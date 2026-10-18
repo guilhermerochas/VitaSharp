@@ -1,0 +1,4 @@
+# Killzone at real speed (as the user plays): menus -> gameplay, no movement
+title=PCSC00045
+data=C:\Users\guisa\VitaSharp\.vitadata
+args=--io-speed=0 --frames=4300 --seconds=300 --dump-every=100 --probe=81614906,8161497A,8161481C,81614838,81614852,816162BA,816162E8,8161635C,81615788,8161569E,816144DE,81615CC2,816161FC,81614468,8161638E,81615EEE --input=tap@20:0.36:0.84,tap@60:0.815:0.763,tap@80:0.25:0.37,tap@95:0.5:0.5,tap@105:0.5:0.5

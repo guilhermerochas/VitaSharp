@@ -1,0 +1,3 @@
+title=PCSA00126
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--seconds=200 --dump-every=200 --no-inspect --audio --bt=sceIoWrite --frames=2300 --input=tap@f1500:0.17:0.58,tap@f1800:0.17:0.58

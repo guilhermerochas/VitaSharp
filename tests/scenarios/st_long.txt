@@ -1,0 +1,3 @@
+title=PCSG00198
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=7200 --seconds=400 --dump-every=150 --input=circle@f400,circle@f700,circle@f1000,circle@f1300,circle@f1600,circle@f1900,circle@f2200,circle@f2500,circle@f2800,circle@f3100,circle@f3400,circle@f3700,circle@f4000,circle@f4300,circle@f4600,circle@f4900,circle@f5200,circle@f5500,circle@f5800,circle@f6100,circle@f6400,circle@f6700,circle@f7000

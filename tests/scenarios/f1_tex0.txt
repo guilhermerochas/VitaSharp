@@ -1,0 +1,4 @@
+# F1 2011: title -> Start -> keep confirming with Cross into the game
+title=PCSE00002
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=7820 --seconds=400 --dump-every=100 --input=start@f3400,cross@f3600,cross@f3750,cross@f3900,cross@f4050,cross@f4200,cross@f4350,cross@f4500,cross@f4650,cross@f4800,cross@f4950,cross@f5100,cross@f5250,cross@f5400,cross@f5550,cross@f5700,cross@f5850,cross@f6000,cross@f6150,cross@f6300,cross@f6450,cross@f6600,cross@f6750,cross@f6900,cross@f7050,cross@f7200,cross@f7350,cross@f7500,cross@f7650,cross@f7800

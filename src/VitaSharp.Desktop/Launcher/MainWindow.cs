@@ -1,0 +1,505 @@
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using VitaSharp.Core.Package;
+
+namespace VitaSharp.Desktop.Launcher;
+
+/// <summary>Game library: lists installed titles, installs new ones and launches the emulator for the selected game.</summary>
+public sealed class MainWindow : Window
+{
+    static readonly IBrush Accent = new SolidColorBrush(Color.Parse("#3D7BFF"));
+    static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#9AA3B2"));
+    static readonly IBrush Panel = new SolidColorBrush(Color.Parse("#1B1F27"));
+    static readonly IBrush WindowBackground = new SolidColorBrush(Color.Parse("#12151B"));
+
+    readonly LauncherSettings _settings = LauncherSettings.Load();
+    readonly ObservableCollection<GameEntry> _visible = new();
+    readonly Dictionary<string, Bitmap?> _icons = new();
+    List<GameEntry> _all = new();
+
+    readonly TextBox _search;
+    readonly ListBox _list;
+    readonly TextBlock _status;
+    readonly TextBox _log;
+    readonly Border _logPanel;
+    readonly StackPanel _details;
+    readonly TextBlock _emptyHint;
+    Process? _running;
+    GameEntry? _runningGame;
+
+    public MainWindow()
+    {
+        Title = "VitaSharp";
+        Width = 1100;
+        Height = 700;
+        MinWidth = 760;
+        MinHeight = 480;
+        Background = WindowBackground;
+
+        _search = new TextBox { Watermark = "Search games", Width = 260, VerticalAlignment = VerticalAlignment.Center };
+        _search.TextChanged += (_, _) => ApplyFilter();
+
+        var toolbar = new DockPanel { Margin = new Thickness(16, 12), LastChildFill = false };
+        var brand = new TextBlock { Text = "VitaSharp", FontSize = 22, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        DockPanel.SetDock(brand, Dock.Left);
+        toolbar.Children.Add(brand);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(_search);
+        actions.Children.Add(MakeButton("Install PKG…", InstallPkg));
+        actions.Children.Add(MakeButton("Add game folder…", AddFolder));
+        actions.Children.Add(MakeButton("Refresh", () => { Refresh(); return Task.CompletedTask; }));
+        actions.Children.Add(MakeButton("Settings", OpenSettings));
+        DockPanel.SetDock(actions, Dock.Right);
+        toolbar.Children.Add(actions);
+
+        _list = new ListBox
+        {
+            ItemsSource = _visible,
+            Background = Brushes.Transparent,
+            ItemTemplate = new FuncDataTemplate<GameEntry>((g, _) => GameRow(g), true),
+        };
+        _list.SelectionChanged += (_, _) => ShowDetails(_list.SelectedItem as GameEntry);
+        _list.DoubleTapped += (_, _) => { if (_list.SelectedItem is GameEntry g) Launch(g); };
+        _list.KeyDown += (_, e) => { if (e.Key == Key.Enter && _list.SelectedItem is GameEntry g) Launch(g); };
+
+        _emptyHint = new TextBlock
+        {
+            Text = "No games installed yet.\nUse \"Install PKG…\" (package + work.bin/.rif license) or \"Add game folder…\" (a decrypted game folder).",
+            Foreground = Muted, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24),
+        };
+        var listHost = new Panel();
+        listHost.Children.Add(_list);
+        listHost.Children.Add(_emptyHint);
+
+        _details = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
+        var detailsPanel = new Border { Background = Panel, Width = 320, Child = new ScrollViewer { Content = _details } };
+
+        _log = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Consolas, Menlo, monospace"), FontSize = 12 };
+        _logPanel = new Border { Height = 160, Background = Panel, Child = _log, IsVisible = _settings.ShowLog, Margin = new Thickness(0, 1, 0, 0) };
+
+        _status = new TextBlock { Foreground = Muted, Margin = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center };
+        var logToggle = new CheckBox { Content = "Show log", IsChecked = _settings.ShowLog, Margin = new Thickness(0, 0, 12, 0) };
+        logToggle.IsCheckedChanged += (_, _) =>
+        {
+            _settings.ShowLog = logToggle.IsChecked == true;
+            _logPanel.IsVisible = _settings.ShowLog;
+            _settings.Save();
+        };
+        var statusBar = new DockPanel { Background = Panel };
+        DockPanel.SetDock(logToggle, Dock.Right);
+        statusBar.Children.Add(logToggle);
+        statusBar.Children.Add(_status);
+
+        var body = new DockPanel();
+        DockPanel.SetDock(detailsPanel, Dock.Right);
+        body.Children.Add(detailsPanel);
+        body.Children.Add(listHost);
+
+        var root = new DockPanel();
+        DockPanel.SetDock(toolbar, Dock.Top);
+        DockPanel.SetDock(statusBar, Dock.Bottom);
+        DockPanel.SetDock(_logPanel, Dock.Bottom);
+        root.Children.Add(toolbar);
+        root.Children.Add(statusBar);
+        root.Children.Add(_logPanel);
+        root.Children.Add(body);
+        Content = root;
+
+        AddHandler(DragDrop.DropEvent, OnDrop);
+        DragDrop.SetAllowDrop(this, true);
+
+        Refresh();
+        ShowDetails(_list.SelectedItem as GameEntry);
+    }
+
+    // ------------------------------------------------------------------ library
+
+    void Refresh()
+    {
+        string? selected = (_list.SelectedItem as GameEntry)?.TitleId;
+        _all = GameLibrary.Scan(Program.Ux0);
+        ApplyFilter();
+        if (selected != null) _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == selected);
+        if (_list.SelectedItem == null && _visible.Count > 0) _list.SelectedIndex = 0;
+        SetStatus(_running != null ? $"Running {_runningGame?.Title}" : $"{_all.Count} game(s) installed — data folder: {Program.DataRoot}");
+    }
+
+    void ApplyFilter()
+    {
+        string q = _search.Text?.Trim() ?? "";
+        _visible.Clear();
+        foreach (var g in _all.Where(g => q.Length == 0
+                     || g.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                     || g.TitleId.Contains(q, StringComparison.OrdinalIgnoreCase)))
+            _visible.Add(g);
+        _emptyHint.IsVisible = _visible.Count == 0;
+        if (_all.Count > 0 && _visible.Count == 0) _emptyHint.Text = "No game matches the search.";
+    }
+
+    Bitmap? GameIcon(GameEntry g)
+    {
+        if (g.IconPath == null) return null;
+        if (_icons.TryGetValue(g.IconPath, out var b)) return b;
+        try { b = new Bitmap(g.IconPath); }
+        catch (Exception) { b = null; }
+        _icons[g.IconPath] = b;
+        return b;
+    }
+
+    Control GameRow(GameEntry g)
+    {
+        var icon = new Border
+        {
+            Width = 64, Height = 64, CornerRadius = new CornerRadius(10), ClipToBounds = true, Background = Panel,
+            Child = GameIcon(g) is { } bmp ? new Image { Source = bmp, Stretch = Stretch.UniformToFill } : new TextBlock { Text = "?", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) };
+        text.Children.Add(new TextBlock { Text = g.Title, FontSize = 16, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        text.Children.Add(new TextBlock
+        {
+            Text = $"{g.TitleId}   ·   {g.CategoryText}{(g.Version.Length > 0 ? $"   ·   v{g.Version}" : "")}   ·   {g.SizeText}",
+            Foreground = Muted, FontSize = 12,
+        });
+        var row = new DockPanel { Margin = new Thickness(8, 6) };
+        DockPanel.SetDock(icon, Dock.Left);
+        row.Children.Add(icon);
+        row.Children.Add(text);
+        return row;
+    }
+
+    void ShowDetails(GameEntry? g)
+    {
+        _details.Children.Clear();
+        if (g == null)
+        {
+            _details.Children.Add(new TextBlock { Text = "Select a game", Foreground = Muted });
+            return;
+        }
+        if (GameIcon(g) is { } bmp)
+            _details.Children.Add(new Border { Width = 160, Height = 160, CornerRadius = new CornerRadius(18), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Left, Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill } });
+        _details.Children.Add(new TextBlock { Text = g.Title, FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+        _details.Children.Add(InfoLine("Title ID", g.TitleId));
+        _details.Children.Add(InfoLine("Type", g.CategoryText));
+        if (g.Version.Length > 0) _details.Children.Add(InfoLine("Version", g.Version));
+        _details.Children.Add(InfoLine("Size", g.SizeText));
+
+        bool busy = _running != null;
+        var play = new Button
+        {
+            Content = busy && _runningGame == g ? "Running…" : "Play", IsEnabled = !busy, Background = Accent, Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 10),
+            FontSize = 16, Margin = new Thickness(0, 8, 0, 0),
+        };
+        play.Click += (_, _) => Launch(g);
+        _details.Children.Add(play);
+        if (busy && _runningGame == g)
+        {
+            var stop = new Button { Content = "Stop", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            stop.Click += (_, _) => { try { _running?.Kill(true); } catch (InvalidOperationException) { } };
+            _details.Children.Add(stop);
+        }
+        var folder = new Button { Content = "Open game folder", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        folder.Click += (_, _) => OpenPath(g.Path);
+        _details.Children.Add(folder);
+        var saves = Path.Combine(Program.Ux0, "user", "00", "savedata", g.TitleId);
+        var saveBtn = new Button { Content = "Open save data", IsEnabled = Directory.Exists(saves), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        saveBtn.Click += (_, _) => OpenPath(saves);
+        _details.Children.Add(saveBtn);
+        var remove = new Button { Content = "Uninstall…", IsEnabled = !busy, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        remove.Click += async (_, _) => await Uninstall(g);
+        _details.Children.Add(remove);
+    }
+
+    static Control InfoLine(string label, string value)
+    {
+        var p = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        p.Children.Add(new TextBlock { Text = label, Foreground = Muted, Width = 70 });
+        p.Children.Add(new TextBlock { Text = value });
+        return p;
+    }
+
+    // ------------------------------------------------------------------ launching
+
+    void Launch(GameEntry g)
+    {
+        if (_running != null) return;
+        var exe = Environment.ProcessPath!;
+        var psi = new ProcessStartInfo(exe)
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
+        };
+        // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
+        if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            psi.ArgumentList.Add(typeof(Program).Assembly.Location);
+        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add(g.Path);
+        foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
+        psi.Environment["VITASHARP_DATA"] = Program.DataRoot;
+
+        _logLines.Clear(); _logChars = 0; _log.Text = "";
+        AppendLog($"> {g.Title} ({g.TitleId})");
+        try
+        {
+            var p = Process.Start(psi)!;
+            p.EnableRaisingEvents = true;
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
+            p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            _running = p;
+            _runningGame = g;
+            SetStatus($"Running {g.Title}");
+            ShowDetails(_list.SelectedItem as GameEntry);
+        }
+        catch (Exception e)
+        {
+            SetStatus($"Could not start the emulator: {e.Message}");
+        }
+    }
+
+    void OnGameExited(Process p)
+    {
+        int code = p.ExitCode;
+        var title = _runningGame?.Title;
+        _running = null;
+        _runningGame = null;
+        p.Dispose();
+        SetStatus(code == 0 ? $"{title} closed." : $"{title} stopped with exit code {code}. See the log for details.");
+        if (code != 0 && !_logPanel.IsVisible) _logPanel.IsVisible = true;
+        ShowDetails(_list.SelectedItem as GameEntry);
+    }
+
+    // Log lines are queued and flushed to the text box a few times per second: games can print hundreds of lines
+    // per second, and rebuilding the whole text per line kept a core busy and starved the game process.
+    readonly Queue<string> _logLines = new();
+    int _logChars;
+    bool _logFlushPending;
+    const int MaxLogLines = 2000;
+
+    void AppendLog(string line)
+    {
+        _logLines.Enqueue(line);
+        _logChars += line.Length + 1;
+        while (_logLines.Count > MaxLogLines) _logChars -= _logLines.Dequeue().Length + 1;
+        if (_logFlushPending) return;
+        _logFlushPending = true;
+        DispatcherTimer.RunOnce(FlushLog, TimeSpan.FromMilliseconds(250));
+    }
+
+    void FlushLog()
+    {
+        _logFlushPending = false;
+        var sb = new System.Text.StringBuilder(_logChars + 16);
+        foreach (var l in _logLines) sb.Append(l).Append(Environment.NewLine);
+        var text = sb.ToString();
+        _log.Text = text;
+        _log.CaretIndex = text.Length;
+    }
+
+    void SetStatus(string s) => _status.Text = s;
+
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        try { _running?.Kill(true); } catch (InvalidOperationException) { }
+        base.OnClosing(e);
+    }
+
+    // ------------------------------------------------------------------ installing
+
+    async Task InstallPkg()
+    {
+        var pkgs = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select a PS Vita package (.pkg)",
+            FileTypeFilter = [new FilePickerFileType("PS Vita package") { Patterns = ["*.pkg"] }],
+        });
+        var pkg = pkgs.FirstOrDefault()?.TryGetLocalPath();
+        if (pkg == null) return;
+        var lics = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select the license for this package (work.bin or .rif)",
+            FileTypeFilter = [new FilePickerFileType("License") { Patterns = ["*.bin", "*.rif"] }, FilePickerFileTypes.All],
+        });
+        var lic = lics.FirstOrDefault()?.TryGetLocalPath();
+        if (lic == null) return;
+        await InstallPkgFiles(pkg, lic);
+    }
+
+    async Task InstallPkgFiles(string pkg, string lic)
+    {
+        SetStatus($"Installing {Path.GetFileName(pkg)}…");
+        _logPanel.IsVisible = true;
+        try
+        {
+            var t = await Task.Run(() => PkgInstaller.Install(pkg, lic, Program.Ux0,
+                msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
+                p => Dispatcher.UIThread.Post(() => SetStatus($"Installing {Path.GetFileName(pkg)}… {p:P0}"))));
+            AppendLog($"Installed {t.TitleId} \"{t.Title}\"");
+            Refresh();
+            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == t.TitleId);
+            SetStatus($"Installed {t.Title}.");
+        }
+        catch (Exception e)
+        {
+            AppendLog("Install failed: " + e.Message);
+            SetStatus("Install failed: " + e.Message);
+        }
+    }
+
+    async Task AddFolder()
+    {
+        var dirs = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select a decrypted game folder (contains eboot.bin and sce_sys)" });
+        var dir = dirs.FirstOrDefault()?.TryGetLocalPath();
+        if (dir != null) await AddFolderPath(dir);
+    }
+
+    async Task AddFolderPath(string dir)
+    {
+        var entry = GameLibrary.Read(dir);
+        if (entry == null)
+        {
+            SetStatus("That folder is not a game: eboot.bin was not found.");
+            return;
+        }
+        var dest = Path.Combine(Program.Ux0, "app", entry.TitleId);
+        if (Path.GetFullPath(dir).TrimEnd('\\', '/').Equals(Path.GetFullPath(dest).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+        {
+            Refresh();
+            return;
+        }
+        if (Directory.Exists(dest) && !await Confirm($"{entry.TitleId} is already installed. Replace it?")) return;
+        SetStatus($"Copying {entry.Title}…");
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (Directory.Exists(dest)) Directory.Delete(dest, true);
+                CopyDirectory(dir, dest);
+            });
+            Refresh();
+            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == entry.TitleId);
+            SetStatus($"Added {entry.Title}.");
+        }
+        catch (Exception e)
+        {
+            SetStatus("Copy failed: " + e.Message);
+        }
+    }
+
+    static void CopyDirectory(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
+        foreach (var d in Directory.GetDirectories(src)) CopyDirectory(d, Path.Combine(dst, Path.GetFileName(d)));
+    }
+
+    async void OnDrop(object? sender, DragEventArgs e)
+    {
+        var items = e.Data.GetFiles()?.Select(f => f.TryGetLocalPath()).Where(p => p != null).Cast<string>().ToList() ?? [];
+        var pkg = items.FirstOrDefault(p => p.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase));
+        var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
+        if (pkg != null && lic != null) await InstallPkgFiles(pkg, lic);
+        else if (pkg != null) SetStatus("Drop the .pkg together with its work.bin/.rif license, or use Install PKG…");
+        else foreach (var dir in items.Where(Directory.Exists)) await AddFolderPath(dir);
+    }
+
+    async Task Uninstall(GameEntry g)
+    {
+        if (!await Confirm($"Uninstall \"{g.Title}\" ({g.TitleId})? Save data is kept.")) return;
+        try
+        {
+            await Task.Run(() => Directory.Delete(g.Path, true));
+            SetStatus($"Uninstalled {g.Title}.");
+        }
+        catch (Exception e) { SetStatus("Uninstall failed: " + e.Message); }
+        Refresh();
+    }
+
+    // ------------------------------------------------------------------ dialogs
+
+    async Task OpenSettings()
+    {
+        var fullscreen = new CheckBox { Content = "Start games in fullscreen (F11 toggles in game)", IsChecked = _settings.Fullscreen };
+        var vsync = new CheckBox { Content = "VSync", IsChecked = _settings.VSync };
+        var validation = new CheckBox { Content = "Vulkan validation layers (debugging, slow)", IsChecked = _settings.Validation };
+        var scale = new ComboBox { ItemsSource = new[] { "1x (960×544)", "2x (1920×1088)", "3x (2880×1632)" }, SelectedIndex = Math.Clamp(_settings.Scale - 1, 0, 2), Width = 200 };
+        var scaleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        scaleRow.Children.Add(new TextBlock { Text = "Window size", VerticalAlignment = VerticalAlignment.Center });
+        scaleRow.Children.Add(scale);
+        var keys = new TextBlock
+        {
+            Foreground = Muted, TextWrapping = TextWrapping.Wrap,
+            Text = "Keyboard: arrows = D-pad, X/Space = Cross, C = Circle, Z = Square, V = Triangle, Q/E = L/R, Enter = Start, " +
+                   "Backspace = Select, WASD = left stick, IJKL = right stick, F11 = fullscreen. Mouse = front touch screen. Gamepads are detected automatically.",
+        };
+        var ok = new Button { Content = "Save", Background = Accent, Foreground = Brushes.White, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(ok);
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = "Settings", FontSize = 18, FontWeight = FontWeight.SemiBold });
+        panel.Children.Add(fullscreen);
+        panel.Children.Add(scaleRow);
+        panel.Children.Add(vsync);
+        panel.Children.Add(validation);
+        panel.Children.Add(keys);
+        panel.Children.Add(new TextBlock { Text = "Data folder: " + Program.DataRoot, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(buttons);
+        var dlg = new Window { Title = "Settings", Width = 460, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
+        ok.Click += (_, _) =>
+        {
+            _settings.Fullscreen = fullscreen.IsChecked == true;
+            _settings.VSync = vsync.IsChecked == true;
+            _settings.Validation = validation.IsChecked == true;
+            _settings.Scale = scale.SelectedIndex + 1;
+            _settings.Save();
+            dlg.Close();
+        };
+        cancel.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+    }
+
+    async Task<bool> Confirm(string message)
+    {
+        bool result = false;
+        var yes = new Button { Content = "Yes", Background = Accent, Foreground = Brushes.White, IsDefault = true };
+        var no = new Button { Content = "No", IsCancel = true };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(no);
+        buttons.Children.Add(yes);
+        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(buttons);
+        var dlg = new Window { Title = "VitaSharp", Width = 400, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
+        yes.Click += (_, _) => { result = true; dlg.Close(); };
+        no.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+        return result;
+    }
+
+    static Button MakeButton(string text, Func<Task> action)
+    {
+        var b = new Button { Content = text, VerticalAlignment = VerticalAlignment.Center };
+        b.Click += async (_, _) => await action();
+        return b;
+    }
+
+    static void OpenPath(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (Exception) { }
+    }
+}

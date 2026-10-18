@@ -1,0 +1,4 @@
+# Devious Dungeon: boot and start a game
+title=PCSB01240
+data=C:\Users\guisa\VitaSharp\.vitadata
+args=--seconds=60 --dump-every=120 --input=cross@10,cross@20,cross@30,cross@40

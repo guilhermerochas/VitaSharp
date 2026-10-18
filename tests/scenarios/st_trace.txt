@@ -1,0 +1,3 @@
+title=PCSG00198
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=700 --seconds=200 --dump-every=100 --trace-draws=600 --debug --input=circle@f400,circle@f700,circle@f1000,circle@f1300,start@f1600,circle@f1900,circle@f2200,circle@f2500

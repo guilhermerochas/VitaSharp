@@ -1,0 +1,225 @@
+using System.Runtime.CompilerServices;
+using System.Text;
+
+namespace VitaSharp.Core.Memory;
+
+public enum MemoryRegion
+{
+    /// <summary>Main LPDDR2 user memory (eboot, heaps, stacks, user memblocks).</summary>
+    User,
+    /// <summary>CDRAM (video memory) memblocks.</summary>
+    Cdram,
+    /// <summary>Emulator-internal allocations (HLE trampolines, kernel objects visible to the guest).</summary>
+    Kernel,
+}
+
+/// <summary>
+/// The whole 32-bit guest address space mapped 1:1 onto a host reservation (fastmem):
+/// host pointer = Base + guest address. Pages are committed on allocation and, on Windows x64,
+/// lazily on first touch through a native vectored exception handler.
+/// </summary>
+public sealed unsafe class GuestMemory : IDisposable
+{
+    public const uint PageSize = 0x1000;
+    const ulong ReserveSize = 0x1_0001_0000; // 4 GiB + slack so 16-byte accesses at the top don't fault
+
+    /// <summary>Host address of guest address 0. Static so JIT-compiled code can embed it.</summary>
+    public static byte* Base { get; private set; }
+
+    readonly bool _lazy;
+    readonly object _lock = new();
+    readonly Dictionary<uint, Block> _blocks = new();
+    readonly SortedList<uint, uint> _freeUser = new();   // start -> size
+    readonly SortedList<uint, uint> _freeCdram = new();
+    readonly SortedList<uint, uint> _freeKernel = new();
+
+    public sealed record Block(uint Address, uint Size, string Name, MemoryRegion Region);
+
+    /// <summary>The process-wide address space (debug tools).</summary>
+    public static GuestMemory? Instance { get; private set; }
+
+    /// <summary>Snapshot of the allocated blocks (debug tools).</summary>
+    public List<Block> Blocks() { lock (_lock) return _blocks.Values.OrderBy(b => b.Address).ToList(); }
+
+    public const uint UserStart = 0x8100_0000, UserEnd = 0xE000_0000;
+    public const uint CdramStart = 0x6000_0000, CdramEnd = 0x7000_0000;
+    public const uint KernelStart = 0x4000_0000, KernelEnd = 0x5000_0000;
+
+    public long CommittedBytes { get; private set; }
+
+    public GuestMemory()
+    {
+        if (Base != null) throw new InvalidOperationException("Only one guest address space per process");
+        Base = HostVirtualMemory.Reserve(unchecked((nuint)ReserveSize), out _lazy);
+        Instance = this;
+        if (!_lazy) _lazy = HostVirtualMemory.InstallLazyCommitHandler(Base, ReserveSize);
+        _freeUser.Add(UserStart, UserEnd - UserStart);
+        _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
+        _freeKernel.Add(KernelStart, KernelEnd - KernelStart);
+    }
+
+    // ---------------- raw access ----------------
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static byte* Ptr(uint addr) => Base + addr;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static T Read<T>(uint addr) where T : unmanaged => Unsafe.ReadUnaligned<T>(Base + addr);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Write<T>(uint addr, T value) where T : unmanaged => Unsafe.WriteUnaligned(Base + addr, value);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ref T Ref<T>(uint addr) where T : unmanaged => ref Unsafe.AsRef<T>(Base + addr);
+
+    public static uint R32(uint a) => Read<uint>(a);
+    public static void W32(uint a, uint v) => Write(a, v);
+
+    public static Span<byte> Span(uint addr, int length) => new(Base + addr, length);
+    public static Span<T> Span<T>(uint addr, int count) where T : unmanaged => new(Base + addr, count);
+
+    public static string ReadCString(uint addr, int max = 4096)
+    {
+        if (addr == 0) return "";
+        var p = Base + addr;
+        int n = 0;
+        while (n < max && p[n] != 0) n++;
+        return Encoding.UTF8.GetString(p, n);
+    }
+
+    public static void WriteCString(uint addr, string s, int max = int.MaxValue)
+    {
+        var bytes = Encoding.UTF8.GetBytes(s);
+        int n = Math.Min(bytes.Length, max - 1);
+        bytes.AsSpan(0, n).CopyTo(new Span<byte>(Base + addr, n));
+        Base[addr + (uint)n] = 0;
+    }
+
+    public static void Copy(uint dst, uint src, uint len) => Buffer.MemoryCopy(Base + src, Base + dst, len, len);
+    public static void Fill(uint dst, byte value, uint len) => new Span<byte>(Base + dst, (int)len).Fill(value);
+
+    // ---------------- allocation ----------------
+
+    SortedList<uint, uint> FreeList(MemoryRegion r) => r switch
+    {
+        MemoryRegion.Cdram => _freeCdram,
+        MemoryRegion.Kernel => _freeKernel,
+        _ => _freeUser,
+    };
+
+    public uint Alloc(uint size, string name, MemoryRegion region = MemoryRegion.User, uint align = PageSize)
+    {
+        if (size == 0) size = 1;
+        size = AlignUp(size, PageSize);
+        align = Math.Max(align, PageSize);
+        lock (_lock)
+        {
+            var free = FreeList(region);
+            for (int i = 0; i < free.Count; i++)
+            {
+                uint start = free.Keys[i], len = free.Values[i];
+                uint aligned = AlignUp(start, align);
+                if (aligned < start || aligned - start + (ulong)size > len) continue;
+                Carve(free, start, len, aligned, size);
+                return Commit(aligned, size, name, region);
+            }
+        }
+        throw new OutOfMemoryException($"Guest {region} memory exhausted allocating 0x{size:X} for {name}");
+    }
+
+    /// <summary>Allocate at a fixed address. Returns 0 when the range is not free.</summary>
+    public uint TryAllocAt(uint addr, uint size, string name)
+    {
+        uint start = addr & ~(PageSize - 1);
+        uint end = AlignUp(addr + size, PageSize);
+        lock (_lock)
+        {
+            foreach (var region in new[] { MemoryRegion.User, MemoryRegion.Cdram, MemoryRegion.Kernel })
+            {
+                var free = FreeList(region);
+                for (int i = 0; i < free.Count; i++)
+                {
+                    uint fs = free.Keys[i], fl = free.Values[i];
+                    if (start >= fs && (ulong)end <= (ulong)fs + fl)
+                    {
+                        Carve(free, fs, fl, start, end - start);
+                        Commit(start, end - start, name, region);
+                        return addr;
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    static void Carve(SortedList<uint, uint> free, uint fs, uint fl, uint start, uint size)
+    {
+        free.Remove(fs);
+        if (start > fs) free.Add(fs, start - fs);
+        ulong tail = (ulong)fs + fl - ((ulong)start + size);
+        if (tail > 0) free.Add(start + size, (uint)tail);
+    }
+
+    uint Commit(uint addr, uint size, string name, MemoryRegion region)
+    {
+        HostVirtualMemory.Commit(Base + addr, size);
+        new Span<byte>(Base + addr, (int)size).Clear();
+        _blocks[addr] = new Block(addr, size, name, region);
+        CommittedBytes += size;
+        return addr;
+    }
+
+    /// <summary>Frees every block (process exec: the address space is reused for a new executable).</summary>
+    public void FreeAll()
+    {
+        uint[] addrs;
+        lock (_lock) addrs = _blocks.Keys.ToArray();
+        foreach (var a in addrs) Free(a);
+    }
+
+    public void Free(uint addr)
+    {
+        lock (_lock)
+        {
+            if (!_blocks.Remove(addr, out var b)) return;
+            CommittedBytes -= b.Size;
+            HostVirtualMemory.Decommit(Base + b.Address, b.Size);
+            var free = FreeList(b.Region);
+            uint start = b.Address, size = b.Size;
+            // merge with neighbours
+            int idx = 0;
+            while (idx < free.Count && free.Keys[idx] < start) idx++;
+            if (idx > 0 && free.Keys[idx - 1] + free.Values[idx - 1] == start)
+            {
+                start = free.Keys[idx - 1];
+                size += free.Values[idx - 1];
+                free.RemoveAt(idx - 1);
+                idx--;
+            }
+            if (idx < free.Count && start + size == free.Keys[idx])
+            {
+                size += free.Values[idx];
+                free.RemoveAt(idx);
+            }
+            free.Add(start, size);
+        }
+    }
+
+    public Block? FindBlock(uint addr)
+    {
+        lock (_lock)
+        {
+            foreach (var b in _blocks.Values)
+                if (addr >= b.Address && addr - b.Address < b.Size) return b;
+        }
+        return null;
+    }
+
+    public static uint AlignUp(uint v, uint a) => (v + a - 1) & ~(a - 1);
+
+    public void Dispose()
+    {
+        if (Base != null) HostVirtualMemory.Release(Base, unchecked((nuint)ReserveSize));
+        Base = null;
+    }
+}

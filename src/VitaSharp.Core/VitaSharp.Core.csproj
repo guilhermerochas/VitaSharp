@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Platform-agnostic emulator core: no windowing, no graphics API, no OS specifics.
+       Desktop and (future) Android front-ends plug into it through the interfaces in Host/. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>VitaSharp.Core</RootNamespace>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Hle\Data\nids.txt" LogicalName="nids.txt" />
+    <InternalsVisibleTo Include="VitaSharp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.13" />
+  </ItemGroup>
+
+</Project>
+

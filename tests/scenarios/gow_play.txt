@@ -1,0 +1,4 @@
+# God of War: menus -> start game
+title=PCSA00126
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=7000 --seconds=300 --dump-every=150 --input=cross@f1500,cross@f1800,cross@f2100,cross@f2400,cross@f2700,cross@f3000,cross@f3300,cross@f3600,cross@f4200,cross@f4800,cross@f5400,cross@f6000

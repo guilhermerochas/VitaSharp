@@ -1,0 +1,4 @@
+# Soccer Tsuku: boot
+title=PCSG00198
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--seconds=60 --dump-every=60

@@ -1,0 +1,4 @@
+# F1 2011: boot through the intro movies to the menus
+title=PCSE00002
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=700 --seconds=60 --dump-every=700 --trace-hle-frames=550:650

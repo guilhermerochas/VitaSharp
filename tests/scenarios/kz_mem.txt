@@ -1,0 +1,3 @@
+title=PCSC00045
+data=C:\Users\guisa\VitaSharp\.vitadata
+args=--frames=700 --seconds=120 --dump-every=700 --trace-hle-frames=0:700:sceGxm+sceKernelGetTLSAddr+sceKernelLockLwMutex+sceKernelUnlockLwMutex+sceNgs+sceKernelGetProcessTime+sceKernelGetThreadId+sceFiber+sceKernelDelayThread+sceKernelWait+sceKernelSignal+sceIo+sceFios+sceKernelGetProcessId+sceTouch+sceCtrl+sceSystemGesture+sceDisplay+sceAudioOut+sceMotion
