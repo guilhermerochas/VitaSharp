@@ -154,7 +154,7 @@ Regras por função (aplicam-se a toda família salvo indicação):
 ## Funções globais da SceCommonDialog
 
 ### sceCommonDialogIsRunning
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x043A353E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x043A353E
 - **Protótipo:** `SceBool sceCommonDialogIsRunning(void);` (inferido; sem protótipo em `common_dialog.h`)
 - **Comportamento:** verdadeiro enquanto há um diálogo comum ativo (status RUNNING; a confirmar se FINISHED-sem-Term
   também conta). Jogos usam para não abrir um segundo diálogo e para pausar input.
@@ -166,7 +166,7 @@ Regras por função (aplicam-se a toda família salvo indicação):
 - **Validação:** com ImeDialog integrado, abrir o teclado no Sakatsuku (`st_*`) e checar no `--trace-hle-only=sceCommonDialog` que o retorno é 1 enquanto a janela está aberta.
 
 ### sceCommonDialogUpdate
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x90530F2F
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x90530F2F
 - **Protótipo:** `int sceCommonDialogUpdate(const SceCommonDialogUpdateParam *updateParam);` (`psp2/common_dialog.h`)
 - **Comportamento:** chamada uma vez por frame, depois de `sceGxmEndScene` e antes do flip; o sistema desenha o
   diálogo ativo no render target indicado e avança a animação/estado. Sem diálogo ativo, não faz nada.
@@ -182,7 +182,7 @@ Regras por função (aplicam-se a toda família salvo indicação):
 - **Validação:** Killzone (`kz_boot`) e Sakatsuku chamam por frame; checar ausência de regressão.
 
 ### sceCommonDialogSetConfigParam
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBECD35C8
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBECD35C8
 - **Protótipo:** `int sceCommonDialogSetConfigParam(const SceCommonDialogConfigParam *configParam);` (`psp2/common_dialog.h`)
 - **Comportamento:** define idioma e botão de confirmação usados pelos diálogos do sistema. Valores
   `SCE_SYSTEM_PARAM_*_MAX_VALUE` (0xFFFFFFFF) significam "usar o do sistema".
@@ -195,7 +195,7 @@ Regras por função (aplicam-se a toda família salvo indicação):
 - **Validação:** teste unitário simples; nenhum jogo depende do efeito offline.
 
 ### sceCommonDialogGetWorkerThreadId
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0xD4C37375
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0xD4C37375
 - **Protótipo:** `SceUID sceCommonDialogGetWorkerThreadId(void);` (inferido)
 - **Comportamento:** retorna o UID da thread de trabalho interna da biblioteca de diálogos (usado para ajuste de
   prioridade/afinidade).
@@ -267,7 +267,7 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
 | `sceImeDialogAbort` | FINISHED | ABORTED (2) | NONE (0) | intacto |
 
 ### sceImeDialogInit
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x1E7043BF
+- [x] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x1E7043BF
 - **Protótipo:** `SceInt32 sceImeDialogInit(const SceImeDialogParam *param);` (`psp2/ime_dialog.h`)
 - **Comportamento:** valida o parâmetro, ocupa o slot global de diálogo, lê título e texto inicial, abre o teclado e
   deixa o diálogo RUNNING. Copia o que precisa da struct (o jogo pode reutilizar a memória do `param` depois do
@@ -296,7 +296,7 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
   `VitaSharp.Desktop imports PCSA00552` / `PCSG00198` não devem mais listar `sceImeDialog*`.
 
 ### sceImeDialogGetStatus
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0xCF0431FD
+- [x] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0xCF0431FD
 - **Protótipo:** `SceCommonDialogStatus sceImeDialogGetStatus(void);` (`psp2/ime_dialog.h`)
 - **Comportamento:** `type == Ime ? status : NONE`. Estratégia mínima: considerar devolver RUNNING na primeira chamada
   depois do `Init` (ver seção comum).
@@ -306,7 +306,7 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
 - **Validação:** idem `sceImeDialogInit`.
 
 ### sceImeDialogGetResult
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x2EB3D046
+- [x] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x2EB3D046
 - **Protótipo:** `SceInt32 sceImeDialogGetResult(SceImeDialogResult *result);` (`psp2/ime_dialog.h`)
 - **Comportamento:** preenche `result` com o desfecho (tabela acima). Não escreve o texto (já está em `inputTextBuffer`).
 - **Retorno/erros:** 0; `SCE_COMMON_DIALOG_ERROR_NOT_FINISHED` 0x80020410 se `type != Ime` ou `status != FINISHED`
@@ -316,7 +316,7 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
 - **Validação:** idem; o jogo deve aceitar o nome (button == 2).
 
 ### sceImeDialogTerm
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x838A3AF4
+- [x] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x838A3AF4
 - **Protótipo:** `SceInt32 sceImeDialogTerm(void);` (`psp2/ime_dialog.h`)
 - **Comportamento:** fecha o diálogo e libera o slot.
 - **Retorno/erros:** 0; `NOT_IN_USE` 0x80020411 se `type != Ime`; `NOT_FINISHED` 0x80020410 se ainda RUNNING.
@@ -325,7 +325,7 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
 - **Validação:** após o nome, abrir outro diálogo (save) não pode retornar BUSY.
 
 ### sceImeDialogAbort
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x594A220E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x594A220E
 - **Protótipo:** `SceInt32 sceImeDialogAbort(void);` (`psp2/ime_dialog.h`)
 - **Comportamento:** fecha o teclado à força: FINISHED, `result = ABORTED`, `button = NONE`, buffer intacto.
 - **Retorno/erros:** 0; `NOT_IN_USE` 0x80020411 se `type != Ime`.
@@ -389,7 +389,7 @@ jogo ao caminho "cancelado" está **a confirmar** (ver plano). Registrar cada fu
    0 (NONE) — **não** copiar o "retorna 2 sempre" do Vita3K, que faria o jogo chamar `GetResult` sem diálogo.
 
 ### sceCommonDialog_33626E2C (Init)
-- [ ] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0x33626E2C
+- [x] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0x33626E2C
 - **Protótipo:** `SceInt32 NID_33626E2C(const void *param);` (inferido do call site)
 - **Comportamento:** inicia o diálogo desconhecido; ver tabela acima. Mínimo: valida `param != 0`, ocupa o slot, termina
   como cancelado. Logar `commId` (0x50, 12 bytes) e `R32(param+0x5C)`.
@@ -401,7 +401,7 @@ jogo ao caminho "cancelado" está **a confirmar** (ver plano). Registrar cada fu
   multijogador não pode travar.
 
 ### sceCommonDialog_B7D4C911 (GetStatus)
-- [ ] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xB7D4C911
+- [x] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xB7D4C911
 - **Protótipo:** `SceCommonDialogStatus sceCommonDialog_B7D4C911(void);` (inferido; nome do Vita3K)
 - **Comportamento:** status do diálogo desconhecido (`type == KzUnknown ? status : NONE`).
 - **Retorno/erros:** 0/1/2.
@@ -411,7 +411,7 @@ jogo ao caminho "cancelado" está **a confirmar** (ver plano). Registrar cada fu
 - **Validação:** idem Init.
 
 ### sceCommonDialog_D1858A78 (GetResult)
-- [ ] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xD1858A78
+- [x] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xD1858A78
 - **Protótipo:** `SceInt32 NID_D1858A78(void *result);` (inferido)
 - **Comportamento:** escreve `+0x00 = result` (`SceCommonDialogResult`) e `+0x04 = <enum 0..3>`; valor de `+0x04` para
   "cancelado" a confirmar (passo 3 do plano). Não escrever além de 0x08 enquanto o tamanho não for conhecido.
@@ -421,7 +421,7 @@ jogo ao caminho "cancelado" está **a confirmar** (ver plano). Registrar cada fu
 - **Validação:** idem Init; conferir no trace que o jogo segue para o estado "fechado" sem mensagem de erro.
 
 ### sceCommonDialog_BEBAEF25 (Term)
-- [ ] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xBEBAEF25
+- [x] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xBEBAEF25
 - **Protótipo:** `SceInt32 NID_BEBAEF25(void);` (inferido)
 - **Comportamento:** libera o slot.
 - **Retorno/erros:** 0; `NOT_IN_USE` 0x80020411; `NOT_FINISHED` 0x80020410.
@@ -430,7 +430,7 @@ jogo ao caminho "cancelado" está **a confirmar** (ver plano). Registrar cada fu
 - **Validação:** depois do Term, `sceMsgDialogInit` do jogo não pode receber BUSY.
 
 ### sceCommonDialog_B55CF0E3 (Abort)
-- [ ] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xB55CF0E3
+- [x] **Prioridade:** P0 (Killzone Mercenary JP PCSC00045) · **Biblioteca:** SceCommonDialog · **NID:** 0xB55CF0E3
 - **Protótipo:** `SceInt32 NID_B55CF0E3(void);` (inferido)
 - **Comportamento:** aborta o diálogo desconhecido (FINISHED, `result = ABORTED`).
 - **Retorno/erros:** 0; `NOT_IN_USE` 0x80020411 (o jogo ignora o retorno).
@@ -467,7 +467,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
 `PSN_AGE_RESTRICTION` 0x80100C09. Os quatro últimos aparecem também como valor de `result.result` (a confirmar).
 
 ### sceNetCheckDialogGetPS3ConnectInfo
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x39467634
+- [x] **Prioridade:** P0 (Invizimals PCSA00552, Sakatsuku PCSG00198) · **Biblioteca:** SceCommonDialog · **NID:** 0x39467634
 - **Protótipo:** `SceInt32 sceNetCheckDialogGetPS3ConnectInfo(SceNetCheckDialogPS3ConnectInfo *info);` (`psp2/netcheck_dialog.h`)
 - **Comportamento:** depois de um NetCheckDialog em modo `PS3_CONNECT` concluído com sucesso, devolve o endereço, apelido
   e MAC do PS3 ao qual o Vita se conectou (cross-play/companion). Offline nunca há PS3 conectado.
@@ -482,7 +482,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
   chama depois de `GetResult` e trata o erro (volta ao menu).
 
 ### sceNetCheckDialogInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xA38A4A0D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xA38A4A0D
 - **Protótipo:** `SceInt32 sceNetCheckDialogInit(SceNetCheckDialogParam *param);` (`psp2/netcheck_dialog.h`)
 - **Comportamento:** inicia a verificação no `mode` pedido. Offline: concluir com `result = USER_CANCELED` (o
   usuário vê "não conectado à PSN" e volta). Modo `ADHOC_CONN`: o Vita3K deixa RUNNING e dispara o adhoc; no VitaSharp
@@ -494,7 +494,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
 - **Validação:** Killzone (importa NetCheck) e Sakatsuku/Invizimals: entrar no modo online e verificar que voltam ao menu.
 
 ### sceNetCheckDialogGetStatus
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x8027292A
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x8027292A
 - **Protótipo:** `SceCommonDialogStatus sceNetCheckDialogGetStatus(void);` (`psp2/netcheck_dialog.h`)
 - **Comportamento:** `type == NetCheck ? status : NONE`.
 - **Retorno/erros:** 0/1/2.
@@ -504,7 +504,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
 - **Validação:** idem Init.
 
 ### sceNetCheckDialogGetResult
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xB05FCE9E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xB05FCE9E
 - **Protótipo:** `SceInt32 sceNetCheckDialogGetResult(SceNetCheckDialogResult *result);` (`psp2/netcheck_dialog.h`)
 - **Comportamento:** preenche `result` (0x84): `result = USER_CANCELED` (1), `psnModeSucceeded = 0`.
 - **Retorno/erros:** 0; `NOT_IN_USE`/`NOT_FINISHED`; `NULL`.
@@ -515,7 +515,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
 - **Validação:** trace de Sakatsuku/Invizimals no menu online.
 
 ### sceNetCheckDialogTerm
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x8BE51C15
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x8BE51C15
 - **Protótipo:** `SceInt32 sceNetCheckDialogTerm(void);`
 - **Comportamento/erros:** regra comum (`NOT_IN_USE`, `NOT_FINISHED`); libera o slot.
 - **Estruturas:** —
@@ -523,7 +523,7 @@ nos modos PSN), `LACK_OF_LIBSSL_POOL_SIZE` 0x80100C04 (pool SSL < 96 KiB), `LATE
 - **Validação:** teste unitário Init→GetResult→Term→Init.
 
 ### sceNetCheckDialogAbort
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x2D8EDF09
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x2D8EDF09
 - **Protótipo:** `SceInt32 sceNetCheckDialogAbort(void);`
 - **Comportamento/erros:** regra comum (`result = ABORTED`).
 - **Estruturas:** —
@@ -545,7 +545,7 @@ de `SceNpId`) é desconhecido. Como confirmar: no Invizimals, logar `Span(param,
 apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04` (a confirmar), 0.
 
 ### sceNpFriendListDialogInit
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x93FCFEC6
+- [x] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x93FCFEC6
 - **Protótipo:** `SceInt32 sceNpFriendListDialogInit(const SceNpFriendListDialogParam *param);` (inferido)
 - **Comportamento:** abre a lista de amigos. Deslogado: o firmware mostraria "sign in" e o usuário cancela → mínimo:
   FINISHED com `USER_CANCELED`.
@@ -557,7 +557,7 @@ apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04`
   voltar ao menu. `imports PCSA00552` sem `sceNpFriendListDialog*`.
 
 ### sceNpFriendListDialogGetStatus
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x1FD5D373
+- [x] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x1FD5D373
 - **Protótipo:** `SceCommonDialogStatus sceNpFriendListDialogGetStatus(void);` (inferido)
 - **Comportamento/erros:** regra comum.
 - **Estruturas:** —
@@ -565,7 +565,7 @@ apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04`
 - **Validação:** idem Init.
 
 ### sceNpFriendListDialogGetResult
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0xD29FE607
+- [x] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0xD29FE607
 - **Protótipo:** `SceInt32 sceNpFriendListDialogGetResult(SceNpFriendListDialogResult *result);` (inferido)
 - **Comportamento:** escreve `result = USER_CANCELED` (e zero selecionados, quando o offset for conhecido).
 - **Retorno/erros:** 0; `NOT_FINISHED`; `NULL`.
@@ -574,7 +574,7 @@ apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04`
 - **Validação:** idem Init.
 
 ### sceNpFriendListDialogTerm
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x4A880C6A
+- [x] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceCommonDialog · **NID:** 0x4A880C6A
 - **Protótipo:** `SceInt32 sceNpFriendListDialogTerm(void);` (inferido)
 - **Comportamento/erros:** regra comum.
 - **Estruturas:** —
@@ -582,7 +582,7 @@ apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04`
 - **Validação:** idem Init.
 
 ### sceNpFriendListDialogAbort
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x58FA2062
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x58FA2062
 - **Protótipo:** `SceInt32 sceNpFriendListDialogAbort(void);` (inferido)
 - **Comportamento/erros:** regra comum (`ABORTED`).
 - **Estruturas:** —
@@ -593,11 +593,11 @@ apenas `+0x00 = USER_CANCELED` e, se existir contador de selecionados em `+0x04`
 
 Versão posterior (SDK 3.x) da mesma lista. Mesmo comportamento mínimo (cancelado), structs a confirmar.
 
-- [ ] `sceNpFriendList2DialogInit` · NID 0xBBCDF66D · P1 — `SceInt32 (const void *param)` (inferido); regra comum de `Init`; FINISHED/`USER_CANCELED`. Implementação em `CommonDialog`, tipo `NpFriendList2`. Validação: teste unitário.
-- [ ] `sceNpFriendList2DialogGetStatus` · NID 0xAC735AF9 · P1 — `SceCommonDialogStatus (void)`; regra comum.
-- [ ] `sceNpFriendList2DialogGetResult` · NID 0xC0CF1ED4 · P1 — `SceInt32 (void *result)`; escreve só `+0x00 = USER_CANCELED`.
-- [ ] `sceNpFriendList2DialogTerm` · NID 0x05B18EA3 · P1 — `SceInt32 (void)`; regra comum.
-- [ ] `sceNpFriendList2DialogAbort` · NID 0xFC67B971 · P1 — `SceInt32 (void)`; regra comum (`ABORTED`).
+- [x] `sceNpFriendList2DialogInit` · NID 0xBBCDF66D · P1 — `SceInt32 (const void *param)` (inferido); regra comum de `Init`; FINISHED/`USER_CANCELED`. Implementação em `CommonDialog`, tipo `NpFriendList2`. Validação: teste unitário.
+- [x] `sceNpFriendList2DialogGetStatus` · NID 0xAC735AF9 · P1 — `SceCommonDialogStatus (void)`; regra comum.
+- [x] `sceNpFriendList2DialogGetResult` · NID 0xC0CF1ED4 · P1 — `SceInt32 (void *result)`; escreve só `+0x00 = USER_CANCELED`.
+- [x] `sceNpFriendList2DialogTerm` · NID 0x05B18EA3 · P1 — `SceInt32 (void)`; regra comum.
+- [x] `sceNpFriendList2DialogAbort` · NID 0xFC67B971 · P1 — `SceInt32 (void)`; regra comum (`ABORTED`).
 
 ---
 
@@ -617,7 +617,7 @@ Implementada em `CommonDialog` (`Online.cs`), termina na hora com `buttonId = 1`
 RETRY/BUTTON3 3).
 
 ### sceMsgDialogInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x755FF270
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x755FF270
 - **Protótipo:** `int sceMsgDialogInit(const SceMsgDialogParam *param);` (`psp2/message_dialog.h`)
 - **Comportamento:** abre a mensagem. Modos USER_MSG/SYSTEM_MSG/ERROR_CODE: mínimo = FINISHED com o botão padrão
   (OK para OK/OK_CANCEL, YES para YESNO, BUTTON1 para 3BUTTONS, `INVALID` + `USER_CANCELED` para CANCEL; para
@@ -633,7 +633,7 @@ RETRY/BUTTON3 3).
   texto correto (UTF-8 japonês) e o fluxo não pode mudar.
 
 ### sceMsgDialogGetResult
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBB3BFC89
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBB3BFC89
 - **Protótipo:** `int sceMsgDialogGetResult(SceMsgDialogResult *result);`
 - **Comportamento:** preenche `mode`, `result` e `buttonId` reais.
 - **Retorno/erros:** 0; `NOT_FINISHED` 0x80020410; `NULL` 0x80020402 (hoje devolve 0x80020401 = BUSY).
@@ -643,7 +643,7 @@ RETRY/BUTTON3 3).
 - **Validação:** idem Init.
 
 ### sceMsgDialogAbort
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x0CC66115
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x0CC66115
 - **Protótipo:** `int sceMsgDialogAbort(void);`
 - **Comportamento:** FINISHED com `result = ABORTED` (`buttonId` inalterado/INVALID).
 - **Retorno/erros:** 0; `NOT_IN_USE` 0x80020411.
@@ -654,7 +654,7 @@ RETRY/BUTTON3 3).
 - **Validação:** teste unitário.
 
 ### sceMsgDialogProgressBarInc
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x7BE0E08B
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x7BE0E08B
 - **Protótipo:** `int sceMsgDialogProgressBarInc(SceMsgDialogProgressBarTarget target, SceUInt32 delta);` (`psp2/message_dialog.h`)
 - **Comportamento:** soma `delta` (em %) à barra, saturando em 100.
 - **Retorno/erros:** 0; `NOT_RUNNING` 0x80020404 se não há MsgDialog; `NOT_SUPPORTED` 0x80020405 se `mode != PROGRESS_BAR`;
@@ -664,7 +664,7 @@ RETRY/BUTTON3 3).
 - **Validação:** teste unitário.
 
 ### sceMsgDialogProgressBarSetValue
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x9CDA5E0D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x9CDA5E0D
 - **Protótipo:** `int sceMsgDialogProgressBarSetValue(SceMsgDialogProgressBarTarget target, SceUInt32 rate);`
 - **Comportamento:** define a barra em `min(rate, 100)`.
 - **Retorno/erros:** como `ProgressBarInc`.
@@ -673,7 +673,7 @@ RETRY/BUTTON3 3).
 - **Validação:** teste unitário.
 
 ### sceMsgDialogProgressBarSetMsg
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x0150A451
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCommonDialog · **NID:** 0x0150A451
 - **Protótipo:** `int sceMsgDialogProgressBarSetMsg(SceMsgDialogProgressBarTarget target, const SceChar8 *barMsg);`
 - **Comportamento:** troca o texto da barra (UTF-8).
 - **Retorno/erros:** como `ProgressBarInc`; `NULL` se `barMsg == 0` (a confirmar).
@@ -686,7 +686,7 @@ RETRY/BUTTON3 3).
 ## SaveDataDialog, NpMessageDialog, NpTrophySetupDialog (STUB)
 
 ### sceSaveDataDialogInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBF5248FA
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xBF5248FA
 - **Protótipo:** `int sceSaveDataDialogInit(const SceSaveDataDialogParam *param);` (struct no Vita3K `dialog/types.h`)
 - **Comportamento:** a lógica atual (RUNNING + substatus FINISHED, modo barra fica RUNNING) está correta e não deve
   mudar. Só os códigos de erro e o estado compartilhado estão errados.
@@ -702,7 +702,7 @@ RETRY/BUTTON3 3).
 - **Validação:** cenários `st_save*.txt` (Sakatsuku) sem regressão; Killzone `kz_boot`.
 
 ### sceNpMessageDialogGetStatus
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x2A0D060F
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x2A0D060F
 - **Protótipo:** `SceCommonDialogStatus sceNpMessageDialogGetStatus(void);` (inferido)
 - **Comportamento:** regra comum. Killzone importa toda a família (envio de convite/mensagem PSN, chamada em
   0x815CA036).
@@ -713,7 +713,7 @@ RETRY/BUTTON3 3).
 - **Validação:** Killzone: menu de convite (`StartInviteDialog`); o jogo não pode achar que a mensagem foi enviada.
 
 ### sceNpMessageDialogGetResult
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x7EC95C61
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0x7EC95C61
 - **Protótipo:** `SceInt32 sceNpMessageDialogGetResult(void *result);` (inferido)
 - **Comportamento:** offline/deslogado: `result = USER_CANCELED` (hoje grava 0 = OK, ou seja "mensagem enviada").
 - **Retorno/erros:** 0; `NOT_FINISHED`; `NULL`.
@@ -722,7 +722,7 @@ RETRY/BUTTON3 3).
 - **Validação:** idem acima.
 
 ### sceNpTrophySetupDialogGetStatus
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xC3A59547
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCommonDialog · **NID:** 0xC3A59547
 - **Protótipo:** `SceCommonDialogStatus sceNpTrophySetupDialogGetStatus(void);` (inferido)
 - **Comportamento:** regra comum; o Vita3K mantém RUNNING por 3 s se `options & 1` (param 0x50 `context`, 0x54
   `options`), depois FINISHED com OK.
@@ -749,86 +749,86 @@ Escolher uma foto da galeria. Param (0x80): 0x00 `sdkVersion`, 0x04 `commonParam
 `path[0x400]` …), 0x60 reserved. Result (0x28): 0x00 `result`, 0x04 `unk` (provável número de itens), 0x08 reserved.
 Desfecho mínimo: `USER_CANCELED`, `+0x04 = 0`. Integração futura: abrir seletor de arquivo do host em `ux0:picture`.
 
-- [ ] `scePhotoImportDialogInit` · NID 0x73EE7C9C · P1 — `int (ScePhotoImportDialogParam *param)`; erros comuns.
-- [ ] `scePhotoImportDialogGetStatus` · NID 0x032206D8 · P1 — `int (void)`.
-- [ ] `scePhotoImportDialogGetResult` · NID 0xD855414C · P1 — `int (ScePhotoImportDialogResult *result)`; zera 0x28 bytes e grava `result = 1`.
-- [ ] `scePhotoImportDialogTerm` · NID 0x7FE5BD77 · P1 — `int (void)`.
-- [ ] `scePhotoImportDialogAbort` · NID 0x4B125581 · P1 — `int (void)`.
+- [x] `scePhotoImportDialogInit` · NID 0x73EE7C9C · P1 — `int (ScePhotoImportDialogParam *param)`; erros comuns.
+- [x] `scePhotoImportDialogGetStatus` · NID 0x032206D8 · P1 — `int (void)`.
+- [x] `scePhotoImportDialogGetResult` · NID 0xD855414C · P1 — `int (ScePhotoImportDialogResult *result)`; zera 0x28 bytes e grava `result = 1`.
+- [x] `scePhotoImportDialogTerm` · NID 0x7FE5BD77 · P1 — `int (void)`.
+- [x] `scePhotoImportDialogAbort` · NID 0x4B125581 · P1 — `int (void)`.
 
 ### PhotoReviewDialog (`psp2/photo_review_dialog.h`)
 
 Mostrar uma foto (`path` em 0x54, `char[0x400]`; 0x50 `unk` = 1; 0x454 `internal_memory`, 0x458 `internal_memory_size`).
 Result (0x24): `result`, `unk`. Mínimo: FINISHED com `OK` (só exibe) — ou `USER_CANCELED`, indiferente; usar OK.
 
-- [ ] `scePhotoReviewDialogInit` · NID 0xCD990375 · P1 — `int (ScePhotoReviewDialogParam *param)`; logar `path`.
-- [ ] `scePhotoReviewDialogGetStatus` · NID 0xF4F600CA · P1 — `int (void)`.
-- [ ] `scePhotoReviewDialogGetResult` · NID 0xFFA35858 · P1 — `int (ScePhotoReviewDialogResult *result)`; zera 0x24 bytes.
-- [ ] `scePhotoReviewDialogTerm` · NID 0xC700B2DF · P1 — `int (void)`.
-- [ ] `scePhotoReviewDialogAbort` · NID 0x74FF2A8B · P1 — `int (void)`.
+- [x] `scePhotoReviewDialogInit` · NID 0xCD990375 · P1 — `int (ScePhotoReviewDialogParam *param)`; logar `path`.
+- [x] `scePhotoReviewDialogGetStatus` · NID 0xF4F600CA · P1 — `int (void)`.
+- [x] `scePhotoReviewDialogGetResult` · NID 0xFFA35858 · P1 — `int (ScePhotoReviewDialogResult *result)`; zera 0x24 bytes.
+- [x] `scePhotoReviewDialogTerm` · NID 0xC700B2DF · P1 — `int (void)`.
+- [x] `scePhotoReviewDialogAbort` · NID 0x74FF2A8B · P1 — `int (void)`.
 
 ### CameraImportDialog / VideoImportDialog
 
 Capturar foto pela câmera / escolher vídeo. Sem header; câmera ausente no VitaSharp (`sceCameraOpen` falha). Mínimo:
 `USER_CANCELED`.
 
-- [ ] `sceCameraImportDialogInit` · NID 0xE525BDB0 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceCameraImportDialogGetStatus` · NID 0x86AE7314 · P1 — `int (void)`.
-- [ ] `sceCameraImportDialogGetResult` · NID 0x7B339AA2 · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceCameraImportDialogTerm` · NID 0x8ED0C83C · P1 — `int (void)`.
-- [ ] `sceCameraImportDialogAbort` · NID 0x8852B9A4 · P1 — `int (void)`.
-- [ ] `sceVideoImportDialogInit` · NID 0xF0CC86F9 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceVideoImportDialogGetStatus` · NID 0xBE7C198A · P1 — `int (void)`.
-- [ ] `sceVideoImportDialogGetResult` · NID 0x7759D5AD · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceVideoImportDialogTerm` · NID 0x52E1CF8F · P1 — `int (void)`.
-- [ ] `sceVideoImportDialogAbort` · NID 0xECA699FD · P1 — `int (void)`.
+- [x] `sceCameraImportDialogInit` · NID 0xE525BDB0 · P1 — `int (const void *param)` (inferido).
+- [x] `sceCameraImportDialogGetStatus` · NID 0x86AE7314 · P1 — `int (void)`.
+- [x] `sceCameraImportDialogGetResult` · NID 0x7B339AA2 · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceCameraImportDialogTerm` · NID 0x8ED0C83C · P1 — `int (void)`.
+- [x] `sceCameraImportDialogAbort` · NID 0x8852B9A4 · P1 — `int (void)`.
+- [x] `sceVideoImportDialogInit` · NID 0xF0CC86F9 · P1 — `int (const void *param)` (inferido).
+- [x] `sceVideoImportDialogGetStatus` · NID 0xBE7C198A · P1 — `int (void)`.
+- [x] `sceVideoImportDialogGetResult` · NID 0x7759D5AD · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceVideoImportDialogTerm` · NID 0x52E1CF8F · P1 — `int (void)`.
+- [x] `sceVideoImportDialogAbort` · NID 0xECA699FD · P1 — `int (void)`.
 
 ### CompanionUtilDialog / CrossControllerDialog
 
 Pareamento com app companion (smartphone) e com PS4 (cross-controller, SDK 3.x). Sem header; sem dispositivo:
 `USER_CANCELED`.
 
-- [ ] `sceCompanionUtilDialogInit` · NID 0x0F68448E · P1 — `int (const void *param)` (inferido).
-- [ ] `sceCompanionUtilDialogGetStatus` · NID 0xB981474F · P1 — `int (void)`.
-- [ ] `sceCompanionUtilDialogGetResult` · NID 0x4A101FA7 · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceCompanionUtilDialogTerm` · NID 0xC3E6B1EC · P1 — `int (void)`.
-- [ ] `sceCompanionUtilDialogAbort` · NID 0x686C27EB · P1 — `int (void)`.
-- [ ] `sceCrossControllerDialogInit` · NID 0x2339FBD5 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceCrossControllerDialogGetStatus` · NID 0x44B9E931 · P1 — `int (void)`.
-- [ ] `sceCrossControllerDialogGetResult` · NID 0x8E35EA7B · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceCrossControllerDialogTerm` · NID 0x6E572EBF · P1 — `int (void)`.
-- [ ] `sceCrossControllerDialogAbort` · NID 0xDDC52A46 · P1 — `int (void)`.
+- [x] `sceCompanionUtilDialogInit` · NID 0x0F68448E · P1 — `int (const void *param)` (inferido).
+- [x] `sceCompanionUtilDialogGetStatus` · NID 0xB981474F · P1 — `int (void)`.
+- [x] `sceCompanionUtilDialogGetResult` · NID 0x4A101FA7 · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceCompanionUtilDialogTerm` · NID 0xC3E6B1EC · P1 — `int (void)`.
+- [x] `sceCompanionUtilDialogAbort` · NID 0x686C27EB · P1 — `int (void)`.
+- [x] `sceCrossControllerDialogInit` · NID 0x2339FBD5 · P1 — `int (const void *param)` (inferido).
+- [x] `sceCrossControllerDialogGetStatus` · NID 0x44B9E931 · P1 — `int (void)`.
+- [x] `sceCrossControllerDialogGetResult` · NID 0x8E35EA7B · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceCrossControllerDialogTerm` · NID 0x6E572EBF · P1 — `int (void)`.
+- [x] `sceCrossControllerDialogAbort` · NID 0xDDC52A46 · P1 — `int (void)`.
 
 ### RemoteOSKDialog
 
 Teclado remoto (digitar no PS3/PS4). Sem header. Mínimo: `USER_CANCELED`. Se um jogo usar como entrada de texto
 principal, reaproveitar o backend do ImeDialog (struct a confirmar; provavelmente parecida com `SceImeDialogParam`).
 
-- [ ] `sceRemoteOSKDialogInit` · NID 0x24EB7636 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceRemoteOSKDialogGetStatus` · NID 0x356F222A · P1 — `int (void)`.
-- [ ] `sceRemoteOSKDialogGetResult` · NID 0xF22D7884 · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceRemoteOSKDialogTerm` · NID 0xA15121F7 · P1 — `int (void)`.
-- [ ] `sceRemoteOSKDialogAbort` · NID 0x2314D273 · P1 — `int (void)`.
+- [x] `sceRemoteOSKDialogInit` · NID 0x24EB7636 · P1 — `int (const void *param)` (inferido).
+- [x] `sceRemoteOSKDialogGetStatus` · NID 0x356F222A · P1 — `int (void)`.
+- [x] `sceRemoteOSKDialogGetResult` · NID 0xF22D7884 · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceRemoteOSKDialogTerm` · NID 0xA15121F7 · P1 — `int (void)`.
+- [x] `sceRemoteOSKDialogAbort` · NID 0x2314D273 · P1 — `int (void)`.
 
 ### StoreCheckoutDialog
 
 Compra de DLC na PS Store dentro do jogo. Sem header. Offline: `USER_CANCELED` (nenhuma compra). Não gerar evento de
 compra (`SCE_APPMGR_SYSTEMEVENT_ON_STORE_PURCHASE`).
 
-- [ ] `sceStoreCheckoutDialogInit` · NID 0x52ECD8A5 · P1 — `int (const void *param)` (inferido); logar IDs de produto se o layout for descoberto.
-- [ ] `sceStoreCheckoutDialogGetStatus` · NID 0x7004BB2E · P1 — `int (void)`.
-- [ ] `sceStoreCheckoutDialogGetResult` · NID 0x07ED1E26 · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceStoreCheckoutDialogTerm` · NID 0xB787F4B0 · P1 — `int (void)`.
-- [ ] `sceStoreCheckoutDialogAbort` · NID 0xD699D9B4 · P1 — `int (void)`.
+- [x] `sceStoreCheckoutDialogInit` · NID 0x52ECD8A5 · P1 — `int (const void *param)` (inferido); logar IDs de produto se o layout for descoberto.
+- [x] `sceStoreCheckoutDialogGetStatus` · NID 0x7004BB2E · P1 — `int (void)`.
+- [x] `sceStoreCheckoutDialogGetResult` · NID 0x07ED1E26 · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceStoreCheckoutDialogTerm` · NID 0xB787F4B0 · P1 — `int (void)`.
+- [x] `sceStoreCheckoutDialogAbort` · NID 0xD699D9B4 · P1 — `int (void)`.
 
 ### NpProfileDialog
 
 Mostra o perfil PSN de um `SceNpId`. Deslogado: `USER_CANCELED`.
 
-- [ ] `sceNpProfileDialogInit` · NID 0x5E0AFDF8 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceNpProfileDialogGetStatus` · NID 0xFDFE6042 · P1 — `int (void)`.
-- [ ] `sceNpProfileDialogGetResult` · NID 0x749CAFFC · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceNpProfileDialogTerm` · NID 0x04B63D6F · P1 — `int (void)`.
-- [ ] `sceNpProfileDialogAbort` · NID 0x2B02BE3F · P1 — `int (void)`.
+- [x] `sceNpProfileDialogInit` · NID 0x5E0AFDF8 · P1 — `int (const void *param)` (inferido).
+- [x] `sceNpProfileDialogGetStatus` · NID 0xFDFE6042 · P1 — `int (void)`.
+- [x] `sceNpProfileDialogGetResult` · NID 0x749CAFFC · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceNpProfileDialogTerm` · NID 0x04B63D6F · P1 — `int (void)`.
+- [x] `sceNpProfileDialogAbort` · NID 0x2B02BE3F · P1 — `int (void)`.
 
 ### NpSnsFacebookDialog / TwDialog / TwLoginDialog
 
@@ -836,21 +836,21 @@ Login/postagem em Facebook e Twitter (serviços desativados). Sempre `USER_CANCE
 `sceTwLoginDialogInit` não tem NID conhecido no db (a família importada por um jogo revelaria o NID: procurar
 `NID_` faltante em `imports` próximo dos outros `sceTwLoginDialog*`).
 
-- [ ] `sceNpSnsFacebookDialogInit` · NID 0x6821F09B · P1 — `int (const void *param)` (inferido).
-- [ ] `sceNpSnsFacebookDialogGetStatus` · NID 0x147650E8 · P1 — `int (void)`.
-- [ ] `sceNpSnsFacebookDialogGetResult` · NID 0x36C5E9A5 · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceNpSnsFacebookDialogGetResultLongToken` · NID 0xA8682304 · P1 — `int (void *result)` (inferido); `NOT_AVAILABLE` 0x80020408 (a confirmar) porque não houve login; não escrever.
-- [ ] `sceNpSnsFacebookDialogTerm` · NID 0xDE1F3928 · P1 — `int (void)`.
-- [ ] `sceNpSnsFacebookDialogAbort` · NID 0x7E22AD33 · P1 — `int (void)`.
-- [ ] `sceTwDialogInit` · NID 0x93E51B04 · P1 — `int (const void *param)` (inferido).
-- [ ] `sceTwDialogGetStatus` · NID 0xD5A6B473 · P1 — `int (void)`.
-- [ ] `sceTwDialogGetResult` · NID 0x87F3F43E · P1 — `int (void *result)`; só `+0x00`.
-- [ ] `sceTwDialogTerm` · NID 0x2702905B · P1 — `int (void)`.
-- [ ] `sceTwDialogAbort` · NID 0x9BEBB77B · P1 — `int (void)`.
-- [ ] `sceTwLoginDialogGetStatus` · NID 0x8ACC1F0B · P1 — `int (void)`; sem `Init` conhecido, sempre NONE até o NID do Init aparecer.
-- [ ] `sceTwLoginDialogGetResult` · NID 0x5F7F4149 · P1 — `int (void *result)`; `NOT_FINISHED` se não iniciado.
-- [ ] `sceTwLoginDialogTerm` · NID 0xD6387E24 · P1 — `int (void)`; `NOT_IN_USE` se não iniciado.
-- [ ] `sceTwLoginDialogAbort` · NID 0xB5ED4A32 · P1 — `int (void)`; `NOT_IN_USE` se não iniciado.
+- [x] `sceNpSnsFacebookDialogInit` · NID 0x6821F09B · P1 — `int (const void *param)` (inferido).
+- [x] `sceNpSnsFacebookDialogGetStatus` · NID 0x147650E8 · P1 — `int (void)`.
+- [x] `sceNpSnsFacebookDialogGetResult` · NID 0x36C5E9A5 · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceNpSnsFacebookDialogGetResultLongToken` · NID 0xA8682304 · P1 — `int (void *result)` (inferido); `NOT_AVAILABLE` 0x80020408 (a confirmar) porque não houve login; não escrever.
+- [x] `sceNpSnsFacebookDialogTerm` · NID 0xDE1F3928 · P1 — `int (void)`.
+- [x] `sceNpSnsFacebookDialogAbort` · NID 0x7E22AD33 · P1 — `int (void)`.
+- [x] `sceTwDialogInit` · NID 0x93E51B04 · P1 — `int (const void *param)` (inferido).
+- [x] `sceTwDialogGetStatus` · NID 0xD5A6B473 · P1 — `int (void)`.
+- [x] `sceTwDialogGetResult` · NID 0x87F3F43E · P1 — `int (void *result)`; só `+0x00`.
+- [x] `sceTwDialogTerm` · NID 0x2702905B · P1 — `int (void)`.
+- [x] `sceTwDialogAbort` · NID 0x9BEBB77B · P1 — `int (void)`.
+- [x] `sceTwLoginDialogGetStatus` · NID 0x8ACC1F0B · P1 — `int (void)`; sem `Init` conhecido, sempre NONE até o NID do Init aparecer.
+- [x] `sceTwLoginDialogGetResult` · NID 0x5F7F4149 · P1 — `int (void *result)`; `NOT_FINISHED` se não iniciado.
+- [x] `sceTwLoginDialogTerm` · NID 0xD6387E24 · P1 — `int (void)`; `NOT_IN_USE` se não iniciado.
+- [x] `sceTwLoginDialogAbort` · NID 0xB5ED4A32 · P1 — `int (void)`; `NOT_IN_USE` se não iniciado.
 
 ### PspSaveDataDialog (FORA)
 
@@ -885,7 +885,7 @@ Valores de `SceAppUtilAppEventType` não estão no vita-headers: a confirmar (nu
 documentação do SDK); só são necessários se o VitaSharp algum dia injetar eventos (ex.: boot via convite).
 
 ### sceAppUtilAppEventParseNpAppDataMessage
-- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceAppUtil · **NID:** 0x6BED9B58
+- [x] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceAppUtil · **NID:** 0x6BED9B58
 - **Protótipo:** `SceInt32 sceAppUtilAppEventParseNpAppDataMessage(const SceAppUtilAppEventParam *eventParam, void *messageId, ...);`
   (inferido; sem header nem implementação no Vita3K. Saída provável: ID da mensagem NP com dados do app, usado depois
   com `sceNpMessage*`/`sceNpBasic*`. Confirmar a aridade no call site com `--trace-hle-only=sceAppUtilAppEvent` e
@@ -902,7 +902,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
   sem regressão.
 
 ### sceAppUtilStoreBrowse
-- [ ] **Prioridade:** P0 (Sakatsuku PCSG00198) · **Biblioteca:** SceAppUtil · **NID:** 0x85FA94EE
+- [x] **Prioridade:** P0 (Sakatsuku PCSG00198) · **Biblioteca:** SceAppUtil · **NID:** 0x85FA94EE
 - **Protótipo:** `int sceAppUtilStoreBrowse(SceAppUtilStoreBrowseParam *param);` (`psp2/apputil.h`)
 - **Comportamento:** abre a PS Store (app de sistema) na categoria/produto indicado; o jogo vai para segundo plano e
   volta com `SCE_APPMGR_SYSTEMEVENT_ON_RESUME` (e eventualmente `ON_STORE_PURCHASE`). No VitaSharp não há Store: logar o
@@ -918,7 +918,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
   deve continuar responsivo.
 
 ### sceAppUtilPhotoMount
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEE85804D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEE85804D
 - **Protótipo:** `int sceAppUtilPhotoMount(void);` (`psp2/apputil.h`)
 - **Comportamento:** monta `photo0:` (galeria do usuário; o Vita3K mapeia o mount 100 de `sceAppMgrAppDataMount` para
   `ux0:picture`) para o jogo ler/gravar fotos. Montar duas vezes: erro a confirmar (provável `BUSY` ou
@@ -933,7 +933,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário de `Vfs.Resolve("photo0:x")`; jogo com importação de foto quando houver.
 
 ### sceAppUtilPhotoUmount
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x9651B941
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x9651B941
 - **Protótipo:** `int sceAppUtilPhotoUmount(void);`
 - **Comportamento:** desmonta `photo0:`.
 - **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604 se não montado.
@@ -943,7 +943,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário.
 
 ### sceAppUtilMusicMount
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xB5EDCBFF
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xB5EDCBFF
 - **Protótipo:** `int sceAppUtilMusicMount(void);`
 - **Comportamento:** monta `music0:` (`ux0:music`, mount 105 do AppMgr segundo o Vita3K).
 - **Retorno/erros:** 0; `MUSIC_DEVICE_NOT_FOUND` 0x80100685 (não emular).
@@ -952,7 +952,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário.
 
 ### sceAppUtilMusicUmount
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xA7FE1BF7
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xA7FE1BF7
 - **Protótipo:** `int sceAppUtilMusicUmount(void);`
 - **Comportamento/erros:** como `PhotoUmount`.
 - **Estruturas:** —
@@ -971,7 +971,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** Sakatsuku apagar save (`st_save*`); teste unitário com `fileNum = 3`.
 
 ### sceAppUtilAppParamGetInt
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xCD7FD67A
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xCD7FD67A
 - **Protótipo:** `int sceAppUtilAppParamGetInt(SceAppUtilAppParamId paramId, int *value);` (`psp2/apputil.h`)
 - **Comportamento:** só `paramId == 0` (`SCE_APPUTIL_APPPARAM_ID_SKU_FLAG`, Vita3K `app_util.h`) é válido: devolve o
   SKU da licença (trial × versão completa). Jogos com demo usam para liberar conteúdo.
@@ -986,7 +986,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** `--trace-hle-only=sceAppUtilAppParam` nos jogos que chamam; nenhum deve entrar em modo demo.
 
 ### sceAppUtilSaveDataGetQuota
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xC560E716
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xC560E716
 - **Protótipo:** `int sceAppUtilSaveDataGetQuota(SceSize *quotaSizeKiB, SceSize *usedSizeKiB, const SceAppUtilSaveDataMountPoint *mountPoint);` (Vita3K)
 - **Comportamento:** cota = `SAVEDATA_MAX_SIZE` do `param.sfo` (KiB); usado = tamanho de `savedata0:` em KiB.
 - **Retorno/erros:** 0; `PARAMETER` se ambos os ponteiros NULL.
@@ -997,7 +997,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** conferir `SAVEDATA_MAX_SIZE` no `param.sfo` dos jogos; Sakatsuku (`st_save*`) e Killzone salvam sem erro.
 
 ### sceAppUtilSaveDataSlotSetParam
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x98630136
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x98630136
 - **Protótipo:** `int sceAppUtilSaveDataSlotSetParam(unsigned int slotId, SceAppUtilSaveDataSlotParam *param, SceAppUtilSaveDataMountPoint *mountPoint);`
 - **Comportamento:** atualiza o param de um slot **existente**.
 - **Retorno/erros:** 0; `SAVEDATA_SLOT_NOT_FOUND` 0x80100641 se o slot não existe; `PARAMETER` se `param == NULL`.
@@ -1008,7 +1008,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** `st_save*`.
 
 ### sceAppUtilSaveDataUmount
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEB720402
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEB720402
 - **Protótipo:** `int sceAppUtilSaveDataUmount(const SceAppUtilSaveDataMountPoint *mountPoint);` (inferido)
 - **Comportamento:** desmonta o savedata de outro título montado por `sceAppUtilSaveDataMount` (`savedata1:`).
 - **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604 se nada montado.
@@ -1030,7 +1030,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** jogos que mostram a versão na tela de título (comparar com o `APP_VER`).
 
 ### sceAppUtilSaveDataSlotSearch
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xE6057A85
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xE6057A85
 - **Protótipo:** `SceInt32 sceAppUtilSaveDataSlotSearch(SceAppUtilWorkBuffer *workBuf, const SceAppUtilSaveDataSlotSearchCond *cond, SceAppUtilSlotSearchResult *result, const SceAppUtilMountPoint *mountPoint);` (Vita3K)
 - **Comportamento:** procura slots no intervalo `[from, from + range)` existentes (`type = EXIST_SLOT 0`) ou vazios
   (`EMPTY_SLOT 1`), ordenados por `key` (SLOT_ID 0, USER_PARAM 1, SIZE_KIB 2, MODIFIED_TIME 3) em `order`
@@ -1046,7 +1046,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário com slots 0, 3, 7 criados.
 
 ### sceAppUtilAddcontMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x53B2C020
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x53B2C020
 - **Protótipo:** `SceInt32 sceAppUtilAddcontMount(SceUInt32 dataType, const SceAppUtilDrmAddcontId *addcontId);` (inferido; sem header)
 - **Comportamento:** versão SDK 3.x de `sceAppUtilDrmOpen`: monta um DLC (`addcont0:<id>`).
 - **Retorno/erros:** 0; `DRM_NO_ENTITLEMENT` 0x80100660 ou `ENOENT` se o DLC não está instalado (a confirmar;
@@ -1056,7 +1056,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** quando um jogo importar, confirmar a aridade pelo call site.
 
 ### sceAppUtilAddcontUmount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x1B36AF8C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x1B36AF8C
 - **Protótipo:** `SceInt32 sceAppUtilAddcontUmount(void);` (inferido)
 - **Comportamento:** desmonta o DLC montado por `AddcontMount`.
 - **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604.
@@ -1065,7 +1065,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** idem.
 
 ### sceAppUtilBgdlGetStatus
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x96F478D6
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x96F478D6
 - **Protótipo:** `int sceAppUtilBgdlGetStatus(SceAppUtilBgdlStatus *stat);` (`psp2/apputil.h`)
 - **Comportamento:** estado dos downloads de DLC em segundo plano: nenhum pendente.
 - **Retorno/erros:** 0; `PARAMETER` se NULL.
@@ -1075,7 +1075,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário.
 
 ### sceAppUtilPspSaveDataGetDirNameList
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x9942071D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x9942071D
 - **Protótipo:** `SceInt32 sceAppUtilPspSaveDataGetDirNameList(const void *cond, void *dirNames, SceUInt32 *num);` (inferido)
 - **Comportamento:** lista saves de PSP (`ux0:pspemu/PSP/SAVEDATA/<dir>`) para remasters importarem progresso.
 - **Retorno/erros:** 0 com `*num = 0` quando não há saves (a confirmar se o firmware usa erro).
@@ -1084,7 +1084,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** só com jogo que importe.
 
 ### sceAppUtilPspSaveDataLoad
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x7402C6EA
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x7402C6EA
 - **Protótipo:** `SceInt32 sceAppUtilPspSaveDataLoad(const void *dirName, void *buf, SceSize size, ...);` (inferido)
 - **Comportamento:** lê (e descriptografa) um arquivo de save de PSP.
 - **Retorno/erros:** sem saves: `SAVEDATA_SLOT_NOT_FOUND` 0x80100641 (a confirmar).
@@ -1093,7 +1093,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** só com jogo que importe.
 
 ### sceAppUtilAddCookieWebBrowser
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xC97D5D9E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xC97D5D9E
 - **Protótipo:** `SceInt32 sceAppUtilAddCookieWebBrowser(const void *param);` (inferido; URL + cookie)
 - **Comportamento:** registra cookie para o navegador do sistema antes de `sceAppUtilLaunchWebBrowser`. Sem navegador:
   aceitar e descartar.
@@ -1103,7 +1103,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário.
 
 ### sceAppUtilResetCookieWebBrowser
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x4FAAD133
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x4FAAD133
 - **Protótipo:** `SceInt32 sceAppUtilResetCookieWebBrowser(void);` (inferido)
 - **Comportamento:** apaga os cookies registrados.
 - **Retorno/erros:** 0.
@@ -1117,14 +1117,14 @@ Todos: protótipo inferido `SceInt32 (const SceAppUtilAppEventParam *eventParam,
 erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`), implementação de uma linha em
 `AppUtil`, validação por `imports` do jogo que importar.
 
-- [ ] `sceAppUtilAppEventParseGameCustomData` · NID 0x0B04C067 · P1 — dados customizados de jogo (SDK 3.x, ligado ao `sceGameCustomDataDialog`).
-- [ ] `sceAppUtilAppEventParseIncomingDialog` · NID 0x22297D59 · P1 — boot via `SceIncomingDialog` (chamada/convite recebido).
-- [ ] `sceAppUtilAppEventParseNpActivity` · NID 0xF6B75651 · P1 — boot a partir de atividade no feed PSN.
-- [ ] `sceAppUtilAppEventParseScreenShotNotification` · NID 0x2AF42D6A · P1 — notificação de screenshot.
-- [ ] `sceAppUtilAppEventParseSessionInvitation` · NID 0xA58E6FCE · P1 — convite de sessão NP (SDK 3.x).
-- [ ] `sceAppUtilAppEventParseTeleport` · NID 0x665A8B7E · P1 — "teleporte" entre jogos (NP).
-- [ ] `sceAppUtilAppEventParseTriggerUtil` · NID 0x8DEE696B · P1 — evento agendado por `SceTriggerUtil`.
-- [ ] `sceAppUtilAppEventParseWebBrowser` · NID 0x8ED716F5 · P1 — retorno do navegador web.
+- [x] `sceAppUtilAppEventParseGameCustomData` · NID 0x0B04C067 · P1 — dados customizados de jogo (SDK 3.x, ligado ao `sceGameCustomDataDialog`).
+- [x] `sceAppUtilAppEventParseIncomingDialog` · NID 0x22297D59 · P1 — boot via `SceIncomingDialog` (chamada/convite recebido).
+- [x] `sceAppUtilAppEventParseNpActivity` · NID 0xF6B75651 · P1 — boot a partir de atividade no feed PSN.
+- [x] `sceAppUtilAppEventParseScreenShotNotification` · NID 0x2AF42D6A · P1 — notificação de screenshot.
+- [x] `sceAppUtilAppEventParseSessionInvitation` · NID 0xA58E6FCE · P1 — convite de sessão NP (SDK 3.x).
+- [x] `sceAppUtilAppEventParseTeleport` · NID 0x665A8B7E · P1 — "teleporte" entre jogos (NP).
+- [x] `sceAppUtilAppEventParseTriggerUtil` · NID 0x8DEE696B · P1 — evento agendado por `SceTriggerUtil`.
+- [x] `sceAppUtilAppEventParseWebBrowser` · NID 0x8ED716F5 · P1 — retorno do navegador web.
 
 ---
 
@@ -1184,7 +1184,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 ### Montagem de dados
 
 #### sceAppMgrAppDataMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x291AFBDC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x291AFBDC
 - **Protótipo:** `int sceAppMgrAppDataMount(int id, char *mountPoint);` (Vita3K; `psp2/appmgr.h`)
 - **Comportamento:** monta dados de app do sistema e devolve o mount point (16 bytes). IDs aceitos no 3.60: 100
   `photo0` (`ux0:picture`), 101 psnfriend (`ur0:user/00/psnfriend`), 102 psnmsg (`ur0:user/00/psnmsg`), 103 near
@@ -1207,7 +1207,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** só com jogo PSM/homebrew.
 
 #### sceAppMgrWorkDirMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B3BB24D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B3BB24D
 - **Protótipo:** `int sceAppMgrWorkDirMount(int id, char *mountPoint);` (Vita3K)
 - **Comportamento:** IDs 200 `ur0:temp/sqlite/`, 201 `ur0:temp/attach/`, 202 `ux0:pspemu/`, 203 (a confirmar),
   204 `ur0:temp/checkout/`, 206 `ur0:temp/webbrowser/` (mapeamento do Vita3K).
@@ -1217,7 +1217,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrWorkDirMountById
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x80E86E42
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x80E86E42
 - **Protótipo:** `int sceAppMgrWorkDirMountById(int id, const char *titleId, char *mountPoint);` (`psp2/appmgr.h`)
 - **Comportamento:** 205 = `ux0:cache/<titleId>` (titleId com 9 chars exatos; é o `cache0:` de outro título);
   207 = `ux0:temp/app_work/<titleId>/rec`.
@@ -1227,7 +1227,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrPhotoMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF71CC393
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF71CC393
 - **Protótipo:** `int sceAppMgrPhotoMount(const SceAppMgrPhotoMountParam *param);` (inferido de `_sceAppMgrPhotoMount`)
 - **Comportamento:** monta `photo0:` (base de `sceAppUtilPhotoMount`).
 - **Retorno/erros:** 0; `PARAM` se `param->size != 0x84` (a confirmar).
@@ -1236,7 +1236,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrPhotoUmount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3F1A3AEC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3F1A3AEC
 - **Protótipo:** `int sceAppMgrPhotoUmount(void);` (inferido)
 - **Comportamento/erros:** desmonta `photo0:`; `NOT_FOUND`/`STATE` se não montado (a confirmar).
 - **Estruturas:** —
@@ -1325,7 +1325,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** idem.
 
 #### sceAppMgrUmount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5E375921
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5E375921
 - **Protótipo:** `int sceAppMgrUmount(const char *mountPoint);` (`psp2/appmgr.h`)
 - **Comportamento:** desmonta um mount point (16 bytes) devolvido por qualquer `*Mount` acima, do próprio processo.
 - **Retorno/erros:** 0; `NOT_FOUND` 0x80802012 se não for um mount ativo.
@@ -1334,7 +1334,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário Mount → Umount → Resolve falha.
 
 #### sceAppMgrDrmOpen
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD43FDF20
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD43FDF20
 - **Protótipo:** `SceInt32 sceAppMgrDrmOpen(const SceAppMgrDrmOpenParam *param);` (`psp2/appmgr.h`; struct não documentada)
 - **Comportamento:** base de `sceAppUtilDrmOpen` (abre licença de DLC).
 - **Retorno/erros:** a confirmar.
@@ -1343,7 +1343,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrDrmClose
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x29293B46
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x29293B46
 - **Protótipo:** `SceInt32 sceAppMgrDrmClose(const void *param);` (inferido)
 - **Comportamento/erros:** par de `DrmOpen`; `=> 0`.
 - **Estruturas:** —
@@ -1353,7 +1353,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 ### Parâmetros, boot e eventos
 
 #### sceAppMgrGetAppParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B2422E0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B2422E0
 - **Protótipo:** `int sceAppMgrGetAppParam(char *param);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** copia (até 1024 bytes) o parâmetro de lançamento (URI/string passada por quem lançou o app, ex.
   `sceAppMgrLaunchAppByUri`/LiveArea). Só a primeira leitura devolve o valor; as seguintes devolvem string vazia.
@@ -1386,7 +1386,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrAppParamSetString
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B07C10B
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B07C10B
 - **Protótipo:** `int sceAppMgrAppParamSetString(int pid?, int param, const char *string);` (inferido)
 - **Comportamento:** define os overrides 100 (CONTENT_ID) e 101 (TITLE) lidos por `AppParamGetString`.
 - **Retorno/erros:** 0; `PARAM` para outros ids.
@@ -1395,7 +1395,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrReceiveEvent
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xCFAD5A3A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xCFAD5A3A
 - **Protótipo:** `int sceAppMgrReceiveEvent(SceAppMgrEvent *appEvent);` (inferido de `_sceAppMgrReceiveEvent`)
 - **Comportamento:** retira um evento de aplicação da fila (`SCE_APP_EVENT_*`: ON_ACTIVATE 0x10000001, ON_DEACTIVATE
   0x10000002, ON_RESUME 0x10000003, REQUEST_QUIT 0x20000001, PARAM_NOTIFY 0x20000004, …). FW 3.60 grava
@@ -1408,7 +1408,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrReceiveEventNum
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x47E5DD7D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x47E5DD7D
 - **Protótipo:** `int sceAppMgrReceiveEventNum(int *eventNum);` (Vita3K)
 - **Comportamento:** número de eventos pendentes (0).
 - **Retorno/erros:** 0; `NULL_POINTER` se NULL.
@@ -1418,7 +1418,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrLaunchAppByUri
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x003C634F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x003C634F
 - **Protótipo:** `int sceAppMgrLaunchAppByUri(int flags, const char *uri);` (`psp2/appmgr.h`; `flags` normalmente 0x20000)
 - **Comportamento:** lança o app associado à URI (`psns:` Store, `pswebbrowser:`, `psgm:play?titleid=` …). O jogo
   continua em segundo plano.
@@ -1429,7 +1429,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrLaunchAppByUri2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0ED6AF54
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0ED6AF54
 - **Protótipo:** `int sceAppMgrLaunchAppByUri2(const char *uri, const SceAppMgrLaunchAppByUri2Param *param);` (inferido de `_sceAppMgrLaunchAppByUri2`)
 - **Comportamento:** como `LaunchAppByUri`, com opções (URI até 0x822 chars).
 - **Retorno/erros:** idem.
@@ -1454,7 +1454,7 @@ usa `SceAppUtilSaveDataRemoveItem` de 0x2C).
 Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código exato).
 
 #### sceAppMgrSaveDataDataSave
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84DE76C7
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84DE76C7
 - **Protótipo:** `int sceAppMgrSaveDataDataSave(SceAppMgrSaveDataData *data);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** igual a `sceAppUtilSaveDataDataSave` (modos FILE 0, FILE_TRUNCATE 1, DIRECTORY 2), incluindo a
   atualização de `modifiedTime` do slot quando `slotParam` é dado (o Vita3K não atualiza o slot aqui — seguir o AppUtil).
@@ -1474,7 +1474,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrSaveDataDataRemove
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4544FCC5
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4544FCC5
 - **Protótipo:** `int sceAppMgrSaveDataDataRemove(SceAppMgrSaveDataDataDelete *data);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** remove arquivos/pastas listados de `savedata0:`.
 - **Retorno/erros:** 0.
@@ -1501,7 +1501,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotCreate
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5181D7B3
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5181D7B3
 - **Protótipo:** `int sceAppMgrSaveDataSlotCreate(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
 - **Comportamento:** cria `SlotParam_<id>.bin` com `data->slotParam` (embutido em +0x08).
 - **Retorno/erros:** 0; `SLOT_EXISTS` (código AppMgr a confirmar).
@@ -1510,7 +1510,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotDelete
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6B0E7CF0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6B0E7CF0
 - **Protótipo:** `int sceAppMgrSaveDataSlotDelete(SceAppMgrSaveDataSlotDelete *data);` (`psp2/appmgr.h`)
 - **Comportamento:** apaga o `SlotParam` do slot.
 - **Retorno/erros:** 0.
@@ -1519,7 +1519,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotGetParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x17653D70
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x17653D70
 - **Protótipo:** `int sceAppMgrSaveDataSlotGetParam(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
 - **Comportamento:** lê o `SlotParam` para `data + 0x08`.
 - **Retorno/erros:** 0; `SLOT_NOT_FOUND` (código AppMgr a confirmar; usar 0x80100641 até confirmar).
@@ -1528,7 +1528,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotSetParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xA8065FA4
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xA8065FA4
 - **Protótipo:** `int sceAppMgrSaveDataSlotSetParam(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
 - **Comportamento:** grava o `SlotParam` de slot existente.
 - **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
@@ -1555,7 +1555,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotInit
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4F8A92F1
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4F8A92F1
 - **Protótipo:** a confirmar.
 - **Comportamento:** inicializa o arquivo de slots (`sce_sys/sdslot.dat` no hardware). O VitaSharp guarda um arquivo
   por slot; nada a fazer.
@@ -1565,7 +1565,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** —
 
 #### sceAppMgrSaveDataSlotFileOpen
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x91BE107E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x91BE107E
 - **Protótipo:** a confirmar.
 - **Comportamento:** abre o arquivo de slots para leitura/escrita em lote (pareado com `FileClose`/`FileGetParam`).
 - **Retorno/erros:** 0.
@@ -1574,7 +1574,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** —
 
 #### sceAppMgrSaveDataSlotFileClose
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xFD7A4EEC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xFD7A4EEC
 - **Protótipo:** a confirmar.
 - **Comportamento/erros:** fecha o arquivo aberto por `FileOpen`; `=> 0`.
 - **Estruturas:** —
@@ -1591,7 +1591,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrUpdateSaveDataParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1B0BD20D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1B0BD20D
 - **Protótipo:** `int sceAppMgrUpdateSaveDataParam(const char *path);` (inferido de `_sceAppMgrUpdateSaveDataParam`)
 - **Comportamento:** atualiza o `param.sfo` do savedata (`sce_sys/param.sfo`: título, data) após salvar.
 - **Retorno/erros:** 0.
@@ -1613,7 +1613,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 ### Sistema, caminhos e dispositivos
 
 #### sceAppMgrSystemParamGetInt
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B75180C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B75180C
 - **Protótipo:** `int sceAppMgrSystemParamGetInt(int paramId, int *value);` (inferido)
 - **Comportamento:** base de `sceAppUtilSystemParamGetInt` (idioma 1, botão 2, formato de data 4, hora 5, fuso 6,
   horário de verão 7).
@@ -1623,7 +1623,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSystemParamGetString
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x09899A08
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x09899A08
 - **Protótipo:** `int sceAppMgrSystemParamGetString(int paramId, char *buf, SceSize bufSize);` (inferido)
 - **Comportamento:** base de `sceAppUtilSystemParamGetString` (id 3 = nome do usuário, máx. 17 bytes).
 - **Retorno/erros:** 0; `PARAM`.
@@ -1641,7 +1641,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrGetDevInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x67705391
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x67705391
 - **Protótipo:** `int sceAppMgrGetDevInfo(const char *dev, uint64_t *maxSize, uint64_t *freeSize);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** capacidade e espaço livre do dispositivo (`"ux0:"`…).
 - **Retorno/erros:** 0; `EINVAL` (0x80010016) se `dev == NULL`; `ENOENT` (0x80010002) para dispositivo desconhecido
@@ -1652,7 +1652,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetRawPath
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0E8D27E8
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0E8D27E8
 - **Protótipo:** `int sceAppMgrGetRawPath(char *path, char *resolvedPath, int resolvedPathSize);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** resolve overlays FIOS/mounts aleatórios para o caminho real (até 0x124 bytes).
 - **Retorno/erros:** 0.
@@ -1661,7 +1661,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrConvertVs0UserDrivePath
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xADAA658E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xADAA658E
 - **Protótipo:** `int sceAppMgrConvertVs0UserDrivePath(char *path, char *mountPoint, int len);` (`psp2/appmgr.h`, Vita3K)
 - **Comportamento:** converte `vs0:` em caminho acessível ao app (`len > 0x3F`, máx. 0x124).
 - **Retorno/erros:** 0; `PARAM` se `len <= 0x3F` (a confirmar).
@@ -1670,7 +1670,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetUserDirPath
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5253338C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5253338C
 - **Protótipo:** `int sceAppMgrGetUserDirPath(int partition, char *path, SceSize maxLen);` (Vita3K)
 - **Comportamento:** partição 1 → `"ur0:user/00"`, 2 → `"ux0:user/00"`; exige `maxLen >= 32`, escreve no máx. 32 bytes.
 - **Retorno/erros:** 0; `PARAM` para partição inválida ou `maxLen < 32`.
@@ -1679,7 +1679,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetIdByName
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x79F9E63A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x79F9E63A
 - **Protótipo:** `int sceAppMgrGetIdByName(SceUID *pid, const char *name);` (`psp2/appmgr.h`)
 - **Comportamento:** PID do app com o title id dado. Só existe o próprio processo.
 - **Retorno/erros:** 0 se `name == Emu.TitleId`; `NOT_FOUND` 0x80802012 caso contrário.
@@ -1688,7 +1688,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetNameById
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF4D6AE3A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF4D6AE3A
 - **Protótipo:** `int sceAppMgrGetNameById(SceUID pid, char *name);` (`psp2/appmgr.h`; buffer de 32)
 - **Comportamento:** title id do processo `pid`.
 - **Retorno/erros:** 0; `NOT_FOUND` para outro pid.
@@ -1706,7 +1706,7 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrGetRecommendedScreenOrientation
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8A1A6FFC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8A1A6FFC
 - **Protótipo:** `int sceAppMgrGetRecommendedScreenOrientation(SceUInt32 *orientation);` (inferido)
 - **Comportamento:** orientação física recomendada (`SceAppMgrScreenOrientation`: LANDSCAPE 1, LANDSCAPE_REVERSED 2,
   PORTRAIT 3, PORTRAIT_REVERSED 4).

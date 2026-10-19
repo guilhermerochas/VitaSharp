@@ -24,6 +24,11 @@ public sealed class Vfs
         Directory.CreateDirectory(hostPath);
     }
 
+    /// <summary>Removes a device mapping (the host directory is kept). Returns false if it was not mounted.</summary>
+    public bool Unmount(string device) => _mounts.Remove(device.TrimEnd(':'));
+
+    public bool IsMounted(string device) => _mounts.ContainsKey(device.TrimEnd(':'));
+
     /// <summary>Additional read-only layers searched before app0 (e.g. installed patches).</summary>
     public void AddApp0Overlay(string hostPath) => _app0Overlays.Insert(0, hostPath);
 

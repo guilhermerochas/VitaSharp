@@ -152,12 +152,6 @@ public sealed partial class Net : HleModule
 
     [Hle] int sceNetCtlAdhocUnregisterCallback(int cid) { lock (_inetCallbacks) _adhocCallbacks.Remove(cid); return 0; }
 
-    // dialogs that check the network report "cancelled"
-    [Hle] int sceNetCheckDialogInit(uint param) => 0;
-    [Hle] int sceNetCheckDialogGetStatus() => 2;
-    [Hle] int sceNetCheckDialogGetResult(uint result) { if (result != 0) { GuestMemory.Fill(result, 0, 0x2C); GuestMemory.W32(result, unchecked((uint)0x80020400 | 1)); } return 0; }
-    [Hle] int sceNetCheckDialogTerm() => 0;
-    [Hle] int sceNetCheckDialogAbort() => 0;
     [Hle] int sceNetCtlAdhocDisconnect() => 0;
 
 }
@@ -195,114 +189,6 @@ public sealed class Np : HleModule
     [Hle] int sceNpBasicRegisterInGameDataMessageHandler(uint handler, uint arg) => 0; // messages only arrive from PSN
     [Hle] int sceNpBasicUnregisterInGameDataMessageHandler() => 0;
 
-    [Hle] int sceNpMessageDialogInit(uint param) => 0;
-    [Hle] int sceNpMessageDialogGetStatus() => 2;
-    [Hle] int sceNpMessageDialogGetResult(uint result) { if (result != 0) GuestMemory.W32(result, 0); return 0; }
-    [Hle] int sceNpMessageDialogAbort() => 0;
-    [Hle] int sceNpMessageDialogTerm() => 0;
-}
-
-/// <summary>Common dialogs: they complete immediately with the default choice.</summary>
-public sealed class CommonDialog : HleModule
-{
-    const int StatusNone = 0, StatusRunning = 1, StatusFinished = 2;
-    int _msg = StatusNone, _save = StatusNone;
-
-    [Hle] int sceCommonDialogUpdate(uint param) => 0;
-    [Hle] int sceCommonDialogSetConfigParam(uint param) => 0; // language / enter button for system dialogs (they complete immediately)
-    [Hle] bool sceCommonDialogIsRunning() => false;
-
-    [Hle]
-    int sceMsgDialogInit(uint param)
-    {
-        if (param != 0)
-        {
-            uint mode = GuestMemory.R32(param + 0x18);
-            uint userMsg = GuestMemory.R32(param + 0x1C);
-            if (mode == 1 && userMsg != 0) Log.Info($"MsgDialog: {GuestMemory.ReadCString(GuestMemory.R32(userMsg + 4))}");
-        }
-        _msg = StatusFinished;
-        return 0;
-    }
-
-    [Hle] int sceMsgDialogGetStatus() => _msg;
-    [Hle] int sceMsgDialogTerm() { _msg = StatusNone; return 0; }
-    [Hle] int sceMsgDialogClose() { _msg = StatusFinished; return 0; }
-    [Hle] int sceMsgDialogAbort() { _msg = StatusFinished; return 0; }
-
-    [Hle]
-    int sceMsgDialogGetResult(uint result)
-    {
-        if (result == 0) return unchecked((int)0x80020401);
-        GuestMemory.Fill(result, 0, 0x2C);
-        GuestMemory.W32(result + 8, 1); // buttonId: YES / OK
-        return 0;
-    }
-
-    // ---- SceSaveDataDialog: the dialog "runs" (status RUNNING) and its work completes at once (substatus FINISHED:
-    // the user confirmed / the slot was shown); the application then calls Finish to close it (status FINISHED) and
-    // Term. Progress-bar dialogs stay running until the application finishes them itself.
-    const int SaveModeFixed = 1, SaveModeList = 2, SaveModeUserMsg = 3, SaveModeSystemMsg = 4, SaveModeErrorCode = 5, SaveModeProgressBar = 6;
-    int _saveSub = StatusNone, _saveMode, _saveSlot = -1;
-    uint _saveUserData, _saveSlotInfo;
-
-    [Hle]
-    int sceSaveDataDialogInit(uint param)
-    {
-        if (param == 0) return unchecked((int)0x80020401);
-        if (_save != StatusNone) return unchecked((int)0x80020404); // BUSY
-        // SceSaveDataDialogParam: sdkVersion, SceCommonDialogParam (76 bytes), mode, dispType, fixed, list, userMsg,
-        // sysMsg, errorCode, progressBar, slotConf, flag, userdata
-        _saveMode = (int)GuestMemory.R32(param + 0x50);
-        _saveUserData = GuestMemory.R32(param + 0x78);
-        uint sub = _saveMode switch { SaveModeFixed => GuestMemory.R32(param + 0x58), SaveModeList => GuestMemory.R32(param + 0x5C),
-            SaveModeUserMsg => GuestMemory.R32(param + 0x60), SaveModeSystemMsg => GuestMemory.R32(param + 0x64), _ => 0 };
-        _saveSlot = _saveMode switch
-        {
-            SaveModeFixed => (int)GuestMemory.R32(sub),                                  // targetSlot.id
-            SaveModeList => GuestMemory.R32(sub) != 0 ? (int)GuestMemory.R32(GuestMemory.R32(sub)) : -1, // slotList[0].id
-            SaveModeUserMsg or SaveModeSystemMsg => (int)GuestMemory.R32(sub + 8),      // targetSlot.id after type/value
-            _ => -1,
-        };
-        _save = StatusRunning;
-        _saveSub = _saveMode == SaveModeProgressBar ? StatusRunning : StatusFinished;
-        Log.Info($"sceSaveDataDialogInit mode {_saveMode} dispType {GuestMemory.R32(param + 0x54)} slot {_saveSlot} sub {sub:X8} subType {(sub != 0 ? GuestMemory.R32(sub) : 0)} value {(sub != 0 ? GuestMemory.R32(sub + 4) : 0)} flag {GuestMemory.R32(param + 0x74)}");
-        return 0;
-    }
-
-    [Hle] int sceSaveDataDialogContinue(uint param) { if (_save != StatusRunning) return unchecked((int)0x80020405); _saveSub = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogGetStatus() => _save;
-    [Hle] int sceSaveDataDialogGetSubStatus() => _save == StatusRunning ? _saveSub : StatusNone;
-    [Hle] int sceSaveDataDialogFinish(uint param) { if (_save != StatusRunning) return unchecked((int)0x80020405); _save = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogAbort() { if (_save != StatusRunning) return unchecked((int)0x80020405); _save = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogTerm() { _save = StatusNone; _saveSub = StatusNone; return 0; }
-    [Hle] int sceSaveDataDialogProgressBarInc(int target, uint delta) => 0;
-    [Hle] int sceSaveDataDialogProgressBarSetValue(int target, uint rate) => 0;
-    [Hle] int sceSaveDataDialogSubClose() { _saveSub = StatusFinished; return 0; }
-
-    [Hle]
-    int sceSaveDataDialogGetResult(uint result)
-    {
-        if (result == 0) return unchecked((int)0x80020401);
-        // SceSaveDataDialogResult: mode, result, buttonId, slotId, slotInfo*, userdata, reserved[32]
-        GuestMemory.Fill(result, 0, 0x38);
-        GuestMemory.W32(result, (uint)_saveMode);
-        GuestMemory.W32(result + 8, 1); // SCE_SAVEDATA_DIALOG_BUTTON_ID_OK / YES
-        GuestMemory.W32(result + 12, (uint)_saveSlot);
-        if (_saveSlot >= 0)
-        {
-            // SceSaveDataDialogSlotInfo { isExist, slotParam*, reserved[32] }
-            if (_saveSlotInfo == 0) _saveSlotInfo = Emu.Memory.Alloc(0x100, "savedata dialog slot info");
-            var appUtil = Emu.Hle.Modules.OfType<AppUtil>().First();
-            bool exists = appUtil.SlotExists((uint)_saveSlot);
-            GuestMemory.Fill(_saveSlotInfo, 0, 0x100);
-            GuestMemory.W32(_saveSlotInfo, exists ? 1u : 0u);
-            if (exists) { appUtil.ReadSlotParam((uint)_saveSlot, _saveSlotInfo + 0x40); GuestMemory.W32(_saveSlotInfo + 4, _saveSlotInfo + 0x40); }
-            GuestMemory.W32(result + 16, _saveSlotInfo);
-        }
-        GuestMemory.W32(result + 20, _saveUserData);
-        return 0;
-    }
 }
 
 /// <summary>Motion sensors (device at rest, flat), camera shutter sound, system gestures (none). SceCamera is in Camera.cs.</summary>
