@@ -170,33 +170,8 @@ public sealed unsafe class Audiodec : HleModule
         uint esUsed = 0, pcmBytes = 0;
         for (uint f = 0; f < frames; f++)
         {
-            int consumed, samples;
-            if (d.At9 != null)
-            {
-                int avail = (int)Math.Min((uint)d.Staging.Length - 16, esMax);
-                GuestMemory.Span(es + esUsed, avail).CopyTo(d.Staging);
-                try { consumed = d.At9.DecodeFrame(d.Staging, d.FrameIndex, d.At9Pcm); }
-                catch (Exception e) when (e is IndexOutOfRangeException or InvalidDataException or ArgumentException)
-                {
-                    Log.WarnOnce("audiodec-at9", $"sceAudiodec ATRAC9 frame error: {e.Message}");
-                    return ERR_API_FAIL;
-                }
-                d.FrameIndex = (d.FrameIndex + 1) % d.At9.Config.FramesPerSuperframe;
-                samples = d.At9.Config.FrameSamples;
-                for (int i = 0; i < samples; i++)
-                    for (int c = 0; c < d.Channels; c++)
-                        d.Pcm[i * d.Channels + c] = d.At9Pcm[c][i];
-            }
-            else
-            {
-                var head = GuestMemory.Span(es + esUsed, 8);
-                consumed = d.Type == TYPE_MP3 ? FrameDecoder.Mp3FrameLength(head)
-                         : d.Adts ? FrameDecoder.AdtsFrameLength(head) : (int)esMax;
-                if (consumed <= 0) return ERR_API_FAIL;
-                consumed = (int)Math.Min((uint)consumed, esMax);
-                samples = d.Codec?.Decode(GuestMemory.Ptr(es + esUsed), consumed, d.Pcm, d.Channels) ?? (d.Type == TYPE_MP3 ? 1152 : 1024);
-                if (d.Codec == null) Array.Clear(d.Pcm, 0, samples * d.Channels);
-            }
+            int r = DecodeOne(d, es + esUsed, esMax, out int consumed, out int samples);
+            if (r != 0) return r;
             int bytes = samples * d.Channels * 2;
             uint pcmCap = GuestMemory.R32(ctrl + 28); // maxPcmSize reported at creation: never write past the guest buffer
             if (pcmCap != 0 && bytes > pcmCap) bytes = (int)pcmCap / (d.Channels * 2) * (d.Channels * 2);
@@ -208,6 +183,106 @@ public sealed unsafe class Audiodec : HleModule
         GuestMemory.W32(ctrl + 24, pcmBytes);
         return 0;
     }
+
+    /// <summary>Decodes one frame at <paramref name="es"/> into d.Pcm (interleaved S16).</summary>
+    int DecodeOne(Decoder d, uint es, uint esMax, out int consumed, out int samples)
+    {
+        if (d.At9 != null)
+        {
+            int avail = (int)Math.Min((uint)d.Staging.Length - 16, esMax);
+            GuestMemory.Span(es, avail).CopyTo(d.Staging);
+            try { consumed = d.At9.DecodeFrame(d.Staging, d.FrameIndex, d.At9Pcm); }
+            catch (Exception e) when (e is IndexOutOfRangeException or InvalidDataException or ArgumentException)
+            {
+                Log.WarnOnce("audiodec-at9", $"sceAudiodec ATRAC9 frame error: {e.Message}");
+                consumed = samples = 0;
+                return ERR_API_FAIL;
+            }
+            d.FrameIndex = (d.FrameIndex + 1) % d.At9.Config.FramesPerSuperframe;
+            samples = d.At9.Config.FrameSamples;
+            for (int i = 0; i < samples; i++)
+                for (int c = 0; c < d.Channels; c++)
+                    d.Pcm[i * d.Channels + c] = d.At9Pcm[c][i];
+        }
+        else
+        {
+            var head = GuestMemory.Span(es, 8);
+            consumed = d.Type == TYPE_MP3 ? FrameDecoder.Mp3FrameLength(head)
+                     : d.Adts ? FrameDecoder.AdtsFrameLength(head) : (int)esMax;
+            samples = 0;
+            if (consumed <= 0) return ERR_API_FAIL;
+            consumed = (int)Math.Min((uint)consumed, esMax);
+            samples = d.Codec?.Decode(GuestMemory.Ptr(es), consumed, d.Pcm, d.Channels) ?? (d.Type == TYPE_MP3 ? 1152 : 1024);
+            if (d.Codec == null) Array.Clear(d.Pcm, 0, samples * d.Channels);
+        }
+        return 0;
+    }
+
+    const int ERR_INVALID_NSTREAMS = unchecked((int)0x807F0010), ERR_DIFFERENT_TYPES = unchecked((int)0x807F0011),
+        ERR_SAME_HANDLES = unchecked((int)0x807F0012);
+
+    /// <summary>One frame on each of nStreams decoders (pCtrls is an array of SceAudiodecCtrl pointers). All must
+    /// share one codec and have distinct handles; the first stream error is returned.</summary>
+    [Hle]
+    int sceAudiodecDecodeNStreams(uint ctrls, uint nStreams)
+    {
+        if (ctrls == 0) return ERR_INVALID_PTR;
+        if (nStreams == 0) return ERR_INVALID_NSTREAMS;
+        var handles = new HashSet<uint>();
+        uint type = 0;
+        for (uint i = 0; i < nStreams; i++)
+        {
+            uint c = GuestMemory.R32(ctrls + i * 4);
+            var d = Find(c, out int err);
+            if (d == null) return err;
+            if (i == 0) type = d.Type;
+            else if (d.Type != type) return ERR_DIFFERENT_TYPES;
+            if (!handles.Add(GuestMemory.R32(c + 4))) return ERR_SAME_HANDLES;
+        }
+        int first = 0;
+        for (uint i = 0; i < nStreams; i++)
+        {
+            int r = DecodeFrames(GuestMemory.R32(ctrls + i * 4), 1);
+            if (r != 0 && first == 0) first = r;
+        }
+        return first;
+    }
+
+    /// <summary>
+    /// Used by libatrac: decodes frames until samplesOffset + samplesToDecode samples exist and copies only the range
+    /// [samplesOffset, samplesOffset + samplesToDecode), at that same offset in pPcm (Vita3K's placement; unconfirmed
+    /// on hardware). outputPcmSize reports every decoded sample, inputEsSize the bytes consumed.
+    /// </summary>
+    [Hle]
+    int sceAudiodecPartlyDecode(uint ctrl, uint samplesOffset, uint samplesToDecode)
+    {
+        var d = Find(ctrl, out int err);
+        if (d == null) return err;
+        if (d.Type != TYPE_AT9) Log.WarnOnce("audiodec-partly", $"sceAudiodecPartlyDecode with codec 0x{d.Type:X}");
+        uint es = GuestMemory.R32(ctrl + 8), pcm = GuestMemory.R32(ctrl + 20), esMax = GuestMemory.R32(ctrl + 16);
+        if (es == 0 || pcm == 0) return ERR_INVALID_PTR;
+        int bps = d.Channels * 2;
+        long needed = (long)(samplesOffset + samplesToDecode) * bps;
+        var temp = new List<byte>((int)needed);
+        uint esUsed = 0;
+        while (temp.Count < needed)
+        {
+            int r = DecodeOne(d, es + esUsed, esMax, out int consumed, out int samples);
+            if (r != 0) return r;
+            if (consumed <= 0 || samples <= 0) return ERR_API_FAIL;
+            esUsed += (uint)consumed;
+            temp.AddRange(System.Runtime.InteropServices.MemoryMarshal.AsBytes(d.Pcm.AsSpan(0, samples * d.Channels)).ToArray());
+        }
+        int off = (int)samplesOffset * bps, len = (int)samplesToDecode * bps;
+        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(temp).Slice(off, len).CopyTo(GuestMemory.Span(pcm + (uint)off, len));
+        GuestMemory.W32(ctrl + 12, esUsed);
+        GuestMemory.W32(ctrl + 24, (uint)temp.Count);
+        return 0;
+    }
+
+    // Resident decoders (system memory, no sceAudiodecInitLibrary). Prototypes inferred: (ctrl, codecType) / (ctrl).
+    [Hle] int sceAudiodecCreateDecoderResident(uint ctrl, uint codecType) => Create(ctrl, codecType, false);
+    [Hle] int sceAudiodecDeleteDecoderResident(uint ctrl) => sceAudiodecDeleteDecoder(ctrl);
 
     [Hle]
     int sceAudiodecClearContext(uint ctrl)

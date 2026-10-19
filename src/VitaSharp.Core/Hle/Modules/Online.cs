@@ -7,16 +7,11 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Network, PSN and web services. VitaSharp behaves like a console that is offline and signed out of PSN:
 /// initialisation succeeds, connection attempts fail with the errors games handle gracefully.
 /// </summary>
-public sealed class Net : HleModule
+public sealed partial class Net : HleModule
 {
-    const int ERR_NET_NOT_CONNECTED = unchecked((int)0x80410179); // SCE_NET_ERROR_ENOTCONN-ish
+    const int ERR_NET_ENOTCONN = unchecked((int)0x80410139), ERR_NET_ENETUNREACH = unchecked((int)0x80410133);
+    const int ERR_NETCTL_INVALID_ADDR = unchecked((int)0x80412107), ERR_NETCTL_CALLBACK_MAX = unchecked((int)0x80412103);
     const int ERR_NETCTL_NOT_CONNECTED = unchecked((int)0x80412108);
-    uint _errnoLoc;
-    int _nextId = 1;
-
-    [Hle] int sceNetInit(uint param) => 0;
-    [Hle] int sceNetTerm() => 0;
-    [Hle] uint sceNetErrnoLoc() { if (_errnoLoc == 0) _errnoLoc = Emu.Memory.Alloc(16, "net errno", MemoryRegion.User, 16); return _errnoLoc; }
     [Hle] uint sceNetHtonl(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(v);
     [Hle] uint sceNetNtohl(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(v);
     [Hle] uint sceNetHtons(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness((ushort)v);
@@ -48,23 +43,6 @@ public sealed class Net : HleModule
         return 1;
     }
 
-    // sockets: creation works, anything touching the network fails
-    [Hle] int sceNetSocket(string name, int domain, int type, int protocol) => _nextId++;
-    [Hle] int sceNetSocketClose(int s) => 0;
-    [Hle] int sceNetSocketAbort(int s, int flags) => 0;
-    [Hle] int sceNetShutdown(int s, int how) => 0;
-    [Hle] int sceNetBind(int s, uint addr, uint len) => 0;
-    [Hle] int sceNetListen(int s, int backlog) => 0;
-    [Hle] int sceNetAccept(int s, uint addr, uint len) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetConnect(int s, uint addr, uint len) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetSend(int s, uint buf, uint len, int flags) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetRecv(int s, uint buf, uint len, int flags) => unchecked((int)0x80410123); // EAGAIN
-    [Hle] int sceNetRecvfrom(int s, uint buf, uint len, int flags, uint from, uint fromlen) => unchecked((int)0x80410123);
-    [Hle] int sceNetSetsockopt(int s, int level, int opt, uint val, uint len) => 0;
-    [Hle] int sceNetGetsockopt(int s, int level, int opt, uint val, uint len) { if (val != 0) GuestMemory.W32(val, 0); return 0; }
-    [Hle] int sceNetGetsockname(int s, uint addr, uint len) { if (addr != 0) GuestMemory.Fill(addr, 0, 16); return 0; }
-    [Hle] int sceNetGetSockInfo(int s, uint info, int n, int flags) => 0;
     [Hle]
     int sceNetGetStatisticsInfo(uint info, int flags)
     {
@@ -75,15 +53,6 @@ public sealed class Net : HleModule
         return 0;
     }
     [Hle] int sceNetShowNetstat() => 0;
-    [Hle] int sceNetEpollCreate(string name, int flags) => _nextId++;
-    [Hle] int sceNetEpollDestroy(int id) => 0;
-    [Hle] int sceNetEpollControl(int id, int op, int s, uint ev) => 0;
-    [Hle] int sceNetEpollWait(int id, uint events, int max, int timeout) { Kernel.Wait.Sleep((ulong)Math.Max(timeout, 1000)); return 0; }
-    [Hle] int sceNetResolverCreate(string name, uint param, int flags) => _nextId++;
-    [Hle] int sceNetResolverDestroy(int rid) => 0;
-    [Hle] int sceNetResolverStartNtoa(int rid, string host, uint addr, int timeout, int retry, int flags) => unchecked((int)0x804101E1);
-    [Hle] int sceNetResolverStartAton(int rid, uint addr, uint host, int len, int timeout, int retry, int flags) => unchecked((int)0x804101E1);
-    [Hle] int sceNetResolverGetError(int rid, Ptr<int> err) { err.TrySet(unchecked((int)0x804101E1)); return 0; }
 
     // NetCtl: initialised, never connected
     // NetCtl: initialised, cable unplugged. Registered callbacks are told so once (DISCONNECTED event),
@@ -93,12 +62,11 @@ public sealed class Net : HleModule
     readonly Dictionary<int, NetCallback> _inetCallbacks = new(), _adhocCallbacks = new();
     int _nextCid;
 
-    [Hle] int sceNetCtlInit() => 0;
-    [Hle] void sceNetCtlTerm() { lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); } }
 
     [Hle]
     int sceNetCtlCheckCallback()
     {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
         var pending = new List<NetCallback>();
         lock (_inetCallbacks)
         {
@@ -111,13 +79,13 @@ public sealed class Net : HleModule
 
     // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers and is signed out of PSN,
     // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server.
-    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return unchecked((int)0x80412102); state.Value = 3; return 0; }
-    [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return unchecked((int)0x80412102); error.Value = 0; return 0; }
+    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = 3; return 0; }
+    [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return ERR_NETCTL_INVALID_ADDR; error.Value = 0; return 0; }
 
     [Hle]
     int sceNetCtlInetGetInfo(int code, uint info)
     {
-        if (info == 0) return unchecked((int)0x80412102);
+        if (info == 0) return ERR_NETCTL_INVALID_ADDR;
         switch (code)
         {
             case 1: GuestMemory.WriteCString(info, "VitaSharp", 65); break;           // configuration name
@@ -142,17 +110,17 @@ public sealed class Net : HleModule
             case 20: GuestMemory.W32(info, 0); break;                               // no proxy
             case 21: GuestMemory.WriteCString(info, "", 256); break;
             case 22: GuestMemory.W32(info, 0); break;
-            default: return unchecked((int)0x80412102);
+            default: return unchecked((int)0x80412106); // SCE_NET_CTL_ERROR_INVALID_CODE
         }
         return 0;
     }
 
     int RegisterNetCallback(Dictionary<int, NetCallback> table, uint func, Ptr<int> cid)
     {
-        if (func == 0 || cid.Address == 0) return unchecked((int)0x80412102);
+        if (func == 0 || cid.Address == 0) return ERR_NETCTL_INVALID_ADDR;
         lock (_inetCallbacks)
         {
-            if (table.Count >= 8) return unchecked((int)0x80412104);
+            if (table.Count >= 8) return ERR_NETCTL_CALLBACK_MAX;
             int id = _nextCid++;
             table[id] = new NetCallback { Func = func, Arg = 0 };
             cid.Value = id;
@@ -184,106 +152,15 @@ public sealed class Net : HleModule
 
     [Hle] int sceNetCtlAdhocUnregisterCallback(int cid) { lock (_inetCallbacks) _adhocCallbacks.Remove(cid); return 0; }
 
-    // dialogs that check the network report "cancelled"
-    [Hle] int sceNetCheckDialogInit(uint param) => 0;
-    [Hle] int sceNetCheckDialogGetStatus() => 2;
-    [Hle] int sceNetCheckDialogGetResult(uint result) { if (result != 0) { GuestMemory.Fill(result, 0, 0x2C); GuestMemory.W32(result, unchecked((uint)0x80020400 | 1)); } return 0; }
-    [Hle] int sceNetCheckDialogTerm() => 0;
-    [Hle] int sceNetCheckDialogAbort() => 0;
     [Hle] int sceNetCtlAdhocDisconnect() => 0;
 
-    // HTTP / SSL
-    [Hle] int sceHttpInit(uint poolSize) => 0;
-    [Hle] int sceHttpTerm() => 0;
-    [Hle] int sceSslInit(uint poolSize) => 0;
-    [Hle] int sceSslTerm() => 0;
-    [Hle] int sceHttpCreateTemplate(string agent, int version, int autoProxy) => _nextId++;
-    [Hle] int sceHttpDeleteTemplate(int id) => 0;
-    [Hle] int sceHttpCreateConnection(int tmpl, string host, string scheme, uint port, int keepAlive) => _nextId++;
-    [Hle] int sceHttpCreateConnectionWithURL(int tmpl, string url, int keepAlive) => _nextId++;
-    [Hle] int sceHttpDeleteConnection(int id) => 0;
-    [Hle] int sceHttpCreateRequest(int conn, int method, string path, ulong len) => _nextId++;
-    [Hle] int sceHttpCreateRequestWithURL(int conn, int method, string url, ulong len) => _nextId++;
-    [Hle] int sceHttpDeleteRequest(int id) => 0;
-    [Hle] int sceHttpSendRequest(int req, uint data, uint size) => unchecked((int)0x80431063); // resolver failure
-    [Hle] int sceHttpAbortRequest(int req) => 0;
-    [Hle] int sceHttpGetStatusCode(int req, Ptr<int> code) => unchecked((int)0x80431005);
-    [Hle] int sceHttpGetResponseContentLength(int req, uint len) => unchecked((int)0x80431005);
-    [Hle] int sceHttpReadData(int req, uint data, uint size) => unchecked((int)0x80431005);
-    [Hle] int sceHttpGetAllResponseHeaders(int req, uint header, uint size) => unchecked((int)0x80431005);
-    [Hle] int sceHttpParseResponseHeader(uint header, uint len, string field, uint val, uint valLen) => unchecked((int)0x80432025);
-    [Hle] int sceHttpAddRequestHeader(int id, string name, string value, uint mode) => 0;
-    [Hle] int sceHttpSetRequestContentLength(int id, ulong len) => 0;
-    [Hle] int sceHttpSetConnectTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetSendTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetRecvTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetResolveTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetResolveRetry(int id, int retry) => 0;
-    [Hle] int sceHttpSetNonblock(int id, int enable) => 0;
-    [Hle] int sceHttpsDisableOption(uint flags) => 0;
-    [Hle] int sceHttpsLoadCert(int caNum, uint caList, uint cert, uint priv) => 0;
-    [Hle] int sceHttpsSetSslCallback(int id, uint cb, uint arg) => 0;
-    [Hle] int sceHttpsGetSslError(int id, Ptr<int> err, Ptr<uint> detail) { err.TrySet(0); detail.TrySet(0); return 0; }
-    [Hle] int sceHttpGetMemoryPoolStats(uint stats) { if (stats != 0) GuestMemory.Fill(stats, 0, 16); return 0; }
-    [Hle] int sceSslGetMemoryPoolStats(uint stats) { if (stats != 0) GuestMemory.Fill(stats, 0, 16); return 0; }
-
-    // No TLS connection ever completes offline, so there are no certificate objects to inspect.
-    const int SSL_ERROR_NOT_FOUND = unchecked((int)0x80435025);
-    [Hle] uint sceSslGetSubjectName(uint cert) => 0;
-    [Hle] uint sceSslGetIssuerName(uint cert) => 0;
-    [Hle] int sceSslGetNameEntryCount(uint certName) => certName == 0 ? SSL_ERROR_NOT_FOUND : 0;
-    [Hle] int sceSslGetNameEntryInfo(uint certName, int entry, uint oid, uint maxOid, uint value, uint maxValue, uint valueLen) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetNotAfter(uint cert, uint tick) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetNotBefore(uint cert, uint tick) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetSerialNumber(uint cert, uint data, uint len) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceHttpUriParse(uint outUri, string src, uint pool, uint require, uint prepare) => unchecked((int)0x80433060);
 }
 
 public sealed class Np : HleModule
 {
     const int ERR_SIGNED_OUT = unchecked((int)0x80550006);
-    int _nextId = 1;
 
-    // PSN: the console is signed out (SCE_NP_SERVICE_STATE_SIGNED_OUT = 1; 0 would mean "unknown yet").
-    const int NP_STATE_SIGNED_OUT = 1;
-    readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
-
-    [Hle] int sceNpInit(uint config, uint ctx) => 0;
-    [Hle] int sceNpTerm() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
-
-    [Hle]
-    int sceNpCheckCallback()
-    {
-        List<(uint Func, uint Arg, bool Notified)> pending;
-        lock (_npCallbacks)
-        {
-            pending = _npCallbacks.Where(c => !c.Notified).ToList();
-            for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
-        }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NP_STATE_SIGNED_OUT, 0, c.Arg);
-        return 0;
-    }
-
-    [Hle] int sceNpGetServiceState(Ptr<int> state) { if (state.Address == 0) return unchecked((int)0x80550003); state.Value = NP_STATE_SIGNED_OUT; return 0; }
-
-    [Hle]
-    int sceNpRegisterServiceStateCallback(uint cb, uint arg)
-    {
-        lock (_npCallbacks) _npCallbacks.Add((cb, arg, false));
-        return 0;
-    }
-
-    [Hle] int sceNpUnregisterServiceStateCallback() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
-    [Hle] int sceNpManagerGetNpId(uint npId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpManagerGetContentRatingFlag(Ptr<int> isRestricted, Ptr<int> age) { isRestricted.TrySet(0); age.TrySet(18); return 0; }
-
-    [Hle] int sceNpAuthInit() => 0;
-    [Hle] int sceNpAuthTerm() => 0;
-    [Hle] int sceNpAuthCreateStartRequest(uint param) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthDestroyRequest(int id) => 0;
-    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => ERR_SIGNED_OUT;
-
+    // NP initialisation, service state and auth live in NpManager (Np.cs); Lookup in NpUtility (NpCommunity.cs).
     [Hle] int sceNpBasicInit(uint opt) => 0;
     [Hle] int sceNpBasicTerm() => 0;
     [Hle] int sceNpBasicCheckCallback() => 0;
@@ -301,16 +178,6 @@ public sealed class Np : HleModule
     [Hle] int sceNpBasicGetBlockListEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetBlockListEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
 
-    [Hle] int sceNpLookupInit(int usesAsync, int threadPrio, int cpuAffinity, uint opt) => 0;
-    [Hle] int sceNpLookupTerm() => 0;
-    [Hle] int sceNpLookupCreateTitleCtx(uint commId, uint npId) => _nextId++;
-    [Hle] int sceNpLookupDeleteTitleCtx(int id) => 0;
-    [Hle] int sceNpLookupCreateRequest(int ctx) => _nextId++;
-    [Hle] int sceNpLookupDeleteRequest(int id) => 0;
-    [Hle] int sceNpLookupAbortRequest(int id) => 0;
-    [Hle] int sceNpLookupUserProfileAsync(int id, uint target, uint user, uint about, uint lang, uint country, uint avatar, uint opt) => ERR_SIGNED_OUT;
-    [Hle] int sceNpLookupPollAsync(int id, Ptr<int> result) { result.TrySet(ERR_SIGNED_OUT); return 0; }
-
     [Hle] int sceNpPartyInit(uint p) => 0;
     [Hle] int sceNpPartyTerm() => 0;
     [Hle] int sceNpPartyCheckCallback() => 0;
@@ -322,130 +189,104 @@ public sealed class Np : HleModule
     [Hle] int sceNpBasicRegisterInGameDataMessageHandler(uint handler, uint arg) => 0; // messages only arrive from PSN
     [Hle] int sceNpBasicUnregisterInGameDataMessageHandler() => 0;
 
-    [Hle] int sceNpMessageDialogInit(uint param) => 0;
-    [Hle] int sceNpMessageDialogGetStatus() => 2;
-    [Hle] int sceNpMessageDialogGetResult(uint result) { if (result != 0) GuestMemory.W32(result, 0); return 0; }
-    [Hle] int sceNpMessageDialogAbort() => 0;
-    [Hle] int sceNpMessageDialogTerm() => 0;
-}
-
-/// <summary>Common dialogs: they complete immediately with the default choice.</summary>
-public sealed class CommonDialog : HleModule
-{
-    const int StatusNone = 0, StatusRunning = 1, StatusFinished = 2;
-    int _msg = StatusNone, _save = StatusNone;
-
-    [Hle] int sceCommonDialogUpdate(uint param) => 0;
-    [Hle] int sceCommonDialogSetConfigParam(uint param) => 0; // language / enter button for system dialogs (they complete immediately)
-    [Hle] bool sceCommonDialogIsRunning() => false;
-
-    [Hle]
-    int sceMsgDialogInit(uint param)
-    {
-        if (param != 0)
-        {
-            uint mode = GuestMemory.R32(param + 0x18);
-            uint userMsg = GuestMemory.R32(param + 0x1C);
-            if (mode == 1 && userMsg != 0) Log.Info($"MsgDialog: {GuestMemory.ReadCString(GuestMemory.R32(userMsg + 4))}");
-        }
-        _msg = StatusFinished;
-        return 0;
-    }
-
-    [Hle] int sceMsgDialogGetStatus() => _msg;
-    [Hle] int sceMsgDialogTerm() { _msg = StatusNone; return 0; }
-    [Hle] int sceMsgDialogClose() { _msg = StatusFinished; return 0; }
-    [Hle] int sceMsgDialogAbort() { _msg = StatusFinished; return 0; }
-
-    [Hle]
-    int sceMsgDialogGetResult(uint result)
-    {
-        if (result == 0) return unchecked((int)0x80020401);
-        GuestMemory.Fill(result, 0, 0x2C);
-        GuestMemory.W32(result + 8, 1); // buttonId: YES / OK
-        return 0;
-    }
-
-    // ---- SceSaveDataDialog: the dialog "runs" (status RUNNING) and its work completes at once (substatus FINISHED:
-    // the user confirmed / the slot was shown); the application then calls Finish to close it (status FINISHED) and
-    // Term. Progress-bar dialogs stay running until the application finishes them itself.
-    const int SaveModeFixed = 1, SaveModeList = 2, SaveModeUserMsg = 3, SaveModeSystemMsg = 4, SaveModeErrorCode = 5, SaveModeProgressBar = 6;
-    int _saveSub = StatusNone, _saveMode, _saveSlot = -1;
-    uint _saveUserData, _saveSlotInfo;
-
-    [Hle]
-    int sceSaveDataDialogInit(uint param)
-    {
-        if (param == 0) return unchecked((int)0x80020401);
-        if (_save != StatusNone) return unchecked((int)0x80020404); // BUSY
-        // SceSaveDataDialogParam: sdkVersion, SceCommonDialogParam (76 bytes), mode, dispType, fixed, list, userMsg,
-        // sysMsg, errorCode, progressBar, slotConf, flag, userdata
-        _saveMode = (int)GuestMemory.R32(param + 0x50);
-        _saveUserData = GuestMemory.R32(param + 0x78);
-        uint sub = _saveMode switch { SaveModeFixed => GuestMemory.R32(param + 0x58), SaveModeList => GuestMemory.R32(param + 0x5C),
-            SaveModeUserMsg => GuestMemory.R32(param + 0x60), SaveModeSystemMsg => GuestMemory.R32(param + 0x64), _ => 0 };
-        _saveSlot = _saveMode switch
-        {
-            SaveModeFixed => (int)GuestMemory.R32(sub),                                  // targetSlot.id
-            SaveModeList => GuestMemory.R32(sub) != 0 ? (int)GuestMemory.R32(GuestMemory.R32(sub)) : -1, // slotList[0].id
-            SaveModeUserMsg or SaveModeSystemMsg => (int)GuestMemory.R32(sub + 8),      // targetSlot.id after type/value
-            _ => -1,
-        };
-        _save = StatusRunning;
-        _saveSub = _saveMode == SaveModeProgressBar ? StatusRunning : StatusFinished;
-        Log.Info($"sceSaveDataDialogInit mode {_saveMode} dispType {GuestMemory.R32(param + 0x54)} slot {_saveSlot} sub {sub:X8} subType {(sub != 0 ? GuestMemory.R32(sub) : 0)} value {(sub != 0 ? GuestMemory.R32(sub + 4) : 0)} flag {GuestMemory.R32(param + 0x74)}");
-        return 0;
-    }
-
-    [Hle] int sceSaveDataDialogContinue(uint param) { if (_save != StatusRunning) return unchecked((int)0x80020405); _saveSub = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogGetStatus() => _save;
-    [Hle] int sceSaveDataDialogGetSubStatus() => _save == StatusRunning ? _saveSub : StatusNone;
-    [Hle] int sceSaveDataDialogFinish(uint param) { if (_save != StatusRunning) return unchecked((int)0x80020405); _save = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogAbort() { if (_save != StatusRunning) return unchecked((int)0x80020405); _save = StatusFinished; return 0; }
-    [Hle] int sceSaveDataDialogTerm() { _save = StatusNone; _saveSub = StatusNone; return 0; }
-    [Hle] int sceSaveDataDialogProgressBarInc(int target, uint delta) => 0;
-    [Hle] int sceSaveDataDialogProgressBarSetValue(int target, uint rate) => 0;
-    [Hle] int sceSaveDataDialogSubClose() { _saveSub = StatusFinished; return 0; }
-
-    [Hle]
-    int sceSaveDataDialogGetResult(uint result)
-    {
-        if (result == 0) return unchecked((int)0x80020401);
-        // SceSaveDataDialogResult: mode, result, buttonId, slotId, slotInfo*, userdata, reserved[32]
-        GuestMemory.Fill(result, 0, 0x38);
-        GuestMemory.W32(result, (uint)_saveMode);
-        GuestMemory.W32(result + 8, 1); // SCE_SAVEDATA_DIALOG_BUTTON_ID_OK / YES
-        GuestMemory.W32(result + 12, (uint)_saveSlot);
-        if (_saveSlot >= 0)
-        {
-            // SceSaveDataDialogSlotInfo { isExist, slotParam*, reserved[32] }
-            if (_saveSlotInfo == 0) _saveSlotInfo = Emu.Memory.Alloc(0x100, "savedata dialog slot info");
-            var appUtil = Emu.Hle.Modules.OfType<AppUtil>().First();
-            bool exists = appUtil.SlotExists((uint)_saveSlot);
-            GuestMemory.Fill(_saveSlotInfo, 0, 0x100);
-            GuestMemory.W32(_saveSlotInfo, exists ? 1u : 0u);
-            if (exists) { appUtil.ReadSlotParam((uint)_saveSlot, _saveSlotInfo + 0x40); GuestMemory.W32(_saveSlotInfo + 4, _saveSlotInfo + 0x40); }
-            GuestMemory.W32(result + 16, _saveSlotInfo);
-        }
-        GuestMemory.W32(result + 20, _saveUserData);
-        return 0;
-    }
 }
 
 /// <summary>Motion sensors (device at rest, flat), camera shutter sound, system gestures (none). SceCamera is in Camera.cs.</summary>
 public sealed class Sensors : HleModule
 {
-    [Hle] int sceMotionStartSampling() => 0;
-    [Hle] int sceMotionStopSampling() => 0;
-    [Hle] int sceMotionReset() => 0;
-    [Hle] int sceMotionMagnetometerOn() => 0;
-    [Hle] int sceMotionMagnetometerOff() => 0;
-    [Hle] int sceMotionGetMagnetometerState() => 0;
-    [Hle] int sceMotionSetTiltCorrection(int e) => 0;
-    [Hle] int sceMotionGetTiltCorrection() => 0;
-    [Hle] int sceMotionSetDeadband(int e) => 0;
-    [Hle] int sceMotionGetDeadband() => 0;
-    [Hle] int sceMotionSetAngleThreshold(float angle) => 0;
+    const int ERR_OUT_OF_BOUNDS = unchecked((int)0x80360205), ERR_NOT_SAMPLING = unchecked((int)0x80360206),
+        ERR_ALREADY_SAMPLING = unchecked((int)0x80360207), ERR_NULL_PARAMETER = unchecked((int)0x80360209),
+        ERR_ANGLE_OUT_OF_RANGE = unchecked((int)0x8036020A);
+    const long SampleIntervalUs = 16667; // sensor sample spacing: unconfirmed, the vblank period like Ctrl/Touch
+
+    // defaults from psp2/motion.h ("Enabled by default") and Vita3K (angle threshold 20 degrees)
+    bool _sampling, _magnetometer;
+    int _tiltCorrection = 1, _deadband = 1, _gyroBiasCorrection = 1;
+    float _angleThreshold = 20.0f;
+    uint _counter;
+
+    internal bool Sampling => _sampling;
+
+    [Hle] int sceMotionStartSampling() { if (_sampling) return ERR_ALREADY_SAMPLING; _sampling = true; return 0; }
+    [Hle] int sceMotionStopSampling() { if (!_sampling) return ERR_NOT_SAMPLING; _sampling = false; return 0; }
+    [Hle] int sceMotionReset() => 0; // static orientation: nothing to reset
+    [Hle] int sceMotionMagnetometerOn() { _magnetometer = true; return 0; }
+    [Hle] int sceMotionMagnetometerOff() { _magnetometer = false; return 0; }
+    [Hle] int sceMotionGetMagnetometerState() => _magnetometer ? 1 : 0;
+    [Hle] int sceMotionSetTiltCorrection(int e) { _tiltCorrection = e; return 0; }
+    [Hle] int sceMotionGetTiltCorrection() => _tiltCorrection;
+    [Hle] int sceMotionSetDeadband(int e) { _deadband = e; return 0; }
+    [Hle] int sceMotionGetDeadband() => _deadband;
+    [Hle] int sceMotionSetGyroBiasCorrection(int e) { _gyroBiasCorrection = e; return 0; }
+    [Hle] int sceMotionGetGyroBiasCorrection() => _gyroBiasCorrection;
+
+    [Hle]
+    int sceMotionSetAngleThreshold(float angle)
+    {
+        if (float.IsNaN(angle) || angle < 0 || angle > 45.0f) return ERR_ANGLE_OUT_OF_RANGE;
+        _angleThreshold = angle;
+        return 0;
+    }
+
+    [Hle] float sceMotionGetAngleThreshold() => _angleThreshold;
+
+    /// <summary>Yaw re-centring of the fused orientation: the host has no motion source, so there is nothing to rotate.</summary>
+    [Hle] int sceMotionRotateYaw(float radians) => 0;
+
+    /// <summary>Device at rest, screen up: the axis against gravity is +Z.</summary>
+    [Hle]
+    int sceMotionGetBasicOrientation(uint v)
+    {
+        if (!_sampling) return ERR_NOT_SAMPLING;
+        if (v == 0) return ERR_NULL_PARAMETER;
+        GuestMemory.Write(v, 0.0f);
+        GuestMemory.Write(v + 4, 0.0f);
+        GuestMemory.Write(v + 8, 1.0f);
+        return 0;
+    }
+
+    /// <summary>SceMotionDeviceLocation (0x30): accelerometer and gyro positions in mm, OLED model (PCH-1000) values
+    /// from psp2/motion.h.</summary>
+    [Hle]
+    int sceMotionGetDeviceLocation(uint loc)
+    {
+        if (loc == 0) return ERR_NULL_PARAMETER;
+        GuestMemory.Fill(loc, 0, 0x30);
+        float[] v = [-32, 12, -8, -33, 6, -8];
+        for (int i = 0; i < v.Length; i++) GuestMemory.Write(loc + (uint)i * 4, v[i]);
+        return 0;
+    }
+
+    /// <summary>
+    /// Raw accelerometer/gyro records (SceMotionSensorState, 0x40 each), oldest first: device at rest, so only the
+    /// counters and timestamps change. 64 records must be accepted (Invizimals reads 64). Like sceMotionGetState this
+    /// stays permissive when sampling was not started.
+    /// </summary>
+    [Hle]
+    int sceMotionGetSensorState(uint states, int numRecords)
+    {
+        if (states == 0) return ERR_NULL_PARAMETER;
+        if (numRecords is <= 0 or > 64) return ERR_OUT_OF_BOUNDS;
+        long now = (long)Emu.Kernel.ProcessTimeUs;
+        WriteSensorStates(states, numRecords, now, _counter);
+        _counter++;
+        return 0;
+    }
+
+    internal static void WriteSensorStates(uint states, int numRecords, long nowUs, uint counter)
+    {
+        for (int i = 0; i < numRecords; i++)
+        {
+            uint p = states + (uint)i * 0x40;
+            int age = numRecords - 1 - i;
+            long ts = nowUs - age * SampleIntervalUs;
+            GuestMemory.Fill(p, 0, 0x40);
+            GuestMemory.Write(p + 8, -1.0f);                 // accelerometer z = -1 g
+            GuestMemory.W32(p + 0x24, (uint)ts);             // timestamp (us)
+            GuestMemory.W32(p + 0x28, counter - (uint)age);  // counter
+            GuestMemory.Write(p + 0x30, (ulong)ts);          // hostTimestamp
+        }
+    }
 
     [Hle]
     int sceMotionGetState(uint state)

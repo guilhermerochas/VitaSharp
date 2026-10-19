@@ -162,4 +162,101 @@ public sealed class Rtc : HleModule
     int sceRtcParseDateTime(Ptr<ulong> tick, string s) => sceRtcParseRFC3339(tick, s);
 
     [Hle] int sceRtcCheckValid(uint time) { try { _ = new DateTime(GuestMemory.Read<ushort>(time), GuestMemory.Read<ushort>(time + 2), GuestMemory.Read<ushort>(time + 4)); return 0; } catch { return unchecked((int)0x80251002); } }
+
+    // ------------------------------------------------------------------ calendar helpers (psp2common/kernel/rtc.h errors)
+
+    const int RTC_INVALID_VALUE = unchecked((int)0x80251000), RTC_INVALID_POINTER = unchecked((int)0x80251001),
+        RTC_INVALID_YEAR = unchecked((int)0x80251081), RTC_INVALID_MONTH = unchecked((int)0x80251082), RTC_INVALID_DAY = unchecked((int)0x80251083);
+
+    /// <summary>Day of the year, 1-based (1 January = 1).</summary>
+    [Hle]
+    int sceRtcGetDayOfYear(int year, int month, int day)
+    {
+        if (year < 1 || year > 9999) return RTC_INVALID_YEAR;
+        if (month is < 1 or > 12) return RTC_INVALID_MONTH;
+        if (day < 1 || day > DateTime.DaysInMonth(year, month)) return RTC_INVALID_DAY;
+        return new DateTime(year, month, day).DayOfYear;
+    }
+
+    /// <summary>FAT date/time: years since 1980 (7 bits), month, day, hour, minute, seconds / 2.</summary>
+    [Hle]
+    int sceRtcGetDosTime(uint time, Ptr<uint> dos)
+    {
+        if (time == 0 || dos.IsNull) return RTC_INVALID_POINTER;
+        int y = GuestMemory.Read<ushort>(time), mo = GuestMemory.Read<ushort>(time + 2), d = GuestMemory.Read<ushort>(time + 4);
+        int h = GuestMemory.Read<ushort>(time + 6), mi = GuestMemory.Read<ushort>(time + 8), s = GuestMemory.Read<ushort>(time + 10);
+        if (y < 1980) { dos.Value = 0; return RTC_INVALID_VALUE; }
+        if (y >= 2108) { dos.Value = 0xFF9FBF7D; return RTC_INVALID_VALUE; }
+        dos.Value = (uint)(((y - 1980) & 0x7F) << 25 | (mo & 0xF) << 21 | (d & 0x1F) << 16 | (h & 0x1F) << 11 | (mi & 0x3F) << 5 | ((s >> 1) & 0x1F));
+        return 0;
+    }
+
+    [Hle]
+    int sceRtcSetDosTime(uint time, uint dos)
+    {
+        if (time == 0) return RTC_INVALID_POINTER;
+        GuestMemory.Write(time, (ushort)(1980 + (dos >> 25)));
+        GuestMemory.Write(time + 2, (ushort)((dos >> 21) & 0xF));
+        GuestMemory.Write(time + 4, (ushort)((dos >> 16) & 0x1F));
+        GuestMemory.Write(time + 6, (ushort)((dos >> 11) & 0x1F));
+        GuestMemory.Write(time + 8, (ushort)((dos >> 5) & 0x3F));
+        GuestMemory.Write(time + 10, (ushort)((dos & 0x1F) * 2));
+        GuestMemory.W32(time + 12, 0);
+        return 0;
+    }
+
+    [Hle]
+    int sceRtcTickAddTicks(Ptr<ulong> dst, Ptr<ulong> src, long add)
+    {
+        if (dst.IsNull || src.IsNull) return RTC_INVALID_POINTER;
+        dst.Value = (ulong)((long)src.Value + add);
+        return 0;
+    }
+
+    [Hle]
+    int sceRtcTickAddWeeks(Ptr<ulong> dst, Ptr<ulong> src, int weeks)
+    {
+        if (dst.IsNull || src.IsNull) return RTC_INVALID_POINTER;
+        dst.Value = (ulong)((long)src.Value + weeks * 604_800_000_000L);
+        return 0;
+    }
+
+    /// <summary>Adds calendar months/years, clamping the day to the end of the resulting month (31/01 + 1 month = 28 or 29/02).</summary>
+    int AddCalendar(Ptr<ulong> dst, Ptr<ulong> src, int months)
+    {
+        if (dst.IsNull || src.IsNull) return RTC_INVALID_POINTER;
+        var d = FromTick(src.Value);
+        long targetMonth = (long)d.Year * 12 + (d.Month - 1) + months;
+        if (targetMonth < 12 || targetMonth >= 10000L * 12) return RTC_INVALID_YEAR;
+        dst.Value = (ulong)(d.AddMonths(months).Ticks / 10);
+        return 0;
+    }
+
+    [Hle] int sceRtcTickAddMonths(Ptr<ulong> dst, Ptr<ulong> src, int months) => AddCalendar(dst, src, months);
+    [Hle] int sceRtcTickAddYears(Ptr<ulong> dst, Ptr<ulong> src, int years) => AddCalendar(dst, src, years * 12);
+
+    /// <summary>Ad hoc, debug, GPS and retained network clocks: no such sources here, they follow the network tick.</summary>
+    [Hle("sceRtcGetCurrentAdNetworkTick")]
+    [Hle("sceRtcGetCurrentDebugNetworkTick")]
+    [Hle("sceRtcGetCurrentGpsTick")]
+    [Hle("sceRtcGetCurrentRetainedNetworkTick")]
+    int sceRtcGetCurrentOtherNetworkTick(Ptr<ulong> tick)
+    {
+        if (tick.IsNull) return RTC_INVALID_POINTER;
+        tick.Value = NowTick;
+        return 0;
+    }
+
+    /// <summary>Last user clock adjustment / RTC reset: reported as the emulator's boot time.</summary>
+    [Hle("sceRtcGetLastAdjustedTick")]
+    [Hle("sceRtcGetLastReincarnatedTick")]
+    int sceRtcGetLastAdjustedTick(Ptr<ulong> tick)
+    {
+        if (tick.IsNull) return RTC_INVALID_POINTER;
+        tick.Value = BootTick;
+        return 0;
+    }
+
+    /// <summary>Monotonic accumulated time; follows the current tick (as Vita3K).</summary>
+    [Hle] ulong sceRtcGetAccumulativeTime() => NowTick;
 }

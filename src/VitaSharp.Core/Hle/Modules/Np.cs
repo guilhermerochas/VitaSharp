@@ -1,0 +1,332 @@
+using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
+
+namespace VitaSharp.Core.Hle.Modules;
+
+/// <summary>
+/// SceNpManager and SceNpCommon: NP initialisation, service state, NpId helpers and auth tickets. VitaSharp is a
+/// console that is signed out of PSN: initialisation works, anything that needs the account fails with
+/// SCE_NP_ERROR_SIGNED_OUT, and callbacks are told SIGNED_OUT once (from sceNpCheckCallback).
+/// </summary>
+public sealed class NpManager : HleModule
+{
+    internal const int ERR_ALREADY_INITIALIZED = unchecked((int)0x80550001), ERR_NOT_INITIALIZED = unchecked((int)0x80550002),
+        ERR_INVALID_ARGUMENT = unchecked((int)0x80550003), ERR_UNKNOWN_PLATFORM_TYPE = unchecked((int)0x80550004),
+        ERR_SIGNED_OUT = unchecked((int)0x80550006);
+    const int MGR_INVALID_ARGUMENT = unchecked((int)0x80550503);
+    internal const int UTIL_INVALID_ARGUMENT = unchecked((int)0x80550601), UTIL_INVALID_NP_ID = unchecked((int)0x80550605),
+        UTIL_NOT_MATCH = unchecked((int)0x80550609);
+
+    // PSN: the console is signed out (SCE_NP_SERVICE_STATE_SIGNED_OUT = 1; 0 would mean "unknown yet").
+    const int NP_STATE_SIGNED_OUT = 1;
+    readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
+
+    readonly object _lock = new();
+    bool _npInited;
+    string? _commId;
+    /// <summary>True between sceNpInit and sceNpTerm.</summary>
+    internal bool NpInited { get { lock (_lock) return _npInited; } }
+    internal string? CommunicationId { get { lock (_lock) return _commId; } }
+
+    sealed class AuthReq { public uint Cb, Arg; public bool Done, Aborted; }
+    readonly Dictionary<int, AuthReq> _authReqs = new();
+    readonly HashSet<int> _oauthReqs = new();
+    int _nextReq = 1;
+
+    /// <summary>SceNpCommunicationConfig (0xC): +0 npCommId*, +4 npCommPass*, +8 npCommSign*.
+    /// SceNpCommunicationId (0xC): data[9], term, num (+0xA), dummy.</summary>
+    [Hle]
+    int sceNpInit(uint config, uint opt)
+    {
+        lock (_lock)
+        {
+            if (_npInited) return ERR_ALREADY_INITIALIZED;
+            _npInited = true;
+            uint id = config != 0 ? GuestMemory.R32(config) : 0;
+            _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
+        }
+        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} (signed out of PSN)");
+        return 0;
+    }
+
+    [Hle]
+    int sceNpTerm()
+    {
+        lock (_lock) { _npInited = false; _commId = null; }
+        lock (_npCallbacks) _npCallbacks.Clear();
+        return 0;
+    }
+
+    [Hle]
+    int sceNpCheckCallback()
+    {
+        List<(uint Func, uint Arg, bool Notified)> pending;
+        lock (_npCallbacks)
+        {
+            pending = _npCallbacks.Where(c => !c.Notified).ToList();
+            for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
+        }
+        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NP_STATE_SIGNED_OUT, 0, c.Arg);
+
+        // auth (ticket) requests complete here: the ticket callback is told the console is signed out
+        List<(int Id, uint Cb, uint Arg)> done;
+        lock (_authReqs)
+        {
+            done = _authReqs.Where(kv => !kv.Value.Done && !kv.Value.Aborted && kv.Value.Cb != 0)
+                .Select(kv => (kv.Key, kv.Value.Cb, kv.Value.Arg)).ToList();
+            foreach (var d in done) _authReqs[d.Id].Done = true;
+        }
+        foreach (var d in done) Kernel.GuestThread.Current?.CallGuest(d.Cb, (uint)d.Id, unchecked((uint)ERR_SIGNED_OUT), d.Arg);
+        return 0;
+    }
+
+    [Hle] int sceNpGetServiceState(Ptr<int> state) { if (state.Address == 0) return ERR_INVALID_ARGUMENT; state.Value = NP_STATE_SIGNED_OUT; return 0; }
+
+    [Hle]
+    int sceNpRegisterServiceStateCallback(uint cb, uint arg)
+    {
+        lock (_npCallbacks) _npCallbacks.Add((cb, arg, false));
+        return 0;
+    }
+
+    [Hle] int sceNpUnregisterServiceStateCallback() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
+    [Hle] int sceNpManagerGetNpId(uint npId) => ERR_SIGNED_OUT;
+    [Hle] int sceNpManagerGetContentRatingFlag(Ptr<int> isRestricted, Ptr<int> age) { isRestricted.TrySet(0); age.TrySet(18); return 0; }
+
+    /// <summary>No account, so no account region (coherent with sceNpManagerGetNpId).</summary>
+    [Hle]
+    int sceNpManagerGetAccountRegion(uint countryCode, uint languageCode)
+    {
+        if (countryCode == 0 || languageCode == 0) return MGR_INVALID_ARGUMENT;
+        return ERR_SIGNED_OUT;
+    }
+
+    [Hle] int sceNpManagerGetCachedParam(uint param) => param == 0 ? MGR_INVALID_ARGUMENT : ERR_SIGNED_OUT;
+
+    [Hle] int sceNpAuthCreateOAuthRequest() { lock (_oauthReqs) { int id = _nextReq++; _oauthReqs.Add(id); return id; } }
+    [Hle] int sceNpAuthDeleteOAuthRequest(int reqId) { lock (_oauthReqs) return _oauthReqs.Remove(reqId) ? 0 : MGR_INVALID_ARGUMENT; }
+    [Hle] int sceNpAuthAbortOAuthRequest(int reqId) => 0;
+    [Hle] int sceNpAuthGetAuthorizationCode(int reqId, uint param, uint code, uint issuerId) => ERR_SIGNED_OUT;
+
+    // ---------------------------------------------------------------- auth tickets (SceNpCommon)
+
+    [Hle] int sceNpAuthInit() => 0;
+    [Hle] int sceNpAuthTerm() { lock (_authReqs) _authReqs.Clear(); return 0; }
+
+    /// <summary>SceNpAuthRequestParameter: +0 size, +4 version, +8 serviceId*, +0xC cookie*, +0x10 cookieSize,
+    /// +0x14 entitlementId*, +0x18 consumedCount, +0x1C ticketCb, +0x20 cbArg. The request is created; its callback
+    /// receives SCE_NP_ERROR_SIGNED_OUT on the next sceNpCheckCallback.</summary>
+    [Hle]
+    int sceNpAuthCreateStartRequest(uint param)
+    {
+        if (param == 0) return ERR_INVALID_ARGUMENT;
+        uint size = GuestMemory.R32(param);
+        if (size < 0x24) return ERR_INVALID_ARGUMENT;
+        lock (_authReqs)
+        {
+            int id = _nextReq++;
+            _authReqs[id] = new AuthReq { Cb = GuestMemory.R32(param + 0x1C), Arg = GuestMemory.R32(param + 0x20) };
+            Log.Debug($"sceNpAuthCreateStartRequest = {id} (ticket callback 0x{_authReqs[id].Cb:X8})");
+            return id;
+        }
+    }
+
+    [Hle] int sceNpAuthDestroyRequest(int id) { lock (_authReqs) _authReqs.Remove(id); return 0; }
+
+    /// <summary>Cancels a pending ticket request (no callback afterwards). Unknown ids are accepted: cleanup paths
+    /// call this unconditionally.</summary>
+    [Hle]
+    int sceNpAuthAbortRequest(int id)
+    {
+        lock (_authReqs)
+            if (_authReqs.TryGetValue(id, out var r)) r.Aborted = true;
+            else Log.Debug($"sceNpAuthAbortRequest({id}): unknown request");
+        return 0;
+    }
+
+    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetEntitlementByIdPrefix(uint ticket, uint size, uint prefix, uint ent) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetEntitlementIdList(uint ticket, uint size, uint list, uint num) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetTicketParam(uint ticket, uint size, int paramId, uint param) => ERR_SIGNED_OUT;
+
+    // ---------------------------------------------------------------- NpId helpers (SceNpCommon)
+
+    [Hle] int sceNpCmpNpId(uint a, uint b) => NpIdUtil.Compare(a, b);
+
+    [Hle]
+    int sceNpCmpNpIdInOrder(uint a, uint b, uint order)
+    {
+        if (order == 0) return UTIL_INVALID_ARGUMENT;
+        int r = NpIdUtil.Order(a, b, out int o);
+        if (r != 0) return r;
+        GuestMemory.W32(order, (uint)o);
+        return 0;
+    }
+
+    [Hle]
+    int sceNpCmpOnlineId(uint a, uint b)
+    {
+        if (a == 0 || b == 0) return UTIL_INVALID_ARGUMENT;
+        return NpIdUtil.OnlineIdCompare(a, b) == 0 ? 0 : UTIL_NOT_MATCH;
+    }
+
+    [Hle] int sceNpGetPlatformType(uint npId) => NpIdUtil.GetPlatformType(npId);
+    [Hle] int sceNpSetPlatformType(uint npId, int type) => NpIdUtil.SetPlatformType(npId, type);
+}
+
+/// <summary>
+/// SceNpId (0x24): +0x00 onlineId.data[16], +0x10 term, +0x11 dummy[3], +0x14 opt[8] (opt[4..7] = platform, e.g.
+/// "psp2"), +0x1C reserved[8] (reserved[0] = 1 when the id is valid).
+/// </summary>
+public static class NpIdUtil
+{
+    public const int PlatformNone = 0, PlatformPs3 = 1, PlatformVita = 2, PlatformPs4 = 3;
+    static readonly uint[] PlatformTags = [0, 0x00337370 /* "ps3\0" */, 0x32707370 /* "psp2" */, 0x00347370 /* "ps4\0" */];
+
+    static bool Valid(uint id) => GuestMemory.Read<byte>(id + 0x1C) == 1;
+
+    public static int OnlineIdCompare(uint a, uint b)
+    {
+        var sa = GuestMemory.Span(a, 16);
+        var sb = GuestMemory.Span(b, 16);
+        for (int i = 0; i < 16; i++)
+        {
+            if (sa[i] != sb[i]) return sa[i] < sb[i] ? -1 : 1;
+            if (sa[i] == 0) break;
+        }
+        return 0;
+    }
+
+    /// <summary>sceNpCmpNpId: online id, opt[0..3], then the platform with the PS3 rule "an unset platform matches".</summary>
+    public static int Compare(uint a, uint b)
+    {
+        if (a == 0 || b == 0) return NpManager.UTIL_INVALID_ARGUMENT;
+        if (!Valid(a) || !Valid(b)) return NpManager.UTIL_INVALID_NP_ID;
+        if (OnlineIdCompare(a, b) != 0) return NpManager.UTIL_NOT_MATCH;
+        if (GuestMemory.R32(a + 0x14) != GuestMemory.R32(b + 0x14)) return NpManager.UTIL_NOT_MATCH;
+        uint pa = GuestMemory.R32(a + 0x18), pb = GuestMemory.R32(b + 0x18);
+        if (pa != pb && (pa & 0xFF) != 0 && (pb & 0xFF) != 0) return NpManager.UTIL_NOT_MATCH;
+        return 0;
+    }
+
+    public static int Order(uint a, uint b, out int order)
+    {
+        order = 0;
+        if (a == 0 || b == 0) return NpManager.UTIL_INVALID_ARGUMENT;
+        if (!Valid(a) || !Valid(b)) return NpManager.UTIL_INVALID_NP_ID;
+        order = OnlineIdCompare(a, b);
+        if (order == 0) order = Math.Sign(GuestMemory.Span(a + 0x14, 4).SequenceCompareTo(GuestMemory.Span(b + 0x14, 4)));
+        if (order == 0)
+        {
+            bool za = GuestMemory.Read<byte>(a + 0x18) == 0, zb = GuestMemory.Read<byte>(b + 0x18) == 0;
+            if (!za && !zb) order = Math.Sign(GuestMemory.Span(a + 0x18, 4).SequenceCompareTo(GuestMemory.Span(b + 0x18, 4)));
+        }
+        return 0;
+    }
+
+    public static int GetPlatformType(uint npId)
+    {
+        if (npId == 0) return NpManager.ERR_INVALID_ARGUMENT;
+        int t = Array.IndexOf(PlatformTags, GuestMemory.R32(npId + 0x18));
+        return t >= 0 ? t : NpManager.ERR_UNKNOWN_PLATFORM_TYPE;
+    }
+
+    public static int SetPlatformType(uint npId, int type)
+    {
+        if (npId == 0) return NpManager.ERR_INVALID_ARGUMENT;
+        if (type is < 0 or > 3) return NpManager.ERR_UNKNOWN_PLATFORM_TYPE;
+        GuestMemory.W32(npId + 0x18, PlatformTags[type]);
+        return 0;
+    }
+}
+
+/// <summary>
+/// SceNpBasic additions, SceNpMessage, SceNpActivity and the party state (SceNpPartyGameUtil): offline there are no
+/// friends, messages or parties. (The older SceNpBasic/SceNpParty functions live in Online.cs, class Np.)
+/// </summary>
+public sealed class NpSocial : HleModule
+{
+    const int ERR_SIGNED_OUT = NpManager.ERR_SIGNED_OUT, BASIC_INVALID_ARGUMENT = unchecked((int)0x80551D02),
+        ERR_NOT_IN_PARTY = unchecked((int)0x80553402);
+
+    // ---------------------------------------------------------------- SceNpBasic: no friends, nothing blocked
+
+    int FriendQuery(uint friendId, uint outPtr) => friendId == 0 || outPtr == 0 ? BASIC_INVALID_ARGUMENT : ERR_SIGNED_OUT;
+    [Hle] int sceNpBasicGetFriendOnlineStatus(uint friendId, uint status) => FriendQuery(friendId, status);
+    [Hle] int sceNpBasicGetFriendContextState(uint friendId, uint state) => FriendQuery(friendId, state);
+    [Hle] int sceNpBasicGetGamePresenceOfFriend(uint friendId, uint presence) => FriendQuery(friendId, presence);
+    [Hle] int sceNpBasicGetGameJoiningPresence(uint friendId, uint presence) => ERR_SIGNED_OUT;
+
+    [Hle]
+    int sceNpBasicCheckIfPlayerIsBlocked(uint player, Ptr<int> blocked)
+    {
+        if (player == 0 || blocked.IsNull) return BASIC_INVALID_ARGUMENT;
+        blocked.Value = 0;
+        return 0;
+    }
+
+    [Hle] int sceNpBasicGetFriendRequestEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
+    [Hle] int sceNpBasicGetFriendRequestEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
+    [Hle] int sceNpBasicGetRequestedFriendRequestEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
+    [Hle] int sceNpBasicGetRequestedFriendRequestEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
+    [Hle] int sceNpBasicGetPlaySessionLogSize(int type, Ptr<uint> size) { size.TrySet(0); return 0; }
+    [Hle] int sceNpBasicGetPlaySessionLog(int type, uint index, uint log) => BASIC_INVALID_ARGUMENT; // the log is empty
+    [Hle] int sceNpBasicUnsetInGamePresence() => ERR_SIGNED_OUT;
+
+    // ---------------------------------------------------------------- SceNpMessage: no messages without PSN
+
+    bool _msgInited;
+    internal bool MessageInited => _msgInited;
+    [Hle] int sceNpMessageInit() { _msgInited = true; return 0; }
+    [Hle] int sceNpMessageInitWithParam(uint param) { _msgInited = true; return 0; }
+    [Hle] int sceNpMessageTerm() { _msgInited = false; return 0; }
+    [Hle] int sceNpMessageAbort() => 0;
+
+    /// <summary>Only reachable after a message app event, which VitaSharp never raises.</summary>
+    [Hle]
+    int sceNpMessageGetMessage(uint r0, uint r1, uint r2, uint r3)
+    {
+        Log.WarnOnce("npmsg-get", $"sceNpMessageGetMessage(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}) while signed out");
+        return ERR_SIGNED_OUT;
+    }
+
+    [Hle]
+    int sceNpMessageGetAttachedData(uint r0, uint r1, uint r2, uint r3)
+    {
+        Log.WarnOnce("npmsg-att", $"sceNpMessageGetAttachedData(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}) while signed out");
+        return ERR_SIGNED_OUT;
+    }
+
+    [Hle] int sceNpMessageGetMessageEntryCount() => ERR_SIGNED_OUT;
+    [Hle] int sceNpMessageGetMessageEntries() => ERR_SIGNED_OUT;
+    [Hle] int sceNpMessageGetMessageEntry() => ERR_SIGNED_OUT;
+    [Hle] int sceNpMessageSetAttachedDataUsedFlag() => ERR_SIGNED_OUT;
+    [Hle] int sceNpMessageSyncMessage() => ERR_SIGNED_OUT;
+
+    // ---------------------------------------------------------------- SceNpActivity: nowhere to post
+
+    bool _activityInited;
+    internal bool ActivityInited => _activityInited;
+    [Hle] int sceNpActivityInit() { _activityInited = true; return 0; }
+    [Hle] int sceNpActivityTerm() { _activityInited = false; return 0; }
+    [Hle] int sceNpActivityPostStatus(uint param) => ERR_SIGNED_OUT;
+    [Hle] int sceNpActivityPostAppStartupStatus(uint param) => ERR_SIGNED_OUT;
+
+    // ---------------------------------------------------------------- SceNpPartyGameUtil: never in a party
+
+    /// <summary>Writes the "not in a party" state. Its numeric value is unconfirmed (no header, Vita3K
+    /// unimplemented); 0 is used and the call is logged once.</summary>
+    [Hle]
+    int sceNpPartyGetState(uint state)
+    {
+        if (state == 0) return NpManager.ERR_INVALID_ARGUMENT;
+        GuestMemory.W32(state, 0);
+        Log.DebugOnce("party-state", "sceNpPartyGetState: not in a party (state 0)");
+        return 0;
+    }
+
+    [Hle] int sceNpPartyGetId(uint id) => ERR_NOT_IN_PARTY;
+    [Hle] int sceNpPartyGetMemberSessionInfo(uint memberId, uint info) => ERR_NOT_IN_PARTY;
+    [Hle] int sceNpPartyGetGameSessionReadyState(uint state) => ERR_NOT_IN_PARTY;
+}
