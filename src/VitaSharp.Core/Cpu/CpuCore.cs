@@ -85,6 +85,19 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Called when the thread resumes after a blocking wait: time spent blocked is not CPU time.</summary>
     public void ResetThrottle() { _throttleStart = -1; _throttleInstrs = 0; }
 
+    /// <summary>
+    /// Where this thread's emulated CPU time is (guest clock ticks), or 0 when unknown/unpaced. A paced thread runs in
+    /// host-speed bursts and sleeps once it is ~1 ms ahead of real time; the clock it reads must follow its own
+    /// progress through the burst (see <see cref="Util.GuestClock.Observed"/>), or a polling loop sees time stand
+    /// still and then jump by the sleep length. Valid on the owning thread (inside an HLE call).
+    /// </summary>
+    public long EmulatedPosition()
+    {
+        long rate = InstructionsPerSecond;
+        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return 0;
+        return _throttleStart + (_throttleInstrs + PendingInstructions) * System.Diagnostics.Stopwatch.Frequency / rate;
+    }
+
     /// <summary>Called before the thread blocks: work done since the last check must take its emulated time first, so
     /// short bursts between waits (job systems) are paced too, not only long runs.</summary>
     public void SettleThrottle(long pendingInstructions)
