@@ -7,18 +7,11 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Network, PSN and web services. VitaSharp behaves like a console that is offline and signed out of PSN:
 /// initialisation succeeds, connection attempts fail with the errors games handle gracefully.
 /// </summary>
-public sealed class Net : HleModule
+public sealed partial class Net : HleModule
 {
     const int ERR_NET_ENOTCONN = unchecked((int)0x80410139), ERR_NET_ENETUNREACH = unchecked((int)0x80410133);
     const int ERR_NETCTL_INVALID_ADDR = unchecked((int)0x80412107), ERR_NETCTL_CALLBACK_MAX = unchecked((int)0x80412103);
-    const int ERR_HTTP_BEFORE_SEND = unchecked((int)0x80431065);
     const int ERR_NETCTL_NOT_CONNECTED = unchecked((int)0x80412108);
-    uint _errnoLoc;
-    int _nextId = 1;
-
-    [Hle] int sceNetInit(uint param) => 0;
-    [Hle] int sceNetTerm() => 0;
-    [Hle] uint sceNetErrnoLoc() { if (_errnoLoc == 0) _errnoLoc = Emu.Memory.Alloc(16, "net errno", MemoryRegion.User, 16); return _errnoLoc; }
     [Hle] uint sceNetHtonl(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(v);
     [Hle] uint sceNetNtohl(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(v);
     [Hle] uint sceNetHtons(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness((ushort)v);
@@ -50,23 +43,6 @@ public sealed class Net : HleModule
         return 1;
     }
 
-    // sockets: creation works, anything touching the network fails
-    [Hle] int sceNetSocket(string name, int domain, int type, int protocol) => _nextId++;
-    [Hle] int sceNetSocketClose(int s) => 0;
-    [Hle] int sceNetSocketAbort(int s, int flags) => 0;
-    [Hle] int sceNetShutdown(int s, int how) => 0;
-    [Hle] int sceNetBind(int s, uint addr, uint len) => 0;
-    [Hle] int sceNetListen(int s, int backlog) => 0;
-    [Hle] int sceNetAccept(int s, uint addr, uint len) => ERR_NET_ENOTCONN;
-    [Hle] int sceNetConnect(int s, uint addr, uint len) => ERR_NET_ENETUNREACH;
-    [Hle] int sceNetSend(int s, uint buf, uint len, int flags) => ERR_NET_ENOTCONN;
-    [Hle] int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) => ERR_NET_ENETUNREACH;
-    [Hle] int sceNetRecv(int s, uint buf, uint len, int flags) => unchecked((int)0x80410123); // EAGAIN
-    [Hle] int sceNetRecvfrom(int s, uint buf, uint len, int flags, uint from, uint fromlen) => unchecked((int)0x80410123);
-    [Hle] int sceNetSetsockopt(int s, int level, int opt, uint val, uint len) => 0;
-    [Hle] int sceNetGetsockopt(int s, int level, int opt, uint val, uint len) { if (val != 0) GuestMemory.W32(val, 0); return 0; }
-    [Hle] int sceNetGetsockname(int s, uint addr, uint len) { if (addr != 0) GuestMemory.Fill(addr, 0, 16); return 0; }
-    [Hle] int sceNetGetSockInfo(int s, uint info, int n, int flags) => 0;
     [Hle]
     int sceNetGetStatisticsInfo(uint info, int flags)
     {
@@ -77,15 +53,6 @@ public sealed class Net : HleModule
         return 0;
     }
     [Hle] int sceNetShowNetstat() => 0;
-    [Hle] int sceNetEpollCreate(string name, int flags) => _nextId++;
-    [Hle] int sceNetEpollDestroy(int id) => 0;
-    [Hle] int sceNetEpollControl(int id, int op, int s, uint ev) => 0;
-    [Hle] int sceNetEpollWait(int id, uint events, int max, int timeout) { Kernel.Wait.Sleep((ulong)Math.Max(timeout, 1000)); return 0; }
-    [Hle] int sceNetResolverCreate(string name, uint param, int flags) => _nextId++;
-    [Hle] int sceNetResolverDestroy(int rid) => 0;
-    [Hle] int sceNetResolverStartNtoa(int rid, string host, uint addr, int timeout, int retry, int flags) => unchecked((int)0x804101E1);
-    [Hle] int sceNetResolverStartAton(int rid, uint addr, uint host, int len, int timeout, int retry, int flags) => unchecked((int)0x804101E1);
-    [Hle] int sceNetResolverGetError(int rid, Ptr<int> err) { err.TrySet(unchecked((int)0x804101E1)); return 0; }
 
     // NetCtl: initialised, never connected
     // NetCtl: initialised, cable unplugged. Registered callbacks are told so once (DISCONNECTED event),
@@ -95,12 +62,11 @@ public sealed class Net : HleModule
     readonly Dictionary<int, NetCallback> _inetCallbacks = new(), _adhocCallbacks = new();
     int _nextCid;
 
-    [Hle] int sceNetCtlInit() => 0;
-    [Hle] void sceNetCtlTerm() { lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); } }
 
     [Hle]
     int sceNetCtlCheckCallback()
     {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
         var pending = new List<NetCallback>();
         lock (_inetCallbacks)
         {
@@ -194,51 +160,6 @@ public sealed class Net : HleModule
     [Hle] int sceNetCheckDialogAbort() => 0;
     [Hle] int sceNetCtlAdhocDisconnect() => 0;
 
-    // HTTP / SSL
-    [Hle] int sceHttpInit(uint poolSize) => 0;
-    [Hle] int sceHttpTerm() => 0;
-    [Hle] int sceSslInit(uint poolSize) => 0;
-    [Hle] int sceSslTerm() => 0;
-    [Hle] int sceHttpCreateTemplate(string agent, int version, int autoProxy) => _nextId++;
-    [Hle] int sceHttpDeleteTemplate(int id) => 0;
-    [Hle] int sceHttpCreateConnection(int tmpl, string host, string scheme, uint port, int keepAlive) => _nextId++;
-    [Hle] int sceHttpCreateConnectionWithURL(int tmpl, string url, int keepAlive) => _nextId++;
-    [Hle] int sceHttpDeleteConnection(int id) => 0;
-    [Hle] int sceHttpCreateRequest(int conn, int method, string path, ulong len) => _nextId++;
-    [Hle] int sceHttpCreateRequestWithURL(int conn, int method, string url, ulong len) => _nextId++;
-    [Hle] int sceHttpDeleteRequest(int id) => 0;
-    [Hle] int sceHttpSendRequest(int req, uint data, uint size) => unchecked((int)0x80431063); // resolver failure
-    [Hle] int sceHttpAbortRequest(int req) => 0;
-    [Hle] int sceHttpGetStatusCode(int req, Ptr<int> code) => ERR_HTTP_BEFORE_SEND;
-    [Hle] int sceHttpGetResponseContentLength(int req, uint len) => ERR_HTTP_BEFORE_SEND;
-    [Hle] int sceHttpReadData(int req, uint data, uint size) => ERR_HTTP_BEFORE_SEND;
-    [Hle] int sceHttpGetAllResponseHeaders(int req, uint header, uint size) => ERR_HTTP_BEFORE_SEND;
-    [Hle] int sceHttpParseResponseHeader(uint header, uint len, string field, uint val, uint valLen) => unchecked((int)0x80432025);
-    [Hle] int sceHttpAddRequestHeader(int id, string name, string value, uint mode) => 0;
-    [Hle] int sceHttpSetRequestContentLength(int id, ulong len) => 0;
-    [Hle] int sceHttpSetConnectTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetSendTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetRecvTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetResolveTimeOut(int id, uint usec) => 0;
-    [Hle] int sceHttpSetResolveRetry(int id, int retry) => 0;
-    [Hle] int sceHttpSetNonblock(int id, int enable) => 0;
-    [Hle] int sceHttpsDisableOption(uint flags) => 0;
-    [Hle] int sceHttpsLoadCert(int caNum, uint caList, uint cert, uint priv) => 0;
-    [Hle] int sceHttpsSetSslCallback(int id, uint cb, uint arg) => 0;
-    [Hle] int sceHttpsGetSslError(int id, Ptr<int> err, Ptr<uint> detail) { err.TrySet(0); detail.TrySet(0); return 0; }
-    [Hle] int sceHttpGetMemoryPoolStats(uint stats) { if (stats != 0) GuestMemory.Fill(stats, 0, 16); return 0; }
-    [Hle] int sceSslGetMemoryPoolStats(uint stats) { if (stats != 0) GuestMemory.Fill(stats, 0, 16); return 0; }
-
-    // No TLS connection ever completes offline, so there are no certificate objects to inspect.
-    const int SSL_ERROR_NOT_FOUND = unchecked((int)0x80435025);
-    [Hle] uint sceSslGetSubjectName(uint cert) => 0;
-    [Hle] uint sceSslGetIssuerName(uint cert) => 0;
-    [Hle] int sceSslGetNameEntryCount(uint certName) => certName == 0 ? SSL_ERROR_NOT_FOUND : 0;
-    [Hle] int sceSslGetNameEntryInfo(uint certName, int entry, uint oid, uint maxOid, uint value, uint maxValue, uint valueLen) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetNotAfter(uint cert, uint tick) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetNotBefore(uint cert, uint tick) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceSslGetSerialNumber(uint cert, uint data, uint len) => SSL_ERROR_NOT_FOUND;
-    [Hle] int sceHttpUriParse(uint outUri, string src, uint pool, uint require, uint prepare) => unchecked((int)0x80433060);
 }
 
 public sealed class Np : HleModule
