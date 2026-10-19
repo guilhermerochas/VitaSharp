@@ -123,7 +123,7 @@ public sealed class HleFunction
             || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag") || n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex")
             || n.StartsWith("sceKernelPollSema") || n.StartsWith("sceKernelStartThread") || n.StartsWith("sceKernelChangeThread") || n.StartsWith("sceKernelExitThread")
             || n.StartsWith("sceIo") || n.StartsWith("sceDisplay") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
-            || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe"))
+            || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera"))
             return 12_000; // ~40 us at 300 MIPS: syscall + scheduler
         return 2_000;
     }

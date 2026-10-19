@@ -10,6 +10,8 @@ public sealed class LauncherSettings
     public bool VSync { get; set; } = true;
     public bool Validation { get; set; }
     public bool ShowLog { get; set; }
+    /// <summary>Webcam used for the Vita cameras: "" = first device, "none" = no webcam (grey frames), or a device name.</summary>
+    public string Camera { get; set; } = "";
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -37,5 +39,6 @@ public sealed class LauncherSettings
         if (Scale > 1) yield return $"--scale={Scale}";
         if (!VSync) yield return "--no-vsync";
         if (Validation) yield return "--validation";
+        if (!string.IsNullOrWhiteSpace(Camera)) yield return $"--camera={Camera}";
     }
 }

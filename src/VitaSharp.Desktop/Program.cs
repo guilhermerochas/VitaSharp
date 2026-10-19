@@ -34,6 +34,8 @@ public static class Program
                 Console.WriteLine($"Wrote {elf.Length} bytes");
                 return 0;
             }
+            case "camera-test":
+                return CameraTest.Run(args.Skip(1).ToArray());
             case "imports" when args.Length >= 2:
                 return ListImports(args[1]);
             case "shadertest" when args.Length >= 2:
@@ -124,5 +126,7 @@ public static class Program
         Console.WriteLine("  test <scenario.txt>                  run an automated scenario (frames, contact sheet, report)");
         Console.WriteLine("  imports <TITLEID|folder>             list the system functions a title needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
+        Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
+        Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
     }
 }

@@ -48,9 +48,20 @@ public sealed class HostServices : IDisposable
 {
     public IInputBackend? Input { get; set; }
     public IAudioBackend? Audio { get; set; }
+    /// <summary>Webcam / device camera backing SceCamera; null = emulated camera delivering grey frames.</summary>
+    public ICameraSource? Camera { get; set; }
+
+    /// <summary>Camera streams the guest has started; survives a process exec so the new process can release them.</summary>
+    internal readonly List<ICameraStream> CameraStreams = new();
 
     public void Dispose()
     {
+        lock (CameraStreams)
+        {
+            foreach (var s in CameraStreams) s.Dispose();
+            CameraStreams.Clear();
+        }
         Audio?.Dispose();
+        Camera?.Dispose();
     }
 }

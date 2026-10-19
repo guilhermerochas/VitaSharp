@@ -437,6 +437,19 @@ public sealed class MainWindow : Window
         var scaleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         scaleRow.Children.Add(new TextBlock { Text = "Window size", VerticalAlignment = VerticalAlignment.Center });
         scaleRow.Children.Add(scale);
+        // camera: "" = first device, "none" = disabled, otherwise a device name
+        var cameraValues = new List<string> { "", "none" };
+        var cameraLabels = new List<string> { "Default (first camera)", "None (grey image)" };
+        foreach (var d in VitaSharp.Desktop.Host.FlashCapCamera.ListDevices()) { cameraValues.Add(d.Name); cameraLabels.Add(d.Name); }
+        if (!cameraValues.Contains(_settings.Camera, StringComparer.OrdinalIgnoreCase)) { cameraValues.Add(_settings.Camera); cameraLabels.Add(_settings.Camera + " (not connected)"); }
+        var camera = new ComboBox
+        {
+            ItemsSource = cameraLabels, Width = 260,
+            SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(_settings.Camera, StringComparison.OrdinalIgnoreCase))),
+        };
+        var cameraRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        cameraRow.Children.Add(new TextBlock { Text = "Camera", VerticalAlignment = VerticalAlignment.Center });
+        cameraRow.Children.Add(camera);
         var keys = new TextBlock
         {
             Foreground = Muted, TextWrapping = TextWrapping.Wrap,
@@ -454,6 +467,7 @@ public sealed class MainWindow : Window
         panel.Children.Add(scaleRow);
         panel.Children.Add(vsync);
         panel.Children.Add(validation);
+        panel.Children.Add(cameraRow);
         panel.Children.Add(keys);
         panel.Children.Add(new TextBlock { Text = "Data folder: " + Program.DataRoot, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(buttons);
@@ -464,6 +478,7 @@ public sealed class MainWindow : Window
             _settings.VSync = vsync.IsChecked == true;
             _settings.Validation = validation.IsChecked == true;
             _settings.Scale = scale.SelectedIndex + 1;
+            _settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
             _settings.Save();
             dlg.Close();
         };
