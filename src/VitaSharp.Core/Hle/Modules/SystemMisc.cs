@@ -329,7 +329,7 @@ public sealed class SystemMisc : HleModule
     // games may raise the CPU clock (333 default, 444 max for applications): the emulated CPU pacing follows it
     [Hle] int scePowerSetArmClockFrequency(int f)
     {
-        if (f < 41 || f > 444) return unchecked((int)0x802B0002); // SCE_POWER_ERROR_INVALID_VALUE
+        if (f < 41 || f > 444) return POWER_ERROR_INVALID_VALUE;
         if (Cpu.CpuCore.InstructionsPerSecond > 0) Cpu.CpuCore.InstructionsPerSecond = f * 1_000_000L;
         Log.Info($"scePowerSetArmClockFrequency({f} MHz)");
         return 0;
@@ -345,6 +345,40 @@ public sealed class SystemMisc : HleModule
     [Hle] int scePowerUnregisterCallback(int cb) => 0;
     [Hle] int scePowerRequestDisplayOn() => 0;
     [Hle] int scePowerRequestDisplayOff() => 0;
+
+    // Virtual battery telemetry: fixed values chosen for a full 3.7 V Li-ion pack on AC (not measured).
+    const int POWER_ERROR_INVALID_VALUE = unchecked((int)0x802B0000);
+    [Hle] int scePowerGetBatteryTemp() => 3000;              // degrees C x 100
+    [Hle] int scePowerGetBatteryVolt() => 4150;              // mV
+    [Hle] int scePowerGetBatterySOH() => 100;                // %
+    [Hle] int scePowerGetBatteryCycleCount() => 10;
+    [Hle] int scePowerGetBatteryRemainLevel() => 4;          // 75-100 %
+    [Hle] int scePowerGetBatteryRemainMaxLevel() => 4;
+    [Hle] int scePowerGetBatteryElec() => 0;                 // full: no charge current
+    [Hle] int scePowerGetCaseTemp() => 3000;
+    [Hle] int scePowerGetBatteryChargingStatus() => 0;       // enum unconfirmed
+    [Hle] int scePowerIsLowBatteryInhibitUpdateDownload() => 0;
+    [Hle] int scePowerIsLowBatteryInhibitUpdateReboot() => 0;
+    [Hle] int scePowerBatteryUpdateInfo() => 0;
+
+    int _usingWireless;
+    [Hle]
+    int scePowerSetUsingWireless(int enabled)
+    {
+        if (enabled is not (0 or 1)) return POWER_ERROR_INVALID_VALUE;
+        _usingWireless = enabled;
+        return 0;
+    }
+    [Hle] int scePowerGetUsingWireless() => _usingWireless;
+
+    // power requests: VitaSharp never suspends or restarts
+    [Hle] int scePowerRequestSuspend() { Log.Info("scePowerRequestSuspend (ignored)"); return 0; }
+    [Hle] int scePowerRequestStandby() { Log.Info("scePowerRequestStandby (ignored)"); return 0; }
+    [Hle] int scePowerRequestColdReset() { Log.Warn("scePowerRequestColdReset (ignored)"); return 0; }
+    [Hle] int scePowerIsSuspendRequired() => 0;
+    [Hle] int scePowerIsRequest() => 0;
+    [Hle] int scePowerCancelRequest() => 0;
+    [Hle] int scePowerSetIdleTimerCount(int count) => 0;
 
     // ------------------------------------------------------------------ misc system
 

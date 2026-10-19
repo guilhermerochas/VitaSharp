@@ -437,17 +437,99 @@ public sealed class CommonDialog : HleModule
 /// <summary>Motion sensors (device at rest, flat), camera shutter sound, system gestures (none). SceCamera is in Camera.cs.</summary>
 public sealed class Sensors : HleModule
 {
-    [Hle] int sceMotionStartSampling() => 0;
-    [Hle] int sceMotionStopSampling() => 0;
-    [Hle] int sceMotionReset() => 0;
-    [Hle] int sceMotionMagnetometerOn() => 0;
-    [Hle] int sceMotionMagnetometerOff() => 0;
-    [Hle] int sceMotionGetMagnetometerState() => 0;
-    [Hle] int sceMotionSetTiltCorrection(int e) => 0;
-    [Hle] int sceMotionGetTiltCorrection() => 0;
-    [Hle] int sceMotionSetDeadband(int e) => 0;
-    [Hle] int sceMotionGetDeadband() => 0;
-    [Hle] int sceMotionSetAngleThreshold(float angle) => 0;
+    const int ERR_OUT_OF_BOUNDS = unchecked((int)0x80360205), ERR_NOT_SAMPLING = unchecked((int)0x80360206),
+        ERR_ALREADY_SAMPLING = unchecked((int)0x80360207), ERR_NULL_PARAMETER = unchecked((int)0x80360209),
+        ERR_ANGLE_OUT_OF_RANGE = unchecked((int)0x8036020A);
+    const long SampleIntervalUs = 16667; // sensor sample spacing: unconfirmed, the vblank period like Ctrl/Touch
+
+    // defaults from psp2/motion.h ("Enabled by default") and Vita3K (angle threshold 20 degrees)
+    bool _sampling, _magnetometer;
+    int _tiltCorrection = 1, _deadband = 1, _gyroBiasCorrection = 1;
+    float _angleThreshold = 20.0f;
+    uint _counter;
+
+    internal bool Sampling => _sampling;
+
+    [Hle] int sceMotionStartSampling() { if (_sampling) return ERR_ALREADY_SAMPLING; _sampling = true; return 0; }
+    [Hle] int sceMotionStopSampling() { if (!_sampling) return ERR_NOT_SAMPLING; _sampling = false; return 0; }
+    [Hle] int sceMotionReset() => 0; // static orientation: nothing to reset
+    [Hle] int sceMotionMagnetometerOn() { _magnetometer = true; return 0; }
+    [Hle] int sceMotionMagnetometerOff() { _magnetometer = false; return 0; }
+    [Hle] int sceMotionGetMagnetometerState() => _magnetometer ? 1 : 0;
+    [Hle] int sceMotionSetTiltCorrection(int e) { _tiltCorrection = e; return 0; }
+    [Hle] int sceMotionGetTiltCorrection() => _tiltCorrection;
+    [Hle] int sceMotionSetDeadband(int e) { _deadband = e; return 0; }
+    [Hle] int sceMotionGetDeadband() => _deadband;
+    [Hle] int sceMotionSetGyroBiasCorrection(int e) { _gyroBiasCorrection = e; return 0; }
+    [Hle] int sceMotionGetGyroBiasCorrection() => _gyroBiasCorrection;
+
+    [Hle]
+    int sceMotionSetAngleThreshold(float angle)
+    {
+        if (float.IsNaN(angle) || angle < 0 || angle > 45.0f) return ERR_ANGLE_OUT_OF_RANGE;
+        _angleThreshold = angle;
+        return 0;
+    }
+
+    [Hle] float sceMotionGetAngleThreshold() => _angleThreshold;
+
+    /// <summary>Yaw re-centring of the fused orientation: the host has no motion source, so there is nothing to rotate.</summary>
+    [Hle] int sceMotionRotateYaw(float radians) => 0;
+
+    /// <summary>Device at rest, screen up: the axis against gravity is +Z.</summary>
+    [Hle]
+    int sceMotionGetBasicOrientation(uint v)
+    {
+        if (!_sampling) return ERR_NOT_SAMPLING;
+        if (v == 0) return ERR_NULL_PARAMETER;
+        GuestMemory.Write(v, 0.0f);
+        GuestMemory.Write(v + 4, 0.0f);
+        GuestMemory.Write(v + 8, 1.0f);
+        return 0;
+    }
+
+    /// <summary>SceMotionDeviceLocation (0x30): accelerometer and gyro positions in mm, OLED model (PCH-1000) values
+    /// from psp2/motion.h.</summary>
+    [Hle]
+    int sceMotionGetDeviceLocation(uint loc)
+    {
+        if (loc == 0) return ERR_NULL_PARAMETER;
+        GuestMemory.Fill(loc, 0, 0x30);
+        float[] v = [-32, 12, -8, -33, 6, -8];
+        for (int i = 0; i < v.Length; i++) GuestMemory.Write(loc + (uint)i * 4, v[i]);
+        return 0;
+    }
+
+    /// <summary>
+    /// Raw accelerometer/gyro records (SceMotionSensorState, 0x40 each), oldest first: device at rest, so only the
+    /// counters and timestamps change. 64 records must be accepted (Invizimals reads 64). Like sceMotionGetState this
+    /// stays permissive when sampling was not started.
+    /// </summary>
+    [Hle]
+    int sceMotionGetSensorState(uint states, int numRecords)
+    {
+        if (states == 0) return ERR_NULL_PARAMETER;
+        if (numRecords is <= 0 or > 64) return ERR_OUT_OF_BOUNDS;
+        long now = (long)Emu.Kernel.ProcessTimeUs;
+        WriteSensorStates(states, numRecords, now, _counter);
+        _counter++;
+        return 0;
+    }
+
+    internal static void WriteSensorStates(uint states, int numRecords, long nowUs, uint counter)
+    {
+        for (int i = 0; i < numRecords; i++)
+        {
+            uint p = states + (uint)i * 0x40;
+            int age = numRecords - 1 - i;
+            long ts = nowUs - age * SampleIntervalUs;
+            GuestMemory.Fill(p, 0, 0x40);
+            GuestMemory.Write(p + 8, -1.0f);                 // accelerometer z = -1 g
+            GuestMemory.W32(p + 0x24, (uint)ts);             // timestamp (us)
+            GuestMemory.W32(p + 0x28, counter - (uint)age);  // counter
+            GuestMemory.Write(p + 0x30, (ulong)ts);          // hostTimestamp
+        }
+    }
 
     [Hle]
     int sceMotionGetState(uint state)

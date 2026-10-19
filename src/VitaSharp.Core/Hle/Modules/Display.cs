@@ -218,7 +218,7 @@ public sealed class Ctrl : HleModule
             uint p = dst + i * 32;
             GuestMemory.Fill(p, 0, 32);
             GuestMemory.Write(p, (ulong)(Emu.Kernel.ProcessTimeUs));
-            uint buttons = (uint)s.Buttons;
+            uint buttons = ApplyRapidFire((uint)s.Buttons, VBlank.Count);
             if (buttons != 0) VitaSharp.Core.Util.Log.Debug($"ctrl port {port} buttons 0x{buttons:X} -> 0x{p:X8}");
             if (!ext) buttons &= 0xFFFF; // standard buttons only
             GuestMemory.W32(p + 8, negative ? ~buttons : buttons);
@@ -265,11 +265,71 @@ public sealed class Ctrl : HleModule
     [Hle] int sceCtrlSetSamplingModeExt(uint mode) { uint old = _samplingMode; _samplingMode = mode; return (int)old; }
     [Hle] int sceCtrlGetSamplingMode(Ptr<uint> mode) { mode.TrySet(_samplingMode); return 0; }
     [Hle] int sceCtrlGetSamplingModeExt(Ptr<uint> mode) { mode.TrySet(_samplingMode); return 0; }
-    [Hle] int sceCtrlSetAnalogStickCheckMode(uint mode) => 0;
+    // analog stick check (semantics unconfirmed: the values are only stored and reported back)
+    int _stickCheckMode, _stickCheckTarget;
+    [Hle] int sceCtrlSetAnalogStickCheckMode(int mode) { _stickCheckMode = mode; return 0; }
+    [Hle] int sceCtrlGetAnalogStickCheckMode(Ptr<int> mode) { if (mode.IsNull) return ERR_INVALID_ARG; mode.Value = _stickCheckMode; return 0; }
+    [Hle] int sceCtrlSetAnalogStickCheckTarget(int target) { _stickCheckTarget = target; return 0; }
+    [Hle] int sceCtrlGetAnalogStickCheckTarget(Ptr<int> target) { if (target.IsNull) return ERR_INVALID_ARG; target.Value = _stickCheckTarget; return 0; }
     [Hle] int sceCtrlSetButtonIntercept(uint v) => 0;
     [Hle] int sceCtrlGetButtonIntercept(Ptr<uint> v) { v.TrySet(0); return 0; }
-    [Hle] int sceCtrlSetRapidFire(int port, int idx, uint p) => 0;
-    [Hle] int sceCtrlClearRapidFire(int port, int idx) => 0;
+
+    const int ERR_INVALID_ARG = unchecked((int)0x80340001);
+
+    /// <summary>SceCtrlRapidFireRule (0x18): Mask, Trigger, Target, Delay, Make, Break (u32 each).</summary>
+    sealed class RapidFireRule
+    {
+        public uint Mask, Trigger, Target, Delay, Make, Break;
+        /// <summary>Vblank at which the trigger was first seen satisfied (-1 = not active).</summary>
+        public long Start = -1;
+    }
+
+    readonly RapidFireRule?[] _rapid = new RapidFireRule?[16];
+
+    /// <summary>Applies the rapid-fire rules to one sample (one per vblank): while (buttons &amp; Mask) == Trigger the
+    /// Target bits stay as read for Delay samples, then are forced on for Make samples and off for Break samples, in a
+    /// cycle. PSP sceCtrl semantics; exact ordering on the Vita unconfirmed.</summary>
+    internal uint ApplyRapidFire(uint buttons, long vcount)
+    {
+        uint raw = buttons;
+        lock (_rapid)
+        {
+            foreach (var r in _rapid)
+            {
+                if (r == null) continue;
+                if ((raw & r.Mask) != r.Trigger) { r.Start = -1; continue; }
+                if (r.Start < 0) r.Start = vcount;
+                long t = vcount - r.Start;
+                if (t < r.Delay) continue;
+                long period = (long)r.Make + r.Break;
+                if (period == 0) continue;
+                long phase = (t - r.Delay) % period;
+                buttons = phase < r.Make ? buttons | r.Target : buttons & ~r.Target;
+            }
+        }
+        return buttons;
+    }
+
+    [Hle]
+    int sceCtrlSetRapidFire(int port, int idx, uint rule)
+    {
+        if (idx is < 0 or > 15 || rule == 0 || port is < 0 or > 1) return ERR_INVALID_ARG;
+        var r = new RapidFireRule
+        {
+            Mask = GuestMemory.R32(rule), Trigger = GuestMemory.R32(rule + 4), Target = GuestMemory.R32(rule + 8),
+            Delay = GuestMemory.R32(rule + 12), Make = GuestMemory.R32(rule + 16), Break = GuestMemory.R32(rule + 20),
+        };
+        lock (_rapid) _rapid[idx] = r;
+        return 0;
+    }
+
+    [Hle]
+    int sceCtrlClearRapidFire(int port, int idx)
+    {
+        if (idx is < 0 or > 15 || port is < 0 or > 1) return ERR_INVALID_ARG;
+        lock (_rapid) _rapid[idx] = null;
+        return 0;
+    }
     [Hle] int sceCtrlSetActuator(int port, uint state) => 0;
     [Hle] int sceCtrlSetLightBar(int port, byte r, byte g, byte b) => 0;
     [Hle] int sceCtrlResetLightBar(int port) => 0;
@@ -309,10 +369,21 @@ public sealed class Hid : HleModule
 
 public sealed class Touch : HleModule
 {
+    const int ERR_INVALID_ARG = unchecked((int)0x80350001);
+    const int MaxBuffers = 64;
+
+    /// <summary>SCE_TOUCH_SAMPLING_STATE_STOP (0) / START (1) per panel. Hardware (and Vita3K) start with both panels
+    /// stopped: games call sceTouchSetSamplingState before reading.</summary>
+    readonly uint[] _sampling = [0, 0];
+    /// <summary>sceTouchEnableTouchForce: reports carry a force value only when enabled.</summary>
+    readonly bool[] _force = [false, false];
+
+    internal uint SamplingState(int port) => _sampling[port];
+
     [Hle]
     int sceTouchGetPanelInfo(int port, uint info)
     {
-        if (info == 0) return unchecked((int)0x80350001);
+        if (info == 0 || port is < 0 or > 1) return ERR_INVALID_ARG;
         GuestMemory.Fill(info, 0, 0x30);
         // minAaX minAaY maxAaX maxAaY minDispX minDispY maxDispX maxDispY (s16), minForce maxForce (u8)
         short[] v = port == 0 ? [0, 0, 1919, 1087, 0, 0, 1919, 1087] : [0, 108, 1919, 889, 0, 108, 1919, 889];
@@ -329,9 +400,10 @@ public sealed class Touch : HleModule
 
     int Peek(int port, uint data, uint count)
     {
-        if (data == 0 || port is < 0 or > 1) return unchecked((int)0x80350001);
+        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
         if (count == 0) return 0;
-        var touches = Emu.Host.Input?.GetTouches(port == 1) ?? [];
+        // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
+        var touches = _sampling[port] != 0 ? Emu.Host.Input?.GetTouches(port == 1) ?? [] : [];
         int reports = Math.Min(touches.Count, 8);
         byte[] ids = new byte[reports];
         lock (_ids)
@@ -354,30 +426,93 @@ public sealed class Touch : HleModule
         GuestMemory.W32(data + 12, (uint)reports);
         // front panel covers 1920x1088; the rear panel's active area is y 108..889 (see sceTouchGetPanelInfo)
         float yMin = port == 0 ? 0 : 108, yMax = port == 0 ? 1087 : 889;
+        byte force = _force[port] ? (byte)128 : (byte)0; // panel force range is 1..128 and the host has no pressure
         for (int r = 0; r < reports; r++)
         {
             uint rp = data + 16 + (uint)r * 16;
             var t = touches[r];
             GuestMemory.Write(rp, ids[r]);
-            GuestMemory.Write(rp + 1, (byte)128); // panel force range is 1..128 and there is no pressure input
+            GuestMemory.Write(rp + 1, force);
             GuestMemory.Write(rp + 2, (ushort)Math.Clamp(t.X * 1919, 0, 1919));
             GuestMemory.Write(rp + 4, (ushort)Math.Clamp(yMin + t.Y * (yMax - yMin), yMin, yMax));
         }
         return 1;
     }
 
-    [Hle] int sceTouchPeek(int port, uint data, uint count) => Peek(port, data, count);
+    [Hle("sceTouchPeek")]
+    [Hle("sceTouchPeek2")]
+    int sceTouchPeek(int port, uint data, uint count) => Peek(port, data, count);
+
     readonly long[] _lastRead = [-1, -1];
 
     /// <summary>Blocks only until a sample newer than the previous read exists (one per vblank), like the hardware.</summary>
-    [Hle]
+    [Hle("sceTouchRead")]
+    [Hle("sceTouchRead2")]
     int sceTouchRead(int port, uint data, uint count)
     {
-        if (port is 0 or 1) _lastRead[port] = VBlank.WaitFor(Math.Max(_lastRead[port] + 1, VBlank.Count));
+        if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
+        _lastRead[port] = VBlank.WaitFor(Math.Max(_lastRead[port] + 1, VBlank.Count));
         return Peek(port, data, count);
     }
-    [Hle] int sceTouchSetSamplingState(int port, uint state) => 0;
-    [Hle] int sceTouchGetSamplingState(int port, Ptr<uint> state) { state.TrySet(1); return 0; }
-    [Hle] int sceTouchEnableTouchForce(int port) => 0;
-    [Hle] int sceTouchDisableTouchForce(int port) => 0;
+
+    // Regions split the panel between processes/overlays; a game owns the whole panel, so the region is ignored.
+    [Hle("sceTouchPeekRegion")]
+    [Hle("sceTouchPeekRegionExt")]
+    int sceTouchPeekRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchPeek(port, data, count);
+
+    [Hle("sceTouchReadRegion")]
+    [Hle("sceTouchReadRegionExt")]
+    int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchRead(port, data, count);
+
+    [Hle] int sceTouchSetRegion() => 0;
+    [Hle] int sceTouchSetRegionAttr() => 0;
+    [Hle] int sceTouchActivateRegion() => 0;
+    [Hle] int sceTouchClearRegion() => 0;
+    [Hle] int sceTouchEnableIdleTimerCancelSetting(int port, int enable) => 0; // no idle timer
+
+    [Hle("sceTouchSetSamplingState")]
+    [Hle("sceTouchSetSamplingStateExt")]
+    int sceTouchSetSamplingState(int port, uint state)
+    {
+        if (port is < 0 or > 1 || state > 1) return ERR_INVALID_ARG;
+        _sampling[port] = state;
+        Log.Debug($"sceTouchSetSamplingState(port={port}, state={state})");
+        return 0;
+    }
+
+    [Hle("sceTouchGetSamplingState")]
+    [Hle("sceTouchGetSamplingStateExt")]
+    int sceTouchGetSamplingState(int port, Ptr<uint> state)
+    {
+        if (port is < 0 or > 1 || state.IsNull) return ERR_INVALID_ARG;
+        state.Value = _sampling[port];
+        return 0;
+    }
+
+    [Hle("sceTouchEnableTouchForce")]
+    [Hle("sceTouchEnableTouchForceExt")]
+    int sceTouchEnableTouchForce(int port) { if (port is < 0 or > 1) return ERR_INVALID_ARG; _force[port] = true; return 0; }
+
+    [Hle("sceTouchDisableTouchForce")]
+    [Hle("sceTouchDisableTouchForceExt")]
+    int sceTouchDisableTouchForce(int port) { if (port is < 0 or > 1) return ERR_INVALID_ARG; _force[port] = false; return 0; }
+
+    /// <summary>Panel density; Vita3K reports 22.0 for its default hardware info (0x30), 17.54 for the other model.</summary>
+    const float PixelDensity = 22.0f;
+
+    [Hle]
+    int sceTouchGetPixelDensity(Ptr<float> front, Ptr<float> back)
+    {
+        if (front.IsNull || back.IsNull) return ERR_INVALID_ARG;
+        front.Value = back.Value = PixelDensity;
+        return 0;
+    }
+
+    [Hle]
+    int sceTouchGetPixelDensity2(Ptr<float> p1, Ptr<float> p2, Ptr<float> p3, Ptr<float> p4)
+    {
+        if (p1.IsNull || p2.IsNull || p3.IsNull || p4.IsNull) return ERR_INVALID_ARG;
+        p1.Value = p2.Value = p3.Value = p4.Value = PixelDensity;
+        return 0;
+    }
 }
