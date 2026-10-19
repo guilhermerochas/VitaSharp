@@ -53,3 +53,19 @@ shown at f4280 (identical timing to the old kz_idle run from before 55e98bb). So
 - Disassembly of the whole eboot: scratchpad dis/kz.asm (Capstone), strings dis/kzstr.txt
   (FellThroughWorld* RTTI names at 0x81966C9C, 0x8196918C, 0x819691AC, 0x819786C8, 0x8198AC04).
 - Address 0x81BBC420 (kz_wpos) is a shared scratch vector, NOT the player position.
+
+## USER INPUT (2026-10-19, read first)
+The user confirmed that the earlier temporary Killzone-specific hack DID fix the limbo in play:
+VITASHARP_TSCALE_PROC=4 VITASHARP_TSCALE_PROC_LR=818BD671, which scales only the process clock as read by the
+Havok hkSystemClock wrapper (0x818BD664, called from the step loop 0x81726058 at 0x81726114/0x81726D92).
+So the timing theory IS the cause: Havok sub-steps while the measured step time is < 1.5 ms. On the host a step
+measures less than on hardware, so it runs 2-3 sub-steps per frame and the player falls through the world.
+
+The user does NOT want anything hardcoded for Killzone (no title/address checks). Required: a GENERIC fix,
+with Vita3K as the reference for how guest time is reported. Directions:
+- Make the guest clocks (sceKernelGetProcessTimeWide/Low, sceKernelGetSystemTimeWide/Low, sceRtc*Tick, any
+  clock the game reads) advance consistently with emulated CPU work instead of raw host wall time, e.g. derived
+  from the cycle-paced CPU ledger (CycleCost / --cpu-mhz). That way short guest code sequences measure the
+  hardware-like duration. Check Vita3K's implementation (rtc/kernel time, its clock source).
+- Verify with kzl_idle (no SUICIDE after frame 4180 for 6000+ frames), and that no other game regresses:
+  F1, DD, GoW, Uncharted, timing-sensitive video/audio.
