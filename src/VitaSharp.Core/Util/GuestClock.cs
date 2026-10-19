@@ -26,6 +26,30 @@ public static class GuestClock
 
     public static long FromSeconds(double s) => (long)(s * Stopwatch.Frequency);
 
+    static long _lastObserved;
+
+    /// <summary>
+    /// The clock as a guest thread reads it (process/system time): never behind the thread's own emulated CPU
+    /// position (<paramref name="threadPosition"/>, 0 = none; under CPU pacing a thread may run up to ~1 ms ahead of
+    /// real time before it sleeps), and monotonic across threads. Without this a busy-wait loop on the clock sees
+    /// time move in sleep-sized steps and overshoots its deadline by up to a step (frame limiters lose ~1 ms per
+    /// frame), and time measured over a short burst of work reads as zero instead of its emulated duration.
+    /// </summary>
+    public static long Observed(long threadPosition)
+    {
+        long t = Math.Max(Ticks, threadPosition);
+        long last = Volatile.Read(ref _lastObserved);
+        while (t > last)
+        {
+            long seen = Interlocked.CompareExchange(ref _lastObserved, t, last);
+            if (seen == last) return t;
+            last = seen;
+        }
+        return last;
+    }
+
+    public static long ToMicroseconds(long ticks) => (long)(ticks * (1_000_000.0 / Stopwatch.Frequency));
+
     /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there.</summary>
     public static void WaitUntil(long deadline, bool allowSpin = true)
     {

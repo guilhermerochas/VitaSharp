@@ -32,7 +32,7 @@ public sealed class Kernel
     }
 
     /// <summary>Microseconds since boot (process time base used by sceKernelGetProcessTime etc.).</summary>
-    public ulong ProcessTimeUs => (ulong)(Util.GuestClock.Microseconds * Util.TimeScale.Proc);
+    public ulong ProcessTimeUs => (ulong)(Util.GuestClock.ToMicroseconds(Util.GuestClock.Observed(GuestThread.Current?.Core.EmulatedPosition() ?? 0)) * Util.TimeScale.Proc);
 
     /// <summary>SCE_KERNEL_DEFAULT_PRIORITY (0x10000100) +/- n means the default user priority (160) +/- n; taken literally it would
     /// be the lowest priority of all and the strict-priority scheduler would starve the thread.</summary>
