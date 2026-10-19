@@ -66,6 +66,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     /// <summary>Re-runs specific encodings (from a fuzz failure) with many random states and prints every difference.</summary>
     [Theory]
     [InlineData(true, "0000BF00")]
+    [InlineData(false, "F3BBB58A,F3BBB50A,F3BB05CC,F3BB054C")] // VRSQRTE/VRECPE.F32 (D and Q): the estimate exponent parity was swapped
     public void Replay(bool thumb, string encodings)
     {
         // VITASHARP_REPLAY=T:enc,enc or A:enc,... replays other encodings without editing the test
@@ -93,8 +94,13 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     static uint RandomSimdInstruction(Random rng, bool thumb)
     {
         uint r = (uint)rng.NextInt64();
-        switch (rng.Next(6))
+        switch (rng.Next(8))
         {
+            case 6: case 7: // NEON shifts / one-register immediates and two-register misc (VRECPE/VRSQRTE, VCVT, VREV, ...)
+            {
+                uint a = (r & 1) == 0 ? 0xF2800010u | (r & 0x017FFFEF) : 0xF3B00000u | (r & 0x004FFFEF);
+                return thumb ? ((a & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (a & 0x00FFFFFF) : a;
+            }
             case 5: // reciprocal (square root) estimates and steps, which random encodings almost never hit:
                     // VRECPE/VRSQRTE (1111 0011 1D11 1011 Vd 010F opQM0 Vm) and VRECPS/VRSQRTS (1111 0010 0D s0 Vn Vd 1111 NQM1 Vm)
                 if ((r & 1) == 0)
@@ -361,6 +367,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                     return F(15, 12) == 15 || F(19, 16) == 15;
                 case Op.Vfp_LdmStm:
                     return F(19, 16) == 15 || (i & 0xFF) == 0;
+                case Op.Neon_ThreeDiff:
+                    return F(24, 24) == 1 && F(11, 8) is 0b1001 or 0b1011 or 0b1101; // VQDMLAL/VQDMLSL/VQDMULL exist only with U=0
             }
             return false;
         }
