@@ -18,8 +18,8 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Polled every ~0.5 ms of guest CPU time: true when the thread must give its core to a higher-priority one.</summary>
     public Func<bool>? ShouldYield;
     public long BlocksExecuted;
-    /// <summary>Guest instructions / weighted cycles (<see cref="BlockBuilder.CycleCost"/>) executed by this thread (diagnostics).</summary>
-    public long InstructionsExecuted, CyclesExecuted;
+    /// <summary>Guest instructions executed by this thread (diagnostics; weighted cycles are in <see cref="BlockCycles"/>).</summary>
+    public long InstructionsExecuted;
 
     public CpuCore(BlockCache cache)
     {
@@ -62,6 +62,11 @@ public sealed unsafe class CpuCore : IDisposable
     /// </summary>
     public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable("VITASHARP_CPU_MHZ"), out var mhz) ? mhz * 1_000_000 : 444_000_000;
     long _throttleInstrs, _throttleStart = -1;
+    /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
+    public volatile bool InThrottle;
+    public struct SleepStat { public long Count, Requested, Actual; }
+    public static readonly SleepStat[] SleepStats = new SleepStat[2];
+    static void Stat(ref SleepStat s, long t0, long expected) { Interlocked.Increment(ref s.Count); Interlocked.Add(ref s.Requested, expected - t0); Interlocked.Add(ref s.Actual, Util.GuestClock.Ticks - t0); }
 
     void Throttle()
     {
@@ -78,12 +83,25 @@ public sealed unsafe class CpuCore : IDisposable
         }
         else if (expected > now + freq / 1000) // ahead by > 1 ms: sleep it off (no spinning: on a phone that is battery)
         {
-            Util.GuestClock.WaitUntil(expected, allowSpin: false);
+            InThrottle = true; long t0 = Util.GuestClock.Ticks; Util.GuestClock.WaitUntil(expected, allowSpin: false); InThrottle = false; Stat(ref SleepStats[0], t0, expected);
         }
     }
 
     /// <summary>Called when the thread resumes after a blocking wait: time spent blocked is not CPU time.</summary>
     public void ResetThrottle() { _throttleStart = -1; _throttleInstrs = 0; }
+
+    /// <summary>
+    /// Where this thread's emulated CPU time is (guest clock ticks), or 0 when unknown/unpaced. A paced thread runs in
+    /// host-speed bursts and sleeps once it is ~1 ms ahead of real time; the clock it reads must follow its own
+    /// progress through the burst (see <see cref="Util.GuestClock.Observed"/>), or a polling loop sees time stand
+    /// still and then jump by the sleep length. Valid on the owning thread (inside an HLE call).
+    /// </summary>
+    public long EmulatedPosition()
+    {
+        long rate = InstructionsPerSecond;
+        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return 0;
+        return _throttleStart + (_throttleInstrs + PendingInstructions) * System.Diagnostics.Stopwatch.Frequency / rate;
+    }
 
     /// <summary>Called before the thread blocks: work done since the last check must take its emulated time first, so
     /// short bursts between waits (job systems) are paced too, not only long runs.</summary>
@@ -93,7 +111,7 @@ public sealed unsafe class CpuCore : IDisposable
         if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return;
         _throttleInstrs += pendingInstructions;
         long expected = _throttleStart + _throttleInstrs * System.Diagnostics.Stopwatch.Frequency / rate;
-        if (expected > Util.GuestClock.Ticks) Util.GuestClock.WaitUntil(expected, allowSpin: false);
+        if (expected > Util.GuestClock.Ticks) { InThrottle = true; long t0 = Util.GuestClock.Ticks; Util.GuestClock.WaitUntil(expected, allowSpin: false); InThrottle = false; Stat(ref SleepStats[1], t0, expected); }
     }
     /// <summary>Instructions executed since the last ledger check (the block loop keeps the running count here).</summary>
     public long PendingInstructions;
@@ -103,7 +121,9 @@ public sealed unsafe class CpuCore : IDisposable
     public static long HleCallCost = 1500;
 
     /// <summary>Charges host-side work (an HLE call, a memory copy done natively) to the emulated CPU ledger.</summary>
-    public void ChargeInstructions(long n) { if (InstructionsPerSecond > 0) _throttleInstrs += n; }
+    public void ChargeInstructions(long n) { ChargedCycles += n; if (InstructionsPerSecond > 0) _throttleInstrs += n; }
+    /// <summary>Profiling totals: cycles of executed guest blocks and cycles charged for host-side (HLE) work.</summary>
+    public long BlockCycles, ChargedCycles;
 
     public ExitReason Run()
     {
@@ -127,8 +147,7 @@ public sealed unsafe class CpuCore : IDisposable
             }
             BlocksExecuted++;
             InstructionsExecuted += b.Insts.Length;
-            CyclesExecuted += b.Cycles;
-            sinceCheck += b.Cycles;
+            sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
             if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
             if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }

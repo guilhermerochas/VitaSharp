@@ -105,6 +105,8 @@ public sealed class HleFunction
     bool? _cbWait;
     public bool IsCallbackWait => _cbWait ??= Name.EndsWith("CB", StringComparison.Ordinal);
     public long CallCount;
+    /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
+    public long ChargedCycles;
 
     long _cost = -1;
     /// <summary>Emulated CPU cost (guest instructions) charged per call: real syscalls (waits, signals, I/O, display)
@@ -114,10 +116,18 @@ public sealed class HleFunction
 
     static long ClassifyCost(string n)
     {
+        // user-mode library code that never enters the kernel on the uncontended path: a TLS lookup is a few
+        // instructions, an lwmutex lock/unlock an LDREX/STREX pair plus checks, a Clib call its prologue (the bytes a
+        // memcpy/memset moves are charged by the implementation). Charging these like syscalls made software-rendering
+        // games (thousands of calls per frame) run out of emulated CPU time.
+        if (n.StartsWith("sceKernelGetTLSAddr") || n.StartsWith("sceKernelGetThreadId") || n.StartsWith("sceKernelAtomic"))
+            return 20;
         if (n.StartsWith("sceKernelLockLwMutex") || n.StartsWith("sceKernelUnlockLwMutex") || n.StartsWith("sceKernelTryLockLwMutex")
-            || n.StartsWith("sceKernelGetTLSAddr") || n.StartsWith("sceKernelGetThreadId") || n.StartsWith("sceClib") || n.StartsWith("sceGxm")
+            || n.StartsWith("sceClib"))
+            return 50;
+        if (n.StartsWith("sceGxm")
             || n.StartsWith("sceNgs") || n.StartsWith("sceKernelGetProcessTime") || n.StartsWith("sceRtc") || n.StartsWith("sceFiber")
-            || n.StartsWith("sceKernelAtomic") || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")
+            || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")
             return 200;
         if (n.StartsWith("sceKernelWait") || n.StartsWith("sceKernelSignal") || n.StartsWith("sceKernelDelay") || n.StartsWith("sceKernelSetEventFlag")
             || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag") || n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex")

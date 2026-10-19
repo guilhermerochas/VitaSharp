@@ -313,6 +313,10 @@ static class BcDecode
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
+    /// <summary>VITASHARP_TRACE_RT=ADDR,ADDR: log every draw into these colour surfaces in any frame (draw trace format).</summary>
+    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_RT") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => Convert.ToUInt32(s, 16)).ToHashSet();
+
     static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_SNAP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
     static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
     /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>

@@ -9,7 +9,7 @@ public sealed class Rtc : HleModule
 
     // wall-clock date at boot plus guest elapsed time, so RTC deltas agree with the other guest clocks
     static readonly ulong BootTick = (ulong)(DateTime.UtcNow.Ticks / 10) - (ulong)Util.GuestClock.Microseconds;
-    static ulong NowTick => BootTick + (ulong)Util.GuestClock.Microseconds;
+    static ulong NowTick => BootTick + (ulong)Util.GuestClock.ToMicroseconds(Util.GuestClock.Observed(Kernel.GuestThread.Current?.Core.EmulatedPosition() ?? 0)); // as the calling thread sees it
 
     static DateTime FromTick(ulong tick) => new DateTime((long)Math.Min(tick * 10, (ulong)DateTime.MaxValue.Ticks), DateTimeKind.Utc);
 
