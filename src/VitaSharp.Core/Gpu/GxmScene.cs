@@ -30,6 +30,9 @@ public sealed class EndSceneCommand : GpuCommand
 /// <summary>sceGxmFinish: the backend completes every submitted GPU operation, including render-target writebacks, before retiring it.</summary>
 public sealed class FinishCommand : GpuCommand;
 
+/// <summary>sceGxmMidSceneFlush: what the scene rendered so far is stored to memory, so later draws of the same scene can sample it.</summary>
+public sealed class MidSceneFlushCommand : GpuCommand;
+
 public sealed class PresentCommand : GpuCommand
 {
     public required DisplayFrame Frame;

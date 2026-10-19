@@ -509,10 +509,12 @@ public sealed unsafe partial class VulkanRenderer
 
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
+        TraceSnapshot();
         if (_opt.TraceDrawsFrame == _presentCount) TraceDraw(d, vs, fs);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
+        SetDrawArea(in st);
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed);
         var fbSet = fs.Gen!.UsesFragColor ? BuildFramebufferFetchSet() : _emptyFbSet ??= BuildEmptyFbSet();

@@ -502,6 +502,7 @@ public sealed class Gxm : HleModule
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
         if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
+        Gpu.Submit(new MidSceneFlushCommand());
         if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
     }
@@ -1949,6 +1950,7 @@ public sealed class Gxm : HleModule
         if (srcAddr == 0 || dstAddr == 0) return ERR_INVALID_POINTER;
         int bpp = TransferBpp(srcFormat);
         var notif = ReadNotification(notification);
+        Log.DebugOnce($"downscale-{srcAddr:X8}-{dstAddr:X8}", $"[gxm] TransferDownscale 0x{srcAddr:X8} ({srcX},{srcY} {srcWidth}x{srcHeight} stride {srcStride}) -> 0x{dstAddr:X8} ({dstX},{dstY} stride {dstStride}) fmt 0x{srcFormat:X8}");
         Gpu.Submit(new CallbackCommand
         {
             WriteAddress = dstAddr, WriteSize = (uint)Math.Abs(dstStride) * (dstY + srcHeight / 2),
