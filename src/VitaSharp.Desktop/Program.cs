@@ -191,7 +191,18 @@ public static class Program
     {
         Log.Level = LogLevel.Warn;
         using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
-        emu.LoadTitle(ResolveApp(titleArg));
+        string appDir = ResolveApp(titleArg);
+        emu.LoadTitle(appDir);
+        // Modules the game loads at run time (sceKernelLoadStartModule of Media/Modules/*.suprx, sysmodule LLE of
+        // sce_module/*.suprx): load them too, without module_start, so imports they export count as LLE.
+        foreach (var file in Directory.EnumerateFiles(appDir, "*.suprx", SearchOption.AllDirectories).Order())
+        {
+            string rel = "app0:" + Path.GetRelativePath(appDir, file).Replace('\\', '/');
+            if (rel.StartsWith("app0:sce_sys/", StringComparison.OrdinalIgnoreCase)) continue; // system plugins (manual, about)
+            if (emu.Kernel.Modules.Values.Any(m => string.Equals(m.Path, rel, StringComparison.OrdinalIgnoreCase))) continue;
+            try { emu.LoadModule(rel); }
+            catch (Exception e) { Console.WriteLine($"(could not load {rel}: {e.Message})"); }
+        }
         int total = 0, hle = 0, lle = 0;
         foreach (var m in emu.Kernel.Modules.Values.OrderBy(m => m.Uid))
         {

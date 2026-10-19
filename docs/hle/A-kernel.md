@@ -126,7 +126,7 @@ enum interno).
 
 ### 0.2 Helpers comuns (usar em todas as seções abaixo)
 
-- [ ] **Prioridade:** pré-requisito · **Arquivo:** `Hle/Modules/ThreadMgr.cs` (helpers privados) e `Kernel/KernelObjects.cs`
+- [x] **Prioridade:** pré-requisito · **Arquivo:** `Hle/Modules/ThreadMgr.cs` (helpers privados) e `Kernel/KernelObjects.cs`
 - **`WriteInfo(uint info, ReadOnlySpan<byte> full)`** (semântica Vita3K `write_info`, confirmada pelo comentário do
   header de `sceKernelGetTimerInfo`: "Its first field, size, sets the exact number of bytes copied"):
   `info == 0` → `ILLEGAL_ADDR`; `size = R32(info)`; `size > full.Length` → `NO_MEMORY` (0x8002710B, como o Vita3K);
@@ -152,7 +152,7 @@ enum interno).
 
 ### 0.3 Caso especial P0: Devious Dungeon (PCSB01240, Unity) — `pthread` e `Il2CppAssemblies` via LLE
 
-- [ ] **Prioridade:** P0 (Devious Dungeon) · **Não é HLE.**
+- [x] **Prioridade:** P0 (Devious Dungeon) · **Não é HLE.**
 - **Situação:** `VitaSharp.Desktop imports PCSB01240` lista no `eboot.bin` (UnityPlayer_201721_Release) 30 imports da
   biblioteca `pthread` (NID_0394D3B4 … NID_F67A82D8) e 4 de `Il2CppAssemblies` (NID_2016A56B, NID_46F3ED2C,
   NID_A7C286AB, NID_F2FAAAB6) como "missing". Esses NIDs são exportados pelos módulos do próprio jogo:
@@ -243,83 +243,83 @@ enum interno).
 
 | Feito | Função | NID | W | Operação | Retorna |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | `sceKernelAtomicAddAndGet16` | 0x495C52EC | 16 | `*p += v` | novo |
-| [ ] | `sceKernelAtomicAddAndGet32` | 0x2E84A93B | 32 | `*p += v` | novo |
-| [ ] | `sceKernelAtomicAddAndGet64` | 0xB6CE9B9A | 64 | `*p += v` | novo |
-| [ ] | `sceKernelAtomicAddAndGet8` | 0x8F7BD940 | 8 | `*p += v` | novo |
-| [ ] | `sceKernelAtomicAddUnless16` | 0x1CF4AA4B | 16 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
-| [ ] | `sceKernelAtomicAddUnless32` | 0x4B33FD3C | 32 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
-| [ ] | `sceKernelAtomicAddUnless64` | 0xFFCE7438 | 64 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
-| [ ] | `sceKernelAtomicAddUnless8` | 0x7FD94393 | 8 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
-| [ ] | `sceKernelAtomicAndAndGet16` | 0xF9890F7E | 16 | `*p &= v` | novo |
-| [ ] | `sceKernelAtomicAndAndGet32` | 0x6709D30C | 32 | `*p &= v` | novo |
-| [ ] | `sceKernelAtomicAndAndGet64` | 0xAED2B370 | 64 | `*p &= v` | novo |
-| [ ] | `sceKernelAtomicAndAndGet8` | 0x86B9170F | 8 | `*p &= v` | novo |
-| [ ] | `sceKernelAtomicClearAndGet16` | 0xCC36B775 | 16 | `*p &= ~v` | novo |
-| [ ] | `sceKernelAtomicClearAndGet32` | 0x9DAA0DE8 | 32 | `*p &= ~v` | novo |
-| [ ] | `sceKernelAtomicClearAndGet64` | 0x264209F3 | 64 | `*p &= ~v` | novo |
-| [ ] | `sceKernelAtomicClearAndGet8` | 0x17B40010 | 8 | `*p &= ~v` | novo |
-| [ ] | `sceKernelAtomicClearMask16` | 0x5FE7DFF8 | 16 | `*p &= ~v` | `void` |
-| [ ] | `sceKernelAtomicClearMask32` | 0xE3DF0CB3 | 32 | `*p &= ~v` | `void` |
-| [ ] | `sceKernelAtomicClearMask64` | 0x953D118A | 64 | `*p &= ~v` | `void` |
-| [ ] | `sceKernelAtomicClearMask8` | 0xD7D49E36 | 8 | `*p &= ~v` | `void` |
-| [ ] | `sceKernelAtomicCompareAndSet16` | 0xE8C01236 | 16 | se `*p == v` então `*p = nv` (3º arg) | antigo |
-| [ ] | `sceKernelAtomicCompareAndSet32` | 0x1124A1D4 | 32 | se `*p == v` então `*p = nv` (3º arg) | antigo |
-| [ ] | `sceKernelAtomicCompareAndSet64` | 0x1EBDFCCD | 64 | se `*p == v` então `*p = nv` (3º arg) | antigo |
-| [ ] | `sceKernelAtomicCompareAndSet8` | 0x327DB4C0 | 8 | se `*p == v` então `*p = nv` (3º arg) | antigo |
-| [ ] | `sceKernelAtomicDecIfPositive16` | 0x323718FB | 16 | ver nota DecIfPositive (sem `v`) | antigo |
-| [ ] | `sceKernelAtomicDecIfPositive32` | 0xCA3294F1 | 32 | ver nota DecIfPositive (sem `v`) | antigo |
-| [ ] | `sceKernelAtomicDecIfPositive64` | 0x8BE2A007 | 64 | ver nota DecIfPositive (sem `v`) | antigo |
-| [ ] | `sceKernelAtomicDecIfPositive8` | 0x9DABE6C3 | 8 | ver nota DecIfPositive (sem `v`) | antigo |
-| [ ] | `sceKernelAtomicGetAndAdd16` | 0x5674DB0C | 16 | `*p += v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAdd32` | 0x2611CB0B | 32 | `*p += v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAdd64` | 0x63DAF37D | 64 | `*p += v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAdd8` | 0x27A2AAFA | 8 | `*p += v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAnd16` | 0x7A0CB056 | 16 | `*p &= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAnd32` | 0x08266595 | 32 | `*p &= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAnd64` | 0x4828BC43 | 64 | `*p &= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndAnd8` | 0x53DCA02B | 8 | `*p &= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndClear16` | 0x57CD7E7D | 16 | `*p &= ~v` | antigo |
-| [ ] | `sceKernelAtomicGetAndClear32` | 0x0226A017 | 32 | `*p &= ~v` | antigo |
-| [ ] | `sceKernelAtomicGetAndClear64` | 0x436AA0B5 | 64 | `*p &= ~v` | antigo |
-| [ ] | `sceKernelAtomicGetAndClear8` | 0xA10873A4 | 8 | `*p &= ~v` | antigo |
-| [ ] | `sceKernelAtomicGetAndOr16` | 0x31E49E73 | 16 | `*p |= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndOr32` | 0x984AD276 | 32 | `*p |= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndOr64` | 0xC39186CD | 64 | `*p |= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndOr8` | 0x107A68DF | 8 | `*p |= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSet16` | 0xF7B9ADFC | 16 | `*p = v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSet32` | 0x9B43E667 | 32 | `*p = v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSet64` | 0xD82B3A7A | 64 | `*p = v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSet8` | 0x2672EA0B | 8 | `*p = v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSub16` | 0xAC51979C | 16 | `*p -= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSub32` | 0x115C516F | 32 | `*p -= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSub64` | 0x4AE9C8E6 | 64 | `*p -= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndSub8` | 0xCDF5DF67 | 8 | `*p -= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndXor16` | 0x6E2D0B9E | 16 | `*p ^= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndXor32` | 0x38739E2F | 32 | `*p ^= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndXor64` | 0x6A19BBE9 | 64 | `*p ^= v` | antigo |
-| [ ] | `sceKernelAtomicGetAndXor8` | 0x7350B2DF | 8 | `*p ^= v` | antigo |
-| [ ] | `sceKernelAtomicOrAndGet16` | 0x8E248EBD | 16 | `*p |= v` | novo |
-| [ ] | `sceKernelAtomicOrAndGet32` | 0xC3B2F7F8 | 32 | `*p |= v` | novo |
-| [ ] | `sceKernelAtomicOrAndGet64` | 0x809BBC7D | 64 | `*p |= v` | novo |
-| [ ] | `sceKernelAtomicOrAndGet8` | 0x51693931 | 8 | `*p |= v` | novo |
-| [ ] | `sceKernelAtomicSet16` | 0x450BFECF | 16 | `*p = v` | `void` |
-| [ ] | `sceKernelAtomicSet32` | 0xB69DA09B | 32 | `*p = v` | `void` |
-| [ ] | `sceKernelAtomicSet64` | 0xC8A4339C | 64 | `*p = v` | `void` |
-| [ ] | `sceKernelAtomicSet8` | 0xE960FDA2 | 8 | `*p = v` | `void` |
-| [ ] | `sceKernelAtomicSubAndGet16` | 0xC26BBBB1 | 16 | `*p -= v` | novo |
-| [ ] | `sceKernelAtomicSubAndGet32` | 0x01C9CD92 | 32 | `*p -= v` | novo |
-| [ ] | `sceKernelAtomicSubAndGet64` | 0x9BB4A94B | 64 | `*p -= v` | novo |
-| [ ] | `sceKernelAtomicSubAndGet8` | 0x99E1796E | 8 | `*p -= v` | novo |
-| [ ] | `sceKernelAtomicXorAndGet16` | 0x6F524195 | 16 | `*p ^= v` | novo |
-| [ ] | `sceKernelAtomicXorAndGet32` | 0x46940704 | 32 | `*p ^= v` | novo |
-| [ ] | `sceKernelAtomicXorAndGet64` | 0xDDC6866E | 64 | `*p ^= v` | novo |
-| [ ] | `sceKernelAtomicXorAndGet8` | 0x634AF062 | 8 | `*p ^= v` | novo |
+| [x] | `sceKernelAtomicAddAndGet16` | 0x495C52EC | 16 | `*p += v` | novo |
+| [x] | `sceKernelAtomicAddAndGet32` | 0x2E84A93B | 32 | `*p += v` | novo |
+| [x] | `sceKernelAtomicAddAndGet64` | 0xB6CE9B9A | 64 | `*p += v` | novo |
+| [x] | `sceKernelAtomicAddAndGet8` | 0x8F7BD940 | 8 | `*p += v` | novo |
+| [x] | `sceKernelAtomicAddUnless16` | 0x1CF4AA4B | 16 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
+| [x] | `sceKernelAtomicAddUnless32` | 0x4B33FD3C | 32 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
+| [x] | `sceKernelAtomicAddUnless64` | 0xFFCE7438 | 64 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
+| [x] | `sceKernelAtomicAddUnless8` | 0x7FD94393 | 8 | ver nota AddUnless (args `v`, `limit`) | `SceBool` |
+| [x] | `sceKernelAtomicAndAndGet16` | 0xF9890F7E | 16 | `*p &= v` | novo |
+| [x] | `sceKernelAtomicAndAndGet32` | 0x6709D30C | 32 | `*p &= v` | novo |
+| [x] | `sceKernelAtomicAndAndGet64` | 0xAED2B370 | 64 | `*p &= v` | novo |
+| [x] | `sceKernelAtomicAndAndGet8` | 0x86B9170F | 8 | `*p &= v` | novo |
+| [x] | `sceKernelAtomicClearAndGet16` | 0xCC36B775 | 16 | `*p &= ~v` | novo |
+| [x] | `sceKernelAtomicClearAndGet32` | 0x9DAA0DE8 | 32 | `*p &= ~v` | novo |
+| [x] | `sceKernelAtomicClearAndGet64` | 0x264209F3 | 64 | `*p &= ~v` | novo |
+| [x] | `sceKernelAtomicClearAndGet8` | 0x17B40010 | 8 | `*p &= ~v` | novo |
+| [x] | `sceKernelAtomicClearMask16` | 0x5FE7DFF8 | 16 | `*p &= ~v` | `void` |
+| [x] | `sceKernelAtomicClearMask32` | 0xE3DF0CB3 | 32 | `*p &= ~v` | `void` |
+| [x] | `sceKernelAtomicClearMask64` | 0x953D118A | 64 | `*p &= ~v` | `void` |
+| [x] | `sceKernelAtomicClearMask8` | 0xD7D49E36 | 8 | `*p &= ~v` | `void` |
+| [x] | `sceKernelAtomicCompareAndSet16` | 0xE8C01236 | 16 | se `*p == v` então `*p = nv` (3º arg) | antigo |
+| [x] | `sceKernelAtomicCompareAndSet32` | 0x1124A1D4 | 32 | se `*p == v` então `*p = nv` (3º arg) | antigo |
+| [x] | `sceKernelAtomicCompareAndSet64` | 0x1EBDFCCD | 64 | se `*p == v` então `*p = nv` (3º arg) | antigo |
+| [x] | `sceKernelAtomicCompareAndSet8` | 0x327DB4C0 | 8 | se `*p == v` então `*p = nv` (3º arg) | antigo |
+| [x] | `sceKernelAtomicDecIfPositive16` | 0x323718FB | 16 | ver nota DecIfPositive (sem `v`) | antigo |
+| [x] | `sceKernelAtomicDecIfPositive32` | 0xCA3294F1 | 32 | ver nota DecIfPositive (sem `v`) | antigo |
+| [x] | `sceKernelAtomicDecIfPositive64` | 0x8BE2A007 | 64 | ver nota DecIfPositive (sem `v`) | antigo |
+| [x] | `sceKernelAtomicDecIfPositive8` | 0x9DABE6C3 | 8 | ver nota DecIfPositive (sem `v`) | antigo |
+| [x] | `sceKernelAtomicGetAndAdd16` | 0x5674DB0C | 16 | `*p += v` | antigo |
+| [x] | `sceKernelAtomicGetAndAdd32` | 0x2611CB0B | 32 | `*p += v` | antigo |
+| [x] | `sceKernelAtomicGetAndAdd64` | 0x63DAF37D | 64 | `*p += v` | antigo |
+| [x] | `sceKernelAtomicGetAndAdd8` | 0x27A2AAFA | 8 | `*p += v` | antigo |
+| [x] | `sceKernelAtomicGetAndAnd16` | 0x7A0CB056 | 16 | `*p &= v` | antigo |
+| [x] | `sceKernelAtomicGetAndAnd32` | 0x08266595 | 32 | `*p &= v` | antigo |
+| [x] | `sceKernelAtomicGetAndAnd64` | 0x4828BC43 | 64 | `*p &= v` | antigo |
+| [x] | `sceKernelAtomicGetAndAnd8` | 0x53DCA02B | 8 | `*p &= v` | antigo |
+| [x] | `sceKernelAtomicGetAndClear16` | 0x57CD7E7D | 16 | `*p &= ~v` | antigo |
+| [x] | `sceKernelAtomicGetAndClear32` | 0x0226A017 | 32 | `*p &= ~v` | antigo |
+| [x] | `sceKernelAtomicGetAndClear64` | 0x436AA0B5 | 64 | `*p &= ~v` | antigo |
+| [x] | `sceKernelAtomicGetAndClear8` | 0xA10873A4 | 8 | `*p &= ~v` | antigo |
+| [x] | `sceKernelAtomicGetAndOr16` | 0x31E49E73 | 16 | `*p |= v` | antigo |
+| [x] | `sceKernelAtomicGetAndOr32` | 0x984AD276 | 32 | `*p |= v` | antigo |
+| [x] | `sceKernelAtomicGetAndOr64` | 0xC39186CD | 64 | `*p |= v` | antigo |
+| [x] | `sceKernelAtomicGetAndOr8` | 0x107A68DF | 8 | `*p |= v` | antigo |
+| [x] | `sceKernelAtomicGetAndSet16` | 0xF7B9ADFC | 16 | `*p = v` | antigo |
+| [x] | `sceKernelAtomicGetAndSet32` | 0x9B43E667 | 32 | `*p = v` | antigo |
+| [x] | `sceKernelAtomicGetAndSet64` | 0xD82B3A7A | 64 | `*p = v` | antigo |
+| [x] | `sceKernelAtomicGetAndSet8` | 0x2672EA0B | 8 | `*p = v` | antigo |
+| [x] | `sceKernelAtomicGetAndSub16` | 0xAC51979C | 16 | `*p -= v` | antigo |
+| [x] | `sceKernelAtomicGetAndSub32` | 0x115C516F | 32 | `*p -= v` | antigo |
+| [x] | `sceKernelAtomicGetAndSub64` | 0x4AE9C8E6 | 64 | `*p -= v` | antigo |
+| [x] | `sceKernelAtomicGetAndSub8` | 0xCDF5DF67 | 8 | `*p -= v` | antigo |
+| [x] | `sceKernelAtomicGetAndXor16` | 0x6E2D0B9E | 16 | `*p ^= v` | antigo |
+| [x] | `sceKernelAtomicGetAndXor32` | 0x38739E2F | 32 | `*p ^= v` | antigo |
+| [x] | `sceKernelAtomicGetAndXor64` | 0x6A19BBE9 | 64 | `*p ^= v` | antigo |
+| [x] | `sceKernelAtomicGetAndXor8` | 0x7350B2DF | 8 | `*p ^= v` | antigo |
+| [x] | `sceKernelAtomicOrAndGet16` | 0x8E248EBD | 16 | `*p |= v` | novo |
+| [x] | `sceKernelAtomicOrAndGet32` | 0xC3B2F7F8 | 32 | `*p |= v` | novo |
+| [x] | `sceKernelAtomicOrAndGet64` | 0x809BBC7D | 64 | `*p |= v` | novo |
+| [x] | `sceKernelAtomicOrAndGet8` | 0x51693931 | 8 | `*p |= v` | novo |
+| [x] | `sceKernelAtomicSet16` | 0x450BFECF | 16 | `*p = v` | `void` |
+| [x] | `sceKernelAtomicSet32` | 0xB69DA09B | 32 | `*p = v` | `void` |
+| [x] | `sceKernelAtomicSet64` | 0xC8A4339C | 64 | `*p = v` | `void` |
+| [x] | `sceKernelAtomicSet8` | 0xE960FDA2 | 8 | `*p = v` | `void` |
+| [x] | `sceKernelAtomicSubAndGet16` | 0xC26BBBB1 | 16 | `*p -= v` | novo |
+| [x] | `sceKernelAtomicSubAndGet32` | 0x01C9CD92 | 32 | `*p -= v` | novo |
+| [x] | `sceKernelAtomicSubAndGet64` | 0x9BB4A94B | 64 | `*p -= v` | novo |
+| [x] | `sceKernelAtomicSubAndGet8` | 0x99E1796E | 8 | `*p -= v` | novo |
+| [x] | `sceKernelAtomicXorAndGet16` | 0x6F524195 | 16 | `*p ^= v` | novo |
+| [x] | `sceKernelAtomicXorAndGet32` | 0x46940704 | 32 | `*p ^= v` | novo |
+| [x] | `sceKernelAtomicXorAndGet64` | 0xDDC6866E | 64 | `*p ^= v` | novo |
+| [x] | `sceKernelAtomicXorAndGet8` | 0x634AF062 | 8 | `*p ^= v` | novo |
 
 ### 1.2 Mutex
 
 #### sceKernelGetMutexInfo
-- [ ] **Prioridade:** P0 (Invizimals, PCSA00552) · **Biblioteca:** SceLibKernel · **NID:** 0x9A6C43CA
+- [x] **Prioridade:** P0 (Invizimals, PCSA00552) · **Biblioteca:** SceLibKernel · **NID:** 0x9A6C43CA
 - **Protótipo:** `int sceKernelGetMutexInfo(SceUID mutexid, SceKernelMutexInfo *info);` (`psp2/kernel/threadmgr/mutex.h`)
 - **Comportamento:** copia o estado do mutex (não lightweight) para `info`, respeitando `info->size` (ver `WriteInfo`).
   Sem efeitos colaterais.
@@ -336,6 +336,7 @@ enum interno).
 
 #### sceKernelCancelMutex
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x2144890D
+- **Status:** não feito nesta passada: exige mexer na espera de `Mutex.Lock` (caminho quente do lw mutex, em otimização em outro branch).
 - **Protótipo:** `int sceKernelCancelMutex(SceUID mutexid, int newCount, int *numWaitThreads);` (`psp2/kernel/threadmgr/mutex.h`)
 - **Comportamento:** acorda todas as threads esperando no mutex com `WAIT_CANCEL`; `newCount == -1` restaura
   `initCount`; grava `LockCount = newCount` e dono = chamador se `newCount > 0`, senão sem dono.
@@ -348,7 +349,7 @@ enum interno).
 - **Validação:** teste unitário com uma thread bloqueada em `Lock` recebendo `WAIT_CANCEL`.
 
 #### sceKernelOpenMutex_089 / sceKernelCloseMutex_089
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x2928D2EC (Open), 0xA35427EE (Close)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x2928D2EC (Open), 0xA35427EE (Close)
 - **Protótipo:** sem protótipo no header. Inferido (NIDs de firmware 0.89x, mesmas assinaturas das versões atuais):
   `SceUID sceKernelOpenMutex_089(const char *name);` e `int sceKernelCloseMutex_089(SceUID mutexid);`
 - **Comportamento/erros:** idênticos a `sceKernelOpenMutex`/`sceKernelCloseMutex` (seção 2.1).
@@ -403,19 +404,19 @@ o registro de callbacks em eventos.
 
 | Feito | Função | Lib | NID | Protótipo (inferido = sem header) | Notas |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | `sceKernelCreateSimpleEvent` | SceLibKernel | 0xE6DB2494 | inferido: `SceUID (const char *name, SceUInt32 attr, SceUInt32 initPattern, const SceKernelSimpleEventOptParam *opt)` | Retorna UID; `UidClass` 13 |
-| [ ] | `sceKernelDeleteSimpleEvent` | SceThreadmgr | 0x208CFE28 | inferido: `int (SceUID eventId)` | Acorda waiters (regra do bit DELETE), remove do `K.Objects`; UID errado → `UNKNOWN_EVENT_ID` |
-| [ ] | `sceKernelOpenSimpleEvent` | SceThreadmgr | 0x4E1E4DF8 | inferido: `SceUID (const char *name)` | `OpenByName`, só encontra eventos com `ATTR_OPENABLE` |
-| [ ] | `sceKernelCloseSimpleEvent` | SceThreadmgr | 0xFEF4CA53 | inferido: `int (SceUID eventId)` | `CloseHandle<SimpleEvent>`, erro `UNKNOWN_EVENT_ID` |
-| [ ] | `sceKernelSetEvent` | SceThreadmgr | 0x324218CD | inferido: `SceInt32 (SceUID id, SceUInt32 setPattern, SceUInt64 userData)` | `userData` em r2:r3; só SimpleEvent (timer → `UNKNOWN_EVENT_ID`) |
-| [ ] | `sceKernelPulseEvent` | SceThreadmgr | 0x8D27BAD6 | inferido: igual a SetEvent | Pulso |
-| [ ] | `sceKernelClearEvent` | SceThreadmgr | 0x7B2A4B28 | `int ksceKernelClearEvent(SceUID, SceUInt32 clear_pattern)` (`psp2kern/kernel/threadmgr.h`) | Timer: zera o "event set" |
-| [ ] | `sceKernelWaitEvent` | SceLibKernel | 0x120F03AF | `SceInt32 (SceUID, SceUInt32 wait_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data, SceUInt32 *timeout)` (`psp2/kernel/libkernel.h`) | Sem callbacks |
-| [ ] | `sceKernelWaitEventCB` | SceLibKernel | 0xA0490795 | inferido: igual a WaitEvent | Processa callbacks antes e durante a espera |
-| [ ] | `sceKernelPollEvent` | SceLibKernel | 0x241F3634 | inferido: `SceInt32 (SceUID, SceUInt32 pattern, SceUInt32 *result, SceUInt64 *user_data)` | `EVENT_COND` se nada |
-| [ ] | `sceKernelCancelEvent` | SceLibKernel | 0x603AB770 | inferido: `SceInt32 (SceUID, SceUInt32 *pNumWaitThreads)` | Timer: também desarma o evento do timer |
+| [x] | `sceKernelCreateSimpleEvent` | SceLibKernel | 0xE6DB2494 | inferido: `SceUID (const char *name, SceUInt32 attr, SceUInt32 initPattern, const SceKernelSimpleEventOptParam *opt)` | Retorna UID; `UidClass` 13 |
+| [x] | `sceKernelDeleteSimpleEvent` | SceThreadmgr | 0x208CFE28 | inferido: `int (SceUID eventId)` | Acorda waiters (regra do bit DELETE), remove do `K.Objects`; UID errado → `UNKNOWN_EVENT_ID` |
+| [x] | `sceKernelOpenSimpleEvent` | SceThreadmgr | 0x4E1E4DF8 | inferido: `SceUID (const char *name)` | `OpenByName`, só encontra eventos com `ATTR_OPENABLE` |
+| [x] | `sceKernelCloseSimpleEvent` | SceThreadmgr | 0xFEF4CA53 | inferido: `int (SceUID eventId)` | `CloseHandle<SimpleEvent>`, erro `UNKNOWN_EVENT_ID` |
+| [x] | `sceKernelSetEvent` | SceThreadmgr | 0x324218CD | inferido: `SceInt32 (SceUID id, SceUInt32 setPattern, SceUInt64 userData)` | `userData` em r2:r3; só SimpleEvent (timer → `UNKNOWN_EVENT_ID`) |
+| [x] | `sceKernelPulseEvent` | SceThreadmgr | 0x8D27BAD6 | inferido: igual a SetEvent | Pulso |
+| [x] | `sceKernelClearEvent` | SceThreadmgr | 0x7B2A4B28 | `int ksceKernelClearEvent(SceUID, SceUInt32 clear_pattern)` (`psp2kern/kernel/threadmgr.h`) | Timer: zera o "event set" |
+| [x] | `sceKernelWaitEvent` | SceLibKernel | 0x120F03AF | `SceInt32 (SceUID, SceUInt32 wait_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data, SceUInt32 *timeout)` (`psp2/kernel/libkernel.h`) | Sem callbacks |
+| [x] | `sceKernelWaitEventCB` | SceLibKernel | 0xA0490795 | inferido: igual a WaitEvent | Processa callbacks antes e durante a espera |
+| [x] | `sceKernelPollEvent` | SceLibKernel | 0x241F3634 | inferido: `SceInt32 (SceUID, SceUInt32 pattern, SceUInt32 *result, SceUInt64 *user_data)` | `EVENT_COND` se nada |
+| [x] | `sceKernelCancelEvent` | SceLibKernel | 0x603AB770 | inferido: `SceInt32 (SceUID, SceUInt32 *pNumWaitThreads)` | Timer: também desarma o evento do timer |
 | [ ] | `sceKernelCancelEventWithSetPattern` | SceLibKernel | 0xB01387D5 | **a confirmar**; provável `SceInt32 (SceUID, SceUInt32 setPattern, SceUInt64 userData, SceUInt32 *pNumWaitThreads)` | Vita3K não implementa. Confirmar desmontando o export em SceLibKernel (Ghidra + VitaLoader) e vendo os registradores repassados à syscall `_sceKernelCancelEventWithSetPattern` |
-| [ ] | `sceKernelGetEventPattern` | SceLibKernel | 0xE5A2AC66 | inferido: `SceInt32 (SceUID, SceUInt32 *pattern)` | `pattern == NULL` → `ILLEGAL_ADDR`; só SimpleEvent |
+| [x] | `sceKernelGetEventPattern` | SceLibKernel | 0xE5A2AC66 | inferido: `SceInt32 (SceUID, SceUInt32 *pattern)` | `pattern == NULL` → `ILLEGAL_ADDR`; só SimpleEvent |
 | [ ] | `sceKernelGetEventInfo` | SceLibKernel | 0xE35F19D6 | **a confirmar**: `int (SceUID, SceKernelEventInfo *info)` | Estrutura não documentada no VitaSDK nem no Vita3K. Provável (padrão das outras Info): size, id, name[32], attr, currentPattern, userData (u64), numWaitThreads. Confirmar com desmontagem antes de implementar; enquanto isso, não registrar |
 | [ ] | `sceKernelWaitMultipleEvents` | SceLibKernel | 0x10586418 | **a confirmar** | Espera em vários eventos de uma vez; protótipo e struct de entrada desconhecidos (Vita3K: `UNIMPLEMENTED`). Confirmar por desmontagem; implementar como espera com predicado "algum evento satisfeito" sobre várias instâncias |
 | [ ] | `sceKernelWaitMultipleEventsCB` | SceLibKernel | 0x4263DBC9 | **a confirmar** | Versão CB |
@@ -449,15 +450,15 @@ Seção comum para `CancelTimer`, `GetTimerBase(Wide)`, `GetTimerEventRemainingT
 
 | Feito | Função | Lib | NID | Protótipo | Comportamento / erros |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | `sceKernelCancelTimer` | SceLibKernel | 0x9CCF768C | `int (SceUID timer_id, SceUInt32 *num_wait_threads)` (`libkernel.h`) | Desarma o evento (`interval = 0`, sem repeat) e acorda waiters com `WAIT_CANCEL`; UID → `UNKNOWN_TIMER_ID` 0x80028241 |
-| [ ] | `sceKernelGetTimerBase` | SceLibKernel | 0x1F59E04D | `int (SceUID, SceKernelSysClock *base_time)` (`libkernel.h`) | 0 se parado, senão `base` (tempo de processo); `base_time == NULL` → `ILLEGAL_ADDR` |
-| [ ] | `sceKernelGetTimerBaseWide` | SceThreadmgr | 0x5DBC1960 | `SceUInt64 (SceUID)` (`ksceKernelGetTimerBaseWide`, `psp2kern/kernel/threadmgr.h`) | Igual, erro → `UINT64_MAX` (0xFFFFFFFFFFFFFFFF) |
-| [ ] | `sceKernelGetTimerEventRemainingTime` | SceLibKernel | 0x75B1EB3E | `int (SceUID, SceKernelSysClock *remaining_time)` (`libkernel.h`) | `max(0, nextEvent - now)`; sem evento armado: provavelmente `EVENT_NOT_SET` 0x80028242 (a confirmar); `NULL` → `ILLEGAL_ADDR` |
-| [ ] | `sceKernelGetTimerInfo` | SceLibKernel | 0x7E35E10A | `int (SceUID, SceKernelTimerInfo *info)` (`libkernel.h`) | `WriteInfo` com struct de 0x60 bytes (abaixo) |
-| [ ] | `sceKernelSetTimerEvent` | SceLibKernel | 0x621D293B | `int (SceUID, SceKernelTimerType type, const SceKernelSysClock *interval, SceBool repeat)` (`libkernel.h`) | `type` ∉ {0,1} → `ILLEGAL_TYPE` 0x8002000C; `interval == NULL` → `ILLEGAL_ADDR`; se rodando, `nextEvent = now + interval` e acorda o 1º waiter para reavaliar |
-| [ ] | `sceKernelSetTimerTime` | SceLibKernel | 0xFFAD717F | `int (SceUID, SceKernelSysClock *timer_time)` (`libkernel.h`) | Entrada/saída: grava o novo `count` e devolve o antigo no mesmo ponteiro (SDK ≥ 2.00; assumir sempre); `NULL` → `ILLEGAL_ADDR` |
-| [ ] | `sceKernelOpenTimer` | SceThreadmgr | 0xB6E286E7 | inferido: `SceUID (const char *name)` | `OpenByName<TimerObject>` |
-| [ ] | `sceKernelCloseTimer` | SceThreadmgr | 0xACE60E4A | inferido: `int (SceUID)` | `CloseHandle<TimerObject>(UNKNOWN_TIMER_ID)` |
+| [x] | `sceKernelCancelTimer` | SceLibKernel | 0x9CCF768C | `int (SceUID timer_id, SceUInt32 *num_wait_threads)` (`libkernel.h`) | Desarma o evento (`interval = 0`, sem repeat) e acorda waiters com `WAIT_CANCEL`; UID → `UNKNOWN_TIMER_ID` 0x80028241 |
+| [x] | `sceKernelGetTimerBase` | SceLibKernel | 0x1F59E04D | `int (SceUID, SceKernelSysClock *base_time)` (`libkernel.h`) | 0 se parado, senão `base` (tempo de processo); `base_time == NULL` → `ILLEGAL_ADDR` |
+| [x] | `sceKernelGetTimerBaseWide` | SceThreadmgr | 0x5DBC1960 | `SceUInt64 (SceUID)` (`ksceKernelGetTimerBaseWide`, `psp2kern/kernel/threadmgr.h`) | Igual, erro → `UINT64_MAX` (0xFFFFFFFFFFFFFFFF) |
+| [x] | `sceKernelGetTimerEventRemainingTime` | SceLibKernel | 0x75B1EB3E | `int (SceUID, SceKernelSysClock *remaining_time)` (`libkernel.h`) | `max(0, nextEvent - now)`; sem evento armado: provavelmente `EVENT_NOT_SET` 0x80028242 (a confirmar); `NULL` → `ILLEGAL_ADDR` |
+| [x] | `sceKernelGetTimerInfo` | SceLibKernel | 0x7E35E10A | `int (SceUID, SceKernelTimerInfo *info)` (`libkernel.h`) | `WriteInfo` com struct de 0x60 bytes (abaixo) |
+| [x] | `sceKernelSetTimerEvent` | SceLibKernel | 0x621D293B | `int (SceUID, SceKernelTimerType type, const SceKernelSysClock *interval, SceBool repeat)` (`libkernel.h`) | `type` ∉ {0,1} → `ILLEGAL_TYPE` 0x8002000C; `interval == NULL` → `ILLEGAL_ADDR`; se rodando, `nextEvent = now + interval` e acorda o 1º waiter para reavaliar |
+| [x] | `sceKernelSetTimerTime` | SceLibKernel | 0xFFAD717F | `int (SceUID, SceKernelSysClock *timer_time)` (`libkernel.h`) | Entrada/saída: grava o novo `count` e devolve o antigo no mesmo ponteiro (SDK ≥ 2.00; assumir sempre); `NULL` → `ILLEGAL_ADDR` |
+| [x] | `sceKernelOpenTimer` | SceThreadmgr | 0xB6E286E7 | inferido: `SceUID (const char *name)` | `OpenByName<TimerObject>` |
+| [x] | `sceKernelCloseTimer` | SceThreadmgr | 0xACE60E4A | inferido: `int (SceUID)` | `CloseHandle<TimerObject>(UNKNOWN_TIMER_ID)` |
 
 `SceKernelTimerInfo` (`psp2common/kernel/threadmgr.h`, 0x60 bytes): +0x00 `size`, +0x04 `timer_id`, +0x08 `name[32]`,
 +0x28 `attr`, +0x2C `active` (SceBool), +0x30 `base_time` (u64; rodando = base, parado = `count` armazenado),
@@ -483,22 +484,22 @@ Seção comum para `CancelTimer`, `GetTimerBase(Wide)`, `GetTimerEventRemainingT
 
 | Feito | Função | Lib | NID | Protótipo | Notas |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | `sceKernelSendMsgPipeVector` | SceLibKernel | 0x94D506F7 | inferido (Vita3K): `SceInt32 (SceUID, const MsgPipeVector *v, SceUInt32 count, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout)` | |
-| [ ] | `sceKernelSendMsgPipeVectorCB` | SceLibKernel | 0x9C6F7F79 | igual | Com callbacks |
-| [ ] | `sceKernelTrySendMsgPipeVector` | SceLibKernel | 0x60DB346F | inferido: sem `pTimeout` | `DONT_WAIT` |
-| [ ] | `sceKernelReceiveMsgPipeVector` | SceLibKernel | 0x9F899087 | igual ao Send | |
-| [ ] | `sceKernelReceiveMsgPipeVectorCB` | SceLibKernel | 0xBE5B3E27 | igual | Com callbacks |
-| [ ] | `sceKernelTryReceiveMsgPipeVector` | SceLibKernel | 0x86ECC0FF | inferido: sem `pTimeout` | `DONT_WAIT` |
-| [ ] | `sceKernelGetMsgPipeInfo` | SceLibKernel | 0x4046D16B | `int (SceUID uid, SceKernelMppInfo *info)` (`psp2/kernel/threadmgr/msgpipe.h`) | `WriteInfo`; struct 0x3C: +0 size, +4 mppId, +8 name[32], +0x28 attr, +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads. `MsgPipe` já tem `BufferSize`, `_data.Count`, `SendWaiters`, `RecvWaiters` |
-| [ ] | `sceKernelCreateMsgPipeWithLR` | SceLibKernel | 0xD7E10BB1 | **inferido**: mesmos argumentos de `sceKernelCreateMsgPipe` (`name, type, attr, bufSize, opt`); o "LR" é o endereço de retorno do chamador que o kernel guarda para depuração (como `caller_address` em `sceKernelCreateThreadForUser_opt`) | Delegar para `sceKernelCreateMsgPipe`. Se a desmontagem mostrar um 6º argumento (LR), ignorá-lo |
-| [ ] | `sceKernelGetMsgPipeCreatorId` | SceThreadmgr | 0x70E2A6D2 | **inferido**: `SceUID (SceUID msgPipeId)` | Devolve o UID da thread que criou o pipe (a confirmar: pode ser o PID). Guardar `CreatorThreadUid` em `MsgPipe` no Create. UID → `UNKNOWN_MSG_PIPE_ID` |
-| [ ] | `sceKernelOpenMsgPipe` | SceThreadmgr | 0x0E1CB9F6 | inferido: `SceUID (const char *name)` | `OpenByName<MsgPipe>` |
-| [ ] | `sceKernelCloseMsgPipe` | SceThreadmgr | 0x1305A065 | inferido: `int (SceUID)` | `CloseHandle<MsgPipe>(UNKNOWN_MSG_PIPE_ID)` |
+| [x] | `sceKernelSendMsgPipeVector` | SceLibKernel | 0x94D506F7 | inferido (Vita3K): `SceInt32 (SceUID, const MsgPipeVector *v, SceUInt32 count, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout)` | |
+| [x] | `sceKernelSendMsgPipeVectorCB` | SceLibKernel | 0x9C6F7F79 | igual | Com callbacks |
+| [x] | `sceKernelTrySendMsgPipeVector` | SceLibKernel | 0x60DB346F | inferido: sem `pTimeout` | `DONT_WAIT` |
+| [x] | `sceKernelReceiveMsgPipeVector` | SceLibKernel | 0x9F899087 | igual ao Send | |
+| [x] | `sceKernelReceiveMsgPipeVectorCB` | SceLibKernel | 0xBE5B3E27 | igual | Com callbacks |
+| [x] | `sceKernelTryReceiveMsgPipeVector` | SceLibKernel | 0x86ECC0FF | inferido: sem `pTimeout` | `DONT_WAIT` |
+| [x] | `sceKernelGetMsgPipeInfo` | SceLibKernel | 0x4046D16B | `int (SceUID uid, SceKernelMppInfo *info)` (`psp2/kernel/threadmgr/msgpipe.h`) | `WriteInfo`; struct 0x3C: +0 size, +4 mppId, +8 name[32], +0x28 attr, +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads. `MsgPipe` já tem `BufferSize`, `_data.Count`, `SendWaiters`, `RecvWaiters` |
+| [x] | `sceKernelCreateMsgPipeWithLR` | SceLibKernel | 0xD7E10BB1 | **inferido**: mesmos argumentos de `sceKernelCreateMsgPipe` (`name, type, attr, bufSize, opt`); o "LR" é o endereço de retorno do chamador que o kernel guarda para depuração (como `caller_address` em `sceKernelCreateThreadForUser_opt`) | Delegar para `sceKernelCreateMsgPipe`. Se a desmontagem mostrar um 6º argumento (LR), ignorá-lo |
+| [x] | `sceKernelGetMsgPipeCreatorId` | SceThreadmgr | 0x70E2A6D2 | **inferido**: `SceUID (SceUID msgPipeId)` | Devolve o UID da thread que criou o pipe (a confirmar: pode ser o PID). Guardar `CreatorThreadUid` em `MsgPipe` no Create. UID → `UNKNOWN_MSG_PIPE_ID` |
+| [x] | `sceKernelOpenMsgPipe` | SceThreadmgr | 0x0E1CB9F6 | inferido: `SceUID (const char *name)` | `OpenByName<MsgPipe>` |
+| [x] | `sceKernelCloseMsgPipe` | SceThreadmgr | 0x1305A065 | inferido: `int (SceUID)` | `CloseHandle<MsgPipe>(UNKNOWN_MSG_PIPE_ID)` |
 
 ### 1.6 Cond, LwCond, RWLock
 
 #### sceKernelGetCondInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x6864DCE2
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x6864DCE2
 - **Protótipo:** sem protótipo user; inferido `int sceKernelGetCondInfo(SceUID condId, SceKernelCondInfo *info);`
   (struct em `psp2common/kernel/threadmgr.h`, que referencia a função).
 - **Comportamento:** copia estado da cond (não lw). **Retorno/erros:** 0; UID → `UNKNOWN_COND_ID` 0x800281A1 (o
@@ -510,7 +511,7 @@ Seção comum para `CancelTimer`, `GetTimerBase(Wide)`, `GetTimerEventRemainingT
 - **Validação:** teste unitário.
 
 #### sceKernelGetLwCondInfo / sceKernelGetLwCondInfoById
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE4DF36A0 (por work area), 0x971F1DE8 (por UID)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE4DF36A0 (por work area), 0x971F1DE8 (por UID)
 - **Protótipo:** sem protótipo user. Inferido, por simetria com `sceKernelGetLwMutexInfo(ById)`:
   `int sceKernelGetLwCondInfo(SceKernelLwCondWork *work, SceKernelLwCondInfo *info);`
   `int sceKernelGetLwCondInfoById(SceUID lwCondId, SceKernelLwCondInfo *info);` (struct de
@@ -525,7 +526,7 @@ Seção comum para `CancelTimer`, `GetTimerBase(Wide)`, `GetTimerEventRemainingT
 - **Validação:** teste unitário com `sceKernelCreateLwCond`.
 
 #### sceKernelCancelRWLock
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x190CA94B
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x190CA94B
 - **Protótipo:** sem header; Vita3K: `SceInt32 sceKernelCancelRWLock(SceUID rwLockId, SceUInt32 *pNumReadWaitThreads, SceUInt32 *pNumWriteWaitThreads, SceInt32 flag);`
 - **Comportamento:** acorda todos os waiters (leitura e escrita) com `WAIT_CANCEL`, conta cada tipo; zera o lock; com
   `flag & SCE_KERNEL_RW_LOCK_CANCEL_WITH_WRITE_LOCK` (0x1) o chamador fica com o lock de escrita (count 1).
@@ -536,17 +537,17 @@ Seção comum para `CancelTimer`, `GetTimerBase(Wide)`, `GetTimerEventRemainingT
 
 | Feito | Função | Lib | NID | Protótipo | Notas |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | `sceKernelOpenCond` | SceThreadmgr | 0x76BDA02F | `int sceKernelOpenCond(const char *name);` (`psp2/kernel/threadmgr/cond.h`) | `OpenByName<CondVar>` filtrando `WorkArea == 0` |
-| [ ] | `sceKernelCloseCond` | SceThreadmgr | 0x15C690E0 | `int sceKernelCloseCond(SceUID condId);` (`cond.h`) | `CloseHandle<CondVar>(UNKNOWN_COND_ID)` |
-| [ ] | `sceKernelOpenRWLock` | SceThreadmgr | 0xCE510196 | `SceUID sceKernelOpenRWLock(const char *name);` (`rwlock.h`) | `OpenByName<RwLock>` |
-| [ ] | `sceKernelCloseRWLock` | SceThreadmgr | 0xFD5BD5C1 | `int sceKernelCloseRWLock(SceUID rwlock_id);` (`rwlock.h`) | `CloseHandle<RwLock>(UNKNOWN_RW_LOCK_ID)` |
+| [x] | `sceKernelOpenCond` | SceThreadmgr | 0x76BDA02F | `int sceKernelOpenCond(const char *name);` (`psp2/kernel/threadmgr/cond.h`) | `OpenByName<CondVar>` filtrando `WorkArea == 0` |
+| [x] | `sceKernelCloseCond` | SceThreadmgr | 0x15C690E0 | `int sceKernelCloseCond(SceUID condId);` (`cond.h`) | `CloseHandle<CondVar>(UNKNOWN_COND_ID)` |
+| [x] | `sceKernelOpenRWLock` | SceThreadmgr | 0xCE510196 | `SceUID sceKernelOpenRWLock(const char *name);` (`rwlock.h`) | `OpenByName<RwLock>` |
+| [x] | `sceKernelCloseRWLock` | SceThreadmgr | 0xFD5BD5C1 | `int sceKernelCloseRWLock(SceUID rwlock_id);` (`rwlock.h`) | `CloseHandle<RwLock>(UNKNOWN_RW_LOCK_ID)` |
 
 Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 
 ### 1.7 Callbacks
 
 #### sceKernelGetCallbackInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x88DD1BC8
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x88DD1BC8
 - **Protótipo:** `int sceKernelGetCallbackInfo(SceUID cb, SceKernelCallbackInfo *infop);` (`psp2/kernel/threadmgr/callback.h`)
 - **Comportamento:** copia o estado do callback (`WriteInfo`). Sem efeitos colaterais.
 - **Retorno/erros:** 0; UID → `UNKNOWN_CALLBACK_ID` 0x800280A1; `NULL` → `ILLEGAL_ADDR`; size maior que a struct →
@@ -561,7 +562,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** teste unitário.
 
 #### sceKernelCancelCallback
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x30741EF2
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x30741EF2
 - **Protótipo:** `int sceKernelCancelCallback(SceUID cb);` (`callback.h`)
 - **Comportamento:** descarta notificações pendentes (`NotifyCount = 0`, `NotifyArg = 0`) sem chamar a função.
 - **Retorno/erros:** 0; UID → `UNKNOWN_CALLBACK_ID`.
@@ -572,7 +573,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 ### 1.8 Threads: diversos
 
 #### sceKernelChangeCurrentThreadAttr
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x36833F93
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x36833F93
 - **Protótipo:** `int sceKernelChangeCurrentThreadAttr(SceUInt clearAttr, SceUInt setAttr);` (`psp2/kernel/threadmgr/thread.h`)
 - **Comportamento:** só aceita `SCE_KERNEL_THREAD_ATTR_NOUSE_VFP` 0x01000000 e `USER` 0x80000000; no hardware nada
   visível muda (Vita3K: "thread info doesn't show a change").
@@ -580,7 +581,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Implementação no VitaSharp:** `ThreadMgr.cs`, sem estado. Custo 2_000. **Validação:** `imports`.
 
 #### sceKernelCheckThreadStack
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x84092FD0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x84092FD0
 - **Protótipo:** `int sceKernelCheckThreadStack(void);` (`thread.h`, retorno "Unknown")
 - **Comportamento (Vita3K):** devolve os bytes livres da pilha da thread atual: `sp - stackBase`; 0 se `sp` estiver
   fora da pilha. Usado por código que verifica estouro de pilha.
@@ -589,7 +590,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   `ProcTime`). Custo 2_000. **Validação:** teste unitário.
 
 #### sceKernelGetCurrentThreadVfpException
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA37A6057
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA37A6057
 - **Protótipo:** sem header; inferido `int sceKernelGetCurrentThreadVfpException(void);`
 - **Comportamento:** devolve a máscara de exceções VFP da thread (palavra 4 do TLS do kernel,
   `GuestThread.TlsVfpException`), mantida por `sceKernelChangeThreadVfpException` (STUB 2.2).
@@ -606,7 +607,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** só depois de confirmar o layout.
 
 #### sceKernelGetThreadRunStatus
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xD6B01013
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xD6B01013
 - **Protótipo:** `int sceKernelGetThreadRunStatus(SceUID thid, SceKernelThreadRunStatus *status);` (`thread.h`)
 - **Comportamento:** para cada uma das 4 CPUs, qual processo/thread/prioridade está rodando. O papel de `thid` não é
   claro (a confirmar); validar como UID de thread (0 = atual).
@@ -618,7 +619,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   `sceKernelGetProcessId`). Custo 2_000. **Validação:** teste unitário.
 
 #### sceKernelGetSystemInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE0241FAA
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE0241FAA
 - **Protótipo:** `int sceKernelGetSystemInfo(SceKernelSystemInfo *info);` (`thread.h`)
 - **Comportamento:** contadores do escalonador por CPU.
 - **Retorno/erros:** 0; `NULL` → `ILLEGAL_ADDR`; size maior que 0x48 → `NO_MEMORY` (padrão Info, a confirmar).
@@ -629,7 +630,8 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   Custo 2_000. **Validação:** teste unitário.
 
 #### sceKernelGetThreadContextForVM / sceKernelSetThreadContextForVM
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x22C9595E (Get), 0x27E6DEDE (Set)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x22C9595E (Get), 0x27E6DEDE (Set)
+- **Status:** aliases registrados; o limite superior de tamanho (`NO_MEMORY`) e a checagem de `THREAD_ATTR_VM` não foram aplicados porque o método é compartilhado com as variantes `ForMono` usadas pelo Devious Dungeon (a confirmar o tamanho que ele passa).
 - **Protótipo:** sem header; Vita3K: `int (SceUID threadId, SceKernelThreadCpuRegisterInfo *cpu, SceKernelThreadVfpRegisterInfo *vfp);`
 - **Comportamento:** wrappers da SceLibKernel para as syscalls `_sceKernelGetThreadContextForVM`/`_Set...` que o
   VitaSharp já implementa em `Hle/Modules/VmThreads.cs` (`GetContext`/`SetContext`). Ler/gravar os registradores de
@@ -647,7 +649,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** jogo PSM/Unity que use GC com suspensão; nenhum dos 7 instalados importa hoje.
 
 #### sceKernelWaitException / sceKernelWaitExceptionCB
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x11E263A5, 0xAB4B5485
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x11E263A5, 0xAB4B5485
 - **Protótipo:** sem header, Vita3K sem argumentos. **A confirmar** (provavelmente recebe ponteiro para info da
   exceção). Equivalente ao `sceKernelWaitExceptionForMono` já tratado em `VmThreads.WaitException`.
 - **Comportamento:** a thread de tratamento de exceções da VM bloqueia até o kernel entregar uma exceção de outra
@@ -657,7 +659,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** thread fica `Waiting` sem consumir CPU.
 
 #### Sinais: sceKernelWaitSignal / sceKernelWaitSignalCB / sceKernelSendSignal
-- [ ] **Prioridade:** P1 · **Bibliotecas/NIDs:** `sceKernelWaitSignal` SceLibKernel 0xADCA94E5,
+- [x] **Prioridade:** P1 · **Bibliotecas/NIDs:** `sceKernelWaitSignal` SceLibKernel 0xADCA94E5,
   `sceKernelWaitSignalCB` SceLibKernel 0x24460BB3, `sceKernelSendSignal` SceThreadmgr 0xD4C367B2
 - **Protótipo:** `int sceKernelWaitSignal(SceUInt32 unk0, SceUInt32 delay, SceUInt32 *timeout);` e
   `int sceKernelSendSignal(SceUID thid);` (`psp2/kernel/threadmgr/signal.h`); CB inferido igual ao Wait.
@@ -683,7 +685,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** depois da confirmação, teste unitário com uma função guest que devolve `sp`.
 
 #### sceKernelStackChkFail
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xEC287338
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xEC287338
 - **Protótipo:** sem header; inferido `void sceKernelStackChkFail(void);` (mesmo papel de `__stack_chk_fail`,
   declarado em `psp2/kernel/libkernel.h`).
 - **Comportamento:** termina a thread/processo por corrupção de pilha.
@@ -691,7 +693,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   (loga, `DumpState`, `GuestThreadExitException`). Custo 2_000. **Validação:** `imports`.
 
 #### sceKernelBacktrace / sceKernelPrintBacktrace
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x894037E8 (Backtrace), 0x1C02A434 (Print)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x894037E8 (Backtrace), 0x1C02A434 (Print)
 - **Protótipo:** `SceInt32 sceKernelBacktrace(SceUID thread_id, SceKernelCallFrame *buf, SceSize num_bytes_buffer, SceUInt32 *num_frames, SceInt32 mode);`
   e `SceInt32 sceKernelPrintBacktrace(const SceKernelCallFrame *call_frame, SceUInt32 num_frames);` (`psp2/kernel/libkernel.h`)
 - **Comportamento:** Backtrace preenche `{sp, pc}` (8 bytes, `psp2common/kernel/backtrace.h`) da pilha de chamadas;
@@ -706,7 +708,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 ### 1.9 Módulos (exportados por SceLibKernel)
 
 #### sceKernelStopModule
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x3B2CBA09
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x3B2CBA09
 - **Protótipo:** `int sceKernelStopModule(SceUID modid, SceSize args, void *argp, int flags, void *option, int *status);` (`psp2/kernel/modulemgr.h`)
 - **Comportamento:** chama `module_stop(args, argp)` do módulo; grava o retorno em `*status`; o módulo continua
   carregado. `SCE_KERNEL_STOP_SUCCESS` 0, `STOP_FAIL` 1.
@@ -743,7 +745,7 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 ### 1.10 Outras de SceLibKernel
 
 #### sceSblACMgrIsGameProgram
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x963F4A99
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x963F4A99
 - **Protótipo:** `SceInt32 sceSblACMgrIsGameProgram(SceBool *result);` (`psp2/sblacmgr.h`)
 - **Comportamento:** `*result = 1` (processo de jogo). **Erros:** `result == NULL` → `ILLEGAL_ADDR` (a confirmar).
 - **Implementação no VitaSharp:** `SystemMisc.cs` (ao lado de `sceAppMgrIsGameProgram`). Custo 2_000.
@@ -774,7 +776,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ### 2.1 Novas
 
 #### sceKernelCreateThreadForUser
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xC0FAF6A3
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xC0FAF6A3
 - **Protótipo:** `SceUID sceKernelCreateThreadForUser(const char *name, SceKernelThreadEntry entry, SceInt32 init_priority, const sceKernelCreateThreadForUser_opt *opt);` (`psp2/kernel/threadmgr.h`)
 - **Comportamento:** syscall que o wrapper `sceKernelCreateThread` da SceLibKernel chama; jogos só a importam se
   contornam a libkernel. Mesma semântica de `sceKernelCreateThread`.
@@ -791,7 +793,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** teste unitário criando thread pelos dois caminhos.
 
 #### sceKernelDelayThreadCB200
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x34938242
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0x34938242
 - **Protótipo:** sem header; inferido `int sceKernelDelayThreadCB200(SceUInt delay);`
 - **Comportamento:** como `sceKernelDelayThreadCB`, com atraso mínimo de 201 µs (Vita3K usa `< 201 → 201`; o
   VitaSharp usa 200 em `sceKernelDelayThread200`: alinhar os dois em 201, a confirmar).
@@ -801,7 +803,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   "CB200"). Custo 12_000 (prefixo `sceKernelDelay`). **Validação:** `imports`.
 
 #### sceKernelGetThreadTLSAddr
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xBACA6891
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xBACA6891
 - **Protótipo:** `void *sceKernelGetThreadTLSAddr(SceUID thid, int key);` (`psp2/kernel/threadmgr/thread.h`)
 - **Comportamento:** como `sceKernelGetTLSAddr`, mas da thread `thid` (0 = atual): endereço da palavra `key` (0..0xFF)
   do TLS do usuário.
@@ -811,7 +813,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   `sceKernelGetTLSAddr` não pega). **Validação:** teste unitário.
 
 #### sceKernelWaitThreadEnd_089 / sceKernelWaitThreadEndCB_089
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xF3489EF4, 0x0373C5E3
+- [x] **Prioridade:** P1 · **Biblioteca:** SceThreadmgr · **NID:** 0xF3489EF4, 0x0373C5E3
 - **Protótipo:** sem header; inferido igual a `int sceKernelWaitThreadEnd(SceUID thid, int *stat, SceUInt *timeout);`
   (NIDs da firmware 0.89x).
 - **Implementação no VitaSharp:** `[Hle("sceKernelWaitThreadEnd_089")]`/`[Hle("sceKernelWaitThreadEndCB_089")]` no
@@ -827,7 +829,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ### 2.2 STUB (já existem, precisam de comportamento real)
 
 #### sceKernelGetThreadmgrUIDClass
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xC9678F7F · `ThreadMgr.cs:110` (sempre 0)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xC9678F7F · `ThreadMgr.cs:110` (sempre 0)
 - **Protótipo:** `SceKernelIdListType sceKernelGetThreadmgrUIDClass(SceUID uid);` (`psp2/kernel/threadmgr/thread.h`)
 - **Comportamento:** classe do objeto de threadmgr dono do UID (tabela em 0.2: thread 1 … simple_event 13). Bibliotecas
   usam para validar handles ("isto é um semáforo?") e ramificar.
@@ -838,7 +840,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** teste unitário com um objeto de cada tipo.
 
 #### sceKernelOpenSema / sceKernelCloseSema
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xCBE235C7 (Open), 0xA2D81F9E (Close) · `ThreadMgr.cs:226-227`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xCBE235C7 (Open), 0xA2D81F9E (Close) · `ThreadMgr.cs:226-227`
 - **Protótipo:** `SceUID sceKernelOpenSema(const char *name);`, `int sceKernelCloseSema(SceUID semaid);` (`psp2/kernel/threadmgr/semaphore.h`)
 - **Comportamento:** Open devolve um handle para o semáforo de mesmo nome; Close solta esse handle (não apaga o objeto).
   Hoje Close não valida o UID (sempre 0) e Open devolve `UNKNOWN_SEMA_ID` quando não acha.
@@ -849,7 +851,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   do criador.
 
 #### sceKernelOpenEventFlag / sceKernelCloseEventFlag
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xBC19F8A1 (Open), 0x9A68F547 (Close) · `ThreadMgr.cs:268-269`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xBC19F8A1 (Open), 0x9A68F547 (Close) · `ThreadMgr.cs:268-269`
 - **Protótipo:** inferido `SceUID sceKernelOpenEventFlag(const char *name);`, `int sceKernelCloseEventFlag(SceUID evfId);`
   (`psp2/kernel/threadmgr/eventflag.h`)
 - **Comportamento/erros:** como semáforo; erro de Close → `UNKNOWN_EVF_ID` 0x800280E1.
@@ -857,7 +859,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** idem.
 
 #### sceKernelOpenMutex / sceKernelCloseMutex
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0x52E17182 (Open), 0x03E23AF6 (Close) · `ThreadMgr.cs:307-308`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0x52E17182 (Open), 0x03E23AF6 (Close) · `ThreadMgr.cs:307-308`
 - **Protótipo:** `int sceKernelOpenMutex(const char *name);`, `int sceKernelCloseMutex(SceUID mutexid);` (`psp2/kernel/threadmgr/mutex.h`)
 - **Comportamento/erros:** como semáforo; Open só encontra mutex **não** lightweight (`!IsLight`; hoje `FindByName`
   pode devolver um lw mutex de mesmo nome); erro de Close → `UNKNOWN_MUTEX_ID` 0x80028141.
@@ -866,7 +868,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** idem.
 
 #### sceKernelChangeThreadVfpException
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xCC18FBAE · `ThreadMgr.cs:108` (sempre 0)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0xCC18FBAE · `ThreadMgr.cs:108` (sempre 0)
 - **Protótipo:** `int sceKernelChangeThreadVfpException(SceUInt32 clear, SceUInt32 set);` (`psp2/kernel/threadmgr/vfp.h`)
 - **Comportamento:** `mask = set | (mask & ~clear)` na palavra `TlsVfpException` (4) do TLS do kernel da thread
   atual. Bits válidos: `SCE_KERNEL_VFP_EXCP_*` IOC 0x1, DZC 0x2, OFC 0x4, UFC 0x8, IXC 0x10, IDC 0x80, QC 0x08000000
@@ -878,7 +880,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** teste com Get (1.8).
 
 #### sceKernelGetThreadStackFreeSize
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0x4F8A3DA0 · `ThreadMgr.cs:157` (`StackSize/2`)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr · **NID:** 0x4F8A3DA0 · `ThreadMgr.cs:157` (`StackSize/2`)
 - **Protótipo:** `int sceKernelGetThreadStackFreeSize(SceUID thid);` (`thread.h`)
 - **Comportamento (Vita3K):** thread dormente → `StackSize`; senão `sp - StackAddr` da thread. Alternativa mais fiel
   (é o que o hardware faz, a confirmar): contar bytes ainda com o padrão de preenchimento desde a base — o VitaSharp já
@@ -888,7 +890,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   Custo 2_000. **Validação:** teste unitário.
 
 #### sceKernelSignalCondTo / sceKernelSignalLwCondTo
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr (`SignalCondTo` 0x1269F4EC), SceLibKernel (`SignalLwCondTo` 0xFC1A48EB) · `ThreadMgr.cs:390,413`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr (`SignalCondTo` 0x1269F4EC), SceLibKernel (`SignalLwCondTo` 0xFC1A48EB) · `ThreadMgr.cs:390,413`
 - **Protótipo:** `int sceKernelSignalCondTo(SceUID condId, SceUID threadId);` (`cond.h`), lw análogo com work area.
 - **Comportamento:** acorda **a thread indicada** se ela espera na cond; hoje acorda uma qualquer. Thread que não espera
   → erro (a confirmar o código; o Vita3K valida só a existência da thread → `UNKNOWN_THREAD_ID`).
@@ -897,7 +899,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   Custo 12_000 (prefixo `sceKernelSignal`). **Validação:** teste com duas threads esperando; `SignalTo` na segunda.
 
 #### Timers existentes: sceKernelStartTimer / sceKernelStopTimer / sceKernelGetTimerTime / sceKernelGetTimerTimeWide
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr (Start 0x48091E0C, Stop 0x869E9F20, TimeWide 0x3EFD3165), SceLibKernel (GetTimerTime 0x381DC300) · `ThreadMgr.cs:524-555`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceThreadmgr (Start 0x48091E0C, Stop 0x869E9F20, TimeWide 0x3EFD3165), SceLibKernel (GetTimerTime 0x381DC300) · `ThreadMgr.cs:524-555`
 - **Protótipo:** `int ksceKernelStartTimer(SceUID)`, `int ksceKernelStopTimer(SceUID)`, `SceUInt64 GetTimerTimeWide(SceUID)`
   (`psp2kern/kernel/threadmgr.h`), `int sceKernelGetTimerTime(SceUID, SceKernelSysClock *)` (`psp2/kernel/libkernel.h`).
 - **Comportamento a corrigir:** Start devolve **1** se já estava rodando (0 se iniciou); Stop devolve **1** se parou e
@@ -908,7 +910,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** testes da seção 1.4.
 
 #### sceKernelRegisterThreadEventHandler
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x6D8C0F13 · `ThreadMgr.cs:174`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x6D8C0F13 · `ThreadMgr.cs:174`
 - **Protótipo:** `SceUID sceKernelRegisterThreadEventHandler(const char *name, SceUID thid, SceInt32 eventMask, SceKernelThreadEventHandler handler, void *common);` (`thread.h`)
 - **Comportamento:** registra um handler chamado em eventos de thread (START 0x4, EXIT 0x8 em `SceKernelThreadEventType`);
   `thid = 0x10027` = todas as threads do processo. Hoje cria um `SimpleEvent` e nunca chama o handler.
@@ -925,7 +927,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ### 3.1 Novas
 
 #### sceKernelOpenVMDomain / sceKernelCloseVMDomain / sceKernelSyncVMDomain
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceSysmem · **NID:** 0x9CA3EB2B (Open), 0xD6CA56CA (Close), 0x19D2A81A (Sync)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceSysmem · **NID:** 0x9CA3EB2B (Open), 0xD6CA56CA (Close), 0x19D2A81A (Sync)
 - **Protótipo:** `int sceKernelOpenVMDomain(void);`, `int sceKernelCloseVMDomain(void);`,
   `int sceKernelSyncVMDomain(SceUID uid, void *data, SceSize size);` (`psp2/kernel/sysmem.h`)
 - **Comportamento:** usados por JITs (Mono/PSM) junto com `sceKernelAllocMemBlockForVM`. Open torna os blocos VM
@@ -939,7 +941,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   Custo 2_000. **Validação:** jogo com JIT (nenhum dos 7); teste unitário de Sync invalidando o cache.
 
 #### sceKernelFreeMemBlockForVM
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceSysmem · **NID:** 0x4EA13FEA
+- [x] **Prioridade:** P1 · **Biblioteca:** SceSysmem · **NID:** 0x4EA13FEA
 - **Protótipo:** `int sceKernelFreeMemBlockForVM(SceUID uid);` (`sysmem.h`)
 - **Comportamento:** libera um bloco criado por `sceKernelAllocMemBlockForVM`.
 - **Retorno/erros:** 0; UID que não é bloco VM → `INVALID_ARGUMENT` (Vita3K).
@@ -958,7 +960,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ### 3.2 STUB
 
 #### sceKernelCloseMemBlock
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceSysmem · **NID:** 0xB680E3A0 · `SysMem.cs` (sempre 0)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceSysmem · **NID:** 0xB680E3A0 · `SysMem.cs` (sempre 0)
 - **Protótipo:** inferido `int sceKernelCloseMemBlock(SceUID uid);` (par de `sceKernelOpenMemBlock(const char *name, int flags)`).
 - **Comportamento:** solta o handle aberto por `sceKernelOpenMemBlock`; não libera a memória.
 - **Retorno/erros:** 0; UID → `INVALID_UID` 0x80024501. `sceKernelOpenMemBlock` deve devolver
@@ -966,7 +968,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Implementação no VitaSharp:** `CloseHandle<MemBlock>(INVALID_UID)`. Custo 2_000. **Validação:** teste unitário.
 
 #### sceKernelGetSubbudgetInfo
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceSysmem · **NID:** 0x832B4A65 · `SysMem.cs` (`(uint p) => 0`, não escreve nada)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceSysmem · **NID:** 0x832B4A65 · `SysMem.cs` (`(uint p) => 0`, não escreve nada)
 - **Protótipo:** do header: `int sceKernelGetSubbudgetInfo(SceKernelSubbudgetId subbudget, SceKernelSubbudgetInfo *info);`
   (`psp2/kernel/sysmem.h`; o binding atual tem um argumento só, está errado).
 - **Comportamento:** total e livre do subbudget MAIN (0) ou CDLG (1, memória de common dialog). O header avisa que na
@@ -984,6 +986,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 
 #### sceKernelGetProcessTimeCore / sceKernelGetProcessTimeLowCore / sceKernelGetProcessTimeWideCore
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceProcessmgr · **NID:** 0xD37A8437 (Core), 0xF5D0D4C6 (LowCore), 0x89DA0967 (WideCore)
+- **Status:** não feito nesta passada: fontes de tempo estão sendo alteradas em outro branch (fix/kz-limbo).
 - **Protótipo:** `int sceKernelGetProcessTimeCore(SceKernelSysClock *time);`, `SceUInt32 sceKernelGetProcessTimeLowCore(void);`,
   `SceKernelSysClock sceKernelGetProcessTimeWideCore(void);` (`psp2/kernel/processmgr.h`)
 - **Comportamento:** syscalls por trás de `sceKernelGetProcessTime*` da SceLibKernel: tempo de processo em µs.
@@ -993,7 +996,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   depuração). Custo 200 (prefixo `sceKernelGetProcessTime`). **Validação:** `imports`.
 
 #### sceKernelGetProcessName
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceProcessmgr · **NID:** 0x10C52C95
+- [x] **Prioridade:** P1 · **Biblioteca:** SceProcessmgr · **NID:** 0x10C52C95
 - **Protótipo:** sem header; Vita3K `int sceKernelGetProcessName(char *name, SceUInt32 len);`
 - **Comportamento:** copia o nome do processo (`process_name` do SceProcessParam, offset 0x20 do `sceProcessParam`;
   se 0, o title id) com no máximo `len` bytes.
@@ -1019,7 +1022,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ## 5. SceModulemgr
 
 #### sceKernelGetAllowedSdkVersionOnSystem
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0x4397FC4E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0x4397FC4E
 - **Protótipo:** `SceUInt32 sceKernelGetAllowedSdkVersionOnSystem(void);` (`psp2/kernel/modulemgr.h`)
 - **Comportamento:** maior versão de SDK que o firmware aceita (formato 0xMMmmpppp, ex. 0x03740011). Bibliotecas
   comparam com a versão do SDK do jogo.
@@ -1029,7 +1032,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** `imports`.
 
 #### sceKernelGetLibraryInfoByNID
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0xEAEB1312
+- [x] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0xEAEB1312
 - **Protótipo:** `int sceKernelGetLibraryInfoByNID(SceUID modid, SceNID libnid, SceKernelLibraryInfo *info);`
   (`psp2/kernel/modulemgr.h`; a struct `SceKernelLibraryInfo` está declarada sem corpo: "missing structs").
 - **Comportamento:** informações da biblioteca `libnid` exportada pelo módulo `modid`.
@@ -1043,7 +1046,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   variável. Custo 2_000. **Validação:** teste unitário com `libc.suprx`.
 
 #### sceKernelIsCalledFromSysModule
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0x85E6D2BB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceModulemgr · **NID:** 0x85E6D2BB
 - **Protótipo:** `int sceKernelIsCalledFromSysModule(void *lr);` (`modulemgr.h`)
 - **Comportamento:** 1 se `lr` está dentro de um módulo de sistema (carregado de `vs0:`/`os0:`), 0 se dentro de
   módulo do jogo. Módulos de sistema carregados como LLE (`sce_module/libc.suprx` etc. vêm de `app0:`, então contam
@@ -1111,7 +1114,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
 `NOT_INITIALIZED`).
 
 #### sceRtcGetDayOfYear
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0xB5C4E95F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0xB5C4E95F
 - **Protótipo:** sem header; inferido `int sceRtcGetDayOfYear(int year, int month, int day);` (par de
   `sceRtcGetDayOfWeek(int, int, int)`).
 - **Comportamento:** dia do ano; base 1 (1º de janeiro = 1) a confirmar (PSP devolve 1..366).
@@ -1121,7 +1124,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
   teste unitário (29/02/2024 → 60).
 
 #### sceRtcGetDosTime / sceRtcSetDosTime
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x92ABEBAF (Get), 0xF8B22B07 (Set)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x92ABEBAF (Get), 0xF8B22B07 (Set)
 - **Protótipo:** `int sceRtcGetDosTime(const SceDateTime *time, unsigned int *puiDosTime);`,
   `int sceRtcSetDosTime(SceDateTime *time, unsigned int uiDosTime);` (`psp2/rtc.h`)
 - **Comportamento:** formato FAT: `((year-1980)&0x7F)<<25 | (month&0xF)<<21 | (day&0x1F)<<16 | (hour&0x1F)<<11 |
@@ -1132,7 +1135,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
   normalizar valores inválidos). **Validação:** ida e volta de uma data.
 
 #### sceRtcTickAddTicks / sceRtcTickAddWeeks / sceRtcTickAddMonths / sceRtcTickAddYears
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x4559E2DB (Ticks), 0xE713C640 (Weeks), 0x6321B4AA (Months), 0xDF6C3E1B (Years)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x4559E2DB (Ticks), 0xE713C640 (Weeks), 0x6321B4AA (Months), 0xDF6C3E1B (Years)
 - **Protótipo:** `int sceRtcTickAddTicks(SceRtcTick *pTick0, const SceRtcTick *pTick1, SceLong64 lAdd);` e
   `int sceRtcTickAdd{Weeks,Months,Years}(SceRtcTick *pTick0, const SceRtcTick *pTick1, int lAdd);` (`psp2/rtc.h`)
 - **Comportamento:** `*pTick0 = *pTick1 + delta`. Ticks: delta em µs. Weeks: `lAdd * 604800 * 10^6`. Months/Years:
@@ -1143,7 +1146,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
   r2:r3). Months/Years com `DateTime.AddMonths/AddYears` (já saturam o dia). **Validação:** teste unitário com 31/01.
 
 #### sceRtcGetCurrentAdNetworkTick / sceRtcGetCurrentDebugNetworkTick / sceRtcGetCurrentGpsTick / sceRtcGetCurrentRetainedNetworkTick
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x5612AF12 (Ad), 0x4ED6BA6C (Debug), 0xBB92534F (Gps), 0xA086AE18 (Retained)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x5612AF12 (Ad), 0x4ED6BA6C (Debug), 0xBB92534F (Gps), 0xA086AE18 (Retained)
 - **Protótipo:** `int sceRtcGetCurrent{AdNetwork,DebugNetwork,Gps,RetainedNetwork}Tick(SceRtcTick *tick);` (`psp2/rtc.h`)
 - **Comportamento:** relógios alternativos (ad hoc, depuração, GPS do 3G, rede retida). Sem rede/GPS reais, devolver o
   mesmo que `sceRtcGetCurrentNetworkTick` (`NowTick`). GPS em console sem 3G deveria falhar (código a confirmar;
@@ -1153,7 +1156,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
 - **Validação:** `imports`.
 
 #### sceRtcGetLastAdjustedTick / sceRtcGetLastReincarnatedTick
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x8148E95C (Adjusted), 0xA8C16615 (Reincarnated)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtcUser · **NID:** 0x8148E95C (Adjusted), 0xA8C16615 (Reincarnated)
 - **Protótipo:** `int sceRtcGetLastAdjustedTick(SceRtcTick *tick);`, `int sceRtcGetLastReincarnatedTick(SceRtcTick *tick);` (`psp2/rtc.h`)
 - **Comportamento:** momento do último ajuste do relógio pelo usuário / da última "reencarnação" (reset do RTC). Usado
   por jogos para detectar troca de hora (anti-trapaça de eventos diários). Devolver um tick fixo no passado: o
@@ -1162,7 +1165,7 @@ Aproveitar para conferir que `sceRtcCheckValid` devolve 0x80251081..87 conforme 
 - **Implementação:** `Rtc.cs`. **Validação:** `imports`.
 
 #### sceRtcGetAccumulativeTime
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceRtc · **NID:** 0x258BE8EC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceRtc · **NID:** 0x258BE8EC
 - **Protótipo:** `SceULong64 sceRtcGetAccumulativeTime(void);` (`psp2/rtc.h`)
 - **Comportamento:** contador monotônico acumulado (não afetado por ajuste de hora). O Vita3K (marcado STUBBED) devolve
   o tick atual; unidade a confirmar. Devolver `NowTick` mantém coerência com os outros relógios.

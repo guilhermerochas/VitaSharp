@@ -10,6 +10,72 @@ public abstract class KernelObject
     string? _waitDescription;
     /// <summary>"kind name" shown in thread states; built once so blocking waits do not allocate a string each time.</summary>
     public string WaitDescription => _waitDescription ??= $"{GetType().Name.ToLowerInvariant()} {Name}";
+
+    /// <summary>Class reported by sceKernelGetThreadmgrUIDClass (Vita3K numbering: thread 1, semaphore 2, event flag 3,
+    /// mutex 4, cond 5, timer 6, msg pipe 7, callback 8, thread event 9, lw mutex 10, lw cond 11, rw lock 12,
+    /// simple event 13); 0 for objects that are not threadmgr objects.</summary>
+    public virtual int UidClass => 0;
+
+    /// <summary>Handles handed out by sceKernelOpen* and not yet closed (the Open returns the creator's UID).</summary>
+    public int OpenCount;
+}
+
+/// <summary>Helpers shared by the sceKernelGet*Info functions.</summary>
+public static class KernelInfo
+{
+    /// <summary>
+    /// Copies the start of <paramref name="full"/> to the guest struct at <paramref name="info"/>: its first field (size)
+    /// sets how many bytes are copied, and is written back. NULL → ILLEGAL_ADDR, size larger than the struct → NO_MEMORY.
+    /// </summary>
+    public static int Write(uint info, ReadOnlySpan<byte> full, int nullError = SceError.ILLEGAL_ADDR)
+    {
+        if (info == 0) return nullError;
+        uint size = Memory.GuestMemory.R32(info);
+        if (size > (uint)full.Length) return SceError.NO_MEMORY;
+        full[..(int)size].CopyTo(Memory.GuestMemory.Span(info, (int)size));
+        if (size >= 4) Memory.GuestMemory.W32(info, size);
+        return SceError.OK;
+    }
+
+    /// <summary>Writes the common header of the Info structs: +0 size, +4 uid, +8 name[32], +0x28 attr.</summary>
+    public static void Header(Span<byte> full, int uid, string name, uint attr)
+    {
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(full, full.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(full[4..], uid);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+        bytes.AsSpan(0, Math.Min(bytes.Length, 31)).CopyTo(full[8..]);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(full[0x28..], attr);
+    }
+
+    public static void Put(Span<byte> full, int offset, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(full[offset..], v);
+    public static void Put(Span<byte> full, int offset, int v) => System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(full[offset..], v);
+    public static void Put64(Span<byte> full, int offset, ulong v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(full[offset..], v);
+
+    /// <summary>
+    /// sceKernelOpen*: finds the object by name (optionally filtered), counts the handle and returns its UID (the
+    /// hardware returns a new UID referencing the same object; the creator's UID behaves the same here).
+    /// NULL name → ILLEGAL_ADDR, longer than 31 bytes → UID_NAME_TOO_LONG, not found → UID_CANNOT_FIND_BY_NAME.
+    /// </summary>
+    public static int OpenByName<T>(ObjectTable objects, uint namePtr, Func<T, bool>? filter = null) where T : KernelObject
+    {
+        if (namePtr == 0) return SceError.ILLEGAL_ADDR;
+        string name = Memory.GuestMemory.ReadCString(namePtr, 256);
+        if (System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
+        var o = objects.All<T>().FirstOrDefault(x => x.Name == name && (filter == null || filter(x)));
+        if (o == null) return SceError.UID_CANNOT_FIND_BY_NAME;
+        Interlocked.Increment(ref o.OpenCount);
+        return o.Uid;
+    }
+
+    /// <summary>sceKernelClose*: releases a handle; never deletes the object.</summary>
+    public static int CloseHandle<T>(ObjectTable objects, int uid, int unknownError, Func<T, bool>? filter = null) where T : KernelObject
+    {
+        var o = objects.Get<T>(uid);
+        if (o == null || (filter != null && !filter(o))) return unknownError;
+        int c;
+        while ((c = Volatile.Read(ref o.OpenCount)) > 0 && Interlocked.CompareExchange(ref o.OpenCount, c - 1, c) != c) { }
+        return SceError.OK;
+    }
 }
 
 /// <summary>Common SCE error codes.</summary>

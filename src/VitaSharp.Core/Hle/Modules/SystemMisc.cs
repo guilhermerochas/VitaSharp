@@ -163,6 +163,64 @@ public sealed class SystemMisc : HleModule
         return 0;
     }
 
+    /// <summary>Runs module_stop(args, argp) and stores its result; the module stays loaded.</summary>
+    [Hle]
+    int sceKernelStopModule(int uid, uint args, uint argp, uint flags, uint opt, Ptr<int> status)
+    {
+        if (!K.Modules.TryGetValue(uid, out var m)) return SceError.MODULEMGR_NO_MOD;
+        int r = m.StopEntry != 0 ? (int)GuestThread.Current!.CallGuest(m.StopEntry, args, argp) : 0;
+        status.TrySet(r);
+        return 0;
+    }
+
+    /// <summary>Highest SDK version the firmware accepts (same firmware as sceKernelGetSystemSwVersion).</summary>
+    [Hle] uint sceKernelGetAllowedSdkVersionOnSystem() => SystemSwVersion;
+
+    /// <summary>1 when <paramref name="lr"/> is inside a firmware module (loaded from vs0:/os0:), 0 for game modules
+    /// (sce_module/*.suprx shipped in app0: count as the game's).</summary>
+    [Hle]
+    int sceKernelIsCalledFromSysModule(uint lr)
+    {
+        foreach (var m in K.Modules.Values)
+            foreach (var s in m.Segments.Values)
+                if (lr >= s.Address && lr < s.Address + s.Size)
+                    return m.Path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) || m.Path.StartsWith("os0:", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        return 0;
+    }
+
+    /// <summary>
+    /// Library exported by a module. SceKernelLibraryInfo has no documented body; the layout used is
+    /// SceKernelModuleLibraryInfo (0x120, a confirmar): +4 library_id, +8 libnid, +0xC version, +0xE flags,
+    /// +0x10 function count, +0x12 variable count, +0x18 library_name[0x100], +0x118 client_count, +0x11C owner module.
+    /// </summary>
+    [Hle]
+    int sceKernelGetLibraryInfoByNID(int modid, uint libNid, uint info)
+    {
+        if (!K.Modules.TryGetValue(modid, out var m)) return SceError.MODULEMGR_NO_MOD;
+        int idx = m.Exports.FindIndex(e => e.LibNid == libNid);
+        if (idx < 0) return unchecked((int)0x8002D003); // MODULEMGR_NO_LIB (a confirmar)
+        var e = m.Exports[idx];
+        Span<byte> f = stackalloc byte[0x120];
+        f.Clear();
+        KernelInfo.Put(f, 0, 0x120);
+        KernelInfo.Put(f, 4, modid);
+        KernelInfo.Put(f, 8, libNid);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(f[0x10..], (ushort)e.FuncNids.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(f[0x12..], (ushort)e.VarNids.Length);
+        var name = System.Text.Encoding.UTF8.GetBytes(e.Library);
+        name.AsSpan(0, Math.Min(name.Length, 0xFF)).CopyTo(f[0x18..]);
+        KernelInfo.Put(f, 0x11C, modid);
+        return KernelInfo.Write(info, f);
+    }
+
+    [Hle]
+    int sceSblACMgrIsGameProgram(Ptr<int> result)
+    {
+        if (result.IsNull) return SceError.ILLEGAL_ADDR;
+        result.Value = 1;
+        return 0;
+    }
+
     [Hle] int sceKernelCallModuleExit() => 0;
 
     [Hle]

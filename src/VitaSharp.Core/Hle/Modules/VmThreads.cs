@@ -32,6 +32,7 @@ public sealed unsafe class VmThreads : HleModule
 
     [Hle("sceKernelGetThreadContextForMono")]
     [Hle("_sceKernelGetThreadContextForVM")]
+    [Hle("sceKernelGetThreadContextForVM")]
     int GetContext(int uid, uint cpuInfo, uint vfpInfo)
     {
         var t = Target(uid);
@@ -40,7 +41,8 @@ public sealed unsafe class VmThreads : HleModule
         var s = t.Core.State;
         if (cpuInfo != 0)
         {
-            if (GuestMemory.R32(cpuInfo) < 0x58) return ERR_ILLEGAL_SIZE;
+            uint cs = GuestMemory.R32(cpuInfo);
+            if (cs < 0x58) return ERR_ILLEGAL_SIZE;
             GuestMemory.W32(cpuInfo + 4, (s->Cpsr & ~0x1Fu) | 0x10);
             for (int i = 0; i < 16; i++) GuestMemory.W32(cpuInfo + 8 + (uint)i * 4, s->R[i]);
             GuestMemory.W32(cpuInfo + 72, s->TpidrUrw);
@@ -50,7 +52,8 @@ public sealed unsafe class VmThreads : HleModule
         }
         if (vfpInfo != 0)
         {
-            if (GuestMemory.R32(vfpInfo) < 0x108) return ERR_ILLEGAL_SIZE;
+            uint vs = GuestMemory.R32(vfpInfo);
+            if (vs < 0x108) return ERR_ILLEGAL_SIZE;
             GuestMemory.W32(vfpInfo + 4, s->Fpscr);
             new ReadOnlySpan<byte>(s->D, 256).CopyTo(GuestMemory.Span(vfpInfo + 8, 256));
         }
@@ -59,6 +62,7 @@ public sealed unsafe class VmThreads : HleModule
 
     [Hle("sceKernelSetThreadContextForMono")]
     [Hle("_sceKernelSetThreadContextForVM")]
+    [Hle("sceKernelSetThreadContextForVM")]
     int SetContext(int uid, uint cpuInfo, uint vfpInfo)
     {
         var t = Target(uid);
@@ -76,6 +80,8 @@ public sealed unsafe class VmThreads : HleModule
     }
 
     [Hle("sceKernelWaitExceptionForMono")]
+    [Hle("sceKernelWaitException")]
+    [Hle("sceKernelWaitExceptionCB")]
     int WaitException()
     {
         var self = GuestThread.Current!;

@@ -7,6 +7,8 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed class MemBlock : KernelObject
 {
     public uint Address, Size, Type;
+    /// <summary>Allocated by sceKernelAllocMemBlockForVM.</summary>
+    public bool IsVm;
 }
 
 /// <summary>SceSysmem: memory blocks.</summary>
@@ -43,7 +45,54 @@ public sealed class SysMem : HleModule
         }
     }
 
-    [Hle] int sceKernelAllocMemBlockForVM(string name, uint size) => sceKernelAllocMemBlock(name, TypeUserRx, size, 0);
+    const uint VmBlockGranule = 0x100000, VmBudget = 0x1000000;
+    bool _vmDomainOpen;
+
+    /// <summary>Executable blocks for JITs (Mono/PSM): size a multiple of 1 MiB, at most 16 MiB in all (Vita3K).</summary>
+    [Hle]
+    int sceKernelAllocMemBlockForVM(string name, uint size)
+    {
+        if (size == 0 || (size & (VmBlockGranule - 1)) != 0) return SceError.ILLEGAL_MEMBLOCK_SIZE;
+        long used = K.Objects.All<MemBlock>().Where(b => b.IsVm).Sum(b => (long)b.Size);
+        if (used + size > VmBudget) return SceError.MEMBLOCK_OVERFLOW;
+        int uid = sceKernelAllocMemBlock(name, TypeUserRx, size, 0);
+        if (uid > 0 && K.Objects.Get<MemBlock>(uid) is { } blk) blk.IsVm = true;
+        return uid;
+    }
+
+    [Hle]
+    int sceKernelFreeMemBlockForVM(int uid)
+    {
+        var b = K.Objects.Get<MemBlock>(uid);
+        if (b == null || !b.IsVm) return SceError.INVALID_ARGUMENT;
+        return sceKernelFreeMemBlock(uid);
+    }
+
+    /// <summary>Makes the VM blocks writable (open) or executable again (close); nested calls fail with ENOSYS.</summary>
+    [Hle]
+    int sceKernelOpenVMDomain()
+    {
+        lock (this) { if (_vmDomainOpen) return SceError.ERRNO_ENOSYS; _vmDomainOpen = true; }
+        return 0;
+    }
+
+    [Hle]
+    int sceKernelCloseVMDomain()
+    {
+        lock (this) { if (!_vmDomainOpen) return SceError.ERRNO_ENOSYS; _vmDomainOpen = false; }
+        return 0;
+    }
+
+    /// <summary>Instruction cache flush after writing JIT code: drops translated blocks of the range.</summary>
+    [Hle]
+    int sceKernelSyncVMDomain(int uid, uint data, uint size)
+    {
+        var b = K.Objects.Get<MemBlock>(uid);
+        if (b == null) return SceError.ILLEGAL_BLOCK_ID;
+        if (data < b.Address || (ulong)data + size > (ulong)b.Address + b.Size) return SceError.MEMBLOCK_RANGE_ERROR;
+        Emu.Code.Invalidate(data, size);
+        return 0;
+    }
 
     [Hle]
     int sceKernelFreeMemBlock(int uid)
@@ -105,7 +154,24 @@ public sealed class SysMem : HleModule
     [Hle] int sceKernelGetModel() => 0x10000;          // PS Vita (not PS TV)
     [Hle] int sceKernelGetModelForCDialog() => 0x10000;
     [Hle] int sceKernelIsPSVitaTV() => 0;
-    [Hle] int sceKernelGetSubbudgetInfo(uint p) => 0;
+    /// <summary>SceKernelSubbudgetInfo (0xC): +0 size, +4 total_size, +8 free_size. MAIN (0) follows
+    /// sceKernelGetFreeMemorySize; CDLG (1, common dialog memory) size is a confirmar (reported as 0).</summary>
+    [Hle]
+    int sceKernelGetSubbudgetInfo(int id, uint info)
+    {
+        if (id is not (0 or 1)) return SceError.INVALID_ARGUMENT;
+        Span<byte> f = stackalloc byte[0xC];
+        f.Clear();
+        KernelInfo.Put(f, 0, 0xC);
+        if (id == 0)
+        {
+            long used = K.Objects.All<MemBlock>().Where(b => b.Type != TypeUserCdramRw).Sum(b => (long)b.Size);
+            KernelInfo.Put(f, 4, (uint)UserBudget);
+            KernelInfo.Put(f, 8, (uint)Math.Max(0, UserBudget - used));
+        }
+        return KernelInfo.Write(info, f);
+    }
+
     [Hle] int sceKernelOpenMemBlock(string name, int flags) => K.Objects.FindByName<MemBlock>(name)?.Uid ?? SceError.UID_CANNOT_FIND_BY_NAME;
-    [Hle] int sceKernelCloseMemBlock(int uid) => 0;
+    [Hle] int sceKernelCloseMemBlock(int uid) => KernelInfo.CloseHandle<MemBlock>(K.Objects, uid, SceError.INVALID_UID);
 }
