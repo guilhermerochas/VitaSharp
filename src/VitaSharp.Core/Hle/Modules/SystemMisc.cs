@@ -349,11 +349,6 @@ public sealed class SystemMisc : HleModule
     // ------------------------------------------------------------------ misc system
 
     [Hle] int sceShutterSoundOutput(int type) => 0;
-    // screenshots are a system feature (PS button + Start): accept the game's settings
-    [Hle] int sceScreenShotEnable() => 0;
-    [Hle] int sceScreenShotDisable() => 0;
-    [Hle] int sceScreenShotSetParam(uint param) => 0;
-    [Hle] int sceScreenShotSetOverlayImage(uint path, int offsetX, int offsetY) => 0;
     [Hle] int sceLiveAreaUpdateFrameSync(uint formatVer, uint frameList, uint numFrames, uint dirpath, uint option) => 0;
     /// <summary>Firmware reported to games (3.74), shared with sceKernelGetAllowedSdkVersionOnSystem.</summary>
     internal const uint SystemSwVersion = 0x03740011;

@@ -28,6 +28,22 @@ nulos → `SCE_GXM_ERROR_INVALID_POINTER`, como no Vita3K), `sceGxmUnmapVertexUs
 (o map não guarda nada; idem, só validar `base != 0`), `sceGxmShaderPatcherGet{Host,Buffer,VertexUsse,FragmentUsse}MemAllocated`
 (estatística de memória do patcher; 0 é aceitável porque o VitaSharp não aloca nada nos heaps do jogo).
 
+## Estado da implementação (branch feat/hle-p0)
+
+Todos os P0, STUB e P1 deste arquivo estão implementados no HLE (`Gxm.cs`, `Display.cs`, `ScreenShot.cs`). Pendências
+que dependem do renderer (`VitaSharp.Renderer.Vulkan`/`ShaderGenerator`, fora do escopo desta passada) — o estado já é
+guardado e só falta consumi-lo:
+
+- `sceGxmColorSurfaceSetClip`: o clip fica na struct do guest (w0 bits 8-31, +0x1C bits 8-31), mas o scissor do
+  Vulkan ainda não é intersectado com ele (`ColorSurfaceInfo` não ganhou os campos).
+- `sceGxmSetWClampEnable/Value`, `sceGxmSetWBufferEnable`, `sceGxmSet*LineFillLastPixelEnable`: campos em `DrawState`/
+  `SideState`, ignorados pelo renderer.
+- `sceGxmSetYuvProfile`: guardado em `GxmContext.YuvProfile`; o decodificador YUV ainda usa as matrizes fixas.
+- `sceGxmColorSurfaceSetDitherMode`: só estado (w0 bit 4); Vulkan não tem dither fixo.
+- `sceScreenShotCapture`: fase 1 (loga os argumentos, não grava imagem). Os argumentos reais continuam a confirmar
+  no primeiro jogo que chamar (Invizimals).
+- Deferred contexts: gravação/execução por receita (`DrawRecipe`); custo de VDM por draw = 64 bytes (a confirmar).
+
 ## Ordem sugerida de implementação
 
 1. **P0 triviais (uma sessão curta):** `sceGxmSetWarningEnabled`, família de user markers
@@ -79,7 +95,7 @@ confirmar). Opcional, só quando houver um modo de trace no renderer: submeter u
 `VK_EXT_debug_utils` estiver ativa — útil para RenderDoc. Não fazer isso por padrão (God of War chama por draw group).
 
 ### sceGxmPushUserMarker
-- [ ] **Prioridade:** P0 (God of War Collection, PCSA00126) · **Biblioteca:** SceGxm · **NID:** 0x3276C475
+- [x] **Prioridade:** P0 (God of War Collection, PCSA00126) · **Biblioteca:** SceGxm · **NID:** 0x3276C475
 - **Protótipo:** `int sceGxmPushUserMarker(SceGxmContext *context, const char *tag);` (`psp2/gxm.h`)
 - **Comportamento:** empilha um marcador de debug nomeado no stream de comandos do contexto. Sem efeito visual.
 - **Retorno/erros:** 0. `SCE_GXM_ERROR_INVALID_POINTER` (0x805B0004) se `context` for nulo (a confirmar; tag nula
@@ -92,7 +108,7 @@ confirmar). Opcional, só quando houver um modo de trace no renderer: submeter u
   e `gow_game.txt` sem `Unimplemented HLE function` e sem regressão nos frames.
 
 ### sceGxmPopUserMarker
-- [ ] **Prioridade:** P0 (God of War Collection, PCSA00126) · **Biblioteca:** SceGxm · **NID:** 0x4FA073A6
+- [x] **Prioridade:** P0 (God of War Collection, PCSA00126) · **Biblioteca:** SceGxm · **NID:** 0x4FA073A6
 - **Protótipo:** `int sceGxmPopUserMarker(SceGxmContext *context);` (`psp2/gxm.h`)
 - **Comportamento:** desempilha o marcador aberto por `sceGxmPushUserMarker`.
 - **Retorno/erros:** 0; `SCE_GXM_ERROR_INVALID_POINTER` com contexto nulo (a confirmar).
@@ -101,7 +117,7 @@ confirmar). Opcional, só quando houver um modo de trace no renderer: submeter u
 - **Validação:** igual a `sceGxmPushUserMarker`.
 
 ### sceGxmSetWarningEnabled
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceGxm · **NID:** 0x12D18B3D
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceGxm · **NID:** 0x12D18B3D
 - **Protótipo (inferido; ausente do vita-headers):** `int sceGxmSetWarningEnabled(SceGxmWarning warning, SceBool enable);`
   — liga/desliga uma classe de aviso da libgxm de debug. Nomes/valores de `SceGxmWarning` a confirmar (não constam em
   nenhuma fonte disponível); para o HLE basta tratar os dois argumentos como `uint`.
@@ -114,7 +130,7 @@ confirmar). Opcional, só quando houver um modo de trace no renderer: submeter u
 - **Validação:** `imports PCSG00198`; `test tests/scenarios/st_boot.txt` sem o aviso de função não implementada.
 
 ### sceGxmSetWBufferEnable
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceGxm · **NID:** 0xEED86975
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceGxm · **NID:** 0xEED86975
 - **Protótipo:** `void sceGxmSetWBufferEnable(SceGxmContext *context, SceGxmWBufferMode enable);` (`psp2/gxm.h`)
   `SCE_GXM_WBUFFER_DISABLED = 0`, `SCE_GXM_WBUFFER_ENABLED = 0x00004000`.
 - **Comportamento:** com W-buffer ligado, o teste/escrita de profundidade usa o W do vértice (profundidade em espaço de
@@ -162,7 +178,7 @@ biblioteca no sistema (o jogo controla se o usuário pode tirar screenshot e com
 | 0x0C | `reserved` | `void *`, deve ser NULL |
 
 ### sceScreenShotEnable
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x76E674D1
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x76E674D1
 - **Protótipo:** `int sceScreenShotEnable(void);` (`psp2/screenshot.h`)
 - **Comportamento:** volta a permitir que o usuário capture a tela pelo sistema (PS + START). Jogos alternam com
   `sceScreenShotDisable` para bloquear capturas em cenas com spoiler/conteúdo licenciado.
@@ -173,7 +189,7 @@ biblioteca no sistema (o jogo controla se o usuário pode tirar screenshot e com
 - **Validação:** `imports PCSG00198`; `st_game.txt` sem aviso de função não implementada.
 
 ### sceScreenShotDisable
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x50AE9FF9
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x50AE9FF9
 - **Protótipo:** `int sceScreenShotDisable(void);` (`psp2/screenshot.h`)
 - **Comportamento:** bloqueia capturas pelo sistema até `sceScreenShotEnable`.
 - **Retorno/erros:** 0.
@@ -182,7 +198,7 @@ biblioteca no sistema (o jogo controla se o usuário pode tirar screenshot e com
 - **Validação:** igual a `sceScreenShotEnable`.
 
 ### sceScreenShotSetParam
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198; Invizimals, PCSA00552) · **Biblioteca:** SceScreenShot · **NID:** 0x05DB59C7
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198; Invizimals, PCSA00552) · **Biblioteca:** SceScreenShot · **NID:** 0x05DB59C7
 - **Protótipo:** `int sceScreenShotSetParam(const SceScreenShotParam *param);` (`psp2/screenshot.h`)
 - **Comportamento:** define título da foto, título do jogo e comentário gravados nos metadados das próximas capturas.
   Ponteiros de string nulos = campo não definido (mantém o padrão do sistema).
@@ -197,7 +213,7 @@ biblioteca no sistema (o jogo controla se o usuário pode tirar screenshot e com
   `reserved != 0` → 0x80102F01.
 
 ### sceScreenShotSetOverlayImage
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x7061665B
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceScreenShot · **NID:** 0x7061665B
 - **Protótipo:** `int sceScreenShotSetOverlayImage(const char *filepath, int offsetX, int offsetY);` (`psp2/screenshot.h`)
 - **Comportamento:** registra uma imagem (PNG, normalmente em `app0:`) desenhada por cima das capturas na posição
   `(offsetX, offsetY)` — marca d'água/logo. `filepath` nulo remove o overlay (a confirmar).
@@ -213,7 +229,7 @@ biblioteca no sistema (o jogo controla se o usuário pode tirar screenshot e com
 - **Validação:** `st_boot.txt`/`st_game.txt`: conferir no log o caminho recebido e que o arquivo resolve.
 
 ### sceScreenShotCapture
-- [ ] **Prioridade:** P0 (Invizimals, PCSA00552) · **Biblioteca:** SceScreenShot · **NID:** 0xD509FB08
+- [x] **Prioridade:** P0 (Invizimals, PCSA00552) · **Biblioteca:** SceScreenShot · **NID:** 0xD509FB08
 - **Protótipo (inferido; ausente do vita-headers e sem implementação no Vita3K):** argumentos desconhecidos. Hipótese:
   captura programática da tela atual para a galeria (Fotos), usando o param/overlay configurados; Invizimals usa para
   "foto" de criaturas em realidade aumentada. **Como confirmar:** rodar Invizimals com
@@ -273,7 +289,7 @@ Desenho:
    da espera, antes do retorno.)
 
 ### sceDisplayRegisterVblankStartCallback
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceDisplay · **NID:** 0x6BDF4C4D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceDisplay · **NID:** 0x6BDF4C4D
 - **Protótipo:** `int sceDisplayRegisterVblankStartCallback(SceUID uid);` (`psp2/display.h`)
 - **Comportamento:** registra o callback `uid` (criado com `sceKernelCreateCallback`) para ser notificado em cada início
   de vblank (~59,94 Hz). Registrar o mesmo uid duas vezes não duplica (Vita3K usa um map por uid).
@@ -286,7 +302,7 @@ Desenho:
   `gow_boot.txt`, `kz_boot.txt` para garantir que a thread nova não muda o ritmo (turbo incluso).
 
 ### sceDisplayUnregisterVblankStartCallback
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceDisplay · **NID:** 0x98436A80
+- [x] **Prioridade:** STUB · **Biblioteca:** SceDisplay · **NID:** 0x98436A80
 - **Protótipo:** `int sceDisplayUnregisterVblankStartCallback(SceUID uid);` (`psp2/display.h`)
 - **Comportamento:** remove o registro; notificações já pendentes no callback continuam pendentes.
 - **Retorno/erros:** 0; `SCE_DISPLAY_ERROR_INVALID_VALUE` (0x80290001) se `uid` não estiver registrado (Vita3K).
@@ -331,7 +347,7 @@ Como aplicar no Vulkan:
    `SetDynamicState` (só 1 e 2).
 
 ### sceGxmColorSurfaceSetClip
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x86456F7B
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x86456F7B
 - **Protótipo:** `void sceGxmColorSurfaceSetClip(SceGxmColorSurface *surface, unsigned int xMin, unsigned int yMin, unsigned int xMax, unsigned int yMax);` (`psp2/gxm.h`)
 - **Comportamento:** define o retângulo inclusivo `[xMin..xMax] × [yMin..yMax]` fora do qual a cor não é escrita.
   Vita3K: `UNIMPLEMENTED()`.
@@ -345,7 +361,7 @@ Como aplicar no Vulkan:
   sceGxmColorSurfaceSetClip` quais jogos chamam.
 
 ### sceGxmColorSurfaceGetClip
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x07DFEE4B
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x07DFEE4B
 - **Protótipo:** `void sceGxmColorSurfaceGetClip(const SceGxmColorSurface *surface, unsigned int *xMin, unsigned int *yMin, unsigned int *xMax, unsigned int *yMax);` (`psp2/gxm.h`)
 - **Comportamento:** devolve o clip guardado (padrão = superfície inteira).
 - **Retorno/erros:** void; ponteiros de saída nulos são ignorados (já usa `TrySet`).
@@ -356,7 +372,7 @@ Como aplicar no Vulkan:
 ## W clamp
 
 ### sceGxmSetWClampEnable
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x1BF8B853
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x1BF8B853
 - **Protótipo:** `void sceGxmSetWClampEnable(SceGxmContext *context, SceGxmWClampMode enable);` (`psp2/gxm.h`)
   `SCE_GXM_WCLAMP_MODE_DISABLED = 0`, `SCE_GXM_WCLAMP_MODE_ENABLED = 0x00008000`.
 - **Comportamento:** liga o clamp de W dos vértices transformados ao valor de `sceGxmSetWClampValue` (evita W ≤ 0 ou
@@ -379,7 +395,7 @@ Como aplicar no Vulkan:
   no jogo que usa a função.
 
 ### sceGxmSetWClampValue
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0xD096336E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0xD096336E
 - **Protótipo:** `void sceGxmSetWClampValue(SceGxmContext *context, float clampValue);` (`psp2/gxm.h`)
 - **Comportamento:** define o valor usado pelo W clamp. `clampValue` chega em `s0` (AAPCS-VFP), como já declarado em
   Gxm.cs:142.
@@ -392,7 +408,7 @@ Como aplicar no Vulkan:
 ## Dither da color surface
 
 ### sceGxmColorSurfaceSetDitherMode
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x45027BAB
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x45027BAB
 - **Protótipo:** `int sceGxmColorSurfaceSetDitherMode(SceGxmColorSurface *surface, SceGxmColorSurfaceDitherMode ditherMode);` (`psp2/gxm.h`)
   `SCE_GXM_COLOR_SURFACE_DITHER_DISABLED = 0`, `SCE_GXM_COLOR_SURFACE_DITHER_ENABLED = 0x00000008`.
 - **Comportamento:** liga dithering ao escrever em formatos de poucos bits (RGB565, ARGB4444…). Hoje o stub descarta o
@@ -405,7 +421,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário Set/Get.
 
 ### sceGxmColorSurfaceGetDitherMode
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x200A96E1
+- [x] **Prioridade:** STUB · **Biblioteca:** SceGxm · **NID:** 0x200A96E1
 - **Protótipo:** `SceGxmColorSurfaceDitherMode sceGxmColorSurfaceGetDitherMode(const SceGxmColorSurface *surface);` (`psp2/gxm.h`)
 - **Comportamento:** devolve o modo guardado.
 - **Retorno/erros:** `0` ou `0x8`.
@@ -418,7 +434,7 @@ Como aplicar no Vulkan:
 # Parte 3 — P1 de SceGxm (exceto deferred)
 
 ### sceGxmFragmentProgramGetPassType
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xCE0B0A76
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xCE0B0A76
 - **Protótipo (inferido; ausente do vita-headers, assinatura do Vita3K):** `SceGxmPassType sceGxmFragmentProgramGetPassType(const SceGxmFragmentProgram *fragmentProgram);`
   `SceGxmPassType` está em `psp2/gxm.h`: `OPAQUE = 0`, `TRANSLUCENT = 0x02000000`, `DISCARD = 0x04000000`,
   `MASK_UPDATE = 0x06000000`, `DEPTH_REPLACE = 0x0A000000`.
@@ -434,7 +450,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário com programas dos jogos (F1/GoW têm programas com discard); nenhum jogo instalado importa.
 
 ### sceGxmGetContextType
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x2A1BCDDB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x2A1BCDDB
 - **Protótipo (inferido; Vita3K):** `int sceGxmGetContextType(const SceGxmContext *context, SceGxmContextType *type);`
   `SceGxmContextType`: `IMMEDIATE = 0`, `DEFERRED = 1` (Vita3K `gxm/types.h`).
 - **Comportamento:** informa se o contexto é imediato ou deferred.
@@ -444,7 +460,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário com os dois tipos de contexto.
 
 ### sceGxmGetParameterBufferThreshold
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x6ABF3F76
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x6ABF3F76
 - **Protótipo (inferido; Vita3K):** `int sceGxmGetParameterBufferThreshold(unsigned int *parameterBufferSize);`
 - **Comportamento:** devolve o limiar de ocupação do parameter buffer (memória de geometria binada do SGX) a partir do
   qual o driver força partial renders. O VitaSharp não tem parameter buffer.
@@ -456,7 +472,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário.
 
 ### sceGxmPrecomputedVertexStateSetAllUniformBuffers
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x0389861D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x0389861D
 - **Protótipo:** `int sceGxmPrecomputedVertexStateSetAllUniformBuffers(SceGxmPrecomputedVertexState *precomputedState, const void * const *bufferDataArray);` (`psp2/gxm.h`)
 - **Comportamento:** copia, de uma vez, os ponteiros de todos os uniform buffers usados pelo programa para o estado
   pré-computado (equivale a `SetUniformBuffer(i, array[i])` para cada índice).
@@ -472,14 +488,14 @@ Como aplicar no Vulkan:
   leitura dos slots.
 
 ### sceGxmPrecomputedFragmentStateSetAllUniformBuffers
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x5A783DC3
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x5A783DC3
 - **Protótipo:** `int sceGxmPrecomputedFragmentStateSetAllUniformBuffers(SceGxmPrecomputedFragmentState *precomputedState, const void * const *bufferDataArray);` (`psp2/gxm.h`)
 - **Comportamento/Retorno/Estruturas:** idênticos à versão vertex.
 - **Implementação no VitaSharp:** mesmo helper.
 - **Validação:** idem.
 
 ### sceGxmProgramGetFragmentProgramInputs
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC6924709
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC6924709
 - **Protótipo (inferido; Vita3K):** `SceGxmFragmentProgramInputs sceGxmProgramGetFragmentProgramInputs(const SceGxmProgram *program);`
   Bits: `POSITION = 1<<0`, `FOG = 1<<1`, `COLOR0 = 1<<2`, `COLOR1 = 1<<3`, `TEXCOORD0..9 = 1<<4..1<<13`,
   `SPRITECOORD = 1<<14` (Vita3K `gxm/types.h`).
@@ -497,7 +513,7 @@ Como aplicar no Vulkan:
   `ShaderGenerator` já decodifica, ShaderGenerator.cs:411).
 
 ### sceGxmProgramIsEquivalent
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE23C838C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE23C838C
 - **Protótipo (inferido; Vita3K):** `SceBool sceGxmProgramIsEquivalent(const SceGxmProgram *programA, const SceGxmProgram *programB);`
 - **Comportamento:** verdadeiro se os dois blobs GXP são idênticos (mesmo tamanho em `+0x08` e mesmos bytes).
 - **Retorno/erros:** 1/0; ponteiro nulo → 0 (Vita3K loga `INVALID_POINTER` e retorna false).
@@ -507,7 +523,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário.
 
 ### sceGxmSetFrontLineFillLastPixelEnable
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x5765DE9F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x5765DE9F
 - **Protótipo:** `void sceGxmSetFrontLineFillLastPixelEnable(SceGxmContext *context, SceGxmLineFillLastPixelMode enable);` (`psp2/gxm.h`)
   `DISABLED = 0`, `ENABLED = 0x00080000`.
 - **Comportamento:** em polígonos desenhados em modo linha (`SCE_GXM_POLYGON_MODE_LINE`/primitiva de linha), controla
@@ -519,7 +535,7 @@ Como aplicar no Vulkan:
 - **Validação:** nenhum jogo instalado importa; só compilar e rodar um cenário.
 
 ### sceGxmSetBackLineFillLastPixelEnable
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC88EB702
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC88EB702
 - **Protótipo:** `void sceGxmSetBackLineFillLastPixelEnable(SceGxmContext *context, SceGxmLineFillLastPixelMode enable);` (`psp2/gxm.h`)
 - **Comportamento/Implementação:** igual à versão front, em `State.Back`.
 - **Retorno/erros:** void.
@@ -528,7 +544,7 @@ Como aplicar no Vulkan:
 - **Validação:** idem.
 
 ### sceGxmSetUserMarker
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC7A8CB77
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC7A8CB77
 - **Protótipo:** `int sceGxmSetUserMarker(SceGxmContext *context, const char *tag);` (`psp2/gxm.h`)
 - **Comportamento:** marcador pontual de debug (Razor). Ver família "User markers" na Parte 1.
 - **Retorno/erros:** 0.
@@ -537,7 +553,7 @@ Como aplicar no Vulkan:
 - **Validação:** compilar; nenhum jogo instalado importa.
 
 ### sceGxmSetYuvProfile
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xB32917F0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xB32917F0
 - **Protótipo:** `int sceGxmSetYuvProfile(SceGxmContext *context, unsigned int index, SceGxmYuvProfile profile);` (`psp2/gxm.h`)
   `BT601_STANDARD = 0`, `BT709_STANDARD = 1`, `BT601_FULL_RANGE = 2`, `BT709_FULL_RANGE = 3`.
 - **Comportamento:** define a matriz de conversão YUV→RGB dos dois "CSC" do hardware (`index` 0 ou 1). Texturas
@@ -553,7 +569,7 @@ Como aplicar no Vulkan:
 - **Validação:** vídeos (`gow_vid*.txt`, `f1_movie.txt`) sem mudança de cor quando o perfil não é chamado.
 
 ### sceGxmTextureGetGammaMode
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xF23FCE81
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xF23FCE81
 - **Protótipo:** `SceGxmTextureGammaMode sceGxmTextureGetGammaMode(const SceGxmTexture *texture);` (`psp2/gxm.h`)
 - **Comportamento:** devolve o modo de gamma (bits 27-28 da palavra 0 da textura, já em posição de enum).
 - **Retorno/erros:** `((w0 >> 27) & 3) << 27`.
@@ -562,7 +578,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário Set/Get.
 
 ### sceGxmTextureGetMipmapCountUnsafe
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x4CC42929
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x4CC42929
 - **Protótipo (inferido; Vita3K):** `unsigned int sceGxmTextureGetMipmapCountUnsafe(const SceGxmTexture *texture);`
 - **Comportamento:** versão sem checagem de tipo: `(mipCountRaw + 1) & 0xF`, mesmo para textura linear strided (onde
   esses bits fazem parte do stride).
@@ -572,7 +588,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário.
 
 ### sceGxmTextureGetNormalizeMode
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x512BB86C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x512BB86C
 - **Protótipo (inferido; Vita3K):** `SceGxmTextureNormalizeMode sceGxmTextureGetNormalizeMode(const SceGxmTexture *texture);`
   (`SceGxmTextureNormalizeMode` em `psp2/gxm.h`: `DISABLED = 0`, `ENABLED = 0x80000000`.)
 - **Comportamento:** devolve o bit 31 da palavra 3.
@@ -582,7 +598,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário Set/Get.
 
 ### sceGxmTextureGetUAddrModeSafe
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC037DA83
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC037DA83
 - **Protótipo (inferido; Vita3K):** `SceGxmTextureAddrMode sceGxmTextureGetUAddrModeSafe(const SceGxmTexture *texture);`
 - **Comportamento:** como `GetUAddrMode`, mas textura linear strided (que não suporta modos de endereço) devolve
   `SCE_GXM_TEXTURE_ADDR_CLAMP` (2).
@@ -592,7 +608,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário.
 
 ### sceGxmTextureGetVAddrModeSafe
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xD2F0D9C1
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xD2F0D9C1
 - **Protótipo (inferido; Vita3K):** `SceGxmTextureAddrMode sceGxmTextureGetVAddrModeSafe(const SceGxmTexture *texture);`
 - **Comportamento:** idem para V (bits 3-5).
 - **Retorno/erros:** `IsStrided(tex) ? 2u : (R32(tex) >> 3) & 7`.
@@ -602,7 +618,7 @@ Como aplicar no Vulkan:
   — conferir.
 
 ### sceGxmTextureSetStride
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x58D0EB0A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x58D0EB0A
 - **Protótipo:** `int sceGxmTextureSetStride(SceGxmTexture *texture, unsigned int byteStride);` (`psp2/gxm.h`)
 - **Comportamento:** muda o stride de uma textura linear strided já inicializada.
 - **Retorno/erros:** 0; `INVALID_POINTER` (textura nula); `SCE_GXM_ERROR_UNSUPPORTED` (0x805B0009) se o tipo não for
@@ -616,7 +632,7 @@ Como aplicar no Vulkan:
 - **Validação:** teste unitário: InitLinearStrided(stride A) → SetStride(B) → `sceGxmTextureGetStride == B`.
 
 ### sceGxmVertexFence
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE05277D6
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE05277D6
 - **Protótipo (inferido; Vita3K):** `int sceGxmVertexFence(SceGxmContext *immediateContext);`
 - **Comportamento:** barreira de vértice no meio da cena; o Vita3K implementa como
   `sceGxmMidSceneFlush(ctx, 0, NULL, NULL)`.
@@ -628,7 +644,7 @@ Como aplicar no Vulkan:
 - **Validação:** compilar; nenhum jogo instalado importa.
 
 ### sceGxmWaitEvent
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x8BD94593
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x8BD94593
 - **Protótipo (inferido; ausente do vita-headers, Vita3K sem assinatura):** `int sceGxmWaitEvent(void);` — argumentos
   desconhecidos.
 - **Comportamento:** espera interna por um evento do driver GPU (usada pela própria libgxm/GLES). Semântica a
@@ -655,7 +671,7 @@ Constantes (`psp2common/display.h`): `SCE_DISPLAY_ERROR_INVALID_HEAD = 0x8029000
 `SceDisplayHead`: `MAIN_LCD_OLED = 0`, `HDMI = 1`, `SUB_LCD = 2`. `SceDisplayFrameBufType`: `GAME_APP = 0`, `LIVEAREA = 1`.
 
 ### sceDisplayGetVcountInternal
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceDisplay · **NID:** 0x9686859E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceDisplay · **NID:** 0x9686859E
 - **Protótipo:** `int sceDisplayGetVcountInternal(int display);` (`psp2/display.h`)
 - **Comportamento:** número de vblanks da cabeça `display`.
 - **Retorno/erros:** para `display == 0`, o mesmo que `sceDisplayGetVcount`. Outras cabeças: o Vita não tem HDMI;
@@ -667,7 +683,7 @@ Constantes (`psp2common/display.h`): `SCE_DISPLAY_ERROR_INVALID_HEAD = 0x8029000
 - **Validação:** nenhum jogo instalado importa; teste unitário.
 
 ### sceDisplayGetFrameBufInternal
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x5213F74B
+- [x] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x5213F74B
 - **Protótipo (inferido):** `int sceDisplayGetFrameBufInternal(SceDisplayHead head, SceDisplayFrameBufType fb_idx, SceDisplayFrameBuf *pParam, SceDisplaySetBufSync sync);`
   (base: `_sceDisplayGetFrameBufInternal(head, fb_idx, frame_buf, opt)` em `psp2/display.h`).
 - **Comportamento:** lê o framebuffer configurado num slot de uma cabeça.
@@ -682,7 +698,7 @@ Constantes (`psp2common/display.h`): `SCE_DISPLAY_ERROR_INVALID_HEAD = 0x8029000
 - **Validação:** teste unitário.
 
 ### sceDisplayGetResolutionInfoInternal
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x0BFB78C6
+- [x] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x0BFB78C6
 - **Protótipo (inferido):** `int sceDisplayGetResolutionInfoInternal(SceDisplayHead head, SceDisplayResolutionInfo *info);`
   (base: `_sceDisplayGetResolutionInfoInternal(head, info, opt)`).
 - **Comportamento:** resolução e modo de saída da cabeça.
@@ -695,7 +711,7 @@ Constantes (`psp2common/display.h`): `SCE_DISPLAY_ERROR_INVALID_HEAD = 0x8029000
 - **Validação:** teste unitário.
 
 ### sceDisplaySetFrameBufInternal
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x89F86A1E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceDisplayUser · **NID:** 0x89F86A1E
 - **Protótipo (inferido):** `int sceDisplaySetFrameBufInternal(SceDisplayHead head, SceDisplayFrameBufType fb_idx, const SceDisplayFrameBuf *pParam, SceDisplaySetBufSync sync);`
   (base: `_sceDisplaySetFrameBufInternal(head, fb_idx, frame_buf, opt)`).
 - **Comportamento:** define o framebuffer de um slot; `pParam` nulo desliga a varredura do slot.
@@ -832,7 +848,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 | 0x2C | `fragmentRingBufferMemSize` |
 
 ### sceGxmCreateDeferredContext
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x249D5B00
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x249D5B00
 - **Protótipo:** `int sceGxmCreateDeferredContext(const SceGxmDeferredContextParams *params, SceGxmContext **context);` (`psp2/gxm.h`)
 - **Comportamento:** cria um contexto deferred dentro de `hostMem` (o contexto mora na memória do jogo). Guarda
   callbacks e buffers iniciais; nenhum é obrigatório se o callback correspondente existir.
@@ -849,7 +865,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
   sem backend.
 
 ### sceGxmDestroyDeferredContext
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xD6A2FF2F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xD6A2FF2F
 - **Protótipo:** `int sceGxmDestroyDeferredContext(SceGxmContext *context);` (`psp2/gxm.h`)
 - **Comportamento:** destrói o contexto; os command lists gravados por ele deixam de ser válidos.
 - **Retorno/erros:** 0; `INVALID_POINTER` se o contexto não existir; `INVALID_VALUE` se for immediate;
@@ -860,7 +876,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** idem Create.
 
 ### sceGxmBeginCommandList
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x944D3F83
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x944D3F83
 - **Protótipo:** `int sceGxmBeginCommandList(SceGxmContext *context);` (`psp2/gxm.h`)
 - **Comportamento:** começa a gravar. Zera uso dos rings vertex/fragment; obtém rings/VDM pelos callbacks se faltarem.
   O estado do deferred (programas, texturas, depth…) persiste entre lists (Vita3K) — a confirmar se o hardware zera.
@@ -873,7 +889,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** idem Create.
 
 ### sceGxmEndCommandList
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x36D85916
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x36D85916
 - **Protótipo:** `int sceGxmEndCommandList(SceGxmContext *context, SceGxmCommandList *list);` (`psp2/gxm.h`)
 - **Comportamento:** termina a gravação e preenche `list` (32 bytes opacos).
 - **Retorno/erros:** 0; `INVALID_POINTER` (contexto ou `list` nulos); `INVALID_VALUE` se immediate;
@@ -885,7 +901,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** idem Create.
 
 ### sceGxmExecuteCommandList
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE8E139DD
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xE8E139DD
 - **Protótipo:** `int sceGxmExecuteCommandList(SceGxmContext *context, SceGxmCommandList *list);` (`psp2/gxm.h`)
 - **Comportamento:** reproduz os draws do list no immediate `context`, dentro da cena atual. O estado do immediate
   fica como estava.
@@ -898,7 +914,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
   aparecem na cena certa com viewport do immediate.
 
 ### sceGxmGetDeferredContextVdmBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xAD8C2EBA
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xAD8C2EBA
 - **Protótipo (inferido; Vita3K):** `int sceGxmGetDeferredContextVdmBuffer(const SceGxmContext *deferredContext, void **mem);`
 - **Comportamento:** devolve o VDM buffer atual do deferred.
 - **Retorno/erros:** 0; `INVALID_POINTER` (nulos); `INVALID_VALUE` se immediate; `ERR_WITHIN_COMMAND_LIST` se gravando.
@@ -907,7 +923,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário.
 
 ### sceGxmSetDeferredContextVdmBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x0B9D13CE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x0B9D13CE
 - **Protótipo (inferido; Vita3K):** `int sceGxmSetDeferredContextVdmBuffer(SceGxmContext *deferredContext, void *mem, SceSize size);`
 - **Comportamento:** troca o VDM buffer; o próximo `Begin` usa o novo (Vita3K força isso esgotando o espaço atual).
 - **Retorno/erros:** 0; `INVALID_POINTER`; `INVALID_VALUE` se immediate; `ERR_WITHIN_COMMAND_LIST` se gravando.
@@ -917,7 +933,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário.
 
 ### sceGxmGetDeferredContextVertexBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x87632B9C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x87632B9C
 - **Protótipo (inferido; Vita3K):** `int sceGxmGetDeferredContextVertexBuffer(const SceGxmContext *deferredContext, void **mem);`
 - **Comportamento/erros:** como a versão VDM, devolvendo `VertexRing`.
 - **Retorno/erros:** idem `GetDeferredContextVdmBuffer`.
@@ -926,7 +942,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário.
 
 ### sceGxmSetDeferredContextVertexBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x27CAD127
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0x27CAD127
 - **Protótipo (inferido; Vita3K):** `int sceGxmSetDeferredContextVertexBuffer(SceGxmContext *deferredContext, void *mem, SceSize size);`
 - **Comportamento:** troca o ring de vertex (default uniform buffers de vértice).
 - **Retorno/erros:** 0; `INVALID_POINTER`; `INVALID_VALUE` se immediate, se `size != 0 && size < 1024`
@@ -937,7 +953,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário.
 
 ### sceGxmGetDeferredContextFragmentBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xFA081D05
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xFA081D05
 - **Protótipo (inferido; Vita3K):** `int sceGxmGetDeferredContextFragmentBuffer(const SceGxmContext *deferredContext, void **mem);`
 - **Comportamento/erros:** como a versão VDM, devolvendo `FragmentRing`.
 - **Retorno/erros:** idem.
@@ -946,7 +962,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário.
 
 ### sceGxmSetDeferredContextFragmentBuffer
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC6B3FCD0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceGxm · **NID:** 0xC6B3FCD0
 - **Protótipo (inferido; Vita3K):** `int sceGxmSetDeferredContextFragmentBuffer(SceGxmContext *deferredContext, void *mem, SceSize size);`
 - **Comportamento/erros:** iguais a `SetDeferredContextVertexBuffer`, para o ring de fragment.
 - **Retorno/erros:** idem.
@@ -959,7 +975,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 # Parte 6 — P1 de SceScreenShot
 
 ### sceScreenShotGetParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0xBAE9E534
+- [x] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0xBAE9E534
 - **Protótipo (inferido; ausente do header):** `int sceScreenShotGetParam(SceScreenShotParam *param);`
 - **Comportamento:** devolve os metadados configurados por `SetParam`. Como a struct só tem ponteiros, o mais provável
   é que o chamador forneça os buffers (`photoTitle`/`gameTitle` com `SCE_SCREENSHOT_MAX_*_SIZE` bytes) e a função
@@ -971,7 +987,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** teste unitário Set → Get.
 
 ### sceScreenShotEnableNotification
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0x816633FE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0x816633FE
 - **Protótipo (inferido):** `int sceScreenShotEnableNotification(void);`
 - **Comportamento:** pede ao sistema que avise o app quando o usuário tirar uma screenshot (o app recebe um app event,
   lido com `sceAppUtilAppEventParseScreenShotNotification` — SceAppUtil, NID 0x2AF42D6A).
@@ -982,7 +998,7 @@ estado incremental no renderer. Então gravar = guardar a "receita" do draw; rep
 - **Validação:** compilar; nenhum jogo instalado importa.
 
 ### sceScreenShotDisableNotification
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0xDA80A228
+- [x] **Prioridade:** P1 · **Biblioteca:** SceScreenShot · **NID:** 0xDA80A228
 - **Protótipo (inferido):** `int sceScreenShotDisableNotification(void);`
 - **Comportamento:** desliga o aviso acima.
 - **Retorno/erros:** 0.

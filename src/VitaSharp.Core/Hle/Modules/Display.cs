@@ -44,7 +44,7 @@ public sealed class Display : HleModule
     {
         if (pParam == 0) { _base = 0; return 0; }
         uint size = GuestMemory.R32(pParam);
-        if (size != 24) return ERR_INVALID_VALUE;
+        if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
         _base = GuestMemory.R32(pParam + 4);
         _pitch = GuestMemory.R32(pParam + 8);
         _format = GuestMemory.R32(pParam + 12);
@@ -67,7 +67,9 @@ public sealed class Display : HleModule
     int GetFrameBuf(uint pParam, uint sync)
     {
         if (pParam == 0) return ERR_INVALID_ADDR;
-        GuestMemory.W32(pParam, 24);
+        uint size = GuestMemory.R32(pParam);
+        if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
+        if (size == 0x1C) GuestMemory.W32(pParam + 0x18, 0x00100000); // flags: bilinear filter (what the driver uses for 0x18 structs)
         GuestMemory.W32(pParam + 4, _base);
         GuestMemory.W32(pParam + 8, _pitch);
         GuestMemory.W32(pParam + 12, _format);
@@ -84,7 +86,7 @@ public sealed class Display : HleModule
     int GetMaxRes(Ptr<int> w, Ptr<int> h) { w.TrySet(960); h.TrySet(544); return 0; }
 
     [Hle] int sceDisplayWaitVblankStart() { VBlank.WaitNext(); return 0; }
-    [Hle] int sceDisplayWaitVblankStartCB() { VBlank.WaitNext(); return 0; }
+    [Hle] int sceDisplayWaitVblankStartCB() { VBlank.WaitNext(); RunCallbacks(); return 0; }
 
     [Hle]
     int sceDisplayWaitVblankStartMulti(uint count)
@@ -93,14 +95,112 @@ public sealed class Display : HleModule
         return 0;
     }
 
-    [Hle] int sceDisplayWaitVblankStartMultiCB(uint count) => sceDisplayWaitVblankStartMulti(count);
+    [Hle] int sceDisplayWaitVblankStartMultiCB(uint count) { sceDisplayWaitVblankStartMulti(count); RunCallbacks(); return 0; }
 
     [Hle] int sceDisplayWaitSetFrameBuf() { VBlank.WaitFor(_lastSetVcount + 1); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufCB() { VBlank.WaitFor(_lastSetVcount + 1); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufCB() { VBlank.WaitFor(_lastSetVcount + 1); RunCallbacks(); return 0; }
     [Hle] int sceDisplayWaitSetFrameBufMulti(uint count) { VBlank.WaitFor(_lastSetVcount + Math.Max(count, 1)); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { VBlank.WaitFor(_lastSetVcount + Math.Max(count, 1)); return 0; }
-    [Hle] int sceDisplayRegisterVblankStartCallback(int uid) => 0;
-    [Hle] int sceDisplayUnregisterVblankStartCallback(int uid) => 0;
+    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { VBlank.WaitFor(_lastSetVcount + Math.Max(count, 1)); RunCallbacks(); return 0; }
+
+    /// <summary>On hardware the callbacks notified during a *CB wait run inside the wait, before it returns.</summary>
+    static void RunCallbacks()
+    {
+        if (GuestThread.Current is { CallbackWait: true } t && Volatile.Read(ref t.PendingCallbacks) > 0)
+            GuestThread.CallbackProcessor?.Invoke(t);
+    }
+
+    // ---- vblank start callbacks: a host thread observes the vblank clock (it never advances guest time, which matters in
+    // turbo mode) and notifies every registered callback once per vblank; they run when the owner enters a *CB wait or
+    // calls sceKernelCheckCallback.
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<int, Callback> _vblankCallbacks = new();
+    Thread? _vblankNotifier;
+
+    [Hle]
+    int sceDisplayRegisterVblankStartCallback(int uid)
+    {
+        var cb = K.Objects.Get<Callback>(uid);
+        if (cb == null) return ERR_INVALID_VALUE;
+        _vblankCallbacks[uid] = cb;
+        lock (_vblankCallbacks)
+        {
+            if (_vblankNotifier == null)
+            {
+                _vblankNotifier = new Thread(VblankNotifierLoop) { IsBackground = true, Name = "VBlank notifier" };
+                _vblankNotifier.Start();
+            }
+        }
+        return 0;
+    }
+
+    [Hle] int sceDisplayUnregisterVblankStartCallback(int uid) => _vblankCallbacks.TryRemove(uid, out _) ? 0 : ERR_INVALID_VALUE;
+
+    void VblankNotifierLoop()
+    {
+        long last = VBlank.Count;
+        while (Emu.Running || Emu.MainModule == null)
+        {
+            Thread.Sleep(1);
+            long now = VBlank.Count;
+            if (now <= last) continue;
+            int n = (int)Math.Min(now - last, 4);
+            last = now;
+            foreach (var (uid, cb) in _vblankCallbacks)
+            {
+                if (K.Objects.Get<Callback>(uid) == null) { _vblankCallbacks.TryRemove(uid, out _); continue; }
+                for (int i = 0; i < n; i++) cb.Notify(0);
+            }
+        }
+    }
+
+    // ---- display "Internal" variants (SceDisplayUser: head + framebuffer slot). VitaSharp has only head 0 (LCD/OLED)
+    // and slot 0 (the game); slot 1 (LiveArea overlay) is accepted and ignored.
+
+    const int ERR_INVALID_HEAD = unchecked((int)0x80290000), ERR_INVALID_UPDATETIMING = unchecked((int)0x80290006);
+
+    [Hle] int sceDisplayGetVcountInternal(int display) => display == 0 ? (int)VBlank.Count : ERR_INVALID_HEAD;
+
+    /// <summary>Inferred: (head, fb_idx, SceDisplayFrameBuf *pParam, sync), the _sceDisplayGetFrameBufInternal arguments without opt.</summary>
+    [Hle]
+    int sceDisplayGetFrameBufInternal(int head, int index, uint pParam, uint sync)
+    {
+        if (head != 0) return ERR_INVALID_HEAD;
+        if (pParam == 0) return ERR_INVALID_ADDR;
+        if (sync > 1) return ERR_INVALID_UPDATETIMING;
+        if (index == 0) return GetFrameBuf(pParam, sync);
+        uint size = GuestMemory.R32(pParam);
+        if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
+        GuestMemory.Fill(pParam + 4, 0, size - 4);
+        return 0;
+    }
+
+    /// <summary>Inferred: (head, fb_idx, const SceDisplayFrameBuf *pParam, sync).</summary>
+    [Hle]
+    int sceDisplaySetFrameBufInternal(int head, int index, uint pParam, uint sync)
+    {
+        if (head != 0) return ERR_INVALID_HEAD;
+        if (sync > 1) return ERR_INVALID_UPDATETIMING;
+        if (index == 0) return SetFrameBuf(pParam, sync);
+        if (pParam != 0 && GuestMemory.R32(pParam) is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
+        return 0;
+    }
+
+    /// <summary>Inferred: (head, SceDisplayResolutionInfo *info). Info (0x1C): size, screen_mode, width, height,
+    /// output_format, scan_mode, fps (float).</summary>
+    [Hle]
+    int sceDisplayGetResolutionInfoInternal(int head, uint info)
+    {
+        if (head != 0) return ERR_INVALID_HEAD;
+        if (info == 0) return ERR_INVALID_ADDR;
+        if (GuestMemory.R32(info) != 0x1C) return ERR_INVALID_VALUE;
+        GuestMemory.W32(info + 0x04, 0);   // SCE_DISPLAY_SCREENMODE_INTERNAL_960X544
+        GuestMemory.W32(info + 0x08, 960);
+        GuestMemory.W32(info + 0x0C, 544);
+        GuestMemory.W32(info + 0x10, 0);   // output format
+        GuestMemory.W32(info + 0x14, 0);   // progressive
+        GuestMemory.Write(info + 0x18, 59.94005f);
+        return 0;
+    }
 }
 
 public sealed class Ctrl : HleModule
