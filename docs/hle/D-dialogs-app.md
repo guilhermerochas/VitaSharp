@@ -861,3 +861,936 @@ Diálogo de save do emulador de PSP (`ScePspemu`), usado pelo processo do PSP em
 - [ ] `scePspSaveDataDialogGetResult` · NID 0x61C45E12 · FORA — idem.
 - [ ] `scePspSaveDataDialogTerm` · NID 0xB8E37F7C · FORA — idem.
 
+---
+
+## SceAppUtil
+
+Implementação atual: `src/VitaSharp.Core/Hle/Modules/AppUtil.cs` (`AppUtil`). Erros (`psp2/apputil.h`):
+`PARAMETER` 0x80100600, `NOT_INITIALIZED` 0x80100601, `NO_MEMORY` 0x80100602, `BUSY` 0x80100603, `NOT_MOUNTED`
+0x80100604, `NO_PERMISSION` 0x80100605, `PASSCODE_MISMATCH` 0x80100606, `APPEVENT_PARSE_INVALID_DATA` 0x80100620,
+`SAVEDATA_SLOT_EXISTS` 0x80100640, `SAVEDATA_SLOT_NOT_FOUND` 0x80100641, `SAVEDATA_NO_SPACE_QUOTA` 0x80100642,
+`SAVEDATA_NO_SPACE_FS` 0x80100643, `DRM_NO_ENTITLEMENT` 0x80100660, `PHOTO_DEVICE_NOT_FOUND` 0x80100680,
+`MUSIC_DEVICE_NOT_FOUND` 0x80100685, `MOUNT_LIMIT_OVER` 0x80100686, `STACKSIZE_TOO_SHORT` 0x801006A0.
+
+### Eventos de aplicação (`sceAppUtilReceiveAppEvent` + `sceAppUtilAppEventParse*`)
+
+`sceAppUtilReceiveAppEvent(SceAppUtilAppEventParam *)` (0x404 bytes: 0x00 `type`, 0x04 `dat[1024]`) devolve o evento
+com que o app foi iniciado/retomado (LiveArea, convite NP, mensagem NP com dados de app, presente "near", screenshot,
+navegador…). O VitaSharp sempre devolve `type = 0` (nenhum evento), então os `Parse*` só são chamados se o jogo não
+checar o tipo. Regra comum para todos os `Parse*` não implementados: validar ponteiros (`PARAMETER` 0x80100600 se NULL)
+e devolver `SCE_APPUTIL_ERROR_APPEVENT_PARSE_INVALID_DATA` (0x80100620) quando `eventParam->type` não é o tipo da
+função (com `type = 0`, sempre). Os quatro `Parse*` já existentes (`LiveArea`, `NearGift`,
+`NpBasicJoinablePresence`, `NpInviteMessage`) devolvem 0x80100600; trocar para 0x80100620 junto (não muda fluxo de jogo).
+Valores de `SceAppUtilAppEventType` não estão no vita-headers: a confirmar (num jogo que receba o evento, ou na
+documentação do SDK); só são necessários se o VitaSharp algum dia injetar eventos (ex.: boot via convite).
+
+### sceAppUtilAppEventParseNpAppDataMessage
+- [ ] **Prioridade:** P0 (Invizimals PCSA00552) · **Biblioteca:** SceAppUtil · **NID:** 0x6BED9B58
+- **Protótipo:** `SceInt32 sceAppUtilAppEventParseNpAppDataMessage(const SceAppUtilAppEventParam *eventParam, void *messageId, ...);`
+  (inferido; sem header nem implementação no Vita3K. Saída provável: ID da mensagem NP com dados do app, usado depois
+  com `sceNpMessage*`/`sceNpBasic*`. Confirmar a aridade no call site com `--trace-hle-only=sceAppUtilAppEvent` e
+  `disasm` do LR)
+- **Comportamento:** extrai do evento "mensagem NP com dados de app" (o usuário abriu uma mensagem PSN que lança o jogo)
+  o identificador da mensagem. Sem PSN não há evento.
+- **Retorno/erros:** `APPEVENT_PARSE_INVALID_DATA` 0x80100620 (evento de outro tipo/sem evento); `PARAMETER` 0x80100600
+  para `eventParam == NULL`. Não escrever na saída.
+- **Estruturas:** `SceAppUtilAppEventParam` (0x404). Saída a confirmar.
+- **Implementação no VitaSharp:** `AppUtil`, uma linha como os outros `Parse*`
+  (`=> eventParam == 0 ? 0x80100600 : 0x80100620`). Declarar só `uint eventParam, uint out` (o binder ignora argumentos
+  extras).
+- **Validação:** `imports PCSA00552` sem a função; boot do Invizimals até o menu (criar `tests/scenarios/inv_boot.txt`)
+  sem regressão.
+
+### sceAppUtilStoreBrowse
+- [ ] **Prioridade:** P0 (Sakatsuku PCSG00198) · **Biblioteca:** SceAppUtil · **NID:** 0x85FA94EE
+- **Protótipo:** `int sceAppUtilStoreBrowse(SceAppUtilStoreBrowseParam *param);` (`psp2/apputil.h`)
+- **Comportamento:** abre a PS Store (app de sistema) na categoria/produto indicado; o jogo vai para segundo plano e
+  volta com `SCE_APPMGR_SYSTEMEVENT_ON_RESUME` (e eventualmente `ON_STORE_PURCHASE`). No VitaSharp não há Store: logar o
+  pedido e retornar como se o usuário tivesse aberto e fechado a loja sem comprar.
+- **Retorno/erros:** 0; `PARAMETER` 0x80100600 se `param == NULL` ou `id == NULL`. Valores de `type`
+  (`SCE_APPUTIL_STORE_BROWSE_TYPE_*`: categoria/produto…) a confirmar — aceitar qualquer valor e só logar.
+  Se o jogo esperar o evento de retomada para sair de um estado "loja aberta", enfileirar
+  `SCE_APPMGR_SYSTEMEVENT_ON_RESUME` (0x10000003) para `sceAppMgrReceiveSystemEvent` (hoje sempre vazio) — decidir
+  pelo trace.
+- **Estruturas:** `SceAppUtilStoreBrowseParam` (8): 0x00 `unsigned int type`, 0x04 `const char *id`.
+- **Implementação no VitaSharp:** `AppUtil`; `Log.Info($"StoreBrowse type {type} id {id}")`.
+- **Validação:** Sakatsuku: acionar o item de loja/DLC no menu (trace `sceAppUtil` como em `st_apputil.txt`); o jogo
+  deve continuar responsivo.
+
+### sceAppUtilPhotoMount
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEE85804D
+- **Protótipo:** `int sceAppUtilPhotoMount(void);` (`psp2/apputil.h`)
+- **Comportamento:** monta `photo0:` (galeria do usuário; o Vita3K mapeia o mount 100 de `sceAppMgrAppDataMount` para
+  `ux0:picture`) para o jogo ler/gravar fotos. Montar duas vezes: erro a confirmar (provável `BUSY` ou
+  `MOUNT_LIMIT_OVER`).
+- **Retorno/erros:** 0; `PHOTO_DEVICE_NOT_FOUND` 0x80100680 se não há armazenamento (não emular);
+  `NOT_INITIALIZED` 0x80100601 antes de `sceAppUtilInit` (a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** hoje `=> 0` (`AppUtil.cs`), e o `Vfs` já monta `photo0` em `<FsRoot>/photo0` no
+  construtor: a pasta é sempre acessível, mas **não é** a galeria `ux0:picture` onde screenshots e fotos do usuário
+  ficam. Fazer `Emu.Vfs.Mount("photo0", Path.Combine(Emu.Options.FsRoot, "ux0", "picture"))` aqui (e apontar a entrada
+  fixa do `Vfs` para o mesmo lugar). Guardar flag de montado.
+- **Validação:** teste unitário de `Vfs.Resolve("photo0:x")`; jogo com importação de foto quando houver.
+
+### sceAppUtilPhotoUmount
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x9651B941
+- **Protótipo:** `int sceAppUtilPhotoUmount(void);`
+- **Comportamento:** desmonta `photo0:`.
+- **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604 se não montado.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `AppUtil`; limpar flag (manter o mapeamento no `Vfs` é aceitável; `Vfs` não tem
+  `Unmount` — adicionar se quiser fidelidade).
+- **Validação:** teste unitário.
+
+### sceAppUtilMusicMount
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xB5EDCBFF
+- **Protótipo:** `int sceAppUtilMusicMount(void);`
+- **Comportamento:** monta `music0:` (`ux0:music`, mount 105 do AppMgr segundo o Vita3K).
+- **Retorno/erros:** 0; `MUSIC_DEVICE_NOT_FOUND` 0x80100685 (não emular).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** como `PhotoMount`, com `ux0/music`.
+- **Validação:** teste unitário.
+
+### sceAppUtilMusicUmount
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xA7FE1BF7
+- **Protótipo:** `int sceAppUtilMusicUmount(void);`
+- **Comportamento/erros:** como `PhotoUmount`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `AppUtil`.
+- **Validação:** teste unitário.
+
+### sceAppUtilSaveDataDataRemove
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xD1C6AB8E
+- **Protótipo:** `int sceAppUtilSaveDataDataRemove(SceAppUtilSaveDataFileSlot *slot, SceAppUtilSaveDataRemoveItem *files, unsigned int fileNum, SceAppUtilSaveDataMountPoint *mountPoint);` (`psp2/apputil.h`)
+- **Comportamento:** remove arquivos/diretórios de `savedata0:` e, se `slot != NULL` e `files[0].mode == DEFAULT (0)`,
+  também o `SlotParam` do slot (`mode == NO_SLOT (1)` preserva o slot).
+- **Retorno/erros:** 0; `PARAMETER` se `slot->id >= 256` (`SCE_APPUTIL_SAVEDATA_SLOT_MAX`, Vita3K).
+- **Estruturas:** `SceAppUtilSaveDataRemoveItem` tem **0x2C** bytes (0x00 `dataPath*`, 0x04 `mode`, 0x08 reserved[36]).
+- **Implementação no VitaSharp:** o código atual percorre `files + i * 48` (stride 0x30): a partir do segundo item lê o
+  ponteiro errado e apaga caminho lixo ou nada. Trocar para `i * 0x2C`. Validar `slot->id`.
+- **Validação:** Sakatsuku apagar save (`st_save*`); teste unitário com `fileNum = 3`.
+
+### sceAppUtilAppParamGetInt
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xCD7FD67A
+- **Protótipo:** `int sceAppUtilAppParamGetInt(SceAppUtilAppParamId paramId, int *value);` (`psp2/apputil.h`)
+- **Comportamento:** só `paramId == 0` (`SCE_APPUTIL_APPPARAM_ID_SKU_FLAG`, Vita3K `app_util.h`) é válido: devolve o
+  SKU da licença (trial × versão completa). Jogos com demo usam para liberar conteúdo.
+- **Retorno/erros:** 0; `PARAMETER` 0x80100600 para outro `paramId`; ponteiro NULL: o Vita3K devolve
+  `NOT_INITIALIZED` 0x80100601 (a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** hoje devolve 0 para qualquer id (SKU 0 pode ser lido como "sem licença completa").
+  Ler `sku_flag` do `.rif` (o Vita3K guarda `license.rif[title].sku_flag`; o `.rif` já é lido para o klicensee em
+  `Emulator.FindKlicensee`) e, na falta dele, devolver o valor de versão completa. Valores
+  `SCE_APPUTIL_APPPARAM_SKU_FLAG_NONE/TRIAL/FULL` a confirmar (memória do SDK: 0/1/3) — confirmar lendo o campo do
+  `.rif` dos 7 jogos instalados (todos versões completas).
+- **Validação:** `--trace-hle-only=sceAppUtilAppParam` nos jogos que chamam; nenhum deve entrar em modo demo.
+
+### sceAppUtilSaveDataGetQuota
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xC560E716
+- **Protótipo:** `int sceAppUtilSaveDataGetQuota(SceSize *quotaSizeKiB, SceSize *usedSizeKiB, const SceAppUtilSaveDataMountPoint *mountPoint);` (Vita3K)
+- **Comportamento:** cota = `SAVEDATA_MAX_SIZE` do `param.sfo` (KiB); usado = tamanho de `savedata0:` em KiB.
+- **Retorno/erros:** 0; `PARAMETER` se ambos os ponteiros NULL.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** hoje cota fixa de 1 MiB (1024 KiB): jogo com save maior vê "sem espaço" ou calcula
+  errado o espaço necessário. Usar `Emu.ParamSfo.GetUInt("SAVEDATA_MAX_SIZE")` (fallback 1024 se ausente) e limitar
+  `used` à cota como o Vita3K.
+- **Validação:** conferir `SAVEDATA_MAX_SIZE` no `param.sfo` dos jogos; Sakatsuku (`st_save*`) e Killzone salvam sem erro.
+
+### sceAppUtilSaveDataSlotSetParam
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0x98630136
+- **Protótipo:** `int sceAppUtilSaveDataSlotSetParam(unsigned int slotId, SceAppUtilSaveDataSlotParam *param, SceAppUtilSaveDataMountPoint *mountPoint);`
+- **Comportamento:** atualiza o param de um slot **existente**.
+- **Retorno/erros:** 0; `SAVEDATA_SLOT_NOT_FOUND` 0x80100641 se o slot não existe; `PARAMETER` se `param == NULL`.
+- **Estruturas:** `SceAppUtilSaveDataSlotParam` (0x34C).
+- **Implementação no VitaSharp:** hoje chama `SlotCreate` (cria o slot se não existe). Checar `SlotExists` antes.
+  `sceAppUtilSaveDataSlotCreate` com slot existente provavelmente devolve `SAVEDATA_SLOT_EXISTS` 0x80100640 no
+  hardware (a confirmar; o Vita3K sobrescreve — manter sobrescrita até confirmar).
+- **Validação:** `st_save*`.
+
+### sceAppUtilSaveDataUmount
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xEB720402
+- **Protótipo:** `int sceAppUtilSaveDataUmount(const SceAppUtilSaveDataMountPoint *mountPoint);` (inferido)
+- **Comportamento:** desmonta o savedata de outro título montado por `sceAppUtilSaveDataMount` (`savedata1:`).
+- **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604 se nada montado.
+- **Estruturas:** `SceAppUtilSaveDataMountPoint` (16 bytes, string do mount point).
+- **Implementação no VitaSharp:** hoje `=> 0` e `savedata1:` continua acessível. Remover o mount (adicionar
+  `Vfs.Unmount`) e devolver `NOT_MOUNTED` se não havia. Baixo impacto.
+- **Validação:** teste unitário Mount → Umount → Resolve.
+
+### sceAppUtilInit
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xDAFFE671
+- **Protótipo:** `int sceAppUtilInit(SceAppUtilInitParam *initParam, SceAppUtilBootParam *bootParam);` (`psp2/apputil.h`)
+- **Comportamento:** inicializa a biblioteca e preenche `bootParam` (0x28: 0x00 `attr`, 0x04 `appVersion`, 0x08
+  reserved[32]). `appVersion` reflete o `APP_VER` do `param.sfo`/patch; `attr` indica o modo de boot.
+- **Retorno/erros:** 0; `PARAMETER` se ponteiros NULL; `BUSY` se já inicializada (a confirmar).
+- **Estruturas:** acima.
+- **Implementação no VitaSharp:** hoje zera `bootParam`. Preencher `appVersion` a partir de `Emu.ParamSfo.AppVersion`
+  (string "01.02"); a codificação numérica (ex.: BCD `0x0102`) está a confirmar — logar o que os jogos fazem com o
+  valor antes de mudar. `attr = 0`.
+- **Validação:** jogos que mostram a versão na tela de título (comparar com o `APP_VER`).
+
+### sceAppUtilSaveDataSlotSearch
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xE6057A85
+- **Protótipo:** `SceInt32 sceAppUtilSaveDataSlotSearch(SceAppUtilWorkBuffer *workBuf, const SceAppUtilSaveDataSlotSearchCond *cond, SceAppUtilSlotSearchResult *result, const SceAppUtilMountPoint *mountPoint);` (Vita3K)
+- **Comportamento:** procura slots no intervalo `[from, from + range)` existentes (`type = EXIST_SLOT 0`) ou vazios
+  (`EMPTY_SLOT 1`), ordenados por `key` (SLOT_ID 0, USER_PARAM 1, SIZE_KIB 2, MODIFIED_TIME 3) em `order`
+  (ASCENT 0, DESCENT 1). Preenche `result->hitNum` e, se `workBuf` dado, uma lista de `SceAppUtilSaveDataSlot` no
+  buffer de trabalho (`result->slotList = workBuf->buf`).
+- **Retorno/erros:** 0; `PARAMETER` se `cond`/`result` NULL; `NO_MEMORY` 0x80100602 se `workBuf->bufSize` < `hitNum * 16`
+  (a confirmar).
+- **Estruturas:** `SceAppUtilWorkBuffer` (0x28: `buf*`, `bufSize`, reserved[32]); `SceAppUtilSaveDataSlotSearchCond`
+  (0x34: `type`, `from`, `range`, `key`, `order`, reserved[32]); `SceAppUtilSlotSearchResult` (0x28: `hitNum`,
+  `slotList*`, reserved[32]); `SceAppUtilSaveDataSlot` (0x10: `id`, `status`, `userParam`, `emptyParam*`).
+- **Implementação no VitaSharp:** `AppUtil`, reaproveitar `SlotPath`/`ReadSlotParam`. Ao contrário do Vita3K (que
+  escreve em `slotList[i]` indexado pelo id e não ordena), escrever compactado `[0..hitNum)` e ordenar de verdade.
+- **Validação:** teste unitário com slots 0, 3, 7 criados.
+
+### sceAppUtilAddcontMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x53B2C020
+- **Protótipo:** `SceInt32 sceAppUtilAddcontMount(SceUInt32 dataType, const SceAppUtilDrmAddcontId *addcontId);` (inferido; sem header)
+- **Comportamento:** versão SDK 3.x de `sceAppUtilDrmOpen`: monta um DLC (`addcont0:<id>`).
+- **Retorno/erros:** 0; `DRM_NO_ENTITLEMENT` 0x80100660 ou `ENOENT` se o DLC não está instalado (a confirmar;
+  `sceAppUtilDrmOpen` atual usa 0x80100A00).
+- **Estruturas:** `SceAppUtilDrmAddcontId` (20 bytes: `data[17]` + padding[3], Vita3K).
+- **Implementação no VitaSharp:** `AppUtil`, mesma checagem de `sceAppUtilDrmOpen`.
+- **Validação:** quando um jogo importar, confirmar a aridade pelo call site.
+
+### sceAppUtilAddcontUmount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x1B36AF8C
+- **Protótipo:** `SceInt32 sceAppUtilAddcontUmount(void);` (inferido)
+- **Comportamento:** desmonta o DLC montado por `AddcontMount`.
+- **Retorno/erros:** 0; `NOT_MOUNTED` 0x80100604.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `AppUtil`; só estado.
+- **Validação:** idem.
+
+### sceAppUtilBgdlGetStatus
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x96F478D6
+- **Protótipo:** `int sceAppUtilBgdlGetStatus(SceAppUtilBgdlStatus *stat);` (`psp2/apputil.h`)
+- **Comportamento:** estado dos downloads de DLC em segundo plano: nenhum pendente.
+- **Retorno/erros:** 0; `PARAMETER` se NULL.
+- **Estruturas:** `SceAppUtilBgdlStatus` (0x2C): 0x00 `type`, 0x04 `addcontNumReady`, 0x08 `addcontNumNotReady`,
+  0x0C `licenseReady`, 0x10 reserved[28]. Zerar tudo (valor de `type` para "nenhum" a confirmar).
+- **Implementação no VitaSharp:** `AppUtil`.
+- **Validação:** teste unitário.
+
+### sceAppUtilPspSaveDataGetDirNameList
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x9942071D
+- **Protótipo:** `SceInt32 sceAppUtilPspSaveDataGetDirNameList(const void *cond, void *dirNames, SceUInt32 *num);` (inferido)
+- **Comportamento:** lista saves de PSP (`ux0:pspemu/PSP/SAVEDATA/<dir>`) para remasters importarem progresso.
+- **Retorno/erros:** 0 com `*num = 0` quando não há saves (a confirmar se o firmware usa erro).
+- **Estruturas:** a confirmar.
+- **Implementação no VitaSharp:** `AppUtil`; listar `<FsRoot>/ux0/pspemu/PSP/SAVEDATA` quando houver demanda.
+- **Validação:** só com jogo que importe.
+
+### sceAppUtilPspSaveDataLoad
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x7402C6EA
+- **Protótipo:** `SceInt32 sceAppUtilPspSaveDataLoad(const void *dirName, void *buf, SceSize size, ...);` (inferido)
+- **Comportamento:** lê (e descriptografa) um arquivo de save de PSP.
+- **Retorno/erros:** sem saves: `SAVEDATA_SLOT_NOT_FOUND` 0x80100641 (a confirmar).
+- **Estruturas:** a confirmar.
+- **Implementação no VitaSharp:** `AppUtil`; devolver "não encontrado" até haver jogo.
+- **Validação:** só com jogo que importe.
+
+### sceAppUtilAddCookieWebBrowser
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0xC97D5D9E
+- **Protótipo:** `SceInt32 sceAppUtilAddCookieWebBrowser(const void *param);` (inferido; URL + cookie)
+- **Comportamento:** registra cookie para o navegador do sistema antes de `sceAppUtilLaunchWebBrowser`. Sem navegador:
+  aceitar e descartar.
+- **Retorno/erros:** 0; `PARAMETER` se NULL.
+- **Estruturas:** a confirmar.
+- **Implementação no VitaSharp:** `AppUtil`, `=> 0` com log.
+- **Validação:** teste unitário.
+
+### sceAppUtilResetCookieWebBrowser
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppUtil · **NID:** 0x4FAAD133
+- **Protótipo:** `SceInt32 sceAppUtilResetCookieWebBrowser(void);` (inferido)
+- **Comportamento:** apaga os cookies registrados.
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `AppUtil`, `=> 0`.
+- **Validação:** —
+
+### Outros `sceAppUtilAppEventParse*` (P1)
+
+Todos: protótipo inferido `SceInt32 (const SceAppUtilAppEventParam *eventParam, void *out, ...)`, comportamento e
+erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`), implementação de uma linha em
+`AppUtil`, validação por `imports` do jogo que importar.
+
+- [ ] `sceAppUtilAppEventParseGameCustomData` · NID 0x0B04C067 · P1 — dados customizados de jogo (SDK 3.x, ligado ao `sceGameCustomDataDialog`).
+- [ ] `sceAppUtilAppEventParseIncomingDialog` · NID 0x22297D59 · P1 — boot via `SceIncomingDialog` (chamada/convite recebido).
+- [ ] `sceAppUtilAppEventParseNpActivity` · NID 0xF6B75651 · P1 — boot a partir de atividade no feed PSN.
+- [ ] `sceAppUtilAppEventParseScreenShotNotification` · NID 0x2AF42D6A · P1 — notificação de screenshot.
+- [ ] `sceAppUtilAppEventParseSessionInvitation` · NID 0xA58E6FCE · P1 — convite de sessão NP (SDK 3.x).
+- [ ] `sceAppUtilAppEventParseTeleport` · NID 0x665A8B7E · P1 — "teleporte" entre jogos (NP).
+- [ ] `sceAppUtilAppEventParseTriggerUtil` · NID 0x8DEE696B · P1 — evento agendado por `SceTriggerUtil`.
+- [ ] `sceAppUtilAppEventParseWebBrowser` · NID 0x8ED716F5 · P1 — retorno do navegador web.
+
+---
+
+## SceAppMgrUser
+
+### Contexto e convenções
+
+- `SceAppMgrUser` é a biblioteca exportada pelo módulo `SceDriverUser` (stubname `SceAppMgr`, NID de biblioteca
+  0xA6605D6F). Os NIDs são diferentes dos `_sceAppMgr*` exportados por `SceAppMgr` (ex.: `sceAppMgrGetAppParam`
+  0x9B2422E0 × `_sceAppMgrGetAppParam` 0x258C3E3C). `nids.txt` já tem todos os nomes (linhas "SceDriverUser
+  SceAppMgrUser"); se o binder achar o nome ambíguo com a variante `_sce...`, usar `Library = "SceAppMgrUser"`.
+- Assinaturas: a variante `SceAppMgrUser` é a API antiga, sem a struct `opt` final das funções `_sceAppMgr*` do
+  `psp2/appmgr.h`. O Vita3K (`modules/SceDriverUser/SceAppMgrUser.cpp`) confirma isso para `AppParamGetString`
+  `(pid, param, char *string, SceSize length)`, `GetAppParam(char *param)`, `AppDataMount(int id, char *mountPoint)`,
+  `WorkDirMount(int id, char *mountPoint)`, `GetUserDirPath(int partition, char *path, SceSize maxLen)`,
+  `GetRawPath(char *path, char *resolved, int size)`, `ConvertVs0UserDrivePath(char *src, char *dst, int len)`,
+  `GetDevInfo(const char *dev, uint64_t *max, uint64_t *free)`, `MmsMount(int id, char *mountPoint)`,
+  `SaveDataDataSave(SceAppMgrSaveDataData *)`, `SaveDataDataRemove(SceAppMgrSaveDataDataDelete *)`. Para as demais, o
+  protótipo abaixo é o do `psp2/appmgr.h` (público quando existe, senão `_sceAppMgr*` sem `opt`) e está marcado como
+  inferido: confirmar no call site do primeiro jogo que importar.
+- Quem usa: no hardware a maioria é chamada pelas próprias bibliotecas de sistema (SceAppUtil, SceCommonDialog,
+  SceNpTrophy), que o VitaSharp faz em HLE. Jogos importam poucas diretamente (Killzone: `sceAppMgrReceiveSystemEvent`,
+  `_sceAppMgrGetAppState`, `sceAppMgrSetNetworkDisconnectionWarningDialogState`, todas já implementadas). Por isso a
+  triagem: **P1** = faz sentido para um jogo/homebrew chamar diretamente; **FORA** = shell/VSH, PSPEmu, instalação,
+  debug.
+- Mount points: o firmware devolve um nome de dispositivo aleatório de 16 bytes (`"gpXXXXXXXXXXXd:"` etc.). O Vita3K
+  escreve um caminho real (`"ux0:picture"`, `"ur0:user/00/psnfriend"`) — o segundo passa de 16 bytes. No VitaSharp:
+  registrar um dispositivo sintético curto no `Vfs` (`Emu.Vfs.Mount("am" + id, hostPath)`, ex. `"am100:"`) e escrever
+  esse nome (≤ 15 chars + NUL) no buffer de 16 bytes. `sceAppMgrUmount` remove o alias.
+- Erros (`psp2/appmgr.h`): `INVALID_PARAM_SFO` 0x80800015, `BUSY` 0x80802000, `INTERNAL` 0x80802001, `PARAM` 0x80802002,
+  `NOT_FOUND` 0x80802012, `STATE` 0x80802013, `NULL_POINTER` 0x80802016, `INVALID` 0x8080201A, `TOO_LONG_ARGV`
+  0x8080201D, `INVALID_SELF_PATH` 0x8080201E, `NOEXEC` 0x8080201F, `BGM_PORT_BUSY` 0x80803000. O Vita3K usa ainda
+  0x80800001 (parâmetro NULL), 0x80801000 (valor inválido; o VitaSharp já devolve esse em
+  `sceAppMgrReceiveSystemEvent` sem evento) e `APP_PARAM_READ` 0x80802015.
+- Implementação: tudo em `SystemMisc` (`src/VitaSharp.Core/Hle/Modules/SystemMisc.cs`, seção SceAppMgr) ou num novo
+  `AppMgr.cs` se a seção crescer. Funções de save delegam para os helpers de `AppUtil` (tornar `SavePath`, `SlotPath`
+  e a escrita de arquivos `internal`).
+
+### sceAppMgrAppParamGetString
+- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppMgrUser · **NID:** 0x0C733AE2
+- **Protótipo:** `int sceAppMgrAppParamGetString(int pid, int param, char *string, SceSize length);` (Vita3K; header
+  público `psp2/appmgr.h`)
+- **Comportamento:** lê um campo de `param.sfo` do processo (`pid == 0` = o próprio). IDs (`SceAppMgrAppParamId`):
+  6 `CONTENT_ID` (≥ 0x30 bytes), 7 `NP_COMMUNICATION_ID` (≥ 0xD), **8 `CATEGORY`** (≥ 4), **9 `TITLE`** (≥ 0x80),
+  10 `STITLE` (≥ 0x34), 12 `TITLE_ID` (≥ 10), 14 `APP_PATH` (exige permissão de sistema), 100/101 overrides de
+  CONTENT_ID/TITLE definidos por `sceAppMgrAppParamSetString` (com fallback para 6/9).
+- **Retorno/erros:** 0; `NULL` 0x80800001 (Vita3K) se `string == NULL`; 0x80801000 para `param` fora de 6..14 (exceto
+  100/101) ou buffer menor que o mínimo do campo (o Vita3K testa `res.size() >= size`); `INVALID` 0x8080201A se o campo
+  não existe no `param.sfo`. `length` é limitado a 0x400.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc.sceAppMgrAppParamGetString` hoje troca **8 e 9** (8 → título, 9 →
+  categoria), não suporta 6/7/10/100/101 e devolve 0 com string vazia para ids desconhecidos. Corrigir o `switch`
+  usando `Emu.ParamSfo.GetString("CONTENT_ID" | "NP_COMMUNICATION_ID" | "CATEGORY" | "TITLE" | "STITLE" | "TITLE_ID")`
+  e os erros acima.
+- **Validação:** `--trace-hle-only=sceAppMgrAppParam` nos jogos instalados; teste unitário com um `param.sfo` real.
+
+### Montagem de dados
+
+#### sceAppMgrAppDataMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x291AFBDC
+- **Protótipo:** `int sceAppMgrAppDataMount(int id, char *mountPoint);` (Vita3K; `psp2/appmgr.h`)
+- **Comportamento:** monta dados de app do sistema e devolve o mount point (16 bytes). IDs aceitos no 3.60: 100
+  `photo0` (`ux0:picture`), 101 psnfriend (`ur0:user/00/psnfriend`), 102 psnmsg (`ur0:user/00/psnmsg`), 103 near
+  (`ur0:user/00/near`), 105 `music0` (`ux0:music`), 108 calendar (`ux0:calendar`), 109 `video0` (`ux0:video`),
+  111 e 112 (destino a confirmar).
+- **Retorno/erros:** 0; `PARAM` 0x80802002 (ou 0x80801000) para id não aceito; `NULL_POINTER` 0x80802016.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; alias `amNNN:` no `Vfs` (ver convenções) apontando para
+  `<FsRoot>/ux0/picture` etc.; criar a pasta.
+- **Validação:** teste unitário (Mount 100 → `Resolve("<mp>x.jpg")` cai em `ux0/picture/x.jpg`).
+
+#### sceAppMgrAppDataMountById
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xE8BD32BD
+- **Protótipo:** `int sceAppMgrAppDataMountById(int id, const char *titleId, char *mountPoint);` (`psp2/appmgr.h`)
+- **Comportamento:** IDs 104, 106, 107, 110. 104 exige id no formato `ABCD12345_67`; 106/107 = `ux0:psm/<titleId>/RO` e
+  `/RW` (PSM). 110 a confirmar.
+- **Retorno/erros:** 0; `PARAM` para id/formato inválido; `NOT_FOUND` 0x80802012 se a pasta não existe (a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`, alias no `Vfs`.
+- **Validação:** só com jogo PSM/homebrew.
+
+#### sceAppMgrWorkDirMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B3BB24D
+- **Protótipo:** `int sceAppMgrWorkDirMount(int id, char *mountPoint);` (Vita3K)
+- **Comportamento:** IDs 200 `ur0:temp/sqlite/`, 201 `ur0:temp/attach/`, 202 `ux0:pspemu/`, 203 (a confirmar),
+  204 `ur0:temp/checkout/`, 206 `ur0:temp/webbrowser/` (mapeamento do Vita3K).
+- **Retorno/erros:** 0; `PARAM` para id não aceito.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`, alias no `Vfs`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrWorkDirMountById
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x80E86E42
+- **Protótipo:** `int sceAppMgrWorkDirMountById(int id, const char *titleId, char *mountPoint);` (`psp2/appmgr.h`)
+- **Comportamento:** 205 = `ux0:cache/<titleId>` (titleId com 9 chars exatos; é o `cache0:` de outro título);
+  207 = `ux0:temp/app_work/<titleId>/rec`.
+- **Retorno/erros:** 0; `PARAM` para id/titleId inválido.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrPhotoMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF71CC393
+- **Protótipo:** `int sceAppMgrPhotoMount(const SceAppMgrPhotoMountParam *param);` (inferido de `_sceAppMgrPhotoMount`)
+- **Comportamento:** monta `photo0:` (base de `sceAppUtilPhotoMount`).
+- **Retorno/erros:** 0; `PARAM` se `param->size != 0x84` (a confirmar).
+- **Estruturas:** `SceAppMgrPhotoMountParam` (0x84): 0x00 `size`, 0x04 reserved[0x80].
+- **Implementação no VitaSharp:** compartilhar com `sceAppUtilPhotoMount`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrPhotoUmount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3F1A3AEC
+- **Protótipo:** `int sceAppMgrPhotoUmount(void);` (inferido)
+- **Comportamento/erros:** desmonta `photo0:`; `NOT_FOUND`/`STATE` se não montado (a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** compartilhar com `sceAppUtilPhotoUmount`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrGameDataMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4993876C
+- **Protótipo:** `int sceAppMgrGameDataMount(const char *appPath, const char *patchPath, const char *rifPath, char *mountPoint);` (`psp2/appmgr.h`)
+- **Comportamento:** monta (descriptografa PFS) um app instalado + patch e devolve `"gpXXXXXXXXXXXd:"`. Usado por
+  homebrew/loaders para ler outro jogo.
+- **Retorno/erros:** 0; `NOT_FOUND` se `appPath` não existe; `NOEXEC` 0x8080201F para processo de jogo sem permissão
+  (o hardware nega a jogos — a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; alias `Vfs` para a pasta do app com overlay do patch (o VitaSharp já
+  guarda os apps descriptografados). Baixa prioridade.
+- **Validação:** homebrew que use (ex.: launchers).
+
+#### sceAppMgrAddContMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x553AA57B
+- **Protótipo:** `int sceAppMgrAddContMount(ScePID pid, const SceAppMgrGenericMountContext *ctx);` (inferido de `_sceAppMgrAddContMount`)
+- **Comportamento:** monta um DLC (`addcont0:` / pasta `ux0:addcont/<titleId>/<dir>`) depois de validar keystone e
+  passcode. Base de `sceAppUtilDrmOpen`.
+- **Retorno/erros:** 0; `NOT_FOUND` se a pasta não existe; `PASSCODE_MISMATCH` (a confirmar o código AppMgr).
+- **Estruturas:** `SceAppMgrGenericMountContext` (0x40): 0x00 `char title_id[16]`, 0x10 `char pass_code[32]`,
+  0x30 `char mount_drive[16]`.
+- **Implementação no VitaSharp:** `SystemMisc`; reusar a lógica de `sceAppUtilDrmOpen` (`addcont0:` já está montado em
+  `ux0/addcont/<TitleId>` por `Emulator.LoadTitle`). Ignorar passcode.
+- **Validação:** teste unitário com pasta de DLC.
+
+#### sceAppMgrAddContAddMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x2B40BA12
+- **Protótipo:** `int sceAppMgrAddContAddMount(const SceAppMgrGenericMountContext *ctx, int forceMountUx);` (inferido)
+- **Comportamento:** como `AddContMount`, para o processo chamador; `forceMountUx` força `ux0:`.
+- **Retorno/erros:** idem.
+- **Estruturas:** idem.
+- **Implementação no VitaSharp:** idem.
+- **Validação:** idem.
+
+#### sceAppMgrSaveDataAddMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8B224917
+- **Protótipo:** `int sceAppMgrSaveDataAddMount(const SceAppMgrGenericMountContext *ctx);` (inferido)
+- **Comportamento:** monta o savedata de outro título (`title_id`) com passcode — base de `sceAppUtilSaveDataMount`
+  (já implementada em `AppUtil`, que monta `savedata1:`).
+- **Retorno/erros:** 0; `NOT_FOUND` sem save.
+- **Estruturas:** `SceAppMgrGenericMountContext`.
+- **Implementação no VitaSharp:** delegar para a lógica de `sceAppUtilSaveDataMount`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x31F3CC59
+- **Protótipo:** a confirmar (provável `int (const char *path?, char *mountPoint)`).
+- **Comportamento:** monta o `savedata0:` do processo. No VitaSharp `savedata0:` é montado no boot
+  (`Emulator.LoadTitle`).
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `=> 0`, escrever `"savedata0:"` se houver buffer de mount point.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrSaveDataUmount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8F513CF5
+- **Protótipo:** a confirmar (provável `int (const char *mountPoint)`).
+- **Comportamento:** desmonta savedata montado por `SaveDataMount`/`SaveDataAddMount`. Nunca desmontar `savedata0:`.
+- **Retorno/erros:** 0; `NOT_FOUND` para mount desconhecido.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrTrophyMount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84FE08EE
+- **Protótipo:** `int sceAppMgrTrophyMount(int id, ScePID pid, char *mountPoint);` (inferido de `_sceAppMgrTrophyMount`)
+- **Comportamento:** IDs 300 e 302: monta os dados de troféu do processo (`ur0:user/00/trophy/data/<NPCOMMID>` e
+  `app0:sce_sys/trophy`, mapeamento exato a confirmar). Usado por `SceNpTrophy` LLE.
+- **Retorno/erros:** 0; `PARAM` para id inválido.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; apontar para a pasta que `NpTrophy.cs` já usa para salvar troféus.
+- **Validação:** só se algum módulo LLE chamar.
+
+#### sceAppMgrTrophyMountById
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x316207F3
+- **Protótipo:** `int sceAppMgrTrophyMountById(int id, const char *titleId, char *mountPoint);` (`psp2/appmgr.h`)
+- **Comportamento:** 303 = troféus de outro título, 304 = backup `_BK`; titleId `ABCD12345_67`.
+- **Retorno/erros:** 0; `PARAM`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`.
+- **Validação:** idem.
+
+#### sceAppMgrUmount
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5E375921
+- **Protótipo:** `int sceAppMgrUmount(const char *mountPoint);` (`psp2/appmgr.h`)
+- **Comportamento:** desmonta um mount point (16 bytes) devolvido por qualquer `*Mount` acima, do próprio processo.
+- **Retorno/erros:** 0; `NOT_FOUND` 0x80802012 se não for um mount ativo.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; tabela de aliases criados + `Vfs.Unmount` (a adicionar).
+- **Validação:** teste unitário Mount → Umount → Resolve falha.
+
+#### sceAppMgrDrmOpen
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD43FDF20
+- **Protótipo:** `SceInt32 sceAppMgrDrmOpen(const SceAppMgrDrmOpenParam *param);` (`psp2/appmgr.h`; struct não documentada)
+- **Comportamento:** base de `sceAppUtilDrmOpen` (abre licença de DLC).
+- **Retorno/erros:** a confirmar.
+- **Estruturas:** `SceAppMgrDrmOpenParam` desconhecida.
+- **Implementação no VitaSharp:** delegar à lógica de `sceAppUtilDrmOpen` quando a struct for conhecida; até lá `=> 0` com log.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrDrmClose
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x29293B46
+- **Protótipo:** `SceInt32 sceAppMgrDrmClose(const void *param);` (inferido)
+- **Comportamento/erros:** par de `DrmOpen`; `=> 0`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`.
+- **Validação:** —
+
+### Parâmetros, boot e eventos
+
+#### sceAppMgrGetAppParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x9B2422E0
+- **Protótipo:** `int sceAppMgrGetAppParam(char *param);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** copia (até 1024 bytes) o parâmetro de lançamento (URI/string passada por quem lançou o app, ex.
+  `sceAppMgrLaunchAppByUri`/LiveArea). Só a primeira leitura devolve o valor; as seguintes devolvem string vazia.
+- **Retorno/erros:** 0; `NULL_POINTER` 0x80802016; leituras seguintes: `param[0] = 0` e retorno
+  `APP_PARAM_READ` 0x80802015 (Vita3K; positivo/negativo a confirmar — o Vita3K devolve o valor sem marcar erro).
+- **Estruturas:** `SceAppMgrAppParam` (0x400).
+- **Implementação no VitaSharp:** `SystemMisc`; guardar o parâmetro de boot (novo campo em `Emulator`, preenchido por
+  `run <TITLE> --app-param=<str>` ou por `RequestExec`); sem parâmetro, escrever string vazia e devolver
+  0x80802015.
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetAppParam2
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3D816DFA
+- **Protótipo:** a confirmar (provável `int (char *param, SceSize size)`).
+- **Comportamento:** variante de `GetAppParam` (tamanho explícito).
+- **Retorno/erros:** como `GetAppParam`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** compartilhar com `GetAppParam`.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrGetBootParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x73E5D57D
+- **Protótipo:** `int sceAppMgrGetBootParam(SceUInt32 selector, SceAppMgrBootParam *bootParam, SceSize size?);` (inferido de
+  `_sceAppMgrGetBootParam`; confirmar no call site se o 3º argumento é tamanho ou ponteiro de `opt`)
+- **Comportamento:** copia os primeiros `boot_param_size` bytes (máx. 0x2C) do boot param; FW 3.60 ignora `selector`,
+  zera `reserved04[2]` e deixa `reserved_0C[8]` como veio.
+- **Retorno/erros:** 0; `PARAM` se tamanho > 0x2C.
+- **Estruturas:** `SceAppMgrBootParam` (0x2C): 0x00 `size`, 0x04 reserved[2], 0x0C reserved[8].
+- **Implementação no VitaSharp:** `SystemMisc`; zerar 0x04..0x0B.
+- **Validação:** teste unitário.
+
+#### sceAppMgrAppParamSetString
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B07C10B
+- **Protótipo:** `int sceAppMgrAppParamSetString(int pid?, int param, const char *string);` (inferido)
+- **Comportamento:** define os overrides 100 (CONTENT_ID) e 101 (TITLE) lidos por `AppParamGetString`.
+- **Retorno/erros:** 0; `PARAM` para outros ids.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; dicionário de overrides consultado por `AppParamGetString`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrReceiveEvent
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xCFAD5A3A
+- **Protótipo:** `int sceAppMgrReceiveEvent(SceAppMgrEvent *appEvent);` (inferido de `_sceAppMgrReceiveEvent`)
+- **Comportamento:** retira um evento de aplicação da fila (`SCE_APP_EVENT_*`: ON_ACTIVATE 0x10000001, ON_DEACTIVATE
+  0x10000002, ON_RESUME 0x10000003, REQUEST_QUIT 0x20000001, PARAM_NOTIFY 0x20000004, …). FW 3.60 grava
+  `app_id = -1` e `param` zerado.
+- **Retorno/erros:** 0 com evento; fila vazia: erro a confirmar (usar 0x80801000 como `sceAppMgrReceiveSystemEvent`).
+- **Estruturas:** `SceAppMgrEvent` (0x40): 0x00 `event`, 0x04 `app_id`, 0x08 `param[56]`.
+- **Implementação no VitaSharp:** `SystemMisc`; fila vazia por padrão. Se no futuro houver suspend/resume no Desktop,
+  empurrar ON_DEACTIVATE/ON_RESUME aqui e em `ReceiveSystemEvent`, e atualizar `_sceAppMgrGetAppState`
+  (`appEventNum`).
+- **Validação:** teste unitário.
+
+#### sceAppMgrReceiveEventNum
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x47E5DD7D
+- **Protótipo:** `int sceAppMgrReceiveEventNum(int *eventNum);` (Vita3K)
+- **Comportamento:** número de eventos pendentes (0).
+- **Retorno/erros:** 0; `NULL_POINTER` se NULL.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc` (existe um `sceAppMgrReceiveSystemEventNum` sem NID conhecido — não
+  confundir).
+- **Validação:** teste unitário.
+
+#### sceAppMgrLaunchAppByUri
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x003C634F
+- **Protótipo:** `int sceAppMgrLaunchAppByUri(int flags, const char *uri);` (`psp2/appmgr.h`; `flags` normalmente 0x20000)
+- **Comportamento:** lança o app associado à URI (`psns:` Store, `pswebbrowser:`, `psgm:play?titleid=` …). O jogo
+  continua em segundo plano.
+- **Retorno/erros:** 0; `PARAM` para URI inválida; `NOEXEC` 0x8080201F se o processo não pode lançar.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; logar a URI e devolver 0 (sem lançar nada). Opcional no Desktop: URI
+  `http(s)` abre no navegador do host.
+- **Validação:** teste unitário.
+
+#### sceAppMgrLaunchAppByUri2
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0ED6AF54
+- **Protótipo:** `int sceAppMgrLaunchAppByUri2(const char *uri, const SceAppMgrLaunchAppByUri2Param *param);` (inferido de `_sceAppMgrLaunchAppByUri2`)
+- **Comportamento:** como `LaunchAppByUri`, com opções (URI até 0x822 chars).
+- **Retorno/erros:** idem.
+- **Estruturas:** `SceAppMgrLaunchAppByUri2Param` (0x40): 0x00 `size`, 0x04 `flags`, 0x08 reserved, 0x0C
+  `app_launch_callback_id`, 0x10 `get_param_callback_id`, 0x14 `parent_app_id`, 0x18 `launch_mode`, 0x1C reserved,
+  0x20 reserved[0x20].
+- **Implementação no VitaSharp:** idem `LaunchAppByUri`.
+- **Validação:** teste unitário.
+
+### Save data (variante AppMgr)
+
+Estruturas (`psp2/appmgr.h`):
+`SceAppMgrSaveDataData` (0x4C): 0x00 `size` (= 0x4C), 0x04 `slotId`, 0x08 `SceAppUtilSaveDataSlotParam *slotParam`,
+0x0C reserved[32], 0x2C `files*`, 0x30 `fileNum`, 0x34 `SceAppUtilSaveDataMountPoint mountPoint` (16), 0x44
+`unsigned *requiredSizeKB`, 0x48 `unk`.
+`SceAppMgrSaveDataDataDelete` (0x44): igual até 0x34 `mountPoint`; `files` aponta para itens de 0x40 bytes segundo o
+header (`SceAppUtilSaveDataFile`) — o Vita3K também anda de 0x40 em 0x40; confirmar no call site (o equivalente AppUtil
+usa `SceAppUtilSaveDataRemoveItem` de 0x2C).
+`SceAppMgrSaveDataSlot` (0x418): 0x00 `size` (= 0x418), 0x04 `slotId`, 0x08 `SceAppUtilSaveDataSlotParam slotParam`
+(0x34C, embutido), 0x354 reserved[116], 0x3C8 `mountPoint` (16), 0x3D8 reserved2[0x40].
+`SceAppMgrSaveDataSlotDelete` (0x18): 0x00 `size` (= 0x18), 0x04 `slotId`, 0x08 `mountPoint`.
+Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código exato).
+
+#### sceAppMgrSaveDataDataSave
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84DE76C7
+- **Protótipo:** `int sceAppMgrSaveDataDataSave(SceAppMgrSaveDataData *data);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** igual a `sceAppUtilSaveDataDataSave` (modos FILE 0, FILE_TRUNCATE 1, DIRECTORY 2), incluindo a
+  atualização de `modifiedTime` do slot quando `slotParam` é dado (o Vita3K não atualiza o slot aqui — seguir o AppUtil).
+- **Retorno/erros:** 0; `requiredSizeKB = 0` se há espaço; `NO_SPACE` conforme a cota (código AppMgr a confirmar).
+- **Estruturas:** acima.
+- **Implementação no VitaSharp:** extrair o corpo de `AppUtil.sceAppUtilSaveDataDataSave` para um helper
+  `SaveFiles(uint files, uint num, uint slotId, uint slotParam)` e chamar dos dois lados.
+- **Validação:** teste unitário comparando os arquivos gerados pelas duas APIs.
+
+#### sceAppMgrSaveDataDataSave2
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD5CA4F56
+- **Protótipo:** a confirmar (provável mesma struct com campos extras).
+- **Comportamento:** variante de `DataSave`.
+- **Retorno/erros:** idem.
+- **Estruturas:** a confirmar (logar `size` no primeiro uso).
+- **Implementação no VitaSharp:** helper comum.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrSaveDataDataRemove
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4544FCC5
+- **Protótipo:** `int sceAppMgrSaveDataDataRemove(SceAppMgrSaveDataDataDelete *data);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** remove arquivos/pastas listados de `savedata0:`.
+- **Retorno/erros:** 0.
+- **Estruturas:** acima (stride dos itens a confirmar: 0x40 × 0x2C).
+- **Implementação no VitaSharp:** helper comum com `sceAppUtilSaveDataDataRemove`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataDataRemove2
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x36040E1D
+- **Protótipo:** a confirmar.
+- **Comportamento:** variante de `DataRemove`.
+- **Retorno/erros:** idem.
+- **Estruturas:** a confirmar.
+- **Implementação no VitaSharp:** helper comum.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrSaveDataGetQuota
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0717E2AE
+- **Protótipo:** a confirmar (provável `int (SceSize *quotaKiB, SceSize *usedKiB, const SceAppUtilSaveDataMountPoint *mp)`).
+- **Comportamento:** como `sceAppUtilSaveDataGetQuota` (corrigida: cota do `param.sfo`).
+- **Retorno/erros:** idem.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** helper comum.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotCreate
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5181D7B3
+- **Protótipo:** `int sceAppMgrSaveDataSlotCreate(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
+- **Comportamento:** cria `SlotParam_<id>.bin` com `data->slotParam` (embutido em +0x08).
+- **Retorno/erros:** 0; `SLOT_EXISTS` (código AppMgr a confirmar).
+- **Estruturas:** `SceAppMgrSaveDataSlot`.
+- **Implementação no VitaSharp:** delegar a `AppUtil.sceAppUtilSaveDataSlotCreate(id, data + 8, 0)`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotDelete
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6B0E7CF0
+- **Protótipo:** `int sceAppMgrSaveDataSlotDelete(SceAppMgrSaveDataSlotDelete *data);` (`psp2/appmgr.h`)
+- **Comportamento:** apaga o `SlotParam` do slot.
+- **Retorno/erros:** 0.
+- **Estruturas:** `SceAppMgrSaveDataSlotDelete`.
+- **Implementação no VitaSharp:** delegar a `sceAppUtilSaveDataSlotDelete`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotGetParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x17653D70
+- **Protótipo:** `int sceAppMgrSaveDataSlotGetParam(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
+- **Comportamento:** lê o `SlotParam` para `data + 0x08`.
+- **Retorno/erros:** 0; `SLOT_NOT_FOUND` (código AppMgr a confirmar; usar 0x80100641 até confirmar).
+- **Estruturas:** `SceAppMgrSaveDataSlot`.
+- **Implementação no VitaSharp:** delegar a `sceAppUtilSaveDataSlotGetParam(id, data + 8, 0)`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotSetParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xA8065FA4
+- **Protótipo:** `int sceAppMgrSaveDataSlotSetParam(SceAppMgrSaveDataSlot *data);` (`psp2/appmgr.h`)
+- **Comportamento:** grava o `SlotParam` de slot existente.
+- **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
+- **Estruturas:** `SceAppMgrSaveDataSlot`.
+- **Implementação no VitaSharp:** delegar a `sceAppUtilSaveDataSlotSetParam` (corrigida).
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotGetStatus
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1F3A2F25
+- **Protótipo:** a confirmar (provável `int (unsigned slotId, SceAppUtilSaveDataSlotStatus *status, const mountPoint*)`).
+- **Comportamento:** lê só o campo `status` (offset 0 do `SlotParam`; 0 = ok, outro = corrompido).
+- **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** ler os 4 primeiros bytes do arquivo do slot.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotSetStatus
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3FD3073C
+- **Protótipo:** a confirmar.
+- **Comportamento:** grava o campo `status` do slot.
+- **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** escrever os 4 primeiros bytes do arquivo do slot.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSaveDataSlotInit
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x4F8A92F1
+- **Protótipo:** a confirmar.
+- **Comportamento:** inicializa o arquivo de slots (`sce_sys/sdslot.dat` no hardware). O VitaSharp guarda um arquivo
+  por slot; nada a fazer.
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `=> 0`.
+- **Validação:** —
+
+#### sceAppMgrSaveDataSlotFileOpen
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x91BE107E
+- **Protótipo:** a confirmar.
+- **Comportamento:** abre o arquivo de slots para leitura/escrita em lote (pareado com `FileClose`/`FileGetParam`).
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `=> 0`.
+- **Validação:** —
+
+#### sceAppMgrSaveDataSlotFileClose
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xFD7A4EEC
+- **Protótipo:** a confirmar.
+- **Comportamento/erros:** fecha o arquivo aberto por `FileOpen`; `=> 0`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `=> 0`.
+- **Validação:** —
+
+#### sceAppMgrSaveDataSlotFileGetParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC176317B
+- **Protótipo:** a confirmar (provável `int (unsigned slotId, SceAppUtilSaveDataSlotParam *param)`).
+- **Comportamento:** lê o param de um slot com o arquivo de slots aberto.
+- **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
+- **Estruturas:** `SceAppUtilSaveDataSlotParam`.
+- **Implementação no VitaSharp:** delegar a `ReadSlotParam`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrUpdateSaveDataParam
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1B0BD20D
+- **Protótipo:** `int sceAppMgrUpdateSaveDataParam(const char *path);` (inferido de `_sceAppMgrUpdateSaveDataParam`)
+- **Comportamento:** atualiza o `param.sfo` do savedata (`sce_sys/param.sfo`: título, data) após salvar.
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `=> 0` (o VitaSharp não gera `param.sfo` de save); opcional: escrever um SFO mínimo
+  para o gerenciador de saves do Desktop.
+- **Validação:** —
+
+#### sceAppMgrGetSaveDataInfo
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6EF25378
+- **Protótipo:** `int sceAppMgrGetSaveDataInfo(const char *path, const char *titleId, int forceMountUx, SceAppMgrGetSaveDataInfoResult *result);` (inferido de `_sceAppMgrGetSaveDataInfo`, `opt->result`)
+- **Comportamento:** informações do savedata de um título.
+- **Retorno/erros:** 0; `NOT_FOUND` sem save.
+- **Estruturas:** `SceAppMgrGetSaveDataInfoResult` (0x1C): 0x00 `storage_type` (USER 4 para `ux0`), 0x04 `is_mounted`,
+  0x08 `has_broken_data`, 0x0C `account_id[2]`, 0x14 `save_data_param44`, 0x18 `allocated_size_kb`.
+- **Implementação no VitaSharp:** `SystemMisc`; preencher a partir da pasta `ux0/user/00/savedata/<titleId>`.
+- **Validação:** teste unitário.
+
+### Sistema, caminhos e dispositivos
+
+#### sceAppMgrSystemParamGetInt
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5B75180C
+- **Protótipo:** `int sceAppMgrSystemParamGetInt(int paramId, int *value);` (inferido)
+- **Comportamento:** base de `sceAppUtilSystemParamGetInt` (idioma 1, botão 2, formato de data 4, hora 5, fuso 6,
+  horário de verão 7).
+- **Retorno/erros:** 0; `PARAM` para id inválido.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** delegar a `AppUtil.sceAppUtilSystemParamGetInt` (tornar `internal`).
+- **Validação:** teste unitário.
+
+#### sceAppMgrSystemParamGetString
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x09899A08
+- **Protótipo:** `int sceAppMgrSystemParamGetString(int paramId, char *buf, SceSize bufSize);` (inferido)
+- **Comportamento:** base de `sceAppUtilSystemParamGetString` (id 3 = nome do usuário, máx. 17 bytes).
+- **Retorno/erros:** 0; `PARAM`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** delegar a `AppUtil`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrSystemParamDateTimeGetConf
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xE39FC7D5
+- **Protótipo:** a confirmar (provável `int (SceSystemParamDateTimeConf *conf)` com formato de data/hora, fuso, DST).
+- **Comportamento:** configurações de data/hora do sistema de uma vez.
+- **Retorno/erros:** 0.
+- **Estruturas:** a confirmar (logar o tamanho do buffer no primeiro uso).
+- **Implementação no VitaSharp:** mesmos valores de `sceAppUtilSystemParamGetInt` 4..7.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrGetDevInfo
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x67705391
+- **Protótipo:** `int sceAppMgrGetDevInfo(const char *dev, uint64_t *maxSize, uint64_t *freeSize);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** capacidade e espaço livre do dispositivo (`"ux0:"`…).
+- **Retorno/erros:** 0; `EINVAL` (0x80010016) se `dev == NULL`; `ENOENT` (0x80010002) para dispositivo desconhecido
+  (Vita3K).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; `new DriveInfo(Path.GetPathRoot(Vfs.Resolve(dev)))`, limitando a
+  valores plausíveis (ex.: máx. 64 GiB) para não estourar cálculos de 32 bits do jogo.
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetRawPath
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0E8D27E8
+- **Protótipo:** `int sceAppMgrGetRawPath(char *path, char *resolvedPath, int resolvedPathSize);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** resolve overlays FIOS/mounts aleatórios para o caminho real (até 0x124 bytes).
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** copiar `path` (como o Vita3K) — os caminhos do VitaSharp já são "reais".
+- **Validação:** teste unitário.
+
+#### sceAppMgrConvertVs0UserDrivePath
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xADAA658E
+- **Protótipo:** `int sceAppMgrConvertVs0UserDrivePath(char *path, char *mountPoint, int len);` (`psp2/appmgr.h`, Vita3K)
+- **Comportamento:** converte `vs0:` em caminho acessível ao app (`len > 0x3F`, máx. 0x124).
+- **Retorno/erros:** 0; `PARAM` se `len <= 0x3F` (a confirmar).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** copiar o caminho (o `Vfs` já monta `vs0`).
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetUserDirPath
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x5253338C
+- **Protótipo:** `int sceAppMgrGetUserDirPath(int partition, char *path, SceSize maxLen);` (Vita3K)
+- **Comportamento:** partição 1 → `"ur0:user/00"`, 2 → `"ux0:user/00"`; exige `maxLen >= 32`, escreve no máx. 32 bytes.
+- **Retorno/erros:** 0; `PARAM` para partição inválida ou `maxLen < 32`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetIdByName
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x79F9E63A
+- **Protótipo:** `int sceAppMgrGetIdByName(SceUID *pid, const char *name);` (`psp2/appmgr.h`)
+- **Comportamento:** PID do app com o title id dado. Só existe o próprio processo.
+- **Retorno/erros:** 0 se `name == Emu.TitleId`; `NOT_FOUND` 0x80802012 caso contrário.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** PID do processo atual (o mesmo de `sceKernelGetProcessId`).
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetNameById
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xF4D6AE3A
+- **Protótipo:** `int sceAppMgrGetNameById(SceUID pid, char *name);` (`psp2/appmgr.h`; buffer de 32)
+- **Comportamento:** title id do processo `pid`.
+- **Retorno/erros:** 0; `NOT_FOUND` para outro pid.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `WriteCString(name, Emu.TitleId, 32)`.
+- **Validação:** teste unitário.
+
+#### sceAppMgrGetMediaTypeFromDrive
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC014AA52
+- **Protótipo:** `int sceAppMgrGetMediaTypeFromDrive(const char *drive, int *mediaType);` (inferido)
+- **Comportamento:** tipo de mídia de um dispositivo (cartão de jogo × memory card × interna). Valores a confirmar.
+- **Retorno/erros:** 0; `PARAM`.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** devolver o valor de "memory card" para tudo (app instalado digitalmente), a confirmar.
+- **Validação:** só com jogo que importe.
+
+#### sceAppMgrGetRecommendedScreenOrientation
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8A1A6FFC
+- **Protótipo:** `int sceAppMgrGetRecommendedScreenOrientation(SceUInt32 *orientation);` (inferido)
+- **Comportamento:** orientação física recomendada (`SceAppMgrScreenOrientation`: LANDSCAPE 1, LANDSCAPE_REVERSED 2,
+  PORTRAIT 3, PORTRAIT_REVERSED 4).
+- **Retorno/erros:** 0.
+- **Estruturas:** —
+- **Implementação no VitaSharp:** sempre 1 (paisagem).
+- **Validação:** teste unitário.
+
+#### sceAppMgrIsCameraActive
+- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8B123D24
+- **Protótipo:** `int sceAppMgrIsCameraActive(int *active?);` (inferido; pode ser retorno direto 0/1)
+- **Comportamento:** se a câmera está em uso por algum processo. Sem câmera: 0.
+- **Retorno/erros:** 0 (e `*active = 0` se for ponteiro).
+- **Estruturas:** —
+- **Implementação no VitaSharp:** `SystemMisc`; se `r0` for ponteiro válido, escrever 0; retornar 0.
+- **Validação:** —
+
+### FORA (shell/VSH, PSPEmu, instalação, debug)
+
+| Função | NID | Motivo |
+| --- | --- | --- |
+| `sceAppMgrAcidDirSet` | 0x31EFA73A | configuração interna de diretório de ACID (DRM do sistema) |
+| `sceAppMgrAcquireSoundOutExclusive3` | 0xD97AC34E | áudio exclusivo para apps de sistema (música/vídeo) |
+| `sceAppMgrAppMount` | 0x127F3BEB | o shell monta o `app0:` de outro app |
+| `sceAppMgrAppUmount` | 0x9619C150 | par de `AppMount` |
+| `sceAppMgrBgdlGetQueueStatus` | 0x7BC8D5B6 | backend de `sceAppUtilBgdlGetStatus`, que é HLE |
+| `sceAppMgrCaptureFrameBufDMACByAppId` | 0x44F8347C | captura de tela de outro app (shell/screenshot) |
+| `sceAppMgrCaptureFrameBufIFTUByAppId` | 0x8C24D566 | idem |
+| `sceAppMgrCheckRifGD` | 0x6E5CBCA2 | validação de licença pelo instalador/shell |
+| `sceAppMgrContentInstallPeriodStart` | 0x251A224D | período de instalação de conteúdo (instalador) |
+| `sceAppMgrContentInstallPeriodStop` | 0xB3DFC681 | idem |
+| `sceAppMgrDeclareShellProcess2` | 0xF261879F | só o SceShell se declara shell |
+| `sceAppMgrDestroyAppByName` | 0x4570DC15 | matar outro app (shell) |
+| `sceAppMgrForceUmount` | 0x54AD0F7F | desmontar imagem USB mass storage (id 600, permissão UDCD) |
+| `sceAppMgrGetAppInfo` | 0x72ABDC61 | exige processo não-jogo (header) |
+| `sceAppMgrGetAppMgrState` | 0x98724E3F | estado global do AppMgr para o shell (chat, áudio) |
+| `sceAppMgrGetCoredumpStateForShell` | 0x27CEDB95 | coredump, só shell |
+| `sceAppMgrGetCurrentBgmState` | 0xACB3826A | dono da porta BGM (player de música) |
+| `sceAppMgrGetCurrentBgmState2` | 0x62BEBD65 | idem |
+| `sceAppMgrGetFgAppInfo` | 0x59F8C1C1 | app em primeiro plano (shell) |
+| `sceAppMgrGetMediaTypeFromDriveByPid` | 0x8F6213CA | consulta de outro processo |
+| `sceAppMgrGetMountProcessNum` | 0x43558909 | contagem interna de mounts (shell/instalador) |
+| `sceAppMgrGetPfsDrive` | 0x139D9D93 | drive PFS aleatório de outro mount (sistema) |
+| `sceAppMgrGetPidListForShell` | 0x970FA364 | só shell |
+| `sceAppMgrGetRawPathOfApp0ByAppIdForShell` | 0x81D8D15D | só shell |
+| `sceAppMgrGetRawPathOfApp0ByPidForShell` | 0x0B79E4BB | só shell |
+| `sceAppMgrGetSaveDataInfoForSpecialExport` | 0xC80E4B0F | exportação de save pelo Content Manager |
+| `sceAppMgrGetStatusByAppId` | 0x47958DE5 | status de outros apps (shell) |
+| `sceAppMgrGetStatusById` | 0x143EA292 | idem, por pid |
+| `sceAppMgrGetStatusByName` | 0x656E0ABD | idem, por nome |
+| `sceAppMgrGetSystemDataFilePlayReady` | 0x1E1E97EE | DRM PlayReady (app de vídeo) |
+| `sceAppMgrGetUserDirPathById` | 0x63E51420 | caminho de usuário de outro título (sistema) |
+| `sceAppMgrGetVs0UserDataDrive` | 0xC0631748 | drive aleatório de `vs0` para apps de sistema |
+| `sceAppMgrGetVs0UserModuleDrive` | 0x906154DE | idem |
+| `sceAppMgrInitSafeMemoryById` | 0x3E53681A | zera safe memory de outro título (Configurações) |
+| `sceAppMgrInstallDirMount` | 0x34003AFC | instalador de pacotes |
+| `sceAppMgrLaunchAppByName` | 0xC9C77E21 | lançar outro app por title id; negado a jogos (NOEXEC) |
+| `sceAppMgrLaunchAppByName2` | 0x42945D67 | idem |
+| `sceAppMgrLaunchAppByName2ForShell` | 0x6412F2D4 | só shell |
+| `sceAppMgrLaunchAppByName2ndStage` | 0xADAC0E8D | segunda fase de boot conduzida pelo shell |
+| `sceAppMgrLaunchAppByNameForShell` | 0xA1D43805 | só shell |
+| `sceAppMgrLaunchAppByPath4` | 0xCECFC7CB | lançar SELF por caminho (shell/depuração) |
+| `sceAppMgrLaunchVideoStreamingApp` | 0x4C02B889 | lança NPXS10085 (streaming de vídeo) |
+| `sceAppMgrLoadSaveDataSystemFile` | 0x660B57BE | lê `param.sfo` de save (SaveDataDialog LLE / Content Manager) |
+| `sceAppMgrLoopBackFormat` | 0xCE8CE150 | imagem USB mass storage |
+| `sceAppMgrLoopBackMount` | 0x33CD76DD | idem |
+| `sceAppMgrMmsMount` | 0xF4730BA8 | mounts do PSPEmu (ids 400–402) |
+| `sceAppMgrOverwriteLaunchParamForShell` | 0xEC1FDACE | só shell |
+| `sceAppMgrPeekLaunchParamForShell` | 0x6AD619D3 | só shell |
+| `sceAppMgrPspSaveDataGetParams` | 0xCF58EEE4 | PSPEmu |
+| `sceAppMgrPspSaveDataRead` | 0x33C47470 | PSPEmu (backend de `sceAppUtilPspSaveDataLoad`, HLE) |
+| `sceAppMgrPspSaveDataRootMount` | 0xC94B7E24 | PSPEmu |
+| `sceAppMgrReceiveNotificationRequestForShell` | 0xF0DFB1EF | só shell |
+| `sceAppMgrReceiveShellEvent` | 0x15AC8C52 | só shell |
+| `sceAppMgrSendNotificationRequest` | 0x6E4997D7 | notificações do sistema (apps de sistema) |
+| `sceAppMgrSendParam` | 0xBB41230E | enviar parâmetro a outro app (sistema) |
+| `sceAppMgrSendSystemEvent` | 0x2E4E1A1E | gerar evento de sistema para outro app (shell) |
+| `sceAppMgrSendSystemEvent2` | 0xAEF9DF01 | idem |
+| `sceAppMgrSetBackRenderPortOwner` | 0x7149016E | composição de display do shell |
+| `sceAppMgrSetBgmProxyApp` | 0xC42F41E9 | player de música em segundo plano |
+| `sceAppMgrSetPowerSaveMode` | 0x2CF000BD | modo de economia gerido pelo shell |
+| `sceAppMgrSetRecommendedScreenOrientationForShell` | 0x219043FF | só shell |
+| `sceAppMgrSetShellScreenOrientation` | 0x5C7BE748 | só shell |
+| `sceAppMgrSetSystemDataFile` | 0x345F5CC0 | arquivos de dados de sistema (apps de sistema) |
+| `sceAppMgrSetSystemDataFilePlayReady` | 0x442ADA77 | DRM PlayReady |
+| `sceAppMgrThemeDataMount` | 0x633A7594 | temas da tela inicial (shell) |
+| `sceAppMgrUmountByPid` | 0x919FDAE7 | desmontar mounts de outro processo (sistema) |

@@ -28,6 +28,36 @@ Fonte da comparação (2026-10-18):
 | [G2-support-libs.md](G2-support-libs.md) | P2: Ult, Json, Xml, Sqlite, utilitários de sistema, debug/perf |
 | [data/](data/) | TSVs brutos: funções do VitaSDK com status, implementadas no VitaSharp, faltantes por jogo |
 
+## Comece por aqui: achados que atravessam pacotes
+
+Estes itens rendem mais do que qualquer função isolada. Faça-os antes do resto.
+
+1. **Códigos de erro errados (P0).** ~30 constantes de `SceError` (`Kernel/KernelObjects.cs`) divergem de
+   `psp2/kernel/error.h`: `INVALID_ARGUMENT` é `0x80020005` (não `0x80020003`, que é `NOSYS`), `ILLEGAL_ADDR` é
+   `0x80020006`, além de Sema/Mutex/LwMutex/EventFlag/MsgPipe/Thread. Também há literais errados em `ThreadMgr.cs`,
+   `Sync.cs`, `VmThreads.cs`, `SysMem.cs`, `sceSysmoduleIsLoaded`, `Online.cs` (rede/HTTP) e `Audio.cs`.
+   Tabelas completas: [A-kernel.md](A-kernel.md) §0.1, [E1-net.md](E1-net.md), [F-devices-media.md](F-devices-media.md) Anexo A.
+2. **`ThreadStatus.Waiting = 4`** (`Kernel/GuestThread.cs:9`); no header WAITING é 8 e 4 é STANDBY. Afeta
+   `sceKernelGetThreadInfo`. Ver [A-kernel.md](A-kernel.md) §0.1.
+3. **`sceSysmoduleLoadModule` carregando módulos via LLE.** Hoje é HLE puro. Fazê-lo carregar
+   `app0:sce_module/<nome>.suprx` e, na falta, `vs0:sys/external/<nome>.suprx` (chamando `module_start`) resolve:
+   SceFace e SceSmart do Invizimals (16 P0 + 48 P1; o jogo traz `libface.suprx`/`libsmart.suprx`), e torna viáveis
+   Ult, Json, Xml, Sqlite, Sas, Pgf, Atrac e Pvf sem HLE. Ver [G2-support-libs.md](G2-support-libs.md) (topo),
+   [F-devices-media.md](F-devices-media.md) e [G1-media-libs.md](G1-media-libs.md).
+4. **Bugs em funções já implementadas** ([D-dialogs-app.md](D-dialogs-app.md), seção STUB):
+   `sceAppMgrAppParamGetString` troca os IDs 8 e 9; `sceAppUtilSaveDataDataRemove` anda de 48 em 48 bytes (a struct
+   tem 0x2C); `sceMsgDialogInit` lê o modo em 0x18 (é 0x50); `sceNetCheckDialogGetResult` grava código de erro no
+   campo de resultado; `sceKernelGetSystemSwVersion` escreve `version` no offset errado ([A-kernel.md](A-kernel.md)).
+5. **Esperas que viram busy loop:** `sceNetEpollWait` (timeout -1 dorme 1 ms) e `sceRudpPollWait` (volta na hora).
+   `Wait.Until` precisa de uma sobrecarga com timeout por valor. Ver [E1-net.md](E1-net.md).
+6. **Falsos positivos do comando `imports`:** os 34 imports `pthread`/`Il2CppAssemblies` do Devious Dungeon resolvem
+   em runtime por LLE (`Media/Modules`); o comando não carrega esses módulos. Ver [A-kernel.md](A-kernel.md) §0.3.
+7. **`NID_023EAA62`** (F1 2011, Uncharted) é a função de log de erro da libc antiga: registrar a string e retornar 0.
+   O problema de verdade é `tty0:`/`tty1:` não mapeados no VFS. Ver [B-io.md](B-io.md).
+
+Todos os pacotes marcam como "inferido" ou "a confirmar" o que não tem fonte (sem header no VitaSDK e sem
+implementação no Vita3K), sempre com o método para confirmar. Confirme antes de implementar.
+
 ## Prioridades
 
 - **P0:** importada por um jogo instalado e sem HLE. Jogos: F1 2011 (PCSE00002), Uncharted: Golden Abyss (PCSA00029),
