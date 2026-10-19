@@ -571,6 +571,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
         _presentCount++;
         _drawSerial = 0;
+        EndFrameStallStats();
         bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.Readback = null;
@@ -775,6 +776,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     public void Dispose()
     {
+        CloseTitleCaches();
         _vk.DeviceWaitIdle(_dev);
         DestroyMirror();
         foreach (var fr in _frames) RetireFrame(fr);

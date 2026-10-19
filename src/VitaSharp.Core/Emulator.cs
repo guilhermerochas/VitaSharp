@@ -141,6 +141,8 @@ public sealed class Emulator : IDisposable
 
         Klicensee = FindKlicensee();
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
+        // per-title shader/pipeline caches start warming up while the executable loads
+        try { Gpu.Backend?.BeginTitle(TitleId); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
 
         MainModule = LoadModule("app0:" + self);
         Loader.TitlePatches.Apply(TitleId, MainModule.Name, Options.PatchDir);

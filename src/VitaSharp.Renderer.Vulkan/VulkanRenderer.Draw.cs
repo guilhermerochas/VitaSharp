@@ -106,6 +106,7 @@ public sealed unsafe partial class VulkanRenderer
         public ulong LayoutHash;
         public uint StreamMask;
         public bool Failed;
+        public ulong ProgramHash, HintKey;
     }
 
     sealed class FsEntry
@@ -113,9 +114,15 @@ public sealed unsafe partial class VulkanRenderer
         public ShaderModule Module;
         public GeneratedShader? Gen;
         public bool Failed;
+        public ulong ProgramHash, HintKey;
     }
 
-    readonly Dictionary<(ulong, ulong), ShaderModule> _modules = new();
+    /// <summary>A translated shader: its module (default when translation failed) and the metadata the renderer needs.</summary>
+    sealed record ModuleEntry(ShaderModule Module, GeneratedShader? Gen);
+
+    /// <summary>(program hash, hint key) → module. Shared with the prewarm thread, which loads modules from the
+    /// per-title shader pack ahead of the first draws.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<(ulong, ulong), ModuleEntry> _modules = new();
     readonly Dictionary<(GxmVertexProgram, ulong), VsEntry> _vsCache = new();
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
@@ -136,36 +143,77 @@ public sealed unsafe partial class VulkanRenderer
         return f;
     }
 
-    (ShaderModule Module, GeneratedShader? Gen) GetModule(GxpProgram program, ShaderHints hints)
+    /// <summary>
+    /// Module for a program + hints: from memory (possibly loaded by the prewarm thread), from the per-title shader
+    /// pack (no translation, no compilation) or translated and compiled now (and then stored in the pack).
+    /// </summary>
+    ModuleEntry GetModule(GxpProgram program, ulong hintKey, Func<DrawCommand, uint, ShaderHints> hints, DrawCommand d, uint colorFormat)
     {
-        var key = (program.Hash, hints.Key());
+        var key = (program.Hash, hintKey);
+        if (_modules.TryGetValue(key, out var cached))
+        {
+            Interlocked.Increment(ref _statShaderMemHits);
+            return cached;
+        }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (LoadPackedShader(program.Hash, hintKey, program.IsVertex) is { } packed)
+        {
+            Interlocked.Increment(ref _statShaderPackHits);
+            NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            return PublishModule(key, packed);
+        }
+        Interlocked.Increment(ref _statShaderMisses);
         GeneratedShader? gen = null;
-        if (_modules.TryGetValue(key, out var m)) return (m, null);
+        ShaderModule m = default;
         try
         {
-            gen = ShaderGenerator.Generate(program, hints);
+            gen = ShaderGenerator.Generate(program, hints(d, colorFormat));
             var spv = _compiler.Compile(gen.Glsl, gen.IsVertex, out var err);
             if (spv == null)
             {
                 Log.Error($"Shader {program.Hash:X16} failed to compile: {err}");
                 DumpShader(program, gen.Glsl + "\n/*\n" + err + "\n*/");
-                _modules[key] = default;
-                return (default, gen);
             }
-            fixed (byte* p = spv)
+            else
             {
-                var ci = new ShaderModuleCreateInfo { SType = StructureType.ShaderModuleCreateInfo, CodeSize = (nuint)spv.Length, PCode = (uint*)p };
-                _vk.CreateShaderModule(_dev, in ci, null, out m).Ok("shader module");
+                m = CreateShaderModule(spv);
+                StorePackedShader(program.Hash, hintKey, gen, spv);
             }
             if (gen.Warnings.Count > 0) Log.WarnOnce($"shwarn{program.Hash:X16}", $"[gpu] shader {program.Hash:X16} ({(program.IsVertex ? "vertex" : "fragment")}): {string.Join("; ", gen.Warnings.Distinct())}");
         }
         catch (Exception e)
         {
             Log.Error($"Shader {program.Hash:X16} translation failed: {e}");
+            if (m.Handle != 0) _vk.DestroyShaderModule(_dev, m, null);
             m = default;
         }
-        _modules[key] = m;
-        return (m, gen);
+        NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        return PublishModule(key, new ModuleEntry(m, gen));
+    }
+
+    // hints are only built when a shader really has to be translated (static: no per-draw closure allocation)
+    static ShaderHints VertexHints(DrawCommand d, uint _) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
+        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, a.Format)).ToArray(), 0);
+
+    static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat);
+
+    ShaderModule CreateShaderModule(ReadOnlySpan<byte> spv)
+    {
+        fixed (byte* p = spv)
+        {
+            var ci = new ShaderModuleCreateInfo { SType = StructureType.ShaderModuleCreateInfo, CodeSize = (nuint)spv.Length, PCode = (uint*)p };
+            _vk.CreateShaderModule(_dev, in ci, null, out var m).Ok("shader module");
+            return m;
+        }
+    }
+
+    /// <summary>Adds a module unless another thread got there first (then that one is used and ours destroyed).</summary>
+    ModuleEntry PublishModule((ulong, ulong) key, ModuleEntry e)
+    {
+        if (_modules.TryAdd(key, e)) return e;
+        if (e.Module.Handle != 0) _vk.DestroyShaderModule(_dev, e.Module, null);
+        return _modules[key];
     }
 
     void DumpShader(GxpProgram program, string text)
@@ -187,15 +235,9 @@ public sealed unsafe partial class VulkanRenderer
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
         ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
-        var hints = new ShaderHints(TextureFormats(d.VertexTextures, vp.Info.TexturesUsed),
-            vp.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, a.Format)).ToArray(), 0);
-        e = new VsEntry();
-        var (module, gen) = GetModule(vp.Info.Program, hints);
-        gen ??= ShaderGenerator.Generate(vp.Info.Program, hints); // module was cached: regenerate metadata only
-        e.Module = module;
-        e.Gen = gen;
-        e.Failed = module.Handle == 0;
-        BuildVertexInput(vp, gen, e);
+        var me = GetModule(vp.Info.Program, hk, VertexHints, d, 0);
+        e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk };
+        if (me.Gen != null) BuildVertexInput(vp, me.Gen, e);
         _vsCache[(vp, hk)] = e;
         return e;
     }
@@ -206,13 +248,8 @@ public sealed unsafe partial class VulkanRenderer
         uint colorFormat = _rt?.ColorFormat ?? 0;
         ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
-        var hints = new ShaderHints(TextureFormats(d.FragmentTextures, fp.Info.TexturesUsed), [], colorFormat);
-        e = new FsEntry();
-        var (module, gen) = GetModule(fp.Info.Program, hints);
-        gen ??= ShaderGenerator.Generate(fp.Info.Program, hints);
-        e.Module = module;
-        e.Gen = gen;
-        e.Failed = module.Handle == 0;
+        var me = GetModule(fp.Info.Program, hk, FragmentHints, d, colorFormat);
+        e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
         _fsCache[(fp, hk)] = e;
         return e;
     }
@@ -228,7 +265,6 @@ public sealed unsafe partial class VulkanRenderer
     {
         var bindings = new List<VertexInputBindingDescription>();
         var attrs = new List<VertexInputAttributeDescription>();
-        var hash = new System.IO.Hashing.XxHash64();
         uint streamMask = 0;
         bool needDummy = false;
         foreach (var input in gen.VertexInputs)
@@ -271,12 +307,18 @@ public sealed unsafe partial class VulkanRenderer
             bindings.Add(new VertexInputBindingDescription((uint)s, st.Stride, instanced ? VertexInputRate.Instance : VertexInputRate.Vertex));
         }
         if (needDummy) bindings.Add(new VertexInputBindingDescription(16, 0, VertexInputRate.Vertex));
-        foreach (var b in bindings) { hash.Append(BitConverter.GetBytes(b.Binding)); hash.Append(BitConverter.GetBytes(b.Stride)); hash.Append(BitConverter.GetBytes((int)b.InputRate)); }
-        foreach (var at in attrs) { hash.Append(BitConverter.GetBytes(at.Location)); hash.Append(BitConverter.GetBytes(at.Binding)); hash.Append(BitConverter.GetBytes((int)at.Format)); hash.Append(BitConverter.GetBytes(at.Offset)); }
         e.Bindings = bindings.ToArray();
         e.Attributes = attrs.ToArray();
-        e.LayoutHash = hash.GetCurrentHashAsUInt64();
+        e.LayoutHash = LayoutHash(e.Bindings, e.Attributes);
         e.StreamMask = streamMask;
+    }
+
+    /// <summary>Identity of a vertex input layout (part of the pipeline key; the prewarm thread computes it from
+    /// the recorded descriptions, so both must hash the same way).</summary>
+    static ulong LayoutHash(VertexInputBindingDescription[] bindings, VertexInputAttributeDescription[] attrs)
+    {
+        ulong h = System.IO.Hashing.XxHash64.HashToUInt64(MemoryMarshal.AsBytes(bindings.AsSpan()));
+        return System.IO.Hashing.XxHash64.HashToUInt64(MemoryMarshal.AsBytes(attrs.AsSpan()), (long)h);
     }
 
     // =================================================================== pipelines
@@ -285,7 +327,10 @@ public sealed unsafe partial class VulkanRenderer
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
         int TopologyClass, PolygonMode Polygon);
 
+    /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
+    /// <summary>Every pipeline created (owner for destruction), shared with the prewarm thread.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<PipelineKey, Pipeline> _sharedPipelines = new();
     Pipeline _boundPipeline;
 
     static int TopologyClass(PrimitiveTopology t) => t switch
@@ -298,20 +343,57 @@ public sealed unsafe partial class VulkanRenderer
     Pipeline GetPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         if (_pipelines.TryGetValue(key, out var p)) return p;
+        if (_sharedPipelines.TryGetValue(key, out p))
+        {
+            // compiled ahead of time by the prewarm thread
+            _statPrewarmUsed++;
+            _pipelines[key] = p;
+            return p;
+        }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology);
+        long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        _statGpuPipelines++;
+        _statGpuPipelineTicks += dt;
+        _frameStallTicks += dt;
+        if (dt > _statGpuPipelineMaxTicks) _statGpuPipelineMaxTicks = dt;
+        if (p.Handle != 0)
+        {
+            if (_sharedPipelines.TryAdd(key, p))
+            {
+                RecordPipeline(key, vs, fs, topology);
+                NotePipelineCreated();
+            }
+            else
+            {
+                // the prewarm thread finished the same pipeline meanwhile
+                _vk.DestroyPipeline(_dev, p, null);
+                p = _sharedPipelines[key];
+            }
+        }
+        _pipelines[key] = p;
+        return p;
+    }
+
+    /// <summary>Builds a graphics pipeline (thread-safe: also used by the prewarm thread).</summary>
+    Pipeline CreatePipeline(in PipelineKey key, ShaderModule vsModule, ShaderModule fsModule,
+        VertexInputBindingDescription[] bindings, VertexInputAttributeDescription[] attributes, PrimitiveTopology topology)
+    {
+        Pipeline p;
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
-        stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vs.Module, PName = entry };
-        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fs.Module, PName = entry };
+        stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vsModule, PName = entry };
+        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fsModule, PName = entry };
 
-        fixed (VertexInputBindingDescription* pb = vs.Bindings)
-        fixed (VertexInputAttributeDescription* pa = vs.Attributes)
+        fixed (VertexInputBindingDescription* pb = bindings)
+        fixed (VertexInputAttributeDescription* pa = attributes)
         {
             var vi = new PipelineVertexInputStateCreateInfo
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = (uint)vs.Bindings.Length,
+                VertexBindingDescriptionCount = (uint)bindings.Length,
                 PVertexBindingDescriptions = pb,
-                VertexAttributeDescriptionCount = (uint)vs.Attributes.Length,
+                VertexAttributeDescriptionCount = (uint)attributes.Length,
                 PVertexAttributeDescriptions = pa,
             };
             var ia = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = topology };
@@ -379,14 +461,13 @@ public sealed unsafe partial class VulkanRenderer
                 p = default;
             }
         }
-        _pipelines[key] = p;
         return p;
     }
 
     void DestroyPipelines()
     {
-        foreach (var p in _pipelines.Values) if (p.Handle != 0) _vk.DestroyPipeline(_dev, p, null);
-        foreach (var m in _modules.Values) if (m.Handle != 0) _vk.DestroyShaderModule(_dev, m, null);
+        foreach (var p in _sharedPipelines.Values) if (p.Handle != 0) _vk.DestroyPipeline(_dev, p, null);
+        foreach (var m in _modules.Values) if (m.Module.Handle != 0) _vk.DestroyShaderModule(_dev, m.Module, null);
         _vk.DestroyPipelineCache(_dev, _vkPipelineCache, null);
         _vk.DestroyPipelineLayout(_dev, _pipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_dev, _uboLayout, null);
@@ -609,8 +690,8 @@ public sealed unsafe partial class VulkanRenderer
         {
             var dir = Path.Combine(_opt.ShaderCacheDir, "trace");
             Directory.CreateDirectory(dir);
-            if (vs.Gen != null) File.WriteAllText(Path.Combine(dir, $"{d.VertexProgram.Info.Program.Hash:x16}.vert"), vs.Gen.Glsl);
-            if (fs.Gen != null) File.WriteAllText(Path.Combine(dir, $"{d.FragmentProgram.Info.Program.Hash:x16}.frag"), fs.Gen.Glsl);
+            if (!string.IsNullOrEmpty(vs.Gen?.Glsl)) File.WriteAllText(Path.Combine(dir, $"{d.VertexProgram.Info.Program.Hash:x16}.vert"), vs.Gen!.Glsl);
+            if (!string.IsNullOrEmpty(fs.Gen?.Glsl)) File.WriteAllText(Path.Combine(dir, $"{d.FragmentProgram.Info.Program.Hash:x16}.frag"), fs.Gen!.Glsl);
         }
     }
 

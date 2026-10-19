@@ -60,6 +60,18 @@ public static class ShaderGenerator
 {
     public const int DefaultUniformHostIndex = 0;
 
+    /// <summary>
+    /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
+    /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
+    /// </summary>
+    public const int GeneratorVersion = 1;
+
+    /// <summary>
+    /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
+    /// output must not be read from or written to persistent shader caches.
+    /// </summary>
+    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugFs != null;
+
     const string PushConstants = """
 layout(push_constant) uniform RenderInfo {
     float viewport_flag;

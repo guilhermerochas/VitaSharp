@@ -12,6 +12,12 @@ public interface IGpuBackend : IDisposable
 
     /// <summary>Called on the worker thread when the queue runs empty (good moment to flush/submit).</summary>
     void Idle() { }
+
+    /// <summary>
+    /// A title is about to start on this backend (called once its id is known, before its first command).
+    /// Backends use it to load per-title caches (shaders, pipelines) and warm them up in the background.
+    /// </summary>
+    void BeginTitle(string titleId) { }
 }
 
 public enum DisplayPixelFormat : uint
