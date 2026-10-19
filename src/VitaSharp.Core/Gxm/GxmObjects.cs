@@ -107,6 +107,18 @@ public sealed class GxmContext
     /// <summary>Visibility test state (sceGxmSet*VisibilityTest*, sceGxmSetVisibilityBuffer).</summary>
     public bool VisFrontEnable, VisBackEnable, VisFrontIncrement = true, VisBackIncrement = true;
     public uint VisFrontIndex, VisBackIndex, VisBuffer, VisStride;
+    /// <summary>Razor user marker nesting (sceGxmPush/PopUserMarker), debug only.</summary>
+    public int MarkerDepth;
+    /// <summary>sceGxmSetYuvProfile for the two colour space converters (CSC0, CSC1): BT601 standard / full range by default.</summary>
+    public readonly byte[] YuvProfile = [0, 2];
+
+    // ---- deferred contexts (sceGxmCreateDeferredContext): draws are recorded into command lists
+    public bool Deferred, InCommandList, ViewportSet, RegionClipSet;
+    public uint VdmCallback, VertexCallback, FragmentCallback, CallbackData;
+    public uint VdmBuffer, VdmBufferSize, VdmUsed, VdmListStart;
+    /// <summary>4 guest bytes receiving the size written by the memory callbacks.</summary>
+    public uint SizeScratch;
+    public List<DrawRecipe>? Recording;
 
     public GxmContext()
     {
@@ -125,4 +137,29 @@ public sealed class GxmShaderPatcher
     public readonly Dictionary<uint, uint> Registered = new();   // id -> program address
     public readonly Dictionary<(uint Program, ulong AttrHash), GxmVertexProgram> VertexCache = new();
     public readonly Dictionary<(uint Program, uint Format, uint Msaa, ulong Blend, uint VertexProgram), GxmFragmentProgram> FragmentCache = new();
+}
+
+/// <summary>A draw recorded by a deferred context: everything sceGxmDraw captures, with uniform buffer addresses (the
+/// data is read when the command list is executed, as the GPU reads it by pointer).</summary>
+public sealed class DrawRecipe
+{
+    public required GxmVertexProgram Vp;
+    public required GxmFragmentProgram Fp;
+    public DrawState State;
+    public readonly uint[] VUbs = new uint[15], FUbs = new uint[15], Streams = new uint[16];
+    public readonly GxmTextureDesc[] VTex = new GxmTextureDesc[16], FTex = new GxmTextureDesc[16];
+    public uint PrimType, IndexType, IndexData, IndexCount, InstanceCount;
+    public uint VisAddress;
+    public bool VisIncrement;
+    /// <summary>The deferred context set its own viewport / region clip before this draw; otherwise the executing
+    /// immediate context's ones are used.</summary>
+    public bool ViewportSet, RegionClipSet;
+}
+
+/// <summary>A finished command list (SceGxmCommandList words: "VSCL", id, owner).</summary>
+public sealed class RecordedCommandList
+{
+    public required uint Id, Owner;
+    public required DrawRecipe[] Draws;
+    public uint VdmStart, VdmEnd;
 }

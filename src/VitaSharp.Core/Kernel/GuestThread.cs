@@ -6,7 +6,8 @@ using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Kernel;
 
-public enum ThreadStatus { Dormant = 0x10, Ready = 2, Running = 1, Waiting = 4, Suspended = 8, Dead = 0x20 }
+/// <summary>Values match SceThreadStatus (psp2common/kernel/threadmgr.h): written as-is by sceKernelGetThreadInfo.</summary>
+public enum ThreadStatus { Running = 1, Ready = 2, Standby = 4, Waiting = 8, Dormant = 0x10, Dead = 0x20, Suspended = 0x100 }
 
 /// <summary>Thrown by HLE code to unwind a guest thread (sceKernelExitThread & co).</summary>
 public sealed class GuestThreadExitException(int status, bool delete) : Exception
@@ -89,7 +90,12 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         TlsBase = emu.Memory.Alloc(Math.Max(tlsSize, 0x1000u), $"tls:{name}");
     }
 
-    void InitTls()
+    /// <summary>
+    /// Sets up the TLS block when the thread is created (needs the UID). It is not cleared again by Start: creators
+    /// may fill another thread's slots between create and start through sceKernelGetThreadTLSAddr (newlib's
+    /// per-thread reent / pthread data in vitasdk's pthread-embedded).
+    /// </summary>
+    internal void InitTls()
     {
         var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
         tls.Clear();
@@ -113,7 +119,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             var s = Core.State;
             new Span<byte>(s, sizeof(CpuState)).Clear();
             s->Fpscr = 0x0300_0000;
-            InitTls();
+            var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
+            tls[TlsCurrentPriority] = Priority;
+            tls[TlsAffinity] = Affinity;
             s->TpidrUro = UserTls;
             s->TpidrUrw = 0;
             s->R[13] = StackAddr + StackSize;

@@ -6,7 +6,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceIofilemgr (and the SceLibKernel I/O wrappers) over the virtual filesystem.</summary>
-public sealed class IoFileMgr : HleModule
+public sealed partial class IoFileMgr : HleModule
 {
     const int O_RDONLY = 1, O_WRONLY = 2, O_RDWR = 3, O_APPEND = 0x100, O_CREAT = 0x200, O_TRUNC = 0x400, O_EXCL = 0x800;
     const uint S_IFDIR = 0x1000, S_IFREG = 0x2000, S_RWX = 0x01FF;
@@ -15,6 +15,10 @@ public sealed class IoFileMgr : HleModule
     {
         public required string VitaPath;
         public FileStream? Stream;
+        /// <summary>Debug console device index ("ttyN:"), -1 for files.</summary>
+        public int Tty = -1;
+        /// <summary>I/O priority set with sceIoSetPriority, -1 = inherit the thread/process default.</summary>
+        public int Priority = -1;
     }
 
     sealed class OpenDir
@@ -43,6 +47,13 @@ public sealed class IoFileMgr : HleModule
     [Hle("sceIoOpen")]
     int sceIoOpen(string path, int flags, int mode)
     {
+        // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
+        if (Io.Vfs.IsTty(path, out int tty))
+        {
+            int tfd = Interlocked.Increment(ref _nextFd);
+            _files[tfd] = new OpenFile { VitaPath = path, Tty = tty };
+            return tfd;
+        }
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
         if (Directory.Exists(host)) return SceError.IO_EISDIR;
@@ -80,6 +91,8 @@ public sealed class IoFileMgr : HleModule
     [Hle]
     int sceIoRead(int fd, uint buf, uint size)
     {
+        if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
+        if (_files.TryGetValue(fd, out var t) && t.Tty >= 0) return 0;
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n;
         lock (f)
@@ -97,6 +110,11 @@ public sealed class IoFileMgr : HleModule
         if (fd is 0x11 or 0x12)
         {
             Log.Info("[guest stdout] " + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
+            return (int)size;
+        }
+        if (_files.TryGetValue(fd, out var tf) && tf.Tty >= 0)
+        {
+            Log.Info((tf.Tty == 1 ? "[guest stderr] " : "[guest stdout] ") + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
             return (int)size;
         }
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
@@ -134,8 +152,36 @@ public sealed class IoFileMgr : HleModule
         return (int)size;
     }
 
-    [Hle("sceIoSync")] int sceIoSync(string dev, int flag) => 0;
-    [Hle] int sceIoSyncByFd(int fd, int flag) { if (_files.TryGetValue(fd, out var f)) f.Stream?.Flush(); return 0; }
+    /// <summary>Flushes every file open on the device ("savedata0:", "ux0:") to the host disk; flags are ignored.</summary>
+    [Hle("sceIoSync")]
+    int sceIoSync(uint device, int flag)
+    {
+        if (device == 0) return SceError.IO_EINVAL;
+        return DoSync(GuestMemory.ReadCString(device));
+    }
+
+    int DoSync(string device)
+    {
+        var (dev, _) = Io.Vfs.Split(device);
+        if (dev.Length == 0) dev = device.TrimEnd(':');
+        foreach (var f in _files.Values)
+        {
+            if (f.Stream == null || !Io.Vfs.Split(f.VitaPath).device.Equals(dev, StringComparison.OrdinalIgnoreCase)) continue;
+            lock (f) { try { f.Stream.Flush(true); } catch (ObjectDisposedException) { } }
+        }
+        return 0;
+    }
+
+    [Hle]
+    int sceIoSyncByFd(int fd, int flag)
+    {
+        if (!_files.TryGetValue(fd, out var f)) return IsSpecialFd(fd) ? 0 : SceError.IO_EBADF;
+        if (f.Stream != null) lock (f) f.Stream.Flush(true);
+        return 0;
+    }
+
+    /// <summary>stdio fds (0x10-0x12) handed out by sceKernelGetStdin/out/err.</summary>
+    static bool IsSpecialFd(int fd) => fd is >= 0x10 and <= 0x12;
 
     [Hle]
     int sceIoRemove(string path)
@@ -243,20 +289,99 @@ public sealed class IoFileMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceIoChstat(string path, uint stat, int bits) => 0;
-    [Hle] int sceIoChstatByFd(int fd, uint stat, int bits) => 0;
+    const int SCE_CST_MODE = 0x01, SCE_CST_SIZE = 0x04, SCE_CST_CT = 0x08, SCE_CST_AT = 0x10, SCE_CST_MT = 0x20;
+    const uint SCE_S_IWUSR = 0x80; // 0200
+    /// <summary>EROFS (newlib errno 30), used for read-only mounts.</summary>
+    const int IO_EROFS = unchecked((int)0x8001001E);
+    static readonly string[] ReadOnlyDevices = ["app0", "vs0", "os0"];
+
+    /// <summary>Inverse of WriteDateTime (same local-time convention as SceIoStat writes).</summary>
+    static DateTime ReadDateTime(uint p)
+    {
+        int y = GuestMemory.Read<ushort>(p), mo = GuestMemory.Read<ushort>(p + 2), d = GuestMemory.Read<ushort>(p + 4);
+        int h = GuestMemory.Read<ushort>(p + 6), mi = GuestMemory.Read<ushort>(p + 8), s = GuestMemory.Read<ushort>(p + 10);
+        uint us = GuestMemory.R32(p + 12);
+        y = Math.Clamp(y, 1, 9999); mo = Math.Clamp(mo, 1, 12); d = Math.Clamp(d, 1, DateTime.DaysInMonth(y, mo));
+        return new DateTime(y, mo, d, Math.Clamp(h, 0, 23), Math.Clamp(mi, 0, 59), Math.Clamp(s, 0, 59), DateTimeKind.Local)
+            .AddTicks(Math.Min(us, 999_999u) * 10L);
+    }
+
+    /// <summary>Applies the SCE_CST_* bits of a SceIoStat to a host file or directory. Unknown bits are ignored.</summary>
+    static int ApplyChstat(string host, uint stat, int bits, FileStream? fs)
+    {
+        bool dir = Directory.Exists(host);
+        if (!dir && !File.Exists(host)) return SceError.IO_ENOENT;
+        try
+        {
+            if ((bits & SCE_CST_MODE) != 0 && !dir)
+                new FileInfo(host).IsReadOnly = (GuestMemory.R32(stat) & SCE_S_IWUSR) == 0;
+            if ((bits & SCE_CST_SIZE) != 0 && !dir)
+            {
+                long size = GuestMemory.Read<long>(stat + 8);
+                if (size < 0) return SceError.IO_EINVAL;
+                if (fs != null) lock (fs) fs.SetLength(size);
+                else { using var f = new FileStream(host, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete); f.SetLength(size); }
+            }
+            fs?.Flush(true); // closing the stream later must not overwrite the times set below
+            if ((bits & SCE_CST_CT) != 0)
+            { var t = ReadDateTime(stat + 16); if (dir) Directory.SetCreationTime(host, t); else File.SetCreationTime(host, t); }
+            if ((bits & SCE_CST_AT) != 0)
+            { var t = ReadDateTime(stat + 32); if (dir) Directory.SetLastAccessTime(host, t); else File.SetLastAccessTime(host, t); }
+            if ((bits & SCE_CST_MT) != 0)
+            { var t = ReadDateTime(stat + 48); if (dir) Directory.SetLastWriteTime(host, t); else File.SetLastWriteTime(host, t); }
+        }
+        catch (UnauthorizedAccessException) { return SceError.IO_EACCES; }
+        catch (ArgumentOutOfRangeException) { return SceError.IO_EINVAL; }
+        catch (IOException) { return SceError.IO_EACCES; }
+        return 0;
+    }
+
+    static bool IsReadOnlyDevice(string path) => ReadOnlyDevices.Contains(Io.Vfs.Split(path).device, StringComparer.OrdinalIgnoreCase);
+
+    [Hle]
+    int sceIoChstat(string path, uint stat, int bits)
+    {
+        if (stat == 0) return SceError.IO_EINVAL;
+        if (IsReadOnlyDevice(path)) return IO_EROFS;
+        var host = HostPath(path, true);
+        if (host == null) return SceError.IO_ENOENT;
+        return ApplyChstat(host, stat, bits, null);
+    }
+
+    [Hle]
+    int sceIoChstatByFd(int fd, uint stat, int bits)
+    {
+        if (!_files.TryGetValue(fd, out var f)) return SceError.IO_EBADF;
+        if (f.Stream == null) return 0; // tty: nothing to change
+        if (stat == 0) return SceError.IO_EINVAL;
+        if (IsReadOnlyDevice(f.VitaPath)) return IO_EROFS;
+        return ApplyChstat(f.Stream.Name, stat, bits, f.Stream);
+    }
 
     [Hle]
     int sceIoDevctl(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen)
     {
-        // 0x3001: free space query
+        // 0x3001: free space query, SceIoDevInfo { s64 max_size; s64 free_size; u32 cluster_size; void *unk; }
         if (cmd == 0x3001 && buf != 0 && bufLen >= 16)
         {
             GuestMemory.Write(buf, 8UL * 1024 * 1024 * 1024);
             GuestMemory.Write(buf + 8, 4UL * 1024 * 1024 * 1024);
+            if (bufLen >= 20) GuestMemory.W32(buf + 16, 4096);
         }
         return 0;
     }
 
-    [Hle] int sceIoIoctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => 0;
+    /// <summary>Driver-specific command on an open fd. No command is known for regular files; validate the fd, log
+    /// the command once and answer with zeroed output.</summary>
+    [Hle]
+    int sceIoIoctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen)
+    {
+        string path;
+        if (_files.TryGetValue(fd, out var f)) path = f.VitaPath;
+        else if (IsSpecialFd(fd)) path = "stdio";
+        else return SceError.IO_EBADF;
+        Log.WarnOnce($"ioctl{cmd:X}", $"sceIoIoctl fd=0x{fd:X} cmd=0x{cmd:X} in={argLen} out={bufLen} path={path}");
+        if (buf != 0 && (int)bufLen > 0) GuestMemory.Span(buf, (int)bufLen).Clear();
+        return 0;
+    }
 }

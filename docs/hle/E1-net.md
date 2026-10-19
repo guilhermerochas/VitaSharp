@@ -162,7 +162,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 ## SceHttp
 
 ### sceHttpUriEscape
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceHttp · **NID:** 0x1DA2A673
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceHttp · **NID:** 0x1DA2A673
 - **Protótipo:** `int sceHttpUriEscape(char *out, unsigned int *require, unsigned int prepare, const char *in);` (`psp2/net/http.h`)
 - **Comportamento:** percent-encoding da string `in` (terminada em NUL). Cada byte "seguro" é copiado; qualquer outro
   vira `%HH`. Escreve em `*require` o tamanho necessário **incluindo o NUL**. Padrão de uso: primeira chamada com
@@ -199,7 +199,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   o log `Unimplemented HLE function`.
 
 ### sceHttpUriUnescape
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x1274D318
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x1274D318
 - **Protótipo:** `int sceHttpUriUnescape(char *out, unsigned int *require, unsigned int prepare, const char *in);` (`psp2/net/http.h`)
 - **Comportamento/algoritmo:** inverso do escape.
   ```text
@@ -217,7 +217,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** ida e volta `Unescape(Escape(x)) == x` para bytes 1–255; `"%4a%4A%zz%"` → `"JJ%zz%"`.
 
 ### sceHttpUriBuild
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x47664424
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x47664424
 - **Protótipo:** `int sceHttpUriBuild(char *out, unsigned int *require, unsigned int prepare, const SceHttpUriElement *srcElement, unsigned int option);` (`psp2/net/http.h`)
 - **Comportamento/algoritmo:** monta uma URL a partir dos campos selecionados por `option` (`SceHttpUriBuildType`:
   SCHEME 0x01, HOSTNAME 0x02, PORT 0x04, PATH 0x08, USERNAME 0x10, PASSWORD 0x20, QUERY 0x40, FRAGMENT 0x80,
@@ -250,7 +250,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   `host/a/b`.
 
 ### sceHttpUriMerge
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x75027D1D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x75027D1D
 - **Protótipo:** `int sceHttpUriMerge(char *mergedUrl, const char *url, const char *relativeUrl, unsigned int *require, unsigned int prepare, unsigned int option);` (`psp2/net/http.h`)
 - **Comportamento/algoritmo:** resolução de referência relativa, RFC 3986 §5.2.2 ("strict"), com base `url` e
   referência `relativeUrl`:
@@ -277,7 +277,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   `../..` → `http://a/`, `?y` → `http://a/b/c/d;p?y`, `#s` → `http://a/b/c/d;p?q#s`).
 
 ### sceHttpUriSweepPath
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x50737A3F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x50737A3F
 - **Protótipo:** `int sceHttpUriSweepPath(char *dst, const char *src, unsigned int srcSize);` (`psp2/net/http.h`)
 - **Comportamento/algoritmo:** remove segmentos `.` e `..` do caminho. `dst` precisa ter pelo menos `srcSize` bytes (a
   saída nunca é maior que a entrada).
@@ -308,7 +308,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   nem esquema).
 
 ### sceHttpParseStatusLine
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x179C56DB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x179C56DB
 - **Protótipo:** `int sceHttpParseStatusLine(const char *statusLine, unsigned int lineLen, int *httpMajorVer, int *httpMinorVer, int *responseCode, const char **reasonPhrase, unsigned int *phraseLen);` (`psp2/net/http.h`)
 - **Comportamento/algoritmo:** analisa a linha de status de uma resposta HTTP (`HTTP/1.1 200 OK\r\n`). O buffer **não**
   precisa terminar em NUL; considerar só `lineLen` bytes e parar no primeiro `\r` ou `\n`.
@@ -339,7 +339,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   `"HTTX/1.1 200 OK"` → 0x80432060.
 
 ### sceHttpUriParse
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x1D45F24E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x1D45F24E
 - **Protótipo:** `int sceHttpUriParse(SceHttpUriElement *out, const char *srcUrl, void *pool, unsigned int *require, unsigned int prepare);` (`psp2/net/http.h`)
 - **Stub atual:** `Online.cs:239` devolve sempre `SCE_HTTP_ERROR_INVALID_URL`, o que quebra qualquer jogo que decomponha
   uma URL (e é a base de `Build`/`Merge`).
@@ -368,7 +368,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** `http://user:pw@host:8080/a/b?x=1#f` → campos esperados, `require` = 4+4+2+4+4+4+2+7 = 31.
 
 ### sceHttpParseResponseHeader
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x03A6C89E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x03A6C89E
 - **Protótipo:** `int sceHttpParseResponseHeader(const char *header, unsigned int headerLen, const char *fieldStr, const char **fieldValue, unsigned int *valueLen);` (`psp2/net/http.h`)
 - **Stub atual:** `Online.cs:214` devolve sempre `PARSE_HTTP_NOT_FOUND`. Função pura: o jogo pode chamá-la com cabeçalhos
   próprios (ex.: lidos de cache), independentemente da rede.
@@ -387,7 +387,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 ### Requisições: criação, cabeçalhos, erros
 
 #### sceHttpCreateRequest2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x857D9242
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x857D9242
 - **Protótipo:** `int sceHttpCreateRequest2(int connId, const char *method, const char *path, unsigned long long contentLength);` (inferido do Vita3K; não está em `http.h`)
 - **Comportamento:** igual a `sceHttpCreateRequest`, mas o método é uma string (`"GET"`, `"POST"`, `"HEAD"`,
   `"OPTIONS"`, `"PUT"`, `"DELETE"`, `"TRACE"`, `"CONNECT"`). URL = URL da conexão + `path`.
@@ -401,7 +401,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
   retorna `INVALID_ID`.
 
 #### sceHttpCreateRequestWithURL2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x1B6B7983
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x1B6B7983
 - **Protótipo:** `int sceHttpCreateRequestWithURL2(int connId, const char *method, const char *url, unsigned long long contentLength);` (inferido do Vita3K)
 - **Comportamento:** como `sceHttpCreateRequestWithURL` com método em string. A URL é validada com o parser de
   `sceHttpUriParse`.
@@ -412,7 +412,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** idem, com URL absoluta.
 
 #### sceHttpAbortRequestForce
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x3D44A6E5
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x3D44A6E5
 - **Protótipo:** `int sceHttpAbortRequestForce(int reqId);` (inferido; não está em `http.h`)
 - **Comportamento:** aborta a requisição imediatamente (sem esperar o fechamento ordenado da conexão). Offline: marca
   `Aborted = true` e acorda quem espera na requisição (`sceHttpWaitRequest`, leituras bloqueantes); operações
@@ -423,7 +423,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** abort seguido de `sceHttpSendRequest` → 0x80431080.
 
 #### sceHttpAddRequestHeaderRaw
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x31C00FBA
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x31C00FBA
 - **Protótipo:** desconhecido. Inferido: `int sceHttpAddRequestHeaderRaw(int id, const char *header, unsigned int headerLen /*?*/, unsigned int mode /*?*/);` — **a confirmar** pelo call site num jogo (nº de argumentos usados em r0–r3).
 - **Comportamento:** adiciona uma linha de cabeçalho já formatada (`"Nome: valor"`) sem validação. Offline: separar no
   primeiro `:` e guardar como `AddRequestHeader` (modo ADD).
@@ -433,7 +433,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** `sceHttpRequestGetAllHeaders` mostra a linha adicionada.
 
 #### sceHttpRemoveRequestHeader
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x5EB5F548
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x5EB5F548
 - **Protótipo:** `int sceHttpRemoveRequestHeader(int id, const char *name);` (`psp2/net/http.h`)
 - **Comportamento:** remove todas as entradas com esse nome (sem diferenciar maiúsculas) da lista de cabeçalhos do
   objeto (template, conexão ou requisição).
@@ -444,7 +444,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** add → remove → `RequestGetAllHeaders` sem a linha.
 
 #### sceHttpRequestGetAllHeaders
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0xBAA34D18
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0xBAA34D18
 - **Protótipo:** `int sceHttpRequestGetAllHeaders(int reqId, char **header, unsigned int *headerSize);` (inferido do Vita3K, análogo a `sceHttpGetAllResponseHeaders`)
 - **Comportamento:** devolve os cabeçalhos de **requisição** que seriam enviados, formatados `Nome: valor\r\n` (inclui
   os automáticos `Host`, `User-Agent`, `Content-Length` quando aplicável? **a confirmar**). O buffer pertence à
@@ -457,7 +457,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** cabeçalho adicionado aparece no texto; tamanho bate com `strlen`.
 
 #### sceHttpGetLastErrno
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x9A68C3DE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0x9A68C3DE
 - **Protótipo:** `int sceHttpGetLastErrno(int reqId, int *errNum);` (inferido do Vita3K)
 - **Comportamento:** errno de rede do último erro de socket da requisição. Offline: após `sceHttpSendRequest` falhar,
   gravar o errno correspondente à falha de DNS; antes de enviar, 0.
@@ -469,7 +469,7 @@ Para timeout por valor, criar a sobrecarga mencionada acima.
 - **Validação:** send falho → `GetLastErrno` ≠ 0.
 
 #### sceHttpSetResponseHeaderMaxSize
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0xFD76E1FB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceHttp · **NID:** 0xFD76E1FB
 - **Protótipo:** `int sceHttpSetResponseHeaderMaxSize(int id, unsigned int headerSize);` (`psp2/net/http.h`)
 - **Comportamento:** tamanho máximo do cabeçalho de resposta aceito (excedido → `TOO_LARGE_RESPONSE_HEADER` 0x80431073
   na leitura). Offline: só guarda em `S.ResponseHeaderMax`.
@@ -507,6 +507,8 @@ no envio), mas fica disponível para o getter e para a rede real.
 Implementação: um par de helpers genéricos `SetSetting(id, Action<HttpSettings>)` / `GetSetting(id, Func<HttpSettings,int>, Ptr<int>)`.
 Validação: para cada par, set → get devolve o mesmo valor; get em ID inválido → 0x80431100.
 
+- [x] **Status:** família implementada em `Hle/Modules/Http.cs` (`SetSetting`/`GetSetting`).
+
 ### Família: callbacks
 
 Guardam `(func, userArg)` no objeto; offline **nunca** são chamados (não há resposta de servidor, redirect, desafio de
@@ -522,6 +524,8 @@ confirmar; o Vita3K exige não nulo em `sceHttpsSetSslCallback`). Rede real: inv
 | sceHttpSetCookieSendCallback | 0x11C03867 | P1 | `int (int id, SceHttpCookieSendCallback cbfunc, void *userArg)` |
 
 Validação: set retorna 0 em ID válido e 0x80431100 em inválido.
+
+- [x] **Status:** família implementada (callbacks guardados, nunca chamados offline).
 
 ### Família: cookies
 
@@ -564,6 +568,8 @@ Implementação: classe `CookieJar` em `Hle/Modules/Http.cs`. Validação: add `
 `http://h/x/y` → get de `http://h/x/z` devolve `a=1`; de `http://h/w` devolve `NOT_FOUND`; export→flush→import
 restaura.
 
+- [x] **Status:** família implementada (`CookieJar`), exceto `sceHttpGetCookieStats` (layout desconhecido, nenhum jogo instalado importa).
+
 ### Família: epoll e espera não bloqueante do HTTP
 
 API para requisições em modo não bloqueante (`sceHttpSetNonblock`). Protótipos ausentes do `http.h`; inferidos pela API
@@ -598,6 +604,8 @@ Erros comuns: `BEFORE_INIT`; handle/ID inválido → `INVALID_ID` 0x80431100; `n
 `INVALID_VALUE`. Rede real: thread de host executando a requisição e enfileirando IN/OUT/HUP. Validação: homebrew de
 teste ou jogo que use modo não bloqueante; nenhum dos 7 jogos importa estas funções hoje.
 
+- [x] **Status:** família implementada com os protótipos inferidos acima (handle = ID opaco).
+
 ### Família: HTTPS / certificados
 
 Offline nenhum handshake TLS acontece; as funções só guardam configuração.
@@ -621,12 +629,14 @@ NOT_BEFORE_CHECK 0x10, KNOWN_CA_CHECK 0x20. **Não** repassar para OpenSSL/SChan
 correspondem); na rede real, traduzir para `RemoteCertificateValidationCallback`. Estrutura `SceHttpsCaList` (8):
 +0 `void **caCerts`, +4 `int caNum`. Validação: set/get triviais; `GetCaList` devolve `caNum = 0`.
 
+- [x] **Status:** família implementada.
+
 ### STUBs do SceHttp (estado descartado)
 
 Todos em `Online.cs:196-226`, corpo `=> 0` ou `_nextId++` sem registro. Com o modelo de objetos:
 
 #### sceHttpInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x214926D9
+- [x] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0x214926D9
 - **Protótipo:** `int sceHttpInit(unsigned int poolSize);` (`psp2/net/http.h`)
 - **Comportamento:** inicializa a biblioteca com um pool interno de `poolSize` bytes. Hoje não guarda estado, então
   nenhuma função pode retornar `BEFORE_INIT`/`ALREADY_INITED`.
@@ -638,7 +648,7 @@ Todos em `Online.cs:196-226`, corpo `=> 0` ou `_nextId++` sem registro. Com o mo
 - **Validação:** Init duplo → 0x80431020; jogos que chamam Init uma vez continuam iguais (cenários de boot dos 7 jogos).
 
 #### sceHttpTerm
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0xC9076666
+- [x] **Prioridade:** STUB · **Biblioteca:** SceHttp · **NID:** 0xC9076666
 - **Protótipo:** `int sceHttpTerm(void);` (`psp2/net/http.h`)
 - **Comportamento:** encerra a biblioteca, liberando todos os templates/conexões/requisições (e buffers guest
   alocados por eles) e o jar de cookies.
@@ -677,7 +687,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 | sceHttpSetResolveRetry | 0x9AB56EA7 | `int (int id, int retry)` | `ResolveRetry` | `retry < 0` → `INVALID_VALUE` (a confirmar) |
 | sceHttpSetNonblock | 0x27A98BDA | `int (int id, int enable)` (inferido; não está em `http.h`) | `Nonblock` | — |
 
-- [ ] **Prioridade:** STUB (as 6 acima) · **Biblioteca:** SceHttp
+- [x] **Prioridade:** STUB (as 6 acima) · **Biblioteca:** SceHttp
 - **Comportamento:** setters da família de configuração: validam init/ID e gravam. Offline o timeout não muda o
   resultado (a falha de DNS é imediata); com rede real, `ResolveTimeoutUs × (ResolveRetry+1)` limita o resolver e os
   demais viram timeouts do socket. Getter só existe para nonblock (`sceHttpGetNonblock`, P1 acima).
@@ -693,7 +703,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 | sceHttpsLoadCert | 0xAE8D7C33 | `int (int caCertNum, const SceHttpsData **caList, const SceHttpsData *cert, const SceHttpsData *privKey)` | copiar e guardar os blobs (`SceHttpsData` = +0 `char *ptr`, +4 `unsigned size`) para a rede real; `caCertNum < 0` ou `caList` nulo com `caCertNum > 0` → `INVALID_VALUE`; 0 |
 | sceHttpsSetSslCallback | 0xA0926037 | `int (int id, SceHttpsCallback cbfunc, void *userArg)` | guardar no template; `INVALID_ID`; `cbfunc` nulo → `INVALID_VALUE` (Vita3K); offline nunca chamado |
 
-- [ ] **Prioridade:** STUB (as 3 acima) · **Biblioteca:** SceHttp
+- [x] **Prioridade:** STUB (as 3 acima) · **Biblioteca:** SceHttp
 - **Retorno/erros/validação:** como na tabela; set/get coerentes com `sceHttpsEnableOption*`.
 - **Implementação no VitaSharp:** campos em `HttpState`/`HttpObj`.
 
@@ -704,7 +714,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 ### STUBs de sockets
 
 #### sceNetInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0xEB03E265
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0xEB03E265
 - **Protótipo:** `int sceNetInit(SceNetInitParam *param);` (`psp2/net/net.h`)
 - **Comportamento:** inicializa a pilha com memória do jogo. Hoje ignora tudo.
 - **Retorno/erros:** 0; já inicializado → `SCE_NET_ERROR_EBUSY` 0x80410110; `param` nulo, `memory` nulo,
@@ -715,7 +725,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 - **Validação:** cenários de boot dos 7 jogos (todos importam SceNet) sem regressão.
 
 #### sceNetTerm
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0xEA3CC286
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0xEA3CC286
 - **Protótipo:** `int sceNetTerm(void);` (`psp2/net/net.h`)
 - **Comportamento:** encerra; fecha sockets/epolls/resolvers abertos e acorda quem espera neles.
 - **Retorno/erros:** 0; sem init → `ENOTINIT` 0x804101C8.
@@ -724,7 +734,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 - **Validação:** Init→Term→Init.
 
 #### sceNetSocketClose
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x29822B4D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x29822B4D
 - **Protótipo:** `int sceNetSocketClose(int s);` (`psp2/net/net.h`)
 - **Comportamento:** fecha o socket; esperas em `recv`/`accept` nele terminam; o ID passa a ser inválido.
 - **Retorno/erros:** 0; ID inexistente → `EBADF` 0x80410109 (+ errno).
@@ -733,7 +743,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 - **Validação:** close duplo → 0x80410109.
 
 #### sceNetSocketAbort
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x891C1B9B
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x891C1B9B
 - **Protótipo:** `int sceNetSocketAbort(int s, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** acorda operações bloqueadas no socket, que retornam `SCE_NET_ERROR_EINTR` 0x80410104 (a confirmar
   vs `ECANCELED` 0x80410157). `flags`: `RCV_PRESERVATION` 0x1 / `SND_PRESERVATION` 0x2 mantêm o estado abortado para
@@ -744,7 +754,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 - **Validação:** thread em `sceNetRecv` bloqueante sai com 0x80410104 após `SocketAbort` de outra thread.
 
 #### sceNetSetsockopt
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x065505CA
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x065505CA
 - **Protótipo:** `int sceNetSetsockopt(int s, int level, int optname, const void *optval, unsigned int optlen);` (`psp2/net/net.h`)
 - **Comportamento:** hoje descarta tudo; precisa guardar ao menos as opções que mudam o comportamento offline:
   `level = SCE_NET_SOL_SOCKET` (0xFFFF) com `SO_NBIO` 0x1100 (int, não bloqueante), `SO_RCVTIMEO` 0x1006 e
@@ -758,7 +768,7 @@ delete sem vazamento (contar `Objs`), e boot sem regressão em F1 2011, Devious 
 - **Validação:** set `SO_NBIO = 1` → get devolve 1.
 
 #### sceNetRecv / sceNetRecvfrom
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x023643B7 (`sceNetRecv`), 0xB226138B (`sceNetRecvfrom`)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x023643B7 (`sceNetRecv`), 0xB226138B (`sceNetRecvfrom`)
 - **Protótipo:** `int sceNetRecv(int s, void *buf, unsigned int len, int flags);` / `int sceNetRecvfrom(int s, void *buf, unsigned int len, int flags, SceNetSockaddr *from, unsigned int *fromlen);` (`psp2/net/net.h`)
 - **Stub atual:** `Online.cs:62-63` devolvem `EAGAIN` imediatamente mesmo em socket bloqueante → a thread do jogo
   que faz `recv` em loop vira busy loop.
@@ -782,7 +792,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 `Wait` sempre expira — exceto `ERR|HUP` para socket fechado enquanto registrado (a confirmar).
 
 #### sceNetEpollControl
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x4C8764AC
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x4C8764AC
 - **Protótipo:** `int sceNetEpollControl(int eid, int op, int id, SceNetEpollEvent *event);` (`psp2/net/net.h`)
 - **Comportamento:** ADD 1 (registra `id` com `event->events` e `event->data`), MOD 2 (altera), DEL 3 (remove). `id`
   pode ser socket ou resolver (o Vita3K aceita resolver e ignora).
@@ -795,7 +805,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** ADD duplo → 0x80410111.
 
 #### sceNetEpollDestroy
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x7915CAF3
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x7915CAF3
 - **Protótipo:** `int sceNetEpollDestroy(int eid);` (`psp2/net/net.h`)
 - **Comportamento:** destrói; esperas em andamento terminam com `EINTR` 0x80410104 (a confirmar vs `EBADF`).
 - **Retorno/erros:** 0; inexistente → `EBADF`.
@@ -804,7 +814,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** destroy duplo → `EBADF`.
 
 #### sceNetEpollWait
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x45CE337D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNet · **NID:** 0x45CE337D
 - **Protótipo:** `int sceNetEpollWait(int eid, SceNetEpollEvent *events, int maxevents, int timeout);` (`psp2/net/net.h`)
 - **Stub atual:** `Online.cs:81` ignora `eid` e dorme `max(timeout, 1000)` µs — com `timeout = -1` (infinito) dorme
   só 1 ms e retorna 0, criando um loop quente.
@@ -819,7 +829,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 ### Funções P1 do SceNet
 
 #### sceNetEpollWaitCB
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x92D3E767
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x92D3E767
 - **Protótipo:** `int sceNetEpollWaitCB(int eid, SceNetEpollEvent *events, int maxevents, int timeout);` (`psp2/net/net.h`)
 - **Comportamento:** igual a `sceNetEpollWait`, processando callbacks do kernel enquanto espera.
 - **Retorno/erros:** idem.
@@ -829,7 +839,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** idem `EpollWait`.
 
 #### sceNetEpollAbort
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x93FCC4E8
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x93FCC4E8
 - **Protótipo:** `int sceNetEpollAbort(int eid, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** acorda as esperas no epoll, que retornam `EINTR` 0x80410104 (a confirmar). Com
   `SCE_NET_EPOLL_ABORT_FLAG_PRESERVATION` (0x1) o estado abortado persiste para esperas futuras até… (a confirmar o que
@@ -840,7 +850,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** thread em `EpollWait(-1)` sai após `EpollAbort`.
 
 #### sceNetResolverAbort
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x38EBBD57
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x38EBBD57
 - **Protótipo:** `int sceNetResolverAbort(int rid, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** aborta uma resolução em andamento. Offline as resoluções falham na hora (`ENODNS`), então não há
   o que abortar: validar e retornar 0. Flags: `NTOA_PRESERVATION` 0x1, `ATON_PRESERVATION` 0x2.
@@ -852,7 +862,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** abort em `rid` válido → 0; inválido → erro.
 
 #### sceNetGetpeername
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x2348D353
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x2348D353
 - **Protótipo:** `int sceNetGetpeername(int s, SceNetSockaddr *name, unsigned int *namelen);` (`psp2/net/net.h`)
 - **Comportamento:** endereço do par conectado. Offline nenhum socket se conecta.
 - **Retorno/erros:** `ENOTCONN` 0x80410139 (+ errno); `EBADF`; ponteiros nulos → `EINVAL`.
@@ -861,7 +871,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** socket recém-criado → 0x80410139.
 
 #### sceNetSendmsg
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x99C579AE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x99C579AE
 - **Protótipo:** `int sceNetSendmsg(int s, const SceNetMsghdr *msg, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** envio scatter/gather: concatena os `msg_iovlen` buffers de `msg_iov` e envia para `msg_name`
   (ou o par conectado). Offline: mesmo resultado de `sceNetSendto` (falha com o erro de rede corrigido — ver tabela de
@@ -873,7 +883,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** mesmo retorno que `sceNetSendto` com os mesmos dados.
 
 #### sceNetRecvmsg
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xDE94C6FE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xDE94C6FE
 - **Protótipo:** `int sceNetRecvmsg(int s, SceNetMsghdr *msg, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** recepção scatter/gather. Offline: mesma semântica de bloqueio de `sceNetRecvfrom` (STUB acima);
   ao expirar/abortar, `msg_flags = 0`.
@@ -883,7 +893,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** socket não bloqueante → `EAGAIN`.
 
 #### sceNetGetSockIdInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x138CF1D6
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x138CF1D6
 - **Protótipo:** `int sceNetGetSockIdInfo(SceNetFdSet *fds, int sockinfoflags, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** preenche o bitset `fds` (1024 bits) com os IDs de socket existentes (do processo). Semântica de
   `sockinfoflags` desconhecida (a confirmar). Retorno: provavelmente o número de sockets (a confirmar).
@@ -893,7 +903,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** criar 2 sockets → 2 bits marcados.
 
 #### sceNetEtherNtostr
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x84334EB2
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x84334EB2
 - **Protótipo:** `int sceNetEtherNtostr(const SceNetEtherAddr *n, char *str, unsigned int len);` (`psp2/net/net.h`)
 - **Comportamento/algoritmo:** formata o MAC como `"xx:xx:xx:xx:xx:xx"` (hex **minúsculo**, 2 dígitos) + NUL (18 bytes).
 - **Retorno/erros:** 0; sem `sceNetInit` → `ENOTINIT` 0x804101C8; `n`/`str` nulos ou `len < 18` → `EINVAL` 0x80410116
@@ -903,7 +913,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** MAC de `sceNetGetMacAddress` → `"00:1f:a7:56:49:54"`.
 
 #### sceNetEtherStrton
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xEEC6D75F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xEEC6D75F
 - **Protótipo:** `int sceNetEtherStrton(const char *str, SceNetEtherAddr *n);` (`psp2/net/net.h`)
 - **Comportamento/algoritmo:** lê 6 grupos de 1–2 dígitos hex (maiúsc./minúsc.) separados por `:`. String inválida:
   o Vita3K ignora (usa `sscanf`) e retorna 0; recomendação: `EINVAL` (a confirmar).
@@ -913,7 +923,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** ida e volta com `EtherNtostr`.
 
 #### sceNetHtonll / sceNetNtohll
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x12C19209 (`Htonll`), 0xFB3336A6 (`Ntohll`)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x12C19209 (`Htonll`), 0xFB3336A6 (`Ntohll`)
 - **Protótipo:** `unsigned long long sceNetHtonll(unsigned long long host64);` / `unsigned long long sceNetNtohll(unsigned long long net64);` (`psp2/net/net.h`)
 - **Comportamento:** inverte os 8 bytes (o Vita é little-endian).
 - **Retorno/erros:** o valor invertido; sem erros.
@@ -923,7 +933,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** `0x0102030405060708` → `0x0807060504030201`.
 
 #### sceNetSetDnsInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xD62EF218
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xD62EF218
 - **Protótipo:** `int sceNetSetDnsInfo(SceNetDnsInfo *info, int flags);` (`psp2/net/net.h`)
 - **Comportamento:** define os servidores DNS usados pelo resolver. Offline: guardar (sem efeito, o resolver falha).
 - **Retorno/erros:** 0; `info` nulo → `EINVAL`; `flags != 0` → `EINVAL` (a confirmar).
@@ -932,7 +942,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** retorno 0.
 
 #### sceNetClearDnsCache
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xFEC1166D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0xFEC1166D
 - **Protótipo:** `int sceNetClearDnsCache(int flags);` (`psp2/net/net.h`)
 - **Comportamento:** limpa o cache do resolver. Offline não há cache.
 - **Retorno/erros:** 0; `flags != 0` → `EINVAL` (a confirmar).
@@ -941,7 +951,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** retorno 0.
 
 #### sceNetShowIfconfig / sceNetShowRoute
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x658B903B (`ShowIfconfig`), 0x6AB3B74B (`ShowRoute`)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet · **NID:** 0x658B903B (`ShowIfconfig`), 0x6AB3B74B (`ShowRoute`)
 - **Protótipo:** `int sceNetShowIfconfig(void *p, int b);` / `int sceNetShowRoute(void);` (`psp2/net/net.h`; significado dos parâmetros de `ShowIfconfig` desconhecido)
 - **Comportamento:** depuração: imprimem a configuração de interfaces/rotas no TTY. Mesmo tratamento de
   `sceNetShowNetstat` (já implementado como `=> 0`).
@@ -951,7 +961,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** retorno 0.
 
 #### Dump (captura de pacotes) — sceNetDumpCreate / Read / Abort / Destroy
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet
 
 | Função | NID | Protótipo (`net.h`) |
 | --- | --- | --- |
@@ -971,7 +981,7 @@ DESCID 0x10000. Offline: nenhum socket fica legível; recomendação: também n�
 - **Validação:** Create→Read(DONTWAIT)→`EAGAIN`→Destroy.
 
 #### Emulação de rede — sceNetEmulationSet / Get
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNet
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNet
 
 | Função | NID | Protótipo (`net.h`) |
 | --- | --- | --- |
@@ -1007,7 +1017,7 @@ CALLBACK_MAX 0x80412103, ID_NOT_FOUND 0x80412104, INVALID_ID 0x80412105, INVALID
 UNKNOWN_DEVICE 0x80412188. Eventos: NONE 0, DISCONNECTED 1, DISCONNECT_REQ_FINISHED 2, IPOBTAINED 3.
 
 ### sceNetCtlAdhocGetResult
-- [ ] **Prioridade:** P0 (Invizimals: The Resistance, PCSA00552) · **Biblioteca:** SceNetCtl · **NID:** 0x7AE0ED19
+- [x] **Prioridade:** P0 (Invizimals: The Resistance, PCSA00552) · **Biblioteca:** SceNetCtl · **NID:** 0x7AE0ED19
 - **Protótipo:** `int sceNetCtlAdhocGetResult(int eventType, int *errorCode);` (`psp2/net/netctl.h`)
 - **Comportamento:** devolve o código de erro associado ao último evento ad hoc do tipo `eventType` (tipicamente chamado
   de dentro do callback registrado com `sceNetCtlAdhocRegisterCallback`, logo após receber `DISCONNECTED`). O VitaSharp
@@ -1025,7 +1035,7 @@ UNKNOWN_DEVICE 0x80412188. Eventos: NONE 0, DISCONNECTED 1, DISCONNECT_REQ_FINIS
   de rede sem `Unimplemented HLE function`.
 
 ### sceNetCtlAdhocGetPeerList
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0x77586C59
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0x77586C59
 - **Protótipo:** `int sceNetCtlAdhocGetPeerList(unsigned int *buflen, void *buf);` (`psp2/net/netctl.h`)
 - **Comportamento:** lista os pares ad hoc visíveis como uma lista encadeada de `SceNetCtlAdhocPeerInfo` dentro de `buf`.
   `*buflen`: na entrada, tamanho de `buf` em bytes; na saída, bytes usados/necessários (`buf == NULL` → só tamanho).
@@ -1039,7 +1049,7 @@ UNKNOWN_DEVICE 0x80412188. Eventos: NONE 0, DISCONNECTED 1, DISCONNECT_REQ_FINIS
 - **Validação:** retorno 0 e `*buflen = 0`.
 
 ### sceNetCtlGetIfStat
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0xDA130450
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0xDA130450
 - **Protótipo:** `int sceNetCtlGetIfStat(int device, SceNetCtlIfStat *ifstat);` (inferido do Vita3K; não está em `netctl.h`)
 - **Comportamento:** estatísticas de tráfego da interface. Offline: contadores zerados (ou bytes de fato "enviados" se
   um dia houver), `resetTick` = tick do boot.
@@ -1052,7 +1062,7 @@ UNKNOWN_DEVICE 0x80412188. Eventos: NONE 0, DISCONNECTED 1, DISCONNECT_REQ_FINIS
 - **Validação:** `size` errado → 0x80412111.
 
 ### sceNetCtlGetPhoneMaxDownloadableSize
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0x4FB4BEA1
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetCtl · **NID:** 0x4FB4BEA1
 - **Protótipo:** `int sceNetCtlGetPhoneMaxDownloadableSize(long long *maxDownloadableSize);` (inferido do Vita3K)
 - **Comportamento:** limite de download por rede celular (modelos 3G). O console emulado está em Wi-Fi: sem limite.
 - **Retorno/erros:** 0 com `*max = 0x7FFFFFFFFFFFFFFF` (Vita3K); `NOT_INITIALIZED`; nulo → `INVALID_ADDR`. O valor
@@ -1062,7 +1072,7 @@ UNKNOWN_DEVICE 0x80412188. Eventos: NONE 0, DISCONNECTED 1, DISCONNECT_REQ_FINIS
 - **Validação:** retorno 0.
 
 ### sceNetCtlInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNetCtl · **NID:** 0x495CA1DB
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNetCtl · **NID:** 0x495CA1DB
 - **Protótipo:** `int sceNetCtlInit();` (`psp2/net/netctl.h`)
 - **Comportamento:** hoje `=> 0` sem estado; nenhuma função NetCtl consegue devolver `NOT_INITIALIZED`.
 - **Retorno/erros:** 0; já inicializado → `NOT_TERMINATED` 0x80412102 (Vita3K).
@@ -1079,7 +1089,7 @@ Revisado sem alteração: `sceNetCtlAdhocDisconnect` 0xED43B79A (`=> 0` é coere
 ## SceSsl
 
 ### sceSslFreeSslCertName
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceSsl · **NID:** 0xC73687E4
+- [x] **Prioridade:** P1 · **Biblioteca:** SceSsl · **NID:** 0xC73687E4
 - **Protótipo:** `int sceSslFreeSslCertName(SceSslCertName *certName);` (`psp2/libssl.h`)
 - **Comportamento:** libera um nome obtido por `sceSslGetSubjectName`/`GetIssuerName`. Offline esses getters devolvem
   NULL (nenhum certificado existe), então nada é liberado.
@@ -1090,7 +1100,7 @@ Revisado sem alteração: `sceNetCtlAdhocDisconnect` 0xED43B79A (`=> 0` é coere
 - **Validação:** retorno coerente para nulo.
 
 ### sceSslInit / sceSslTerm
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceSsl · **NID:** 0x3C733316 (`sceSslInit`), 0x03CE6E3A (`sceSslTerm`)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceSsl · **NID:** 0x3C733316 (`sceSslInit`), 0x03CE6E3A (`sceSslTerm`)
 - **Protótipo:** `int sceSslInit(unsigned poolSize);` / `int sceSslTerm(void);` (`psp2/libssl.h`)
 - **Comportamento:** hoje sem estado. Init: `ALREADY_INITED` 0x80435020 se repetido, `INVALID_VALUE` 0x804351FE se
   `poolSize == 0` (Vita3K); guarda `poolSize` para `sceSslGetMemoryPoolStats` (+0 `poolSize`, +4 `maxInuseSize`,
@@ -1143,7 +1153,7 @@ Offline nenhum contexto se conecta (`sceRudpInitiate`/`Activate` falham na hora)
 poll só termina por timeout, cancel ou destroy.
 
 ### sceRudpPollWait
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibRudp · **NID:** 0x55918C7C
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibRudp · **NID:** 0x55918C7C
 - **Protótipo:** `int sceRudpPollWait(int pollId, SceRudpPollEvent *events, SceSize eventLen, SceRudpUsec timeout);` (inferido; `SceRudpUsec` = `unsigned long long` como no PS3 — a confirmar; é o tipo que `Multiplayer.cs:168` já usa)
 - **Stub atual:** `Multiplayer.cs:168` (`=> 0`) ignora o timeout: a thread de rede do jogo que chama `PollWait` em loop
   vira **busy loop** (Killzone e Sakatsuku importam a função).
@@ -1165,7 +1175,7 @@ poll só termina por timeout, cancel ou destroy.
   aparecer como consumidora de CPU; `kz_gameplay` sem regressão. Sakatsuku: boot sem travar.
 
 ### sceRudpPollCreate / Control / Destroy / Cancel
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibRudp
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibRudp
 
 | Função | NID | Protótipo (inferido) | Hoje | Correto |
 | --- | --- | --- | --- | --- |
@@ -1181,7 +1191,7 @@ poll só termina por timeout, cancel ou destroy.
 - **Validação:** thread em `PollWait(infinito)` acorda com `PollCancel` de outra thread; IDs inválidos → INVALID_POLL_ID.
 
 ### sceRudpSetMaxSegmentSize
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibRudp · **NID:** 0xE1DD9645
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibRudp · **NID:** 0xE1DD9645
 - **Protótipo:** `int sceRudpSetMaxSegmentSize(unsigned short mss);` (inferido do PS3/`Multiplayer.cs:160`)
 - **Comportamento:** define o MSS global; hoje descartado e `sceRudpGetMaxSegmentSize` devolve sempre 1280.
 - **Retorno/erros:** 0; NOT_INITIALIZED; `mss` abaixo do mínimo/acima do máximo → INVALID_ARGUMENT (limites a
@@ -1191,7 +1201,7 @@ poll só termina por timeout, cancel ou destroy.
 - **Validação:** set 1000 → get 1000.
 
 ### sceRudpEnableInternalIOThread2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x87EC465E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x87EC465E
 - **Protótipo:** `int sceRudpEnableInternalIOThread2(unsigned int stackSize, unsigned int priority, int cpuAffinityMask);` (inferido: versão 2 de `sceRudpEnableInternalIOThread` com afinidade; a confirmar o 3º argumento)
 - **Comportamento:** cria a thread interna que lê o socket UDP e processa eventos (em vez do jogo chamar
   `sceRudpNetReceived`/`ProcessEvents`). Offline não há tráfego: não criar thread; registrar que o modo interno está
@@ -1204,7 +1214,7 @@ poll só termina por timeout, cancel ou destroy.
 - **Validação:** retorno 0 após `sceRudpInit`.
 
 ### sceRudpGetLocalInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x4DC43692
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x4DC43692
 - **Protótipo:** `int sceRudpGetLocalInfo(int ctxId, int *soc, SceNetSockaddr *addr, SceNetSocklen_t *addrLen, unsigned short *vport, unsigned char *muxMode);` (inferido do PS3 `cellRudpGetLocalInfo`)
 - **Comportamento:** devolve o socket, o endereço local, a vport e o modo mux usados no `sceRudpBind` do contexto.
   Ponteiros nulos são ignorados (a confirmar).
@@ -1215,7 +1225,7 @@ poll só termina por timeout, cancel ou destroy.
 - **Validação:** Bind(ctx, s, 3658, 1) → GetLocalInfo devolve s, 3658, 1.
 
 ### sceRudpGetRemoteInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x104E4D3B
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x104E4D3B
 - **Protótipo:** `int sceRudpGetRemoteInfo(int ctxId, SceNetSockaddr *addr, SceNetSocklen_t *addrLen, unsigned short *vport);` (inferido do PS3)
 - **Comportamento:** endereço/vport do par passados a `sceRudpInitiate`/`Activate`. Offline essas chamadas falham, mas
   o endereço pedido pode ser guardado; sem destino conhecido → zeros.
@@ -1225,7 +1235,7 @@ poll só termina por timeout, cancel ou destroy.
 - **Validação:** Initiate(…) falho → GetRemoteInfo devolve o endereço passado.
 
 ### sceRudpGetNumberOfPacketsToRead
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x5D0460CD
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibRudp · **NID:** 0x5D0460CD
 - **Protótipo:** `int sceRudpGetNumberOfPacketsToRead(int ctxId);` (inferido do PS3)
 - **Comportamento:** nº de mensagens prontas para `sceRudpRead`. Offline: 0.
 - **Retorno/erros:** ≥ 0; INVALID_CONTEXT_ID; NOT_INITIALIZED.
@@ -1276,7 +1286,7 @@ afinidade recebidas) que envia hellos UDP broadcast na `port` a cada `hello_inte
 por captura entre dois consoles.
 
 ### sceNetAdhocMatchingInit
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x8E0E0EAE
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x8E0E0EAE
 - **Protótipo:** `int sceNetAdhocMatchingInit(unsigned int pool_size, void *pool_ptr);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** inicializa a biblioteca usando o pool de memória do jogo (`pool_ptr`, `pool_size` bytes).
   Offline: guarda os valores (o pool não é usado).
@@ -1289,7 +1299,7 @@ por captura entre dois consoles.
   0x80413112.
 
 ### sceNetAdhocMatchingTerm
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x6E195CD1
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x6E195CD1
 - **Protótipo:** `int sceNetAdhocMatchingTerm(void);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** para e apaga todos os contextos e encerra a biblioteca.
 - **Retorno/erros:** 0; não inicializada → NOT_INITIALIZED 0x80413113 (a confirmar; o PSP retorna 0 nesse caso —
@@ -1299,7 +1309,7 @@ por captura entre dois consoles.
 - **Validação:** Init→Term→Init funciona.
 
 ### sceNetAdhocMatchingCreate
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x7BAD7EA2
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x7BAD7EA2
 - **Protótipo:** `int sceNetAdhocMatchingCreate(SceNetAdhocMatchingMode mode, int max_members, SceUShort16 port, int rx_buffer_len, unsigned int hello_interval, unsigned int keep_alive_interval, int retry_count, unsigned int rexmt_interval, SceNetAdhocMatchingCallback handler_callback);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** cria um contexto de matching (não inicia). Intervalos em µs. Devolve o ID (> 0).
 - **Retorno/erros:** ID; NOT_INITIALIZED 0x80413113; `mode` ∉ {1,2,3} → INVALID_MODE 0x80413101; `max_members` fora
@@ -1314,7 +1324,7 @@ por captura entre dois consoles.
 - **Validação:** Create com mesma porta duas vezes → 0x80413114; mode 0 → 0x80413101.
 
 ### sceNetAdhocMatchingDelete
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x7BCDD889
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x7BCDD889
 - **Protótipo:** `int sceNetAdhocMatchingDelete(int id);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** apaga o contexto.
 - **Retorno/erros:** 0; NOT_INITIALIZED; ID inexistente → INVALID_ID 0x80413107; contexto em execução → IS_RUNNING
@@ -1325,7 +1335,7 @@ por captura entre dois consoles.
 - **Validação:** Delete duplo → 0x80413107.
 
 ### sceNetAdhocMatchingStart
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0xF13E17BE
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0xF13E17BE
 - **Protótipo:** `int sceNetAdhocMatchingStart(int id, int thread_priority, int thread_stack_size, int thread_cpu_affinity_mask, int hello_opt_len, void *hello_opt);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** inicia o contexto: cria a thread de eventos e começa a anunciar (PARENT/P2P enviam hello com
   `hello_opt`; CHILD escuta). Offline: `Running = true`, copia `hello_opt` para `HelloOpt`; **não** cria thread e não
@@ -1339,7 +1349,7 @@ por captura entre dois consoles.
 - **Validação:** Start duplo → 0x8041310A; Sakatsuku entra na tela de procura de jogadores e permite cancelar.
 
 ### sceNetAdhocMatchingStop
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x63ABB632
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x63ABB632
 - **Protótipo:** `int sceNetAdhocMatchingStop(int id);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** para o contexto (envia BYE aos membros e encerra a thread no hardware). Offline: `Running = false`.
 - **Retorno/erros:** 0; NOT_INITIALIZED; INVALID_ID; não em execução → NOT_RUNNING 0x8041310B (a confirmar; o PSP
@@ -1349,7 +1359,7 @@ por captura entre dois consoles.
 - **Validação:** Start→Stop→Start funciona.
 
 ### sceNetAdhocMatchingSelectTarget
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x9A6B1D0F
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x9A6B1D0F
 - **Protótipo:** `int sceNetAdhocMatchingSelectTarget(int id, SceNetInAddr *target, int opt_len, void *opt);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** CHILD: pede para entrar no grupo de `target`; PARENT: aceita o pedido de `target`; P2P: idem
   entre pares. Offline nenhum par é conhecido.
@@ -1362,7 +1372,7 @@ por captura entre dois consoles.
 - **Validação:** chamada com qualquer endereço → 0x8041310C.
 
 ### sceNetAdhocMatchingCancelTarget
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x04FF010C
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x04FF010C
 - **Protótipo:** `int sceNetAdhocMatchingCancelTarget(int id, SceNetInAddr *target);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** cancela pedido/conexão com `target` (envia CANCEL/LEAVE no hardware).
 - **Retorno/erros:** offline UNKNOWN_TARGET 0x8041310C; NOT_INITIALIZED; INVALID_ID; NOT_RUNNING; `target` nulo →
@@ -1372,7 +1382,7 @@ por captura entre dois consoles.
 - **Validação:** → 0x8041310C.
 
 ### sceNetAdhocMatchingCancelTargetWithOpt
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x54F6534D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x54F6534D
 - **Protótipo:** `int sceNetAdhocMatchingCancelTargetWithOpt(int id, SceNetInAddr *target, int opt_len, char *opt);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** como `CancelTarget`, enviando dados opcionais com o cancelamento.
 - **Retorno/erros:** idem + INVALID_OPTLEN 0x80413105 para `opt_len` inválido.
@@ -1381,7 +1391,7 @@ por captura entre dois consoles.
 - **Validação:** → 0x8041310C.
 
 ### sceNetAdhocMatchingSendData
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x83C0E435
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x83C0E435
 - **Protótipo:** `int sceNetAdhocMatchingSendData(int id, SceNetInAddr *addr, int data_len, void *data);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** envia dados a um membro estabelecido (confirmação vem como evento DATA_ACK/DATA_TIMEOUT).
 - **Retorno/erros:** offline UNKNOWN_TARGET 0x8041310C (nenhum membro); NOT_INITIALIZED; INVALID_ID; NOT_RUNNING;
@@ -1392,7 +1402,7 @@ por captura entre dois consoles.
 - **Validação:** → 0x8041310C.
 
 ### sceNetAdhocMatchingAbortSendData
-- [ ] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0xFE77831E
+- [x] **Prioridade:** P0 (Sakatsuku 2013, PCSG00198) · **Biblioteca:** SceNetAdhocMatching · **NID:** 0xFE77831E
 - **Protótipo:** `int sceNetAdhocMatchingAbortSendData(int id, SceNetInAddr *addr);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** cancela um envio pendente para `addr`.
 - **Retorno/erros:** offline UNKNOWN_TARGET 0x8041310C; NOT_INITIALIZED; INVALID_ID; NOT_RUNNING; `addr` nulo →
@@ -1402,7 +1412,7 @@ por captura entre dois consoles.
 - **Validação:** → 0x8041310C.
 
 ### sceNetAdhocMatchingSetHelloOpt
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x659D4B04
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x659D4B04
 - **Protótipo:** `int sceNetAdhocMatchingSetHelloOpt(int id, int opt_len, void *opt);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** troca os dados enviados nos hellos (PARENT/P2P).
 - **Retorno/erros:** 0; NOT_INITIALIZED; INVALID_ID; modo CHILD → INVALID_MODE 0x80413101; não em execução →
@@ -1412,7 +1422,7 @@ por captura entre dois consoles.
 - **Validação:** Set→Get devolve os mesmos bytes.
 
 ### sceNetAdhocMatchingGetHelloOpt
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x90AFFEDD
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x90AFFEDD
 - **Protótipo:** `int sceNetAdhocMatchingGetHelloOpt(int id, unsigned int *opt_len, void *opt);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** `*opt_len` entra com o tamanho de `opt` e sai com o tamanho do hello opt atual; `opt == NULL` →
   só tamanho; buffer menor → copia o que couber ou erro (a confirmar; recomendação: copiar `min` e devolver o tamanho
@@ -1424,7 +1434,7 @@ por captura entre dois consoles.
 - **Validação:** após `Start` com hello de 8 bytes, `*opt_len = 8`.
 
 ### sceNetAdhocMatchingGetMembers
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x85B23CEB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNetAdhocMatching · **NID:** 0x85B23CEB
 - **Protótipo:** `int sceNetAdhocMatchingGetMembers(int id, unsigned int *members_count, struct SceNetAdhocMatchingMember *members);` (`psp2/net/adhoc_matching.h`)
 - **Comportamento:** lista os membros do grupo; `*members_count` entra com a capacidade de `members` e sai com o nº
   escrito (ou total, se `members == NULL`). No PSP a lista inclui o próprio console (e o pai primeiro, no filho).

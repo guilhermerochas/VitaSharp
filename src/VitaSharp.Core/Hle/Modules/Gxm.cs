@@ -15,7 +15,10 @@ public sealed class Gxm : HleModule
     const int ERR_UNINITIALIZED = unchecked((int)0x805B0000), ERR_ALREADY_INITIALIZED = unchecked((int)0x805B0001),
         ERR_INVALID_VALUE = unchecked((int)0x805B0003), ERR_INVALID_POINTER = unchecked((int)0x805B0004),
         ERR_INVALID_ALIGNMENT = unchecked((int)0x805B0005), ERR_NOT_WITHIN_SCENE = unchecked((int)0x805B0006),
-        ERR_WITHIN_SCENE = unchecked((int)0x805B0007), ERR_NULL_PROGRAM = unchecked((int)0x805B0008);
+        ERR_WITHIN_SCENE = unchecked((int)0x805B0007), ERR_NULL_PROGRAM = unchecked((int)0x805B0008),
+        ERR_UNSUPPORTED = unchecked((int)0x805B0009), ERR_RESERVE_FAILED = unchecked((int)0x805B000B),
+        // Vita3K gxm/types.h only (absent from vita-headers)
+        ERR_WITHIN_COMMAND_LIST = unchecked((int)0x805B002C), ERR_NOT_WITHIN_COMMAND_LIST = unchecked((int)0x805B002D);
 
     const uint TexLinearStrided = 0xC0000000, TexSwizzled = 0, TexCube = 0x40000000, TexLinear = 0x60000000, TexTiled = 0x80000000,
         TexSwizzledArbitrary = 0xA0000000, TexCubeArbitrary = 0xE0000000;
@@ -29,7 +32,7 @@ public sealed class Gxm : HleModule
     readonly ConcurrentDictionary<uint, (uint Base, uint Size)> _mapped = new();
 
     bool _initialized;
-    uint _notificationRegion;
+    uint _notificationRegion, _parameterBufferSize;
     uint _displayCallback, _displayDataSize;
     BlockingCollection<(uint Data, long GpuSeq)>? _displayQueue;
     int _displayPending;
@@ -53,6 +56,7 @@ public sealed class Gxm : HleModule
         if (pParams == 0) return ERR_INVALID_POINTER;
         if (_initialized) return ERR_ALREADY_INITIALIZED;
         uint pendingMax = GuestMemory.R32(pParams + 4);
+        _parameterBufferSize = GuestMemory.R32(pParams + 16);
         _displayCallback = GuestMemory.R32(pParams + 8);
         _displayDataSize = GuestMemory.R32(pParams + 12);
         _notificationRegion = Emu.Memory.Alloc(1 << 20, "SceGxmNotificationRegion", MemoryRegion.User);
@@ -138,10 +142,53 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
     [Hle] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
     [Hle] int sceGxmPadHeartbeat(uint displaySurface, uint displaySync) => 0;
-    [Hle] int sceGxmSetWClampEnable(uint ctx, uint enable) => 0;
-    [Hle] void sceGxmSetWClampValue(uint ctx, float value) { }
+    /// <summary>SCE_GXM_WCLAMP_MODE_ENABLED = 0x8000. Stored in the draw state; the clamp itself is not applied by the
+    /// renderer yet (Vulkan clipping already handles W &lt;= 0).</summary>
+    [Hle] void sceGxmSetWClampEnable(uint ctx, uint enable) { if (Ctx(ctx) is { } c) c.State.WClampEnabled = enable != 0; }
+    [Hle] void sceGxmSetWClampValue(uint ctx, float value) { if (Ctx(ctx) is { } c) c.State.WClampValue = value; }
     [Hle] int sceGxmIsDebugVersion() => 0;
     [Hle] int sceGxmSetValidationEnable(uint ctx, uint enable) => 0;
+    /// <summary>Inferred (not in vita-headers): toggles a warning class of the debug libgxm; a no-op in release.</summary>
+    [Hle] int sceGxmSetWarningEnabled(uint warning, uint enable) => 0;
+
+    /// <summary>Parameter buffer threshold: VitaSharp has no parameter buffer (never partial-renders), so the size given to
+    /// sceGxmInitialize is reported (actual hardware fraction unknown).</summary>
+    [Hle]
+    int sceGxmGetParameterBufferThreshold(Ptr<uint> size)
+    {
+        if (size.IsNull) return ERR_INVALID_POINTER;
+        size.Value = _parameterBufferSize;
+        return 0;
+    }
+
+    /// <summary>Inferred: an internal libgxm/GLES driver event wait. Logged once so a game importing it reveals its
+    /// arguments; returns immediately.</summary>
+    [Hle]
+    int sceGxmWaitEvent(uint a0, uint a1, uint a2, uint a3)
+    {
+        Log.WarnOnce("gxm-waitevent", $"sceGxmWaitEvent(0x{a0:X8}, 0x{a1:X8}, 0x{a2:X8}, 0x{a3:X8})");
+        return 0;
+    }
+
+    // ---- Razor user markers: debug grouping of draws, no visual effect
+
+    [Hle]
+    int sceGxmPushUserMarker(uint ctx, uint tag)
+    {
+        if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
+        c.MarkerDepth++;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmPopUserMarker(uint ctx)
+    {
+        if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
+        if (c.MarkerDepth > 0) c.MarkerDepth--;
+        return 0;
+    }
+
+    [Hle] int sceGxmSetUserMarker(uint ctx, uint tag) => Ctx(ctx) == null ? ERR_INVALID_POINTER : 0;
 
     // =========================================================== contexts / render targets / sync
 
@@ -163,6 +210,15 @@ public sealed class Gxm : HleModule
     }
 
     [Hle] int sceGxmDestroyContext(uint ctx) { Gpu.WaitIdle(); _contexts.TryRemove(ctx, out _); return 0; }
+
+    /// <summary>SceGxmContextType: IMMEDIATE 0, DEFERRED 1 (Vita3K gxm/types.h).</summary>
+    [Hle]
+    int sceGxmGetContextType(uint ctx, Ptr<uint> type)
+    {
+        if (Ctx(ctx) is not { } c || type.IsNull) return ERR_INVALID_POINTER;
+        type.Value = c.Deferred ? 1u : 0u;
+        return 0;
+    }
 
     [Hle]
     int sceGxmGetRenderTargetMemSize(uint p, Ptr<uint> size)
@@ -231,7 +287,8 @@ public sealed class Gxm : HleModule
         GuestMemory.W32(surface + 16, data);
         GuestMemory.W32(surface + 20, colorFormat);
         GuestMemory.W32(surface + 24, surfaceType);
-        GuestMemory.W32(surface + 28, outputRegisterSize);
+        GuestMemory.W32(surface + 28, outputRegisterSize & 1);
+        WriteClip(surface, 0, 0, width - 1, height - 1);
         uint texType = surfaceType switch { 0x08000000 => TexSwizzled, 0x04000000 => TexTiled, _ => TexLinear };
         InitTexture(surface + 32, data, ColorToTextureFormat(colorFormat), width, height, 1, texType);
         return 0;
@@ -256,11 +313,34 @@ public sealed class Gxm : HleModule
     }
 
     [Hle] int sceGxmColorSurfaceInitDisabled(uint surface) { GuestMemory.Fill(surface, 0, 48); GuestMemory.W32(surface, 1); return 0; }
-    [Hle] void sceGxmColorSurfaceSetClip(uint surface, uint xMin, uint yMin, uint xMax, uint yMax) { }
-    [Hle] void sceGxmColorSurfaceGetClip(uint surface, Ptr<uint> xMin, Ptr<uint> yMin, Ptr<uint> xMax, Ptr<uint> yMax)
+
+    // Colour surface clip (VitaSharp layout): w0 bits 8-19 xMax, bits 20-31 yMax; +0x1C (outputRegisterSize in bit 0)
+    // bits 8-19 xMin, bits 20-31 yMin. Kept in the guest struct because games copy surfaces by value. The renderer does
+    // not apply it yet (it would intersect the scissor with it).
+    static void WriteClip(uint surface, uint xMin, uint yMin, uint xMax, uint yMax)
     {
-        xMin.TrySet(0); yMin.TrySet(0);
-        xMax.TrySet(GuestMemory.R32(surface + 4) - 1); yMax.TrySet(GuestMemory.R32(surface + 8) - 1);
+        uint w0 = GuestMemory.R32(surface) & 0xFFu, w7 = GuestMemory.R32(surface + 0x1C) & 0xFFu;
+        GuestMemory.W32(surface, w0 | ((xMax & 0xFFF) << 8) | ((yMax & 0xFFF) << 20));
+        GuestMemory.W32(surface + 0x1C, w7 | ((xMin & 0xFFF) << 8) | ((yMin & 0xFFF) << 20));
+    }
+
+    [Hle]
+    void sceGxmColorSurfaceSetClip(uint surface, uint xMin, uint yMin, uint xMax, uint yMax)
+    {
+        if (surface == 0) return;
+        uint w = GuestMemory.R32(surface + 4), h = GuestMemory.R32(surface + 8);
+        if (w > 0) { xMin = Math.Min(xMin, w - 1); xMax = Math.Min(xMax, w - 1); }
+        if (h > 0) { yMin = Math.Min(yMin, h - 1); yMax = Math.Min(yMax, h - 1); }
+        WriteClip(surface, xMin, yMin, xMax, yMax);
+    }
+
+    [Hle]
+    void sceGxmColorSurfaceGetClip(uint surface, Ptr<uint> xMin, Ptr<uint> yMin, Ptr<uint> xMax, Ptr<uint> yMax)
+    {
+        if (surface == 0) return;
+        uint w0 = GuestMemory.R32(surface), w7 = GuestMemory.R32(surface + 0x1C);
+        xMin.TrySet((w7 >> 8) & 0xFFF); yMin.TrySet((w7 >> 20) & 0xFFF);
+        xMax.TrySet((w0 >> 8) & 0xFFF); yMax.TrySet((w0 >> 20) & 0xFFF);
     }
 
     [Hle]
@@ -281,8 +361,18 @@ public sealed class Gxm : HleModule
     [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => (GuestMemory.R32(surface) & 1) == 0;
     [Hle] uint sceGxmColorSurfaceGetScaleMode(uint surface) => (GuestMemory.R32(surface) >> 1) & 1;
     [Hle] void sceGxmColorSurfaceSetScaleMode(uint surface, uint mode) { uint w = GuestMemory.R32(surface) & ~2u; GuestMemory.W32(surface, w | (mode != 0 ? 2u : 0)); }
-    [Hle] uint sceGxmColorSurfaceGetDitherMode(uint surface) => 0;
-    [Hle] int sceGxmColorSurfaceSetDitherMode(uint surface, uint mode) => 0;
+    /// <summary>Dither mode (SCE_GXM_COLOR_SURFACE_DITHER_ENABLED = 8) kept in w0 bit 4 (bits 2-3 are the gamma mode).
+    /// Vulkan has no fixed-function dither, so it has no visual effect.</summary>
+    [Hle] uint sceGxmColorSurfaceGetDitherMode(uint surface) => surface != 0 && ((GuestMemory.R32(surface) >> 4) & 1) != 0 ? 8u : 0u;
+
+    [Hle]
+    int sceGxmColorSurfaceSetDitherMode(uint surface, uint mode)
+    {
+        if (surface == 0) return ERR_INVALID_POINTER;
+        uint w = GuestMemory.R32(surface) & ~0x10u;
+        GuestMemory.W32(surface, w | (mode != 0 ? 0x10u : 0));
+        return 0;
+    }
 
     static ColorSurfaceInfo? ReadColorSurface(uint s)
     {
@@ -371,6 +461,7 @@ public sealed class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null || !_renderTargets.TryGetValue(renderTarget, out var rt)) return ERR_INVALID_POINTER;
+        if (c.Deferred) return ERR_INVALID_VALUE;
         if (c.InScene) return ERR_WITHIN_SCENE;
         c.InScene = true;
         c.RenderTarget = rt;
@@ -394,6 +485,7 @@ public sealed class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null) return ERR_INVALID_POINTER;
+        if (c.Deferred) return ERR_INVALID_VALUE;
         if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         c.InScene = false;
         var list = new List<(uint, uint)>();
@@ -409,8 +501,20 @@ public sealed class Gxm : HleModule
     [Hle]
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
+        if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
+        Gpu.Submit(new MidSceneFlushCommand());
         if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
+    }
+
+    /// <summary>Vertex barrier inside a scene (Vita3K: a mid-scene flush without notification). The GPU queue already runs
+    /// in order, so only the validation remains.</summary>
+    [Hle]
+    int sceGxmVertexFence(uint ctx)
+    {
+        if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
+        if (c.Deferred) return ERR_INVALID_VALUE;
+        return c.InScene ? 0 : ERR_NOT_WITHIN_SCENE;
     }
 
     [Hle] int sceGxmFinish(uint ctx) { GpuFinish(); return 0; }
@@ -527,7 +631,16 @@ public sealed class Gxm : HleModule
         uint size = (c.VertexProgram?.Info.Program.DefaultUniformBufferCount ?? 0) * 4;
         if (size == 0) { outBuf.Value = 0; c.VertexUniformBuffers[14] = 0; return 0; }
         c.VertexRingUsed = (c.VertexRingUsed + 3) & ~3u;
-        if (c.VertexRingUsed + size > c.VertexRingSize) c.VertexRingUsed = 0;
+        if (c.VertexRingUsed + size > c.VertexRingSize)
+        {
+            if (c.Deferred && c.VertexCallback != 0)
+            {
+                uint mem = CallMemoryCallback(c, c.VertexCallback, Math.Max(size, RingCallbackRequest), out uint got);
+                if (mem == 0) return ERR_RESERVE_FAILED;
+                c.VertexRing = mem; c.VertexRingSize = got;
+            }
+            c.VertexRingUsed = 0;
+        }
         uint p = c.VertexRing + c.VertexRingUsed;
         c.VertexDefaultReserved = true;
         c.VertexUniformBuffers[14] = p;
@@ -543,7 +656,16 @@ public sealed class Gxm : HleModule
         uint size = (c.FragmentProgram?.Info?.Program.DefaultUniformBufferCount ?? 0) * 4;
         if (size == 0) { outBuf.Value = 0; c.FragmentUniformBuffers[14] = 0; return 0; }
         c.FragmentRingUsed = (c.FragmentRingUsed + 3) & ~3u;
-        if (c.FragmentRingUsed + size > c.FragmentRingSize) c.FragmentRingUsed = 0;
+        if (c.FragmentRingUsed + size > c.FragmentRingSize)
+        {
+            if (c.Deferred && c.FragmentCallback != 0)
+            {
+                uint mem = CallMemoryCallback(c, c.FragmentCallback, Math.Max(size, RingCallbackRequest), out uint got);
+                if (mem == 0) return ERR_RESERVE_FAILED;
+                c.FragmentRing = mem; c.FragmentRingSize = got;
+            }
+            c.FragmentRingUsed = 0;
+        }
         uint p = c.FragmentRing + c.FragmentRingUsed;
         c.FragmentDefaultReserved = true;
         c.FragmentUniformBuffers[14] = p;
@@ -562,6 +684,28 @@ public sealed class Gxm : HleModule
     [Hle] void sceGxmSetBackFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.FragmentEnabled = e == 0; }
     [Hle] void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) c.State.Front.PolygonMode = (byte)(m >> 15); }
     [Hle] void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) c.State.Back.PolygonMode = (byte)(m >> 15); }
+    /// <summary>SCE_GXM_WBUFFER_ENABLED = 0x4000 (not 1).</summary>
+    [Hle]
+    void sceGxmSetWBufferEnable(uint ctx, uint enable)
+    {
+        if (Ctx(ctx) is not { } c) return;
+        c.State.WBuffer = enable != 0;
+        if (enable != 0) Log.WarnOnce("gxm-wbuffer", "sceGxmSetWBufferEnable: W-buffering approximated with Z/W depth");
+    }
+    /// <summary>SCE_GXM_LINE_FILL_LAST_PIXEL_ENABLED = 0x80000.</summary>
+    [Hle] void sceGxmSetFrontLineFillLastPixelEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.LineFillLastPixel = e != 0; }
+    [Hle] void sceGxmSetBackLineFillLastPixelEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.LineFillLastPixel = e != 0; }
+
+    /// <summary>YUV->RGB matrix of the colour space converter <paramref name="index"/> (0/1): BT601 0, BT709 1,
+    /// BT601 full range 2, BT709 full range 3. Stored per context; the texture decoder still uses its fixed matrices.</summary>
+    [Hle]
+    int sceGxmSetYuvProfile(uint ctx, uint index, uint profile)
+    {
+        if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
+        if (index > 1 || profile > 3) return ERR_INVALID_VALUE;
+        c.YuvProfile[index] = (byte)profile;
+        return 0;
+    }
     [Hle] void sceGxmSetFrontPointLineWidth(uint ctx, uint w) { if (Ctx(ctx) is { } c) c.State.Front.PointLineWidth = (byte)w; }
     [Hle] void sceGxmSetBackPointLineWidth(uint ctx, uint w) { if (Ctx(ctx) is { } c) c.State.Back.PointLineWidth = (byte)w; }
     [Hle] void sceGxmSetFrontDepthBias(uint ctx, int factor, int units) { if (Ctx(ctx) is { } c) { c.State.Front.DepthBiasFactor = factor; c.State.Front.DepthBiasUnits = units; } }
@@ -600,9 +744,10 @@ public sealed class Gxm : HleModule
         if (Ctx(ctx) is not { } c) return;
         ref var s = ref c.State;
         s.VpOffX = xOffset; s.VpScaleX = xScale; s.VpOffY = yOffset; s.VpScaleY = yScale; s.VpOffZ = zOffset; s.VpScaleZ = zScale;
+        c.ViewportSet = true;
     }
 
-    [Hle] void sceGxmSetViewportEnable(uint ctx, uint enable) { if (Ctx(ctx) is { } c) c.State.ViewportEnabled = enable == 0; }
+    [Hle] void sceGxmSetViewportEnable(uint ctx, uint enable) { if (Ctx(ctx) is { } c) { c.State.ViewportEnabled = enable == 0; c.ViewportSet = true; } }
 
     [Hle]
     void sceGxmSetRegionClip(uint ctx, uint mode, uint xMin, uint yMin, uint xMax, uint yMax)
@@ -611,9 +756,10 @@ public sealed class Gxm : HleModule
         ref var s = ref c.State;
         s.RegionClipMode = (byte)(mode >> 30);
         s.ClipMinX = (int)xMin; s.ClipMinY = (int)yMin; s.ClipMaxX = (int)xMax; s.ClipMaxY = (int)yMax;
+        c.RegionClipSet = true;
     }
 
-    [Hle] void sceGxmSetDefaultRegionClipAndViewport(uint ctx, uint xMax, uint yMax) { if (Ctx(ctx) is { } c) SetDefaultRegionClipAndViewport(c, xMax, yMax); }
+    [Hle] void sceGxmSetDefaultRegionClipAndViewport(uint ctx, uint xMax, uint yMax) { if (Ctx(ctx) is { } c) { SetDefaultRegionClipAndViewport(c, xMax, yMax); c.ViewportSet = c.RegionClipSet = true; } }
     // visibility tests: the GPU counts the samples of a draw that pass the depth/stencil tests into a word of the
     // visibility buffer (index * 4 within the per-core stride); games use them for occlusion culling and streaming
     const uint VisibilityOpIncrement = 0, VisibilityAlignment = 16;
@@ -677,37 +823,29 @@ public sealed class Gxm : HleModule
     int Draw(GxmContext c, GxmVertexProgram? vp, GxmFragmentProgram? fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex, GxmTextureDesc[] fTex,
         uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount)
     {
-        if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
+        if (c.Deferred) { if (!c.InCommandList) return ERR_NOT_WITHIN_COMMAND_LIST; }
+        else if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         if (vp == null || fp == null) return ERR_NULL_PROGRAM;
         if (indexData == 0) return ERR_INVALID_POINTER;
-        var cmd = Gpu.RentDraw();
-        cmd.VertexProgram = vp;
-        cmd.FragmentProgram = fp;
-        cmd.State = c.State;
-        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, ref cmd.VertexUniforms);
-        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, ref cmd.FragmentUniforms) : 0;
-        vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
-        fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);
-        cmd.PrimitiveType = (byte)(primType >> 26);
-        cmd.Index32 = indexType != 0;
-        cmd.IndexAddress = indexData;
-        cmd.IndexCount = indexCount;
-        cmd.InstanceCount = Math.Max(instanceCount, 1);
         // visibility test (front state; the back state applies when only it is enabled)
+        uint visAddress = 0;
+        bool visIncrement = false;
         bool front = c.VisFrontEnable, back = c.VisBackEnable;
         if (c.VisBuffer != 0 && (front || back))
         {
             uint index = front ? c.VisFrontIndex : c.VisBackIndex;
             if (index < Math.Max(c.VisStride / 4, 1))
             {
-                cmd.VisAddress = c.VisBuffer + index * 4;
-                cmd.VisIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
+                visAddress = c.VisBuffer + index * 4;
+                visIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
             }
         }
-        vTex.CopyTo(cmd.VertexTextures, 0);
-        fTex.CopyTo(cmd.FragmentTextures, 0);
-        streams.CopyTo(cmd.Streams, 0);
-        Gpu.Submit(cmd);
+        if (c.Deferred)
+        {
+            int r = RecordDraw(c, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+            if (r != 0) return r;
+        }
+        else SubmitDraw(in c.State, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
 
         if (c.VertexDefaultReserved)
         {
@@ -719,6 +857,290 @@ public sealed class Gxm : HleModule
             c.FragmentRingUsed += (fp.Info?.Program.DefaultUniformBufferCount ?? 0) * 4;
             c.FragmentDefaultReserved = false;
         }
+        return 0;
+    }
+
+    void SubmitDraw(in DrawState state, GxmVertexProgram vp, GxmFragmentProgram fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex,
+        GxmTextureDesc[] fTex, uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount,
+        uint visAddress, bool visIncrement)
+    {
+        var cmd = Gpu.RentDraw();
+        cmd.VertexProgram = vp;
+        cmd.FragmentProgram = fp;
+        cmd.State = state;
+        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, ref cmd.VertexUniforms);
+        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, ref cmd.FragmentUniforms) : 0;
+        vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
+        fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);
+        cmd.PrimitiveType = (byte)(primType >> 26);
+        cmd.Index32 = indexType != 0;
+        cmd.IndexAddress = indexData;
+        cmd.IndexCount = indexCount;
+        cmd.InstanceCount = Math.Max(instanceCount, 1);
+        if (visAddress != 0)
+        {
+            cmd.VisAddress = visAddress;
+            cmd.VisIncrement = visIncrement;
+        }
+        vTex.CopyTo(cmd.VertexTextures, 0);
+        fTex.CopyTo(cmd.FragmentTextures, 0);
+        streams.CopyTo(cmd.Streams, 0);
+        Gpu.Submit(cmd);
+    }
+
+    // =========================================================== deferred contexts / command lists
+    // A deferred context records draw "recipes" (state, programs, textures, streams, uniform buffer addresses) between
+    // sceGxmBeginCommandList and sceGxmEndCommandList; sceGxmExecuteCommandList replays them inside the scene of an
+    // immediate context, reading the uniform data at that point. VDM memory is accounted only so callbacks and list
+    // lifetimes look like the hardware's (bytes per recorded draw unconfirmed).
+
+    const uint VdmCostPerDraw = 64, VdmCallbackRequest = 1024, RingCallbackRequest = 4096, DeferredMinBufferSize = 1024;
+    const uint CommandListMagic = 0x4C435356; // "VSCL"
+    const int MaxCommandLists = 8192;
+    readonly Dictionary<uint, RecordedCommandList> _commandLists = new();
+    uint _nextCommandListId = 1;
+
+    /// <summary>Calls a deferred-context memory callback: void *cb(void *data, SceSize requested, SceSize *size).</summary>
+    static uint CallMemoryCallback(GxmContext c, uint cb, uint requested, out uint size)
+    {
+        size = 0;
+        if (cb == 0 || GuestThread.Current is not { } t) return 0;
+        GuestMemory.W32(c.SizeScratch, 0);
+        uint mem = (uint)t.CallGuest(cb, c.CallbackData, requested, c.SizeScratch);
+        size = GuestMemory.R32(c.SizeScratch);
+        return mem;
+    }
+
+    /// <summary>Accounts VDM space for a recorded draw, asking the VDM callback for a new block when the current one is
+    /// full (the list then spans from its start to the end of the old block plus the new one).</summary>
+    int ConsumeVdm(GxmContext c, uint bytes)
+    {
+        if (c.VdmUsed + bytes <= c.VdmBufferSize) { c.VdmUsed += bytes; return 0; }
+        if (c.VdmCallback != 0)
+        {
+            uint mem = CallMemoryCallback(c, c.VdmCallback, Math.Max(VdmCallbackRequest, bytes), out uint size);
+            if (mem == 0) return ERR_RESERVE_FAILED;
+            c.VdmBuffer = mem; c.VdmBufferSize = size; c.VdmUsed = Math.Min(bytes, size);
+            return 0;
+        }
+        c.VdmUsed = Math.Min(bytes, c.VdmBufferSize); // no callback: the ring wraps
+        return 0;
+    }
+
+    int RecordDraw(GxmContext c, GxmVertexProgram vp, GxmFragmentProgram fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex,
+        GxmTextureDesc[] fTex, uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount,
+        uint visAddress, bool visIncrement)
+    {
+        int r = ConsumeVdm(c, VdmCostPerDraw);
+        if (r != 0) return r;
+        var d = new DrawRecipe
+        {
+            Vp = vp, Fp = fp, State = c.State,
+            PrimType = primType, IndexType = indexType, IndexData = indexData, IndexCount = indexCount, InstanceCount = instanceCount,
+            VisAddress = visAddress, VisIncrement = visIncrement, ViewportSet = c.ViewportSet, RegionClipSet = c.RegionClipSet,
+        };
+        vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(d.VUbs);
+        fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(d.FUbs);
+        vTex.CopyTo(d.VTex, 0);
+        fTex.CopyTo(d.FTex, 0);
+        streams.CopyTo(d.Streams, 0);
+        c.Recording!.Add(d);
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmCreateDeferredContext(uint p, Ptr<uint> outContext)
+    {
+        if (p == 0 || outContext.IsNull) return ERR_INVALID_POINTER;
+        uint hostMem = GuestMemory.R32(p);
+        uint h = hostMem != 0 ? (hostMem + 7) & ~7u : AllocObj(64, "SceGxmDeferredContext");
+        var c = new GxmContext
+        {
+            Handle = h, Deferred = true,
+            VdmCallback = GuestMemory.R32(p + 0x08), VertexCallback = GuestMemory.R32(p + 0x0C),
+            FragmentCallback = GuestMemory.R32(p + 0x10), CallbackData = GuestMemory.R32(p + 0x14),
+            VdmBuffer = GuestMemory.R32(p + 0x18), VdmBufferSize = GuestMemory.R32(p + 0x1C),
+            VertexRing = GuestMemory.R32(p + 0x20), VertexRingSize = GuestMemory.R32(p + 0x24),
+            FragmentRing = GuestMemory.R32(p + 0x28), FragmentRingSize = GuestMemory.R32(p + 0x2C),
+            SizeScratch = Emu.Memory.Alloc(16, "SceGxmDeferredContext size", MemoryRegion.User, 16),
+        };
+        _contexts[h] = c;
+        outContext.Value = h;
+        return 0;
+    }
+
+    GxmContext? DeferredCtx(uint ctx, out int error)
+    {
+        var c = Ctx(ctx);
+        error = c == null ? ERR_INVALID_POINTER : !c.Deferred ? ERR_INVALID_VALUE : 0;
+        return error == 0 ? c : null;
+    }
+
+    [Hle]
+    int sceGxmDestroyDeferredContext(uint ctx)
+    {
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        _contexts.TryRemove(ctx, out _);
+        lock (_commandLists)
+            foreach (var id in _commandLists.Where(kv => kv.Value.Owner == ctx).Select(kv => kv.Key).ToList()) _commandLists.Remove(id);
+        if (c.SizeScratch != 0) Emu.Memory.Free(c.SizeScratch);
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmBeginCommandList(uint ctx)
+    {
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        c.VertexRingUsed = c.FragmentRingUsed = 0;
+        if (c.VertexRing == 0 && c.VertexCallback != 0)
+        {
+            uint mem = CallMemoryCallback(c, c.VertexCallback, RingCallbackRequest, out uint size);
+            if (mem == 0) return ERR_RESERVE_FAILED;
+            c.VertexRing = mem; c.VertexRingSize = size;
+        }
+        if (c.FragmentRing == 0 && c.FragmentCallback != 0)
+        {
+            uint mem = CallMemoryCallback(c, c.FragmentCallback, RingCallbackRequest, out uint size);
+            if (mem == 0) return ERR_RESERVE_FAILED;
+            c.FragmentRing = mem; c.FragmentRingSize = size;
+        }
+        if ((c.VdmBuffer == 0 || c.VdmUsed >= c.VdmBufferSize) && c.VdmCallback != 0)
+        {
+            uint mem = CallMemoryCallback(c, c.VdmCallback, VdmCallbackRequest, out uint size);
+            if (mem == 0) return ERR_RESERVE_FAILED;
+            c.VdmBuffer = mem; c.VdmBufferSize = size; c.VdmUsed = 0;
+        }
+        c.InCommandList = true;
+        c.ViewportSet = c.RegionClipSet = false;
+        c.VdmListStart = c.VdmBuffer + c.VdmUsed;
+        c.Recording = new List<DrawRecipe>();
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmEndCommandList(uint ctx, uint list)
+    {
+        if (list == 0) return ERR_INVALID_POINTER;
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (!c.InCommandList) return ERR_NOT_WITHIN_COMMAND_LIST;
+        uint start = c.VdmListStart, end = c.VdmBuffer + c.VdmUsed;
+        if (end < start || end - start > c.VdmBufferSize) start = c.VdmBuffer; // the list moved to a new VDM block
+        uint id;
+        lock (_commandLists)
+        {
+            // the VDM memory of older lists of this context that this one overwrote was reused: they are gone
+            if (end > start)
+                foreach (var old in _commandLists.Values.Where(l => l.Owner == ctx && l.VdmStart < end && start < l.VdmEnd).Select(l => l.Id).ToList())
+                    _commandLists.Remove(old);
+            if (_commandLists.Count >= MaxCommandLists)
+            {
+                Log.WarnOnce("gxm-cmdlists", "sceGxmEndCommandList: too many live command lists, dropping the oldest");
+                _commandLists.Remove(_commandLists.Keys.Min());
+            }
+            id = _nextCommandListId++;
+            _commandLists[id] = new RecordedCommandList { Id = id, Owner = ctx, Draws = c.Recording!.ToArray(), VdmStart = start, VdmEnd = end };
+        }
+        GuestMemory.Fill(list, 0, 32);
+        GuestMemory.W32(list, CommandListMagic);
+        GuestMemory.W32(list + 4, id);
+        GuestMemory.W32(list + 8, ctx);
+        c.InCommandList = false;
+        c.Recording = null;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmExecuteCommandList(uint ctx, uint list)
+    {
+        var c = Ctx(ctx);
+        if (c == null || list == 0) return ERR_INVALID_POINTER;
+        if (c.Deferred) return ERR_INVALID_VALUE;
+        if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
+        if (GuestMemory.R32(list) != CommandListMagic) return ERR_INVALID_POINTER;
+        RecordedCommandList? rec;
+        lock (_commandLists) _commandLists.TryGetValue(GuestMemory.R32(list + 4), out rec);
+        if (rec == null) return ERR_INVALID_POINTER;
+        foreach (var d in rec.Draws)
+        {
+            // viewport and region clip come from the executing scene unless the deferred context set them itself
+            var st = d.State;
+            ref readonly var im = ref c.State;
+            if (!d.ViewportSet)
+            {
+                st.ViewportEnabled = im.ViewportEnabled;
+                st.VpOffX = im.VpOffX; st.VpOffY = im.VpOffY; st.VpOffZ = im.VpOffZ;
+                st.VpScaleX = im.VpScaleX; st.VpScaleY = im.VpScaleY; st.VpScaleZ = im.VpScaleZ;
+            }
+            if (!d.RegionClipSet)
+            {
+                st.RegionClipMode = im.RegionClipMode;
+                st.ClipMinX = im.ClipMinX; st.ClipMinY = im.ClipMinY; st.ClipMaxX = im.ClipMaxX; st.ClipMaxY = im.ClipMaxY;
+            }
+            SubmitDraw(in st, d.Vp, d.Fp, d.VUbs, d.FUbs, d.VTex, d.FTex, d.Streams, d.PrimType, d.IndexType, d.IndexData, d.IndexCount,
+                d.InstanceCount, d.VisAddress, d.VisIncrement);
+        }
+        if (Gpu.Pending > 20000) Gpu.WaitFor(Gpu.Submitted - 2000);
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmGetDeferredContextVdmBuffer(uint ctx, Ptr<uint> mem)
+    {
+        if (mem.IsNull) return ERR_INVALID_POINTER;
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        mem.Value = c.VdmBuffer;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmSetDeferredContextVdmBuffer(uint ctx, uint mem, uint size)
+    {
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        c.VdmBuffer = mem; c.VdmBufferSize = size; c.VdmUsed = 0;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmGetDeferredContextVertexBuffer(uint ctx, Ptr<uint> mem)
+    {
+        if (mem.IsNull) return ERR_INVALID_POINTER;
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        mem.Value = c.VertexRing;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmSetDeferredContextVertexBuffer(uint ctx, uint mem, uint size)
+    {
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        if ((size != 0 && size < DeferredMinBufferSize) || (mem != 0 && size == 0)) return ERR_INVALID_VALUE;
+        c.VertexRing = mem; c.VertexRingSize = size; c.VertexRingUsed = 0;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmGetDeferredContextFragmentBuffer(uint ctx, Ptr<uint> mem)
+    {
+        if (mem.IsNull) return ERR_INVALID_POINTER;
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        mem.Value = c.FragmentRing;
+        return 0;
+    }
+
+    [Hle]
+    int sceGxmSetDeferredContextFragmentBuffer(uint ctx, uint mem, uint size)
+    {
+        if (DeferredCtx(ctx, out int err) is not { } c) return err;
+        if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
+        if ((size != 0 && size < DeferredMinBufferSize) || (mem != 0 && size == 0)) return ERR_INVALID_VALUE;
+        c.FragmentRing = mem; c.FragmentRingSize = size; c.FragmentRingUsed = 0;
         return 0;
     }
 
@@ -870,7 +1292,8 @@ public sealed class Gxm : HleModule
 
     [Hle] int sceGxmPrecomputedVertexStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
     [Hle] int sceGxmPrecomputedFragmentStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
-    [Hle] uint sceGxmTextureGetMipmapCountUnsafe(uint tex) => GxmTextureDesc.Read(tex).MipCount;
+    /// <summary>No type check: the raw field + 1, even for linear strided textures where those bits belong to the stride.</summary>
+    [Hle] uint sceGxmTextureGetMipmapCountUnsafe(uint tex) => (((GuestMemory.R32(tex) >> 17) & 0xF) + 1) & 0xF;
 
     static int PrecomputedSetDefaultUniformBuffer(uint state, uint data)
     {
@@ -908,7 +1331,7 @@ public sealed class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null || draw == 0) return ERR_INVALID_POINTER;
-        if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
+        if (!c.Deferred && !c.InScene) return ERR_NOT_WITHIN_SCENE;
         var vp = c.VertexProgram; var fp = c.FragmentProgram;
         var vUbs = (uint[])c.VertexUniformBuffers.Clone(); var fUbs = (uint[])c.FragmentUniformBuffers.Clone();
         var vTex = (GxmTextureDesc[])c.VertexTextures.Clone(); var fTex = (GxmTextureDesc[])c.FragmentTextures.Clone();
@@ -950,6 +1373,62 @@ public sealed class Gxm : HleModule
     [Hle] bool sceGxmProgramIsFragColorUsed(uint program) => (GuestMemory.R32(program + 0x14) & GxpProgram.FlagFragColorUsed) != 0;
     [Hle] uint sceGxmProgramGetDefaultUniformBufferSize(uint program) => GuestMemory.R32(program + 0x64) * 4;
     [Hle] uint sceGxmProgramGetParameterCount(uint program) => GuestMemory.R32(program + 0x24);
+
+    /// <summary>True when both GXP blobs are identical (same size at +8 and same bytes).</summary>
+    [Hle]
+    bool sceGxmProgramIsEquivalent(uint a, uint b)
+    {
+        if (a == 0 || b == 0) return false;
+        if (a == b) return true;
+        uint size = GuestMemory.R32(a + 8);
+        if (size != GuestMemory.R32(b + 8) || size > 16 * 1024 * 1024) return false;
+        return GuestMemory.Span(a, (int)size).SequenceEqual(GuestMemory.Span(b, (int)size));
+    }
+
+    /// <summary>SceGxmFragmentProgramInputs mask of the varyings a fragment program reads: POSITION 1, FOG 2, COLOR0 4,
+    /// COLOR1 8, TEXCOORD0..9 0x10..0x2000, SPRITECOORD 0x4000. Each fragment attribute descriptor names up to two
+    /// resources, one in the low nibble of its info word and one in bits 12-15 (0xF = unused).</summary>
+    internal static uint FragmentProgramInputs(GxpProgram p)
+    {
+        if (!p.IsFragment) return 0;
+        uint mask = 0;
+        foreach (var d in p.FragmentAttributeDescriptors())
+        {
+            uint info = d.AttributeInfo;
+            uint lo = info & 0xF;
+            if (lo != 0xF)
+            {
+                if ((info & 0x400) != 0) mask |= 1u << 14;
+                else if (lo <= 9) mask |= 1u << (int)(4 + lo);
+            }
+            uint hi = (info >> 12) & 0xF;
+            if (hi != 0xF)
+            {
+                if ((info & 0x40000000) != 0) mask |= 1u << 14;
+                else if (hi <= 9) mask |= 1u << (int)(4 + hi);
+                else mask |= hi switch { 0xA => 1u << 2, 0xB => 1u << 3, 0xC => 1u << 1, 0xD => 1u, _ => 0u };
+            }
+        }
+        return mask;
+    }
+
+    [Hle] uint sceGxmProgramGetFragmentProgramInputs(uint program) => program == 0 ? 0 : FragmentProgramInputs(GxmProgramInfo.Get(program).Program);
+
+    /// <summary>SceGxmPassType of a patched fragment program: MASK_UPDATE 0x06000000, DEPTH_REPLACE 0x0A000000, DISCARD
+    /// 0x04000000, TRANSLUCENT 0x02000000 (blending on), OPAQUE 0. The precedence among them is not confirmed (most
+    /// restrictive first).</summary>
+    [Hle]
+    uint sceGxmFragmentProgramGetPassType(uint fp)
+    {
+        if (!_fragmentPrograms.TryGetValue(fp, out var f)) return 0;
+        if (f.IsMaskUpdate) return 0x06000000;
+        var p = f.Info?.Program;
+        if (p != null && (p.Flags & GxpProgram.FlagDepthUsed) != 0) return 0x0A000000;
+        if (p != null && (p.Flags & GxpProgram.FlagDiscardUsed) != 0) return 0x04000000;
+        if (f.Blend is { } b && !(b.ColorFunc == 0 && b.AlphaFunc == 0) && !(b.ColorSrc == 1 && b.ColorDst == 0 && b.AlphaSrc == 1 && b.AlphaDst == 0))
+            return 0x02000000;
+        return 0;
+    }
 
     [Hle]
     uint sceGxmProgramGetParameter(uint program, uint index)
@@ -1276,9 +1755,7 @@ public sealed class Gxm : HleModule
         if (width > 4096 || height > 4096) return ERR_INVALID_VALUE;
         if ((byteStride & 3) != 0) return ERR_INVALID_ALIGNMENT;
         if (byteStride < 4 || byteStride > 131072) return ERR_INVALID_VALUE;
-        uint s = (byteStride >> 2) - 1;
-        uint w0 = ((s & 1) << 9) | (((s >> 1) & 3) << 10) | (((s >> 3) & 0xF) << 17) | (((s >> 7) & 0x3F) << 21)
-                  | (2u << 3) | (2u << 6) | (((format >> 31) & 1) << 31);
+        uint w0 = EncodeStride((2u << 3) | (2u << 6) | (((format >> 31) & 1) << 31), byteStride);
         uint w1 = ((height - 1) & 0xFFF) | (((width - 1) & 0xFFF) << 12) | (((format >> 24) & 0x1F) << 24) | ((TexLinearStrided >> 29) << 29);
         GuestMemory.W32(tex, w0);
         GuestMemory.W32(tex + 4, w1);
@@ -1288,6 +1765,26 @@ public sealed class Gxm : HleModule
     }
 
     static bool IsStrided(uint tex) => (GuestMemory.R32(tex + 4) >> 29) == (TexLinearStrided >> 29);
+
+    /// <summary>Linear strided byte stride, as s = stride/4 - 1 spread over word 0: bit 9, bits 10-11, 17-20 and 21-26.</summary>
+    const uint StrideBitsMask = (1u << 9) | (3u << 10) | (0xFu << 17) | (0x3Fu << 21);
+
+    static uint EncodeStride(uint w0, uint byteStride)
+    {
+        uint s = (byteStride >> 2) - 1;
+        return (w0 & ~StrideBitsMask) | ((s & 1) << 9) | (((s >> 1) & 3) << 10) | (((s >> 3) & 0xF) << 17) | (((s >> 7) & 0x3F) << 21);
+    }
+
+    [Hle]
+    int sceGxmTextureSetStride(uint tex, uint byteStride)
+    {
+        if (tex == 0) return ERR_INVALID_POINTER;
+        if (!IsStrided(tex)) return ERR_UNSUPPORTED;
+        if ((byteStride & 3) != 0) return ERR_INVALID_ALIGNMENT;
+        if (byteStride < 4 || byteStride > 131072) return ERR_INVALID_VALUE;
+        GuestMemory.W32(tex, EncodeStride(GuestMemory.R32(tex), byteStride));
+        return 0;
+    }
 
     static int SetBits(uint addr, int shift, int bits, uint value)
     {
@@ -1305,14 +1802,19 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmTextureSetMipFilter(uint tex, uint f) => IsStrided(tex) ? 0 : SetBits(tex, 9, 1, f != 0 ? 1u : 0);
     [Hle] int sceGxmTextureSetUAddrMode(uint tex, uint m) => SetBits(tex, 6, 3, m);
     [Hle] int sceGxmTextureSetVAddrMode(uint tex, uint m) => SetBits(tex, 3, 3, m);
-    [Hle] int sceGxmTextureSetUAddrModeSafe(uint tex, uint m) => SetBits(tex, 6, 3, m);
-    [Hle] int sceGxmTextureSetVAddrModeSafe(uint tex, uint m) => SetBits(tex, 3, 3, m);
+    [Hle] int sceGxmTextureSetUAddrModeSafe(uint tex, uint m) => tex != 0 && IsStrided(tex) ? 0 : SetBits(tex, 6, 3, m);
+    [Hle] int sceGxmTextureSetVAddrModeSafe(uint tex, uint m) => tex != 0 && IsStrided(tex) ? 0 : SetBits(tex, 3, 3, m);
+    /// <summary>Linear strided textures do not support address modes: they read as CLAMP (2).</summary>
+    [Hle] uint sceGxmTextureGetUAddrModeSafe(uint tex) => IsStrided(tex) ? 2u : (GuestMemory.R32(tex) >> 6) & 7;
+    [Hle] uint sceGxmTextureGetVAddrModeSafe(uint tex) => IsStrided(tex) ? 2u : (GuestMemory.R32(tex) >> 3) & 7;
     [Hle] int sceGxmTextureSetLodBias(uint tex, uint bias) => IsStrided(tex) ? 0 : SetBits(tex, 21, 6, bias);
     [Hle] int sceGxmTextureSetLodMin(uint tex, uint lodMin) { if (IsStrided(tex)) return 0; int r = SetBits(tex + 8, 0, 2, lodMin & 3); return r != 0 ? r : SetBits(tex + 12, 26, 2, lodMin >> 2); }
     [Hle] uint sceGxmTextureGetLodMin(uint tex) => IsStrided(tex) ? 0 : GxmTextureDesc.Read(tex).LodMin;
     [Hle] int sceGxmTextureSetGammaMode(uint tex, uint mode) => SetBits(tex, 27, 2, mode >> 27);
+    [Hle] uint sceGxmTextureGetGammaMode(uint tex) => ((GuestMemory.R32(tex) >> 27) & 3) << 27;
     [Hle] int sceGxmTextureSetPalette(uint tex, uint data) => SetBits(tex + 12, 0, 26, data >> 6);
     [Hle] int sceGxmTextureSetNormalizeMode(uint tex, uint mode) => SetBits(tex + 12, 31, 1, mode >> 31);
+    [Hle] uint sceGxmTextureGetNormalizeMode(uint tex) => GuestMemory.R32(tex + 12) & 0x80000000;
     [Hle] uint sceGxmTextureGetPalette(uint tex) => (GuestMemory.R32(tex + 12) & 0x03FFFFFF) << 6;
     [Hle] uint sceGxmTextureGetFormat(uint tex) => GxmTextureDesc.Read(tex).Format;
     [Hle] uint sceGxmTextureGetType(uint tex) => GuestMemory.R32(tex + 4) & 0xE0000000;
@@ -1448,6 +1950,7 @@ public sealed class Gxm : HleModule
         if (srcAddr == 0 || dstAddr == 0) return ERR_INVALID_POINTER;
         int bpp = TransferBpp(srcFormat);
         var notif = ReadNotification(notification);
+        Log.DebugOnce($"downscale-{srcAddr:X8}-{dstAddr:X8}", $"[gxm] TransferDownscale 0x{srcAddr:X8} ({srcX},{srcY} {srcWidth}x{srcHeight} stride {srcStride}) -> 0x{dstAddr:X8} ({dstX},{dstY} stride {dstStride}) fmt 0x{srcFormat:X8}");
         Gpu.Submit(new CallbackCommand
         {
             WriteAddress = dstAddr, WriteSize = (uint)Math.Abs(dstStride) * (dstY + srcHeight / 2),
