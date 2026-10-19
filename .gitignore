@@ -6,6 +6,7 @@
 # dotenv files
 .env
 .vitadata/
+.claude/
 
 # User-specific files
 *.rsuser
