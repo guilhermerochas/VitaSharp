@@ -201,6 +201,15 @@ public sealed class ThreadMgr : HleModule
         return Self.TlsBase + (uint)key * 4;
     }
 
+    /// <summary>TLS slot address of another thread (0 = the calling thread); NULL for an unknown thread or key.</summary>
+    [Hle]
+    uint sceKernelGetThreadTLSAddr(int thid, int key)
+    {
+        if (key < 0 || key >= 0x100) return 0;
+        var t = K.GetThread(thid);
+        return t == null ? 0 : t.TlsBase + (uint)key * 4;
+    }
+
     [Hle] int sceKernelCheckWaitableStatus() => 0;
     [Hle] int sceKernelGetThreadExitStatus(int thid, Ptr<int> status) { var t = K.GetThread(thid); if (t == null) return SceError.UNKNOWN_THREAD_ID; if (t.Status != ThreadStatus.Dormant) return SceError.NOT_DORMANT; status.TrySet(t.ExitStatus); return 0; }
 
