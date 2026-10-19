@@ -16,15 +16,31 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // --data=<root> overrides the data folder for any command (same as VITASHARP_DATA)
+        var data = args.FirstOrDefault(a => a.StartsWith("--data="));
+        if (data != null)
+        {
+            Environment.SetEnvironmentVariable("VITASHARP_DATA", Path.GetFullPath(data["--data=".Length..]));
+            args = args.Where(a => a != data).ToArray();
+        }
+
         if (args.Length == 0 || args[0] == "gui") return Launcher.LauncherApp.Run(args);
 
         switch (args[0])
         {
+            case "install" when args.Length >= 2 && IsArchive(args[1]):
+                return InstallVpkCli(args[1], args.Skip(2).ToArray());
             case "install" when args.Length >= 3:
             {
                 var t = PkgInstaller.Install(args[1], args[2], Ux0, Console.WriteLine);
                 Console.WriteLine($"Installed {t.TitleId} \"{t.Title}\" ({t.Type}) -> {t.Path}");
                 return 0;
+            }
+            case "run" when args.Length >= 2 && IsArchive(args[1]) && File.Exists(args[1]):
+            {
+                var app = InstallVpkForRun(args[1], args.Skip(2).ToArray());
+                if (app == null) return 1;
+                return Runner.Run(app, args.Skip(2).Where(a => a != "--reinstall" && !a.StartsWith("--license=")).ToArray());
             }
             case "self2elf" when args.Length >= 3:
             {
@@ -90,6 +106,87 @@ public static class Program
         throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p})");
     }
 
+    static bool IsArchive(string path) =>
+        path.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+
+    static string? OptValue(string[] options, string name) =>
+        options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
+
+    /// <summary>install &lt;file.vpk|.zip&gt; [--license=&lt;work.bin|.rif&gt;] [--force]</summary>
+    static int InstallVpkCli(string archive, string[] options)
+    {
+        bool force = options.Contains("--force") || options.Contains("-y");
+        int lastPercent = -1;
+        try
+        {
+            var results = VpkInstaller.Install(archive, Ux0, new VpkInstallOptions
+            {
+                Log = Console.WriteLine,
+                LicensePath = OptValue(options, "--license"),
+                ConfirmOverwrite = c => force || AskYesNo($"{c.TitleId} ({c.Kind}) is already installed at {c.DestinationPath}. Replace it?"),
+                Progress = p =>
+                {
+                    int pct = (int)(p.Fraction * 100);
+                    if (pct / 10 == lastPercent / 10 && pct != 100) return;
+                    lastPercent = pct;
+                    Console.WriteLine($"  {pct,3}%");
+                },
+            });
+            foreach (var r in results)
+                Console.WriteLine(r.Installed
+                    ? $"{(r.Replaced ? "Updated" : "Installed")} {r.TitleId} \"{r.Content.Title}\" ({r.Content.Kind}, category {r.Content.Category}) -> {r.InstallPath}"
+                    : $"Skipped {r.TitleId} ({r.Content.Kind}): already installed (use --force to replace)");
+            return 0;
+        }
+        catch (Exception e) when (e is InvalidDataException or VpkLicenseException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine("Install failed: " + e.Message);
+            return 1;
+        }
+    }
+
+    /// <summary>run &lt;file.vpk&gt;: installs the archive (unless its app is already installed) and returns the app folder.</summary>
+    static string? InstallVpkForRun(string archive, string[] options)
+    {
+        try
+        {
+            var contents = VpkInstaller.Inspect(archive, Ux0);
+            var app = contents.FirstOrDefault(c => c.Kind == VpkContentKind.App);
+            bool reinstall = options.Contains("--reinstall");
+            if (app != null && app.AlreadyInstalled && !reinstall)
+            {
+                Console.WriteLine($"{app.TitleId} is already installed; booting {app.DestinationPath} (use --reinstall to install the VPK again)");
+                return app.DestinationPath;
+            }
+            Console.WriteLine($"Installing {Path.GetFileName(archive)}…");
+            VpkInstaller.Install(archive, Ux0, new VpkInstallOptions
+            {
+                Log = Console.WriteLine,
+                LicensePath = OptValue(options, "--license"),
+                ConfirmOverwrite = c => reinstall || c.Kind != VpkContentKind.App,
+            });
+            if (app != null) return app.DestinationPath;
+            // a patch/add-on archive: boot the base game it belongs to, when installed
+            var baseApp = Path.Combine(Ux0, "app", contents[0].TitleId);
+            if (Directory.Exists(baseApp)) return baseApp;
+            Console.Error.WriteLine($"Installed {contents[0].TitleId} ({contents[0].Kind}), but its base game is not installed, so there is nothing to boot.");
+            return null;
+        }
+        catch (Exception e) when (e is InvalidDataException or VpkLicenseException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine("Install failed: " + e.Message);
+            return null;
+        }
+    }
+
+    static bool AskYesNo(string question)
+    {
+        if (Console.IsInputRedirected) return false;
+        Console.Write(question + " [y/N] ");
+        var answer = Console.ReadLine()?.Trim();
+        return answer != null && (answer.Equals("y", StringComparison.OrdinalIgnoreCase) || answer.Equals("yes", StringComparison.OrdinalIgnoreCase));
+    }
+
     static int ListImports(string titleArg)
     {
         Log.Level = LogLevel.Warn;
@@ -122,7 +219,11 @@ public static class Program
         Console.WriteLine("VitaSharp - PS Vita emulator");
         Console.WriteLine("  (no arguments)                        open the game library window");
         Console.WriteLine("  install <game.pkg> <work.bin|.rif>   install a package into the virtual ux0");
+        Console.WriteLine("  install <game.vpk|.zip> [--license=<work.bin|.rif>] [--force]");
+        Console.WriteLine("                                       install a VPK/content zip (app, patch or add-on, by param.sfo category)");
         Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
+        Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
+        Console.WriteLine("  --data=<folder>                      use another data folder (default %APPDATA%/VitaSharp)");
         Console.WriteLine("  test <scenario.txt>                  run an automated scenario (frames, contact sheet, report)");
         Console.WriteLine("  imports <TITLEID|folder>             list the system functions a title needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
