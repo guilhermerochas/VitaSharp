@@ -30,6 +30,9 @@ public sealed class EndSceneCommand : GpuCommand
 /// <summary>sceGxmFinish: the backend completes every submitted GPU operation, including render-target writebacks, before retiring it.</summary>
 public sealed class FinishCommand : GpuCommand;
 
+/// <summary>sceGxmMidSceneFlush: what the scene rendered so far is stored to memory, so later draws of the same scene can sample it.</summary>
+public sealed class MidSceneFlushCommand : GpuCommand;
+
 public sealed class PresentCommand : GpuCommand
 {
     public required DisplayFrame Frame;
@@ -58,6 +61,8 @@ public struct SideState
     public bool FragmentEnabled;
     public int DepthBiasFactor, DepthBiasUnits;
     public byte PointLineWidth;
+    /// <summary>sceGxmSet*LineFillLastPixelEnable: rasterize the last pixel of line segments (not expressible in Vulkan; kept for completeness).</summary>
+    public bool LineFillLastPixel;
     public static SideState Default => new() { DepthFunc = 3, DepthWrite = true, Stencil = StencilState.Default, FragmentEnabled = true, PointLineWidth = 1 };
 }
 
@@ -71,6 +76,12 @@ public struct DrawState
     public float VpOffX, VpOffY, VpOffZ, VpScaleX, VpScaleY, VpScaleZ;
     public byte RegionClipMode;  // 0 none, 1 all, 2 outside, 3 inside
     public int ClipMinX, ClipMinY, ClipMaxX, ClipMaxY;
+    /// <summary>sceGxmSetWBufferEnable: depth uses the vertex W instead of Z/W. Depth ordering is the same under a perspective
+    /// projection, so the renderer may ignore it.</summary>
+    public bool WBuffer;
+    /// <summary>sceGxmSetWClampEnable/Value: clamp of the transformed vertex W (renderer support pending).</summary>
+    public bool WClampEnabled;
+    public float WClampValue;
 }
 
 /// <summary>Raw 16-byte SceGxmTexture control words.</summary>

@@ -71,9 +71,8 @@ public sealed class ThreadMgr : HleModule
 
     // ------------------------------------------------------------------ thread signals (libult parks/unparks workers with these)
 
-    const int ERR_ALREADY_SENT = unchecked((int)0x8002804C); // SCE_KERNEL_ERROR_ALREADY_SENT (value unverified; callers only test != 0)
-
-    /// <summary>sceKernelWaitSignal(unk, delay, timeout): blocks until another thread sent this thread a signal, then consumes it.</summary>
+    /// <summary>sceKernelWaitSignal(unk, delay, timeout): blocks until another thread sent this thread a signal, then consumes it.
+    /// A pending signal is consumed at once without touching timeout; delay is ignored (as Vita3K).</summary>
     [Hle("sceKernelWaitSignal")]
     [Hle("sceKernelWaitSignalCB")]
     [Hle("_sceKernelWaitSignal")]
@@ -92,11 +91,12 @@ public sealed class ThreadMgr : HleModule
     [Hle]
     int sceKernelSendSignal(int thid)
     {
+        if (thid == SCE_KERNEL_THREAD_ID_SELF) return SceError.ILLEGAL_THREAD_ID; // Vita3K
         var t = K.GetThread(thid);
         if (t == null) { Log.Warn($"sceKernelSendSignal(0x{thid:X}): unknown thread"); return SceError.UNKNOWN_THREAD_ID; }
         lock (t.SignalLock)
         {
-            if (t.SignalPending) { Log.Debug($"sceKernelSendSignal({t.Name}): already sent"); return ERR_ALREADY_SENT; }
+            if (t.SignalPending) { Log.Debug($"sceKernelSendSignal({t.Name}): already sent"); return SceError.ALREADY_SENT; }
             t.SignalPending = true;
             Monitor.PulseAll(t.SignalLock);
         }
@@ -139,9 +139,117 @@ public sealed class ThreadMgr : HleModule
         return t == null ? SceError.UNKNOWN_THREAD_ID : t.Affinity;
     }
 
-    [Hle] int sceKernelChangeThreadVfpException(int clear, int set) => 0;
+    // ------------------------------------------------------------------ VFP exception mask (kernel TLS word 4)
+
+    const uint VfpExceptionBits = 0x0800009F; // IOC DZC OFC UFC IXC IDC QC
+
+    ref int VfpExceptionWord(GuestThread t) => ref GuestMemory.Ref<int>(t.TlsBase + GuestThread.TlsVfpException * 4);
+
+    /// <summary>mask = set | (mask &amp; ~clear). VitaSharp raises no VFP traps; the mask is only kept for the getter.</summary>
+    [Hle]
+    int sceKernelChangeThreadVfpException(uint clear, uint set)
+    {
+        if (((clear | set) & ~VfpExceptionBits) != 0 || (clear & set) != 0) return SceError.INVALID_ARGUMENT;
+        ref int w = ref VfpExceptionWord(Self);
+        w = (int)(set | ((uint)w & ~clear));
+        return 0;
+    }
+
+    [Hle] int sceKernelGetCurrentThreadVfpException() => VfpExceptionWord(Self);
+
     [Hle] int sceKernelGetProcessId() => 0x40010003;
-    [Hle] int sceKernelGetThreadmgrUIDClass(int uid) => 0;
+
+    /// <summary>Class of the threadmgr object behind a UID (thread 1 ... simple event 13; see KernelObject.UidClass).</summary>
+    [Hle]
+    int sceKernelGetThreadmgrUIDClass(int uid)
+    {
+        if (K.GetThread(uid) != null) return 1;
+        var o = K.Objects.Get<KernelObject>(uid);
+        return o == null || o.UidClass == 0 ? SceError.INVALID_UID : o.UidClass;
+    }
+
+    /// <summary>Only NOUSE_VFP (0x01000000) and USER (0x80000000) may change; nothing visible changes (Vita3K).</summary>
+    [Hle]
+    int sceKernelChangeCurrentThreadAttr(uint clearAttr, uint setAttr)
+        => ((clearAttr | setAttr) & ~0x81000000u) != 0 ? SceError.ILLEGAL_ATTR : 0;
+
+    /// <summary>Free bytes left on the calling thread's stack (sp - stack base), 0 if sp is outside it.</summary>
+    [Hle]
+    unsafe int sceKernelCheckThreadStack()
+    {
+        var t = Self;
+        uint sp = t.Core.State->R[13];
+        return sp >= t.StackAddr && sp <= t.StackAddr + t.StackSize ? (int)(sp - t.StackAddr) : 0;
+    }
+
+    /// <summary>SceKernelThreadRunStatus (0x34): size, then cpuInfo[4] {processId, threadId, priority}: the threads
+    /// holding the three user cores; the fourth (system) core reports nothing.</summary>
+    [Hle]
+    int sceKernelGetThreadRunStatus(int thid, uint status)
+    {
+        if (K.GetThread(thid) == null) return SceError.UNKNOWN_THREAD_ID;
+        Span<byte> full = stackalloc byte[0x34];
+        full.Clear();
+        KernelInfo.Put(full, 0, 0x34);
+        int i = 0;
+        foreach (var t in K.Threads)
+        {
+            if (i >= 3) break;
+            if (!t.HasCore) continue;
+            KernelInfo.Put(full, 4 + i * 12, 0x40010003);
+            KernelInfo.Put(full, 8 + i * 12, t.Uid);
+            KernelInfo.Put(full, 12 + i * 12, t.Priority);
+            i++;
+        }
+        return KernelInfo.Write(status, full);
+    }
+
+    /// <summary>SceKernelSystemInfo (0x48): size, activeCpuMask, cpuInfo[4] {idleClock u64, comesOutOfIdleCount,
+    /// threadSwitchCount}. Three user cores active; no scheduler statistics are kept, so counters are 0.</summary>
+    [Hle]
+    int sceKernelGetSystemInfo(uint info)
+    {
+        Span<byte> full = stackalloc byte[0x48];
+        full.Clear();
+        KernelInfo.Put(full, 0, 0x48);
+        KernelInfo.Put(full, 4, 0x7);
+        return KernelInfo.Write(info, full);
+    }
+
+    /// <summary>Runs <paramref name="f"/> as a callback-processing wait (for *CB functions whose name does not end in
+    /// "CB", which the dispatcher would otherwise not recognise).</summary>
+    int WithCallbacks(Func<int> f)
+    {
+        var t = Self;
+        bool prev = t.CallbackWait;
+        t.CallbackWait = true;
+        try
+        {
+            if (t.PendingCallbacks > 0) ProcessCallbacks(t);
+            return f();
+        }
+        finally { t.CallbackWait = prev; }
+    }
+
+    /// <summary>sceKernelCreateThreadForUser opt (0x18): +0 size, +4 stack_size, +8 attr, +0xC cpu_affinity_mask,
+    /// +0x10 opt_param, +0x14 caller_address.</summary>
+    [Hle]
+    int sceKernelCreateThreadForUser(uint namePtr, uint entry, int initPriority, uint opt)
+    {
+        if (namePtr == 0) return unchecked((int)0x80022005); // SCE_KERNEL_ERROR_INVALID_MEMORY_ACCESS
+        if (entry == 0) return SceError.ILLEGAL_ADDR;
+        if (opt == 0) return SceError.ILLEGAL_ADDR;
+        int stackSize = (int)GuestMemory.R32(opt + 4);
+        uint attr = GuestMemory.R32(opt + 8);
+        int affinity = (int)GuestMemory.R32(opt + 0xC);
+        if (stackSize <= 0) return SceError.ILLEGAL_STACK_SIZE;
+        if ((affinity & ~0x70000) != 0) return SceError.ILLEGAL_CPU_AFFINITY_MASK;
+        if ((attr & ~(0x2000u | 0x01000000u | 0x04000000u | 0x80000000u)) != 0) return SceError.ILLEGAL_ATTR;
+        int prio = initPriority == 0 ? Self.Priority : ResolvePriority(initPriority);
+        if (prio is < 64 or > 191) return SceError.ILLEGAL_PRIORITY;
+        var t = K.CreateThread(GuestMemory.ReadCString(namePtr), entry, prio, (uint)Math.Max(stackSize, 0x1000), attr, affinity);
+        return t.Uid;
+    }
 
     [Hle("sceKernelDelayThread")]
     [Hle("sceKernelDelayThreadCB")]
@@ -152,6 +260,19 @@ public sealed class ThreadMgr : HleModule
     }
 
     [Hle] int sceKernelDelayThread200(uint usec) { Kernel.Wait.Sleep(Math.Max(usec, 200u)); return 0; }
+
+    /// <summary>DelayThreadCB with the 200 us minimum; runs callbacks that arrive (name does not end in "CB").</summary>
+    [Hle]
+    int sceKernelDelayThreadCB200(uint usec)
+    {
+        WithCallbacks(() => { Kernel.Wait.Sleep(Math.Max(usec, 200u)); return 0; });
+        if (Self.PendingCallbacks > 0) ProcessCallbacks(Self);
+        return 0;
+    }
+
+    // firmware 0.89x NIDs of sceKernelWaitThreadEnd(CB)
+    [Hle] int sceKernelWaitThreadEnd_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => sceKernelWaitThreadEnd(thid, stat, timeout);
+    [Hle] int sceKernelWaitThreadEndCB_089(int thid, Ptr<int> stat, Ptr<uint> timeout) => WithCallbacks(() => sceKernelWaitThreadEnd(thid, stat, timeout));
 
     static long _getThreadInfoCalls;
 
@@ -188,10 +309,13 @@ public sealed class ThreadMgr : HleModule
     }
 
     [Hle]
-    int sceKernelGetThreadStackFreeSize(int thid)
+    unsafe int sceKernelGetThreadStackFreeSize(int thid)
     {
         var t = K.GetThread(thid);
-        return t == null ? 0 : (int)(t.StackSize / 2);
+        if (t == null) return SceError.UNKNOWN_THREAD_ID;
+        if (t.Status == ThreadStatus.Dormant) return (int)t.StackSize;
+        uint sp = t.Core.State->R[13]; // Vita3K: sp - stack base
+        return sp > t.StackAddr && sp <= t.StackAddr + t.StackSize ? (int)(sp - t.StackAddr) : 0;
     }
 
     [Hle]
@@ -216,11 +340,18 @@ public sealed class ThreadMgr : HleModule
     [Hle]
     int sceKernelRegisterThreadEventHandler(string name, int thid, uint mask, uint handler, uint common)
     {
-        var o = new SimpleEvent { Name = name };
+        // the handler is recorded but not called: VitaSharp emits no thread start/exit events (no installed game needs them)
+        var o = new ThreadEventHandler { Name = name, ThreadMask = thid, EventMask = mask, Handler = handler, Common = common };
         return K.Objects.Register(o);
     }
 
-    [Hle] int sceKernelUnregisterThreadEventHandler(int uid) { K.Objects.Remove(uid); return 0; }
+    [Hle]
+    int sceKernelUnregisterThreadEventHandler(int uid)
+    {
+        if (K.Objects.Get<ThreadEventHandler>(uid) == null) return SceError.UNKNOWN_THREAD_EVENT_ID;
+        K.Objects.Remove(uid);
+        return 0;
+    }
 
     // ------------------------------------------------------------------ time
 
@@ -266,8 +397,8 @@ public sealed class ThreadMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelOpenSema(string name) => K.Objects.FindByName<Semaphore>(name)?.Uid ?? SceError.UNKNOWN_SEMA_ID;
-    [Hle] int sceKernelCloseSema(int uid) => 0;
+    [Hle] int sceKernelOpenSema(uint name) => KernelInfo.OpenByName<Semaphore>(K.Objects, name);
+    [Hle] int sceKernelCloseSema(int uid) => KernelInfo.CloseHandle<Semaphore>(K.Objects, uid, SceError.UNKNOWN_SEMA_ID);
     [Hle] int sceKernelSignalSema(int uid, int signal) => Obj<Semaphore>(uid)?.Signal(signal) ?? SceError.UNKNOWN_SEMA_ID;
 
     [Hle("sceKernelWaitSema")]
@@ -282,14 +413,17 @@ public sealed class ThreadMgr : HleModule
     {
         var s = Obj<Semaphore>(uid);
         if (s == null) return SceError.UNKNOWN_SEMA_ID;
-        GuestMemory.W32(info + 4, (uint)uid);
-        GuestMemory.WriteCString(info + 8, s.Name, 32);
-        GuestMemory.W32(info + 40, s.Attr);
-        GuestMemory.W32(info + 44, (uint)s.InitCount);
-        GuestMemory.W32(info + 48, (uint)s.Count);
-        GuestMemory.W32(info + 52, (uint)s.MaxCount);
-        GuestMemory.W32(info + 56, (uint)s.Waiters);
-        return 0;
+        Span<byte> f = stackalloc byte[0x3C]; // SceKernelSemaInfo
+        f.Clear();
+        lock (s)
+        {
+            KernelInfo.Header(f, uid, s.Name, s.Attr);
+            KernelInfo.Put(f, 0x2C, s.InitCount);
+            KernelInfo.Put(f, 0x30, s.Count);
+            KernelInfo.Put(f, 0x34, s.MaxCount);
+            KernelInfo.Put(f, 0x38, s.Waiters);
+        }
+        return KernelInfo.Write(info, f);
     }
 
     // ------------------------------------------------------------------ event flags
@@ -308,8 +442,8 @@ public sealed class ThreadMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelOpenEventFlag(string name) => K.Objects.FindByName<EventFlag>(name)?.Uid ?? SceError.UNKNOWN_EVF_ID;
-    [Hle] int sceKernelCloseEventFlag(int uid) => 0;
+    [Hle] int sceKernelOpenEventFlag(uint name) => KernelInfo.OpenByName<EventFlag>(K.Objects, name);
+    [Hle] int sceKernelCloseEventFlag(int uid) => KernelInfo.CloseHandle<EventFlag>(K.Objects, uid, SceError.UNKNOWN_EVF_ID);
     [Hle] int sceKernelSetEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Set(bits); return 0; }
     [Hle] int sceKernelClearEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Clear(bits); return 0; }
 
@@ -326,13 +460,16 @@ public sealed class ThreadMgr : HleModule
     {
         var e = Obj<EventFlag>(uid);
         if (e == null) return SceError.UNKNOWN_EVF_ID;
-        GuestMemory.W32(info + 4, (uint)uid);
-        GuestMemory.WriteCString(info + 8, e.Name, 32);
-        GuestMemory.W32(info + 40, e.Attr);
-        GuestMemory.W32(info + 44, e.InitPattern);
-        GuestMemory.W32(info + 48, e.Pattern);
-        GuestMemory.W32(info + 52, (uint)e.Waiters);
-        return 0;
+        Span<byte> f = stackalloc byte[0x38]; // SceKernelEventFlagInfo
+        f.Clear();
+        lock (e)
+        {
+            KernelInfo.Header(f, uid, e.Name, e.Attr);
+            KernelInfo.Put(f, 0x2C, e.InitPattern);
+            KernelInfo.Put(f, 0x30, e.Pattern);
+            KernelInfo.Put(f, 0x34, e.Waiters);
+        }
+        return KernelInfo.Write(info, f);
     }
 
     // ------------------------------------------------------------------ mutexes
@@ -347,8 +484,35 @@ public sealed class ThreadMgr : HleModule
     }
 
     [Hle] int sceKernelDeleteMutex(int uid) { var m = Obj<Mutex>(uid); if (m == null) return SceError.UNKNOWN_MUTEX_ID; m.Delete(); K.Objects.Remove(uid); return 0; }
-    [Hle] int sceKernelOpenMutex(string name) => K.Objects.FindByName<Mutex>(name)?.Uid ?? SceError.UNKNOWN_MUTEX_ID;
-    [Hle] int sceKernelCloseMutex(int uid) => 0;
+    [Hle]
+    [Hle("sceKernelOpenMutex_089")]
+    int sceKernelOpenMutex(uint name) => KernelInfo.OpenByName<Mutex>(K.Objects, name, static m => !m.IsLight);
+
+    [Hle]
+    [Hle("sceKernelCloseMutex_089")]
+    int sceKernelCloseMutex(int uid) => KernelInfo.CloseHandle<Mutex>(K.Objects, uid, SceError.UNKNOWN_MUTEX_ID, static m => !m.IsLight);
+
+    /// <summary>SceKernelMutexInfo (0x3C): +0x2C initCount, +0x30 currentCount, +0x34 currentOwnerId, +0x38 numWaitThreads.
+    /// The pointer is checked before the UID (Vita3K).</summary>
+    [Hle]
+    int sceKernelGetMutexInfo(int uid, uint info)
+    {
+        if (info == 0) return SceError.INVALID_ARGUMENT;
+        if (GuestMemory.R32(info) > 0x3C) return SceError.NO_MEMORY;
+        var m = Obj<Mutex>(uid);
+        if (m == null || m.IsLight) return SceError.UNKNOWN_MUTEX_ID;
+        Span<byte> f = stackalloc byte[0x3C];
+        f.Clear();
+        lock (m)
+        {
+            KernelInfo.Header(f, uid, m.Name, m.Attr);
+            KernelInfo.Put(f, 0x2C, m.InitCount);
+            KernelInfo.Put(f, 0x30, m.LockCount);
+            KernelInfo.Put(f, 0x34, m.Owner?.Uid ?? 0);
+            KernelInfo.Put(f, 0x38, m.Waiters);
+        }
+        return KernelInfo.Write(info, f);
+    }
 
     [Hle("sceKernelLockMutex")]
     [Hle("sceKernelLockMutexCB")]
@@ -378,7 +542,7 @@ public sealed class ThreadMgr : HleModule
     int sceKernelDeleteLwMutex(uint work)
     {
         var m = LwMutexOf(work);
-        if (m == null) return unchecked((int)0x80028221);
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
         m.Delete();
         K.Objects.Remove(m.Uid);
         return 0;
@@ -386,9 +550,9 @@ public sealed class ThreadMgr : HleModule
 
     [Hle("sceKernelLockLwMutex")]
     [Hle("sceKernelLockLwMutexCB")]
-    int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? unchecked((int)0x80028221);
+    int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
-    [Hle] int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? unchecked((int)0x80028221);
+    [Hle] int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
     [Hle("sceKernelUnlockLwMutex")]
     [Hle("sceKernelUnlockLwMutex2")]
@@ -398,19 +562,22 @@ public sealed class ThreadMgr : HleModule
     int sceKernelGetLwMutexInfo(uint work, uint info)
     {
         var m = LwMutexOf(work);
-        if (m == null) return unchecked((int)0x80028221);
-        GuestMemory.W32(info + 4, (uint)m.Uid);
-        GuestMemory.WriteCString(info + 8, m.Name, 32);
-        GuestMemory.W32(info + 40, m.Attr);
-        GuestMemory.W32(info + 44, work);
-        GuestMemory.W32(info + 48, (uint)m.InitCount);
-        GuestMemory.W32(info + 52, (uint)m.LockCount);
-        GuestMemory.W32(info + 56, (uint)(m.Owner?.Uid ?? 0));
-        GuestMemory.W32(info + 60, (uint)m.Waiters);
-        return 0;
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
+        Span<byte> f = stackalloc byte[0x40]; // SceKernelLwMutexInfo
+        f.Clear();
+        lock (m)
+        {
+            KernelInfo.Header(f, m.Uid, m.Name, m.Attr);
+            KernelInfo.Put(f, 0x2C, work);
+            KernelInfo.Put(f, 0x30, m.InitCount);
+            KernelInfo.Put(f, 0x34, m.LockCount);
+            KernelInfo.Put(f, 0x38, m.Owner?.Uid ?? 0);
+            KernelInfo.Put(f, 0x3C, m.Waiters);
+        }
+        return KernelInfo.Write(info, f);
     }
 
-    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfo(m.WorkArea, info) : unchecked((int)0x80028221);
+    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfo(m.WorkArea, info) : SceError.UNKNOWN_LW_MUTEX_ID;
 
     // ------------------------------------------------------------------ condition variables
 
@@ -430,7 +597,57 @@ public sealed class ThreadMgr : HleModule
 
     [Hle] int sceKernelSignalCond(int uid) { var c = Obj<CondVar>(uid); if (c == null) return SceError.UNKNOWN_COND_ID; c.Signal(); return 0; }
     [Hle] int sceKernelSignalCondAll(int uid) { var c = Obj<CondVar>(uid); if (c == null) return SceError.UNKNOWN_COND_ID; c.SignalAll(); return 0; }
-    [Hle] int sceKernelSignalCondTo(int uid, int thid) => sceKernelSignalCond(uid);
+    /// <summary>Wakes the given thread if it waits on the cond; ILLEGAL_THREAD_ID when it does not (Vita3K).</summary>
+    [Hle]
+    int sceKernelSignalCondTo(int uid, int thid)
+    {
+        var c = Obj<CondVar>(uid);
+        if (c == null || c.WorkArea != 0) return SceError.UNKNOWN_COND_ID;
+        var t = K.GetThread(thid);
+        if (t == null) return SceError.UNKNOWN_THREAD_ID;
+        return c.SignalTo(t) ? 0 : SceError.ILLEGAL_THREAD_ID;
+    }
+
+    [Hle] int sceKernelOpenCond(uint name) => KernelInfo.OpenByName<CondVar>(K.Objects, name, static c => c.WorkArea == 0);
+    [Hle] int sceKernelCloseCond(int uid) => KernelInfo.CloseHandle<CondVar>(K.Objects, uid, SceError.UNKNOWN_COND_ID, static c => c.WorkArea == 0);
+
+    /// <summary>SceKernelCondInfo (0x34): +0x2C mutexId, +0x30 numWaitThreads.</summary>
+    [Hle]
+    int sceKernelGetCondInfo(int uid, uint info)
+    {
+        var c = Obj<CondVar>(uid);
+        if (c == null || c.WorkArea != 0) return SceError.UNKNOWN_COND_ID;
+        Span<byte> f = stackalloc byte[0x34];
+        f.Clear();
+        lock (c)
+        {
+            KernelInfo.Header(f, uid, c.Name, c.Attr);
+            KernelInfo.Put(f, 0x2C, c.Mutex.Uid);
+            KernelInfo.Put(f, 0x30, c.Waiters);
+        }
+        return KernelInfo.Write(info, f);
+    }
+
+    /// <summary>SceKernelLwCondInfo (0x38): +0x2C work area, +0x30 lw mutex work area, +0x34 numWaitThreads.</summary>
+    [Hle]
+    int sceKernelGetLwCondInfoById(int uid, uint info)
+    {
+        var c = Obj<CondVar>(uid);
+        if (c == null || c.WorkArea == 0) return SceError.UNKNOWN_LW_COND_ID;
+        Span<byte> f = stackalloc byte[0x38];
+        f.Clear();
+        lock (c)
+        {
+            KernelInfo.Header(f, uid, c.Name, c.Attr);
+            KernelInfo.Put(f, 0x2C, c.WorkArea);
+            KernelInfo.Put(f, 0x30, c.Mutex.WorkArea);
+            KernelInfo.Put(f, 0x34, c.Waiters);
+        }
+        return KernelInfo.Write(info, f);
+    }
+
+    [Hle]
+    int sceKernelGetLwCondInfo(uint work, uint info) => LwCondOf(work) is { } c ? sceKernelGetLwCondInfoById(c.Uid, info) : SceError.UNKNOWN_LW_COND_ID;
 
     CondVar? LwCondOf(uint work) => work == 0 ? null : Obj<CondVar>((int)GuestMemory.R32(work));
 
@@ -438,28 +655,109 @@ public sealed class ThreadMgr : HleModule
     int sceKernelCreateLwCond(uint work, string name, uint attr, uint workMutex, uint opt)
     {
         var m = LwMutexOf(workMutex);
-        if (m == null) return unchecked((int)0x80028221);
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
         int uid = K.Objects.Register(new CondVar { Name = name, Attr = attr, Mutex = m, WorkArea = work });
         GuestMemory.W32(work, (uint)uid);
         GuestMemory.W32(work + 4, (uint)m.Uid);
         return 0;
     }
 
-    [Hle] int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.Delete(); K.Objects.Remove(c.Uid); return 0; }
+    [Hle] int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Delete(); K.Objects.Remove(c.Uid); return 0; }
 
     [Hle("sceKernelWaitLwCond")]
     [Hle("sceKernelWaitLwCondCB")]
-    int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? unchecked((int)0x80028241);
+    int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? SceError.UNKNOWN_LW_COND_ID;
 
-    [Hle] int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.Signal(); return 0; }
-    [Hle] int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.SignalAll(); return 0; }
-    [Hle] int sceKernelSignalLwCondTo(uint work, int thid) => sceKernelSignalLwCond(work);
+    [Hle] int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Signal(); return 0; }
+    [Hle] int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.SignalAll(); return 0; }
+    [Hle]
+    int sceKernelSignalLwCondTo(uint work, int thid)
+    {
+        var c = LwCondOf(work);
+        if (c == null) return SceError.UNKNOWN_LW_COND_ID;
+        var t = K.GetThread(thid);
+        if (t == null) return SceError.UNKNOWN_THREAD_ID;
+        return c.SignalTo(t) ? 0 : SceError.ILLEGAL_THREAD_ID;
+    }
 
     // ------------------------------------------------------------------ message pipes
 
     [Hle]
     int sceKernelCreateMsgPipe(string name, uint type, uint attr, uint bufSize, uint opt)
-        => K.Objects.Register(new MsgPipe { Name = name, Attr = attr, BufferSize = (int)Math.Max(bufSize, 1) });
+        => K.Objects.Register(new MsgPipe { Name = name, Attr = attr, BufferSize = (int)Math.Max(bufSize, 1), CreatorThreadUid = Self.Uid });
+
+    /// <summary>Same arguments as sceKernelCreateMsgPipe; the "LR" (caller address kept for debugging) is not used.</summary>
+    [Hle] int sceKernelCreateMsgPipeWithLR(string name, uint type, uint attr, uint bufSize, uint opt) => sceKernelCreateMsgPipe(name, type, attr, bufSize, opt);
+
+    [Hle] int sceKernelGetMsgPipeCreatorId(int uid) => Obj<MsgPipe>(uid)?.CreatorThreadUid ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    [Hle] int sceKernelOpenMsgPipe(uint name) => KernelInfo.OpenByName<MsgPipe>(K.Objects, name);
+    [Hle] int sceKernelCloseMsgPipe(int uid) => KernelInfo.CloseHandle<MsgPipe>(K.Objects, uid, SceError.UNKNOWN_MSG_PIPE_ID);
+
+    /// <summary>SceKernelMppInfo (0x3C): +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads.</summary>
+    [Hle]
+    int sceKernelGetMsgPipeInfo(int uid, uint info)
+    {
+        var p = Obj<MsgPipe>(uid);
+        if (p == null) return SceError.UNKNOWN_MSG_PIPE_ID;
+        Span<byte> f = stackalloc byte[0x3C];
+        f.Clear();
+        lock (p)
+        {
+            KernelInfo.Header(f, uid, p.Name, p.Attr);
+            KernelInfo.Put(f, 0x2C, p.BufferSize);
+            KernelInfo.Put(f, 0x30, p.FreeSize);
+            KernelInfo.Put(f, 0x34, p.SendWaiters);
+            KernelInfo.Put(f, 0x38, p.RecvWaiters);
+        }
+        return KernelInfo.Write(info, f);
+    }
+
+    /// <summary>Reads a MsgPipeVector array ({void *base; SceSize size;} x count). NULL array or any NULL base →
+    /// ILLEGAL_ADDR, count 0 → ILLEGAL_COUNT.</summary>
+    static int ReadVector(uint vec, uint count, out MsgPipe.Segments segs)
+    {
+        segs = default;
+        if (vec == 0) return SceError.ILLEGAL_ADDR;
+        if (count == 0) return SceError.ILLEGAL_COUNT;
+        var addrs = new uint[count];
+        var sizes = new int[count];
+        for (uint i = 0; i < count; i++)
+        {
+            addrs[i] = GuestMemory.R32(vec + i * 8);
+            sizes[i] = (int)GuestMemory.R32(vec + i * 8 + 4);
+            if (addrs[i] == 0) return SceError.ILLEGAL_ADDR;
+        }
+        segs = new MsgPipe.Segments(addrs, sizes);
+        return 0;
+    }
+
+    int MsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result, Ptr<uint> timeout, bool send, bool poll)
+    {
+        var p = Obj<MsgPipe>(uid);
+        if (p == null) { if (poll) result.TrySet(0); return SceError.UNKNOWN_MSG_PIPE_ID; }
+        int e = ReadVector(vec, count, out var segs);
+        if (e != 0) { if (poll) result.TrySet(0); return e; }
+        if (segs.Total == 0) { result.TrySet(0); return 0; }
+        int r = send ? p.Send(segs, mode, result, timeout, poll) : p.Receive(segs, mode, result, timeout, poll);
+        if (r < 0 && (poll || r is SceError.WAIT_TIMEOUT or SceError.WAIT_DELETE or SceError.WAIT_CANCEL)) result.TrySet(0);
+        return r;
+    }
+
+    [Hle("sceKernelSendMsgPipeVector")]
+    [Hle("sceKernelSendMsgPipeVectorCB")]
+    int sceKernelSendMsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result, Ptr<uint> timeout)
+        => MsgPipeVector(uid, vec, count, mode, result, timeout, true, false);
+
+    [Hle] int sceKernelTrySendMsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result)
+        => MsgPipeVector(uid, vec, count, mode, result, default, true, true);
+
+    [Hle("sceKernelReceiveMsgPipeVector")]
+    [Hle("sceKernelReceiveMsgPipeVectorCB")]
+    int sceKernelReceiveMsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result, Ptr<uint> timeout)
+        => MsgPipeVector(uid, vec, count, mode, result, timeout, false, false);
+
+    [Hle] int sceKernelTryReceiveMsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result)
+        => MsgPipeVector(uid, vec, count, mode, result, default, false, true);
 
     [Hle] int sceKernelDeleteMsgPipe(int uid) { var p = Obj<MsgPipe>(uid); if (p == null) return SceError.UNKNOWN_MSG_PIPE_ID; p.Delete(); K.Objects.Remove(uid); return 0; }
 
@@ -504,15 +802,27 @@ public sealed class ThreadMgr : HleModule
     {
         var l = Obj<RwLock>(uid);
         if (l == null) return SceError.UNKNOWN_RW_LOCK_ID;
-        GuestMemory.W32(info + 4, (uint)uid);
-        GuestMemory.WriteCString(info + 8, l.Name, 32);
-        GuestMemory.W32(info + 40, l.Attr);
-        GuestMemory.W32(info + 44, (uint)(l.Writer != null ? l.WriteCount : l.Readers));
-        GuestMemory.W32(info + 48, (uint)(l.Writer?.Uid ?? 0));
-        GuestMemory.W32(info + 52, (uint)l.ReadWaiters);
-        GuestMemory.W32(info + 56, (uint)l.WriteWaiters);
-        return 0;
+        Span<byte> f = stackalloc byte[0x3C]; // SceKernelRWLockInfo
+        f.Clear();
+        lock (l)
+        {
+            KernelInfo.Header(f, uid, l.Name, l.Attr);
+            KernelInfo.Put(f, 0x2C, l.Writer != null ? l.WriteCount : l.Readers);
+            KernelInfo.Put(f, 0x30, l.Writer?.Uid ?? 0);
+            KernelInfo.Put(f, 0x34, l.ReadWaiters);
+            KernelInfo.Put(f, 0x38, l.WriteWaiters);
+        }
+        return KernelInfo.Write(info, f);
     }
+
+    [Hle] int sceKernelOpenRWLock(uint name) => KernelInfo.OpenByName<RwLock>(K.Objects, name);
+    [Hle] int sceKernelCloseRWLock(int uid) => KernelInfo.CloseHandle<RwLock>(K.Objects, uid, SceError.UNKNOWN_RW_LOCK_ID);
+
+    /// <summary>Wakes all readers and writers with WAIT_CANCEL; flag 1 (CANCEL_WITH_WRITE_LOCK) leaves the caller owning
+    /// the lock for writing.</summary>
+    [Hle]
+    int sceKernelCancelRWLock(int uid, Ptr<uint> numRead, Ptr<uint> numWrite, int flag)
+        => Obj<RwLock>(uid)?.Cancel(Self, numRead, numWrite, (flag & 1) != 0) ?? SceError.UNKNOWN_RW_LOCK_ID;
 
     // ------------------------------------------------------------------ callbacks
 
@@ -536,6 +846,50 @@ public sealed class ThreadMgr : HleModule
 
     [Hle]
     int sceKernelGetCallbackCount(int uid) => Obj<Callback>(uid)?.NotifyCount ?? SceError.UNKNOWN_CALLBACK_ID;
+
+    /// <summary>
+    /// SceKernelCallbackInfo, Vita3K layout (0x44): +0x28 attr, +0x2C threadId, +0x30 callbackFunc, +0x34 notifyId,
+    /// +0x38 notifyCount, +0x3C notifyArg, +0x40 pCommon. The SDK header (0x3C, "needs confirmation") lacks attr and
+    /// notifyId; a caller passing size 0x3C gets the first 0x3C bytes of this layout.
+    /// </summary>
+    [Hle]
+    int sceKernelGetCallbackInfo(int uid, uint info)
+    {
+        var c = Obj<Callback>(uid);
+        if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
+        Span<byte> f = stackalloc byte[0x44];
+        f.Clear();
+        lock (c)
+        {
+            KernelInfo.Header(f, uid, c.Name, c.Attr);
+            KernelInfo.Put(f, 0x2C, c.Owner?.Uid ?? 0);
+            KernelInfo.Put(f, 0x30, c.Function);
+            KernelInfo.Put(f, 0x34, c.NotifyId);
+            KernelInfo.Put(f, 0x38, c.NotifyCount);
+            KernelInfo.Put(f, 0x3C, c.NotifyArg);
+            KernelInfo.Put(f, 0x40, c.Arg);
+        }
+        return KernelInfo.Write(info, f);
+    }
+
+    /// <summary>Drops pending notifications without running the callback.</summary>
+    [Hle]
+    int sceKernelCancelCallback(int uid)
+    {
+        var c = Obj<Callback>(uid);
+        if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
+        lock (c)
+        {
+            if (c.NotifyCount > 0 && c.Owner != null)
+            {
+                int p;
+                while ((p = Volatile.Read(ref c.Owner.PendingCallbacks)) > 0 && Interlocked.CompareExchange(ref c.Owner.PendingCallbacks, p - 1, p) != p) { }
+            }
+            c.NotifyCount = 0;
+            c.NotifyArg = 0;
+        }
+        return 0;
+    }
 
     /// <summary>Runs pending callbacks owned by the thread; returns how many ran.</summary>
     public override void Initialize() => GuestThread.CallbackProcessor = ProcessCallbacks;
@@ -563,37 +917,195 @@ public sealed class ThreadMgr : HleModule
 
     // ------------------------------------------------------------------ timers
 
-    [Hle]
-    int sceKernelCreateTimer(string name, uint attr, uint opt) => K.Objects.Register(new TimerObject { Name = name, Attr = attr });
-
-    [Hle] int sceKernelDeleteTimer(int uid) { K.Objects.Remove(uid); return 0; }
-    [Hle] int sceKernelStartTimer(int uid) { var t = Obj<TimerObject>(uid); if (t == null) return SceError.UNKNOWN_TIMER_ID; t.Clock.Start(); return 0; }
-    [Hle] int sceKernelStopTimer(int uid) { var t = Obj<TimerObject>(uid); if (t == null) return SceError.UNKNOWN_TIMER_ID; t.Clock.Stop(); return 0; }
+    TimerObject? Timer(int uid) => Obj<TimerObject>(uid);
 
     [Hle]
-    ulong sceKernelGetTimerTimeWide(int uid)
+    int sceKernelCreateTimer(string name, uint attr, uint opt) => K.Objects.Register(new TimerObject { Name = name, Attr = attr, Clock = () => K.ProcessTimeUs });
+
+    [Hle]
+    int sceKernelDeleteTimer(int uid)
     {
-        var t = Obj<TimerObject>(uid);
-        return t == null ? 0 : t.BaseUs + (ulong)t.Clock.ElapsedMicroseconds;
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        t.Delete();
+        K.Objects.Remove(uid);
+        return 0;
     }
+
+    /// <summary>0 when it started the timer, 1 when it was already running.</summary>
+    [Hle] int sceKernelStartTimer(int uid) => Timer(uid)?.Start() ?? SceError.UNKNOWN_TIMER_ID;
+
+    /// <summary>1 when it stopped a running timer, 0 when it was already stopped.</summary>
+    [Hle] int sceKernelStopTimer(int uid) => Timer(uid)?.Stop() ?? SceError.UNKNOWN_TIMER_ID;
+
+    /// <summary>Count in microseconds; an unknown timer gives all ones (an error code could pass for a time).</summary>
+    [Hle] ulong sceKernelGetTimerTimeWide(int uid) => Timer(uid)?.Count() ?? ulong.MaxValue;
 
     [Hle]
     int sceKernelGetTimerTime(int uid, Ptr<ulong> time)
     {
-        time.TrySet(sceKernelGetTimerTimeWide(uid));
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        if (time.IsNull) return SceError.ILLEGAL_ADDR;
+        time.Value = t.Count();
         return 0;
     }
 
+    [Hle] ulong sceKernelSetTimerTimeWide(int uid, ulong time) => Timer(uid)?.SetTime(time) ?? ulong.MaxValue;
+
+    /// <summary>In/out: writes the new count and returns the old one through the same pointer.</summary>
     [Hle]
-    ulong sceKernelSetTimerTimeWide(int uid, ulong time)
+    int sceKernelSetTimerTime(int uid, Ptr<ulong> time)
     {
-        var t = Obj<TimerObject>(uid);
-        if (t == null) return 0;
-        ulong old = sceKernelGetTimerTimeWide(uid);
-        t.BaseUs = time;
-        bool running = t.Clock.IsRunning;
-        t.Clock.Reset();
-        if (running) t.Clock.Start();
-        return old;
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        if (time.IsNull) return SceError.ILLEGAL_ADDR;
+        time.Value = t.SetTime(time.Value);
+        return 0;
+    }
+
+    /// <summary>Process time the count runs from (0 if the timer never started).</summary>
+    [Hle] ulong sceKernelGetTimerBaseWide(int uid) => Timer(uid) is { } t ? (t.Started || t.StoppedCount != 0 ? t.Base : 0) : ulong.MaxValue;
+
+    [Hle]
+    int sceKernelGetTimerBase(int uid, Ptr<ulong> baseTime)
+    {
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        if (baseTime.IsNull) return SceError.ILLEGAL_ADDR;
+        baseTime.Value = sceKernelGetTimerBaseWide(uid);
+        return 0;
+    }
+
+    /// <summary>type 0 = SET_EVENT, 1 = PULSE_EVENT; when running the next event is now + interval.</summary>
+    [Hle]
+    int sceKernelSetTimerEvent(int uid, int type, Ptr<ulong> interval, int repeat)
+    {
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        if (type is not (0 or 1)) return SceError.ILLEGAL_TYPE;
+        if (interval.IsNull) return SceError.ILLEGAL_ADDR;
+        return t.SetEvent(type, interval.Value, repeat != 0);
+    }
+
+    [Hle] int sceKernelCancelTimer(int uid, Ptr<uint> numWait) => Timer(uid)?.Cancel(numWait) ?? SceError.UNKNOWN_TIMER_ID;
+
+    /// <summary>Time until the armed event; EVENT_NOT_SET (0x80028242, a confirmar) when none is armed.</summary>
+    [Hle]
+    int sceKernelGetTimerEventRemainingTime(int uid, Ptr<ulong> remaining)
+    {
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        if (remaining.IsNull) return SceError.ILLEGAL_ADDR;
+        lock (t)
+        {
+            if (t.NextEvent == ulong.MaxValue) return unchecked((int)0x80028242);
+            ulong now = K.ProcessTimeUs;
+            remaining.Value = t.NextEvent > now ? t.NextEvent - now : 0;
+        }
+        return 0;
+    }
+
+    /// <summary>SceKernelTimerInfo (0x60): +0x2C active, +0x30 base_time (count when stopped), +0x38 current_time,
+    /// +0x40 schedule (next event in timer time, 0 = none), +0x48 interval, +0x50 type, +0x54 repeat,
+    /// +0x58 num_wait_threads.</summary>
+    [Hle]
+    int sceKernelGetTimerInfo(int uid, uint info)
+    {
+        var t = Timer(uid);
+        if (t == null) return SceError.UNKNOWN_TIMER_ID;
+        Span<byte> f = stackalloc byte[0x60];
+        f.Clear();
+        lock (t)
+        {
+            KernelInfo.Header(f, uid, t.Name, t.Attr);
+            KernelInfo.Put(f, 0x2C, t.Started ? 1 : 0);
+            KernelInfo.Put64(f, 0x30, t.Started ? t.Base : t.StoppedCount);
+            KernelInfo.Put64(f, 0x38, t.Count());
+            KernelInfo.Put64(f, 0x40, t.NextEvent == ulong.MaxValue ? 0 : t.NextEvent - t.Base);
+            KernelInfo.Put64(f, 0x48, t.Interval);
+            KernelInfo.Put(f, 0x50, t.Pulse ? 1 : 0);
+            KernelInfo.Put(f, 0x54, t.Repeat ? 1 : 0);
+            KernelInfo.Put(f, 0x58, t.NumWaiters);
+        }
+        return KernelInfo.Write(info, f);
+    }
+
+    [Hle] int sceKernelOpenTimer(uint name) => KernelInfo.OpenByName<TimerObject>(K.Objects, name);
+    [Hle] int sceKernelCloseTimer(int uid) => KernelInfo.CloseHandle<TimerObject>(K.Objects, uid, SceError.UNKNOWN_TIMER_ID);
+
+    // ------------------------------------------------------------------ simple events (sceKernelWaitEvent & co also accept timers)
+
+    SimpleEvent? Event(int uid) => Obj<SimpleEvent>(uid);
+
+    [Hle]
+    int sceKernelCreateSimpleEvent(uint namePtr, uint attr, uint initPattern, uint opt)
+    {
+        if (namePtr == 0) return SceError.ILLEGAL_ADDR;
+        string name = GuestMemory.ReadCString(namePtr, 256);
+        if ((attr & EventBits.AttrOpenable) != 0 && System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
+        if ((attr & ~(EventBits.AttrAutoReset | EventBits.AttrThPrio | EventBits.AttrOpenable)) != 0) return SceError.ILLEGAL_ATTR;
+        if ((initPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
+        return K.Objects.Register(new SimpleEvent { Name = name, Attr = attr, Pattern = initPattern | EventBits.Create });
+    }
+
+    [Hle]
+    int sceKernelDeleteSimpleEvent(int uid)
+    {
+        var e = Event(uid);
+        if (e == null) return SceError.UNKNOWN_EVENT_ID;
+        e.Delete();
+        K.Objects.Remove(uid);
+        return 0;
+    }
+
+    [Hle] int sceKernelOpenSimpleEvent(uint name) => KernelInfo.OpenByName<SimpleEvent>(K.Objects, name, static e => (e.Attr & EventBits.AttrOpenable) != 0);
+    [Hle] int sceKernelCloseSimpleEvent(int uid) => KernelInfo.CloseHandle<SimpleEvent>(K.Objects, uid, SceError.UNKNOWN_EVENT_ID);
+
+    [Hle] int sceKernelSetEvent(int uid, uint setPattern, ulong userData) => Event(uid)?.SetOrPulse(setPattern, userData, false) ?? SceError.UNKNOWN_EVENT_ID;
+    [Hle] int sceKernelPulseEvent(int uid, uint setPattern, ulong userData) => Event(uid)?.SetOrPulse(setPattern, userData, true) ?? SceError.UNKNOWN_EVENT_ID;
+
+    /// <summary>Keeps only the given bits; on a timer it clears the event state.</summary>
+    [Hle]
+    int sceKernelClearEvent(int uid, uint keepPattern)
+    {
+        if (Event(uid) is { } e) return e.Clear(keepPattern);
+        if (Timer(uid) is { } t) return t.Clear();
+        return SceError.UNKNOWN_EVENT_ID;
+    }
+
+    [Hle("sceKernelWaitEvent")]
+    [Hle("sceKernelWaitEventCB")]
+    int sceKernelWaitEvent(int uid, uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData, Ptr<uint> timeout)
+    {
+        if (Event(uid) is { } e) return e.Wait(Self, waitPattern, resultPattern, userData, timeout);
+        if (Timer(uid) is { } t) return t.Wait(resultPattern, userData, timeout);
+        return SceError.UNKNOWN_EVENT_ID;
+    }
+
+    [Hle]
+    int sceKernelPollEvent(int uid, uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData)
+    {
+        if (Event(uid) is { } e) return e.Poll(waitPattern, resultPattern, userData);
+        if (Timer(uid) is { } t) return t.Poll(resultPattern, userData);
+        return SceError.UNKNOWN_EVENT_ID;
+    }
+
+    [Hle]
+    int sceKernelCancelEvent(int uid, Ptr<uint> numWait)
+    {
+        if (Event(uid) is { } e) return e.Cancel(numWait);
+        if (Timer(uid) is { } t) return t.Cancel(numWait);
+        return SceError.UNKNOWN_EVENT_ID;
+    }
+
+    [Hle]
+    int sceKernelGetEventPattern(int uid, Ptr<uint> pattern)
+    {
+        var e = Event(uid);
+        if (e == null) return SceError.UNKNOWN_EVENT_ID;
+        if (pattern.IsNull) return SceError.ILLEGAL_ADDR;
+        lock (e) pattern.Value = e.Pattern;
+        return 0;
     }
 }

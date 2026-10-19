@@ -72,6 +72,29 @@ public sealed class Ngs : HleModule
     [Hle] int sceSulphaNgsSetRackName(uint rack, uint name) => 0;
     [Hle] int sceSulphaNgsTrace(uint message) => 0;
 
+    /// <summary>SceSulphaNgsConfig (8): max_named_samples, api_trace_buffer_size (FW 3.60 defaults 1024 / 4096).</summary>
+    [Hle]
+    int sceSulphaNgsGetDefaultConfig(uint config)
+    {
+        if (config == 0) return INVALID_ARG; // Sulpha's own error codes are undocumented
+        GuestMemory.W32(config, 1024);
+        GuestMemory.W32(config + 4, 4096);
+        return OK;
+    }
+
+    /// <summary>Memory for the trace agent. The HLE never uses it; the size is an HLE choice, not the firmware's.</summary>
+    [Hle]
+    int sceSulphaNgsGetNeededMemory(uint config, Ptr<uint> size)
+    {
+        if (config == 0 || size.IsNull) return INVALID_ARG;
+        size.Value = 16 + GuestMemory.R32(config) * 16 + GuestMemory.R32(config + 4);
+        return OK;
+    }
+
+    [Hle] int sceSulphaNgsInit(uint config, uint buffer, uint size) => config == 0 || buffer == 0 ? INVALID_ARG : OK;
+    [Hle] int sceSulphaNgsShutdown() => OK;
+    [Hle] int sceSulphaNgsSetSampleName(uint location, uint length, uint name) => location == 0 || length == 0 ? INVALID_ARG : OK;
+
     [Hle]
     int sceNgsSystemInit(uint memspace, uint memsize, uint p, Ptr<uint> outSystem)
     {

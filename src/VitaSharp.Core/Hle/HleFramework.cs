@@ -127,13 +127,15 @@ public sealed class HleFunction
             return 50;
         if (n.StartsWith("sceGxm")
             || n.StartsWith("sceNgs") || n.StartsWith("sceKernelGetProcessTime") || n.StartsWith("sceRtc") || n.StartsWith("sceFiber")
-            || n.StartsWith("sceKernelGetSystemTime"))
+            || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")
             return 200;
         if (n.StartsWith("sceKernelWait") || n.StartsWith("sceKernelSignal") || n.StartsWith("sceKernelDelay") || n.StartsWith("sceKernelSetEventFlag")
             || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag") || n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex")
             || n.StartsWith("sceKernelPollSema") || n.StartsWith("sceKernelStartThread") || n.StartsWith("sceKernelChangeThread") || n.StartsWith("sceKernelExitThread")
             || n.StartsWith("sceIo") || n.StartsWith("sceDisplay") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
-            || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera"))
+            || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera")
+            || n.StartsWith("sceNetEpollWait") || n.StartsWith("sceNetRecv") || n.StartsWith("sceRudpPollWait") || n.StartsWith("sceHttpWaitRequest")
+            || n is "sceKernelSendSignal" or "sceKernelSetEvent" or "sceKernelPulseEvent" or "sceKernelPollEvent" or "sceKernelClearEvent")
             return 12_000; // ~40 us at 300 MIPS: syscall + scheduler
         return 2_000;
     }

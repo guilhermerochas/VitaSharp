@@ -61,10 +61,11 @@ public sealed class NpTrophy : HleModule
     int sceNpTrophyCreateContext(Ptr<int> ctx, uint commId, uint commSign, ulong options)
     {
         if (!_initialized) return ERR_NOT_INITIALIZED;
-        if (ctx.Address == 0 || commId == 0) return ERR_INVALID_ARGUMENT;
-        // SceNpCommunicationId: char data[9]; char term; uint8 num; char dummy
-        string id = $"{GuestMemory.ReadCString(commId, 9)}_{GuestMemory.Read<byte>(commId + 10):D2}";
-        var set = Load(id);
+        if (ctx.Address == 0) return ERR_INVALID_ARGUMENT;
+        // SceNpCommunicationId: char data[9]; char term; uint8 num; char dummy. NULL = the application's default
+        // communication id (Vita3K uses the one given to sceNpInit): the trophy set the game ships in app0:sce_sys/trophy.
+        string? id = commId != 0 ? $"{GuestMemory.ReadCString(commId, 9)}_{GuestMemory.Read<byte>(commId + 10):D2}" : DefaultCommId();
+        var set = id != null ? Load(id) : null;
         if (set == null) return ERR_TRP_NOT_FOUND;
         lock (_contexts)
         {
@@ -72,6 +73,12 @@ public sealed class NpTrophy : HleModule
             _contexts[_nextContext++] = set;
         }
         return 0;
+    }
+
+    string? DefaultCommId()
+    {
+        var dir = Emu.Vfs.Resolve("app0:sce_sys/trophy");
+        return dir != null && Directory.Exists(dir) ? Directory.GetDirectories(dir).Select(Path.GetFileName).Order().FirstOrDefault() : null;
     }
 
     [Hle] int sceNpTrophyDestroyContext(int ctx) { lock (_contexts) return _contexts.Remove(ctx) ? 0 : ERR_INVALID_CONTEXT; }
@@ -337,11 +344,4 @@ public sealed class NpTrophy : HleModule
         bytes.AsSpan(0, n).CopyTo(GuestMemory.Span(addr, n));
         GuestMemory.Write(addr + (uint)n, (byte)0);
     }
-
-    // The first-run "Preparing trophies" dialog: completes immediately.
-    [Hle] int sceNpTrophySetupDialogInit(uint param) => 0;
-    [Hle] int sceNpTrophySetupDialogGetStatus() => 2; // SCE_COMMON_DIALOG_STATUS_FINISHED
-    [Hle] int sceNpTrophySetupDialogGetResult(uint result) { if (result != 0) GuestMemory.Fill(result, 0, 0x24); return 0; }
-    [Hle] int sceNpTrophySetupDialogAbort() => 0;
-    [Hle] int sceNpTrophySetupDialogTerm() => 0;
 }

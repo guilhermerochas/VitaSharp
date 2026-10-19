@@ -72,7 +72,7 @@ Nenhuma variante Async nem as funções de prioridade são importadas pelos 7 jo
 ## 1. `NID_023EAA62` e os dispositivos `tty0:`/`tty1:`
 
 ### NID_023EAA62
-- [ ] **Prioridade:** P0 (F1 2011 PCSE00002, Uncharted PCSA00029) · **Biblioteca:** SceLibKernel · **NID:** 0x023EAA62
+- [x] **Prioridade:** P0 (F1 2011 PCSE00002, Uncharted PCSA00029) · **Biblioteca:** SceLibKernel · **NID:** 0x023EAA62
 - **Protótipo:** não existe em nenhum header do VitaSDK, nem em `nids.txt` (Vita3K). Inferido pela desmontagem:
   `void/int NID_023EAA62(const char *msg /*, r1..r3 = lixo */);`
 - **O que a desmontagem mostrou** (F1, `libc.suprx` carregada em 0x81340000+, função `openStdio` em 0x813405E4):
@@ -126,7 +126,7 @@ Nenhuma variante Async nem as funções de prioridade são importadas pelos 7 jo
   `run PCSA00029`.
 
 ### Mapeamento de `tty0:`/`tty1:` (parte do P0 acima)
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceIofilemgr (`sceIoOpen`/`Read`/`Write`/`Close`) ·
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceIofilemgr (`sceIoOpen`/`Read`/`Write`/`Close`) ·
   **NID:** n/a (comportamento de `sceIoOpen` 0x6C60AC61)
 - **Comportamento:** no Vita, `tty0:`..`tty3:` são dispositivos de caractere do console de debug (deci/UART). A
   libc LLE abre `tty0:` como stdin e stdout e `tty1:` como stderr, todos com `SCE_O_RDWR` (3), e guarda os fds em
@@ -191,7 +191,7 @@ como OPAQUE) e o parâmetro `resolve_for_write`; e `GetInfoForProcess02` não pr
 `id`. Corrija junto com `GetInfo`.
 
 ### _sceFiosKernelOverlayGetInfo
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0xF44F3505
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0xF44F3505
 - **Protótipo:** `int _sceFiosKernelOverlayGetInfo(SceFiosKernelOverlayID id, SceFiosKernelOverlay *out_overlay);` (`psp2/fios2kernel.h`)
 - **Comportamento:** copia para `out_overlay` o overlay `id` do processo atual. É o mesmo que
   `_sceFiosKernelOverlayGetInfoForProcess(pid_atual, id, out)`.
@@ -205,7 +205,7 @@ como OPAQUE) e o parâmetro `resolve_for_write`; e `GetInfoForProcess02` não pr
   `imports PCSE00002` não deve listá-la como faltante.
 
 ### _sceFiosKernelOverlayGetList
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x9379E2D5
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x9379E2D5
 - **Protótipo:** `int _sceFiosKernelOverlayGetList(SceUID pid, SceUInt8 min_order, SceUInt8 max_order, SceFiosGetListSyscallArgs *args);` (`psp2/fios2kernel.h`)
 - **Comportamento:** lista os IDs dos overlays de `pid` com `min_order <= order <= max_order`, na ordem de resolução
   (ordem crescente de `order`; dentro do mesmo order, ordem de inserção). Escreve no máximo `max_ids` IDs e informa o
@@ -231,7 +231,7 @@ como OPAQUE) e o parâmetro `resolve_for_write`; e `GetInfoForProcess02` não pr
 - **Validação:** teste unitário com 3 overlays de orders diferentes e faixas parciais.
 
 ### _sceFiosKernelOverlayModify
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x6D6CDE05
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x6D6CDE05
 - **Protótipo:** `int _sceFiosKernelOverlayModify(SceFiosKernelOverlayID id, const SceFiosKernelOverlay *new_value);` (`psp2/fios2kernel.h`)
 - **Comportamento:** substitui `type`, `order`, `dst` e `src` do overlay `id` do processo atual pelos de
   `new_value`. Normaliza os caminhos como no Add e mantém o `id`. Se o `order` mudar, o overlay volta para a posição
@@ -247,7 +247,7 @@ como OPAQUE) e o parâmetro `resolve_for_write`; e `GetInfoForProcess02` não pr
 - **Validação:** teste unitário Add → Modify(src novo) → `Resolve` devolve o src novo.
 
 ### _sceFiosKernelOverlayModifyForProcess
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x6DF2FC05
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x6DF2FC05
 - **Protótipo:** `int _sceFiosKernelOverlayModifyForProcess(SceUID target_process, SceFiosKernelOverlayID id, const SceFiosKernelOverlay *new_value);` (`psp2/fios2kernel.h`)
 - **Comportamento:** igual ao `_sceFiosKernelOverlayModify`, para o processo `target_process`. O VitaSharp tem um só
   processo, então ignore `pid` (como fazem as demais `…ForProcess`).
@@ -279,12 +279,14 @@ o caller do stub de 0x5D6A1CCE e ver contra qual constante o retorno é comparad
 via é implementar o Modo A com `0x80020004`, rodar F1/Uncharted com `--trace-hle-only _sceFiosKernelOverlayDHOpenSync+sceIoDopen`
 e conferir se aparece um `sceIoDopen` logo depois (sinal de fallback).
 
+> **Implementado (2026-10-19): Modo A** com `SCE_KERNEL_ERROR_UNSUP 0x80020004` em todas as DH*. F1 (cenário de boot de 90 s) e Uncharted (1500 quadros) não chamaram `DHOpenSync`; o `WarnOnce` avisa se algum jogo chamar.
+
 Structs ausentes no header (`SceFiosNativeStat`, `SceFiosNativeDirEntry`): **inferido** que "Native" é o tipo de
 plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no Modo B. Confirmar pelo tamanho que a
 `libfios2` reserva na pilha antes de chamar `DHReadSync`.
 
 ### _sceFiosKernelOverlayDHOpenSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x5D6A1CCE
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x5D6A1CCE
 - **Protótipo:** `int _sceFiosKernelOverlayDHOpenSync(SceFiosKernelOverlayDH *out_dh, const char *path, SceUInt8 from_order, SceFiosDHOpenSyncSyscallArgs *args);` (`psp2/fios2kernel.h`)
 - **Comportamento:** FW 3.60: devolve "não suportado" antes de ler `args->to_order`. Modo B: abre o diretório
   mesclado e escreve o handle em `*out_dh`.
@@ -299,7 +301,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
   `sceIoDopen`).
 
 ### _sceFiosKernelOverlayDHReadSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x2F06ADC6
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x2F06ADC6
 - **Protótipo:** `int _sceFiosKernelOverlayDHReadSync(SceFiosKernelOverlayDH dh, SceFiosNativeDirEntry *out_entry);` (`psp2/fios2kernel.h`)
 - **Comportamento:** lê a próxima entrada do DH mesclado. Modo A: `dh` nunca é válido.
 - **Retorno/erros:** Modo A: `EBADF` (ou "não suportado", a confirmar). Modo B: valor > 0 se escreveu uma entrada, 0
@@ -311,7 +313,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** como DHOpenSync.
 
 ### _sceFiosKernelOverlayDHStatSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x759EBEE6
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x759EBEE6
 - **Protótipo:** `int _sceFiosKernelOverlayDHStatSync(SceFiosKernelOverlayDH dh, SceFiosNativeStat *out_stat);` (`psp2/fios2kernel.h`)
 - **Comportamento:** stat do diretório aberto pelo DH.
 - **Retorno/erros:** Modo A: `EBADF`/"não suportado". Modo B: 0 e `SceIoStat` do diretório resolvido.
@@ -320,7 +322,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** como DHOpenSync.
 
 ### _sceFiosKernelOverlayDHChstatSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0xF6A3E335
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0xF6A3E335
 - **Protótipo:** `int _sceFiosKernelOverlayDHChstatSync(SceFiosKernelOverlayDH dh, const SceFiosNativeStat *new_stat, unsigned int cbit);` (`psp2/fios2kernel.h`)
 - **Comportamento:** chstat do diretório do DH, com os bits `SCE_CST_*` de `cbit` (ver `sceIoChstat`).
 - **Retorno/erros:** Modo A: `EBADF`/"não suportado". Modo B: como `sceIoChstat`.
@@ -329,7 +331,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** como DHOpenSync.
 
 ### _sceFiosKernelOverlayDHSyncSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x2A9724C9
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x2A9724C9
 - **Protótipo:** `int _sceFiosKernelOverlayDHSyncSync(SceFiosKernelOverlayDH dh, int flag);` (`psp2/fios2kernel.h`)
 - **Comportamento:** sync do diretório (o equivalente a `sceIoSyncByFd` para o DH).
 - **Retorno/erros:** Modo A: `EBADF`/"não suportado". Modo B: 0 (nada a fazer no host).
@@ -338,7 +340,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** como DHOpenSync.
 
 ### _sceFiosKernelOverlayDHCloseSync
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x021B4AF7
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceFios2Kernel · **NID:** 0x021B4AF7
 - **Protótipo:** `int _sceFiosKernelOverlayDHCloseSync(SceFiosKernelOverlayDH dh);` (`psp2/fios2kernel.h`)
 - **Comportamento:** fecha o DH.
 - **Retorno/erros:** Modo A: `EBADF`/"não suportado". Modo B: 0; dh desconhecido → `EBADF`.
@@ -347,7 +349,7 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** como DHOpenSync.
 
 ### _sceFiosKernelOverlayThreadSetDisabled
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceFios2Kernel · **NID:** 0x3E9172EA
+- [x] **Prioridade:** STUB · **Biblioteca:** SceFios2Kernel · **NID:** 0x3E9172EA
 - **Protótipo:** `int _sceFiosKernelOverlayThreadSetDisabled(SceInt32 disabled);` (`psp2/fios2kernel.h`)
 - **Comportamento:** liga/desliga os overlays de **aplicativo** (order < 0x80) para a thread atual. Segundo o
   header, com overlays desligados, `ResolveWithRangeSync` troca o `min_order` pedido por 0x80, ou seja, só valem os
@@ -364,8 +366,10 @@ plataforma, ou seja, `SceIoStat` (0x58) e `SceIoDirent` (0x160). Só importa no 
 - **Validação:** teste unitário: overlay order 0 `app0:` → `ux0:x`; com a flag ligada, `Resolve("app0:a")` devolve
   `app0:a`. Em jogo: `--trace-hle-only _sceFiosKernelOverlayThreadSetDisabled` em F1 mostra se e quando é usado.
 
+> **Implementado (2026-10-19):** flag por `GuestThread` em `Fios2User` (`ConditionalWeakTable`), aplicada em `Resolve`. Trace de F1: as threads `SceFiosIO`/`SceFiosCallback` chamam `SetDisabled(1)` ao iniciar e nunca religam (elas recebem caminhos já resolvidos); a `main` alterna 1/0 em volta de cada resolução. Retorno 0 (o r1 da chamada traz lixo, não um ponteiro de estado anterior).
+
 ### _sceFiosKernelOverlayThreadIsDisabled
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceFios2Kernel · **NID:** 0x629F4FE4
+- [x] **Prioridade:** STUB · **Biblioteca:** SceFios2Kernel · **NID:** 0x629F4FE4
 - **Protótipo:** `int _sceFiosKernelOverlayThreadIsDisabled(void);` (`psp2/fios2kernel.h`)
 - **Comportamento:** devolve 1 se os overlays de app estão desligados na thread atual, senão 0.
 - **Retorno/erros:** 0/1.
@@ -382,7 +386,7 @@ e `sceIoSync`. As demais funções de I/O implementadas (`sceIoDevctl` IL 73, `s
 real e ficam fora desta lista.
 
 ### sceIoChstat
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x29482F7F
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x29482F7F
 - **Protótipo:** `int sceIoChstat(const char *file, SceIoStat *stat, int bits);` (`psp2/io/stat.h`). A syscall por
   baixo é `_sceIoChstat(name, stat, bits, sceIoChstatOpt*)` (`psp2/io/fcntl.h`).
 - **Comportamento:** altera os atributos de `file` conforme `bits`:
@@ -407,7 +411,7 @@ real e ficam fora desta lista.
   jogo: `--trace-hle-only sceIoChstat` durante um save (GoW, F1) para ver quais bits são usados.
 
 ### sceIoChstatByFd
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x6E903AB2
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x6E903AB2
 - **Protótipo:** `int sceIoChstatByFd(SceUID fd, const SceIoStat *buf, unsigned int cbit);` (`psp2/io/stat.h`)
 - **Comportamento:** como `sceIoChstat`, sobre o arquivo aberto em `fd`.
 - **Retorno/erros:** 0; fd inválido → `IO_EBADF`; o resto como Chstat.
@@ -418,7 +422,7 @@ real e ficam fora desta lista.
 - **Validação:** como Chstat, usando fd.
 
 ### sceIoSync
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x98ACED6D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x98ACED6D
 - **Protótipo:** `int sceIoSync(const char *device, unsigned int flags);` (`psp2/io/fcntl.h`). A syscall é
   `_sceIoSync(device, flags, sceIoSyncOpt*)`.
 - **Comportamento:** grava em disco os dados em cache de todos os arquivos abertos no dispositivo (`"savedata0:"`,
@@ -434,7 +438,7 @@ real e ficam fora desta lista.
 - **Validação:** `--trace-hle-only sceIoSync` num save; teste unitário de que não lança exceção com o arquivo aberto.
 
 ### sceIoIoctl
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x54ABACFA
+- [x] **Prioridade:** STUB · **Biblioteca:** SceLibKernel · **NID:** 0x54ABACFA
 - **Protótipo:** `int sceIoIoctl(SceUID fd, unsigned int cmd, void *indata, int inlen, void *outdata, int outlen);` (`psp2/io/devctl.h`)
 - **Comportamento:** comando específico do driver sobre um fd aberto. Não há comandos documentados para arquivos
   comuns no exFAT/PFS. O stub atual devolve 0 **sem validar o fd e sem registrar nada**, o que esconde chamadas que
@@ -513,6 +517,8 @@ real e ficam fora desta lista.
 - **Limite:** o firmware tem um número máximo de operações pendentes por processo (**a confirmar**). Não limite na
   fase 1.
 
+> **Implementado (2026-10-19), fase 1:** `Hle/Modules/IoFileMgr.Async.cs`. `IoAsyncOp : KernelObject` (UID = opid, `Pattern` recebe o bit 0x1 na conclusão e o objeto recebe `PulseAll`, pronto para o `sceKernelWaitEvent` do pacote A); cada `XxxAsync` executa a versão síncrona na hora e devolve o opid; fd desconhecido → `IO_EBADF` imediato. `sceIoComplete` devolve o resultado (32 bits baixos no Lseek) e libera o opid (`UNKNOWN_EVENT_ID` se desconhecido). `sceIoCancel` aceita opid ou fd e devolve 0 (nada fica pendente na fase 1). `sceIoCompleteMultiple` continua sem registro até o layout ser confirmado. Prioridades: guardadas e devolvidas; padrão do processo 0 e faixa (só negativos rejeitados) a confirmar.
+
 ### Tabela das variantes Async
 
 Todas as linhas seguem o mesmo template. Protótipo **inferido**, a não ser quando houver header indicado.
@@ -522,7 +528,7 @@ Validação: teste unitário Async → `sceKernelWaitEvent` → `sceIoComplete` 
 síncrona. Em jogo, só quando algum título importar a função.
 
 ### sceIoOpenAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x6A7EA9FD
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x6A7EA9FD
 - **Protótipo:** `SceUID sceIoOpenAsync(const char *file, int flags, SceMode mode);` (sem header; inferido de `sceIoOpen`)
 - **Comportamento:** abre o arquivo de forma assíncrona; o fd novo é o resultado do Complete. Se o fd já existe
   quando Async retorna (como no PSP) ou só passa a existir no Complete: **a confirmar**.
@@ -533,7 +539,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** Open síncrono e Async no mesmo arquivo dão fds válidos e o mesmo conteúdo lido.
 
 ### sceIoCloseAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x8EA3616A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x8EA3616A
 - **Protótipo:** `int sceIoCloseAsync(SceUID fd);` (inferido)
 - **Comportamento:** fecha `fd` depois que as operações pendentes nele terminarem.
 - **Retorno/erros:** `opid` ou `IO_EBADF` imediato; Complete → 0.
@@ -542,7 +548,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** Close async seguido de `sceIoRead(fd)` → EBADF depois do Complete.
 
 ### sceIoReadAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x773EBD45
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x773EBD45
 - **Protótipo:** `int sceIoReadAsync(SceUID fd, void *buf, SceSize nbyte);` (inferido de `sceIoRead`)
 - **Comportamento:** lê `nbyte` bytes da posição atual e avança a posição.
 - **Retorno/erros:** `opid`; Complete → bytes lidos.
@@ -552,7 +558,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** ler um arquivo conhecido do `app0:` e comparar o hash.
 
 ### sceIoWriteAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xE0D63D2A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xE0D63D2A
 - **Protótipo:** `int sceIoWriteAsync(SceUID fd, const void *buf, SceSize nbyte);` (inferido)
 - **Comportamento:** escreve na posição atual. Os fds de tty/stdout também são aceitos.
 - **Retorno/erros:** `opid`; Complete → bytes escritos.
@@ -562,7 +568,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** escrever em `ux0:data/x`, Complete, ler de volta.
 
 ### sceIoPreadAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA010141E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA010141E
 - **Protótipo:** `int sceIoPreadAsync(SceUID fd, void *buf, SceSize nbyte, SceOff offset);` (inferido de `sceIoPread`)
 - **Comportamento:** lê em `offset` sem mover a posição do arquivo.
 - **Retorno/erros:** `opid`; Complete → bytes lidos.
@@ -572,7 +578,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** como ReadAsync, com offsets aleatórios.
 
 ### sceIoPwriteAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xED25BEEF
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xED25BEEF
 - **Protótipo:** `int sceIoPwriteAsync(SceUID fd, const void *buf, SceSize nbyte, SceOff offset);` (inferido)
 - **Comportamento:** escreve em `offset` sem mover a posição.
 - **Retorno/erros:** `opid`; Complete → bytes escritos.
@@ -581,7 +587,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** como WriteAsync.
 
 ### sceIoLseekAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xCAC5D672
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xCAC5D672
 - **Protótipo:** `int sceIoLseekAsync(SceUID fd, SceOff offset, int whence);` (inferido; syscall `_sceIoLseekAsync(fd, _sceIoLseekOpt*)`,
   com `_sceIoLseekOpt { SceOff offset; int whence; u32 unk; }`, layout do Vita3K `SceIofilemgr.h`)
 - **Comportamento:** move a posição; o resultado é a nova posição (64 bits).
@@ -592,7 +598,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** Lseek async SEEK_END → Complete == tamanho do arquivo.
 
 ### sceIoSyncAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xF7C7FBFE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xF7C7FBFE
 - **Protótipo:** `int sceIoSyncAsync(const char *device, unsigned int flags);` (inferido de `sceIoSync`)
 - **Comportamento:** `sceIoSync` assíncrono.
 - **Retorno/erros:** `opid`; Complete → 0 / ENODEV.
@@ -601,7 +607,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** como `sceIoSync`.
 
 ### sceIoSyncByFdAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x7E1367CB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x7E1367CB
 - **Protótipo:** `int sceIoSyncByFdAsync(SceUID fd, int flag);` (inferido)
 - **Comportamento:** `sceIoSyncByFd` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → 0.
@@ -610,7 +616,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoGetstatAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x82B20B41
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x82B20B41
 - **Protótipo:** `int sceIoGetstatAsync(const char *file, SceIoStat *stat);` (inferido)
 - **Comportamento:** `sceIoGetstat` assíncrono; `stat` é preenchido antes da conclusão.
 - **Retorno/erros:** `opid`; Complete → 0 / ENOENT.
@@ -619,7 +625,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário comparando com a versão síncrona.
 
 ### sceIoGetstatByFdAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x5167AC1E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x5167AC1E
 - **Protótipo:** `int sceIoGetstatByFdAsync(SceUID fd, SceIoStat *stat);` (inferido)
 - **Comportamento:** `sceIoGetstatByFd` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → 0.
@@ -628,7 +634,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoChstatAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x9739A5E2
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x9739A5E2
 - **Protótipo:** `int sceIoChstatAsync(const char *file, SceIoStat *stat, int bits);` (inferido; syscall `_sceIoChstatAsync`)
 - **Comportamento:** `sceIoChstat` assíncrono.
 - **Retorno/erros:** `opid`; Complete → como Chstat.
@@ -637,7 +643,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoChstatByFdAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xA9F89275
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xA9F89275
 - **Protótipo:** `int sceIoChstatByFdAsync(SceUID fd, const SceIoStat *buf, unsigned int cbit);` (inferido)
 - **Comportamento:** `sceIoChstatByFd` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → como ChstatByFd.
@@ -646,7 +652,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoMkdirAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x8E5FCBB1
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x8E5FCBB1
 - **Protótipo:** `int sceIoMkdirAsync(const char *dir, SceMode mode);` (inferido)
 - **Comportamento:** `sceIoMkdir` assíncrono.
 - **Retorno/erros:** `opid`; Complete → 0 / EEXIST / ENOENT.
@@ -655,7 +661,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoRmdirAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x9694D00F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x9694D00F
 - **Protótipo:** `int sceIoRmdirAsync(const char *path);` (inferido)
 - **Comportamento:** `sceIoRmdir` assíncrono.
 - **Retorno/erros:** `opid`; Complete → 0 / ENOENT / ENOTEMPTY.
@@ -664,7 +670,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoRemoveAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x446A60AC
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x446A60AC
 - **Protótipo:** `int sceIoRemoveAsync(const char *file);` (inferido)
 - **Comportamento:** `sceIoRemove` assíncrono.
 - **Retorno/erros:** `opid`; Complete → 0 / ENOENT.
@@ -673,7 +679,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoRenameAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xEE9857CD
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xEE9857CD
 - **Protótipo:** `int sceIoRenameAsync(const char *oldname, const char *newname);` (inferido)
 - **Comportamento:** `sceIoRename` assíncrono.
 - **Retorno/erros:** `opid`; Complete → 0 / ENOENT.
@@ -682,7 +688,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoDopenAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xC49C312F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xC49C312F
 - **Protótipo:** `SceUID sceIoDopenAsync(const char *dirname);` (inferido)
 - **Comportamento:** `sceIoDopen` assíncrono; o dfd é o resultado do Complete.
 - **Retorno/erros:** `opid`; Complete → dfd / ENOENT.
@@ -691,7 +697,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoDreadAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xF59F37B0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xF59F37B0
 - **Protótipo:** `int sceIoDreadAsync(SceUID fd, SceIoDirent *dir);` (inferido)
 - **Comportamento:** `sceIoDread` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → >0 entrada lida, 0 fim.
@@ -701,7 +707,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoDcloseAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xDC2D7D38
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xDC2D7D38
 - **Protótipo:** `int sceIoDcloseAsync(SceUID fd);` (inferido)
 - **Comportamento:** `sceIoDclose` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → 0.
@@ -710,7 +716,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoDevctlAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x950F78EB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x950F78EB
 - **Protótipo:** `int sceIoDevctlAsync(const char *dev, unsigned int cmd, void *indata, int inlen, void *outdata, int outlen);`
   (inferido de `sceIoDevctl`; syscall `_sceIoDevctlAsync(dev, cmd, arg, SceIoDevctlOpt*)`, com `SceIoDevctlOpt` 0x18:
   +0 `arglen`, +4 `bufp`, +8 `buflen`, +0xC reservado[3], conforme `psp2/io/fcntl.h`)
@@ -724,7 +730,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário.
 
 ### sceIoIoctlAsync
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x099C54B9
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x099C54B9
 - **Protótipo:** `int sceIoIoctlAsync(SceUID fd, unsigned int cmd, void *indata, int inlen, void *outdata, int outlen);` (`psp2/io/devctl.h`)
 - **Comportamento:** `sceIoIoctl` assíncrono.
 - **Retorno/erros:** `opid` / `IO_EBADF`; Complete → como Ioctl.
@@ -735,7 +741,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 ### Funções de controle do I/O assíncrono
 
 ### sceIoComplete
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xD1C49D2F
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xD1C49D2F
 - **Protótipo:** `int sceIoComplete(SceUID opid);` (sem header; inferido. O argumento pode ser o fd em vez do `opid`:
   **a confirmar**)
 - **Comportamento:** finaliza a operação: se ainda estiver pendente, espera (inferido; pode também devolver
@@ -762,7 +768,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** a definir quando o layout for confirmado.
 
 ### sceIoCancel
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xCEF48835
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xCEF48835
 - **Protótipo:** `int sceIoCancel(SceUID fd);` (`psp2/io/fcntl.h`: "Cancel an asynchronous operation on a file
   descriptor")
 - **Comportamento:** cancela as operações assíncronas pendentes. O header diz `fd`; se for o fd ou o `opid` é **a
@@ -792,7 +798,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 `int _processDefaultPriority` e um `ConditionalWeakTable<GuestThread, StrongBox<int>>` para o valor por thread.
 
 ### sceIoGetPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xF2A472A1
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xF2A472A1
 - **Protótipo:** `int sceIoGetPriority(SceUID fd);` (`psp2/io/fcntl.h`)
 - **Comportamento:** devolve a prioridade de I/O do fd (a definida, ou a herdada no open, a confirmar).
 - **Retorno/erros:** prioridade (≥ 0); fd inválido → `IO_EBADF`.
@@ -801,7 +807,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** Set → Get devolve o valor.
 
 ### sceIoSetPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x14B2D56C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x14B2D56C
 - **Protótipo:** `int sceIoSetPriority(SceUID fd, int priority);` (`psp2/io/fcntl.h`)
 - **Comportamento:** define a prioridade de I/O do fd.
 - **Retorno/erros:** 0; fd inválido → `IO_EBADF`; prioridade fora da faixa → `SCE_KERNEL_ERROR_ILLEGAL_PRIORITY
@@ -811,7 +817,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** unitário.
 
 ### sceIoGetThreadDefaultPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xA176CD03
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0xA176CD03
 - **Protótipo:** `int sceIoGetThreadDefaultPriority(void);` (`psp2/io/fcntl.h`)
 - **Comportamento:** prioridade padrão dos fds abertos pela thread atual.
 - **Retorno/erros:** prioridade; se não definida, a do processo (inferido).
@@ -820,7 +826,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** unitário.
 
 ### sceIoSetThreadDefaultPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x49312108
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x49312108
 - **Protótipo:** `int sceIoSetThreadDefaultPriority(int priority);` (`psp2/io/fcntl.h`)
 - **Comportamento:** define a prioridade padrão de I/O da thread atual.
 - **Retorno/erros:** 0; fora da faixa → ILLEGAL_PRIORITY (a confirmar).
@@ -829,7 +835,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** unitário.
 
 ### sceIoGetProcessDefaultPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x0DC4F1BB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x0DC4F1BB
 - **Protótipo:** `int sceIoGetProcessDefaultPriority(void);` (`psp2/io/fcntl.h`)
 - **Comportamento:** prioridade padrão de I/O do processo.
 - **Retorno/erros:** prioridade (valor inicial a confirmar).
@@ -838,7 +844,7 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** unitário.
 
 ### sceIoSetProcessDefaultPriority
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x7F2ABBAF
+- [x] **Prioridade:** P1 · **Biblioteca:** SceIofilemgr · **NID:** 0x7F2ABBAF
 - **Protótipo:** `int sceIoSetProcessDefaultPriority(int priority);` (`psp2/io/fcntl.h`)
 - **Comportamento:** define a prioridade padrão de I/O do processo.
 - **Retorno/erros:** 0; fora da faixa → ILLEGAL_PRIORITY (a confirmar).

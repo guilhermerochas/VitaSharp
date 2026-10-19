@@ -19,6 +19,9 @@ public sealed unsafe partial class VulkanRenderer
     long _traceTextureFrame = -1;
 
     bool TracingThisFrame => _opt.TraceDrawsFrame == _presentCount && _opt.ShaderCacheDir != null;
+    /// <summary>Scene begins and mid-scene flushes are logged for the traced frame and the one after it (a frame's
+    /// post-processing often runs after the previous frame was presented).</summary>
+    bool TracingScenes => _opt.ShaderCacheDir != null && _presentCount >= _opt.TraceDrawsFrame && _presentCount <= _opt.TraceDrawsFrame + 1 && _opt.TraceDrawsFrame >= 0;
 
     void TraceTexture(TexKey key, GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
     {
@@ -300,5 +303,62 @@ static class BcDecode
         c[o + 1] = (byte)(((v >> 5) & 63) * 255 / 63);
         c[o + 2] = (byte)((v & 31) * 255 / 31);
         c[o + 3] = 255;
+    }
+}
+
+/// <summary>
+/// Trace-frame snapshots of the current colour target taken just before chosen draws
+/// (VITASHARP_TRACE_SNAP=id,id,... with the ids of the draw trace), written next to the target dumps as
+/// snap_&lt;id&gt;_rt_&lt;addr&gt;.png plus an alpha image, to see what each pass of a post-processing chain produced.
+/// </summary>
+public sealed unsafe partial class VulkanRenderer
+{
+    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_SNAP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+    static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
+    /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>
+    static readonly HashSet<uint> TraceSnapTargets = TraceSnapSpec.Where(s => s.StartsWith("rt:"))
+        .Select(s => Convert.ToUInt32(s[3..], 16)).ToHashSet();
+
+    readonly List<(int Id, RenderTarget Rt, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _traceSnaps = new();
+
+    void TraceSnapshot()
+    {
+        // snapshots are taken in the logged frame (draw ids match the draw trace) and written when it is presented
+        if (TraceSnapSpec.Length == 0 || _opt.ShaderCacheDir == null || !TracingThisFrame || _rt is not { } rt) return;
+        if (!TraceSnapIds.Contains(_drawSerial) && !TraceSnapTargets.Contains(rt.Address)) return;
+        int bpp = HostBytesPerPixel(rt.Format);
+        if (bpp != 4 && bpp != 8) return;
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        rt.Dirty = true;
+        SyncRenderTargetForRead(rt);
+        var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
+        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+        _traceSnaps.Add((_drawSerial, rt, buf, mem, ptr));
+    }
+
+    /// <summary>Writes the snapshots (called after the traced frame completed on the GPU).</summary>
+    void WriteTraceSnapshots(string dir)
+    {
+        foreach (var (id, rt, buf, mem, ptr) in _traceSnaps)
+        {
+            int n = (int)(rt.Width * rt.Height);
+            var rgb = new byte[n * 4];
+            var alpha = new byte[n * 4];
+            bool half = HostBytesPerPixel(rt.Format) == 8;
+            for (int i = 0; i < n; i++)
+            {
+                for (int c = 0; c < 4; c++)
+                {
+                    byte v = half ? (byte)Math.Clamp((int)((float)((Half*)ptr)[i * 4 + c] * 255f + 0.5f), 0, 255) : ((byte*)ptr)[i * 4 + c];
+                    if (c < 3) rgb[i * 4 + c] = v; else { alpha[i * 4] = alpha[i * 4 + 1] = alpha[i * 4 + 2] = v; }
+                }
+                if (rt.Format == Format.B8G8R8A8Unorm) (rgb[i * 4], rgb[i * 4 + 2]) = (rgb[i * 4 + 2], rgb[i * 4]);
+                rgb[i * 4 + 3] = alpha[i * 4 + 3] = 255;
+            }
+            Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}.png"), rgb, (int)rt.Width, (int)rt.Height);
+            Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}_alpha.png"), alpha, (int)rt.Width, (int)rt.Height);
+            _core.DestroyBuffer(buf, mem);
+        }
+        _traceSnaps.Clear();
     }
 }

@@ -85,7 +85,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
 `bool[2] _force` (padrão `false`). `Peek` (Display.cs) passa a consultar os dois.
 
 ### sceTouchSetSamplingState
-- [ ] **Prioridade:** STUB (chamada por Invizimals, Devious Dungeon, God of War, Killzone, F1) · **Biblioteca:** SceTouch · **NID:** 0x1B9C5D14
+- [x] **Prioridade:** STUB (chamada por Invizimals, Devious Dungeon, God of War, Killzone, F1) · **Biblioteca:** SceTouch · **NID:** 0x1B9C5D14
 - **Protótipo:** `int sceTouchSetSamplingState(SceUInt32 port, SceTouchSamplingState state);` (`psp2/touch.h`)
 - **Comportamento:** liga ou desliga a amostragem do painel. Com STOP, `sceTouchRead/Peek` continuam funcionando, mas
   devolvem `reportNum = 0` (Vita3K `touch/src/touch.cpp`, `if (!touch_mode[port]) data->reportNum = 0`). Hoje
@@ -101,7 +101,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
   (taps continuam funcionando). Log Debug da chamada mostra `state=1` no boot desses jogos.
 
 ### sceTouchGetSamplingState
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceTouch · **NID:** 0x26531526
+- [x] **Prioridade:** STUB · **Biblioteca:** SceTouch · **NID:** 0x26531526
 - **Protótipo:** `int sceTouchGetSamplingState(SceUInt32 port, SceTouchSamplingState *pState);` (`psp2/touch.h`)
 - **Comportamento:** devolve o estado gravado por `SetSamplingState`. Hoje devolve sempre 1.
 - **Retorno/erros:** 0; `0x80350001` se `port > 1` ou `pState == NULL`.
@@ -110,7 +110,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
 - **Validação:** teste unitário: Set(0, STOP) seguido de Get deve dar 0.
 
 ### sceTouchEnableTouchForce / sceTouchDisableTouchForce
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceTouch · **NID:** 0xB18370C2 (Enable) / 0x41194411 (Disable)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceTouch · **NID:** 0xB18370C2 (Enable) / 0x41194411 (Disable)
 - **Protótipo:** `int sceTouchEnableTouchForce(SceUInt32 port);` / `int sceTouchDisableTouchForce(SceUInt32 port);` (`psp2/touch.h`)
 - **Comportamento:** liga ou desliga o campo `force` dos relatórios. Desligado, `force = 0`; ligado, `force` vem dentro de
   `minForce..maxForce` (1..128). Hoje o Peek escreve sempre 128.
@@ -121,7 +121,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
 - **Validação:** Invizimals e F1 chamam `EnableTouchForce`; verificar no log que os relatórios saem com 128.
 
 ### sceTouchPeek2 / sceTouchRead2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceTouch · **NID:** 0x3AD3D0A1 (Peek2) / 0x39401BEA (Read2)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceTouch · **NID:** 0x3AD3D0A1 (Peek2) / 0x39401BEA (Read2)
 - **Protótipo:** inferido (Vita3K): `int sceTouchPeek2(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs);`, idem `sceTouchRead2`.
 - **Comportamento:** mesmo contrato de `sceTouchPeek`/`sceTouchRead`. O Vita3K trata as duas como aliases. Diferença
   real em relação às versões sem "2": a confirmar (provavelmente o tratamento de `SCE_TOUCH_REPORT_INFO_HIDE_UPPER_LAYER`).
@@ -133,7 +133,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
 - **Validação:** teste unitário de alias; nenhum jogo instalado importa.
 
 ### sceTouchGetPixelDensity / sceTouchGetPixelDensity2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceTouch · **NID:** 0xF0704CF3 / 0xE0C1DB92
+- [x] **Prioridade:** P1 · **Biblioteca:** SceTouch · **NID:** 0xF0704CF3 / 0xE0C1DB92
 - **Protótipo:** inferido (Vita3K): `int sceTouchGetPixelDensity(float *pFront, float *pBack);` e
   `int sceTouchGetPixelDensity2(float *p1, float *p2, float *p3, float *p4);`
 - **Comportamento:** densidade do painel. O Vita3K devolve 22.0 em todos os campos quando o "hardware info" vale
@@ -143,6 +143,7 @@ Estado novo da classe `Touch`: `SceTouchSamplingState[2] _sampling` (padrão STO
 - **Estruturas:** —
 - **Implementação no VitaSharp:** escrever 17.54f em todos os ponteiros. Isso equivale a 1920 unidades em ~109 mm
   (largura física da tela de 5"); o modelo correspondente ainda está a confirmar.
+- **Implementado:** escreve 22.0f (o valor que o Vita3K devolve com o hardware info padrão 0x30), já que o modelo de cada valor está a confirmar.
 - **Validação:** teste unitário.
 
 ### Família: regiões e variantes Ext do SceTouch
@@ -154,19 +155,19 @@ recebem os mesmos argumentos da base. Para confirmar, desmontar o SceTouch do FW
 
 | [ ] | Função | NID | Prioridade | Protótipo (inferido) | Implementação |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | sceTouchPeekRegion | 0x04440622 | P1 | `int (SceUInt32 port, SceTouchData*, SceUInt32 nBufs, int region)` | `region > 0xFF` → 0x80350001; senão `Peek` |
-| [ ] | sceTouchReadRegion | 0x93B5635B | P1 | idem | idem com `Read` |
-| [ ] | sceTouchPeekRegionExt | 0x2CF6D7E2 | P1 | idem + args extras a confirmar | `PeekRegion` |
-| [ ] | sceTouchReadRegionExt | 0x9F0ACAF9 | P1 | idem | `ReadRegion` |
-| [ ] | sceTouchSetRegion | 0x6134DFBE | P1 | a confirmar | 0 (no-op) |
-| [ ] | sceTouchSetRegionAttr | 0x08DD4C7C | P1 | a confirmar | 0 |
-| [ ] | sceTouchActivateRegion | 0xBD59D652 | P1 | a confirmar | 0 |
-| [ ] | sceTouchClearRegion | 0x2D94EAEA | P1 | a confirmar | 0 |
-| [ ] | sceTouchGetSamplingStateExt | 0xDC8671EA | P1 | `int (SceUInt32 port, SceTouchSamplingState*)` | igual a `GetSamplingState` |
-| [ ] | sceTouchSetSamplingStateExt | 0x13CDFC43 | P1 | `int (SceUInt32 port, SceTouchSamplingState)` | igual a `SetSamplingState` |
-| [ ] | sceTouchEnableTouchForceExt | 0xA3FE877B | P1 | `int (SceUInt32 port)` | igual a `EnableTouchForce` |
-| [ ] | sceTouchDisableTouchForceExt | 0xED25DFDC | P1 | `int (SceUInt32 port)` | igual a `DisableTouchForce` |
-| [ ] | sceTouchEnableIdleTimerCancelSetting | 0x012EAE3A | P1 | `int (SceUInt32 port, SceBool enable)` (a confirmar) | 0 (o VitaSharp não tem idle timer) |
+| [x] | sceTouchPeekRegion | 0x04440622 | P1 | `int (SceUInt32 port, SceTouchData*, SceUInt32 nBufs, int region)` | `region > 0xFF` → 0x80350001; senão `Peek` |
+| [x] | sceTouchReadRegion | 0x93B5635B | P1 | idem | idem com `Read` |
+| [x] | sceTouchPeekRegionExt | 0x2CF6D7E2 | P1 | idem + args extras a confirmar | `PeekRegion` |
+| [x] | sceTouchReadRegionExt | 0x9F0ACAF9 | P1 | idem | `ReadRegion` |
+| [x] | sceTouchSetRegion | 0x6134DFBE | P1 | a confirmar | 0 (no-op) |
+| [x] | sceTouchSetRegionAttr | 0x08DD4C7C | P1 | a confirmar | 0 |
+| [x] | sceTouchActivateRegion | 0xBD59D652 | P1 | a confirmar | 0 |
+| [x] | sceTouchClearRegion | 0x2D94EAEA | P1 | a confirmar | 0 |
+| [x] | sceTouchGetSamplingStateExt | 0xDC8671EA | P1 | `int (SceUInt32 port, SceTouchSamplingState*)` | igual a `GetSamplingState` |
+| [x] | sceTouchSetSamplingStateExt | 0x13CDFC43 | P1 | `int (SceUInt32 port, SceTouchSamplingState)` | igual a `SetSamplingState` |
+| [x] | sceTouchEnableTouchForceExt | 0xA3FE877B | P1 | `int (SceUInt32 port)` | igual a `EnableTouchForce` |
+| [x] | sceTouchDisableTouchForceExt | 0xED25DFDC | P1 | `int (SceUInt32 port)` | igual a `DisableTouchForce` |
+| [x] | sceTouchEnableIdleTimerCancelSetting | 0x012EAE3A | P1 | `int (SceUInt32 port, SceBool enable)` (a confirmar) | 0 (o VitaSharp não tem idle timer) |
 
 Validação: teste unitário de cada alias; nenhum jogo instalado importa.
 
@@ -186,7 +187,7 @@ Validação: teste unitário de cada alias; nenhum jogo instalado importa.
 ## SceCtrl
 
 ### sceCtrlSetRapidFire
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCtrl · **NID:** 0xE9CB69C8
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCtrl · **NID:** 0xE9CB69C8
 - **Protótipo:** `int sceCtrlSetRapidFire(int port, int idx, const SceCtrlRapidFireRule *pRule);` (`psp2/ctrl.h`)
 - **Comportamento:** grava a regra de tiro rápido `idx` (0..15) da porta. Depois disso, as leituras do buffer aplicam a
   regra: quando `(buttons & Mask) == Trigger`, os bits de `Target` alternam. Ficam `Delay` amostras sem mudança, depois
@@ -205,7 +206,7 @@ Validação: teste unitário de cada alias; nenhum jogo instalado importa.
   pressionado: 4 vblanks devem dar o padrão 1,1,0,0.
 
 ### sceCtrlClearRapidFire
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCtrl · **NID:** 0xD8294C9C
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCtrl · **NID:** 0xD8294C9C
 - **Protótipo:** `int sceCtrlClearRapidFire(int port, int idx);` (`psp2/ctrl.h`)
 - **Comportamento:** remove a regra `idx`.
 - **Retorno/erros:** 0; `0x80340001` para `idx` fora de 0..15 ou porta inválida.
@@ -214,7 +215,7 @@ Validação: teste unitário de cada alias; nenhum jogo instalado importa.
 - **Validação:** junto com o teste de `SetRapidFire`.
 
 ### sceCtrlSetAnalogStickCheckTarget / sceCtrlGetAnalogStickCheckTarget / sceCtrlGetAnalogStickCheckMode
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceCtrl · **NID:** 0xFB12A0A7 (SetTarget) / 0xD01DE63A (GetTarget) / 0x35BCD3BB (GetMode)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceCtrl · **NID:** 0xFB12A0A7 (SetTarget) / 0xD01DE63A (GetTarget) / 0x35BCD3BB (GetMode)
 - **Protótipo:** inferido, pareando com o stub existente `sceCtrlSetAnalogStickCheckMode(uint mode)`:
   `int sceCtrlSetAnalogStickCheckTarget(int target);`, `int sceCtrlGetAnalogStickCheckTarget(int *pTarget);`,
   `int sceCtrlGetAnalogStickCheckMode(int *pMode);`. Nenhuma tem protótipo no vita-headers e o Vita3K não implementa.
@@ -259,7 +260,7 @@ Códigos de erro de `psp2/motion.h`: NOT_SAMPLING `0x80360206`, ALREADY_SAMPLING
 `0x80360205`. Do Vita3K: NULL_PARAMETER `0x80360209` e ANGLE_OUT_OF_RANGE `0x8036020A`.
 
 ### sceMotionGetSensorState
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceMotion · **NID:** 0x47D679EA
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceMotion · **NID:** 0x47D679EA
 - **Protótipo:** `int sceMotionGetSensorState(SceMotionSensorState *sensorState, int numRecords);` (`psp2/motion.h`)
 - **Comportamento:** copia as últimas `numRecords` amostras cruas do acelerômetro e do giroscópio, sem fusão (diferente
   de `GetState`). Invizimals chama em `0x814BCA04` com `numRecords = 64` e copia em seguida `0x1000` bytes
@@ -279,6 +280,7 @@ Códigos de erro de `psp2/motion.h`: NOT_SAMPLING `0x80360206`, ALREADY_SAMPLING
   `0..numRecords-1`, registro em `p = sensorState + i*0x40`: zerar 0x40; `W(p+8, -1.0f)`;
   `ts = now - (numRecords-1-i)*16667`; `W32(p+0x24, (uint)ts)`; `W32(p+0x28, _counter - (numRecords-1-i))`;
   `W64(p+0x30, ts)`. Depois, `_counter++`.
+- **Implementado:** `NOT_SAMPLING` **não** é exigido (permissivo como `sceMotionGetState`, ver o risco na família STUB); registros do mais antigo ao mais novo, intervalo de 16 667 µs.
 - **Validação:** `VitaSharp.Desktop imports PCSA00552` deixa de listar a função. Criar `tests/scenarios/inv_boot.txt`
   (`title=PCSA00552`, `data=C:\Users\guisa\AppData\Roaming\VitaSharp`, `args=--seconds=90 --dump-every=60`) e conferir
   que o modo AR não trava na leitura de sensores.
@@ -292,23 +294,23 @@ log Debug que os Get devolvem o que foi gravado.
 
 | [ ] | Função | NID | Protótipo | Comportamento / retorno |
 | --- | --- | --- | --- | --- |
-| [ ] | sceMotionStartSampling | 0x28034AC9 | `int (void)` | Se já estiver amostrando → 0x80360207; senão `_sampling = true`, 0. |
-| [ ] | sceMotionStopSampling | 0xAF32CB1D | `int (void)` | Se não estiver amostrando → 0x80360206; senão `false`, 0. |
-| [ ] | sceMotionGetTiltCorrection | 0xC1652201 | `int (void)` | Devolve `_tiltCorrection` (padrão 1). |
-| [ ] | sceMotionSetTiltCorrection | 0xAF09FCDB | `int (int setValue)` | Grava (0/1), 0. |
-| [ ] | sceMotionGetDeadband | 0x112E0EAE | `int (void)` | Devolve `_deadband` (padrão 1). |
-| [ ] | sceMotionSetDeadband | 0x917EA390 | `int (int setValue)` | Grava, 0. |
-| [ ] | sceMotionSetAngleThreshold | 0xDACB2A41 | `int (float angle)` | NaN ou fora de 0..45 → 0x8036020A (Vita3K); senão grava, 0. |
-| [ ] | sceMotionMagnetometerOn | 0x122A79F8 | `int (void)` | `_magnetometer = true`, 0. |
-| [ ] | sceMotionMagnetometerOff | 0xC1A7395A | `int (void)` | `false`, 0. |
-| [ ] | sceMotionGetMagnetometerState | 0x3D4813AE | `int (void)` | Devolve `_magnetometer` (1/0). |
+| [x] | sceMotionStartSampling | 0x28034AC9 | `int (void)` | Se já estiver amostrando → 0x80360207; senão `_sampling = true`, 0. |
+| [x] | sceMotionStopSampling | 0xAF32CB1D | `int (void)` | Se não estiver amostrando → 0x80360206; senão `false`, 0. |
+| [x] | sceMotionGetTiltCorrection | 0xC1652201 | `int (void)` | Devolve `_tiltCorrection` (padrão 1). |
+| [x] | sceMotionSetTiltCorrection | 0xAF09FCDB | `int (int setValue)` | Grava (0/1), 0. |
+| [x] | sceMotionGetDeadband | 0x112E0EAE | `int (void)` | Devolve `_deadband` (padrão 1). |
+| [x] | sceMotionSetDeadband | 0x917EA390 | `int (int setValue)` | Grava, 0. |
+| [x] | sceMotionSetAngleThreshold | 0xDACB2A41 | `int (float angle)` | NaN ou fora de 0..45 → 0x8036020A (Vita3K); senão grava, 0. |
+| [x] | sceMotionMagnetometerOn | 0x122A79F8 | `int (void)` | `_magnetometer = true`, 0. |
+| [x] | sceMotionMagnetometerOff | 0xC1A7395A | `int (void)` | `false`, 0. |
+| [x] | sceMotionGetMagnetometerState | 0x3D4813AE | `int (void)` | Devolve `_magnetometer` (1/0). |
 
 Risco: `sceMotionGetState` passaria a exigir `_sampling` (o Vita3K devolve NOT_SAMPLING). Os 5 jogos que importam
 SceMotion também importam `StartSampling`, mas manter `GetState` permissivo até validar GoW e Killzone.
 `sceMotionReset` (0x0FD2CDA2) continua no-op: com orientação estática não há o que zerar.
 
 ### sceMotionGetAngleThreshold
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x499B6C87
+- [x] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x499B6C87
 - **Protótipo:** `float sceMotionGetAngleThreshold(void);` (`psp2/motion.h`)
 - **Comportamento:** devolve o limiar em graus usado pela orientação básica.
 - **Retorno/erros:** `_angleThreshold` (padrão 20.0f) em s0.
@@ -318,7 +320,7 @@ SceMotion também importam `StartSampling`, mas manter `GetState` permissivo at�
 - **Validação:** teste unitário Set(30)/Get.
 
 ### sceMotionGetBasicOrientation
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x4F28BFE0
+- [x] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x4F28BFE0
 - **Protótipo:** `int sceMotionGetBasicOrientation(SceFVector3 *basicOrientation);` (`psp2/motion.h`)
 - **Comportamento:** vetor com componentes -1/0/1 indicando qual eixo aponta contra a gravidade. Aparelho parado e
   deitado: (0, 0, 1).
@@ -328,7 +330,7 @@ SceMotion também importam `StartSampling`, mas manter `GetState` permissivo at�
 - **Validação:** teste unitário.
 
 ### sceMotionGetDeviceLocation
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x047F060A
+- [x] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x047F060A
 - **Protótipo:** `int sceMotionGetDeviceLocation(SceMotionDeviceLocation *deviceLocation);` (`psp2/motion.h`)
 - **Comportamento:** posição (mm) do acelerômetro e do giroscópio em relação ao centro do aparelho.
 - **Retorno/erros:** 0; 0x80360209 se NULL.
@@ -340,7 +342,7 @@ SceMotion também importam `StartSampling`, mas manter `GetState` permissivo at�
 - **Validação:** teste unitário.
 
 ### sceMotionGetGyroBiasCorrection / sceMotionSetGyroBiasCorrection
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0xE8A28DA5 (Get) / 0xA4A7E6E2 (Set)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0xE8A28DA5 (Get) / 0xA4A7E6E2 (Set)
 - **Protótipo:** `int sceMotionGetGyroBiasCorrection(void);` / `int sceMotionSetGyroBiasCorrection(int setValue);` (`psp2/motion.h`)
 - **Comportamento:** liga/desliga a correção de bias do giroscópio (padrão ligado). Sem efeito nos dados estáticos.
 - **Retorno/erros:** Get devolve 1/0; Set devolve 0.
@@ -349,7 +351,7 @@ SceMotion também importam `StartSampling`, mas manter `GetState` permissivo at�
 - **Validação:** teste unitário.
 
 ### sceMotionRotateYaw
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x20F00078
+- [x] **Prioridade:** P1 · **Biblioteca:** SceMotion · **NID:** 0x20F00078
 - **Protótipo:** `int sceMotionRotateYaw(float radians);` (`psp2/motion.h`)
 - **Comportamento:** gira a referência de yaw da orientação fundida.
 - **Retorno/erros:** 0.
@@ -369,7 +371,7 @@ INVALID_SAMPLE_FREQ 0x80260008, INVALID_VOLUME 0x80260009, INVALID_PORT_TYPE 0x8
 O `Audio.cs` atual usa valores trocados (Anexo A).
 
 ### sceAudioOutOpenExtPort
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x6184B939
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x6184B939
 - **Protótipo:** `int sceAudioOutOpenExtPort(int len, SceAudioOutMode mode);` (`psp2/audioout.h`)
 - **Comportamento:** abre a porta MAIN estendida do processo, a 48 kHz. É a nona porta MAIN, além das 8 normais.
 - **Retorno/erros:** handle **8**. INVALID_SIZE se `len` não for múltiplo de 64 ou passar de 65472; INVALID_FORMAT se
@@ -382,7 +384,7 @@ O `Audio.cs` atual usa valores trocados (Anexo A).
 - **Validação:** teste unitário: abrir 8 portas normais e a estendida.
 
 ### sceAudioOutSetCompress
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x3601D375
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x3601D375
 - **Protótipo:** `int sceAudioOutSetCompress(int port, SceBool enable);` (`psp2/audioout.h`)
 - **Comportamento:** escolhe o perfil comprimido de codec externo para porta BGM ou VOICE. Sem efeito audível no host.
 - **Retorno/erros:** 0; INVALID_PORT se a porta não existir. Para porta MAIN: o erro está a confirmar (provavelmente
@@ -392,7 +394,7 @@ O `Audio.cs` atual usa valores trocados (Anexo A).
 - **Validação:** teste unitário.
 
 ### sceAudioOutSetAdoptMode
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0xDCC90EDB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0xDCC90EDB
 - **Protótipo:** `int sceAudioOutSetAdoptMode(SceAudioOutAdoptMode mode);` (`psp2/audioout.h`)
 - **Comportamento:** define se portas BGM/VOICE novas são "adotadas" automaticamente (0) ou não (≠0).
 - **Retorno/erros:** sempre 0.
@@ -401,7 +403,7 @@ O `Audio.cs` atual usa valores trocados (Anexo A).
 - **Validação:** —
 
 ### sceAudioOutSetAdopt_forUser
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x26C82AF2
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x26C82AF2
 - **Protótipo:** `int sceAudioOutSetAdopt_forUser(SceAudioOutPortType type, SceBool adopt, int ramp_length, SceBool wait_for_completion);` (`psp2/audioout.h`)
 - **Comportamento:** adota ou libera o perfil `type` com rampa de `ramp_length` ms (limitada a 1..4096).
 - **Retorno/erros:** 0; `type` fora de MAIN/BGM/VOICE → INVALID_PORT_TYPE 0x8026000A (a confirmar).
@@ -411,7 +413,7 @@ O `Audio.cs` atual usa valores trocados (Anexo A).
 - **Validação:** Invizimals e Sakatsuku chamam `GetAdopt`: o retorno 1 deve continuar igual.
 
 ### sceAudioOutSetPortVolume_forUser / sceAudioOutGetPortVolume_forUser
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x65840F3D (Set) / 0xFF635DA5 (Get)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x65840F3D (Set) / 0xFF635DA5 (Get)
 - **Protótipo:** `int sceAudioOutSetPortVolume_forUser(int port_mask, SceUInt32 volume, int ramp_length);` /
   `int sceAudioOutGetPortVolume_forUser(SceAudioOutPortType type);` (`psp2/audioout.h`)
 - **Comportamento:** ganho privado 0..256 por perfil (máscara MAIN=2, BGM=4, VOICE=8), separado do volume Q15 por
@@ -435,7 +437,7 @@ Estado novo em `Audio.cs` (ou classe `AudioIn` separada): `Dictionary<int, InPor
 NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` (BUILTIN_MIC).
 
 ### sceAudioInGetStatus
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceAudioIn · **NID:** 0x2F940377
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceAudioIn · **NID:** 0x2F940377
 - **Protótipo:** `int sceAudioInGetStatus(int select);` (`psp2/audioin.h`)
 - **Comportamento:** com `select = SCE_AUDIO_IN_GETSTATUS_MUTE` (1), diz se o microfone do sistema está mudo.
   Invizimals chama em `0x814FF94A` com `select = 1` e trata `== 1` como mudo (a função dele devolve bool). Não depende
@@ -450,7 +452,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** `imports PCSA00552` sem a função; cenário `inv_boot.txt` sem `Unimplemented HLE function`.
 
 ### sceAudioInOpenPort
-- [ ] **Prioridade:** STUB (Invizimals, Devious Dungeon) · **Biblioteca:** SceAudioIn · **NID:** 0x39B50DC1
+- [x] **Prioridade:** STUB (Invizimals, Devious Dungeon) · **Biblioteca:** SceAudioIn · **NID:** 0x39B50DC1
 - **Protótipo:** `int sceAudioInOpenPort(SceAudioInPortType portType, int grain, int freq, SceAudioInParam param);` (`psp2/audioin.h`)
 - **Comportamento:** abre a porta de captura. Regras do FW 3.60 (header): VOICE (0) aceita 256 ou 512 amostras a
   16000 Hz; RAW (2) aceita 256 a 16000 Hz ou 768 a 48000 Hz; CAMERA (0x20) aceita 256/512 a 16000 Hz. `param` precisa
@@ -463,7 +465,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** `dd_boot.txt` sem regressão; ver no log o handle 0x80.
 
 ### sceAudioInInput
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAudioIn · **NID:** 0x638ADD2D
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAudioIn · **NID:** 0x638ADD2D
 - **Protótipo:** `int sceAudioInInput(int port, void *destPtr);` (`psp2/audioin.h`)
 - **Comportamento:** bloqueia até haver `grain` amostras e escreve `grain*2` bytes de PCM S16 mono.
 - **Retorno/erros:** 0; NOT_OPENED 0x80260109 se a porta não estiver aberta; INVALID_POINTER 0x80260105 se `destPtr`
@@ -475,7 +477,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** cronometrar 100 chamadas com grain 256 @16 kHz: ~1,6 s.
 
 ### sceAudioInReleasePort
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAudioIn · **NID:** 0x3A61B8C4
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAudioIn · **NID:** 0x3A61B8C4
 - **Protótipo:** `int sceAudioInReleasePort(int port);` (`psp2/audioin.h`)
 - **Comportamento:** libera a porta.
 - **Retorno/erros:** 0; NOT_OPENED 0x80260109 se não estiver aberta.
@@ -484,7 +486,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** Open → Release → Open devolve 0x80 de novo.
 
 ### sceAudioInInputWithInputDeviceState
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x343E8251
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x343E8251
 - **Protótipo:** `int sceAudioInInputWithInputDeviceState(int port, void *dest_ptr, int *input_device_state);` (`psp2/audioin.h`)
 - **Comportamento:** igual a `Input`. Em portas com relato de dispositivo (perfil CAMERA), escreve 1 nas duas primeiras
   capturas depois de uma troca de rota e 0 depois disso. Em outros perfis não toca no ponteiro.
@@ -495,7 +497,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** teste unitário.
 
 ### sceAudioInGetAdopt
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x566AC433
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x566AC433
 - **Protótipo:** `int sceAudioInGetAdopt(SceAudioInPortType portType);` (`psp2/audioin.h`)
 - **Comportamento:** 1 se o processo tem porta e é o processo de entrada adotado. Só aceita VOICE e RAW.
 - **Retorno/erros:** 1/0; INVALID_PORT_TYPE 0x80260104 para outros tipos.
@@ -504,7 +506,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** teste unitário.
 
 ### sceAudioInGetInput / sceAudioInSelectInput
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x08105392 (Get) / 0xA0EB852F (Select)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x08105392 (Get) / 0xA0EB852F (Select)
 - **Protótipo:** `int sceAudioInGetInput(void);` / `int sceAudioInSelectInput(SceAudioInInputMode input_mode);` (`psp2/audioin.h`)
 - **Comportamento:** lê/escolhe a rota de entrada (-1 NONE, 0 BUILTIN_MIC, 1 HEADSET_MIC, 2 CODEC_2, 0x10 BLUETOOTH,
   0x20 VITA_TV). `Select` não rejeita valores fora do enum.
@@ -516,7 +518,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** teste unitário.
 
 ### sceAudioInSetMute
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x1DFE7698
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x1DFE7698
 - **Protótipo:** `int sceAudioInSetMute(SceAudioInMuteCommand command);` (`psp2/audioin.h`)
 - **Comportamento:** 1 = MUTE, 2 = UNMUTE. Outros valores são ignorados.
 - **Retorno/erros:** para comando reconhecido, as flags internas atualizadas (layout no FW a confirmar; devolver
@@ -526,7 +528,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** SetMute(1) e depois GetStatus(1) == 1.
 
 ### sceAudioInSetMicGain / sceAudioInGetMicGain
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x0F34DD73 (Set) / 0x86118097 (Get)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudioIn · **NID:** 0x0F34DD73 (Set) / 0x86118097 (Get)
 - **Protótipo:** `int sceAudioInSetMicGain(int port, int gain);` / `int sceAudioInGetMicGain(int port);` (`psp2/audioin.h`)
 - **Comportamento:** guarda os 16 bits baixos de `gain` na porta (valor inicial 0x1060). O FW não usa o valor para nada.
 - **Retorno/erros:** Set: 0. Get: o valor com extensão de sinal de 16 bits. Porta inválida ou de outro processo:
@@ -552,7 +554,7 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 Tudo em `Audiodec.cs`. Códigos de `psp2/audiodec.h` (0x807F0000..0x807F0013).
 
 ### sceAudiodecDecodeNStreams
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x68F4A9CB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x68F4A9CB
 - **Protótipo:** `SceInt32 sceAudiodecDecodeNStreams(SceAudiodecCtrl *pCtrls[], SceUInt32 nStreams);` (`psp2/audiodec.h`)
 - **Comportamento:** decodifica um quadro em cada um dos `nStreams` decodificadores, numa chamada só (uso: várias trilhas
   sincronizadas). Atenção: o argumento é um array de **ponteiros**. O Vita3K trata como ponteiro único e não implementa.
@@ -566,7 +568,7 @@ Tudo em `Audiodec.cs`. Códigos de `psp2/audiodec.h` (0x807F0000..0x807F0013).
 - **Validação:** teste unitário com dois decoders AT9 do mesmo arquivo.
 
 ### sceAudiodecPartlyDecode
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x2742E642
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x2742E642
 - **Protótipo:** inferido (Vita3K): `SceInt32 sceAudiodecPartlyDecode(SceAudiodecCtrl *pCtrl, SceUInt32 samplesOffset, SceUInt32 samplesToDecode);`
 - **Comportamento:** usada pela libatrac (LLE) para decodificar parte de um superquadro ATRAC9. Decodifica quadros a
   partir de `pEs` até ter `samplesOffset + samplesToDecode` amostras e grava em `pPcm` só a faixa
@@ -581,7 +583,7 @@ Tudo em `Audiodec.cs`. Códigos de `psp2/audiodec.h` (0x807F0000..0x807F0013).
 - **Validação:** jogo com libatrac; nenhum dos 7 instalados importa.
 
 ### sceAudiodecCreateDecoderResident / sceAudiodecDeleteDecoderResident
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x98B44E1B (Create) / 0x164DAEDA (Delete)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAudiodecUser · **NID:** 0x98B44E1B (Create) / 0x164DAEDA (Delete)
 - **Protótipo:** inferido: `SceInt32 sceAudiodecCreateDecoderResident(SceAudiodecCtrl *pCtrl, SceUInt32 codecType);` e
   `SceInt32 sceAudiodecDeleteDecoderResident(SceAudiodecCtrl *pCtrl);`. Sem protótipo no vita-headers e não
   implementadas no Vita3K: a confirmar pela desmontagem do SceAudiodecUser do FW.
@@ -890,21 +892,21 @@ Protótipo e retorno de cada linha. Sem erros (sempre o valor). Implementação:
 
 | [ ] | Função | NID | Protótipo | Retorno |
 | --- | --- | --- | --- | --- |
-| [ ] | scePowerGetBatteryTemp | 0x28E12023 | `int (void)` (`psp2/power.h`) | 3000 |
-| [ ] | scePowerGetBatteryVolt | 0x483CE86B | `int (void)` (`psp2/power.h`) | 4150 |
-| [ ] | scePowerGetBatterySOH | 0xA88A2B65 | `int (void)` (`psp2/power.h`) | 100 |
-| [ ] | scePowerGetBatteryCycleCount | 0x008A54B9 | `int (void)` (`psp2/power.h`) | 10 |
-| [ ] | scePowerGetBatteryRemainLevel | 0xEA3E3715 | `int (void)` (inferido, Vita3K) | 4 |
-| [ ] | scePowerGetBatteryRemainMaxLevel | 0x1DB00F10 | `int (void)` (inferido, Vita3K) | 4 |
-| [ ] | scePowerGetBatteryElec | 0x862AE1A6 | `int (void)` (inferido) | 0 (bateria cheia, sem corrente de carga) |
-| [ ] | scePowerGetCaseTemp | 0x525592E4 | `int (void)` (inferido) | 3000 |
-| [ ] | scePowerGetBatteryChargingStatus | 0xB4432BC8 | `int (void)` (inferido) | 0. Enum desconhecido, a confirmar: desmontar o ScePower do FW ou ler num homebrew no hardware com o carregador ligado e desligado. |
-| [ ] | scePowerIsLowBatteryInhibitUpdateDownload | 0xE3E45636 | `SceBool (void)` (inferido) | 0 |
-| [ ] | scePowerIsLowBatteryInhibitUpdateReboot | 0x9AA05A48 | `SceBool (void)` (inferido) | 0 |
-| [ ] | scePowerBatteryUpdateInfo | 0x27F3292C | `int (void)` (inferido) | 0 (pede releitura da bateria; nada a fazer) |
+| [x] | scePowerGetBatteryTemp | 0x28E12023 | `int (void)` (`psp2/power.h`) | 3000 |
+| [x] | scePowerGetBatteryVolt | 0x483CE86B | `int (void)` (`psp2/power.h`) | 4150 |
+| [x] | scePowerGetBatterySOH | 0xA88A2B65 | `int (void)` (`psp2/power.h`) | 100 |
+| [x] | scePowerGetBatteryCycleCount | 0x008A54B9 | `int (void)` (`psp2/power.h`) | 10 |
+| [x] | scePowerGetBatteryRemainLevel | 0xEA3E3715 | `int (void)` (inferido, Vita3K) | 4 |
+| [x] | scePowerGetBatteryRemainMaxLevel | 0x1DB00F10 | `int (void)` (inferido, Vita3K) | 4 |
+| [x] | scePowerGetBatteryElec | 0x862AE1A6 | `int (void)` (inferido) | 0 (bateria cheia, sem corrente de carga) |
+| [x] | scePowerGetCaseTemp | 0x525592E4 | `int (void)` (inferido) | 3000 |
+| [x] | scePowerGetBatteryChargingStatus | 0xB4432BC8 | `int (void)` (inferido) | 0. Enum desconhecido, a confirmar: desmontar o ScePower do FW ou ler num homebrew no hardware com o carregador ligado e desligado. |
+| [x] | scePowerIsLowBatteryInhibitUpdateDownload | 0xE3E45636 | `SceBool (void)` (inferido) | 0 |
+| [x] | scePowerIsLowBatteryInhibitUpdateReboot | 0x9AA05A48 | `SceBool (void)` (inferido) | 0 |
+| [x] | scePowerBatteryUpdateInfo | 0x27F3292C | `int (void)` (inferido) | 0 (pede releitura da bateria; nada a fazer) |
 
 ### scePowerSetUsingWireless / scePowerGetUsingWireless
-- [ ] **Prioridade:** P1 · **Biblioteca:** ScePower · **NID:** 0x4D695C1F (Set) / 0xD541FF03 (Get)
+- [x] **Prioridade:** P1 · **Biblioteca:** ScePower · **NID:** 0x4D695C1F (Set) / 0xD541FF03 (Get)
 - **Protótipo:** `int scePowerSetUsingWireless(SceBool enabled);` / `int scePowerGetUsingWireless(void);` (`psp2/power.h`)
 - **Comportamento:** o jogo avisa se usa Wi-Fi (o perfil de energia muda). Get devolve o último valor.
 - **Retorno/erros:** Set: 0; valor ≠ 0/1 → INVALID_VALUE 0x802B0000 (Vita3K). Get: 0/1. O padrão de hardware está a
@@ -920,13 +922,13 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 
 | [ ] | Função | NID | Protótipo | Retorno |
 | --- | --- | --- | --- | --- |
-| [ ] | scePowerRequestSuspend | 0xAC32C9CC | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op) |
-| [ ] | scePowerRequestStandby | 0x2B7C7CF4 | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op) |
-| [ ] | scePowerRequestColdReset | 0x0442D852 | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op + Warn). No hardware o processo morre; se um jogo depender disso, tratar como `sceKernelExitProcess`. |
-| [ ] | scePowerIsSuspendRequired | 0x78A1A796 | `SceBool (void)` (`psp2/power.h`) | 0 |
-| [ ] | scePowerIsRequest | 0x7FA406DD | `SceBool (void)` (inferido) | 0 (nenhum pedido pendente) |
-| [ ] | scePowerCancelRequest | 0xDB62C9CF | `int (void)` (inferido) | 0 |
-| [ ] | scePowerSetIdleTimerCount | 0xB11EF149 | `int (int count)` (inferido) | 0 (sem timer de inatividade) |
+| [x] | scePowerRequestSuspend | 0xAC32C9CC | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op) |
+| [x] | scePowerRequestStandby | 0x2B7C7CF4 | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op) |
+| [x] | scePowerRequestColdReset | 0x0442D852 | `int (void)` (`psp2/power.h`, "always 0") | 0 (no-op + Warn). No hardware o processo morre; se um jogo depender disso, tratar como `sceKernelExitProcess`. |
+| [x] | scePowerIsSuspendRequired | 0x78A1A796 | `SceBool (void)` (`psp2/power.h`) | 0 |
+| [x] | scePowerIsRequest | 0x7FA406DD | `SceBool (void)` (inferido) | 0 (nenhum pedido pendente) |
+| [x] | scePowerCancelRequest | 0xDB62C9CF | `int (void)` (inferido) | 0 |
+| [x] | scePowerSetIdleTimerCount | 0xB11EF149 | `int (int count)` (inferido) | 0 (sem timer de inatividade) |
 
 ---
 
@@ -939,6 +941,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
   SceLibKernel (`__stack_chk_fail`, `__sce_aeabi_idiv0`, `__sce_aeabi_ldiv0`). Todos resolvidos hoje.
 - Pré-requisito: [sceSysmoduleLoadModule](#scesysmoduleloadmodule-pré-requisito-de-facesmart). Com ele, as entradas
   abaixo ficam resolvidas sem código novo. Marcar o checkbox depois de validar com Invizimals.
+- **Validado (2026-10-19):** com o loader genérico de `sceSysmoduleLoadModule` (0x38 → `libface`, 0x39 → `libsmart`), carregar os dois `.suprx` do PCSA00552 resolve os 16 imports SceFace/SceSmart do eboot por LLE e todos os imports dos próprios módulos (0 faltando). Nos cenários roteirizados (`inv_boot`), o jogo vai até o menu e entra no Story Mode, mas ainda não chama 0x38/0x39 (a cena de abertura do Story Mode fica parada); a carga em runtime ainda não foi observada.
 - Fallback HLE (só se o `.suprx` não existir): criar `Face.cs`. Objetivo: "nenhum rosto": tamanhos de memória > 0,
   parâmetros default reais e contagem de resultados 0.
 - Erros: base 0x808B0000. `sceFaceDetectionGetDefaultParam(NULL)` devolve **0x808B0002** (visto na desmontagem); nome
@@ -959,7 +962,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
   ShapeTrack +0x6CBB.
 
 ### sceFaceDetectionGetWorkingMemorySize
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xF24B851D
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xF24B851D
 - **Protótipo:** inferido (desmontagem + chamada): `SceInt32 sceFaceDetectionGetWorkingMemorySize(SceInt32 width, SceInt32 height, SceInt32 rowstride, const void *detectDict);`
 - **Comportamento:** tamanho da memória de trabalho da detecção para uma imagem `width×height`. O código valida e
   devolve **0** se `rowstride < width`, `width <= 0`, `height <= 0`, `rowstride <= 0`, `detectDict == NULL` ou o
@@ -973,7 +976,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 - **Validação:** `imports PCSA00552` lista SceFace como LLE; cenário `inv_boot.txt` sem `Unimplemented HLE function`.
 
 ### sceFaceAllPartsGetWorkingMemorySize
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xCF07E1C4
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xCF07E1C4
 - **Protótipo:** inferido: `SceInt32 sceFaceAllPartsGetWorkingMemorySize(SceInt32 width, SceInt32 height, SceInt32 rowstride, const void *partsDict);`
 - **Comportamento:** como a anterior, para a detecção de partes. Valida os mesmos argumentos e verifica que a primeira
   palavra de `partsDict` é igual a uma constante mágica do módulo. Devolve `g(...) + 0xA50` ou 0 se inválido.
@@ -985,7 +988,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 - **Validação:** idem.
 
 ### sceFaceDetectionGetDefaultParam
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xE5689BD1
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xE5689BD1
 - **Protótipo:** inferido: `SceInt32 sceFaceDetectionGetDefaultParam(SceFaceDetectionParam *param);`
 - **Comportamento:** preenche os parâmetros-padrão da detecção. Valores lidos do código (libface +0x2350):
 - **Retorno/erros:** 0; `param == NULL` → 0x808B0002.
@@ -1012,7 +1015,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 - **Validação:** teste unitário do fallback comparando com a tabela.
 
 ### sceFaceDetectionEx
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xD9603C69
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xD9603C69
 - **Protótipo:** inferido da chamada em `0x814D2640` (4 registradores e 7 palavras na pilha):
   `SceInt32 sceFaceDetectionEx(const SceUChar8 *img, SceInt32 width, SceInt32 height, SceInt32 rowstride, const void *detectDict, const SceFaceDetectionParam *param, SceFaceDetectionResult *results, SceInt32 maxResults, SceInt32 *numResults, void *workMem, SceInt32 workMemSize);`
   O Invizimals passa 160, 120, 160, `maxResults = 1`. Os nomes dos argumentos da pilha estão a confirmar; as posições
@@ -1025,7 +1028,7 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 - **Validação:** com câmera virtual cinza, o jogo nunca chama `sceFaceAllParts` (ver log com `TraceHle`).
 
 ### sceFaceDetectionLocal
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0x7D71725D
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0x7D71725D
 - **Protótipo:** inferido da chamada em `0x814D25D8`: 4 registradores (img, 160, 120, 160), **4 floats em s0–s3**
   (0.8409, 1.5, 1.3, 0.1 no Invizimals) e 10 palavras na pilha: `[0]` dict, `[4]` 2, `[8]` 1, `[0xC]` região anterior
   (entrada), `[0x10]` 1, `[0x14]` resultado (saída, 0x20 bytes), `[0x18]` 1 (máximo de resultados?), `[0x1C]`
@@ -1117,7 +1120,7 @@ comum: jogo que importe; até lá, nada.
   +0x4DEB (SM = SceneMapping, TT = TargetTracking).
 
 ### sceSmartInit
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x58979C84
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x58979C84
 - **Protótipo:** inferido: `SceInt32 sceSmartInit(const SceSmartInitParam *param);`
 - **Comportamento:** cria o contexto global (0xC8 bytes alocados pelo alocador do usuário). `param` pode ser NULL. Se
   `param` e os dois ponteiros de função forem não nulos, usa o alocador do usuário; senão usa o padrão interno
@@ -1131,7 +1134,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** `imports PCSA00552` mostra SceSmart como LLE; cenário `inv_boot.txt`.
 
 ### sceSmartRelease
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x43DF6D9C
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x43DF6D9C
 - **Protótipo:** inferido: `SceInt32 sceSmartRelease(void);`
 - **Comportamento:** para scene mapping e target tracking se estiverem ativos, libera o contexto pelo `free` do usuário
   e volta ao estado não inicializado.
@@ -1141,7 +1144,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** sair do modo AR e entrar de novo sem `0x808C0001` no Init.
 
 ### sceSmartSceneMappingStart
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xA3A82B99
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xA3A82B99
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingStart(SceInt32 mode);`
 - **Comportamento:** inicia o mapeamento de cena (SLAM monocular) no modo `mode`. O Invizimals usa 5 na entrada e 2/3/4
   conforme a fase (tabela {5,2,3,3,4}). O significado dos modos está a confirmar.
@@ -1151,7 +1154,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingStop
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x52EB57E4
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x52EB57E4
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingStop(void);`
 - **Comportamento:** para o mapeamento.
 - **Retorno/erros:** 0.
@@ -1160,7 +1163,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingReset
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xC1AD43BC
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xC1AD43BC
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingReset(void);`
 - **Comportamento:** descarta o mapa e volta à fase de inicialização sem parar.
 - **Retorno/erros:** 0.
@@ -1169,7 +1172,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingRunCore
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xCB30BD4D
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xCB30BD4D
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingRunCore(void);` (nenhum argumento preparado na chamada em
   `0x814FF092`).
 - **Comportamento:** executa uma iteração do processamento (extração de features, rastreamento, atualização do mapa)
@@ -1182,7 +1185,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** perfil de CPU do cenário `inv_boot.txt` no modo AR.
 
 ### sceSmartSceneMappingDispatchAndQuery
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xF10FDDD1
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xF10FDDD1
 - **Protótipo:** inferido da chamada em `0x814FEFCC`: `SceInt32 sceSmartSceneMappingDispatchAndQuery(SceSmartSceneMappingResult *result, const SceSmartSceneMappingInput *input);`
 - **Comportamento:** entrega o quadro atual (e dados associados) ao mapeador e devolve o resultado mais recente (pose
   da câmera e estado do tracking) em `result`.
@@ -1195,7 +1198,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingGetInitializationPointInfo
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x9A578A29
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x9A578A29
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingGetInitializationPointInfo(SceSmartSceneMappingInitPointInfo *buf, SceInt32 maxNum);`
 - **Comportamento:** copia os pontos candidatos à inicialização do mapa. O Invizimals passa `maxNum = 64` e guarda o
   retorno como contagem.
@@ -1205,7 +1208,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingGetLandmarkInfo
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xB17057EA
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0xB17057EA
 - **Protótipo:** inferido: `SceInt32 sceSmartSceneMappingGetLandmarkInfo(SceSmartSceneMappingLandmarkInfo *buf, SceInt32 maxNum);`
 - **Comportamento:** copia os landmarks do mapa. O Invizimals passa `maxNum = 512`.
 - **Retorno/erros:** contagem (a confirmar se é o retorno, como na anterior) ou erro.
@@ -1214,7 +1217,7 @@ comum: jogo que importe; até lá, nada.
 - **Validação:** idem.
 
 ### sceSmartSceneMappingPropagateResult
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x5A9EC64D
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceSmart · **NID:** 0x5A9EC64D
 - **Protótipo:** inferido da chamada em `0x814FEB36` (4 registradores e 1 palavra na pilha): `SceInt32 sceSmartSceneMappingPropagateResult(const SceSmartSceneMappingResult *in, a1, a2, a3, SceSmartSceneMappingResult *out);`
   `a1..a3` são dados do sensor de movimento/intervalo de tempo (a confirmar).
 - **Comportamento:** propaga o último pose estimado para o instante atual usando o giroscópio. Isso suaviza o AR entre
@@ -1272,7 +1275,7 @@ comum: 0 / contagem 0 / "alvo não encontrado". Validação: jogo que importe.
 ## sceSysmoduleLoadModule (pré-requisito de Face/Smart)
 
 ### sceSysmoduleLoadModule
-- [ ] **Prioridade:** STUB (Invizimals; sobrepõe o pacote A) · **Biblioteca:** SceSysmodule · **NID:** 0x79A0160A
+- [x] **Prioridade:** STUB (Invizimals; sobrepõe o pacote A) · **Biblioteca:** SceSysmodule · **NID:** 0x79A0160A
 - **Protótipo:** `int sceSysmoduleLoadModule(SceSysmoduleModuleId id);` (`psp2/sysmodule.h`)
 - **Comportamento:** carrega o módulo do sistema `id`. Alguns módulos não estão no firmware e vêm em
   `app0:sce_module`; para esses, o sistema carrega o `.suprx` do jogo. Hoje (SystemMisc.cs:17) a função só anota o ID,
@@ -1303,7 +1306,7 @@ Sulpha é o agente de trace do NGS para a ferramenta de PC; no VitaSharp nada es
 Sulpha não estão no header (a confirmar); validar só ponteiros nulos. Arquivo: `Ngs.cs`.
 
 ### sceSulphaNgsGetDefaultConfig
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x5FD8AEDB
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x5FD8AEDB
 - **Protótipo:** `SceInt32 sceSulphaNgsGetDefaultConfig(SceSulphaNgsConfig *config);` (`psp2/ngs.h`)
 - **Comportamento:** preenche os defaults do FW 3.60: 1024 amostras nomeáveis e buffer de trace de 4096 bytes.
 - **Retorno/erros:** 0; NULL → erro Sulpha (a confirmar; usar `SCE_NGS_ERROR_INVALID_ARG`, já usado em `Ngs.cs`, até
@@ -1313,7 +1316,7 @@ Sulpha não estão no header (a confirmar); validar só ponteiros nulos. Arquivo
 - **Validação:** teste unitário.
 
 ### sceSulphaNgsGetNeededMemory
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x793E3E8C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x793E3E8C
 - **Protótipo:** `SceInt32 sceSulphaNgsGetNeededMemory(const SceSulphaNgsConfig *config, SceSize *size_in_bytes);` (`psp2/ngs.h`)
 - **Comportamento:** quanto o jogo deve alocar para o agente. O valor real do FW está a confirmar (desmontar o
   SceNgsUser). Como o HLE não usa o buffer, qualquer valor > 0 serve. Proposta, marcada como valor do HLE e não do FW:
@@ -1324,7 +1327,7 @@ Sulpha não estão no header (a confirmar); validar só ponteiros nulos. Arquivo
 - **Validação:** teste unitário.
 
 ### sceSulphaNgsInit / sceSulphaNgsShutdown
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0xAFCD824F (Init) / 0xD124BFB1 (Shutdown)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0xAFCD824F (Init) / 0xD124BFB1 (Shutdown)
 - **Protótipo:** `SceInt32 sceSulphaNgsInit(const SceSulphaNgsConfig *config, void *buffer, SceSize size_in_bytes);` /
   `SceInt32 sceSulphaNgsShutdown(void);` (`psp2/ngs.h`)
 - **Comportamento:** registra/desregistra o agente (compartilhado pelo processo). O buffer precisa continuar válido até
@@ -1336,7 +1339,7 @@ Sulpha não estão no header (a confirmar); validar só ponteiros nulos. Arquivo
 - **Validação:** teste unitário.
 
 ### sceSulphaNgsSetSampleName
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x54EC5B8D
+- [x] **Prioridade:** P1 · **Biblioteca:** SceNgs · **NID:** 0x54EC5B8D
 - **Protótipo:** `SceInt32 sceSulphaNgsSetSampleName(const void *location, SceSize length, const char *name);` (`psp2/ngs.h`)
 - **Comportamento:** associa um nome de diagnóstico a uma faixa de memória de amostras. `location` não nulo e
   `length > 0`.

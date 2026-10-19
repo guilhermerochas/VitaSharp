@@ -6,7 +6,8 @@ using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Kernel;
 
-public enum ThreadStatus { Dormant = 0x10, Ready = 2, Running = 1, Waiting = 4, Suspended = 8, Dead = 0x20 }
+/// <summary>Values match SceThreadStatus (psp2common/kernel/threadmgr.h): written as-is by sceKernelGetThreadInfo.</summary>
+public enum ThreadStatus { Running = 1, Ready = 2, Standby = 4, Waiting = 8, Dormant = 0x10, Dead = 0x20, Suspended = 0x100 }
 
 /// <summary>Thrown by HLE code to unwind a guest thread (sceKernelExitThread & co).</summary>
 public sealed class GuestThreadExitException(int status, bool delete) : Exception

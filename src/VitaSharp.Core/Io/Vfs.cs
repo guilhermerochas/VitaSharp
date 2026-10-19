@@ -24,6 +24,11 @@ public sealed class Vfs
         Directory.CreateDirectory(hostPath);
     }
 
+    /// <summary>Removes a device mapping (the host directory is kept). Returns false if it was not mounted.</summary>
+    public bool Unmount(string device) => _mounts.Remove(device.TrimEnd(':'));
+
+    public bool IsMounted(string device) => _mounts.ContainsKey(device.TrimEnd(':'));
+
     /// <summary>Additional read-only layers searched before app0 (e.g. installed patches).</summary>
     public void AddApp0Overlay(string hostPath) => _app0Overlays.Insert(0, hostPath);
 
@@ -32,6 +37,17 @@ public sealed class Vfs
         int c = vitaPath.IndexOf(':');
         if (c < 0) return ("", vitaPath.TrimStart('/'));
         return (vitaPath[..c], vitaPath[(c + 1)..].Replace('\\', '/').TrimStart('/'));
+    }
+
+    /// <summary>Debug console character devices "tty0:".."tty3:" (no host directory behind them).</summary>
+    public static bool IsTty(string vitaPath, out int index)
+    {
+        index = -1;
+        var (dev, rel) = Split(vitaPath);
+        if (rel.Length != 0 || dev.Length != 4 || !dev.StartsWith("tty", StringComparison.OrdinalIgnoreCase)) return false;
+        if (dev[3] is < '0' or > '3') return false;
+        index = dev[3] - '0';
+        return true;
     }
 
     /// <summary>Normalizes "." and ".." segments.</summary>
