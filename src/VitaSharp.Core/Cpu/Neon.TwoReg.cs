@@ -312,14 +312,14 @@ internal static unsafe partial class Neon
                     case 0xC: // VCVT.F16.F32 (b=11000)
                     {
                         ushort* res = stackalloc ushort[4];
-                        for (int i = 0; i < 4; i++) res[i] = BitConverter.HalfToUInt16Bits((Half)((float*)tm)[i]);
+                        for (int i = 0; i < 4; i++) { float f = Ftz(((float*)tm)[i]); res[i] = float.IsNaN(f) ? (ushort)0x7E00 : BitConverter.HalfToUInt16Bits((Half)f); } // FZ + DN
                         Buffer.MemoryCopy(res, Reg(s, d), 8, 8);
                         return;
                     }
                     case 0xE: // VCVT.F32.F16 (b=11100)
                     {
                         float* res = stackalloc float[4];
-                        for (int i = 0; i < 4; i++) res[i] = (float)BitConverter.UInt16BitsToHalf(((ushort*)tm)[i]);
+                        for (int i = 0; i < 4; i++) res[i] = FRes((float)BitConverter.UInt16BitsToHalf(((ushort*)tm)[i]));
                         Buffer.MemoryCopy(res, Reg(s, d), 16, 16);
                         return;
                     }

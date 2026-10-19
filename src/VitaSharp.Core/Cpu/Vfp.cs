@@ -80,15 +80,34 @@ internal static unsafe class Vfp
             {
                 0 => op ? acc - FixF(s, a * b) : acc + FixF(s, a * b),
                 1 => op ? -acc - FixF(s, a * b) : -acc + FixF(s, a * b),
-                2 => op ? -(a * b) : a * b,
+                2 => a * b, // VNMUL negates below
                 3 => op ? a - b : a + b,
                 4 => a / b,
                 5 => op ? MathF.FusedMultiplyAdd(-a, b, -acc) : MathF.FusedMultiplyAdd(a, b, -acc),
                 6 => op ? MathF.FusedMultiplyAdd(-a, b, acc) : MathF.FusedMultiplyAdd(a, b, acc),
                 _ => 0,
             };
+            // ARM flushes a result that is tiny BEFORE rounding: one that rounds up to the smallest normal is zero
+            if ((s->Fpscr & FpscrFZ) != 0 && (BitConverter.SingleToUInt32Bits(r) & 0x7FFFFFFF) == 0x00800000 && opc1 >= 2)
+            {
+                // x + y with x, y exact in double: TwoSum gives the rounded sum and its exact error, so the
+                // comparison with 2^-126 is exact (a float product is exact in double)
+                double x, y;
+                switch (opc1)
+                {
+                    case 2: x = (double)a * b; y = 0; break;
+                    case 3: x = a; y = op ? -(double)b : b; break;
+                    case 4: x = (double)a / b; y = 0; break;
+                    case 5: x = (op ? -(double)a : a) * b; y = -(double)acc; break;
+                    default: x = (op ? -(double)a : a) * b; y = acc; break;
+                }
+                double sum = x + y, bv = sum - x, err = (x - (sum - bv)) + (y - bv);
+                const double MinNormal = 1.1754943508222875e-38;
+                bool tiny = Math.Abs(sum) < MinNormal || (Math.Abs(sum) == MinNormal && err != 0 && Math.Sign(err) != Math.Sign(sum));
+                if (tiny) r = BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(r) & 0x80000000);
+            }
             // VNMUL negates the rounded product, after any default-NaN substitution (so its NaN is 0xFFC00000)
-            Sf(s, d) = opc1 == 2 && op ? -FixF(s, a * b) : FixF(s, r);
+            Sf(s, d) = opc1 == 2 && op ? -FixF(s, r) : FixF(s, r);
         }
         else
         {
@@ -174,12 +193,12 @@ internal static unsafe class Vfp
             case 4: case 5: // VCMP / VCMPE (5: compare with zero)
                 if (!dbl)
                 {
-                    float a = Sf(s, SingleD(ins)), b = opc2 == 5 ? 0f : Sf(s, SingleM(ins));
+                    float a = InF(s, Sf(s, SingleD(ins))), b = opc2 == 5 ? 0f : InF(s, Sf(s, SingleM(ins))); // FZ applies to compares too
                     SetCompareFlags(s, float.IsNaN(a) || float.IsNaN(b), a == b, a < b);
                 }
                 else
                 {
-                    double a = Df(s, DoubleD(ins)), b = opc2 == 5 ? 0 : Df(s, DoubleM(ins));
+                    double a = InD(s, Df(s, DoubleD(ins))), b = opc2 == 5 ? 0 : InD(s, Df(s, DoubleM(ins)));
                     SetCompareFlags(s, double.IsNaN(a) || double.IsNaN(b), a == b, a < b);
                 }
                 return;

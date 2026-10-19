@@ -378,6 +378,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 return F(19, 16) == 15 || (i & 0xFFFF) == 0 || (F(21, 21) == 1 && (i & (1u << (int)F(19, 16))) != 0) || (i & 0x2000) != 0;
             case Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.T32_Tbb:
                 return true;
+            case Op.Vfp_Mov64 or Op.Vfp_MovCoreSingle or Op.Vfp_MovScalarCore or Op.Vfp_MovCoreScalar or Op.Vfp_VdupCore:
+                return F(15, 12) is 13 or 15 || F(19, 16) is 13 or 15; // SP/PC as the core register
             case Op.T16_AddHi or Op.T16_MovHi:
                 return false;
             case Op.T16_BxBlx:
