@@ -570,6 +570,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         src.LastUsedFrame = FrameCount;
 
         _presentCount++;
+        _drawSerial = 0;
         bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.Readback = null;
@@ -699,6 +700,20 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 px = new byte[h.Length];
                 for (int i = 0; i < h.Length; i++) px[i] = (byte)Math.Clamp((int)((float)h[i] * 255f + 0.5f), 0, 255);
             }
+            else if (rt.Format == Format.B10G11R11UfloatPack32)
+            {
+                // packed unsigned floats (R 11 bits, G 11 bits, B 10 bits): decode for viewing, clamped to 0..1
+                var w = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.Width * rt.Height));
+                px = new byte[w.Length * 4];
+                for (int i = 0; i < w.Length; i++)
+                {
+                    uint v = w[i];
+                    px[i * 4] = ToByte(UFloat(v & 0x7FF, 6));
+                    px[i * 4 + 1] = ToByte(UFloat((v >> 11) & 0x7FF, 6));
+                    px[i * 4 + 2] = ToByte(UFloat((v >> 22) & 0x3FF, 5));
+                    px[i * 4 + 3] = 255;
+                }
+            }
             else px = new ReadOnlySpan<byte>((void*)ptr, (int)(rt.Width * rt.Height * 4)).ToArray();
             if (rt.Format == Format.B8G8R8A8Unorm) for (int i = 0; i < px.Length; i += 4) (px[i], px[i + 2]) = (px[i + 2], px[i]);
             var opaque = (byte[])px.Clone();
@@ -707,6 +722,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _core.DestroyBuffer(buf, mem);
         }
         File.WriteAllText(Path.Combine(dir, "targets.txt"), stats.ToString());
+
+        // unsigned small float (5-bit exponent, 6- or 5-bit mantissa), as in B10G11R11_UFLOAT
+        static float UFloat(uint bits, int mantissaBits)
+        {
+            uint e = bits >> mantissaBits, m = bits & ((1u << mantissaBits) - 1);
+            if (e == 0) return m / (float)(1 << mantissaBits) * MathF.Pow(2, -14);
+            if (e == 31) return m == 0 ? float.PositiveInfinity : float.NaN;
+            return (1 + m / (float)(1 << mantissaBits)) * MathF.Pow(2, (int)e - 15);
+        }
         _vk.DestroyCommandPool(_dev, pool, null);
         Log.Info($"[gpu] dumped {_renderTargets.Count} render targets to {dir}");
     }

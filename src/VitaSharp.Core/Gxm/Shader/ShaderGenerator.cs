@@ -66,6 +66,7 @@ layout(push_constant) uniform RenderInfo {
     float z_offset;
     float z_scale;
     float res_multiplier;
+    float draw_id;
 } rinfo;
 """;
 
@@ -500,11 +501,17 @@ float packC10(vec3 c) {
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
         // shader math, to tell texture/coordinate problems from lighting/fog problems
         if (DebugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
-            t.Line(DebugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
+            t.Line(DebugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : DebugLod ? "out_color = vec4(clamp(textureQueryLod(ftex0, v_TexCoord0.xy).y / 16.0 + 0.5, 0.0, 1.0), clamp(log2(max(fwidth(v_TexCoord0.x), fwidth(v_TexCoord0.y)) * float(textureSize(ftex0, 0).x)) / 16.0 + 0.5, 0.0, 1.0), float(textureSize(ftex0, 0).x) / 1024.0, 1.0);" : DebugAlpha ? "out_color = vec4(texture(ftex0, v_TexCoord0.xy).aaa, 1.0);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
+        // VITASHARP_DEBUG_TEX0=id: every pixel shows the number of the draw that wrote it, 4 bits per channel (R low, G mid, B high), so it survives packed float targets
+        if (DebugId)
+            t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
     }
 
-    static readonly bool DebugTex0 = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") is "1" or "uv";
+    static readonly bool DebugTex0 = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") is "1" or "uv" or "alpha" or "lod";
+    static readonly bool DebugLod = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "lod";
+    static readonly bool DebugAlpha = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "alpha";
     static readonly bool DebugUv = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "uv";
+    static readonly bool DebugId = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "id";
 
     // ------------------------------------------------------------------ vertex outputs
 

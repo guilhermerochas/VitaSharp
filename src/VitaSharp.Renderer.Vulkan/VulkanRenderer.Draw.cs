@@ -20,7 +20,7 @@ public sealed unsafe partial class VulkanRenderer
     [StructLayout(LayoutKind.Sequential)]
     struct PushConstants
     {
-        public float ViewportFlag, ScreenWidth, ScreenHeight, ZOffset, ZScale, ResMultiplier;
+        public float ViewportFlag, ScreenWidth, ScreenHeight, ZOffset, ZScale, ResMultiplier, DrawId;
     }
 
     void CreateLayouts()
@@ -397,8 +397,12 @@ public sealed unsafe partial class VulkanRenderer
         return max;
     }
 
+    /// <summary>Draw number within the presented frame (debug: VITASHARP_DEBUG_TEX0=id paints it, the draw trace logs it).</summary>
+    int _drawSerial;
+
     void Draw(DrawCommand d)
     {
+        _drawSerial++;
         if (!_inScene || d.IndexCount == 0) return;
         if (d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null) return;
         var st = d.State;
@@ -509,7 +513,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
-        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = 1, ZOffset = 0, ZScale = 1 };
+        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = 1, ZOffset = 0, ZScale = 1, DrawId = _drawSerial };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;
@@ -564,11 +568,11 @@ public sealed unsafe partial class VulkanRenderer
         var st = d.State;
         var b = d.FragmentProgram.Blend;
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[draw] rt=0x{_rt?.Address ?? 0:X8} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
+        sb.Append($"[draw] id={_drawSerial} rt=0x{_rt?.Address ?? 0:X8} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
         sb.Append($" blend={(b is { } bb ? $"{bb.ColorMask:X}:{bb.ColorFunc}/{bb.ColorSrc}/{bb.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
         for (int i = 0; i < 16; i++)
             if ((d.FragmentProgram.Info.TexturesUsed & (1u << i)) != 0)
-                sb.Append($" t{i}=0x{d.FragmentTextures[i].DataAddress:X8}:{d.FragmentTextures[i].Format:X8}:{d.FragmentTextures[i].Width}x{d.FragmentTextures[i].Height}:T{d.FragmentTextures[i].TextureType >> 29}:S{d.FragmentTextures[i].StrideBytes}:G{d.FragmentTextures[i].GammaMode}");
+                sb.Append($" t{i}=0x{d.FragmentTextures[i].DataAddress:X8}:{d.FragmentTextures[i].Format:X8}:{d.FragmentTextures[i].Width}x{d.FragmentTextures[i].Height}:T{d.FragmentTextures[i].TextureType >> 29}:S{d.FragmentTextures[i].StrideBytes}:G{d.FragmentTextures[i].GammaMode}:F{d.FragmentTextures[i].MagFilter}{d.FragmentTextures[i].MinFilter}{d.FragmentTextures[i].MipFilter}:B{d.FragmentTextures[i].LodBias}:L{d.FragmentTextures[i].LodMin}:M{d.FragmentTextures[i].MipCount}:A{d.FragmentTextures[i].UAddr}{d.FragmentTextures[i].VAddr}:W0={d.FragmentTextures[i].W0:X8}");
         foreach (var a in d.VertexProgram.Attributes) sb.Append($" a[r{a.RegIndex} s{a.StreamIndex}+{a.Offset} f{a.Format}x{a.ComponentCount}]");
         foreach (var s in d.VertexProgram.Streams) sb.Append($" st[{s.Stride}/{s.IndexSource}]");
         // first two vertices of stream 0 as raw bytes: lets attribute formats/offsets be checked against real data
