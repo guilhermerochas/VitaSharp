@@ -37,6 +37,17 @@ lines, so the hardware also runs the second sub-step.
 - kzl_walk2 (long scripted walk): one SUICIDE at f5520, after strafing out of the building onto the exterior
   structure (frames 5310-5400 show the outside). Probably a real fall off the level. No other deaths.
 
+## After merging main (b13f95c)
+- main got the same VRSQRTE fix independently (fix/uc-anim, 09d2cff) and the ledger-based guest clock (perf/mania).
+  Merged: identical code, the fuzz generators were combined into one FuzzSimdAgainstUnicorn (ARM + Thumb, special
+  operands, estimate/step, shift/immediate and two-register-misc encodings).
+- main at ac66d9b (ledger guest clock, *without* the VRSQRTE fix): kzl_idle still died every ~250 frames
+  (black at 4150, 4360, 4590, 5150, ...). So the clock change alone does not fix limbo, and no further clock or
+  pacing change is needed on this branch.
+- Merged branch: kzl_idle2 and kzl_walk3 (each 10500 frames, gameplay from about f4200) have no deaths. dotnet test:
+  137/137 tests pass. The uc_game, dd_boot, f1_trees_lod and gow_play regression runs were all OK. They ran on a scratch copy of the
+  data root (junctions to the app folders, copied savedata), so nothing was written under AppData\Roaming\VitaSharp\fs.
+
 ## Not done / remaining
 - The generic "guest clock follows the CPU ledger" change was implemented and tested (it did not fix the bug by itself),
   then dropped as unnecessary. Patch kept in the session scratchpad (guestclock-ledger.patch).
