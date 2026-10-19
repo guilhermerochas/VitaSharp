@@ -193,8 +193,9 @@ public sealed unsafe partial class VulkanRenderer
             if (!newerColor) return DepthTexture(depthSrc, w, h);
         }
         // rendered surfaces are used directly (or a region of them is copied out)
-        foreach (var rt in _renderTargets.Values)
+        foreach (var target in _renderTargets.Values)
         {
+            var rt = target;
             int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
             uint rowBytes = rt.Stride * (uint)bpp;
             if (addr < rt.Address || addr >= rt.Address + rowBytes * rt.Height) continue;
@@ -202,7 +203,13 @@ public sealed unsafe partial class VulkanRenderer
             uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(w, 8) * (uint)bpp;
             uint off = addr - rt.Address;
             uint x0 = off % rowBytes / (uint)bpp, y0 = off / rowBytes;
+            // the surface being rendered, read where the draw itself renders: those tiles are still on chip, so the
+            // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
+            if (target == _rt && _inScene && SamplesOwnTiles(x0, y0, w, h)) rt = SceneStartSource(target);
             if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias) return (alias, ImageLayout.ShaderReadOnlyOptimal);
+            if (d.TextureType == GxmTextureDesc.TypeLinear && texRow == rowBytes && x0 + w <= rt.Width && y0 + h <= rt.Height
+                && RenderTargetMipmapped(rt, d, x0, y0, gamma) is { } mipped)
+                return (mipped, ImageLayout.ShaderReadOnlyOptimal);
             if (addr != rt.Address || w != rt.Width || h != rt.Height)
             {
                 if (!linear || texRow != rowBytes || x0 + w > rt.Width || y0 + h > rt.Height) continue;
@@ -444,6 +451,7 @@ public sealed unsafe partial class VulkanRenderer
         uint type = d.TextureType;
         bool swizzled = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube or GxmTextureDesc.TypeSwizzledArbitrary or GxmTextureDesc.TypeCubeArbitrary;
         bool pow2 = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
+        bool mipmappedLayout = mips > 1 && d.MipCountRaw != 0xF;
         uint offset = 0;
         for (uint m = 0; m < mips; m++)
         {
@@ -490,7 +498,16 @@ public sealed unsafe partial class VulkanRenderer
                 bytes = rowPitch * mh;
             }
             levels[m] = new MipLayout(offset, mw, mh, rowPitch, bytes);
-            offset += Align(bytes, swizzled ? 1u : 1u);
+            // mipmapped linear/tiled textures reserve each level at the power-of-two size (rows keep their own pitch):
+            // a 384x64 level 0 occupies 512x64 texels before level 1 starts (as in Vita3K's texture cache). A raw mip
+            // count of 0xF (no mips) packs the data without padding.
+            if (mipmappedLayout && !info.Compressed && !yuv420 && type is GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeTiled)
+            {
+                uint lw = Math.Max(BitOperations.RoundUpToPowerOf2(w) >> (int)m, 1), lh = Math.Max(BitOperations.RoundUpToPowerOf2(h) >> (int)m, 1);
+                uint aw = type == GxmTextureDesc.TypeTiled ? 32u : 8u, ah = type == GxmTextureDesc.TypeTiled ? 32u : 1u;
+                offset += (uint)((ulong)Align(lw, aw) * Align(lh, ah) * (uint)info.BitsPerPixel / 8);
+            }
+            else offset += bytes;
         }
         bool cube = type is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
         uint faceStride = cube ? Align(offset, 4096) : offset;

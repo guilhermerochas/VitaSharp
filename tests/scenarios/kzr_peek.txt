@@ -1,3 +1,0 @@
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--frames=4112 --peek=0x6637A000:128@4105,0x66381E00:128@4105,0x66362000:64@4105 --trace-hle-frames=4104:4105 --seconds=400 --dump-every=50 --no-inspect --input=tap@f450:0.36:0.84,tap@f1000:0.815:0.763,tap@f1900:0.25:0.37,tap@f2550:0.5:0.5,tap@f2700:0.5:0.5,tap@f2850:0.5:0.5,lstick@f4150:0:-1:f200

@@ -230,6 +230,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             case DrawCommand d: Draw(d); break;
             case EndSceneCommand e: EndScene(e); break;
             case FinishCommand: Finish(); break;
+            case MidSceneFlushCommand:
+                if (TracingScenes) Log.Info($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={_drawSerial + 1})");
+                if (_inScene && _rt != null) CaptureSceneStart(_rt);
+                break;
             case PresentCommand p: Present(p.Frame); break;
             case CallbackCommand cb:
                 if (cb.WriteSize > 0) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
@@ -448,6 +452,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
+        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} (next draw id={_drawSerial + 1})");
+        if (_rt != null) CaptureSceneStart(_rt);
         // surface gamma: shader output is linear and gets sRGB-encoded on write
         var srgb = _rt != null ? Formats.Srgb(_rt.Format) : Format.Undefined;
         _rtGamma = _rt != null && b.Color!.GammaMode != 0 && srgb != _rt.Format && _core.SupportsColorAttachment(srgb);
@@ -582,6 +588,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             SubmitFrame(false, 0);
             DumpAllTargets(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
+            return;
+        }
+        if (_traceSnaps.Count > 0 && _opt.ShaderCacheDir != null)
+        {
+            SubmitFrame(false, 0);
+            _vk.DeviceWaitIdle(_dev);
+            WriteTraceSnapshots(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
             return;
         }
         if (_swapchain.Handle != 0)
