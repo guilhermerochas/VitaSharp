@@ -22,7 +22,9 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
 }
 
 /// <summary>A vertex shader input: <see cref="RegIndex"/> is the SceGxmVertexAttribute regIndex it is fed from.</summary>
-public sealed record VertexInputInfo(uint RegIndex, int Location, char Kind, int Components, int LocationCount);
+/// <param name="RawSize">1/2 = register-format attribute fetched as raw U8/U16 integers (0 = normal fetch)</param>
+/// <param name="RawComponents">total raw components (may span several locations)</param>
+public sealed record VertexInputInfo(uint RegIndex, int Location, char Kind, int Components, int LocationCount, int RawSize = 0, int RawComponents = 0);
 
 /// <summary>Placement of a guest uniform buffer inside the per-stage storage buffer.</summary>
 /// <remarks>
@@ -229,7 +231,17 @@ float packC10(vec3 c) {
                     }
                     int location = inAllocated / 4;
                     int n = (int)(inp.ArraySize * inp.ComponentCount);
-                    if (a.RegFormat && GxpProgram.TypeSize(inp.Type) < 4) result.Warnings.Add("regformat attribute");
+                    if (a.RegFormat)
+                    {
+                        // register-format attribute: the hardware copies the raw stream bytes into the PA registers
+                        // (one byte / half per component, packed), whatever the stream's declared format
+                        int ts = GxpProgram.TypeSize(inp.Type);
+                        int comps = inp.Type == DataType.C10 ? (n * 10 + 7) / 8 : Math.Max(n, 1);
+                        if (ts >= 4) EmitUntypedAttribute(t, decl, result, reg, a.Index, location, comps, 4);
+                        else EmitRawAttribute(t, decl, result, reg, a.Index, location, comps, ts);
+                        inAllocated += (comps + 3) / 4 * 4;
+                        break;
+                    }
                     var hint = hints.Attributes.FirstOrDefault(h => h.RegIndex == inp.Offset);
                     if (hint.Format == AttributeFormatUntyped && hint.ComponentCount > 0)
                     {
@@ -281,6 +293,8 @@ float packC10(vec3 c) {
         var sb = new StringBuilder();
         sb.AppendLine("#version 450");
         sb.AppendLine($"// gxp {program.Hash:X16} ({(vertex ? "vertex" : "fragment")}) vo1 0x{program.VertexOutputs1:X8} vo2 0x{program.VertexOutputs2:X8}");
+        if (result.UniformBuffers.Count > 0)
+            sb.AppendLine("// ub " + string.Join(" ", result.UniformBuffers.Select(s => $"[{s.GuestIndex}]@{s.ByteOffset}+{s.ByteSize}{(s.Mapped ? "M" : "")}")));
         sb.AppendLine(PushConstants);
         foreach (var s in samplerVars.Values)
             sb.AppendLine($"layout(set = {texSet}, binding = {s.Index}) uniform {(s.IsCube ? "samplerCube" : "sampler2D")} {s.GlslName};");
@@ -330,7 +344,7 @@ float packC10(vec3 c) {
     /// UNTYPED attributes are copied into the parameter's registers as raw 32-bit words without conversion; the
     /// program then reads them with its own type (packed u8/s8/f16 ...). They are fetched as R32_UINT words.
     /// </summary>
-    static void EmitUntypedAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int words)
+    static void EmitUntypedAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int words, int rawSize = 0)
     {
         var raw = reg;
         raw.Type = DataType.UInt32;
@@ -346,7 +360,34 @@ float packC10(vec3 c) {
             decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
             for (int i = 0; i < k; i++) t.Store(raw, new Val($"{name}[{i}]", 'u', 4), 0b1111, i * 4);
         }
-        result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(words, 4), k));
+        result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(words, 4), k, rawSize, rawSize > 0 ? words : 0));
+    }
+
+    /// <summary>Raw 8/16-bit register-format attribute: fetched as unsigned integers and packed into 32-bit PA registers.</summary>
+    static void EmitRawAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int comps, int typeSize)
+    {
+        var raw = reg;
+        raw.Type = DataType.UInt32;
+        string name = $"in_attr{location}";
+        int k = (comps + 3) / 4;
+        if (k == 1) decl.AppendLine($"layout(location = {location}) in {(comps == 1 ? "uint" : $"uvec{comps}")} {name};");
+        else decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        string C(int i) => k == 1 ? (comps == 1 ? name : $"{name}.{"xyzw"[i]}") : $"{name}[{i / 4}].{"xyzw"[i % 4]}";
+        int perWord = 4 / typeSize, bits = typeSize * 8;
+        uint mask = typeSize == 1 ? 0xFFu : 0xFFFFu;
+        int words = (comps + perWord - 1) / perWord;
+        for (int w = 0; w < words; w++)
+        {
+            var parts = new List<string>();
+            for (int j = w * perWord; j < Math.Min(comps, (w + 1) * perWord); j++)
+            {
+                int shift = (j - w * perWord) * bits;
+                string v = $"({C(j)} & 0x{mask:X}u)";
+                parts.Add(shift == 0 ? v : $"({v} << {shift})");
+            }
+            t.Store(raw, new Val($"({string.Join(" | ", parts)})", 'u', 1), 1, w);
+        }
+        result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(comps, 4), k, typeSize, comps));
     }
 
     static void EmitAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int n, bool forceArray = false, int hintCount = 0)
@@ -505,12 +546,16 @@ float packC10(vec3 c) {
         // VITASHARP_DEBUG_FS=<hash>:<glsl vec4 expression>: replace one fragment program's output (term bisection)
         if (DebugFs is { } dfs && dfs.StartsWith($"{program.Hash:X16}:", StringComparison.OrdinalIgnoreCase))
             t.Line($"out_color = {dfs[17..]};");
+        // VITASHARP_DEBUG_TEX0=hash: every pixel shows the fragment program that wrote it (low 3 bytes of its hash as RGB)
+        if (DebugHash)
+            t.Line($"out_color = vec4({program.Hash & 0xFF}.0, {(program.Hash >> 8) & 0xFF}.0, {(program.Hash >> 16) & 0xFF}.0, 255.0) / 255.0;");
         // VITASHARP_DEBUG_TEX0=id: every pixel shows the number of the draw that wrote it, 4 bits per channel (R low, G mid, B high), so it survives packed float targets
         if (DebugId)
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
     }
 
     static readonly bool DebugTex0 = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") is "1" or "uv" or "alpha" or "lod";
+    static readonly bool DebugHash = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "hash";
     static readonly string? DebugFs = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_FS");
     static readonly bool DebugLod = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "lod";
     static readonly bool DebugAlpha = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "alpha";
