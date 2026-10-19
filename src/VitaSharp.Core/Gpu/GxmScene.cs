@@ -16,6 +16,8 @@ public sealed record DepthSurfaceInfo(uint DepthData, uint StencilData, uint Str
 public sealed class BeginSceneCommand : GpuCommand
 {
     public required uint Width, Height;
+    /// <summary>SceGxmMultisampleMode of the render target: 0 = none, 1 = 2X, 2 = 4X.</summary>
+    public uint Multisample;
     public ColorSurfaceInfo? Color;
     public DepthSurfaceInfo? Depth;
 }
@@ -101,7 +103,11 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
     public uint MipCountRaw => (W0 >> 17) & 0xF;
     public uint LodBias => (W0 >> 21) & 0x3F;
     public uint GammaMode => (W0 >> 27) & 3;
-    public uint LodMin => (W2 & 3) | (((W3 >> 26) & 3) << 2);
+    /// <summary>
+    /// Minimum LOD (4 bits). Word 2 bits 0-1 hold the UPPER two bits (lod_min0) and word 3 bits 26-27 the lower two
+    /// (lod_min1), as in the VitaSDK SceGxmTexture layout and Vita3K 50c3e835.
+    /// </summary>
+    public uint LodMin => ((W2 & 3) << 2) | ((W3 >> 26) & 3);
     public bool Normalize => (W3 >> 31) != 0;
 
     public uint TextureType => Type << 29;

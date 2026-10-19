@@ -351,6 +351,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void DestroyLater(RenderTarget rt)
     {
+        DestroySupersampleLater(rt);
         var f = F;
         f.Deferred.Add(() =>
         {
@@ -452,8 +453,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
-        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} (next draw id={_drawSerial + 1})");
+        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} (next draw id={_drawSerial + 1})");
         if (_rt != null) CaptureSceneStart(_rt);
+        // MSAA downscale surface: rendered 2x supersampled and box-filtered back (see VulkanRenderer.Msaa.cs)
+        _ss = _rt != null && b.Multisample != 0 && b.Color!.Downscale && SupportsSupersample(_rt.Format);
+        if (_ss) LoadSupersample(_rt!);
         // surface gamma: shader output is linear and gets sRGB-encoded on write
         var srgb = _rt != null ? Formats.Srgb(_rt.Format) : Format.Undefined;
         _rtGamma = _rt != null && b.Color!.GammaMode != 0 && srgb != _rt.Format && _core.SupportsColorAttachment(srgb);
@@ -464,7 +468,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         else Log.WarnOnce("scene-nocolor", "[gpu] scene without colour surface");
         _sceneW = _rt != null ? Math.Min(b.Width, _rt.Width) : b.Width;
         _sceneH = _rt != null ? Math.Min(b.Height, _rt.Height) : b.Height;
-        _depth = GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0), Math.Max(b.Height, _rt?.Height ?? 0));
+        _depth = GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale);
         _sceneSerial++;
         if (_rt != null) _rt.LastScene = _sceneSerial;
         _depth.LastScene = _sceneSerial;
@@ -480,6 +484,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (writeback && e.Notifications.Length > 0) { F.Notifications.AddRange(e.Notifications); e.NotificationsDeferred = true; }
         _inScene = false;
         _scene = null;
+        _ss = false;
     }
 
     void BeginRendering()
@@ -488,7 +493,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var color = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
-            ImageView = _rt == null ? default : _rtGamma ? _rt.SrgbView : _rt.View,
+            ImageView = _rt == null ? default : _ss ? SupersampleView(_rt) : _rtGamma ? _rt.SrgbView : _rt.View,
             ImageLayout = ImageLayout.General,
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
@@ -507,7 +512,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var ri = new RenderingInfo
         {
             SType = StructureType.RenderingInfo,
-            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW, _sceneH)),
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SsScale, _sceneH * SsScale)),
             LayerCount = 1,
             ColorAttachmentCount = _rt != null ? 1u : 0u,
             PColorAttachments = &color,
@@ -525,6 +530,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (!_rendering) return;
         _vk.CmdEndRendering(Cmd);
         _rendering = false;
+        if (_ss && _rt != null) ResolveSupersample(_rt);
     }
 
     /// <summary>Makes colour writes to <paramref name="rt"/> visible to shader reads / transfers.</summary>

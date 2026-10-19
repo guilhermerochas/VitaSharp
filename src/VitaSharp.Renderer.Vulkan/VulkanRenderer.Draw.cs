@@ -510,7 +510,7 @@ public sealed unsafe partial class VulkanRenderer
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
         TraceSnapshot();
-        if (_opt.TraceDrawsFrame == _presentCount) TraceDraw(d, vs, fs);
+        if (_opt.TraceDrawsFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
@@ -613,7 +613,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
-        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = 1, ZOffset = 0, ZScale = 1, DrawId = _drawSerial };
+        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SsScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;
@@ -626,6 +626,7 @@ public sealed unsafe partial class VulkanRenderer
         else vpRect = new Viewport(0, 0, w, h, 0, 1);
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
+        if (_ss) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
         _vk.CmdSetViewport(cmd, 0, 1, in vpRect);
 
         Rect2D scissor;
@@ -636,13 +637,14 @@ public sealed unsafe partial class VulkanRenderer
             scissor = new Rect2D(new Offset2D(x0, y0), new Extent2D((uint)(x1 - x0), (uint)(y1 - y0)));
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
+        if (_ss) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
         _vk.CmdSetScissor(cmd, 0, 1, in scissor);
         _vk.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
         _vk.CmdSetPrimitiveTopology(cmd, topology);
         _vk.CmdSetCullMode(cmd, st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None });
         _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
-        _vk.CmdSetLineWidth(cmd, _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) : 1);
+        _vk.CmdSetLineWidth(cmd, _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SsScale : 1);
 
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
@@ -668,7 +670,7 @@ public sealed unsafe partial class VulkanRenderer
         var st = d.State;
         var b = d.FragmentProgram.Blend;
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[draw] id={_drawSerial} rt=0x{_rt?.Address ?? 0:X8}:{_rt?.ColorFormat ?? 0:X8} ds=0x{_depth?.Address ?? 0:X8}/{_depth?.Width ?? 0}x{_depth?.Height ?? 0} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
+        sb.Append($"[draw] id={_drawSerial} f={_presentCount} rt=0x{_rt?.Address ?? 0:X8}:{_rt?.ColorFormat ?? 0:X8} ds=0x{_depth?.Address ?? 0:X8}/{_depth?.Width ?? 0}x{_depth?.Height ?? 0} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
         sb.Append($" blend={(b is { } bb ? $"{bb.ColorMask:X}:{bb.ColorFunc}/{bb.ColorSrc}/{bb.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
         for (int i = 0; i < 16; i++)
             if ((d.FragmentProgram.Info.TexturesUsed & (1u << i)) != 0)

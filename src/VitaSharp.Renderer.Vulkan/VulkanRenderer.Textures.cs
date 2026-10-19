@@ -306,8 +306,8 @@ public sealed unsafe partial class VulkanRenderer
             ? (d.W1 & ~0x000F000Fu) | ((uint)BitOperations.Log2(lv.Width) << 16) | (uint)BitOperations.Log2(lv.Height)
             : (d.W1 & ~0x00FFFFFFu) | ((lv.Width - 1) << 12) | (lv.Height - 1);
         uint w0 = (d.W0 & ~(0xFu << 17)) | ((mips - level - 1) << 17);
-        uint w2 = (d.DataAddress + lv.Offset) & ~3u;   // the low two bits are LOD min bits 0-1
-        uint w3 = d.W3 & ~(3u << 26);                  // LOD min bits 2-3
+        uint w2 = (d.DataAddress + lv.Offset) & ~3u;   // the low two bits are LOD min bits 2-3
+        uint w3 = d.W3 & ~(3u << 26);                  // LOD min bits 0-1
         return new GxmTextureDesc(w0, w1, w2, w3);
     }
 
