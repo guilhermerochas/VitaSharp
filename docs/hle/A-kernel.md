@@ -41,7 +41,7 @@ pré-requisito transversal (códigos de erro errados em `SceError`) que afeta qu
 
 ### 0.1 Correções em SceError
 
-- [ ] **Prioridade:** P0 (afeta todas as funções que retornam esses códigos, em todos os jogos) · **Arquivo:** `src/VitaSharp.Core/Kernel/KernelObjects.cs`
+- [x] **Prioridade:** P0 (afeta todas as funções que retornam esses códigos, em todos os jogos) · **Arquivo:** `src/VitaSharp.Core/Kernel/KernelObjects.cs`
 - **Problema:** quase todas as constantes de threadmgr em `SceError` não batem com `psp2/kernel/error.h` (VitaSDK) nem
   com `vita3k/kernel/include/kernel/types.h`, que concordam entre si. Vários valores atuais são o código de **outro**
   erro (ex.: `UNKNOWN_SEMA_ID` atual = `UNKNOWN_LW_COND_ID` real). Jogos que comparam o retorno com a constante do SDK

@@ -9,8 +9,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>SceAudioOut: ports feed host audio streams; Output() blocks to pace the guest like the real hardware.</summary>
 public sealed class Audio : HleModule
 {
-    const int ERR_INVALID_PORT = unchecked((int)0x80260007), ERR_PORT_FULL = unchecked((int)0x80260109),
-        ERR_INVALID_SIZE = unchecked((int)0x80260004), ERR_INVALID_FORMAT = unchecked((int)0x80260108);
+    const int ERR_INVALID_PORT = unchecked((int)0x80260003), ERR_INVALID_POINTER = unchecked((int)0x80260004),
+        ERR_PORT_FULL = unchecked((int)0x80260005), ERR_INVALID_SIZE = unchecked((int)0x80260006), ERR_INVALID_FORMAT = unchecked((int)0x80260007),
+        ERR_INVALID_SAMPLE_FREQ = unchecked((int)0x80260008), ERR_INVALID_PORT_TYPE = unchecked((int)0x8026000A), ERR_INVALID_CONF_TYPE = unchecked((int)0x8026000C);
 
     sealed class Port
     {
@@ -28,6 +29,8 @@ public sealed class Audio : HleModule
     [Hle]
     int sceAudioOutOpenPort(int type, int len, int freq, int mode)
     {
+        if (type is < 0 or > 2) return ERR_INVALID_PORT_TYPE;
+        if (type == 0 && freq != 48000) return ERR_INVALID_SAMPLE_FREQ;
         if (len <= 0 || len > 65472 || (len & 63) != 0) return ERR_INVALID_SIZE;
         if (mode is not (0 or 1)) return ERR_INVALID_FORMAT;
         lock (_ports)
@@ -102,7 +105,7 @@ public sealed class Audio : HleModule
     {
         var p = Get(port);
         if (p == null) return ERR_INVALID_PORT;
-        if (vols == 0) return unchecked((int)0x80260003);
+        if (vols == 0) return ERR_INVALID_POINTER;
         if ((flag & 1) != 0) p.Volume[0] = Math.Clamp(GuestMemory.R32(vols) / 32768f, 0, 1);
         if ((flag & 2) != 0) p.Volume[1] = Math.Clamp(GuestMemory.R32(vols + 4) / 32768f, 0, 1);
         return 0;
@@ -132,7 +135,7 @@ public sealed class Audio : HleModule
     {
         var p = Get(port);
         if (p == null) return ERR_INVALID_PORT;
-        return type switch { 0 => p.Grain, 1 => p.Freq, 2 => p.Channels == 1 ? 0 : 1, _ => unchecked((int)0x80260003) };
+        return type switch { 0 => p.Grain, 1 => p.Freq, 2 => p.Channels == 1 ? 0 : 1, _ => ERR_INVALID_CONF_TYPE };
     }
 
     /// <summary>Samples queued on the port and not yet played. Bink-style players poll this to pace and sync their

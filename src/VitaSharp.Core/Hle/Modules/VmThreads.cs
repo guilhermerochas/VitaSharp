@@ -6,7 +6,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>Thread suspension and context access used by managed runtimes (Mono/IL2CPP garbage collectors).</summary>
 public sealed unsafe class VmThreads : HleModule
 {
-    const int ERR_NOT_SUSPENDED = unchecked((int)0x80028047), ERR_ILLEGAL_SIZE = unchecked((int)0x80020015);
+    const int ERR_NOT_SUSPENDED = SceError.NOT_SUSPENDED, ERR_ILLEGAL_SIZE = SceError.ILLEGAL_SIZE;
 
     GuestThread? Target(int uid) => uid == 0 ? null : K.GetThread(uid);
 

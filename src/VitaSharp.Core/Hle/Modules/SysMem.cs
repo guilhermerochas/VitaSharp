@@ -49,7 +49,7 @@ public sealed class SysMem : HleModule
     int sceKernelFreeMemBlock(int uid)
     {
         var b = K.Objects.Get<MemBlock>(uid);
-        if (b == null) return SceError.UNKNOWN_UID;
+        if (b == null) return SceError.INVALID_UID;
         Mem.Free(b.Address);
         K.Objects.Remove(uid);
         return 0;
@@ -59,7 +59,7 @@ public sealed class SysMem : HleModule
     int sceKernelGetMemBlockBase(int uid, Ptr<uint> basePtr)
     {
         var b = K.Objects.Get<MemBlock>(uid);
-        if (b == null) return SceError.UNKNOWN_UID;
+        if (b == null) return SceError.INVALID_UID;
         basePtr.TrySet(b.Address);
         return 0;
     }
@@ -69,7 +69,7 @@ public sealed class SysMem : HleModule
     {
         foreach (var b in K.Objects.All<MemBlock>())
             if (addr >= b.Address && addr < b.Address + b.Size) return b.Uid;
-        return unchecked((int)0x80020009);
+        return SceError.BLOCK_ERROR;
     }
 
     [Hle]
@@ -85,7 +85,7 @@ public sealed class SysMem : HleModule
             GuestMemory.W32(info + 20, b.Type);
             return 0;
         }
-        return unchecked((int)0x80020009);
+        return SceError.BLOCK_ERROR;
     }
 
     [Hle("sceKernelGetMemBlockInfoByRange")]
@@ -106,6 +106,6 @@ public sealed class SysMem : HleModule
     [Hle] int sceKernelGetModelForCDialog() => 0x10000;
     [Hle] int sceKernelIsPSVitaTV() => 0;
     [Hle] int sceKernelGetSubbudgetInfo(uint p) => 0;
-    [Hle] int sceKernelOpenMemBlock(string name, int flags) => K.Objects.FindByName<MemBlock>(name)?.Uid ?? SceError.UNKNOWN_UID;
+    [Hle] int sceKernelOpenMemBlock(string name, int flags) => K.Objects.FindByName<MemBlock>(name)?.Uid ?? SceError.UID_CANNOT_FIND_BY_NAME;
     [Hle] int sceKernelCloseMemBlock(int uid) => 0;
 }

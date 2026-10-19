@@ -569,7 +569,7 @@ public sealed class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer != null && Writer != self) return unchecked((int)0x80028283);
+            if (Writer != null && Writer != self) return SceError.RW_LOCK_FAILED_TO_LOCK;
             Readers++;
             return SceError.OK;
         }
@@ -579,7 +579,7 @@ public sealed class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Readers == 0) return unchecked((int)0x80028285);
+            if (Readers == 0) return SceError.RW_LOCK_UNLOCK_UDF;
             Readers--;
             Monitor.PulseAll(this);
             return SceError.OK;
@@ -607,7 +607,7 @@ public sealed class RwLock : KernelObject
         lock (this)
         {
             if (Writer == self) { WriteCount++; return SceError.OK; }
-            if (Writer != null || Readers > 0) return unchecked((int)0x80028283);
+            if (Writer != null || Readers > 0) return SceError.RW_LOCK_FAILED_TO_LOCK;
             Writer = self;
             WriteCount = 1;
             return SceError.OK;
@@ -618,7 +618,7 @@ public sealed class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer != self) return unchecked((int)0x80028286);
+            if (Writer != self) return SceError.RW_LOCK_NOT_OWNED;
             if (--WriteCount == 0) Writer = null;
             Monitor.PulseAll(this);
             return SceError.OK;

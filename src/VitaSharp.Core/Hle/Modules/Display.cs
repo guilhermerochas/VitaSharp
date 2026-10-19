@@ -132,7 +132,7 @@ public sealed class Ctrl : HleModule
 
     int Peek(int port, uint data, uint count, bool negative, bool ext)
     {
-        if (data == 0) return unchecked((int)0x80340002);
+        if (data == 0) return unchecked((int)0x80340001); // SCE_CTRL_ERROR_INVALID_ARG
         if (count == 0) return 0;
         WriteData(data, 1, negative, port, ext); // newest sample only
         return 1;
@@ -213,7 +213,7 @@ public sealed class Touch : HleModule
     int sceTouchGetPanelInfo(int port, uint info)
     {
         if (info == 0) return unchecked((int)0x80350001);
-        GuestMemory.Fill(info, 0, 0x20);
+        GuestMemory.Fill(info, 0, 0x30);
         // minAaX minAaY maxAaX maxAaY minDispX minDispY maxDispX maxDispY (s16), minForce maxForce (u8)
         short[] v = port == 0 ? [0, 0, 1919, 1087, 0, 0, 1919, 1087] : [0, 108, 1919, 889, 0, 108, 1919, 889];
         for (int i = 0; i < 8; i++) GuestMemory.Write(info + (uint)i * 2, v[i]);

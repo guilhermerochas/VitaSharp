@@ -378,7 +378,7 @@ public sealed class ThreadMgr : HleModule
     int sceKernelDeleteLwMutex(uint work)
     {
         var m = LwMutexOf(work);
-        if (m == null) return unchecked((int)0x80028221);
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
         m.Delete();
         K.Objects.Remove(m.Uid);
         return 0;
@@ -386,9 +386,9 @@ public sealed class ThreadMgr : HleModule
 
     [Hle("sceKernelLockLwMutex")]
     [Hle("sceKernelLockLwMutexCB")]
-    int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? unchecked((int)0x80028221);
+    int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
-    [Hle] int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? unchecked((int)0x80028221);
+    [Hle] int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
     [Hle("sceKernelUnlockLwMutex")]
     [Hle("sceKernelUnlockLwMutex2")]
@@ -398,7 +398,7 @@ public sealed class ThreadMgr : HleModule
     int sceKernelGetLwMutexInfo(uint work, uint info)
     {
         var m = LwMutexOf(work);
-        if (m == null) return unchecked((int)0x80028221);
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
         GuestMemory.W32(info + 4, (uint)m.Uid);
         GuestMemory.WriteCString(info + 8, m.Name, 32);
         GuestMemory.W32(info + 40, m.Attr);
@@ -410,7 +410,7 @@ public sealed class ThreadMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfo(m.WorkArea, info) : unchecked((int)0x80028221);
+    [Hle] int sceKernelGetLwMutexInfoById(int uid, uint info) => Obj<Mutex>(uid) is { } m ? sceKernelGetLwMutexInfo(m.WorkArea, info) : SceError.UNKNOWN_LW_MUTEX_ID;
 
     // ------------------------------------------------------------------ condition variables
 
@@ -438,21 +438,21 @@ public sealed class ThreadMgr : HleModule
     int sceKernelCreateLwCond(uint work, string name, uint attr, uint workMutex, uint opt)
     {
         var m = LwMutexOf(workMutex);
-        if (m == null) return unchecked((int)0x80028221);
+        if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
         int uid = K.Objects.Register(new CondVar { Name = name, Attr = attr, Mutex = m, WorkArea = work });
         GuestMemory.W32(work, (uint)uid);
         GuestMemory.W32(work + 4, (uint)m.Uid);
         return 0;
     }
 
-    [Hle] int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.Delete(); K.Objects.Remove(c.Uid); return 0; }
+    [Hle] int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Delete(); K.Objects.Remove(c.Uid); return 0; }
 
     [Hle("sceKernelWaitLwCond")]
     [Hle("sceKernelWaitLwCondCB")]
-    int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? unchecked((int)0x80028241);
+    int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? SceError.UNKNOWN_LW_COND_ID;
 
-    [Hle] int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.Signal(); return 0; }
-    [Hle] int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return unchecked((int)0x80028241); c.SignalAll(); return 0; }
+    [Hle] int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Signal(); return 0; }
+    [Hle] int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.SignalAll(); return 0; }
     [Hle] int sceKernelSignalLwCondTo(uint work, int thid) => sceKernelSignalLwCond(work);
 
     // ------------------------------------------------------------------ message pipes

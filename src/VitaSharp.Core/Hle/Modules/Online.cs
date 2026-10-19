@@ -9,7 +9,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed class Net : HleModule
 {
-    const int ERR_NET_NOT_CONNECTED = unchecked((int)0x80410179); // SCE_NET_ERROR_ENOTCONN-ish
+    const int ERR_NET_ENOTCONN = unchecked((int)0x80410139), ERR_NET_ENETUNREACH = unchecked((int)0x80410133);
+    const int ERR_NETCTL_INVALID_ADDR = unchecked((int)0x80412107), ERR_NETCTL_CALLBACK_MAX = unchecked((int)0x80412103);
+    const int ERR_HTTP_BEFORE_SEND = unchecked((int)0x80431065);
     const int ERR_NETCTL_NOT_CONNECTED = unchecked((int)0x80412108);
     uint _errnoLoc;
     int _nextId = 1;
@@ -55,10 +57,10 @@ public sealed class Net : HleModule
     [Hle] int sceNetShutdown(int s, int how) => 0;
     [Hle] int sceNetBind(int s, uint addr, uint len) => 0;
     [Hle] int sceNetListen(int s, int backlog) => 0;
-    [Hle] int sceNetAccept(int s, uint addr, uint len) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetConnect(int s, uint addr, uint len) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetSend(int s, uint buf, uint len, int flags) => ERR_NET_NOT_CONNECTED;
-    [Hle] int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) => ERR_NET_NOT_CONNECTED;
+    [Hle] int sceNetAccept(int s, uint addr, uint len) => ERR_NET_ENOTCONN;
+    [Hle] int sceNetConnect(int s, uint addr, uint len) => ERR_NET_ENETUNREACH;
+    [Hle] int sceNetSend(int s, uint buf, uint len, int flags) => ERR_NET_ENOTCONN;
+    [Hle] int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) => ERR_NET_ENETUNREACH;
     [Hle] int sceNetRecv(int s, uint buf, uint len, int flags) => unchecked((int)0x80410123); // EAGAIN
     [Hle] int sceNetRecvfrom(int s, uint buf, uint len, int flags, uint from, uint fromlen) => unchecked((int)0x80410123);
     [Hle] int sceNetSetsockopt(int s, int level, int opt, uint val, uint len) => 0;
@@ -111,13 +113,13 @@ public sealed class Net : HleModule
 
     // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers and is signed out of PSN,
     // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server.
-    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return unchecked((int)0x80412102); state.Value = 3; return 0; }
-    [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return unchecked((int)0x80412102); error.Value = 0; return 0; }
+    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = 3; return 0; }
+    [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return ERR_NETCTL_INVALID_ADDR; error.Value = 0; return 0; }
 
     [Hle]
     int sceNetCtlInetGetInfo(int code, uint info)
     {
-        if (info == 0) return unchecked((int)0x80412102);
+        if (info == 0) return ERR_NETCTL_INVALID_ADDR;
         switch (code)
         {
             case 1: GuestMemory.WriteCString(info, "VitaSharp", 65); break;           // configuration name
@@ -142,17 +144,17 @@ public sealed class Net : HleModule
             case 20: GuestMemory.W32(info, 0); break;                               // no proxy
             case 21: GuestMemory.WriteCString(info, "", 256); break;
             case 22: GuestMemory.W32(info, 0); break;
-            default: return unchecked((int)0x80412102);
+            default: return unchecked((int)0x80412106); // SCE_NET_CTL_ERROR_INVALID_CODE
         }
         return 0;
     }
 
     int RegisterNetCallback(Dictionary<int, NetCallback> table, uint func, Ptr<int> cid)
     {
-        if (func == 0 || cid.Address == 0) return unchecked((int)0x80412102);
+        if (func == 0 || cid.Address == 0) return ERR_NETCTL_INVALID_ADDR;
         lock (_inetCallbacks)
         {
-            if (table.Count >= 8) return unchecked((int)0x80412104);
+            if (table.Count >= 8) return ERR_NETCTL_CALLBACK_MAX;
             int id = _nextCid++;
             table[id] = new NetCallback { Func = func, Arg = 0 };
             cid.Value = id;
@@ -207,10 +209,10 @@ public sealed class Net : HleModule
     [Hle] int sceHttpDeleteRequest(int id) => 0;
     [Hle] int sceHttpSendRequest(int req, uint data, uint size) => unchecked((int)0x80431063); // resolver failure
     [Hle] int sceHttpAbortRequest(int req) => 0;
-    [Hle] int sceHttpGetStatusCode(int req, Ptr<int> code) => unchecked((int)0x80431005);
-    [Hle] int sceHttpGetResponseContentLength(int req, uint len) => unchecked((int)0x80431005);
-    [Hle] int sceHttpReadData(int req, uint data, uint size) => unchecked((int)0x80431005);
-    [Hle] int sceHttpGetAllResponseHeaders(int req, uint header, uint size) => unchecked((int)0x80431005);
+    [Hle] int sceHttpGetStatusCode(int req, Ptr<int> code) => ERR_HTTP_BEFORE_SEND;
+    [Hle] int sceHttpGetResponseContentLength(int req, uint len) => ERR_HTTP_BEFORE_SEND;
+    [Hle] int sceHttpReadData(int req, uint data, uint size) => ERR_HTTP_BEFORE_SEND;
+    [Hle] int sceHttpGetAllResponseHeaders(int req, uint header, uint size) => ERR_HTTP_BEFORE_SEND;
     [Hle] int sceHttpParseResponseHeader(uint header, uint len, string field, uint val, uint valLen) => unchecked((int)0x80432025);
     [Hle] int sceHttpAddRequestHeader(int id, string name, string value, uint mode) => 0;
     [Hle] int sceHttpSetRequestContentLength(int id, ulong len) => 0;
