@@ -20,6 +20,15 @@ SceNpWebApiCommonDialog, SceNpCommerce2, SceNpDrmPackage, SceNpSnsFacebook.
 
 No `E.tsv` as 13 funções FORA aparecem como P1. Elas foram reclassificadas aqui, com justificativa em cada seção.
 
+**Estado (2026-10-19, branch `feat/hle-p0-e2`):** todos os P0 e STUB implementados (checkboxes abaixo). As tabelas P1
+(sem checkbox) também foram implementadas conforme o contrato offline, em `Hle/Modules/Np.cs` (`NpManager`, `NpIdUtil`,
+`NpSocial`), `NpCommunity.cs` (`NpCommunity`, `NpScore`, `NpTus`, `NpUtility`) e `NpServices.cs` (`NpSignaling`,
+`NpWebApi`, `NpWebApiCommonDialog`, `NpCommerce2`, `NpDrmPackage`), exceto as de protótipo não confirmado:
+`sceNpCommonBase64Encode`, `sceNpCommonGetNpEnviroment`, `sceNpCommonGetSystemSwVersion`,
+`sceNpCommerce2GetShortfallOfLibhttpPool`/`LibsslPool`, e as FORA. A classe `Np` de `Online.cs` mantém só Basic,
+Party e `sceNpMessageDialog*`. Pendentes de confirmação (§0.6 não achou call sites diretos no eboot do Invizimals): o
+valor de `SCE_NP_PARTY_STATE_NOT_IN_PARTY` (hoje 0) e a forma de `sceNpGetPlatformType` (tipo em r0).
+
 ## Ordem sugerida de implementação
 
 1. **Helper `NpCommunity` (§0.4)** e **SceNpScore/SceNpTus P0** (§4, §5): destrava Sakatsuku, cujos 22 imports
@@ -178,7 +187,7 @@ inferido do SDK do PS3/PS4 (mesma família de API) e do Vita3K, e está marcado 
 ## 1. STUB: funções já registradas que descartam comportamento
 
 ### sceNpInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNpManager · **NID:** `0x04D9F484`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNpManager · **NID:** `0x04D9F484`
 - **Protótipo:** `int sceNpInit(const SceNpCommunicationConfig *config, SceNpOptParam *opt);` (`psp2/np/mgr.h`)
 - **Comportamento:** inicializa o NP do processo e guarda o `SceNpCommunicationId` padrão. Hoje retorna 0 sempre, não
   detecta chamada dupla e não guarda o commId, que as bibliotecas filhas (Basic, Message, WebApi) usariam como padrão
@@ -192,7 +201,7 @@ inferido do SDK do PS3/PS4 (mesma família de API) e do Vita3K, e está marcado 
 - **Validação:** cenários `st_boot` (Sakatsuku) e `kz_boot` (Killzone usa NP) sem regressão; log com o commId.
 
 ### sceNpAuthCreateStartRequest
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNpCommon · **NID:** `0xED42079F`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNpCommon · **NID:** `0xED42079F`
 - **Protótipo:** `int sceNpAuthCreateStartRequest(const SceNpAuthRequestParameter *param);` (inferido; layout no Vita3K)
 - **Comportamento:** cria uma requisição de ticket NP e, ao terminar, chama `param->ticketCb(reqId, result, cbArg)`
   a partir do `sceNpCheckCallback`. Hoje retorna `SCE_NP_ERROR_SIGNED_OUT` na hora, sem criar requisição. Sakatsuku
@@ -213,7 +222,7 @@ inferido do SDK do PS3/PS4 (mesma família de API) e do Vita3K, e está marcado 
 - **Validação:** `st_game` (Sakatsuku) com log das chamadas `sceNpAuth*`; conferir que o jogo destrói a requisição.
 
 ### sceNpLookupUserProfileAsync
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNpUtility · **NID:** `0xE5285E0F`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNpUtility · **NID:** `0xE5285E0F`
 - **Protótipo:** `int sceNpLookupUserProfileAsync(SceInt32 reqId, const SceNpId *targetNpId, SceNpUserInfo *userInfo, SceNpAboutMe *aboutMe, SceNpMyLanguages *languages, SceNpCountryCode *countryCode, void *avatarImage, void *option);` (inferido do PS3; a ordem exata não importa offline)
 - **Comportamento:** hoje falha na hora com `SIGNED_OUT`, sem validar a request e sem marcar a transação, o que é
   incoerente com o `sceNpLookupPollAsync`. Deve seguir o modelo community (§0.4).
@@ -225,7 +234,7 @@ inferido do SDK do PS3/PS4 (mesma família de API) e do Vita3K, e está marcado 
 - **Validação:** teste unitário do helper (criar ctx → request → async → poll = 0 com `result = 0x80550705`); `kz_boot`.
 
 ### sceNpLookupPollAsync
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceNpUtility · **NID:** `0xFCDBA234`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceNpUtility · **NID:** `0xFCDBA234`
 - **Protótipo:** `int sceNpLookupPollAsync(SceInt32 reqId, SceInt32 *result);` (inferido)
 - **Comportamento:** hoje retorna 0 e escreve `SIGNED_OUT` para qualquer ID, inclusive inexistente. Deve seguir o §0.4.
 - **Retorno/erros:** 0 com `*result`; `INVALID_ID`; `INVALID_ARGUMENT` sem transação iniciada.
@@ -244,7 +253,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
 ## 2. SceNpCommon
 
 ### sceNpCmpNpId
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpCommon · **NID:** `0xFB8D82E5`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpCommon · **NID:** `0xFB8D82E5`
 - **Protótipo:** `int sceNpCmpNpId(const SceNpId *npid1, const SceNpId *npid2);` (inferido; Vita3K usa essa assinatura)
 - **Comportamento:** função pura que compara dois NpIds.
   1. `npid1 == 0 || npid2 == 0` → `SCE_NP_UTIL_ERROR_INVALID_ARGUMENT`.
@@ -268,7 +277,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
   `"psp2"` vs zero; reserved[0]=0). Em Sakatsuku (`st_game`), a chamada não pode gerar `Unimplemented`.
 
 ### sceNpGetPlatformType
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpCommon · **NID:** `0xE9A003DE`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpCommon · **NID:** `0xE9A003DE`
 - **Protótipo:** `int sceNpGetPlatformType(const SceNpId *npId);` (**inferido**; retorna o tipo em r0. Confirmar pelo
   §0.6 se não há um segundo argumento `SceNpPlatformType *type`. Se o jogo passar um ponteiro em r1 e ler `[r1]` depois
   da chamada, a forma é `(npId, *type)` com retorno 0.)
@@ -285,7 +294,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
   falha nesse ponto.
 
 ### sceNpSetPlatformType
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpCommon · **NID:** `0xE807D0BC`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpCommon · **NID:** `0xE807D0BC`
 - **Protótipo:** `int sceNpSetPlatformType(SceNpId *npId, SceNpPlatformType platformType);` (inferido do PS4; confirmar pelo §0.6)
 - **Comportamento:** função pura. Grava os 4 bytes de plataforma em `opt[4..7]` (+0x18): NONE → `00 00 00 00`; PS3 →
   `"ps3\0"`; VITA → `"psp2"`; PS4 → `"ps4\0"`. Não altera mais nada.
@@ -296,7 +305,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
 - **Validação:** idem `sceNpGetPlatformType`.
 
 ### sceNpAuthAbortRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpCommon · **NID:** `0xE2582575`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpCommon · **NID:** `0xE2582575`
 - **Protótipo:** `int sceNpAuthAbortRequest(SceNpAuthRequestId reqId);` (inferido; `SceNpAuthRequestId` = `SceInt32`)
 - **Comportamento:** cancela uma requisição de ticket em andamento; o callback recebe o resultado de abort. Offline,
   sem o STUB de `sceNpAuthCreateStartRequest`, nenhuma requisição existe e o jogo só chama isto no caminho de limpeza.
@@ -327,7 +336,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
 ## 3. SceNpManager
 
 ### sceNpManagerGetAccountRegion
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpManager · **NID:** `0xFE835967`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpManager · **NID:** `0xFE835967`
 - **Protótipo:** `int sceNpManagerGetAccountRegion(SceNpCountryCode *country_code, int *language_code);` (`psp2/np/mgr.h`)
 - **Comportamento:** devolve o país (2 letras + `\0`, ex. `"us"`) e o idioma da conta PSN. Sem conta não há região.
 - **Retorno/erros:** `country_code == 0 || language_code == 0` → `SCE_NP_MANAGER_ERROR_INVALID_ARGUMENT` (0x80550503);
@@ -359,7 +368,7 @@ Modelo: §0.4. Módulo `NpScore` em `NpCommunity.cs`. Tipos: `SceNpScoreBoardId`
 do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumento extra de prioridade).
 
 ### sceNpScoreInit
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x0433069F`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x0433069F`
 - **Protótipo:** `int sceNpScoreInit(SceInt32 threadPriority, SceInt32 cpuAffinityMask, void *option);` (inferido)
 - **Comportamento:** inicializa a biblioteca de ranking (o real cria uma thread de trabalho; aqui nada).
 - **Retorno/erros:** 0; `SCE_NP_COMMUNITY_ERROR_ALREADY_INITIALIZED` 0x80550701.
@@ -368,7 +377,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** `st_boot`/`st_game`; `imports PCSG00198` sem SceNpScore faltando.
 
 ### sceNpScoreCreateTitleCtx
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x5685F225`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x5685F225`
 - **Protótipo:** `int sceNpScoreCreateTitleCtx(const SceNpCommunicationId *communicationId, const SceNpCommunicationPassphrase *passphrase, const SceNpId *selfNpId);` (inferido; mesma assinatura do `sceNpTusCreateTitleCtx` do Vita3K)
 - **Comportamento:** cria o contexto do título. Offline funciona, porque é local.
 - **Retorno/erros:** ID > 0; `NOT_INITIALIZED` 0x80550702; `INSUFFICIENT_ARGUMENT` 0x8055070C (`communicationId == 0`);
@@ -378,7 +387,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** idem.
 
 ### sceNpScoreDeleteTitleCtx
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xF52EA88A`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xF52EA88A`
 - **Protótipo:** `int sceNpScoreDeleteTitleCtx(SceInt32 titleCtxId);` (inferido)
 - **Comportamento:** destrói o contexto e as requests dele.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ID` 0x8055070E.
@@ -387,7 +396,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** idem.
 
 ### sceNpScoreCreateRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xD30D1993`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xD30D1993`
 - **Protótipo:** `int sceNpScoreCreateRequest(SceInt32 titleCtxId);` (inferido)
 - **Comportamento:** cria um ID de transação ligado ao contexto.
 - **Retorno/erros:** ID > 0; `NOT_INITIALIZED`; `INVALID_ID`; `TOO_MANY_OBJECTS`.
@@ -396,7 +405,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** idem.
 
 ### sceNpScoreDeleteRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xFFF24BB1`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xFFF24BB1`
 - **Protótipo:** `int sceNpScoreDeleteRequest(SceInt32 reqId);` (inferido)
 - **Comportamento:** libera a request (aborta se estiver em andamento).
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ID`.
@@ -405,7 +414,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** idem.
 
 ### sceNpScoreRecordScoreAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x24B09634`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x24B09634`
 - **Protótipo:** `int sceNpScoreRecordScoreAsync(SceInt32 reqId, SceNpScoreBoardId boardId, SceNpScoreValue score, const SceNpScoreComment *scoreComment, const SceNpScoreGameInfo *gameInfo, SceNpScoreRankNumber *tmpRank, const SceRtcTick *compareDate, void *option);` (inferido; `score` 64 bits em r2:r3, o resto na pilha)
 - **Comportamento:** envia uma pontuação ao placar. Offline, a transação termina na hora com erro.
 - **Retorno/erros:** 0 (iniciada); `NOT_INITIALIZED`; `INVALID_ID`; `TRANSACTION_ALREADY_END` 0x80550712. O
@@ -416,7 +425,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
   → DeleteRequest, e o jogo continua.
 
 ### sceNpScoreGetRankingByRangeAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xC45E3FCD`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xC45E3FCD`
 - **Protótipo:** `int sceNpScoreGetRankingByRangeAsync(SceInt32 reqId, SceNpScoreBoardId boardId, SceNpScoreRankNumber startSerialRank, SceNpScoreRankData *rankArray, SceSize rankArraySize, SceNpScoreComment *commentArray, SceSize commentArraySize, SceNpScoreGameInfo *infoArray, SceSize infoArraySize, SceSize arrayNum, SceRtcTick *lastSortDate, SceNpScoreRankNumber *totalRecord, void *option);` (inferido)
 - **Comportamento:** lê um intervalo do ranking. Offline, termina com erro e não preenche nada.
 - **Retorno/erros:** como `RecordScoreAsync`.
@@ -425,7 +434,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** `st_game` (tela de ranking online deve mostrar erro de conexão e voltar).
 
 ### sceNpScoreGetRankingByNpIdPcIdAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xCE3A9544`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0xCE3A9544`
 - **Protótipo:** `int sceNpScoreGetRankingByNpIdPcIdAsync(SceInt32 reqId, SceNpScoreBoardId boardId, const SceNpScoreNpIdPcId *idArray, SceSize idArraySize, SceNpScorePlayerRankData *rankArray, SceSize rankArraySize, SceNpScoreComment *commentArray, SceSize commentArraySize, SceNpScoreGameInfo *infoArray, SceSize infoArraySize, SceSize arrayNum, SceRtcTick *lastSortDate, SceNpScoreRankNumber *totalRecord, void *option);` (inferido)
 - **Comportamento:** ranking de jogadores específicos (NpId + id de personagem). Offline: erro.
 - **Retorno/erros:** como `RecordScoreAsync`.
@@ -434,7 +443,7 @@ do PS3/PS4 (no Vita o `Async` tem os mesmos argumentos do síncrono, sem argumen
 - **Validação:** `st_game`.
 
 ### sceNpScorePollAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x9F2A7AC9`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpScore · **NID:** `0x9F2A7AC9`
 - **Protótipo:** `int sceNpScorePollAsync(SceInt32 reqId, SceInt32 *result);` (inferido)
 - **Comportamento:** consulta sem bloquear. Retorna 0 (FINISHED) com `*result` = resultado da transação, ou 1
   (RUNNING). Aqui nunca há RUNNING.
@@ -487,7 +496,7 @@ no Vita3K). Módulo `NpTus` em `NpCommunity.cs`. Tipos: `SceNpTusSlotId` = `SceI
 PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 
 ### sceNpTusInit
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xB2141F8D`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xB2141F8D`
 - **Protótipo:** `int sceNpTusInit(SceInt32 threadPriority, SceInt32 cpuAffinityMask, const void *option);` (Vita3K)
 - **Comportamento:** inicializa o TUS/TSS. O Vita3K rejeita `option != NULL` com `INVALID_ARGUMENT`; aqui ignorar o
   `option`, porque rejeitar não traz benefício.
@@ -497,7 +506,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** `st_boot`; `imports PCSG00198` sem SceNpTus faltando.
 
 ### sceNpTusTerm
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x7EDC33B3`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x7EDC33B3`
 - **Protótipo:** `int sceNpTusTerm(void);` (Vita3K)
 - **Comportamento:** encerra a biblioteca e descarta contextos e requests.
 - **Retorno/erros:** 0; `NOT_INITIALIZED` 0x80550702.
@@ -506,7 +515,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusCreateTitleCtx
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xF1D9529E`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xF1D9529E`
 - **Protótipo:** `int sceNpTusCreateTitleCtx(const SceNpCommunicationId *communicationId, const SceNpCommunicationPassphrase *passphrase, const SceNpId *selfNpId);` (Vita3K)
 - **Comportamento:** cria o contexto do título (local).
 - **Retorno/erros:** ID > 0; `NOT_INITIALIZED`; `INSUFFICIENT_ARGUMENT` 0x8055070C; `TOO_MANY_OBJECTS` 0x80550706 (32).
@@ -515,7 +524,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusDeleteTitleCtx
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xD53D3692`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xD53D3692`
 - **Protótipo:** `int sceNpTusDeleteTitleCtx(SceInt32 titleCtxId);` (Vita3K)
 - **Comportamento:** remove o contexto e as requests dele.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ID` 0x8055070E.
@@ -524,7 +533,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusCreateRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x99DC7420`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x99DC7420`
 - **Protótipo:** `int sceNpTusCreateRequest(SceInt32 titleCtxId);` (Vita3K)
 - **Comportamento:** cria uma request (vale para TUS e TSS).
 - **Retorno/erros:** ID > 0; `NOT_INITIALIZED`; `INVALID_ID`; `TOO_MANY_OBJECTS`.
@@ -533,7 +542,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusDeleteRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xB46B5D7F`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xB46B5D7F`
 - **Protótipo:** `int sceNpTusDeleteRequest(SceInt32 requestId);` (Vita3K)
 - **Comportamento:** libera a request.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ID`.
@@ -542,7 +551,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusAbortRequest
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x2C5F1162`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x2C5F1162`
 - **Protótipo:** `int sceNpTusAbortRequest(SceInt32 requestId);` (Vita3K)
 - **Comportamento:** aborta a transação em andamento. Se a request ainda não tem resultado, ele passa a ser
   `ABORTED`; se já terminou, nada muda.
@@ -552,7 +561,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusPollAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xC003C588`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xC003C588`
 - **Protótipo:** `int sceNpTusPollAsync(SceInt32 requestId, SceInt32 *result);` (Vita3K)
 - **Comportamento:** igual a `sceNpScorePollAsync`.
 - **Retorno/erros:** 0 com `*result`; `NOT_INITIALIZED`; `INVALID_ID`; `INVALID_ARGUMENT` (sem transação ou `result == 0`).
@@ -561,7 +570,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusGetDataAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x883AC44A`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x883AC44A`
 - **Protótipo:** `int sceNpTusGetDataAsync(SceInt32 reqId, const SceNpId *targetNpId, SceNpTusSlotId slotId, SceNpTusDataStatus *dataStatus, SceSize dataStatusSize, void *data, SceSize recvSize, void *option);` (inferido)
 - **Comportamento:** baixa o blob de dados de um slot do usuário. Offline: erro na conclusão. O Vita3K retorna
   `NO_RESOURCE` sem iniciar a transação; aqui ela é iniciada, para o jogo seguir o caminho de polling.
@@ -571,7 +580,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** `st_game` (dados online de Sakatsuku: o jogo deve mostrar falha de conexão e continuar).
 
 ### sceNpTusSetDataAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x9FABA1E5`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x9FABA1E5`
 - **Protótipo:** `int sceNpTusSetDataAsync(SceInt32 reqId, const SceNpId *targetNpId, SceNpTusSlotId slotId, SceSize totalSize, SceSize sendSize, const void *data, const SceNpTusDataInfo *info, SceSize infoStructSize, void *option);` (inferido)
 - **Comportamento:** envia um blob para o slot. Offline: erro.
 - **Retorno/erros:** como `GetDataAsync`.
@@ -580,7 +589,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusGetMultiSlotDataStatusAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x520975C3`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x520975C3`
 - **Protótipo:** `int sceNpTusGetMultiSlotDataStatusAsync(SceInt32 reqId, const SceNpId *targetNpId, const SceNpTusSlotId *slotIdArray, SceNpTusDataStatus *statusArray, SceSize statusArraySize, SceSize arrayNum, void *option);` (inferido)
 - **Comportamento:** lê o status (existência, data de alteração, tamanho) de vários slots. Offline: erro.
 - **Retorno/erros:** como `GetDataAsync`.
@@ -589,7 +598,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTusDeleteMultiSlotDataAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x0CFAC523`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0x0CFAC523`
 - **Protótipo:** `int sceNpTusDeleteMultiSlotDataAsync(SceInt32 reqId, const SceNpId *targetNpId, const SceNpTusSlotId *slotIdArray, SceSize arrayNum, void *option);` (inferido)
 - **Comportamento:** apaga blobs de vários slots. Offline: erro.
 - **Retorno/erros:** como `GetDataAsync`.
@@ -598,7 +607,7 @@ PS4/PS Vita análogo e do Vita3K (`sceNpTss*`).
 - **Validação:** idem.
 
 ### sceNpTssGetSmallStorageAsync
-- [ ] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xEA588F23`
+- [x] **Prioridade:** P0 (Sakatsuku) · **Biblioteca:** SceNpTus · **NID:** `0xEA588F23`
 - **Protótipo:** `int sceNpTssGetSmallStorageAsync(SceInt32 requestId, void *data, SceSize maxSize, SceSize *contentLength, const void *option);` (Vita3K)
 - **Comportamento:** baixa o "small storage" do título (TSS, até 64 KiB, dados que a Sony hospeda por título, como
   notícias e configurações). Offline: erro. O Vita3K zera `*contentLength`; fazer o mesmo, que é inofensivo.
@@ -680,7 +689,7 @@ O offline já implementado mantém listas vazias de amigos e bloqueados e devolv
 funções abaixo seguem o mesmo padrão em `Np` (`Online.cs`). Protótipos **inferidos** do SDK PS Vita/PS4 análogo.
 
 ### sceNpBasicGetFriendOnlineStatus
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0x5183A4B5`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0x5183A4B5`
 - **Protótipo:** `int sceNpBasicGetFriendOnlineStatus(const SceNpId *friendId, SceNpBasicFriendOnlineStatus *status);` (inferido)
 - **Comportamento:** status online de um amigo. A lista de amigos está vazia (`sceNpBasicGetFriendListEntryCount` = 0),
   então o jogo não tem NpId de amigo para consultar. Se consultar mesmo assim, a resposta é "sem dados".
@@ -691,7 +700,7 @@ funções abaixo seguem o mesmo padrão em `Np` (`Online.cs`). Protótipos **inf
 - **Validação:** cenário Invizimals (§3); a tela de amigos/menu online deve mostrar lista vazia.
 
 ### sceNpBasicGetFriendContextState
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0x9A9E2021`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0x9A9E2021`
 - **Protótipo:** `int sceNpBasicGetFriendContextState(const SceNpId *friendId, SceNpBasicFriendContextState *state);` (inferido)
 - **Comportamento:** diz se o amigo está no mesmo jogo/contexto. Offline não há amigos.
 - **Retorno/erros:** igual a `GetFriendOnlineStatus`.
@@ -700,7 +709,7 @@ funções abaixo seguem o mesmo padrão em `Np` (`Online.cs`). Protótipos **inf
 - **Validação:** idem.
 
 ### sceNpBasicGetGamePresenceOfFriend
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0xEF8A91BC`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpBasic · **NID:** `0xEF8A91BC`
 - **Protótipo:** `int sceNpBasicGetGamePresenceOfFriend(const SceNpId *friendId, SceNpBasicGamePresence *presence);` (inferido)
 - **Comportamento:** lê a presença in-game (status, dados) de um amigo. Offline não há amigos.
 - **Retorno/erros:** igual a `GetFriendOnlineStatus`.
@@ -733,7 +742,7 @@ vita-headers ou no Vita3K; todos são inferidos.** Como os P0 só usam o valor d
 seguro.
 
 ### sceNpMessageInit
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x258DA4AC`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x258DA4AC`
 - **Protótipo:** `int sceNpMessageInit(void);` (**inferido**; pode receber prioridade/afinidade de thread, que são ignoradas)
 - **Comportamento:** inicializa a biblioteca de mensagens.
 - **Retorno/erros:** 0. Chamada dupla: o firmware provavelmente devolve um `ALREADY_INITIALIZED` da família da
@@ -743,7 +752,7 @@ seguro.
 - **Validação:** cenário Invizimals; sem `Unimplemented` no boot.
 
 ### sceNpMessageTerm
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x380230A1`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x380230A1`
 - **Protótipo:** `int sceNpMessageTerm(void);` (inferido)
 - **Comportamento:** encerra a biblioteca.
 - **Retorno/erros:** 0.
@@ -752,7 +761,7 @@ seguro.
 - **Validação:** idem.
 
 ### sceNpMessageGetMessage
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x514A4320`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x514A4320`
 - **Protótipo:** `int sceNpMessageGetMessage(SceNpMessageId msgId, ...);` (**inferido**; `SceNpMessageId` provavelmente
   64 bits, em r0:r1, e os buffers de saída nos registradores seguintes. Confirmar pelo §0.6 se algum dia for chamado)
 - **Comportamento:** lê o cabeçalho e o corpo de uma mensagem recebida. Offline não existe mensagem.
@@ -764,7 +773,7 @@ seguro.
 - **Validação:** idem; esperar que nunca seja chamada.
 
 ### sceNpMessageGetAttachedData
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x7E697F98`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpMessage · **NID:** `0x7E697F98`
 - **Protótipo:** `int sceNpMessageGetAttachedData(SceNpMessageAttachedDataId id, SceNpId *from, void *data, SceSize *size);` (**inferido**)
 - **Comportamento:** copia os dados anexados (app data) de uma mensagem para o jogo. Offline não existe mensagem.
 - **Retorno/erros:** `SCE_NP_ERROR_SIGNED_OUT`, sem escrever nada.
@@ -791,7 +800,7 @@ seguro.
 Posts no feed de atividades da PSN. **Sem protótipos públicos; todos inferidos.** Só o retorno importa.
 
 ### sceNpActivityInit
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0xE0FFEE97`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0xE0FFEE97`
 - **Protótipo:** `int sceNpActivityInit(void);` (inferido; argumentos ignorados)
 - **Comportamento:** inicializa a biblioteca.
 - **Retorno/erros:** 0; guardar `bool _activityInited`.
@@ -800,7 +809,7 @@ Posts no feed de atividades da PSN. **Sem protótipos públicos; todos inferidos
 - **Validação:** cenário Invizimals.
 
 ### sceNpActivityTerm
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0x9EA4901F`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0x9EA4901F`
 - **Protótipo:** `int sceNpActivityTerm(void);` (inferido)
 - **Comportamento:** encerra.
 - **Retorno/erros:** 0.
@@ -809,7 +818,7 @@ Posts no feed de atividades da PSN. **Sem protótipos públicos; todos inferidos
 - **Validação:** idem.
 
 ### sceNpActivityPostStatus
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0xBC7FDC77`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpActivity · **NID:** `0xBC7FDC77`
 - **Protótipo:** `int sceNpActivityPostStatus(const SceNpActivityPostStatusParam *param);` (inferido)
 - **Comportamento:** publica um evento ("capturou o Invizimal X") no feed. Sem conta, não há onde publicar.
 - **Retorno/erros:** `SCE_NP_ERROR_SIGNED_OUT`, coerente com `sceNpBasicSetInGamePresence`. **Plano B:** se o jogo
@@ -827,7 +836,7 @@ Posts no feed de atividades da PSN. **Sem protótipos públicos; todos inferidos
 ## 9. SceNpPartyGameUtil
 
 ### sceNpPartyGetState
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpPartyGameUtil · **NID:** `0x9F99ADF7`
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceNpPartyGameUtil · **NID:** `0x9F99ADF7`
 - **Protótipo:** `int sceNpPartyGetState(SceNpPartyState *state);` (**inferido**)
 - **Comportamento:** estado do usuário no app Party (fora de party / em party). Offline: nunca em party.
 - **Retorno/erros:** `state == 0` → `SCE_NP_ERROR_INVALID_ARGUMENT` 0x80550003 (código da família party a confirmar);

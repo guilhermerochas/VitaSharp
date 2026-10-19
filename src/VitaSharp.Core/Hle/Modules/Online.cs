@@ -244,48 +244,8 @@ public sealed class Net : HleModule
 public sealed class Np : HleModule
 {
     const int ERR_SIGNED_OUT = unchecked((int)0x80550006);
-    int _nextId = 1;
 
-    // PSN: the console is signed out (SCE_NP_SERVICE_STATE_SIGNED_OUT = 1; 0 would mean "unknown yet").
-    const int NP_STATE_SIGNED_OUT = 1;
-    readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
-
-    [Hle] int sceNpInit(uint config, uint ctx) => 0;
-    [Hle] int sceNpTerm() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
-
-    [Hle]
-    int sceNpCheckCallback()
-    {
-        List<(uint Func, uint Arg, bool Notified)> pending;
-        lock (_npCallbacks)
-        {
-            pending = _npCallbacks.Where(c => !c.Notified).ToList();
-            for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
-        }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NP_STATE_SIGNED_OUT, 0, c.Arg);
-        return 0;
-    }
-
-    [Hle] int sceNpGetServiceState(Ptr<int> state) { if (state.Address == 0) return unchecked((int)0x80550003); state.Value = NP_STATE_SIGNED_OUT; return 0; }
-
-    [Hle]
-    int sceNpRegisterServiceStateCallback(uint cb, uint arg)
-    {
-        lock (_npCallbacks) _npCallbacks.Add((cb, arg, false));
-        return 0;
-    }
-
-    [Hle] int sceNpUnregisterServiceStateCallback() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
-    [Hle] int sceNpManagerGetNpId(uint npId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpManagerGetContentRatingFlag(Ptr<int> isRestricted, Ptr<int> age) { isRestricted.TrySet(0); age.TrySet(18); return 0; }
-
-    [Hle] int sceNpAuthInit() => 0;
-    [Hle] int sceNpAuthTerm() => 0;
-    [Hle] int sceNpAuthCreateStartRequest(uint param) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthDestroyRequest(int id) => 0;
-    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => ERR_SIGNED_OUT;
-
+    // NP initialisation, service state and auth live in NpManager (Np.cs); Lookup in NpUtility (NpCommunity.cs).
     [Hle] int sceNpBasicInit(uint opt) => 0;
     [Hle] int sceNpBasicTerm() => 0;
     [Hle] int sceNpBasicCheckCallback() => 0;
@@ -302,16 +262,6 @@ public sealed class Np : HleModule
     [Hle] int sceNpManagerGetChatRestrictionFlag(Ptr<int> flag) { flag.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetBlockListEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetBlockListEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
-
-    [Hle] int sceNpLookupInit(int usesAsync, int threadPrio, int cpuAffinity, uint opt) => 0;
-    [Hle] int sceNpLookupTerm() => 0;
-    [Hle] int sceNpLookupCreateTitleCtx(uint commId, uint npId) => _nextId++;
-    [Hle] int sceNpLookupDeleteTitleCtx(int id) => 0;
-    [Hle] int sceNpLookupCreateRequest(int ctx) => _nextId++;
-    [Hle] int sceNpLookupDeleteRequest(int id) => 0;
-    [Hle] int sceNpLookupAbortRequest(int id) => 0;
-    [Hle] int sceNpLookupUserProfileAsync(int id, uint target, uint user, uint about, uint lang, uint country, uint avatar, uint opt) => ERR_SIGNED_OUT;
-    [Hle] int sceNpLookupPollAsync(int id, Ptr<int> result) { result.TrySet(ERR_SIGNED_OUT); return 0; }
 
     [Hle] int sceNpPartyInit(uint p) => 0;
     [Hle] int sceNpPartyTerm() => 0;
