@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="VitaSharp logo">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C4DFF"/>
+      <stop offset="1" stop-color="#2979FF"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1B3A"/>
+      <stop offset="1" stop-color="#0B0C1E"/>
+    </linearGradient>
+    <linearGradient id="sharp" gradientUnits="userSpaceOnUse" x1="95" y1="98" x2="160" y2="158">
+      <stop offset="0" stop-color="#7DF9FF"/>
+      <stop offset="1" stop-color="#B388FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- handheld body -->
+  <rect x="8" y="64" width="240" height="128" rx="64" fill="url(#body)"/>
+  <rect x="8" y="64" width="240" height="128" rx="64" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- screen -->
+  <rect x="66" y="80" width="124" height="96" rx="12" fill="url(#screen)"/>
+
+  <!-- C# "sharp" glyph on the screen -->
+  <g stroke="url(#sharp)" stroke-width="9" stroke-linecap="round">
+    <line x1="118" y1="98"  x2="108" y2="158"/>
+    <line x1="146" y1="98"  x2="136" y2="158"/>
+    <line x1="98"  y1="117" x2="160" y2="117"/>
+    <line x1="95"  y1="139" x2="157" y2="139"/>
+  </g>
+
+  <!-- d-pad -->
+  <g fill="#FFFFFF" fill-opacity="0.92">
+    <rect x="31" y="96"  width="8"  height="26" rx="2"/>
+    <rect x="22" y="105" width="26" height="8"  rx="2"/>
+  </g>
+  <!-- left stick -->
+  <circle cx="46" cy="152" r="10" fill="#0B0C1E" fill-opacity="0.55"/>
+  <circle cx="46" cy="152" r="5"  fill="#FFFFFF" fill-opacity="0.85"/>
+
+  <!-- face buttons -->
+  <g fill="#FFFFFF" fill-opacity="0.92">
+    <circle cx="221" cy="97"  r="5.5"/>
+    <circle cx="209" cy="109" r="5.5"/>
+    <circle cx="233" cy="109" r="5.5"/>
+    <circle cx="221" cy="121" r="5.5"/>
+  </g>
+  <!-- right stick -->
+  <circle cx="210" cy="152" r="10" fill="#0B0C1E" fill-opacity="0.55"/>
+  <circle cx="210" cy="152" r="5"  fill="#FFFFFF" fill-opacity="0.85"/>
+</svg>
