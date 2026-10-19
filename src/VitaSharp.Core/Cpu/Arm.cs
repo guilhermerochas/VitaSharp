@@ -232,6 +232,30 @@ internal static unsafe class Arm
     }
 
     // ------------------------------------------------------------- exclusive monitor
+    //
+    // LDREX/STREX used to be emulated as a compare-and-swap against the value LDREX read. That is not LL/SC: a STREX
+    // must fail when another core stored to the location since the LDREX, even if the value is back to what was read
+    // (ABA). libult (SceUlt, shipped by Uncharted: Golden Abyss) keeps semaphore state in untagged words updated with
+    // LDREXD/STREXD; with plain CAS a stale snapshot could still be committed, leaving a semaphore with count 1 and
+    // its waiter asleep forever (the game hung while loading). Every successful exclusive store now also bumps a
+    // generation counter for its 8-byte granule (striped table); LDREX snapshots it and STREX fails if it moved.
+    // Plain stores do not bump it (they are still caught by the value compare).
+
+    const int ExclusiveStripes = 4096;
+    static readonly uint[] ExclusiveGens = new uint[ExclusiveStripes];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static ref uint GenOf(uint addr) => ref ExclusiveGens[(addr >> 3) & (ExclusiveStripes - 1)];
+
+    /// <summary>Arms the monitor. Must run BEFORE the value is read, so an exclusive store in between fails the STREX.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void ReserveExclusive(CpuState* s, uint addr)
+    {
+        ref uint g = ref GenOf(addr);
+        uint v;
+        while (((v = Volatile.Read(ref g)) & 1) != 0) Thread.SpinWait(1); // an exclusive store is in flight
+        s->ExclusiveGen = v;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SetExclusive(CpuState* s, uint addr, ulong value)
@@ -241,26 +265,43 @@ internal static unsafe class Arm
         s->ExclusiveValid = 1;
     }
 
-    public static bool StoreExclusive32(CpuState* s, uint addr, uint value)
+    /// <summary>Locks the granule if nobody stored to it exclusively since our LDREX; false = the STREX fails.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static bool BeginExclusiveStore(CpuState* s, uint addr)
     {
         if (s->ExclusiveValid == 0 || s->ExclusiveAddr != addr) return false;
         s->ExclusiveValid = 0;
+        uint snap = s->ExclusiveGen;
+        return Interlocked.CompareExchange(ref GenOf(addr), snap + 1, snap) == snap;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    static bool EndExclusiveStore(CpuState* s, uint addr, bool ok)
+    {
+        Volatile.Write(ref GenOf(addr), ok ? s->ExclusiveGen + 2 : s->ExclusiveGen);
+        return ok;
+    }
+
+    public static bool StoreExclusive32(CpuState* s, uint addr, uint value)
+    {
+        if (!BeginExclusiveStore(s, addr)) return false;
         ref uint target = ref Unsafe.AsRef<uint>(Mem.Base + addr);
-        return Interlocked.CompareExchange(ref target, value, (uint)s->ExclusiveValue) == (uint)s->ExclusiveValue;
+        bool ok = Interlocked.CompareExchange(ref target, value, (uint)s->ExclusiveValue) == (uint)s->ExclusiveValue;
+        if (WriteWatch.Enabled && ok && addr - WriteWatch.Lo + 3 < WriteWatch.Span + 3) WriteWatch.Hit(addr, 4, value);
+        return EndExclusiveStore(s, addr, ok);
     }
 
     public static bool StoreExclusive64(CpuState* s, uint addr, ulong value)
     {
-        if (s->ExclusiveValid == 0 || s->ExclusiveAddr != addr) return false;
-        s->ExclusiveValid = 0;
+        if (!BeginExclusiveStore(s, addr)) return false;
         ref ulong target = ref Unsafe.AsRef<ulong>(Mem.Base + addr);
-        return Interlocked.CompareExchange(ref target, value, s->ExclusiveValue) == s->ExclusiveValue;
+        bool ok = Interlocked.CompareExchange(ref target, value, s->ExclusiveValue) == s->ExclusiveValue;
+        return EndExclusiveStore(s, addr, ok);
     }
 
     public static bool StoreExclusive16(CpuState* s, uint addr, uint value)
     {
-        if (s->ExclusiveValid == 0 || s->ExclusiveAddr != addr) return false;
-        s->ExclusiveValid = 0;
+        if (!BeginExclusiveStore(s, addr)) return false;
         // CAS on the containing aligned word, only replacing our halfword.
         uint wa = addr & ~3u;
         int sh = (int)(addr & 2) * 8;
@@ -268,25 +309,24 @@ internal static unsafe class Arm
         while (true)
         {
             uint old = Volatile.Read(ref w);
-            if (((old >> sh) & 0xFFFF) != (uint)(s->ExclusiveValue & 0xFFFF)) return false;
+            if (((old >> sh) & 0xFFFF) != (uint)(s->ExclusiveValue & 0xFFFF)) return EndExclusiveStore(s, addr, false);
             uint nw = (old & ~(0xFFFFu << sh)) | ((value & 0xFFFF) << sh);
-            if (Interlocked.CompareExchange(ref w, nw, old) == old) return true;
+            if (Interlocked.CompareExchange(ref w, nw, old) == old) return EndExclusiveStore(s, addr, true);
         }
     }
 
     public static bool StoreExclusive8(CpuState* s, uint addr, uint value)
     {
-        if (s->ExclusiveValid == 0 || s->ExclusiveAddr != addr) return false;
-        s->ExclusiveValid = 0;
+        if (!BeginExclusiveStore(s, addr)) return false;
         uint wa = addr & ~3u;
         int sh = (int)(addr & 3) * 8;
         ref uint w = ref Unsafe.AsRef<uint>(Mem.Base + wa);
         while (true)
         {
             uint old = Volatile.Read(ref w);
-            if (((old >> sh) & 0xFF) != (uint)(s->ExclusiveValue & 0xFF)) return false;
+            if (((old >> sh) & 0xFF) != (uint)(s->ExclusiveValue & 0xFF)) return EndExclusiveStore(s, addr, false);
             uint nw = (old & ~(0xFFu << sh)) | ((value & 0xFF) << sh);
-            if (Interlocked.CompareExchange(ref w, nw, old) == old) return true;
+            if (Interlocked.CompareExchange(ref w, nw, old) == old) return EndExclusiveStore(s, addr, true);
         }
     }
 

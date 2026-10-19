@@ -37,7 +37,8 @@ public unsafe struct CpuState
     public uint SvcImm;
     public uint SvcPc;        // address of the SVC instruction
     public long Budget;       // remaining instruction budget before a reschedule
-    public uint Pad0, Pad1;
+    public uint ExclusiveGen; // generation of the reserved granule at LDREX (see Arm.StoreExclusive*)
+    public uint Pad1;
     public fixed ulong D[32]; // VFP/NEON register file (D0-D31 == Q0-Q15)
 
     public uint Cpsr

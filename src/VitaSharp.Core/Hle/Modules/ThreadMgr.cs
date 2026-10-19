@@ -93,10 +93,10 @@ public sealed class ThreadMgr : HleModule
     int sceKernelSendSignal(int thid)
     {
         var t = K.GetThread(thid);
-        if (t == null) return SceError.UNKNOWN_THREAD_ID;
+        if (t == null) { Log.Warn($"sceKernelSendSignal(0x{thid:X}): unknown thread"); return SceError.UNKNOWN_THREAD_ID; }
         lock (t.SignalLock)
         {
-            if (t.SignalPending) return ERR_ALREADY_SENT;
+            if (t.SignalPending) { Log.Debug($"sceKernelSendSignal({t.Name}): already sent"); return ERR_ALREADY_SENT; }
             t.SignalPending = true;
             Monitor.PulseAll(t.SignalLock);
         }

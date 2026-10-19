@@ -771,6 +771,7 @@ internal static unsafe partial class A32
     {
         if (load)
         {
+            ReserveExclusive(s, addr);
             switch (op)
             {
                 case 0: { uint v = Volatile.Read(ref *(uint*)(Mem.Base + addr)); s->R[rt] = v; SetExclusive(s, addr, v); break; }

@@ -372,7 +372,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public string Describe()
     {
         var s = Core.State;
-        return $"'{Name}' uid=0x{Uid:X} {Status} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}";
+        string bt = Status == ThreadStatus.Dormant ? "" : " bt:" + Backtrace(s);
+        return $"'{Name}' uid=0x{Uid:X} {Status} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}{bt}";
     }
 
     public void RequestStop()
