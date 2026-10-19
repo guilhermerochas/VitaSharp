@@ -859,6 +859,19 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
+    /// <summary>sceGxmPrecomputed*StateSetAllUniformBuffers(state, const void *const *bufferDataArray): the 14 non-default buffers.</summary>
+    static int PrecomputedSetAllUniformBuffers(uint state, uint array)
+    {
+        if (state == 0 || array == 0) return ERR_INVALID_POINTER;
+        uint n = Math.Min(GuestMemory.Read<ushort>(state + 10), 14u), dst = GuestMemory.R32(state + 12);
+        for (uint i = 0; i < n; i++) GuestMemory.W32(dst + i * 4, GuestMemory.R32(array + i * 4));
+        return 0;
+    }
+
+    [Hle] int sceGxmPrecomputedVertexStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
+    [Hle] int sceGxmPrecomputedFragmentStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
+    [Hle] uint sceGxmTextureGetMipmapCountUnsafe(uint tex) => GxmTextureDesc.Read(tex).MipCount;
+
     static int PrecomputedSetDefaultUniformBuffer(uint state, uint data)
     {
         if (state == 0 || data == 0) return ERR_INVALID_POINTER;
