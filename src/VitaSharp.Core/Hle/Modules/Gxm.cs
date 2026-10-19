@@ -471,7 +471,7 @@ public sealed class Gxm : HleModule
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         Gpu.Submit(new BeginSceneCommand
         {
-            Width = rt.Width, Height = rt.Height,
+            Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
             Color = ReadColorSurface(colorSurface),
             Depth = ReadDepthSurface(depthStencil),
         });

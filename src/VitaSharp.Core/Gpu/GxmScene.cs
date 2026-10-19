@@ -16,6 +16,8 @@ public sealed record DepthSurfaceInfo(uint DepthData, uint StencilData, uint Str
 public sealed class BeginSceneCommand : GpuCommand
 {
     public required uint Width, Height;
+    /// <summary>SceGxmMultisampleMode of the render target: 0 = none, 1 = 2X, 2 = 4X.</summary>
+    public uint Multisample;
     public ColorSurfaceInfo? Color;
     public DepthSurfaceInfo? Depth;
 }
