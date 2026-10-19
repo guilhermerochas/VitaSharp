@@ -40,7 +40,7 @@ public static class Runner
 
         var rendererOptions = new VulkanRendererOptions
         {
-            ShaderCacheDir = Path.Combine(Program.DataRoot, "shadercache"),
+            ShaderCacheDir = Opt(options, "--shader-cache") ?? Path.Combine(Program.DataRoot, "shadercache"),
             Validation = options.Contains("--validation"),
             VSync = !options.Contains("--no-vsync"),
         };
