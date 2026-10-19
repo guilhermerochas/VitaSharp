@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_mirror.Handle != 0) return;
         (_mirror, _mirrorMem) = _core.CreateDeviceBuffer((ulong)CdramBytes + ScratchBytes,
-            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit);
+            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit);
         // the last 256 bytes stay zero: slots bound to a null address read from there
         EndRendering();
         _vk.CmdFillBuffer(Cmd, _mirror, (ulong)CdramBytes + ScratchBytes - 256, 256, 0);
