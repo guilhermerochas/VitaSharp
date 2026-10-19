@@ -191,7 +191,6 @@ internal static unsafe partial class Neon
                 {
                     if (!u)
                     {
-                        if (!sz1 && bytes == 16) { var r = Vector128.Load((float*)tn) + Vector128.Load((float*)tm); for (int i = 0; i < 4; i++) SetF(td, i, r[i]); break; }
                         for (int i = 0; i < count; i++) SetF(td, i, sz1 ? F(tn, i) - F(tm, i) : F(tn, i) + F(tm, i));
                     }
                     else if (!sz1) // VPADD.F32

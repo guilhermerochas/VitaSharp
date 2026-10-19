@@ -80,14 +80,34 @@ internal static unsafe class Vfp
             {
                 0 => op ? acc - FixF(s, a * b) : acc + FixF(s, a * b),
                 1 => op ? -acc - FixF(s, a * b) : -acc + FixF(s, a * b),
-                2 => op ? -(a * b) : a * b,
+                2 => a * b, // VNMUL negates below
                 3 => op ? a - b : a + b,
                 4 => a / b,
                 5 => op ? MathF.FusedMultiplyAdd(-a, b, -acc) : MathF.FusedMultiplyAdd(a, b, -acc),
                 6 => op ? MathF.FusedMultiplyAdd(-a, b, acc) : MathF.FusedMultiplyAdd(a, b, acc),
                 _ => 0,
             };
-            Sf(s, d) = FixF(s, r);
+            // ARM flushes a result that is tiny BEFORE rounding: one that rounds up to the smallest normal is zero
+            if ((s->Fpscr & FpscrFZ) != 0 && (BitConverter.SingleToUInt32Bits(r) & 0x7FFFFFFF) == 0x00800000 && opc1 >= 2)
+            {
+                // x + y with x, y exact in double: TwoSum gives the rounded sum and its exact error, so the
+                // comparison with 2^-126 is exact (a float product is exact in double)
+                double x, y;
+                switch (opc1)
+                {
+                    case 2: x = (double)a * b; y = 0; break;
+                    case 3: x = a; y = op ? -(double)b : b; break;
+                    case 4: x = (double)a / b; y = 0; break;
+                    case 5: x = (op ? -(double)a : a) * b; y = -(double)acc; break;
+                    default: x = (op ? -(double)a : a) * b; y = acc; break;
+                }
+                double sum = x + y, bv = sum - x, err = (x - (sum - bv)) + (y - bv);
+                const double MinNormal = 1.1754943508222875e-38;
+                bool tiny = Math.Abs(sum) < MinNormal || (Math.Abs(sum) == MinNormal && err != 0 && Math.Sign(err) != Math.Sign(sum));
+                if (tiny) r = BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(r) & 0x80000000);
+            }
+            // VNMUL negates the rounded product, after any default-NaN substitution (so its NaN is 0xFFC00000)
+            Sf(s, d) = opc1 == 2 && op ? -FixF(s, r) : FixF(s, r);
         }
         else
         {
@@ -104,7 +124,7 @@ internal static unsafe class Vfp
                 6 => op ? Math.FusedMultiplyAdd(-a, b, acc) : Math.FusedMultiplyAdd(a, b, acc),
                 _ => 0,
             };
-            Df(s, d) = FixD(s, r);
+            Df(s, d) = opc1 == 2 && op ? -FixD(s, a * b) : FixD(s, r);
         }
     }
 
@@ -159,25 +179,26 @@ internal static unsafe class Vfp
                 int shift = b7 ? 16 : 0;
                 if (opc2 == 3) // single -> half
                 {
-                    ushort h = BitConverter.HalfToUInt16Bits((Half)Sf(s, m));
+                    float f = InF(s, Sf(s, m));
+                    ushort h = float.IsNaN(f) && (s->Fpscr & FpscrDN) != 0 ? (ushort)0x7E00 : BitConverter.HalfToUInt16Bits((Half)f);
                     Su(s, d) = (Su(s, d) & ~(0xFFFFu << shift)) | ((uint)h << shift);
                 }
                 else
                 {
                     Half h = BitConverter.UInt16BitsToHalf((ushort)(Su(s, m) >> shift));
-                    Sf(s, d) = (float)h;
+                    Sf(s, d) = FixF(s, (float)h);
                 }
                 return;
             }
             case 4: case 5: // VCMP / VCMPE (5: compare with zero)
                 if (!dbl)
                 {
-                    float a = Sf(s, SingleD(ins)), b = opc2 == 5 ? 0f : Sf(s, SingleM(ins));
+                    float a = InF(s, Sf(s, SingleD(ins))), b = opc2 == 5 ? 0f : InF(s, Sf(s, SingleM(ins))); // FZ applies to compares too
                     SetCompareFlags(s, float.IsNaN(a) || float.IsNaN(b), a == b, a < b);
                 }
                 else
                 {
-                    double a = Df(s, DoubleD(ins)), b = opc2 == 5 ? 0 : Df(s, DoubleM(ins));
+                    double a = InD(s, Df(s, DoubleD(ins))), b = opc2 == 5 ? 0 : InD(s, Df(s, DoubleM(ins)));
                     SetCompareFlags(s, double.IsNaN(a) || double.IsNaN(b), a == b, a < b);
                 }
                 return;
@@ -222,40 +243,31 @@ internal static unsafe class Vfp
         int imm = (int)(((ins & 0xF) << 1) | Bit(ins, 5));
         int frac = size - imm;
         double scale = Math.Pow(2, frac);
-        if (dbl)
+        if (toFixed)
+        {
+            // round towards zero and saturate to the fixed-point size, then extend to the register (ARM ARM: the
+            // result is sign- or zero-extended to 32 bits, or to 64 for a double register)
+            double v = Math.Truncate((dbl ? InD(s, Df(s, DoubleD(ins))) : InF(s, Sf(s, SingleD(ins)))) * scale);
+            long r;
+            if (double.IsNaN(v)) r = 0;
+            else if (unsigned) r = (long)Math.Clamp(v, 0, size == 32 ? uint.MaxValue : ushort.MaxValue);
+            else r = (long)Math.Clamp(v, size == 32 ? int.MinValue : short.MinValue, size == 32 ? int.MaxValue : short.MaxValue);
+            if (dbl) Du(s, DoubleD(ins)) = (ulong)r;
+            else Su(s, SingleD(ins)) = (uint)r;
+        }
+        else if (dbl)
         {
             uint d = DoubleD(ins);
-            if (toFixed)
-            {
-                double v = Math.Truncate(Df(s, d) * scale);
-                // the fixed-point result is zero- or sign-extended to the register width (ARM ARM VCVT fixed-point)
-                ulong r = size == 32 ? (unsigned ? ToU32(v) : (ulong)(long)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (ulong)(long)(short)Math.Clamp(v, -32768, 32767));
-                if (double.IsNaN(v)) r = 0;
-                Du(s, d) = r;
-            }
-            else
-            {
-                ulong raw = Du(s, d);
-                double v = size == 32 ? (unsigned ? (uint)raw : (int)(uint)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
-                Df(s, d) = v / scale;
-            }
+            ulong raw = Du(s, d);
+            double v = size == 32 ? (unsigned ? (uint)raw : (int)(uint)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
+            Df(s, d) = v / scale;
         }
         else
         {
             uint d = SingleD(ins);
-            if (toFixed)
-            {
-                double v = Math.Truncate(Sf(s, d) * scale);
-                uint r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(int)(short)Math.Clamp(v, -32768, 32767));
-                if (double.IsNaN(v)) r = 0;
-                Su(s, d) = r;
-            }
-            else
-            {
-                uint raw = Su(s, d);
-                double v = size == 32 ? (unsigned ? raw : (int)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
-                Sf(s, d) = (float)(v / scale);
-            }
+            uint raw = Su(s, d);
+            double v = size == 32 ? (unsigned ? raw : (int)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
+            Sf(s, d) = (float)(v / scale);
         }
     }
 

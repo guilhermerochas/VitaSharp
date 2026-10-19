@@ -131,6 +131,9 @@ public static class Runner
         }
         if (Opt(options, "--probe-frames") is { } pf) { var q = pf.Split(':'); ProbeFrom = long.Parse(q[0]); ProbeTo = long.Parse(q[1]); ProbeAll = true; }
         if (Opt(options, "--probe") is { } probes) InstallProbes(probes);
+#if LOCKSTEP
+        Lockstep.Install();
+#endif
         if (Opt(options, "--poke") is { } poke) InstallPokes(poke);
         if (Opt(options, "--watch") is { } watch) InstallWatch(watch);
         if (Opt(options, "--watch-read") is { } watchRead) InstallReadWatch(watchRead);
@@ -429,7 +432,7 @@ public static class Runner
                 int n = hits[pc];
                 if (!ProbeAll && n > 8 && n % 300 != 0) return;
             }
-            var sb = new System.Text.StringBuilder($"PROBE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {pc:X8} #{hits[pc]}:");
+            var sb = new System.Text.StringBuilder($"PROBE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {pc:X8} #{hits[pc]} cyc={core.BlockCycles} ins={core.InstructionsExecuted}:");
             for (int i = 0; i < 15; i++) sb.Append($" r{i}={s->R[i]:X}");
             var (reg, words, _) = probes[pc];
             if (reg >= 0)

@@ -18,6 +18,22 @@
     <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
   </ItemGroup>
 
+  <!--
+    Debug tool, off by default: `dotnet build -p:Lockstep=true` adds Lockstep.cs, which runs real game code on Unicorn
+    next to our interpreter and logs every instruction whose results differ (VITASHARP_LOCKSTEP=STARTPC:BLOCKS:FROMFRAME).
+    Unicorn exits its generated code with longjmp, which the CET shadow stack of .NET apphosts rejects: CET is off then.
+  -->
+  <PropertyGroup Condition="'$(Lockstep)' == 'true'">
+    <DefineConstants>$(DefineConstants);LOCKSTEP</DefineConstants>
+    <CETCompat>false</CETCompat>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Lockstep)' == 'true'">
+    <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Lockstep)' != 'true'">
+    <Compile Remove="Lockstep.cs" />
+  </ItemGroup>
+
   <!-- FFmpeg (LGPL) for SceAvPlayer movies and SceAudiodec MP3/AAC: downloaded per platform at build time -->
   <Import Project="..\..\build\FFmpeg.targets" />
 

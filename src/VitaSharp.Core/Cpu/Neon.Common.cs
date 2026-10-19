@@ -94,14 +94,14 @@ internal static unsafe partial class Neon
 
     internal static float FMax(float a, float b)
     {
-        if (float.IsNaN(a) || float.IsNaN(b)) return float.NaN;
+        if (float.IsNaN(a) || float.IsNaN(b)) return BitConverter.UInt32BitsToSingle(0x7FC00000); // Advanced SIMD: always the default NaN
         if (a == 0 && b == 0) return BitConverter.SingleToUInt32Bits(a) == 0 ? a : b;
         return a > b ? a : b;
     }
 
     internal static float FMin(float a, float b)
     {
-        if (float.IsNaN(a) || float.IsNaN(b)) return float.NaN;
+        if (float.IsNaN(a) || float.IsNaN(b)) return BitConverter.UInt32BitsToSingle(0x7FC00000); // Advanced SIMD: always the default NaN
         if (a == 0 && b == 0) return BitConverter.SingleToUInt32Bits(a) != 0 ? a : b;
         return a < b ? a : b;
     }

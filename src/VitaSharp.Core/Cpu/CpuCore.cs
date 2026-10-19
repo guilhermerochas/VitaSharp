@@ -18,6 +18,8 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Polled every ~0.5 ms of guest CPU time: true when the thread must give its core to a higher-priority one.</summary>
     public Func<bool>? ShouldYield;
     public long BlocksExecuted;
+    /// <summary>Guest instructions executed by this thread (diagnostics; weighted cycles are in <see cref="BlockCycles"/>).</summary>
+    public long InstructionsExecuted;
 
     public CpuCore(BlockCache cache)
     {
@@ -44,6 +46,9 @@ public sealed unsafe class CpuCore : IDisposable
     public static HashSet<uint>? Probes;
     public static ProbeFn? ProbeHit;
     public delegate void ProbeFn(CpuCore core, CpuState* s);
+    /// <summary>Debugging: called before every block; returning true means it executed the block itself (differential testing).</summary>
+    public static BlockFn? BlockHook;
+    public delegate bool BlockFn(CpuCore core, CpuState* s, Block b);
 
     /// <summary>
     /// Emulated CPU speed in guest instructions per second per thread (0 = unlimited). The Vita's Cortex-A9 runs games
@@ -133,13 +138,15 @@ public sealed unsafe class CpuCore : IDisposable
             if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
             var b = Lookup(s->R[15], s->Thumb != 0);
             var fn = b.Compiled;
-            if (fn != null) fn(s);
+            if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
+            else if (fn != null) fn(s);
             else
             {
                 Interpret(s, b);
                 if (++b.ExecCount >= 64 && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= Jit.HotInstructions) Jit.Enqueue(b);
             }
             BlocksExecuted++;
+            InstructionsExecuted += b.Insts.Length;
             sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
             if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
