@@ -666,7 +666,7 @@ public sealed unsafe partial class VulkanRenderer
         var st = d.State;
         var b = d.FragmentProgram.Blend;
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[draw] id={_drawSerial} rt=0x{_rt?.Address ?? 0:X8} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
+        sb.Append($"[draw] id={_drawSerial} rt=0x{_rt?.Address ?? 0:X8}:{_rt?.ColorFormat ?? 0:X8} ds=0x{_depth?.Address ?? 0:X8}/{_depth?.Width ?? 0}x{_depth?.Height ?? 0} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
         sb.Append($" blend={(b is { } bb ? $"{bb.ColorMask:X}:{bb.ColorFunc}/{bb.ColorSrc}/{bb.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
         for (int i = 0; i < 16; i++)
             if ((d.FragmentProgram.Info.TexturesUsed & (1u << i)) != 0)

@@ -636,6 +636,21 @@ public sealed class Gxm : HleModule
 
     // =========================================================== draws
 
+    static GuestMemory.Block? _ubBlock;
+
+    /// <summary>Bytes from <paramref name="addr"/> to the end of its memory block (uint.MaxValue when unknown).</summary>
+    static uint BlockBytesLeft(uint addr)
+    {
+        var b = _ubBlock;
+        if (b == null || addr < b.Address || addr - b.Address >= b.Size)
+        {
+            b = GuestMemory.Instance?.FindBlock(addr);
+            if (b == null) return uint.MaxValue;
+            _ubBlock = b;
+        }
+        return b.Address + b.Size - addr;
+    }
+
     /// <summary>Gathers the draw's uniform buffers into the command's reusable buffer; returns the byte count.</summary>
     static int CopyUniforms(GxmProgramInfo info, uint[] buffers, ref byte[] data)
     {
@@ -652,6 +667,8 @@ public sealed class Gxm : HleModule
             // large "unknown size" buffers: don't run past the next buffer
             foreach (var other in buffers)
                 if (other > addr && other - addr < size) size = (int)(other - addr);
+            // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
+            if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
             GuestMemory.Span(addr, size).CopyTo(data.AsSpan(slot.ByteOffset, size));
         }
         return info.UniformBytes;
@@ -841,6 +858,19 @@ public sealed class Gxm : HleModule
         GuestMemory.W32(GuestMemory.R32(state + 12) + index * 4, data);
         return 0;
     }
+
+    /// <summary>sceGxmPrecomputed*StateSetAllUniformBuffers(state, const void *const *bufferDataArray): the 14 non-default buffers.</summary>
+    static int PrecomputedSetAllUniformBuffers(uint state, uint array)
+    {
+        if (state == 0 || array == 0) return ERR_INVALID_POINTER;
+        uint n = Math.Min(GuestMemory.Read<ushort>(state + 10), 14u), dst = GuestMemory.R32(state + 12);
+        for (uint i = 0; i < n; i++) GuestMemory.W32(dst + i * 4, GuestMemory.R32(array + i * 4));
+        return 0;
+    }
+
+    [Hle] int sceGxmPrecomputedVertexStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
+    [Hle] int sceGxmPrecomputedFragmentStateSetAllUniformBuffers(uint s, uint a) => PrecomputedSetAllUniformBuffers(s, a);
+    [Hle] uint sceGxmTextureGetMipmapCountUnsafe(uint tex) => GxmTextureDesc.Read(tex).MipCount;
 
     static int PrecomputedSetDefaultUniformBuffer(uint state, uint data)
     {

@@ -69,6 +69,40 @@ public sealed class ThreadMgr : HleModule
         return r == SceError.OK ? t.ExitStatus : r;
     }
 
+    // ------------------------------------------------------------------ thread signals (libult parks/unparks workers with these)
+
+    const int ERR_ALREADY_SENT = unchecked((int)0x8002804C); // SCE_KERNEL_ERROR_ALREADY_SENT (value unverified; callers only test != 0)
+
+    /// <summary>sceKernelWaitSignal(unk, delay, timeout): blocks until another thread sent this thread a signal, then consumes it.</summary>
+    [Hle("sceKernelWaitSignal")]
+    [Hle("sceKernelWaitSignalCB")]
+    [Hle("_sceKernelWaitSignal")]
+    [Hle("_sceKernelWaitSignalCB")]
+    int sceKernelWaitSignal(uint unk, uint delay, Ptr<uint> timeout)
+    {
+        var t = Self;
+        lock (t.SignalLock)
+        {
+            int r = Kernel.Wait.Until(t.SignalLock, t, static th => th.SignalPending, timeout, null, "signal");
+            if (r == SceError.OK) t.SignalPending = false;
+            return r;
+        }
+    }
+
+    [Hle]
+    int sceKernelSendSignal(int thid)
+    {
+        var t = K.GetThread(thid);
+        if (t == null) { Log.Warn($"sceKernelSendSignal(0x{thid:X}): unknown thread"); return SceError.UNKNOWN_THREAD_ID; }
+        lock (t.SignalLock)
+        {
+            if (t.SignalPending) { Log.Debug($"sceKernelSendSignal({t.Name}): already sent"); return ERR_ALREADY_SENT; }
+            t.SignalPending = true;
+            Monitor.PulseAll(t.SignalLock);
+        }
+        return 0;
+    }
+
     [Hle] int sceKernelGetThreadId() => Self.Uid;
 
     [Hle]

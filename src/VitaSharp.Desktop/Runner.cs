@@ -255,6 +255,9 @@ public static class Runner
         }
     }
 
+    /// <summary>Maximum number of watch hits logged (env VITASHARP_WATCH_MAX, default 4000).</summary>
+    static readonly int WatchMax = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WATCH_MAX"), out var wm) ? wm : 4000;
+
     /// <summary>--watch=ADDR:LEN[:FROM:TO] logs every CPU store into the range (optionally only in a frame window).</summary>
     static unsafe void InstallWatch(string spec)
     {
@@ -266,7 +269,7 @@ public static class Runner
         VitaSharp.Core.Cpu.WriteWatch.OnHit = (a, size, v) =>
         {
             long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            if (f < from || f >= to || Interlocked.Increment(ref hits) > 4000) return;
+            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax) return;
             var t = VitaSharp.Core.Kernel.GuestThread.Current;
             if (t == null) return;
             var s = t.Core.State;
@@ -329,7 +332,7 @@ public static class Runner
         VitaSharp.Core.Cpu.WriteWatch.OnRead = (a, size) =>
         {
             long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            if (f < from || f >= to || Interlocked.Increment(ref hits) > 4000) return;
+            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax) return;
             var t = VitaSharp.Core.Kernel.GuestThread.Current;
             if (t == null) return;
             var s = t.Core.State;
@@ -434,6 +437,16 @@ public static class Runner
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
         foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());
+        // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
+        if (Environment.GetEnvironmentVariable("VITASHARP_PEEK_END") is { } peekEnd)
+            foreach (var spec in peekEnd.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pp = spec.Split(':');
+                uint pa = Convert.ToUInt32(pp[0], 16), pl = Convert.ToUInt32(pp[1], 16);
+                var sb = new System.Text.StringBuilder($"  peek-end {pa:X8}:");
+                for (uint i = 0; i < pl; i += 4) { if (i % 32 == 0) sb.Append($"\n   {pa + i:X8}:"); sb.Append($" {VitaSharp.Core.Memory.GuestMemory.R32(pa + i):X8}"); }
+                Log.Info(sb.ToString());
+            }
         // held mutexes with waiters: the first thing to look at when threads sit in "wait=[mutex ...]" (deadlocks)
         foreach (var m in emu.Kernel.Objects.All<VitaSharp.Core.Kernel.Mutex>())
             if (m.Owner != null && m.Waiters > 0)

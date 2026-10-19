@@ -270,6 +270,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
+    readonly List<RenderTarget> _traceReplaced = new();
     readonly Dictionary<(uint, uint, uint), DepthTarget> _depthTargets = new();
 
     (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
@@ -328,7 +329,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var (k, old) in _renderTargets.Where(kv => kv.Key.Item1 == c.Data).ToList())
         {
             _renderTargets.Remove(k);
-            DestroyLater(old);
+            if (_opt.TraceDrawsFrame == _presentCount + 1 && _opt.ShaderCacheDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
+            else DestroyLater(old);
             _mirroredRt.Remove(old);
         }
         var format = SurfaceFormat(c.ColorFormat);
@@ -677,16 +679,19 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var stats = new System.Text.StringBuilder();
         var pci = new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _core.QueueFamily };
         _vk.CreateCommandPool(_dev, in pci, null, out var pool);
-        foreach (var rt in _renderTargets.Values)
+        var replaced = _traceReplaced.ToList();
+        _traceReplaced.Clear();
+        foreach (var rt in _renderTargets.Values.Concat(replaced))
         {
             bool half = rt.Format == Format.R16G16B16A16Sfloat;
-            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (half ? 8u : 4u), BufferUsageFlags.TransferDstBit);
+            bool raw64 = rt.Format == Format.R32G32Sfloat; // dumped as its first 32-bit word per pixel (packed data)
+            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (half || raw64 ? 8u : 4u), BufferUsageFlags.TransferDstBit);
             var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
             _vk.AllocateCommandBuffers(_dev, in ai, out var cmd);
             var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
             _vk.BeginCommandBuffer(cmd, in bi);
             var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-            if (half || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm)
+            if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm)
                 _vk.CmdCopyImageToBuffer(cmd, rt.Image, ImageLayout.General, buf, 1, in region);
             _vk.EndCommandBuffer(cmd);
             var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cmd };
@@ -700,6 +705,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 var h = new ReadOnlySpan<Half>((void*)ptr, (int)(rt.Width * rt.Height * 4));
                 px = new byte[h.Length];
                 for (int i = 0; i < h.Length; i++) px[i] = (byte)Math.Clamp((int)((float)h[i] * 255f + 0.5f), 0, 255);
+            }
+            else if (raw64)
+            {
+                var wds = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.Width * rt.Height * 2));
+                px = new byte[rt.Width * rt.Height * 4];
+                for (int i = 0; i < px.Length / 4; i++) BitConverter.TryWriteBytes(px.AsSpan(i * 4), wds[i * 2]);
             }
             else if (rt.Format == Format.B10G11R11UfloatPack32)
             {
@@ -719,10 +730,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (rt.Format == Format.B8G8R8A8Unorm) for (int i = 0; i < px.Length; i += 4) (px[i], px[i + 2]) = (px[i + 2], px[i]);
             var opaque = (byte[])px.Clone();
             for (int i = 3; i < opaque.Length; i += 4) opaque[i] = 255;
-            Png.Write(Path.Combine(dir, $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.Width, (int)rt.Height);
+            Png.Write(Path.Combine(dir, replaced.Contains(rt) ? $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}_{rt.ColorFormat:X8}.png" : $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.Width, (int)rt.Height);
             _core.DestroyBuffer(buf, mem);
         }
         File.WriteAllText(Path.Combine(dir, "targets.txt"), stats.ToString());
+        foreach (var old in replaced) DestroyLater(old);
 
         // unsigned small float (5-bit exponent, 6- or 5-bit mantissa), as in B10G11R11_UFLOAT
         static float UFloat(uint bits, int mantissaBits)

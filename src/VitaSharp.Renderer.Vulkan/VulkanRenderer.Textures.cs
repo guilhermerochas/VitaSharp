@@ -197,6 +197,7 @@ public sealed unsafe partial class VulkanRenderer
             uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(w, 8) * (uint)bpp;
             uint off = addr - rt.Address;
             uint x0 = off % rowBytes / (uint)bpp, y0 = off / rowBytes;
+            if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias) return (alias, ImageLayout.ShaderReadOnlyOptimal);
             if (addr != rt.Address || w != rt.Width || h != rt.Height)
             {
                 if (!linear || texRow != rowBytes || x0 + w > rt.Width || y0 + h > rt.Height) continue;
@@ -332,6 +333,76 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         return r.View;
+    }
+
+    sealed class RtAlias
+    {
+        public Image Image;
+        public ImageView View;
+        public ImageMemoryPool.Allocation Mem;
+        public RenderTarget? Source;
+        public long Version = -1;
+    }
+
+    readonly Dictionary<(uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma), RtAlias> _rtAliases = new();
+
+    /// <summary>
+    /// A linear texture that reads a render target's memory with a different texel size, e.g. Uncharted's 720x408
+    /// F32F32 G-buffer (each pixel = packed RGBA8 albedo + S8x4 normal, written as raw bits) sampled as two
+    /// 1440x408 textures: U8U8U8U8 at the surface address and S8S8S8S8 at +4. The bytes are taken from the CDRAM
+    /// mirror (render target copied in guest layout) and copied into an image of the texture's format, which
+    /// reinterprets them exactly like the hardware does. Null when this is not such a case.
+    /// </summary>
+    ImageView? ReinterpretRenderTarget(RenderTarget rt, GxmTextureDesc d, bool gamma)
+    {
+        int rtBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
+        var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0) return null;
+        uint texBpp = (uint)info.BitsPerPixel / 8;
+        if (texBpp == rtBpp) return null;
+        uint addr = d.DataAddress, w = d.Width, h = d.Height;
+        uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(w, 8) * texBpp;
+        if (addr < GuestMemory.CdramStart || texRow % texBpp != 0 || (addr - GuestMemory.CdramStart) % Math.Max(texBpp, 4) != 0) return null;
+        if ((ulong)addr + (ulong)texRow * (h - 1) + w * texBpp > GuestMemory.CdramEnd) return null;
+        var format = info.Format;
+        if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb)) format = srgb;
+        if (!_core.SupportsSampled(format)) return null;
+        EnsureMirror();
+        if (!MirrorRenderTarget(rt)) return null;
+
+        var key = (addr, d.Format, w, h, texRow, gamma);
+        if (!_rtAliases.TryGetValue(key, out var a))
+        {
+            a = new RtAlias();
+            (a.Image, a.View, a.Mem) = CreateImage(w, h, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+                swizzle: Formats.TextureSwizzle(d.Format));
+            _rtAliases[key] = a;
+            Log.WarnOnce($"rtalias-{addr:X8}-{d.Format:X8}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} reinterprets render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}");
+            BeginFrameIfNeeded();
+            EndRendering();
+            Barrier(a.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
+        }
+        if (a.Source == rt && a.Version == rt.Version) return a.View;
+        a.Source = rt;
+        a.Version = rt.Version;
+        EndRendering();
+        BufferBarrier(_mirror, PipelineStageFlags.TransferBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
+            AccessFlags.TransferWriteBit | AccessFlags.ShaderReadBit, AccessFlags.TransferReadBit);
+        Barrier(a.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
+        var region = new BufferImageCopy
+        {
+            BufferOffset = addr - GuestMemory.CdramStart,
+            BufferRowLength = texRow / texBpp,
+            BufferImageHeight = 0,
+            ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            ImageExtent = new Extent3D(w, h, 1),
+        };
+        _vk.CmdCopyBufferToImage(Cmd, _mirror, a.Image, ImageLayout.TransferDstOptimal, 1, in region);
+        Barrier(a.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+        return a.View;
     }
 
     readonly record struct MipLayout(uint Offset, uint Width, uint Height, uint RowPitch, uint Bytes);

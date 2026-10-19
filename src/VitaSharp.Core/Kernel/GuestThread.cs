@@ -45,6 +45,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public int ExitStatus { get; private set; }
     public int WakeupCount;
     public readonly object WaitLock = new();
+    /// <summary>Thread signal (sceKernelSendSignal / sceKernelWaitSignal): one pending flag guarded by SignalLock.</summary>
+    public bool SignalPending;
+    public readonly object SignalLock = new();
     public long CpuTimeTicks;
     public string WaitingOn = "";
     /// <summary>When set, the thread runs this host code instead of guest code at Entry (it may still CallGuest).</summary>
@@ -369,7 +372,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public string Describe()
     {
         var s = Core.State;
-        return $"'{Name}' uid=0x{Uid:X} {Status} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}";
+        string bt = Status == ThreadStatus.Dormant ? "" : " bt:" + Backtrace(s);
+        return $"'{Name}' uid=0x{Uid:X} {Status} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}{bt}";
     }
 
     public void RequestStop()

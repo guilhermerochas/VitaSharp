@@ -16,9 +16,33 @@ public sealed class SystemMisc : HleModule
     [Hle("sceSysmoduleLoadModuleInternalWithArg")]
     int sceSysmoduleLoadModule(uint id)
     {
-        lock (_loadedSysmodules) _loadedSysmodules.Add(id);
+        bool first;
+        lock (_loadedSysmodules) first = _loadedSysmodules.Add(id);
+        if (first && LleSysmodules.TryGetValue(id, out var lib) && TryLoadShippedModule(lib)) return 0;
         Log.Debug($"sceSysmoduleLoadModule(0x{id:X}) -> HLE");
         return 0;
+    }
+
+    /// <summary>
+    /// Sysmodules that a game may ship itself in app0:sce_module (early-SDK titles bundle libult/libfiber/...):
+    /// when present they are loaded and started LLE, which rebinds the game's already-linked HLE import stubs.
+    /// </summary>
+    static readonly Dictionary<uint, string> LleSysmodules = new()
+    {
+        [0x0006] = "libfiber",
+        [0x0007] = "libult",
+    };
+
+    bool TryLoadShippedModule(string lib)
+    {
+        string path = $"app0:sce_module/{lib}.suprx";
+        var host = Emu.Vfs.Resolve(path);
+        if (host == null || !File.Exists(host)) return false;
+        if (K.Modules.Values.Any(m => m.Path == path)) return true;
+        var m = Emu.LoadModule(path);
+        if (m.StartEntry != 0) GuestThread.Current!.CallGuest(m.StartEntry, 0, 0);
+        Log.Info($"sceSysmoduleLoadModule: {lib} loaded from the game (LLE)");
+        return true;
     }
 
     [Hle("sceSysmoduleUnloadModule")]
@@ -249,6 +273,12 @@ public sealed class SystemMisc : HleModule
     // ------------------------------------------------------------------ misc system
 
     [Hle] int sceShutterSoundOutput(int type) => 0;
+    // screenshots are a system feature (PS button + Start): accept the game's settings
+    [Hle] int sceScreenShotEnable() => 0;
+    [Hle] int sceScreenShotDisable() => 0;
+    [Hle] int sceScreenShotSetParam(uint param) => 0;
+    [Hle] int sceScreenShotSetOverlayImage(uint path, int offsetX, int offsetY) => 0;
+    [Hle] int sceLiveAreaUpdateFrameSync(uint formatVer, uint frameList, uint numFrames, uint dirpath, uint option) => 0;
     [Hle] int sceKernelGetSystemSwVersion(uint data) { GuestMemory.WriteCString(data + 4, "3.74"); GuestMemory.W32(data + 0x14, 0x03740011); return 0; }
     [Hle] int sceKernelCheckDipsw(int bit) => 0;
 }
