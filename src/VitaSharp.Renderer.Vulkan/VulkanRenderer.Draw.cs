@@ -157,7 +157,7 @@ public sealed unsafe partial class VulkanRenderer
                 var ci = new ShaderModuleCreateInfo { SType = StructureType.ShaderModuleCreateInfo, CodeSize = (nuint)spv.Length, PCode = (uint*)p };
                 _vk.CreateShaderModule(_dev, in ci, null, out m).Ok("shader module");
             }
-            if (gen.Warnings.Count > 0) Log.Debug($"Shader {program.Hash:X16}: {string.Join("; ", gen.Warnings)}");
+            if (gen.Warnings.Count > 0) Log.WarnOnce($"shwarn{program.Hash:X16}", $"[gpu] shader {program.Hash:X16} ({(program.IsVertex ? "vertex" : "fragment")}): {string.Join("; ", gen.Warnings.Distinct())}");
         }
         catch (Exception e)
         {
@@ -217,6 +217,13 @@ public sealed unsafe partial class VulkanRenderer
         return e;
     }
 
+    static Format RawAttributeFormat(int size, int count) => (size, count) switch
+    {
+        (1, 1) => Format.R8Uint, (1, 2) => Format.R8G8Uint, (1, 3) => Format.R8G8B8Uint, (1, _) => Format.R8G8B8A8Uint,
+        (2, 1) => Format.R16Uint, (2, 2) => Format.R16G16Uint, (2, 3) => Format.R16G16B16Uint, (2, _) => Format.R16G16B16A16Uint,
+        (_, 1) => Format.R32Uint, (_, 2) => Format.R32G32Uint, (_, 3) => Format.R32G32B32Uint, _ => Format.R32G32B32A32Uint,
+    };
+
     void BuildVertexInput(GxmVertexProgram vp, GeneratedShader gen, VsEntry e)
     {
         var bindings = new List<VertexInputBindingDescription>();
@@ -235,6 +242,16 @@ public sealed unsafe partial class VulkanRenderer
                     needDummy = true;
                     var fmt = input.Kind switch { 'i' => Format.R32G32B32A32Sint, 'u' => Format.R32G32B32A32Uint, _ => Format.R32G32B32A32Sfloat };
                     attrs.Add(new VertexInputAttributeDescription((uint)(input.Location + l), 16, fmt, 0));
+                    continue;
+                }
+                if (input.RawSize > 0)
+                {
+                    // register-format attribute: raw unsigned integers of the parameter's size, stream format ignored
+                    int rc = Math.Min(4, Math.Max(input.RawComponents - l * 4, 1));
+                    var rf = RawAttributeFormat(input.RawSize, rc);
+                    if (!_core.SupportsVertexFormat(rf) && rc == 3) rf = RawAttributeFormat(input.RawSize, 4);
+                    attrs.Add(new VertexInputAttributeDescription((uint)(input.Location + l), a.StreamIndex, rf, (uint)(a.Offset + l * 4 * input.RawSize)));
+                    streamMask |= 1u << a.StreamIndex;
                     continue;
                 }
                 int remaining = Math.Max(a.ComponentCount - l * 4, 1);

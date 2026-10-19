@@ -238,6 +238,8 @@ public sealed class UniformBufferDesc
 public sealed class ProgramInput
 {
     public const uint TextureBuffer = 15, LiteralBuffer = 16, ThreadBuffer = 18, DefaultUniformBuffer = 14, MaxUbInFloat = 2048;
+    /// <summary>Debug (VITASHARP_UB_UNBOUNDED=1): size every indexed uniform buffer as unbounded (read up to the next buffer).</summary>
+    static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable("VITASHARP_UB_UNBOUNDED") == "1";
 
     public List<ProgramInputItem> Inputs { get; } = new();
     public List<SamplerDesc> Samplers { get; } = new();
@@ -310,6 +312,7 @@ public sealed class ProgramInput
         foreach (var (idx, b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024) b.Size = MaxUbInFloat;
+            else if (UnboundedUbs && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbInFloat);
             pi.UniformBuffers.Add(b);
         }
 
