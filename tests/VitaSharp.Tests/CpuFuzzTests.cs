@@ -66,6 +66,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     /// <summary>Re-runs specific encodings (from a fuzz failure) with many random states and prints every difference.</summary>
     [Theory]
     [InlineData(true, "0000BF00")]
+    [InlineData(false, "F3BBB58A,F3BBB50A,F3BB05CC,F3BB054C")] // VRSQRTE/VRECPE.F32 (D and Q): the estimate exponent parity was swapped
     public void Replay(bool thumb, string encodings)
     {
         foreach (var enc in encodings.Split(','))
@@ -77,7 +78,13 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     [InlineData(true, 30_000, 2)]
     public void FuzzAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null);
 
-    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns)
+    /// <summary>ARM-state fuzzing restricted to the NEON and VFP data-processing spaces with realistic float inputs: the
+    /// general fuzz reaches each SIMD encoding only a few times (animation and physics code lives there).</summary>
+    [Theory]
+    [InlineData(40_000, 3)]
+    public void FuzzSimdAgainstUnicorn(int iterations, int seed) => Fuzz(false, iterations, seed, null, simd: true);
+
+    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false)
     {
         EnsureGuestPages();
         var rng = new Random(seed);
@@ -100,6 +107,13 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             {
                 ins = (uint)rng.NextInt64();
                 if ((ins >> 28) == 0xF && rng.Next(4) != 0) ins = (ins & 0x0FFFFFFF) | 0xE000_0000;
+                if (simd) ins = rng.Next(4) switch
+                {
+                    0 => 0xF200_0000u | (ins & 0x01FF_FFFF), // NEON data processing (U = bit 24)
+                    1 => 0xEE00_0A00u | (ins & 0x00FF_F1FF) | ((ins >> 20 & 1) << 8), // VFP data processing, single/double
+                    2 => 0xF280_0010u | (ins & 0x017F_FFEF), // NEON shifts and one-register immediates
+                    _ => 0xF3B0_0000u | (ins & 0x004F_FFEF), // NEON two-register misc (VRECPE/VRSQRTE, VCVT, VREV, ...)
+                };
                 code = BitConverter.GetBytes(ins);
             }
             else
@@ -269,6 +283,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                     return F(15, 12) == 15 || F(19, 16) == 15;
                 case Op.Vfp_LdmStm:
                     return F(19, 16) == 15 || (i & 0xFF) == 0;
+                case Op.Neon_ThreeDiff:
+                    return F(24, 24) == 1 && F(11, 8) is 0b1001 or 0b1011 or 0b1101; // VQDMLAL/VQDMLSL/VQDMULL exist only with U=0
             }
             return false;
         }

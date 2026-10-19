@@ -16,6 +16,8 @@ public sealed class VulkanRendererOptions
     /// <summary>Headless debugging: write every Nth presented frame as PNG into this folder.</summary>
     public string? DumpFramesDir;
     public int DumpEvery = 60;
+    /// <summary>Frames before this one are not dumped (--dump-from).</summary>
+    public long DumpFrom;
     public bool VSync = true;
     /// <summary>Debug: log every draw of this presented frame number (-1 = off).</summary>
     public long TraceDrawsFrame = -1;
@@ -580,7 +582,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _presentCount++;
         _drawSerial = 0;
         EndFrameStallStats();
-        bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0;
+        bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.Readback = null;
 
