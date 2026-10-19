@@ -77,7 +77,73 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     [InlineData(true, 30_000, 2)]
     public void FuzzAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null);
 
-    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns)
+    /// <summary>
+    /// VFP / Advanced SIMD only, with operands biased towards special values (denormals, zeros, infinities,
+    /// NaNs, values near the float limits): physics code (Havok) lives on these instructions and their edge cases.
+    /// </summary>
+    [Theory]
+    [InlineData(false, 40_000, 11)]
+    [InlineData(true, 40_000, 12)]
+    public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null, simd: true);
+
+    static uint RandomSimdInstruction(Random rng, bool thumb)
+    {
+        uint r = (uint)rng.NextInt64();
+        switch (rng.Next(5))
+        {
+            case 0: case 1: // Advanced SIMD data processing: ARM 1111 001U, Thumb 111U 1111
+            {
+                uint u = (r >> 24) & 1, rest = r & 0x00FFFFFF;
+                return thumb ? 0xEF000000u | (u << 28) | rest : 0xF2000000u | (u << 24) | rest;
+            }
+            case 2: // VFP data processing (cond 1110 1110, coproc 101x, bit 4 = 0)
+                return 0xEE000A00u | (r & 0x00FFF1EF);
+            case 3: // VFP <-> core transfers (bit 4 = 1)
+                return 0xEE000A10u | (r & 0x00FFF1EF);
+            default: // Advanced SIMD element / structure load-store: ARM 1111 0100 xxx0, Thumb 1111 1001 xxx0
+            {
+                uint rest = r & 0x00EFFFFF;
+                return thumb ? 0xF9000000u | rest : 0xF4000000u | rest;
+            }
+        }
+    }
+
+    static uint SpecialFloat(Random rng) => rng.Next(14) switch
+    {
+        0 => 0,
+        1 => 0x80000000,
+        2 => (uint)rng.Next(1, 0x800000) | (rng.Next(2) == 0 ? 0 : 0x80000000), // denormal
+        3 => 0x00800000u | (rng.Next(2) == 0 ? 0 : 0x80000000), // smallest normal
+        4 => 0x7F800000u | (rng.Next(2) == 0 ? 0 : 0x80000000), // infinity
+        5 => 0x7FC00000u | (uint)rng.Next(0x400000) | (rng.Next(2) == 0 ? 0 : 0x80000000), // qNaN
+        6 => 0x7F800001u | (uint)rng.Next(0x3FFFFF) | (rng.Next(2) == 0 ? 0 : 0x80000000), // sNaN
+        7 => 0x3F800000u | (rng.Next(2) == 0 ? 0 : 0x80000000), // 1.0
+        8 => 0x7F7FFFFFu - (uint)rng.Next(0x1000000), // near max
+        9 => (uint)rng.Next(0x00800000, 0x02000000), // tiny normals: products underflow
+        10 => (uint)rng.NextInt64(),
+        _ => BitConverter.SingleToUInt32Bits((float)((rng.NextDouble() - 0.5) * Math.Pow(2, rng.Next(-30, 30)))),
+    };
+
+    static ulong SpecialDouble(Random rng) => rng.Next(10) switch
+    {
+        0 => 0,
+        1 => 0x8000000000000000,
+        2 => (ulong)rng.NextInt64(1, 0x000FFFFFFFFFFFFF), // denormal
+        3 => 0x7FF0000000000000,
+        4 => 0x7FF8000000000000 | (ulong)rng.NextInt64(0x0008000000000000),
+        5 => 0x7FF0000000000001 | (ulong)rng.NextInt64(0x0007FFFFFFFFFFFF),
+        6 => (ulong)rng.NextInt64(),
+        _ => BitConverter.DoubleToUInt64Bits((rng.NextDouble() - 0.5) * Math.Pow(2, rng.Next(-60, 60))),
+    };
+
+    static ulong RandomSpecialSimd(Random rng) => rng.Next(6) switch
+    {
+        0 => SpecialDouble(rng),
+        1 => RandomSimd(rng),
+        _ => SpecialFloat(rng) | ((ulong)SpecialFloat(rng) << 32),
+    };
+
+    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false)
     {
         EnsureGuestPages();
         var rng = new Random(seed);
@@ -95,6 +161,11 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             {
                 ins = fi;
                 code = !thumb ? BitConverter.GetBytes(ins) : ins > 0xFFFF ? [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)] : [(byte)ins, (byte)(ins >> 8)];
+            }
+            else if (simd)
+            {
+                ins = RandomSimdInstruction(rng, thumb);
+                code = !thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)];
             }
             else if (!thumb)
             {
@@ -159,8 +230,9 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 regs[r] = rng.Next(3) == 0 ? (uint)rng.NextInt64() : DataBase + 0x4000 + (uint)rng.Next(0x4000) * (rng.Next(2) == 0 ? 4u : 1u) % 0x7000;
             uint flags = (uint)rng.Next(32) << 27 | (uint)rng.Next(16) << 16;
             var dregs = new ulong[32];
-            for (int r = 0; r < 32; r++) dregs[r] = RandomSimd(rng);
+            for (int r = 0; r < 32; r++) dregs[r] = simd ? RandomSpecialSimd(rng) : RandomSimd(rng);
             uint fpscr = (uint)rng.Next(16) << 28 | 0x0300_0000; // DN + FZ like the Vita runtime
+            if (simd && rng.Next(4) == 0) fpscr = (uint)rng.Next(16) << 28 | (uint)rng.Next(4) << 22; // IEEE mode, any rounding
             rng.NextBytes(data);
 
             // ---- unicorn
