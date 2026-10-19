@@ -228,7 +228,8 @@ internal static unsafe class Vfp
             if (toFixed)
             {
                 double v = Math.Truncate(Df(s, d) * scale);
-                ulong r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(ushort)(short)Math.Clamp(v, -32768, 32767));
+                // the fixed-point result is zero- or sign-extended to the register width (ARM ARM VCVT fixed-point)
+                ulong r = size == 32 ? (unsigned ? ToU32(v) : (ulong)(long)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (ulong)(long)(short)Math.Clamp(v, -32768, 32767));
                 if (double.IsNaN(v)) r = 0;
                 Du(s, d) = r;
             }
@@ -245,7 +246,7 @@ internal static unsafe class Vfp
             if (toFixed)
             {
                 double v = Math.Truncate(Sf(s, d) * scale);
-                uint r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(ushort)(short)Math.Clamp(v, -32768, 32767));
+                uint r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(int)(short)Math.Clamp(v, -32768, 32767));
                 if (double.IsNaN(v)) r = 0;
                 Su(s, d) = r;
             }

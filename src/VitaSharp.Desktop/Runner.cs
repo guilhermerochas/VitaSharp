@@ -101,6 +101,7 @@ public static class Runner
             if (dumpOpt != null && Directory.Exists(dir)) foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
             ro.DumpFramesDir = dumpOpt != null ? dir : null;
             ro.DumpEvery = int.TryParse(Opt(options, "--dump-every"), out var de) ? de : 60;
+            ro.DumpFrom = long.TryParse(Opt(options, "--dump-from"), out var dfr) ? dfr : 0;
             ro.TraceDrawsFrame = long.TryParse(Opt(options, "--trace-draws"), out var tdf) ? tdf : -1;
             if (dumpOpt != null) { dumpDir = dir; ro.Thumbnails = thumbs = new(); ro.InspectTextures = !options.Contains("--no-inspect"); }
             emu.Gpu.Backend = new VulkanRenderer(ro);
