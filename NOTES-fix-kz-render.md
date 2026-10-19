@@ -1,65 +1,55 @@
-# NOTES fix/kz-render (Killzone Mercenary rendering), checkpoint 2026-10-19 ~03:20
+# NOTES fix/kz-render (Killzone Mercenary rendering), 2026-10-19
 
-No code changes yet. This commit only adds the trace scenario tests/scenarios/kzr_trace.txt and these notes.
+## Fixed (commits e0d03dd, 2221c9d)
 
-## Current hypothesis
-The glowing white/pink viewmodel (gun and arms) comes from the per-pixel lighting maths in the viewmodel
-fragment shaders, not from the albedo. The prime suspect has shifted to a USSE translation detail:
-- In arms fs 8DF6CBEA602F13BD (GLSL: .vitadata/shadercache/trace/8df6cbea602f13bd.frag), instruction 19,
-  `V16NMAD 10C4F106A0047042`, is translated as
-  `dot(vec4(R.xyz, 1.0), vec4(V.xyz, 1.0))`, which is R.V **+ 1**. The other dot3 instructions in the same
-  shader (8, 10, 11) use `vec4(x, 0.0)` / `vec4(y, 1.0)`, so the w term is 0. Instruction 19 looks like the
-  specular R.V term, and if it gets an extra +1 the specular would blow up.
-  Check how UsseTranslator.Alu.cs (around lines 131-160, V16NMAD dot path) builds the 4th lane and
-  compare with Vita3K's USSE translator (scratchpad ref/vita3k/vita3k/shader/src/translator/...).
-- Second suspect: the PVRTC-II (fmt 0x83000000) normal maps that all three glowing draws use.
-  The arms use t5=0x63AB1F10, the gun t1=0x63991DA0 and the sight t1=0x63951D60.
-  The 32x32 resident dump of 0x63AB1F10 looks like a plausible normal map, so the decoder is probably OK,
-  but it is not proven.
-- Third: all viewmodel textures are 512x512 with lodMin 4, so only 32x32 is resident (streaming never
-  raises lodMin?). That gives a blurry result, not a glow, but it should still be checked.
+Root cause of the glowing white/pink weapon and white-blob arms: the viewmodel shaders add an environment
+reflection (x6) sampled from texture 0x66362000. That texture is a 384x64, 5-level linear texture whose level 0 is
+rows 128-191 of render target 0x66332000. Four emulation gaps made the reflection far too bright:
 
-## Verified
-- The draw lines (from .vitadata/tests/kz_hash/log.txt, frame trace) are:
-  - arms, fs 8DF6CB: t0 UBC1 albedo, t1 UBC3 64x64 (uv1), t2 UBC3 512 (gamma, uv0, spec/mask in .zw),
-    t3 UBC3 64x64 (uv1), t4 = 0x8BA25CC0 S8S8S8 16x16 cube (fmt 0x99001000, a normalisation cube, L dir
-    from v_TexCoord2), t5 = PVRTII4BPP normal map sampled at uv0. The arms do **not** sample 0x66362000.
-  - gun body, fs 4B6E2E, and sight, fs EC1DE5: t2 = the same cube, t3 = an F16x4 64x1 LUT,
-    t5 = 0x66362000 U8U8U8U8 linear 384x64 gamma1.
-- In the arms shader, ftex5 is a tangent-space normal map. Instruction 3 is `n = ftex5 + r0*k`,
-  instruction 4 is `n*2-1`, followed by normalize, then N.L with the cube sample.
-  The specular power is gloss*100+4 (ftex2.x * v_TexCoord4.w), and spec = exp2(-pow*|R.V+..|).
-- RT 0x66332000 (384x192 RGBA8) is the first target each frame. It has a full-screen draw, a draw that
-  samples its own rows 128-191 (0x66362000), 3132 tris in rows 128-191, and depth-only draws at
-  [256,0-383,63]. The dump shows flat purple in rows 0-127 and flat pink (0.83,0.16,0.43) in rows 128-191.
-  This is what gun/sight ftex5 reads. It still needs checking whether this flat content is correct.
-- The S8S8S8 alpha is already 0x7F in TextureDecoder (line 75). It is also irrelevant because the swizzle
-  forces A=1.
-- The swizzle1/swizzle3 tables match Vita3K (gxm_to_vulkan.cpp translate_swizzle*).
+1. LOD min ignored for render-target-aliasing textures. The gun and sight use LOD min 12, i.e. the last mip; we
+   sampled the full-resolution surface. Fixed by `BaseLevelView` (VulkanRenderer.Textures.cs).
+2. Mip chain missing. A mipmapped texture over a surface now gets an image whose level 0 is the surface and whose
+   other levels come from memory (VulkanRenderer.RtMips.cs).
+3. Wrong level spacing. Mipmapped linear/tiled levels are reserved at power-of-two size, as in Vita3K's
+   texture/cache.cpp. The game fills the env mips with sceGxmTransferDownscale at 0x66382000, 0x6638A000,
+   0x6638C000 and 0x6638C800, which matches that layout. Our packed layout read zeros at 0x6637A000.
+4. Feedback read inside a scene. The env pass clears the target, then blends last frame's map from the same
+   surface. A TBDR chip cannot see in-tile content, so that read returns memory, i.e. the scene-start content. We
+   returned the cleared white.
+   - Now, a draw that samples the surface it renders, overlapping its own clip area, reads a copy taken at
+     BeginScene and refreshed on sceGxmMidSceneFlush (VulkanRenderer.SceneStart.cs).
+   - Reads of other regions still see live data. This matters because the 29-pass post atlas 0x66272000 is
+     ONE scene with no flush, and making every self-read stale broke it: rainbow blocks, exploded characters and
+     streaks.
+
+Also: the stair "marble swirl" reflections are gone. They came from level 0 being used where the hardware samples
+the downscaled mips.
+
+## Debug tools added
+- `VITASHARP_TRACE_SNAP=id,id|rt:ADDR` writes snapshots of the colour target (plus alpha) before draws of the traced
+  frame to `<shadercache>/trace/targets/snap_*`.
+- `[scene] begin` and `[scene] mid-scene flush` lines are logged around the traced frame.
+- The sceGxmTransferDownscale call is logged once at debug level.
 
 ## Ruled out
-- Albedo textures (VITASHARP_DEBUG_TEX0=1 shows a correct gun and arms).
-- S8S8S8 alpha (see above).
-- The arms glow cannot come from 0x66362000, since the arms draw does not bind it.
+- V16NMAD dot with lane 4 = 1.0 (arms fs 8DF6CB, instruction 19). It decodes to src1 swizzle XYZ1 and src2 swizzle
+  XYZ1, the same as in Vita3K. It is the game's R.V+1 specular term, not a bug.
+- Grading LUT indexing (composite 73F33F57 instructions 43-49) is correct.
+- S8S8S8 alpha and the swizzle tables match Vita3K.
+- The magenta/yellow 60x34 atlas blocks are a depth-of-field CoC map, which is legitimate.
+- The purple tints are lens-flare ghost tint constants (fs 479CA35C uniforms), not a decode error.
+- GPU stores (fs 5BE02575, "buffer store unsupported") target 0x65200000. The CPU never reads that range in
+  gameplay (checked with --watch-read), so it is not the exposure source.
 
-## Exact next steps
-1. Read the result of the trace run kzr_trace (frame 4300): .vitadata/tests/kzr_trace/log.txt
-   (grep `fs=8DF6CB|fs=4B6E2E|fs=EC1DE5|rt=0x66332000`) and the scratchpad sc1/trace/
-   {targets,textures} plus *.frag for 4b6e2e / ec1de5.
-2. Decode V16NMAD 10C4F106A0047042 by hand (UsseTranslator.Alu.cs dot path) against Vita3K and fix the
-   lane-4 handling if it is wrong. Bump ShaderGenerator.GeneratorVersion.
-3. Bisect with VITASHARP_DEBUG_FS=8DF6CBEA602F13BD:vec4(<term>) on t-locals, for example
-   `vec4(t86*0.25)` (R.V) or `vec4(t99,t101,0,1)` (the exp2 terms), and read rt_65C78000 in the trace.
-4. Do the same for the gun 4B6E2E and the sight EC1DE5. Check whether their ftex5 (RT 0x66332000
-   rows 128-191) should be flat pink. Look at what draw id=3 (3132 tris, fs 46FCA5DDF927069E) renders.
-5. Then look at the purple haze in the post chain (atlas 0x66272000, bloom/DoF blurs).
-6. Regression scenarios: f1_trees_lod, dd_boot, gow_play, uc_game (the uc_game sheets must still show
-   textured gameplay).
+## Remaining
+- After spawn and respawn, the first ~50 frames facing the sun are very bright, white-purple. This may be the game's
+  spawn flash or exposure adaptation; it is unverified without a hardware reference.
+- Lens-flare ghosts tint dark foreground objects slightly purple when looking at the sun. The intensity is
+  unverified.
+- Runs are non-deterministic and the player often dies (the physics/limbo bug handled by the other agent). Run tests
+  one at a time: parallel instances and other agents' runs share the GTX 1650.
 
-## Commands
-- Build:
-  `dotnet build src/VitaSharp.Desktop -c Release -o C:\Users\guisa\AppData\Local\Temp\claude\C--Users-guisa\2fba547d-1767-41f4-bd6c-4baac31f8ab5\scratchpad\kzbin`
-- Run: `kzbin\VitaSharp.Desktop.exe test tests\scenarios\kzr_trace.txt` (about 3 min).
-  It uses `--shader-cache=<scratchpad>\sc1`, so the trace output stays private and does not clash with
-  other agents.
-- Vita3K source: scratchpad\ref\vita3k.
+## Scenarios
+- kzr_walk: walks into gameplay, uses a private shader cache, frames to 4400.
+- kzr_idle: no movement, trace at 4280.
+- kzr_trace: trace at 4300.
