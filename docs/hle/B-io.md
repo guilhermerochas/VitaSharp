@@ -72,7 +72,7 @@ Nenhuma variante Async nem as funções de prioridade são importadas pelos 7 jo
 ## 1. `NID_023EAA62` e os dispositivos `tty0:`/`tty1:`
 
 ### NID_023EAA62
-- [ ] **Prioridade:** P0 (F1 2011 PCSE00002, Uncharted PCSA00029) · **Biblioteca:** SceLibKernel · **NID:** 0x023EAA62
+- [x] **Prioridade:** P0 (F1 2011 PCSE00002, Uncharted PCSA00029) · **Biblioteca:** SceLibKernel · **NID:** 0x023EAA62
 - **Protótipo:** não existe em nenhum header do VitaSDK, nem em `nids.txt` (Vita3K). Inferido pela desmontagem:
   `void/int NID_023EAA62(const char *msg /*, r1..r3 = lixo */);`
 - **O que a desmontagem mostrou** (F1, `libc.suprx` carregada em 0x81340000+, função `openStdio` em 0x813405E4):
@@ -126,7 +126,7 @@ Nenhuma variante Async nem as funções de prioridade são importadas pelos 7 jo
   `run PCSA00029`.
 
 ### Mapeamento de `tty0:`/`tty1:` (parte do P0 acima)
-- [ ] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceIofilemgr (`sceIoOpen`/`Read`/`Write`/`Close`) ·
+- [x] **Prioridade:** P0 (F1 2011, Uncharted) · **Biblioteca:** SceIofilemgr (`sceIoOpen`/`Read`/`Write`/`Close`) ·
   **NID:** n/a (comportamento de `sceIoOpen` 0x6C60AC61)
 - **Comportamento:** no Vita, `tty0:`..`tty3:` são dispositivos de caractere do console de debug (deci/UART). A
   libc LLE abre `tty0:` como stdin e stdout e `tty1:` como stderr, todos com `SCE_O_RDWR` (3), e guarda os fds em

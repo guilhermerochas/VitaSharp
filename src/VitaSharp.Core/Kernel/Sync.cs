@@ -30,12 +30,20 @@ public static class Wait
     /// explicitly, so sync objects can use static lambdas: every blocking syscall used to allocate two closures.
     /// </summary>
     public static int Until<T>(object sync, T state, Func<T, bool> ready, Ptr<uint> timeout, Func<T, int>? abort, string what = "")
+        => UntilCore(sync, state, ready, timeout, timeout.IsNull ? null : timeout.Value, abort, what);
+
+    /// <summary>Same as <see cref="Until(object, Func{bool}, Ptr{uint}, Func{int}?, string)"/> with the timeout passed by
+    /// value (microseconds; null = wait forever). For APIs such as sceNetEpollWait or sceRudpPollWait whose timeout is an
+    /// argument rather than a guest pointer.</summary>
+    public static int Until(object sync, Func<bool> ready, long? timeoutUs, Func<int>? abort = null, string what = "")
+        => UntilCore(sync, (ready, abort), static s => s.ready(), default, timeoutUs, static s => s.abort?.Invoke() ?? 0, what);
+
+    static int UntilCore<T>(object sync, T state, Func<T, bool> ready, Ptr<uint> timeout, long? limitUs, Func<T, int>? abort, string what)
     {
         var self = GuestThread.Current;
         if (self != null) { self.Status = ThreadStatus.Waiting; self.WaitingOn = what; self.CurrentWaitSync = sync; }
         try
         {
-            long? limitUs = timeout.IsNull ? null : timeout.Value;
             long start = GuestClock.Ticks; // timeouts run on guest time
             bool waited = false;
             while (true)
@@ -58,7 +66,7 @@ public static class Wait
                 if (limitUs.HasValue)
                 {
                     long leftUs = limitUs.Value - ElapsedUs(start);
-                    if (leftUs <= 0) { timeout.Value = 0; return SceError.WAIT_TIMEOUT; }
+                    if (leftUs <= 0) { timeout.TrySet(0); return SceError.WAIT_TIMEOUT; }
                     sliceMs = (int)Math.Clamp((leftUs / GuestClock.Speed + 999) / 1000, 1, 50);
                     if (GuestClock.Turbo)
                     {

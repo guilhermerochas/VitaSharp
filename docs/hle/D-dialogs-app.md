@@ -960,7 +960,7 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário.
 
 ### sceAppUtilSaveDataDataRemove
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xD1C6AB8E
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xD1C6AB8E
 - **Protótipo:** `int sceAppUtilSaveDataDataRemove(SceAppUtilSaveDataFileSlot *slot, SceAppUtilSaveDataRemoveItem *files, unsigned int fileNum, SceAppUtilSaveDataMountPoint *mountPoint);` (`psp2/apputil.h`)
 - **Comportamento:** remove arquivos/diretórios de `savedata0:` e, se `slot != NULL` e `files[0].mode == DEFAULT (0)`,
   também o `SlotParam` do slot (`mode == NO_SLOT (1)` preserva o slot).
@@ -1164,7 +1164,7 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
   e a escrita de arquivos `internal`).
 
 ### sceAppMgrAppParamGetString
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppMgrUser · **NID:** 0x0C733AE2
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppMgrUser · **NID:** 0x0C733AE2
 - **Protótipo:** `int sceAppMgrAppParamGetString(int pid, int param, char *string, SceSize length);` (Vita3K; header
   público `psp2/appmgr.h`)
 - **Comportamento:** lê um campo de `param.sfo` do processo (`pid == 0` = o próprio). IDs (`SceAppMgrAppParamId`):

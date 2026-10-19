@@ -34,6 +34,17 @@ public sealed class Vfs
         return (vitaPath[..c], vitaPath[(c + 1)..].Replace('\\', '/').TrimStart('/'));
     }
 
+    /// <summary>Debug console character devices "tty0:".."tty3:" (no host directory behind them).</summary>
+    public static bool IsTty(string vitaPath, out int index)
+    {
+        index = -1;
+        var (dev, rel) = Split(vitaPath);
+        if (rel.Length != 0 || dev.Length != 4 || !dev.StartsWith("tty", StringComparison.OrdinalIgnoreCase)) return false;
+        if (dev[3] is < '0' or > '3') return false;
+        index = dev[3] - '0';
+        return true;
+    }
+
     /// <summary>Normalizes "." and ".." segments.</summary>
     static string Normalize(string rel)
     {

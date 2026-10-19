@@ -205,9 +205,10 @@ public sealed class AppUtil : HleModule
     [Hle]
     int sceAppUtilSaveDataDataRemove(uint slot, uint files, uint fileNum, uint mountPoint)
     {
+        if (slot != 0 && GuestMemory.R32(slot) >= 256) return ERR_PARAMETER; // SCE_APPUTIL_SAVEDATA_SLOT_MAX
         for (uint i = 0; i < fileNum; i++)
         {
-            string path = SavePath(GuestMemory.ReadCString(GuestMemory.R32(files + i * 48)));
+            string path = SavePath(GuestMemory.ReadCString(GuestMemory.R32(files + i * 0x2C)));
             if (File.Exists(path)) File.Delete(path);
             else if (Directory.Exists(path)) Directory.Delete(path, true);
         }

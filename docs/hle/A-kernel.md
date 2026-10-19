@@ -1059,7 +1059,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 | FORA | `sceKernelInhibitLoadingModule` | 0x6CED1F63 | Bloqueia carga de módulos no processo; usada pelo shell/sistema. Se aparecer, devolver 0. |
 
 #### STUB: sceKernelGetSystemSwVersion
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceModulemgr · **NID:** 0x5182E212 · `SystemMisc.cs` (última linha)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceModulemgr · **NID:** 0x5182E212 · `SystemMisc.cs` (última linha)
 - **Protótipo:** `int sceKernelGetSystemSwVersion(SceKernelSystemSwVersion *version);` (`psp2/kernel/modulemgr.h`)
 - **Problema:** grava `version` em +0x14, mas a struct (`psp2common/kernel/modulemgr.h`, 0x28 bytes) é +0 size,
   +4 `versionString[0x1C]`, **+0x20 `version`**, +0x24 `unk_24`. Quem lê `version` recebe lixo/zero.
@@ -1073,7 +1073,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ## 6. SceSysmodule
 
 #### sceSysmoduleUnloadModuleInternalWithArg
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceSysmodule · **NID:** 0xA2F40C4C
+- [x] **Prioridade:** P1 · **Biblioteca:** SceSysmodule · **NID:** 0xA2F40C4C
 - **Protótipo:** `int sceSysmoduleUnloadModuleInternalWithArg(SceSysmoduleInternalModuleId id, SceSize args, void *argp, const SceSysmoduleOpt *option);` (`psp2/sysmodule.h`)
 - **Comportamento:** descarrega um módulo interno passando argumentos ao `module_stop`; no VitaSharp os módulos são
   HLE, então só remove de `_loadedSysmodules` e, se `option && option->result`, grava 0 em `*option->result`.
@@ -1084,7 +1084,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 - **Validação:** `imports`.
 
 #### STUB: sceSysmoduleIsLoaded / sceSysmoduleIsLoadedInternal
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceSysmodule · **NID:** 0x53099B7A, 0x09A4AF1D · `SystemMisc.cs`
+- [x] **Prioridade:** STUB · **Biblioteca:** SceSysmodule · **NID:** 0x53099B7A, 0x09A4AF1D · `SystemMisc.cs`
 - **Protótipo:** `int sceSysmoduleIsLoaded(SceSysmoduleModuleId id);` (`psp2/sysmodule.h`)
 - **Problema:** devolve 0x805A1002 quando não carregado; o header define `SCE_SYSMODULE_ERROR_UNLOADED = 0x805A1001`
   (0x805A1002 não existe). Jogos que fazem `if (IsLoaded(x) == SCE_SYSMODULE_ERROR_UNLOADED) LoadModule(x)` nunca
@@ -1093,7 +1093,7 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
   0x805A1000. Custo 2_000. **Validação:** cenários de todos os jogos (afeta inicialização de bibliotecas).
 
 #### STUB: sceSysmoduleLoadModuleInternalWithArg
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceSysmodule · **NID:** 0xC3C26339 · `SystemMisc.cs` (mesmo método de `sceSysmoduleLoadModule(uint id)`)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceSysmodule · **NID:** 0xC3C26339 · `SystemMisc.cs` (mesmo método de `sceSysmoduleLoadModule(uint id)`)
 - **Protótipo:** `int sceSysmoduleLoadModuleInternalWithArg(SceSysmoduleInternalModuleId id, SceSize args, void *argp, const SceSysmoduleOpt *option);`
 - **Problema:** ignora `option`; quem passa `option->result` lê lixo como retorno do `module_start`.
 - **Implementação no VitaSharp:** método próprio que marca como carregado e, se `option != 0 && R32(option+4) != 0`,

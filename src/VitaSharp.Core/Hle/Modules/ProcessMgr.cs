@@ -28,6 +28,11 @@ public sealed class ProcessMgr : HleModule
     [Hle] int sceKernelGetStdin() => 0x10;
     [Hle] int sceKernelGetStdout() => 0x11;
     [Hle] int sceKernelGetStderr() => 0x12;
+
+    /// <summary>Unnamed SceLibKernel export used by the old libc's openStdio to report "stdin : open failed" and the
+    /// like (r0 = message without newline, result ignored). Behaves as an unformatted debug print.</summary>
+    [Hle("NID_023EAA62", Nid = 0x023EAA62, Library = "SceLibKernel")]
+    int Nid023EAA62(string msg) { Log.Info("[guest] " + msg.TrimEnd('\n')); return 0; }
     [Hle] int sceKernelPowerTick(int type) => 0;
     [Hle] int sceKernelPowerLock(int type) => 0;
     [Hle] int sceKernelPowerUnlock(int type) => 0;

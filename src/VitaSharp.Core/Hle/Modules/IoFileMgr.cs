@@ -15,6 +15,8 @@ public sealed class IoFileMgr : HleModule
     {
         public required string VitaPath;
         public FileStream? Stream;
+        /// <summary>Debug console device index ("ttyN:"), -1 for files.</summary>
+        public int Tty = -1;
     }
 
     sealed class OpenDir
@@ -43,6 +45,13 @@ public sealed class IoFileMgr : HleModule
     [Hle("sceIoOpen")]
     int sceIoOpen(string path, int flags, int mode)
     {
+        // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
+        if (Io.Vfs.IsTty(path, out int tty))
+        {
+            int tfd = Interlocked.Increment(ref _nextFd);
+            _files[tfd] = new OpenFile { VitaPath = path, Tty = tty };
+            return tfd;
+        }
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
         if (Directory.Exists(host)) return SceError.IO_EISDIR;
@@ -80,6 +89,8 @@ public sealed class IoFileMgr : HleModule
     [Hle]
     int sceIoRead(int fd, uint buf, uint size)
     {
+        if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
+        if (_files.TryGetValue(fd, out var t) && t.Tty >= 0) return 0;
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n;
         lock (f)
@@ -97,6 +108,11 @@ public sealed class IoFileMgr : HleModule
         if (fd is 0x11 or 0x12)
         {
             Log.Info("[guest stdout] " + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
+            return (int)size;
+        }
+        if (_files.TryGetValue(fd, out var tf) && tf.Tty >= 0)
+        {
+            Log.Info((tf.Tty == 1 ? "[guest stderr] " : "[guest stdout] ") + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
             return (int)size;
         }
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
