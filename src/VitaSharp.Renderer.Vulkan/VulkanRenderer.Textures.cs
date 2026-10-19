@@ -50,28 +50,40 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== samplers
 
+    /// <summary>SceGxmTextureFilter: POINT = 0, LINEAR = 1, MIPMAP_LINEAR = 2, MIPMAP_POINT = 3.</summary>
+    static Filter GxmFilter(uint f) => f is 1 or 2 ? Filter.Linear : Filter.Nearest;
+
     Sampler GetSampler(uint w0, uint type)
     {
         bool strided = type == GxmTextureDesc.TypeLinearStrided;
         uint key = strided ? (w0 & 0x000031F8u) | 0x80000000u : w0 & 0x07FE3FF8u;
         if (_samplers.TryGetValue((key, type), out var s)) return s;
-        uint mag = (w0 >> 12) & 3, min = strided ? 0 : (w0 >> 10) & 3, mip = strided ? 0 : (w0 >> 9) & 1;
+        // linear strided textures have no min filter field: the mag filter applies to minification too
+        uint mag = (w0 >> 12) & 3, min = strided ? mag : (w0 >> 10) & 3, mip = strided ? 0 : (w0 >> 9) & 1;
         uint u = (w0 >> 6) & 7, v = (w0 >> 3) & 7;
-        float lodBias = strided ? 0 : (((w0 >> 21) & 0x3F) - 31) / 8f;
+        // signed: the field is biased by 31 (31 = no bias); unsigned subtraction wrapped every negative bias to +huge (1x1 mip)
+        float lodBias = strided ? 0 : ((int)((w0 >> 21) & 0x3F) - 31) / 8f;
         var sci = new SamplerCreateInfo
         {
             SType = StructureType.SamplerCreateInfo,
-            MagFilter = (mag & 1) != 0 ? Filter.Linear : Filter.Nearest,
-            MinFilter = (min & 1) != 0 ? Filter.Linear : Filter.Nearest,
-            MipmapMode = mip != 0 && min is 2 ? SamplerMipmapMode.Linear : SamplerMipmapMode.Nearest,
+            MagFilter = GxmFilter(mag),
+            MinFilter = GxmFilter(min),
+            // the mip filter only chooses blending between levels; the mip chain is always used (lod clamp is the
+            // texture's own level count, applied by the image view)
+            MipmapMode = mip != 0 ? SamplerMipmapMode.Linear : SamplerMipmapMode.Nearest,
             AddressModeU = Formats.Address(u),
             AddressModeV = Formats.Address(v),
             AddressModeW = SamplerAddressMode.ClampToEdge,
-            MipLodBias = lodBias,
+            MipLodBias = Math.Clamp(lodBias, -_core.Properties.Limits.MaxSamplerLodBias, _core.Properties.Limits.MaxSamplerLodBias),
             MinLod = 0,
-            MaxLod = mip != 0 ? 16 : 0.25f,
+            MaxLod = strided ? 0.25f : 1000f,
             BorderColor = BorderColor.FloatTransparentBlack,
         };
+        if (Environment.GetEnvironmentVariable("VITASHARP_SAMPLER_DEBUG") is { } sd)
+        {
+            if (sd == "nobias") sci.MipLodBias = 0;
+            Log.Info($"[gpu] sampler w0=0x{w0:X8} type=0x{type:X8} mag={sci.MagFilter} min={sci.MinFilter} mip={sci.MipmapMode} bias={sci.MipLodBias} maxLod={sci.MaxLod}");
+        }
         _vk.CreateSampler(_dev, in sci, null, out s).Ok("vkCreateSampler");
         _samplers[(key, type)] = s;
         return s;
