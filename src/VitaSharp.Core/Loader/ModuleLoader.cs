@@ -13,6 +13,8 @@ public sealed class LoadedModule
     public uint TlsInit, TlsInitSize, TlsAreaSize;
     public uint ExidxTop, ExidxEnd, ExtabTop, ExtabEnd;
     public uint ModuleInfoAddr;
+    /// <summary>Guest address ranges of the export and import tables (taiGetModuleInfo).</summary>
+    public uint ExportsStart, ExportsEnd, ImportsStart, ImportsEnd;
     public ushort Attributes, Version;
     public Dictionary<int, SegmentInfo> Segments = new();
     public Dictionary<int, (uint Flags, uint MemSz, uint FileSz)> SegmentFlags = new();
@@ -198,6 +200,8 @@ public static class ModuleLoader
         uint exportTop = U32LE(info, 0x24), exportEnd = U32LE(info, 0x28);
         uint importTop = U32LE(info, 0x2C), importEnd = U32LE(info, 0x30);
         m.ModuleNid = U32LE(info, 0x34);
+        m.ExportsStart = infoBase + exportTop; m.ExportsEnd = infoBase + exportEnd;
+        m.ImportsStart = infoBase + importTop; m.ImportsEnd = infoBase + importEnd;
         uint tlsStart = U32LE(info, 0x38);
         m.TlsInitSize = U32LE(info, 0x3C);
         m.TlsAreaSize = U32LE(info, 0x40);

@@ -47,6 +47,7 @@ public sealed class Kernel
         priority = ResolvePriority(priority);
         var t = new GuestThread(_emu, name, entry, priority, stackSize, attr, affinity);
         Objects.Register(t);
+        t.InitTls();
         Log.Info($"Created thread '{name}' uid=0x{t.Uid:X} entry=0x{entry:X8} prio={priority} affinity=0x{affinity:X} stack=0x{stackSize:X} f{Hle.Modules.Display.FramesPresented}");
         return t;
     }

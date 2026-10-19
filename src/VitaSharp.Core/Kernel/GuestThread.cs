@@ -89,7 +89,12 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         TlsBase = emu.Memory.Alloc(Math.Max(tlsSize, 0x1000u), $"tls:{name}");
     }
 
-    void InitTls()
+    /// <summary>
+    /// Sets up the TLS block when the thread is created (needs the UID). It is not cleared again by Start: creators
+    /// may fill another thread's slots between create and start through sceKernelGetThreadTLSAddr (newlib's
+    /// per-thread reent / pthread data in vitasdk's pthread-embedded).
+    /// </summary>
+    internal void InitTls()
     {
         var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
         tls.Clear();
@@ -113,7 +118,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             var s = Core.State;
             new Span<byte>(s, sizeof(CpuState)).Clear();
             s->Fpscr = 0x0300_0000;
-            InitTls();
+            var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
+            tls[TlsCurrentPriority] = Priority;
+            tls[TlsAffinity] = Affinity;
             s->TpidrUro = UserTls;
             s->TpidrUrw = 0;
             s->R[13] = StackAddr + StackSize;

@@ -198,6 +198,15 @@ public sealed class Ctrl : HleModule
     int sceCtrlGetBatteryInfo(int port, Ptr<byte> level) { level.TrySet(5); return 0; }
 }
 
+/// <summary>SceHid: USB/Bluetooth keyboards and mice. None are attached, so enumeration finds no devices.</summary>
+public sealed class Hid : HleModule
+{
+    /// <summary>sceHid{Keyboard,Mouse}Enumerate(int *handles, int count): returns the number of devices written.</summary>
+    [Hle("sceHidKeyboardEnumerate")]
+    [Hle("sceHidMouseEnumerate")]
+    int sceHidEnumerate(uint handles, int count) => 0;
+}
+
 public sealed class Touch : HleModule
 {
     [Hle]
