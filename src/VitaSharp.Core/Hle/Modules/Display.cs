@@ -53,11 +53,14 @@ public sealed class Display : HleModule
         if (_base == 0) return 0;
         Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
         _lastSetVcount = VBlank.Count;
+        PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = System.Diagnostics.Stopwatch.GetTimestamp();
         FramesPresented++;
         return 0;
     }
 
     public static long FramesPresented;
+    /// <summary>Host timestamps of the last 8192 presented frames, indexed by frame number (profiling).</summary>
+    public static readonly long[] PresentTimes = new long[8192];
     public static int FrameSleepMs;
 
     [Hle("sceDisplaySetFrameBufForCompat")]

@@ -105,6 +105,8 @@ public sealed class HleFunction
     bool? _cbWait;
     public bool IsCallbackWait => _cbWait ??= Name.EndsWith("CB", StringComparison.Ordinal);
     public long CallCount;
+    /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
+    public long ChargedCycles;
 
     long _cost = -1;
     /// <summary>Emulated CPU cost (guest instructions) charged per call: real syscalls (waits, signals, I/O, display)

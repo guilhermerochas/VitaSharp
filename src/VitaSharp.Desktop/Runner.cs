@@ -56,12 +56,13 @@ public static class Runner
         emu.Host.Camera = FlashCapCamera.TryCreate(Opt(options, "--camera"));
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
-        long lastFrames = 0;
+        long lastFrames = 0, titleTicks = 0;
         var titleTimer = new System.Threading.Timer(_ =>
         {
             long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
             double fps = (frames - lastFrames) / 1.0;
             lastFrames = frames;
+            if (++titleTicks % 5 == 0) Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
             try { window.Title = $"VitaSharp | {emu.TitleId} {emu.Title} | {fps:F0} FPS | {renderer?.DeviceName}"; } catch { }
         }, null, 1000, 1000);
 
@@ -139,10 +140,18 @@ public static class Runner
         emu.Start();
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
-        Sampler? sampler = options.Contains("--profile") ? new Sampler(emu) : null;
+        Sampler? sampler = options.Contains("--profile") || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0) : null;
         if (Opt(options, "--seconds") == null && frameLimit > 0) seconds = 1800; // frames decide; seconds is a safety timeout
+        long fpsFrames = 0; double fpsAt = 0;
         while (!fatal.Wait(50) && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
+            double now = wall.Elapsed.TotalSeconds;
+            if (now - fpsAt >= 5) // periodic frame rate, so boot and gameplay can be told apart
+            {
+                long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+                Log.Info($"FPS frame {f}: {(f - fpsFrames) / (now - fpsAt):F1} frames/s");
+                fpsFrames = f; fpsAt = now;
+            }
             if (emu.ExecRequest != null)
             {
                 try { emu.PerformExec(emu.Gpu.Backend != null ? () => new VulkanRenderer(ro) : null); }
@@ -437,6 +446,11 @@ public static class Runner
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
         foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());
+        {
+            long fr = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
+            foreach (var t in emu.Kernel.Threads.Where(t => t.Core.BlockCycles + t.Core.ChargedCycles > 0).OrderByDescending(t => t.Core.BlockCycles + t.Core.ChargedCycles).Take(6))
+                Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame");
+        }
         // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
         if (Environment.GetEnvironmentVariable("VITASHARP_PEEK_END") is { } peekEnd)
             foreach (var spec in peekEnd.Split(',', StringSplitOptions.RemoveEmptyEntries))

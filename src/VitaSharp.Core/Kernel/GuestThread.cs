@@ -252,7 +252,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 foreach (var p in _emu.TraceHleExclude) if (f.Name.StartsWith(p, StringComparison.Ordinal)) { trace = false; break; }
             }
         }
-        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8}");
+        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}");
         return trace;
     }
 
@@ -260,6 +260,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     {
         var f = _emu.Hle.GetFunction(s->SvcImm);
         f.CallCount++;
+        long charged0 = Core.ChargedCycles;
         Core.ChargeInstructions(f.Cost);
         // tracing checks live in a separate method: a lambda capturing f here would allocate a closure on every HLE call
         bool trace = (_emu.TraceHle || _emu.TraceHleOnly != null || _emu.TraceHleFrames != null) && TraceHleCall(f, s);
@@ -278,7 +279,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 finally { CallbackWait = prev; }
             }
             else f.Invoke(Hle);
-            if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X}");
+            f.ChargedCycles += Core.ChargedCycles - charged0;
+            if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             if (ContextReplaced) { ContextReplaced = false; return; }
         }
         else
