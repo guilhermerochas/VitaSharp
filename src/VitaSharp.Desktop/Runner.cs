@@ -52,6 +52,8 @@ public static class Runner
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         emu.Host.Input = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : window;
         emu.Host.Audio = audio;
+        // webcam for SceCamera: --camera=<name or index> picks a device, --camera=none disables it (grey frames)
+        emu.Host.Camera = FlashCapCamera.TryCreate(Opt(options, "--camera"));
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0;
@@ -115,6 +117,7 @@ public static class Runner
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
         if (Opt(options, "--input") is { } script) emu.Host.Input = new ScriptedInput(script);
         if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(); // real audio device, as in the window mode
+        if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
         emu.BacktraceHle = Opt(options, "--bt");
         if (Opt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');
         if (Opt(options, "--trace-hle-threads") is { } tht) emu.TraceHleThreads = tht.Split('+');

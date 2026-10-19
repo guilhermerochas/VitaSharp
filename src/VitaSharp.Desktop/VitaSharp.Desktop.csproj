@@ -9,6 +9,7 @@
     <PackageReference Include="Avalonia" Version="11.3.0" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="FlashCap" Version="1.12.0" />
     <!-- transitive dependency of Avalonia 11.3.0 with a known vulnerability (GHSA-xrw6-gwf8-vvr9): pin the patched release -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <PackageReference Include="Silk.NET.Input" Version="2.23.0" />

@@ -684,6 +684,11 @@ para a função pública indicada.
 
 ## SceCamera
 
+> **Implementado** em `src/VitaSharp.Core/Hle/Modules/Camera.cs` (as 45 funções), usando a câmera real do host via
+> `ICameraSource` (`Host/Camera.cs`; desktop: `VitaSharp.Desktop/Host/FlashCapCamera.cs`, opção
+> `--camera=<nome|índice|none>` e seletor nas Settings do launcher). Sem câmera no host, entrega quadros cinza neutros.
+> Conversões (host → RGBA → formato do Vita) em `Media/CameraImage.cs`.
+
 ### Seção comum: câmera virtual
 
 Objetivo: o jogo vê uma câmera funcionando que entrega quadros neutros. Assim o modo AR do Invizimals avança até o ponto
@@ -731,7 +736,7 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
 (a confirmar com o FW).
 
 ### sceCameraOpen
-- [ ] **Prioridade:** STUB (Invizimals, Devious Dungeon) · **Biblioteca:** SceCamera · **NID:** 0xA462F801
+- [x] **Prioridade:** STUB (Invizimals, Devious Dungeon) · **Biblioteca:** SceCamera · **NID:** 0xA462F801
 - **Protótipo:** `int sceCameraOpen(int devnum, SceCameraInfo *pInfo);` (`psp2/camera.h`)
 - **Comportamento:** valida e guarda a configuração, e preenche `width`/`height` a partir de `resolution`. Hoje devolve
   sempre 0x802E000B.
@@ -749,7 +754,7 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
 - **Validação:** Invizimals/DD não devem mais logar erro de câmera; o cenário `inv_boot.txt` entra no AR.
 
 ### sceCameraStart / sceCameraStop
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0xA8FEAE35 (Start) / 0x1DD9C9CE (Stop)
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0xA8FEAE35 (Start) / 0x1DD9C9CE (Stop)
 - **Protótipo:** `int sceCameraStart(int devnum);` / `int sceCameraStop(int devnum);` (`psp2/camera.h`)
 - **Comportamento:** começa/para a captura. Start zera `FrameIndex` e agenda o primeiro quadro.
 - **Retorno/erros:** 0; NOT_OPEN 0x802E0004; Start já iniciado → ALREADY_START 0x802E0005; Stop não iniciado →
@@ -759,7 +764,7 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
 - **Validação:** sequência Open/Start/Stop/Close do Invizimals sem erro.
 
 ### sceCameraRead
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0x79B5C2DE
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0x79B5C2DE
 - **Protótipo:** `int sceCameraRead(int devnum, SceCameraRead *pRead);` (`psp2/camera.h`)
 - **Comportamento:** entrega o quadro atual nos buffers (os do Open em SETBYOPEN, os do `pRead` em SETBYREAD). Com
   `mode = 0` (WAIT_NEXTFRAME_ON) bloqueia até o próximo quadro. Com `mode = 1` (OFF), se ainda não houver quadro novo,
@@ -777,7 +782,7 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
   cenário mostra o fundo cinza da câmera na tela de AR.
 
 ### sceCameraIsActive
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0x103A75B8
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0x103A75B8
 - **Protótipo:** `int sceCameraIsActive(int devnum);` (`psp2/camera.h`)
 - **Comportamento:** 1 se aberta e iniciada.
 - **Retorno/erros:** 1; NOT_OPEN; NOT_START (Vita3K devolve os erros em vez de 0).
@@ -786,7 +791,7 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
 - **Validação:** junto com Start.
 
 ### sceCameraClose
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0xCD6E1CFC
+- [x] **Prioridade:** STUB · **Biblioteca:** SceCamera · **NID:** 0xCD6E1CFC
 - **Protótipo:** `int sceCameraClose(int devnum);` (`psp2/camera.h`)
 - **Comportamento:** fecha. Se estiver iniciada, para antes (a confirmar se o FW exige Stop antes).
 - **Retorno/erros:** 0; NOT_OPEN.
@@ -801,21 +806,21 @@ Protótipo comum: `int sceCameraSetX(int devnum, int value);` (`psp2/camera.h`).
 
 | [ ] | Função | NID | Atributo |
 | --- | --- | --- | --- |
-| [ ] | sceCameraSetAntiFlicker | 0xE312958A | AntiFlicker |
-| [ ] | sceCameraSetAutoControlHold | 0x3A0DABBD | AutoControlHold (Invizimals chama) |
-| [ ] | sceCameraSetBacklight | 0xAE071044 | Backlight |
-| [ ] | sceCameraSetBrightness | 0x98D71588 | Brightness |
-| [ ] | sceCameraSetContrast | 0x06FB2900 | Contrast |
-| [ ] | sceCameraSetEV | 0x62AFF0B8 | EV |
-| [ ] | sceCameraSetEffect | 0xE9D2CFB1 | Effect |
-| [ ] | sceCameraSetExposureCeiling | 0x04F34BEE | ExposureCeiling |
-| [ ] | sceCameraSetISO | 0x3CF630A1 | ISO |
-| [ ] | sceCameraSetNightmode | 0x3F26233E | Nightmode |
-| [ ] | sceCameraSetReverse | 0x1175F477 | Reverse |
-| [ ] | sceCameraSetSaturation | 0xF9F7CA3D | Saturation |
-| [ ] | sceCameraSetSharpness | 0xD1A5BB0B | Sharpness |
-| [ ] | sceCameraSetWhiteBalance | 0x4D4514AC | WhiteBalance |
-| [ ] | sceCameraSetZoom | 0xF7464216 | Zoom |
+| [x] | sceCameraSetAntiFlicker | 0xE312958A | AntiFlicker |
+| [x] | sceCameraSetAutoControlHold | 0x3A0DABBD | AutoControlHold (Invizimals chama) |
+| [x] | sceCameraSetBacklight | 0xAE071044 | Backlight |
+| [x] | sceCameraSetBrightness | 0x98D71588 | Brightness |
+| [x] | sceCameraSetContrast | 0x06FB2900 | Contrast |
+| [x] | sceCameraSetEV | 0x62AFF0B8 | EV |
+| [x] | sceCameraSetEffect | 0xE9D2CFB1 | Effect |
+| [x] | sceCameraSetExposureCeiling | 0x04F34BEE | ExposureCeiling |
+| [x] | sceCameraSetISO | 0x3CF630A1 | ISO |
+| [x] | sceCameraSetNightmode | 0x3F26233E | Nightmode |
+| [x] | sceCameraSetReverse | 0x1175F477 | Reverse |
+| [x] | sceCameraSetSaturation | 0xF9F7CA3D | Saturation |
+| [x] | sceCameraSetSharpness | 0xD1A5BB0B | Sharpness |
+| [x] | sceCameraSetWhiteBalance | 0x4D4514AC | WhiteBalance |
+| [x] | sceCameraSetZoom | 0xF7464216 | Zoom |
 
 Validação: Devious Dungeon chama 13 desses setters em sequência; nenhum deve falhar depois do Open/Start virtual.
 Atenção: hoje eles "funcionam" porque devolvem 0 mesmo com a câmera fechada. Com a câmera virtual, um setter chamado
@@ -829,30 +834,30 @@ da seção comum). Erros comuns da seção. Validação comum: teste unitário S
 
 | [ ] | Função | NID | Observação |
 | --- | --- | --- | --- |
-| [ ] | sceCameraGetAntiFlicker | 0x9FDACB99 | |
-| [ ] | sceCameraGetAutoControlHold | 0x06A21BBB | |
-| [ ] | sceCameraGetBacklight | 0x8DD1292B | |
-| [ ] | sceCameraGetBrightness | 0x85D5951D | |
-| [ ] | sceCameraGetContrast | 0x8FBE84BE | |
-| [ ] | sceCameraGetEffect | 0x7E8EF3B2 | |
-| [ ] | sceCameraGetEV | 0x8B5E6147 | |
-| [ ] | sceCameraGetExposureCeiling | 0x5FA5B1BB | |
-| [ ] | sceCameraGetImageQuality | 0xE2AC7BCE | `int (int devnum, int* pLevel)` |
-| [ ] | sceCameraGetISO | 0x4EBD5C68 | |
-| [ ] | sceCameraGetNightmode | 0x12B6FF26 | |
-| [ ] | sceCameraGetNoiseReduction | 0xFEB99ACC | `int (int devnum, int* pLevel)` |
-| [ ] | sceCameraGetReverse | 0x44F6043F | |
-| [ ] | sceCameraGetSaturation | 0x624F7653 | |
-| [ ] | sceCameraGetSharpness | 0xAA72C3DC | |
-| [ ] | sceCameraGetSharpnessOff | 0x34CCAF85 | `int (int devnum, int* pLevel)` |
-| [ ] | sceCameraGetWhiteBalance | 0xDBFFA1DA | |
-| [ ] | sceCameraGetZoom | 0x06D3816C | |
-| [ ] | sceCameraGetGain | 0x2C36D6F3 | Sempre ATTRIBUTE_UNKNOWN 0x802E000C depois de validar `devnum`/`pValue` (sem exigir Open). |
-| [ ] | sceCameraSetGain | 0xE65CFE86 | Sempre 0x802E000C depois de validar `devnum`. |
-| [ ] | sceCameraSetImageQuality | 0x75C4300B | |
-| [ ] | sceCameraSetNoiseReduction | 0xF9B79556 | |
-| [ ] | sceCameraSetSharpnessOff | 0x4B5405C8 | |
-| [ ] | sceCameraGetDeviceLocation | 0x274EF751 | `int (int devnum, SceFVector3 *pLocation)`. Posição física da câmera (mm). O Vita3K zera e marca não implementado. Valores reais a confirmar (um homebrew no hardware). Até lá, escrever (0,0,0) e devolver 0. Não exige Open. |
+| [x] | sceCameraGetAntiFlicker | 0x9FDACB99 | |
+| [x] | sceCameraGetAutoControlHold | 0x06A21BBB | |
+| [x] | sceCameraGetBacklight | 0x8DD1292B | |
+| [x] | sceCameraGetBrightness | 0x85D5951D | |
+| [x] | sceCameraGetContrast | 0x8FBE84BE | |
+| [x] | sceCameraGetEffect | 0x7E8EF3B2 | |
+| [x] | sceCameraGetEV | 0x8B5E6147 | |
+| [x] | sceCameraGetExposureCeiling | 0x5FA5B1BB | |
+| [x] | sceCameraGetImageQuality | 0xE2AC7BCE | `int (int devnum, int* pLevel)` |
+| [x] | sceCameraGetISO | 0x4EBD5C68 | |
+| [x] | sceCameraGetNightmode | 0x12B6FF26 | |
+| [x] | sceCameraGetNoiseReduction | 0xFEB99ACC | `int (int devnum, int* pLevel)` |
+| [x] | sceCameraGetReverse | 0x44F6043F | |
+| [x] | sceCameraGetSaturation | 0x624F7653 | |
+| [x] | sceCameraGetSharpness | 0xAA72C3DC | |
+| [x] | sceCameraGetSharpnessOff | 0x34CCAF85 | `int (int devnum, int* pLevel)` |
+| [x] | sceCameraGetWhiteBalance | 0xDBFFA1DA | |
+| [x] | sceCameraGetZoom | 0x06D3816C | |
+| [x] | sceCameraGetGain | 0x2C36D6F3 | Sempre ATTRIBUTE_UNKNOWN 0x802E000C depois de validar `devnum`/`pValue` (sem exigir Open). |
+| [x] | sceCameraSetGain | 0xE65CFE86 | Sempre 0x802E000C depois de validar `devnum`. |
+| [x] | sceCameraSetImageQuality | 0x75C4300B | |
+| [x] | sceCameraSetNoiseReduction | 0xF9B79556 | |
+| [x] | sceCameraSetSharpnessOff | 0x4B5405C8 | |
+| [x] | sceCameraGetDeviceLocation | 0x274EF751 | `int (int devnum, SceFVector3 *pLocation)`. Posição física da câmera (mm). O Vita3K zera e marca não implementado. Valores reais a confirmar (um homebrew no hardware). Até lá, escrever (0,0,0) e devolver 0. Não exige Open. |
 
 ---
 

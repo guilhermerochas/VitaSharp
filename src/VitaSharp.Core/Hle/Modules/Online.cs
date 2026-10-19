@@ -432,7 +432,7 @@ public sealed class CommonDialog : HleModule
     }
 }
 
-/// <summary>Motion sensors (device at rest, flat), camera (absent), system gestures (none).</summary>
+/// <summary>Motion sensors (device at rest, flat), camera shutter sound, system gestures (none). SceCamera is in Camera.cs.</summary>
 public sealed class Sensors : HleModule
 {
     [Hle] int sceMotionStartSampling() => 0;
@@ -467,28 +467,6 @@ public sealed class Sensors : HleModule
         return 0;
     }
 
-    const int ERR_CAMERA_NOT_FOUND = unchecked((int)0x802E000B);
-    [Hle] int sceCameraOpen(int dev, uint info) => ERR_CAMERA_NOT_FOUND;
-    [Hle] int sceCameraClose(int dev) => 0;
-    [Hle] int sceCameraStart(int dev) => ERR_CAMERA_NOT_FOUND;
-    [Hle] int sceCameraStop(int dev) => 0;
-    [Hle] int sceCameraRead(int dev, uint read) => ERR_CAMERA_NOT_FOUND;
-    [Hle] int sceCameraIsActive(int dev) => 0;
-    [Hle] int sceCameraSetBrightness(int dev, int v) => 0;
-    [Hle] int sceCameraSetContrast(int dev, int v) => 0;
-    [Hle] int sceCameraSetEV(int dev, int v) => 0;
-    [Hle] int sceCameraSetSaturation(int dev, int v) => 0;
-    [Hle] int sceCameraSetSharpness(int dev, int v) => 0;
-    [Hle] int sceCameraSetReverse(int dev, int v) => 0;
-    [Hle] int sceCameraSetEffect(int dev, int v) => 0;
-    [Hle] int sceCameraSetZoom(int dev, int v) => 0;
-    [Hle] int sceCameraSetAntiFlicker(int dev, int v) => 0;
-    [Hle] int sceCameraSetISO(int dev, int v) => 0;
-    [Hle] int sceCameraSetWhiteBalance(int dev, int v) => 0;
-    [Hle] int sceCameraSetBacklight(int dev, int v) => 0;
-    [Hle] int sceCameraSetNightmode(int dev, int v) => 0;
-    [Hle] int sceCameraSetExposureCeiling(int dev, int v) => 0;
-    [Hle] int sceCameraSetAutoControlHold(int dev, int v) => 0;
     [Hle] int sceShutterSoundPlay(uint type) => 0;
 
 }
