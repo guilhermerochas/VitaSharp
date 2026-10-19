@@ -16,9 +16,33 @@ public sealed class SystemMisc : HleModule
     [Hle("sceSysmoduleLoadModuleInternalWithArg")]
     int sceSysmoduleLoadModule(uint id)
     {
-        lock (_loadedSysmodules) _loadedSysmodules.Add(id);
+        bool first;
+        lock (_loadedSysmodules) first = _loadedSysmodules.Add(id);
+        if (first && LleSysmodules.TryGetValue(id, out var lib) && TryLoadShippedModule(lib)) return 0;
         Log.Debug($"sceSysmoduleLoadModule(0x{id:X}) -> HLE");
         return 0;
+    }
+
+    /// <summary>
+    /// Sysmodules that a game may ship itself in app0:sce_module (early-SDK titles bundle libult/libfiber/...):
+    /// when present they are loaded and started LLE, which rebinds the game's already-linked HLE import stubs.
+    /// </summary>
+    static readonly Dictionary<uint, string> LleSysmodules = new()
+    {
+        [0x0006] = "libfiber",
+        [0x0007] = "libult",
+    };
+
+    bool TryLoadShippedModule(string lib)
+    {
+        string path = $"app0:sce_module/{lib}.suprx";
+        var host = Emu.Vfs.Resolve(path);
+        if (host == null || !File.Exists(host)) return false;
+        if (K.Modules.Values.Any(m => m.Path == path)) return true;
+        var m = Emu.LoadModule(path);
+        if (m.StartEntry != 0) GuestThread.Current!.CallGuest(m.StartEntry, 0, 0);
+        Log.Info($"sceSysmoduleLoadModule: {lib} loaded from the game (LLE)");
+        return true;
     }
 
     [Hle("sceSysmoduleUnloadModule")]

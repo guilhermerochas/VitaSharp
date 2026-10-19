@@ -45,6 +45,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public int ExitStatus { get; private set; }
     public int WakeupCount;
     public readonly object WaitLock = new();
+    /// <summary>Thread signal (sceKernelSendSignal / sceKernelWaitSignal): one pending flag guarded by SignalLock.</summary>
+    public bool SignalPending;
+    public readonly object SignalLock = new();
     public long CpuTimeTicks;
     public string WaitingOn = "";
     /// <summary>When set, the thread runs this host code instead of guest code at Entry (it may still CallGuest).</summary>
