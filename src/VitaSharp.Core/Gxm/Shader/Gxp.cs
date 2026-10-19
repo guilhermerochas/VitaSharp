@@ -233,6 +233,10 @@ public sealed class UniformBufferDesc
     public uint Size;          // in 32-bit words
     public uint RegStartOffset;
     public uint RegBlockSize;
+    /// <summary>The buffer ends with an array (bone palettes, light tables). Hardware does no bounds checks on uniform
+    /// buffer loads and shaders do index such arrays past their declared length (Uncharted declares
+    /// g_mSkinTransforms[96] and reads entry 147), so the buffer is read as far as the next buffer / mapped memory.</summary>
+    public bool EndsWithArray;
 }
 
 public sealed class ProgramInput
@@ -288,12 +292,15 @@ public sealed class ProgramInput
                                 RegBlockSize = container?.SizeInF32 ?? 0,
                                 RegStartOffset = container != null ? container.BaseSaOffset : offset,
                                 Size = p.ResourceIndex + paramSizeF32,
+                                EndsWithArray = p.ArraySize > 1,
                             };
                             ubs[ci] = b;
                         }
                         else
                         {
-                            b.Size = Math.Max(p.ResourceIndex + paramSizeF32, b.Size);
+                            uint end = p.ResourceIndex + paramSizeF32;
+                            if (end > b.Size) { b.Size = end; b.EndsWithArray = p.ArraySize > 1; }
+                            else if (end == b.Size && p.ArraySize > 1) b.EndsWithArray = true;
                             if (container == null) b.RegStartOffset = Math.Min(b.RegStartOffset, offset);
                         }
                     }
@@ -313,7 +320,7 @@ public sealed class ProgramInput
         foreach (var (idx, b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024) b.Size = MaxUbInFloat;
-            else if (UnboundedUbs && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbInFloat);
+            else if ((UnboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbInFloat);
             pi.UniformBuffers.Add(b);
         }
 

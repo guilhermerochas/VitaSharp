@@ -1,0 +1,3 @@
+title=PCSA00029
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=6000 --seconds=300 --dump-every=50 --input=tap@f1300:0.5:0.6,cross@f1300,cross@f1600,cross@f1900,cross@f2200,cross@f2500,cross@f2800,cross@f3100,cross@f3400,cross@f3700,cross@f4000

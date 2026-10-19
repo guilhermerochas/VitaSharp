@@ -636,6 +636,21 @@ public sealed class Gxm : HleModule
 
     // =========================================================== draws
 
+    static GuestMemory.Block? _ubBlock;
+
+    /// <summary>Bytes from <paramref name="addr"/> to the end of its memory block (uint.MaxValue when unknown).</summary>
+    static uint BlockBytesLeft(uint addr)
+    {
+        var b = _ubBlock;
+        if (b == null || addr < b.Address || addr - b.Address >= b.Size)
+        {
+            b = GuestMemory.Instance?.FindBlock(addr);
+            if (b == null) return uint.MaxValue;
+            _ubBlock = b;
+        }
+        return b.Address + b.Size - addr;
+    }
+
     /// <summary>Gathers the draw's uniform buffers into the command's reusable buffer; returns the byte count.</summary>
     static int CopyUniforms(GxmProgramInfo info, uint[] buffers, ref byte[] data)
     {
@@ -652,6 +667,8 @@ public sealed class Gxm : HleModule
             // large "unknown size" buffers: don't run past the next buffer
             foreach (var other in buffers)
                 if (other > addr && other - addr < size) size = (int)(other - addr);
+            // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
+            if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
             GuestMemory.Span(addr, size).CopyTo(data.AsSpan(slot.ByteOffset, size));
         }
         return info.UniformBytes;
