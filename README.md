@@ -109,8 +109,10 @@ the tested games actually import.
 | SDK | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (to build) |
 | CPU | A modern multi-core x64 CPU; the guest runs on several host threads |
 
-FFmpeg 8 binaries for Windows x64 ship in [`third_party/ffmpeg`](third_party/ffmpeg) and are copied to an `ffmpeg`
-folder next to the executable at build time.
+The first build downloads FFmpeg 8.1 (LGPL) for your platform, checks its SHA-256 and copies it to an `ffmpeg` folder
+next to the executable; later builds reuse the cached copy. Windows and Linux (x64 and ARM64) get prebuilt
+libraries; on macOS install FFmpeg with `brew install ffmpeg`. To build offline, pass `-p:VitaSharpSkipFFmpeg=true`
+(videos and MP3/AAC audio are then disabled). Details in [`third_party/ffmpeg`](third_party/ffmpeg/README.md).
 
 ### Build
 
@@ -265,7 +267,7 @@ Third-party components keep their own licenses:
 | Component | License |
 | --- | --- |
 | ATRAC9 decoder, from VGAudio (`src/VitaSharp.Core/Hle/Audio/Atrac9`) | MIT |
-| FFmpeg binaries (`third_party/ffmpeg`) | LGPL 2.1 or later |
+| FFmpeg (downloaded at build time, see `third_party/ffmpeg`) | LGPL 2.1 or later |
 | Silk.NET, Avalonia, FFmpeg.AutoGen (NuGet) | MIT / LGPL, see each package |
 
 PlayStation and PS Vita are trademarks of Sony Interactive Entertainment. VitaSharp is not affiliated with or

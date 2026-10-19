@@ -17,10 +17,8 @@
     <PackageReference Include="Silk.NET.Windowing" Version="2.23.0" />
   </ItemGroup>
 
-  <!-- FFmpeg (LGPL) for SceAvPlayer movies and SceAudiodec MP3/AAC; loaded at runtime from the ffmpeg folder -->
-  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <None Include="..\..\third_party\ffmpeg\win-x64\*.dll;..\..\third_party\ffmpeg\win-x64\*.txt" Link="ffmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- FFmpeg (LGPL) for SceAvPlayer movies and SceAudiodec MP3/AAC: downloaded per platform at build time -->
+  <Import Project="..\..\build\FFmpeg.targets" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

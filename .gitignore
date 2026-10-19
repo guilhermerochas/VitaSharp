@@ -481,3 +481,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# FFmpeg libraries downloaded at build time (build/FFmpeg.targets)
+third_party/ffmpeg/*/
+third_party/ffmpeg/.download/
