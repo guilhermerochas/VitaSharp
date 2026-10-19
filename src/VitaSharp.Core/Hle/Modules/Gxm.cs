@@ -1808,7 +1808,7 @@ public sealed class Gxm : HleModule
     [Hle] uint sceGxmTextureGetUAddrModeSafe(uint tex) => IsStrided(tex) ? 2u : (GuestMemory.R32(tex) >> 6) & 7;
     [Hle] uint sceGxmTextureGetVAddrModeSafe(uint tex) => IsStrided(tex) ? 2u : (GuestMemory.R32(tex) >> 3) & 7;
     [Hle] int sceGxmTextureSetLodBias(uint tex, uint bias) => IsStrided(tex) ? 0 : SetBits(tex, 21, 6, bias);
-    [Hle] int sceGxmTextureSetLodMin(uint tex, uint lodMin) { if (IsStrided(tex)) return 0; int r = SetBits(tex + 8, 0, 2, lodMin & 3); return r != 0 ? r : SetBits(tex + 12, 26, 2, lodMin >> 2); }
+    [Hle] int sceGxmTextureSetLodMin(uint tex, uint lodMin) { if (IsStrided(tex)) return 0; int r = SetBits(tex + 8, 0, 2, (lodMin >> 2) & 3); return r != 0 ? r : SetBits(tex + 12, 26, 2, lodMin & 3); }
     [Hle] uint sceGxmTextureGetLodMin(uint tex) => IsStrided(tex) ? 0 : GxmTextureDesc.Read(tex).LodMin;
     [Hle] int sceGxmTextureSetGammaMode(uint tex, uint mode) => SetBits(tex, 27, 2, mode >> 27);
     [Hle] uint sceGxmTextureGetGammaMode(uint tex) => ((GuestMemory.R32(tex) >> 27) & 3) << 27;
