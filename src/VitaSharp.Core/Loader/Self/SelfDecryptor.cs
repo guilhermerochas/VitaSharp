@@ -28,6 +28,29 @@ public static class SelfDecryptor
     public static bool IsSelf(ReadOnlySpan<byte> data) => data.Length >= 4 && U32LE(data, 0) == SceMagic;
     public static bool IsElf(ReadOnlySpan<byte> data) => data.Length >= 4 && U32LE(data, 0) == 0x464C457F;
 
+    /// <summary>
+    /// True when <paramref name="header"/> (the start of a file, at least its SCE header) is an NPDRM application
+    /// SELF with encrypted segments, i.e. it can only be loaded with the title's klicensee (work.bin / .rif).
+    /// Plain ELFs and fake SELFs (homebrew, already decrypted dumps) return false.
+    /// </summary>
+    public static bool RequiresKlicensee(ReadOnlySpan<byte> header)
+    {
+        if (!IsSelf(header) || header.Length < 32 + 80) return false;
+        const int sh = 32;
+        long appinfoOff = (long)U64LE(header, sh + 24), elfOff = (long)U64LE(header, sh + 32);
+        long phdrOff = (long)U64LE(header, sh + 40), segInfoOff = (long)U64LE(header, sh + 56);
+        if (appinfoOff + 16 > header.Length || elfOff + 52 > header.Length) return false;
+        if ((SelfType)U32LE(header, (int)appinfoOff + 12) != SelfType.APP) return false;
+        ushort phnum = U16LE(header, (int)elfOff + 44);
+        for (int i = 0; i < phnum; i++)
+        {
+            long s = segInfoOff + i * 32;
+            if (s + 32 > header.Length || phdrOff + (i + 1) * 32 > header.Length) return false;
+            if (U32LE(header, (int)s + 24) != 2) return true; // not plaintext
+        }
+        return false;
+    }
+
     /// <summary>Returns a plain ELF. Input may already be an ELF.</summary>
     public static byte[] ToElf(byte[] file, byte[]? klicensee)
     {

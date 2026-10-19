@@ -33,6 +33,10 @@ public sealed class MainWindow : Window
     readonly Border _logPanel;
     readonly StackPanel _details;
     readonly TextBlock _emptyHint;
+    readonly ProgressBar _progress;
+    readonly Button _cancelInstall;
+    readonly List<Button> _installButtons = new();
+    CancellationTokenSource? _installCts;
     Process? _running;
     GameEntry? _runningGame;
 
@@ -54,8 +58,11 @@ public sealed class MainWindow : Window
         toolbar.Children.Add(brand);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(_search);
-        actions.Children.Add(MakeButton("Install PKG…", InstallPkg));
-        actions.Children.Add(MakeButton("Add game folder…", AddFolder));
+        foreach (var b in new[] { MakeButton("Install VPK…", InstallVpk), MakeButton("Install PKG…", InstallPkg), MakeButton("Add game folder…", AddFolder) })
+        {
+            _installButtons.Add(b);
+            actions.Children.Add(b);
+        }
         actions.Children.Add(MakeButton("Refresh", () => { Refresh(); return Task.CompletedTask; }));
         actions.Children.Add(MakeButton("Settings", OpenSettings));
         DockPanel.SetDock(actions, Dock.Right);
@@ -73,7 +80,7 @@ public sealed class MainWindow : Window
 
         _emptyHint = new TextBlock
         {
-            Text = "No games installed yet.\nUse \"Install PKG…\" (package + work.bin/.rif license) or \"Add game folder…\" (a decrypted game folder).",
+            Text = "No games installed yet.\nUse \"Install VPK…\" (or drop a .vpk here), \"Install PKG…\" (package + work.bin/.rif license) or \"Add game folder…\" (a decrypted game folder).",
             Foreground = Muted, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24),
         };
@@ -95,9 +102,16 @@ public sealed class MainWindow : Window
             _logPanel.IsVisible = _settings.ShowLog;
             _settings.Save();
         };
+        _progress = new ProgressBar { Width = 220, Minimum = 0, Maximum = 1, IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        _cancelInstall = new Button { Content = "Cancel", IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
+        _cancelInstall.Click += (_, _) => _installCts?.Cancel();
         var statusBar = new DockPanel { Background = Panel };
         DockPanel.SetDock(logToggle, Dock.Right);
+        DockPanel.SetDock(_cancelInstall, Dock.Right);
+        DockPanel.SetDock(_progress, Dock.Right);
         statusBar.Children.Add(logToggle);
+        statusBar.Children.Add(_cancelInstall);
+        statusBar.Children.Add(_progress);
         statusBar.Children.Add(_status);
 
         var body = new DockPanel();
@@ -312,10 +326,109 @@ public sealed class MainWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         try { _running?.Kill(true); } catch (InvalidOperationException) { }
+        _installCts?.Cancel();
         base.OnClosing(e);
     }
 
     // ------------------------------------------------------------------ installing
+
+    async Task InstallVpk()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select a PS Vita VPK or content zip",
+            AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType("PS Vita VPK / zip") { Patterns = ["*.vpk", "*.zip"] }, FilePickerFileTypes.All],
+        });
+        foreach (var f in files)
+            if (f.TryGetLocalPath() is { } path && !await InstallVpkFile(path)) break;
+    }
+
+    /// <summary>Installs one archive; returns false when it failed or was cancelled.</summary>
+    async Task<bool> InstallVpkFile(string archive)
+    {
+        if (_installCts != null) return false;
+        string name = Path.GetFileName(archive);
+        var cts = new CancellationTokenSource();
+        _installCts = cts;
+        SetInstalling(true);
+        SetStatus($"Installing {name}…");
+        AppendLog($"> Installing {name}");
+        int lastPermille = -1;
+        try
+        {
+            var results = await Task.Run(() => VpkInstaller.Install(archive, Program.Ux0, new VpkInstallOptions
+            {
+                Log = msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
+                Progress = p =>
+                {
+                    int permille = (int)(p.Fraction * 1000);
+                    if (permille == lastPermille) return;
+                    lastPermille = permille;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        _progress.Value = p.Fraction;
+                        SetStatus($"Installing {name}… {p.Fraction:P0}");
+                    });
+                },
+                // runs on the install thread: show the dialog on the UI thread and wait for the answer
+                ConfirmOverwrite = c => Dispatcher.UIThread.InvokeAsync(() => Confirm(c.Kind switch
+                {
+                    VpkContentKind.Patch => $"An update for {c.TitleId} is already installed. Replace it with {(c.Version.Length > 0 ? "version " + c.Version : "this one")}?",
+                    VpkContentKind.AddCont => $"This add-on for {c.TitleId} is already installed. Replace it?",
+                    _ => $"\"{c.Title}\" ({c.TitleId}) is already installed. Replace it? Save data is kept.",
+                })).GetAwaiter().GetResult(),
+            }, cts.Token), cts.Token);
+
+            foreach (var r in results)
+                AppendLog(r.Installed ? $"Installed {r.TitleId} \"{r.Content.Title}\" ({r.Content.Kind}) -> {r.InstallPath}"
+                                      : $"Skipped {r.TitleId} ({r.Content.Kind}): already installed");
+            Refresh();
+            var installed = results.Where(r => r.Installed).ToList();
+            if (installed.Count == 0)
+            {
+                SetStatus($"Nothing installed from {name}.");
+                return true;
+            }
+            var app = installed.FirstOrDefault(r => r.Content.Kind == VpkContentKind.App) ?? installed[0];
+            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == app.TitleId) ?? _list.SelectedItem;
+            SetStatus(string.Join("  ", installed.Select(r => r.Content.Kind switch
+            {
+                VpkContentKind.Patch => $"Installed update for {r.TitleId}{(r.Content.Version.Length > 0 ? $" (v{r.Content.Version})" : "")}.",
+                VpkContentKind.AddCont => $"Installed add-on for {r.TitleId}.",
+                _ => $"{(r.Replaced ? "Reinstalled" : "Installed")} {r.Content.Title}.",
+            })));
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog("Install cancelled.");
+            SetStatus($"Install of {name} cancelled.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            AppendLog("Install failed: " + e.Message);
+            SetStatus("Install failed.");
+            await ShowMessage(e is VpkLicenseException ? "License required" : "Install failed",
+                $"{name} could not be installed.\n\n{e.Message}");
+            return false;
+        }
+        finally
+        {
+            _installCts = null;
+            cts.Dispose();
+            SetInstalling(false);
+        }
+    }
+
+    void SetInstalling(bool installing)
+    {
+        _progress.Value = 0;
+        _progress.IsVisible = installing;
+        _cancelInstall.IsVisible = installing;
+        foreach (var b in _installButtons) b.IsEnabled = !installing;
+    }
 
     async Task InstallPkg()
     {
@@ -409,7 +522,13 @@ public sealed class MainWindow : Window
         var items = e.Data.GetFiles()?.Select(f => f.TryGetLocalPath()).Where(p => p != null).Cast<string>().ToList() ?? [];
         var pkg = items.FirstOrDefault(p => p.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase));
         var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
-        if (pkg != null && lic != null) await InstallPkgFiles(pkg, lic);
+        var archives = items.Where(p => File.Exists(p) && (p.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))).ToList();
+        if (archives.Count > 0)
+        {
+            foreach (var a in archives)
+                if (!await InstallVpkFile(a)) break;
+        }
+        else if (pkg != null && lic != null) await InstallPkgFiles(pkg, lic);
         else if (pkg != null) SetStatus("Drop the .pkg together with its work.bin/.rif license, or use Install PKG…");
         else foreach (var dir in items.Where(Directory.Exists)) await AddFolderPath(dir);
     }
@@ -468,6 +587,18 @@ public sealed class MainWindow : Window
             dlg.Close();
         };
         cancel.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+    }
+
+    async Task ShowMessage(string title, string message)
+    {
+        var ok = new Button { Content = "OK", Background = Accent, Foreground = Brushes.White, IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
+        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeight.SemiBold });
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(ok);
+        var dlg = new Window { Title = "VitaSharp", Width = 460, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
+        ok.Click += (_, _) => dlg.Close();
         await dlg.ShowDialog(this);
     }
 
