@@ -87,7 +87,8 @@ internal static unsafe class Vfp
                 6 => op ? MathF.FusedMultiplyAdd(-a, b, acc) : MathF.FusedMultiplyAdd(a, b, acc),
                 _ => 0,
             };
-            Sf(s, d) = FixF(s, r);
+            // VNMUL negates the rounded product, after any default-NaN substitution (so its NaN is 0xFFC00000)
+            Sf(s, d) = opc1 == 2 && op ? -FixF(s, a * b) : FixF(s, r);
         }
         else
         {
@@ -104,7 +105,7 @@ internal static unsafe class Vfp
                 6 => op ? Math.FusedMultiplyAdd(-a, b, acc) : Math.FusedMultiplyAdd(a, b, acc),
                 _ => 0,
             };
-            Df(s, d) = FixD(s, r);
+            Df(s, d) = opc1 == 2 && op ? -FixD(s, a * b) : FixD(s, r);
         }
     }
 
@@ -159,13 +160,14 @@ internal static unsafe class Vfp
                 int shift = b7 ? 16 : 0;
                 if (opc2 == 3) // single -> half
                 {
-                    ushort h = BitConverter.HalfToUInt16Bits((Half)Sf(s, m));
+                    float f = InF(s, Sf(s, m));
+                    ushort h = float.IsNaN(f) && (s->Fpscr & FpscrDN) != 0 ? (ushort)0x7E00 : BitConverter.HalfToUInt16Bits((Half)f);
                     Su(s, d) = (Su(s, d) & ~(0xFFFFu << shift)) | ((uint)h << shift);
                 }
                 else
                 {
                     Half h = BitConverter.UInt16BitsToHalf((ushort)(Su(s, m) >> shift));
-                    Sf(s, d) = (float)h;
+                    Sf(s, d) = FixF(s, (float)h);
                 }
                 return;
             }
@@ -222,39 +224,31 @@ internal static unsafe class Vfp
         int imm = (int)(((ins & 0xF) << 1) | Bit(ins, 5));
         int frac = size - imm;
         double scale = Math.Pow(2, frac);
-        if (dbl)
+        if (toFixed)
+        {
+            // round towards zero and saturate to the fixed-point size, then extend to the register (ARM ARM: the
+            // result is sign- or zero-extended to 32 bits, or to 64 for a double register)
+            double v = Math.Truncate((dbl ? InD(s, Df(s, DoubleD(ins))) : InF(s, Sf(s, SingleD(ins)))) * scale);
+            long r;
+            if (double.IsNaN(v)) r = 0;
+            else if (unsigned) r = (long)Math.Clamp(v, 0, size == 32 ? uint.MaxValue : ushort.MaxValue);
+            else r = (long)Math.Clamp(v, size == 32 ? int.MinValue : short.MinValue, size == 32 ? int.MaxValue : short.MaxValue);
+            if (dbl) Du(s, DoubleD(ins)) = (ulong)r;
+            else Su(s, SingleD(ins)) = (uint)r;
+        }
+        else if (dbl)
         {
             uint d = DoubleD(ins);
-            if (toFixed)
-            {
-                double v = Math.Truncate(Df(s, d) * scale);
-                ulong r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(ushort)(short)Math.Clamp(v, -32768, 32767));
-                if (double.IsNaN(v)) r = 0;
-                Du(s, d) = r;
-            }
-            else
-            {
-                ulong raw = Du(s, d);
-                double v = size == 32 ? (unsigned ? (uint)raw : (int)(uint)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
-                Df(s, d) = v / scale;
-            }
+            ulong raw = Du(s, d);
+            double v = size == 32 ? (unsigned ? (uint)raw : (int)(uint)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
+            Df(s, d) = v / scale;
         }
         else
         {
             uint d = SingleD(ins);
-            if (toFixed)
-            {
-                double v = Math.Truncate(Sf(s, d) * scale);
-                uint r = size == 32 ? (unsigned ? ToU32(v) : (uint)ToS32(v)) : (unsigned ? (uint)Math.Clamp(v, 0, 65535) : (uint)(ushort)(short)Math.Clamp(v, -32768, 32767));
-                if (double.IsNaN(v)) r = 0;
-                Su(s, d) = r;
-            }
-            else
-            {
-                uint raw = Su(s, d);
-                double v = size == 32 ? (unsigned ? raw : (int)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
-                Sf(s, d) = (float)(v / scale);
-            }
+            uint raw = Su(s, d);
+            double v = size == 32 ? (unsigned ? raw : (int)raw) : (unsigned ? (ushort)raw : (short)(ushort)raw);
+            Sf(s, d) = (float)(v / scale);
         }
     }
 

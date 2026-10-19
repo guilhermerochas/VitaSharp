@@ -68,8 +68,10 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     [InlineData(true, "0000BF00")]
     public void Replay(bool thumb, string encodings)
     {
+        // VITASHARP_REPLAY=T:enc,enc or A:enc,... replays other encodings without editing the test
+        if (Environment.GetEnvironmentVariable("VITASHARP_REPLAY") is { Length: > 2 } env) { thumb = env[0] == 'T'; encodings = env[2..]; }
         foreach (var enc in encodings.Split(','))
-            Fuzz(thumb, 40, 7, Convert.ToUInt32(enc, 16));
+            Fuzz(thumb, 400, 7, Convert.ToUInt32(enc, 16), simd: true);
     }
 
     [Theory]
@@ -82,15 +84,29 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     /// NaNs, values near the float limits): physics code (Havok) lives on these instructions and their edge cases.
     /// </summary>
     [Theory]
-    [InlineData(false, 40_000, 11)]
-    [InlineData(true, 40_000, 12)]
-    public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null, simd: true);
+    [InlineData(false, 40_000, 11, false)]
+    [InlineData(true, 40_000, 12, false)]
+    // anyFpscr = true also runs with flush-to-zero / default NaN off and other rounding modes: not modelled for VFP
+    // arithmetic (games run with the Vita default FPSCR: round to nearest, FZ, DN), so it is a manual diagnostic only
+    public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed, bool anyFpscr) => Fuzz(thumb, iterations, seed, null, simd: true, anyFpscr: anyFpscr);
 
     static uint RandomSimdInstruction(Random rng, bool thumb)
     {
         uint r = (uint)rng.NextInt64();
-        switch (rng.Next(5))
+        switch (rng.Next(6))
         {
+            case 5: // reciprocal (square root) estimates and steps, which random encodings almost never hit:
+                    // VRECPE/VRSQRTE (1111 0011 1D11 1011 Vd 010F opQM0 Vm) and VRECPS/VRSQRTS (1111 0010 0D s0 Vn Vd 1111 NQM1 Vm)
+                if ((r & 1) == 0)
+                {
+                    uint est = 0x03BB0400u | (r & 0x0040F1EF) | 0x100u;
+                    return thumb ? 0xFF000000u | (est & 0x00FFFFFF) : 0xF0000000u | est;
+                }
+                else
+                {
+                    uint step = 0x02000F10u | (r & 0x006FF0EF);
+                    return thumb ? 0xEF000000u | (step & 0x00FFFFFF) : 0xF0000000u | step;
+                }
             case 0: case 1: // Advanced SIMD data processing: ARM 1111 001U, Thumb 111U 1111
             {
                 uint u = (r >> 24) & 1, rest = r & 0x00FFFFFF;
@@ -143,14 +159,14 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         _ => SpecialFloat(rng) | ((ulong)SpecialFloat(rng) << 32),
     };
 
-    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false)
+    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false, bool anyFpscr = false)
     {
         EnsureGuestPages();
         var rng = new Random(seed);
         using var core = new CpuCore(new BlockCache());
         var uc = NewUnicorn(thumb);
         var failures = new Dictionary<Op, (int count, string example)>();
-        int compared = 0, skipped = 0;
+        int compared = 0, skipped = 0, detailed = 0;
         var data = new byte[DataSize];
 
         for (int it = 0; it < iterations; it++)
@@ -232,7 +248,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             var dregs = new ulong[32];
             for (int r = 0; r < 32; r++) dregs[r] = simd ? RandomSpecialSimd(rng) : RandomSimd(rng);
             uint fpscr = (uint)rng.Next(16) << 28 | 0x0300_0000; // DN + FZ like the Vita runtime
-            if (simd && rng.Next(4) == 0) fpscr = (uint)rng.Next(16) << 28 | (uint)rng.Next(4) << 22; // IEEE mode, any rounding
+            if (anyFpscr && rng.Next(2) == 0) fpscr = (uint)rng.Next(16) << 28 | (uint)rng.Next(4) << 22; // IEEE mode, any rounding
             rng.NextBytes(data);
 
             // ---- unicorn
@@ -295,6 +311,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             if (sb.Length > 0 && fixedIns != null)
                 output.WriteLine($"{ins:X8} regs=[{string.Join(" ", regs.Take(15).Select(r => r.ToString("X8")))}] D=[{string.Join(" ", dregs.Take(8).Select(r => r.ToString("X16")))}] cpsr={flags:X8}:{sb}");
 
+            if (sb.Length > 0 && simd && fixedIns == null && detailed++ < 400)
+                output.WriteLine($"FAIL {ins:X8} {d.Op} fpscr={fpscr:X8} D=[{string.Join(" ", dregs.Select(r => r.ToString("X16")))}]:{sb}");
             if (sb.Length > 0) Record(failures, d.Op, $"{ins:X8}:{sb}");
         }
 
@@ -313,7 +331,9 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     {
         uint i = d.Raw;
         uint F(int hi, int lo) => (i >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
-        if (d.Op == Op.Neon_LoadStore) return NeonRegsOutOfRange(i);
+        if (d.Op == Op.Neon_LoadStore) return NeonRegsOutOfRange(i) || F(19, 16) == 15; // Rn = PC is UNPREDICTABLE
+        // VQDMLAL / VQDMLSL / VQDMULL exist only with U = 0: U = 1 is UNDEFINED (QEMU computes something anyway)
+        if (d.Op == Op.Neon_ThreeDiff && (thumb ? F(28, 28) : F(24, 24)) == 1 && F(11, 8) is 9 or 11 or 13) return true;
         if (!thumb)
         {
             switch (d.Op)

@@ -94,14 +94,14 @@ internal static unsafe partial class Neon
 
     internal static float FMax(float a, float b)
     {
-        if (float.IsNaN(a) || float.IsNaN(b)) return float.NaN;
+        if (float.IsNaN(a) || float.IsNaN(b)) return BitConverter.UInt32BitsToSingle(0x7FC00000); // Advanced SIMD: always the default NaN
         if (a == 0 && b == 0) return BitConverter.SingleToUInt32Bits(a) == 0 ? a : b;
         return a > b ? a : b;
     }
 
     internal static float FMin(float a, float b)
     {
-        if (float.IsNaN(a) || float.IsNaN(b)) return float.NaN;
+        if (float.IsNaN(a) || float.IsNaN(b)) return BitConverter.UInt32BitsToSingle(0x7FC00000); // Advanced SIMD: always the default NaN
         if (a == 0 && b == 0) return BitConverter.SingleToUInt32Bits(a) != 0 ? a : b;
         return a < b ? a : b;
     }
@@ -149,9 +149,11 @@ internal static unsafe partial class Neon
         if (exp == 0) return BitConverter.UInt32BitsToSingle((bits & 0x80000000) | 0x7F800000);
         if ((bits & 0x80000000) != 0) return BitConverter.UInt32BitsToSingle(0x7FC00000);
         if (float.IsPositiveInfinity(a)) return 0f;
+        // ARM ARM FPRSqrtEstimate: an even exponent scales the operand into [0.5, 1.0), an odd one into [0.25, 0.5)
+        // (e.g. 1.0 has exponent 127: scaled 0.25, estimate 1.996 -> 0.998). Reversed, every estimate is off by sqrt(2).
         double scaled = (exp & 1) == 0
-            ? BitConverter.UInt64BitsToDouble(0x3FD0000000000000ul | ((ulong)(bits & 0x7FFFFF) << 29))
-            : BitConverter.UInt64BitsToDouble(0x3FE0000000000000ul | ((ulong)(bits & 0x7FFFFF) << 29));
+            ? BitConverter.UInt64BitsToDouble(0x3FE0000000000000ul | ((ulong)(bits & 0x7FFFFF) << 29))
+            : BitConverter.UInt64BitsToDouble(0x3FD0000000000000ul | ((ulong)(bits & 0x7FFFFF) << 29));
         int resultExp = (380 - exp) / 2;
         double est = RecipSqrtEstimateCore(scaled);
         ulong estBits = BitConverter.DoubleToUInt64Bits(est);
