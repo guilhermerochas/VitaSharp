@@ -1,29 +1,94 @@
 using System.Collections.Concurrent;
-using System.Reflection;
-using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
+using VitaSharp.Core.Cpu.Backends;
 
 namespace VitaSharp.Core.Cpu;
 
 public unsafe delegate void JitBlockFn(CpuState* s);
 
 /// <summary>
-/// Block JIT: emits one IL method per guest block that calls each instruction handler with the
-/// instruction word and address as constants. RyuJIT inlines the handlers and folds the decoding,
-/// turning the block into straight-line native code. Compilation runs on background threads.
+/// The CPU backend chain. Blocks start interpreted; once a block has executed enough instructions for the next backend
+/// in <see cref="Chain"/> it is queued for compilation on background workers. A backend that cannot compile the block
+/// returns null and the block moves on to the following backend (or stays interpreted).
+/// Selection: --cpu=native|il|interp, VITASHARP_CPU, the launcher setting; default = best supported on the host.
 /// </summary>
 public static unsafe class Jit
 {
-    static readonly MethodInfo CondPassed = typeof(Arm).GetMethod(nameof(Arm.CondPassed), BindingFlags.Static | BindingFlags.Public)!;
-    const int PcOffset = 15 * 4; // offsetof(CpuState, R[15])
+    /// <summary>Every backend known to this build, best first (the interpreter is implicit and always last).</summary>
+    public static IReadOnlyList<IBlockCompiler> All { get; } = [IlJitCompiler.Instance];
+
+    /// <summary>Active backends in the order blocks are offered to them.</summary>
+    public static IBlockCompiler[] Chain
+    {
+        get => _chain;
+        private set { _chain = value; InitialThreshold = value.Length > 0 ? value[0].HotInstructions : long.MaxValue; }
+    }
+    static IBlockCompiler[] _chain = [];
+
+    /// <summary>Threshold of the first backend: new blocks start with it (<see cref="Block.HotAt"/>).</summary>
+    public static long InitialThreshold { get; private set; } = long.MaxValue;
+
+    /// <summary>Name of the selected mode: a backend name, or "interp".</summary>
+    public static string Mode { get; private set; } = "interp";
+
+    static Jit() => Select(null);
+
+    /// <summary>False runs everything in the interpreter (--no-jit, lockstep debugging).</summary>
+    public static bool Enabled { get; set; } = true;
+
+    /// <summary>Threshold of the IL backend (--jit-threshold), kept for compatibility.</summary>
+    public static long HotInstructions
+    {
+        get => IlJitCompiler.Instance.HotInstructions;
+        set { IlJitCompiler.Instance.HotInstructions = value; Chain = Chain; }
+    }
+
+    /// <summary>A block is never compiled before this many executions (whatever its length).</summary>
+    public const int MinExecutions = 64;
+
+    static IBlockCompiler[] DefaultChain() => All.Where(b => b.IsSupported).ToArray();
 
     /// <summary>
-    /// A block is compiled once it has executed this many guest instructions in total (executions x length): a
-    /// DynamicMethod costs ~1 ms to create and JIT, so only code that will run millions of instructions pays it back.
+    /// Selects the backend: "native", "il" or "interp" (null/""/"auto" = best supported). A backend falls back to the
+    /// ones after it in <see cref="All"/> for blocks it cannot compile. Returns false for an unknown or unsupported name.
     /// </summary>
-    public static long HotInstructions { get; set; } = 400_000;
-    public static bool Enabled { get; set; } = true;
-    public static long CompiledBlocks, CompiledInstructions, CompileTicks;
+    public static bool Select(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            Chain = DefaultChain();
+            Mode = Chain.Length > 0 ? Chain[0].Name : "interp";
+            return true;
+        }
+        if (name.Equals("interp", StringComparison.OrdinalIgnoreCase) || name.Equals("interpreter", StringComparison.OrdinalIgnoreCase))
+        {
+            Chain = [];
+            Mode = "interp";
+            return true;
+        }
+        int idx = -1;
+        for (int i = 0; i < All.Count; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase)) idx = i;
+        if (idx < 0 || !All[idx].IsSupported) return false;
+        Chain = All.Skip(idx).Where(b => b.IsSupported).ToArray();
+        Mode = All[idx].Name;
+        return true;
+    }
+
+    /// <summary>Applies VITASHARP_CPU when set (called once at startup; the command line overrides it).</summary>
+    public static void SelectFromEnvironment()
+    {
+        if (Environment.GetEnvironmentVariable("VITASHARP_CPU") is { Length: > 0 } env && !Select(env))
+            Console.Error.WriteLine($"VITASHARP_CPU={env}: unknown or unsupported CPU backend, using {Mode}");
+    }
+
+    /// <summary>Instructions the block must have executed before the next backend in the chain takes it.</summary>
+    public static long NextThreshold(Block b)
+    {
+        var chain = Chain;
+        return b.Tier < chain.Length ? chain[b.Tier].HotInstructions : long.MaxValue;
+    }
+
+    /// <summary>Legacy totals (all backends).</summary>
+    public static long CompiledBlocks => Chain.Sum(c => c.Stats.Blocks);
 
     static readonly BlockingCollection<Block> Queue = new(new ConcurrentQueue<Block>());
     static int _workersStarted;
@@ -55,52 +120,40 @@ public static unsafe class Jit
         }
     }
 
+    /// <summary>Offers the block to the backend at its tier; on rejection it moves to the next tier.</summary>
     public static void Compile(Block b)
     {
+        var chain = Chain;
+        if (b.Tier >= chain.Length) { b.JitState = 3; return; }
+        var backend = chain[b.Tier];
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var dm = new DynamicMethod($"blk_{b.Start:X8}{(b.Thumb ? "t" : "a")}", typeof(void), [typeof(CpuState*)], typeof(Jit).Module, skipVisibility: true);
-        var il = dm.GetILGenerator();
-        var insts = b.Insts;
-        for (int i = 0; i < insts.Length; i++)
+        var cb = backend.Compile(b);
+        long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        var st = backend.Stats;
+        Interlocked.Add(ref st.Ticks, dt);
+        if (cb == null)
         {
-            ref readonly var d = ref insts[i];
-            bool last = i == insts.Length - 1;
-            if (d.EndsBlock || last) EmitStorePc(il, d.Address + d.Size);
-            if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop) continue;
-
-            Label skip = default;
-            bool cond = (d.Flags & InstFlags.Conditional) != 0;
-            if (cond)
-            {
-                skip = il.DefineLabel();
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Ldc_I4, (int)d.Cond);
-                il.Emit(OpCodes.Call, CondPassed);
-                il.Emit(OpCodes.Brfalse, skip);
-            }
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldc_I4, (int)d.Raw);
-            il.Emit(OpCodes.Ldc_I4, (int)d.Address);
-            il.Emit(OpCodes.Call, HandlerTable.Methods[(int)d.Op]);
-            if (cond) il.MarkLabel(skip);
+            Interlocked.Increment(ref st.Rejected);
+            b.Tier++;
+            b.HotAt = NextThreshold(b);
+            b.JitState = b.Tier < chain.Length ? 0 : 3; // the next backend takes it once the block reaches its threshold
+            return;
         }
-        il.Emit(OpCodes.Ret);
-
-        var fn = dm.CreateDelegate<JitBlockFn>();
-        RuntimeHelpers.PrepareDelegate(fn); // compile to native here, off the guest thread
-        b.Compiled = fn;
-        b.JitState = 2;
-        Interlocked.Increment(ref CompiledBlocks);
-        Interlocked.Add(ref CompiledInstructions, insts.Length);
-        Interlocked.Add(ref CompileTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        Install(b, cb);
+        Interlocked.Increment(ref st.Blocks);
+        Interlocked.Add(ref st.Instructions, b.Insts.Length);
     }
 
-    static void EmitStorePc(ILGenerator il, uint pc)
+    static void Install(Block b, CompiledBlock cb)
     {
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldc_I4, PcOffset);
-        il.Emit(OpCodes.Add);
-        il.Emit(OpCodes.Ldc_I4, (int)pc);
-        il.Emit(OpCodes.Stind_I4);
+        b.Code = cb;
+        if (cb.Managed != null) b.Compiled = cb.Managed;
+        b.JitState = 2;
     }
+
+    /// <summary>One line per active backend for logs.</summary>
+    public static string Describe() =>
+        Chain.Length == 0 ? "CPU backend: interpreter only"
+            : $"CPU backend: {Mode} (chain {string.Join(" > ", Chain.Select(c => c.Name))} > interp)" +
+              string.Concat(Chain.Select(c => $"; {c.Name}: {c.Stats}"));
 }

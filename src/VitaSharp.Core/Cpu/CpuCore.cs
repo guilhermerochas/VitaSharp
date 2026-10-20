@@ -143,7 +143,7 @@ public sealed unsafe class CpuCore : IDisposable
             else
             {
                 Interpret(s, b);
-                if (++b.ExecCount >= 64 && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= Jit.HotInstructions) Jit.Enqueue(b);
+                if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt) Jit.Enqueue(b);
             }
             BlocksExecuted++;
             InstructionsExecuted += b.Insts.Length;

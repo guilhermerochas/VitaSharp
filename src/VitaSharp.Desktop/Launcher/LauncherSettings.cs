@@ -12,6 +12,8 @@ public sealed class LauncherSettings
     public bool ShowLog { get; set; }
     /// <summary>Webcam used for the Vita cameras: "" = first device, "none" = no webcam (grey frames), or a device name.</summary>
     public string Camera { get; set; } = "";
+    /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
+    public string CpuBackend { get; set; } = "";
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -40,5 +42,6 @@ public sealed class LauncherSettings
         if (!VSync) yield return "--no-vsync";
         if (Validation) yield return "--validation";
         if (!string.IsNullOrWhiteSpace(Camera)) yield return $"--camera={Camera}";
+        if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
     }
 }

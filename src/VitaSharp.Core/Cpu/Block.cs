@@ -13,8 +13,15 @@ public sealed unsafe class Block
     /// <summary>Approximate hardware cost of the block (see <see cref="BlockBuilder.CycleCost"/>).</summary>
     public long Cycles;
     public int ExecCount;
-    public volatile int JitState; // 0 = interpreted, 1 = queued, 2 = compiled
+    public volatile int JitState; // 0 = interpreted, 1 = queued, 2 = compiled, 3 = no backend takes it
+    /// <summary>Index in <see cref="Jit.Chain"/> of the next backend to offer the block to.</summary>
+    public int Tier;
+    /// <summary>Executed instructions (ExecCount x length) at which the backend at <see cref="Tier"/> takes the block.</summary>
+    public long HotAt = long.MaxValue;
+    /// <summary>Managed code of the block (IL backend).</summary>
     public JitBlockFn? Compiled;
+    /// <summary>Whatever backend compiled the block.</summary>
+    public Backends.CompiledBlock? Code;
 
     public override string ToString() => $"Block {Start:X8}-{End:X8} {(Thumb ? "T" : "A")} n={Insts.Length}";
 }
@@ -74,7 +81,7 @@ public static unsafe class BlockBuilder
         var insts = list.ToArray();
         long cycles = 0;
         foreach (ref var d in insts.AsSpan()) cycles += CycleCost(in d);
-        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = cycles };
+        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = cycles, HotAt = Jit.InitialThreshold };
     }
 
     /// <summary>

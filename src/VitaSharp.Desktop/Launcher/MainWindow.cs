@@ -566,6 +566,16 @@ public sealed class MainWindow : Window
             ItemsSource = cameraLabels, Width = 260,
             SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(_settings.Camera, StringComparison.OrdinalIgnoreCase))),
         };
+        // CPU backend: "" = best supported on this PC, else --cpu=native|il|interp
+        string[] cpuValues = ["", "native", "il", "interp"];
+        var cpu = new ComboBox
+        {
+            ItemsSource = new[] { "Auto (best for this PC)", "Native JIT (x64 machine code)", "IL JIT (.NET DynamicMethod)", "Interpreter (slowest, debugging)" },
+            Width = 260, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(_settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
+        };
+        var cpuRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        cpuRow.Children.Add(new TextBlock { Text = "CPU", VerticalAlignment = VerticalAlignment.Center });
+        cpuRow.Children.Add(cpu);
         var cameraRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         cameraRow.Children.Add(new TextBlock { Text = "Camera", VerticalAlignment = VerticalAlignment.Center });
         cameraRow.Children.Add(camera);
@@ -587,6 +597,7 @@ public sealed class MainWindow : Window
         panel.Children.Add(vsync);
         panel.Children.Add(validation);
         panel.Children.Add(cameraRow);
+        panel.Children.Add(cpuRow);
         panel.Children.Add(keys);
         panel.Children.Add(new TextBlock { Text = "Data folder: " + Program.DataRoot, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(buttons);
@@ -598,6 +609,7 @@ public sealed class MainWindow : Window
             _settings.Validation = validation.IsChecked == true;
             _settings.Scale = scale.SelectedIndex + 1;
             _settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
+            _settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
             _settings.Save();
             dlg.Close();
         };
