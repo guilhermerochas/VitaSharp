@@ -11,12 +11,19 @@ public sealed class ProcessMgr : HleModule
 
     public override void Initialize()
     {
-        Emu.Hle.RegisterVariable("__stack_chk_guard", () =>
+        // __stack_chk_guard, sceLibSspStackChkGuard (SceLibSsp) and SceKernelStackChkGuard all name the same guard word
+        uint StackChkGuard()
         {
-            _stackChkGuard = Mem.Alloc(0x1000, "__stack_chk_guard", MemoryRegion.Kernel);
-            GuestMemory.W32(_stackChkGuard, 0x0DEADBEE);
+            if (_stackChkGuard == 0)
+            {
+                _stackChkGuard = Mem.Alloc(0x1000, "__stack_chk_guard", MemoryRegion.Kernel);
+                GuestMemory.W32(_stackChkGuard, 0x0DEADBEE);
+            }
             return _stackChkGuard;
-        });
+        }
+        Emu.Hle.RegisterVariable("__stack_chk_guard", StackChkGuard);
+        Emu.Hle.RegisterVariable(0x1EA375E6u, StackChkGuard);
+        Emu.Hle.RegisterVariable(0x4458BCF3u, StackChkGuard);
         Emu.Hle.RegisterVariable("__sce_libcparam", () =>
         {
             uint pp = Emu.Linker.ProcessParam;
@@ -148,11 +155,20 @@ public sealed class ProcessMgr : HleModule
 
     // ------------------------------------------------------------------ stack protector & runtime traps
 
+    /// <summary>
+    /// __stack_chk_fail / sceLibSspStackChkFail (the same SceLibKernel entry on FW 3.60) and sceKernelStackChkFail: the
+    /// stack protector found a clobbered canary. The firmware executes bkpt and the process is killed (coredump), so
+    /// this logs the crashing thread and stops the emulated process. Only reached on real stack corruption.
+    /// </summary>
+    [Hle("__stack_chk_fail", Library = "SceLibKernel")]
+    [Hle("sceLibSspStackChkFail")]
     [Hle("sceKernelStackChkFail")]
     void __stack_chk_fail()
     {
-        Log.Error("__stack_chk_fail: stack smashing detected");
-        GuestThread.Current?.DumpState();
+        var t = GuestThread.Current;
+        Log.Error($"__stack_chk_fail: stack smashing detected in thread {t?.Name ?? "?"} (0x{t?.Uid ?? 0:X}); terminating the process");
+        t?.DumpState();
+        Emu.Stop();
         throw new GuestThreadExitException(-1, false);
     }
 
@@ -197,7 +213,25 @@ public sealed class ProcessMgr : HleModule
             n++;
         }
         numFrames.TrySet(Math.Min(n, cap));
-        return mode == 2 ? 0 : (int)n;
+        return (mode & BacktraceDontExceed) != 0 ? 0 : (int)n;
+    }
+
+    const int BacktraceKernel = 1, BacktraceDontExceed = 2; // SCE_KERNEL_BACKTRACE_MODE_*
+
+    /// <summary>
+    /// SceBacktrace _sceKernelBacktrace(thread_id, call_frame_buffer, num_bytes_buffer, const SceBacktraceArgs *args);
+    /// SceBacktraceArgs (0x10) = { SceUInt32 *num_frames, SceInt32 mode, reserved[2] }. The user-mode unwind is shared
+    /// with sceKernelBacktrace; kernel-mode stacks are not available to an application.
+    /// </summary>
+    [Hle]
+    int _sceKernelBacktrace(int thid, uint buf, uint bufBytes, uint args)
+    {
+        if (args == 0) return SceError.INVALID_ARGUMENT;
+        uint numFrames = GuestMemory.R32(args);
+        int mode = (int)GuestMemory.R32(args + 4);
+        if ((mode & BacktraceKernel) != 0) return SceError.INVALID_ARGUMENT;
+        if (buf != 0 && bufBytes < 8) return SceError.INVALID_ARGUMENT;
+        return sceKernelBacktrace(thid, buf, bufBytes, new Ptr<uint>(numFrames), mode);
     }
 
     [Hle]

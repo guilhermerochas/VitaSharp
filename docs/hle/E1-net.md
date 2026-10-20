@@ -568,7 +568,8 @@ Implementação: classe `CookieJar` em `Hle/Modules/Http.cs`. Validação: add `
 `http://h/x/y` → get de `http://h/x/z` devolve `a=1`; de `http://h/w` devolve `NOT_FOUND`; export→flush→import
 restaura.
 
-- [x] **Status:** família implementada (`CookieJar`), exceto `sceHttpGetCookieStats` (layout desconhecido, nenhum jogo instalado importa).
+- [x] **Status:** família implementada (`CookieJar`), exceto `sceHttpGetCookieStats` (layout desconhecido, nenhum jogo instalado importa). Passada p1: continua sem
+  registro; `SceHttpCookieStats` não existe em vita-headers e o Vita3K é `UNIMPLEMENTED()` sem argumentos.
 
 ### Família: epoll e espera não bloqueante do HTTP
 

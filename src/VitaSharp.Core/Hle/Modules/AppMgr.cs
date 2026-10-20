@@ -80,6 +80,140 @@ public sealed class AppMgr : HleModule
         return 0;
     }
 
+    /// <summary>psp2/appmgr.h: <c>int (int id, const char *titleid, char *mount_point)</c>; the syscall adds an ignored
+    /// opt. FW 3.60 accepts 104 (exact <c>ABCD12345_67</c> id), 106/107 (<c>ux0:psm/&lt;id&gt;/RO</c>, <c>/RW</c>) and
+    /// 110; the targets of 104 and 110 are not documented, so they are rejected like an unknown id.</summary>
+    [Hle]
+    [Hle("_sceAppMgrAppDataMountById")]
+    int sceAppMgrAppDataMountById(int id, uint titleId, uint mountPoint)
+    {
+        if (titleId == 0 || mountPoint == 0) return ERR_NULL_POINTER;
+        string tid = GuestMemory.ReadCString(titleId, 32);
+        string? rel = id switch
+        {
+            106 when tid.Length > 0 => $"ux0/psm/{tid}/RO",
+            107 when tid.Length > 0 => $"ux0/psm/{tid}/RW",
+            _ => null,
+        };
+        if (rel == null)
+        {
+            Log.WarnOnce($"appdatamountbyid-{id}", $"sceAppMgrAppDataMountById({id}, {tid}): unsupported id");
+            return ERR_PARAM;
+        }
+        if (!Directory.Exists(Path.Combine(Emu.Options.FsRoot, rel.Replace('/', Path.DirectorySeparatorChar)))) return ERR_NOT_FOUND;
+        return MountAlias($"am{id}", rel, mountPoint);
+    }
+
+    int _gameDataMounts;
+
+    /// <summary>psp2/appmgr.h: <c>int (const char *app_path, const char *patch_path, const char *rif_path, char
+    /// *mount_point)</c>. Installed applications are stored decrypted, so the app directory is mounted as is (a patch
+    /// directory is not overlaid; the rif is not checked).</summary>
+    [Hle]
+    int sceAppMgrGameDataMount(uint appPath, uint patchPath, uint rifPath, uint mountPoint)
+    {
+        if (appPath == 0 || mountPoint == 0) return ERR_NULL_POINTER;
+        string app = GuestMemory.ReadCString(appPath, 0x400);
+        var host = Emu.Vfs.Resolve(app);
+        if (host == null || !Directory.Exists(host)) return ERR_NOT_FOUND;
+        if (patchPath != 0 && GuestMemory.ReadCString(patchPath, 0x400) is { Length: > 0 } patch)
+            Log.Info($"sceAppMgrGameDataMount: patch {patch} not overlaid");
+        string dev = $"gd{Interlocked.Increment(ref _gameDataMounts)}";
+        Emu.Vfs.Mount(dev, host);
+        lock (_mounts) _mounts.Add(dev);
+        GuestMemory.Fill(mountPoint, 0, 16);
+        GuestMemory.WriteCString(mountPoint, dev + ":", 16);
+        return 0;
+    }
+
+    /// <summary>Syscall form: the 16-byte mount point goes to <c>SceAppMgrGameDataMountOpt.mount_point</c> (+0).</summary>
+    [Hle]
+    int _sceAppMgrGameDataMount(uint appPath, uint patchPath, uint rifPath, uint opt)
+        => opt == 0 ? ERR_NULL_POINTER : sceAppMgrGameDataMount(appPath, patchPath, rifPath, GuestMemory.R32(opt));
+
+    // SceAppMgrGenericMountContext (0x40): +0x00 title_id[16], +0x10 pass_code[32], +0x30 mount_drive[16]. The
+    // passcode is not checked (no PFS keystone here).
+
+    /// <summary>Additional content directory <c>addcont0:&lt;title_id&gt;</c> must exist; addcont0: itself is mounted at
+    /// boot, so nothing else changes.</summary>
+    int AddContMount(uint ctx)
+    {
+        if (ctx == 0) return ERR_NULL_POINTER;
+        string id = GuestMemory.ReadCString(ctx, 16);
+        var host = id.Length == 0 ? null : Emu.Vfs.Resolve("addcont0:" + id);
+        return host != null && Directory.Exists(host) ? 0 : ERR_NOT_FOUND;
+    }
+
+    /// <summary>psp2/appmgr.h (_sceAppMgrAddContMount): <c>int (ScePID process_id, const SceAppMgrGenericMountContext *ctx)</c>.</summary>
+    [Hle]
+    [Hle("_sceAppMgrAddContMount")]
+    int sceAppMgrAddContMount(int pid, uint ctx) => AddContMount(ctx);
+
+    /// <summary>psp2/appmgr.h (_sceAppMgrAddContAddMount): <c>int (const SceAppMgrGenericMountContext *ctx, int force_mount_ux)</c>.</summary>
+    [Hle]
+    [Hle("_sceAppMgrAddContAddMount")]
+    int sceAppMgrAddContAddMount(uint ctx, int forceMountUx) => AddContMount(ctx);
+
+    /// <summary>psp2/appmgr.h (_sceAppMgrSaveDataAddMount): <c>int (const SceAppMgrGenericMountContext *ctx)</c>. Mounts
+    /// the title's save data as savedata1:, like sceAppUtilSaveDataMount.</summary>
+    [Hle]
+    [Hle("_sceAppMgrSaveDataAddMount")]
+    int sceAppMgrSaveDataAddMount(uint ctx)
+    {
+        if (ctx == 0) return ERR_NULL_POINTER;
+        string tid = GuestMemory.ReadCString(ctx, 16);
+        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", tid);
+        if (tid.Length == 0 || !Directory.Exists(dir)) return ERR_NOT_FOUND;
+        Emu.Vfs.Mount("savedata1", dir);
+        return 0;
+    }
+
+    /// <summary>
+    /// SceAppMgrBootParam (0x2C): +0 size, +4 reserved04[2] (zeroed on FW 3.60), +0xC reserved_0C[8] (left as is).
+    /// The syscall copies <c>opt->boot_param_size</c> bytes (above 0x2C → PARAM) and ignores the selector. Only the
+    /// syscall is registered: whether the public wrapper's third argument is the size or the opt is not documented.
+    /// </summary>
+    [Hle]
+    int _sceAppMgrGetBootParam(uint selector, uint bootParam, uint opt)
+    {
+        if (bootParam == 0 || opt == 0) return ERR_NULL_POINTER;
+        uint size = GuestMemory.R32(opt);
+        if (size > 0x2C) return ERR_PARAM;
+        for (uint o = 4; o < Math.Min(size, 0xCu); o++) GuestMemory.Write(bootParam + o, (byte)0);
+        return 0;
+    }
+
+    /// <summary>
+    /// psp2/appmgr.h: <c>int _sceAppMgrGetSaveDataInfo(const char *path, const char *title_id, int force_mount_ux,
+    /// const SceAppMgrGetSaveDataInfoOpt *opt)</c>, result in <c>opt->result</c> (SceAppMgrGetSaveDataInfoResult,
+    /// 0x1C). Only the syscall is registered: the public wrapper's arguments are not documented.
+    /// </summary>
+    [Hle]
+    int _sceAppMgrGetSaveDataInfo(uint path, uint titleId, int forceMountUx, uint opt)
+    {
+        if (titleId == 0 || opt == 0) return ERR_NULL_POINTER;
+        uint result = GuestMemory.R32(opt);
+        if (result == 0) return ERR_NULL_POINTER;
+        string tid = GuestMemory.ReadCString(titleId, 16);
+        if (tid.Length != 9) return ERR_PARAM;
+        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", tid);
+        if (!Directory.Exists(dir)) return ERR_NOT_FOUND;
+        long bytes = 0;
+        try { bytes = new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); }
+        catch (IOException) { }
+        GuestMemory.Fill(result, 0, 0x1C);
+        GuestMemory.W32(result + 0x00, 4); // SCE_APPMGR_SAVE_DATA_STORAGE_USER (ux0:)
+        GuestMemory.W32(result + 0x04, string.Equals(tid, Emu.TitleId, StringComparison.OrdinalIgnoreCase) ? 1u : 0u);
+        GuestMemory.W32(result + 0x18, (uint)((bytes + 1023) / 1024));
+        return 0;
+    }
+
+    /// <summary>No camera is ever in use by another process. The prototype is not documented (pointer or direct
+    /// result), so nothing is written: the return value 0 reads as "inactive" either way.</summary>
+    [Hle]
+    [Hle("_sceAppMgrIsCameraActive")]
+    int sceAppMgrIsCameraActive() => 0;
+
     [Hle] int sceAppMgrPhotoMount(uint param) => AppUtil.MountPhoto();
     [Hle] int sceAppMgrPhotoUmount() => AppUtil.UmountPhoto() == 0 ? 0 : ERR_NOT_FOUND;
 

@@ -1304,7 +1304,11 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
-    [Hle] int sceGxmPrecomputedVertexStateSetTexture(uint s, uint i, uint t) => PrecomputedSetTexture(s, i, t);
+    // 0x1625D348: old-SDK NID of the same function (Uncharted imports it instead of 0x6A29EB06; its call sites pick
+    // it for non-fragment precomputed states right next to sceGxmPrecomputedFragmentStateSetTexture).
+    [Hle]
+    [Hle(Nid = 0x1625D348, Library = "SceGxm")]
+    int sceGxmPrecomputedVertexStateSetTexture(uint s, uint i, uint t) => PrecomputedSetTexture(s, i, t);
     [Hle] int sceGxmPrecomputedFragmentStateSetTexture(uint s, uint i, uint t) => PrecomputedSetTexture(s, i, t);
     [Hle] int sceGxmPrecomputedVertexStateSetAllTextures(uint s, uint t) => PrecomputedSetAllTextures(s, t);
     [Hle] int sceGxmPrecomputedFragmentStateSetAllTextures(uint s, uint t) => PrecomputedSetAllTextures(s, t);
