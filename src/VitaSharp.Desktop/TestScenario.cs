@@ -23,7 +23,15 @@ static class TestScenario
             if (eq > 0) values[l[..eq].Trim()] = l[(eq + 1)..].Trim();
         }
         if (!values.TryGetValue("title", out var title)) { Console.Error.WriteLine("scenario needs title="); return 1; }
-        if (values.TryGetValue("data", out var data)) Environment.SetEnvironmentVariable("VITASHARP_DATA", data);
+        // --data=<folder> on the command line wins over the scenario's data= (scenarios name Windows folders; on
+        // another OS, or to run against a copy of the data, pass --data); a data= folder that does not exist on this
+        // machine is ignored as well
+        if (values.TryGetValue("data", out var data))
+        {
+            if (Program.DataFromCommandLine) Console.WriteLine($"Scenario data={data} overridden by --data={Program.DataRoot}");
+            else if (!Path.IsPathFullyQualified(data) || !Directory.Exists(data)) Console.WriteLine($"Scenario data={data} not found here, using {Program.DataRoot}");
+            else Environment.SetEnvironmentVariable("VITASHARP_DATA", data);
+        }
 
         string name = Path.GetFileNameWithoutExtension(file);
         string outDir = Path.Combine(Program.DataRoot, "tests", name);

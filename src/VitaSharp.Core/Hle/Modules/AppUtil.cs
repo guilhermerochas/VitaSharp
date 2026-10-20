@@ -112,7 +112,7 @@ public sealed class AppUtil : HleModule
                 var data = File.ReadAllBytes(rif);
                 if (data.Length >= 0x100) return System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(0xFC));
             }
-            return Directory.Exists(Path.Combine(Emu.AppPath, "sce_sys", "retail", "livearea")) ? 1 : 0;
+            return Directory.Exists(VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(Emu.AppPath, "sce_sys/retail/livearea")) ? 1 : 0;
         }
         catch (IOException) { return 0; }
     }

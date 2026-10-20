@@ -121,11 +121,12 @@ public sealed unsafe partial class VulkanRenderer
         return set;
     }
 
-    DescriptorSet BuildEmptyFbSet() => BuildSingleTextureSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal);
+    // cached in _emptyFbSet for the renderer's lifetime: allocated from the persistent pool, not a frame pool
+    DescriptorSet BuildEmptyFbSet() => BuildSingleTextureSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, persistent: true);
 
-    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout)
+    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout, bool persistent = false)
     {
-        var set = AllocSet(_fbLayout);
+        var set = persistent ? AllocPersistentSet(_fbLayout) : AllocSet(_fbLayout);
         var info = new DescriptorImageInfo(_dummySampler, view, layout);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &w, 0, null);

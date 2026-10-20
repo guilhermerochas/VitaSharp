@@ -844,6 +844,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
             foreach (var a in f.Deferred) a();
         }
+        DestroyPersistentSets();
         DestroyPipelines();
         DestroyTextures();
         foreach (var rt in _renderTargets.Values)

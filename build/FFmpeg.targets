@@ -73,7 +73,7 @@
     <!-- the tarball's soname symlinks (libavcodec.so.62 -> libavcodec.so.62.28.103) can't be created on a Windows
          host publishing for Linux; they are not needed (see below), so tar's exit code is ignored and the result is
          checked by the library count instead -->
-    <Exec Condition="'@(_FFmpegArchive)' != '' and $(FFmpegAsset.EndsWith('.tar.xz'))" Command="tar -xJf &quot;@(_FFmpegArchive->'%(Filename)%(Extension)')&quot;"
+    <Exec Condition="'@(_FFmpegArchive)' != '' and $(FFmpegAsset.EndsWith('.tar.xz'))" Command="tar -xJf &quot;@(_FFmpegArchive->'%(Filename)%(Extension)')&quot; --exclude=*.so --exclude=*.so.[0-9] --exclude=*.so.[0-9][0-9]"
           WorkingDirectory="$(_FFmpegWork)" IgnoreExitCode="true" />
 
     <ItemGroup Condition="'@(_FFmpegArchive)' != ''">

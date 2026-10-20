@@ -28,7 +28,7 @@ public static class VkCheck
 /// <summary>Instance, device, queue and memory management.</summary>
 public sealed unsafe class VkCore : IDisposable
 {
-    public readonly Vk Vk = Vk.GetApi();
+    public readonly Vk Vk = VulkanLoader.Load();
     public Instance Instance;
     public PhysicalDevice Physical;
     public Device Device;
@@ -72,6 +72,17 @@ public sealed unsafe class VkCore : IDisposable
                 if (Marshal.PtrToStringAnsi((nint)l.LayerName) == "VK_LAYER_KHRONOS_validation") layers.Add("VK_LAYER_KHRONOS_validation");
             if (layers.Count > 0) exts.Add(ExtDebugUtils.ExtensionName);
         }
+        // MoltenVK (macOS) and other non-conformant implementations are only enumerated by loaders >= 1.3.216 when
+        // the application opts in with VK_KHR_portability_enumeration
+        var available = InstanceExtensions();
+        var flags = InstanceCreateFlags.None;
+        if (available.Contains(PortabilityEnumeration))
+        {
+            exts.Add(PortabilityEnumeration);
+            flags |= InstanceCreateFlags.EnumeratePortabilityBitKhr;
+        }
+        foreach (var e in exts.Where(e => !available.Contains(e)).ToList())
+            Log.Warn($"Vulkan instance extension {e} is not available ({VulkanLoader.InstallHint()})");
         var appName = (byte*)SilkMarshal.StringToPtr("VitaSharp");
         var app = new ApplicationInfo
         {
@@ -87,6 +98,7 @@ public sealed unsafe class VkCore : IDisposable
         var ci = new InstanceCreateInfo
         {
             SType = StructureType.InstanceCreateInfo,
+            Flags = flags,
             PApplicationInfo = &app,
             EnabledExtensionCount = (uint)exts.Count,
             PpEnabledExtensionNames = extPtrs,
@@ -112,6 +124,31 @@ public sealed unsafe class VkCore : IDisposable
         }
     }
 
+    const string PortabilityEnumeration = "VK_KHR_portability_enumeration";
+    const string PortabilitySubset = "VK_KHR_portability_subset";
+
+    HashSet<string> InstanceExtensions()
+    {
+        uint n = 0;
+        Vk.EnumerateInstanceExtensionProperties((byte*)null, ref n, null);
+        var props = new ExtensionProperties[n];
+        fixed (ExtensionProperties* p = props) Vk.EnumerateInstanceExtensionProperties((byte*)null, ref n, p);
+        var set = new HashSet<string>();
+        foreach (var e in props) set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
+        return set;
+    }
+
+    HashSet<string> DeviceExtensions(PhysicalDevice d)
+    {
+        uint n = 0;
+        Vk.EnumerateDeviceExtensionProperties(d, (byte*)null, ref n, null);
+        var props = new ExtensionProperties[n];
+        fixed (ExtensionProperties* p = props) Vk.EnumerateDeviceExtensionProperties(d, (byte*)null, ref n, p);
+        var set = new HashSet<string>();
+        foreach (var e in props) set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
+        return set;
+    }
+
     static uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity, DebugUtilsMessageTypeFlagsEXT type, DebugUtilsMessengerCallbackDataEXT* data, void* user)
     {
         var msg = Marshal.PtrToStringAnsi((nint)data->PMessage) ?? "";
@@ -128,10 +165,15 @@ public sealed unsafe class VkCore : IDisposable
         fixed (PhysicalDevice* p = devices) Vk.EnumeratePhysicalDevices(Instance, ref count, p);
         PhysicalDevice best = default;
         int bestScore = -1;
+        var rejected = new List<string>();
         foreach (var d in devices)
         {
             Vk.GetPhysicalDeviceProperties(d, out var props);
-            if (props.ApiVersion < Vk.Version13) continue;
+            if (props.ApiVersion < Vk.Version13)
+            {
+                rejected.Add($"{Marshal.PtrToStringAnsi((nint)props.DeviceName)} (Vulkan {props.ApiVersion >> 22}.{(props.ApiVersion >> 12) & 0x3FF})");
+                continue;
+            }
             int score = props.DeviceType switch
             {
                 PhysicalDeviceType.DiscreteGpu => 3000,
@@ -140,7 +182,9 @@ public sealed unsafe class VkCore : IDisposable
             };
             if (score > bestScore) { bestScore = score; best = d; }
         }
-        if (bestScore < 0) throw new InvalidOperationException("No Vulkan 1.3 capable device found");
+        if (bestScore < 0)
+            throw new InvalidOperationException($"No Vulkan 1.3 capable device found (found: {string.Join(", ", rejected)}). " +
+                                                (OperatingSystem.IsMacOS() ? "MoltenVK 1.3 or newer is required. " : "") + VulkanLoader.InstallHint());
         Physical = best;
         Vk.GetPhysicalDeviceProperties(Physical, out Properties);
         Vk.GetPhysicalDeviceMemoryProperties(Physical, out MemoryProperties);
@@ -171,10 +215,25 @@ public sealed unsafe class VkCore : IDisposable
         float prio = 1.0f;
         var qci = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = QueueFamily, QueueCount = 1, PQueuePriorities = &prio };
 
-        var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true };
-        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &f13, SamplerMirrorClampToEdge = true };
-        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2 };
+        var devExts = DeviceExtensions(Physical);
+        bool portability = devExts.Contains(PortabilitySubset);
+
+        // what the device supports (1.2/1.3 feature structs, plus the portability subset on MoltenVK)
+        var has13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+        var has12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &has13 };
+        var hasPortability = new PhysicalDevicePortabilitySubsetFeaturesKHR { SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, PNext = &has12 };
+        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = portability ? &hasPortability : &has12 };
         Vk.GetPhysicalDeviceFeatures2(Physical, &supported2);
+        if (!has13.DynamicRendering || !has13.Synchronization2)
+            throw new InvalidOperationException($"{DeviceName} lacks dynamicRendering/synchronization2 (Vulkan 1.3 features). {VulkanLoader.InstallHint()}");
+        SamplerMirrorClampToEdge = has12.SamplerMirrorClampToEdge;
+        Formats.MirrorClampToEdgeSupported = SamplerMirrorClampToEdge;
+
+        var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true };
+        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &f13, SamplerMirrorClampToEdge = has12.SamplerMirrorClampToEdge };
+        // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
+        // enable whatever the device has, then degrade where the renderer depends on a missing one
+        var fPortability = hasPortability with { PNext = &f12 };
         var feats = new PhysicalDeviceFeatures
         {
             SamplerAnisotropy = supported2.Features.SamplerAnisotropy,
@@ -191,14 +250,16 @@ public sealed unsafe class VkCore : IDisposable
         TextureCompressionBC = supported2.Features.TextureCompressionBC;
         FillModeNonSolid = supported2.Features.FillModeNonSolid;
         WideLines = supported2.Features.WideLines;
+        if (portability) ApplyPortabilityLimits(hasPortability, ref feats);
 
         var exts = new List<string>();
         if (present) exts.Add(KhrSwapchain.ExtensionName);
+        if (portability) exts.Add(PortabilitySubset);
         var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
-            PNext = &f12,
+            PNext = portability ? &fPortability : &f12,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
             PEnabledFeatures = &feats,
@@ -215,7 +276,35 @@ public sealed unsafe class VkCore : IDisposable
         }
     }
 
-    public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise;
+    public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+
+    /// <summary>True on a portability-subset implementation (MoltenVK) that reports no triangle fan support. GXM fan
+    /// draws are still issued as fans (MoltenVK converts them internally for most draws); a fan-to-list index rewrite
+    /// can key off this flag.</summary>
+    public bool TriangleFansUnsupported;
+
+    /// <summary>
+    /// MoltenVK reports what Metal cannot do through VkPhysicalDevicePortabilitySubsetFeaturesKHR. The renderer's
+    /// dependencies on it are handled here, so the draw code needs no Metal-specific paths:
+    ///  - samplerMipLodBias: Metal samplers have no LOD bias; the bias limit is forced to 0, so the existing clamp of
+    ///    the GXM sampler bias yields 0 (textures may look slightly blurrier/sharper than on hardware);
+    ///  - pointPolygons: GXM point fill mode would be invalid; polygon modes fall back to fill;
+    ///  - triangleFans, separateStencilMaskRef, constantAlphaColorBlendFactors: logged (no fallback yet).
+    /// Geometry/tessellation shaders and 64-bit floats are not used by the renderer.
+    /// </summary>
+    void ApplyPortabilityLimits(in PhysicalDevicePortabilitySubsetFeaturesKHR p, ref PhysicalDeviceFeatures feats)
+    {
+        var missing = new List<string>();
+        if (!p.SamplerMipLodBias) { Properties.Limits.MaxSamplerLodBias = 0; missing.Add("samplerMipLodBias (sampler LOD bias ignored)"); }
+        if (!p.PointPolygons) { FillModeNonSolid = false; feats.FillModeNonSolid = false; missing.Add("pointPolygons (wireframe/point fill drawn filled)"); }
+        if (!p.TriangleFans) { TriangleFansUnsupported = true; missing.Add("triangleFans"); }
+        if (!p.SeparateStencilMaskRef) missing.Add("separateStencilMaskRef");
+        if (!p.ConstantAlphaColorBlendFactors) missing.Add("constantAlphaColorBlendFactors");
+        if (!p.ImageViewFormatSwizzle) missing.Add("imageViewFormatSwizzle");
+        if (!p.ImageViewFormatReinterpretation) missing.Add("imageViewFormatReinterpretation");
+        if (!p.MutableComparisonSamplers) missing.Add("mutableComparisonSamplers");
+        Log.Info($"Vulkan portability subset (MoltenVK) on {DeviceName}; missing: {(missing.Count == 0 ? "nothing" : string.Join(", ", missing))}");
+    }
 
     Format PickDepthFormat()
     {

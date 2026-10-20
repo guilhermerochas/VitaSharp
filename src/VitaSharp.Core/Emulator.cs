@@ -124,7 +124,7 @@ public sealed class Emulator : IDisposable
     {
         AppPath = Path.GetFullPath(appPath);
         Vfs.Mount("app0", AppPath);
-        var sfoPath = Path.Combine(AppPath, "sce_sys", "param.sfo");
+        var sfoPath = Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/param.sfo");
         if (File.Exists(sfoPath))
         {
             ParamSfo = Sfo.Load(sfoPath);
@@ -177,7 +177,7 @@ public sealed class Emulator : IDisposable
     {
         foreach (var p in new[]
                  {
-                     Path.Combine(AppPath, "sce_sys", "package", "work.bin"),
+                     Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/package/work.bin"),
                  }.Concat(Directory.Exists(Path.Combine(Options.FsRoot, "ux0", "license", TitleId))
                      ? Directory.GetFiles(Path.Combine(Options.FsRoot, "ux0", "license", TitleId), "*.rif") : []))
         {
