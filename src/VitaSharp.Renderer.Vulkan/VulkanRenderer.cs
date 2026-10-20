@@ -455,11 +455,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
-        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} (next draw id={_drawSerial + 1})");
+        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
         if (_rt != null) CaptureSceneStart(_rt);
         // MSAA downscale surface: rendered 2x supersampled and box-filtered back (see VulkanRenderer.Msaa.cs)
         _ss = _rt != null && b.Multisample != 0 && b.Color!.Downscale && SupportsSupersample(_rt.Format);
         if (_ss) LoadSupersample(_rt!);
+        // MSAA without downscale: the surface holds the samples, render into it at 2x (see VulkanRenderer.Msaa.cs)
+        _msaaNoDownscale = _rt != null && b.Multisample != 0 && !b.Color!.Downscale;
+        if (_msaaNoDownscale && _msaaNoDownscaleLogged.Add(_rt!.Address)) Log.Info($"[gpu] render target 0x{_rt.Address:X8} {b.Width}x{b.Height} MSAA {(b.Multisample == 2 ? "4X" : "2X")} without downscale: rendering at 2x into the {_rt.Width}x{_rt.Height} sample surface");
         // surface gamma: shader output is linear and gets sRGB-encoded on write
         var srgb = _rt != null ? Formats.Srgb(_rt.Format) : Format.Undefined;
         _rtGamma = _rt != null && b.Color!.GammaMode != 0 && srgb != _rt.Format && _core.SupportsColorAttachment(srgb);
@@ -468,9 +471,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (b.Color is { } cs) Log.DebugOnce($"scene{cs.Data:X}{cs.Width}{cs.ColorFormat:X}", $"[gpu] scene target 0x{cs.Data:X8} {cs.Width}x{cs.Height} stride {cs.StrideInPixels} fmt 0x{cs.ColorFormat:X8} type 0x{cs.SurfaceType:X} gamma {cs.GammaMode}");
         if (b.Depth is { } ds) Log.DebugOnce($"scened{ds.DepthData:X}", $"[gpu] scene depth 0x{ds.DepthData:X8} stencil 0x{ds.StencilData:X8} stride {ds.StrideInSamples} fmt 0x{ds.Format:X8} type 0x{ds.Type:X8} ({b.Width}x{b.Height})");
         else Log.WarnOnce("scene-nocolor", "[gpu] scene without colour surface");
-        _sceneW = _rt != null ? Math.Min(b.Width, _rt.Width) : b.Width;
-        _sceneH = _rt != null ? Math.Min(b.Height, _rt.Height) : b.Height;
-        _depth = GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale);
+        // the scene's size in render-target pixels; the render area is SceneScale times that
+        uint surfW = _rt?.Width ?? b.Width, surfH = _rt?.Height ?? b.Height;
+        if (_msaaNoDownscale) { surfW = Math.Max(surfW / 2, 1); surfH = Math.Max(surfH / 2, 1); }
+        _sceneW = Math.Min(b.Width, surfW);
+        _sceneH = Math.Min(b.Height, surfH);
+        _depth = _msaaNoDownscale
+            ? GetDepthTarget(b.Depth, Math.Max(b.Width * 2, _rt!.Width), Math.Max(b.Height * 2, _rt.Height))
+            : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale);
         _sceneSerial++;
         if (_rt != null) _rt.LastScene = _sceneSerial;
         _depth.LastScene = _sceneSerial;
@@ -487,6 +495,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = false;
         _scene = null;
         _ss = false;
+        _msaaNoDownscale = false;
     }
 
     void BeginRendering()
@@ -514,7 +523,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var ri = new RenderingInfo
         {
             SType = StructureType.RenderingInfo,
-            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SsScale, _sceneH * SsScale)),
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale)),
             LayerCount = 1,
             ColorAttachmentCount = _rt != null ? 1u : 0u,
             PColorAttachments = &color,
