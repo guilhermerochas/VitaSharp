@@ -441,7 +441,6 @@ public sealed class SystemMisc : HleModule
     // ------------------------------------------------------------------ misc system
 
     [Hle] int sceShutterSoundOutput(int type) => 0;
-    [Hle] int sceLiveAreaUpdateFrameSync(uint formatVer, uint frameList, uint numFrames, uint dirpath, uint option) => 0;
     /// <summary>Firmware reported to games (3.74), shared with sceKernelGetAllowedSdkVersionOnSystem.</summary>
     internal const uint SystemSwVersion = 0x03740011;
 

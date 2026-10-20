@@ -907,18 +907,25 @@ Estado compartilhado: um dicionário `id → valor` com os padrões abaixo, carr
 Tipos exatos e padrões reais: a confirmar lendo `os0:kd/registry.db0` de um dump (XOR com a chave de 16 bytes usada
 pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção `[REG-BAS` traz `tipo:tamanho:padrão`).
 
+**Implementado** em `Hle/Modules/RegMgr.cs` (`RegMgr.Table`: os 63 IDs do header, 14 graváveis). Os valores que
+existem no AppUtil vêm de `AppUtil.SystemParamInt`/`AppUtil.UserName` (mesma fonte). Tipos escolhidos onde o doc
+dizia "a confirmar": teleport wol_target_mac_address e PS4LINK keys = bin; target_name, initial_target,
+passcode_client, tpps_proxy_*, psnow app_cached_url, ignore_titleid, adhoc ssid prefix (`"PSP"`) = str. Str e bin
+compartilham armazenamento em bytes (GetStr/GetBin/SetStr/SetBin aceitam ambos); int exige chave int, senão
+`0x800D0004`. Só as chaves graváveis são persistidas no JSON.
+
 #### sceRegMgrSystemParamGetInt
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x347C1BDB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x347C1BDB
 - **Protótipo:** `int sceRegMgrSystemParamGetInt(const int id, int *buf);` (`psp2/registrymgr.h`)
 - **Comportamento:** procura `id` na tabela fixa e escreve o inteiro em `*buf`.
-- **Retorno/erros:** 0; ID desconhecido ou `buf` NULL → `0x800D0004`; ID de tipo não-int → a confirmar (sugestão
-  `0x800D0004`).
+- **Retorno/erros:** 0; ID desconhecido ou `buf` NULL → `0x800D0004`; ID de tipo não-int → `0x800D0004` (escolha
+  do VitaSharp; o firmware não foi verificado).
 - **Estruturas:** —
-- **Implementação no VitaSharp:** `SystemUtil.cs`, dicionário compartilhado com as outras 5 funções.
+- **Implementação no VitaSharp:** `RegMgr.cs`, dicionário compartilhado com as outras 5 funções.
 - **Validação:** homebrew que leia `0x00037502` e compare com `sceAppUtilSystemParamGetInt(1)`.
 
 #### sceRegMgrSystemParamGetStr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x877ADB3F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x877ADB3F
 - **Protótipo:** `int sceRegMgrSystemParamGetStr(const int id, char *buf, const int size);` (`psp2/registrymgr.h`)
 - **Comportamento:** copia a string da chave para `buf`, até `size` bytes, terminada em NUL.
 - **Retorno/erros:** 0; ID desconhecido ou `buf` NULL → `0x800D0004`.
@@ -927,7 +934,7 @@ pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção 
 - **Validação:** ler `0x00598438` → `"VitaSharp"`.
 
 #### sceRegMgrSystemParamGetBin
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x7FFE2CDF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x7FFE2CDF
 - **Protótipo:** `SceInt32 sceRegMgrSystemParamGetBin(SceRegMgrSystemParam id, void *buf, SceSize buf_size);`
 - **Comportamento:** copia exatamente `min(buf_size, 0x800)` bytes do valor (completar com zeros se o valor
   armazenado for menor).
@@ -937,7 +944,7 @@ pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção 
 - **Validação:** ler `0x00450F32` com 8 bytes → zeros.
 
 #### sceRegMgrSystemParamSetInt
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xC8F73311
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xC8F73311
 - **Protótipo:** `SceInt32 sceRegMgrSystemParamSetInt(SceRegMgrSystemParam id, SceInt32 value);`
 - **Comportamento:** grava o inteiro se o ID for gravável e de tipo int; persiste no JSON.
 - **Retorno/erros:** 0; ID desconhecido → `0x800D0004`; ID conhecido somente leitura → `0x800D0015`.
@@ -946,7 +953,7 @@ pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção 
 - **Validação:** `SetInt(0x00612B3E, 1)` seguido de `GetInt` → 1; `SetInt(0x00037502, 0)` → `0x800D0015`.
 
 #### sceRegMgrSystemParamSetStr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xCB3246E3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xCB3246E3
 - **Protótipo:** `SceInt32 sceRegMgrSystemParamSetStr(SceRegMgrSystemParam id, const char *buf, SceSize buf_size);`
 - **Comportamento:** copia exatamente `buf_size` bytes (sem acrescentar NUL) para a chave gravável de tipo string.
 - **Retorno/erros:** 0; `buf` NULL ou `buf_size > 0x7C0` → `0x800D0004` (código exato a confirmar; o header só diz
@@ -956,7 +963,7 @@ pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção 
 - **Validação:** gravar e reler `0x005F6737`.
 
 #### sceRegMgrSystemParamSetBin
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xD5A73557
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0xD5A73557
 - **Protótipo:** `SceInt32 sceRegMgrSystemParamSetBin(SceRegMgrSystemParam id, const void *buf, SceSize buf_size);`
 - **Comportamento:** igual a SetStr, para chaves binárias.
 - **Retorno/erros:** 0; `buf` NULL ou `buf_size > 0x7C0` → erro (a confirmar, sugestão `0x800D0004`); desconhecido
@@ -966,7 +973,7 @@ pelo Vita3K em `vita3k/regmgr/src/regmgr.cpp`, cabeçalho de 138 bytes; seção 
 - **Validação:** gravar e reler `0x0094E320`.
 
 #### sceRegMgrSystemIsBlueScreen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x169A0D1D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRegMgrForGame · **NID:** 0x169A0D1D
 - **Protótipo:** `int sceRegMgrSystemIsBlueScreen(void);` **(inferido; não há protótipo no vita-headers)**
 - **Comportamento:** informa se o sistema está em modo "blue screen" (tela de demonstração/loja; a confirmar).
 - **Retorno/erros:** retornar 0 (não está). Se desmontagem mostrar ponteiro de saída, escrever 0 nele.
@@ -980,12 +987,21 @@ Sem shell: as operações "dão certo" e não têm efeito. Estado: `pendingResul
 "uma operação assíncrona pendente por processo" e, opcionalmente, um dicionário `frameId → (revision, userData)`
 alimentado pelos updates (parse leve do XML: atributo `id` de `<frame>` e conteúdo de `<user-data>` — opcional).
 
+**Implementado** em `Hle/Modules/LiveArea.cs` (o stub antigo de `sceLiveAreaUpdateFrameSync` em `SystemMisc.cs`,
+com assinatura errada, foi removido). A tabela de frames tem duas camadas (normal/retail) e é semeada do
+`template.xml` de `app0:sce_sys/livearea/contents` e `app0:sce_sys/retail/livearea/contents`; revisão global =
+`content-rev` do template (incrementada a cada Replace/Update); revisão de frame = atributo `rev` do `<frame>` ou, sem
+ele, a anterior + 1 (0 vindo do template) — semântica do `rev` **inferida**. ReplaceAll recarrega o `template.xml` do
+diretório dado. A regra de prefixo inclui a restrição do header: em `app0:` abaixo de `/sce_*` só os dois diretórios
+de contents. ForTitle com outro title ID valida e não altera o estado. Os 6 NIDs ForTitle não estão no `nids.txt`
+e são dados explicitamente.
+
 Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / nenhuma pendente,
 `0x80104002` argumento inválido, `0x80104003` caminho não resolvido, `0x80104004` XML inválido,
 `0x80104009` XML > 10239 bytes, `0x8010400A` objeto/frame indisponível, `0x8010400B` caminho não permitido.
 
 #### sceLiveAreaGetStatus
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x7FE5B83F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x7FE5B83F
 - **Protótipo:** `int sceLiveAreaGetStatus(void);` (`psp2/livearea.h`)
 - **Comportamento:** consulta a operação assíncrona pendente; o resultado final é devolvido uma única vez e a
   pendência é limpa.
@@ -996,7 +1012,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** `ReplaceAllAsync` → `GetStatus` = 0 → `GetStatus` = `0x80104001`.
 
 #### sceLiveAreaReplaceAllSync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x29C65C0B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x29C65C0B
 - **Protótipo:** `int sceLiveAreaReplaceAllSync(const char *contents_path);`
 - **Comportamento:** substitui toda a LiveArea do título atual pelo conteúdo do diretório.
 - **Retorno/erros:** 0; `contents_path` NULL ou > 255 caracteres → `0x80104002`; caminho que não começa com
@@ -1006,7 +1022,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** teste unitário do validador de caminho.
 
 #### sceLiveAreaReplaceAllAsync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x18066BA9
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x18066BA9
 - **Protótipo:** `int sceLiveAreaReplaceAllAsync(const char *contents_path);`
 - **Comportamento:** versão assíncrona; resultado via `sceLiveAreaGetStatus`.
 - **Retorno/erros:** 0 submetido; `0x80104001` se já há pendência; `0x80104002` argumento inválido. Erros de
@@ -1016,7 +1032,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** ver `sceLiveAreaGetStatus`.
 
 #### sceLiveAreaReplaceAllForTitleSync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xB0571F88
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xB0571F88
 - **Protótipo:** `int sceLiveAreaReplaceAllForTitleSync(const char *contents_path, const char *title_id, const SceRtcTick *last_modified);`
 - **Comportamento:** como ReplaceAllSync para um título explícito; não aplica a lista de prefixos `app0:`/`savedata0:`.
 - **Retorno/erros:** 0; `0x80104002`; `0x80104003`.
@@ -1025,7 +1041,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaReplaceAllForTitleAsync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xEF2A3C3D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xEF2A3C3D
 - **Protótipo:** `int sceLiveAreaReplaceAllForTitleAsync(const char *contents_path, const char *title_id, const SceRtcTick *last_modified);`
 - **Comportamento:** assíncrona da anterior.
 - **Retorno/erros:** 0; `0x80104001`; `0x80104002`.
@@ -1034,7 +1050,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaUpdateFrameSync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xCFCEDE95
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xCFCEDE95
 - **Protótipo:** `int sceLiveAreaUpdateFrameSync(const char *format_version, const char *frame_xml, SceInt32 frame_xml_length, const char *contents_path, SceLiveAreaTargetType target_type);`
 - **Comportamento:** atualiza um frame (id lido do XML) do título atual.
 - **Retorno/erros:** 0; `format_version != "01.00"`, ponteiros NULL, caminho > 255 ou `target_type` ∉ {0,1} →
@@ -1045,7 +1061,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** teste unitário com XML válido/ inválido.
 
 #### sceLiveAreaUpdateFrameAsync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD330285D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD330285D
 - **Protótipo:** `int sceLiveAreaUpdateFrameAsync(const char *format_version, const char *frame_xml, SceInt32 frame_xml_length, const char *contents_path, SceLiveAreaTargetType target_type);`
 - **Comportamento:** assíncrona de UpdateFrameSync.
 - **Retorno/erros:** 0; `0x80104001`; `0x80104002`; `0x80104009` (síncronos); parse/permissão → `pendingResult`.
@@ -1054,7 +1070,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaUpdateFrameForTitleSync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x009CD8E2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x009CD8E2
 - **Protótipo:** `int sceLiveAreaUpdateFrameForTitleSync(const char *format_version, const char *frame_xml, SceInt32 frame_xml_length, const char *contents_path, SceLiveAreaTargetType target_type, const char *title_id);`
 - **Comportamento:** UpdateFrameSync para título explícito, sem regra de prefixo.
 - **Retorno/erros:** 0; `0x80104002`; `0x80104004`; `0x80104009`.
@@ -1063,7 +1079,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaUpdateFrameForTitleAsync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xC1F7A931
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xC1F7A931
 - **Protótipo:** `int sceLiveAreaUpdateFrameForTitleAsync(const char *format_version, const char *frame_xml, SceInt32 frame_xml_length, const char *contents_path, SceLiveAreaTargetType target_type, const char *title_id);`
 - **Comportamento:** assíncrona da anterior.
 - **Retorno/erros:** 0; `0x80104001`; `0x80104002`; `0x80104009`.
@@ -1072,7 +1088,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaUpdateFramesForTitleSync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x31A5E6AB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x31A5E6AB
 - **Protótipo:** `int sceLiveAreaUpdateFramesForTitleSync(const char *format_version, const char *const *frame_xml_array, SceUInt32 frame_count, const char *contents_path, SceLiveAreaTargetType target_type, const char *title_id);`
 - **Comportamento:** atualiza vários frames (strings NUL-terminated, sem limite individual).
 - **Retorno/erros:** 0; `frame_count == 0`, entrada NULL, versão/alvo inválidos → `0x80104002`; algum XML sem
@@ -1083,7 +1099,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** teste unitário.
 
 #### sceLiveAreaUpdateFramesForTitleAsync
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x876A649B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x876A649B
 - **Protótipo:** `int sceLiveAreaUpdateFramesForTitleAsync(const char *format_version, const char *const *frame_xml_array, SceUInt32 frame_count, const char *contents_path, SceLiveAreaTargetType target_type, const char *title_id);`
 - **Comportamento:** assíncrona da anterior.
 - **Retorno/erros:** 0; `0x80104001`; `0x80104002`; `0x80020588`.
@@ -1092,7 +1108,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** idem.
 
 #### sceLiveAreaGetRevision
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x833F5D0A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0x833F5D0A
 - **Protótipo:** `int sceLiveAreaGetRevision(SceUInt64 *revision);`
 - **Comportamento:** revisão global da LiveArea do título.
 - **Retorno/erros:** 0 com `*revision = 0` (ou contador incrementado a cada Replace/Update); `revision` NULL →
@@ -1102,7 +1118,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** —
 
 #### sceLiveAreaGetFrameRevision
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD6EE2214
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD6EE2214
 - **Protótipo:** `int sceLiveAreaGetFrameRevision(const char *frame_id, SceUInt64 *revision);`
 - **Comportamento:** revisão de um frame (retail tem precedência).
 - **Retorno/erros:** 0 se o frame está no dicionário; `frame_id` NULL/vazio ou `revision` NULL → `0x80104002`;
@@ -1112,7 +1128,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** —
 
 #### sceLiveAreaGetFrameUserData
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD6FD367F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLiveAreaUtil · **NID:** 0xD6FD367F
 - **Protótipo:** `int sceLiveAreaGetFrameUserData(const char *frame_id, char *buffer, SceSize buffer_size);`
 - **Comportamento:** devolve a string de user data do frame, até `min(buffer_size, 1024) - 1` bytes + NUL.
 - **Retorno/erros:** 0; `frame_id`/`buffer` NULL ou `buffer_size == 0` → `0x80104002`; sem frame → `0x8010400A`.
