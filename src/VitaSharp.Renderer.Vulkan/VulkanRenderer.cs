@@ -63,6 +63,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         /// <summary>Scene notifications signalled once this frame (and its writebacks) completed.</summary>
         public readonly List<(uint Address, uint Value)> Notifications = new();
         public bool Retired;
+        /// <summary>Submission order (frames retire oldest first so results are published in GPU order).</summary>
+        public long SubmitSeq;
         /// <summary>Occlusion queries of this frame's visibility tests.</summary>
         public VisibilityFrame? Visibility;
     }
@@ -156,6 +158,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence).Ok("vkQueueSubmit");
         f.Recording = false;
         f.Submitted = true;
+        f.SubmitSeq = ++_submitSeq;
         if (present) PresentSwapchain(swapIndex, done);
         _frameIndex = (_frameIndex + 1) % FramesInFlight;
         FrameCount++;
@@ -168,6 +171,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void RetireFrame(Frame f)
     {
         if (!f.Submitted || f.Retired) return;
+        // the GPU completes work in submission order: publish older frames' results first
+        foreach (var o in _frames)
+            if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
         _vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue);
         f.Retired = true;
         if (f.Readback is { } rb) WriteDump(f, rb);
@@ -177,7 +183,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         f.Notifications.Clear();
     }
 
-    bool HasPendingResults(Frame f) => f.Writebacks.Count > 0 || f.Notifications.Count > 0;
+    bool HasPendingResults(Frame f) => f.Writebacks.Count > 0 || f.Notifications.Count > 0 || f.Visibility is { Used: > 0 };
+
+    long _submitSeq;
+
+    /// <summary>
+    /// True when GPU results recorded so far (render-target writebacks, visibility test results, deferred
+    /// notifications) are not yet in guest memory. A notification means that all earlier GPU work completed, so a
+    /// scene ending now must not signal before those results are published.
+    /// </summary>
+    bool ResultsPending()
+    {
+        foreach (var f in _frames)
+            if ((f.Recording || (f.Submitted && !f.Retired)) && HasPendingResults(f)) return true;
+        return false;
+    }
 
     /// <summary>sceGxmFinish: submit what is recorded and retire every frame in flight.</summary>
     void Finish()
@@ -490,8 +510,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         EndRendering();
         bool writeback = _rt != null && ScheduleWriteback(_rt);
-        // a scene whose pixels the CPU can read back signals its notifications only once they are in memory
-        if (writeback && e.Notifications.Length > 0) { F.Notifications.AddRange(e.Notifications); e.NotificationsDeferred = true; }
+        // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
+        // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
+        // games read occlusion results once the frame's last notification arrived
+        if (e.Notifications.Length > 0 && (writeback || ResultsPending())) { F.Notifications.AddRange(e.Notifications); e.NotificationsDeferred = true; }
+        if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;
         _ss = false;
