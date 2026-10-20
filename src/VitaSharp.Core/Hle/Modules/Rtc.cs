@@ -51,8 +51,6 @@ public sealed class Rtc : HleModule
         return 0;
     }
 
-    [Hle("sceRtcGetCurrentClockUtc")]
-    int sceRtcGetCurrentClockUtc(uint time) { WriteDateTime(time, DateTime.UtcNow); return 0; }
 
     [Hle] int sceRtcGetDayOfWeek(int year, int month, int day)
     {
