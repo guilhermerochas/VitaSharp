@@ -112,6 +112,10 @@ the tested games actually import.
 
 A modern multi-core CPU is recommended: the guest runs on several host threads.
 
+Platform status: Windows is the most tested platform. Linux x64 is tested on Debian 12 (unit tests, headless and
+windowed runs on X11 and Wayland, Mesa lavapipe). macOS (x64 and Apple Silicon) builds and publishes, but has not been
+run on a Mac yet; reports are welcome.
+
 The first build downloads FFmpeg 8.1 (LGPL) for the target platform, checks its SHA-256 and copies it to an `ffmpeg`
 folder next to the executable; later builds reuse the cached copy. Windows and Linux (x64 and ARM64) get prebuilt
 libraries; there is no prebuilt macOS build, so VitaSharp uses Homebrew's (`/opt/homebrew/lib`, `/usr/local/lib`) or
@@ -147,7 +151,6 @@ Platform notes:
   (GLFW) runs on Wayland when its libraries are present and on X11/XWayland otherwise;
   `VITASHARP_GLFW_PLATFORM=x11` or `=wayland` forces one. `vulkaninfo --summary` (package `vulkan-tools`) shows which
   driver will be used; with several, pick one with `VK_DRIVER_FILES` (`VK_ICD_FILENAMES` on older loaders).
-
 - **macOS**: VitaSharp needs a Vulkan loader with MoltenVK. If it lives in a folder the dynamic linker does not search
   (Homebrew on Apple Silicon, or an SDK used in place through `VULKAN_SDK`), VitaSharp restarts itself once with that
   folder on `DYLD_FALLBACK_LIBRARY_PATH`. `VITASHARP_VULKAN_LIB=/path/to/libvulkan.1.dylib` (or `libMoltenVK.dylib`)
