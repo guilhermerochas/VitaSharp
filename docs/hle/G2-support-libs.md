@@ -1498,8 +1498,10 @@ erro (convenção **inferida**).
 
 ## 5. Localização e proximidade (HLE, "serviço indisponível")
 
-Arquivo sugerido: `src/VitaSharp.Core/Hle/Modules/Location.cs` (`sealed class Location : HleModule`) com
-SceLibLocation, SceGps e SceNear*.
+Implementado em `src/VitaSharp.Core/Hle/Modules/Location.cs` (`Location` = SceLibLocation, `Gps` = SceGps) e
+`src/VitaSharp.Core/Hle/Modules/Near.cs` (`NearUtil` = SceNearUtil + SceNearDialogUtil). Testes:
+`tests/VitaSharp.Tests/LocationPerfHleTests.cs`. Os timestamps gravados usam o mesmo relógio de `sceRtcGetCurrentTick`
+(`Rtc.NowTick`).
 
 ### 5.1 SceLibLocation
 
@@ -1521,7 +1523,7 @@ NOT_RUNNING_CALLBACK, `0x8010120C` DIALOG_RESULT_NONE, `0x8010120D` DISABLE_APPL
 MULTIPLE_CONFIRM.
 
 #### sceLocationOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xDD271661
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xDD271661
 - **Protótipo:** `SceInt32 sceLocationOpen(SceLocationHandle *handle, SceLocationLocationMethod locateMethod, SceLocationHeadingMethod headingMethod);` (`psp2/location.h`)
 - **Comportamento:** cria um handle com os métodos de medição.
 - **Retorno/erros:** 0; `handle` NULL → `0x80101204`; método inválido → `0x80101208`/`0x80101209`.
@@ -1530,7 +1532,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** homebrew de localização: Open → GetLocation retorna `0x8010120D`.
 
 #### sceLocationClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x14FE76E8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x14FE76E8
 - **Protótipo:** `SceInt32 sceLocationClose(SceLocationHandle handle);`
 - **Comportamento:** fecha o handle e para callbacks.
 - **Retorno/erros:** 0; desconhecido → `0x80101205`.
@@ -1539,7 +1541,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** Close duplo → `0x80101205`.
 
 #### sceLocationReopen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xB1F55065
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xB1F55065
 - **Protótipo:** `SceInt32 sceLocationReopen(SceLocationHandle handle, SceLocationLocationMethod locateMethod, SceLocationHeadingMethod headingMethod);`
 - **Comportamento:** troca os métodos de um handle aberto.
 - **Retorno/erros:** 0; `0x80101205`; `0x80101208`; `0x80101209`.
@@ -1548,7 +1550,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** Reopen → GetMethod.
 
 #### sceLocationGetMethod
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x188CE004
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x188CE004
 - **Protótipo:** `SceInt32 sceLocationGetMethod(SceLocationHandle handle, SceLocationLocationMethod *locateMethod, SceLocationHeadingMethod *headingMethod);`
 - **Comportamento:** devolve os métodos do handle.
 - **Retorno/erros:** 0; `0x80101205`; ponteiro NULL → `0x80101204`.
@@ -1557,7 +1559,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationGetLocation
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x15BC27C8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x15BC27C8
 - **Protótipo:** `SceInt32 sceLocationGetLocation(SceLocationHandle handle, SceLocationLocationInfo *locationInfo);`
 - **Comportamento:** medição bloqueante da posição.
 - **Retorno/erros:** `0x8010120D`; `0x80101205`; `0x80101204`. Antes de retornar, preencher `locationInfo` com
@@ -1569,7 +1571,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationGetLocationWithTimeout
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x16F41ED0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x16F41ED0
 - **Protótipo:** `SceInt32 sceLocationGetLocationWithTimeout(SceLocationHandle handle, SceLocationLocationInfo *locationInfo, SceUInt64 timeout);` **(inferido; tipo/unidade do timeout a confirmar)**
 - **Comportamento:** como GetLocation com tempo limite.
 - **Retorno/erros:** igual a GetLocation (`0x8010120D`); nunca espera.
@@ -1578,7 +1580,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationCancelGetLocation
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x71503251
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x71503251
 - **Protótipo:** `SceInt32 sceLocationCancelGetLocation(SceLocationHandle handle);`
 - **Comportamento:** cancela um GetLocation em espera (que retornaria `0x80101202`).
 - **Retorno/erros:** 0; `0x80101205`.
@@ -1587,7 +1589,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationStartLocationCallback
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x12D1F0EA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x12D1F0EA
 - **Protótipo:** `SceInt32 sceLocationStartLocationCallback(SceLocationHandle handle, SceUInt32 distance, SceLocationLocationInfoCallback callback, void *userdata);`
 - **Comportamento:** chama `callback` a cada deslocamento de `distance` metros.
 - **Retorno/erros:** `0x8010120D` (sem permissão; nenhum callback registrado); `0x80101205`; `callback` NULL →
@@ -1597,7 +1599,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationStopLocationCallback
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xED378700
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xED378700
 - **Protótipo:** `SceInt32 sceLocationStopLocationCallback(SceLocationHandle handle);`
 - **Comportamento:** para o callback de posição.
 - **Retorno/erros:** como nunca há callback ativo → `0x8010120B`; `0x80101205`.
@@ -1606,7 +1608,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationGetHeading
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x4E9E5ED9
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x4E9E5ED9
 - **Protótipo:** `SceInt32 sceLocationGetHeading(SceLocationHandle handle, SceLocationHeadingInfo *headingInfo);`
 - **Comportamento:** direção (bússola).
 - **Retorno/erros:** `0x8010120D`; `0x80101205`; `0x80101204`.
@@ -1616,7 +1618,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationStartHeadingCallback
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x07D4DFE0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x07D4DFE0
 - **Protótipo:** `SceInt32 sceLocationStartHeadingCallback(SceLocationHandle handle, SceUInt32 difference, SceLocationHeadingInfoCallback callback, void *userdata);`
 - **Comportamento:** callback de mudança de direção.
 - **Retorno/erros:** `0x8010120D`; `0x80101205`; `0x80101204`.
@@ -1625,7 +1627,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationStopHeadingCallback
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x92E53F94
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x92E53F94
 - **Protótipo:** `SceInt32 sceLocationStopHeadingCallback(SceLocationHandle handle);`
 - **Comportamento:** para o callback de direção.
 - **Retorno/erros:** `0x8010120B`; `0x80101205`.
@@ -1634,7 +1636,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationConfirm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xC895E567
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xC895E567
 - **Protótipo:** `SceInt32 sceLocationConfirm(SceLocationHandle handle);`
 - **Comportamento:** abre o diálogo de permissão de localização.
 - **Retorno/erros:** 0; `0x80101205`; diálogo já rodando → `0x8010120E` (nunca ocorre aqui).
@@ -1643,7 +1645,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** Confirm → ConfirmGetStatus = 2 → ConfirmGetResult = 1.
 
 #### sceLocationConfirmGetStatus
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x730FF842
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x730FF842
 - **Protótipo:** `SceInt32 sceLocationConfirmGetStatus(SceLocationHandle handle, SceLocationDialogStatus *status);`
 - **Comportamento:** estado do diálogo (0 IDLE, 1 RUNNING, 2 FINISHED).
 - **Retorno/erros:** 0; `0x80101205`; `0x80101204`.
@@ -1652,7 +1654,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationConfirmGetResult
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xFF016C13
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xFF016C13
 - **Protótipo:** `SceInt32 sceLocationConfirmGetResult(SceLocationHandle handle, SceLocationDialogResult *result);`
 - **Comportamento:** resultado do diálogo (0 NONE, 1 DISABLE, 2 ENABLE).
 - **Retorno/erros:** 0; sem diálogo concluído → `0x8010120C`; `0x80101205`; `0x80101204`.
@@ -1661,7 +1663,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationConfirmAbort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xE3CBF875
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xE3CBF875
 - **Protótipo:** `SceInt32 sceLocationConfirmAbort(SceLocationHandle handle);`
 - **Comportamento:** aborta o diálogo em curso.
 - **Retorno/erros:** 0; `0x80101205`.
@@ -1670,7 +1672,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationGetPermission
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x482622C6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x482622C6
 - **Protótipo:** `SceInt32 sceLocationGetPermission(SceLocationHandle handle, SceLocationPermissionInfo *info);`
 - **Comportamento:** estado de permissão.
 - **Retorno/erros:** 0; `0x80101205`; `0x80101204`.
@@ -1680,7 +1682,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationDenyApplication
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x8AAF3FBD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x8AAF3FBD
 - **Protótipo:** `SceInt32 sceLocationDenyApplication(void);` **(inferido)**
 - **Comportamento:** marca o app como sem permissão.
 - **Retorno/erros:** 0 (estado já é DENY).
@@ -1689,7 +1691,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationSetGpsEmulationFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xDE0A9EA4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xDE0A9EA4
 - **Protótipo:** `SceInt32 sceLocationSetGpsEmulationFile(unsigned char *filename);`
 - **Comportamento:** (devkit) usa arquivo de trilha GPS simulada.
 - **Retorno/erros:** 0 e logar o nome (não usar o arquivo).
@@ -1698,7 +1700,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x09C4F674
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x09C4F674
 - **Protótipo:** `SceInt32 sceLocationInit(void);` **(inferido)**
 - **Comportamento:** inicialização interna da biblioteca (normalmente chamada pelo `module_start`/sistema).
 - **Retorno/erros:** 0.
@@ -1707,7 +1709,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationTerm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x1E80199A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0x1E80199A
 - **Protótipo:** `SceInt32 sceLocationTerm(void);` **(inferido)**
 - **Comportamento:** finalização interna; fecha handles.
 - **Retorno/erros:** 0.
@@ -1716,7 +1718,7 @@ MULTIPLE_CONFIRM.
 - **Validação:** —
 
 #### sceLocationSetThreadParameter
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xAA026B53
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibLocation · **NID:** 0xAA026B53
 - **Protótipo:** `SceInt32 sceLocationSetThreadParameter(const void *threadParam);` **(inferido; struct com prioridade/afinidade da thread interna, a confirmar)**
 - **Comportamento:** configura a thread interna da biblioteca.
 - **Retorno/erros:** 0.
@@ -1732,7 +1734,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 (`SCE_ERROR_ERRNO_ENODEV`) até confirmar o código real (desmontar `SceGps` user stub ou testar num PS Vita Wi-Fi).
 
 #### _sceGpsIsDevice
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x0EE1BC7B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x0EE1BC7B
 - **Protótipo:** `int _sceGpsIsDevice(void);` (`psp2/gps.h`)
 - **Comportamento:** informa se há receptor GPS.
 - **Retorno/erros:** 0 (não há). Convenção (bool vs. erro) a confirmar.
@@ -1741,7 +1743,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x6EAC2C6D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x6EAC2C6D
 - **Protótipo:** `int _sceGpsOpen(SceUID cbid);`
 - **Comportamento:** abre o dispositivo, registrando callback de eventos.
 - **Retorno/erros:** `0x80010013` (sem dispositivo).
@@ -1750,7 +1752,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x73EE0ED1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x73EE0ED1
 - **Protótipo:** `int _sceGpsClose(void);`
 - **Comportamento:** fecha o dispositivo.
 - **Retorno/erros:** `0x80010013`.
@@ -1759,7 +1761,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsStart
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x2914F243
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x2914F243
 - **Protótipo:** `int _sceGpsStart(unsigned int mode);`
 - **Comportamento:** inicia aquisição.
 - **Retorno/erros:** `0x80010013`.
@@ -1768,7 +1770,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xE1ABB52D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xE1ABB52D
 - **Protótipo:** `int _sceGpsStop(void);`
 - **Comportamento:** para aquisição.
 - **Retorno/erros:** `0x80010013`.
@@ -1777,7 +1779,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsGetData
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x9BAF9579
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x9BAF9579
 - **Protótipo:** `int _sceGpsGetData(SceGpsPositionData *pos, SceGpsSatelliteData *sat);`
 - **Comportamento:** lê posição e satélites.
 - **Retorno/erros:** `0x80010013`.
@@ -1786,7 +1788,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsGetDeviceInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x7F1DFADB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x7F1DFADB
 - **Protótipo:** `int _sceGpsGetDeviceInfo(SceGpsDeviceInfo *dev_info);`
 - **Comportamento:** informações do receptor.
 - **Retorno/erros:** `0x80010013`.
@@ -1795,7 +1797,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsGetState
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xB8001499
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xB8001499
 - **Protótipo:** `int _sceGpsGetState(SceGpsStatus *state);`
 - **Comportamento:** estado do receptor.
 - **Retorno/erros:** `0x80010013`.
@@ -1804,7 +1806,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsIoctl
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xB11E674D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0xB11E674D
 - **Protótipo:** `int _sceGpsIoctl(SceUInt32 ioctl_command, SceVoid *arg, SceSize arg_size, SceSize *a4);`
 - **Comportamento:** comando específico do driver.
 - **Retorno/erros:** `0x80010013`.
@@ -1813,7 +1815,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsSelectDevice
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x2D4D8788
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x2D4D8788
 - **Protótipo:** `int _sceGpsSelectDevice(SceUInt32 device_type);`
 - **Comportamento:** escolhe o dispositivo (interno/externo).
 - **Retorno/erros:** `0x80010013`.
@@ -1822,7 +1824,7 @@ vita-headers ("missing structs") — não escrever nelas. Erro "sem dispositivo"
 - **Validação:** —
 
 #### _sceGpsResumeCallback
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x0A4882B3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGps · **NID:** 0x0A4882B3
 - **Protótipo:** `int _sceGpsResumeCallback(void);`
 - **Comportamento:** usado pelo sistema após suspensão.
 - **Retorno/erros:** 0.
@@ -1837,7 +1839,7 @@ header no vita-headers nem implementação no Vita3K; os protótipos abaixo são
 (`int f(...)`): a implementação mínima não lê argumentos, então os layouts não são necessários.
 
 #### Seção comum (família `sceNear*` / `sceNearUtility*`)
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceNearUtil / SceNearDialogUtil · **NID:** ver tabela
+- [x] **Prioridade:** P2 · **Biblioteca:** SceNearUtil / SceNearDialogUtil · **NID:** ver tabela
 - **Protótipo:** não público; `int f(...)` **(inferido)**. `sceNearUtility*` (SceNearDialogUtil) são as mesmas
   operações de `sceNear*` (SceNearUtil) com nome alternativo (mesma lista, 1 para 1, mais as 5 funções de diálogo).
 - **Comportamento:** serviço Near indisponível. `sceNearInitialize`/`sceNearUtilityInitialize` falham; todas as
@@ -1854,9 +1856,30 @@ header no vita-headers nem implementação no Vita3K; os protótipos abaixo são
 
 Diálogo Near (`sceNearDialog*`): segue o padrão de common dialog do VitaSharp (`Hle/Modules/Online.cs`,
 `sceNetCheckDialog*`): `Init(param)` → 0; `GetStatus()` → 2 (`SCE_COMMON_DIALOG_STATUS_FINISHED`);
-`GetResult(result)` → zera 0x2C bytes (tamanho a confirmar) e escreve `result = 2`
-(`SCE_COMMON_DIALOG_RESULT_ABORTED`) no primeiro campo; `Abort`/`Term` → 0. `GetStatus` sem `Init` → 0 (NONE);
-`GetResult` sem `Init` → `0x80020404`.
+`GetResult(result)` → escreve só `result = 2` (`SCE_COMMON_DIALOG_RESULT_ABORTED`) no primeiro campo (o tamanho
+0x2C da struct não está confirmado, então o resto não é zerado para não arriscar sobrescrever a pilha do jogo);
+`Abort` → 0; `Term` → 0 e volta ao estado NONE. `GetStatus` sem `Init` → 0 (NONE); `GetResult` sem `Init` →
+`0x80020404`.
+
+#### NIDs SceNearUtil de SDK antigo (Uncharted: Golden Abyss, PCSA00029)
+- [x] **Prioridade:** P2 · **Biblioteca:** SceNearUtil · **NID:** 0x1AA394BA 0x1AE3EC1C 0x49A97D5F 0x69EE6FB3
+  0x76C4807C 0x8095FDEF 0x88540CEC 0x9B3F2DCE 0x9FB9277B 0xA412E9CA 0xBF2BBE1F 0xCA742B97 0xE608000B
+- **Origem:** o `uncharted.self` (título de lançamento) importa 13 NIDs de SceNearUtil que não existem no db do
+  vita-headers nem no Vita3K (nenhum coincide com a tabela acima: são NIDs de um SDK pré-lançamento).
+- **Análise dos call sites** (`0x81282084`..`0x812838C0` do `uncharted.self`; o jogo carrega
+  `SCE_SYSMODULE_NEAR_UTIL` 0x2B antes):
+  - `0xA412E9CA(work, {buf, 0x40000}*, 0)`: o jogo aloca 256 KiB, chama, e se o retorno ≠ 0 libera o buffer e grava
+    o estado "falhou" (que permite nova tentativa a partir do menu) → é o `Initialize` antigo.
+  - `0xE608000B(work)`: mesmo ponteiro de trabalho, chamado no desligamento antes de liberar o buffer → `Finalize`.
+  - `0x69EE6FB3(&n, &ptr)`: o valor de retorno é usado diretamente como contagem sem sinal de um laço (chamada duas
+    vezes, a segunda com `&contagem`). Um código de erro negativo seria lido como ~2 bilhões de entradas → **não pode
+    retornar erro**. `0x49A97D5F` é testado com `<= 0 → falha`. Os demais (`1AA394BA`, `1AE3EC1C`, `76C4807C`,
+    `8095FDEF`, `88540CEC`, `9B3F2DCE`, `9FB9277B`, `BF2BBE1F`, `CA742B97`) leem/consultam entradas desses laços.
+  - A thread de trabalho Near do jogo chama essas funções mesmo depois de o `Initialize` falhar (não testa o
+    estado), então o comportamento seguro é "nada encontrado".
+- **Comportamento:** `0xA412E9CA` → `0x80020405` (indisponível, como `sceNearInitialize`); `0xE608000B` → 0;
+  os outros 11 → 0 sem escrever em ponteiro nenhum (contagem 0 / nada). Registrados com NID explícito em `Near.cs`
+  com nomes `sceNearUtil_<NID>`.
 
 | NID | Biblioteca | Função | Comportamento mínimo |
 | --- | --- | --- | --- |
@@ -1927,15 +1950,16 @@ Diálogo Near (`sceNearDialog*`): segue o padrão de common dialog do VitaSharp 
 
 ## 6. Debug, perf e segurança (HLE trivial)
 
-Arquivo sugerido: `src/VitaSharp.Core/Hle/Modules/DebugPerf.cs` (`sealed class DebugPerf : HleModule`) para 6.1–6.4.
-SceLibSsp e SceLibRng entram em `src/VitaSharp.Core/Hle/Modules/ProcessMgr.cs`, ao lado de `__stack_chk_fail`.
+Implementado: `src/VitaSharp.Core/Hle/Modules/DebugPerf.cs` (`DebugPerf`) para 6.1–6.3 e 6.7;
+`_sceKernelBacktrace` e SceLibSsp em `ProcessMgr.cs`, ao lado de `__stack_chk_fail`; SceLibRng já estava em
+`Taihen.cs` (`Security`). Testes: `tests/VitaSharp.Tests/LocationPerfHleTests.cs`.
 Num console retail essas bibliotecas de devkit existem mas não fazem nada útil; o objetivo é só não quebrar o jogo
 que deixou chamadas de profiler no build final.
 
 ### 6.1 ScePerf
 
 #### Seção comum
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePerf · **NID:** ver tabela
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePerf · **NID:** ver tabela
 - **Protótipo:** PMON e timebase em `psp2/perf.h`; Razor CPU **(inferidos)**.
 - **Comportamento:** contadores de performance ARM (PMU) e marcadores do Razor CPU profiler. Sem profiler: tudo
   retorna sucesso sem efeito; consultas devolvem "não capturando"/zero.
@@ -1974,15 +1998,15 @@ que deixou chamadas de profiler no build final.
 | 0x4F1385E3 | `sceRazorCpuSync` | `int (void)` **(inferido)** | 0 |
 | 0x3F29E937 | `sceRazorCpuStartActivityMonitor` | `int (...)` **(inferido)** | 0 |
 | 0x9D5B9621 | `sceRazorCpuStopActivityMonitor` | `int (void)` **(inferido)** | 0 |
-| 0xF7F8ADCE | `sceRazorCpuGetActivityMonitorTraceBuffer` | `int (void **buf, SceSize *size)` **(inferido)** | 0; se os ponteiros não forem NULL, escrever 0 neles (assinatura a confirmar antes de escrever) |
+| 0xF7F8ADCE | `sceRazorCpuGetActivityMonitorTraceBuffer` | `int (void **buf, SceSize *size)` **(inferido)** | 0; não escreve nos ponteiros (assinatura não confirmada) |
 | 0xAED36A40 | `sceRazorCpuStartUserMarkerTrace` | `int (void *buffer, SceSize size)` **(inferido)** | 0 |
 | 0x4B47E144 | `sceRazorCpuStopUserMarkerTrace` | `int (void)` **(inferido)** | 0 |
-| 0x0DE231D4 | `sceRazorCpuGetUserMarkerTraceBuffer` | `int (void **buf, SceSize *size)` **(inferido)** | 0; idem |
+| 0x0DE231D4 | `sceRazorCpuGetUserMarkerTraceBuffer` | `int (void **buf, SceSize *size)` **(inferido)** | 0; idem (não escreve) |
 
 ### 6.2 SceRazorCapture e SceRazorHud
 
 #### Seção comum
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceRazorCapture / SceRazorHud · **NID:** ver tabela
+- [x] **Prioridade:** P2 · **Biblioteca:** SceRazorCapture / SceRazorHud · **NID:** ver tabela
 - **Protótipo:** os que estão em `psp2/razor_capture.h` e `psp2/razor_hud.h` estão indicados; o resto
   **(inferido)**.
 - **Comportamento:** captura de frame da GPU (Razor GPU) e HUD de métricas ao vivo. Sem profiler: no-op.
@@ -2028,12 +2052,13 @@ que deixou chamadas de profiler no build final.
 Canal DECI4P com o PC host (Target Manager) — só existe em devkit. Num retail não há host: abrir canal falha.
 
 #### Seção comum
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceDeci4pUserp · **NID:** ver tabela
+- [x] **Prioridade:** P2 · **Biblioteca:** SceDeci4pUserp · **NID:** ver tabela
 - **Protótipo:** `psp2/deci4p/user.h` (os de CreateHostProcess* **inferidos**).
 - **Comportamento:** sem host conectado.
 - **Retorno/erros:** códigos reais a confirmar (testar num retail ou desmontar `SceDeci4pUserp`). Provisório:
-  `SceError.ERROR` (`0x80020001`) para Open/CreateHostProcess*, `SceError.UNKNOWN_UID` (`0x80028002`) para
-  operações sobre socket (nunca há socket válido).
+  `SceError.ERROR` (`0x80020001`) para Open/CreateHostProcess*, `SceError.UNKNOWN_UID` (`0x80028001`; o
+  `0x80028002` citado antes é `DIFFERENT_UID_CLASS` em `psp2/kernel/error.h`) para operações sobre socket (nunca há
+  socket válido).
 - **Estruturas:** —
 - **Implementação no VitaSharp:** `DebugPerf.cs`.
 - **Validação:** —
@@ -2041,10 +2066,10 @@ Canal DECI4P com o PC host (Target Manager) — só existe em devkit. Num retail
 | NID | Função | Protótipo | Comportamento |
 | --- | --- | --- | --- |
 | 0x28578FE8 | `sceKernelDeci4pOpen` | `SceUID (const char *protoname, SceUInt32 protonum, SceSize bufsize)` | `0x80020001` (sem host); logar `protoname` |
-| 0x63B0C50F | `sceKernelDeci4pClose` | `SceInt32 (SceUID socketid)` | `0x80028002` |
-| 0x971E1C66 | `sceKernelDeci4pRead` | `SceInt32 (SceUID socketid, void *buffer, SceSize size, SceUInt32 reserved)` | `0x80028002` |
-| 0xCDA3AAAC | `sceKernelDeci4pWrite` | `SceInt32 (SceUID socketid, const void *buffer, SceSize size, SceUInt32 reserved)` | `0x80028002` |
-| 0x73371F35 | `sceKernelDeci4pRegisterCallback` | `SceInt32 (SceUID socketid, SceUID cbid)` | `0x80028002` |
+| 0x63B0C50F | `sceKernelDeci4pClose` | `SceInt32 (SceUID socketid)` | `0x80028001` |
+| 0x971E1C66 | `sceKernelDeci4pRead` | `SceInt32 (SceUID socketid, void *buffer, SceSize size, SceUInt32 reserved)` | `0x80028001` |
+| 0xCDA3AAAC | `sceKernelDeci4pWrite` | `SceInt32 (SceUID socketid, const void *buffer, SceSize size, SceUInt32 reserved)` | `0x80028001` |
+| 0x73371F35 | `sceKernelDeci4pRegisterCallback` | `SceInt32 (SceUID socketid, SceUID cbid)` | `0x80028001` |
 | 0xC4E1D86D | `sceKernelDeci4pIsProcessAttached` | `SceInt32 (void)` | 0 (nenhum debugger) |
 | 0x3BC66BD8 | `sceKernelDeci4pEnableWatchpoint` | `SceInt32 (void)` | 0 |
 | 0x5A4CDF97 | `sceKernelDeci4pDisableWatchpoint` | `SceInt32 (void)` | 0 |
@@ -2054,46 +2079,47 @@ Canal DECI4P com o PC host (Target Manager) — só existe em devkit. Num retail
 ### 6.4 SceBacktrace
 
 #### _sceKernelBacktrace
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceBacktrace (módulo SceKernelModulemgr) · **NID:** 0xBF371A98
+- [x] **Prioridade:** P2 · **Biblioteca:** SceBacktrace (módulo SceKernelModulemgr) · **NID:** 0xBF371A98
 - **Protótipo:** `SceInt32 _sceKernelBacktrace(SceUID thread_id, SceKernelCallFrame *call_frame_buffer, SceSize num_bytes_buffer, const SceBacktraceArgs *args);` (`psp2/kernel/backtrace.h`)
 - **Comportamento:** desempilha a pilha da thread (`thread_id` ou `SCE_KERNEL_BACKTRACE_CONTEXT_CURRENT`) gravando
   pares `{sp, pc}`. No FW 3.60 exige modo de desenvolvimento.
 - **Retorno/erros:** com `SCE_KERNEL_BACKTRACE_MODE_DONT_EXCEED` (2) em `args->mode`: 0 em sucesso; sem o flag: nº
   total de frames da pilha (inclusive os que não couberam); < 0 em erro. `args` NULL → erro; buffer não NULL menor
-  que 8 bytes → erro (códigos a confirmar; usar `SceError.INVALID_ARGUMENT` 0x80020003). Modo kernel (bit 1) →
-  erro de permissão (a confirmar; usar `0x80020003`).
+  que 8 bytes → erro (códigos a confirmar; usa `SceError.INVALID_ARGUMENT` = `0x80020005`; o `0x80020003` citado
+  antes é `SCE_KERNEL_ERROR_NOSYS`). Modo kernel (`SCE_KERNEL_BACKTRACE_MODE_KERNEL` = 1, bit 0) → erro de
+  permissão (a confirmar; usa `0x80020005`).
 - **Estruturas:** `SceBacktraceArgs` (0x10): +0x00 `num_frames` (`SceUInt32*`, pode ser NULL), +0x04 `mode`,
   +0x08 reserved[2]. `SceKernelCallFrame` (8): +0x00 sp, +0x04 pc.
-- **Implementação no VitaSharp:** versão mínima: escrever `*num_frames = 0` (se não NULL) e retornar 0 (pilha
-  "vazia", coerente nos dois modos). Versão útil (opcional): para a thread atual, gravar o frame 0 com o `sp` atual
-  e `lr` do chamador (`GuestThread.Current` tem os registradores) e seguir a cadeia de frame pointer (`r7` em Thumb)
-  enquanto apontar para a pilha da thread; parar no fim do buffer quando DONT_EXCEED.
+- **Implementação no VitaSharp:** `ProcessMgr._sceKernelBacktrace` valida `args`/modo/buffer e delega ao
+  `sceKernelBacktrace` existente (frame 0 = `sp`/`lr` da thread atual, depois palavras da pilha que apontam logo após
+  um BL/BLX Thumb, até 64 frames; `*num_frames` = frames gravados). `DONT_EXCEED` agora é testado como bit
+  (`mode & 2`), aceitando também o bit 0x8.
 - **Validação:** homebrew que imprime backtrace; comparar com `DumpState`.
 
 ### 6.5 SceLibSsp
 
 #### sceLibSspStackChkFail
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibSsp (módulo SceLibKernel) · **NID:** 0x39AD080B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibSsp (módulo SceLibKernel) · **NID:** 0x39AD080B
 - **Protótipo:** `__attribute__((__noreturn__)) void sceLibSspStackChkFail(void);` (`psp2/kernel/ssp.h`)
 - **Comportamento:** alias de `__stack_chk_fail` (NID 0x37691BF8, mesma entrada no FW 3.60): executa `bkpt 0x81`
   e não retorna — o processo é derrubado (coredump), não só a thread.
 - **Retorno/erros:** não retorna.
 - **Estruturas:** —
-- **Implementação no VitaSharp:** acrescentar `[Hle("sceLibSspStackChkFail")]` ao método `__stack_chk_fail` já
-  existente em `ProcessMgr.cs` (o atributo permite múltiplos; o nome resolve para 0x39AD080B via `nids.txt`).
-  Comportamento atual (log + `DumpState` + `GuestThreadExitException(-1)`) só encerra a thread; para fidelidade,
-  parar o emulador (`Emu.Running = false` ou mecanismo equivalente de término de processo) — decidir junto com o
-  `__stack_chk_fail`. **Relacionado (fora da lista do TSV, mas necessário para coerência):** as variáveis
-  `sceLibSspStackChkGuard` (NID 0x1EA375E6, SceLibSsp) e `SceKernelStackChkGuard` (NID 0x4458BCF3, SceLibKernel)
-  devem apontar para o mesmo guard que `__stack_chk_guard` (0x93B8AA67): registrar o mesmo factory com
-  `Emu.Hle.RegisterVariable(0x1EA375E6u, ...)` / `(0x4458BCF3u, ...)` reaproveitando `_stackChkGuard`.
+- **Implementação no VitaSharp:** o método `__stack_chk_fail` de `ProcessMgr.cs` agora tem
+  `[Hle("__stack_chk_fail", Library = "SceLibKernel")]` (0x37691BF8 — antes só estava ligado a
+  `sceKernelStackChkFail` 0xEC287338, por isso GoW/Invizimals/Killzone/Sakatsuku e as libc/libult LLE o listavam como
+  ausente), `[Hle("sceLibSspStackChkFail")]` (0x39AD080B) e `[Hle("sceKernelStackChkFail")]`. Comportamento: log de
+  erro com nome/UID da thread + `DumpState` + `Emu.Stop()` + `GuestThreadExitException(-1)` (mesmo término de processo
+  de `sceKernelExitProcess`; o Vita3K faz `assert(false)`). As variáveis `sceLibSspStackChkGuard` (0x1EA375E6) e
+  `SceKernelStackChkGuard` (0x4458BCF3) usam o mesmo factory idempotente de `__stack_chk_guard` (0x93B8AA67), logo
+  apontam para a mesma palavra de guard.
 - **Validação:** homebrew compilado com `-fstack-protector` que estoura um buffer → log
   `__stack_chk_fail: stack smashing detected`.
 
 ### 6.6 SceLibRng
 
 #### sceKernelGetRandomNumber
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibRng (módulo SceLibKernel) · **NID:** 0xB2700165
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibRng (módulo SceLibKernel) · **NID:** 0xB2700165
 - **Protótipo:** `int sceKernelGetRandomNumber(void *output, SceSize size);` (`psp2/kernel/rng.h`)
 - **Comportamento:** preenche `output` com `size` bytes aleatórios (wrapper de `_sceKernelGetRandomNumber`
   do SceSblSsMgr com `dst_size == length`). Máximo 64 bytes por chamada.
@@ -2101,9 +2127,26 @@ Canal DECI4P com o PC host (Target Manager) — só existe em devkit. Num retail
   a confirmar no hardware); `output` NULL com `size > 0` → erro (código a confirmar; usar o mesmo `0x810C0000`).
   `size == 0` → 0.
 - **Estruturas:** —
-- **Implementação no VitaSharp:** em `ProcessMgr.cs`:
-  `[Hle] int sceKernelGetRandomNumber(uint output, uint size)` →
-  validar e `System.Security.Cryptography.RandomNumberGenerator.Fill(GuestMemory.Span(output, (int)size))`.
+- **Implementação no VitaSharp:** já existia em `Taihen.cs` (`Security.sceKernelGetRandomNumber`, com
+  `RandomNumberGenerator.Fill`); os códigos de erro foram alinhados a este spec (`0x810C0000` em vez de
+  `ILLEGAL_SIZE`/`ILLEGAL_ADDR`) e `size == 0` retorna 0 mesmo com `output` NULL.
   Não usar semente fixa (jogos usam para IDs de sessão/sal); se for preciso determinismo em cenários de teste,
   usar uma opção explícita (`EmulatorOptions.DeterministicRng`).
 - **Validação:** teste unitário: 64 bytes → 0 e buffer alterado; 65 → `0x810C0000`.
+
+### 6.7 SceUlobjMgr e SceUlobjDbg (suporte à libult LLE)
+
+#### Seção comum
+- [x] **Prioridade:** P2 · **Biblioteca:** SceUlobjMgr / SceUlobjDbg · **NID:** ver tabela
+- **Origem:** importadas pelo `libult.suprx` que os jogos trazem (GoW, Invizimals, Killzone, Sakatsuku, DD), junto
+  com `_sceRazorCpuWriteFiberUltPkt` (6.1). Registram a revisão do protocolo da libult e objetos de nível de usuário
+  para o debugger; sem debugger não fazem nada.
+- **Comportamento:** 0, sem efeito (o Vita3K também só retorna). Implementado em `DebugPerf.cs`.
+
+| NID | Biblioteca | Função | Comportamento |
+| --- | --- | --- | --- |
+| 0x50F2F2AA | SceUlobjMgr | `_sceUlobjMgrRegisterLibultProtocolRevision` | 0 |
+| 0x08769991 | SceUlobjMgr | `_sceUlobjMgrStartSupportingUserlevelObject` | 0 |
+| 0xEF09284B | SceUlobjMgr | `_sceUlobjMgrStopSupportingUserlevelObject` | 0 |
+| 0xD7F0F610 | SceUlobjDbg | `SceUlobjDbg_D7F0F610` (sem nome público) | 0 |
+| 0xF9C0F5DA | SceUlobjDbg | `SceUlobjDbg_F9C0F5DA` (sem nome público) | 0 |
