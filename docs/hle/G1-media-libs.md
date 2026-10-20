@@ -182,13 +182,35 @@ Estruturas comuns:
 | `SceAtracContentInfo` | 0x34 | 0x00 `size`, 0x04 `atracType`, 0x08 `channel`, 0x0C `samplingRate`, 0x10 `endSample` (s32), 0x14 `loopStartSample` (s32), 0x18 `loopEndSample` (s32), 0x1C `bitRate`, 0x20 `fixedEncBlockSize`, 0x24 `fixedEncBlockSample`, 0x28 `frameSample`, 0x2C `loopBlockOffset`, 0x30 `loopBlockSize` |
 | `SceAtracStreamInfo` | 0x10 | 0x00 `size` (=0x10), 0x04 `pWritePosition` (ptr guest), 0x08 `readPosition`, 0x0C `writableSize` |
 
+**Estado da implementação (HLE):** `Hle/Modules/Atrac.cs` + `Hle/Audio/At9Container.cs` (parser) +
+`Hle/Audio/AtracStream.cs` (estado por handle, testável sem guest: o decoder entra por `IAt9SuperframeDecoder`).
+`sceSysmoduleLoadModule(0x0030)` tenta antes `libatrac.suprx` por LLE (`app0:sce_module` ou `vs0:sys/external`,
+tabela `LleSysmodules` em `SystemMisc.cs`); o HLE fica como fallback. Decisões tomadas onde a doc dizia "a confirmar"
+(todas continuam sem verificação em hardware/LLE):
+- Handle = `0x2003 << 16 | slot`, slot 0-based (o menor livre).
+- Os pontos do `smpl` são lidos como incluindo o encoder delay (como AT3 no PSP) e expostos sem ele; `loopEnd` e
+  `endSample` são inclusivos (`endSample = TotalSamples - 1`). `loopBlockOffset` = offset no arquivo do superframe
+  que contém o início do loop; `loopBlockSize` = bytes desse superframe até o fim do superframe do fim do loop.
+- `OutputSamples` padrão = `FrameSamples`; `SetOutputSamples` exige múltiplo de `FrameSamples`, ≤ 8 frames e ≤ 2048.
+- `Decode` para no ponto de loop e no fim (pode devolver menos amostras); depois do fim retorna `ALL_DATA_WAS_DECODED`.
+  Ao pular de forma não sequencial com tudo na memória (seek/loop), o decoder é reiniciado e "aquecido" com o
+  superframe anterior. Erro do decoder → `InternalError = 0x807F0000` e retorno `0x807F0000`.
+- Streaming: o anel recebe os superframes na ordem de reprodução — ao chegar ao fim do bloco de loop com loops
+  restantes, `readPosition` volta para o bloco de início do loop. Por isso o sub-buffer nunca é necessário:
+  `IsSubBufferNeeded` = 0, `GetSubBufferInfo`/`SetSubBuffer` = `NO_NEED_SUB_BUFFER`. `SetLoopNum` depois de o jogo
+  já ter lido além do fim do loop descarta os bytes excedentes do anel e rebobina o leitor. `ResetNextOutputPosition`
+  em streaming esvazia o anel e pede a leitura a partir de um superframe antes do alvo (aquecimento).
+- `SetLoopNum(≠0)` num arquivo sem loop → `INVALID_LOOP_STATUS`. Status: tudo na memória = `0x2|0x4` (+`0x8` com
+  loop); streaming liga `0x4` quando o leitor chegou ao fim dos dados. `MAIN_BUFFER_SIZE_IS_TOO_SMALL` em streaming
+  quando `bufferSize < dataOffset + superframe`.
+
 Validação geral: não há jogo instalado que importe SceAtrac. Montar um homebrew de teste com VitaSDK (`-lSceAtrac_stub`)
 que carrega um `.at9` de `app0:`, toca em modo "tudo na memória" e em streaming com buffer pequeno, e compara a PCM
 (hash) com o mesmo arquivo decodificado pelo `Audiodec` frame a frame. Cruzar os valores de `GetContentInfo` e dos
 getters com o Vita3K rodando `libatrac` por LLE.
 
 ### sceAtracQueryDecoderGroupMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
 - **Protótipo:** `int sceAtracQueryDecoderGroupMemSize(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup);` (`psp2/atrac.h`)
 - **Comportamento:** retorna (em r0, positivo) o tamanho de memória de trabalho que o jogo deve alocar e passar a
   `sceAtracCreateDecoderGroup` para `totalCh` canais.
@@ -202,7 +224,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** homebrew de teste imprime o valor para totalCh 1, 2, 16.
 
 ### sceAtracCreateDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
 - **Protótipo:** `int sceAtracCreateDecoderGroup(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup, void *pvWorkMem, int initAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** cria o grupo de decoders (reserva `totalCh` canais de hardware). Se `initAudiodecFlag != 0`,
   inicializa a biblioteca SceAudiodec para AT9 com `totalCh` (equivalente a `sceAudiodecInitLibrary(0x1003, {size, totalCh})`).
@@ -216,7 +238,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** criar duas vezes deve dar `ALREADY_CREATED`.
 
 ### sceAtracDeleteDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
 - **Protótipo:** `int sceAtracDeleteDecoderGroup(SceUInt32 atracType, int termAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** destrói o grupo; se `termAudiodecFlag`, termina a biblioteca SceAudiodec AT9.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_CREATED` (sem grupo); `REMAIN_VALID_HANDLE` (há handles não liberados);
@@ -226,7 +248,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** deletar com handle vivo → `0x80630018`.
 
 ### sceAtracGetDecoderGroupInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
 - **Protótipo:** `int sceAtracGetDecoderGroupInfo(SceUInt32 atracType, SceAtracDecoderGroup *pCreatedDecoder, SceAtracDecoderGroup *pAvailableDecoder);` (`psp2/atrac.h`)
 - **Comportamento:** preenche `pCreatedDecoder` com o grupo criado (`wordLength`, `totalCh`) e `pAvailableDecoder` com
   o que ainda está livre (`totalCh - canais em uso`).
@@ -237,7 +259,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** após acquire de um stereo, `available.totalCh` cai 2.
 
 ### sceAtracSetDataAndAcquireHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
 - **Protótipo:** `int sceAtracSetDataAndAcquireHandle(SceUChar8 *pucBuffer, SceUInt32 uiReadSize, SceUInt32 uiBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** analisa o cabeçalho RIFF no início de `pucBuffer` (`uiReadSize` bytes válidos do arquivo, buffer
   total `uiBufferSize`), reserva canais no grupo e devolve um handle. Se `uiReadSize >= FileSize` → status
@@ -255,7 +277,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** `.at9` inteiro e cabeçalho truncado (`readSize` pequeno → `0x8063000B`).
 
 ### sceAtracReleaseHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
 - **Protótipo:** `int sceAtracReleaseHandle(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** libera o handle e devolve seus canais ao grupo.
 - **Retorno/erros:** 0; `INVALID_HANDLE` (`handle >> 16 != 0x2003` ou índice desconhecido).
@@ -264,7 +286,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** liberar duas vezes → `0x8063000C`.
 
 ### sceAtracDecode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
 - **Protótipo:** `int sceAtracDecode(int atracHandle, void *pOutputBuffer, SceUInt32 *pOutputSamples, SceUInt32 *pDecoderStatus);` (`psp2/atrac.h`)
 - **Comportamento:** decodifica até `OutputSamples` amostras (por canal) a partir de `NextSample` para
   `pOutputBuffer` (S16 intercalado). Descarta `EncoderDelay` amostras no início do arquivo. Ao alcançar `LoopEnd` com
@@ -284,7 +306,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
   `loopStartSample` exatamente (comparar amostra a amostra).
 
 ### sceAtracGetStreamInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
 - **Protótipo:** `int sceAtracGetStreamInfo(int atracHandle, SceAtracStreamInfo *pStreamInfo);` (`psp2/atrac.h`)
 - **Comportamento:** informa onde o jogo deve escrever mais dados: `pWritePosition` (endereço no anel), `readPosition`
   (offset no arquivo a ler), `writableSize` (bytes contíguos que cabem até o fim do anel ou até o dado ainda não
@@ -296,7 +318,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** streaming com buffer de 0x4000 toca um arquivo de 1 MB sem erro.
 
 ### sceAtracAddStreamData
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
 - **Protótipo:** `int sceAtracAddStreamData(int atracHandle, SceUInt32 addSize);` (`psp2/atrac.h`)
 - **Comportamento:** o jogo informa que escreveu `addSize` bytes em `pWritePosition`; avança `WritePtr`, `ReadPos`,
   `Filled`; atualiza bits `*_IS_ON_MEMORY`.
@@ -306,7 +328,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** adicionar mais que o vago → `0x80630013`.
 
 ### sceAtracIsSubBufferNeeded
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
 - **Protótipo:** `int sceAtracIsSubBufferNeeded(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** retorna 1 se o handle está em streaming com loop e o bloco que contém `LoopStart`
   (`loopBlockOffset/loopBlockSize`) precisa ser mantido num sub-buffer para recomeçar o loop sem reler o arquivo;
@@ -318,7 +340,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** arquivo com loop em streaming; comparar com Vita3K LLE.
 
 ### sceAtracGetSubBufferInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
 - **Protótipo:** `int sceAtracGetSubBufferInfo(int atracHandle, SceUInt32 *pReadPosition, SceUInt32 *pMinSubBufferSize, SceUInt32 *pDataSize);` (`psp2/atrac.h`)
 - **Comportamento:** informa o offset no arquivo (`readPosition`) e o tamanho (`dataSize`) do trecho que o jogo deve
   carregar no sub-buffer, e o tamanho mínimo do sub-buffer (`minSubBufferSize`, alinhado a 0x100).
@@ -329,7 +351,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem acima.
 
 ### sceAtracSetSubBuffer
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
 - **Protótipo:** `int sceAtracSetSubBuffer(int atracHandle, SceUChar8 *pSubBuffer, SceUInt32 subBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** registra o sub-buffer já preenchido pelo jogo; o `Decode` usa esse bloco ao voltar ao loop.
 - **Retorno/erros:** 0; `INVALID_ALIGNMENT` (ponteiro ou tamanho não múltiplos de 0x100 — checado antes de tudo no
@@ -339,7 +361,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem.
 
 ### sceAtracSetLoopNum
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
 - **Protótipo:** `int sceAtracSetLoopNum(int atracHandle, int loopNum);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas vezes o trecho de loop repete (`-1` infinito, `0` sem loop).
 - **Retorno/erros:** 0; `INVALID_LOOP_NUM` (`< -1`), `INVALID_HANDLE`; `INVALID_LOOP_STATUS` se o arquivo não tem
@@ -349,7 +371,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** loopNum=1 deve tocar o loop exatamente duas vezes.
 
 ### sceAtracSetOutputSamples
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
 - **Protótipo:** `int sceAtracSetOutputSamples(int atracHandle, SceUInt32 outputSamples);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas amostras por canal cada `sceAtracDecode` entrega.
 - **Retorno/erros:** 0; `INVALID_HANDLE`; `INVALID_MAX_OUTPUT_SAMPLES` se `0` ou `> 2048` ou (provável) não múltiplo
@@ -359,7 +381,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** valores 256, 1024, 2048, 2049.
 
 ### sceAtracResetNextOutputPosition
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
 - **Protótipo:** `int sceAtracResetNextOutputPosition(int atracHandle, SceUInt32 resetSample);` (`psp2/atrac.h`)
 - **Comportamento:** seek: a próxima saída começa em `resetSample`. Reposiciona o decoder no superframe que contém
   `resetSample` (+ delay), descarta as amostras iniciais do superframe e, em streaming, esvazia o anel e ajusta
@@ -371,7 +393,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** seek para metade e comparar PCM com decodificação contínua (tolerância no primeiro superframe).
 
 ### sceAtracGetContentInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
 - **Protótipo:** `int sceAtracGetContentInfo(int atracHandle, SceAtracContentInfo *pContentInfo);` (`psp2/atrac.h`)
 - **Comportamento:** preenche informações do arquivo: `atracType = 0x2003`, `channel`, `samplingRate`,
   `endSample` (última amostra, `TotalSamples - 1`, a confirmar), `loopStartSample`/`loopEndSample` (-1 sem loop),
@@ -392,14 +414,14 @@ teste ao longo da reprodução e comparar com Vita3K LLE.
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
-| - [ ] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
-| - [ ] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
-| - [ ] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
-| - [ ] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
-| - [ ] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
-| - [ ] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
-| - [ ] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
+| - [x] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
+| - [x] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
+| - [x] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
+| - [x] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
+| - [x] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
+| - [x] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
+| - [x] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
+| - [x] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
 
 ## SceSas (33 funções)
 
@@ -491,13 +513,42 @@ Códigos de erro: **valores do PSP** (PPSSPP `sceSas.h`); a família `0x8042xxxx
 | SCE_SAS_ERROR_NOT_INIT | 0x80420100 |
 | SCE_SAS_ERROR_ALREADY_INIT | 0x80420101 |
 
+**Estado da implementação (HLE, ABI ainda inferida):** `Hle/Modules/Sas.cs` + `Hle/Audio/SasEngine.cs` (vozes,
+envelope, mixer, efeito) + `Hle/Audio/Adpcm.cs` (bloco VAG/HEVAG; `Ngs.DecodeHevag` não foi migrado para o helper,
+para não mexer no NGS sem regressão). `sceSysmoduleLoadModule(0x000D)` tenta antes `libsas.suprx` por LLE
+(`LleSysmodules` em `SystemMisc.cs`); o HLE é o fallback. Os protótipos e os códigos `0x8042xxxx` continuam
+inferidos do PSP. Decisões tomadas onde a doc dizia "a confirmar":
+- Config: pares `chave=valor` separados por espaço/vírgula (`numGrains`, `numVoices`, `numReverbs`, sem
+  diferenciar maiúsculas; chaves desconhecidas só geram aviso). Padrões 256/32/1. `numVoices` aceito em 1..256 (folga
+  sobre o limite 32 do PSP). Grão: regra do PSP (64..2048, múltiplo de 32) e ≤ `numGrains` quando informado;
+  `sceSasInit` usa `numGrains` como grão. `GetNeededMemorySize` devolve 0 e escreve o tamanho em `*outSize`.
+  O tamanho do buffer do init não é checado.
+- Saída sempre estéreo a 48 kHz (`OutputMode` 1 é aceito e renderizado como estéreo, com aviso). Pitch 0x1000 = 1
+  amostra de origem por amostra de saída, interpolação linear, faixa 1..0x4000.
+- VAG: o mesmo decodificador cobre VAG clássico e HEVAG (preditor estendido pelo nibble alto do byte 1); histórico
+  saturado em s16. Bloco com flag 7 ou fim do buffer encerram a voz; bit2 marca o início do loop, bit0 encerra o
+  bloco e, com `loopflag` e bit1, volta ao início do loop (bloco 0 se não houver marca). `SetVoice` no mesmo endereço
+  com a voz tocando não reinicia a posição.
+- PCM: `size` em amostras (S16 mono), `loopsize` = últimas N amostras repetidas (≤ 0 sem loop); sem limite superior
+  de tamanho.
+- Envelope por amostra, altura 0..0x40000000; padrões (sem confirmação): attack instantâneo, sustain no máximo até o
+  key off, release instantâneo. Curvas: linear ±rate; bent = rate até 3/4 da altura e rate/4 acima; exponencial =
+  rate/2^31 da distância a 0/máximo por amostra; direct = altura passa a `rate` e a fase avança. `SimpleADSR`
+  converte os registradores do SPU (shift/step) para essas taxas. Modos válidos por fase como no PSP (A: 0/2/5,
+  D e R: 1/3/5, S: 0..5).
+- `SetPause` é por voz; `GetEndState`/`GetPauseState` são por voz (1/0). `SetEffect` trata qualquer valor ≠ 0 como
+  ligado. Efeito: ECHO/DELAY = linha de atraso com feedback (`delayTime` × 192 amostras, `feedback/128`); demais tipos
+  de reverb passam o envio wet sem processamento (aviso uma vez); OFF zera o wet. Padrões: dry ligado, wet desligado,
+  volume do efeito 0x1000. `SetDistortion` só guarda o valor. Picos: maior |amostra| do barramento dry, da saída do
+  efeito e da soma pré-clamp no último grão, escritos em `*pPeakL/*pPeakR`.
+
 Validação geral: nenhum jogo instalado importa SceSas. Teste unitário de `SasEngine` (uma voz VAG conhecida, pitch
 0x1000, ADSR direto → PCM idêntica ao decode VAG puro; pitch 0x2000 → metade das amostras). Homebrew VitaSDK com stub
 gerado do `db/360/SceSas.yml` (`vita-libs-gen`) chamando init/setvoice/keyon/core e salvando a saída; comparar com o
 Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop imports <TITLEID>`.
 
 ### sceSasGetNeededMemorySize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
 - **Protótipo:** `int sceSasGetNeededMemorySize(const char *config, SceSize *outSize);` (inferido)
 - **Comportamento:** analisa a string de configuração e devolve o tamanho de buffer de trabalho necessário para
   `sceSasInit`.
@@ -509,7 +560,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** homebrew imprime o valor; comparar com LLE.
 
 ### sceSasInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
 - **Protótipo:** `int sceSasInit(const char *config, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** inicializa o mixer global com a config e o buffer de trabalho do jogo; todas as vozes `Off`,
   envelope zerado, volumes padrão (PSP: 0x1000? a confirmar), reverb OFF, grão padrão (`numGrains`).
@@ -520,7 +571,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** init duplo → `ALREADY_INIT`.
 
 ### sceSasInitWithGrain
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
 - **Protótipo:** `int sceSasInitWithGrain(const char *config, unsigned int grain, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** igual a `sceSasInit`, mas com o grão explícito.
 - **Retorno/erros:** como `sceSasInit` + `INVALID_GRAIN`.
@@ -529,7 +580,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** grão 256 → `sceSasCore` escreve 256×2×2 bytes.
 
 ### sceSasExit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
 - **Protótipo:** `int sceSasExit(void **outBuffer, SceSize *outBufferSize);` (inferido)
 - **Comportamento:** finaliza o mixer e devolve ao jogo o buffer de trabalho passado no init (para liberar).
 - **Retorno/erros:** 0; `NOT_INIT`. Ponteiros nulos tolerados? (a confirmar).
@@ -538,7 +589,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** exit sem init → `NOT_INIT`.
 
 ### sceSasCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
 - **Protótipo:** `int sceSasCore(SceInt16 *out);` (inferido)
 - **Comportamento:** processa um grão: avança todas as vozes, aplica envelopes, mistura dry + reverb e escreve
   `Grain` quadros estéreo S16 em `out` (multicanal se `OutputMode == 1`, a confirmar no Vita). Vozes que chegam ao fim
@@ -549,7 +600,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** teste unitário do engine; homebrew comparando com LLE.
 
 ### sceSasCoreWithMix
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
 - **Protótipo:** `int sceSasCoreWithMix(SceInt16 *inOut, int lvol, int rvol);` (inferido)
 - **Comportamento:** como `sceSasCore`, mas mistura o resultado ao PCM já presente em `inOut`; no PSP, o conteúdo
   existente é escalado por `lvol/rvol` (0..0x1000) antes da soma, com clamp.
@@ -559,7 +610,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** buffer de entrada zerado deve dar o mesmo resultado de `sceSasCore` com lvol=rvol=0x1000.
 
 ### sceSasSetVoice
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
 - **Protótipo:** `int sceSasSetVoice(int iVoiceNum, const void *vagBuf, SceSize size, unsigned int loopflag);` (inferido)
 - **Comportamento:** associa um stream VAG (sem cabeçalho "VAGp", a confirmar) à voz; `loopflag != 0` faz a voz
   respeitar os flags de loop dos blocos (bit2 início, bit1 repetir). Reseta posição e histórico; não liga a voz
@@ -572,7 +623,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** VAG com loop toca indefinidamente; sem loop termina e `GetEndState` = 1.
 
 ### sceSasSetVoicePCM
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
 - **Protótipo:** `int sceSasSetVoicePCM(int iVoiceNum, const void *pcmBuf, SceSize size, int loopsize);` (inferido)
 - **Comportamento:** associa PCM S16 mono à voz; `size` em amostras ou bytes (a confirmar; no PSP é em amostras,
   máx. 0x10000 com `INVALID_PCM_SIZE`); `loopsize` = tamanho do trecho final repetido (≤ 0 sem loop, a confirmar).
@@ -582,7 +633,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** senoide PCM com pitch 0x1000 sai idêntica.
 
 ### sceSasSetNoise
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
 - **Protótipo:** `int sceSasSetNoise(int iVoiceNum, unsigned int uClk);` (inferido)
 - **Comportamento:** transforma a voz num gerador de ruído com frequência `uClk` (PSP: 0..63, mesmo esquema do
   gerador de ruído do SPU: LFSR atualizado a cada período derivado de `uClk`).
@@ -593,7 +644,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** sai ruído não nulo após KeyOn.
 
 ### sceSasSetPitch
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
 - **Protótipo:** `int sceSasSetPitch(int iVoiceNum, int pitch);` (inferido)
 - **Comportamento:** define o passo de reamostragem; `0x1000` = taxa original (48 kHz no Vita? 44.1 kHz no PSP — a
   confirmar a taxa de saída do libsas no Vita).
@@ -603,7 +654,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pitch 0x2000 dobra a frequência.
 
 ### sceSasSetVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
 - **Protótipo:** `int sceSasSetVolume(int iVoiceNum, int l, int r, int wl, int wr);` (inferido; no PSP o 5º argumento
   vai na pilha no Vita, pelo AAPCS)
 - **Comportamento:** volumes dry esquerdo/direito e wet (envio ao reverb) esquerdo/direito; 0x1000 = unidade;
@@ -614,7 +665,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** l=0x1000,r=0 → canal direito silencioso.
 
 ### sceSasSetADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
 - **Protótipo:** `int sceSasSetADSR(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define as *rates* das fases selecionadas por `flag` (`0x1` A, `0x2` D, `0x4` S, `0x8` R).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_RATE` (PSP: rate > 0x7FFFFFFF), `NOT_INIT`.
@@ -623,7 +674,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** attack rate alto → envelope sobe em poucos grãos (`GetEnvelope`).
 
 ### sceSasSetADSRmode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
 - **Protótipo:** `int sceSasSetADSRmode(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define o tipo de curva (0..5, ver arquitetura) de cada fase selecionada por `flag`.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_CURVE_MODE`, `NOT_INIT`.
@@ -632,7 +683,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** modo exponencial vs linear muda a forma do decaimento.
 
 ### sceSasSetSL
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
 - **Protótipo:** `int sceSasSetSL(int iVoiceNum, unsigned int sl);` (inferido)
 - **Comportamento:** nível de sustain (altura onde o decay termina; PSP: 0..0x40000000).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_PARAMETER` (fora da faixa), `NOT_INIT`.
@@ -641,7 +692,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** envelope estabiliza no valor após o decay.
 
 ### sceSasSetSimpleADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
 - **Protótipo:** `int sceSasSetSimpleADSR(int iVoiceNum, unsigned int adsr1, unsigned int adsr2);` (inferido)
 - **Comportamento:** configura o envelope inteiro a partir de dois registradores no formato SPU: `adsr1` =
   `[15] attack exponencial, [14:8] attack rate, [7:4] decay rate, [3:0] sustain level`; `adsr2` = `[15] sustain
@@ -654,7 +705,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** valores típicos (`0x000F`, `0x1FC0`) produzem envelope plausível.
 
 ### sceSasSetKeyOn
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
 - **Protótipo:** `int sceSasSetKeyOn(int iVoiceNum);` (inferido)
 - **Comportamento:** inicia a voz: posição 0, histórico zerado, envelope em Attack com altura 0, `Ended = false`.
   Efetivo no próximo `sceSasCore`.
@@ -664,7 +715,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** KeyOn + Core produz som.
 
 ### sceSasSetKeyOff
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
 - **Protótipo:** `int sceSasSetKeyOff(int iVoiceNum);` (inferido)
 - **Comportamento:** passa o envelope para Release; a voz termina quando a altura chega a 0.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `VOICE_PAUSED`, `NOT_INIT`.
@@ -673,7 +724,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** após release, `GetEndState` = 1.
 
 ### sceSasSetPause
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
 - **Protótipo:** `int sceSasSetPause(int iVoiceNum, unsigned int pauseFlag);` (inferido; no PSP o argumento é uma
   máscara de vozes `voicebit` + `pause`, no Vita é a confirmar)
 - **Comportamento:** pausa/retoma a(s) voz(es): o mix pula a voz sem avançar posição nem envelope.
@@ -683,7 +734,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pausar, rodar Core, retomar: a PCM continua de onde parou.
 
 ### sceSasSetDistortion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
 - **Protótipo:** `int sceSasSetDistortion(int iVoiceNum, int distortion);` (inferido; função nova do Vita, sem
   equivalente no PSP)
 - **Comportamento:** efeito de distorção (provável saturação/clipping por voz). Semântica e faixa a confirmar.
@@ -693,7 +744,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** confirmar com LLE.
 
 ### sceSasSetEffect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
 - **Protótipo:** `int sceSasSetEffect(int drySwitch, int wetSwitch);` (inferido)
 - **Comportamento:** liga/desliga a saída dry e a saída wet (reverb) no master.
 - **Retorno/erros:** 0; `NOT_INIT`; `INVALID_PARAMETER` (valores ≠ 0/1, a confirmar).
@@ -702,7 +753,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** dry=0 com wet desligado → silêncio.
 
 ### sceSasSetEffectType
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
 - **Protótipo:** `int sceSasSetEffectType(int type);` (inferido)
 - **Comportamento:** seleciona o algoritmo de reverb (`-1..8`, ver arquitetura).
 - **Retorno/erros:** 0; `REV_INVALID_TYPE`; `BUSY` (PSP retorna BUSY ao trocar tipo durante processamento — no HLE
@@ -712,7 +763,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** tipo 6 (ECHO) gera eco audível.
 
 ### sceSasSetEffectParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
 - **Protótipo:** `int sceSasSetEffectParam(unsigned int delayTime, unsigned int feedback);` (inferido)
 - **Comportamento:** parâmetros de delay/feedback (só efetivos para ECHO/DELAY no PSP; faixa PSP 0..127).
 - **Retorno/erros:** 0; `REV_INVALID_DELAY_TIME`, `REV_INVALID_FEEDBACK`, `NOT_INIT`.
@@ -721,7 +772,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** feedback 0 → eco único.
 
 ### sceSasSetEffectVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
 - **Protótipo:** `int sceSasSetEffectVolume(int valL, int valR);` (inferido)
 - **Comportamento:** volume de retorno do reverb no master (0x1000 = unidade; PSP aceita -0x1000..0x1000).
 - **Retorno/erros:** 0; `REV_INVALID_VOLUME`, `NOT_INIT`.
@@ -737,16 +788,16 @@ o `SasEngine` sob o lock. Validação: homebrew de teste comparando com Vita3K e
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
-| - [ ] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
-| - [ ] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
-| - [ ] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
-| - [ ] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
-| - [ ] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
-| - [ ] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
-| - [ ] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
-| - [ ] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
-| - [ ] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
+| - [x] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
+| - [x] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
+| - [x] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
+| - [x] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
+| - [x] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
+| - [x] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
+| - [x] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
+| - [x] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
+| - [x] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
+| - [x] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
 
 ## Fontes do sistema: ScePgf e ScePvf (visão comum)
 
