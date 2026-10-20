@@ -23,8 +23,11 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Bump when the renderer changes what it puts in pipelines (vertex input layout, fixed-function state).</summary>
-    const uint PipelineFormatVersion = 1;
-    const uint ShaderPackFormatVersion = 1;
+    /// <remarks>2: version 1 lists could hold vertex layouts built from shader-pack metadata that had lost the raw
+    /// (register-format) attribute sizes, i.e. normalised/float fetches where the shader expects raw integers.</remarks>
+    const uint PipelineFormatVersion = 2;
+    /// <summary>Bump when the shader-pack record layout changes (2: vertex inputs carry the raw attribute size/count).</summary>
+    const uint ShaderPackFormatVersion = 2;
     const uint VkCacheMagic = 0x43505356; // "VSPC"
     const uint VkCacheFormatVersion = 1;
     const int VkCacheHeaderSize = 48;
@@ -115,8 +118,11 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // record: flags u8 (vertex, uses frag colour, writes depth, attribute fallback), input count u16,
-    // inputs (reg u32, location i32, kind u16, components i32, location count i32), then the SPIR-V
-    const int InputRecordSize = 18;
+    // inputs (reg u32, location i32, kind u16, components i32, location count i32, raw size i32, raw components i32),
+    // then the SPIR-V. Every VertexInputInfo field must round-trip: BuildVertexInput derives the Vulkan vertex formats
+    // from them, and a lost raw size turns a raw U8/U16 register-format fetch into a normalised/float one (garbage
+    // positions and texture coordinates, only when the shader came from the pack)
+    const int InputRecordSize = 26;
 
     void StorePackedShader(ulong programHash, ulong hintKey, GeneratedShader gen, byte[] spv)
     {
@@ -135,6 +141,8 @@ public sealed unsafe partial class VulkanRenderer
             BinaryPrimitives.WriteUInt16LittleEndian(s[8..], vi.Kind);
             BinaryPrimitives.WriteInt32LittleEndian(s[10..], vi.Components);
             BinaryPrimitives.WriteInt32LittleEndian(s[14..], vi.LocationCount);
+            BinaryPrimitives.WriteInt32LittleEndian(s[18..], vi.RawSize);
+            BinaryPrimitives.WriteInt32LittleEndian(s[22..], vi.RawComponents);
             o += InputRecordSize;
         }
         spv.CopyTo(buf, o);
@@ -164,7 +172,8 @@ public sealed unsafe partial class VulkanRenderer
         {
             var s = data.AsSpan(3 + i * InputRecordSize);
             gen.VertexInputs.Add(new VertexInputInfo(BinaryPrimitives.ReadUInt32LittleEndian(s), BinaryPrimitives.ReadInt32LittleEndian(s[4..]),
-                (char)BinaryPrimitives.ReadUInt16LittleEndian(s[8..]), BinaryPrimitives.ReadInt32LittleEndian(s[10..]), BinaryPrimitives.ReadInt32LittleEndian(s[14..])));
+                (char)BinaryPrimitives.ReadUInt16LittleEndian(s[8..]), BinaryPrimitives.ReadInt32LittleEndian(s[10..]), BinaryPrimitives.ReadInt32LittleEndian(s[14..]),
+                BinaryPrimitives.ReadInt32LittleEndian(s[18..]), BinaryPrimitives.ReadInt32LittleEndian(s[22..])));
         }
         return new ModuleEntry(CreateShaderModule(data.AsSpan(spvOffset, spvLength)), gen);
     }
