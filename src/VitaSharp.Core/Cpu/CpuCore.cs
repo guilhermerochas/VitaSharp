@@ -171,6 +171,7 @@ public sealed unsafe class CpuCore : IDisposable
                 BlockCycles += s->CycleAcc - sinceCheck;
                 sinceCheck = s->CycleAcc;
                 if (s->LastExitSlot != 0) LinkExit(s);
+                else if (s->TierUpRequest != 0) { s->TierUpRequest = 0; Jit.TierUp(Lookup(s->R[15], s->Thumb != 0)); }
             }
             else
             {

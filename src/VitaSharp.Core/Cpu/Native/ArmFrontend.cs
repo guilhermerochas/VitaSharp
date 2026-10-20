@@ -21,6 +21,8 @@ public sealed unsafe class ArmFrontend
     static readonly uint TpidrUroOffset = (uint)StateLayout.Of(nameof(CpuState.TpidrUro));
     static readonly uint TpidrUrwOffset = (uint)StateLayout.Of(nameof(CpuState.TpidrUrw));
     static readonly uint ExclusiveValidOffset = (uint)StateLayout.Of(nameof(CpuState.ExclusiveValid));
+    static readonly uint DOffset = (uint)StateLayout.Of(nameof(CpuState.D));
+    static readonly uint FpscrOffset = (uint)StateLayout.Of(nameof(CpuState.Fpscr));
 
     /// <summary>Per-op inline/callout counters (diagnostics: which instructions are worth adding to the IR next).</summary>
     public static readonly long[] InlineCount = new long[(int)Op.Count], CalloutCount = new long[(int)Op.Count];
@@ -189,6 +191,20 @@ public sealed unsafe class ArmFrontend
             Op.T32_LdmStm => BlockTransfer(in d, Bits(d.Raw, 19, 16), d.Raw & 0xFFFF, Bits(d.Raw, 24, 23) != 1, Bits(d.Raw, 24, 23) == 1, Bit(d.Raw, 21) != 0, Bit(d.Raw, 20) != 0, d.Address + 4),
             Op.T32_LdStDual => T32LdStDual(in d),
             Op.T32_LdSt => T32LdSt(in d),
+
+            Op.Vfp_LdrStrArm => VfpLdrStr(in d, false),
+            Op.Vfp_LdrStrThumb => VfpLdrStr(in d, true),
+            Op.Vfp_LdmStm => VfpLdmStm(in d),
+            Op.Vfp_MovCoreSingle => VfpMovCoreSingle(in d),
+            Op.Vfp_Mov64 => VfpMov64(in d),
+            Op.Vfp_Vmrs => VfpVmrs(in d),
+            Op.Vfp_Vmsr => VfpVmsr(in d),
+            Op.Vfp_VdupCore => VfpVdupCore(in d),
+            Op.Vfp_MovCoreScalar => VfpMovCoreScalar(in d),
+            Op.Vfp_MovScalarCore => VfpMovScalarCore(in d),
+            Op.Vfp_Arith => VfpArith(in d),
+            Op.Vfp_Other => VfpOther(in d),
+            Op.Vfp_MovImm => VfpMovImm(in d),
             _ => null,
         };
         if (r is { } exitNow) { Interlocked.Increment(ref InlineCount[(int)d.Op]); return exitNow; }
@@ -962,5 +978,264 @@ public sealed unsafe class ArmFrontend
             if (wback) SetReg(rn, offAddr);
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------ VFP register transfers and loads/stores
+    // The SIMD register file stays in CpuState (callouts for arithmetic read it there): these are plain moves
+    // between it, the core registers and memory, with the handlers' exact address arithmetic and order.
+
+    static uint SingleD(uint ins) => (Bits(ins, 15, 12) << 1) | Bit(ins, 22);
+    static uint SingleN(uint ins) => (Bits(ins, 19, 16) << 1) | Bit(ins, 7);
+    static uint SingleM(uint ins) => ((ins & 0xF) << 1) | Bit(ins, 5);
+    static uint DoubleD(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
+    static uint DoubleN(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
+    static uint DoubleM(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
+    static uint SOff(uint s) => DOffset + 4 * s;           // S register (S32.. alias D16.. like the handlers' uint view)
+    static uint DOff(uint d) => DOffset + 8 * d;
+
+    void LoadPair(int addr, uint off)
+    {
+        int lo = B.Load(IrOp.Load32, addr), hi = B.Load(IrOp.Load32, B.AddK(addr, 4));
+        B.StoreState(off, lo); B.StoreState(off + 4, hi);
+    }
+
+    void StorePair(int addr, uint off)
+    {
+        int lo = B.LoadState(off), hi = B.LoadState(off + 4);
+        B.Store(IrOp.Store32, addr, lo); B.Store(IrOp.Store32, B.AddK(addr, 4), hi);
+    }
+
+    bool? VfpLdrStr(in DecodedInst d, bool thumb)
+    {
+        uint ins = d.Raw, rn = Bits(ins, 19, 16), imm = (ins & 0xFF) << 2;
+        bool u = Bit(ins, 23) != 0, l = Bit(ins, 20) != 0, dbl = Bit(ins, 8) != 0;
+        int baseVal = rn == 15 ? C((d.Address + (thumb ? 4u : 8u)) & ~3u) : Reg(rn);
+        int addr = u ? B.AddK(baseVal, imm) : B.SubK(baseVal, imm);
+        if (dbl)
+        {
+            uint off = DOff(DoubleD(ins));
+            if (l) LoadPair(addr, off); else StorePair(addr, off);
+        }
+        else
+        {
+            uint off = SOff(SingleD(ins));
+            if (l) B.StoreState(off, B.Load(IrOp.Load32, addr)); else B.Store(IrOp.Store32, addr, B.LoadState(off));
+        }
+        return false;
+    }
+
+    bool? VfpLdmStm(in DecodedInst d)
+    {
+        uint ins = d.Raw, rn = Bits(ins, 19, 16), imm8 = ins & 0xFF;
+        bool p = Bit(ins, 24) != 0, u = Bit(ins, 23) != 0, w = Bit(ins, 21) != 0, l = Bit(ins, 20) != 0, dbl = Bit(ins, 8) != 0;
+        if (rn == 15) return null;
+        int baseVal = Reg(rn);
+        int start = p ? B.SubK(baseVal, imm8 * 4) : baseVal;
+        if (w) SetReg(rn, u ? B.AddK(baseVal, imm8 * 4) : B.SubK(baseVal, imm8 * 4));
+        if (dbl)
+        {
+            uint dd = DoubleD(ins), regs = imm8 >> 1;
+            for (uint i = 0; i < regs; i++)
+            {
+                int addr = B.AddK(start, i * 8);
+                if (l) LoadPair(addr, DOff((dd + i) & 31)); else StorePair(addr, DOff((dd + i) & 31));
+            }
+        }
+        else
+        {
+            uint sd = SingleD(ins);
+            for (uint i = 0; i < imm8; i++)
+            {
+                int addr = B.AddK(start, i * 4);
+                uint off = SOff((sd + i) & 63);
+                if (l) B.StoreState(off, B.Load(IrOp.Load32, addr)); else B.Store(IrOp.Store32, addr, B.LoadState(off));
+            }
+        }
+        return false;
+    }
+
+    bool? VfpMovCoreSingle(in DecodedInst d)
+    {
+        uint ins = d.Raw, rt = Bits(ins, 15, 12), off = SOff(SingleN(ins));
+        if (Bit(ins, 20) != 0)
+        {
+            if (rt == 15) return null;
+            SetReg(rt, B.LoadState(off));
+        }
+        else B.StoreState(off, Reg(rt));
+        return false;
+    }
+
+    bool? VfpMov64(in DecodedInst d)
+    {
+        uint ins = d.Raw, rt2 = Bits(ins, 19, 16), rt = Bits(ins, 15, 12);
+        bool toCore = Bit(ins, 20) != 0;
+        if (toCore && (rt == 15 || rt2 == 15)) return null;
+        uint lo, hi;
+        if (Bit(ins, 8) == 0) { uint m = SingleM(ins); lo = SOff(m); hi = SOff(m + 1); }
+        else { uint m = DoubleM(ins); lo = DOff(m); hi = lo + 4; }
+        if (toCore) { int a = B.LoadState(lo), b = B.LoadState(hi); SetReg(rt, a); SetReg(rt2, b); }
+        else { B.StoreState(lo, Reg(rt)); B.StoreState(hi, Reg(rt2)); }
+        return false;
+    }
+
+    bool? VfpVmrs(in DecodedInst d)
+    {
+        uint ins = d.Raw, rt = Bits(ins, 15, 12), reg = Bits(ins, 19, 16);
+        int v = reg switch
+        {
+            1 => B.LoadState(FpscrOffset),
+            0 => C(0x41033094),
+            6 or 7 => C(0x10110222),
+            8 => C(0x40000000),
+            _ => C(0),
+        };
+        if (rt == 15)
+        {
+            B.SetFlag(IrFlag.N, B.Bit(v, 31)); B.SetFlag(IrFlag.Z, B.Bit(v, 30));
+            B.SetFlag(IrFlag.C, B.Bit(v, 29)); B.SetFlag(IrFlag.V, B.Bit(v, 28));
+        }
+        else SetReg(rt, v);
+        return false;
+    }
+
+    bool? VfpVmsr(in DecodedInst d)
+    {
+        if (Bits(d.Raw, 19, 16) == 1) B.StoreState(FpscrOffset, Reg(Bits(d.Raw, 15, 12)));
+        return false;
+    }
+
+    bool? VfpVdupCore(in DecodedInst d)
+    {
+        uint ins = d.Raw, dd = DoubleN(ins), rt = Bits(ins, 15, 12);
+        bool q = Bit(ins, 21) != 0;
+        uint be = (Bit(ins, 22) << 1) | Bit(ins, 5);
+        int v = Reg(rt);
+        int rep = be switch
+        {
+            0 => v,
+            1 => B.Mul(B.AndK(v, 0xFFFF), C(0x00010001)),
+            _ => B.Mul(B.AndK(v, 0xFF), C(0x01010101)),
+        };
+        for (uint k = 0; k < (q ? 2u : 1u); k++) { B.StoreState(DOff(dd + k), rep); B.StoreState(DOff(dd + k) + 4, rep); }
+        return false;
+    }
+
+    bool? VfpMovCoreScalar(in DecodedInst d)
+    {
+        uint ins = d.Raw, dd = DoubleN(ins), rt = Bits(ins, 15, 12);
+        uint opc = (Bits(ins, 22, 21) << 2) | Bits(ins, 6, 5);
+        int v = Reg(rt);
+        uint byteOff, size;
+        if ((opc & 8) != 0) { byteOff = opc & 7; size = 1; }
+        else if ((opc & 1) != 0) { byteOff = ((opc >> 1) & 3) * 2; size = 2; }
+        else { B.StoreState(DOff(dd) + ((opc >> 2) & 1) * 4, v); return false; }
+        uint wordOff = DOff(dd) + (byteOff & 4), sh = (byteOff & 3) * 8, mask = (size == 1 ? 0xFFu : 0xFFFFu) << (int)sh;
+        int word = B.LoadState(wordOff);
+        B.StoreState(wordOff, B.Or(B.AndK(word, ~mask), B.AndK(B.Shl(v, (int)sh), mask)));
+        return false;
+    }
+
+    bool? VfpMovScalarCore(in DecodedInst d)
+    {
+        uint ins = d.Raw, n = DoubleN(ins), rt = Bits(ins, 15, 12);
+        if (rt == 15) return null;
+        bool u = Bit(ins, 23) != 0;
+        uint opc = (Bits(ins, 22, 21) << 2) | Bits(ins, 6, 5);
+        if ((opc & 8) == 0 && (opc & 1) == 0) { SetReg(rt, B.LoadState(DOff(n) + ((opc >> 2) & 1) * 4)); return false; }
+        uint byteOff = (opc & 8) != 0 ? opc & 7 : ((opc >> 1) & 3) * 2;
+        int word = B.LoadState(DOff(n) + (byteOff & 4));
+        int f = B.Shr(word, (int)((byteOff & 3) * 8));
+        int v = (opc & 8) != 0 ? (u ? B.ZExt8(f) : B.SExt8(f)) : (u ? B.ZExt16(f) : B.SExt16(f));
+        SetReg(rt, v);
+        return false;
+    }
+
+    // ------------------------------------------------------------------ VFP arithmetic
+    // Bit-level operations (VMOV, VABS, VNEG, VMOV immediate) are integer IR; real arithmetic becomes FpOp, which the
+    // emitter runs natively in the Vita's default FPSCR mode and through the interpreter handler otherwise.
+
+    bool? VfpMovImm(in DecodedInst d)
+    {
+        uint ins = d.Raw, imm8 = (Bits(ins, 19, 16) << 4) | (ins & 0xF);
+        if (Bit(ins, 8) == 0)
+        {
+            uint v = ((imm8 & 0x80) << 24) | ((imm8 & 0x40) != 0 ? 0x3E000000u : 0x40000000u) | ((imm8 & 0x3F) << 19);
+            B.StoreState(SOff(SingleD(ins)), C(v));
+        }
+        else
+        {
+            ulong v = ((ulong)(imm8 & 0x80) << 56) | ((imm8 & 0x40) != 0 ? 0x3FC0000000000000ul : 0x4000000000000000ul) | ((ulong)(imm8 & 0x3F) << 48);
+            uint off = DOff(DoubleD(ins));
+            B.StoreState(off, C((uint)v)); B.StoreState(off + 4, C((uint)(v >> 32)));
+        }
+        return false;
+    }
+
+    bool? VfpArith(in DecodedInst d)
+    {
+        uint ins = d.Raw, opc1 = (Bit(ins, 23) << 2) | Bits(ins, 21, 20);
+        bool op = Bit(ins, 6) != 0, dbl = Bit(ins, 8) != 0;
+        FpKind kind;
+        switch (opc1)
+        {
+            case 0: kind = op ? FpKind.Mls : FpKind.Mla; break;
+            case 1: kind = op ? FpKind.Nmla : FpKind.Nmls; break;
+            case 2: kind = op ? FpKind.NMul : FpKind.Mul; break;
+            case 3: kind = op ? FpKind.Sub : FpKind.Add; break;
+            case 4: if (op) return null; kind = FpKind.Div; break;
+            default: return null; // VFMA family (VFPv4: not on the Cortex-A9) and the rest
+        }
+        if (dbl) B.FpOp(kind, FpFlags.Double, DoubleD(ins) * 8, DoubleN(ins) * 8, DoubleM(ins) * 8, ins, d.Address);
+        else B.FpOp(kind, 0, SingleD(ins) * 4, SingleN(ins) * 4, SingleM(ins) * 4, ins, d.Address);
+        return false;
+    }
+
+    bool? VfpOther(in DecodedInst d)
+    {
+        uint ins = d.Raw, opc2 = Bits(ins, 19, 16);
+        bool dbl = Bit(ins, 8) != 0, b7 = Bit(ins, 7) != 0;
+        uint sd = SingleD(ins) * 4, sm = SingleM(ins) * 4, dd = DoubleD(ins) * 8, dm = DoubleM(ins) * 8;
+        const FpFlags O = FpFlags.OtherOp;
+        switch (opc2)
+        {
+            case 0: case 1:
+                if (opc2 == 1 && b7) // VSQRT
+                {
+                    B.FpOp(FpKind.Sqrt, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dm : sm, ins, d.Address);
+                    return false;
+                }
+                // VMOV / VABS / VNEG: bit operations on the high word holding the sign
+                if (!dbl)
+                {
+                    int v = B.LoadState(DOffset + sm);
+                    B.StoreState(DOffset + sd, opc2 == 0 ? (b7 ? B.AndK(v, 0x7FFFFFFF) : v) : B.Xor(v, C(0x80000000)));
+                }
+                else
+                {
+                    int lo = B.LoadState(DOffset + dm), hi = B.LoadState(DOffset + dm + 4);
+                    B.StoreState(DOffset + dd, lo);
+                    B.StoreState(DOffset + dd + 4, opc2 == 0 ? (b7 ? B.AndK(hi, 0x7FFFFFFF) : hi) : B.Xor(hi, C(0x80000000)));
+                }
+                return false;
+            case 4: case 5:
+                B.FpOp(opc2 == 5 ? FpKind.CmpZero : FpKind.Cmp, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dm : sm, ins, d.Address);
+                return false;
+            case 7:
+                if (!dbl) B.FpOp(FpKind.CvtToDouble, O, dd, 0, sm, ins, d.Address);
+                else B.FpOp(FpKind.CvtToSingle, O | FpFlags.Double, sd, 0, dm, ins, d.Address);
+                return false;
+            case 8:
+                B.FpOp(b7 ? FpKind.CvtFromS32 : FpKind.CvtFromU32, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, sm, ins, d.Address);
+                return false;
+            case 0xC: case 0xD:
+            {
+                bool signed = opc2 == 0xD;
+                var kind = b7 ? (signed ? FpKind.CvtToS32 : FpKind.CvtToU32) : (signed ? FpKind.CvtToS32R : FpKind.CvtToU32R);
+                B.FpOp(kind, O | (dbl ? FpFlags.Double : 0), sd, 0, dbl ? dm : sm, ins, d.Address);
+                return false;
+            }
+            default: return null; // half-precision and fixed-point conversions
+        }
     }
 }

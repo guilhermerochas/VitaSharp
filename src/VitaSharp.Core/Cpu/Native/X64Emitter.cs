@@ -42,6 +42,12 @@ public sealed unsafe class X64Emitter
     static readonly int OffLastExitSlot = StateLayout.Of(nameof(CpuState.LastExitSlot));
     static readonly int OffLinkBreak = StateLayout.Of(nameof(CpuState.LinkBreak));
     static readonly int OffThumb = StateLayout.Of(nameof(CpuState.Thumb));
+    static readonly int OffMxcsrHost = StateLayout.Of(nameof(CpuState.MxcsrHost));
+    static readonly int OffMxcsrGuest = StateLayout.Of(nameof(CpuState.MxcsrGuest));
+    static readonly int OffFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
+    static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
+    static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
+    static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
 
     /// <summary>Debug knob for tests: restricts the temp registers so spilling paths get exercised.</summary>
     public static int MaxTempRegisters = int.MaxValue;
@@ -54,6 +60,7 @@ public sealed unsafe class X64Emitter
     int[] _loc = null!; // >= 0 register, <= -2 spill slot -(loc+2), -1 none
     Label[] _labels = null!;
     Label _abort;
+    bool _checkExit;
 
     /// <summary>Addresses of the runtime entry points the code jumps to or calls.</summary>
     public struct Runtime
@@ -67,7 +74,7 @@ public sealed unsafe class X64Emitter
     /// Allocates registers and lowers the block into the assembler. <paramref name="slotFor"/> returns the address of
     /// the link slot for the k-th static exit. Returns false when the block needs more spill slots than the frame has.
     /// </summary>
-    public bool Prepare(IrBlock ir, Runtime rt, Func<int, nint> slotFor)
+    public bool Prepare(IrBlock ir, Runtime rt, Func<int, nint> slotFor, nint tierUpCounter = 0)
     {
         _ir = ir;
         if (_assembler == null) _assembler = new Assembler(64); else _assembler.Reset();
@@ -75,13 +82,30 @@ public sealed unsafe class X64Emitter
         _labels = new Label[ir.Labels];
         for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.CreateLabel();
         _abort = _a.CreateLabel();
+        _checkExit = ir.Callouts > 0; // a handler may raise an exit mid-block: such blocks never chain while Exit is set
+        var tierUp = _a.CreateLabel();
+        if (tierUpCounter != 0)
+        {
+            // execution budget of a block the IL backend runs better: at zero, ask the dispatcher to recompile it
+            // (the block has not run: the state is exactly the block entry state)
+            _a.mov(rax, (ulong)tierUpCounter);
+            _a.dec(__dword_ptr[rax]);
+            _a.jz(tierUp);
+        }
         int exitIndex = 0;
         foreach (var x in ir.Insts) Lower(x, rt, slotFor, ref exitIndex);
-        // shared path for callouts that request an exit (Exit set, exception): account the block and leave
+        // shared path for callouts that threw: account the block and leave
         _a.Label(ref _abort);
         EmitAccounting();
         _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
         _a.jmp(rt.Epilogue);
+        if (tierUpCounter != 0)
+        {
+            _a.Label(ref tierUp);
+            _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
+            _a.mov(State(OffTierUp), 1);
+            _a.jmp(rt.Epilogue);
+        }
         return true;
     }
 
@@ -109,7 +133,7 @@ public sealed unsafe class X64Emitter
         for (int i = 0; i < count; i++)
         {
             var x = insts[i];
-            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op == IrOp.Callout ? 1 : 0);
+            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op is IrOp.Callout or IrOp.FpOp ? 1 : 0); // FpOp may call the handler
             void Out(int t, int idx) { if (t >= 0) def[t] = idx; }
             void In(int t, int idx) { if (t >= 0) last[t] = idx; }
             Out(x.D, i); Out(x.D2, i); Out(x.Fn, i); Out(x.Fz, i); Out(x.Fc, i); Out(x.Fv, i);
@@ -552,6 +576,7 @@ public sealed unsafe class X64Emitter
                 return;
             }
             case IrOp.Fence: a.mfence(); return;
+            case IrOp.FpOp: FpOp(x, rt); return;
 
             // ---------------- control
             case IrOp.Label: { var l = _labels[x.Imm]; a.Label(ref l); _labels[x.Imm] = l; return; }
@@ -595,6 +620,7 @@ public sealed unsafe class X64Emitter
                 a.jge(ret);
                 a.cmp(State(OffLinkBreak), 0);
                 a.jne(ret);
+                if (_checkExit) { a.cmp(State(OffExit), 0); a.jne(ret); }
                 a.mov(rax, (ulong)slot);
                 a.mov(rax, __qword_ptr[rax]);
                 a.test(rax, rax);
@@ -619,6 +645,7 @@ public sealed unsafe class X64Emitter
                     a.jge(ret);
                     a.cmp(State(OffLinkBreak), 0);
                     a.jne(ret);
+                    if (_checkExit) { a.cmp(State(OffExit), 0); a.jne(ret); }
                     a.mov(eax, State(OffR + 60));
                     a.mov(edx, eax);
                     a.or(eax, State(OffThumb));
@@ -639,6 +666,204 @@ public sealed unsafe class X64Emitter
             }
             default: throw new NotSupportedException($"IR op {x.Op}");
         }
+    }
+
+    // ------------------------------------------------------------------ VFP
+
+    /// <summary>
+    /// Scalar VFP operation. Fast path only in the Vita's FPSCR mode (DN=1, FZ=1, round to nearest, no short vectors):
+    /// SSE under FTZ+DAZ matches ARM flush-to-zero except for results that round up to the smallest normal (ARM
+    /// detects tininess before rounding, x86 after): those, any other FPSCR mode and unrepresentable conversions run
+    /// the interpreter handler instead. NaN results become the default NaN. MXCSR is the host's outside fast paths.
+    /// </summary>
+    void FpOp(IrInst x, Runtime rt)
+    {
+        var a = _a;
+        var kind = (FpKind)(x.Imm & 0xFF);
+        bool dbl = (x.Imm & (uint)FpFlags.Double) != 0;
+        var op = (x.Imm & (uint)FpFlags.OtherOp) != 0 ? Op.Vfp_Other : Op.Vfp_Arith;
+        int dOff = OffD + (int)(x.Imm4 & 0xFF), nOff = OffD + (int)((x.Imm4 >> 8) & 0xFF), mOff = OffD + (int)((x.Imm4 >> 16) & 0xFF);
+        var slow = a.CreateLabel(); var slowGuest = a.CreateLabel(); var done = a.CreateLabel();
+        AssemblerMemoryOperand S(int off) => __dword_ptr[rbx + off];
+        AssemblerMemoryOperand Dq(int off) => __qword_ptr[rbx + off];
+
+        a.mov(eax, State(OffFpscr));
+        a.and(eax, 0x03F70000);
+        a.cmp(eax, 0x03000000);
+        a.jne(slow);
+        a.ldmxcsr(State(OffMxcsrGuest));
+
+        switch (kind)
+        {
+            case FpKind.Add: case FpKind.Sub: case FpKind.Mul: case FpKind.NMul: case FpKind.Div:
+                if (dbl)
+                {
+                    a.movsd(xmm0, Dq(nOff));
+                    switch (kind) { case FpKind.Add: a.addsd(xmm0, Dq(mOff)); break; case FpKind.Sub: a.subsd(xmm0, Dq(mOff)); break; case FpKind.Div: a.divsd(xmm0, Dq(mOff)); break; default: a.mulsd(xmm0, Dq(mOff)); break; }
+                }
+                else
+                {
+                    a.movss(xmm0, S(nOff));
+                    switch (kind) { case FpKind.Add: a.addss(xmm0, S(mOff)); break; case FpKind.Sub: a.subss(xmm0, S(mOff)); break; case FpKind.Div: a.divss(xmm0, S(mOff)); break; default: a.mulss(xmm0, S(mOff)); break; }
+                }
+                StoreFpResult(dOff, dbl, kind == FpKind.NMul, slowGuest, done);
+                break;
+            case FpKind.Mla: case FpKind.Mls: case FpKind.Nmla: case FpKind.Nmls:
+                // d = (+/-)d (+/-) round(n * m): the product is rounded (and flushed / NaN-defaulted) on its own
+                if (dbl) { a.movsd(xmm1, Dq(nOff)); a.mulsd(xmm1, Dq(mOff)); a.movsd(xmm0, Dq(dOff)); }
+                else { a.movss(xmm1, S(nOff)); a.mulss(xmm1, S(mOff)); a.movss(xmm0, S(dOff)); }
+                if (kind is FpKind.Nmla or FpKind.Nmls) NegateXmm0(dbl);
+                if (kind is FpKind.Mla or FpKind.Nmls) { if (dbl) a.addsd(xmm0, xmm1); else a.addss(xmm0, xmm1); }
+                else { if (dbl) a.subsd(xmm0, xmm1); else a.subss(xmm0, xmm1); }
+                StoreFpResult(dOff, dbl, false, slowGuest, done);
+                break;
+            case FpKind.Sqrt:
+                if (dbl) a.sqrtsd(xmm0, Dq(mOff)); else a.sqrtss(xmm0, S(mOff));
+                StoreFpResult(dOff, dbl, false, slowGuest, done);
+                break;
+            case FpKind.Cmp: case FpKind.CmpZero:
+            {
+                var set = a.CreateLabel();
+                if (dbl) a.movsd(xmm0, Dq(dOff)); else a.movss(xmm0, S(dOff));
+                if (kind == FpKind.CmpZero) { a.xorps(xmm1, xmm1); if (dbl) a.ucomisd(xmm0, xmm1); else a.ucomiss(xmm0, xmm1); }
+                else if (dbl) a.ucomisd(xmm0, Dq(mOff)); else a.ucomiss(xmm0, S(mOff));
+                a.mov(eax, 0x30000000u); // unordered: C V
+                a.jp(set);
+                a.mov(eax, 0x60000000u); // equal: Z C
+                a.je(set);
+                a.mov(eax, 0x80000000u); // less: N
+                a.jb(set);
+                a.mov(eax, 0x20000000u); // greater: C
+                a.Label(ref set);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(edx, State(OffFpscr));
+                a.and(edx, 0x0FFFFFFF);
+                a.or(edx, eax);
+                a.mov(State(OffFpscr), edx);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtToDouble:
+                a.cvtss2sd(xmm0, S(mOff));
+                StoreFpResult(dOff, true, false, slowGuest, done);
+                break;
+            case FpKind.CvtToSingle:
+                a.cvtsd2ss(xmm0, Dq(mOff));
+                StoreFpResult(dOff, false, false, slowGuest, done);
+                break;
+            case FpKind.CvtFromS32: case FpKind.CvtFromU32:
+                if (kind == FpKind.CvtFromS32) { if (dbl) a.cvtsi2sd(xmm0, S(mOff)); else a.cvtsi2ss(xmm0, S(mOff)); }
+                else
+                {
+                    a.mov(eax, S(mOff)); // zero-extended: the 64-bit conversion is exact for every uint
+                    if (dbl) a.cvtsi2sd(xmm0, rax); else a.cvtsi2ss(xmm0, rax);
+                }
+                // integers convert to normal numbers or zero: no fix-up needed
+                a.ldmxcsr(State(OffMxcsrHost));
+                if (dbl) a.movsd(Dq(dOff), xmm0); else a.movss(S(dOff), xmm0);
+                a.jmp(done);
+                break;
+            case FpKind.CvtToS32: case FpKind.CvtToS32R:
+                // 0x80000000 is the x86 "indefinite" result (NaN, out of range) but also a real value: the handler decides
+                if (kind == FpKind.CvtToS32) { if (dbl) a.cvttsd2si(eax, Dq(mOff)); else a.cvttss2si(eax, S(mOff)); }
+                else { if (dbl) a.cvtsd2si(eax, Dq(mOff)); else a.cvtss2si(eax, S(mOff)); }
+                a.cmp(eax, unchecked((int)0x80000000));
+                a.je(slowGuest);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(S(dOff), eax);
+                a.jmp(done);
+                break;
+            case FpKind.CvtToU32: case FpKind.CvtToU32R:
+            {
+                var store = a.CreateLabel(); var pos = a.CreateLabel();
+                if (kind == FpKind.CvtToU32) { if (dbl) a.cvttsd2si(rax, Dq(mOff)); else a.cvttss2si(rax, S(mOff)); }
+                else { if (dbl) a.cvtsd2si(rax, Dq(mOff)); else a.cvtss2si(rax, S(mOff)); }
+                a.mov(rdx, 0x8000000000000000UL);
+                a.cmp(rax, rdx);
+                a.je(slowGuest);       // NaN or beyond 2^63
+                a.test(rax, rax);
+                a.jns(pos);
+                a.xor(eax, eax);       // negative: 0
+                a.jmp(store);
+                a.Label(ref pos);
+                a.mov(edx, 0xFFFFFFFFu);
+                a.cmp(rax, rdx);
+                a.jbe(store);
+                a.mov(eax, edx);       // saturate
+                a.Label(ref store);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(S(dOff), eax);
+                a.jmp(done);
+                break;
+            }
+            default:
+                a.jmp(slowGuest);
+                break;
+        }
+
+        a.Label(ref slowGuest);
+        a.ldmxcsr(State(OffMxcsrHost));
+        a.Label(ref slow);
+        if (Windows) { a.mov(rcx, rbx); a.mov(edx, (uint)op); a.mov(r8d, x.Imm2); a.mov(r9d, x.Imm3); }
+        else { a.mov(rdi, rbx); a.mov(esi, (uint)op); a.mov(edx, x.Imm2); a.mov(ecx, x.Imm3); }
+        a.mov(rax, rt.Callout);
+        a.call(rax);
+        a.test(eax, eax);
+        a.jnz(_abort);
+        a.Label(ref done);
+    }
+
+    void NegateXmm0(bool dbl)
+    {
+        if (dbl) { _a.movq(rax, xmm0); _a.btc(rax, 63); _a.movq(xmm0, rax); }
+        else { _a.movd(eax, xmm0); _a.xor(eax, unchecked((int)0x80000000)); _a.movd(xmm0, eax); }
+    }
+
+    /// <summary>
+    /// Stores the arithmetic result in xmm0 to the guest register: NaN -> default NaN (then optionally negated, like
+    /// VNMUL), a result equal to +/- the smallest normal goes to the handler (FZ tininess before rounding).
+    /// </summary>
+    void StoreFpResult(int dOff, bool dbl, bool negate, Label slowGuest, Label done)
+    {
+        var a = _a;
+        var nan = a.CreateLabel(); var store = a.CreateLabel();
+        if (dbl)
+        {
+            a.movq(rax, xmm0);
+            a.mov(rdx, rax);
+            a.btr(rdx, 63);
+            a.mov(rcx, 0x7FF0000000000000UL);
+            a.cmp(rdx, rcx);
+            a.ja(nan);
+            a.mov(rcx, 0x0010000000000000UL);
+            a.cmp(rdx, rcx);
+            a.je(slowGuest);
+            a.jmp(store);
+            a.Label(ref nan);
+            a.mov(rax, 0x7FF8000000000000UL);
+            a.Label(ref store);
+            if (negate) a.btc(rax, 63);
+            a.ldmxcsr(State(OffMxcsrHost));
+            a.mov(__qword_ptr[rbx + dOff], rax);
+        }
+        else
+        {
+            a.movd(eax, xmm0);
+            a.mov(edx, eax);
+            a.and(edx, 0x7FFFFFFF);
+            a.cmp(edx, 0x7F800000);
+            a.ja(nan);
+            a.cmp(edx, 0x00800000);
+            a.je(slowGuest);
+            a.jmp(store);
+            a.Label(ref nan);
+            a.mov(eax, 0x7FC00000u);
+            a.Label(ref store);
+            if (negate) a.xor(eax, unchecked((int)0x80000000));
+            a.ldmxcsr(State(OffMxcsrHost));
+            a.mov(State(dOff), eax);
+        }
+        a.jmp(done);
     }
 
     void StoreTo(AssemblerMemoryOperand m, int t)
@@ -904,8 +1129,15 @@ public sealed unsafe class X64Emitter
         foreach (var r in saved) a.push(r);
         int frame = ShadowSpace + 8 * SpillSlots + 8;
         a.sub(rsp, frame);
-        if (Windows) { a.mov(rbx, rcx); a.mov(r15, memBase); a.jmp(rdx); }
-        else { a.mov(rbx, rdi); a.mov(r15, memBase); a.jmp(rsi); }
+        if (Windows) a.mov(rbx, rcx); else a.mov(rbx, rdi);
+        a.mov(r15, memBase);
+        // VFP fast paths switch to FTZ+DAZ, round to nearest, all exceptions masked, and back to the host mode
+        a.stmxcsr(__dword_ptr[rbx + OffMxcsrHost]);
+        a.mov(eax, __dword_ptr[rbx + OffMxcsrHost]);
+        a.and(eax, ~0x6000);
+        a.or(eax, 0x8040 | 0x1F80);
+        a.mov(__dword_ptr[rbx + OffMxcsrGuest], eax);
+        if (Windows) a.jmp(rdx); else a.jmp(rsi);
         a.Label(ref epi);
         a.add(rsp, frame);
         for (int i = saved.Length - 1; i >= 0; i--) a.pop(saved[i]);

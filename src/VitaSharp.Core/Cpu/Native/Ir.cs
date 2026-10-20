@@ -48,6 +48,9 @@ public enum IrOp : byte
     Callout,      // run the interpreter handler: Imm = Op, Imm2 = instruction word, Imm3 = address
     ExitStatic,   // leave the block for guest PC Imm in Thumb state Imm2 (R15/Thumb already stored); linkable
     ExitDynamic,  // leave the block; PC/Thumb are in the state (indirect branch); Imm = 1: never link (SVC, callout exit)
+    // ---- floating point on the guest SIMD register file (state memory)
+    FpOp,         // Imm = FpKind | FpFlags, Imm4 = byte offsets in D of d | n << 8 | m << 16; Imm2/Imm3 = instruction
+                  // word and address: an emitter may run the interpreter handler instead (any FPSCR mode, edge cases)
 }
 
 public enum IrFlag : byte { N, Z, C, V }
@@ -57,13 +60,13 @@ public struct IrInst
     public IrOp Op;
     public int D = -1, D2 = -1, Fn = -1, Fz = -1, Fc = -1, Fv = -1;
     public int A = -1, B = -1, C = -1, E = -1;
-    public uint Imm, Imm2, Imm3;
+    public uint Imm, Imm2, Imm3, Imm4;
 
     public IrInst(IrOp op) { Op = op; }
 
     public readonly bool HasSideEffects => Op is IrOp.SetReg or IrOp.SetFlag or IrOp.StoreState or IrOp.Store8 or IrOp.Store16
         or IrOp.Store32 or IrOp.Fence or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
-        or IrOp.ExitDynamic
+        or IrOp.ExitDynamic or IrOp.FpOp
         // loads may fault on unmapped memory exactly like the interpreter: keep them
         or IrOp.Load8 or IrOp.Load8S or IrOp.Load16 or IrOp.Load16S or IrOp.Load32;
 
@@ -110,4 +113,24 @@ public sealed class IrBlock
 public static class StateLayout
 {
     public static int Of(string field) => (int)System.Runtime.InteropServices.Marshal.OffsetOf<CpuState>(field);
+}
+
+/// <summary>Operation of an <see cref="IrOp.FpOp"/> (VFPv3 scalar arithmetic, ARM semantics).</summary>
+public enum FpKind : byte
+{
+    Add, Sub, Mul, NMul, Div,
+    Mla, Mls, Nmla, Nmls,      // d = d + n*m, d - n*m, -d - n*m, -d + n*m (product rounded first)
+    Sqrt,
+    Cmp, CmpZero,              // FPSCR.NZCV = compare(d, m) / compare(d, 0)
+    CvtToDouble, CvtToSingle,  // single m -> double d / double m -> single d
+    CvtFromS32, CvtFromU32,    // integer in single m -> float d
+    CvtToS32, CvtToU32,        // float m -> integer in single d, round towards zero
+    CvtToS32R, CvtToU32R,      // ... with the FPSCR rounding mode
+}
+
+[Flags]
+public enum FpFlags : uint
+{
+    Double = 1 << 8,           // operands are doubles (for conversions: the float side)
+    OtherOp = 1 << 9,          // the interpreter handler is Vfp_Other (else Vfp_Arith)
 }

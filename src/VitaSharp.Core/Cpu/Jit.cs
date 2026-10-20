@@ -147,9 +147,28 @@ public static unsafe class Jit
     static void Install(Block b, CompiledBlock cb)
     {
         b.Code = cb;
-        if (cb.Managed != null) b.Compiled = cb.Managed;
+        if (cb.Managed != null)
+        {
+            b.Compiled = cb.Managed;
+            if (b.NativeEntry != 0) Native.NativeRuntime.Retire(b); // tier-up from native code
+        }
         if (cb.NativeEntry != 0) { b.NativeEntry = cb.NativeEntry; Native.NativeRuntime.Instance.Publish(b); }
         b.JitState = 2;
+    }
+
+    /// <summary>
+    /// A native block asked to be recompiled by the next backend (it is dominated by interpreter callouts the IL
+    /// backend inlines): queue it for the IL backend now, whatever the threshold.
+    /// </summary>
+    public static void TierUp(Block b)
+    {
+        var chain = Chain;
+        int il = Array.IndexOf(chain, IlJitCompiler.Instance);
+        if (il <= b.Tier || b.NativeEntry == 0 || b.JitState == 1) return;
+        b.Tier = il;
+        b.HotAt = 0;
+        b.JitState = 0;
+        Enqueue(b);
     }
 
     /// <summary>One line per active backend for logs.</summary>

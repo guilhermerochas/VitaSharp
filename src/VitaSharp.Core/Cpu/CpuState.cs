@@ -53,6 +53,9 @@ public unsafe struct CpuState
     public nint LastExitSlot;  // link slot of the static exit that returned (0 = dynamic exit)
     public uint LinkBreak;     // set when the thread must return to the dispatcher (interrupt, stop)
     public uint CalloutFault;  // a callout threw: the exception is rethrown by the dispatcher
+    public uint MxcsrHost;     // host SSE control word at native entry (restored around everything but VFP fast paths)
+    public uint MxcsrGuest;    // the same with flush-to-zero + denormals-are-zero, round to nearest (ARM FZ mode)
+    public uint TierUpRequest; // a SIMD-heavy native block ran out of its execution budget: recompile it with the IL backend
 
     public uint Cpsr
     {

@@ -130,7 +130,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static uint SpecialFloat(Random rng) => rng.Next(14) switch
+    internal static uint SpecialFloat(Random rng) => rng.Next(14) switch
     {
         0 => 0,
         1 => 0x80000000,
@@ -158,7 +158,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         _ => BitConverter.DoubleToUInt64Bits((rng.NextDouble() - 0.5) * Math.Pow(2, rng.Next(-60, 60))),
     };
 
-    static ulong RandomSpecialSimd(Random rng) => rng.Next(6) switch
+    internal static ulong RandomSpecialSimd(Random rng) => rng.Next(6) switch
     {
         0 => SpecialDouble(rng),
         1 => RandomSimd(rng),

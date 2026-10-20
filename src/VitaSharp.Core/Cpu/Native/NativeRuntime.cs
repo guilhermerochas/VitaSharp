@@ -63,17 +63,23 @@ public sealed unsafe class NativeRuntime
 
     [ThreadStatic] static ExceptionDispatchInfo? _fault;
 
+    /// <summary>Executed callouts per guest op (diagnostics: what to translate inline next).</summary>
+    public static readonly long[] CalloutHits = new long[(int)Op.Count];
+
     /// <summary>
-    /// Runs one interpreter handler for generated code. Returns nonzero when the block must stop: the handler set an
-    /// exit (SVC/UDF/yield...) or threw; the exception is rethrown on the managed side by <see cref="ThrowPendingFault"/>.
+    /// Runs one interpreter handler for generated code. Returns nonzero when the block must stop because the handler
+    /// threw (rethrown on the managed side by <see cref="ThrowPendingFault"/>). An exit the handler raises (SVC, UDF,
+    /// yield) does not stop the block: like the interpreter, the rest of the block runs, and the block's exits return
+    /// to the dispatcher instead of chaining while Exit is set.
     /// </summary>
     [UnmanagedCallersOnly]
     static int Callout(CpuState* s, int op, uint ins, uint pc)
     {
         try
         {
+            CalloutHits[op]++; // racy on purpose: statistics only
             HandlerTable.Pointers[op](s, ins, pc);
-            return s->Exit != ExitReason.None ? 1 : 0;
+            return 0; // an exit the handler raised (UDF, SVC...) is seen by the block exits, exactly like the interpreter
         }
         catch (Exception e)
         {
@@ -126,12 +132,6 @@ public sealed unsafe class NativeRuntime
         }
     }
 
-    void Unpublish(Block b)
-    {
-        var e = EntryOf(b);
-        lock (_dispatchLock)
-            if (e->Key == KeyOf(b) && e->Code == b.NativeEntry) Volatile.Write(ref e->Key, NoKey);
-    }
 
     readonly object _dispatchLock = new();
 
@@ -179,12 +179,40 @@ public sealed unsafe class NativeRuntime
         lock (b)
         {
             b.Invalidated = true;
-            _instance?.Unpublish(b);
-            if (b.LinkedFrom == null) return;
-            foreach (var slot in b.LinkedFrom)
-                if (*(nint*)slot == b.NativeEntry) Volatile.Write(ref *(nint*)slot, 0);
-            Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
-            b.LinkedFrom = null;
+            DetachNative(b, b.NativeEntry);
         }
+    }
+
+    /// <summary>
+    /// Tier-up: another backend now runs the block. Its native code stays mapped (a thread may still be inside it)
+    /// but nothing jumps into it any more and the dispatcher stops choosing it.
+    /// </summary>
+    public static void Retire(Block b)
+    {
+        lock (b)
+        {
+            nint entry = b.NativeEntry;
+            if (entry == 0) return;
+            b.NativeEntry = 0;
+            DetachNative(b, entry);
+        }
+        Interlocked.Increment(ref TieredUp);
+    }
+
+    public static long TieredUp;
+
+    static void DetachNative(Block b, nint entry)
+    {
+        if (_instance != null)
+        {
+            var e = _instance.EntryOf(b);
+            lock (_instance._dispatchLock)
+                if (e->Key == KeyOf(b) && e->Code == entry) Volatile.Write(ref e->Key, NoKey);
+        }
+        if (b.LinkedFrom == null) return;
+        foreach (var slot in b.LinkedFrom)
+            if (*(nint*)slot == entry) Volatile.Write(ref *(nint*)slot, 0);
+        Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
+        b.LinkedFrom = null;
     }
 }

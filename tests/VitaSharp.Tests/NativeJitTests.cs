@@ -134,7 +134,16 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
             // SIMD: raw random words hit UNDEFINED NEON encodings whose interpreter handlers overrun their scratch
             // buffers; SIMD slots come from the vetted generator of the single-instruction fuzz instead
             bool simd = d.Op.ToString().StartsWith("Neon_") || d.Op.ToString().StartsWith("Vfp_");
-            if (simd || rng.Next(10) == 0)
+            if (!forUnicorn && rng.Next(12) == 0)
+            {
+                // VFP loads/stores (VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP): cond 110P UDWL Rn Vd 101s imm8, same bits in Thumb
+                ins = 0xEC000A00u | ((uint)rng.NextInt64() & 0x01FFF1FFu);
+                if (rng.Next(2) == 0) ins = (ins & ~0xFFu) | (uint)rng.Next(1, 9); // short register lists mostly
+                bytes = !thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)];
+                d = !thumb ? Decoder.DecodeArm(ins, addr) : Decoder.DecodeThumb32(ins, addr, false, 14);
+                simd = false; // the VFP transfer handlers are safe for any encoding
+            }
+            else if (simd || rng.Next(10) == 0)
             {
                 if (!simd && forUnicorn) { }
                 else
@@ -359,6 +368,71 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
         }
     }
 
+    /// <summary>
+    /// A NEON-heavy loop: its native block carries a tier-up budget, gets recompiled by the IL backend while running
+    /// and its native code is retired (unlinked). State and dispatcher counters must still match the interpreter.
+    /// </summary>
+    [Fact]
+    public void TierUpToIlMatchesInterpreter()
+    {
+        EnsureGuestPages();
+        uint[] arm =
+        [
+            0xE3A00000, // 00 mov r0, #0
+            0xF2200150, // 04 loop: veor q0, q0, q0  (= vorr? any NEON three-same)
+            0xF2222844, // 08 vadd.i32 q1, q1, q2
+            0xF2244846, // 0C vadd.i32 q2, q2, q3
+            0xF2266848, // 10 vadd.i32 q3, q3, q4
+            0xE2800001, // 14 add r0, r0, #1
+            0xE3500B02, // 18 cmp r0, #0x800
+            0xBAFFFFF8, // 1C blt loop
+            0xEF000042, // 20 svc #0x42
+        ];
+        long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions, oldIl = IlJitCompiler.Instance.HotInstructions;
+        var oldMode = Jit.Mode;
+        CpuCore.InstructionsPerSecond = 0;
+        NativeX64Compiler.Instance.HotInstructions = 1;
+        IlJitCompiler.Instance.HotInstructions = 200; // budget = max(64, 200 / 7) executions
+        try
+        {
+            (uint[] Regs, ulong[] D, long Blocks, long Insts, long Cycles) Run(string backend)
+            {
+                Assert.True(Jit.Select(backend));
+                var code = GuestMemory.Span(CodeBase, 0x1000);
+                code.Clear();
+                for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+                using var core = new CpuCore(new BlockCache());
+                var s = core.State;
+                for (int i = 0; i < 32; i++) s->D[i] = 0x0001000200030004ul * (ulong)(i + 1);
+                for (int pass = 0; pass < 6; pass++)
+                {
+                    s->R[15] = CodeBase; s->Thumb = 0;
+                    Assert.Equal(ExitReason.Svc, core.Run());
+                    Thread.Sleep(40); // let the workers compile
+                }
+                return (Enumerable.Range(0, 16).Select(i => s->R[i]).Append(s->Cpsr).ToArray(), Enumerable.Range(0, 32).Select(i => s->D[i]).ToArray(),
+                    core.BlocksExecuted, core.InstructionsExecuted, core.BlockCycles);
+            }
+            long tiered0 = NativeRuntime.TieredUp;
+            var interp = Run("interp");
+            var native = Run("native");
+            Assert.Equal(interp.Regs, native.Regs);
+            Assert.Equal(interp.D, native.D);
+            Assert.Equal(interp.Blocks, native.Blocks);
+            Assert.Equal(interp.Insts, native.Insts);
+            Assert.Equal(interp.Cycles, native.Cycles);
+            output.WriteLine($"tiered up: {NativeRuntime.TieredUp - tiered0}; {Jit.Describe()}");
+            Assert.True(NativeRuntime.TieredUp > tiered0, "the NEON loop was never recompiled by the IL backend");
+        }
+        finally
+        {
+            CpuCore.InstructionsPerSecond = oldRate;
+            NativeX64Compiler.Instance.HotInstructions = oldHot;
+            IlJitCompiler.Instance.HotInstructions = oldIl;
+            Jit.Select(oldMode);
+        }
+    }
+
     /// <summary>Debug aid: VITASHARP_HUNT=T|A:words runs one block in the interpreter from many random states, tracing each.</summary>
     [Fact]
     public void HuntBlock()
@@ -476,6 +550,67 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     [InlineData(true, 15_000, 202)]
     public void NativeMatchesInterpreterWithSpills(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: false, spillStress: true);
 
+    /// <summary>
+    /// VFP blocks with special operands (denormals, values next to the smallest normal, NaNs, infinities): the native
+    /// FP fast paths (FTZ/DAZ SSE + default NaN + handler fallback) must reproduce the interpreter bit for bit, in the
+    /// Vita FPSCR mode and - through the fallback - in any other mode.
+    /// </summary>
+    [Theory]
+    [InlineData(false, 40_000, 501)]
+    [InlineData(true, 40_000, 502)]
+    public void NativeVfpMatchesInterpreter(bool thumb, int iterations, int seed)
+    {
+        EnsureGuestPages();
+        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
+        var rng = new Random(seed);
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0, detailed = 0;
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                // 1-6 VFP data-processing / transfer instructions (cond AL), then a branch to self
+                var code = new List<byte>();
+                int n = rng.Next(1, 7);
+                for (int k = 0; k < n; k++)
+                {
+                    uint r = (uint)rng.NextInt64();
+                    uint ins = rng.Next(5) == 0 ? 0xEE000A10u | (r & 0x00FFF1EF) : 0xEE000A00u | (r & 0x00FFF1EF);
+                    if (rng.Next(3) == 0) ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40); // bias: opc1 0..7
+                    var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
+                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb)) continue;
+                    code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
+                }
+                if (code.Count == 0) continue;
+                code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                var st = new RandomState(rng);
+                for (int i = 0; i < 32; i++) st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                st.Fpscr = rng.Next(5) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
+
+                st.Apply(s, thumb);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                st.Apply(s, thumb);
+                var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
+                compared++;
+                string diff = Diff(interp, native);
+                if (diff.Length > 0)
+                {
+                    if (detailed++ < 4) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Take(16).Select(v => v.ToString("X16")))}]{diff}\n{DescribeNative(b, cb)}");
+                    Record(failures, "native", b, diff);
+                }
+            }
+        }
+        finally { CpuState.Free(s); }
+        output.WriteLine($"compared {compared} VFP blocks; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
     /// <summary>All three backends on the same blocks (the IL backend is slow to compile: fewer iterations).</summary>
     [Theory]
     [InlineData(false, 1_500, 301)]
@@ -490,6 +625,7 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
         X64Emitter.VerifyAllocation = true;
         int oldMax = X64Emitter.MaxTempRegisters;
         if (spillStress) X64Emitter.MaxTempRegisters = 2;
+        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int Count, string Example)>();

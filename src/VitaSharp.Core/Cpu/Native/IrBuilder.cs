@@ -193,6 +193,16 @@ public sealed unsafe class IrBuilder
         Block.Callouts++;
     }
 
+    /// <summary>
+    /// Scalar VFP operation on the register file in the state (offsets relative to D0). Like a SIMD-only callout it
+    /// never touches the cached core state.
+    /// </summary>
+    public void FpOp(FpKind kind, FpFlags flags, uint dOff, uint nOff, uint mOff, uint ins, uint pc)
+    {
+        Emit(new IrInst(IrOp.FpOp) { Imm = (uint)kind | (uint)flags, Imm4 = dOff | (nOff << 8) | (mOff << 16), Imm2 = ins, Imm3 = pc });
+        Block.Callouts++;
+    }
+
     public void StoreState(uint offset, int v) => Emit(new IrInst(IrOp.StoreState) { A = v, Imm = offset });
     public int LoadState(uint offset) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LoadState) { D = t, Imm = offset }); return t; }
     public void Fence() => Emit(new IrInst(IrOp.Fence));
