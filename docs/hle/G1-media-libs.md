@@ -2962,8 +2962,19 @@ Validação comum de toda a biblioteca: não há jogo instalado que importe. Esc
 Connect→Write PCM→Read PCM→Stop→End), e conferir contra hardware com um homebrew (VitaSDK, `-lSceVoice_stub`) quando
 houver dúvida "a confirmar".
 
+**Implementado** (`Hle/Modules/Voice.cs`, testes em `tests/VitaSharp.Tests/MediaMiscHleTests.cs`). Escolhas
+provisórias (a confirmar no hardware): o `Audio.cs` hoje tem um microfone virtual (SceAudioIn abre e entrega silêncio),
+mas o Voice não depende dele — IN_DEVICE gera silêncio direto; `CheckTopology` devolve `INVALID_PORT` para as três
+regras; `Connect` com tipos invertidos ou IN_VOICE→OUT_VOICE → `INVALID_PORT`, duplicata → `INVALID_ARGUMENT`;
+`Disconnect` inexistente → `INVALID_ARGUMENT`; `Write/ReadFromOPort` sem `Start` → `NOT_STARTED` com `*size = 0`;
+`frame_size` = 320 para portas PCM/device (10 ms a 16 kHz); estados após Start: entradas do app IDLE (BUFFERING/ACTIVE
+conforme o threshold efetivo = max(threshold, 2 frames)), demais ACTIVE; OUT_PCMAUDIO/OUT_VOICE só produzem dados quando
+alguma entrada conectada produziu no tick (o mic sempre produz); ring de saída cheio descarta o mais antigo; OUT_DEVICE
+abre `IAudioStream(16000, 1, 160)` sob demanda e descarta ticks quando o host já tem ~100 ms na fila (nunca bloqueia);
+eventos (`event_callback`) não são disparados (log `WarnOnce`); `GetPortAttr` com `attr != 1000` → `INVALID_ARGUMENT`.
+
 ### sceVoiceInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
 - **Protótipo:** `int sceVoiceInit(const SceVoiceInitParam *param, SceUInt32 version);` (`psp2/voice.h`)
 - **Comportamento:** inicializa o SceVoice do processo, guarda callback de evento e `user_data`, cria a thread de
   eventos (no HLE: nada). Não aloca memória de trabalho (isso é em `sceVoiceStart`).
@@ -2977,7 +2988,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário; segunda chamada deve devolver 0x804E0802.
 
 ### sceVoiceEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
 - **Protótipo:** `int sceVoiceEnd(void);` (`psp2/voice.h`)
 - **Comportamento:** se iniciado, para o processamento e desanexa o memblock (como `sceVoiceStop`); destrói todas as
   portas (fecha `IAudioStream`s) e conexões; zera estado. Não libera o memblock (é do app).
@@ -2988,7 +2999,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após End, `sceVoiceCreatePort` → 0x804E0801; `sceVoiceInit` volta a funcionar.
 
 ### sceVoiceStart
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
 - **Protótipo:** `int sceVoiceStart(const SceVoiceStartParam *param);` (`psp2/voice.h`)
 - **Comportamento:** anexa o memblock de trabalho (≥ 0x40000, tamanho **não** validado no FW 3.60) e inicia o
   processamento; recria recursos de processamento das portas existentes. Se já iniciado: sucesso sem trocar o
@@ -3002,7 +3013,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com memblock criado por `sceKernelAllocMemBlock`; uid inválido → 0x804E0806.
 
 ### sceVoiceStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
 - **Protótipo:** `int sceVoiceStop(void);` (`psp2/voice.h`)
 - **Comportamento:** para o processamento e desanexa o memblock. Portas e conexões permanecem, mas buffers são
   descartados. Já parado mas inicializado → sucesso.
@@ -3012,7 +3023,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após Stop, `GetPortInfo` → 0x804E080A.
 
 ### sceVoiceGetResourceInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
 - **Protótipo:** `int sceVoiceGetResourceInfo(SceVoiceResourceInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** escreve os limites fixos do FW 3.60: 7 IN_VOICE, 7 OUT_VOICE, 1 IN_DEVICE, 1 OUT_DEVICE, 64 portas.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ARGUMENT` se `info == NULL`.
@@ -3022,7 +3033,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceCheckTopology
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
 - **Protótipo:** `int sceVoiceCheckTopology(void);` (`psp2/voice.h`)
 - **Comportamento:** valida o grafo: toda porta criada tem ≥ 1 conexão; portas OUT_VOICE adjacentes na lista interna
   têm o mesmo bitrate, mesmo mute (zero/não-zero) e volume exatamente igual; se existem IN_DEVICE e IN_PCMAUDIO,
@@ -3036,7 +3047,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com cada caso.
 
 ### sceVoiceCreatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
 - **Protótipo:** `int sceVoiceCreatePort(SceVoicePortId *port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** escreve 0xFF em `*port_id` antes de validar. Valida o tipo (0..5); para PCMAUDIO:
   `pcm_data_type == 0` (S16LE), `sampling_rate == 16000`, capacidade efetiva = `buffer_size & ~511`, faixa
@@ -3058,7 +3069,7 @@ houver dúvida "a confirmar".
   oitava IN_VOICE → 0x804E0808.
 
 ### sceVoiceUpdatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
 - **Protótipo:** `int sceVoiceUpdatePort(SceVoicePortId port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** troca configuração de uma porta existente; o tipo não pode mudar. Mudar bitrate recria o
   codec e descarta dados. Não realoca rings PCM (no FW 3.60 mudar `buffer_size` corrompe a contabilidade — o HLE
@@ -3071,7 +3082,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceConnectIPortToOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
 - **Protótipo:** `int sceVoiceConnectIPortToOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** liga entrada (tipo 0..2) a saída (3..5). Rejeita IN_VOICE→OUT_VOICE direto, conexão duplicada e
@@ -3083,7 +3094,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDisconnectIPortFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
 - **Protótipo:** `int sceVoiceDisconnectIPortFromOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** remove a conexão.
@@ -3093,7 +3104,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDeletePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
 - **Protótipo:** `int sceVoiceDeletePort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** apaga a porta e todas as conexões que a envolvem; libera o slot e a contagem de recursos.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_PORT_ID`.
@@ -3101,7 +3112,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: ID volta a ser reutilizado pelo próximo `CreatePort`.
 
 ### sceVoiceWriteToIPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
 - **Protótipo:** `int sceVoiceWriteToIPort(SceVoicePortId port_id, const void *data, SceSize *size, SceInt16 frame_gap);`
   (`psp2/voice.h`)
 - **Comportamento:** escreve dados do app numa IN_PCMAUDIO ou IN_VOICE; `*size` volta com os bytes aceitos (limitado
@@ -3116,7 +3127,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com PCM: escrever 2048 bytes num ring de 1024 → `*size == 1024`.
 
 ### sceVoiceReadFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
 - **Protótipo:** `int sceVoiceReadFromOPort(SceVoicePortId port_id, void *data, SceSize *size);` (`psp2/voice.h`)
 - **Comportamento:** lê de OUT_PCMAUDIO ou OUT_VOICE; `*size` (capacidade) volta com os bytes copiados. Voz codificada
   é arredondada para baixo a frames completos; PCM para número par de bytes. Falha pós-validação → `*size = 0`.
@@ -3131,7 +3142,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário IN_PCMAUDIO→OUT_PCMAUDIO com volume 0.5: amostra 1000 deve sair 500.
 
 ### sceVoiceGetPortInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
 - **Protótipo:** `int sceVoiceGetPortInfo(SceVoicePortId port_id, SceVoicePortInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** devolve tipo, estado, `data_size` (bytes livres no ring de entrada ou bytes enfileirados no de
   saída) e `frame_size` (tamanho do frame de processamento, codificado ou PCM). Se não iniciado, zera a struct inteira e
@@ -3147,7 +3158,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário + homebrew em hardware para os valores "a confirmar".
 
 ### sceVoiceResetPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
 - **Protótipo:** `int sceVoiceResetPort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** limpa os dados do ring; ACTIVE vira IDLE; INACTIVE/IDLE/BUFFERING mantêm estado interno. O estado
   visível em `GetPortInfo` só muda no próximo ciclo de processamento.
@@ -3164,19 +3175,19 @@ campos de `Port`. Validação: teste unitário set→get. Protótipos em `psp2/v
 
 | Função | NID | Protótipo | Comportamento / particularidades |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
-| - [ ] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
-| - [ ] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
-| - [ ] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
-| - [ ] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
-| - [ ] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
-| - [ ] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
-| - [ ] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
-| - [ ] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
-| - [ ] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
-| - [ ] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
-| - [ ] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
-| - [ ] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
+| - [x] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
+| - [x] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
+| - [x] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
+| - [x] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
+| - [x] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
+| - [x] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
+| - [x] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
+| - [x] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
+| - [x] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
+| - [x] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
+| - [x] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
+| - [x] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
+| - [x] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
 
 ---
 
@@ -3220,8 +3231,13 @@ Voice são da mesma equipe) — não usar sem confirmar.
 Validação comum: teste unitário (Init→CreateLocal→CreateRemote→Connect→Read/WritePacket→Disconnect→Delete×2→End).
 Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de chat/lobby sem travar.
 
+**Implementado** (`Hle/Modules/VoiceQoS.cs`) como sessão offline: IDs de endpoints/conexões vêm de um contador único
+(começa em 1); erros provisórios `SceError.ERROR` (0x80020001, com `WarnOnce`) para não inicializado / já inicializado /
+ID desconhecido / conexão duplicada, e `SceError.INVALID_ARGUMENT` (0x80020005) para ponteiro nulo ou tamanho de
+atributo ≤ 0 ou > 0x10000; apagar um endpoint remove as conexões que o usam; `Init` não exige o SceVoice.
+
 ### sceVoiceQoSInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
 - **Protótipo (inferido, PS4):** `int sceVoiceQoSInit(void *pMemBlock, SceUInt32 memSize, SceInt32 appType);`
 - **Comportamento:** inicializa a biblioteca usando memória fornecida pelo app. Segunda chamada → erro "já
   inicializado".
@@ -3231,7 +3247,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário; em jogo, conferir que `r0` é ponteiro alinhado e `r1` um tamanho plausível.
 
 ### sceVoiceQoSEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
 - **Protótipo (inferido):** `int sceVoiceQoSEnd(void);`
 - **Comportamento:** destrói conexões e endpoints e finaliza.
 - **Retorno/erros:** 0; não inicializado → a confirmar.
@@ -3239,7 +3255,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateLocalEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
 - **Protótipo (inferido):** `int sceVoiceQoSCreateLocalEndpoint(SceVoiceQoSLocalId *pLocalId);`
 - **Comportamento:** cria endpoint local (no hardware também as portas internas do SceVoice) e devolve o ID.
 - **Retorno/erros:** 0; ponteiro nulo / limite de endpoints → a confirmar (limite também a confirmar).
@@ -3247,7 +3263,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateRemoteEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
 - **Protótipo (inferido):** `int sceVoiceQoSCreateRemoteEndpoint(SceVoiceQoSRemoteId *pRemoteId);`
 - **Comportamento:** cria endpoint que representa um par remoto.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3255,7 +3271,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSConnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
 - **Protótipo (inferido):** `int sceVoiceQoSConnect(SceVoiceQoSConnectionId *pConnectionId, SceVoiceQoSLocalId localId, SceVoiceQoSRemoteId remoteId);`
 - **Comportamento:** cria uma conexão local↔remoto e devolve o ID.
 - **Retorno/erros:** 0; IDs inexistentes / conexão duplicada → a confirmar.
@@ -3263,7 +3279,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSDisconnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
 - **Protótipo (inferido):** `int sceVoiceQoSDisconnect(SceVoiceQoSConnectionId connectionId);`
 - **Comportamento:** encerra a conexão.
 - **Retorno/erros:** 0; ID inválido → a confirmar.
@@ -3271,7 +3287,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSReadPacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
 - **Protótipo (inferido):** `int sceVoiceQoSReadPacket(SceVoiceQoSConnectionId connectionId, void *pData, SceUInt32 *pSize);`
 - **Comportamento:** copia para `pData` o próximo pacote de voz a enviar ao remoto da conexão; `*pSize` entra como
   capacidade e sai como bytes escritos.
@@ -3281,7 +3297,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSWritePacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
 - **Protótipo (inferido):** `int sceVoiceQoSWritePacket(SceVoiceQoSConnectionId connectionId, const void *pData, SceUInt32 *pSize);`
 - **Comportamento:** entrega ao QoS um pacote recebido do remoto (vai para o jitter buffer → porta IN_VOICE).
   `*pSize` sai com os bytes aceitos.
@@ -3298,15 +3314,15 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
-| - [ ] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
-| - [ ] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
-| - [ ] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
-| - [ ] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
-| - [ ] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
-| - [ ] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
+| - [x] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
+| - [x] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
+| - [x] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
+| - [x] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
+| - [x] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
+| - [x] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
+| - [x] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
 
 ---
 

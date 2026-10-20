@@ -213,4 +213,301 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         }
         finally { CommonDialog.ImeDefaultText = saved; }
     }
+
+    // ------------------------------------------------------------------ SceVoice
+
+    sealed class FakeClock { public double Now; }
+
+    (Voice v, FakeClock clock, uint scratch) NewVoice()
+    {
+        var clock = new FakeClock();
+        var v = new Voice { Clock = () => clock.Now, MemBlockExists = uid => uid == 0x4242 };
+        uint s = fx.Memory.Alloc(0x10000, "voice scratch");
+        GuestMemory.Fill(s, 0, 0x10000);
+        GuestMemory.W32(s, 0x20000000);
+        Assert.Equal(0, Call(v, "sceVoiceInit", s, 100u));
+        return (v, clock, s);
+    }
+
+    /// <summary>Writes a SceVoicePortParam at <paramref name="p"/> and creates the port; returns (result, id).</summary>
+    static (int r, uint id) CreatePort(Voice v, uint p, uint type, uint data, ushort threshold = 0, float volume = 1f, uint rate = 16000)
+    {
+        GuestMemory.Fill(p, 0, 0x20);
+        GuestMemory.W32(p, type);
+        GuestMemory.Write(p + 4, threshold);
+        GuestMemory.Write(p + 8, volume);
+        GuestMemory.W32(p + 0xC, data);
+        GuestMemory.W32(p + 0x14, rate);
+        int r = Call(v, "sceVoiceCreatePort", p + 0x20, p);
+        return (r, GuestMemory.R32(p + 0x20));
+    }
+
+    [Fact]
+    public void VoiceInitStartStopEnd()
+    {
+        var (v, _, s) = NewVoice();
+        Assert.Equal(Voice.ERR_ALREADY_INITIALIZED, Call(v, "sceVoiceInit", s, 100u));
+        uint info = s + 0x100;
+        Assert.Equal(0, Call(v, "sceVoiceGetResourceInfo", info));
+        Assert.Equal(new ushort[] { 7, 7, 1, 1, 64 }, Enumerable.Range(0, 5).Select(i => GuestMemory.Read<ushort>(info + (uint)i * 2)).ToArray());
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceStart", 0u));
+        uint start = s + 0x200;
+        GuestMemory.W32(start, 99);
+        Assert.Equal(Voice.ERR_INVALID_MEMBLOCK, Call(v, "sceVoiceStart", start));
+        var (r, id) = CreatePort(v, s + 0x300, Voice.OUT_PCMAUDIO, 2048);
+        Assert.Equal(0, r);
+        GuestMemory.Fill(info, 0xEE, 0x18);
+        Assert.Equal(Voice.ERR_NOT_STARTED, Call(v, "sceVoiceGetPortInfo", id, info));
+        Assert.Equal(0u, GuestMemory.R32(info + 0x14)); // whole struct cleared
+        GuestMemory.W32(start, 0x4242);
+        Assert.Equal(0, Call(v, "sceVoiceStart", start));
+        Assert.Equal(0, Call(v, "sceVoiceStart", start)); // already started: success
+        GuestMemory.Fill(info, 0xEE, 0x18);
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", id, info));
+        Assert.Equal(Voice.OUT_PCMAUDIO, GuestMemory.R32(info));
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(info + 8)); // reserved untouched on success
+        Assert.Equal(0, Call(v, "sceVoiceStop"));
+        Assert.Equal(0, Call(v, "sceVoiceStop"));
+        Assert.Equal(Voice.ERR_NOT_STARTED, Call(v, "sceVoiceGetPortInfo", id, info));
+        Assert.Equal(0, Call(v, "sceVoiceEnd"));
+        Assert.Equal(Voice.ERR_NOT_INITIALIZED, Call(v, "sceVoiceEnd"));
+        Assert.Equal(Voice.ERR_NOT_INITIALIZED, CreatePort(v, s + 0x300, Voice.OUT_PCMAUDIO, 2048).r);
+        Assert.Equal(0, Call(v, "sceVoiceInit", s, 100u));
+    }
+
+    [Fact]
+    public void VoiceCreatePortValidationAndLimits()
+    {
+        var (v, _, s) = NewVoice();
+        uint p = s + 0x400;
+        var (r, id) = CreatePort(v, p, Voice.IN_PCMAUDIO, 1000);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, r);
+        Assert.Equal(0xFFu, id); // written before validation
+        Assert.Equal(0, CreatePort(v, p, Voice.IN_PCMAUDIO, 1024).r);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, Voice.IN_PCMAUDIO, 65024).r);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, Voice.IN_PCMAUDIO, 4096, rate: 48000).r);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, Voice.IN_PCMAUDIO, 1024, threshold: 32).r); // 1024 B = 32 ms
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, Voice.OUT_VOICE, 6000).r);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, Voice.IN_DEVICE, 1).r);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, 6, 0).r);
+        Assert.Equal(0, CreatePort(v, p, Voice.IN_DEVICE, 0).r);
+        Assert.Equal(Voice.ERR_RESOURCE_LIMIT, CreatePort(v, p, Voice.IN_DEVICE, 0).r);
+        for (int i = 0; i < 7; i++) Assert.Equal(0, CreatePort(v, p, Voice.IN_VOICE, 12200).r);
+        Assert.Equal(Voice.ERR_RESOURCE_LIMIT, CreatePort(v, p, Voice.IN_VOICE, 12200).r);
+        // deleting frees the lowest slot for reuse
+        Assert.Equal(0, Call(v, "sceVoiceDeletePort", 0u));
+        Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceDeletePort", 0u));
+        Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceDeletePort", 64u));
+        var (r2, id2) = CreatePort(v, p, Voice.OUT_PCMAUDIO, 4096);
+        Assert.Equal((0, 0u), (r2, id2));
+    }
+
+    [Fact]
+    public void VoiceConnectDisconnectAndTopology()
+    {
+        var (v, _, s) = NewVoice();
+        uint p = s + 0x400;
+        uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
+        uint inV = CreatePort(v, p, Voice.IN_VOICE, 12200).id;
+        uint outV = CreatePort(v, p, Voice.OUT_VOICE, 12200).id;
+        uint spk = CreatePort(v, p, Voice.OUT_DEVICE, 0).id;
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceCheckTopology")); // unconnected ports
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceConnectIPortToOPort", inV, outV)); // IN_VOICE -> OUT_VOICE
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceConnectIPortToOPort", outV, mic)); // reversed
+        Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceConnectIPortToOPort", 40u, outV));
+        Assert.Equal(0, Call(v, "sceVoiceConnectIPortToOPort", mic, outV));
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceConnectIPortToOPort", mic, outV)); // duplicate
+        Assert.Equal(0, Call(v, "sceVoiceConnectIPortToOPort", inV, spk));
+        Assert.Equal(0, Call(v, "sceVoiceCheckTopology"));
+        // a second OUT_VOICE with another bitrate breaks the adjacency rule
+        uint outV2 = CreatePort(v, p, Voice.OUT_VOICE, 5700).id;
+        Assert.Equal(0, Call(v, "sceVoiceConnectIPortToOPort", mic, outV2));
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceCheckTopology"));
+        Assert.Equal(0, Call(v, "sceVoiceSetBitRate", outV2, 12200u));
+        Assert.Equal(0, Call(v, "sceVoiceCheckTopology"));
+        Assert.Equal(0, Call(v, "sceVoiceDisconnectIPortFromOPort", mic, outV2));
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceDisconnectIPortFromOPort", mic, outV2));
+        // deleting a port drops its connections
+        Assert.Equal(0, Call(v, "sceVoiceDeletePort", outV2));
+        Assert.Equal(0, Call(v, "sceVoiceDeletePort", mic));
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceCheckTopology")); // outV lost its only connection
+    }
+
+    [Fact]
+    public void VoicePcmMixWithVolume()
+    {
+        var (v, clock, s) = NewVoice();
+        uint p = s + 0x400;
+        uint inP = CreatePort(v, p, Voice.IN_PCMAUDIO, 1024).id;
+        uint outP = CreatePort(v, p, Voice.OUT_PCMAUDIO, 4096, volume: 0.5f).id;
+        Assert.Equal(0, Call(v, "sceVoiceConnectIPortToOPort", inP, outP));
+        GuestMemory.W32(s + 0x200, 0x4242);
+        Assert.Equal(0, Call(v, "sceVoiceStart", s + 0x200));
+        uint info = s + 0x100;
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", inP, info));
+        Assert.Equal((Voice.STATE_IDLE, 1024u, 320u), (GuestMemory.R32(info + 4), GuestMemory.R32(info + 0xC), GuestMemory.R32(info + 0x10)));
+
+        // writing more than the ring holds accepts only the free space
+        uint data = s + 0x1000, size = s + 0x80;
+        for (uint i = 0; i < 1024; i++) GuestMemory.Write(data + i * 2, (short)1000);
+        GuestMemory.W32(size, 2048);
+        Assert.Equal(0, Call(v, "sceVoiceWriteToIPort", inP, data, size, 0u));
+        Assert.Equal(1024u, GuestMemory.R32(size));
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", inP, info));
+        Assert.Equal((Voice.STATE_ACTIVE, 0u), (GuestMemory.R32(info + 4), GuestMemory.R32(info + 0xC)));
+
+        clock.Now += 0.020; // two ticks: 640 bytes
+        uint outBuf = s + 0x3000;
+        GuestMemory.W32(size, 4096);
+        Assert.Equal(0, Call(v, "sceVoiceReadFromOPort", outP, outBuf, size));
+        Assert.Equal(640u, GuestMemory.R32(size));
+        Assert.Equal((short)500, GuestMemory.Read<short>(outBuf));
+        Assert.Equal((short)500, GuestMemory.Read<short>(outBuf + 638));
+        // odd capacities are rounded down to whole samples
+        clock.Now += 0.010;
+        GuestMemory.W32(size, 101);
+        Assert.Equal(0, Call(v, "sceVoiceReadFromOPort", outP, outBuf, size));
+        Assert.Equal(100u, GuestMemory.R32(size));
+        // wrong port kinds
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceReadFromOPort", inP, outBuf, size));
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceWriteToIPort", outP, data, size, 0u));
+        // mute on the input silences the mix
+        Assert.Equal(0, Call(v, "sceVoiceSetMuteFlag", inP, 1u));
+        GuestMemory.W32(size, 1024);
+        Assert.Equal(0, Call(v, "sceVoiceWriteToIPort", inP, data, size, 0u));
+        clock.Now += 0.050;
+        GuestMemory.W32(size, 4096);
+        Assert.Equal(0, Call(v, "sceVoiceReadFromOPort", outP, outBuf, size));
+        Assert.True(GuestMemory.R32(size) >= 320);
+        Assert.Equal((short)0, GuestMemory.Read<short>(outBuf + GuestMemory.R32(size) - 2));
+        // reset clears the ring
+        Assert.Equal(0, Call(v, "sceVoiceResetPort", inP));
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", inP, info));
+        Assert.Equal(1024u, GuestMemory.R32(info + 0xC));
+    }
+
+    [Fact]
+    public void VoiceOutVoiceProducesSizedFramesFromMic()
+    {
+        var (v, clock, s) = NewVoice();
+        uint p = s + 0x400;
+        uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
+        uint outV = CreatePort(v, p, Voice.OUT_VOICE, 5700).id; // 15 bytes / 20 ms
+        Assert.Equal(0, Call(v, "sceVoiceConnectIPortToOPort", mic, outV));
+        GuestMemory.W32(s + 0x200, 0x4242);
+        Assert.Equal(0, Call(v, "sceVoiceStart", s + 0x200));
+        clock.Now += 0.065; // 6 ticks = 3 frames
+        uint info = s + 0x100;
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", outV, info));
+        Assert.Equal((45u, 15u), (GuestMemory.R32(info + 0xC), GuestMemory.R32(info + 0x10)));
+        uint buf = s + 0x2000, size = s + 0x80;
+        GuestMemory.W32(size, 40); // rounded down to whole frames
+        Assert.Equal(0, Call(v, "sceVoiceReadFromOPort", outV, buf, size));
+        Assert.Equal(30u, GuestMemory.R32(size));
+        // paused output keeps reporting its old state and produces nothing
+        Assert.Equal(0, Call(v, "sceVoicePausePort", outV));
+        clock.Now += 0.1;
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", outV, info));
+        Assert.Equal((Voice.STATE_ACTIVE, 15u), (GuestMemory.R32(info + 4), GuestMemory.R32(info + 0xC)));
+        Assert.Equal(0, Call(v, "sceVoiceResumePort", outV));
+        // pause-all does not catch up the paused time
+        Assert.Equal(0, Call(v, "sceVoicePausePortAll"));
+        clock.Now += 1.0;
+        Assert.Equal(0, Call(v, "sceVoiceResumePortAll"));
+        Assert.Equal(0, Call(v, "sceVoiceGetPortInfo", outV, info));
+        Assert.Equal(15u, GuestMemory.R32(info + 0xC));
+    }
+
+    [Fact]
+    public void VoicePortAttributes()
+    {
+        var (v, _, s) = NewVoice();
+        uint p = s + 0x400, outp = s + 0x80;
+        uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
+        uint pcm = CreatePort(v, p, Voice.OUT_PCMAUDIO, 2048).id;
+        uint vo = CreatePort(v, p, Voice.OUT_VOICE, 3850).id;
+        Assert.Equal(0, Call(v, "sceVoiceSetVolume", pcm, 2.5f));
+        Assert.Equal(0, Call(v, "sceVoiceGetVolume", pcm, outp));
+        Assert.Equal(2.5f, GuestMemory.Read<float>(outp));
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceGetVolume", pcm, 0u));
+        Assert.Equal(0, Call(v, "sceVoiceGetMuteFlag", pcm, outp));
+        Assert.Equal((ushort)0, GuestMemory.Read<ushort>(outp));
+        Assert.Equal(0, Call(v, "sceVoiceSetMuteFlagAll", 1u));
+        Assert.Equal(0, Call(v, "sceVoiceGetMuteFlag", pcm, outp));
+        Assert.Equal((ushort)1, GuestMemory.Read<ushort>(outp));
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceSetBitRate", pcm, 3850u));
+        Assert.Equal(Voice.ERR_INVALID_PORT, Call(v, "sceVoiceGetBitRate", pcm, outp));
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceSetBitRate", vo, 1234u));
+        Assert.Equal(0, Call(v, "sceVoiceSetBitRate", vo, 7300u));
+        Assert.Equal(0, Call(v, "sceVoiceGetBitRate", vo, outp));
+        Assert.Equal(7300u, GuestMemory.R32(outp));
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceSetPortAttr", mic, 1000u, outp));
+        Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceSetPortAttr", 50u, 1000u, outp));
+        GuestMemory.W32(outp, 77);
+        Assert.Equal(0, Call(v, "sceVoiceGetPortAttr", pcm, 1000u, outp));
+        Assert.Equal(77u, GuestMemory.R32(outp)); // non-device: untouched
+        Assert.Equal(0, Call(v, "sceVoiceGetPortAttr", mic, 1000u, outp));
+        Assert.Equal(0u, GuestMemory.R32(outp));
+        // UpdatePort: type cannot change, bitrate validated
+        GuestMemory.W32(p, Voice.OUT_PCMAUDIO);
+        Assert.Equal(Voice.ERR_INVALID_ARGUMENT, Call(v, "sceVoiceUpdatePort", vo, p));
+        GuestMemory.W32(p, Voice.OUT_VOICE);
+        GuestMemory.W32(p + 0xC, 12200);
+        GuestMemory.Write(p + 8, 0.25f);
+        Assert.Equal(0, Call(v, "sceVoiceUpdatePort", vo, p));
+        Assert.Equal(0, Call(v, "sceVoiceGetBitRate", vo, outp));
+        Assert.Equal(12200u, GuestMemory.R32(outp));
+        Assert.Equal(0, Call(v, "sceVoiceGetVolume", vo, outp));
+        Assert.Equal(0.25f, GuestMemory.Read<float>(outp));
+    }
+
+    // ------------------------------------------------------------------ SceVoiceQoS
+
+    [Fact]
+    public void VoiceQoSSessionFlow()
+    {
+        var q = new VoiceQoS();
+        uint s = fx.Memory.Alloc(0x1000, "qos");
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSCreateLocalEndpoint", s));
+        Assert.Equal(0, Call(q, "sceVoiceQoSInit", s + 0x800, 0x800u, 0x20000000u));
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSInit", s + 0x800, 0x800u, 0x20000000u));
+        Assert.Equal(0, Call(q, "sceVoiceQoSCreateLocalEndpoint", s));
+        Assert.Equal(0, Call(q, "sceVoiceQoSCreateRemoteEndpoint", s + 4));
+        int local = (int)GuestMemory.R32(s), remote = (int)GuestMemory.R32(s + 4);
+        Assert.NotEqual(local, remote);
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSConnect", s + 8, remote, local)); // swapped ids
+        Assert.Equal(0, Call(q, "sceVoiceQoSConnect", s + 8, local, remote));
+        int conn = (int)GuestMemory.R32(s + 8);
+        Assert.Equal(0, Call(q, "sceVoiceQoSGetLocalEndpoint", conn, s + 12));
+        Assert.Equal(0, Call(q, "sceVoiceQoSGetRemoteEndpoint", conn, s + 16));
+        Assert.Equal(((uint)local, (uint)remote), (GuestMemory.R32(s + 12), GuestMemory.R32(s + 16)));
+
+        uint data = s + 0x100, size = s + 20;
+        GuestMemory.W32(size, 256);
+        Assert.Equal(0, Call(q, "sceVoiceQoSReadPacket", conn, data, size));
+        Assert.Equal(0u, GuestMemory.R32(size)); // nothing to send
+        GuestMemory.W32(size, 64);
+        Assert.Equal(0, Call(q, "sceVoiceQoSWritePacket", conn, data, size));
+        Assert.Equal(64u, GuestMemory.R32(size)); // all consumed
+
+        // attributes: set -> get, never written -> zeros, separate key spaces
+        GuestMemory.W32(s + 0x200, 0xCAFE);
+        Assert.Equal(0, Call(q, "sceVoiceQoSSetLocalEndpointAttribute", local, 3u, s + 0x200, 4));
+        GuestMemory.W32(s + 0x300, 0xFFFF);
+        Assert.Equal(0, Call(q, "sceVoiceQoSGetLocalEndpointAttribute", local, 3u, s + 0x300, 4));
+        Assert.Equal(0xCAFEu, GuestMemory.R32(s + 0x300));
+        Assert.Equal(0, Call(q, "sceVoiceQoSGetConnectionAttribute", conn, 3u, s + 0x300, 4));
+        Assert.Equal(0u, GuestMemory.R32(s + 0x300));
+        GuestMemory.W32(s + 0x300, 0xFFFF);
+        Assert.Equal(0, Call(q, "sceVoiceQoSGetStatus", conn, 1u, s + 0x300, 4));
+        Assert.Equal(0u, GuestMemory.R32(s + 0x300));
+
+        // deleting the local endpoint drops its connection
+        Assert.Equal(0, Call(q, "sceVoiceQoSDeleteLocalEndpoint", local));
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSDisconnect", conn));
+        Assert.Equal(0, Call(q, "sceVoiceQoSDeleteRemoteEndpoint", remote));
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSDeleteRemoteEndpoint", remote));
+        Assert.Equal(0, Call(q, "sceVoiceQoSEnd"));
+        Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSEnd"));
+    }
 }
