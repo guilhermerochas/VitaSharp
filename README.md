@@ -7,7 +7,7 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg?logo=vulkan&logoColor=white)](https://www.vulkan.org/)
-[![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D6.svg)](#requirements)
+[![Platforms: Windows | Linux | macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg)](#requirements)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#compatibility)
 
 [Features](#features) ·
@@ -102,31 +102,77 @@ the tested games actually import.
 
 ### Requirements
 
-| | Minimum |
-| --- | --- |
-| OS | Windows 10 or 11, x64 |
-| GPU | Vulkan 1.3 support (any recent NVIDIA, AMD or Intel GPU with current drivers) |
-| SDK | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (to build) |
-| CPU | A modern multi-core x64 CPU; the guest runs on several host threads |
+| | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| OS | Windows 10 or 11, x64 | x64 or ARM64, glibc distribution (X11 or Wayland) | a macOS release supported by .NET 10, Apple Silicon or Intel |
+| GPU | Vulkan 1.3 driver (any recent NVIDIA, AMD or Intel GPU) | Vulkan 1.3 driver: Mesa (RADV, ANV, NVK), NVIDIA, or lavapipe (software, slow) | Vulkan through [MoltenVK](https://github.com/KhronosGroup/MoltenVK) 1.3 or later |
+| Vulkan loader | ships with the GPU driver | `libvulkan1` (`sudo apt install libvulkan1 mesa-vulkan-drivers`) | [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home#mac) (system-wide install) or `brew install molten-vk vulkan-loader` |
+| FFmpeg | downloaded at build time | downloaded at build time | `brew install ffmpeg` |
+| SDK (to build) | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | .NET 10 SDK | .NET 10 SDK |
 
-The first build downloads FFmpeg 8.1 (LGPL) for your platform, checks its SHA-256 and copies it to an `ffmpeg` folder
-next to the executable; later builds reuse the cached copy. Windows and Linux (x64 and ARM64) get prebuilt
-libraries; on macOS install FFmpeg with `brew install ffmpeg`. To build offline, pass `-p:VitaSharpSkipFFmpeg=true`
-(videos and MP3/AAC audio are then disabled). Details in [`third_party/ffmpeg`](third_party/ffmpeg/README.md).
+A modern multi-core CPU is recommended: the guest runs on several host threads.
+
+The first build downloads FFmpeg 8.1 (LGPL) for the target platform, checks its SHA-256 and copies it to an `ffmpeg`
+folder next to the executable; later builds reuse the cached copy. Windows and Linux (x64 and ARM64) get prebuilt
+libraries; there is no prebuilt macOS build, so VitaSharp uses Homebrew's (`/opt/homebrew/lib`, `/usr/local/lib`) or
+the folder named by `VITASHARP_FFMPEG`. To build offline, pass `-p:VitaSharpSkipFFmpeg=true` (videos and MP3/AAC
+audio are then disabled). Details in [`third_party/ffmpeg`](third_party/ffmpeg/README.md).
+
+Other native libraries come from NuGet for every platform: GLFW (window), OpenAL Soft (audio), shaderc (shader
+compiler), Skia (launcher UI). The webcam (SceCamera) uses DirectShow / Media Foundation on Windows, V4L2 on Linux and
+AVFoundation on macOS; without a camera, or when access is denied, games get "no camera".
 
 ### Build
 
-```powershell
+```sh
 git clone <repository-url> VitaSharp
 cd VitaSharp
 dotnet build -c Release
 ```
 
+The same command works on all three systems.
+
 ### Run
 
-```powershell
+```sh
 dotnet run --project src/VitaSharp.Desktop -c Release
 ```
+
+Platform notes:
+
+- **Linux**: desktop installs already have the client libraries VitaSharp loads; on a minimal system (servers,
+  containers, WSL) install them with
+  `sudo apt install libvulkan1 mesa-vulkan-drivers libx11-6 libxcursor1 libxrandr2 libxi6 libxinerama1 libice6 libsm6 libfontconfig1 libxkbcommon0 libwayland-client0 libwayland-cursor0 libpulse0`
+  (Avalonia needs libICE/libSM, GLFW the X11 or Wayland ones, OpenAL Soft libpulse or ALSA). The game window
+  (GLFW) runs on Wayland when its libraries are present and on X11/XWayland otherwise;
+  `VITASHARP_GLFW_PLATFORM=x11` or `=wayland` forces one. `vulkaninfo --summary` (package `vulkan-tools`) shows which
+  driver will be used; with several, pick one with `VK_DRIVER_FILES` (`VK_ICD_FILENAMES` on older loaders).
+
+- **macOS**: VitaSharp needs a Vulkan loader with MoltenVK. If it lives in a folder the dynamic linker does not search
+  (Homebrew on Apple Silicon, or an SDK used in place through `VULKAN_SDK`), VitaSharp restarts itself once with that
+  folder on `DYLD_FALLBACK_LIBRARY_PATH`. `VITASHARP_VULKAN_LIB=/path/to/libvulkan.1.dylib` (or `libMoltenVK.dylib`)
+  forces a specific library. Metal lacks a few Vulkan features the Vita GPU uses; VitaSharp logs them at startup
+  ("Vulkan portability subset") and falls back: no sampler LOD bias, wireframe/point fill drawn filled.
+- Any platform: `VITASHARP_DATA=<folder>` or `--data=<folder>` moves the data folder.
+
+### Publish
+
+Self-contained single-file builds (no .NET install needed to run them), ReadyToRun-compiled, for any platform from
+any host:
+
+```sh
+build/publish.sh                        # all: win-x64 linux-x64 linux-arm64 osx-x64 osx-arm64
+build/publish.sh linux-x64 osx-arm64    # some
+```
+
+```powershell
+build\publish.ps1 -Rid win-x64,linux-x64
+```
+
+Each platform lands in `artifacts/publish/<rid>/`: the `VitaSharp.Desktop` executable, the native libraries next to
+it, and FFmpeg in `ffmpeg/`. macOS builds made on another OS are not code-signed; on the Mac, run
+`codesign --force --sign - VitaSharp.Desktop` (and `xattr -dr com.apple.quarantine .` for downloaded copies) before
+starting them.
 
 The game library opens. Use **Install PKG...** to install a game package together with its `work.bin` or `.rif`
 license, or **Add game folder...** for an already-extracted game, then press **Play**.
@@ -178,8 +224,17 @@ Gamepads are detected automatically.
 
 ### Data folder
 
-Everything the emulator writes lives in `%APPDATA%\VitaSharp` (override with the `VITASHARP_DATA` environment
-variable):
+Everything the emulator writes lives in one data folder (override with the `VITASHARP_DATA` environment variable or
+`--data=<folder>`):
+
+| Platform | Default data folder |
+| --- | --- |
+| Windows | `%APPDATA%\VitaSharp` |
+| Linux | `$XDG_DATA_HOME/VitaSharp`, i.e. `~/.local/share/VitaSharp` by default |
+| macOS | `~/Library/Application Support/VitaSharp` |
+
+The Vita's file systems ignore case and so does VitaSharp, also on case-sensitive Linux/macOS file systems: games
+that open `Media/Data.bin` as `media/DATA.BIN` find it.
 
 ```text
 VitaSharp/
@@ -219,9 +274,14 @@ flowchart LR
 
 Unit tests:
 
-```powershell
+```sh
 dotnet test tests/VitaSharp.Tests
 ```
+
+The CPU fuzz tests compare the interpreter with [Unicorn](https://www.unicorn-engine.org/); they take several
+minutes, and are skipped where Unicorn's native library is not available (macOS on Apple Silicon) or when
+`VITASHARP_SKIP_UNICORN=1` is set. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds and tests on
+Windows, Ubuntu and macOS and publishes every platform.
 
 Game scenarios boot a title headless, feed scripted input and write frames, a contact sheet, metrics and a report
 to the data folder:
@@ -231,9 +291,14 @@ title=PCSE00002
 args=--frames=8600 --dump-every=50 --input=start@f3400,cross@f3600
 ```
 
-```powershell
+```sh
 dotnet run --project src/VitaSharp.Desktop -c Release -- test tests/scenarios/f1_drive.txt
 ```
+
+A scenario's `data=` line is ignored when `--data=<folder>` is given or when that folder does not exist on the
+machine, so the same scenarios run on Linux against a copy of the data:
+`VitaSharp.Desktop test tests/scenarios/dd_boot.txt --data=$HOME/vitadata`. Headless runs need no display; on a
+machine without a GPU, Mesa's lavapipe (`mesa-vulkan-drivers`) renders in software.
 
 ## Contributing
 
