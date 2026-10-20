@@ -138,12 +138,20 @@ public sealed unsafe partial class VulkanRenderer
     ImageMemoryPool.Allocation _fbCopyMem;
     uint _fbCopyW, _fbCopyH;
     Format _fbCopyFormat;
+    readonly HashSet<uint> _ssFetchLogged = new();
 
     DescriptorSet BuildFramebufferFetchSet()
     {
         if (_rt == null) return _emptyFbSet ??= BuildEmptyFbSet();
-        EndRendering();
-        if (_fbCopy.Handle == 0 || _fbCopyW != _rt.Width || _fbCopyH != _rt.Height || _fbCopyFormat != _rtAttachFormat)
+        // A supersampled (MSAA downscale) scene rasterises at 2x, so gl_FragCoord addresses samples and the shader
+        // must read the sample image, not the 1x surface (reading the surface put a half-size copy of the scene into
+        // the top-left quarter of every programmable-blending pass). Each sample reads its own value, as on hardware;
+        // the samples are box-filtered into the surface when rendering pauses for something else.
+        EndRendering(resolve: !_ss);
+        var ss = _ss ? GetSupersampleImage(_rt) : null;
+        if (ss != null && _ssFetchLogged.Add(_rt.Address)) Log.Info($"[gpu] programmable blending in supersampled scene 0x{_rt.Address:X8}: shaders read the {ss.Width}x{ss.Height} sample image");
+        uint w = ss?.Width ?? _rt.Width, h = ss?.Height ?? _rt.Height;
+        if (_fbCopy.Handle == 0 || _fbCopyW != w || _fbCopyH != h || _fbCopyFormat != _rtAttachFormat)
         {
             if (_fbCopy.Handle != 0)
             {
@@ -151,23 +159,37 @@ public sealed unsafe partial class VulkanRenderer
                 F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
             }
             // with surface gamma the copy is sRGB too, so the shader reads linear values
-            (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(_rt.Width, _rt.Height, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
-            _fbCopyW = _rt.Width; _fbCopyH = _rt.Height; _fbCopyFormat = _rtAttachFormat;
+            (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+            _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
             Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
         }
-        _rt.Dirty = true;
-        SyncRenderTargetForRead(_rt);
+        var src = _rt.Image;
+        if (ss != null)
+        {
+            src = ss.Image;
+            Barrier(src, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        }
+        else
+        {
+            _rt.Dirty = true;
+            SyncRenderTargetForRead(_rt);
+        }
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            Extent = new Extent3D(_rt.Width, _rt.Height, 1),
+            Extent = new Extent3D(w, h, 1),
         };
-        _vk.CmdCopyImage(Cmd, _rt.Image, ImageLayout.General, _fbCopy, ImageLayout.General, 1, in copy);
+        _vk.CmdCopyImage(Cmd, src, ImageLayout.General, _fbCopy, ImageLayout.General, 1, in copy);
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+        if (ss != null) // the copy must finish before the scene renders into the samples again
+            Barrier(src, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
+                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
         return BuildSingleTextureSet(_fbCopyView, ImageLayout.General);
     }
 
