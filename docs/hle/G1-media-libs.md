@@ -2329,9 +2329,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   constantes `0x806x....` no `avcodec_us.suprx`/kernel `SceAvcodec`). Até lá, usar os dois de `Videodec.cs`.
 - **Tipo de codec:** provavelmente `0x2001` (SCE_VIDEOENC_TYPE_HW_AVCENC), por analogia com
   `TYPE_HW_AVCDEC = 0x1001` — a confirmar; enquanto não confirmado, aceitar qualquer valor e logar `WarnOnce`.
+- **Implementado (stub funcional, `Hle/Modules/Videoenc.cs`):** sem FFmpeg/encoder; bibliotecas e handles rastreados,
+  handle em `ctrl+0`, w/h lidos de `query+0/+4` (limite 1920×1088 como o decoder), tamanhos escritos só em
+  `memInfo+0`/`info+0`; `Encode` conta e descarta o quadro; nenhuma struct de imagem/NAL é escrita. `CreateEncoder`
+  não exige `InitLibrary`; handle desconhecido → `INVALID_PARAM` (0x80620002); `sceAvcencCsc` fica desmarcado (ver).
 
 ### sceVideoencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
 - **Protótipo (inferido):** `int sceVideoencInitLibrary(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo);`
 - **Comportamento:** inicializa o encoder de hardware para o tipo de codec, reservando a memória interna do codec
   (tamanho dado por `sceVideoencQueryMemSize`).
@@ -2341,7 +2345,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem (ver arquitetura); jogo/app que importe deve seguir para `QueryEncoderMemSize`.
 
 ### sceVideoencInitLibraryWithUnmapMem
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
 - **Protótipo (inferido):** `int sceVideoencInitLibraryWithUnmapMem(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, const SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** como `InitLibrary`, mas usa memória fornecida pelo jogo (`pMemInfo`: provável `{size, pMem}`).
 - **Retorno/erros:** como `InitLibrary`; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2349,7 +2353,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencInitLibraryInternal / sceVideoencInitLibraryWithUnmapMemInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
 - **Protótipo (inferido):** mesmos argumentos das versões públicas (possivelmente com um argumento extra de
   flags/pid — a confirmar pela desmontagem).
 - **Comportamento:** variantes para módulos do sistema (ex.: o próprio `SceLibMp4Recorder`).
@@ -2358,7 +2362,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencQueryMemSize / sceVideoencQueryMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
 - **Protótipo (inferido):** `int sceVideoencQueryMemSize(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** escreve em `pMemInfo` (offset 0, provável `size`) a memória que a biblioteca precisa.
 - **Retorno/erros:** 0; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2367,7 +2371,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
 - **Protótipo (inferido):** `int sceVideoencTermLibrary(SceUInt32 codecType);`
 - **Comportamento:** finaliza a biblioteca do codec.
 - **Retorno/erros:** 0.
@@ -2375,7 +2379,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencQueryEncoderMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
 - **Protótipo (inferido):** `int sceAvcencQueryEncoderMemSize(SceUInt32 codecType, const SceAvcencQueryEncoder *pQuery, SceAvcencEncoderInfo *pInfo);`
 - **Comportamento:** dado largura/altura/parâmetros máximos (`pQuery`, provável `{width, height, ...}`), devolve o
   tamanho de memória do encoder em `pInfo` (provável `{frameMemSize}`).
@@ -2386,14 +2390,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem do `SceLibMp4Recorder` (que chama esta função com modos conhecidos 640×368 etc.).
 
 ### sceAvcencQueryEncoderMemSizeBasic / sceAvcencQueryEncoderMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencQueryEncoderMemSize` com struct de query "Basic"/interna.
 - **Comportamento/Retorno:** idem.
 - **Implementação no VitaSharp:** delegar ao helper comum.
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
 - **Protótipo (inferido):** `int sceAvcencCreateEncoder(SceUInt32 codecType, SceAvcencCtrl *pCtrl, const SceAvcencQueryEncoder *pQuery);`
 - **Comportamento:** cria o encoder na memória `pCtrl->frameBuf` fornecida e grava o handle em `pCtrl` (provável
   +0, como `SceAvcdecCtrl {handle, frameBuf{p,size}}`).
@@ -2403,14 +2407,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoderBasic / sceAvcencCreateEncoderInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencCreateEncoder`.
 - **Comportamento/Retorno:** idem (Basic = perfil Baseline).
 - **Implementação no VitaSharp:** helper comum.
 - **Validação:** idem.
 
 ### sceAvcencDeleteEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
 - **Protótipo (inferido):** `int sceAvcencDeleteEncoder(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** destrói o encoder.
 - **Retorno/erros:** 0; handle desconhecido → `INVALID_PARAM`? a confirmar.
@@ -2418,7 +2422,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetEncoderParameter
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
 - **Protótipo (inferido):** `int sceAvcencSetEncoderParameter(SceAvcencCtrl *pCtrl, const SceAvcencEncoderParam *pParam);`
 - **Comportamento:** define bitrate, framerate, GOP, perfil/nível, rate control. Layout a confirmar.
 - **Retorno/erros:** 0; parâmetro inválido → `INVALID_PARAM`.
@@ -2427,7 +2431,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetAvailablePreset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
 - **Protótipo (inferido):** `int sceAvcencSetAvailablePreset(SceAvcencCtrl *pCtrl, SceInt32 preset);` (talvez sem
   `pCtrl` — global; a confirmar).
 - **Comportamento:** escolhe um preset de qualidade/resolução pré-definido (os modos do Mp4Recorder
@@ -2445,10 +2449,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Implementação no VitaSharp:** `YuvConvert.RgbaToYuv420` com escala bilinear se dimensões diferirem; layout de
   `SceAvcencPicture` a confirmar (usar como hipótese o `SceMp4RecFrame`: pixelformat +4, stride +8, width +0xC,
   height +0x10, buffer +0x24).
+  **Estado atual:** `Videoenc.cs` só valida `ctrl`/ponteiros e retorna 0 **sem escrever** — escrever pixels num
+  ponteiro tirado de um layout hipotético poderia corromper memória do jogo; fica desmarcado até confirmar o layout
+  (não existe `YuvConvert`; a conversão RGBA→YUV420 packed real está em `Mp4Recorder.RgbaToYuv420Packed`).
 - **Validação:** idem.
 
 ### sceAvcencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
 - **Protótipo (inferido):** `int sceAvcencEncode(SceAvcencCtrl *pCtrl, const SceAvcencInputPicture *pIn, SceAvcencEncodeResult *pOut);`
 - **Comportamento:** envia um quadro YUV420 ao encoder; as NAL units resultantes são retiradas com
   `sceAvcencGetNalUnit`.
@@ -2458,7 +2465,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; arquivo gravado pelo Mp4Recorder toca no PC (quando houver encoder real).
 
 ### sceAvcencEncodeFlush
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
 - **Protótipo (inferido):** `int sceAvcencEncodeFlush(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** força a saída dos quadros retidos (B-frames/lookahead).
 - **Retorno/erros:** 0.
@@ -2466,7 +2473,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencEncodeStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
 - **Protótipo (inferido):** `int sceAvcencEncodeStop(SceAvcencCtrl *pCtrl);` (pode ter argumento de saída — a confirmar)
 - **Comportamento:** encerra a sessão de codificação (fim de stream).
 - **Retorno/erros:** 0.
@@ -2474,13 +2481,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencGetNalUnit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
 - **Protótipo (inferido):** `int sceAvcencGetNalUnit(SceAvcencCtrl *pCtrl, SceAvcencNalUnit *pNal);`
 - **Comportamento:** retira a próxima NAL unit (ponteiro/tamanho/pts) produzida pelo encoder.
 - **Retorno/erros:** 0 com dado; "sem dados" → código a confirmar (provável erro específico ou `size = 0`).
 - **Implementação no VitaSharp:** com fila vazia (stub), preencher tamanho 0 e retornar o código de "sem dados"
   assim que confirmado — até lá, `size = 0` e retorno 0, observando se o jogo entra em loop (se entrar, trocar para
-  erro).
+  erro). **Implementado:** como o layout de `SceAvcencNalUnit` não é conhecido, a struct **não é escrita** (nem o
+  `size`); retorna 0 com `WarnOnce`.
 - **Validação:** idem.
 
 ## SceLibMp4Recorder (10 funções)
@@ -2508,6 +2516,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Códigos de erro:** nenhum documentado em header ou Vita3K — **a confirmar** (desmontar `libmp4recorder`
   (`vs0:sys/external/libmp4_recorder.suprx`, nome exato a confirmar) e procurar constantes `0x80xxxxxx`). Até lá,
   usar `SceError.INVALID_ARGUMENT` (0x80020005) só para ponteiros nulos e retornar 0 no resto.
+- **Implementado (fase 1, `Hle/Modules/Mp4Recorder.cs`):** recorders por endereço do `SceMp4RecRecorder`;
+  `Init` exige recorder criado e `mode` 0..5; `Add*Sample` contam e descartam (aceitos mesmo antes do `Init`, com
+  `WarnOnce`); `Term` só loga (nenhum arquivo); `size != 4096` no áudio só gera log; erros = `INVALID_ARGUMENT`
+  (0x80020005) para ponteiro nulo/recorder desconhecido/modo inválido. `sceMp4RecCsc` é real: A8B8G8R8 → YUV420
+  packed (plano Y com `stride`, depois croma intercalada **V antes de U** no offset `stride × height`, como o
+  `PIXEL_YUV420_PACKED_RASTER` do `Videodec.cs`), BT.601 faixa limitada, escala bilinear; mesmo formato e tamanho →
+  cópia; outras combinações → `INVALID_ARGUMENT`. A ordem U/V para o encoder real continua a confirmar.
 
 **Estruturas (`psp2/mp4rec.h`):**
 
@@ -2519,7 +2534,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 | SceMp4RecTermParam (0x20C) | 0x00 / 0x04 / 0x08 / 0x208 | size / discard (SceBool) / reserved[128] / metadata |
 
 ### sceMp4RecCreateRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
 - **Protótipo:** `int sceMp4RecCreateRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** cria o recorder usando o memblock `rec->base`/`base_size` fornecido pelo jogo (tamanho
   necessário possivelmente obtido de `sceMp4RecRecorderInit`/documentação — a confirmar).
@@ -2529,7 +2544,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   completar Create→Init→Add*→Term→Delete sem erro.
 
 ### sceMp4RecDeleteRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
 - **Protótipo:** `int sceMp4RecDeleteRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** destrói o recorder (o jogo libera o memblock depois).
 - **Retorno/erros:** 0; desconhecido → erro a confirmar.
@@ -2537,7 +2552,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecQueryPhysicalMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
 - **Protótipo:** `int sceMp4RecQueryPhysicalMemSize(SceMp4RecRecorder *rec, int mode, uint32_t *encoder_size, uint32_t *av_size);` (`psp2/mp4rec.h`)
 - **Comportamento:** devolve os tamanhos dos blocos fisicamente contíguos para o encoder de vídeo e de áudio do
   `mode`.
@@ -2549,7 +2564,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** alocação do jogo bem-sucedida.
 
 ### sceMp4RecInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
 - **Protótipo:** `int sceMp4RecInit(SceMp4RecRecorder *rec, SceMp4RecInitParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** inicia uma sessão de gravação no modo pedido, cria a thread do recorder e o arquivo de saída.
 - **Retorno/erros:** 0; `params` inválido / modo inválido → a confirmar.
@@ -2559,7 +2574,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecTerm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
 - **Protótipo:** `int sceMp4RecTerm(SceMp4RecRecorder *rec, SceMp4RecTermParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** encerra a sessão; se `discard == 0`, finaliza e salva em `ux0:video` com `metadata`; se
   `discard != 0`, apaga.
@@ -2570,7 +2585,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; fase 2: arquivo abre no PC.
 
 ### sceMp4RecCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
 - **Protótipo:** `int sceMp4RecCsc(SceMp4RecFrame *dst, SceMp4RecFrame *src);` (`psp2/mp4rec.h`)
 - **Comportamento:** conversão de cor + reescala por hardware: tipicamente framebuffer A8B8G8R8 960×544 →
   YUV420 packed na resolução do modo (ex. 640×368), pronto para `AddVideoSample`.
@@ -2582,7 +2597,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** teste unitário com framebuffer sintético; comparar com saída de `sceAvcdec` no mesmo formato.
 
 ### sceMp4RecAddVideoSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
 - **Protótipo:** `int sceMp4RecAddVideoSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira um quadro (YUV420 packed da resolução do modo) para codificação; duração 1001/30000 s.
 - **Retorno/erros:** 0; sessão não iniciada/tamanho errado → a confirmar.
@@ -2590,7 +2605,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecAddAudioSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
 - **Protótipo:** `int sceMp4RecAddAudioSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira 4096 bytes de PCM S16 estéreo 48 kHz (1024 amostras) para AAC.
 - **Retorno/erros:** 0; `size != 4096` → erro (código a confirmar).
@@ -2599,7 +2614,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecRecorderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderInit(SceMp4RecRecorder *rec, ...);` —
   argumentos a confirmar. Hipótese: inicialização da biblioteca/memblock do recorder (paralela a
   `CreateRecorder`), ou versão antiga da API.
@@ -2609,7 +2624,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** quando houver importador, verificar se o fluxo seguinte (Create/Init) funciona.
 
 ### sceMp4RecRecorderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderEnd(SceMp4RecRecorder *rec);` — a confirmar.
 - **Comportamento:** par de `sceMp4RecRecorderInit` (a confirmar).
 - **Retorno/erros:** a confirmar.
@@ -2851,21 +2866,24 @@ Todas: **Prioridade:** P2 · **Biblioteca:** SceHandwriting · header: nenhum (i
 
 | Checkbox | Função | NID | Protótipo inferido | Comportamento inferido | HLE mínimo |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
-| [ ] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
-| [ ] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
-| [ ] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
-| [ ] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
-| [ ] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
-| [ ] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
-| [ ] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
-| [ ] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
-| [ ] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
-| [ ] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
+| [x] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
+| [x] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
+| [x] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
+| [x] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
+| [x] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
+| [x] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
+| [x] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
+| [x] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
+| [x] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
+| [x] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
+| [x] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
 
 - **Implementação no VitaSharp:** preferir LLE (acima). No HLE mínimo, usar `[Hle(Nid = 0x...)]` só se o nome não estiver
   em `Hle/Data/nids.txt` (os 11 estão lá), registrar `Log.WarnOnce("handwriting", ...)` na primeira chamada para deixar
   claro que o reconhecimento não existe, e **não** escrever em ponteiros cujo layout não foi confirmado.
+  **Implementado (HLE mínimo, `Hle/Modules/Handwriting.cs`):** `GetBufferSize` → 0x40000; `Init/Term/SetMode`
+  guardam estado e retornam 0; `Recognize` e todos os `Register*` retornam 0 sem escrever nada (argumentos r0–r3
+  logados uma vez por função). O LLE continua sendo o caminho para reconhecimento real.
 - **Validação:** só é possível com um jogo/homebrew que importe a lib. Critério mínimo: o jogo passa pela tela de
   escrita sem crash nem erro; critério completo (LLE): um caractere desenhado via toque roteirizado no cenário é
   reconhecido.
@@ -3365,13 +3383,13 @@ Códigos de erro: todos a confirmar (nenhuma fonte). Provisoriamente: argumento 
 
 Validação comum: teste unitário decodificando um vetor de teste G.729 da ITU (frames de 10 bytes → comparar com o PCM
 de referência, tolerância ±1 LSB do FFmpeg); em jogo, quando algum importar, conferir no log que `DecodeGetContextSize`
+devolve um tamanho que o jogo aceita.
 
 **Implementado** (`Hle/Modules/G729.cs`, NIDs explícitos): `*GetContextSize` retorna 0x1000 sem escrever em `r0`
 (o valor de `r0` vai para o log, para decidir a variante com `*pSize`); `Init/Core/Reset` chaveados pelo endereço do
 contexto (contexto desconhecido ou ponteiro nulo → `INVALID_ARGUMENT`); `DecodeCore(ctx, in, out)` usa o g729 do FFmpeg
 (silêncio sem FFmpeg); `EncodeCore(ctx, in, out)` escreve 10 bytes zero (não é um frame de silêncio G.729 verificado);
 o 2º argumento de `EncodeInit` (VAD?) só é guardado. Ainda falta o teste com vetores ITU.
-devolve um tamanho que o jogo aceita.
 
 ### sceG729DecodeGetContextSize
 - [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD

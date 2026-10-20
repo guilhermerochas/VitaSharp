@@ -627,4 +627,118 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(g, "sceG729DecodeCore", ctx, io + 0x200, io + 0x400));
         Assert.Equal(0, Call(g, "sceG729DecodeReset", ctx));
     }
+
+    // ------------------------------------------------------------------ SceVideoenc / SceLibMp4Recorder / SceHandwriting
+
+    [Fact]
+    public void VideoencEncoderLifecycle()
+    {
+        var v = new Videoenc();
+        uint s = fx.Memory.Alloc(0x1000, "videoenc"), ctrl = s, query = s + 0x40, info = s + 0x80, pic = s + 0x100;
+        Assert.Equal(0, Call(v, "sceVideoencInitLibrary", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200));
+        Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceVideoencInitLibraryWithUnmapMem", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, 0u));
+        Assert.Equal(0, Call(v, "sceVideoencQueryMemSize", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, info));
+        Assert.Equal(0x40000u, GuestMemory.R32(info));
+        GuestMemory.W32(query, 640);
+        GuestMemory.W32(query + 4, 368);
+        Assert.Equal(0, Call(v, "sceAvcencQueryEncoderMemSize", Videoenc.TYPE_HW_AVCENC_GUESS, query, info));
+        Assert.Equal(0u, GuestMemory.R32(info) % 0x40000);
+        Assert.True(GuestMemory.R32(info) >= 640 * 368 * 3 / 2);
+        GuestMemory.W32(query, 4096);
+        Assert.Equal(Videoenc.ERR_INVALID_PARAM, Call(v, "sceAvcencCreateEncoder", Videoenc.TYPE_HW_AVCENC_GUESS, ctrl, query));
+        GuestMemory.W32(query, 640);
+        Assert.Equal(0, Call(v, "sceAvcencCreateEncoderBasic", Videoenc.TYPE_HW_AVCENC_GUESS, ctrl, query));
+        uint h = GuestMemory.R32(ctrl);
+        Assert.Equal(0, Call(v, "sceAvcencSetAvailablePreset", ctrl, 1u));
+        Assert.Equal(0, Call(v, "sceAvcencEncode", ctrl, pic, pic + 0x40));
+        Assert.Equal(0, Call(v, "sceAvcencEncode", ctrl, pic, pic + 0x40));
+        Assert.Equal(2, v.FramesOf(h));
+        GuestMemory.Fill(pic, 0xAB, 0x40);
+        Assert.Equal(0, Call(v, "sceAvcencGetNalUnit", ctrl, pic));
+        Assert.Equal(0xABABABABu, GuestMemory.R32(pic)); // NAL struct untouched (layout unconfirmed)
+        Assert.Equal(0, Call(v, "sceAvcencEncodeFlush", ctrl));
+        Assert.Equal(0, Call(v, "sceAvcencEncodeStop", ctrl, 0u));
+        Assert.Equal(0, Call(v, "sceAvcencDeleteEncoder", ctrl));
+        Assert.Equal(Videoenc.ERR_INVALID_PARAM, Call(v, "sceAvcencDeleteEncoder", ctrl));
+        Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceAvcencEncode", 0u, pic, pic));
+        Assert.Equal(0, Call(v, "sceVideoencTermLibrary", Videoenc.TYPE_HW_AVCENC_GUESS));
+    }
+
+    [Fact]
+    public void Mp4RecorderAcceptsAndDropsSamples()
+    {
+        var m = new Mp4Recorder();
+        uint s = fx.Memory.Alloc(0x1000, "mp4rec"), rec = s, init = s + 0x40, term = s + 0x400;
+        GuestMemory.Fill(s, 0, 0x1000);
+        GuestMemory.W32(rec, 0x10);
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecInit", rec, init));
+        Assert.Equal(0, Call(m, "sceMp4RecCreateRecorder", rec));
+        Assert.Equal(0, Call(m, "sceMp4RecQueryPhysicalMemSize", rec, 2u, s + 0x80, s + 0x84));
+        Assert.Equal(0u, GuestMemory.R32(s + 0x80) % 0x40000);
+        Assert.True(GuestMemory.R32(s + 0x80) >= 480 * 272 * 3 / 2);
+        Assert.Equal(0x40000u, GuestMemory.R32(s + 0x84));
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecQueryPhysicalMemSize", rec, 6u, s + 0x80, s + 0x84));
+        GuestMemory.W32(init, 0x20);
+        GuestMemory.W32(init + 4, 7);
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecInit", rec, init));
+        GuestMemory.W32(init + 4, 0);
+        Assert.Equal(0, Call(m, "sceMp4RecInit", rec, init));
+        Assert.Equal(0, Call(m, "sceMp4RecAddVideoSample", rec, s + 0x100, 640 * 368 * 3 / 2));
+        Assert.Equal(0, Call(m, "sceMp4RecAddAudioSample", rec, s + 0x100, 4096));
+        Assert.Equal(0, Call(m, "sceMp4RecAddAudioSample", rec, s + 0x100, 4096));
+        Assert.Equal((1L, 2L), m.Counts(rec));
+        GuestMemory.W32(term, 0x20C);
+        Assert.Equal(0, Call(m, "sceMp4RecTerm", rec, term));
+        Assert.Equal(0, Call(m, "sceMp4RecDeleteRecorder", rec));
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecDeleteRecorder", rec));
+        Assert.Null(m.Counts(rec));
+        Assert.Equal(0, Call(m, "sceMp4RecRecorderInit", 0u, 0u, 0u, 0u));
+        Assert.Equal(0, Call(m, "sceMp4RecRecorderEnd", 0u));
+    }
+
+    [Fact]
+    public void Mp4RecCscConvertsAndScales()
+    {
+        var m = new Mp4Recorder();
+        const int sw = 8, sh = 4, dw = 4, dh = 2;
+        uint s = fx.Memory.Alloc(0x2000, "mp4rec csc"), src = s, dst = s + 0x40, sBuf = s + 0x100, dBuf = s + 0x800;
+        GuestMemory.Fill(s, 0, 0x2000);
+        foreach (var (f, fmt, w, h, buf) in new[] { (src, Mp4Recorder.PIXEL_A8B8G8R8, sw, sh, sBuf), (dst, Mp4Recorder.PIXEL_YUV420_PACKED, dw, dh, dBuf) })
+        {
+            GuestMemory.W32(f, 0x2C);
+            GuestMemory.W32(f + 4, fmt);
+            GuestMemory.W32(f + 8, (uint)w);
+            GuestMemory.W32(f + 0xC, (uint)w);
+            GuestMemory.W32(f + 0x10, (uint)h);
+            GuestMemory.W32(f + 0x24, buf);
+        }
+        // white left half, black right half (bytes R,G,B,A)
+        for (int y = 0; y < sh; y++)
+            for (int x = 0; x < sw; x++)
+                GuestMemory.W32(sBuf + (uint)(y * sw + x) * 4, x < sw / 2 ? 0xFFFFFFFFu : 0xFF000000u);
+        Assert.Equal(0, Call(m, "sceMp4RecCsc", dst, src));
+        Assert.Equal(235, GuestMemory.Read<byte>(dBuf));          // white luma
+        Assert.Equal(16, GuestMemory.Read<byte>(dBuf + 3));       // black luma
+        Assert.Equal(235, GuestMemory.Read<byte>(dBuf + dw));     // second row
+        uint uv = dBuf + dw * dh;
+        Assert.InRange(GuestMemory.Read<byte>(uv), 127, 129);     // neutral chroma (V)
+        Assert.InRange(GuestMemory.Read<byte>(uv + 1), 127, 129); // neutral chroma (U)
+        GuestMemory.W32(dst + 4, 0x10);
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecCsc", dst, src));
+        Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecCsc", 0u, src));
+    }
+
+    [Fact]
+    public void HandwritingMinimalLifecycle()
+    {
+        var h = new Handwriting();
+        Assert.Equal(Handwriting.BufferSize, Call(h, "sceHandwritingGetBufferSize", 0u));
+        Assert.Equal(0, Call(h, "sceHandwritingInit", 0x8100_0000u, (uint)Handwriting.BufferSize, 0u));
+        Assert.True(h.Initialized);
+        Assert.Equal(0, Call(h, "sceHandwritingSetMode", 3u));
+        Assert.Equal(3u, h.Mode);
+        Assert.Equal(0, Call(h, "sceHandwritingRecognize", 0u, 0u, 0u, 0u));
+        Assert.Equal(0, Call(h, "sceHandwritingTerm"));
+        Assert.False(h.Initialized);
+    }
 }
