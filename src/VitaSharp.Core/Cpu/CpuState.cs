@@ -40,6 +40,19 @@ public unsafe struct CpuState
     public uint ExclusiveGen; // generation of the reserved granule at LDREX (see Arm.StoreExclusive*)
     public uint Pad1;
     public fixed ulong D[32]; // VFP/NEON register file (D0-D31 == Q0-Q15)
+    // Absorbs writes past D31 by UNPREDICTABLE NEON encodings (register lists / Q pairs that run off the end): the
+    // handlers index D directly, and without this they would overwrite the fields below (or the heap).
+    public fixed ulong DGuard[16];
+
+    // ---- native backend bookkeeping (see CpuCore.Run): generated code accounts every block it runs here and returns
+    // to the dispatcher once CycleAcc reaches CheckWindow, LinkBreak is set or a block cannot be chained.
+    public long CycleAcc;      // cycles since the last pacing check (the dispatcher's "sinceCheck")
+    public long CheckWindow;   // pacing check interval; 0 = return after every block (probes)
+    public long NBlocks;       // blocks / instructions run since entering native code
+    public long NInstr;
+    public nint LastExitSlot;  // link slot of the static exit that returned (0 = dynamic exit)
+    public uint LinkBreak;     // set when the thread must return to the dispatcher (interrupt, stop)
+    public uint CalloutFault;  // a callout threw: the exception is rethrown by the dispatcher
 
     public uint Cpsr
     {

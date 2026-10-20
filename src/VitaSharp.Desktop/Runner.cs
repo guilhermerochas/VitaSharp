@@ -448,6 +448,8 @@ public static class Runner
     static void PrintStats(Emulator emu)
     {
         Log.Info($"Stopping. {VitaSharp.Core.Cpu.Jit.Describe()}");
+        if (VitaSharp.Core.Cpu.Jit.Chain.Contains(VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance))
+            Log.Info($"CPU backend report: {VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Report()}");
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
         foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());

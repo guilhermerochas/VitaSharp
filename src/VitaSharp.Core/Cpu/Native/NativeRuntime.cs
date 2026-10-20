@@ -1,0 +1,190 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
+using VitaSharp.Core.Memory;
+
+namespace VitaSharp.Core.Cpu.Native;
+
+/// <summary>
+/// Process-wide runtime of the native backend: the code arena with its entry trampoline, the callout bridge into the
+/// interpreter handlers, and block linking.
+/// <para>
+/// Linking: every static exit of a block owns an 8-byte slot in plain data memory. The exit jumps through the slot when
+/// it is non-zero (and the pacing window and interrupt flag allow it), otherwise it returns to the dispatcher, which
+/// fills the slot once the target block has native code. Slots are data, so linking and unlinking (invalidation) never
+/// write to code pages: no W^X flips and no races with threads executing the code.
+/// </para>
+/// </summary>
+public sealed unsafe class NativeRuntime
+{
+    static NativeRuntime? _instance;
+    static readonly object InitLock = new();
+
+    public static NativeRuntime Instance
+    {
+        get
+        {
+            if (_instance != null) return _instance;
+            lock (InitLock) return _instance ??= new NativeRuntime();
+        }
+    }
+
+    public readonly ExecutableMemory Code = new();
+    readonly delegate* unmanaged<CpuState*, nint, void> _enter;
+    public readonly X64Emitter.Runtime Stubs;
+
+    NativeRuntime()
+    {
+        if (GuestMemory.Base == null) throw new InvalidOperationException("native backend needs the guest address space");
+        // generated code addresses CpuState fields by their marshalled offsets: they must be the managed layout
+        var probe = CpuState.Allocate();
+        bool layoutOk = StateLayout.Of(nameof(CpuState.N)) == (int)((byte*)&probe->N - (byte*)probe)
+                        && StateLayout.Of(nameof(CpuState.CycleAcc)) == (int)((byte*)&probe->CycleAcc - (byte*)probe)
+                        && StateLayout.Of(nameof(CpuState.LinkBreak)) == (int)((byte*)&probe->LinkBreak - (byte*)probe);
+        CpuState.Free(probe);
+        if (!layoutOk) throw new InvalidOperationException("CpuState layout mismatch");
+        InitDispatch();
+        int epilogueOffset = 0;
+        byte* tramp = Code.Place(rip => X64Emitter.EmitTrampoline(rip, (ulong)GuestMemory.Base, out epilogueOffset));
+        _enter = (delegate* unmanaged<CpuState*, nint, void>)tramp;
+        Stubs = new X64Emitter.Runtime
+        {
+            Epilogue = (ulong)(tramp + epilogueOffset),
+            Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
+            DispatchTable = (ulong)Dispatch,
+        };
+    }
+
+    /// <summary>Runs native code from <paramref name="entry"/> until a block returns to the dispatcher.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Run(CpuState* s, nint entry) => _enter(s, entry);
+
+    // ------------------------------------------------------------------ callouts
+
+    [ThreadStatic] static ExceptionDispatchInfo? _fault;
+
+    /// <summary>
+    /// Runs one interpreter handler for generated code. Returns nonzero when the block must stop: the handler set an
+    /// exit (SVC/UDF/yield...) or threw; the exception is rethrown on the managed side by <see cref="ThrowPendingFault"/>.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    static int Callout(CpuState* s, int op, uint ins, uint pc)
+    {
+        try
+        {
+            HandlerTable.Pointers[op](s, ins, pc);
+            return s->Exit != ExitReason.None ? 1 : 0;
+        }
+        catch (Exception e)
+        {
+            _fault = ExceptionDispatchInfo.Capture(e);
+            s->CalloutFault = 1;
+            return 1;
+        }
+    }
+
+    public static void ThrowPendingFault(CpuState* s)
+    {
+        s->CalloutFault = 0;
+        var f = _fault;
+        _fault = null;
+        f?.Throw();
+    }
+
+    // ------------------------------------------------------------------ indirect-exit dispatch table
+
+    /// <summary>
+    /// Direct-mapped table of native entry points for indirect exits (BX LR, POP {PC}, computed jumps): entry
+    /// (pc >> 1) &amp; mask holds {key = pc | thumb, code}. Generated code compares the key and jumps to the code, so
+    /// returns stay in native code without a trip through the dispatcher. Entries are published in the order code,
+    /// key (and cleared key first), which x64 store ordering makes safe for concurrent readers.
+    /// </summary>
+    public const int DispatchBits = 16;
+    public readonly DispatchEntry* Dispatch = (DispatchEntry*)NativeMemory.AlignedAlloc((nuint)(sizeof(DispatchEntry) << DispatchBits), 64);
+    public const uint NoKey = 0xFFFFFFFF; // never a valid key: block addresses are even
+
+    public struct DispatchEntry { public uint Key, Pad; public nint Code; }
+
+    void InitDispatch()
+    {
+        for (int i = 0; i < 1 << DispatchBits; i++) { Dispatch[i].Key = NoKey; Dispatch[i].Code = 0; }
+    }
+
+    static uint KeyOf(Block b) => b.Start | (b.Thumb ? 1u : 0u);
+    DispatchEntry* EntryOf(Block b) => Dispatch + ((b.Start >> 1) & ((1u << DispatchBits) - 1));
+
+    /// <summary>Makes a native block reachable from indirect exits.</summary>
+    public void Publish(Block b)
+    {
+        if (b.NativeEntry == 0 || b.Invalidated) return;
+        var e = EntryOf(b);
+        lock (_dispatchLock)
+        {
+            Volatile.Write(ref e->Key, NoKey);
+            Volatile.Write(ref e->Code, b.NativeEntry);
+            Volatile.Write(ref e->Key, KeyOf(b));
+        }
+    }
+
+    void Unpublish(Block b)
+    {
+        var e = EntryOf(b);
+        lock (_dispatchLock)
+            if (e->Key == KeyOf(b) && e->Code == b.NativeEntry) Volatile.Write(ref e->Key, NoKey);
+    }
+
+    readonly object _dispatchLock = new();
+
+    // ------------------------------------------------------------------ link slots
+
+    const int SlotChunk = 8192;
+    nint* _slotChunk;
+    int _slotUsed = SlotChunk;
+    readonly object _slotLock = new();
+
+    /// <summary>Zeroed link slots for the static exits of one block (never freed: slots are tiny).</summary>
+    public nint* AllocateSlots(int count)
+    {
+        if (count == 0) return null;
+        lock (_slotLock)
+        {
+            if (_slotUsed + count > SlotChunk)
+            {
+                _slotChunk = (nint*)NativeMemory.AllocZeroed((nuint)(SlotChunk * sizeof(nint)));
+                _slotUsed = 0;
+            }
+            var p = _slotChunk + _slotUsed;
+            _slotUsed += count;
+            return p;
+        }
+    }
+
+    public static long Links, Unlinks;
+
+    /// <summary>Points an exit slot at the target block's code (called by the dispatcher after a static exit).</summary>
+    public static void Link(nint slot, Block target)
+    {
+        lock (target)
+        {
+            if (target.NativeEntry == 0 || target.Invalidated) return;
+            (target.LinkedFrom ??= new List<nint>()).Add(slot);
+            Volatile.Write(ref *(nint*)slot, target.NativeEntry);
+        }
+        Interlocked.Increment(ref Links);
+    }
+
+    /// <summary>Clears every slot that jumps into the block (its code is stale: the guest rewrote it).</summary>
+    public static void Unlink(Block b)
+    {
+        lock (b)
+        {
+            b.Invalidated = true;
+            _instance?.Unpublish(b);
+            if (b.LinkedFrom == null) return;
+            foreach (var slot in b.LinkedFrom)
+                if (*(nint*)slot == b.NativeEntry) Volatile.Write(ref *(nint*)slot, 0);
+            Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
+            b.LinkedFrom = null;
+        }
+    }
+}

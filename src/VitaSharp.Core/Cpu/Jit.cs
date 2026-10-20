@@ -14,7 +14,7 @@ public unsafe delegate void JitBlockFn(CpuState* s);
 public static unsafe class Jit
 {
     /// <summary>Every backend known to this build, best first (the interpreter is implicit and always last).</summary>
-    public static IReadOnlyList<IBlockCompiler> All { get; } = [IlJitCompiler.Instance];
+    public static IReadOnlyList<IBlockCompiler> All { get; } = [NativeX64Compiler.Instance, IlJitCompiler.Instance];
 
     /// <summary>Active backends in the order blocks are offered to them.</summary>
     public static IBlockCompiler[] Chain
@@ -148,6 +148,7 @@ public static unsafe class Jit
     {
         b.Code = cb;
         if (cb.Managed != null) b.Compiled = cb.Managed;
+        if (cb.NativeEntry != 0) { b.NativeEntry = cb.NativeEntry; Native.NativeRuntime.Instance.Publish(b); }
         b.JitState = 2;
     }
 

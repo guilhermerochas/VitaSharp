@@ -12,9 +12,18 @@ public sealed unsafe class CpuCore : IDisposable
     const int FastSize = 4096;
     readonly Block?[] _fast = new Block?[FastSize];
 
-    public volatile bool StopRequested;
+    volatile bool _stop, _interrupt;
+    public bool StopRequested
+    {
+        get => _stop;
+        set { _stop = value; if (value) State->LinkBreak = 1; } // native code chained across blocks returns
+    }
     /// <summary>Makes <see cref="Run"/> return <see cref="ExitReason.Yield"/> at the next block boundary.</summary>
-    public volatile bool InterruptRequested;
+    public bool InterruptRequested
+    {
+        get => _interrupt;
+        set { _interrupt = value; if (value) State->LinkBreak = 1; }
+    }
     /// <summary>Polled every ~0.5 ms of guest CPU time: true when the thread must give its core to a higher-priority one.</summary>
     public Func<bool>? ShouldYield;
     public long BlocksExecuted;
@@ -33,13 +42,22 @@ public sealed unsafe class CpuCore : IDisposable
     {
         int slot = (int)((pc >> 1) & (FastSize - 1));
         var b = _fast[slot];
-        if (b != null && b.Start == pc && b.Thumb == thumb) return b;
+        if (b != null && b.Start == pc && b.Thumb == thumb && !b.Invalidated) return b; // invalidated: guest rewrote the code
         b = _cache.Get(pc, thumb);
         _fast[slot] = b;
         return b;
     }
 
     public void FlushFastCache() => Array.Clear(_fast);
+
+    /// <summary>A native static exit returned through an empty link slot: point the slot at the next block if it is native.</summary>
+    void LinkExit(CpuState* s)
+    {
+        nint slot = s->LastExitSlot;
+        if (*(nint*)slot != 0) return; // linked already (the exit returned for pacing or an interrupt)
+        var next = Lookup(s->R[15], s->Thumb != 0);
+        if (next.NativeEntry != 0) Native.NativeRuntime.Link(slot, next);
+    }
 
     /// <summary>Run until the guest raises an exit (SVC, undefined, breakpoint, yield) or a stop is requested.</summary>
     /// <summary>Debug probes: block-start addresses that invoke <see cref="ProbeHit"/> before executing.</summary>
@@ -137,17 +155,37 @@ public sealed unsafe class CpuCore : IDisposable
         {
             if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
             var b = Lookup(s->R[15], s->Thumb != 0);
-            var fn = b.Compiled;
-            if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
-            else if (fn != null) fn(s);
+            if (b.NativeEntry != 0 && BlockHook == null)
+            {
+                // Native code accounts each block it runs in the state and chains through linked exits until the
+                // pacing window is full, an interrupt/stop is flagged or an exit cannot be linked: the same per-block
+                // bookkeeping as the loop below, done by the generated code.
+                s->CycleAcc = sinceCheck;
+                s->CheckWindow = Probes != null ? 0 : checkWindow;
+                s->LinkBreak = _interrupt || _stop ? 1u : 0u;
+                s->NBlocks = 0; s->NInstr = 0;
+                Native.NativeRuntime.Instance.Run(s, b.NativeEntry);
+                if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
+                BlocksExecuted += s->NBlocks;
+                InstructionsExecuted += s->NInstr;
+                BlockCycles += s->CycleAcc - sinceCheck;
+                sinceCheck = s->CycleAcc;
+                if (s->LastExitSlot != 0) LinkExit(s);
+            }
             else
             {
-                Interpret(s, b);
-                if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt) Jit.Enqueue(b);
+                var fn = b.Compiled;
+                if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
+                else if (fn != null) fn(s);
+                else
+                {
+                    Interpret(s, b);
+                    if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt) Jit.Enqueue(b);
+                }
+                BlocksExecuted++;
+                InstructionsExecuted += b.Insts.Length;
+                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             }
-            BlocksExecuted++;
-            InstructionsExecuted += b.Insts.Length;
-            sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
             if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
             if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }
