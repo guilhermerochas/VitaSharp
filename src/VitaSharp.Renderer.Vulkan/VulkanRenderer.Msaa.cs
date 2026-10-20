@@ -30,6 +30,8 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>The current scene renders 2x supersampled (MSAA downscale surface).</summary>
     bool _ss;
+    /// <summary>The sample image holds rendering that was not box-filtered into the surface yet.</summary>
+    bool _ssUnresolved;
     uint SsScale => _ss ? 2u : 1u;
 
     readonly Dictionary<Format, bool> _ssFormatOk = new();

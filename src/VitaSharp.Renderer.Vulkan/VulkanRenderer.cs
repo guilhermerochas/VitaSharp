@@ -527,12 +527,20 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (_depth != null) _depth.Version++;
     }
 
-    void EndRendering()
+    /// <param name="resolve">false keeps a supersampled scene's samples unfiltered (the next pause filters them)</param>
+    void EndRendering(bool resolve = true)
     {
-        if (!_rendering) return;
-        _vk.CmdEndRendering(Cmd);
-        _rendering = false;
-        if (_ss && _rt != null) ResolveSupersample(_rt);
+        if (_rendering)
+        {
+            _vk.CmdEndRendering(Cmd);
+            _rendering = false;
+            if (_ss && _rt != null) _ssUnresolved = true;
+        }
+        if (resolve && _ssUnresolved)
+        {
+            _ssUnresolved = false;
+            if (_ss && _rt != null) ResolveSupersample(_rt);
+        }
     }
 
     /// <summary>Makes colour writes to <paramref name="rt"/> visible to shader reads / transfers.</summary>
