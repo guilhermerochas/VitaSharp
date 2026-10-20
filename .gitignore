@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 # FFmpeg libraries downloaded at build time (build/FFmpeg.targets)
 third_party/ffmpeg/*/
 third_party/ffmpeg/.download/
+
+# Avalonia build task cache (created by Linux/macOS builds)
+.avalonia-build-tasks/

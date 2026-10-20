@@ -65,6 +65,8 @@ public sealed unsafe class ShaderCompiler : IDisposable
     public void Dispose()
     {
         _sc.CompilerRelease(_compiler);
-        _sc.Dispose();
+        // The shaderc library is deliberately not unloaded (no _sc.Dispose()): it registers a process-exit handler
+        // that stays behind after dlclose, so on Linux exit() jumped into the unmapped library (SIGSEGV after every
+        // clean run). Keeping it mapped until the process ends costs nothing; a new renderer reuses it.
     }
 }
