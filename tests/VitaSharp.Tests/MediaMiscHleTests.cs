@@ -510,4 +510,121 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(q, "sceVoiceQoSEnd"));
         Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSEnd"));
     }
+
+    // ------------------------------------------------------------------ SceAudioenc / SceG729
+
+    /// <summary>Allocates a SceAudioencCtrl with its SceAudioencInfoCelp, PCM/ES buffers and SceAudioencOptInfoCelp.</summary>
+    uint NewEncCtrl(uint bitRate)
+    {
+        uint c = fx.Memory.Alloc(0x2000, "audioenc ctrl");
+        GuestMemory.Fill(c, 0, 0x2000);
+        uint info = c + 0x40, opt = c + 0x80, pcm = c + 0x400, es = c + 0x1000;
+        GuestMemory.W32(c, 0x2C);
+        GuestMemory.W32(c + 8, pcm);
+        GuestMemory.W32(c + 0x14, es);
+        GuestMemory.W32(c + 0x20, 16);
+        GuestMemory.W32(c + 0x24, info);
+        GuestMemory.W32(c + 0x28, opt);
+        GuestMemory.W32(info, 0x10);
+        GuestMemory.W32(info + 8, 8000);
+        GuestMemory.W32(info + 12, bitRate);
+        GuestMemory.W32(opt, 0x2C);
+        return c;
+    }
+
+    [Fact]
+    public void AudioencCelpContextSizesAndFrames()
+    {
+        var a = new Audioenc();
+        uint init = fx.Memory.Alloc(0x10, "audioenc init");
+        GuestMemory.W32(init, 8);
+        GuestMemory.W32(init + 4, 1);
+        uint ctrl = NewEncCtrl(12200);
+        Assert.Equal(Audioenc.ERR_NOT_INITIALIZED, Call(a, "sceAudioencCreateEncoder", ctrl, Audioenc.TYPE_CELP));
+        Assert.Equal(Audioenc.ERR_INVALID_TYPE, Call(a, "sceAudioencInitLibrary", 0x1006u, init));
+        Assert.Equal(Audioenc.ERR_INVALID_PTR, Call(a, "sceAudioencInitLibrary", Audioenc.TYPE_CELP, 0u));
+        GuestMemory.W32(init + 4, 2);
+        Assert.Equal(Audioenc.ERR_INVALID_INIT_PARAM, Call(a, "sceAudioencInitLibrary", Audioenc.TYPE_CELP, init));
+        GuestMemory.W32(init + 4, 1);
+        Assert.Equal(0, Call(a, "sceAudioencInitLibrary", Audioenc.TYPE_CELP, init));
+        Assert.Equal(Audioenc.ERR_ALREADY_INITIALIZED, Call(a, "sceAudioencInitLibrary", Audioenc.TYPE_CELP, init));
+
+        // validation of ctrl / info
+        GuestMemory.W32(ctrl, 0x28);
+        Assert.Equal(Audioenc.ERR_INVALID_SIZE, Call(a, "sceAudioencCreateEncoder", ctrl, Audioenc.TYPE_CELP));
+        GuestMemory.W32(ctrl, 0x2C);
+        GuestMemory.W32(ctrl + 0x20, 24);
+        Assert.Equal(Audioenc.ERR_INVALID_WORD_LENGTH, Call(a, "sceAudioencCreateEncoder", ctrl, Audioenc.TYPE_CELP));
+        GuestMemory.W32(ctrl + 0x20, 16);
+        GuestMemory.W32(GuestMemory.R32(ctrl + 0x24) + 12, 12345);
+        Assert.Equal(Audioenc.ERR_CELP_INVALID_CONFIG, Call(a, "sceAudioencCreateEncoder", ctrl, Audioenc.TYPE_CELP));
+        GuestMemory.W32(GuestMemory.R32(ctrl + 0x24) + 12, 12200);
+
+        Assert.Equal(0, Call(a, "sceAudioencCreateEncoder", ctrl, Audioenc.TYPE_CELP));
+        Assert.Equal((160u, 16u), (GuestMemory.R32(ctrl + 0x10), GuestMemory.R32(ctrl + 0x1C)));
+        Assert.Equal(Audioenc.ERR_ALL_HANDLES_IN_USE, Call(a, "sceAudioencCreateEncoder", NewEncCtrl(3850), Audioenc.TYPE_CELP));
+        uint es = GuestMemory.R32(ctrl + 0x14);
+        GuestMemory.Fill(es, 0xAA, 64);
+        Assert.Equal(0, Call(a, "sceAudioencEncode", ctrl));
+        Assert.Equal((160u, 16u), (GuestMemory.R32(ctrl + 0x0C), GuestMemory.R32(ctrl + 0x18)));
+        Assert.Equal(0, GuestMemory.Read<byte>(es + 15));
+        Assert.Equal(0xAA, GuestMemory.Read<byte>(es + 16)); // nothing past the frame
+        Assert.Equal(0, Call(a, "sceAudioencEncodeNFrames", ctrl, 3u));
+        Assert.Equal((480u, 48u), (GuestMemory.R32(ctrl + 0x0C), GuestMemory.R32(ctrl + 0x18)));
+        Assert.Equal(0, Call(a, "sceAudioencGetOptInfo", ctrl));
+        Assert.Equal(0u, GuestMemory.R32(GuestMemory.R32(ctrl + 0x28) + 0x24)); // headerSize
+        uint ie = ctrl + 0x1F00;
+        GuestMemory.W32(ie, 5);
+        Assert.Equal(0, Call(a, "sceAudioencGetInternalError", ctrl, ie));
+        Assert.Equal(0u, GuestMemory.R32(ie));
+        Assert.Equal(0, Call(a, "sceAudioencClearContext", ctrl));
+        Assert.Equal(Audioenc.ERR_A_HANDLE_IN_USE, Call(a, "sceAudioencTermLibrary", Audioenc.TYPE_CELP));
+
+        // External encoders need no library slot and give their context back on delete
+        uint ext = NewEncCtrl(5700);
+        Assert.Equal(0x10000, Call(a, "sceAudioencGetContextSize", ext, Audioenc.TYPE_CELP));
+        Assert.Equal(Audioenc.ERR_INVALID_SIZE, Call(a, "sceAudioencCreateEncoderExternal", ext, Audioenc.TYPE_CELP, 0x8100_0000u, 0x100u));
+        Assert.Equal(0, Call(a, "sceAudioencCreateEncoderExternal", ext, Audioenc.TYPE_CELP, 0x8100_0000u, 0x10000u));
+        Assert.Equal((320u, 15u), (GuestMemory.R32(ext + 0x10), GuestMemory.R32(ext + 0x1C)));
+        Assert.Equal(0, Call(a, "sceAudioencDeleteEncoderExternal", ext, ie));
+        Assert.Equal(0x8100_0000u, GuestMemory.R32(ie));
+        Assert.Equal(Audioenc.ERR_NOT_HANDLE_IN_USE, Call(a, "sceAudioencEncode", ext));
+
+        Assert.Equal(0, Call(a, "sceAudioencDeleteEncoder", ctrl));
+        Assert.Equal(Audioenc.ERR_NOT_HANDLE_IN_USE, Call(a, "sceAudioencDeleteEncoder", ctrl));
+        GuestMemory.W32(ctrl + 4, 0);
+        Assert.Equal(Audioenc.ERR_INVALID_HANDLE, Call(a, "sceAudioencEncode", ctrl));
+        Assert.Equal(0, Call(a, "sceAudioencTermLibrary", Audioenc.TYPE_CELP));
+        Assert.Equal(Audioenc.ERR_NOT_INITIALIZED, Call(a, "sceAudioencTermLibrary", Audioenc.TYPE_CELP));
+    }
+
+    [Theory]
+    [InlineData(3850u, 320, 20)]
+    [InlineData(4650u, 320, 24)]
+    [InlineData(5700u, 160, 15)]
+    [InlineData(7300u, 160, 19)]
+    [InlineData(12200u, 80, 16)]
+    public void AudioencFrameTableMatchesVoiceHeader(uint bitRate, int samples, int bytes) =>
+        Assert.Equal((samples, bytes), Audioenc.Frame(bitRate));
+
+    [Fact]
+    public void G729ContextLifecycle()
+    {
+        var g = new G729();
+        uint ctx = fx.Memory.Alloc(0x2000, "g729"), io = ctx + 0x1000;
+        Assert.Equal(G729.ContextSize, Call(g, "sceG729DecodeGetContextSize", 0u));
+        Assert.Equal(G729.ContextSize, Call(g, "sceG729EncodeGetContextSize", 0u));
+        Assert.Equal(G729.ERR_INVALID_ARGUMENT, Call(g, "sceG729EncodeCore", ctx, io, io + 0x200));
+        Assert.Equal(G729.ERR_INVALID_ARGUMENT, Call(g, "sceG729EncodeInit", 0u, 0u));
+        Assert.Equal(0, Call(g, "sceG729EncodeInit", ctx, 0u));
+        GuestMemory.Fill(io + 0x200, 0xAA, 16);
+        Assert.Equal(0, Call(g, "sceG729EncodeCore", ctx, io, io + 0x200));
+        Assert.Equal(0, GuestMemory.Read<byte>(io + 0x209));
+        Assert.Equal(0xAA, GuestMemory.Read<byte>(io + 0x20A));
+        Assert.Equal(0, Call(g, "sceG729EncodeReset", ctx));
+        Assert.Equal(G729.ERR_INVALID_ARGUMENT, Call(g, "sceG729DecodeReset", ctx));
+        Assert.Equal(0, Call(g, "sceG729DecodeInit", ctx));
+        Assert.Equal(0, Call(g, "sceG729DecodeCore", ctx, io + 0x200, io + 0x400));
+        Assert.Equal(0, Call(g, "sceG729DecodeReset", ctx));
+    }
 }

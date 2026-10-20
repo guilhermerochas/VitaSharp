@@ -2507,7 +2507,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Dependências:** `GuestMemory`, `YuvConvert` (Csc), `Emu.Vfs` (fase 2), `FFmpegLoader` (fase 2).
 - **Códigos de erro:** nenhum documentado em header ou Vita3K — **a confirmar** (desmontar `libmp4recorder`
   (`vs0:sys/external/libmp4_recorder.suprx`, nome exato a confirmar) e procurar constantes `0x80xxxxxx`). Até lá,
-  usar `SceError.INVALID_ARGUMENT` (0x80020003) só para ponteiros nulos e retornar 0 no resto.
+  usar `SceError.INVALID_ARGUMENT` (0x80020005) só para ponteiros nulos e retornar 0 no resto.
 
 **Estruturas (`psp2/mp4rec.h`):**
 
@@ -3361,14 +3361,20 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
   `Log.WarnOnce`, igual a `Audiodec.cs`).
 
 Códigos de erro: todos a confirmar (nenhuma fonte). Provisoriamente: argumento nulo → `SceError.INVALID_ARGUMENT`
-(0x80020003) com `Log.WarnOnce`.
+(0x80020005) com `Log.WarnOnce`.
 
 Validação comum: teste unitário decodificando um vetor de teste G.729 da ITU (frames de 10 bytes → comparar com o PCM
 de referência, tolerância ±1 LSB do FFmpeg); em jogo, quando algum importar, conferir no log que `DecodeGetContextSize`
+
+**Implementado** (`Hle/Modules/G729.cs`, NIDs explícitos): `*GetContextSize` retorna 0x1000 sem escrever em `r0`
+(o valor de `r0` vai para o log, para decidir a variante com `*pSize`); `Init/Core/Reset` chaveados pelo endereço do
+contexto (contexto desconhecido ou ponteiro nulo → `INVALID_ARGUMENT`); `DecodeCore(ctx, in, out)` usa o g729 do FFmpeg
+(silêncio sem FFmpeg); `EncodeCore(ctx, in, out)` escreve 10 bytes zero (não é um frame de silêncio G.729 verificado);
+o 2º argumento de `EncodeInit` (VAD?) só é guardado. Ainda falta o teste com vetores ITU.
 devolve um tamanho que o jogo aceita.
 
 ### sceG729DecodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
 - **Protótipo (inferido):** `SceInt32 sceG729DecodeGetContextSize(void);` (retorna o tamanho em bytes; pode ser
   `int sceG729DecodeGetContextSize(SceUInt32 *pSize)` — a confirmar)
 - **Comportamento:** informa quantos bytes o app deve alocar para um contexto de decodificação.
@@ -3379,7 +3385,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo que importar.
 
 ### sceG729DecodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
 - **Protótipo (inferido):** `int sceG729DecodeInit(void *pContext /*, modo/flags a confirmar */);`
 - **Comportamento:** inicializa o estado do decoder no buffer do app.
 - **Retorno/erros:** 0; ctx nulo → erro a confirmar.
@@ -3388,7 +3394,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729DecodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
 - **Protótipo (inferido):** `int sceG729DecodeCore(void *pContext, const void *pIn /*10 bytes*/, SceInt16 *pOut /*80 amostras*/ /*, int bfi ou tamanho do frame — a confirmar */);`
 - **Comportamento:** decodifica um frame de 10 ms. Com flag de frame perdido (bfi) faz ocultação.
 - **Retorno/erros:** 0 (ou nº de amostras/bytes — a confirmar).
@@ -3397,7 +3403,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** vetores de teste ITU-T G.729.
 
 ### sceG729DecodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
 - **Protótipo (inferido):** `int sceG729DecodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do decoder (filtros/preditor) sem realocar.
 - **Retorno/erros:** 0; ctx desconhecido → erro a confirmar.
@@ -3406,7 +3412,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário: Reset e redecodificar o mesmo frame dá o mesmo PCM da primeira vez.
 
 ### sceG729EncodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
 - **Protótipo (inferido):** `SceInt32 sceG729EncodeGetContextSize(void);` (ou variante com `SceUInt32 *pSize`, a confirmar)
 - **Comportamento:** tamanho do contexto de codificação.
 - **Retorno/erros:** como `DecodeGetContextSize`.
@@ -3414,7 +3420,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo.
 
 ### sceG729EncodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
 - **Protótipo (inferido):** `int sceG729EncodeInit(void *pContext /*, int enableVad (Annex B) — a confirmar */);`
 - **Comportamento:** inicializa o encoder; possivelmente habilita VAD/DTX.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3423,7 +3429,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729EncodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
 - **Protótipo (inferido):** `int sceG729EncodeCore(void *pContext, const SceInt16 *pIn /*80 amostras*/, void *pOut /*10 bytes*/ /*, SceUInt32 *pOutSize — se VAD/DTX, a confirmar */);`
 - **Comportamento:** codifica 10 ms de PCM 8 kHz num frame de 10 bytes (ou SID/vazio com DTX).
 - **Retorno/erros:** 0 (ou bytes gerados — a confirmar).
@@ -3432,7 +3438,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** decodificar a saída com o decoder (FFmpeg) e obter silêncio.
 
 ### sceG729EncodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
 - **Protótipo (inferido):** `int sceG729EncodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do encoder.
 - **Retorno/erros:** 0.
@@ -3513,8 +3519,14 @@ Estruturas (`psp2/audioenc.h`):
 Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo→Delete→TermLibrary verificando
 `maxPcmSize = FrameSamples*2`, `maxEsSize = FrameBytes`, `inputPcmSize`/`outputEsSize` após Encode.
 
+**Implementado** (`Hle/Modules/Audioenc.cs`): CELP com frames de payload zero. Escolhas provisórias: `totalStreams`
+só aceita 1; `CreateEncoderResident` não exige `InitLibrary` nem ocupa stream; `CreateEncoderExternal` exige
+`contextSize ≥ 0x10000`; qualquer variante de `Delete*` apaga qualquer tipo de encoder (`DeleteEncoderExternal`
+escreve o `vaContext` em `*pvaContext` se não nulo); `EncodeNFrames(0)` = 1 frame; `TermLibrary` com encoder da
+biblioteca vivo → `A_HANDLE_IN_USE`; alinhamento de buffers não validado.
+
 ### sceAudioencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
 - **Protótipo:** `int sceAudioencInitLibrary(int codecType, SceAudioencInitParam *pInitParam);` (`psp2/audioenc.h`)
 - **Comportamento:** reserva recursos do encoder do tipo dado para `totalStreams` streams.
 - **Retorno/erros:** 0; `INVALID_TYPE` (0x80860001) se `codecType != 0x2006`; `INVALID_PTR` (0x80860008) se
@@ -3526,7 +3538,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
 - **Protótipo:** `int sceAudioencTermLibrary(unsigned int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** libera a biblioteca do tipo.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_INITIALIZED` (0x80860005); com encoders vivos → `A_HANDLE_IN_USE`
@@ -3535,7 +3547,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
 - **Protótipo:** `int sceAudioencCreateEncoder(SceAudioencCtrl *pCtrl, int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** valida `pCtrl->size == 0x2C`, `wordLength == 16`, `pInfo` (size 0x10, `excitationMode == 0`,
   `samplingRate == 8000`, `bitRate` na tabela); cria o encoder, escreve `handle`, `maxPcmSize` (= amostras do
@@ -3550,7 +3562,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário para cada bitrate conhecido (tabela da Arquitetura).
 
 ### sceAudioencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
 - **Protótipo:** `int sceAudioencEncode(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`)
 - **Comportamento:** codifica um frame: lê `FrameSamples` s16 de `pInputPcm`, escreve `FrameBytes` em `pOutputEs`,
   atualiza `inputPcmSize` e `outputEsSize`.
@@ -3562,7 +3574,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencEncodeNFrames
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
 - **Protótipo (inferido de `sceAudiodecDecodeNFrames`):** `int sceAudioencEncodeNFrames(SceAudioencCtrl *pCtrl, SceUInt32 nFrames);`
 - **Comportamento:** como Encode para `nFrames` frames consecutivos; tamanhos de saída acumulados.
 - **Retorno/erros:** como Encode; `nFrames == 0` → a confirmar (Audiodec.cs trata como 1).
@@ -3578,12 +3590,12 @@ iguais aos de Create/Delete. Implementação em `Audioenc.cs`; validação por t
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
-| - [ ] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
-| - [ ] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
-| - [ ] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
-| - [ ] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
-| - [ ] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
-| - [ ] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
-| - [ ] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
-| - [ ] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |
+| - [x] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
+| - [x] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
+| - [x] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
+| - [x] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
+| - [x] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
+| - [x] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
+| - [x] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
+| - [x] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
+| - [x] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |
