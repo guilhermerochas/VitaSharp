@@ -42,6 +42,16 @@ public sealed unsafe partial class VulkanRenderer
                 var opaque = (byte[])rgba.Clone();
                 for (int i = 3; i < opaque.Length; i += 4) opaque[i] = 255;
                 Png.Write(Path.Combine(dir, $"tex_{d.DataAddress:X8}_{d.Format:X8}_{w}x{h}.png"), opaque, (int)iw, (int)ih);
+                // cube maps: the other five faces too (a wrong face stride shows garbage on faces 1-5 only)
+                if (d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
+                    for (uint f = 1; f < 6; f++)
+                    {
+                        byte[]? face = DecodeForInspection(d, info, w, h, out uint fw, out uint fh, -1, f);
+                        if (face == null) continue;
+                        sb.Append($"    face {f}: ").Append(Inspect(face, (int)fw, (int)fh)).AppendLine();
+                        for (int i = 3; i < face.Length; i += 4) face[i] = 255;
+                        Png.Write(Path.Combine(dir, $"tex_{d.DataAddress:X8}_{d.Format:X8}_{w}x{h}_f{f}.png"), face, (int)fw, (int)fh);
+                    }
             }
         }
         catch (Exception e) { sb.AppendLine($" decode failed: {e.Message}"); }
@@ -69,15 +79,16 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Mip 0 of face 0 as RGBA8 for formats the CPU decodes; BC formats are expanded here too.</summary>
-    static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1)
+    static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
         // inspect the first resident level (LOD min), the one the GPU samples at full detail (or a given level)
         uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
         uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(d.LodMin, mips - 1);
-        var layout = ComputeLayout(d, info, w, h, lodMin + 1, 1);
+        // the face stride depends on the whole chain, so lay out every level when a later cube face is wanted
+        var layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
         var lv = layout.Levels[lodMin];
         w = lv.Width; h = lv.Height;
-        byte[] data = TextureDecoder.Decode(d, info, d.DataAddress + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+        byte[] data = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
         iw = w; ih = h;
         if (info.Compressed && info.Convert == TexConvert.None)
         {

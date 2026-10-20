@@ -32,6 +32,20 @@ public sealed unsafe partial class VulkanRenderer
     bool _ss;
     uint SsScale => _ss ? 2u : 1u;
 
+    /// <summary>
+    /// The current scene uses MSAA without downscale: the colour surface stores every sample as a pixel of its own, so
+    /// it is twice the render target's size (a 360x204 4X target writes a 720x408 surface, as Uncharted: Golden Abyss
+    /// does for its quarter-resolution particle, mist and glow pass over the full-resolution HDR scene). As in Vita3K
+    /// (render target, viewport and region clip doubled, res_multiplier 2) the scene renders straight into the surface
+    /// at twice the target's size; each surface pixel is then one sample, and the depth/stencil surface (sample-sized
+    /// as well) lines up with it.
+    /// </summary>
+    bool _msaaNoDownscale;
+    readonly HashSet<uint> _msaaNoDownscaleLogged = new();
+
+    /// <summary>Render-area scale of the current scene: supersampled and MSAA-without-downscale scenes render at 2x.</summary>
+    uint SceneScale => _ss || _msaaNoDownscale ? 2u : 1u;
+
     readonly Dictionary<Format, bool> _ssFormatOk = new();
 
     bool SupportsSupersample(Format f)
