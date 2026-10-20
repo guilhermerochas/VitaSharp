@@ -513,13 +513,42 @@ Códigos de erro: **valores do PSP** (PPSSPP `sceSas.h`); a família `0x8042xxxx
 | SCE_SAS_ERROR_NOT_INIT | 0x80420100 |
 | SCE_SAS_ERROR_ALREADY_INIT | 0x80420101 |
 
+**Estado da implementação (HLE, ABI ainda inferida):** `Hle/Modules/Sas.cs` + `Hle/Audio/SasEngine.cs` (vozes,
+envelope, mixer, efeito) + `Hle/Audio/Adpcm.cs` (bloco VAG/HEVAG; `Ngs.DecodeHevag` não foi migrado para o helper,
+para não mexer no NGS sem regressão). `sceSysmoduleLoadModule(0x000D)` tenta antes `libsas.suprx` por LLE
+(`LleSysmodules` em `SystemMisc.cs`); o HLE é o fallback. Os protótipos e os códigos `0x8042xxxx` continuam
+inferidos do PSP. Decisões tomadas onde a doc dizia "a confirmar":
+- Config: pares `chave=valor` separados por espaço/vírgula (`numGrains`, `numVoices`, `numReverbs`, sem
+  diferenciar maiúsculas; chaves desconhecidas só geram aviso). Padrões 256/32/1. `numVoices` aceito em 1..256 (folga
+  sobre o limite 32 do PSP). Grão: regra do PSP (64..2048, múltiplo de 32) e ≤ `numGrains` quando informado;
+  `sceSasInit` usa `numGrains` como grão. `GetNeededMemorySize` devolve 0 e escreve o tamanho em `*outSize`.
+  O tamanho do buffer do init não é checado.
+- Saída sempre estéreo a 48 kHz (`OutputMode` 1 é aceito e renderizado como estéreo, com aviso). Pitch 0x1000 = 1
+  amostra de origem por amostra de saída, interpolação linear, faixa 1..0x4000.
+- VAG: o mesmo decodificador cobre VAG clássico e HEVAG (preditor estendido pelo nibble alto do byte 1); histórico
+  saturado em s16. Bloco com flag 7 ou fim do buffer encerram a voz; bit2 marca o início do loop, bit0 encerra o
+  bloco e, com `loopflag` e bit1, volta ao início do loop (bloco 0 se não houver marca). `SetVoice` no mesmo endereço
+  com a voz tocando não reinicia a posição.
+- PCM: `size` em amostras (S16 mono), `loopsize` = últimas N amostras repetidas (≤ 0 sem loop); sem limite superior
+  de tamanho.
+- Envelope por amostra, altura 0..0x40000000; padrões (sem confirmação): attack instantâneo, sustain no máximo até o
+  key off, release instantâneo. Curvas: linear ±rate; bent = rate até 3/4 da altura e rate/4 acima; exponencial =
+  rate/2^31 da distância a 0/máximo por amostra; direct = altura passa a `rate` e a fase avança. `SimpleADSR`
+  converte os registradores do SPU (shift/step) para essas taxas. Modos válidos por fase como no PSP (A: 0/2/5,
+  D e R: 1/3/5, S: 0..5).
+- `SetPause` é por voz; `GetEndState`/`GetPauseState` são por voz (1/0). `SetEffect` trata qualquer valor ≠ 0 como
+  ligado. Efeito: ECHO/DELAY = linha de atraso com feedback (`delayTime` × 192 amostras, `feedback/128`); demais tipos
+  de reverb passam o envio wet sem processamento (aviso uma vez); OFF zera o wet. Padrões: dry ligado, wet desligado,
+  volume do efeito 0x1000. `SetDistortion` só guarda o valor. Picos: maior |amostra| do barramento dry, da saída do
+  efeito e da soma pré-clamp no último grão, escritos em `*pPeakL/*pPeakR`.
+
 Validação geral: nenhum jogo instalado importa SceSas. Teste unitário de `SasEngine` (uma voz VAG conhecida, pitch
 0x1000, ADSR direto → PCM idêntica ao decode VAG puro; pitch 0x2000 → metade das amostras). Homebrew VitaSDK com stub
 gerado do `db/360/SceSas.yml` (`vita-libs-gen`) chamando init/setvoice/keyon/core e salvando a saída; comparar com o
 Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop imports <TITLEID>`.
 
 ### sceSasGetNeededMemorySize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
 - **Protótipo:** `int sceSasGetNeededMemorySize(const char *config, SceSize *outSize);` (inferido)
 - **Comportamento:** analisa a string de configuração e devolve o tamanho de buffer de trabalho necessário para
   `sceSasInit`.
@@ -531,7 +560,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** homebrew imprime o valor; comparar com LLE.
 
 ### sceSasInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
 - **Protótipo:** `int sceSasInit(const char *config, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** inicializa o mixer global com a config e o buffer de trabalho do jogo; todas as vozes `Off`,
   envelope zerado, volumes padrão (PSP: 0x1000? a confirmar), reverb OFF, grão padrão (`numGrains`).
@@ -542,7 +571,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** init duplo → `ALREADY_INIT`.
 
 ### sceSasInitWithGrain
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
 - **Protótipo:** `int sceSasInitWithGrain(const char *config, unsigned int grain, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** igual a `sceSasInit`, mas com o grão explícito.
 - **Retorno/erros:** como `sceSasInit` + `INVALID_GRAIN`.
@@ -551,7 +580,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** grão 256 → `sceSasCore` escreve 256×2×2 bytes.
 
 ### sceSasExit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
 - **Protótipo:** `int sceSasExit(void **outBuffer, SceSize *outBufferSize);` (inferido)
 - **Comportamento:** finaliza o mixer e devolve ao jogo o buffer de trabalho passado no init (para liberar).
 - **Retorno/erros:** 0; `NOT_INIT`. Ponteiros nulos tolerados? (a confirmar).
@@ -560,7 +589,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** exit sem init → `NOT_INIT`.
 
 ### sceSasCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
 - **Protótipo:** `int sceSasCore(SceInt16 *out);` (inferido)
 - **Comportamento:** processa um grão: avança todas as vozes, aplica envelopes, mistura dry + reverb e escreve
   `Grain` quadros estéreo S16 em `out` (multicanal se `OutputMode == 1`, a confirmar no Vita). Vozes que chegam ao fim
@@ -571,7 +600,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** teste unitário do engine; homebrew comparando com LLE.
 
 ### sceSasCoreWithMix
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
 - **Protótipo:** `int sceSasCoreWithMix(SceInt16 *inOut, int lvol, int rvol);` (inferido)
 - **Comportamento:** como `sceSasCore`, mas mistura o resultado ao PCM já presente em `inOut`; no PSP, o conteúdo
   existente é escalado por `lvol/rvol` (0..0x1000) antes da soma, com clamp.
@@ -581,7 +610,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** buffer de entrada zerado deve dar o mesmo resultado de `sceSasCore` com lvol=rvol=0x1000.
 
 ### sceSasSetVoice
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
 - **Protótipo:** `int sceSasSetVoice(int iVoiceNum, const void *vagBuf, SceSize size, unsigned int loopflag);` (inferido)
 - **Comportamento:** associa um stream VAG (sem cabeçalho "VAGp", a confirmar) à voz; `loopflag != 0` faz a voz
   respeitar os flags de loop dos blocos (bit2 início, bit1 repetir). Reseta posição e histórico; não liga a voz
@@ -594,7 +623,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** VAG com loop toca indefinidamente; sem loop termina e `GetEndState` = 1.
 
 ### sceSasSetVoicePCM
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
 - **Protótipo:** `int sceSasSetVoicePCM(int iVoiceNum, const void *pcmBuf, SceSize size, int loopsize);` (inferido)
 - **Comportamento:** associa PCM S16 mono à voz; `size` em amostras ou bytes (a confirmar; no PSP é em amostras,
   máx. 0x10000 com `INVALID_PCM_SIZE`); `loopsize` = tamanho do trecho final repetido (≤ 0 sem loop, a confirmar).
@@ -604,7 +633,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** senoide PCM com pitch 0x1000 sai idêntica.
 
 ### sceSasSetNoise
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
 - **Protótipo:** `int sceSasSetNoise(int iVoiceNum, unsigned int uClk);` (inferido)
 - **Comportamento:** transforma a voz num gerador de ruído com frequência `uClk` (PSP: 0..63, mesmo esquema do
   gerador de ruído do SPU: LFSR atualizado a cada período derivado de `uClk`).
@@ -615,7 +644,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** sai ruído não nulo após KeyOn.
 
 ### sceSasSetPitch
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
 - **Protótipo:** `int sceSasSetPitch(int iVoiceNum, int pitch);` (inferido)
 - **Comportamento:** define o passo de reamostragem; `0x1000` = taxa original (48 kHz no Vita? 44.1 kHz no PSP — a
   confirmar a taxa de saída do libsas no Vita).
@@ -625,7 +654,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pitch 0x2000 dobra a frequência.
 
 ### sceSasSetVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
 - **Protótipo:** `int sceSasSetVolume(int iVoiceNum, int l, int r, int wl, int wr);` (inferido; no PSP o 5º argumento
   vai na pilha no Vita, pelo AAPCS)
 - **Comportamento:** volumes dry esquerdo/direito e wet (envio ao reverb) esquerdo/direito; 0x1000 = unidade;
@@ -636,7 +665,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** l=0x1000,r=0 → canal direito silencioso.
 
 ### sceSasSetADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
 - **Protótipo:** `int sceSasSetADSR(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define as *rates* das fases selecionadas por `flag` (`0x1` A, `0x2` D, `0x4` S, `0x8` R).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_RATE` (PSP: rate > 0x7FFFFFFF), `NOT_INIT`.
@@ -645,7 +674,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** attack rate alto → envelope sobe em poucos grãos (`GetEnvelope`).
 
 ### sceSasSetADSRmode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
 - **Protótipo:** `int sceSasSetADSRmode(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define o tipo de curva (0..5, ver arquitetura) de cada fase selecionada por `flag`.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_CURVE_MODE`, `NOT_INIT`.
@@ -654,7 +683,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** modo exponencial vs linear muda a forma do decaimento.
 
 ### sceSasSetSL
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
 - **Protótipo:** `int sceSasSetSL(int iVoiceNum, unsigned int sl);` (inferido)
 - **Comportamento:** nível de sustain (altura onde o decay termina; PSP: 0..0x40000000).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_PARAMETER` (fora da faixa), `NOT_INIT`.
@@ -663,7 +692,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** envelope estabiliza no valor após o decay.
 
 ### sceSasSetSimpleADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
 - **Protótipo:** `int sceSasSetSimpleADSR(int iVoiceNum, unsigned int adsr1, unsigned int adsr2);` (inferido)
 - **Comportamento:** configura o envelope inteiro a partir de dois registradores no formato SPU: `adsr1` =
   `[15] attack exponencial, [14:8] attack rate, [7:4] decay rate, [3:0] sustain level`; `adsr2` = `[15] sustain
@@ -676,7 +705,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** valores típicos (`0x000F`, `0x1FC0`) produzem envelope plausível.
 
 ### sceSasSetKeyOn
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
 - **Protótipo:** `int sceSasSetKeyOn(int iVoiceNum);` (inferido)
 - **Comportamento:** inicia a voz: posição 0, histórico zerado, envelope em Attack com altura 0, `Ended = false`.
   Efetivo no próximo `sceSasCore`.
@@ -686,7 +715,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** KeyOn + Core produz som.
 
 ### sceSasSetKeyOff
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
 - **Protótipo:** `int sceSasSetKeyOff(int iVoiceNum);` (inferido)
 - **Comportamento:** passa o envelope para Release; a voz termina quando a altura chega a 0.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `VOICE_PAUSED`, `NOT_INIT`.
@@ -695,7 +724,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** após release, `GetEndState` = 1.
 
 ### sceSasSetPause
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
 - **Protótipo:** `int sceSasSetPause(int iVoiceNum, unsigned int pauseFlag);` (inferido; no PSP o argumento é uma
   máscara de vozes `voicebit` + `pause`, no Vita é a confirmar)
 - **Comportamento:** pausa/retoma a(s) voz(es): o mix pula a voz sem avançar posição nem envelope.
@@ -705,7 +734,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pausar, rodar Core, retomar: a PCM continua de onde parou.
 
 ### sceSasSetDistortion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
 - **Protótipo:** `int sceSasSetDistortion(int iVoiceNum, int distortion);` (inferido; função nova do Vita, sem
   equivalente no PSP)
 - **Comportamento:** efeito de distorção (provável saturação/clipping por voz). Semântica e faixa a confirmar.
@@ -715,7 +744,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** confirmar com LLE.
 
 ### sceSasSetEffect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
 - **Protótipo:** `int sceSasSetEffect(int drySwitch, int wetSwitch);` (inferido)
 - **Comportamento:** liga/desliga a saída dry e a saída wet (reverb) no master.
 - **Retorno/erros:** 0; `NOT_INIT`; `INVALID_PARAMETER` (valores ≠ 0/1, a confirmar).
@@ -724,7 +753,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** dry=0 com wet desligado → silêncio.
 
 ### sceSasSetEffectType
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
 - **Protótipo:** `int sceSasSetEffectType(int type);` (inferido)
 - **Comportamento:** seleciona o algoritmo de reverb (`-1..8`, ver arquitetura).
 - **Retorno/erros:** 0; `REV_INVALID_TYPE`; `BUSY` (PSP retorna BUSY ao trocar tipo durante processamento — no HLE
@@ -734,7 +763,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** tipo 6 (ECHO) gera eco audível.
 
 ### sceSasSetEffectParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
 - **Protótipo:** `int sceSasSetEffectParam(unsigned int delayTime, unsigned int feedback);` (inferido)
 - **Comportamento:** parâmetros de delay/feedback (só efetivos para ECHO/DELAY no PSP; faixa PSP 0..127).
 - **Retorno/erros:** 0; `REV_INVALID_DELAY_TIME`, `REV_INVALID_FEEDBACK`, `NOT_INIT`.
@@ -743,7 +772,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** feedback 0 → eco único.
 
 ### sceSasSetEffectVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
 - **Protótipo:** `int sceSasSetEffectVolume(int valL, int valR);` (inferido)
 - **Comportamento:** volume de retorno do reverb no master (0x1000 = unidade; PSP aceita -0x1000..0x1000).
 - **Retorno/erros:** 0; `REV_INVALID_VOLUME`, `NOT_INIT`.
@@ -759,16 +788,16 @@ o `SasEngine` sob o lock. Validação: homebrew de teste comparando com Vita3K e
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
-| - [ ] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
-| - [ ] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
-| - [ ] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
-| - [ ] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
-| - [ ] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
-| - [ ] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
-| - [ ] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
-| - [ ] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
-| - [ ] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
+| - [x] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
+| - [x] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
+| - [x] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
+| - [x] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
+| - [x] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
+| - [x] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
+| - [x] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
+| - [x] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
+| - [x] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
+| - [x] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
 
 ## Fontes do sistema: ScePgf e ScePvf (visão comum)
 
