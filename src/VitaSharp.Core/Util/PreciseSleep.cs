@@ -4,19 +4,22 @@ using System.Runtime.InteropServices;
 namespace VitaSharp.Core.Util;
 
 /// <summary>
-/// Sub-millisecond sleeping. Windows' default Sleep granularity is ~15.6 ms, which makes guest delays and vblank
-/// waits overshoot whole frames; there a high-resolution waitable timer (one per thread) is used. Other platforms'
-/// Thread.Sleep (nanosleep) is already precise.
+/// Sub-millisecond sleeping. Thread.Sleep only takes whole milliseconds (a 0.5 ms request becomes a yield), and
+/// Windows' default Sleep granularity is ~15.6 ms, which makes guest delays and vblank waits overshoot whole frames.
+/// Windows uses a high-resolution waitable timer (one per thread); Linux, macOS and Android use nanosleep, which is
+/// precise to a few tens of microseconds there.
 /// </summary>
 public static class PreciseSleep
 {
     [ThreadStatic] static nint _timer;
     static readonly bool Windows = OperatingSystem.IsWindows();
+    static bool _posixFailed;
 
     public static void Microseconds(long us)
     {
         if (us <= 0) return;
-        if (Windows && TryWindows(us)) return;
+        if (Windows) { if (TryWindows(us)) return; }
+        else if (!_posixFailed && TryPosix(us)) return;
         Thread.Sleep(TimeSpan.FromTicks(us * 10));
     }
 
@@ -49,6 +52,31 @@ public static class PreciseSleep
         return true;
     }
 
+    const int EINTR = 4; // same value on Linux, macOS and Android
+
+    static unsafe bool TryPosix(long us)
+    {
+        try
+        {
+            // struct timespec { time_t tv_sec; long tv_nsec; }: both are pointer-sized on every supported ABI
+            var req = stackalloc nint[2];
+            var rem = stackalloc nint[2];
+            req[0] = (nint)(us / 1_000_000);
+            req[1] = (nint)(us % 1_000_000 * 1000);
+            while (nanosleep(req, rem) != 0)
+            {
+                if (Marshal.GetLastPInvokeError() != EINTR) return false;
+                req[0] = rem[0]; req[1] = rem[1]; // interrupted by a signal: sleep the remainder
+            }
+            return true;
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            _posixFailed = true;
+            return false;
+        }
+    }
+
     const uint CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x2, TIMER_ALL_ACCESS = 0x1F0003;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -59,4 +87,7 @@ public static class PreciseSleep
 
     [DllImport("kernel32.dll")]
     static extern uint WaitForSingleObject(nint handle, uint ms);
+
+    [DllImport("libc", SetLastError = true)]
+    static extern unsafe int nanosleep(nint* req, nint* rem);
 }
