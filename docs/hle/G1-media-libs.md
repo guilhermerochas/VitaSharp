@@ -2329,9 +2329,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   constantes `0x806x....` no `avcodec_us.suprx`/kernel `SceAvcodec`). Até lá, usar os dois de `Videodec.cs`.
 - **Tipo de codec:** provavelmente `0x2001` (SCE_VIDEOENC_TYPE_HW_AVCENC), por analogia com
   `TYPE_HW_AVCDEC = 0x1001` — a confirmar; enquanto não confirmado, aceitar qualquer valor e logar `WarnOnce`.
+- **Implementado (stub funcional, `Hle/Modules/Videoenc.cs`):** sem FFmpeg/encoder; bibliotecas e handles rastreados,
+  handle em `ctrl+0`, w/h lidos de `query+0/+4` (limite 1920×1088 como o decoder), tamanhos escritos só em
+  `memInfo+0`/`info+0`; `Encode` conta e descarta o quadro; nenhuma struct de imagem/NAL é escrita. `CreateEncoder`
+  não exige `InitLibrary`; handle desconhecido → `INVALID_PARAM` (0x80620002); `sceAvcencCsc` fica desmarcado (ver).
 
 ### sceVideoencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
 - **Protótipo (inferido):** `int sceVideoencInitLibrary(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo);`
 - **Comportamento:** inicializa o encoder de hardware para o tipo de codec, reservando a memória interna do codec
   (tamanho dado por `sceVideoencQueryMemSize`).
@@ -2341,7 +2345,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem (ver arquitetura); jogo/app que importe deve seguir para `QueryEncoderMemSize`.
 
 ### sceVideoencInitLibraryWithUnmapMem
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
 - **Protótipo (inferido):** `int sceVideoencInitLibraryWithUnmapMem(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, const SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** como `InitLibrary`, mas usa memória fornecida pelo jogo (`pMemInfo`: provável `{size, pMem}`).
 - **Retorno/erros:** como `InitLibrary`; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2349,7 +2353,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencInitLibraryInternal / sceVideoencInitLibraryWithUnmapMemInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
 - **Protótipo (inferido):** mesmos argumentos das versões públicas (possivelmente com um argumento extra de
   flags/pid — a confirmar pela desmontagem).
 - **Comportamento:** variantes para módulos do sistema (ex.: o próprio `SceLibMp4Recorder`).
@@ -2358,7 +2362,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencQueryMemSize / sceVideoencQueryMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
 - **Protótipo (inferido):** `int sceVideoencQueryMemSize(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** escreve em `pMemInfo` (offset 0, provável `size`) a memória que a biblioteca precisa.
 - **Retorno/erros:** 0; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2367,7 +2371,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
 - **Protótipo (inferido):** `int sceVideoencTermLibrary(SceUInt32 codecType);`
 - **Comportamento:** finaliza a biblioteca do codec.
 - **Retorno/erros:** 0.
@@ -2375,7 +2379,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencQueryEncoderMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
 - **Protótipo (inferido):** `int sceAvcencQueryEncoderMemSize(SceUInt32 codecType, const SceAvcencQueryEncoder *pQuery, SceAvcencEncoderInfo *pInfo);`
 - **Comportamento:** dado largura/altura/parâmetros máximos (`pQuery`, provável `{width, height, ...}`), devolve o
   tamanho de memória do encoder em `pInfo` (provável `{frameMemSize}`).
@@ -2386,14 +2390,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem do `SceLibMp4Recorder` (que chama esta função com modos conhecidos 640×368 etc.).
 
 ### sceAvcencQueryEncoderMemSizeBasic / sceAvcencQueryEncoderMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencQueryEncoderMemSize` com struct de query "Basic"/interna.
 - **Comportamento/Retorno:** idem.
 - **Implementação no VitaSharp:** delegar ao helper comum.
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
 - **Protótipo (inferido):** `int sceAvcencCreateEncoder(SceUInt32 codecType, SceAvcencCtrl *pCtrl, const SceAvcencQueryEncoder *pQuery);`
 - **Comportamento:** cria o encoder na memória `pCtrl->frameBuf` fornecida e grava o handle em `pCtrl` (provável
   +0, como `SceAvcdecCtrl {handle, frameBuf{p,size}}`).
@@ -2403,14 +2407,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoderBasic / sceAvcencCreateEncoderInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencCreateEncoder`.
 - **Comportamento/Retorno:** idem (Basic = perfil Baseline).
 - **Implementação no VitaSharp:** helper comum.
 - **Validação:** idem.
 
 ### sceAvcencDeleteEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
 - **Protótipo (inferido):** `int sceAvcencDeleteEncoder(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** destrói o encoder.
 - **Retorno/erros:** 0; handle desconhecido → `INVALID_PARAM`? a confirmar.
@@ -2418,7 +2422,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetEncoderParameter
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
 - **Protótipo (inferido):** `int sceAvcencSetEncoderParameter(SceAvcencCtrl *pCtrl, const SceAvcencEncoderParam *pParam);`
 - **Comportamento:** define bitrate, framerate, GOP, perfil/nível, rate control. Layout a confirmar.
 - **Retorno/erros:** 0; parâmetro inválido → `INVALID_PARAM`.
@@ -2427,7 +2431,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetAvailablePreset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
 - **Protótipo (inferido):** `int sceAvcencSetAvailablePreset(SceAvcencCtrl *pCtrl, SceInt32 preset);` (talvez sem
   `pCtrl` — global; a confirmar).
 - **Comportamento:** escolhe um preset de qualidade/resolução pré-definido (os modos do Mp4Recorder
@@ -2445,10 +2449,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Implementação no VitaSharp:** `YuvConvert.RgbaToYuv420` com escala bilinear se dimensões diferirem; layout de
   `SceAvcencPicture` a confirmar (usar como hipótese o `SceMp4RecFrame`: pixelformat +4, stride +8, width +0xC,
   height +0x10, buffer +0x24).
+  **Estado atual:** `Videoenc.cs` só valida `ctrl`/ponteiros e retorna 0 **sem escrever** — escrever pixels num
+  ponteiro tirado de um layout hipotético poderia corromper memória do jogo; fica desmarcado até confirmar o layout
+  (não existe `YuvConvert`; a conversão RGBA→YUV420 packed real está em `Mp4Recorder.RgbaToYuv420Packed`).
 - **Validação:** idem.
 
 ### sceAvcencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
 - **Protótipo (inferido):** `int sceAvcencEncode(SceAvcencCtrl *pCtrl, const SceAvcencInputPicture *pIn, SceAvcencEncodeResult *pOut);`
 - **Comportamento:** envia um quadro YUV420 ao encoder; as NAL units resultantes são retiradas com
   `sceAvcencGetNalUnit`.
@@ -2458,7 +2465,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; arquivo gravado pelo Mp4Recorder toca no PC (quando houver encoder real).
 
 ### sceAvcencEncodeFlush
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
 - **Protótipo (inferido):** `int sceAvcencEncodeFlush(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** força a saída dos quadros retidos (B-frames/lookahead).
 - **Retorno/erros:** 0.
@@ -2466,7 +2473,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencEncodeStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
 - **Protótipo (inferido):** `int sceAvcencEncodeStop(SceAvcencCtrl *pCtrl);` (pode ter argumento de saída — a confirmar)
 - **Comportamento:** encerra a sessão de codificação (fim de stream).
 - **Retorno/erros:** 0.
@@ -2474,13 +2481,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencGetNalUnit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
 - **Protótipo (inferido):** `int sceAvcencGetNalUnit(SceAvcencCtrl *pCtrl, SceAvcencNalUnit *pNal);`
 - **Comportamento:** retira a próxima NAL unit (ponteiro/tamanho/pts) produzida pelo encoder.
 - **Retorno/erros:** 0 com dado; "sem dados" → código a confirmar (provável erro específico ou `size = 0`).
 - **Implementação no VitaSharp:** com fila vazia (stub), preencher tamanho 0 e retornar o código de "sem dados"
   assim que confirmado — até lá, `size = 0` e retorno 0, observando se o jogo entra em loop (se entrar, trocar para
-  erro).
+  erro). **Implementado:** como o layout de `SceAvcencNalUnit` não é conhecido, a struct **não é escrita** (nem o
+  `size`); retorna 0 com `WarnOnce`.
 - **Validação:** idem.
 
 ## SceLibMp4Recorder (10 funções)
@@ -2507,7 +2515,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Dependências:** `GuestMemory`, `YuvConvert` (Csc), `Emu.Vfs` (fase 2), `FFmpegLoader` (fase 2).
 - **Códigos de erro:** nenhum documentado em header ou Vita3K — **a confirmar** (desmontar `libmp4recorder`
   (`vs0:sys/external/libmp4_recorder.suprx`, nome exato a confirmar) e procurar constantes `0x80xxxxxx`). Até lá,
-  usar `SceError.INVALID_ARGUMENT` (0x80020003) só para ponteiros nulos e retornar 0 no resto.
+  usar `SceError.INVALID_ARGUMENT` (0x80020005) só para ponteiros nulos e retornar 0 no resto.
+- **Implementado (fase 1, `Hle/Modules/Mp4Recorder.cs`):** recorders por endereço do `SceMp4RecRecorder`;
+  `Init` exige recorder criado e `mode` 0..5; `Add*Sample` contam e descartam (aceitos mesmo antes do `Init`, com
+  `WarnOnce`); `Term` só loga (nenhum arquivo); `size != 4096` no áudio só gera log; erros = `INVALID_ARGUMENT`
+  (0x80020005) para ponteiro nulo/recorder desconhecido/modo inválido. `sceMp4RecCsc` é real: A8B8G8R8 → YUV420
+  packed (plano Y com `stride`, depois croma intercalada **V antes de U** no offset `stride × height`, como o
+  `PIXEL_YUV420_PACKED_RASTER` do `Videodec.cs`), BT.601 faixa limitada, escala bilinear; mesmo formato e tamanho →
+  cópia; outras combinações → `INVALID_ARGUMENT`. A ordem U/V para o encoder real continua a confirmar.
 
 **Estruturas (`psp2/mp4rec.h`):**
 
@@ -2519,7 +2534,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 | SceMp4RecTermParam (0x20C) | 0x00 / 0x04 / 0x08 / 0x208 | size / discard (SceBool) / reserved[128] / metadata |
 
 ### sceMp4RecCreateRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
 - **Protótipo:** `int sceMp4RecCreateRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** cria o recorder usando o memblock `rec->base`/`base_size` fornecido pelo jogo (tamanho
   necessário possivelmente obtido de `sceMp4RecRecorderInit`/documentação — a confirmar).
@@ -2529,7 +2544,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   completar Create→Init→Add*→Term→Delete sem erro.
 
 ### sceMp4RecDeleteRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
 - **Protótipo:** `int sceMp4RecDeleteRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** destrói o recorder (o jogo libera o memblock depois).
 - **Retorno/erros:** 0; desconhecido → erro a confirmar.
@@ -2537,7 +2552,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecQueryPhysicalMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
 - **Protótipo:** `int sceMp4RecQueryPhysicalMemSize(SceMp4RecRecorder *rec, int mode, uint32_t *encoder_size, uint32_t *av_size);` (`psp2/mp4rec.h`)
 - **Comportamento:** devolve os tamanhos dos blocos fisicamente contíguos para o encoder de vídeo e de áudio do
   `mode`.
@@ -2549,7 +2564,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** alocação do jogo bem-sucedida.
 
 ### sceMp4RecInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
 - **Protótipo:** `int sceMp4RecInit(SceMp4RecRecorder *rec, SceMp4RecInitParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** inicia uma sessão de gravação no modo pedido, cria a thread do recorder e o arquivo de saída.
 - **Retorno/erros:** 0; `params` inválido / modo inválido → a confirmar.
@@ -2559,7 +2574,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecTerm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
 - **Protótipo:** `int sceMp4RecTerm(SceMp4RecRecorder *rec, SceMp4RecTermParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** encerra a sessão; se `discard == 0`, finaliza e salva em `ux0:video` com `metadata`; se
   `discard != 0`, apaga.
@@ -2570,7 +2585,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; fase 2: arquivo abre no PC.
 
 ### sceMp4RecCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
 - **Protótipo:** `int sceMp4RecCsc(SceMp4RecFrame *dst, SceMp4RecFrame *src);` (`psp2/mp4rec.h`)
 - **Comportamento:** conversão de cor + reescala por hardware: tipicamente framebuffer A8B8G8R8 960×544 →
   YUV420 packed na resolução do modo (ex. 640×368), pronto para `AddVideoSample`.
@@ -2582,7 +2597,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** teste unitário com framebuffer sintético; comparar com saída de `sceAvcdec` no mesmo formato.
 
 ### sceMp4RecAddVideoSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
 - **Protótipo:** `int sceMp4RecAddVideoSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira um quadro (YUV420 packed da resolução do modo) para codificação; duração 1001/30000 s.
 - **Retorno/erros:** 0; sessão não iniciada/tamanho errado → a confirmar.
@@ -2590,7 +2605,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecAddAudioSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
 - **Protótipo:** `int sceMp4RecAddAudioSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira 4096 bytes de PCM S16 estéreo 48 kHz (1024 amostras) para AAC.
 - **Retorno/erros:** 0; `size != 4096` → erro (código a confirmar).
@@ -2599,7 +2614,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecRecorderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderInit(SceMp4RecRecorder *rec, ...);` —
   argumentos a confirmar. Hipótese: inicialização da biblioteca/memblock do recorder (paralela a
   `CreateRecorder`), ou versão antiga da API.
@@ -2609,7 +2624,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** quando houver importador, verificar se o fluxo seguinte (Create/Init) funciona.
 
 ### sceMp4RecRecorderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderEnd(SceMp4RecRecorder *rec);` — a confirmar.
 - **Comportamento:** par de `sceMp4RecRecorderInit` (a confirmar).
 - **Retorno/erros:** a confirmar.
@@ -2650,6 +2665,10 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   `PRESS_ENTER` após N frames.
   Sem back-end: `sceImeOpen` funciona, entrega só `OPEN` e nunca mais nada (o jogo fica esperando entrada, mas não
   trava).
+  **Implementado:** `ITextInputBackend` (com `SetText`) e `HostServices.TextInput` existem (nenhum front-end o fornece
+  ainda). Sem back-end, se `--ime-text` estiver definido (`CommonDialog.ImeDefaultText`, a mesma fonte do
+  `sceImeDialog`), o `Ime` entrega `OPEN → UPDATE_TEXT(texto) → PRESS_ENTER` nas próximas `sceImeUpdate`. Callbacks
+  vindos do back-end de uma sessão já fechada são descartados (contador de sessão).
 - **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/Ime.cs`, `public sealed class Ime : HleModule`. Todos os seis
   nomes estão em `Hle/Data/nids.txt` (não precisa `Nid =`).
 - **Chamada do handler:** `GuestThread.Current!.CallGuest(handler, arg, eventAddr)` (mesmo padrão de
@@ -2722,7 +2741,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 `SceImeCaret` (0x10): `x, y, height, index`. `SceImePreeditGeometry` (0xC): `x, y, height`.
 
 ### sceImeOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
 - **Protótipo:** `SceInt32 sceImeOpen(const SceImeParam *param);` (`psp2/libime.h`)
 - **Comportamento:** valida o parâmetro, guarda a configuração, copia `initialText` (se houver) para o estado interno e
   para `inputTextBuffer`, posiciona o caret no fim do texto e pede ao sistema para mostrar o teclado. O evento `OPEN`
@@ -2748,7 +2767,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
   PRESS_ENTER`.
 
 ### sceImeUpdate
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
 - **Protótipo:** `SceInt32 sceImeUpdate(void);` (`psp2/libime.h`)
 - **Comportamento:** despacha, na thread chamadora, todos os eventos pendentes para `handler(arg, &event)`, na ordem
   em que ocorreram. Antes de `UPDATE_TEXT`, o texto novo já está em `inputTextBuffer` (terminado em 0) e o evento
@@ -2765,7 +2784,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** mesmo cenário de `sceImeOpen`; conferir que `editLengthChange` bate com o diff do texto.
 
 ### sceImeSetText
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
 - **Protótipo:** `SceInt32 sceImeSetText(const SceWChar16 *text, SceUInt32 length);` (`psp2/libime.h`)
 - **Comportamento:** o jogo substitui o texto do IME (ex.: botão "limpar"). O IME atualiza o estado interno e o
   `inputTextBuffer`, e coloca o caret no fim. Se gera um `UPDATE_TEXT` de volta é a confirmar (provável que não, já que
@@ -2777,7 +2796,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário; homebrew que chama `SetText` e depois lê `inputTextBuffer`.
 
 ### sceImeSetCaret
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
 - **Protótipo:** `SceInt32 sceImeSetCaret(const SceImeCaret *caret);` (`psp2/libime.h`)
 - **Comportamento:** o jogo informa onde desenhou o caret (`x, y, height` em pixels de tela, para o sistema posicionar
   a lista de sugestões) e o índice lógico (`index`) no texto. O IME move o caret interno para `index` (limitado ao
@@ -2791,7 +2810,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário.
 
 ### sceImeSetPreeditGeometry
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
 - **Protótipo:** `SceInt32 sceImeSetPreeditGeometry(const SceImePreeditGeometry *preedit);` (`psp2/libime.h`)
 - **Comportamento:** posição (`x, y, height`) onde o jogo desenha o texto em pré-edição; o sistema usa para a janela de
   conversão (japonês/chinês). Sem efeito visível no HLE porque não há pré-edição.
@@ -2801,7 +2820,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** retorno 0 com IME aberto, `0x80100701` fechado.
 
 ### sceImeClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
 - **Protótipo:** `SceInt32 sceImeClose(void);` (`psp2/libime.h`)
 - **Comportamento:** esconde o teclado e libera a sessão. Eventos ainda na fila são descartados. Depois disso o jogo
   pode reaproveitar `work`/`inputTextBuffer`.
@@ -2847,21 +2866,24 @@ Todas: **Prioridade:** P2 · **Biblioteca:** SceHandwriting · header: nenhum (i
 
 | Checkbox | Função | NID | Protótipo inferido | Comportamento inferido | HLE mínimo |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
-| [ ] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
-| [ ] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
-| [ ] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
-| [ ] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
-| [ ] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
-| [ ] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
-| [ ] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
-| [ ] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
-| [ ] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
-| [ ] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
+| [x] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
+| [x] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
+| [x] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
+| [x] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
+| [x] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
+| [x] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
+| [x] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
+| [x] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
+| [x] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
+| [x] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
+| [x] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
 
 - **Implementação no VitaSharp:** preferir LLE (acima). No HLE mínimo, usar `[Hle(Nid = 0x...)]` só se o nome não estiver
   em `Hle/Data/nids.txt` (os 11 estão lá), registrar `Log.WarnOnce("handwriting", ...)` na primeira chamada para deixar
   claro que o reconhecimento não existe, e **não** escrever em ponteiros cujo layout não foi confirmado.
+  **Implementado (HLE mínimo, `Hle/Modules/Handwriting.cs`):** `GetBufferSize` → 0x40000; `Init/Term/SetMode`
+  guardam estado e retornam 0; `Recognize` e todos os `Register*` retornam 0 sem escrever nada (argumentos r0–r3
+  logados uma vez por função). O LLE continua sendo o caminho para reconhecimento real.
 - **Validação:** só é possível com um jogo/homebrew que importe a lib. Critério mínimo: o jogo passa pela tela de
   escrita sem crash nem erro; critério completo (LLE): um caractere desenhado via toque roteirizado no cenário é
   reconhecido.
@@ -2958,8 +2980,19 @@ Validação comum de toda a biblioteca: não há jogo instalado que importe. Esc
 Connect→Write PCM→Read PCM→Stop→End), e conferir contra hardware com um homebrew (VitaSDK, `-lSceVoice_stub`) quando
 houver dúvida "a confirmar".
 
+**Implementado** (`Hle/Modules/Voice.cs`, testes em `tests/VitaSharp.Tests/MediaMiscHleTests.cs`). Escolhas
+provisórias (a confirmar no hardware): o `Audio.cs` hoje tem um microfone virtual (SceAudioIn abre e entrega silêncio),
+mas o Voice não depende dele — IN_DEVICE gera silêncio direto; `CheckTopology` devolve `INVALID_PORT` para as três
+regras; `Connect` com tipos invertidos ou IN_VOICE→OUT_VOICE → `INVALID_PORT`, duplicata → `INVALID_ARGUMENT`;
+`Disconnect` inexistente → `INVALID_ARGUMENT`; `Write/ReadFromOPort` sem `Start` → `NOT_STARTED` com `*size = 0`;
+`frame_size` = 320 para portas PCM/device (10 ms a 16 kHz); estados após Start: entradas do app IDLE (BUFFERING/ACTIVE
+conforme o threshold efetivo = max(threshold, 2 frames)), demais ACTIVE; OUT_PCMAUDIO/OUT_VOICE só produzem dados quando
+alguma entrada conectada produziu no tick (o mic sempre produz); ring de saída cheio descarta o mais antigo; OUT_DEVICE
+abre `IAudioStream(16000, 1, 160)` sob demanda e descarta ticks quando o host já tem ~100 ms na fila (nunca bloqueia);
+eventos (`event_callback`) não são disparados (log `WarnOnce`); `GetPortAttr` com `attr != 1000` → `INVALID_ARGUMENT`.
+
 ### sceVoiceInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
 - **Protótipo:** `int sceVoiceInit(const SceVoiceInitParam *param, SceUInt32 version);` (`psp2/voice.h`)
 - **Comportamento:** inicializa o SceVoice do processo, guarda callback de evento e `user_data`, cria a thread de
   eventos (no HLE: nada). Não aloca memória de trabalho (isso é em `sceVoiceStart`).
@@ -2973,7 +3006,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário; segunda chamada deve devolver 0x804E0802.
 
 ### sceVoiceEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
 - **Protótipo:** `int sceVoiceEnd(void);` (`psp2/voice.h`)
 - **Comportamento:** se iniciado, para o processamento e desanexa o memblock (como `sceVoiceStop`); destrói todas as
   portas (fecha `IAudioStream`s) e conexões; zera estado. Não libera o memblock (é do app).
@@ -2984,7 +3017,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após End, `sceVoiceCreatePort` → 0x804E0801; `sceVoiceInit` volta a funcionar.
 
 ### sceVoiceStart
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
 - **Protótipo:** `int sceVoiceStart(const SceVoiceStartParam *param);` (`psp2/voice.h`)
 - **Comportamento:** anexa o memblock de trabalho (≥ 0x40000, tamanho **não** validado no FW 3.60) e inicia o
   processamento; recria recursos de processamento das portas existentes. Se já iniciado: sucesso sem trocar o
@@ -2998,7 +3031,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com memblock criado por `sceKernelAllocMemBlock`; uid inválido → 0x804E0806.
 
 ### sceVoiceStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
 - **Protótipo:** `int sceVoiceStop(void);` (`psp2/voice.h`)
 - **Comportamento:** para o processamento e desanexa o memblock. Portas e conexões permanecem, mas buffers são
   descartados. Já parado mas inicializado → sucesso.
@@ -3008,7 +3041,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após Stop, `GetPortInfo` → 0x804E080A.
 
 ### sceVoiceGetResourceInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
 - **Protótipo:** `int sceVoiceGetResourceInfo(SceVoiceResourceInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** escreve os limites fixos do FW 3.60: 7 IN_VOICE, 7 OUT_VOICE, 1 IN_DEVICE, 1 OUT_DEVICE, 64 portas.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ARGUMENT` se `info == NULL`.
@@ -3018,7 +3051,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceCheckTopology
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
 - **Protótipo:** `int sceVoiceCheckTopology(void);` (`psp2/voice.h`)
 - **Comportamento:** valida o grafo: toda porta criada tem ≥ 1 conexão; portas OUT_VOICE adjacentes na lista interna
   têm o mesmo bitrate, mesmo mute (zero/não-zero) e volume exatamente igual; se existem IN_DEVICE e IN_PCMAUDIO,
@@ -3032,7 +3065,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com cada caso.
 
 ### sceVoiceCreatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
 - **Protótipo:** `int sceVoiceCreatePort(SceVoicePortId *port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** escreve 0xFF em `*port_id` antes de validar. Valida o tipo (0..5); para PCMAUDIO:
   `pcm_data_type == 0` (S16LE), `sampling_rate == 16000`, capacidade efetiva = `buffer_size & ~511`, faixa
@@ -3054,7 +3087,7 @@ houver dúvida "a confirmar".
   oitava IN_VOICE → 0x804E0808.
 
 ### sceVoiceUpdatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
 - **Protótipo:** `int sceVoiceUpdatePort(SceVoicePortId port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** troca configuração de uma porta existente; o tipo não pode mudar. Mudar bitrate recria o
   codec e descarta dados. Não realoca rings PCM (no FW 3.60 mudar `buffer_size` corrompe a contabilidade — o HLE
@@ -3067,7 +3100,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceConnectIPortToOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
 - **Protótipo:** `int sceVoiceConnectIPortToOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** liga entrada (tipo 0..2) a saída (3..5). Rejeita IN_VOICE→OUT_VOICE direto, conexão duplicada e
@@ -3079,7 +3112,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDisconnectIPortFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
 - **Protótipo:** `int sceVoiceDisconnectIPortFromOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** remove a conexão.
@@ -3089,7 +3122,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDeletePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
 - **Protótipo:** `int sceVoiceDeletePort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** apaga a porta e todas as conexões que a envolvem; libera o slot e a contagem de recursos.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_PORT_ID`.
@@ -3097,7 +3130,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: ID volta a ser reutilizado pelo próximo `CreatePort`.
 
 ### sceVoiceWriteToIPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
 - **Protótipo:** `int sceVoiceWriteToIPort(SceVoicePortId port_id, const void *data, SceSize *size, SceInt16 frame_gap);`
   (`psp2/voice.h`)
 - **Comportamento:** escreve dados do app numa IN_PCMAUDIO ou IN_VOICE; `*size` volta com os bytes aceitos (limitado
@@ -3112,7 +3145,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com PCM: escrever 2048 bytes num ring de 1024 → `*size == 1024`.
 
 ### sceVoiceReadFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
 - **Protótipo:** `int sceVoiceReadFromOPort(SceVoicePortId port_id, void *data, SceSize *size);` (`psp2/voice.h`)
 - **Comportamento:** lê de OUT_PCMAUDIO ou OUT_VOICE; `*size` (capacidade) volta com os bytes copiados. Voz codificada
   é arredondada para baixo a frames completos; PCM para número par de bytes. Falha pós-validação → `*size = 0`.
@@ -3127,7 +3160,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário IN_PCMAUDIO→OUT_PCMAUDIO com volume 0.5: amostra 1000 deve sair 500.
 
 ### sceVoiceGetPortInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
 - **Protótipo:** `int sceVoiceGetPortInfo(SceVoicePortId port_id, SceVoicePortInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** devolve tipo, estado, `data_size` (bytes livres no ring de entrada ou bytes enfileirados no de
   saída) e `frame_size` (tamanho do frame de processamento, codificado ou PCM). Se não iniciado, zera a struct inteira e
@@ -3143,7 +3176,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário + homebrew em hardware para os valores "a confirmar".
 
 ### sceVoiceResetPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
 - **Protótipo:** `int sceVoiceResetPort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** limpa os dados do ring; ACTIVE vira IDLE; INACTIVE/IDLE/BUFFERING mantêm estado interno. O estado
   visível em `GetPortInfo` só muda no próximo ciclo de processamento.
@@ -3160,19 +3193,19 @@ campos de `Port`. Validação: teste unitário set→get. Protótipos em `psp2/v
 
 | Função | NID | Protótipo | Comportamento / particularidades |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
-| - [ ] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
-| - [ ] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
-| - [ ] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
-| - [ ] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
-| - [ ] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
-| - [ ] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
-| - [ ] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
-| - [ ] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
-| - [ ] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
-| - [ ] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
-| - [ ] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
-| - [ ] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
+| - [x] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
+| - [x] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
+| - [x] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
+| - [x] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
+| - [x] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
+| - [x] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
+| - [x] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
+| - [x] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
+| - [x] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
+| - [x] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
+| - [x] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
+| - [x] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
+| - [x] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
 
 ---
 
@@ -3216,8 +3249,13 @@ Voice são da mesma equipe) — não usar sem confirmar.
 Validação comum: teste unitário (Init→CreateLocal→CreateRemote→Connect→Read/WritePacket→Disconnect→Delete×2→End).
 Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de chat/lobby sem travar.
 
+**Implementado** (`Hle/Modules/VoiceQoS.cs`) como sessão offline: IDs de endpoints/conexões vêm de um contador único
+(começa em 1); erros provisórios `SceError.ERROR` (0x80020001, com `WarnOnce`) para não inicializado / já inicializado /
+ID desconhecido / conexão duplicada, e `SceError.INVALID_ARGUMENT` (0x80020005) para ponteiro nulo ou tamanho de
+atributo ≤ 0 ou > 0x10000; apagar um endpoint remove as conexões que o usam; `Init` não exige o SceVoice.
+
 ### sceVoiceQoSInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
 - **Protótipo (inferido, PS4):** `int sceVoiceQoSInit(void *pMemBlock, SceUInt32 memSize, SceInt32 appType);`
 - **Comportamento:** inicializa a biblioteca usando memória fornecida pelo app. Segunda chamada → erro "já
   inicializado".
@@ -3227,7 +3265,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário; em jogo, conferir que `r0` é ponteiro alinhado e `r1` um tamanho plausível.
 
 ### sceVoiceQoSEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
 - **Protótipo (inferido):** `int sceVoiceQoSEnd(void);`
 - **Comportamento:** destrói conexões e endpoints e finaliza.
 - **Retorno/erros:** 0; não inicializado → a confirmar.
@@ -3235,7 +3273,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateLocalEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
 - **Protótipo (inferido):** `int sceVoiceQoSCreateLocalEndpoint(SceVoiceQoSLocalId *pLocalId);`
 - **Comportamento:** cria endpoint local (no hardware também as portas internas do SceVoice) e devolve o ID.
 - **Retorno/erros:** 0; ponteiro nulo / limite de endpoints → a confirmar (limite também a confirmar).
@@ -3243,7 +3281,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateRemoteEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
 - **Protótipo (inferido):** `int sceVoiceQoSCreateRemoteEndpoint(SceVoiceQoSRemoteId *pRemoteId);`
 - **Comportamento:** cria endpoint que representa um par remoto.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3251,7 +3289,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSConnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
 - **Protótipo (inferido):** `int sceVoiceQoSConnect(SceVoiceQoSConnectionId *pConnectionId, SceVoiceQoSLocalId localId, SceVoiceQoSRemoteId remoteId);`
 - **Comportamento:** cria uma conexão local↔remoto e devolve o ID.
 - **Retorno/erros:** 0; IDs inexistentes / conexão duplicada → a confirmar.
@@ -3259,7 +3297,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSDisconnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
 - **Protótipo (inferido):** `int sceVoiceQoSDisconnect(SceVoiceQoSConnectionId connectionId);`
 - **Comportamento:** encerra a conexão.
 - **Retorno/erros:** 0; ID inválido → a confirmar.
@@ -3267,7 +3305,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSReadPacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
 - **Protótipo (inferido):** `int sceVoiceQoSReadPacket(SceVoiceQoSConnectionId connectionId, void *pData, SceUInt32 *pSize);`
 - **Comportamento:** copia para `pData` o próximo pacote de voz a enviar ao remoto da conexão; `*pSize` entra como
   capacidade e sai como bytes escritos.
@@ -3277,7 +3315,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSWritePacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
 - **Protótipo (inferido):** `int sceVoiceQoSWritePacket(SceVoiceQoSConnectionId connectionId, const void *pData, SceUInt32 *pSize);`
 - **Comportamento:** entrega ao QoS um pacote recebido do remoto (vai para o jitter buffer → porta IN_VOICE).
   `*pSize` sai com os bytes aceitos.
@@ -3294,15 +3332,15 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
-| - [ ] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
-| - [ ] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
-| - [ ] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
-| - [ ] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
-| - [ ] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
-| - [ ] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
+| - [x] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
+| - [x] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
+| - [x] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
+| - [x] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
+| - [x] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
+| - [x] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
+| - [x] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
 
 ---
 
@@ -3341,14 +3379,20 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
   `Log.WarnOnce`, igual a `Audiodec.cs`).
 
 Códigos de erro: todos a confirmar (nenhuma fonte). Provisoriamente: argumento nulo → `SceError.INVALID_ARGUMENT`
-(0x80020003) com `Log.WarnOnce`.
+(0x80020005) com `Log.WarnOnce`.
 
 Validação comum: teste unitário decodificando um vetor de teste G.729 da ITU (frames de 10 bytes → comparar com o PCM
 de referência, tolerância ±1 LSB do FFmpeg); em jogo, quando algum importar, conferir no log que `DecodeGetContextSize`
 devolve um tamanho que o jogo aceita.
 
+**Implementado** (`Hle/Modules/G729.cs`, NIDs explícitos): `*GetContextSize` retorna 0x1000 sem escrever em `r0`
+(o valor de `r0` vai para o log, para decidir a variante com `*pSize`); `Init/Core/Reset` chaveados pelo endereço do
+contexto (contexto desconhecido ou ponteiro nulo → `INVALID_ARGUMENT`); `DecodeCore(ctx, in, out)` usa o g729 do FFmpeg
+(silêncio sem FFmpeg); `EncodeCore(ctx, in, out)` escreve 10 bytes zero (não é um frame de silêncio G.729 verificado);
+o 2º argumento de `EncodeInit` (VAD?) só é guardado. Ainda falta o teste com vetores ITU.
+
 ### sceG729DecodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
 - **Protótipo (inferido):** `SceInt32 sceG729DecodeGetContextSize(void);` (retorna o tamanho em bytes; pode ser
   `int sceG729DecodeGetContextSize(SceUInt32 *pSize)` — a confirmar)
 - **Comportamento:** informa quantos bytes o app deve alocar para um contexto de decodificação.
@@ -3359,7 +3403,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo que importar.
 
 ### sceG729DecodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
 - **Protótipo (inferido):** `int sceG729DecodeInit(void *pContext /*, modo/flags a confirmar */);`
 - **Comportamento:** inicializa o estado do decoder no buffer do app.
 - **Retorno/erros:** 0; ctx nulo → erro a confirmar.
@@ -3368,7 +3412,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729DecodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
 - **Protótipo (inferido):** `int sceG729DecodeCore(void *pContext, const void *pIn /*10 bytes*/, SceInt16 *pOut /*80 amostras*/ /*, int bfi ou tamanho do frame — a confirmar */);`
 - **Comportamento:** decodifica um frame de 10 ms. Com flag de frame perdido (bfi) faz ocultação.
 - **Retorno/erros:** 0 (ou nº de amostras/bytes — a confirmar).
@@ -3377,7 +3421,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** vetores de teste ITU-T G.729.
 
 ### sceG729DecodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
 - **Protótipo (inferido):** `int sceG729DecodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do decoder (filtros/preditor) sem realocar.
 - **Retorno/erros:** 0; ctx desconhecido → erro a confirmar.
@@ -3386,7 +3430,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário: Reset e redecodificar o mesmo frame dá o mesmo PCM da primeira vez.
 
 ### sceG729EncodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
 - **Protótipo (inferido):** `SceInt32 sceG729EncodeGetContextSize(void);` (ou variante com `SceUInt32 *pSize`, a confirmar)
 - **Comportamento:** tamanho do contexto de codificação.
 - **Retorno/erros:** como `DecodeGetContextSize`.
@@ -3394,7 +3438,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo.
 
 ### sceG729EncodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
 - **Protótipo (inferido):** `int sceG729EncodeInit(void *pContext /*, int enableVad (Annex B) — a confirmar */);`
 - **Comportamento:** inicializa o encoder; possivelmente habilita VAD/DTX.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3403,7 +3447,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729EncodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
 - **Protótipo (inferido):** `int sceG729EncodeCore(void *pContext, const SceInt16 *pIn /*80 amostras*/, void *pOut /*10 bytes*/ /*, SceUInt32 *pOutSize — se VAD/DTX, a confirmar */);`
 - **Comportamento:** codifica 10 ms de PCM 8 kHz num frame de 10 bytes (ou SID/vazio com DTX).
 - **Retorno/erros:** 0 (ou bytes gerados — a confirmar).
@@ -3412,7 +3456,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** decodificar a saída com o decoder (FFmpeg) e obter silêncio.
 
 ### sceG729EncodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
 - **Protótipo (inferido):** `int sceG729EncodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do encoder.
 - **Retorno/erros:** 0.
@@ -3493,8 +3537,14 @@ Estruturas (`psp2/audioenc.h`):
 Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo→Delete→TermLibrary verificando
 `maxPcmSize = FrameSamples*2`, `maxEsSize = FrameBytes`, `inputPcmSize`/`outputEsSize` após Encode.
 
+**Implementado** (`Hle/Modules/Audioenc.cs`): CELP com frames de payload zero. Escolhas provisórias: `totalStreams`
+só aceita 1; `CreateEncoderResident` não exige `InitLibrary` nem ocupa stream; `CreateEncoderExternal` exige
+`contextSize ≥ 0x10000`; qualquer variante de `Delete*` apaga qualquer tipo de encoder (`DeleteEncoderExternal`
+escreve o `vaContext` em `*pvaContext` se não nulo); `EncodeNFrames(0)` = 1 frame; `TermLibrary` com encoder da
+biblioteca vivo → `A_HANDLE_IN_USE`; alinhamento de buffers não validado.
+
 ### sceAudioencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
 - **Protótipo:** `int sceAudioencInitLibrary(int codecType, SceAudioencInitParam *pInitParam);` (`psp2/audioenc.h`)
 - **Comportamento:** reserva recursos do encoder do tipo dado para `totalStreams` streams.
 - **Retorno/erros:** 0; `INVALID_TYPE` (0x80860001) se `codecType != 0x2006`; `INVALID_PTR` (0x80860008) se
@@ -3506,7 +3556,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
 - **Protótipo:** `int sceAudioencTermLibrary(unsigned int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** libera a biblioteca do tipo.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_INITIALIZED` (0x80860005); com encoders vivos → `A_HANDLE_IN_USE`
@@ -3515,7 +3565,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
 - **Protótipo:** `int sceAudioencCreateEncoder(SceAudioencCtrl *pCtrl, int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** valida `pCtrl->size == 0x2C`, `wordLength == 16`, `pInfo` (size 0x10, `excitationMode == 0`,
   `samplingRate == 8000`, `bitRate` na tabela); cria o encoder, escreve `handle`, `maxPcmSize` (= amostras do
@@ -3530,7 +3580,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário para cada bitrate conhecido (tabela da Arquitetura).
 
 ### sceAudioencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
 - **Protótipo:** `int sceAudioencEncode(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`)
 - **Comportamento:** codifica um frame: lê `FrameSamples` s16 de `pInputPcm`, escreve `FrameBytes` em `pOutputEs`,
   atualiza `inputPcmSize` e `outputEsSize`.
@@ -3542,7 +3592,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencEncodeNFrames
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
 - **Protótipo (inferido de `sceAudiodecDecodeNFrames`):** `int sceAudioencEncodeNFrames(SceAudioencCtrl *pCtrl, SceUInt32 nFrames);`
 - **Comportamento:** como Encode para `nFrames` frames consecutivos; tamanhos de saída acumulados.
 - **Retorno/erros:** como Encode; `nFrames == 0` → a confirmar (Audiodec.cs trata como 1).
@@ -3558,12 +3608,12 @@ iguais aos de Create/Delete. Implementação em `Audioenc.cs`; validação por t
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
-| - [ ] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
-| - [ ] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
-| - [ ] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
-| - [ ] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
-| - [ ] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
-| - [ ] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
-| - [ ] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
-| - [ ] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |
+| - [x] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
+| - [x] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
+| - [x] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
+| - [x] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
+| - [x] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
+| - [x] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
+| - [x] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
+| - [x] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
+| - [x] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |
