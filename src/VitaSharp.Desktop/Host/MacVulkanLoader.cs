@@ -31,7 +31,7 @@ static class MacVulkanLoader
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
         // framework-dependent "dotnet VitaSharp.Desktop.dll ..."
         if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-            psi.ArgumentList.Add(typeof(Program).Assembly.Location);
+            psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
         if (Program.DataFromCommandLine) psi.ArgumentList.Add("--data=" + Program.DataRoot); // Main consumed it
         foreach (var a in args) psi.ArgumentList.Add(a);
         var current = Environment.GetEnvironmentVariable("DYLD_FALLBACK_LIBRARY_PATH");

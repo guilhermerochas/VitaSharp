@@ -46,6 +46,19 @@
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
+    <!-- platforms VitaSharp is published for (build/publish.sh, build/publish.ps1); plain builds stay portable -->
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- self-contained single-file release (dotnet publish -r <rid> -p:VitaSharpRelease=true): the managed code is
+       bundled into one ReadyToRun executable; native libraries (GLFW, OpenAL Soft, shaderc, Skia) stay next to it,
+       with FFmpeg in ffmpeg/ -->
+  <PropertyGroup Condition="'$(VitaSharpRelease)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
 </Project>

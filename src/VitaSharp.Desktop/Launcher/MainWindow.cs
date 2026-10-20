@@ -254,7 +254,7 @@ public sealed class MainWindow : Window
         };
         // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
         if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-            psi.ArgumentList.Add(typeof(Program).Assembly.Location);
+            psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
         psi.ArgumentList.Add("run");
         psi.ArgumentList.Add(g.Path);
         foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
