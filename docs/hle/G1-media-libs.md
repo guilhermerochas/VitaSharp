@@ -182,13 +182,35 @@ Estruturas comuns:
 | `SceAtracContentInfo` | 0x34 | 0x00 `size`, 0x04 `atracType`, 0x08 `channel`, 0x0C `samplingRate`, 0x10 `endSample` (s32), 0x14 `loopStartSample` (s32), 0x18 `loopEndSample` (s32), 0x1C `bitRate`, 0x20 `fixedEncBlockSize`, 0x24 `fixedEncBlockSample`, 0x28 `frameSample`, 0x2C `loopBlockOffset`, 0x30 `loopBlockSize` |
 | `SceAtracStreamInfo` | 0x10 | 0x00 `size` (=0x10), 0x04 `pWritePosition` (ptr guest), 0x08 `readPosition`, 0x0C `writableSize` |
 
+**Estado da implementação (HLE):** `Hle/Modules/Atrac.cs` + `Hle/Audio/At9Container.cs` (parser) +
+`Hle/Audio/AtracStream.cs` (estado por handle, testável sem guest: o decoder entra por `IAt9SuperframeDecoder`).
+`sceSysmoduleLoadModule(0x0030)` tenta antes `libatrac.suprx` por LLE (`app0:sce_module` ou `vs0:sys/external`,
+tabela `LleSysmodules` em `SystemMisc.cs`); o HLE fica como fallback. Decisões tomadas onde a doc dizia "a confirmar"
+(todas continuam sem verificação em hardware/LLE):
+- Handle = `0x2003 << 16 | slot`, slot 0-based (o menor livre).
+- Os pontos do `smpl` são lidos como incluindo o encoder delay (como AT3 no PSP) e expostos sem ele; `loopEnd` e
+  `endSample` são inclusivos (`endSample = TotalSamples - 1`). `loopBlockOffset` = offset no arquivo do superframe
+  que contém o início do loop; `loopBlockSize` = bytes desse superframe até o fim do superframe do fim do loop.
+- `OutputSamples` padrão = `FrameSamples`; `SetOutputSamples` exige múltiplo de `FrameSamples`, ≤ 8 frames e ≤ 2048.
+- `Decode` para no ponto de loop e no fim (pode devolver menos amostras); depois do fim retorna `ALL_DATA_WAS_DECODED`.
+  Ao pular de forma não sequencial com tudo na memória (seek/loop), o decoder é reiniciado e "aquecido" com o
+  superframe anterior. Erro do decoder → `InternalError = 0x807F0000` e retorno `0x807F0000`.
+- Streaming: o anel recebe os superframes na ordem de reprodução — ao chegar ao fim do bloco de loop com loops
+  restantes, `readPosition` volta para o bloco de início do loop. Por isso o sub-buffer nunca é necessário:
+  `IsSubBufferNeeded` = 0, `GetSubBufferInfo`/`SetSubBuffer` = `NO_NEED_SUB_BUFFER`. `SetLoopNum` depois de o jogo
+  já ter lido além do fim do loop descarta os bytes excedentes do anel e rebobina o leitor. `ResetNextOutputPosition`
+  em streaming esvazia o anel e pede a leitura a partir de um superframe antes do alvo (aquecimento).
+- `SetLoopNum(≠0)` num arquivo sem loop → `INVALID_LOOP_STATUS`. Status: tudo na memória = `0x2|0x4` (+`0x8` com
+  loop); streaming liga `0x4` quando o leitor chegou ao fim dos dados. `MAIN_BUFFER_SIZE_IS_TOO_SMALL` em streaming
+  quando `bufferSize < dataOffset + superframe`.
+
 Validação geral: não há jogo instalado que importe SceAtrac. Montar um homebrew de teste com VitaSDK (`-lSceAtrac_stub`)
 que carrega um `.at9` de `app0:`, toca em modo "tudo na memória" e em streaming com buffer pequeno, e compara a PCM
 (hash) com o mesmo arquivo decodificado pelo `Audiodec` frame a frame. Cruzar os valores de `GetContentInfo` e dos
 getters com o Vita3K rodando `libatrac` por LLE.
 
 ### sceAtracQueryDecoderGroupMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
 - **Protótipo:** `int sceAtracQueryDecoderGroupMemSize(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup);` (`psp2/atrac.h`)
 - **Comportamento:** retorna (em r0, positivo) o tamanho de memória de trabalho que o jogo deve alocar e passar a
   `sceAtracCreateDecoderGroup` para `totalCh` canais.
@@ -202,7 +224,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** homebrew de teste imprime o valor para totalCh 1, 2, 16.
 
 ### sceAtracCreateDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
 - **Protótipo:** `int sceAtracCreateDecoderGroup(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup, void *pvWorkMem, int initAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** cria o grupo de decoders (reserva `totalCh` canais de hardware). Se `initAudiodecFlag != 0`,
   inicializa a biblioteca SceAudiodec para AT9 com `totalCh` (equivalente a `sceAudiodecInitLibrary(0x1003, {size, totalCh})`).
@@ -216,7 +238,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** criar duas vezes deve dar `ALREADY_CREATED`.
 
 ### sceAtracDeleteDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
 - **Protótipo:** `int sceAtracDeleteDecoderGroup(SceUInt32 atracType, int termAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** destrói o grupo; se `termAudiodecFlag`, termina a biblioteca SceAudiodec AT9.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_CREATED` (sem grupo); `REMAIN_VALID_HANDLE` (há handles não liberados);
@@ -226,7 +248,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** deletar com handle vivo → `0x80630018`.
 
 ### sceAtracGetDecoderGroupInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
 - **Protótipo:** `int sceAtracGetDecoderGroupInfo(SceUInt32 atracType, SceAtracDecoderGroup *pCreatedDecoder, SceAtracDecoderGroup *pAvailableDecoder);` (`psp2/atrac.h`)
 - **Comportamento:** preenche `pCreatedDecoder` com o grupo criado (`wordLength`, `totalCh`) e `pAvailableDecoder` com
   o que ainda está livre (`totalCh - canais em uso`).
@@ -237,7 +259,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** após acquire de um stereo, `available.totalCh` cai 2.
 
 ### sceAtracSetDataAndAcquireHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
 - **Protótipo:** `int sceAtracSetDataAndAcquireHandle(SceUChar8 *pucBuffer, SceUInt32 uiReadSize, SceUInt32 uiBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** analisa o cabeçalho RIFF no início de `pucBuffer` (`uiReadSize` bytes válidos do arquivo, buffer
   total `uiBufferSize`), reserva canais no grupo e devolve um handle. Se `uiReadSize >= FileSize` → status
@@ -255,7 +277,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** `.at9` inteiro e cabeçalho truncado (`readSize` pequeno → `0x8063000B`).
 
 ### sceAtracReleaseHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
 - **Protótipo:** `int sceAtracReleaseHandle(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** libera o handle e devolve seus canais ao grupo.
 - **Retorno/erros:** 0; `INVALID_HANDLE` (`handle >> 16 != 0x2003` ou índice desconhecido).
@@ -264,7 +286,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** liberar duas vezes → `0x8063000C`.
 
 ### sceAtracDecode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
 - **Protótipo:** `int sceAtracDecode(int atracHandle, void *pOutputBuffer, SceUInt32 *pOutputSamples, SceUInt32 *pDecoderStatus);` (`psp2/atrac.h`)
 - **Comportamento:** decodifica até `OutputSamples` amostras (por canal) a partir de `NextSample` para
   `pOutputBuffer` (S16 intercalado). Descarta `EncoderDelay` amostras no início do arquivo. Ao alcançar `LoopEnd` com
@@ -284,7 +306,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
   `loopStartSample` exatamente (comparar amostra a amostra).
 
 ### sceAtracGetStreamInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
 - **Protótipo:** `int sceAtracGetStreamInfo(int atracHandle, SceAtracStreamInfo *pStreamInfo);` (`psp2/atrac.h`)
 - **Comportamento:** informa onde o jogo deve escrever mais dados: `pWritePosition` (endereço no anel), `readPosition`
   (offset no arquivo a ler), `writableSize` (bytes contíguos que cabem até o fim do anel ou até o dado ainda não
@@ -296,7 +318,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** streaming com buffer de 0x4000 toca um arquivo de 1 MB sem erro.
 
 ### sceAtracAddStreamData
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
 - **Protótipo:** `int sceAtracAddStreamData(int atracHandle, SceUInt32 addSize);` (`psp2/atrac.h`)
 - **Comportamento:** o jogo informa que escreveu `addSize` bytes em `pWritePosition`; avança `WritePtr`, `ReadPos`,
   `Filled`; atualiza bits `*_IS_ON_MEMORY`.
@@ -306,7 +328,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** adicionar mais que o vago → `0x80630013`.
 
 ### sceAtracIsSubBufferNeeded
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
 - **Protótipo:** `int sceAtracIsSubBufferNeeded(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** retorna 1 se o handle está em streaming com loop e o bloco que contém `LoopStart`
   (`loopBlockOffset/loopBlockSize`) precisa ser mantido num sub-buffer para recomeçar o loop sem reler o arquivo;
@@ -318,7 +340,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** arquivo com loop em streaming; comparar com Vita3K LLE.
 
 ### sceAtracGetSubBufferInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
 - **Protótipo:** `int sceAtracGetSubBufferInfo(int atracHandle, SceUInt32 *pReadPosition, SceUInt32 *pMinSubBufferSize, SceUInt32 *pDataSize);` (`psp2/atrac.h`)
 - **Comportamento:** informa o offset no arquivo (`readPosition`) e o tamanho (`dataSize`) do trecho que o jogo deve
   carregar no sub-buffer, e o tamanho mínimo do sub-buffer (`minSubBufferSize`, alinhado a 0x100).
@@ -329,7 +351,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem acima.
 
 ### sceAtracSetSubBuffer
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
 - **Protótipo:** `int sceAtracSetSubBuffer(int atracHandle, SceUChar8 *pSubBuffer, SceUInt32 subBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** registra o sub-buffer já preenchido pelo jogo; o `Decode` usa esse bloco ao voltar ao loop.
 - **Retorno/erros:** 0; `INVALID_ALIGNMENT` (ponteiro ou tamanho não múltiplos de 0x100 — checado antes de tudo no
@@ -339,7 +361,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem.
 
 ### sceAtracSetLoopNum
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
 - **Protótipo:** `int sceAtracSetLoopNum(int atracHandle, int loopNum);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas vezes o trecho de loop repete (`-1` infinito, `0` sem loop).
 - **Retorno/erros:** 0; `INVALID_LOOP_NUM` (`< -1`), `INVALID_HANDLE`; `INVALID_LOOP_STATUS` se o arquivo não tem
@@ -349,7 +371,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** loopNum=1 deve tocar o loop exatamente duas vezes.
 
 ### sceAtracSetOutputSamples
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
 - **Protótipo:** `int sceAtracSetOutputSamples(int atracHandle, SceUInt32 outputSamples);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas amostras por canal cada `sceAtracDecode` entrega.
 - **Retorno/erros:** 0; `INVALID_HANDLE`; `INVALID_MAX_OUTPUT_SAMPLES` se `0` ou `> 2048` ou (provável) não múltiplo
@@ -359,7 +381,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** valores 256, 1024, 2048, 2049.
 
 ### sceAtracResetNextOutputPosition
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
 - **Protótipo:** `int sceAtracResetNextOutputPosition(int atracHandle, SceUInt32 resetSample);` (`psp2/atrac.h`)
 - **Comportamento:** seek: a próxima saída começa em `resetSample`. Reposiciona o decoder no superframe que contém
   `resetSample` (+ delay), descarta as amostras iniciais do superframe e, em streaming, esvazia o anel e ajusta
@@ -371,7 +393,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** seek para metade e comparar PCM com decodificação contínua (tolerância no primeiro superframe).
 
 ### sceAtracGetContentInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
 - **Protótipo:** `int sceAtracGetContentInfo(int atracHandle, SceAtracContentInfo *pContentInfo);` (`psp2/atrac.h`)
 - **Comportamento:** preenche informações do arquivo: `atracType = 0x2003`, `channel`, `samplingRate`,
   `endSample` (última amostra, `TotalSamples - 1`, a confirmar), `loopStartSample`/`loopEndSample` (-1 sem loop),
@@ -392,14 +414,14 @@ teste ao longo da reprodução e comparar com Vita3K LLE.
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
-| - [ ] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
-| - [ ] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
-| - [ ] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
-| - [ ] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
-| - [ ] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
-| - [ ] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
-| - [ ] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
+| - [x] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
+| - [x] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
+| - [x] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
+| - [x] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
+| - [x] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
+| - [x] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
+| - [x] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
+| - [x] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
 
 ## SceSas (33 funções)
 

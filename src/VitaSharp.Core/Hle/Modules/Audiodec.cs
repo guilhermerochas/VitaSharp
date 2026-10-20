@@ -56,6 +56,10 @@ public sealed unsafe class Audiodec : HleModule
         lock (_libraries) return _libraries.Remove(codecType) ? 0 : ERR_NOT_INITIALIZED;
     }
 
+    /// <summary>sceAudiodecInitLibrary/TermLibrary on behalf of libatrac (sceAtracCreate/DeleteDecoderGroup flags).</summary>
+    internal int InitLibraryInternal(uint codecType) { lock (_libraries) _libraries.Add(codecType); return 0; }
+    internal int TermLibraryInternal(uint codecType) { lock (_libraries) return _libraries.Remove(codecType) ? 0 : ERR_NOT_INITIALIZED; }
+
     [Hle] int sceAudiodecCreateDecoder(uint ctrl, uint codecType) => Create(ctrl, codecType, true);
     // external decoders live in memory the application provides: no sceAudiodecInitLibrary needed
     [Hle] int sceAudiodecCreateDecoderExternal(uint ctrl, uint codecType, uint context, uint size) => Create(ctrl, codecType, false);

@@ -51,6 +51,8 @@ public sealed class SystemMisc : HleModule
     {
         [0x0006] = "libfiber",     // FIBER (app0 only: Fiber.cs is the fallback)
         [0x0007] = "libult",       // ULT
+        [0x000D] = "libsas",       // SAS (Sas.cs is the fallback)
+        [0x0030] = "libatrac",     // ATRAC (Atrac.cs is the fallback; uses sceAudiodecPartlyDecode)
         [0x0017] = "libSceXml",    // XML
         [0x001F] = "libSceSqlite", // SQLITE
         [0x0038] = "libface",      // FACE
