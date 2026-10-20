@@ -276,12 +276,15 @@ public static class Formats
         _ => PolygonMode.Fill,
     };
 
+    /// <summary>samplerMirrorClampToEdge (Vulkan 1.2 feature) is optional; set by VkCore at device creation.</summary>
+    public static bool MirrorClampToEdgeSupported = true;
+
     public static SamplerAddressMode Address(uint m) => m switch
     {
         0 => SamplerAddressMode.Repeat,
         1 => SamplerAddressMode.MirroredRepeat,
         2 => SamplerAddressMode.ClampToEdge,
-        3 => SamplerAddressMode.MirrorClampToEdge,
+        3 => MirrorClampToEdgeSupported ? SamplerAddressMode.MirrorClampToEdge : SamplerAddressMode.MirroredRepeat,
         4 => SamplerAddressMode.Repeat,
         _ => SamplerAddressMode.ClampToBorder,
     };

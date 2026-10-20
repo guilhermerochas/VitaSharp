@@ -51,7 +51,10 @@ public sealed unsafe partial class VulkanRenderer
             ImageUsage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.ColorAttachmentBit,
             ImageSharingMode = SharingMode.Exclusive,
             PreTransform = caps.CurrentTransform,
-            CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
+            // opaque everywhere on desktop; Android surfaces typically only offer INHERIT
+            CompositeAlpha = (caps.SupportedCompositeAlpha & CompositeAlphaFlagsKHR.OpaqueBitKhr) != 0 ? CompositeAlphaFlagsKHR.OpaqueBitKhr
+                : (caps.SupportedCompositeAlpha & CompositeAlphaFlagsKHR.InheritBitKhr) != 0 ? CompositeAlphaFlagsKHR.InheritBitKhr
+                : (CompositeAlphaFlagsKHR)((uint)caps.SupportedCompositeAlpha & (uint)-(int)caps.SupportedCompositeAlpha),
             PresentMode = mode,
             Clipped = true,
             OldSwapchain = old,
