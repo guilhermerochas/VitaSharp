@@ -263,7 +263,7 @@ public static class VpkInstaller
     /// </summary>
     static void PrepareLicense(VpkContentInfo info, string dir, string ux0Root, VpkInstallOptions options)
     {
-        string workBin = Path.Combine(dir, "sce_sys", "package", "work.bin");
+        string workBin = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/package/work.bin");
         string? license = FindLicense(info, dir, ux0Root, options.LicensePath);
 
         var eboot = Path.Combine(dir, "eboot.bin");
@@ -306,9 +306,9 @@ public static class VpkInstaller
             if (!File.Exists(userLicense)) throw new FileNotFoundException("License file not found", userLicense);
             return userLicense;
         }
-        var candidates = new List<string> { Path.Combine(dir, "sce_sys", "package", "work.bin") };
+        var candidates = new List<string> { Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/package/work.bin") };
         if (info.Kind != VpkContentKind.App)
-            candidates.Add(Path.Combine(ux0Root, "app", info.TitleId, "sce_sys", "package", "work.bin"));
+            candidates.Add(Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "app", info.TitleId), "sce_sys/package/work.bin"));
         var licDir = Path.Combine(ux0Root, "license", info.TitleId);
         if (Directory.Exists(licDir)) candidates.AddRange(Directory.GetFiles(licDir, "*.rif"));
         return candidates.FirstOrDefault(p => File.Exists(p) && new FileInfo(p).Length >= 0x60);

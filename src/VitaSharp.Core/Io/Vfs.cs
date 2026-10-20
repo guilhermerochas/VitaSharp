@@ -71,27 +71,70 @@ public sealed class Vfs
         {
             foreach (var overlay in _app0Overlays)
             {
-                var o = FindCaseInsensitive(overlay, rel);
-                if (o != null && (File.Exists(o) || Directory.Exists(o))) return o;
+                var o = ResolveCaseInsensitive(overlay, rel);
+                if (File.Exists(o) || Directory.Exists(o)) return o;
             }
         }
         if (!_mounts.TryGetValue(dev, out var root)) return null;
-        return FindCaseInsensitive(root, rel) ?? Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+        return ResolveCaseInsensitive(root, rel);
     }
 
-    /// <summary>Resolves path components case-insensitively on case-sensitive hosts.</summary>
-    static string? FindCaseInsensitive(string root, string rel)
+    /// <summary>
+    /// Resolves <paramref name="rel"/> ("dir/sub/file", '/'-separated) under <paramref name="root"/> the way the
+    /// Vita's case-insensitive file systems would: on case-sensitive hosts (Linux, Android, case-sensitive APFS) every
+    /// existing path component is matched ignoring case, an exact-case entry winning over the others. Components that
+    /// do not exist yet (files about to be created) keep the guest's spelling, appended to the matched prefix.
+    /// On Windows the host file system already ignores case and the path is returned as is.
+    /// </summary>
+    public static string ResolveCaseInsensitive(string root, string rel)
     {
+        rel = rel.Replace('\\', '/');
         string direct = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
-        if (OperatingSystem.IsWindows() || File.Exists(direct) || Directory.Exists(direct)) return direct;
+        if (!CaseSensitiveHost || rel.Length == 0 || File.Exists(direct) || Directory.Exists(direct)) return direct;
+        var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         string cur = root;
-        foreach (var part in rel.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        int i = 0;
+        for (; i < parts.Length; i++)
         {
-            if (!Directory.Exists(cur)) return direct;
-            var match = Directory.EnumerateFileSystemEntries(cur)
-                .FirstOrDefault(e => string.Equals(Path.GetFileName(e), part, StringComparison.OrdinalIgnoreCase));
-            cur = match ?? Path.Combine(cur, part);
+            var match = FindEntry(cur, parts[i]);
+            if (match == null) break;
+            cur = match;
         }
+        for (; i < parts.Length; i++) cur = Path.Combine(cur, parts[i]);
         return cur;
+    }
+
+    static readonly bool CaseSensitiveHost = !OperatingSystem.IsWindows();
+
+    /// <summary>Directory listings by folded name, keyed by directory path; revalidated against the directory's
+    /// modification time so files created, renamed or deleted by the guest (or the user) are seen.</summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Stamp, Dictionary<string, string> Entries)> Listings = new();
+
+    static string? FindEntry(string dir, string name)
+    {
+        string exact = Path.Combine(dir, name);
+        if (File.Exists(exact) || Directory.Exists(exact)) return exact;
+        DateTime stamp;
+        try
+        {
+            if (!Directory.Exists(dir)) return null;
+            stamp = Directory.GetLastWriteTimeUtc(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+
+        if (!Listings.TryGetValue(dir, out var listing) || listing.Stamp != stamp)
+        {
+            var entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var e in Directory.EnumerateFileSystemEntries(dir))
+                    entries.TryAdd(Path.GetFileName(e), e); // several spellings of one name: keep the first
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+            listing = (stamp, entries);
+            if (Listings.Count > 4096) Listings.Clear();
+            Listings[dir] = listing;
+        }
+        return listing.Entries.TryGetValue(name, out var hit) ? hit : null;
     }
 }
