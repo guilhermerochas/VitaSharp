@@ -1843,30 +1843,31 @@ sombra) e podem virar a base de um teste unitário de `PgfFont`.
   4:2:2 16×8, 4:4:4/gray 8×8, 4:4:0 8×16, 4:1:1 32×8, 4:4:1 8×32), divididas pelo downscale e realinhadas
   (largura ao bloco, altura a 8 no modo standard, 1 no extended). `pitch[0]` = luma; `pitch[1]=pitch[2]` = croma
   (luma / divisor de croma); no modo standard 4:2:0/4:2:2 a largura do croma é alinhada a 16; `pitch[3]` = 0.
+  Fórmula exata (conferida no fonte do Vita3K): `x = align(align(w, mcuW) / ratio, mcuW)`,
+  `y = align(align(h, mcuH) / ratio, standard ? 8 : 1)`. Ex.: 4:2:0 100×60 → Y 112×64, Cb/Cr 64×32 (56 → 16);
+  4:4:4 100×60 extended → 104×64. `Csc`/`MJpegCsc` usam o tamanho recebido sem alinhamento a MCU (ratio "0").
+  Downscale com vários bits (`0x70` "ANY"): o VitaSharp usa o menor (1/2), para que buffers dimensionados por
+  `GetOutputInfo` sempre caibam (Vita3K calcula `0x70/8 = 14`, sem sentido).
   Layout do buffer YCbCr: plano Y (`pitch[0].x*pitch[0].y`) seguido de Cb e Cr, contíguos.
 - **Limites:** Vita3K rejeita pitch de saída < 64 ou > 2032×1088 com `UNSUPPORT_IMAGE_SIZE` (o teste é sobre o
   pitch já reduzido pelo downscale). Valores exatos do hardware: a confirmar (testar JPEGs de 63/64 e 2032/2048 px
   num Vita real com um homebrew).
-- **Decoder a usar:** FFmpeg (já embarcado: `third_party/ffmpeg`, `FFmpeg.AutoGen`), `AV_CODEC_ID_MJPEG`. Ele
-  aceita MJPEG sem DHT (insere as tabelas padrão), devolve `AV_PIX_FMT_YUVJ4xxP` com planos separados (cópia direta
-  para o layout de pitch acima) e suporta `AVCodecContext.lowres = 1..3`, que corresponde ao downscale 1/2, 1/4,
-  1/8 (o filtro do Vita pode diferir — Vita3K faz média de blocos; diferença visual aceitável, a confirmar).
-  Alternativa .NET pura (sem FFmpeg): um decodificador baseline próprio (Huffman + IDCT inteira 8×8, ~600 linhas)
-  ou biblioteca MIT que exponha os planos YCbCr; SixLabors.ImageSharp só entrega RGBA e tem licença Split
-  (verificar antes de adotar). Recomendo FFmpeg, igual a `Audiodec`/`Videodec`, com fallback de log
-  `WarnOnce` + `SCE_JPEG_ERROR_CANNOT_INIT` quando `FFmpegLoader.Available == false`.
-- **Arquivos novos:**
-  - `src/VitaSharp.Core/Media/MjpegCodec.cs` — wrapper FFmpeg: `Probe(span) → (w, h, colorSpace)`,
-    `Decode(span, lowres) → planos Y/Cb/Cr + strides`, `Encode(planos, w, h, subsampling, quality) → byte[]`
-    (usado por JpegEnc). Padrão: `H264Decoder.cs` (packet com padding, `avcodec_send_packet`/`receive_frame`).
-  - `src/VitaSharp.Core/Media/YuvConvert.cs` — conversões YCbCr↔RGBA em C# (JFIF full-range e BT.601
-    limited-range, BGRA opcional, upsampling de croma por replicação). Extrair para cá o `ToRgb` privado de
-    `Hle/Modules/Videodec.cs` (linha ~208) e reaproveitá-lo nos dois módulos.
-  - `src/VitaSharp.Core/Hle/Modules/Jpeg.cs` — `sealed class Jpeg : HleModule` com SceJpegUser **e** SceJpegArm
-    (mesma semântica; métodos `[Hle]` separados chamando helpers comuns).
-- **Dependências:** `GuestMemory.Span/R32/W32`, `FFmpegLoader`, `Log.WarnOnce`. Nenhuma dependência de kernel.
-  Decodificação é síncrona (custo de CPU alto): classificar em `HleFunction.ClassifyCost` como faixa "pesada"
-  (mesma de `sceAvcdecDecode`).
+- **Decoder (implementado):** decodificador JPEG próprio, 100% gerenciado (sem FFmpeg, o Core continua
+  multiplataforma): `src/VitaSharp.Core/Media/JpegDecoder.cs` — baseline e sequencial estendido 8 bits, progressivo
+  (seleção espectral + aproximações sucessivas de DC e AC, EOB runs), Huffman, restart markers, grayscale e
+  YCbCr 4:4:4/4:4:0/4:4:1/4:2:2/4:2:0/4:1:1; sem DHT (MJPEG) usa as tabelas típicas do Annex K. Saída planar na
+  resolução nativa de cada componente (MCUs inteiros). Validado contra o GDI+ do Windows em ~40 JPEGs reais
+  (baseline e progressivos, até 6400×4000): PSNR 50–68 dB em 4:4:4. Downscale: média de caixas ratio×ratio sobre o
+  layout de pitch completo (como Vita3K; o filtro do hardware real pode diferir). Padding além dos MCUs
+  decodificados repete a última coluna/linha.
+- **Arquivos:** `Media/JpegCommon.cs` (tabelas Annex K, zig-zag, IDCT/FDCT 8×8, `JpegError`),
+  `Media/JpegDecoder.cs`, `Media/YuvConvert.cs` (YCbCr↔RGBA: JFIF full-range e BT.601 limited-range, BGRA,
+  croma por replicação/média), `Hle/Modules/Jpeg.cs` (`sealed class Jpeg : HleModule`, SceJpegUser + SceJpegArm).
+  `Videodec.cs` não foi tocado (pode migrar para `YuvConvert` depois).
+- **Dependências:** `GuestMemory.Span/R32/W32`, `Log.WarnOnce`. Nenhuma dependência de kernel. Custo HLE: a
+  faixa padrão (não há classe "pesada" em `ClassifyCost`); ~20 ms de CPU host para 960×544.
+- **Buffers curtos:** se `osize`/`tempBufferSize` for menor que o layout, a escrita é truncada no tamanho dado
+  (`WarnOnce`), sem erro — o código de erro real é desconhecido e o Vita3K não verifica.
 
 **Códigos de erro (SceJpeg, Vita3K `codec/include/codec/types.h`):**
 
@@ -1914,9 +1915,16 @@ sombra) e podem virar a base de um teste unitário de `PgfFont`.
 | SCE_JPEG_ERROR_INPUT_DATA_TOO_BIG | 0x80650065 |
 | SCE_JPEG_ERROR_INVALID_DATA_SIZE | 0x80650066 |
 
-Mapeamento sugerido de falhas do FFmpeg: sem `FFD8` no início → `NO_SOI`; `AVERROR_INVALIDDATA` genérico →
-`DECODE_ERROR`; SOF progressivo/aritmético/lossless detectado no probe → `NO_*_SUPPORT` (o hardware é baseline;
-confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRESSIVE_PARAM` sugere que sim).
+Mapeamento implementado (`Jpeg.MapError`): o parser devolve um `JpegError` por falha — sem `FFD8` → `NO_SOI`,
+stream < 2 bytes ou dimensão 0 → `IMAGE_EMPTY`, comprimento de segmento inválido → `BAD_MARKER_LENGTH`, índices
+DQT/DHT → `BAD_DQT_INDEX`/`BAD_DHT_INDEX`, contagens DHT → `BAD_DHT_COUNTS`, DQT/DHT/DRI/SOF/SOS malformados →
+`BAD_*_MARKER`, SOF repetido → `SOF_DUPLICATE`, precisão ≠ 8 → `BAD_PRECISION`, Nf ∉ {1,3} → `COMPONENT_COUNT`,
+fator > 4 ou > 10 blocos/MCU → `BAD_MCU_SIZE`, amostragem não suportada → `UNSUPPORT_SAMPLING`, SOF3/5/6/7/11/15 →
+`NO_LOSSLESS_SUPPORT`, SOF9/10/13/14/DAC → `NO_ARITH_SUPPORT`, parâmetros progressivos ilegais →
+`BAD_PROGRESSIVE_PARAM`, RSTn ausente → `BAD_RESTART_MARKER`, SOI no meio → `UNEXPECTED_MARKER`, marcador reservado
+→ `UNKNOWN_MARKER`, tabela Huffman 2/3 ausente → `NO_HUFF_TABLE` (0/1 ausentes = tabelas padrão), DQT ausente →
+`NO_QUANT_TABLE`, resto → `DECODE_ERROR`. Progressivo é **aceito** (Vita3K também aceita via FFmpeg; se o hardware
+recusa, a confirmar). Stream sem EOI mas com ao menos um scan é aceito.
 
 **Estrutura `SceJpegOutputInfo` (0x34 bytes, `psp2/jpeg.h`; nomes dos campos desconhecidos vindos do Vita3K):**
 
@@ -1931,31 +1939,31 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 | 0x14 | SceJpegPitch[4] | {x, y} u32 cada |
 
 ### sceJpegInitMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xB030773B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xB030773B
 - **Protótipo:** `int sceJpegInitMJpeg(SceInt32 decoderCount);` (`psp2/jpeg.h`; `decoderCount` = máximo de
   split decoders simultâneos)
 - **Comportamento:** inicializa a biblioteca MJPEG e reserva recursos para até `decoderCount` split decoders.
   Obrigatória antes de qualquer `Decode*`/`GetOutputInfo`/`CreateSplitDecoder`.
 - **Retorno/erros:** 0; `SCE_JPEG_ERROR_INIT_DONE` (0x80650063) se já inicializada (a confirmar: Vita3K não
   verifica); `CANNOT_INIT` (0x80650042) se FFmpeg indisponível; `decoderCount < 0` → erro a confirmar.
-- **Implementação no VitaSharp:** `Jpeg.cs`: `_initialized = true; _maxSplit = decoderCount`. Não criar o
-  `AVCodecContext` aqui — criar por chamada de decode (contexto descartável, imagens independentes) ou um por
-  thread; guardar sob `lock`.
+- **Implementação no VitaSharp (feito):** `Jpeg.cs`: `_initialized = true; MaxSplitDecoders = max(0, decoderCount)`
+  sob `lock`. Um segundo Init retorna 0 (como Vita3K; `INIT_DONE` não é emitido até confirmar). Os `Decode*` não
+  exigem Init (decodificação sem estado).
 - **Validação:** homebrew de teste que chama Init duas vezes e verifica o segundo retorno; jogo que importe
   SceJpegUser deve passar da inicialização sem `Unimplemented HLE function`.
 
 ### sceJpegInitMJpegWithParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x518163A7
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x518163A7
 - **Protótipo:** `int sceJpegInitMJpegWithParam(const SceJpegMJpegInitParam *params);` (`psp2/jpeg.h`)
 - **Comportamento:** igual a `InitMJpeg(params->decoderCount)`; `options` reservado (0).
 - **Retorno/erros:** como `InitMJpeg`; `params == NULL` → `INVALID_POINTER` (0x80650010); `size != 0xC` → erro a
   confirmar (provável `INVALID_POINTER` ou `INVALID_DATA_SIZE` 0x80650066).
 - **Estruturas:** `SceJpegMJpegInitParam` 0xC: +0 size, +4 decoderCount, +8 options.
-- **Implementação no VitaSharp:** ler +4 e delegar ao helper de `InitMJpeg`.
+- **Implementação no VitaSharp (feito):** ler +4 e delegar a `InitMJpeg`; `size` não é verificado (como Vita3K).
 - **Validação:** idem `sceJpegInitMJpeg`.
 
 ### sceJpegFinishMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x62842598
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x62842598
 - **Protótipo:** `int sceJpegFinishMJpeg(void);` (`psp2/jpeg.h`)
 - **Comportamento:** finaliza a biblioteca e libera os split decoders restantes.
 - **Retorno/erros:** 0; `CANNOT_FINISH` (0x80650043) ou `INVALID_STATE` (0x80650039) se não inicializada — qual
@@ -1964,7 +1972,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** Init → Finish → Init deve retornar 0 nas três.
 
 ### sceJpegGetOutputInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x353BA9B0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x353BA9B0
 - **Protótipo:** `int sceJpegGetOutputInfo(const SceUInt8 *jpegData, SceSize jpegSize, SceInt32 format,
   SceInt32 mode, SceJpegOutputInfo *output);` (`psp2/jpeg.h`)
 - **Comportamento:** analisa os cabeçalhos (SOI/SOF/DHT) sem decodificar e informa espaço de cor, dimensões,
@@ -1978,14 +1986,16 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   `yuvTotal = Σ pitch[i].x*pitch[i].y`. Se `format == -1`: `outputSize = align(yuvTotal, 256)`. Senão:
   `pitch[0].x *= 4`, `pitch[1..3] = 0`, `tempBufferSize = align(yuvTotal, 256)`,
   `outputSize = align(pitch[0].x * pitch[0].y, 256)`.
-- **Implementação no VitaSharp:** parse de marcadores em C# puro (não precisa de FFmpeg): percorrer segmentos até
-  SOF0/SOF1 (baseline/extended), ler `Hi/Vi` de cada componente → amostragem, `width/height`. Detectar SOF2
-  (progressivo), SOF3 (lossless), SOF9+ (aritmético). Helper `JpegHeader.Parse` em `Media/MjpegCodec.cs`.
+- **Implementação no VitaSharp (feito):** `JpegDecoder.ReadInfo` percorre os segmentos até o primeiro SOS
+  (valida DQT/DHT/DRI/SOF). Escreve exatamente 0x34 bytes; nos erros de modo/amostragem a struct fica zerada com
+  `colorSpace` preenchido (como Vita3K). `coefBufferSize`: 0x100 para baseline (valor do Vita3K, que evita
+  `malloc(0)` nos jogos); progressivo = todos os coeficientes do frame em 16 bits (`blocos × 128`, alinhado a 256).
+  Também usado por `sceJpegArmGetOutputInfo`.
 - **Validação:** teste unitário com JPEGs 4:2:0, 4:2:2, 4:4:4 e gray (gerar com FFmpeg/`System.Drawing` fora do
   repo) comparando pitches com a tabela; cenário `tests/scenarios` quando um jogo usar.
 
 ### sceJpegDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6215B095
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6215B095
 - **Protótipo (inferido — ausente do header; ordem do Vita3K):** `int sceJpegDecodeMJpeg(const SceUInt8 *pJpeg,
   SceSize isize, void *pRGBA, SceSize osize, SceInt32 decodeMode, void *pTempBuffer, SceSize tempBufferSize,
   void *pCoefBuffer, SceSize coefBufferSize);` — 9 argumentos (5 a 9 na pilha).
@@ -1994,51 +2004,55 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Retorno/erros:** sucesso = `(pitchWidth << 16) | pitchHeight` (valor positivo, não 0!). Erros: `INVALID_POINTER`,
   `UNSUPPORT_IMAGE_SIZE` (0x80650020), erros de parse; `osize` menor que o necessário → erro a confirmar
   (provável `INVALID_DATA_SIZE` 0x80650066 ou `INPUT_DATA_TOO_BIG` 0x80650065).
-- **Implementação no VitaSharp:** `MjpegCodec.Decode(span, lowres)` → copiar planos para um buffer host com layout
-  de pitch → `YuvConvert.ToRgba(..., fullRange: true)` direto em `GuestMemory.Span(pRGBA, osize)`. Não é
-  obrigatório escrever em `pTempBuffer` (o jogo não lê), mas escrever o YCbCr lá é mais fiel e barato.
-  Sem pTempBuffer (nulo) → `INVALID_POINTER`? a confirmar.
+- **Implementação no VitaSharp (feito, ordem do Vita3K):** `JpegDecoder.Decode` → layout de pitch (host) →
+  `YuvConvert.ToRgba` JFIF full-range de `pitch[0].x × pitch[0].y` pixels (inclui o padding) em `pRGBA`; o YCbCr
+  também é copiado para `pTempBuffer` quando não nulo (nulo é aceito). Limite 64..2032 × 64..1088 sobre o pitch
+  após downscale → `UNSUPPORT_IMAGE_SIZE`. `osize` curto: escrita truncada, sem erro.
 - **Validação:** confirmar a ordem dos argumentos desmontando o stub do jogo que importar (ver quais registradores
   são carregados antes do `BLX`), ou com homebrew; comparar o RGBA com decodificação de referência (PSNR > 40 dB).
 
 ### sceJpegDecodeMJpegYCbCr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x2A769BD8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x2A769BD8
 - **Protótipo:** `psp2/jpeg.h` declara `int sceJpegDecodeMJpegYCbCr(const SceUInt8 *jpegData, SceSize jpegSize,
   SceInt32 mode, SceUInt8 *output, SceSize outputSize, void *buffer, SceSize bufferSize);`. **Vita3K usa ordem
   diferente:** `(pJpeg, isize, pYCbCr, osize, decodeMode, pCoefBuffer, coefBufferSize)`. A ordem correta está a
   confirmar; a do Vita3K roda jogos comerciais, então é a mais provável — o header vitasdk pode estar errado.
 - **Comportamento:** decodifica para YCbCr planar (Y, Cb, Cr contíguos, layout de pitch da arquitetura), sem CSC.
 - **Retorno/erros:** sucesso = `(pitch[0].x << 16) | pitch[0].y`; erros como `DecodeMJpeg`.
-- **Implementação no VitaSharp:** mesmo helper; cópia plano a plano respeitando pitch (preencher padding com a
-  última coluna/linha, como o hardware faz por MCU — ou zero; a confirmar).
+- **Implementação no VitaSharp (feito, ordem do Vita3K):** mesmo helper; o padding do pitch recebe os dados
+  decodificados dos MCUs (o hardware decodifica MCUs inteiros) e, além deles (croma alinhado a 16), repete a última
+  coluna/linha. Sem limite de tamanho (Vita3K também não aplica aqui).
 - **Validação:** checar ordem de argumentos (heurística: o argumento que vale ≤ 0x7F com bits só em 0–2/4–6 é o
   `decodeMode`); comparar planos com FFmpeg.
 
 ### sceJpegCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6263AEC2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6263AEC2
 - **Protótipo (inferido — ausente do header; Vita3K):** `int sceJpegCsc(SceUInt8 *pRGBA, const SceUInt8 *pYCbCr,
   SceUInt32 xysize, SceInt32 iFrameWidth, SceInt32 colorOption, SceInt32 sampling);`
 - **Comportamento:** conversão YCbCr→RGBA8888 genérica. `xysize = (width << 16) | height`; `iFrameWidth` = largura
   de linha do destino em pixels; `colorOption` = formato (só RGBA8888 = 0) | `0x10` BT.601; `sampling` só
   `0x101` (4:4:4) ou `0x10101 & 0xFFFF`→gray (segundo Vita3K: só YUV400/YUV444).
 - **Retorno/erros:** 0; `INVALID_COLOR_FORMAT` (0x80650050) para formato ≠ RGBA ou amostragem não suportada.
-- **Implementação no VitaSharp:** `YuvConvert` com pitch não-standard (sem alinhamento de croma a 16). Implementar
-  BT.601 (Vita3K ignora a flag).
+- **Implementação no VitaSharp (feito):** `YuvConvert` com pitch não-standard (planos `width × height`, sem
+  alinhamento). `sampling` aceito: `0x101` (4:4:4) e o código completo `0x10101` (gray). Flag BT.601
+  implementada (entrada limited-range; Vita3K a ignora). Ponteiro nulo → `INVALID_POINTER`.
 - **Validação:** teste unitário: Y=Cb=Cr=128 → cinza 128; vermelho puro ida e volta.
 
 ### sceJpegMJpegCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xC2380E3A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xC2380E3A
 - **Protótipo:** `int sceJpegMJpegCsc(SceUInt8 *rgba, const SceUInt8 *yuv, SceSize yuvSize, SceInt32 imageWidth,
   SceInt32 format, SceInt32 sampling);` (`psp2/jpeg.h`; `yuvSize` é na verdade `(width<<16)|height`, como em Csc)
 - **Comportamento:** converte saída de `DecodeMJpegYCbCr` (layout standard, croma alinhado a 16) para RGBA ou BGRA.
   `sampling` 4:2:0 (0x202) ou 4:2:2 (0x201).
 - **Retorno/erros:** 0; `INVALID_COLOR_FORMAT` se formato ∉ {0, 4} (após remover 0x10); `UNSUPPORT_IMAGE_SIZE` se
   w/h fora de 64..2032 × 64..1088.
-- **Implementação no VitaSharp:** `YuvConvert.ToRgba(standardPitch: true, bgra: format == 4, bt601: (format & 0x10) != 0)`.
+- **Implementação no VitaSharp (feito):** pitch standard sem alinhamento a MCU (luma = `width`, croma alinhado a 16)
+  → `YuvConvert.ToRgba(bgra: format == 4, bt601: flag 0x10)`. Amostragens conhecidas (4:4:4 também) são aceitas;
+  código desconhecido → `UNSUPPORT_SAMPLING`.
 - **Validação:** decodificar com `DecodeMJpegYCbCr` + `MJpegCsc` e comparar com `DecodeMJpeg` (devem ser iguais).
 
 ### sceJpegCreateSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x123B4734
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x123B4734
 - **Protótipo (inferido; nem header nem Vita3K):** `int sceJpegCreateSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);`
   — estrutura e assinatura a confirmar.
 - **Comportamento (inferido):** cria um decodificador incremental para JPEG grande/streaming (dados entregues em
@@ -2048,11 +2062,13 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Implementação no VitaSharp:** até confirmar o layout: log `WarnOnce` com os 4 primeiros argumentos e dump de
   0x40 bytes do ponteiro, retornar `EXCEED_MAX_SPLIT_DECODER` (faz o jogo cair no caminho não-split, se tiver).
   Implementação real: acumular os pedaços num `MemoryStream` e decodificar tudo no último pedaço.
+  **Feito apenas o stub seguro acima** (layout continua desconhecido; idem para `SplitDecode`/`Delete` e as
+  variantes Arm).
 - **Validação:** quando um jogo importar: desmontar o uso (campos lidos/escritos no ctrl) e cruzar com o PSP2 SDK
   doc se disponível; não há referência pública hoje.
 
 ### sceJpegSplitDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x4598EC9C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x4598EC9C
 - **Protótipo (inferido):** `int sceJpegSplitDecodeMJpeg(SceJpegSplitDecodeCtrl *pCtrl);` — a confirmar.
 - **Comportamento (inferido):** consome o próximo pedaço de entrada; retorna `INPUT_SUSPENDED` enquanto faltar
   dado, e ao final escreve a saída como `DecodeMJpegYCbCr`.
@@ -2062,7 +2078,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** idem.
 
 ### sceJpegDeleteSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xDE8D5FA1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xDE8D5FA1
 - **Protótipo (inferido):** `int sceJpegDeleteSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);` — a confirmar.
 - **Comportamento:** libera o split decoder.
 - **Retorno/erros:** 0; handle inválido → `INVALID_STATE`? a confirmar.
@@ -2078,7 +2094,8 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   (`SCE_SYSMODULE_INTERNAL_JPEG_ARM`, `psp2/jpegarm.h`), raro em jogos. Vita3K: todas `UNIMPLEMENTED`.
 - **Estado interno:** nenhuma função `Init` própria na lista; não depende de `sceJpegInitMJpeg` (a confirmar). Split
   decoders próprios.
-- **Implementação:** mesmos helpers de `Jpeg.cs` (`MjpegCodec`, `YuvConvert`). Diferenças conhecidas pelo header: não
+- **Implementação (feita):** mesma classe `Jpeg.cs` e helpers (`JpegDecoder`, `YuvConvert`); não exige
+  `sceJpegInitMJpeg`; o limite 2032×1088 não é aplicado. Diferenças conhecidas pelo header: não
   há `pTempBuffer` em `DecodeMJpeg` (só coef buffer) e a ordem é `(pJpeg, isize, decodeMode, out, osize, coef,
   coefSize)`. Erros: header só define `SCE_JPEG_ARM_OK = 0`; supor os mesmos códigos `0x8065xxxx` do SceJpeg (a
   confirmar). Limites de tamanho do decoder ARM podem ser maiores que 2032×1088 (a confirmar; não aplicar o
@@ -2094,7 +2111,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 | sceJpegArmDeleteSplitDecoder | 0xE9CB3DFD | inferido: `int sceJpegArmDeleteSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);` | Como `sceJpegDeleteSplitDecoder`. |
 
 ### sceJpegArmGetOutputInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x23AE3BEA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x23AE3BEA
 - **Protótipo:** ver tabela (`psp2/jpegarm.h`).
 - **Comportamento:** como `sceJpegGetOutputInfo`, com os argumentos 3/4 trocados.
 - **Retorno/erros:** 0 ou códigos SceJpeg (a confirmar).
@@ -2103,7 +2120,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** teste unitário reaproveitando os vetores do SceJpeg.
 
 ### sceJpegArmDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xA4ABFCE3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xA4ABFCE3
 - **Protótipo:** ver tabela.
 - **Comportamento:** YCbCr interno (host) + CSC para RGBA, sem temp buffer do guest.
 - **Retorno/erros:** como `sceJpegDecodeMJpeg` (a confirmar).
@@ -2111,14 +2128,14 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** comparar com saída de `sceJpegDecodeMJpeg`.
 
 ### sceJpegArmDecodeMJpegYCbCr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xE9B1B86F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xE9B1B86F
 - **Protótipo:** ver tabela.
 - **Comportamento/Retorno:** como `sceJpegDecodeMJpegYCbCr`.
 - **Implementação no VitaSharp:** helper comum.
 - **Validação:** idem.
 
 ### sceJpegArmCreateSplitDecoder / sceJpegArmSplitDecodeMJpeg / sceJpegArmDeleteSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x9DA48DB6 / 0x5D83C606 / 0xE9CB3DFD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x9DA48DB6 / 0x5D83C606 / 0xE9CB3DFD
 - **Protótipo:** inferidos (tabela); a confirmar.
 - **Comportamento:** idem às versões SceJpegUser.
 - **Retorno/erros:** idem.
@@ -2142,18 +2159,21 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   R,G,B,A?) a confirmar com uma foto de cor conhecida — o framebuffer do Vita é A8B8G8R8 (bytes R,G,B,A), e o
   Vita3K trata 0 como RGBA, o que bate.
 - **Layout YCbCr de entrada:** planar Y, Cb, Cr contíguos com largura = `inWidth` (alinhamento de pitch a 16? a
-  confirmar; Vita3K usa `av_image_fill_arrays(..., align 1)`).
-- **Encoder:** FFmpeg `AV_CODEC_ID_MJPEG` (encoder nativo, presente no build LGPL embarcado), `pix_fmt`
-  `YUVJ420P/YUVJ422P`, `AV_CODEC_FLAG_QSCALE`, `qmin=1`, `frame->quality = FF_QP2LAMBDA * (ratio*15/255 + 1)`
-  (ratio 0..255 → qscale 1..16; mapeamento do Vita3K, aproximação). O pacote do encoder mjpeg é MJPEG "puro"
-  (sem DHT, a confirmar) — passar pelo bitstream filter `mjpeg2jpeg` para `headerMode == JPEG` (gera JFIF com
-  DHT/APP0). Para `headerMode == MJPEG` emitir o pacote sem DHT/APP0 (o Vita3K não suporta; aqui é trivial — basta
-  pular o bsf).
-  Alternativa .NET pura: encoder baseline JPEG próprio (DCT + quantização + Huffman padrão, ~400 linhas), útil se
-  FFmpeg faltar, já que encoder é bem mais simples que decoder.
-- **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/JpegEnc.cs` (`sealed class JpegEnc : HleModule`) com SceJpegEncUser
-  e SceJpegEncArm; usa `Media/MjpegCodec.Encode` e `Media/YuvConvert.RgbaToYuv`.
-- **Dependências:** `GuestMemory`, `FFmpegLoader`. Custo "pesado" em `ClassifyCost`.
+  confirmar; Vita3K usa `av_image_fill_arrays(..., align 1)`). **Implementado como Vita3K:** Y `inWidth×inHeight`,
+  depois Cb e Cr de `ceil(inWidth/2) × ceil(inHeight/vdiv)` cada (vdiv 2 para 4:2:0, 1 para 4:2:2), sem padding.
+  `Csc` produz exatamente esse layout.
+- **Flag 16 (CSC_ARGB_YCBCR):** aceita no Init, mas `Encode` **sempre** lê YCbCr (como Vita3K, que roda os jogos
+  que usam a lib — Uncharted chama `Csc` e depois `Encode` com o buffer YCbCr). A leitura "Encode converte ARGB
+  internamente" não foi adotada: quebraria o fluxo Csc→Encode. A confirmar no hardware.
+- **Encoder (implementado):** encoder baseline JPEG próprio, 100% gerenciado (`Media/JpegEncoder.cs`): FDCT 8×8,
+  quantização, Huffman com as tabelas típicas do Annex K, MCU de borda por replicação, restart opcional.
+  Qualidade: `scale = 1 + ratio*15/255` (1..16, mesmo mapeamento ratio→qscale do Vita3K) e tabelas = Annex K ×
+  scale/8 (ratio 64 → tabelas "qualidade 75"; ratio 0 → ~94; 255 → ~25). `headerMode == JPEG`: SOI, APP0 JFIF,
+  DQT, SOF0, DHT, SOS, EOI. `headerMode == MJPEG`: sem APP0 e sem DHT (decodificadores MJPEG usam as tabelas
+  padrão; conteúdo exato do hardware a confirmar). Saída validada decodificando no GDI+ do Windows.
+- **Arquivos:** `src/VitaSharp.Core/Hle/Modules/JpegEnc.cs` (`sealed class JpegEnc : HleModule`, SceJpegEncUser +
+  SceJpegEncArm, dicionários de contexto separados), `Media/JpegEncoder.cs`, `Media/YuvConvert.FromRgba`.
+- **Dependências:** `GuestMemory`. Custo HLE na faixa padrão (não existe classe "pesada").
 
 **Códigos de erro (`psp2common/jpegenc.h`):**
 
@@ -2172,102 +2192,112 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 
 ### sceJpegEncoderGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2B55844D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2B55844D
 - **Protótipo:** `int sceJpegEncoderGetContextSize(void);` (`psp2/jpegenc.h`)
 - **Comportamento:** devolve o tamanho de memória que o jogo deve alocar para o contexto.
 - **Retorno/erros:** tamanho em bytes (> 0). Valor real a confirmar (ler o retorno num Vita real com homebrew).
   Vita3K devolve `sizeof` da sua própria struct (~0x20).
-- **Implementação no VitaSharp:** como o estado fica host-side, qualquer valor ≥ 4 funciona; usar uma constante
-  documentada (ex. 0x20, igual ao Vita3K) até confirmar.
+- **Implementação no VitaSharp (feito):** devolve `0x20` (igual ao Vita3K); o estado fica host-side e a memória
+  do contexto guest nunca é escrita. Valor real do hardware continua a confirmar.
 - **Validação:** homebrew; jogo passa do `malloc` do contexto.
 
 ### sceJpegEncoderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x88DA92B4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x88DA92B4
 - **Protótipo:** `int sceJpegEncoderInit(SceJpegEncoderContext context, int inWidth, int inHeight,
   SceJpegEncoderPixelFormat pixelformat, void *outBuffer, SceSize outSize);` (`psp2/jpegenc.h`; 5º e 6º args na pilha)
 - **Comportamento:** registra o contexto com as dimensões, formato e buffer de saída; ratio = 64, header = JPEG.
 - **Retorno/erros:** 0; `INVALID_POINTER` (0x80650205) se `context`/`outBuffer` nulos; `INVALID_PIXELFORMAT`
   (0x80650203) se `pixelformat & 0xF ∉ {0, 4, 8, 9}`/bits desconhecidos; `IMAGE_SIZE` (0x80650200) se dimensões
   inválidas (faixa real a confirmar — provavelmente até 2048 ou 4096 px, múltiplos de 2 para 4:2:x).
-- **Implementação no VitaSharp:** `_ctx[context] = new EncCtx { ... CompressRatio = 64 }`.
+- **Implementação no VitaSharp (feito):** `_ctx[context] = new Ctx { ..., Ratio = 64, HeaderMode = JPEG,
+  região válida = Init }`. Formato aceito: bits só em `0x1F` e `& 0xF ∈ {0, 4, 8, 9}` (0/4 são aceitos no Init, mas
+  `Csc`/`Encode` exigem 8/9). Dimensões aceitas: 1..65535 (limite JPEG; o do hardware é desconhecido, não é
+  aplicado para não quebrar jogos). Sem checagem de alinhamento de 256 bytes.
 - **Validação:** homebrew que codifica 960×544 e grava o .jpg; abrir no PC.
 
 ### sceJpegEncoderInitWithParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2E8FE45D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2E8FE45D
 - **Protótipo:** `int sceJpegEncoderInitWithParam(SceJpegEncoderContext context, const SceJpegEncoderInitParam *initParam);` (`psp2/jpegenc.h`)
 - **Comportamento:** como `Init`, com `option` (`1 = LPDDR2_MEMORY`: buffers em LPDDR2 em vez de CDRAM — sem efeito
   no HLE).
 - **Retorno/erros:** como `Init`; `initParam == NULL` → `INVALID_POINTER`; `size != 0x1C` → erro a confirmar.
 - **Estruturas:** `SceJpegEncoderInitParam` 0x1C: +0 size, +4 inWidth, +8 inHeight, +0xC pixelFormat,
   +0x10 outBuffer, +0x14 outSize, +0x18 option.
-- **Implementação no VitaSharp:** ler a struct e chamar o helper de `Init`.
+- **Implementação no VitaSharp (feito):** ler a struct e chamar o helper de `Init`; `size` não é verificado (como
+  Vita3K); `option` guardado sem efeito.
 - **Validação:** idem.
 
 ### sceJpegEncoderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC87AA849
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC87AA849
 - **Protótipo:** `int sceJpegEncoderEnd(SceJpegEncoderContext context);` (`psp2/jpegenc.h`)
 - **Comportamento:** finaliza o contexto (o jogo libera a memória depois).
 - **Retorno/erros:** 0; contexto desconhecido → `INVALID_POINTER`? a confirmar (retornar 0).
-- **Implementação no VitaSharp:** `_ctx.Remove(context)`.
+- **Implementação no VitaSharp (feito):** `_ctx.Remove(context)`, sempre 0. Chamadas posteriores com o contexto
+  encerrado (ou nunca inicializado) devolvem `INVALID_POINTER`.
 - **Validação:** Init → End → Init no mesmo endereço funciona.
 
 ### sceJpegEncoderEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC60DE94C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC60DE94C
 - **Protótipo:** `int sceJpegEncoderEncode(SceJpegEncoderContext context, const void *inBuffer);` (`psp2/jpegenc.h`)
 - **Comportamento:** codifica a imagem de `inBuffer` (YCbCr planar no formato do contexto; ou ARGB se o formato tem
   a flag 16 — conversão interna) para `outBuffer`. Se `SetValidRegion` foi chamado, codifica só o retângulo
   (0,0)-(validW,validH) da imagem de largura `inWidth`.
 - **Retorno/erros:** **tamanho do JPEG em bytes** (> 0); `INSUFFICIENT_BUFFER` (0x80650201) se não couber em
   `outSize`; `INVALID_PIXELFORMAT` se formato sem amostragem 8/9; `INVALID_POINTER` se `inBuffer` nulo.
-- **Implementação no VitaSharp:** se flag 16: `YuvConvert.RgbaToYuv` para buffer host; senão ler os planos do guest
-  (`w*h` + 2×croma). `MjpegCodec.Encode(planos, validW, validH, sub, ratio, mjpegHeader)` → copiar para
-  `outBuffer`. Sem FFmpeg: `WarnOnce` e retornar `INSUFFICIENT_BUFFER`? Melhor: escrever um JPEG cinza mínimo
-  válido (gerado uma vez em C#) para não quebrar o fluxo do jogo.
+- **Implementação no VitaSharp (feito):** lê os planos YCbCr do guest no layout da arquitetura (a flag 16 **não**
+  faz o Encode ler ARGB — ver Arquitetura), `JpegEncoder.Encode(validW, validH, strides do Init, tabelas do ratio,
+  headerMode)` e copia para `outBuffer`; nada é escrito se não couber (`INSUFFICIENT_BUFFER`). Contexto
+  desconhecido ou `inBuffer` nulo → `INVALID_POINTER`; formato sem 8/9 → `INVALID_PIXELFORMAT`.
 - **Validação:** homebrew/jogo: arquivo resultante abre num visualizador; tamanho cresce quando ratio diminui.
 
 ### sceJpegEncoderSetCompressionRatio
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xB2B828EC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xB2B828EC
 - **Protótipo:** `int sceJpegEncoderSetCompressionRatio(SceJpegEncoderContext context, int ratio);` (`psp2/jpegenc.h`)
 - **Comportamento:** 0..255, maior = mais compressão/menor qualidade.
 - **Retorno/erros:** 0; `INVALID_COMPRATIO` (0x80650202) fora de 0..255.
-- **Implementação no VitaSharp:** guardar no `EncCtx`.
+- **Implementação no VitaSharp (feito):** guardar no contexto; tabelas = Annex K × (1 + ratio·15/255)/8.
 - **Validação:** teste unitário de faixa.
 
 ### sceJpegEncoderSetOutputAddr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x25D52D97
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x25D52D97
 - **Protótipo:** `int sceJpegEncoderSetOutputAddr(SceJpegEncoderContext context, void *outBuffer, SceSize outSize);` (`psp2/jpegenc.h`)
 - **Comportamento:** troca o buffer de saída para os próximos `Encode`.
 - **Retorno/erros:** 0; `INVALID_POINTER` se nulo.
-- **Implementação no VitaSharp:** atualizar `EncCtx`.
+- **Implementação no VitaSharp (feito):** atualizar o contexto.
 - **Validação:** dois encodes em buffers diferentes.
 
 ### sceJpegEncoderCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x824A7D4F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x824A7D4F
 - **Protótipo:** `int sceJpegEncoderCsc(SceJpegEncoderContext context, void *outBuffer, const void *inBuffer,
   int inPitch, SceJpegEncoderPixelFormat inPixelFormat);` (`psp2/jpegenc.h`)
 - **Comportamento:** converte ARGB8888 (pitch `inPitch` em pixels) com as dimensões do contexto para YCbCr planar na
   amostragem do contexto (`pixelFormat & 0xF` = 8 ou 9), em `outBuffer`, pronto para `Encode`.
 - **Retorno/erros:** 0; `INVALID_PIXELFORMAT` se contexto não é YCbCr420/422 ou `inPixelFormat ∉ {0, 4}`.
-- **Implementação no VitaSharp:** `YuvConvert.RgbaToYuv(src, inPitch, w, h, bgra: inPixelFormat == 4, sub)`, JFIF
-  full-range (BT.601 coeficientes, sem offset de 16 — a confirmar comparando com hardware).
-- **Validação:** teste unitário com cores primárias; Csc + Encode deve igualar Encode com flag 16.
+- **Implementação no VitaSharp (feito):** `YuvConvert.FromRgba(src, inPitch, w, h, bgra: inPixelFormat == 4, 2,
+  vdiv)` sobre o tamanho do Init, JFIF full-range (coeficientes BT.601 sem offset de 16; Vita3K usa swscale em
+  limited-range e depois codifica como full-range, o que desbota as cores — a confirmar no hardware). Croma =
+  média dos pixels cobertos. 0 = bytes R,G,B,A (framebuffer do Vita), 4 = B,G,R,A. `inPitch < inWidth` → usa
+  `inWidth`. Nulos → `INVALID_POINTER`.
+- **Validação:** teste unitário com cores primárias; Csc + Encode + decode volta ao RGBA original (PSNR > 30 dB).
 
 ### sceJpegEncoderSetValidRegion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x9511F3BC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x9511F3BC
 - **Protótipo:** `int sceJpegEncoderSetValidRegion(SceJpegEncoderContext context, int inWidth, int inHeight);` (`psp2/jpegenc.h`)
 - **Comportamento:** define a região a codificar a partir de (0,0) (descrição do `jpegencarm.h`); o buffer de
   entrada continua com largura do Init. Vita3K: não implementado.
 - **Retorno/erros:** 0; `IMAGE_SIZE` se maior que as dimensões do Init.
-- **Implementação no VitaSharp:** guardar `validW/H` (padrão = Init); `Encode` recorta os planos.
+- **Implementação no VitaSharp (feito):** guardar `validW/H` (padrão = Init; 1..Init, senão `IMAGE_SIZE`);
+  `Encode` codifica o canto superior esquerdo mantendo os strides do Init.
 - **Validação:** codificar 960×544 com região 480×272 e conferir dimensões do JPEG.
 
 ### sceJpegEncoderSetHeaderMode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2F58B12C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2F58B12C
 - **Protótipo:** `int sceJpegEncoderSetHeaderMode(SceJpegEncoderContext context, int mode);` (`psp2/jpegenc.h`)
 - **Comportamento:** `0` JPEG completo (JFIF com DQT/DHT), `1` MJPEG (frame sem DHT, para streams MJPEG).
   Conteúdo exato dos marcadores no modo MJPEG a confirmar (gerar no Vita e inspecionar).
 - **Retorno/erros:** 0; `INVALID_HEADER_MODE` (0x80650204) para outros valores.
-- **Implementação no VitaSharp:** guardar; usado em `Encode`.
+- **Implementação no VitaSharp (feito):** guardar; `MJPEG` omite APP0 e DHT (Vita3K não suporta o modo MJPEG).
+  O `sceJpegDecodeMJpeg*` do VitaSharp decodifica esses frames com as tabelas padrão.
 - **Validação:** inspeção hex do resultado.
 
 ## SceJpegEncArm (8 funções)
@@ -2278,8 +2308,9 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   YCbCr 4:2:0 = 8 e 4:2:2 = 9), dimensões `SceUInt16`, ratio `SceUInt8` 1..255 (padrão 64,
   `SCE_JPEGENCARM_DEFAULT_COMP_RATIO`), buffers alinhados a 8 bytes, contexto alinhado a 4. Vita3K: todas
   `UNIMPLEMENTED`.
-- **Implementação:** mesma classe `JpegEnc.cs`, dicionário de contextos separado (ou o mesmo com flag `Arm`),
-  mesmos helpers. Códigos de erro próprios:
+- **Implementação (feita):** mesma classe `JpegEnc.cs`, dicionário de contextos separado do SceJpegEnc, mesmos
+  helpers e layout de entrada. `GetContextSize` = 0x20. Init aceita só 8/9 (sem flag 16). Checagens de alinhamento
+  (8 bytes nos buffers, 4 no contexto) não implementadas até confirmar. Códigos de erro próprios:
 
 | Nome | Valor |
 | --- | --- |
@@ -2302,44 +2333,44 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 | sceJpegArmEncoderSetHeaderMode | 0x6D24A669 | `int sceJpegArmEncoderSetHeaderMode(SceJpegArmEncoderContext context, SceJpegArmEncoderHeaderMode mode);` | 0 JPEG / 1 MJPEG; outro → `INVALID_HEADER_MODE` (0x80650304). |
 
 ### sceJpegArmEncoderGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8D15B36D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8D15B36D
 - **Protótipo:** ver tabela. **Comportamento:** tamanho do contexto. **Retorno/erros:** tamanho (> 0), a confirmar.
 - **Implementação no VitaSharp:** constante (estado host-side). **Validação:** homebrew.
 
 ### sceJpegArmEncoderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8C23875A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8C23875A
 - **Protótipo:** ver tabela (u16 em r1/r2: mascarar `& 0xFFFF`).
 - **Comportamento/Retorno:** ver tabela. **Implementação no VitaSharp:** helper comum com `arm: true` (sem flag 16,
   erros 0x806503xx, checagem de alinhamento 8 só depois de confirmada). **Validação:** homebrew codificando YCbCr.
 
 ### sceJpegArmEncoderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8A42D6EC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8A42D6EC
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0. **Implementação no VitaSharp:** remover do
   dicionário. **Validação:** Init/End/Init.
 
 ### sceJpegArmEncoderEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x648FFAA3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x648FFAA3
 - **Protótipo:** ver tabela. **Comportamento:** como `sceJpegEncoderEncode` sem CSC. **Retorno/erros:** tamanho em
   bytes; `INSUFFICIENT_BUFFER` 0x80650301; `INVALID_POINTER` 0x80650305.
-- **Implementação no VitaSharp:** `MjpegCodec.Encode`. **Validação:** arquivo abre no PC.
+- **Implementação no VitaSharp:** `JpegEncoder.Encode` (feito). **Validação:** arquivo abre no PC.
 
 ### sceJpegArmEncoderSetCompressionRatio
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x32B8E159
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x32B8E159
 - **Protótipo/Comportamento/Retorno:** ver tabela (faixa 1..255, `SCE_JPEGENCARM_MIN/MAX_COMP_RATIO`).
 - **Implementação no VitaSharp:** `ratio & 0xFF`; mesmo mapeamento para qscale. **Validação:** teste de faixa.
 
 ### sceJpegArmEncoderSetOutputAddr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xDA0D0868
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xDA0D0868
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; nulo → 0x80650305. **Implementação no VitaSharp:**
   atualizar contexto. **Validação:** dois buffers.
 
 ### sceJpegArmEncoderSetValidRegion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xD561E2E5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xD561E2E5
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; 0x80650300. **Implementação no VitaSharp:** recorte
   no Encode. **Validação:** dimensões do JPEG.
 
 ### sceJpegArmEncoderSetHeaderMode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x6D24A669
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x6D24A669
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; 0x80650304. **Implementação no VitaSharp:** como
   SceJpegEnc. **Validação:** inspeção hex.
 
