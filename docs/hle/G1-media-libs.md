@@ -2650,6 +2650,10 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   `PRESS_ENTER` após N frames.
   Sem back-end: `sceImeOpen` funciona, entrega só `OPEN` e nunca mais nada (o jogo fica esperando entrada, mas não
   trava).
+  **Implementado:** `ITextInputBackend` (com `SetText`) e `HostServices.TextInput` existem (nenhum front-end o fornece
+  ainda). Sem back-end, se `--ime-text` estiver definido (`CommonDialog.ImeDefaultText`, a mesma fonte do
+  `sceImeDialog`), o `Ime` entrega `OPEN → UPDATE_TEXT(texto) → PRESS_ENTER` nas próximas `sceImeUpdate`. Callbacks
+  vindos do back-end de uma sessão já fechada são descartados (contador de sessão).
 - **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/Ime.cs`, `public sealed class Ime : HleModule`. Todos os seis
   nomes estão em `Hle/Data/nids.txt` (não precisa `Nid =`).
 - **Chamada do handler:** `GuestThread.Current!.CallGuest(handler, arg, eventAddr)` (mesmo padrão de
@@ -2722,7 +2726,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 `SceImeCaret` (0x10): `x, y, height, index`. `SceImePreeditGeometry` (0xC): `x, y, height`.
 
 ### sceImeOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
 - **Protótipo:** `SceInt32 sceImeOpen(const SceImeParam *param);` (`psp2/libime.h`)
 - **Comportamento:** valida o parâmetro, guarda a configuração, copia `initialText` (se houver) para o estado interno e
   para `inputTextBuffer`, posiciona o caret no fim do texto e pede ao sistema para mostrar o teclado. O evento `OPEN`
@@ -2748,7 +2752,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
   PRESS_ENTER`.
 
 ### sceImeUpdate
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
 - **Protótipo:** `SceInt32 sceImeUpdate(void);` (`psp2/libime.h`)
 - **Comportamento:** despacha, na thread chamadora, todos os eventos pendentes para `handler(arg, &event)`, na ordem
   em que ocorreram. Antes de `UPDATE_TEXT`, o texto novo já está em `inputTextBuffer` (terminado em 0) e o evento
@@ -2765,7 +2769,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** mesmo cenário de `sceImeOpen`; conferir que `editLengthChange` bate com o diff do texto.
 
 ### sceImeSetText
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
 - **Protótipo:** `SceInt32 sceImeSetText(const SceWChar16 *text, SceUInt32 length);` (`psp2/libime.h`)
 - **Comportamento:** o jogo substitui o texto do IME (ex.: botão "limpar"). O IME atualiza o estado interno e o
   `inputTextBuffer`, e coloca o caret no fim. Se gera um `UPDATE_TEXT` de volta é a confirmar (provável que não, já que
@@ -2777,7 +2781,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário; homebrew que chama `SetText` e depois lê `inputTextBuffer`.
 
 ### sceImeSetCaret
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
 - **Protótipo:** `SceInt32 sceImeSetCaret(const SceImeCaret *caret);` (`psp2/libime.h`)
 - **Comportamento:** o jogo informa onde desenhou o caret (`x, y, height` em pixels de tela, para o sistema posicionar
   a lista de sugestões) e o índice lógico (`index`) no texto. O IME move o caret interno para `index` (limitado ao
@@ -2791,7 +2795,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário.
 
 ### sceImeSetPreeditGeometry
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
 - **Protótipo:** `SceInt32 sceImeSetPreeditGeometry(const SceImePreeditGeometry *preedit);` (`psp2/libime.h`)
 - **Comportamento:** posição (`x, y, height`) onde o jogo desenha o texto em pré-edição; o sistema usa para a janela de
   conversão (japonês/chinês). Sem efeito visível no HLE porque não há pré-edição.
@@ -2801,7 +2805,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** retorno 0 com IME aberto, `0x80100701` fechado.
 
 ### sceImeClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
 - **Protótipo:** `SceInt32 sceImeClose(void);` (`psp2/libime.h`)
 - **Comportamento:** esconde o teclado e libera a sessão. Eventos ainda na fila são descartados. Depois disso o jogo
   pode reaproveitar `work`/`inputTextBuffer`.
