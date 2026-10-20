@@ -236,7 +236,9 @@ public static class Pvrtc
         for (int y = 0; y < wh; y++)
             for (int x = 0; x < ww; x++)
             {
-                int mod = twoBpp ? ModulationAt(vals, modes, x + ww / 2, y + wh / 2, true) : vals[y + wh / 2, x + ww / 2];
+                // 4bpp: vals is stored [row, column] and read as [x, y] (the reference decoder's getModulationValues),
+                // which matches the transposed colour interpolation and output store of this path
+                int mod = twoBpp ? ModulationAt(vals, modes, x + ww / 2, y + wh / 2, true) : vals[x + ww / 2, y + wh / 2];
                 C a = upA[y * ww + x], b = upB[y * ww + x], res;
                 bool punch = false;
                 if (mod >= 30)
@@ -248,8 +250,11 @@ public static class Pvrtc
                 {
                     if (mod >= 20)
                     {
-                        // non-interpolated: each quadrant keeps the colours of its own word
-                        var w = x < ww / 2 ? (y < wh / 2 ? p : r) : (y < wh / 2 ? q : s);
+                        // non-interpolated: each quadrant keeps the colours of its own word. The 4bpp path runs
+                        // transposed (x walks rows, y walks columns: see the output store below and Interpolate),
+                        // so its top-right quadrant is Q, not R (Vita3K pvrt-dec.cpp pvrtcGetDecompressedPixels).
+                        bool left = twoBpp ? x < ww / 2 : y < wh / 2, top = twoBpp ? y < wh / 2 : x < ww / 2;
+                        var w = top ? (left ? p : q) : (left ? r : s);
                         a = Expand(ColorA(w.Col, ii), twoBpp);
                         b = Expand(ColorB(w.Col, ii), twoBpp);
                         mod -= 20;
