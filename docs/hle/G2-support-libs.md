@@ -1138,8 +1138,11 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 
 ### 4.3 SceNotificationUtil
 
+**Implementado** (4.3–4.6) em `Hle/Modules/SystemUtil.cs`. A notificação só vai para o log (e
+`SystemUtil.LastNotification`); o `HostServices` não tem gancho de toast/área de transferência hoje.
+
 #### sceNotificationUtilSendNotification
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceNotificationUtil · **NID:** 0xDE6F33F4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceNotificationUtil · **NID:** 0xDE6F33F4
 - **Protótipo:** `SceInt32 sceNotificationUtilSendNotification(const SceWChar16 *text);` (`psp2/notificationutil.h`)
 - **Comportamento:** mostra uma notificação do sistema com o texto (buffer de 0x410 bytes) e a guarda no
   histórico do app.
@@ -1151,7 +1154,7 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 - **Validação:** homebrew que envie notificação → linha no log.
 
 #### sceNotificationUtilCleanHistory
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceNotificationUtil · **NID:** 0xB0FFFB7B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceNotificationUtil · **NID:** 0xB0FFFB7B
 - **Protótipo:** `SceInt32 sceNotificationUtilCleanHistory(void);`
 - **Comportamento:** apaga as notificações do app no histórico.
 - **Retorno/erros:** 0.
@@ -1163,9 +1166,11 @@ Erros comuns (todos de `psp2/livearea.h`): `0x80104001` operação pendente / ne
 
 Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNING, 1 ACCEPTED, 2 RUNNING,
 3 REJECTED, 4 CLOSED, 5 BUSY, 6 TIMEOUT). Sem shell, ninguém aceita o diálogo: ao abrir, ele expira na hora.
+Implementado com a opção simples (`Open` → status 6); `Open` sem `Initialize` → `0x80106201`; `Initialize` repetido
+→ 0.
 
 #### sceIncomingDialogInitialize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x18AF99EB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x18AF99EB
 - **Protótipo:** `SceInt32 sceIncomingDialogInitialize(int init_type);` (`psp2/incoming_dialog.h`)
 - **Comportamento:** inicializa a biblioteca; `init_type` deve ser 1.
 - **Retorno/erros:** 0; `init_type != 1` → `0x80106201` (`SCE_INCOMINGDIALOG_ERROR_INVALID_ARG`); já inicializada →
@@ -1175,7 +1180,7 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 - **Validação:** —
 
 #### sceIncomingDialogOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x2BEDC1A0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x2BEDC1A0
 - **Protótipo:** `SceInt32 sceIncomingDialogOpen(SceIncomingDialogParam *dialogParam);`
 - **Comportamento:** mostra diálogo de "chamada recebida" com botões aceitar/recusar por `dialogTimer` segundos.
 - **Retorno/erros:** 0; `dialogParam` NULL ou não inicializado → `0x80106201` (a confirmar o segundo caso); já
@@ -1190,7 +1195,7 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 - **Validação:** `Open` → `GetStatus` = 6.
 
 #### sceIncomingDialogGetStatus
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x839DE14C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x839DE14C
 - **Protótipo:** `SceInt32 sceIncomingDialogGetStatus(void);`
 - **Comportamento:** devolve o status atual (valor do enum, não erro).
 - **Retorno/erros:** `status`.
@@ -1199,7 +1204,7 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 - **Validação:** —
 
 #### sceIncomingDialogSwitchToDialog
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x0123B83A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x0123B83A
 - **Protótipo:** `SceInt32 sceIncomingDialogSwitchToDialog(void);`
 - **Comportamento:** força a volta à LiveArea mostrando o diálogo.
 - **Retorno/erros:** 0 (no-op).
@@ -1208,7 +1213,7 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 - **Validação:** —
 
 #### sceIncomingDialogClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x126BD15E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x126BD15E
 - **Protótipo:** `SceInt32 sceIncomingDialogClose(void);`
 - **Comportamento:** fecha o diálogo aberto.
 - **Retorno/erros:** 0; `status = 4` (CLOSED).
@@ -1217,7 +1222,7 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 - **Validação:** —
 
 #### sceIncomingDialogFinish
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x860B1885
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIncomingDialog · **NID:** 0x860B1885
 - **Protótipo:** `SceInt32 sceIncomingDialogFinish(void);`
 - **Comportamento:** finaliza a biblioteca.
 - **Retorno/erros:** 0; `initialized = false; status = 0`.
@@ -1228,9 +1233,12 @@ Estado: `initialized` (bool) e `status` (`SceIncomingDialogStatus`: 0 NOT_RUNNIN
 ### 4.5 SceClipboard
 
 Sem header no vita-headers. Estado: uma string em memória (opcional: área de transferência do host via `Emu.Host`).
+Implementado em memória (protótipos continuam **inferidos**): `text` NULL (e, no Get, `length` 0) →
+`SceError.INVALID_ARGUMENT` (0x80020005, escolha do VitaSharp); Set guarda até `min(length, 64 KiB)` bytes ou até o
+NUL; Get devolve 0.
 
 #### sceClipboardSetText
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceClipboard · **NID:** 0x43A94D3E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceClipboard · **NID:** 0x43A94D3E
 - **Protótipo:** `int sceClipboardSetText(const char *text, SceSize length);` **(inferido)**
 - **Comportamento:** grava texto UTF-8 na área de transferência do sistema.
 - **Retorno/erros:** 0; `text` NULL → erro (código a confirmar); limite de tamanho a confirmar (desmontar
@@ -1240,7 +1248,7 @@ Sem header no vita-headers. Estado: uma string em memória (opcional: área de t
 - **Validação:** Set seguido de Get devolve o mesmo texto.
 
 #### sceClipboardGetText
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceClipboard · **NID:** 0x5BB10CC2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceClipboard · **NID:** 0x5BB10CC2
 - **Protótipo:** `int sceClipboardGetText(char *text, SceSize length);` **(inferido)**
 - **Comportamento:** copia o texto atual para `text` (até `length - 1` + NUL).
 - **Retorno/erros:** 0 (ou nº de bytes — a confirmar); vazio → string vazia.
@@ -1252,9 +1260,10 @@ Sem header no vita-headers. Estado: uma string em memória (opcional: área de t
 
 Sem header e sem implementação no Vita3K. A biblioteca verifica/baixa patch do jogo pela PSN. Comportamento
 mínimo: "nenhuma atualização disponível". Protótipos **inferidos**; confirmar desmontando um jogo que a importe.
+Implementado com o comportamento mínimo abaixo (Run loga e devolve 0 sem escrever nada).
 
 #### sceGameUpdateInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x2F401247
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x2F401247
 - **Protótipo:** `int sceGameUpdateInit(void *param);` **(inferido)**
 - **Comportamento:** inicializa a biblioteca.
 - **Retorno/erros:** 0.
@@ -1263,7 +1272,7 @@ mínimo: "nenhuma atualização disponível". Protótipos **inferidos**; confirm
 - **Validação:** —
 
 #### sceGameUpdateRun
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x3C616238
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x3C616238
 - **Protótipo:** `int sceGameUpdateRun(void *param);` **(inferido)**
 - **Comportamento:** executa a verificação de update (no hardware, diálogo do sistema).
 - **Retorno/erros:** sem rede → erro de "não conectado" (código a confirmar). Até confirmar, logar e retornar 0
@@ -1273,7 +1282,7 @@ mínimo: "nenhuma atualização disponível". Protótipos **inferidos**; confirm
 - **Validação:** primeiro jogo que importar.
 
 #### sceGameUpdateAbort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x14116007
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x14116007
 - **Protótipo:** `int sceGameUpdateAbort(void);` **(inferido)**
 - **Comportamento:** cancela a verificação em curso.
 - **Retorno/erros:** 0.
@@ -1282,7 +1291,7 @@ mínimo: "nenhuma atualização disponível". Protótipos **inferidos**; confirm
 - **Validação:** —
 
 #### sceGameUpdateTerm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x48D879BA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceGameUpdate · **NID:** 0x48D879BA
 - **Protótipo:** `int sceGameUpdateTerm(void);` **(inferido)**
 - **Comportamento:** finaliza a biblioteca.
 - **Retorno/erros:** 0.
@@ -1298,8 +1307,14 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 `0x80103600` BUSY, `0x80103611` NOT_FOUND_USER, `0x80103614` NOT_FOUND_SYSTEM, `0x80103621` NOT_REGISTERED,
 `0x80103624` EVENT_TYPE_MISMATCH, `0x80103660` INVALID_ARG.
 
+**Implementado** em `Hle/Modules/TriggerUtil.cs`, com persistência em `<FsRoot>/ux0/vitasharp/trigger/<TITLEID>.json`
+(o arquivo é o do título em execução; cada evento guarda o title ID passado, ou o atual se NULL/vazio). Registrar
+de novo um `eventId` existente substitui o evento (não conta para o limite de 6). `repeatDays` é testado só nos
+bits 0–6. A lista de títulos usa entradas de 10 bytes (**inferido**: 9 caracteres + NUL, a escolha que não estoura
+um buffer de 16 por entrada) e devolve a quantidade escrita.
+
 #### sceTriggerUtilRegisterDailyEvent
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xA69102DE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xA69102DE
 - **Protótipo:** `int sceTriggerUtilRegisterDailyEvent(const char *titleid, const SceTriggerUtilEventParamDaily *param, int eventId, int a4, int a5);`
 - **Comportamento:** registra evento diário (`repeatDays` = máscara `SCE_TRIGGER_UTIL_SUNDAY..SATURDAY`).
 - **Retorno/erros:** 0; `param` NULL ou máscara 0 → `0x80103660`; 7º evento → erro (código a confirmar; sugestão
@@ -1310,7 +1325,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** Register → GetDailyEventInfo devolve os mesmos bytes.
 
 #### sceTriggerUtilRegisterOneTimeEvent
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x04218D35
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x04218D35
 - **Protótipo:** `int sceTriggerUtilRegisterOneTimeEvent(const char *titleid, const SceTriggerUtilEventParamOneTime *param, int eventId, int a4, int a5);`
 - **Comportamento:** registra evento único.
 - **Retorno/erros:** 0; `param` NULL → `0x80103660`.
@@ -1320,7 +1335,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** Register → GetOneTimeEventInfo.
 
 #### sceTriggerUtilUnregisterDailyEvent
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x58BF700F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x58BF700F
 - **Protótipo:** `int sceTriggerUtilUnregisterDailyEvent(int eventId, int a2, int a3);`
 - **Comportamento:** remove evento diário.
 - **Retorno/erros:** 0; inexistente → `0x80103621`; é one-time → `0x80103624`.
@@ -1329,7 +1344,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilUnregisterOneTimeEvent
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xAF73E0A8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xAF73E0A8
 - **Protótipo:** `int sceTriggerUtilUnregisterOneTimeEvent(int eventId, int a2, int a3);`
 - **Comportamento:** remove evento único.
 - **Retorno/erros:** 0; `0x80103621`; `0x80103624`.
@@ -1338,7 +1353,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetDailyEventInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xDF3ED08E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xDF3ED08E
 - **Protótipo:** `int sceTriggerUtilGetDailyEventInfo(int eventId, SceTriggerUtilEventParamDaily *param, int a5, int a6);`
 - **Comportamento:** devolve os parâmetros registrados.
 - **Retorno/erros:** 0; `0x80103621`; `0x80103624`; `param` NULL → `0x80103660`.
@@ -1347,7 +1362,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetOneTimeEventInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x912434E0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x912434E0
 - **Protótipo:** `int sceTriggerUtilGetOneTimeEventInfo(int eventId, SceRtcTick *triggerTime, int a4, int a5);`
 - **Comportamento:** devolve o instante do evento único.
 - **Retorno/erros:** 0; `0x80103621`; `0x80103624`; ponteiro NULL → `0x80103660`.
@@ -1356,7 +1371,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetAutoStartStatus
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xDD2CA8BB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xDD2CA8BB
 - **Protótipo:** `int sceTriggerUtilGetAutoStartStatus(int *status, int a2, int a3);`
 - **Comportamento:** informa se o app foi iniciado por um trigger (semântica exata do valor a confirmar).
 - **Retorno/erros:** 0 com `*status = 0` (não foi auto-iniciado); NULL → `0x80103660`.
@@ -1365,7 +1380,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetUserAppInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x0ACE6552
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x0ACE6552
 - **Protótipo:** `int sceTriggerUtilGetUserAppInfo(const char *titleid, SceTriggerUtilUserAppInfo *appInfo, int a4, int a5);`
 - **Comportamento:** nome e ícone de um app de usuário instalado.
 - **Retorno/erros:** 0 se `titleid == Emu.TitleId` (ou existe `ux0:app/<titleid>`); senão `0x80103611`.
@@ -1376,7 +1391,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetSystemAppInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xD659CCB0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xD659CCB0
 - **Protótipo:** `int sceTriggerUtilGetSystemAppInfo(const char *titleid, SceTriggerUtilSystemAppInfo *appInfo, int a4, int a5);`
 - **Comportamento:** idem para apps de sistema (NPXS...).
 - **Retorno/erros:** sempre `0x80103614` (não há apps de sistema).
@@ -1385,7 +1400,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetRegisteredUserTitleIdList
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xE2B2D2D0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0xE2B2D2D0
 - **Protótipo:** `int sceTriggerUtilGetRegisteredUserTitleIdList(char *titleIdBuffer, int numOfIds);`
 - **Comportamento:** lista títulos de usuário com eventos registrados.
 - **Retorno/erros:** nº de IDs escritos (a confirmar se é retorno ou só sucesso); com eventos do jogo atual, escrever
@@ -1395,7 +1410,7 @@ usados e que cada app tem no máximo 6 eventos. Estado: dicionário `eventId →
 - **Validação:** —
 
 #### sceTriggerUtilGetRegisteredSystemTitleIdList
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x2A67EF8C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceTriggerUtil · **NID:** 0x2A67EF8C
 - **Protótipo:** `int sceTriggerUtilGetRegisteredSystemTitleIdList(char *buffer, int numOfIds);`
 - **Comportamento:** idem para apps de sistema.
 - **Retorno/erros:** 0 (lista vazia).
@@ -1411,11 +1426,18 @@ caminho de destino. Subpastas reais do sistema (ex.: `photo0:/<TITLEID>/` ou `ux
 console; até lá usar `<dispositivo>:/<TITLEID>/<nome original>`, acrescentando sufixo numérico se já existir.
 `cancelCb`/`progress` podem ser ignorados (operação síncrona instantânea); chamar `progress(user, 100)` só se for
 simples chamar guest a partir do HLE (`GuestThread.Current!.CallGuest`). Códigos de erro não documentados: usar
-`SceError.INVALID_ARGUMENT` (0x80020003) para NULL e `0x80010002` (ENOENT) para arquivo de origem inexistente até
-confirmar.
+`SceError.INVALID_ARGUMENT` (0x80020005; o valor 0x80020003 citado antes é NOSYS) para NULL e `0x80010002` (ENOENT)
+para arquivo de origem inexistente até confirmar.
+
+**Implementado** em `Hle/Modules/MediaExport.cs`: destino `<dispositivo>:/<TITLEID>/<nome>` resolvido pelo `Vfs`
+(respeita o remapeamento de `photo0:` feito por `sceAppUtilPhotoMount`), sufixo `_1`, `_2`... se o nome existir;
+FromData usa `yyyyMMdd_HHmmss.<ext>`. Formato de foto não suportado (nem JPEG nem PNG) → `INVALID_ARGUMENT`;
+falha de cópia no host → `SceError.ERROR`. A origem passa pelos overlays FIOS antes do `Vfs`. Vídeo/música não
+validam o formato; `progress(user, 100)` é chamado ao final quando há thread guest. IsAvailable* devolvem 0 /
+erro (convenção **inferida**).
 
 #### scePhotoExportFromData
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x70512321
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x70512321
 - **Protótipo:** `int scePhotoExportFromData(const void *data, SceSize size, const PhotoExportParam *param, void *workingMemory, void *cancelCb, void *user, char *outPath, SceSize outPathSize);` (`psp2/photoexport.h`)
 - **Comportamento:** grava a imagem (JPEG/PNG em memória) como nova foto.
 - **Retorno/erros:** 0; `data`/`param` NULL → erro; formato não suportado → erro (a confirmar).
@@ -1426,7 +1448,7 @@ confirmar.
 - **Validação:** arquivo aparece em `<FsRoot>/photo0`.
 
 #### scePhotoExportFromFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x84FD9FC5
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x84FD9FC5
 - **Protótipo:** `int scePhotoExportFromFile(const char *path, const PhotoExportParam *param, void *workingMemory, void *cancelCb, void *user, char *outPath, SceSize outPathSize);`
 - **Comportamento:** idem a partir de um arquivo Vita.
 - **Retorno/erros:** 0; origem inexistente → erro.
@@ -1435,7 +1457,7 @@ confirmar.
 - **Validação:** idem.
 
 #### scePhotoExportIsAvailableFromData
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0xE6E6AFD5
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0xE6E6AFD5
 - **Protótipo:** `int scePhotoExportIsAvailableFromData(const void *data, SceSize size);` **(inferido)**
 - **Comportamento:** verifica se os dados podem ser exportados (formato suportado/espaço).
 - **Retorno/erros:** 0 se JPEG/PNG reconhecido (ou 1 = disponível — a confirmar a convenção de retorno), erro
@@ -1445,7 +1467,7 @@ confirmar.
 - **Validação:** —
 
 #### scePhotoExportIsAvailableFromFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x5655F971
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePhotoExport · **NID:** 0x5655F971
 - **Protótipo:** `int scePhotoExportIsAvailableFromFile(const char *path);` **(inferido)**
 - **Comportamento:** idem para arquivo.
 - **Retorno/erros:** como acima; inexistente → erro.
@@ -1454,7 +1476,7 @@ confirmar.
 - **Validação:** —
 
 #### sceVideoExportFromFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoExport · **NID:** 0x4F60A3C8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoExport · **NID:** 0x4F60A3C8
 - **Protótipo:** `int sceVideoExportFromFile(const VideoExportInputParam *in_param, int unk, void *workingMemory, void *cancelCb, void (*progress)(void*, int), void *user, int unk2, VideoExportOutputParam *out_param);` (`psp2/videoexport.h`)
 - **Comportamento:** copia o vídeo (MP4) para a biblioteca de vídeos.
 - **Retorno/erros:** 0; `in_param`/`out_param` NULL → erro; origem inexistente → erro.
@@ -1464,7 +1486,7 @@ confirmar.
 - **Validação:** arquivo em `<FsRoot>/video0`.
 
 #### sceMusicExportFromFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceMusicExport · **NID:** 0x08000579
+- [x] **Prioridade:** P2 · **Biblioteca:** SceMusicExport · **NID:** 0x08000579
 - **Protótipo:** `int sceMusicExportFromFile(const char *path, const MusicExportParam *param, void *workingMemory, void *cancelCb, void (*progress)(void*, int), void *user, char *outPath, SceSize outPathSize);` (`psp2/musicexport.h`)
 - **Comportamento:** copia a música para a biblioteca de músicas.
 - **Retorno/erros:** 0; origem inexistente → erro.
