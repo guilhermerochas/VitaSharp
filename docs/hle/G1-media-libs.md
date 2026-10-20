@@ -17,7 +17,7 @@ marcados **(inferido)**; valores sem fonte estão marcados **a confirmar**, com 
 | SceSas | 33 | nenhum (inferido do PSP) | `Hle/Modules/Sas.cs` + `Hle/Audio/SasEngine.cs` |
 | ScePvf | 43 | `psp2/pvf.h` (10 inferidas) | `Hle/Modules/Pvf.cs` |
 | ScePgf | 23 | `psp2/pgf.h` | `Hle/Modules/Pgf.cs` |
-| SceJpegUser | 11 | `psp2/jpeg.h` | `Hle/Modules/Jpeg.cs` + `Media/MjpegCodec.cs`, `Media/YuvConvert.cs` |
+| SceJpegUser | 11 | `psp2/jpeg.h` | `Hle/Modules/Jpeg.cs` + `Media/JpegDecoder.cs`, `Media/JpegCommon.cs`, `Media/YuvConvert.cs` |
 | SceJpegEncUser | 10 | `psp2/jpegenc.h`, `psp2common/jpegenc.h` | `Hle/Modules/JpegEnc.cs` |
 | SceIme | 6 | `psp2/libime.h` | `Hle/Modules/Ime.cs` (+ `ITextInputBackend` em `Host/HostServices.cs`) |
 | SceVoice | 28 | `psp2/voice.h` | `Hle/Modules/Voice.cs` |
