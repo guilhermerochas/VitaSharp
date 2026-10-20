@@ -111,12 +111,16 @@ public sealed class Security : HleModule
         return 0;
     }
 
+    /// <summary>SCE_RNG_ERROR_INVALID_ARGUMENT (value used by Vita3K; unconfirmed on hardware).</summary>
+    internal const int SCE_RNG_ERROR_INVALID_ARGUMENT = unchecked((int)0x810C0000);
+
     /// <summary>sceKernelGetRandomNumber(void *output, SceSize size): at most 64 bytes per call.</summary>
     [Hle]
     int sceKernelGetRandomNumber(uint output, uint size)
     {
-        if (size > 0x40) return SceError.ILLEGAL_SIZE;
-        if (output == 0) return SceError.ILLEGAL_ADDR;
+        if (size > 0x40) return SCE_RNG_ERROR_INVALID_ARGUMENT;
+        if (size == 0) return 0;
+        if (output == 0) return SCE_RNG_ERROR_INVALID_ARGUMENT;
         RandomNumberGenerator.Fill(GuestMemory.Span(output, (int)size));
         return 0;
     }
