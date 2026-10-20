@@ -368,6 +368,18 @@ public sealed class Hid : HleModule
     [Hle("sceHidKeyboardEnumerate")]
     [Hle("sceHidMouseEnumerate")]
     int sceHidEnumerate(uint handles, int count) => 0;
+
+    /// <summary>
+    /// psp2/hid.h: <c>int sceHidKeyboardRead/Peek(SceUInt32 handle, SceHidKeyboardReport *reports[], int nReports)</c>
+    /// and <c>int sceHidMouseRead(SceUInt32 handle, SceHidMouseReport *reports[], int nReports)</c>; the result is the
+    /// number of reports filled. No device is ever attached, so there is never a report: return 0 at once instead of
+    /// blocking (Read is documented as blocking, which would hang a caller polling a handle it never enumerated).
+    /// The report buffers are not touched.
+    /// </summary>
+    [Hle("sceHidKeyboardRead")]
+    [Hle("sceHidKeyboardPeek")]
+    [Hle("sceHidMouseRead")]
+    int sceHidRead(uint handle, uint reports, int nReports) => 0;
 }
 
 public sealed class Touch : HleModule

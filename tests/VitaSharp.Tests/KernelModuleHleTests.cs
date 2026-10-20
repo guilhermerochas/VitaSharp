@@ -48,6 +48,24 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, m.Lock(waiter, 1, default));
     }
 
+    /// <summary>Every [Hle] registration must resolve to a NID ("HLE: no NID known" otherwise: dead code).</summary>
+    [Fact]
+    public void EveryHleRegistrationHasANid()
+    {
+        var missing = new List<string>();
+        foreach (var t in typeof(VitaSharp.Core.Hle.HleModule).Assembly.GetTypes()
+                     .Where(t => t.IsSubclassOf(typeof(VitaSharp.Core.Hle.HleModule)) && !t.IsAbstract))
+            foreach (var mi in t.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly))
+                foreach (var a in System.Reflection.CustomAttributeExtensions.GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>(mi))
+                {
+                    string name = a.Name ?? mi.Name;
+                    if (a.Nid == 0 && !VitaSharp.Core.Hle.NidDatabase.LookupName(name).Any(n => a.Library == null || n.Library == a.Library))
+                        missing.Add($"{t.Name}.{name}");
+                }
+        Assert.Empty(missing);
+    }
+
     sealed class FakeHle : IImportResolver
     {
         public uint GetHleFunctionIndex(uint nid, uint libNid, string libName) => nid & 0xFFFF;
