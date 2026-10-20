@@ -168,7 +168,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
-    public void EpollWaitTimesOutAndAborts()
+    public async Task EpollWaitTimesOutAndAborts()
     {
         var net = new Net();
         int eid = Call(net, "sceNetEpollCreate", "e", 0);
@@ -185,14 +185,14 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Thread.Sleep(50);
         Assert.False(waiter.IsCompleted);
         Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 0));
-        Assert.True(waiter.Wait(5000));
-        Assert.Equal(Net.EINTR, waiter.Result);
+        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(Net.EINTR, await waiter);
         Assert.Equal(0, Call(net, "sceNetEpollDestroy", eid));
         Assert.Equal(Net.EBADF, Call(net, "sceNetEpollDestroy", eid));
     }
 
     [Fact]
-    public void BlockingRecvWaitsForAbort()
+    public async Task BlockingRecvWaitsForAbort()
     {
         var net = new Net();
         int s = Call(net, "sceNetSocket", "u", 2, 2, 0);
@@ -206,14 +206,14 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Thread.Sleep(50);
         Assert.False(waiter.IsCompleted);
         Assert.Equal(0, Call(net, "sceNetSocketAbort", s, 0));
-        Assert.True(waiter.Wait(5000));
-        Assert.Equal(Net.EINTR, waiter.Result);
+        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(Net.EINTR, await waiter);
         Assert.Equal(0, Call(net, "sceNetSocketClose", s));
         Assert.Equal(Net.EBADF, Call(net, "sceNetSocketClose", s));
     }
 
     [Fact]
-    public void RudpPollWaitBlocksUntilCancel()
+    public async Task RudpPollWaitBlocksUntilCancel()
     {
         var rudp = new Rudp();
         Assert.Equal(0, Call(rudp, "sceRudpInit", 0u, 0u));
@@ -226,7 +226,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Thread.Sleep(50);
         Assert.False(waiter.IsCompleted);
         Assert.Equal(0, Call(rudp, "sceRudpPollCancel", poll));
-        Assert.True(waiter.Wait(5000));
+        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, Call(rudp, "sceRudpSetMaxSegmentSize", (ushort)1000));
         var mss = fx.Memory.Alloc(16, "mss");
         Call(rudp, "sceRudpGetMaxSegmentSize", new Ptr<ushort>(mss));
