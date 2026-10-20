@@ -121,7 +121,6 @@ public sealed class ThreadMgr : HleModule
     }
 
     [Hle]
-    [Hle("sceKernelChangeThreadCpuAffinityMask2")]
     int sceKernelChangeThreadCpuAffinityMask(int thid, int mask)
     {
         var t = K.GetThread(thid);
@@ -370,7 +369,6 @@ public sealed class ThreadMgr : HleModule
     [Hle] ulong sceKernelGetProcessTimeWide() => ProcTime();
     [Hle] int sceKernelGetProcessTime(Ptr<ulong> clock) { clock.TrySet(K.ProcessTimeUs); return 0; }
     [Hle] ulong sceKernelGetSystemTimeWide() => K.ProcessTimeUs;
-    [Hle] uint sceKernelGetSystemTimeLow() => (uint)K.ProcessTimeUs;
     [Hle] int sceKernelGetSystemTime(Ptr<ulong> clock) { clock.TrySet(K.ProcessTimeUs); return 0; }
 
     // ------------------------------------------------------------------ semaphores
@@ -520,6 +518,11 @@ public sealed class ThreadMgr : HleModule
 
     [Hle] int sceKernelTryLockMutex(int uid, int count) => Obj<Mutex>(uid)?.TryLock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
     [Hle] int sceKernelUnlockMutex(int uid, int count) => Obj<Mutex>(uid)?.Unlock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
+
+    /// <summary>psp2/kernel/threadmgr/mutex.h: int (SceUID mutexid, int newCount, int *numWaitThreads).</summary>
+    [Hle]
+    int sceKernelCancelMutex(int uid, int newCount, Ptr<int> numWait)
+        => Obj<Mutex>(uid) is { IsLight: false } m ? m.Cancel(Self, newCount, numWait) : SceError.UNKNOWN_MUTEX_ID;
 
     // ------------------------------------------------------------------ lightweight mutexes (work area in guest memory)
 

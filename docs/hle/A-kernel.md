@@ -335,8 +335,10 @@ enum interno).
   `Unimplemented ... sceKernelGetMutexInfo`. Teste unitário: criar mutex com `initCount=1`, conferir `currentOwnerId`.
 
 #### sceKernelCancelMutex
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x2144890D
-- **Status:** não feito nesta passada: exige mexer na espera de `Mutex.Lock` (caminho quente do lw mutex, em otimização em outro branch).
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x2144890D
+- **Status:** feito: `Mutex.Cancel` (contador de geração `_cancelled` no abort do `Wait.Until` de `Lock`, sem custo no
+  caminho sem espera); só mutex normal (lw mutex → `UNKNOWN_MUTEX_ID`). Regras de contagem conferidas com o Vita3K
+  (`Mutex::cancel` em `kernel/src/sync_primitives.cpp`). Teste: `KernelModuleHleTests`.
 - **Protótipo:** `int sceKernelCancelMutex(SceUID mutexid, int newCount, int *numWaitThreads);` (`psp2/kernel/threadmgr/mutex.h`)
 - **Comportamento:** acorda todas as threads esperando no mutex com `WAIT_CANCEL`; `newCount == -1` restaura
   `initCount`; grava `LockCount = newCount` e dono = chamador se `newCount > 0`, senão sem dono.
@@ -425,6 +427,11 @@ o registro de callbacks em eventos.
 | [ ] | `sceKernelRegisterCallbackToEvent` | SceThreadmgr | 0x76FB37E9 | inferido: `int (SceUID eventId, SceUID callbackId)` | Guarda o callback numa lista do evento. Com attr `NOTIFY_CB_WAKEUP_ONLY` 0x800 o callback só é notificado quando o set acorda alguém (a confirmar). Erros: `UNKNOWN_EVENT_ID`, `UNKNOWN_CALLBACK_ID`, `ALREADY_REGISTERED` 0x80028003 |
 | [ ] | `sceKernelUnregisterCallbackFromEvent` | SceThreadmgr | 0x18462B11 | inferido: `int (SceUID eventId, SceUID callbackId)` | Remove um; ausente → `CALLBACK_NOT_REGISTERED` 0x800280A3 (a confirmar) |
 | [ ] | `sceKernelUnregisterCallbackFromEventAll` | SceThreadmgr | 0x888A7361 | inferido: `int (SceUID eventId)` | Limpa a lista |
+
+> Segunda passada (p1): os 9 itens abertos acima continuam sem protótipo confirmado. vita-headers (include/ e db/)
+> não declara nenhum deles (nem as versões `ksce`), e no Vita3K todos (`SceLibKernel.cpp`, `SceThreadmgr.cpp`,
+> `SceThreadmgrForDriver.cpp`, inclusive as syscalls `_sceKernel...`) são `UNIMPLEMENTED()` sem argumentos. Ficam
+> não registrados até uma desmontagem do export confirmar argumentos/structs.
 
 ### 1.4 Timers (SceLibKernel + SceThreadmgr)
 
@@ -718,7 +725,13 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   plugins.
 
 #### sceKernelUnloadModule
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x1987920E
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x1987920E (+ syscall `_sceKernelUnloadModule` 0x8E4A7716)
+- **Status:** feito: `Linker.UnregisterModule` (remove exports e bindings do próprio módulo; stubs de outros módulos
+  que saltavam para ele vão para o próximo provedor do NID ou de volta ao stub HLE; imports de variável são
+  re-relocados para uma variável HLE quando existe) + `Emulator.UnloadModule` (invalida o JIT e libera os segmentos,
+  remove de `K.Modules`/`K.Objects`). Sem checagem de "ainda iniciado" (o Vita3K também não faz).
+  `sceKernelStopUnloadModule` agora faz Stop + Unload. O executável principal não pode ser descarregado
+  (`MODULEMGR_NO_MOD`). Teste: `KernelModuleHleTests.UnregisterModuleRebindsImports`.
 - **Protótipo:** `int sceKernelUnloadModule(SceUID modid, int flags, SceKernelULMOption *option);` (`modulemgr.h`)
 - **Comportamento:** remove um módulo parado: libera segmentos, tira as exportações do linker (imports que apontavam
   para ele voltam a cair no HLE/stub de log) e invalida o código JIT da faixa.
@@ -731,7 +744,12 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
   nada aponta para memória liberada.
 
 #### sceKernelOpenModule / sceKernelCloseModule
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x4F2D8B15 (Open), 0x657FA50E (Close)
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x4F2D8B15 (Open), 0x657FA50E (Close)
+- **Status:** feito com os 4 argumentos confirmados da syscall (`path/modid, args, argp, flags`), registrados também
+  nas syscalls `_sceKernelOpenModule` 0x9D674F45 / `_sceKernelCloseModule` 0x849E78BE. Os argumentos 5/6 do wrapper
+  (opt/status, inferidos) não são lidos nem gravados, para não escrever por um ponteiro que talvez não exista. Open de
+  um caminho já carregado devolve o mesmo UID e conta referência; Close da última referência roda `module_stop` e
+  descarrega. O Vita3K não implementa nenhuma das duas.
 - **Protótipo:** só a syscall está no header: `SceUID _sceKernelOpenModule(const char *module_filename, SceSize args, const void *argp, SceUInt32 flags);`
   e `SceUID _sceKernelCloseModule(SceUID modid, SceSize args, const void *argp, SceUInt32 flags);` (`psp2/kernel/modulemgr.h`).
   Wrapper user inferido: `SceUID sceKernelOpenModule(const char *path, SceSize args, void *argp, int flags, void *opt, int *status)`

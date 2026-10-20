@@ -277,6 +277,7 @@ public sealed class Mutex : KernelObject
     public int Waiters;
     public uint WorkArea; // lightweight mutex work area (0 for normal mutexes)
     bool _deleted;
+    int _cancelled;
 
     public bool IsLight => WorkArea != 0;
 
@@ -331,10 +332,11 @@ public sealed class Mutex : KernelObject
                 return SceError.OK;
             }
             Waiters++;
+            int gen = _cancelled;
             try
             {
-                int r = Wait.Until(this, this, static m => m.Owner == null || m.Owner.Status == ThreadStatus.Dormant, timeout,
-                    static m => m._deleted ? SceError.WAIT_DELETE : 0, WaitDescription);
+                int r = Wait.Until(this, (m: this, gen), static t => t.m.Owner == null || t.m.Owner.Status == ThreadStatus.Dormant, timeout,
+                    static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
                 if (r != SceError.OK) return r;
                 Owner = self;
                 LockCount = count;
@@ -371,6 +373,24 @@ public sealed class Mutex : KernelObject
             UpdateWorkArea();
             Monitor.PulseAll(this);
             return c;
+        }
+    }
+
+    /// <summary>sceKernelCancelMutex: wakes every waiter with WAIT_CANCEL and resets the lock count (-1 = initCount);
+    /// a count above 0 hands the mutex to the caller.</summary>
+    public int Cancel(GuestThread? self, int newCount, Ptr<int> numWait)
+    {
+        lock (this)
+        {
+            if (newCount == -1) newCount = InitCount;
+            if (newCount < 0 || (newCount > 1 && (Attr & AttrRecursive) == 0)) return SceError.ILLEGAL_COUNT;
+            numWait.TrySet(Waiters);
+            _cancelled++;
+            LockCount = newCount;
+            Owner = newCount > 0 ? self : null;
+            UpdateWorkArea();
+            Monitor.PulseAll(this);
+            return SceError.OK;
         }
     }
 

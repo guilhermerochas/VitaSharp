@@ -157,10 +157,68 @@ public sealed class SystemMisc : HleModule
     [Hle]
     int sceKernelStopUnloadModule(int uid, uint args, uint argp, uint flags, uint opt, Ptr<int> status)
     {
-        if (!K.Modules.TryGetValue(uid, out var m)) return unchecked((int)0x8002D011);
+        if (!K.Modules.TryGetValue(uid, out var m)) return SceError.MODULEMGR_NO_MOD;
         int r = m.StopEntry != 0 ? (int)GuestThread.Current!.CallGuest(m.StopEntry, args, argp) : 0;
         status.TrySet(r);
+        return UnloadModule(m);
+    }
+
+    /// <summary>psp2/kernel/modulemgr.h: int (SceUID modid, int flags, SceKernelULMOption *option). Like Vita3K, no
+    /// "still started" check: the module is unlinked and its memory freed.</summary>
+    [Hle]
+    [Hle("_sceKernelUnloadModule")]
+    int sceKernelUnloadModule(int uid, uint flags, uint opt)
+        => K.Modules.TryGetValue(uid, out var m) ? UnloadModule(m) : SceError.MODULEMGR_NO_MOD;
+
+    int UnloadModule(Loader.LoadedModule m)
+    {
+        if (m == Emu.MainModule) return SceError.MODULEMGR_NO_MOD; // the executable is not a loadable module
+        lock (_openCounts) _openCounts.Remove(m.Uid);
+        Emu.UnloadModule(m);
         return 0;
+    }
+
+    readonly Dictionary<int, int> _openCounts = new();
+
+    /// <summary>
+    /// sceKernelOpenModule / _sceKernelOpenModule: shared load-and-start. Only the syscall prototype is in the header
+    /// (<c>SceUID (const char *path, SceSize args, const void *argp, SceUInt32 flags)</c>); the SceLibKernel wrapper
+    /// shares those four arguments, so the trailing option/status words are not touched. Opening a path that is
+    /// already loaded returns the same UID and counts one more reference.
+    /// </summary>
+    [Hle("sceKernelOpenModule")]
+    [Hle("_sceKernelOpenModule")]
+    int sceKernelOpenModule(string path, uint args, uint argp, uint flags)
+    {
+        var existing = K.Modules.Values.FirstOrDefault(m => string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            lock (_openCounts) _openCounts[existing.Uid] = _openCounts.GetValueOrDefault(existing.Uid, 1) + 1;
+            return existing.Uid;
+        }
+        Loader.LoadedModule mod;
+        try { mod = Emu.LoadModule(path); }
+        catch (FileNotFoundException) { return unchecked((int)0x8002D01C); }
+        // same as sceKernelLoadStartModule: the module stays loaded whatever module_start returns
+        if (mod.StartEntry != 0) GuestThread.Current!.CallGuest(mod.StartEntry, args, argp);
+        lock (_openCounts) _openCounts[mod.Uid] = 1;
+        return mod.Uid;
+    }
+
+    /// <summary>sceKernelCloseModule / _sceKernelCloseModule (<c>(SceUID modid, SceSize args, const void *argp,
+    /// SceUInt32 flags)</c>): drops one reference; the last one runs module_stop and unloads.</summary>
+    [Hle("sceKernelCloseModule")]
+    [Hle("_sceKernelCloseModule")]
+    int sceKernelCloseModule(int uid, uint args, uint argp, uint flags)
+    {
+        if (!K.Modules.TryGetValue(uid, out var m)) return SceError.MODULEMGR_NO_MOD;
+        lock (_openCounts)
+        {
+            int n = _openCounts.GetValueOrDefault(uid, 1) - 1;
+            if (n > 0) { _openCounts[uid] = n; return 0; }
+        }
+        if (m.StopEntry != 0) GuestThread.Current!.CallGuest(m.StopEntry, args, argp);
+        return UnloadModule(m);
     }
 
     /// <summary>Runs module_stop(args, argp) and stores its result; the module stays loaded.</summary>
@@ -307,7 +365,6 @@ public sealed class SystemMisc : HleModule
     [Hle] int sceAppMgrSetInfobarState(int visible, int color, int transparency) => 0;
     [Hle] int sceAppMgrSetNetworkDisconnectionWarningDialogState(int state) => 0;
     [Hle] int sceAppMgrReceiveSystemEvent(uint ev) => unchecked((int)0x80801000);
-    [Hle] int sceAppMgrReceiveSystemEventNum(Ptr<int> num) { num.TrySet(0); return 0; }
 
     [Hle("_sceAppMgrGetAppState")]
     int _sceAppMgrGetAppState(uint state, uint size, uint version)
@@ -315,9 +372,6 @@ public sealed class SystemMisc : HleModule
         GuestMemory.Span(state, (int)Math.Min(size, 0x100)).Clear();
         return 0;
     }
-
-    [Hle("sceAppMgrGetAppState")]
-    int sceAppMgrGetAppState(uint state) { GuestMemory.Span(state, 0x40).Clear(); return 0; }
 
     [Hle]
     int sceAppMgrAppParamGetString(int pid, int param, uint buf, uint size)
@@ -383,7 +437,6 @@ public sealed class SystemMisc : HleModule
     [Hle] int scePowerGetBatteryFullCapacity() => 2200;
     [Hle] int scePowerIsBatteryExist() => 1;
     [Hle] int scePowerSetConfigurationMode(int mode) => 0;
-    [Hle] int scePowerGetConfigurationMode() => 0x80;
     // games may raise the CPU clock (333 default, 444 max for applications): the emulated CPU pacing follows it
     [Hle] int scePowerSetArmClockFrequency(int f)
     {
@@ -440,7 +493,6 @@ public sealed class SystemMisc : HleModule
 
     // ------------------------------------------------------------------ misc system
 
-    [Hle] int sceShutterSoundOutput(int type) => 0;
     [Hle] int sceLiveAreaUpdateFrameSync(uint formatVer, uint frameList, uint numFrames, uint dirpath, uint option) => 0;
     /// <summary>Firmware reported to games (3.74), shared with sceKernelGetAllowedSdkVersionOnSystem.</summary>
     internal const uint SystemSwVersion = 0x03740011;
