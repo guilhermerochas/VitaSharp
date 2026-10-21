@@ -804,12 +804,10 @@ public sealed class Gxm : HleModule
         return b.Address + b.Size - addr;
     }
 
-    /// <summary>Gathers the draw's uniform buffers into the command's reusable buffer; returns the byte count.</summary>
-    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, ref byte[] data)
+    /// <summary>Gathers the draw's uniform buffers into <paramref name="data"/> (zero-filled, UniformBytes long); returns the byte count.</summary>
+    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data)
     {
         if (info.UniformBytes == 0) return 0;
-        UniformBufferPool.Ensure(ref data, info.UniformBytes);
-        data.AsSpan(0, info.UniformBytes).Clear();
         foreach (var slot in info.UniformSlots)
         {
             if (slot.Mapped) continue; // read in place by the renderer
@@ -822,7 +820,7 @@ public sealed class Gxm : HleModule
                 if (other > addr && other - addr < size) size = (int)(other - addr);
             // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
             if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
-            GuestMemory.Span(addr, size).CopyTo(data.AsSpan(slot.ByteOffset, size));
+            GuestMemory.Span(addr, size).CopyTo(data.Slice(slot.ByteOffset, size));
         }
         return info.UniformBytes;
     }
@@ -875,8 +873,17 @@ public sealed class Gxm : HleModule
         cmd.VertexProgram = vp;
         cmd.FragmentProgram = fp;
         cmd.State = state;
-        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, ref cmd.VertexUniforms);
-        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, ref cmd.FragmentUniforms) : 0;
+        // one zero-filled arena slice holds both stages' uniform blocks until the GPU worker executed the draw
+        int vBytes = vp.Info.UniformBytes, fBytes = fp.Info?.UniformBytes ?? 0, vAligned = (vBytes + 15) & ~15;
+        if (vBytes + fBytes > 0)
+        {
+            var chunk = cmd.UniformChunk = UniformArena.Rent(vAligned + fBytes, out int off);
+            cmd.VertexUniforms = cmd.FragmentUniforms = chunk.Data;
+            cmd.VertexUniformsOffset = off;
+            cmd.FragmentUniformsOffset = off + vAligned;
+        }
+        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, cmd.VertexUniforms.AsSpan(cmd.VertexUniformsOffset, vBytes));
+        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, cmd.FragmentUniforms.AsSpan(cmd.FragmentUniformsOffset, fBytes)) : 0;
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);
         cmd.PrimitiveType = (byte)(primType >> 26);

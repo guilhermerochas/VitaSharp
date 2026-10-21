@@ -142,19 +142,31 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
 }
 
 /// <summary>
-/// One draw call. Instances are pooled by <see cref="GpuQueue"/> (thousands per frame): the uniform arrays are
-/// capacity buffers reused across draws, so readers must use the *Length fields / spans, never the array lengths.
+/// One draw call. Instances are pooled by <see cref="GpuQueue"/> (thousands per frame); the uniform data lives in a
+/// shared arena slice, so readers must use the uniform spans, never the arrays directly.
 /// </summary>
 public sealed class DrawCommand : GpuCommand
 {
     public GxmVertexProgram VertexProgram = null!;
     public GxmFragmentProgram FragmentProgram = null!;
     public DrawState State;
+    /// <summary>Uniform data of this draw: a slice of a shared <see cref="UniformArena"/> chunk (vertex block, then fragment
+    /// block), owned by the command until the GPU worker executed it. Use the spans, never the whole arrays.</summary>
     public byte[] VertexUniforms = [];
     public byte[] FragmentUniforms = [];
+    public int VertexUniformsOffset, FragmentUniformsOffset;
     public int VertexUniformsLength, FragmentUniformsLength;
-    public ReadOnlySpan<byte> VertexUniformSpan => VertexUniforms.AsSpan(0, VertexUniformsLength);
-    public ReadOnlySpan<byte> FragmentUniformSpan => FragmentUniforms.AsSpan(0, FragmentUniformsLength);
+    public UniformChunk? UniformChunk;
+    public Span<byte> VertexUniformSpan => VertexUniforms.AsSpan(VertexUniformsOffset, VertexUniformsLength);
+    public Span<byte> FragmentUniformSpan => FragmentUniforms.AsSpan(FragmentUniformsOffset, FragmentUniformsLength);
+
+    /// <summary>Gives the uniform slice back to the arena (GPU worker, after the backend executed the draw).</summary>
+    public void ReleaseUniforms()
+    {
+        if (UniformChunk is { } c) { UniformChunk = null; UniformArena.Release(c); }
+        VertexUniforms = FragmentUniforms = [];
+        VertexUniformsOffset = FragmentUniformsOffset = 0;
+    }
     /// <summary>Guest addresses of the uniform buffers (index 0-14) bound for this draw.</summary>
     public readonly uint[] VertexUniformAddrs = new uint[15], FragmentUniformAddrs = new uint[15];
 
