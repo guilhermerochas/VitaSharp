@@ -111,13 +111,16 @@ public static class Wait
         if (microseconds < (ulong)SyscallLatencyUs) microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
         // guest time: follows the test speed factor, and turbo mode skips the wait
         using var blocked = Scheduler.Block();
-        long end = GuestClock.Ticks + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+        // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
+        // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
+        long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
         while (GuestClock.Ticks < end)
         {
             if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
             // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
             GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice));
         }
+        self?.Core.WokeAt(end);
     }
 }
 

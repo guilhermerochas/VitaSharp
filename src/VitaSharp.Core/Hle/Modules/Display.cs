@@ -22,10 +22,9 @@ public static class VBlank
         using var blocked = Scheduler.Block();
         while (true)
         {
-            long cur = Count;
-            if (cur >= target) return cur;
-            // +1 tick so rounding cannot land just before the boundary
-            GuestClock.WaitUntil(GuestClock.FromSeconds(target * PeriodSeconds / TimeScale.VBlank) + 1);
+            long cur = Count, at = GuestClock.FromSeconds(target * PeriodSeconds / TimeScale.VBlank) + 1; // +1 tick: no rounding below the boundary
+            if (cur >= target) { GuestThread.Current?.Core.WokeAt(at); return cur; } // resumes at the vblank, not at the late host wake-up
+            GuestClock.WaitUntil(at);
         }
     }
 

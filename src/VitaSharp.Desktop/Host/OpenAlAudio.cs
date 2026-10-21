@@ -47,6 +47,9 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         }
     }
 
+    /// <summary>Times an output stream ran dry and was restarted (diagnostics for audio/video pacing).</summary>
+    public static int Underruns;
+
     sealed class Stream : IAudioStream
     {
         // the Vita output is double-buffered: sceAudioOutOutput returns once the previous grain finished, so at most one
@@ -102,7 +105,13 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                         _o._al.SourceQueueBuffers(_source, 1, &b);
                         _queued++;
                         _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
-                        if (state != (int)SourceState.Playing) _o._al.SourcePlay(_source);
+                        if (state != (int)SourceState.Playing)
+                        {
+                            // Stopped (not Initial): the queue ran dry, the guest did not submit in time (audible gap)
+                            if (state == (int)SourceState.Stopped && Interlocked.Increment(ref Underruns) is var n && (n <= 10 || n % 100 == 0))
+                                Log.Warn($"Audio: host stream underrun #{n} (guest output late)");
+                            _o._al.SourcePlay(_source);
+                        }
                         return;
                     }
                 }

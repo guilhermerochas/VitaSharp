@@ -72,47 +72,84 @@ public static unsafe class BlockBuilder
             }
         }
         var insts = list.ToArray();
-        long cycles = 0;
-        foreach (ref var d in insts.AsSpan()) cycles += CycleCost(in d);
-        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = cycles };
+        long quarters = 0;
+        foreach (ref var d in insts.AsSpan()) quarters += CycleCost(in d);
+        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit) };
     }
 
+    /// <summary><see cref="CycleCost"/> is in 1/CostUnit cycles, so that dual issue (an average below one cycle) can
+    /// be expressed; <see cref="Block.Cycles"/> is in whole cycles.</summary>
+    public const int CostUnit = 4;
+
     /// <summary>
-    /// Approximate Cortex-A9 cost of one instruction in CPU cycles, including the average share of cache misses
-    /// and branch penalties. The emulated CPU is paced by these so game code sees hardware-like execution times
-    /// (physics budgets, frame timers, busy-wait loops), whatever the host speed.
+    /// Average cost of one instruction on the Vita's Cortex-A9, in quarter cycles (<see cref="CostUnit"/>). The
+    /// emulated CPU is paced by these (<see cref="CpuCore.InstructionsPerSecond"/>, 444 MHz), so game code sees
+    /// hardware-like execution times (physics budgets, frame timers, busy-wait loops) whatever the host speed. Every
+    /// CPU backend charges the block total (<see cref="Block.Cycles"/>), so this table is the only place the model lives.
+    /// <para>
+    /// The A9 decodes two instructions per cycle and issues them out of order to two ALUs (one with the multiplier),
+    /// a load/store unit and the VFP/NEON unit, behind an 8-11 stage pipeline (Cortex-A9 TRM, "Cycle timings and
+    /// interlock behavior"; Cortex-A9 NEON MPE / FPU TRMs). On typical compiled code it sustains about 1.2-1.5 cycles
+    /// per instruction: independent ALU operations pair, L1-hit loads (3-4 cycle load-use latency) are mostly hidden
+    /// by renaming, and the global-history predictor, BTAC and return stack predict most branches (a misprediction
+    /// costs ~8 cycles). The table charges the issue cost plus the average share of stalls per instruction class: an
+    /// average-case approximation, not a pipeline model.
+    /// </para>
+    /// <list type="bullet">
+    /// <item>data processing, moves, compares, IT, extends, bitfield, VMOV core/VFP: 0.75 (about one in three pairs)</item>
+    /// <item>single loads (incl. LDRD, VLDR, VLDn): 1.5 (issue plus the exposed load-use latency and the cache-miss
+    /// share); single stores: 1 (they retire through the store buffer)</item>
+    /// <item>LDM/STM/PUSH/POP/VLDM/VSTM: 1 + 0.5 per register word (the load/store unit moves 64 bits per cycle)</item>
+    /// <item>direct unconditional branches (B, BL, BLX imm): 1 (BTAC-predicted); conditional branches, CBZ/CBNZ and
+    /// register branches (BX/BLX, return stack): 1.5 (issue plus ~5% mispredictions at ~8 cycles); TBB/TBH: 4 (a
+    /// load and an indirect branch)</item>
+    /// <item>multiplies: 2; long multiplies: 3 (32x32 multiplies occupy the MUL pipe for 2-3 cycles)</item>
+    /// <item>VFP arithmetic: 2 (single-cycle issue for F32, but 4-8 cycle result latencies stall the dependent chains
+    /// game math is made of); VDIV/VSQRT: 15 (not pipelined; F32 13-15 cycles); other VFP (VMOV, VABS, VNEG, VCMP,
+    /// VCVT): 1; VMRS/VMSR: 3 (wait for the VFP pipeline)</item>
+    /// <item>NEON: 1 per D register operation, 2 per Q register operation (the A9 NEON datapath is 64 bits wide)</item>
+    /// <item>exclusives/SWP: 4; MRC/MCR (TLS register reads): 3; barriers: 10; SVC: 20 (the HLE function itself is
+    /// charged by the HLE cost ledger, <see cref="Hle.HleFunction.Cost"/>)</item>
+    /// </list>
+    /// Measured averages: ~1.07 cycles per instruction on Sonic Mania's software renderer (pixel loops: ~55% ALU/IT,
+    /// 22% loads/stores, 14% conditional branches, 4% multiplies), 1.3-1.5 on Killzone's game, job and Havok threads.
+    /// The previous table (ALU 1, loads/stores 4, branches 3: ~2.5 per instruction) made Mania's menus need 22 ms of
+    /// emulated CPU per frame at 444 MHz and run at 30-45 fps where hardware runs them at 60.
     /// </summary>
     public static int CycleCost(in DecodedInst d) => d.Op switch
     {
-        // single loads/stores: issue + average L1/L2 miss share
-        Op.A32_LdStImm or Op.A32_LdStReg or Op.A32_LdStExtra or Op.T16_LdrLit or Op.T16_LdStReg or Op.T16_LdStImm
-            or Op.T16_LdStH or Op.T16_LdStSp or Op.T32_LdSt or Op.Vfp_LdrStrArm or Op.Vfp_LdrStrThumb => 4,
-        Op.T32_LdStDual => 5,
-        Op.A32_Exclusive or Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.A32_Swp => 8,
-        // multiple loads/stores: one cycle per register plus the memory share
-        Op.A32_LdmStm or Op.T32_LdmStm => 3 + System.Numerics.BitOperations.PopCount(d.Raw & 0xFFFF),
-        Op.T16_Push or Op.T16_Pop => 3 + System.Numerics.BitOperations.PopCount(d.Raw & 0x1FF),
-        Op.T16_Stm or Op.T16_Ldm => 3 + System.Numerics.BitOperations.PopCount(d.Raw & 0xFF),
-        Op.Vfp_LdmStm => 3 + (int)(d.Raw & 0xFF) / 2,
-        Op.Neon_LoadStore => 6,
+        // single loads and stores (L bit: bit 20 in 32-bit encodings, bit 11 in 16-bit ones, bit 21 for VLDn/VSTn)
+        Op.A32_LdStImm or Op.A32_LdStReg or Op.A32_LdStExtra or Op.T32_LdSt or Op.T32_LdStDual or Op.Vfp_LdrStrArm
+            or Op.Vfp_LdrStrThumb => (d.Raw & (1u << 20)) != 0 ? 6 : 4,
+        Op.T16_LdStImm or Op.T16_LdStH or Op.T16_LdStSp => (d.Raw & (1u << 11)) != 0 ? 6 : 4,
+        Op.T16_LdStReg => ((d.Raw >> 9) & 7) >= 3 ? 6 : 4, // opB 000-010: STR, STRH, STRB
+        Op.T16_LdrLit => 6,
+        Op.Neon_LoadStore => (d.Raw & (1u << 21)) != 0 ? 6 : 4,
+        Op.A32_Exclusive or Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.A32_Swp => 16,
+        // multiple loads/stores: 1 + half a cycle per register word
+        Op.A32_LdmStm or Op.T32_LdmStm => 4 + 2 * System.Numerics.BitOperations.PopCount(d.Raw & 0xFFFF),
+        Op.T16_Push or Op.T16_Pop => 4 + 2 * System.Numerics.BitOperations.PopCount(d.Raw & 0x1FF),
+        Op.T16_Stm or Op.T16_Ldm => 4 + 2 * System.Numerics.BitOperations.PopCount(d.Raw & 0xFF),
+        Op.Vfp_LdmStm => 4 + 2 * (int)(d.Raw & 0xFF), // imm8 = words transferred
         // multiplies
-        Op.A32_Multiply or Op.A32_HalfMultiply or Op.A32_SignedMultiplyMedia or Op.T32_Mul or Op.A32_Usad8 => 2,
-        Op.T32_LongMul => 3,
-        // branches: taken-branch and misprediction share
-        Op.A32_B or Op.A32_Bl or Op.A32_BlxImm or Op.A32_Bx or Op.A32_BlxReg or Op.T16_B or Op.T16_BCond or Op.T16_BxBlx
-            or Op.T16_Cbz or Op.T32_BW or Op.T32_BCondW or Op.T32_Bl or Op.T32_BlxImm or Op.T32_BxjOrSubsPcLr => 3,
-        Op.T32_Tbb => 5,
-        // VFP (A9: pipelined, 4-5 cycle latency chains) and NEON (64-bit datapath: a Q operation takes two passes)
-        Op.Vfp_Arith or Op.Vfp_MovCoreSingle or Op.Vfp_MovCoreScalar or Op.Vfp_MovScalarCore or Op.Vfp_Mov64 or Op.Vfp_VdupCore => 2,
-        Op.Vfp_Other => 8, // VDIV / VSQRT / conversions
-        Op.Vfp_Vmrs or Op.Vfp_Vmsr => 4,
+        Op.A32_Multiply or Op.A32_HalfMultiply or Op.A32_SignedMultiplyMedia or Op.T32_Mul or Op.A32_Usad8 => 8,
+        Op.T32_LongMul => 12,
+        // branches: direct unconditional ones are predicted by the BTAC; the rest pay the misprediction share
+        Op.A32_B or Op.A32_Bl => d.Raw >> 28 == 0xE ? 4 : 6,
+        Op.A32_BlxImm or Op.T16_B or Op.T32_BW or Op.T32_Bl or Op.T32_BlxImm => 4,
+        Op.A32_Bx or Op.A32_BlxReg or Op.T16_BCond or Op.T16_BxBlx or Op.T16_Cbz or Op.T32_BCondW or Op.T32_BxjOrSubsPcLr => 6,
+        Op.T32_Tbb => 16,
+        // VFP: VDIV is opc1 = 0b100 (bits 23, 21:20); VSQRT is opc1 = 0b111 with opc2 = 0b0001 and bit 7 set
+        Op.Vfp_Arith => (d.Raw & 0x00B0_0000) == 0x0080_0000 ? 60 : 8,
+        Op.Vfp_Other => (d.Raw & 0x000F_0080) == 0x0001_0080 ? 60 : 4,
+        Op.Vfp_Vmrs or Op.Vfp_Vmsr => 12,
         Op.Neon_ThreeSame or Op.Neon_ThreeDiff or Op.Neon_Scalar or Op.Neon_Shift or Op.Neon_Misc or Op.Neon_Imm
-            or Op.Neon_Vext or Op.Neon_Vtbl or Op.Neon_VdupScalar => (d.Raw & 0x40) != 0 ? 2 : 1, // Q bit
+            or Op.Neon_Vext or Op.Neon_Vtbl or Op.Neon_VdupScalar => (d.Raw & 0x40) != 0 ? 8 : 4, // Q bit
         // system
-        Op.A32_Svc or Op.T16_Svc => 20,
-        Op.A32_Mrc or Op.A32_Mcr or Op.T32_Mrc or Op.T32_Mcr or Op.A32_Barrier or Op.T32_Barrier => 10,
-        Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop => 1,
-        _ => 1,
+        Op.A32_Svc or Op.T16_Svc => 80,
+        Op.A32_Barrier or Op.T32_Barrier => 40,
+        Op.A32_Mrc or Op.A32_Mcr or Op.T32_Mrc or Op.T32_Mcr => 12,
+        _ => 3, // data processing, moves, IT, extends, bitfield, NOPs, VMOV between core and VFP registers
     };
 }
 
