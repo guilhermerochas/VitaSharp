@@ -34,7 +34,8 @@ public static class Runner
         if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
         Log.OpenFile(Opt(options, "--log") ?? Path.Combine(Program.DataRoot, "logs", "last.log"));
 
-        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches") });
+        // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
+        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches") });
         var fatal = new ManualResetEventSlim();
         emu.Fatal += (t, e) => fatal.Set();
 
@@ -474,7 +475,11 @@ public static class Runner
 
     static void PrintStats(Emulator emu)
     {
-        Log.Info($"Stopping. Blocks compiled by JIT: {VitaSharp.Core.Cpu.Jit.CompiledBlocks} ({VitaSharp.Core.Cpu.Jit.CompiledInstructions} instructions, {VitaSharp.Core.Cpu.Jit.CompileTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms compiling, {VitaSharp.Core.Cpu.Jit.CompileTicks * 1e6 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, VitaSharp.Core.Cpu.Jit.CompiledBlocks):F0} us/block)");
+        Log.Info($"Stopping. {VitaSharp.Core.Cpu.Jit.Describe()}");
+        if (VitaSharp.Core.Cpu.Native.NativeVerifier.Enabled)
+            Log.Info($"CPU backend report: native verify: {VitaSharp.Core.Cpu.Native.NativeVerifier.Verified} block runs verified, {VitaSharp.Core.Cpu.Native.NativeVerifier.Mismatches} mismatches, {VitaSharp.Core.Cpu.Native.NativeVerifier.Skipped} interpreted (unloggable stores)");
+        if (VitaSharp.Core.Cpu.Jit.Chain.Contains(VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance))
+            Log.Info($"CPU backend report: {VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Report()}");
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
         foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());

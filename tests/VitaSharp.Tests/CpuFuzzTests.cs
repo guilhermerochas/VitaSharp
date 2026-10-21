@@ -36,7 +36,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         UcArm.UC_ARM_REG_R10, UcArm.UC_ARM_REG_R11, UcArm.UC_ARM_REG_R12, UcArm.UC_ARM_REG_R13, UcArm.UC_ARM_REG_R14,
     ];
 
-    static Unicorn NewUnicorn(bool thumb)
+    internal static Unicorn NewUnicorn(bool thumb)
     {
         var uc = new Unicorn(Common.UC_ARCH_ARM, thumb ? Common.UC_MODE_THUMB : Common.UC_MODE_ARM);
         uc.MemMap(CodeBase, 0x1000, Common.UC_PROT_ALL);
@@ -91,7 +91,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     // arithmetic (games run with the Vita default FPSCR: round to nearest, FZ, DN), so it is a manual diagnostic only
     public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed, bool anyFpscr) => Fuzz(thumb, iterations, seed, null, simd: true, anyFpscr: anyFpscr);
 
-    static uint RandomSimdInstruction(Random rng, bool thumb)
+    internal static uint RandomSimdInstruction(Random rng, bool thumb)
     {
         uint r = (uint)rng.NextInt64();
         switch (rng.Next(8))
@@ -130,7 +130,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static uint SpecialFloat(Random rng) => rng.Next(14) switch
+    internal static uint SpecialFloat(Random rng) => rng.Next(14) switch
     {
         0 => 0,
         1 => 0x80000000,
@@ -158,7 +158,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         _ => BitConverter.DoubleToUInt64Bits((rng.NextDouble() - 0.5) * Math.Pow(2, rng.Next(-60, 60))),
     };
 
-    static ulong RandomSpecialSimd(Random rng) => rng.Next(6) switch
+    internal static ulong RandomSpecialSimd(Random rng) => rng.Next(6) switch
     {
         0 => SpecialDouble(rng),
         1 => RandomSimd(rng),
@@ -333,7 +333,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     /// Encodings the architecture leaves UNPREDICTABLE (PC used where it may not be, exception returns
     /// from user mode, writeback into the transfer register). Real games never execute them.
     /// </summary>
-    static bool IsUnpredictable(DecodedInst d, bool thumb)
+    internal static bool IsUnpredictable(DecodedInst d, bool thumb)
     {
         uint i = d.Raw;
         uint F(int hi, int lo) => (i >> lo) & (uint)((1L << (hi - lo + 1)) - 1);

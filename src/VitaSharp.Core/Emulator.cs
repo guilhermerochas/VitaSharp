@@ -16,6 +16,8 @@ public sealed class EmulatorOptions
     /// <summary>Root of the virtual Vita filesystem (contains ux0/, ur0/, ...).</summary>
     public required string FsRoot { get; init; }
     public bool EnableJit { get; init; } = true;
+    /// <summary>CPU backend: "native", "il", "interp" or null/"auto" (then VITASHARP_CPU, else the best one the host supports).</summary>
+    public string? CpuBackend { get; init; }
     public bool TraceHle { get; init; }
     public string Language { get; init; } = "en";
     /// <summary>Directory with per-title code patch files (TITLEID.txt); null = built-in patches only.</summary>
@@ -64,6 +66,9 @@ public sealed class Emulator : IDisposable
     {
         Options = options;
         Jit.Enabled = options.EnableJit;
+        string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable("VITASHARP_CPU");
+        if (!Jit.Select(backend)) { Log.Warn($"CPU backend '{backend}' is unknown or not supported on this host"); Jit.Select(null); }
+        Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
         Memory = new GuestMemory();
         Vfs = new Vfs(options.FsRoot);

@@ -13,8 +13,21 @@ public sealed unsafe class Block
     /// <summary>Approximate hardware cost of the block (see <see cref="BlockBuilder.CycleCost"/>).</summary>
     public long Cycles;
     public int ExecCount;
-    public volatile int JitState; // 0 = interpreted, 1 = queued, 2 = compiled
+    public volatile int JitState; // 0 = interpreted, 1 = queued, 2 = compiled, 3 = no backend takes it
+    /// <summary>Index in <see cref="Jit.Chain"/> of the next backend to offer the block to.</summary>
+    public int Tier;
+    /// <summary>Executed instructions (ExecCount x length) at which the backend at <see cref="Tier"/> takes the block.</summary>
+    public long HotAt = long.MaxValue;
+    /// <summary>Managed code of the block (IL backend).</summary>
     public JitBlockFn? Compiled;
+    /// <summary>Whatever backend compiled the block.</summary>
+    public Backends.CompiledBlock? Code;
+    /// <summary>Native code entry (native backend), 0 when none. Run through <see cref="Native.NativeRuntime.Run"/>.</summary>
+    public nint NativeEntry;
+    /// <summary>Set when the block was dropped from the cache (guest code rewritten): exits must not link to it.</summary>
+    public volatile bool Invalidated;
+    /// <summary>Exit link slots that jump into this block's native code (cleared on invalidation).</summary>
+    internal List<nint>? LinkedFrom;
 
     public override string ToString() => $"Block {Start:X8}-{End:X8} {(Thumb ? "T" : "A")} n={Insts.Length}";
 }
@@ -74,7 +87,7 @@ public static unsafe class BlockBuilder
         var insts = list.ToArray();
         long quarters = 0;
         foreach (ref var d in insts.AsSpan()) quarters += CycleCost(in d);
-        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit) };
+        return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit), HotAt = Jit.InitialThreshold };
     }
 
     /// <summary><see cref="CycleCost"/> is in 1/CostUnit cycles, so that dual issue (an average below one cycle) can
@@ -176,11 +189,23 @@ public sealed class BlockCache
         foreach (var kv in _blocks)
         {
             var b = kv.Value;
-            if (b.Start < addr + size && b.End > addr) _blocks.TryRemove(kv.Key, out _);
+            if (b.Start < addr + size && b.End > addr && _blocks.TryRemove(kv.Key, out _))
+                Retire(b);
         }
     }
 
-    public void Clear() => _blocks.Clear();
+    public void Clear()
+    {
+        foreach (var kv in _blocks) Retire(kv.Value);
+        _blocks.Clear();
+    }
+
+    /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher.</summary>
+    static void Retire(Block b)
+    {
+        if (b.NativeEntry != 0) Native.NativeRuntime.Unlink(b);
+        else b.Invalidated = true;
+    }
 
     public int Count => _blocks.Count;
 }

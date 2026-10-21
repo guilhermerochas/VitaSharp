@@ -241,8 +241,9 @@ internal static unsafe class Arm
     // generation counter for its 8-byte granule (striped table); LDREX snapshots it and STREX fails if it moved.
     // Plain stores do not bump it (they are still caught by the value compare).
 
-    const int ExclusiveStripes = 4096;
-    static readonly uint[] ExclusiveGens = new uint[ExclusiveStripes];
+    internal const int ExclusiveStripes = 4096;
+    // pinned (pinned object heap): the native backend addresses it directly
+    internal static readonly uint[] ExclusiveGens = GC.AllocateArray<uint>(ExclusiveStripes, pinned: true);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static ref uint GenOf(uint addr) => ref ExclusiveGens[(addr >> 3) & (ExclusiveStripes - 1)];

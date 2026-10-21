@@ -74,7 +74,7 @@ static class TestScenario
             string body = b >= 0 ? line[(b + 2)..] : line;
             bool interesting = body.StartsWith("[Warn") || body.StartsWith("[Error") || body.Contains("Unimplemented")
                                || body.Contains("Run finished") || body.Contains("FPS per") || body.Contains("Contact sheet")
-                               || body.Contains("  thread '") || body.Contains("METRICS") || body.Contains("PERF ") || body.Contains("ALLOC frames") || body.Contains("SUSPECT") || body.Contains("Applied patch") || body.Contains("LoadExec") || body.Contains("[shadercache]");
+                               || body.Contains("  thread '") || body.Contains("METRICS") || body.Contains("PERF ") || body.Contains("ALLOC frames") || body.Contains("CPU backend") || body.Contains("SUSPECT") || body.Contains("Applied patch") || body.Contains("LoadExec") || body.Contains("[shadercache]");
             if (interesting && seen.Add(body)) sb.AppendLine(body);
         }
         File.WriteAllText(report, sb.ToString());
