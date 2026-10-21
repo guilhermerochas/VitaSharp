@@ -330,6 +330,8 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Writes the driver cache atomically (temp file + rename). Thread-safe; a no-op once closed.</summary>
+    byte[] _vkCacheSaveBuf = [];
+
     void SaveVkPipelineCache()
     {
         lock (_vkCacheLock)
@@ -347,7 +349,9 @@ public sealed unsafe partial class VulkanRenderer
                     size = 0;
                     if (_vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, null) != Result.Success || size == 0 || size > int.MaxValue / 2) return;
                     size += size / 8; // headroom for concurrent additions
-                    var buf = new byte[VkCacheHeaderSize + (int)size];
+                    // reused between saves (guarded by _vkCacheLock): the cache grows to megabytes and is saved repeatedly
+                    if (_vkCacheSaveBuf.Length < VkCacheHeaderSize + (int)size) _vkCacheSaveBuf = new byte[VkCacheHeaderSize + (int)size + (int)size / 4];
+                    var buf = _vkCacheSaveBuf;
                     Result r;
                     fixed (byte* p = &buf[VkCacheHeaderSize]) r = _vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, p);
                     if (r == Result.Success) file = buf;

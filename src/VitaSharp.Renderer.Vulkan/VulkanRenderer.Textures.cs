@@ -139,6 +139,8 @@ public sealed unsafe partial class VulkanRenderer
     ImageMemoryPool.Allocation _fbCopyMem;
     uint _fbCopyW, _fbCopyH;
     Format _fbCopyFormat;
+    /// <summary>Framebuffer-fetch copies of other sizes/formats, kept for reuse (all in GENERAL layout).</summary>
+    readonly Dictionary<(uint W, uint H, Format F), (Image Image, ImageView View, ImageMemoryPool.Allocation Mem)> _fbCopies = new();
     readonly HashSet<uint> _ssFetchLogged = new();
 
     DescriptorSet BuildFramebufferFetchSet()
@@ -154,15 +156,30 @@ public sealed unsafe partial class VulkanRenderer
         uint w = ss?.Width ?? _rt.Width, h = ss?.Height ?? _rt.Height;
         if (_fbCopy.Handle == 0 || _fbCopyW != w || _fbCopyH != h || _fbCopyFormat != _rtAttachFormat)
         {
+            // games alternate between targets of different sizes: keep the copies per size/format instead of recreating
+            // one (image, memory, deferred destroy closure) on every switch
             if (_fbCopy.Handle != 0)
             {
-                var (oi, ov, om) = (_fbCopy, _fbCopyView, _fbCopyMem);
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                var old = (_fbCopy, _fbCopyView, _fbCopyMem);
+                if (_fbCopies.Count < 8) _fbCopies[(_fbCopyW, _fbCopyH, _fbCopyFormat)] = old;
+                else
+                {
+                    var (oi, ov, om) = old;
+                    F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                }
             }
-            // with surface gamma the copy is sRGB too, so the shader reads linear values
-            (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
-            _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
-            Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            if (_fbCopies.Remove((w, h, _rtAttachFormat), out var cached))
+            {
+                (_fbCopy, _fbCopyView, _fbCopyMem) = cached; // already in GENERAL layout
+                _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
+            }
+            else
+            {
+                // with surface gamma the copy is sRGB too, so the shader reads linear values
+                (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+                _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
+                Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            }
         }
         var src = _rt.Image;
         if (ss != null)
@@ -623,5 +640,6 @@ public sealed unsafe partial class VulkanRenderer
         _vk.DestroyImageView(_dev, _dummyCubeView, null);
         _vk.DestroyImage(_dev, _dummyImage, null);
         if (_fbCopy.Handle != 0) { _vk.DestroyImageView(_dev, _fbCopyView, null); _vk.DestroyImage(_dev, _fbCopy, null); }
+        foreach (var (img, view, _) in _fbCopies.Values) { _vk.DestroyImageView(_dev, view, null); _vk.DestroyImage(_dev, img, null); }
     }
 }
