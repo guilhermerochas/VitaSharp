@@ -434,6 +434,7 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
 
     /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
     [Fact]
+    [Trait("Category", "Slow")]
     public void ExclusiveIncrementIsAtomicAcrossThreads()
     {
         EnsureGuestPages();
@@ -704,12 +705,14 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     [Theory]
     [InlineData(false, 60_000, 101)]
     [InlineData(true, 60_000, 102)]
+    [Trait("Category", "Slow")]
     public void NativeMatchesInterpreter(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: false, spillStress: false);
 
     /// <summary>Same with only two registers for temps: exercises the spill paths of the register allocator.</summary>
     [Theory]
     [InlineData(false, 15_000, 201)]
     [InlineData(true, 15_000, 202)]
+    [Trait("Category", "Slow")]
     public void NativeMatchesInterpreterWithSpills(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: false, spillStress: true);
 
     /// <summary>
@@ -720,6 +723,7 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     [Theory]
     [InlineData(false, 40_000, 501)]
     [InlineData(true, 40_000, 502)]
+    [Trait("Category", "Slow")]
     public void NativeVfpMatchesInterpreter(bool thumb, int iterations, int seed)
     {
         EnsureGuestPages();
@@ -785,6 +789,7 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     [Theory]
     [InlineData(false, 1_500, 301)]
     [InlineData(true, 1_500, 302)]
+    [Trait("Category", "Slow")]
     public void AllBackendsMatchInterpreter(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: true, spillStress: false);
 
     void Differential(bool thumb, int iterations, int seed, bool withIl, bool spillStress)
@@ -885,6 +890,7 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     [Theory]
     [InlineData(false, 8_000, 401)]
     [InlineData(true, 8_000, 402)]
+    [Trait("Category", "Slow")]
     public void NativeBlocksMatchUnicorn(bool thumb, int iterations, int seed)
     {
         EnsureGuestPages();
