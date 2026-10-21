@@ -133,7 +133,8 @@ half/fixed-point conversions are callouts.
 ## Verification
 - Unit tests: `NativeJitTests` (20 tests: random multi-instruction blocks native vs interpreter incl. a
   2-register spill stress, VFP with special operands, IL+native vs interpreter, native vs Unicorn, dispatcher end to
-  end with identical counters, tier-up, invalidation under a live cache) + the full suite (see below).
+  end with identical counters, tier-up, invalidation under a live cache, exclusive monitor scenarios and a 4-thread
+  atomic-increment stress). Full suite on the final commit (incl. main cf72b18): 290/290 passed (39 min).
 - In-game: `VITASHARP_NATIVE_VERIFY=1` on Killzone to frame 3800: 272M native block executions verified against the
   interpreter, 0 mismatches.
 - Bug found by game runs, not by the per-block tests: dispatch-table read race (fixed in 4332e9d). Lesson: block-level
