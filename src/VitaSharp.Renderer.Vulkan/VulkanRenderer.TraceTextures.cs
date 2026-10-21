@@ -88,7 +88,7 @@ public sealed unsafe partial class VulkanRenderer
         var layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
         var lv = layout.Levels[lodMin];
         w = lv.Width; h = lv.Height;
-        byte[] data = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+        byte[] data; using (var texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _)) data = texels.ToArray();
         iw = w; ih = h;
         if (info.Compressed && info.Convert == TexConvert.None)
         {

@@ -576,8 +576,8 @@ public sealed unsafe partial class VulkanRenderer
             {
                 var lv = layout.Levels[m];
                 uint baseAddr = d.DataAddress + face * layout.FaceStride + lv.Offset;
-                byte[] linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
-                var (buf, off) = UploadSpan(linear, 16);
+                using var linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+                var (buf, off) = UploadSpan(linear.Span, 16);
                 regions.Add(new BufferImageCopy
                 {
                     BufferOffset = off,
