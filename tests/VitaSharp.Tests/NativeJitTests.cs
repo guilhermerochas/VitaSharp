@@ -541,10 +541,10 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
         uint[] arm =
         [
             0xE3A00000, // 00 mov r0, #0
-            0xF2200150, // 04 loop: veor q0, q0, q0  (= vorr? any NEON three-same)
-            0xF2222844, // 08 vadd.i32 q1, q1, q2
-            0xF2244846, // 0C vadd.i32 q2, q2, q3
-            0xF2266848, // 10 vadd.i32 q3, q3, q4
+            0xF2210B12, // 04 loop: vpadd.i32 d0, d1, d2 (NEON forms that stay interpreter callouts)
+            0xF2243B15, // 08 vpadd.i32 d3, d4, d5
+            0xF2276B18, // 0C vpadd.i32 d6, d7, d8
+            0xF22A9B1B, // 10 vpadd.i32 d9, d10, d11
             0xE2800001, // 14 add r0, r0, #1
             0xE3500B02, // 18 cmp r0, #0x800
             0xBAFFFFF8, // 1C blt loop

@@ -580,6 +580,8 @@ public sealed unsafe class X64Emitter
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
             case IrOp.VecOp: VecOp(x); return;
+            case IrOp.LoadD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[r15 + G64[r]]); a.mov(__qword_ptr[rbx + (int)x.Imm], rcx); return; }
+            case IrOp.StoreD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]); a.mov(__qword_ptr[r15 + G64[r]], rcx); return; }
             case IrOp.LdrEx: LoadExclusive(x); return;
             case IrOp.StrEx: StoreExclusive(x); return;
 

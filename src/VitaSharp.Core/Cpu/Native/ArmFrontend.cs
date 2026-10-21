@@ -204,6 +204,8 @@ public sealed unsafe class ArmFrontend
             Op.A32_Exclusive => A32Exclusive(in d),
             Op.Neon_ThreeSame => NeonThreeSame(in d),
             Op.Neon_VdupScalar => NeonVdupScalar(in d),
+            Op.Neon_Imm => NeonImm(in d),
+            Op.Neon_LoadStore => NeonLoadStore(in d),
             Op.T32_ExclusiveWord => T32ExclusiveWord(in d),
             Op.Vfp_LdrStrArm => VfpLdrStr(in d, false),
             Op.Vfp_LdrStrThumb => VfpLdrStr(in d, true),
@@ -1327,6 +1329,52 @@ public sealed unsafe class ArmFrontend
         else rep = B.LoadState(DOff(vm) + (imm4 >> 3) * 4);
         B.StoreState(DOff(vd), rep); B.StoreState(DOff(vd) + 4, rep);
         if (q) { uint d2 = (vd + 1) & 31; B.StoreState(DOff(d2), rep); B.StoreState(DOff(d2) + 4, rep); }
+        return false;
+    }
+
+    /// <summary>VMOV/VMVN/VORR/VBIC (immediate): the expanded immediate is a compile-time constant.</summary>
+    bool? NeonImm(in DecodedInst d)
+    {
+        uint ins = d.Raw, imm8 = (Bit(ins, 24) << 7) | (Bits(ins, 18, 16) << 4) | (ins & 0xF), cmode = Bits(ins, 11, 8);
+        bool op = Bit(ins, 5) != 0, q = Bit(ins, 6) != 0;
+        uint vd = NRd(ins) & 31;
+        ulong imm = Neon.ExpandImm(op, cmode, imm8);
+        bool orrBic = (cmode & 1) != 0 && cmode < 12;
+        for (uint i = 0; i < (q ? 2u : 1u); i++)
+        {
+            uint off = DOff(vd + i); // like the handler: D[d + 1] past D31 lands in the guard area
+            if (orrBic)
+            {
+                int lo = B.LoadState(off), hi = B.LoadState(off + 4);
+                if (op) { lo = B.AndK(lo, ~(uint)imm); hi = B.AndK(hi, ~(uint)(imm >> 32)); }
+                else { lo = B.Or(lo, C((uint)imm)); hi = B.Or(hi, C((uint)(imm >> 32))); }
+                B.StoreState(off, lo); B.StoreState(off + 4, hi);
+            }
+            else
+            {
+                ulong v = op && cmode != 14 ? ~imm : imm;
+                B.StoreState(off, C((uint)v)); B.StoreState(off + 4, C((uint)(v >> 32)));
+            }
+        }
+        return false;
+    }
+
+    /// <summary>VLD1/VST1 (multiple, 1-4 D registers): contiguous 8-byte copies, then Rn writeback.</summary>
+    bool? NeonLoadStore(in DecodedInst d)
+    {
+        uint ins = d.Raw, rn = Bits(ins, 19, 16), rm = ins & 0xF, type = Bits(ins, 11, 8);
+        if (Bit(ins, 23) != 0 || rn == 15) return null; // single lane / all lanes: callouts
+        int regs = type switch { 0x7 => 1, 0xA => 2, 0x6 => 3, 0x2 => 4, _ => 0 };
+        if (regs == 0) return null;                       // interleaving VLD2-4 / VST2-4: callouts
+        bool load = Bit(ins, 21) != 0;
+        uint vd = NRd(ins);
+        int baseVal = Reg(rn);
+        for (uint r = 0; r < regs; r++)
+        {
+            int a = B.AddK(baseVal, r * 8);
+            if (load) B.LoadD(a, DOff((vd + r) & 31)); else B.StoreD(a, DOff((vd + r) & 31));
+        }
+        if (rm != 15) SetReg(rn, rm == 13 ? B.AddK(baseVal, (uint)(8 * regs)) : B.Add(baseVal, Reg(rm)));
         return false;
     }
 }

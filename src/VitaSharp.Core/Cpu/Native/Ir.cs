@@ -42,6 +42,8 @@ public enum IrOp : byte
     Store8, Store16, Store32,   // value B
     Fence,
     VecOp,        // Advanced SIMD on the register file: Imm = VecKind | q << 8 | size << 9, Imm4 = byte offsets d | n << 8 | m << 16
+    LoadD,        // 8 bytes at guest address A -> state offset Imm (one unaligned 64-bit access, like Mem.R64)
+    StoreD,       // state offset Imm (8 bytes) -> guest address A (like Mem.W64)
     LdrEx,        // D = word at guest address A, arming the exclusive monitor (interpreter generation-counter protocol)
     StrEx,        // exclusive store of B to address A; D = 0 on success, 1 on failure
     // ---- control
@@ -68,7 +70,7 @@ public struct IrInst
     public IrInst(IrOp op) { Op = op; }
 
     public readonly bool HasSideEffects => Op is IrOp.SetReg or IrOp.SetFlag or IrOp.StoreState or IrOp.Store8 or IrOp.Store16
-        or IrOp.Store32 or IrOp.Fence or IrOp.VecOp or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
+        or IrOp.Store32 or IrOp.Fence or IrOp.VecOp or IrOp.LoadD or IrOp.StoreD or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
         or IrOp.ExitDynamic or IrOp.FpOp
         // loads may fault on unmapped memory exactly like the interpreter: keep them
         or IrOp.Load8 or IrOp.Load8S or IrOp.Load16 or IrOp.Load16S or IrOp.Load32;

@@ -63,7 +63,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         rt.Register((nint)code, size, b);
         if (DumpCode) Console.Error.WriteLine($"[native] {b}\n{ir}\n{X64Disassembler.Disassemble((nint)code, size)}");
         bool unlogged = false; // callouts that may store to memory: the verifier cannot undo them
-        foreach (var x in ir.Insts) if (x.Op == IrOp.StrEx || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;
+        foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;
         return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged));
     }
 
