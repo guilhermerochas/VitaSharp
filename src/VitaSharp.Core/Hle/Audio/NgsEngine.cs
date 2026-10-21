@@ -137,6 +137,9 @@ public sealed class NgsSystem
     public int Granularity, SampleRate, MaxVoices;
     public readonly List<NgsRack> Racks = new();
     public readonly List<NgsVoice> Queue = new();
+    /// <summary>Reused snapshot of <see cref="Queue"/> for sceNgsSystemUpdate (voices may leave the queue while it runs).</summary>
+    public NgsVoice[] UpdateSnapshot = [];
+    public int UpdateDepth;
     public readonly object Lock = new();
     public uint CallbackInfo;   // guest scratch for SceNgsCallbackInfo
 }
