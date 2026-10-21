@@ -9,7 +9,10 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | 1. Pluggable backends (`IBlockCompiler`, chain, `--cpu=`, `VITASHARP_CPU`, launcher setting) | done, commit b3fe8bb |
 | 2a. Native x64 backend: integer core, fastmem, linking, indirect-exit table | done, commit 0874fa7 |
 | 2b. VFP inline (transfers + scalar arithmetic), tier-up to IL, exact mid-block exits | done, commit d36cd84 |
-| 2c. NEON natively | not started (NEON runs as interpreter callouts; NEON-heavy blocks tier up to IL) |
+| 2b'. Dispatch-table race fix, in-game verify mode (VITASHARP_NATIVE_VERIFY), fault reporter, merge of main b1f371a | done, commit 4332e9d |
+| Merge of main cf72b18 (quarter-cycle CycleCost, pacing, alloc pooling, Linux/macOS) | done, commit d6cc00d |
+| 2c. LDREX/STREX (word) inline | done, commit 56e752a |
+| 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
 | ARM64 emitter | not started (design below) |
 
 Results and measurements: see "Verification" and "Performance" (filled in from the final runs).
@@ -82,8 +85,8 @@ budget and are recompiled by the IL backend when it runs out (tier-up; native co
   disables native execution. Watchpoints (`VITASHARP_WATCH`) make the native backend unsupported (IL takes over).
 - Invalidation (`BlockCache.Invalidate/Clear`): retired blocks are marked `Invalidated`, their incoming link slots
   cleared and their dispatch-table entry removed. The per-core fast lookup now also skips invalidated blocks.
-- Exclusive monitor (LDREX/STREX/CLREX family): LDREX/STREX are callouts (interpreter generation-counter monitor),
-  CLREX inline.
+- Exclusive monitor: LDREX/STREX word are inline with the interpreter generation-counter protocol (the generation
+  table is pinned so generated code addresses it); other sizes are callouts; CLREX inline.
 
 ### Linking
 - Static exits own an 8-byte link slot in data memory: the exit jumps through it when non-zero, else returns and
@@ -119,16 +122,32 @@ half/fixed-point conversions are callouts.
 - VFP: VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP, VMOV (all core<->S/D/scalar forms, immediate, register), VDUP (core),
   VMRS/VMSR, VABS/VNEG, VADD/VSUB/VMUL/VNMUL/VDIV/VMLA/VMLS/VNMLA/VNMLS/VSQRT/VCMP(E)/VCVT (f32<->f64, int<->float)
   with the fast-path rules above.
-- Callouts: NEON (all), exclusives/SWP, saturating and parallel add/sub, SSAT/USAT, PKH, SEL, USAD8, halfword and
+- Exclusives: LDREX/STREX word (ARM, Thumb-2) with the interpreter's generation-counter monitor; CLREX.
+- NEON: VAND/VBIC/VORR/VORN/VEOR/VBSL/VBIT/VBIF, VADD/VSUB.I8-64, VADD/VSUB/VMUL/VMLA/VMLS.F32 (D and Q), VDUP
+  (scalar), VMOV/VMVN/VORR/VBIC (immediate), VLD1/VST1 (multiple, 1-4 registers, all writeback forms).
+- Callouts: other NEON (VLD2-4/VST2-4, single/all-lane loads, shifts, scalar-by-element, misc, VEXT, VTBL...),
+  byte/halfword/doubleword exclusives, SWP, saturating and parallel add/sub, SSAT/USAT, PKH, SEL, USAD8, halfword and
   dual multiplies, MRS/MSR, SDIV/UDIV in ARM state (SignedMultiplyMedia), VFMA, half/fixed-point VCVT, BKPT/UDF/
   YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
 
 ## Verification
-(see the report section at the end of this file)
+- Unit tests: `NativeJitTests` (20 tests: random multi-instruction blocks native vs interpreter incl. a
+  2-register spill stress, VFP with special operands, IL+native vs interpreter, native vs Unicorn, dispatcher end to
+  end with identical counters, tier-up, invalidation under a live cache) + the full suite (see below).
+- In-game: `VITASHARP_NATIVE_VERIFY=1` on Killzone to frame 3800: 272M native block executions verified against the
+  interpreter, 0 mismatches.
+- Bug found by game runs, not by the per-block tests: dispatch-table read race (fixed in 4332e9d). Lesson: block-level
+  differential tests cannot see cross-thread races in the chaining machinery; run games several times and bisect
+  with VITASHARP_NATIVE_NOLINK.
+- Game runs and performance: see "Performance" below (latest batch).
 
 ## Debugging knobs
 - `--cpu=native|il|interp`, `VITASHARP_CPU`, launcher Settings > CPU.
 - `VITASHARP_NATIVE_DUMP=1`: IR + disassembly of every compiled block (stderr).
+- `VITASHARP_NATIVE_VERIFY=1`: in-game differential mode (native vs interpreter per block execution, store log + undo;
+  mismatches logged as NATIVE VERIFY MISMATCH with IR/disassembly). Halves CPU speed.
+- Native faults inside generated code are reported (stderr and vitasharp-native-fault.txt in %TEMP%) with registers,
+  the guest block, IR and disassembly.
 - `VITASHARP_NATIVE_NOINLINE=all|Op,Op,...`: force interpreter callouts for those ops (bisection).
 - `VITASHARP_NATIVE_NOLINK=1`: no exit linking / dispatch table.
 - `VITASHARP_NATIVE_TIERUP=0`: no IL tier-up.
@@ -137,8 +156,9 @@ half/fixed-point conversions are callouts.
   `VITASHARP_HUNT=T|A:words` + `VITASHARP_HUNT_NATIVE=1` searches states for a native/interpreter mismatch).
 
 ## Next steps
-1. NEON natively (biggest remaining callout source in Uncharted/Killzone): ThreeSame integer/logic/float (FZ+DN are
-   architectural for NEON, so no FPSCR guard), VDUP scalar, VMOV/VMVN immediate, VLD1/VST1, VEXT; then tier-up can go.
+1. More NEON natively (remaining callouts in Uncharted/Killzone, see the report line "executed callouts"): shifts
+   (Neon_Shift), scalar-by-element (Neon_Scalar), two-register misc (Neon_Misc), VLD2-4/VST2-4 and lane loads, VEXT,
+   VPADD/VMAX/VMIN/VCGT float compares; byte/halfword/doubleword exclusives. Then tier-up to IL can likely go.
 2. Keep SIMD registers in XMM across a block (today every VFP op loads/stores the register file).
 3. Fold `[base + imm]` into the addressing mode when the frontend can prove no 32-bit wrap; CMP+branch fusion
    (use host flags directly instead of materialised Z/N/C/V temps).
