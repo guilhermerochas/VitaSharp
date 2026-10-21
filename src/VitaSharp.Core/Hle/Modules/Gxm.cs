@@ -488,10 +488,17 @@ public sealed class Gxm : HleModule
         if (c.Deferred) return ERR_INVALID_VALUE;
         if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         c.InScene = false;
-        var list = new List<(uint, uint)>();
-        if (ReadNotification(vertexNotification) is { } vn && vn.Item1 != 0) list.Add(vn);
-        if (ReadNotification(fragmentNotification) is { } fn && fn.Item1 != 0) list.Add(fn);
-        long seq = Gpu.Submit(new EndSceneCommand { Notifications = list.ToArray() });
+        // exact-size array (no list per scene): vertex notification first, then fragment
+        var vn = ReadNotification(vertexNotification) is { } v && v.Item1 != 0 ? v : ((uint, uint)?)null;
+        var fn = ReadNotification(fragmentNotification) is { } f && f.Item1 != 0 ? f : ((uint, uint)?)null;
+        (uint, uint)[] notifications = (vn, fn) switch
+        {
+            ({ } a, { } b) => [a, b],
+            ({ } a, null) => [a],
+            (null, { } b) => [b],
+            _ => [],
+        };
+        long seq = Gpu.Submit(new EndSceneCommand { Notifications = notifications });
         // keep the guest at most a few scenes ahead of the GPU worker
         Gpu.WaitFor(seq - 4096);
         if (Gpu.Pending > 20000) Gpu.WaitFor(seq - 2000);
@@ -801,8 +808,8 @@ public sealed class Gxm : HleModule
     static int CopyUniforms(GxmProgramInfo info, uint[] buffers, ref byte[] data)
     {
         if (info.UniformBytes == 0) return 0;
-        if (data.Length < info.UniformBytes) data = new byte[Math.Max(info.UniformBytes, data.Length * 2)];
-        else data.AsSpan(0, info.UniformBytes).Clear();
+        UniformBufferPool.Ensure(ref data, info.UniformBytes);
+        data.AsSpan(0, info.UniformBytes).Clear();
         foreach (var slot in info.UniformSlots)
         {
             if (slot.Mapped) continue; // read in place by the renderer
@@ -1337,8 +1344,11 @@ public sealed class Gxm : HleModule
         if (c == null || draw == 0) return ERR_INVALID_POINTER;
         if (!c.Deferred && !c.InScene) return ERR_NOT_WITHIN_SCENE;
         var vp = c.VertexProgram; var fp = c.FragmentProgram;
-        var vUbs = (uint[])c.VertexUniformBuffers.Clone(); var fUbs = (uint[])c.FragmentUniformBuffers.Clone();
-        var vTex = (GxmTextureDesc[])c.VertexTextures.Clone(); var fTex = (GxmTextureDesc[])c.FragmentTextures.Clone();
+        // per-context scratch copies (Draw copies them into the pooled command): no arrays cloned per draw
+        var vUbs = c.PreVertexUbs; var fUbs = c.PreFragmentUbs;
+        c.VertexUniformBuffers.CopyTo(vUbs, 0); c.FragmentUniformBuffers.CopyTo(fUbs, 0);
+        var vTex = c.PreVertexTextures; var fTex = c.PreFragmentTextures;
+        c.VertexTextures.CopyTo(vTex, 0); c.FragmentTextures.CopyTo(fTex, 0);
         if (c.PrecomputedVertexState != 0)
         {
             vp = _vertexPrograms.GetValueOrDefault(GuestMemory.R32(c.PrecomputedVertexState)) ?? vp;
@@ -1609,20 +1619,13 @@ public sealed class Gxm : HleModule
     {
         if (!_patchers.TryGetValue(patcher, out var sp) || programId == 0 || outVp.Address == 0) return ERR_INVALID_POINTER;
         uint program = GuestMemory.R32(programId);
-        var attrs = new GxmVertexAttribute[attributeCount];
-        var hash = new System.IO.Hashing.XxHash64();
-        for (uint i = 0; i < attributeCount; i++)
-        {
-            uint a = attributes + i * 8;
-            attrs[i] = new GxmVertexAttribute(GuestMemory.Read<ushort>(a), GuestMemory.Read<ushort>(a + 2), GuestMemory.Read<byte>(a + 4),
-                GuestMemory.Read<byte>(a + 5), GuestMemory.Read<ushort>(a + 6));
-        }
-        var strs = new GxmVertexStream[streamCount];
-        for (uint i = 0; i < streamCount; i++)
-            strs[i] = new GxmVertexStream(GuestMemory.Read<ushort>(streams + i * 4), GuestMemory.Read<ushort>(streams + i * 4 + 2));
-        if (attributeCount > 0) hash.Append(GuestMemory.Span(attributes, (int)attributeCount * 8));
-        if (streamCount > 0) hash.Append(GuestMemory.Span(streams, (int)streamCount * 4));
-        var key = (program, hash.GetCurrentHashAsUInt64());
+        // key = program + XxHash64 of the raw attribute and stream records (same value as hashing them in sequence);
+        // games re-create the same vertex program every frame, so the descriptors are only built on a cache miss
+        int attrBytes = (int)attributeCount * 8, streamBytes = (int)streamCount * 4;
+        Span<byte> raw = attrBytes + streamBytes <= 1024 ? stackalloc byte[attrBytes + streamBytes] : new byte[attrBytes + streamBytes];
+        if (attributeCount > 0) GuestMemory.Span(attributes, attrBytes).CopyTo(raw);
+        if (streamCount > 0) GuestMemory.Span(streams, streamBytes).CopyTo(raw[attrBytes..]);
+        var key = (program, System.IO.Hashing.XxHash64.HashToUInt64(raw));
         lock (sp)
         {
             if (sp.VertexCache.TryGetValue(key, out var cached) && _vertexPrograms.ContainsKey(cached.Handle))
@@ -1631,6 +1634,16 @@ public sealed class Gxm : HleModule
                 outVp.Value = cached.Handle;
                 return 0;
             }
+            var attrs = new GxmVertexAttribute[attributeCount];
+            for (uint i = 0; i < attributeCount; i++)
+            {
+                uint a = attributes + i * 8;
+                attrs[i] = new GxmVertexAttribute(GuestMemory.Read<ushort>(a), GuestMemory.Read<ushort>(a + 2), GuestMemory.Read<byte>(a + 4),
+                    GuestMemory.Read<byte>(a + 5), GuestMemory.Read<ushort>(a + 6));
+            }
+            var strs = new GxmVertexStream[streamCount];
+            for (uint i = 0; i < streamCount; i++)
+                strs[i] = new GxmVertexStream(GuestMemory.Read<ushort>(streams + i * 4), GuestMemory.Read<ushort>(streams + i * 4 + 2));
             uint h = AllocObj(16, "SceGxmVertexProgram");
             GuestMemory.W32(h + 4, program);
             var vp = new GxmVertexProgram { Handle = h, Info = GxmProgramInfo.Get(program), Attributes = attrs, Streams = strs };
