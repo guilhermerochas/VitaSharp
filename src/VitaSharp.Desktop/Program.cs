@@ -53,7 +53,7 @@ public static class Program
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
             case "imports" when args.Length >= 2:
-                return ListImports(args[1]);
+                return ListImports(args[1], args.Length > 2 ? args[2] : "eboot.bin");
             case "shadertest" when args.Length >= 2:
                 return ShaderTest.Run(ResolveApp(args[1]), args.Skip(2).ToArray());
             case "disasm" when args.Length >= 3:
@@ -187,12 +187,12 @@ public static class Program
         return answer != null && (answer.Equals("y", StringComparison.OrdinalIgnoreCase) || answer.Equals("yes", StringComparison.OrdinalIgnoreCase));
     }
 
-    static int ListImports(string titleArg)
+    static int ListImports(string titleArg, string exe)
     {
         Log.Level = LogLevel.Warn;
         using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
         string appDir = ResolveApp(titleArg);
-        emu.LoadTitle(appDir);
+        emu.LoadTitle(appDir, exe);
         // Modules the game loads at run time (sceKernelLoadStartModule of Media/Modules/*.suprx, sysmodule LLE of
         // sce_module/*.suprx): load them too, without module_start, so imports they export count as LLE.
         foreach (var file in Directory.EnumerateFiles(appDir, "*.suprx", SearchOption.AllDirectories).Order())
@@ -236,7 +236,7 @@ public static class Program
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default %APPDATA%/VitaSharp)");
         Console.WriteLine("  test <scenario.txt>                  run an automated scenario (frames, contact sheet, report)");
-        Console.WriteLine("  imports <TITLEID|folder>             list the system functions a title needs");
+        Console.WriteLine("  imports <TITLEID|folder> [x.self]    list the system functions a title (or one of its executables) needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");

@@ -17,7 +17,7 @@ marcados **(inferido)**; valores sem fonte estão marcados **a confirmar**, com 
 | SceSas | 33 | nenhum (inferido do PSP) | `Hle/Modules/Sas.cs` + `Hle/Audio/SasEngine.cs` |
 | ScePvf | 43 | `psp2/pvf.h` (10 inferidas) | `Hle/Modules/Pvf.cs` |
 | ScePgf | 23 | `psp2/pgf.h` | `Hle/Modules/Pgf.cs` |
-| SceJpegUser | 11 | `psp2/jpeg.h` | `Hle/Modules/Jpeg.cs` + `Media/MjpegCodec.cs`, `Media/YuvConvert.cs` |
+| SceJpegUser | 11 | `psp2/jpeg.h` | `Hle/Modules/Jpeg.cs` + `Media/JpegDecoder.cs`, `Media/JpegCommon.cs`, `Media/YuvConvert.cs` |
 | SceJpegEncUser | 10 | `psp2/jpegenc.h`, `psp2common/jpegenc.h` | `Hle/Modules/JpegEnc.cs` |
 | SceIme | 6 | `psp2/libime.h` | `Hle/Modules/Ime.cs` (+ `ITextInputBackend` em `Host/HostServices.cs`) |
 | SceVoice | 28 | `psp2/voice.h` | `Hle/Modules/Voice.cs` |
@@ -182,13 +182,35 @@ Estruturas comuns:
 | `SceAtracContentInfo` | 0x34 | 0x00 `size`, 0x04 `atracType`, 0x08 `channel`, 0x0C `samplingRate`, 0x10 `endSample` (s32), 0x14 `loopStartSample` (s32), 0x18 `loopEndSample` (s32), 0x1C `bitRate`, 0x20 `fixedEncBlockSize`, 0x24 `fixedEncBlockSample`, 0x28 `frameSample`, 0x2C `loopBlockOffset`, 0x30 `loopBlockSize` |
 | `SceAtracStreamInfo` | 0x10 | 0x00 `size` (=0x10), 0x04 `pWritePosition` (ptr guest), 0x08 `readPosition`, 0x0C `writableSize` |
 
+**Estado da implementação (HLE):** `Hle/Modules/Atrac.cs` + `Hle/Audio/At9Container.cs` (parser) +
+`Hle/Audio/AtracStream.cs` (estado por handle, testável sem guest: o decoder entra por `IAt9SuperframeDecoder`).
+`sceSysmoduleLoadModule(0x0030)` tenta antes `libatrac.suprx` por LLE (`app0:sce_module` ou `vs0:sys/external`,
+tabela `LleSysmodules` em `SystemMisc.cs`); o HLE fica como fallback. Decisões tomadas onde a doc dizia "a confirmar"
+(todas continuam sem verificação em hardware/LLE):
+- Handle = `0x2003 << 16 | slot`, slot 0-based (o menor livre).
+- Os pontos do `smpl` são lidos como incluindo o encoder delay (como AT3 no PSP) e expostos sem ele; `loopEnd` e
+  `endSample` são inclusivos (`endSample = TotalSamples - 1`). `loopBlockOffset` = offset no arquivo do superframe
+  que contém o início do loop; `loopBlockSize` = bytes desse superframe até o fim do superframe do fim do loop.
+- `OutputSamples` padrão = `FrameSamples`; `SetOutputSamples` exige múltiplo de `FrameSamples`, ≤ 8 frames e ≤ 2048.
+- `Decode` para no ponto de loop e no fim (pode devolver menos amostras); depois do fim retorna `ALL_DATA_WAS_DECODED`.
+  Ao pular de forma não sequencial com tudo na memória (seek/loop), o decoder é reiniciado e "aquecido" com o
+  superframe anterior. Erro do decoder → `InternalError = 0x807F0000` e retorno `0x807F0000`.
+- Streaming: o anel recebe os superframes na ordem de reprodução — ao chegar ao fim do bloco de loop com loops
+  restantes, `readPosition` volta para o bloco de início do loop. Por isso o sub-buffer nunca é necessário:
+  `IsSubBufferNeeded` = 0, `GetSubBufferInfo`/`SetSubBuffer` = `NO_NEED_SUB_BUFFER`. `SetLoopNum` depois de o jogo
+  já ter lido além do fim do loop descarta os bytes excedentes do anel e rebobina o leitor. `ResetNextOutputPosition`
+  em streaming esvazia o anel e pede a leitura a partir de um superframe antes do alvo (aquecimento).
+- `SetLoopNum(≠0)` num arquivo sem loop → `INVALID_LOOP_STATUS`. Status: tudo na memória = `0x2|0x4` (+`0x8` com
+  loop); streaming liga `0x4` quando o leitor chegou ao fim dos dados. `MAIN_BUFFER_SIZE_IS_TOO_SMALL` em streaming
+  quando `bufferSize < dataOffset + superframe`.
+
 Validação geral: não há jogo instalado que importe SceAtrac. Montar um homebrew de teste com VitaSDK (`-lSceAtrac_stub`)
 que carrega um `.at9` de `app0:`, toca em modo "tudo na memória" e em streaming com buffer pequeno, e compara a PCM
 (hash) com o mesmo arquivo decodificado pelo `Audiodec` frame a frame. Cruzar os valores de `GetContentInfo` e dos
 getters com o Vita3K rodando `libatrac` por LLE.
 
 ### sceAtracQueryDecoderGroupMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x1A34B331
 - **Protótipo:** `int sceAtracQueryDecoderGroupMemSize(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup);` (`psp2/atrac.h`)
 - **Comportamento:** retorna (em r0, positivo) o tamanho de memória de trabalho que o jogo deve alocar e passar a
   `sceAtracCreateDecoderGroup` para `totalCh` canais.
@@ -202,7 +224,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** homebrew de teste imprime o valor para totalCh 1, 2, 16.
 
 ### sceAtracCreateDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x01BFB98C
 - **Protótipo:** `int sceAtracCreateDecoderGroup(SceUInt32 atracType, const SceAtracDecoderGroup *pDecoderGroup, void *pvWorkMem, int initAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** cria o grupo de decoders (reserva `totalCh` canais de hardware). Se `initAudiodecFlag != 0`,
   inicializa a biblioteca SceAudiodec para AT9 com `totalCh` (equivalente a `sceAudiodecInitLibrary(0x1003, {size, totalCh})`).
@@ -216,7 +238,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** criar duas vezes deve dar `ALREADY_CREATED`.
 
 ### sceAtracDeleteDecoderGroup
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x6CA2F08A
 - **Protótipo:** `int sceAtracDeleteDecoderGroup(SceUInt32 atracType, int termAudiodecFlag);` (`psp2/atrac.h`)
 - **Comportamento:** destrói o grupo; se `termAudiodecFlag`, termina a biblioteca SceAudiodec AT9.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_CREATED` (sem grupo); `REMAIN_VALID_HANDLE` (há handles não liberados);
@@ -226,7 +248,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** deletar com handle vivo → `0x80630018`.
 
 ### sceAtracGetDecoderGroupInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xBF34605D
 - **Protótipo:** `int sceAtracGetDecoderGroupInfo(SceUInt32 atracType, SceAtracDecoderGroup *pCreatedDecoder, SceAtracDecoderGroup *pAvailableDecoder);` (`psp2/atrac.h`)
 - **Comportamento:** preenche `pCreatedDecoder` com o grupo criado (`wordLength`, `totalCh`) e `pAvailableDecoder` com
   o que ainda está livre (`totalCh - canais em uso`).
@@ -237,7 +259,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** após acquire de um stereo, `available.totalCh` cai 2.
 
 ### sceAtracSetDataAndAcquireHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD1997678
 - **Protótipo:** `int sceAtracSetDataAndAcquireHandle(SceUChar8 *pucBuffer, SceUInt32 uiReadSize, SceUInt32 uiBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** analisa o cabeçalho RIFF no início de `pucBuffer` (`uiReadSize` bytes válidos do arquivo, buffer
   total `uiBufferSize`), reserva canais no grupo e devolve um handle. Se `uiReadSize >= FileSize` → status
@@ -255,7 +277,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** `.at9` inteiro e cabeçalho truncado (`readSize` pequeno → `0x8063000B`).
 
 ### sceAtracReleaseHandle
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x008EF251
 - **Protótipo:** `int sceAtracReleaseHandle(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** libera o handle e devolve seus canais ao grupo.
 - **Retorno/erros:** 0; `INVALID_HANDLE` (`handle >> 16 != 0x2003` ou índice desconhecido).
@@ -264,7 +286,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** liberar duas vezes → `0x8063000C`.
 
 ### sceAtracDecode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x29C74EE3
 - **Protótipo:** `int sceAtracDecode(int atracHandle, void *pOutputBuffer, SceUInt32 *pOutputSamples, SceUInt32 *pDecoderStatus);` (`psp2/atrac.h`)
 - **Comportamento:** decodifica até `OutputSamples` amostras (por canal) a partir de `NextSample` para
   `pOutputBuffer` (S16 intercalado). Descarta `EncoderDelay` amostras no início do arquivo. Ao alcançar `LoopEnd` com
@@ -284,7 +306,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
   `loopStartSample` exatamente (comparar amostra a amostra).
 
 ### sceAtracGetStreamInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD9409E57
 - **Protótipo:** `int sceAtracGetStreamInfo(int atracHandle, SceAtracStreamInfo *pStreamInfo);` (`psp2/atrac.h`)
 - **Comportamento:** informa onde o jogo deve escrever mais dados: `pWritePosition` (endereço no anel), `readPosition`
   (offset no arquivo a ler), `writableSize` (bytes contíguos que cabem até o fim do anel ou até o dado ainda não
@@ -296,7 +318,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** streaming com buffer de 0x4000 toca um arquivo de 1 MB sem erro.
 
 ### sceAtracAddStreamData
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x53656F1C
 - **Protótipo:** `int sceAtracAddStreamData(int atracHandle, SceUInt32 addSize);` (`psp2/atrac.h`)
 - **Comportamento:** o jogo informa que escreveu `addSize` bytes em `pWritePosition`; avança `WritePtr`, `ReadPos`,
   `Filled`; atualiza bits `*_IS_ON_MEMORY`.
@@ -306,7 +328,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** adicionar mais que o vago → `0x80630013`.
 
 ### sceAtracIsSubBufferNeeded
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x722F5004
 - **Protótipo:** `int sceAtracIsSubBufferNeeded(int atracHandle);` (`psp2/atrac.h`)
 - **Comportamento:** retorna 1 se o handle está em streaming com loop e o bloco que contém `LoopStart`
   (`loopBlockOffset/loopBlockSize`) precisa ser mantido num sub-buffer para recomeçar o loop sem reler o arquivo;
@@ -318,7 +340,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** arquivo com loop em streaming; comparar com Vita3K LLE.
 
 ### sceAtracGetSubBufferInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xE7D9DC4F
 - **Protótipo:** `int sceAtracGetSubBufferInfo(int atracHandle, SceUInt32 *pReadPosition, SceUInt32 *pMinSubBufferSize, SceUInt32 *pDataSize);` (`psp2/atrac.h`)
 - **Comportamento:** informa o offset no arquivo (`readPosition`) e o tamanho (`dataSize`) do trecho que o jogo deve
   carregar no sub-buffer, e o tamanho mínimo do sub-buffer (`minSubBufferSize`, alinhado a 0x100).
@@ -329,7 +351,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem acima.
 
 ### sceAtracSetSubBuffer
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x272B4CBA
 - **Protótipo:** `int sceAtracSetSubBuffer(int atracHandle, SceUChar8 *pSubBuffer, SceUInt32 subBufferSize);` (`psp2/atrac.h`)
 - **Comportamento:** registra o sub-buffer já preenchido pelo jogo; o `Decode` usa esse bloco ao voltar ao loop.
 - **Retorno/erros:** 0; `INVALID_ALIGNMENT` (ponteiro ou tamanho não múltiplos de 0x100 — checado antes de tudo no
@@ -339,7 +361,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** idem.
 
 ### sceAtracSetLoopNum
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x5C22E927
 - **Protótipo:** `int sceAtracSetLoopNum(int atracHandle, int loopNum);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas vezes o trecho de loop repete (`-1` infinito, `0` sem loop).
 - **Retorno/erros:** 0; `INVALID_LOOP_NUM` (`< -1`), `INVALID_HANDLE`; `INVALID_LOOP_STATUS` se o arquivo não tem
@@ -349,7 +371,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** loopNum=1 deve tocar o loop exatamente duas vezes.
 
 ### sceAtracSetOutputSamples
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x075B0C63
 - **Protótipo:** `int sceAtracSetOutputSamples(int atracHandle, SceUInt32 outputSamples);` (`psp2/atrac.h`)
 - **Comportamento:** define quantas amostras por canal cada `sceAtracDecode` entrega.
 - **Retorno/erros:** 0; `INVALID_HANDLE`; `INVALID_MAX_OUTPUT_SAMPLES` se `0` ou `> 2048` ou (provável) não múltiplo
@@ -359,7 +381,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** valores 256, 1024, 2048, 2049.
 
 ### sceAtracResetNextOutputPosition
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0xD81D7280
 - **Protótipo:** `int sceAtracResetNextOutputPosition(int atracHandle, SceUInt32 resetSample);` (`psp2/atrac.h`)
 - **Comportamento:** seek: a próxima saída começa em `resetSample`. Reposiciona o decoder no superframe que contém
   `resetSample` (+ delay), descarta as amostras iniciais do superframe e, em streaming, esvazia o anel e ajusta
@@ -371,7 +393,7 @@ getters com o Vita3K rodando `libatrac` por LLE.
 - **Validação:** seek para metade e comparar PCM com decodificação contínua (tolerância no primeiro superframe).
 
 ### sceAtracGetContentInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAtrac · **NID:** 0x68DFC199
 - **Protótipo:** `int sceAtracGetContentInfo(int atracHandle, SceAtracContentInfo *pContentInfo);` (`psp2/atrac.h`)
 - **Comportamento:** preenche informações do arquivo: `atracType = 0x2003`, `channel`, `samplingRate`,
   `endSample` (última amostra, `TotalSamples - 1`, a confirmar), `loopStartSample`/`loopEndSample` (-1 sem loop),
@@ -392,14 +414,14 @@ teste ao longo da reprodução e comparar com Vita3K LLE.
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
-| - [ ] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
-| - [ ] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
-| - [ ] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
-| - [ ] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
-| - [ ] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
-| - [ ] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
-| - [ ] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
+| - [x] sceAtracGetLoopInfo | 0xDC768033 | `int sceAtracGetLoopInfo(int atracHandle, int *pLoopNum, SceUInt32 *pLoopStatus);` | `*pLoopNum` = loops restantes; `*pLoopStatus` = `RESETABLE_PART` (1) se ainda é possível mudar o loop (antes de `LoopEnd`), senão `NON_RESETABLE_PART` (0) — a confirmar. |
+| - [x] sceAtracGetOutputSamples | 0x37B3F335 | `int sceAtracGetOutputSamples(int atracHandle, SceUInt32 *pOutputSamples);` | Devolve `OutputSamples` configurado. |
+| - [x] sceAtracGetNextOutputPosition | 0xACA5F9CC | `int sceAtracGetNextOutputPosition(int atracHandle, SceUInt32 *pNextOutputSample);` | Devolve `NextSample`; após o fim, provavelmente retorna `ALL_DATA_WAS_DECODED` (a confirmar). |
+| - [x] sceAtracGetRemainSamples | 0xDC27E7C2 | `int sceAtracGetRemainSamples(int atracHandle, SceLong64 *pRemainSamples);` | `SceLong64` (8 bytes, alinhado): amostras ainda a sair contando loops restantes; `-1` (`SCE_ATRAC_INFINITE_SAMPLES`) se `LoopNum == -1`. |
+| - [x] sceAtracGetOutputableSamples | 0x5B36CDB5 | `int sceAtracGetOutputableSamples(int atracHandle, SceLong64 *pOutputableSamples);` | `SceLong64`: amostras decodificáveis com os dados já no buffer (superframes completos no anel × `SuperframeSamples` + PCM pendente); com tudo na memória, igual a `RemainSamples`. |
+| - [x] sceAtracGetDecoderStatus | 0x90B512AC | `int sceAtracGetDecoderStatus(int atracHandle, SceUInt32 *pDecoderStatus);` | Devolve os bits `SceAtracDecoderStatus` atuais. |
+| - [x] sceAtracGetVacantSize | 0x9BDB14F7 | `int sceAtracGetVacantSize(int atracHandle, SceUInt32 *pVacantSize);` | Espaço livre total no anel (`BufferSize - Filled`), sem considerar contiguidade; 0 se tudo na memória. |
+| - [x] sceAtracGetInternalError | 0x67981334 | `int sceAtracGetInternalError(int atracHandle, int *pInternalError);` | Devolve o último erro do decoder (`InternalError`, 0 se nenhum), como `sceAudiodecGetInternalError`. |
 
 ## SceSas (33 funções)
 
@@ -491,13 +513,42 @@ Códigos de erro: **valores do PSP** (PPSSPP `sceSas.h`); a família `0x8042xxxx
 | SCE_SAS_ERROR_NOT_INIT | 0x80420100 |
 | SCE_SAS_ERROR_ALREADY_INIT | 0x80420101 |
 
+**Estado da implementação (HLE, ABI ainda inferida):** `Hle/Modules/Sas.cs` + `Hle/Audio/SasEngine.cs` (vozes,
+envelope, mixer, efeito) + `Hle/Audio/Adpcm.cs` (bloco VAG/HEVAG; `Ngs.DecodeHevag` não foi migrado para o helper,
+para não mexer no NGS sem regressão). `sceSysmoduleLoadModule(0x000D)` tenta antes `libsas.suprx` por LLE
+(`LleSysmodules` em `SystemMisc.cs`); o HLE é o fallback. Os protótipos e os códigos `0x8042xxxx` continuam
+inferidos do PSP. Decisões tomadas onde a doc dizia "a confirmar":
+- Config: pares `chave=valor` separados por espaço/vírgula (`numGrains`, `numVoices`, `numReverbs`, sem
+  diferenciar maiúsculas; chaves desconhecidas só geram aviso). Padrões 256/32/1. `numVoices` aceito em 1..256 (folga
+  sobre o limite 32 do PSP). Grão: regra do PSP (64..2048, múltiplo de 32) e ≤ `numGrains` quando informado;
+  `sceSasInit` usa `numGrains` como grão. `GetNeededMemorySize` devolve 0 e escreve o tamanho em `*outSize`.
+  O tamanho do buffer do init não é checado.
+- Saída sempre estéreo a 48 kHz (`OutputMode` 1 é aceito e renderizado como estéreo, com aviso). Pitch 0x1000 = 1
+  amostra de origem por amostra de saída, interpolação linear, faixa 1..0x4000.
+- VAG: o mesmo decodificador cobre VAG clássico e HEVAG (preditor estendido pelo nibble alto do byte 1); histórico
+  saturado em s16. Bloco com flag 7 ou fim do buffer encerram a voz; bit2 marca o início do loop, bit0 encerra o
+  bloco e, com `loopflag` e bit1, volta ao início do loop (bloco 0 se não houver marca). `SetVoice` no mesmo endereço
+  com a voz tocando não reinicia a posição.
+- PCM: `size` em amostras (S16 mono), `loopsize` = últimas N amostras repetidas (≤ 0 sem loop); sem limite superior
+  de tamanho.
+- Envelope por amostra, altura 0..0x40000000; padrões (sem confirmação): attack instantâneo, sustain no máximo até o
+  key off, release instantâneo. Curvas: linear ±rate; bent = rate até 3/4 da altura e rate/4 acima; exponencial =
+  rate/2^31 da distância a 0/máximo por amostra; direct = altura passa a `rate` e a fase avança. `SimpleADSR`
+  converte os registradores do SPU (shift/step) para essas taxas. Modos válidos por fase como no PSP (A: 0/2/5,
+  D e R: 1/3/5, S: 0..5).
+- `SetPause` é por voz; `GetEndState`/`GetPauseState` são por voz (1/0). `SetEffect` trata qualquer valor ≠ 0 como
+  ligado. Efeito: ECHO/DELAY = linha de atraso com feedback (`delayTime` × 192 amostras, `feedback/128`); demais tipos
+  de reverb passam o envio wet sem processamento (aviso uma vez); OFF zera o wet. Padrões: dry ligado, wet desligado,
+  volume do efeito 0x1000. `SetDistortion` só guarda o valor. Picos: maior |amostra| do barramento dry, da saída do
+  efeito e da soma pré-clamp no último grão, escritos em `*pPeakL/*pPeakR`.
+
 Validação geral: nenhum jogo instalado importa SceSas. Teste unitário de `SasEngine` (uma voz VAG conhecida, pitch
 0x1000, ADSR direto → PCM idêntica ao decode VAG puro; pitch 0x2000 → metade das amostras). Homebrew VitaSDK com stub
 gerado do `db/360/SceSas.yml` (`vita-libs-gen`) chamando init/setvoice/keyon/core e salvando a saída; comparar com o
 Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop imports <TITLEID>`.
 
 ### sceSasGetNeededMemorySize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x180C6824
 - **Protótipo:** `int sceSasGetNeededMemorySize(const char *config, SceSize *outSize);` (inferido)
 - **Comportamento:** analisa a string de configuração e devolve o tamanho de buffer de trabalho necessário para
   `sceSasInit`.
@@ -509,7 +560,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** homebrew imprime o valor; comparar com LLE.
 
 ### sceSasInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x449B5974
 - **Protótipo:** `int sceSasInit(const char *config, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** inicializa o mixer global com a config e o buffer de trabalho do jogo; todas as vozes `Off`,
   envelope zerado, volumes padrão (PSP: 0x1000? a confirmar), reverb OFF, grão padrão (`numGrains`).
@@ -520,7 +571,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** init duplo → `ALREADY_INIT`.
 
 ### sceSasInitWithGrain
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x820D5F82
 - **Protótipo:** `int sceSasInitWithGrain(const char *config, unsigned int grain, void *buffer, SceSize bufferSize);` (inferido)
 - **Comportamento:** igual a `sceSasInit`, mas com o grão explícito.
 - **Retorno/erros:** como `sceSasInit` + `INVALID_GRAIN`.
@@ -529,7 +580,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** grão 256 → `sceSasCore` escreve 256×2×2 bytes.
 
 ### sceSasExit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBB7D6790
 - **Protótipo:** `int sceSasExit(void **outBuffer, SceSize *outBufferSize);` (inferido)
 - **Comportamento:** finaliza o mixer e devolve ao jogo o buffer de trabalho passado no init (para liberar).
 - **Retorno/erros:** 0; `NOT_INIT`. Ponteiros nulos tolerados? (a confirmar).
@@ -538,7 +589,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** exit sem init → `NOT_INIT`.
 
 ### sceSasCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x7A4672B2
 - **Protótipo:** `int sceSasCore(SceInt16 *out);` (inferido)
 - **Comportamento:** processa um grão: avança todas as vozes, aplica envelopes, mistura dry + reverb e escreve
   `Grain` quadros estéreo S16 em `out` (multicanal se `OutputMode == 1`, a confirmar no Vita). Vozes que chegam ao fim
@@ -549,7 +600,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** teste unitário do engine; homebrew comparando com LLE.
 
 ### sceSasCoreWithMix
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBD496983
 - **Protótipo:** `int sceSasCoreWithMix(SceInt16 *inOut, int lvol, int rvol);` (inferido)
 - **Comportamento:** como `sceSasCore`, mas mistura o resultado ao PCM já presente em `inOut`; no PSP, o conteúdo
   existente é escalado por `lvol/rvol` (0..0x1000) antes da soma, com clamp.
@@ -559,7 +610,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** buffer de entrada zerado deve dar o mesmo resultado de `sceSasCore` com lvol=rvol=0x1000.
 
 ### sceSasSetVoice
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2B75F9BC
 - **Protótipo:** `int sceSasSetVoice(int iVoiceNum, const void *vagBuf, SceSize size, unsigned int loopflag);` (inferido)
 - **Comportamento:** associa um stream VAG (sem cabeçalho "VAGp", a confirmar) à voz; `loopflag != 0` faz a voz
   respeitar os flags de loop dos blocos (bit2 início, bit1 repetir). Reseta posição e histórico; não liga a voz
@@ -572,7 +623,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** VAG com loop toca indefinidamente; sem loop termina e `GetEndState` = 1.
 
 ### sceSasSetVoicePCM
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB1756EFC
 - **Protótipo:** `int sceSasSetVoicePCM(int iVoiceNum, const void *pcmBuf, SceSize size, int loopsize);` (inferido)
 - **Comportamento:** associa PCM S16 mono à voz; `size` em amostras ou bytes (a confirmar; no PSP é em amostras,
   máx. 0x10000 com `INVALID_PCM_SIZE`); `loopsize` = tamanho do trecho final repetido (≤ 0 sem loop, a confirmar).
@@ -582,7 +633,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** senoide PCM com pitch 0x1000 sai idêntica.
 
 ### sceSasSetNoise
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xF1C63CB9
 - **Protótipo:** `int sceSasSetNoise(int iVoiceNum, unsigned int uClk);` (inferido)
 - **Comportamento:** transforma a voz num gerador de ruído com frequência `uClk` (PSP: 0..63, mesmo esquema do
   gerador de ruído do SPU: LFSR atualizado a cada período derivado de `uClk`).
@@ -593,7 +644,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** sai ruído não nulo após KeyOn.
 
 ### sceSasSetPitch
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x2C48A08C
 - **Protótipo:** `int sceSasSetPitch(int iVoiceNum, int pitch);` (inferido)
 - **Comportamento:** define o passo de reamostragem; `0x1000` = taxa original (48 kHz no Vita? 44.1 kHz no PSP — a
   confirmar a taxa de saída do libsas no Vita).
@@ -603,7 +654,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pitch 0x2000 dobra a frequência.
 
 ### sceSasSetVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x0BE8204D
 - **Protótipo:** `int sceSasSetVolume(int iVoiceNum, int l, int r, int wl, int wr);` (inferido; no PSP o 5º argumento
   vai na pilha no Vita, pelo AAPCS)
 - **Comportamento:** volumes dry esquerdo/direito e wet (envio ao reverb) esquerdo/direito; 0x1000 = unidade;
@@ -614,7 +665,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** l=0x1000,r=0 → canal direito silencioso.
 
 ### sceSasSetADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x18A5EFA2
 - **Protótipo:** `int sceSasSetADSR(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define as *rates* das fases selecionadas por `flag` (`0x1` A, `0x2` D, `0x4` S, `0x8` R).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_RATE` (PSP: rate > 0x7FFFFFFF), `NOT_INIT`.
@@ -623,7 +674,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** attack rate alto → envelope sobe em poucos grãos (`GetEnvelope`).
 
 ### sceSasSetADSRmode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5207F9D2
 - **Protótipo:** `int sceSasSetADSRmode(int iVoiceNum, unsigned int flag, unsigned int a, unsigned int d, unsigned int s, unsigned int r);` (inferido)
 - **Comportamento:** define o tipo de curva (0..5, ver arquitetura) de cada fase selecionada por `flag`.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_ADSR_CURVE_MODE`, `NOT_INIT`.
@@ -632,7 +683,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** modo exponencial vs linear muda a forma do decaimento.
 
 ### sceSasSetSL
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xDE6227B8
 - **Protótipo:** `int sceSasSetSL(int iVoiceNum, unsigned int sl);` (inferido)
 - **Comportamento:** nível de sustain (altura onde o decay termina; PSP: 0..0x40000000).
 - **Retorno/erros:** 0; `INVALID_VOICE`, `INVALID_PARAMETER` (fora da faixa), `NOT_INIT`.
@@ -641,7 +692,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** envelope estabiliza no valor após o decay.
 
 ### sceSasSetSimpleADSR
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xECCE0DB8
 - **Protótipo:** `int sceSasSetSimpleADSR(int iVoiceNum, unsigned int adsr1, unsigned int adsr2);` (inferido)
 - **Comportamento:** configura o envelope inteiro a partir de dois registradores no formato SPU: `adsr1` =
   `[15] attack exponencial, [14:8] attack rate, [7:4] decay rate, [3:0] sustain level`; `adsr2` = `[15] sustain
@@ -654,7 +705,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** valores típicos (`0x000F`, `0x1FC0`) produzem envelope plausível.
 
 ### sceSasSetKeyOn
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xC838DB6F
 - **Protótipo:** `int sceSasSetKeyOn(int iVoiceNum);` (inferido)
 - **Comportamento:** inicia a voz: posição 0, histórico zerado, envelope em Attack com altura 0, `Ended = false`.
   Efetivo no próximo `sceSasCore`.
@@ -664,7 +715,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** KeyOn + Core produz som.
 
 ### sceSasSetKeyOff
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x5E42ADAB
 - **Protótipo:** `int sceSasSetKeyOff(int iVoiceNum);` (inferido)
 - **Comportamento:** passa o envelope para Release; a voz termina quando a altura chega a 0.
 - **Retorno/erros:** 0; `INVALID_VOICE`, `VOICE_PAUSED`, `NOT_INIT`.
@@ -673,7 +724,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** após release, `GetEndState` = 1.
 
 ### sceSasSetPause
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x59C7A9DF
 - **Protótipo:** `int sceSasSetPause(int iVoiceNum, unsigned int pauseFlag);` (inferido; no PSP o argumento é uma
   máscara de vozes `voicebit` + `pause`, no Vita é a confirmar)
 - **Comportamento:** pausa/retoma a(s) voz(es): o mix pula a voz sem avançar posição nem envelope.
@@ -683,7 +734,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** pausar, rodar Core, retomar: a PCM continua de onde parou.
 
 ### sceSasSetDistortion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x011788BE
 - **Protótipo:** `int sceSasSetDistortion(int iVoiceNum, int distortion);` (inferido; função nova do Vita, sem
   equivalente no PSP)
 - **Comportamento:** efeito de distorção (provável saturação/clipping por voz). Semântica e faixa a confirmar.
@@ -693,7 +744,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** confirmar com LLE.
 
 ### sceSasSetEffect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xB0444E69
 - **Protótipo:** `int sceSasSetEffect(int drySwitch, int wetSwitch);` (inferido)
 - **Comportamento:** liga/desliga a saída dry e a saída wet (reverb) no master.
 - **Retorno/erros:** 0; `NOT_INIT`; `INVALID_PARAMETER` (valores ≠ 0/1, a confirmar).
@@ -702,7 +753,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** dry=0 com wet desligado → silêncio.
 
 ### sceSasSetEffectType
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xCDF2DDD5
 - **Protótipo:** `int sceSasSetEffectType(int type);` (inferido)
 - **Comportamento:** seleciona o algoritmo de reverb (`-1..8`, ver arquitetura).
 - **Retorno/erros:** 0; `REV_INVALID_TYPE`; `BUSY` (PSP retorna BUSY ao trocar tipo durante processamento — no HLE
@@ -712,7 +763,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** tipo 6 (ECHO) gera eco audível.
 
 ### sceSasSetEffectParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0xBAD546A0
 - **Protótipo:** `int sceSasSetEffectParam(unsigned int delayTime, unsigned int feedback);` (inferido)
 - **Comportamento:** parâmetros de delay/feedback (só efetivos para ECHO/DELAY no PSP; faixa PSP 0..127).
 - **Retorno/erros:** 0; `REV_INVALID_DELAY_TIME`, `REV_INVALID_FEEDBACK`, `NOT_INIT`.
@@ -721,7 +772,7 @@ Vita3K em LLE (`libsas`). Quando um jogo importar, rodar `VitaSharp.Desktop impo
 - **Validação:** feedback 0 → eco único.
 
 ### sceSasSetEffectVolume
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceSas · **NID:** 0x55EDDBFA
 - **Protótipo:** `int sceSasSetEffectVolume(int valL, int valR);` (inferido)
 - **Comportamento:** volume de retorno do reverb no master (0x1000 = unidade; PSP aceita -0x1000..0x1000).
 - **Retorno/erros:** 0; `REV_INVALID_VOLUME`, `NOT_INIT`.
@@ -737,16 +788,16 @@ o `SasEngine` sob o lock. Validação: homebrew de teste comparando com Vita3K e
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
-| - [ ] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
-| - [ ] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
-| - [ ] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
-| - [ ] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
-| - [ ] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
-| - [ ] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
-| - [ ] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
-| - [ ] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
-| - [ ] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
+| - [x] sceSasSetGrain | 0x2B4A207C | `int sceSasSetGrain(unsigned int grain);` | Muda o número de amostras por `sceSasCore`; `INVALID_GRAIN` fora da faixa (PSP 64..2048, múltiplo de 32; Vita a confirmar, provável ≤ `numGrains` do init). |
+| - [x] sceSasGetGrain | 0x2BEA45BC | `int sceSasGetGrain(void);` | Retorna o grão atual em r0. |
+| - [x] sceSasSetOutputmode | 0x44DDB3C4 | `int sceSasSetOutputmode(unsigned int outputmode);` | 0 = estéreo, 1 = multicanal (PSP); `INVALID_OUTPUT_MODE` se outro valor. Modo multicanal no Vita a confirmar. |
+| - [x] sceSasGetOutputmode | 0x2C36E150 | `int sceSasGetOutputmode(void);` | Retorna o modo atual. |
+| - [x] sceSasGetEndState | 0x007E63E6 | `int sceSasGetEndState(int iVoiceNum);` | Retorna 1 se a voz terminou (ou nunca foi ligada), 0 se tocando. No PSP a versão sem voz retorna máscara de bits de todas as vozes; no Vita, por voz (a confirmar). |
+| - [x] sceSasGetPauseState | 0xFD1A0CBF | `int sceSasGetPauseState(int iVoiceNum);` | Retorna 1 se a voz está pausada (ou máscara, como acima — a confirmar). |
+| - [x] sceSasGetEnvelope | 0x296A9910 | `int sceSasGetEnvelope(int iVoiceNum);` | Retorna a altura atual do envelope (0..0x40000000). |
+| - [x] sceSasGetDryPeak | 0xB6642276 | `int sceSasGetDryPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar se é por voz ou valor de retorno) | Pico absoluto do barramento dry no último `sceSasCore`. Função nova do Vita. |
+| - [x] sceSasGetWetPeak | 0x4314F0E9 | `int sceSasGetWetPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico do barramento wet (saída do reverb) no último grão. |
+| - [x] sceSasGetPreMasterPeak | 0x1568017A | `int sceSasGetPreMasterPeak(int *pPeakL, int *pPeakR);` (inferido, a confirmar) | Pico da soma dry+wet antes do volume master/clamp no último grão. |
 
 ## Fontes do sistema: ScePgf e ScePvf (visão comum)
 
@@ -1792,30 +1843,31 @@ sombra) e podem virar a base de um teste unitário de `PgfFont`.
   4:2:2 16×8, 4:4:4/gray 8×8, 4:4:0 8×16, 4:1:1 32×8, 4:4:1 8×32), divididas pelo downscale e realinhadas
   (largura ao bloco, altura a 8 no modo standard, 1 no extended). `pitch[0]` = luma; `pitch[1]=pitch[2]` = croma
   (luma / divisor de croma); no modo standard 4:2:0/4:2:2 a largura do croma é alinhada a 16; `pitch[3]` = 0.
+  Fórmula exata (conferida no fonte do Vita3K): `x = align(align(w, mcuW) / ratio, mcuW)`,
+  `y = align(align(h, mcuH) / ratio, standard ? 8 : 1)`. Ex.: 4:2:0 100×60 → Y 112×64, Cb/Cr 64×32 (56 → 16);
+  4:4:4 100×60 extended → 104×64. `Csc`/`MJpegCsc` usam o tamanho recebido sem alinhamento a MCU (ratio "0").
+  Downscale com vários bits (`0x70` "ANY"): o VitaSharp usa o menor (1/2), para que buffers dimensionados por
+  `GetOutputInfo` sempre caibam (Vita3K calcula `0x70/8 = 14`, sem sentido).
   Layout do buffer YCbCr: plano Y (`pitch[0].x*pitch[0].y`) seguido de Cb e Cr, contíguos.
 - **Limites:** Vita3K rejeita pitch de saída < 64 ou > 2032×1088 com `UNSUPPORT_IMAGE_SIZE` (o teste é sobre o
   pitch já reduzido pelo downscale). Valores exatos do hardware: a confirmar (testar JPEGs de 63/64 e 2032/2048 px
   num Vita real com um homebrew).
-- **Decoder a usar:** FFmpeg (já embarcado: `third_party/ffmpeg`, `FFmpeg.AutoGen`), `AV_CODEC_ID_MJPEG`. Ele
-  aceita MJPEG sem DHT (insere as tabelas padrão), devolve `AV_PIX_FMT_YUVJ4xxP` com planos separados (cópia direta
-  para o layout de pitch acima) e suporta `AVCodecContext.lowres = 1..3`, que corresponde ao downscale 1/2, 1/4,
-  1/8 (o filtro do Vita pode diferir — Vita3K faz média de blocos; diferença visual aceitável, a confirmar).
-  Alternativa .NET pura (sem FFmpeg): um decodificador baseline próprio (Huffman + IDCT inteira 8×8, ~600 linhas)
-  ou biblioteca MIT que exponha os planos YCbCr; SixLabors.ImageSharp só entrega RGBA e tem licença Split
-  (verificar antes de adotar). Recomendo FFmpeg, igual a `Audiodec`/`Videodec`, com fallback de log
-  `WarnOnce` + `SCE_JPEG_ERROR_CANNOT_INIT` quando `FFmpegLoader.Available == false`.
-- **Arquivos novos:**
-  - `src/VitaSharp.Core/Media/MjpegCodec.cs` — wrapper FFmpeg: `Probe(span) → (w, h, colorSpace)`,
-    `Decode(span, lowres) → planos Y/Cb/Cr + strides`, `Encode(planos, w, h, subsampling, quality) → byte[]`
-    (usado por JpegEnc). Padrão: `H264Decoder.cs` (packet com padding, `avcodec_send_packet`/`receive_frame`).
-  - `src/VitaSharp.Core/Media/YuvConvert.cs` — conversões YCbCr↔RGBA em C# (JFIF full-range e BT.601
-    limited-range, BGRA opcional, upsampling de croma por replicação). Extrair para cá o `ToRgb` privado de
-    `Hle/Modules/Videodec.cs` (linha ~208) e reaproveitá-lo nos dois módulos.
-  - `src/VitaSharp.Core/Hle/Modules/Jpeg.cs` — `sealed class Jpeg : HleModule` com SceJpegUser **e** SceJpegArm
-    (mesma semântica; métodos `[Hle]` separados chamando helpers comuns).
-- **Dependências:** `GuestMemory.Span/R32/W32`, `FFmpegLoader`, `Log.WarnOnce`. Nenhuma dependência de kernel.
-  Decodificação é síncrona (custo de CPU alto): classificar em `HleFunction.ClassifyCost` como faixa "pesada"
-  (mesma de `sceAvcdecDecode`).
+- **Decoder (implementado):** decodificador JPEG próprio, 100% gerenciado (sem FFmpeg, o Core continua
+  multiplataforma): `src/VitaSharp.Core/Media/JpegDecoder.cs` — baseline e sequencial estendido 8 bits, progressivo
+  (seleção espectral + aproximações sucessivas de DC e AC, EOB runs), Huffman, restart markers, grayscale e
+  YCbCr 4:4:4/4:4:0/4:4:1/4:2:2/4:2:0/4:1:1; sem DHT (MJPEG) usa as tabelas típicas do Annex K. Saída planar na
+  resolução nativa de cada componente (MCUs inteiros). Validado contra o GDI+ do Windows em ~40 JPEGs reais
+  (baseline e progressivos, até 6400×4000): PSNR 50–68 dB em 4:4:4. Downscale: média de caixas ratio×ratio sobre o
+  layout de pitch completo (como Vita3K; o filtro do hardware real pode diferir). Padding além dos MCUs
+  decodificados repete a última coluna/linha.
+- **Arquivos:** `Media/JpegCommon.cs` (tabelas Annex K, zig-zag, IDCT/FDCT 8×8, `JpegError`),
+  `Media/JpegDecoder.cs`, `Media/YuvConvert.cs` (YCbCr↔RGBA: JFIF full-range e BT.601 limited-range, BGRA,
+  croma por replicação/média), `Hle/Modules/Jpeg.cs` (`sealed class Jpeg : HleModule`, SceJpegUser + SceJpegArm).
+  `Videodec.cs` não foi tocado (pode migrar para `YuvConvert` depois).
+- **Dependências:** `GuestMemory.Span/R32/W32`, `Log.WarnOnce`. Nenhuma dependência de kernel. Custo HLE: a
+  faixa padrão (não há classe "pesada" em `ClassifyCost`); ~20 ms de CPU host para 960×544.
+- **Buffers curtos:** se `osize`/`tempBufferSize` for menor que o layout, a escrita é truncada no tamanho dado
+  (`WarnOnce`), sem erro — o código de erro real é desconhecido e o Vita3K não verifica.
 
 **Códigos de erro (SceJpeg, Vita3K `codec/include/codec/types.h`):**
 
@@ -1863,9 +1915,16 @@ sombra) e podem virar a base de um teste unitário de `PgfFont`.
 | SCE_JPEG_ERROR_INPUT_DATA_TOO_BIG | 0x80650065 |
 | SCE_JPEG_ERROR_INVALID_DATA_SIZE | 0x80650066 |
 
-Mapeamento sugerido de falhas do FFmpeg: sem `FFD8` no início → `NO_SOI`; `AVERROR_INVALIDDATA` genérico →
-`DECODE_ERROR`; SOF progressivo/aritmético/lossless detectado no probe → `NO_*_SUPPORT` (o hardware é baseline;
-confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRESSIVE_PARAM` sugere que sim).
+Mapeamento implementado (`Jpeg.MapError`): o parser devolve um `JpegError` por falha — sem `FFD8` → `NO_SOI`,
+stream < 2 bytes ou dimensão 0 → `IMAGE_EMPTY`, comprimento de segmento inválido → `BAD_MARKER_LENGTH`, índices
+DQT/DHT → `BAD_DQT_INDEX`/`BAD_DHT_INDEX`, contagens DHT → `BAD_DHT_COUNTS`, DQT/DHT/DRI/SOF/SOS malformados →
+`BAD_*_MARKER`, SOF repetido → `SOF_DUPLICATE`, precisão ≠ 8 → `BAD_PRECISION`, Nf ∉ {1,3} → `COMPONENT_COUNT`,
+fator > 4 ou > 10 blocos/MCU → `BAD_MCU_SIZE`, amostragem não suportada → `UNSUPPORT_SAMPLING`, SOF3/5/6/7/11/15 →
+`NO_LOSSLESS_SUPPORT`, SOF9/10/13/14/DAC → `NO_ARITH_SUPPORT`, parâmetros progressivos ilegais →
+`BAD_PROGRESSIVE_PARAM`, RSTn ausente → `BAD_RESTART_MARKER`, SOI no meio → `UNEXPECTED_MARKER`, marcador reservado
+→ `UNKNOWN_MARKER`, tabela Huffman 2/3 ausente → `NO_HUFF_TABLE` (0/1 ausentes = tabelas padrão), DQT ausente →
+`NO_QUANT_TABLE`, resto → `DECODE_ERROR`. Progressivo é **aceito** (Vita3K também aceita via FFmpeg; se o hardware
+recusa, a confirmar). Stream sem EOI mas com ao menos um scan é aceito.
 
 **Estrutura `SceJpegOutputInfo` (0x34 bytes, `psp2/jpeg.h`; nomes dos campos desconhecidos vindos do Vita3K):**
 
@@ -1880,31 +1939,31 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 | 0x14 | SceJpegPitch[4] | {x, y} u32 cada |
 
 ### sceJpegInitMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xB030773B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xB030773B
 - **Protótipo:** `int sceJpegInitMJpeg(SceInt32 decoderCount);` (`psp2/jpeg.h`; `decoderCount` = máximo de
   split decoders simultâneos)
 - **Comportamento:** inicializa a biblioteca MJPEG e reserva recursos para até `decoderCount` split decoders.
   Obrigatória antes de qualquer `Decode*`/`GetOutputInfo`/`CreateSplitDecoder`.
 - **Retorno/erros:** 0; `SCE_JPEG_ERROR_INIT_DONE` (0x80650063) se já inicializada (a confirmar: Vita3K não
   verifica); `CANNOT_INIT` (0x80650042) se FFmpeg indisponível; `decoderCount < 0` → erro a confirmar.
-- **Implementação no VitaSharp:** `Jpeg.cs`: `_initialized = true; _maxSplit = decoderCount`. Não criar o
-  `AVCodecContext` aqui — criar por chamada de decode (contexto descartável, imagens independentes) ou um por
-  thread; guardar sob `lock`.
+- **Implementação no VitaSharp (feito):** `Jpeg.cs`: `_initialized = true; MaxSplitDecoders = max(0, decoderCount)`
+  sob `lock`. Um segundo Init retorna 0 (como Vita3K; `INIT_DONE` não é emitido até confirmar). Os `Decode*` não
+  exigem Init (decodificação sem estado).
 - **Validação:** homebrew de teste que chama Init duas vezes e verifica o segundo retorno; jogo que importe
   SceJpegUser deve passar da inicialização sem `Unimplemented HLE function`.
 
 ### sceJpegInitMJpegWithParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x518163A7
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x518163A7
 - **Protótipo:** `int sceJpegInitMJpegWithParam(const SceJpegMJpegInitParam *params);` (`psp2/jpeg.h`)
 - **Comportamento:** igual a `InitMJpeg(params->decoderCount)`; `options` reservado (0).
 - **Retorno/erros:** como `InitMJpeg`; `params == NULL` → `INVALID_POINTER` (0x80650010); `size != 0xC` → erro a
   confirmar (provável `INVALID_POINTER` ou `INVALID_DATA_SIZE` 0x80650066).
 - **Estruturas:** `SceJpegMJpegInitParam` 0xC: +0 size, +4 decoderCount, +8 options.
-- **Implementação no VitaSharp:** ler +4 e delegar ao helper de `InitMJpeg`.
+- **Implementação no VitaSharp (feito):** ler +4 e delegar a `InitMJpeg`; `size` não é verificado (como Vita3K).
 - **Validação:** idem `sceJpegInitMJpeg`.
 
 ### sceJpegFinishMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x62842598
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x62842598
 - **Protótipo:** `int sceJpegFinishMJpeg(void);` (`psp2/jpeg.h`)
 - **Comportamento:** finaliza a biblioteca e libera os split decoders restantes.
 - **Retorno/erros:** 0; `CANNOT_FINISH` (0x80650043) ou `INVALID_STATE` (0x80650039) se não inicializada — qual
@@ -1913,7 +1972,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** Init → Finish → Init deve retornar 0 nas três.
 
 ### sceJpegGetOutputInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x353BA9B0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x353BA9B0
 - **Protótipo:** `int sceJpegGetOutputInfo(const SceUInt8 *jpegData, SceSize jpegSize, SceInt32 format,
   SceInt32 mode, SceJpegOutputInfo *output);` (`psp2/jpeg.h`)
 - **Comportamento:** analisa os cabeçalhos (SOI/SOF/DHT) sem decodificar e informa espaço de cor, dimensões,
@@ -1927,14 +1986,16 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   `yuvTotal = Σ pitch[i].x*pitch[i].y`. Se `format == -1`: `outputSize = align(yuvTotal, 256)`. Senão:
   `pitch[0].x *= 4`, `pitch[1..3] = 0`, `tempBufferSize = align(yuvTotal, 256)`,
   `outputSize = align(pitch[0].x * pitch[0].y, 256)`.
-- **Implementação no VitaSharp:** parse de marcadores em C# puro (não precisa de FFmpeg): percorrer segmentos até
-  SOF0/SOF1 (baseline/extended), ler `Hi/Vi` de cada componente → amostragem, `width/height`. Detectar SOF2
-  (progressivo), SOF3 (lossless), SOF9+ (aritmético). Helper `JpegHeader.Parse` em `Media/MjpegCodec.cs`.
+- **Implementação no VitaSharp (feito):** `JpegDecoder.ReadInfo` percorre os segmentos até o primeiro SOS
+  (valida DQT/DHT/DRI/SOF). Escreve exatamente 0x34 bytes; nos erros de modo/amostragem a struct fica zerada com
+  `colorSpace` preenchido (como Vita3K). `coefBufferSize`: 0x100 para baseline (valor do Vita3K, que evita
+  `malloc(0)` nos jogos); progressivo = todos os coeficientes do frame em 16 bits (`blocos × 128`, alinhado a 256).
+  Também usado por `sceJpegArmGetOutputInfo`.
 - **Validação:** teste unitário com JPEGs 4:2:0, 4:2:2, 4:4:4 e gray (gerar com FFmpeg/`System.Drawing` fora do
   repo) comparando pitches com a tabela; cenário `tests/scenarios` quando um jogo usar.
 
 ### sceJpegDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6215B095
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6215B095
 - **Protótipo (inferido — ausente do header; ordem do Vita3K):** `int sceJpegDecodeMJpeg(const SceUInt8 *pJpeg,
   SceSize isize, void *pRGBA, SceSize osize, SceInt32 decodeMode, void *pTempBuffer, SceSize tempBufferSize,
   void *pCoefBuffer, SceSize coefBufferSize);` — 9 argumentos (5 a 9 na pilha).
@@ -1943,51 +2004,55 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Retorno/erros:** sucesso = `(pitchWidth << 16) | pitchHeight` (valor positivo, não 0!). Erros: `INVALID_POINTER`,
   `UNSUPPORT_IMAGE_SIZE` (0x80650020), erros de parse; `osize` menor que o necessário → erro a confirmar
   (provável `INVALID_DATA_SIZE` 0x80650066 ou `INPUT_DATA_TOO_BIG` 0x80650065).
-- **Implementação no VitaSharp:** `MjpegCodec.Decode(span, lowres)` → copiar planos para um buffer host com layout
-  de pitch → `YuvConvert.ToRgba(..., fullRange: true)` direto em `GuestMemory.Span(pRGBA, osize)`. Não é
-  obrigatório escrever em `pTempBuffer` (o jogo não lê), mas escrever o YCbCr lá é mais fiel e barato.
-  Sem pTempBuffer (nulo) → `INVALID_POINTER`? a confirmar.
+- **Implementação no VitaSharp (feito, ordem do Vita3K):** `JpegDecoder.Decode` → layout de pitch (host) →
+  `YuvConvert.ToRgba` JFIF full-range de `pitch[0].x × pitch[0].y` pixels (inclui o padding) em `pRGBA`; o YCbCr
+  também é copiado para `pTempBuffer` quando não nulo (nulo é aceito). Limite 64..2032 × 64..1088 sobre o pitch
+  após downscale → `UNSUPPORT_IMAGE_SIZE`. `osize` curto: escrita truncada, sem erro.
 - **Validação:** confirmar a ordem dos argumentos desmontando o stub do jogo que importar (ver quais registradores
   são carregados antes do `BLX`), ou com homebrew; comparar o RGBA com decodificação de referência (PSNR > 40 dB).
 
 ### sceJpegDecodeMJpegYCbCr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x2A769BD8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x2A769BD8
 - **Protótipo:** `psp2/jpeg.h` declara `int sceJpegDecodeMJpegYCbCr(const SceUInt8 *jpegData, SceSize jpegSize,
   SceInt32 mode, SceUInt8 *output, SceSize outputSize, void *buffer, SceSize bufferSize);`. **Vita3K usa ordem
   diferente:** `(pJpeg, isize, pYCbCr, osize, decodeMode, pCoefBuffer, coefBufferSize)`. A ordem correta está a
   confirmar; a do Vita3K roda jogos comerciais, então é a mais provável — o header vitasdk pode estar errado.
 - **Comportamento:** decodifica para YCbCr planar (Y, Cb, Cr contíguos, layout de pitch da arquitetura), sem CSC.
 - **Retorno/erros:** sucesso = `(pitch[0].x << 16) | pitch[0].y`; erros como `DecodeMJpeg`.
-- **Implementação no VitaSharp:** mesmo helper; cópia plano a plano respeitando pitch (preencher padding com a
-  última coluna/linha, como o hardware faz por MCU — ou zero; a confirmar).
+- **Implementação no VitaSharp (feito, ordem do Vita3K):** mesmo helper; o padding do pitch recebe os dados
+  decodificados dos MCUs (o hardware decodifica MCUs inteiros) e, além deles (croma alinhado a 16), repete a última
+  coluna/linha. Sem limite de tamanho (Vita3K também não aplica aqui).
 - **Validação:** checar ordem de argumentos (heurística: o argumento que vale ≤ 0x7F com bits só em 0–2/4–6 é o
   `decodeMode`); comparar planos com FFmpeg.
 
 ### sceJpegCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6263AEC2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x6263AEC2
 - **Protótipo (inferido — ausente do header; Vita3K):** `int sceJpegCsc(SceUInt8 *pRGBA, const SceUInt8 *pYCbCr,
   SceUInt32 xysize, SceInt32 iFrameWidth, SceInt32 colorOption, SceInt32 sampling);`
 - **Comportamento:** conversão YCbCr→RGBA8888 genérica. `xysize = (width << 16) | height`; `iFrameWidth` = largura
   de linha do destino em pixels; `colorOption` = formato (só RGBA8888 = 0) | `0x10` BT.601; `sampling` só
   `0x101` (4:4:4) ou `0x10101 & 0xFFFF`→gray (segundo Vita3K: só YUV400/YUV444).
 - **Retorno/erros:** 0; `INVALID_COLOR_FORMAT` (0x80650050) para formato ≠ RGBA ou amostragem não suportada.
-- **Implementação no VitaSharp:** `YuvConvert` com pitch não-standard (sem alinhamento de croma a 16). Implementar
-  BT.601 (Vita3K ignora a flag).
+- **Implementação no VitaSharp (feito):** `YuvConvert` com pitch não-standard (planos `width × height`, sem
+  alinhamento). `sampling` aceito: `0x101` (4:4:4) e o código completo `0x10101` (gray). Flag BT.601
+  implementada (entrada limited-range; Vita3K a ignora). Ponteiro nulo → `INVALID_POINTER`.
 - **Validação:** teste unitário: Y=Cb=Cr=128 → cinza 128; vermelho puro ida e volta.
 
 ### sceJpegMJpegCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xC2380E3A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xC2380E3A
 - **Protótipo:** `int sceJpegMJpegCsc(SceUInt8 *rgba, const SceUInt8 *yuv, SceSize yuvSize, SceInt32 imageWidth,
   SceInt32 format, SceInt32 sampling);` (`psp2/jpeg.h`; `yuvSize` é na verdade `(width<<16)|height`, como em Csc)
 - **Comportamento:** converte saída de `DecodeMJpegYCbCr` (layout standard, croma alinhado a 16) para RGBA ou BGRA.
   `sampling` 4:2:0 (0x202) ou 4:2:2 (0x201).
 - **Retorno/erros:** 0; `INVALID_COLOR_FORMAT` se formato ∉ {0, 4} (após remover 0x10); `UNSUPPORT_IMAGE_SIZE` se
   w/h fora de 64..2032 × 64..1088.
-- **Implementação no VitaSharp:** `YuvConvert.ToRgba(standardPitch: true, bgra: format == 4, bt601: (format & 0x10) != 0)`.
+- **Implementação no VitaSharp (feito):** pitch standard sem alinhamento a MCU (luma = `width`, croma alinhado a 16)
+  → `YuvConvert.ToRgba(bgra: format == 4, bt601: flag 0x10)`. Amostragens conhecidas (4:4:4 também) são aceitas;
+  código desconhecido → `UNSUPPORT_SAMPLING`.
 - **Validação:** decodificar com `DecodeMJpegYCbCr` + `MJpegCsc` e comparar com `DecodeMJpeg` (devem ser iguais).
 
 ### sceJpegCreateSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x123B4734
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x123B4734
 - **Protótipo (inferido; nem header nem Vita3K):** `int sceJpegCreateSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);`
   — estrutura e assinatura a confirmar.
 - **Comportamento (inferido):** cria um decodificador incremental para JPEG grande/streaming (dados entregues em
@@ -1997,11 +2062,13 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Implementação no VitaSharp:** até confirmar o layout: log `WarnOnce` com os 4 primeiros argumentos e dump de
   0x40 bytes do ponteiro, retornar `EXCEED_MAX_SPLIT_DECODER` (faz o jogo cair no caminho não-split, se tiver).
   Implementação real: acumular os pedaços num `MemoryStream` e decodificar tudo no último pedaço.
+  **Feito apenas o stub seguro acima** (layout continua desconhecido; idem para `SplitDecode`/`Delete` e as
+  variantes Arm).
 - **Validação:** quando um jogo importar: desmontar o uso (campos lidos/escritos no ctrl) e cruzar com o PSP2 SDK
   doc se disponível; não há referência pública hoje.
 
 ### sceJpegSplitDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x4598EC9C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0x4598EC9C
 - **Protótipo (inferido):** `int sceJpegSplitDecodeMJpeg(SceJpegSplitDecodeCtrl *pCtrl);` — a confirmar.
 - **Comportamento (inferido):** consome o próximo pedaço de entrada; retorna `INPUT_SUSPENDED` enquanto faltar
   dado, e ao final escreve a saída como `DecodeMJpegYCbCr`.
@@ -2011,7 +2078,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** idem.
 
 ### sceJpegDeleteSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xDE8D5FA1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegUser · **NID:** 0xDE8D5FA1
 - **Protótipo (inferido):** `int sceJpegDeleteSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);` — a confirmar.
 - **Comportamento:** libera o split decoder.
 - **Retorno/erros:** 0; handle inválido → `INVALID_STATE`? a confirmar.
@@ -2027,7 +2094,8 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   (`SCE_SYSMODULE_INTERNAL_JPEG_ARM`, `psp2/jpegarm.h`), raro em jogos. Vita3K: todas `UNIMPLEMENTED`.
 - **Estado interno:** nenhuma função `Init` própria na lista; não depende de `sceJpegInitMJpeg` (a confirmar). Split
   decoders próprios.
-- **Implementação:** mesmos helpers de `Jpeg.cs` (`MjpegCodec`, `YuvConvert`). Diferenças conhecidas pelo header: não
+- **Implementação (feita):** mesma classe `Jpeg.cs` e helpers (`JpegDecoder`, `YuvConvert`); não exige
+  `sceJpegInitMJpeg`; o limite 2032×1088 não é aplicado. Diferenças conhecidas pelo header: não
   há `pTempBuffer` em `DecodeMJpeg` (só coef buffer) e a ordem é `(pJpeg, isize, decodeMode, out, osize, coef,
   coefSize)`. Erros: header só define `SCE_JPEG_ARM_OK = 0`; supor os mesmos códigos `0x8065xxxx` do SceJpeg (a
   confirmar). Limites de tamanho do decoder ARM podem ser maiores que 2032×1088 (a confirmar; não aplicar o
@@ -2043,7 +2111,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 | sceJpegArmDeleteSplitDecoder | 0xE9CB3DFD | inferido: `int sceJpegArmDeleteSplitDecoder(SceJpegSplitDecodeCtrl *pCtrl);` | Como `sceJpegDeleteSplitDecoder`. |
 
 ### sceJpegArmGetOutputInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x23AE3BEA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x23AE3BEA
 - **Protótipo:** ver tabela (`psp2/jpegarm.h`).
 - **Comportamento:** como `sceJpegGetOutputInfo`, com os argumentos 3/4 trocados.
 - **Retorno/erros:** 0 ou códigos SceJpeg (a confirmar).
@@ -2052,7 +2120,7 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** teste unitário reaproveitando os vetores do SceJpeg.
 
 ### sceJpegArmDecodeMJpeg
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xA4ABFCE3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xA4ABFCE3
 - **Protótipo:** ver tabela.
 - **Comportamento:** YCbCr interno (host) + CSC para RGBA, sem temp buffer do guest.
 - **Retorno/erros:** como `sceJpegDecodeMJpeg` (a confirmar).
@@ -2060,14 +2128,14 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 - **Validação:** comparar com saída de `sceJpegDecodeMJpeg`.
 
 ### sceJpegArmDecodeMJpegYCbCr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xE9B1B86F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0xE9B1B86F
 - **Protótipo:** ver tabela.
 - **Comportamento/Retorno:** como `sceJpegDecodeMJpegYCbCr`.
 - **Implementação no VitaSharp:** helper comum.
 - **Validação:** idem.
 
 ### sceJpegArmCreateSplitDecoder / sceJpegArmSplitDecodeMJpeg / sceJpegArmDeleteSplitDecoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x9DA48DB6 / 0x5D83C606 / 0xE9CB3DFD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegArm · **NID:** 0x9DA48DB6 / 0x5D83C606 / 0xE9CB3DFD
 - **Protótipo:** inferidos (tabela); a confirmar.
 - **Comportamento:** idem às versões SceJpegUser.
 - **Retorno/erros:** idem.
@@ -2091,18 +2159,21 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
   R,G,B,A?) a confirmar com uma foto de cor conhecida — o framebuffer do Vita é A8B8G8R8 (bytes R,G,B,A), e o
   Vita3K trata 0 como RGBA, o que bate.
 - **Layout YCbCr de entrada:** planar Y, Cb, Cr contíguos com largura = `inWidth` (alinhamento de pitch a 16? a
-  confirmar; Vita3K usa `av_image_fill_arrays(..., align 1)`).
-- **Encoder:** FFmpeg `AV_CODEC_ID_MJPEG` (encoder nativo, presente no build LGPL embarcado), `pix_fmt`
-  `YUVJ420P/YUVJ422P`, `AV_CODEC_FLAG_QSCALE`, `qmin=1`, `frame->quality = FF_QP2LAMBDA * (ratio*15/255 + 1)`
-  (ratio 0..255 → qscale 1..16; mapeamento do Vita3K, aproximação). O pacote do encoder mjpeg é MJPEG "puro"
-  (sem DHT, a confirmar) — passar pelo bitstream filter `mjpeg2jpeg` para `headerMode == JPEG` (gera JFIF com
-  DHT/APP0). Para `headerMode == MJPEG` emitir o pacote sem DHT/APP0 (o Vita3K não suporta; aqui é trivial — basta
-  pular o bsf).
-  Alternativa .NET pura: encoder baseline JPEG próprio (DCT + quantização + Huffman padrão, ~400 linhas), útil se
-  FFmpeg faltar, já que encoder é bem mais simples que decoder.
-- **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/JpegEnc.cs` (`sealed class JpegEnc : HleModule`) com SceJpegEncUser
-  e SceJpegEncArm; usa `Media/MjpegCodec.Encode` e `Media/YuvConvert.RgbaToYuv`.
-- **Dependências:** `GuestMemory`, `FFmpegLoader`. Custo "pesado" em `ClassifyCost`.
+  confirmar; Vita3K usa `av_image_fill_arrays(..., align 1)`). **Implementado como Vita3K:** Y `inWidth×inHeight`,
+  depois Cb e Cr de `ceil(inWidth/2) × ceil(inHeight/vdiv)` cada (vdiv 2 para 4:2:0, 1 para 4:2:2), sem padding.
+  `Csc` produz exatamente esse layout.
+- **Flag 16 (CSC_ARGB_YCBCR):** aceita no Init, mas `Encode` **sempre** lê YCbCr (como Vita3K, que roda os jogos
+  que usam a lib — Uncharted chama `Csc` e depois `Encode` com o buffer YCbCr). A leitura "Encode converte ARGB
+  internamente" não foi adotada: quebraria o fluxo Csc→Encode. A confirmar no hardware.
+- **Encoder (implementado):** encoder baseline JPEG próprio, 100% gerenciado (`Media/JpegEncoder.cs`): FDCT 8×8,
+  quantização, Huffman com as tabelas típicas do Annex K, MCU de borda por replicação, restart opcional.
+  Qualidade: `scale = 1 + ratio*15/255` (1..16, mesmo mapeamento ratio→qscale do Vita3K) e tabelas = Annex K ×
+  scale/8 (ratio 64 → tabelas "qualidade 75"; ratio 0 → ~94; 255 → ~25). `headerMode == JPEG`: SOI, APP0 JFIF,
+  DQT, SOF0, DHT, SOS, EOI. `headerMode == MJPEG`: sem APP0 e sem DHT (decodificadores MJPEG usam as tabelas
+  padrão; conteúdo exato do hardware a confirmar). Saída validada decodificando no GDI+ do Windows.
+- **Arquivos:** `src/VitaSharp.Core/Hle/Modules/JpegEnc.cs` (`sealed class JpegEnc : HleModule`, SceJpegEncUser +
+  SceJpegEncArm, dicionários de contexto separados), `Media/JpegEncoder.cs`, `Media/YuvConvert.FromRgba`.
+- **Dependências:** `GuestMemory`. Custo HLE na faixa padrão (não existe classe "pesada").
 
 **Códigos de erro (`psp2common/jpegenc.h`):**
 
@@ -2121,102 +2192,112 @@ confirmar se progressivo é aceito pelo split decoder — o código `BAD_PROGRES
 checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 
 ### sceJpegEncoderGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2B55844D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2B55844D
 - **Protótipo:** `int sceJpegEncoderGetContextSize(void);` (`psp2/jpegenc.h`)
 - **Comportamento:** devolve o tamanho de memória que o jogo deve alocar para o contexto.
 - **Retorno/erros:** tamanho em bytes (> 0). Valor real a confirmar (ler o retorno num Vita real com homebrew).
   Vita3K devolve `sizeof` da sua própria struct (~0x20).
-- **Implementação no VitaSharp:** como o estado fica host-side, qualquer valor ≥ 4 funciona; usar uma constante
-  documentada (ex. 0x20, igual ao Vita3K) até confirmar.
+- **Implementação no VitaSharp (feito):** devolve `0x20` (igual ao Vita3K); o estado fica host-side e a memória
+  do contexto guest nunca é escrita. Valor real do hardware continua a confirmar.
 - **Validação:** homebrew; jogo passa do `malloc` do contexto.
 
 ### sceJpegEncoderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x88DA92B4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x88DA92B4
 - **Protótipo:** `int sceJpegEncoderInit(SceJpegEncoderContext context, int inWidth, int inHeight,
   SceJpegEncoderPixelFormat pixelformat, void *outBuffer, SceSize outSize);` (`psp2/jpegenc.h`; 5º e 6º args na pilha)
 - **Comportamento:** registra o contexto com as dimensões, formato e buffer de saída; ratio = 64, header = JPEG.
 - **Retorno/erros:** 0; `INVALID_POINTER` (0x80650205) se `context`/`outBuffer` nulos; `INVALID_PIXELFORMAT`
   (0x80650203) se `pixelformat & 0xF ∉ {0, 4, 8, 9}`/bits desconhecidos; `IMAGE_SIZE` (0x80650200) se dimensões
   inválidas (faixa real a confirmar — provavelmente até 2048 ou 4096 px, múltiplos de 2 para 4:2:x).
-- **Implementação no VitaSharp:** `_ctx[context] = new EncCtx { ... CompressRatio = 64 }`.
+- **Implementação no VitaSharp (feito):** `_ctx[context] = new Ctx { ..., Ratio = 64, HeaderMode = JPEG,
+  região válida = Init }`. Formato aceito: bits só em `0x1F` e `& 0xF ∈ {0, 4, 8, 9}` (0/4 são aceitos no Init, mas
+  `Csc`/`Encode` exigem 8/9). Dimensões aceitas: 1..65535 (limite JPEG; o do hardware é desconhecido, não é
+  aplicado para não quebrar jogos). Sem checagem de alinhamento de 256 bytes.
 - **Validação:** homebrew que codifica 960×544 e grava o .jpg; abrir no PC.
 
 ### sceJpegEncoderInitWithParam
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2E8FE45D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2E8FE45D
 - **Protótipo:** `int sceJpegEncoderInitWithParam(SceJpegEncoderContext context, const SceJpegEncoderInitParam *initParam);` (`psp2/jpegenc.h`)
 - **Comportamento:** como `Init`, com `option` (`1 = LPDDR2_MEMORY`: buffers em LPDDR2 em vez de CDRAM — sem efeito
   no HLE).
 - **Retorno/erros:** como `Init`; `initParam == NULL` → `INVALID_POINTER`; `size != 0x1C` → erro a confirmar.
 - **Estruturas:** `SceJpegEncoderInitParam` 0x1C: +0 size, +4 inWidth, +8 inHeight, +0xC pixelFormat,
   +0x10 outBuffer, +0x14 outSize, +0x18 option.
-- **Implementação no VitaSharp:** ler a struct e chamar o helper de `Init`.
+- **Implementação no VitaSharp (feito):** ler a struct e chamar o helper de `Init`; `size` não é verificado (como
+  Vita3K); `option` guardado sem efeito.
 - **Validação:** idem.
 
 ### sceJpegEncoderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC87AA849
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC87AA849
 - **Protótipo:** `int sceJpegEncoderEnd(SceJpegEncoderContext context);` (`psp2/jpegenc.h`)
 - **Comportamento:** finaliza o contexto (o jogo libera a memória depois).
 - **Retorno/erros:** 0; contexto desconhecido → `INVALID_POINTER`? a confirmar (retornar 0).
-- **Implementação no VitaSharp:** `_ctx.Remove(context)`.
+- **Implementação no VitaSharp (feito):** `_ctx.Remove(context)`, sempre 0. Chamadas posteriores com o contexto
+  encerrado (ou nunca inicializado) devolvem `INVALID_POINTER`.
 - **Validação:** Init → End → Init no mesmo endereço funciona.
 
 ### sceJpegEncoderEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC60DE94C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xC60DE94C
 - **Protótipo:** `int sceJpegEncoderEncode(SceJpegEncoderContext context, const void *inBuffer);` (`psp2/jpegenc.h`)
 - **Comportamento:** codifica a imagem de `inBuffer` (YCbCr planar no formato do contexto; ou ARGB se o formato tem
   a flag 16 — conversão interna) para `outBuffer`. Se `SetValidRegion` foi chamado, codifica só o retângulo
   (0,0)-(validW,validH) da imagem de largura `inWidth`.
 - **Retorno/erros:** **tamanho do JPEG em bytes** (> 0); `INSUFFICIENT_BUFFER` (0x80650201) se não couber em
   `outSize`; `INVALID_PIXELFORMAT` se formato sem amostragem 8/9; `INVALID_POINTER` se `inBuffer` nulo.
-- **Implementação no VitaSharp:** se flag 16: `YuvConvert.RgbaToYuv` para buffer host; senão ler os planos do guest
-  (`w*h` + 2×croma). `MjpegCodec.Encode(planos, validW, validH, sub, ratio, mjpegHeader)` → copiar para
-  `outBuffer`. Sem FFmpeg: `WarnOnce` e retornar `INSUFFICIENT_BUFFER`? Melhor: escrever um JPEG cinza mínimo
-  válido (gerado uma vez em C#) para não quebrar o fluxo do jogo.
+- **Implementação no VitaSharp (feito):** lê os planos YCbCr do guest no layout da arquitetura (a flag 16 **não**
+  faz o Encode ler ARGB — ver Arquitetura), `JpegEncoder.Encode(validW, validH, strides do Init, tabelas do ratio,
+  headerMode)` e copia para `outBuffer`; nada é escrito se não couber (`INSUFFICIENT_BUFFER`). Contexto
+  desconhecido ou `inBuffer` nulo → `INVALID_POINTER`; formato sem 8/9 → `INVALID_PIXELFORMAT`.
 - **Validação:** homebrew/jogo: arquivo resultante abre num visualizador; tamanho cresce quando ratio diminui.
 
 ### sceJpegEncoderSetCompressionRatio
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xB2B828EC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0xB2B828EC
 - **Protótipo:** `int sceJpegEncoderSetCompressionRatio(SceJpegEncoderContext context, int ratio);` (`psp2/jpegenc.h`)
 - **Comportamento:** 0..255, maior = mais compressão/menor qualidade.
 - **Retorno/erros:** 0; `INVALID_COMPRATIO` (0x80650202) fora de 0..255.
-- **Implementação no VitaSharp:** guardar no `EncCtx`.
+- **Implementação no VitaSharp (feito):** guardar no contexto; tabelas = Annex K × (1 + ratio·15/255)/8.
 - **Validação:** teste unitário de faixa.
 
 ### sceJpegEncoderSetOutputAddr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x25D52D97
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x25D52D97
 - **Protótipo:** `int sceJpegEncoderSetOutputAddr(SceJpegEncoderContext context, void *outBuffer, SceSize outSize);` (`psp2/jpegenc.h`)
 - **Comportamento:** troca o buffer de saída para os próximos `Encode`.
 - **Retorno/erros:** 0; `INVALID_POINTER` se nulo.
-- **Implementação no VitaSharp:** atualizar `EncCtx`.
+- **Implementação no VitaSharp (feito):** atualizar o contexto.
 - **Validação:** dois encodes em buffers diferentes.
 
 ### sceJpegEncoderCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x824A7D4F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x824A7D4F
 - **Protótipo:** `int sceJpegEncoderCsc(SceJpegEncoderContext context, void *outBuffer, const void *inBuffer,
   int inPitch, SceJpegEncoderPixelFormat inPixelFormat);` (`psp2/jpegenc.h`)
 - **Comportamento:** converte ARGB8888 (pitch `inPitch` em pixels) com as dimensões do contexto para YCbCr planar na
   amostragem do contexto (`pixelFormat & 0xF` = 8 ou 9), em `outBuffer`, pronto para `Encode`.
 - **Retorno/erros:** 0; `INVALID_PIXELFORMAT` se contexto não é YCbCr420/422 ou `inPixelFormat ∉ {0, 4}`.
-- **Implementação no VitaSharp:** `YuvConvert.RgbaToYuv(src, inPitch, w, h, bgra: inPixelFormat == 4, sub)`, JFIF
-  full-range (BT.601 coeficientes, sem offset de 16 — a confirmar comparando com hardware).
-- **Validação:** teste unitário com cores primárias; Csc + Encode deve igualar Encode com flag 16.
+- **Implementação no VitaSharp (feito):** `YuvConvert.FromRgba(src, inPitch, w, h, bgra: inPixelFormat == 4, 2,
+  vdiv)` sobre o tamanho do Init, JFIF full-range (coeficientes BT.601 sem offset de 16; Vita3K usa swscale em
+  limited-range e depois codifica como full-range, o que desbota as cores — a confirmar no hardware). Croma =
+  média dos pixels cobertos. 0 = bytes R,G,B,A (framebuffer do Vita), 4 = B,G,R,A. `inPitch < inWidth` → usa
+  `inWidth`. Nulos → `INVALID_POINTER`.
+- **Validação:** teste unitário com cores primárias; Csc + Encode + decode volta ao RGBA original (PSNR > 30 dB).
 
 ### sceJpegEncoderSetValidRegion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x9511F3BC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x9511F3BC
 - **Protótipo:** `int sceJpegEncoderSetValidRegion(SceJpegEncoderContext context, int inWidth, int inHeight);` (`psp2/jpegenc.h`)
 - **Comportamento:** define a região a codificar a partir de (0,0) (descrição do `jpegencarm.h`); o buffer de
   entrada continua com largura do Init. Vita3K: não implementado.
 - **Retorno/erros:** 0; `IMAGE_SIZE` se maior que as dimensões do Init.
-- **Implementação no VitaSharp:** guardar `validW/H` (padrão = Init); `Encode` recorta os planos.
+- **Implementação no VitaSharp (feito):** guardar `validW/H` (padrão = Init; 1..Init, senão `IMAGE_SIZE`);
+  `Encode` codifica o canto superior esquerdo mantendo os strides do Init.
 - **Validação:** codificar 960×544 com região 480×272 e conferir dimensões do JPEG.
 
 ### sceJpegEncoderSetHeaderMode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2F58B12C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncUser · **NID:** 0x2F58B12C
 - **Protótipo:** `int sceJpegEncoderSetHeaderMode(SceJpegEncoderContext context, int mode);` (`psp2/jpegenc.h`)
 - **Comportamento:** `0` JPEG completo (JFIF com DQT/DHT), `1` MJPEG (frame sem DHT, para streams MJPEG).
   Conteúdo exato dos marcadores no modo MJPEG a confirmar (gerar no Vita e inspecionar).
 - **Retorno/erros:** 0; `INVALID_HEADER_MODE` (0x80650204) para outros valores.
-- **Implementação no VitaSharp:** guardar; usado em `Encode`.
+- **Implementação no VitaSharp (feito):** guardar; `MJPEG` omite APP0 e DHT (Vita3K não suporta o modo MJPEG).
+  O `sceJpegDecodeMJpeg*` do VitaSharp decodifica esses frames com as tabelas padrão.
 - **Validação:** inspeção hex do resultado.
 
 ## SceJpegEncArm (8 funções)
@@ -2227,8 +2308,9 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   YCbCr 4:2:0 = 8 e 4:2:2 = 9), dimensões `SceUInt16`, ratio `SceUInt8` 1..255 (padrão 64,
   `SCE_JPEGENCARM_DEFAULT_COMP_RATIO`), buffers alinhados a 8 bytes, contexto alinhado a 4. Vita3K: todas
   `UNIMPLEMENTED`.
-- **Implementação:** mesma classe `JpegEnc.cs`, dicionário de contextos separado (ou o mesmo com flag `Arm`),
-  mesmos helpers. Códigos de erro próprios:
+- **Implementação (feita):** mesma classe `JpegEnc.cs`, dicionário de contextos separado do SceJpegEnc, mesmos
+  helpers e layout de entrada. `GetContextSize` = 0x20. Init aceita só 8/9 (sem flag 16). Checagens de alinhamento
+  (8 bytes nos buffers, 4 no contexto) não implementadas até confirmar. Códigos de erro próprios:
 
 | Nome | Valor |
 | --- | --- |
@@ -2251,44 +2333,44 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 | sceJpegArmEncoderSetHeaderMode | 0x6D24A669 | `int sceJpegArmEncoderSetHeaderMode(SceJpegArmEncoderContext context, SceJpegArmEncoderHeaderMode mode);` | 0 JPEG / 1 MJPEG; outro → `INVALID_HEADER_MODE` (0x80650304). |
 
 ### sceJpegArmEncoderGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8D15B36D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8D15B36D
 - **Protótipo:** ver tabela. **Comportamento:** tamanho do contexto. **Retorno/erros:** tamanho (> 0), a confirmar.
 - **Implementação no VitaSharp:** constante (estado host-side). **Validação:** homebrew.
 
 ### sceJpegArmEncoderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8C23875A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8C23875A
 - **Protótipo:** ver tabela (u16 em r1/r2: mascarar `& 0xFFFF`).
 - **Comportamento/Retorno:** ver tabela. **Implementação no VitaSharp:** helper comum com `arm: true` (sem flag 16,
   erros 0x806503xx, checagem de alinhamento 8 só depois de confirmada). **Validação:** homebrew codificando YCbCr.
 
 ### sceJpegArmEncoderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8A42D6EC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x8A42D6EC
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0. **Implementação no VitaSharp:** remover do
   dicionário. **Validação:** Init/End/Init.
 
 ### sceJpegArmEncoderEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x648FFAA3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x648FFAA3
 - **Protótipo:** ver tabela. **Comportamento:** como `sceJpegEncoderEncode` sem CSC. **Retorno/erros:** tamanho em
   bytes; `INSUFFICIENT_BUFFER` 0x80650301; `INVALID_POINTER` 0x80650305.
-- **Implementação no VitaSharp:** `MjpegCodec.Encode`. **Validação:** arquivo abre no PC.
+- **Implementação no VitaSharp:** `JpegEncoder.Encode` (feito). **Validação:** arquivo abre no PC.
 
 ### sceJpegArmEncoderSetCompressionRatio
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x32B8E159
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x32B8E159
 - **Protótipo/Comportamento/Retorno:** ver tabela (faixa 1..255, `SCE_JPEGENCARM_MIN/MAX_COMP_RATIO`).
 - **Implementação no VitaSharp:** `ratio & 0xFF`; mesmo mapeamento para qscale. **Validação:** teste de faixa.
 
 ### sceJpegArmEncoderSetOutputAddr
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xDA0D0868
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xDA0D0868
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; nulo → 0x80650305. **Implementação no VitaSharp:**
   atualizar contexto. **Validação:** dois buffers.
 
 ### sceJpegArmEncoderSetValidRegion
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xD561E2E5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0xD561E2E5
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; 0x80650300. **Implementação no VitaSharp:** recorte
   no Encode. **Validação:** dimensões do JPEG.
 
 ### sceJpegArmEncoderSetHeaderMode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x6D24A669
+- [x] **Prioridade:** P2 · **Biblioteca:** SceJpegEncArm · **NID:** 0x6D24A669
 - **Protótipo/Comportamento:** ver tabela. **Retorno/erros:** 0; 0x80650304. **Implementação no VitaSharp:** como
   SceJpegEnc. **Validação:** inspeção hex.
 
@@ -2329,9 +2411,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   constantes `0x806x....` no `avcodec_us.suprx`/kernel `SceAvcodec`). Até lá, usar os dois de `Videodec.cs`.
 - **Tipo de codec:** provavelmente `0x2001` (SCE_VIDEOENC_TYPE_HW_AVCENC), por analogia com
   `TYPE_HW_AVCDEC = 0x1001` — a confirmar; enquanto não confirmado, aceitar qualquer valor e logar `WarnOnce`.
+- **Implementado (stub funcional, `Hle/Modules/Videoenc.cs`):** sem FFmpeg/encoder; bibliotecas e handles rastreados,
+  handle em `ctrl+0`, w/h lidos de `query+0/+4` (limite 1920×1088 como o decoder), tamanhos escritos só em
+  `memInfo+0`/`info+0`; `Encode` conta e descarta o quadro; nenhuma struct de imagem/NAL é escrita. `CreateEncoder`
+  não exige `InitLibrary`; handle desconhecido → `INVALID_PARAM` (0x80620002); `sceAvcencCsc` fica desmarcado (ver).
 
 ### sceVideoencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xACA59885
 - **Protótipo (inferido):** `int sceVideoencInitLibrary(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo);`
 - **Comportamento:** inicializa o encoder de hardware para o tipo de codec, reservando a memória interna do codec
   (tamanho dado por `sceVideoencQueryMemSize`).
@@ -2341,7 +2427,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem (ver arquitetura); jogo/app que importe deve seguir para `QueryEncoderMemSize`.
 
 ### sceVideoencInitLibraryWithUnmapMem
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x8F970948
 - **Protótipo (inferido):** `int sceVideoencInitLibraryWithUnmapMem(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, const SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** como `InitLibrary`, mas usa memória fornecida pelo jogo (`pMemInfo`: provável `{size, pMem}`).
 - **Retorno/erros:** como `InitLibrary`; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2349,7 +2435,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencInitLibraryInternal / sceVideoencInitLibraryWithUnmapMemInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF0F17AD / 0x54D750B8
 - **Protótipo (inferido):** mesmos argumentos das versões públicas (possivelmente com um argumento extra de
   flags/pid — a confirmar pela desmontagem).
 - **Comportamento:** variantes para módulos do sistema (ex.: o próprio `SceLibMp4Recorder`).
@@ -2358,7 +2444,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencQueryMemSize / sceVideoencQueryMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7772157D / 0x3E459BA8
 - **Protótipo (inferido):** `int sceVideoencQueryMemSize(SceUInt32 codecType, const SceVideoencInitInfo *pInitInfo, SceVideoencMemInfo *pMemInfo);`
 - **Comportamento:** escreve em `pMemInfo` (offset 0, provável `size`) a memória que a biblioteca precisa.
 - **Retorno/erros:** 0; `pMemInfo` nulo → `INVALID_POINTER`.
@@ -2367,7 +2453,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceVideoencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7FE7EDA3
 - **Protótipo (inferido):** `int sceVideoencTermLibrary(SceUInt32 codecType);`
 - **Comportamento:** finaliza a biblioteca do codec.
 - **Retorno/erros:** 0.
@@ -2375,7 +2461,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencQueryEncoderMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAF317203
 - **Protótipo (inferido):** `int sceAvcencQueryEncoderMemSize(SceUInt32 codecType, const SceAvcencQueryEncoder *pQuery, SceAvcencEncoderInfo *pInfo);`
 - **Comportamento:** dado largura/altura/parâmetros máximos (`pQuery`, provável `{width, height, ...}`), devolve o
   tamanho de memória do encoder em `pInfo` (provável `{frameMemSize}`).
@@ -2386,14 +2472,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** desmontagem do `SceLibMp4Recorder` (que chama esta função com modos conhecidos 640×368 etc.).
 
 ### sceAvcencQueryEncoderMemSizeBasic / sceAvcencQueryEncoderMemSizeInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC6616EA8 / 0x55F2FD3C
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencQueryEncoderMemSize` com struct de query "Basic"/interna.
 - **Comportamento/Retorno:** idem.
 - **Implementação no VitaSharp:** delegar ao helper comum.
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x7F5728CC
 - **Protótipo (inferido):** `int sceAvcencCreateEncoder(SceUInt32 codecType, SceAvcencCtrl *pCtrl, const SceAvcencQueryEncoder *pQuery);`
 - **Comportamento:** cria o encoder na memória `pCtrl->frameBuf` fornecida e grava o handle em `pCtrl` (provável
   +0, como `SceAvcdecCtrl {handle, frameBuf{p,size}}`).
@@ -2403,14 +2489,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencCreateEncoderBasic / sceAvcencCreateEncoderInternal
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC70B7E2E / 0x11CB9524
 - **Protótipo (inferido):** mesmos argumentos de `sceAvcencCreateEncoder`.
 - **Comportamento/Retorno:** idem (Basic = perfil Baseline).
 - **Implementação no VitaSharp:** helper comum.
 - **Validação:** idem.
 
 ### sceAvcencDeleteEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xEC08A60C
 - **Protótipo (inferido):** `int sceAvcencDeleteEncoder(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** destrói o encoder.
 - **Retorno/erros:** 0; handle desconhecido → `INVALID_PARAM`? a confirmar.
@@ -2418,7 +2504,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetEncoderParameter
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x5B4A70BD
 - **Protótipo (inferido):** `int sceAvcencSetEncoderParameter(SceAvcencCtrl *pCtrl, const SceAvcencEncoderParam *pParam);`
 - **Comportamento:** define bitrate, framerate, GOP, perfil/nível, rate control. Layout a confirmar.
 - **Retorno/erros:** 0; parâmetro inválido → `INVALID_PARAM`.
@@ -2427,7 +2513,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencSetAvailablePreset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x2238693E
 - **Protótipo (inferido):** `int sceAvcencSetAvailablePreset(SceAvcencCtrl *pCtrl, SceInt32 preset);` (talvez sem
   `pCtrl` — global; a confirmar).
 - **Comportamento:** escolhe um preset de qualidade/resolução pré-definido (os modos do Mp4Recorder
@@ -2445,10 +2531,13 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Implementação no VitaSharp:** `YuvConvert.RgbaToYuv420` com escala bilinear se dimensões diferirem; layout de
   `SceAvcencPicture` a confirmar (usar como hipótese o `SceMp4RecFrame`: pixelformat +4, stride +8, width +0xC,
   height +0x10, buffer +0x24).
+  **Estado atual:** `Videoenc.cs` só valida `ctrl`/ponteiros e retorna 0 **sem escrever** — escrever pixels num
+  ponteiro tirado de um layout hipotético poderia corromper memória do jogo; fica desmarcado até confirmar o layout
+  (não existe `YuvConvert`; a conversão RGBA→YUV420 packed real está em `Mp4Recorder.RgbaToYuv420Packed`).
 - **Validação:** idem.
 
 ### sceAvcencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4B171BEA
 - **Protótipo (inferido):** `int sceAvcencEncode(SceAvcencCtrl *pCtrl, const SceAvcencInputPicture *pIn, SceAvcencEncodeResult *pOut);`
 - **Comportamento:** envia um quadro YUV420 ao encoder; as NAL units resultantes são retiradas com
   `sceAvcencGetNalUnit`.
@@ -2458,7 +2547,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; arquivo gravado pelo Mp4Recorder toca no PC (quando houver encoder real).
 
 ### sceAvcencEncodeFlush
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x03D1CFED
 - **Protótipo (inferido):** `int sceAvcencEncodeFlush(SceAvcencCtrl *pCtrl);`
 - **Comportamento:** força a saída dos quadros retidos (B-frames/lookahead).
 - **Retorno/erros:** 0.
@@ -2466,7 +2555,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencEncodeStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0x4BE87709
 - **Protótipo (inferido):** `int sceAvcencEncodeStop(SceAvcencCtrl *pCtrl);` (pode ter argumento de saída — a confirmar)
 - **Comportamento:** encerra a sessão de codificação (fim de stream).
 - **Retorno/erros:** 0.
@@ -2474,13 +2563,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencGetNalUnit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xC5609479
 - **Protótipo (inferido):** `int sceAvcencGetNalUnit(SceAvcencCtrl *pCtrl, SceAvcencNalUnit *pNal);`
 - **Comportamento:** retira a próxima NAL unit (ponteiro/tamanho/pts) produzida pelo encoder.
 - **Retorno/erros:** 0 com dado; "sem dados" → código a confirmar (provável erro específico ou `size = 0`).
 - **Implementação no VitaSharp:** com fila vazia (stub), preencher tamanho 0 e retornar o código de "sem dados"
   assim que confirmado — até lá, `size = 0` e retorno 0, observando se o jogo entra em loop (se entrar, trocar para
-  erro).
+  erro). **Implementado:** como o layout de `SceAvcencNalUnit` não é conhecido, a struct **não é escrita** (nem o
+  `size`); retorna 0 com `WarnOnce`.
 - **Validação:** idem.
 
 ## SceLibMp4Recorder (10 funções)
@@ -2507,7 +2597,14 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Dependências:** `GuestMemory`, `YuvConvert` (Csc), `Emu.Vfs` (fase 2), `FFmpegLoader` (fase 2).
 - **Códigos de erro:** nenhum documentado em header ou Vita3K — **a confirmar** (desmontar `libmp4recorder`
   (`vs0:sys/external/libmp4_recorder.suprx`, nome exato a confirmar) e procurar constantes `0x80xxxxxx`). Até lá,
-  usar `SceError.INVALID_ARGUMENT` (0x80020003) só para ponteiros nulos e retornar 0 no resto.
+  usar `SceError.INVALID_ARGUMENT` (0x80020005) só para ponteiros nulos e retornar 0 no resto.
+- **Implementado (fase 1, `Hle/Modules/Mp4Recorder.cs`):** recorders por endereço do `SceMp4RecRecorder`;
+  `Init` exige recorder criado e `mode` 0..5; `Add*Sample` contam e descartam (aceitos mesmo antes do `Init`, com
+  `WarnOnce`); `Term` só loga (nenhum arquivo); `size != 4096` no áudio só gera log; erros = `INVALID_ARGUMENT`
+  (0x80020005) para ponteiro nulo/recorder desconhecido/modo inválido. `sceMp4RecCsc` é real: A8B8G8R8 → YUV420
+  packed (plano Y com `stride`, depois croma intercalada **V antes de U** no offset `stride × height`, como o
+  `PIXEL_YUV420_PACKED_RASTER` do `Videodec.cs`), BT.601 faixa limitada, escala bilinear; mesmo formato e tamanho →
+  cópia; outras combinações → `INVALID_ARGUMENT`. A ordem U/V para o encoder real continua a confirmar.
 
 **Estruturas (`psp2/mp4rec.h`):**
 
@@ -2519,7 +2616,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 | SceMp4RecTermParam (0x20C) | 0x00 / 0x04 / 0x08 / 0x208 | size / discard (SceBool) / reserved[128] / metadata |
 
 ### sceMp4RecCreateRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x21053FDE
 - **Protótipo:** `int sceMp4RecCreateRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** cria o recorder usando o memblock `rec->base`/`base_size` fornecido pelo jogo (tamanho
   necessário possivelmente obtido de `sceMp4RecRecorderInit`/documentação — a confirmar).
@@ -2529,7 +2626,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   completar Create→Init→Add*→Term→Delete sem erro.
 
 ### sceMp4RecDeleteRecorder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x5EBA2AE2
 - **Protótipo:** `int sceMp4RecDeleteRecorder(SceMp4RecRecorder *rec);` (`psp2/mp4rec.h`)
 - **Comportamento:** destrói o recorder (o jogo libera o memblock depois).
 - **Retorno/erros:** 0; desconhecido → erro a confirmar.
@@ -2537,7 +2634,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecQueryPhysicalMemSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x9A48028F
 - **Protótipo:** `int sceMp4RecQueryPhysicalMemSize(SceMp4RecRecorder *rec, int mode, uint32_t *encoder_size, uint32_t *av_size);` (`psp2/mp4rec.h`)
 - **Comportamento:** devolve os tamanhos dos blocos fisicamente contíguos para o encoder de vídeo e de áudio do
   `mode`.
@@ -2549,7 +2646,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** alocação do jogo bem-sucedida.
 
 ### sceMp4RecInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xE9193B80
 - **Protótipo:** `int sceMp4RecInit(SceMp4RecRecorder *rec, SceMp4RecInitParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** inicia uma sessão de gravação no modo pedido, cria a thread do recorder e o arquivo de saída.
 - **Retorno/erros:** 0; `params` inválido / modo inválido → a confirmar.
@@ -2559,7 +2656,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecTerm
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB13DAFF3
 - **Protótipo:** `int sceMp4RecTerm(SceMp4RecRecorder *rec, SceMp4RecTermParam *params);` (`psp2/mp4rec.h`)
 - **Comportamento:** encerra a sessão; se `discard == 0`, finaliza e salva em `ux0:video` com `metadata`; se
   `discard != 0`, apaga.
@@ -2570,7 +2667,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem; fase 2: arquivo abre no PC.
 
 ### sceMp4RecCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x7B3184E4
 - **Protótipo:** `int sceMp4RecCsc(SceMp4RecFrame *dst, SceMp4RecFrame *src);` (`psp2/mp4rec.h`)
 - **Comportamento:** conversão de cor + reescala por hardware: tipicamente framebuffer A8B8G8R8 960×544 →
   YUV420 packed na resolução do modo (ex. 640×368), pronto para `AddVideoSample`.
@@ -2582,7 +2679,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** teste unitário com framebuffer sintético; comparar com saída de `sceAvcdec` no mesmo formato.
 
 ### sceMp4RecAddVideoSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB263D8FB
 - **Protótipo:** `int sceMp4RecAddVideoSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira um quadro (YUV420 packed da resolução do modo) para codificação; duração 1001/30000 s.
 - **Retorno/erros:** 0; sessão não iniciada/tamanho errado → a confirmar.
@@ -2590,7 +2687,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecAddAudioSample
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x2C39D932
 - **Protótipo:** `int sceMp4RecAddAudioSample(SceMp4RecRecorder *rec, void *buffer, int size);` (`psp2/mp4rec.h`)
 - **Comportamento:** enfileira 4096 bytes de PCM S16 estéreo 48 kHz (1024 amostras) para AAC.
 - **Retorno/erros:** 0; `size != 4096` → erro (código a confirmar).
@@ -2599,7 +2696,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceMp4RecRecorderInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0x4045786D
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderInit(SceMp4RecRecorder *rec, ...);` —
   argumentos a confirmar. Hipótese: inicialização da biblioteca/memblock do recorder (paralela a
   `CreateRecorder`), ou versão antiga da API.
@@ -2609,7 +2706,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** quando houver importador, verificar se o fluxo seguinte (Create/Init) funciona.
 
 ### sceMp4RecRecorderEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
+- [x] **Prioridade:** P2 · **Biblioteca:** SceLibMp4Recorder · **NID:** 0xB51FEBAF
 - **Protótipo (inferido — ausente do header):** `int sceMp4RecRecorderEnd(SceMp4RecRecorder *rec);` — a confirmar.
 - **Comportamento:** par de `sceMp4RecRecorderInit` (a confirmar).
 - **Retorno/erros:** a confirmar.
@@ -2650,6 +2747,10 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   `PRESS_ENTER` após N frames.
   Sem back-end: `sceImeOpen` funciona, entrega só `OPEN` e nunca mais nada (o jogo fica esperando entrada, mas não
   trava).
+  **Implementado:** `ITextInputBackend` (com `SetText`) e `HostServices.TextInput` existem (nenhum front-end o fornece
+  ainda). Sem back-end, se `--ime-text` estiver definido (`CommonDialog.ImeDefaultText`, a mesma fonte do
+  `sceImeDialog`), o `Ime` entrega `OPEN → UPDATE_TEXT(texto) → PRESS_ENTER` nas próximas `sceImeUpdate`. Callbacks
+  vindos do back-end de uma sessão já fechada são descartados (contador de sessão).
 - **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/Ime.cs`, `public sealed class Ime : HleModule`. Todos os seis
   nomes estão em `Hle/Data/nids.txt` (não precisa `Nid =`).
 - **Chamada do handler:** `GuestThread.Current!.CallGuest(handler, arg, eventAddr)` (mesmo padrão de
@@ -2722,7 +2823,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 `SceImeCaret` (0x10): `x, y, height, index`. `SceImePreeditGeometry` (0xC): `x, y, height`.
 
 ### sceImeOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x0E050613
 - **Protótipo:** `SceInt32 sceImeOpen(const SceImeParam *param);` (`psp2/libime.h`)
 - **Comportamento:** valida o parâmetro, guarda a configuração, copia `initialText` (se houver) para o estado interno e
   para `inputTextBuffer`, posiciona o caret no fim do texto e pede ao sistema para mostrar o teclado. O evento `OPEN`
@@ -2748,7 +2849,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
   PRESS_ENTER`.
 
 ### sceImeUpdate
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x71D6898A
 - **Protótipo:** `SceInt32 sceImeUpdate(void);` (`psp2/libime.h`)
 - **Comportamento:** despacha, na thread chamadora, todos os eventos pendentes para `handler(arg, &event)`, na ordem
   em que ocorreram. Antes de `UPDATE_TEXT`, o texto novo já está em `inputTextBuffer` (terminado em 0) e o evento
@@ -2765,7 +2866,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** mesmo cenário de `sceImeOpen`; conferir que `editLengthChange` bate com o diff do texto.
 
 ### sceImeSetText
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xF3BD9A76
 - **Protótipo:** `SceInt32 sceImeSetText(const SceWChar16 *text, SceUInt32 length);` (`psp2/libime.h`)
 - **Comportamento:** o jogo substitui o texto do IME (ex.: botão "limpar"). O IME atualiza o estado interno e o
   `inputTextBuffer`, e coloca o caret no fim. Se gera um `UPDATE_TEXT` de volta é a confirmar (provável que não, já que
@@ -2777,7 +2878,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário; homebrew que chama `SetText` e depois lê `inputTextBuffer`.
 
 ### sceImeSetCaret
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0xD8342D2A
 - **Protótipo:** `SceInt32 sceImeSetCaret(const SceImeCaret *caret);` (`psp2/libime.h`)
 - **Comportamento:** o jogo informa onde desenhou o caret (`x, y, height` em pixels de tela, para o sistema posicionar
   a lista de sugestões) e o índice lógico (`index`) no texto. O IME move o caret interno para `index` (limitado ao
@@ -2791,7 +2892,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** teste unitário.
 
 ### sceImeSetPreeditGeometry
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x7B1EFAA5
 - **Protótipo:** `SceInt32 sceImeSetPreeditGeometry(const SceImePreeditGeometry *preedit);` (`psp2/libime.h`)
 - **Comportamento:** posição (`x, y, height`) onde o jogo desenha o texto em pré-edição; o sistema usa para a janela de
   conversão (japonês/chinês). Sem efeito visível no HLE porque não há pré-edição.
@@ -2801,7 +2902,7 @@ Constantes: `SCE_IME_WORK_BUFFER_SIZE = 20*1024`, `SCE_IME_MAX_PREEDIT_LENGTH = 
 - **Validação:** retorno 0 com IME aberto, `0x80100701` fechado.
 
 ### sceImeClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
+- [x] **Prioridade:** P2 · **Biblioteca:** SceIme · **NID:** 0x889A8421
 - **Protótipo:** `SceInt32 sceImeClose(void);` (`psp2/libime.h`)
 - **Comportamento:** esconde o teclado e libera a sessão. Eventos ainda na fila são descartados. Depois disso o jogo
   pode reaproveitar `work`/`inputTextBuffer`.
@@ -2847,21 +2948,24 @@ Todas: **Prioridade:** P2 · **Biblioteca:** SceHandwriting · header: nenhum (i
 
 | Checkbox | Função | NID | Protótipo inferido | Comportamento inferido | HLE mínimo |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
-| [ ] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
-| [ ] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
-| [ ] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
-| [ ] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
-| [ ] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
-| [ ] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
-| [ ] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
-| [ ] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
-| [ ] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
-| [ ] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
+| [x] | sceHandwritingGetBufferSize | 0x4C3A8D49 | `SceSize sceHandwritingGetBufferSize(const void *param);` (inferido; pode ser `(void)` ou receber modo/idioma) | Tamanho do buffer de trabalho que o jogo deve alocar e passar a `Init`. | Retornar um tamanho fixo generoso (ex. 0x40000, valor real a confirmar). |
+| [x] | sceHandwritingInit | 0x446F171E | `SceInt32 sceHandwritingInit(void *buffer, SceSize size, const void *param);` (inferido) | Inicializa o reconhecedor sobre o buffer do jogo; carrega dicionário. | `Initialized = true`, retorna 0. |
+| [x] | sceHandwritingTerm | 0x356B2931 | `SceInt32 sceHandwritingTerm(void);` (inferido) | Encerra o reconhecedor. | `Initialized = false`, retorna 0. |
+| [x] | sceHandwritingSetMode | 0x09AF9BF8 | `SceInt32 sceHandwritingSetMode(SceUInt32 mode);` (inferido) | Seleciona conjunto de caracteres (kana, kanji, latino, números…). | Guardar, retornar 0. |
+| [x] | sceHandwritingRecognize | 0x12E4F99A | `SceInt32 sceHandwritingRecognize(const void *strokes, SceUInt32 numStrokes, void *result, SceUInt32 maxCandidates);` (inferido) | Reconhece um conjunto completo de traços e devolve candidatos (provavelmente códigos UTF-16 + pontuação). | Escrever 0 candidatos no resultado (layout a confirmar) e retornar 0; se o layout não for conhecido, não escrever e retornar 0. |
+| [x] | sceHandwritingRegisterInit | 0x76395D93 | `SceInt32 sceHandwritingRegisterInit(void *ctx, ...);` (inferido) | Abre um contexto de "registro" (reconhecimento incremental ou registro de caracteres do usuário — a confirmar). | Retornar 0. |
+| [x] | sceHandwritingRegisterSet | 0x79CA5D3F | `SceInt32 sceHandwritingRegisterSet(void *ctx, const void *strokes, ...);` (inferido) | Adiciona traços/amostra ao contexto. | Retornar 0. |
+| [x] | sceHandwritingRegisterGetResult | 0xB886450E | `SceInt32 sceHandwritingRegisterGetResult(void *ctx, void *result);` (inferido) | Lê o resultado do contexto. | 0 candidatos, retornar 0. |
+| [x] | sceHandwritingRegisterInfo | 0x69324689 | `SceInt32 sceHandwritingRegisterInfo(void *ctx, void *info);` (inferido) | Consulta informações do contexto (contagem, capacidade). | Zerar `info` só se o tamanho for conhecido; retornar 0. |
+| [x] | sceHandwritingRegisterDelete | 0x6BA4A521 | `SceInt32 sceHandwritingRegisterDelete(void *ctx, SceUInt32 index);` (inferido) | Remove uma entrada registrada. | Retornar 0. |
+| [x] | sceHandwritingRegisterTerm | 0x6ABBD675 | `SceInt32 sceHandwritingRegisterTerm(void *ctx);` (inferido) | Fecha o contexto de registro. | Retornar 0. |
 
 - **Implementação no VitaSharp:** preferir LLE (acima). No HLE mínimo, usar `[Hle(Nid = 0x...)]` só se o nome não estiver
   em `Hle/Data/nids.txt` (os 11 estão lá), registrar `Log.WarnOnce("handwriting", ...)` na primeira chamada para deixar
   claro que o reconhecimento não existe, e **não** escrever em ponteiros cujo layout não foi confirmado.
+  **Implementado (HLE mínimo, `Hle/Modules/Handwriting.cs`):** `GetBufferSize` → 0x40000; `Init/Term/SetMode`
+  guardam estado e retornam 0; `Recognize` e todos os `Register*` retornam 0 sem escrever nada (argumentos r0–r3
+  logados uma vez por função). O LLE continua sendo o caminho para reconhecimento real.
 - **Validação:** só é possível com um jogo/homebrew que importe a lib. Critério mínimo: o jogo passa pela tela de
   escrita sem crash nem erro; critério completo (LLE): um caractere desenhado via toque roteirizado no cenário é
   reconhecido.
@@ -2958,8 +3062,19 @@ Validação comum de toda a biblioteca: não há jogo instalado que importe. Esc
 Connect→Write PCM→Read PCM→Stop→End), e conferir contra hardware com um homebrew (VitaSDK, `-lSceVoice_stub`) quando
 houver dúvida "a confirmar".
 
+**Implementado** (`Hle/Modules/Voice.cs`, testes em `tests/VitaSharp.Tests/MediaMiscHleTests.cs`). Escolhas
+provisórias (a confirmar no hardware): o `Audio.cs` hoje tem um microfone virtual (SceAudioIn abre e entrega silêncio),
+mas o Voice não depende dele — IN_DEVICE gera silêncio direto; `CheckTopology` devolve `INVALID_PORT` para as três
+regras; `Connect` com tipos invertidos ou IN_VOICE→OUT_VOICE → `INVALID_PORT`, duplicata → `INVALID_ARGUMENT`;
+`Disconnect` inexistente → `INVALID_ARGUMENT`; `Write/ReadFromOPort` sem `Start` → `NOT_STARTED` com `*size = 0`;
+`frame_size` = 320 para portas PCM/device (10 ms a 16 kHz); estados após Start: entradas do app IDLE (BUFFERING/ACTIVE
+conforme o threshold efetivo = max(threshold, 2 frames)), demais ACTIVE; OUT_PCMAUDIO/OUT_VOICE só produzem dados quando
+alguma entrada conectada produziu no tick (o mic sempre produz); ring de saída cheio descarta o mais antigo; OUT_DEVICE
+abre `IAudioStream(16000, 1, 160)` sob demanda e descarta ticks quando o host já tem ~100 ms na fila (nunca bloqueia);
+eventos (`event_callback`) não são disparados (log `WarnOnce`); `GetPortAttr` com `attr != 1000` → `INVALID_ARGUMENT`.
+
 ### sceVoiceInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x805CC20F
 - **Protótipo:** `int sceVoiceInit(const SceVoiceInitParam *param, SceUInt32 version);` (`psp2/voice.h`)
 - **Comportamento:** inicializa o SceVoice do processo, guarda callback de evento e `user_data`, cria a thread de
   eventos (no HLE: nada). Não aloca memória de trabalho (isso é em `sceVoiceStart`).
@@ -2973,7 +3088,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário; segunda chamada deve devolver 0x804E0802.
 
 ### sceVoiceEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAC98853E
 - **Protótipo:** `int sceVoiceEnd(void);` (`psp2/voice.h`)
 - **Comportamento:** se iniciado, para o processamento e desanexa o memblock (como `sceVoiceStop`); destrói todas as
   portas (fecha `IAudioStream`s) e conexões; zera estado. Não libera o memblock (é do app).
@@ -2984,7 +3099,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após End, `sceVoiceCreatePort` → 0x804E0801; `sceVoiceInit` volta a funcionar.
 
 ### sceVoiceStart
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xB2ED725B
 - **Protótipo:** `int sceVoiceStart(const SceVoiceStartParam *param);` (`psp2/voice.h`)
 - **Comportamento:** anexa o memblock de trabalho (≥ 0x40000, tamanho **não** validado no FW 3.60) e inicia o
   processamento; recria recursos de processamento das portas existentes. Se já iniciado: sucesso sem trocar o
@@ -2998,7 +3113,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com memblock criado por `sceKernelAllocMemBlock`; uid inválido → 0x804E0806.
 
 ### sceVoiceStop
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xC3868DF6
 - **Protótipo:** `int sceVoiceStop(void);` (`psp2/voice.h`)
 - **Comportamento:** para o processamento e desanexa o memblock. Portas e conexões permanecem, mas buffers são
   descartados. Já parado mas inicializado → sucesso.
@@ -3008,7 +3123,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: após Stop, `GetPortInfo` → 0x804E080A.
 
 ### sceVoiceGetResourceInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x6E46950E
 - **Protótipo:** `int sceVoiceGetResourceInfo(SceVoiceResourceInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** escreve os limites fixos do FW 3.60: 7 IN_VOICE, 7 OUT_VOICE, 1 IN_DEVICE, 1 OUT_DEVICE, 64 portas.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_ARGUMENT` se `info == NULL`.
@@ -3018,7 +3133,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceCheckTopology
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x874054CE
 - **Protótipo:** `int sceVoiceCheckTopology(void);` (`psp2/voice.h`)
 - **Comportamento:** valida o grafo: toda porta criada tem ≥ 1 conexão; portas OUT_VOICE adjacentes na lista interna
   têm o mesmo bitrate, mesmo mute (zero/não-zero) e volume exatamente igual; se existem IN_DEVICE e IN_PCMAUDIO,
@@ -3032,7 +3147,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com cada caso.
 
 ### sceVoiceCreatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xFA4E57B1
 - **Protótipo:** `int sceVoiceCreatePort(SceVoicePortId *port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** escreve 0xFF em `*port_id` antes de validar. Valida o tipo (0..5); para PCMAUDIO:
   `pcm_data_type == 0` (S16LE), `sampling_rate == 16000`, capacidade efetiva = `buffer_size & ~511`, faixa
@@ -3054,7 +3169,7 @@ houver dúvida "a confirmar".
   oitava IN_VOICE → 0x804E0808.
 
 ### sceVoiceUpdatePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xCE855C50
 - **Protótipo:** `int sceVoiceUpdatePort(SceVoicePortId port_id, const SceVoicePortParam *param);` (`psp2/voice.h`)
 - **Comportamento:** troca configuração de uma porta existente; o tipo não pode mudar. Mudar bitrate recria o
   codec e descarta dados. Não realoca rings PCM (no FW 3.60 mudar `buffer_size` corrompe a contabilidade — o HLE
@@ -3067,7 +3182,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceConnectIPortToOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x698BDAAE
 - **Protótipo:** `int sceVoiceConnectIPortToOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** liga entrada (tipo 0..2) a saída (3..5). Rejeita IN_VOICE→OUT_VOICE direto, conexão duplicada e
@@ -3079,7 +3194,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDisconnectIPortFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5F0260F4
 - **Protótipo:** `int sceVoiceDisconnectIPortFromOPort(SceVoicePortId input_port_id, SceVoicePortId output_port_id);`
   (`psp2/voice.h`)
 - **Comportamento:** remove a conexão.
@@ -3089,7 +3204,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário.
 
 ### sceVoiceDeletePort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0xAE46564D
 - **Protótipo:** `int sceVoiceDeletePort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** apaga a porta e todas as conexões que a envolvem; libera o slot e a contagem de recursos.
 - **Retorno/erros:** 0; `NOT_INITIALIZED`; `INVALID_PORT_ID`.
@@ -3097,7 +3212,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário: ID volta a ser reutilizado pelo próximo `CreatePort`.
 
 ### sceVoiceWriteToIPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x0A22EC0E
 - **Protótipo:** `int sceVoiceWriteToIPort(SceVoicePortId port_id, const void *data, SceSize *size, SceInt16 frame_gap);`
   (`psp2/voice.h`)
 - **Comportamento:** escreve dados do app numa IN_PCMAUDIO ou IN_VOICE; `*size` volta com os bytes aceitos (limitado
@@ -3112,7 +3227,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário com PCM: escrever 2048 bytes num ring de 1024 → `*size == 1024`.
 
 ### sceVoiceReadFromOPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x09E4D18C
 - **Protótipo:** `int sceVoiceReadFromOPort(SceVoicePortId port_id, void *data, SceSize *size);` (`psp2/voice.h`)
 - **Comportamento:** lê de OUT_PCMAUDIO ou OUT_VOICE; `*size` (capacidade) volta com os bytes copiados. Voz codificada
   é arredondada para baixo a frames completos; PCM para número par de bytes. Falha pós-validação → `*size = 0`.
@@ -3127,7 +3242,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário IN_PCMAUDIO→OUT_PCMAUDIO com volume 0.5: amostra 1000 deve sair 500.
 
 ### sceVoiceGetPortInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5933CCFB
 - **Protótipo:** `int sceVoiceGetPortInfo(SceVoicePortId port_id, SceVoicePortInfo *info);` (`psp2/voice.h`)
 - **Comportamento:** devolve tipo, estado, `data_size` (bytes livres no ring de entrada ou bytes enfileirados no de
   saída) e `frame_size` (tamanho do frame de processamento, codificado ou PCM). Se não iniciado, zera a struct inteira e
@@ -3143,7 +3258,7 @@ houver dúvida "a confirmar".
 - **Validação:** teste unitário + homebrew em hardware para os valores "a confirmar".
 
 ### sceVoiceResetPort
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoice · **NID:** 0x5E1CE910
 - **Protótipo:** `int sceVoiceResetPort(SceVoicePortId port_id);` (`psp2/voice.h`)
 - **Comportamento:** limpa os dados do ring; ACTIVE vira IDLE; INACTIVE/IDLE/BUFFERING mantêm estado interno. O estado
   visível em `GetPortInfo` só muda no próximo ciclo de processamento.
@@ -3160,19 +3275,19 @@ campos de `Port`. Validação: teste unitário set→get. Protótipos em `psp2/v
 
 | Função | NID | Protótipo | Comportamento / particularidades |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
-| - [ ] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
-| - [ ] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
-| - [ ] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
-| - [ ] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
-| - [ ] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
-| - [ ] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
-| - [ ] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
-| - [ ] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
-| - [ ] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
-| - [ ] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
-| - [ ] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
-| - [ ] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
+| - [x] sceVoiceSetMuteFlagAll | 0xDB90EAC4 | `int sceVoiceSetMuteFlagAll(SceBool mute);` | Liga/desliga o override global que só afeta o que `GetMuteFlag` **reporta** (todas as portas = 1); não silencia o áudio. `_muteAll = mute != 0`. |
+| - [x] sceVoiceSetMuteFlag | 0x0B9E4AE2 | `int sceVoiceSetMuteFlag(SceVoicePortId port_id, SceBool mute);` | `Port.Mute = mute != 0`; porta mutada contribui/produz zeros no processamento. |
+| - [x] sceVoiceGetMuteFlag | 0xC913F7E9 | `int sceVoiceGetMuteFlag(SceVoicePortId port_id, SceUInt16 *mute);` | Escreve u16 `1` se `_muteAll` ou `Port.Mute`, senão `0`. |
+| - [x] sceVoiceSetVolume | 0xD93769E6 | `int sceVoiceSetVolume(SceVoicePortId port_id, float volume);` | Guarda sem limitar faixa (volume em `s0`); amostras escaladas são clampadas a s16 no processamento. OUT_DEVICE: também `Stream.Volume`? Não — aplicar no mix para manter clamp. |
+| - [x] sceVoiceGetVolume | 0x875CC80D | `int sceVoiceGetVolume(SceVoicePortId port_id, float *volume);` | Escreve o float guardado (`W32(BitConverter.SingleToUInt32Bits(v))`). |
+| - [x] sceVoiceSetBitRate | 0x02F58D6F | `int sceVoiceSetBitRate(SceVoicePortId port_id, SceUInt32 bit_rate);` | Só IN_VOICE/OUT_VOICE (outros → `INVALID_PORT` 0x804E0807, a confirmar); bitrate fora da tabela → `INVALID_ARGUMENT`; recria codec e descarta o ring. |
+| - [x] sceVoiceGetBitRate | 0xD02C00B4 | `int sceVoiceGetBitRate(SceVoicePortId port_id, SceUInt32 *bit_rate);` | Só portas VOICE (outras → `INVALID_PORT`, a confirmar); escreve `Port.BitRate`. |
+| - [x] sceVoiceSetPortAttr | 0x9B0D3490 | `int sceVoiceSetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, const SceInt32 *value);` | No FW 3.60 **sempre falha**: porta existente → `INVALID_ARGUMENT`; ID válido sem porta → `INVALID_PORT_ID`. |
+| - [x] sceVoiceGetPortAttr | 0x73F72940 | `int sceVoiceGetPortAttr(SceVoicePortId port_id, SceVoicePortAttr attr, SceInt32 *value);` | `attr == 1000` (AUDIO_INPUT_OWNERSHIP) numa IN_DEVICE escreve o estado de posse do microfone — HLE: escrever `0` (sem mic; valor exato "possui" a confirmar, provavelmente 1). Outros tipos: retorna 0 sem escrever. `attr` desconhecido → `INVALID_ARGUMENT` (a confirmar). |
+| - [x] sceVoicePausePort | 0x23C6B16B | `int sceVoicePausePort(SceVoicePortId port_id);` | `Paused = true`; mantém buffers; device/saídas vão a INACTIVE internamente, mas o estado reportado congela até retomar. |
+| - [x] sceVoiceResumePort | 0x2DE35411 | `int sceVoiceResumePort(SceVoicePortId port_id);` | `Paused = false`; reiniciar o relógio de pacing da porta para não "recuperar" o tempo pausado. |
+| - [x] sceVoicePausePortAll | 0x39AA3884 | `int sceVoicePausePortAll(void);` | `_allPaused = true`; mantém buffers e estados internos e reportados. |
+| - [x] sceVoiceResumePortAll | 0x1F93FC0C | `int sceVoiceResumePortAll(void);` | `_allPaused = false`; reiniciar o relógio de pacing global. |
 
 ---
 
@@ -3216,8 +3331,13 @@ Voice são da mesma equipe) — não usar sem confirmar.
 Validação comum: teste unitário (Init→CreateLocal→CreateRemote→Connect→Read/WritePacket→Disconnect→Delete×2→End).
 Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de chat/lobby sem travar.
 
+**Implementado** (`Hle/Modules/VoiceQoS.cs`) como sessão offline: IDs de endpoints/conexões vêm de um contador único
+(começa em 1); erros provisórios `SceError.ERROR` (0x80020001, com `WarnOnce`) para não inicializado / já inicializado /
+ID desconhecido / conexão duplicada, e `SceError.INVALID_ARGUMENT` (0x80020005) para ponteiro nulo ou tamanho de
+atributo ≤ 0 ou > 0x10000; apagar um endpoint remove as conexões que o usam; `Init` não exige o SceVoice.
+
 ### sceVoiceQoSInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x4B5FFF1C
 - **Protótipo (inferido, PS4):** `int sceVoiceQoSInit(void *pMemBlock, SceUInt32 memSize, SceInt32 appType);`
 - **Comportamento:** inicializa a biblioteca usando memória fornecida pelo app. Segunda chamada → erro "já
   inicializado".
@@ -3227,7 +3347,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário; em jogo, conferir que `r0` é ponteiro alinhado e `r1` um tamanho plausível.
 
 ### sceVoiceQoSEnd
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xFB0B747B
 - **Protótipo (inferido):** `int sceVoiceQoSEnd(void);`
 - **Comportamento:** destrói conexões e endpoints e finaliza.
 - **Retorno/erros:** 0; não inicializado → a confirmar.
@@ -3235,7 +3355,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateLocalEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xAAB54BE4
 - **Protótipo (inferido):** `int sceVoiceQoSCreateLocalEndpoint(SceVoiceQoSLocalId *pLocalId);`
 - **Comportamento:** cria endpoint local (no hardware também as portas internas do SceVoice) e devolve o ID.
 - **Retorno/erros:** 0; ponteiro nulo / limite de endpoints → a confirmar (limite também a confirmar).
@@ -3243,7 +3363,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSCreateRemoteEndpoint
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xBAB98727
 - **Protótipo (inferido):** `int sceVoiceQoSCreateRemoteEndpoint(SceVoiceQoSRemoteId *pRemoteId);`
 - **Comportamento:** cria endpoint que representa um par remoto.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3251,7 +3371,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSConnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0xE0C5CEEE
 - **Protótipo (inferido):** `int sceVoiceQoSConnect(SceVoiceQoSConnectionId *pConnectionId, SceVoiceQoSLocalId localId, SceVoiceQoSRemoteId remoteId);`
 - **Comportamento:** cria uma conexão local↔remoto e devolve o ID.
 - **Retorno/erros:** 0; IDs inexistentes / conexão duplicada → a confirmar.
@@ -3259,7 +3379,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSDisconnect
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x3C7A08B0
 - **Protótipo (inferido):** `int sceVoiceQoSDisconnect(SceVoiceQoSConnectionId connectionId);`
 - **Comportamento:** encerra a conexão.
 - **Retorno/erros:** 0; ID inválido → a confirmar.
@@ -3267,7 +3387,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSReadPacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2D613549
 - **Protótipo (inferido):** `int sceVoiceQoSReadPacket(SceVoiceQoSConnectionId connectionId, void *pData, SceUInt32 *pSize);`
 - **Comportamento:** copia para `pData` o próximo pacote de voz a enviar ao remoto da conexão; `*pSize` entra como
   capacidade e sai como bytes escritos.
@@ -3277,7 +3397,7 @@ Em jogo: quando algum importar, verificar no log que o jogo passa pela tela de c
 - **Validação:** teste unitário.
 
 ### sceVoiceQoSWritePacket
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVoiceQoS · **NID:** 0x2FE1F28F
 - **Protótipo (inferido):** `int sceVoiceQoSWritePacket(SceVoiceQoSConnectionId connectionId, const void *pData, SceUInt32 *pSize);`
 - **Comportamento:** entrega ao QoS um pacote recebido do remoto (vai para o jitter buffer → porta IN_VOICE).
   `*pSize` sai com os bytes aceitos.
@@ -3294,15 +3414,15 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
-| - [ ] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
-| - [ ] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
-| - [ ] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
-| - [ ] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
-| - [ ] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
-| - [ ] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
-| - [ ] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
+| - [x] sceVoiceQoSDeleteLocalEndpoint | 0x68FABF6F | `int sceVoiceQoSDeleteLocalEndpoint(SceVoiceQoSLocalId localId);` | Remove o endpoint local (e conexões que o usam — ou erro se houver conexões; a confirmar). |
+| - [x] sceVoiceQoSDeleteRemoteEndpoint | 0xC2F2C771 | `int sceVoiceQoSDeleteRemoteEndpoint(SceVoiceQoSRemoteId remoteId);` | Idem para remoto. |
+| - [x] sceVoiceQoSGetLocalEndpoint | 0xE5B4527D | `int sceVoiceQoSGetLocalEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSLocalId *pLocalId);` | Escreve o ID local da conexão. |
+| - [x] sceVoiceQoSGetRemoteEndpoint | 0x876A9B9C | `int sceVoiceQoSGetRemoteEndpoint(SceVoiceQoSConnectionId connectionId, SceVoiceQoSRemoteId *pRemoteId);` | Escreve o ID remoto da conexão. |
+| - [x] sceVoiceQoSSetLocalEndpointAttribute | 0x540CEBA5 | `int sceVoiceQoSSetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Guarda `attributeSize` bytes em `_attrs[(localId, attr)]`. |
+| - [x] sceVoiceQoSGetLocalEndpointAttribute | 0xC981AB3B | `int sceVoiceQoSGetLocalEndpointAttribute(SceVoiceQoSLocalId localId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSSetConnectionAttribute | 0xE757806F | `int sceVoiceQoSSetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, const void *pAttributeValue, SceInt32 attributeSize);` | Idem, chave da conexão (usar espaço de chaves separado do local). |
+| - [x] sceVoiceQoSGetConnectionAttribute | 0xE81B8D44 | `int sceVoiceQoSGetConnectionAttribute(SceVoiceQoSConnectionId connectionId, SceVoiceQoSAttributeId attributeId, void *pAttributeValue, SceInt32 attributeSize);` | Copia o blob guardado (zeros se nunca escrito). |
+| - [x] sceVoiceQoSGetStatus | 0xC9DC1425 | `int sceVoiceQoSGetStatus(SceVoiceQoSConnectionId connectionId, SceVoiceQoSStatusId statusId, void *pStatusValue, SceInt32 statusSize);` | Escreve zeros em `statusSize` bytes (sem tráfego/atividade de voz). |
 
 ---
 
@@ -3341,14 +3461,20 @@ valores). Implementação em `VoiceQoS.cs` com o dicionário `_attrs`; validaç�
   `Log.WarnOnce`, igual a `Audiodec.cs`).
 
 Códigos de erro: todos a confirmar (nenhuma fonte). Provisoriamente: argumento nulo → `SceError.INVALID_ARGUMENT`
-(0x80020003) com `Log.WarnOnce`.
+(0x80020005) com `Log.WarnOnce`.
 
 Validação comum: teste unitário decodificando um vetor de teste G.729 da ITU (frames de 10 bytes → comparar com o PCM
 de referência, tolerância ±1 LSB do FFmpeg); em jogo, quando algum importar, conferir no log que `DecodeGetContextSize`
 devolve um tamanho que o jogo aceita.
 
+**Implementado** (`Hle/Modules/G729.cs`, NIDs explícitos): `*GetContextSize` retorna 0x1000 sem escrever em `r0`
+(o valor de `r0` vai para o log, para decidir a variante com `*pSize`); `Init/Core/Reset` chaveados pelo endereço do
+contexto (contexto desconhecido ou ponteiro nulo → `INVALID_ARGUMENT`); `DecodeCore(ctx, in, out)` usa o g729 do FFmpeg
+(silêncio sem FFmpeg); `EncodeCore(ctx, in, out)` escreve 10 bytes zero (não é um frame de silêncio G.729 verificado);
+o 2º argumento de `EncodeInit` (VAD?) só é guardado. Ainda falta o teste com vetores ITU.
+
 ### sceG729DecodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x57DB3ADD
 - **Protótipo (inferido):** `SceInt32 sceG729DecodeGetContextSize(void);` (retorna o tamanho em bytes; pode ser
   `int sceG729DecodeGetContextSize(SceUInt32 *pSize)` — a confirmar)
 - **Comportamento:** informa quantos bytes o app deve alocar para um contexto de decodificação.
@@ -3359,7 +3485,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo que importar.
 
 ### sceG729DecodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x7A74B98F
 - **Protótipo (inferido):** `int sceG729DecodeInit(void *pContext /*, modo/flags a confirmar */);`
 - **Comportamento:** inicializa o estado do decoder no buffer do app.
 - **Retorno/erros:** 0; ctx nulo → erro a confirmar.
@@ -3368,7 +3494,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729DecodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x918BE529
 - **Protótipo (inferido):** `int sceG729DecodeCore(void *pContext, const void *pIn /*10 bytes*/, SceInt16 *pOut /*80 amostras*/ /*, int bfi ou tamanho do frame — a confirmar */);`
 - **Comportamento:** decodifica um frame de 10 ms. Com flag de frame perdido (bfi) faz ocultação.
 - **Retorno/erros:** 0 (ou nº de amostras/bytes — a confirmar).
@@ -3377,7 +3503,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** vetores de teste ITU-T G.729.
 
 ### sceG729DecodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0x60C5F97E
 - **Protótipo (inferido):** `int sceG729DecodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do decoder (filtros/preditor) sem realocar.
 - **Retorno/erros:** 0; ctx desconhecido → erro a confirmar.
@@ -3386,7 +3512,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário: Reset e redecodificar o mesmo frame dá o mesmo PCM da primeira vez.
 
 ### sceG729EncodeGetContextSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFB053ABE
 - **Protótipo (inferido):** `SceInt32 sceG729EncodeGetContextSize(void);` (ou variante com `SceUInt32 *pSize`, a confirmar)
 - **Comportamento:** tamanho do contexto de codificação.
 - **Retorno/erros:** como `DecodeGetContextSize`.
@@ -3394,7 +3520,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** log no primeiro jogo.
 
 ### sceG729EncodeInit
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xAB9DA641
 - **Protótipo (inferido):** `int sceG729EncodeInit(void *pContext /*, int enableVad (Annex B) — a confirmar */);`
 - **Comportamento:** inicializa o encoder; possivelmente habilita VAD/DTX.
 - **Retorno/erros:** 0; erros a confirmar.
@@ -3403,7 +3529,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** teste unitário.
 
 ### sceG729EncodeCore
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xFF57E664
 - **Protótipo (inferido):** `int sceG729EncodeCore(void *pContext, const SceInt16 *pIn /*80 amostras*/, void *pOut /*10 bytes*/ /*, SceUInt32 *pOutSize — se VAD/DTX, a confirmar */);`
 - **Comportamento:** codifica 10 ms de PCM 8 kHz num frame de 10 bytes (ou SID/vazio com DTX).
 - **Retorno/erros:** 0 (ou bytes gerados — a confirmar).
@@ -3412,7 +3538,7 @@ devolve um tamanho que o jogo aceita.
 - **Validação:** decodificar a saída com o decoder (FFmpeg) e obter silêncio.
 
 ### sceG729EncodeReset
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
+- [x] **Prioridade:** P2 · **Biblioteca:** SceG729 · **NID:** 0xA5B87504
 - **Protótipo (inferido):** `int sceG729EncodeReset(void *pContext);`
 - **Comportamento:** reinicia o estado do encoder.
 - **Retorno/erros:** 0.
@@ -3493,8 +3619,14 @@ Estruturas (`psp2/audioenc.h`):
 Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo→Delete→TermLibrary verificando
 `maxPcmSize = FrameSamples*2`, `maxEsSize = FrameBytes`, `inputPcmSize`/`outputEsSize` após Encode.
 
+**Implementado** (`Hle/Modules/Audioenc.cs`): CELP com frames de payload zero. Escolhas provisórias: `totalStreams`
+só aceita 1; `CreateEncoderResident` não exige `InitLibrary` nem ocupa stream; `CreateEncoderExternal` exige
+`contextSize ≥ 0x10000`; qualquer variante de `Delete*` apaga qualquer tipo de encoder (`DeleteEncoderExternal`
+escreve o `vaContext` em `*pvaContext` se não nulo); `EncodeNFrames(0)` = 1 frame; `TermLibrary` com encoder da
+biblioteca vivo → `A_HANDLE_IN_USE`; alinhamento de buffers não validado.
+
 ### sceAudioencInitLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x76EE4DC6
 - **Protótipo:** `int sceAudioencInitLibrary(int codecType, SceAudioencInitParam *pInitParam);` (`psp2/audioenc.h`)
 - **Comportamento:** reserva recursos do encoder do tipo dado para `totalStreams` streams.
 - **Retorno/erros:** 0; `INVALID_TYPE` (0x80860001) se `codecType != 0x2006`; `INVALID_PTR` (0x80860008) se
@@ -3506,7 +3638,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencTermLibrary
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAB32D022
 - **Protótipo:** `int sceAudioencTermLibrary(unsigned int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** libera a biblioteca do tipo.
 - **Retorno/erros:** 0; `INVALID_TYPE`; `NOT_INITIALIZED` (0x80860005); com encoders vivos → `A_HANDLE_IN_USE`
@@ -3515,7 +3647,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencCreateEncoder
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0x64C04AE8
 - **Protótipo:** `int sceAudioencCreateEncoder(SceAudioencCtrl *pCtrl, int codecType);` (`psp2/audioenc.h`)
 - **Comportamento:** valida `pCtrl->size == 0x2C`, `wordLength == 16`, `pInfo` (size 0x10, `excitationMode == 0`,
   `samplingRate == 8000`, `bitRate` na tabela); cria o encoder, escreve `handle`, `maxPcmSize` (= amostras do
@@ -3530,7 +3662,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário para cada bitrate conhecido (tabela da Arquitetura).
 
 ### sceAudioencEncode
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xD85DB29C
 - **Protótipo:** `int sceAudioencEncode(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`)
 - **Comportamento:** codifica um frame: lê `FrameSamples` s16 de `pInputPcm`, escreve `FrameBytes` em `pOutputEs`,
   atualiza `inputPcmSize` e `outputEsSize`.
@@ -3542,7 +3674,7 @@ Validação comum: teste unitário InitLibrary→Create→Encode×N→GetOptInfo
 - **Validação:** teste unitário.
 
 ### sceAudioencEncodeNFrames
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
+- [x] **Prioridade:** P2 · **Biblioteca:** SceAudioencUser · **NID:** 0xAFCEDA50
 - **Protótipo (inferido de `sceAudiodecDecodeNFrames`):** `int sceAudioencEncodeNFrames(SceAudioencCtrl *pCtrl, SceUInt32 nFrames);`
 - **Comportamento:** como Encode para `nFrames` frames consecutivos; tamanhos de saída acumulados.
 - **Retorno/erros:** como Encode; `nFrames == 0` → a confirmar (Audiodec.cs trata como 1).
@@ -3558,12 +3690,12 @@ iguais aos de Create/Delete. Implementação em `Audioenc.cs`; validação por t
 
 | Função | NID | Protótipo | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
-| - [ ] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
-| - [ ] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
-| - [ ] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
-| - [ ] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
-| - [ ] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
-| - [ ] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
-| - [ ] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
-| - [ ] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |
+| - [x] sceAudioencGetContextSize | 0xEAD4AF38 | `int sceAudioencGetContextSize(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Retorna o nº de bytes de contexto que o app deve alocar para um encoder External com essa configuração (`pInfo` lido). Valor real a confirmar; usar 0x10000 como `Audiodec.cs`. |
+| - [x] sceAudioencCreateEncoderExternal | 0x9B1E8DE2 | `int sceAudioencCreateEncoderExternal(SceAudioencCtrl *pCtrl, SceUInt32 codecType, SceUIntVAddr vaContext, SceUInt32 contextSize);` (inferido) | Como Create, mas usa memória do app e não exige InitLibrary (`needsLibrary: false`, como Audiodec). `vaContext` nulo → INVALID_PTR; `contextSize` < GetContextSize → INVALID_SIZE (a confirmar). |
+| - [x] sceAudioencCreateEncoderResident | 0xDD13004C | `int sceAudioencCreateEncoderResident(SceAudioencCtrl *pCtrl, SceUInt32 codecType);` (inferido) | Como Create, encoder "residente" (memória reservada do sistema); HLE = Create com `Resident = true`. Se exige InitLibrary: a confirmar. |
+| - [x] sceAudioencDeleteEncoder | 0xC6BA5EE6 | `int sceAudioencDeleteEncoder(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Valida ctrl/size e remove o handle (NOT_HANDLE_IN_USE se não existe). |
+| - [x] sceAudioencDeleteEncoderExternal | 0x552E8882 | `int sceAudioencDeleteEncoderExternal(SceAudioencCtrl *pCtrl, SceUIntVAddr *pvaContext);` (inferido) | Remove o handle e escreve em `*pvaContext` o endereço do contexto passado no Create (para o app liberar). Obs.: `Audiodec.cs` declara o 2º arg como valor, não ponteiro — não repetir aqui. |
+| - [x] sceAudioencDeleteEncoderResident | 0x80765849 | `int sceAudioencDeleteEncoderResident(SceAudioencCtrl *pCtrl);` (inferido) | Remove handle residente. |
+| - [x] sceAudioencClearContext | 0x9386F42D | `int sceAudioencClearContext(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Reinicia o estado do encoder (no HLE: valida handle e retorna 0). |
+| - [x] sceAudioencGetOptInfo | 0xD01C63A3 | `int sceAudioencGetOptInfo(SceAudioencCtrl *pCtrl);` (`psp2/audioenc.h`) | Preenche `*pCtrl->pOptInfo` (`SceAudioencOptInfoCelp`, size 0x2C): `header[32]`, `headerSize`, `encoderVersion`. Conteúdo do header CELP e versão a confirmar (hardware: chamar após Create para cada bitrate e despejar). HLE inicial: header zerado, `headerSize = 0`, `encoderVersion = 0`; `pOptInfo` nulo → INVALID_PTR; `size != 0x2C` → INVALID_SIZE. |
+| - [x] sceAudioencGetInternalError | 0x452246D0 | `int sceAudioencGetInternalError(SceAudioencCtrl *pCtrl, int *pInternalError);` (`psp2/audioenc.h`) | Valida handle; escreve 0 em `*pInternalError` (igual a `sceAudiodecGetInternalError`). |

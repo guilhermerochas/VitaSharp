@@ -63,24 +63,30 @@ public sealed class AppUtil : HleModule
     internal int sceAppUtilSystemParamGetInt(uint id, Ptr<int> value)
     {
         if (value.Address == 0) return ERR_PARAMETER;
-        value.Value = id switch
-        {
-            1 => 1,  // language: English (US)
-            2 => 1,  // enter button: cross
-            4 => 0,  // date format YYYYMMDD
-            5 => 0,  // 12 hour clock
-            6 => (int)TimeZoneInfo.Local.BaseUtcOffset.TotalMinutes,
-            7 => TimeZoneInfo.Local.IsDaylightSavingTime(DateTime.Now) ? 1 : 0,
-            _ => 0,
-        };
+        value.Value = SystemParamInt(id);
         return id is >= 1 and <= 7 ? 0 : ERR_PARAMETER;
     }
+
+    /// <summary>Integer system parameters (SCE_SYSTEM_PARAM_ID_*), shared with SceRegMgr so both agree.</summary>
+    internal static int SystemParamInt(uint id) => id switch
+    {
+        1 => 1,  // language: English (US)
+        2 => 1,  // enter button: cross
+        4 => 0,  // date format YYYYMMDD
+        5 => 0,  // 12 hour clock
+        6 => (int)TimeZoneInfo.Local.BaseUtcOffset.TotalMinutes,
+        7 => TimeZoneInfo.Local.IsDaylightSavingTime(DateTime.Now) ? 1 : 0,
+        _ => 0,
+    };
+
+    /// <summary>SCE_SYSTEM_PARAM_ID_USERNAME (3).</summary>
+    internal const string UserName = "VitaSharp";
 
     [Hle]
     internal int sceAppUtilSystemParamGetString(uint id, uint buf, uint size)
     {
         if (buf == 0 || size == 0) return ERR_PARAMETER;
-        GuestMemory.WriteCString(buf, id == 3 ? "VitaSharp" : "", (int)size);
+        GuestMemory.WriteCString(buf, id == 3 ? UserName : "", (int)size);
         return 0;
     }
 

@@ -203,6 +203,21 @@ public sealed class Emulator : IDisposable
         return m;
     }
 
+    /// <summary>Removes a loaded module (sceKernelUnloadModule): imports that pointed at its exports go back to the next
+    /// provider or to HLE, its segments are freed and the translated code of their range is dropped.</summary>
+    public void UnloadModule(LoadedModule m)
+    {
+        int rebound = Linker.UnregisterModule(m);
+        foreach (var s in m.Segments.Values)
+        {
+            Code.Invalidate(s.Address, s.Size);
+            Memory.Free(s.Address);
+        }
+        Kernel.Modules.TryRemove(m.Uid, out _);
+        Kernel.Objects.Remove(m.Uid);
+        Log.Info($"Unloaded module {m.Name} ({m.Path}): {rebound} import stub(s) rebound");
+    }
+
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>
     public void Start(string[]? args = null)
     {
