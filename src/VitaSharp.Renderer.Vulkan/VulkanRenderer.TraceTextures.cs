@@ -336,6 +336,22 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly List<(int Id, RenderTarget Rt, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _traceSnaps = new();
 
+    /// <summary>"src:ADDR" entries: snapshot that surface whenever a draw samples it (id = draw id + 10000).</summary>
+    static readonly HashSet<uint> TraceSnapSampled = TraceSnapSpec.Where(s => s.StartsWith("src:"))
+        .Select(s => Convert.ToUInt32(s[4..], 16)).ToHashSet();
+
+    void TraceSampledSnapshot(RenderTarget rt)
+    {
+        if (!TracingThisFrame || !TraceSnapSampled.Contains(rt.Address)) return;
+        int bpp = HostBytesPerPixel(rt.Format);
+        if (bpp != 4 && bpp != 8) return;
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        EndRendering();
+        var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
+        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+        _traceSnaps.Add((_drawSerial + 10000, rt, buf, mem, ptr));
+    }
+
     void TraceSnapshot()
     {
         // snapshots are taken in the logged frame (draw ids match the draw trace) and written when it is presented

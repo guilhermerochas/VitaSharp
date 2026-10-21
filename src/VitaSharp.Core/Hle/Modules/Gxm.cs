@@ -34,7 +34,7 @@ public sealed class Gxm : HleModule
     bool _initialized;
     uint _notificationRegion, _parameterBufferSize;
     uint _displayCallback, _displayDataSize;
-    BlockingCollection<(uint Data, long GpuSeq)>? _displayQueue;
+    BlockingCollection<(uint Data, GpuQueue.Fence Done)>? _displayQueue;
     int _displayPending;
     readonly object _displayLock = new();
     GuestThread? _displayThread;
@@ -62,7 +62,7 @@ public sealed class Gxm : HleModule
         _notificationRegion = Emu.Memory.Alloc(1 << 20, "SceGxmNotificationRegion", MemoryRegion.User);
         GuestMemory.Fill(_notificationRegion, 0, 1 << 20);
         int capacity = (int)Math.Max(Math.Min(pendingMax, 3u) - 1, 1u);
-        _displayQueue = new BlockingCollection<(uint, long)>(capacity);
+        _displayQueue = new BlockingCollection<(uint, GpuQueue.Fence)>(capacity);
         var t = K.CreateThread("SceGxmDisplayQueue", 0, 64, 0x4000, 0, 0);
         t.HostBody = DisplayQueueThread;
         _displayThread = t;
@@ -76,14 +76,15 @@ public sealed class Gxm : HleModule
     {
         while (true)
         {
-            (uint data, long seq) entry;
+            (uint data, GpuQueue.Fence done) entry;
             using (Scheduler.Block()) // blocked on the queue: do not hold an emulated core
             {
                 try { entry = _displayQueue!.Take(); }
                 catch (InvalidOperationException) { break; } // queue completed
             }
-            var (data, seq) = entry;
-            Gpu.WaitFor(seq);
+            var (data, done) = entry;
+            // the hardware calls back once the frame's rendering completed and its results are in memory
+            using (Scheduler.Block()) done.Wait(() => Emu.Running);
             if (!Emu.Running && Emu.MainModule != null && K.MainThread?.Status == ThreadStatus.Dormant) break;
             try
             {
@@ -552,7 +553,7 @@ public sealed class Gxm : HleModule
         // the queue has pendingCount-1 slots: when the render thread runs ahead it blocks here until the display thread
         // flips, and that wait must not hold an emulated core (it starved every lower-priority thread, e.g. God of
         // War's Bink audio thread, making the video audio port restart every 100 ms)
-        using (Scheduler.Block()) _displayQueue.Add((copy, Gpu.Submitted));
+        using (Scheduler.Block()) _displayQueue.Add((copy, Gpu.SubmitFence()));
         return 0;
     }
 
@@ -1904,9 +1905,10 @@ public sealed class Gxm : HleModule
                         }
                         GuestMemory.Copy(dstAddr + d, srcAddr + so, (uint)bpp);
                     }
-                if (notif is { } n && n.Item1 != 0) lock (Gpu.NotificationLock) { GuestMemory.W32(n.Item1, n.Item2); Monitor.PulseAll(Gpu.NotificationLock); }
             },
         });
+        // the notification follows the transfer in GPU order, once earlier results are in memory
+        if (notif is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
     }
 
@@ -1937,9 +1939,10 @@ public sealed class Gxm : HleModule
                         }
                     }
                 }
-                if (notif is { } n && n.Item1 != 0) lock (Gpu.NotificationLock) { GuestMemory.W32(n.Item1, n.Item2); Monitor.PulseAll(Gpu.NotificationLock); }
             },
         });
+        // the notification follows the transfer in GPU order, once earlier results are in memory
+        if (notif is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
     }
 
@@ -1972,9 +1975,10 @@ public sealed class Gxm : HleModule
                         }
                         else GuestMemory.Copy(d, s0, (uint)bpp);
                     }
-                if (notif is { } n && n.Item1 != 0) lock (Gpu.NotificationLock) { GuestMemory.W32(n.Item1, n.Item2); Monitor.PulseAll(Gpu.NotificationLock); }
             },
         });
+        // the notification follows the transfer in GPU order, once earlier results are in memory
+        if (notif is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
     }
 }

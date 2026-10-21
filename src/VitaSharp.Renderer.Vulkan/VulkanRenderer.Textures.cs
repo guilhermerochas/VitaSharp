@@ -238,6 +238,7 @@ public sealed unsafe partial class VulkanRenderer
                 return (RenderTargetRegion(rt, x0, y0, w, h, d.Format, gamma), ImageLayout.ShaderReadOnlyOptimal);
             }
             SyncRenderTargetForRead(rt);
+            TraceSampledSnapshot(rt);
             var sw = RtSwizzle(rt, d.Format);
             if (rt.SampledView.Handle == 0 || !rt.SampledSwizzle.Equals(sw) || rt.SampledGamma != gamma)
             {
