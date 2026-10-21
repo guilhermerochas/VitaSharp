@@ -56,6 +56,8 @@ public unsafe struct CpuState
     public uint MxcsrHost;     // host SSE control word at native entry (restored around everything but VFP fast paths)
     public uint MxcsrGuest;    // the same with flush-to-zero + denormals-are-zero, round to nearest (ARM FZ mode)
     public uint TierUpRequest; // a SIMD-heavy native block ran out of its execution budget: recompile it with the IL backend
+    public uint StoreLogCount; // verify mode: guest stores of the current native block (address, size, old value)
+    public nint StoreLog;
 
     public uint Cpsr
     {

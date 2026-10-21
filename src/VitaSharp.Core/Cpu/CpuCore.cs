@@ -155,7 +155,15 @@ public sealed unsafe class CpuCore : IDisposable
         {
             if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
             var b = Lookup(s->R[15], s->Thumb != 0);
-            if (b.NativeEntry != 0 && BlockHook == null)
+            if (b.NativeEntry != 0 && BlockHook == null && Native.NativeVerifier.Enabled)
+            {
+                // differential mode: native run checked against the interpreter, which provides the result
+                Native.NativeVerifier.Run(s, b);
+                BlocksExecuted++;
+                InstructionsExecuted += b.Insts.Length;
+                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
+            }
+            else if (b.NativeEntry != 0 && BlockHook == null)
             {
                 // Native code accounts each block it runs in the state and chains through linked exits until the
                 // pacing window is full, an interrupt/stop is flagged or an exit cannot be linked: the same per-block

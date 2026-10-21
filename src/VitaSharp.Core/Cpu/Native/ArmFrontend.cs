@@ -24,6 +24,14 @@ public sealed unsafe class ArmFrontend
     static readonly uint DOffset = (uint)StateLayout.Of(nameof(CpuState.D));
     static readonly uint FpscrOffset = (uint)StateLayout.Of(nameof(CpuState.Fpscr));
 
+    /// <summary>
+    /// Debug bisection: VITASHARP_NATIVE_NOINLINE=all or a comma-separated list of ops (e.g. A32_LdmStm,T16_Pop)
+    /// turns those instructions into interpreter callouts.
+    /// </summary>
+    static readonly bool[]? NoInline = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_NOINLINE") is { Length: > 0 } list
+        ? list == "all" ? [] : Enumerable.Range(0, (int)Op.Count).Select(i => list.Split(',').Contains(((Op)i).ToString())).ToArray()
+        : null;
+
     /// <summary>Per-op inline/callout counters (diagnostics: which instructions are worth adding to the IR next).</summary>
     public static readonly long[] InlineCount = new long[(int)Op.Count], CalloutCount = new long[(int)Op.Count];
 
@@ -122,6 +130,7 @@ public sealed unsafe class ArmFrontend
     /// <summary>Translates one instruction. Returns true when the block must end right after it without linking.</summary>
     bool Translate(DecodedInst d)
     {
+        if (NoInline != null && (NoInline.Length == 0 || NoInline[(int)d.Op])) return Callout(in d);
         bool? r = d.Op switch
         {
             Op.A32_DPImm or Op.A32_DPRegImm or Op.A32_DPRegReg => A32DataProc(in d),
@@ -260,9 +269,9 @@ public sealed unsafe class ArmFrontend
         {
             case 0x0: r = B.And(a, b); break;
             case 0x1: r = B.Xor(a, b); break;
-            case 0x2: { var f = B.SubC(a, b, -1); Arith(S, rd, f); return; }
-            case 0x3: { var f = B.SubC(b, a, -1); Arith(S, rd, f); return; }
-            case 0x4: { var f = B.AddC(a, b, -1); Arith(S, rd, f); return; }
+            case 0x2: if (!S || rd == 15) { A32WriteRd(rd, B.Sub(a, b)); return; } { var f = B.SubC(a, b, -1); Arith(S, rd, f); return; }
+            case 0x3: if (!S || rd == 15) { A32WriteRd(rd, B.Sub(b, a)); return; } { var f = B.SubC(b, a, -1); Arith(S, rd, f); return; }
+            case 0x4: if (!S || rd == 15) { A32WriteRd(rd, B.Add(a, b)); return; } { var f = B.AddC(a, b, -1); Arith(S, rd, f); return; }
             case 0x5: { var f = B.AddC(a, b, B.Flag(IrFlag.C)); Arith(S, rd, f); return; }
             case 0x6: { var f = B.SubC(a, b, B.Flag(IrFlag.C)); Arith(S, rd, f); return; }
             case 0x7: { var f = B.SubC(b, a, B.Flag(IrFlag.C)); Arith(S, rd, f); return; }
@@ -746,11 +755,11 @@ public sealed unsafe class ArmFrontend
             case 2: r = B.Or(a, b); break;
             case 3: r = B.OrNot(a, b); break;
             case 4: r = B.Xor(a, b); break;
-            case 8: f = B.AddC(a, b, -1); r = f.Value.R; break;
+            case 8: if (S) { f = B.AddC(a, b, -1); r = f.Value.R; } else r = B.Add(a, b); break;
             case 10: f = B.AddC(a, b, B.Flag(IrFlag.C)); r = f.Value.R; break;
             case 11: f = B.SubC(a, b, B.Flag(IrFlag.C)); r = f.Value.R; break;
-            case 13: f = B.SubC(a, b, -1); r = f.Value.R; break;
-            case 14: f = B.SubC(b, a, -1); r = f.Value.R; break;
+            case 13: if (S) { f = B.SubC(a, b, -1); r = f.Value.R; } else r = B.Sub(a, b); break;
+            case 14: if (S) { f = B.SubC(b, a, -1); r = f.Value.R; } else r = B.Sub(b, a); break;
             default: return false;
         }
         if (S)

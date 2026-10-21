@@ -78,6 +78,7 @@ public sealed unsafe class X64Emitter
     {
         _ir = ir;
         if (_assembler == null) _assembler = new Assembler(64); else _assembler.Reset();
+        _lastLabelAt = -1;
         if (!Allocate()) return false;
         _labels = new Label[ir.Labels];
         for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.CreateLabel();
@@ -95,13 +96,13 @@ public sealed unsafe class X64Emitter
         int exitIndex = 0;
         foreach (var x in ir.Insts) Lower(x, rt, slotFor, ref exitIndex);
         // shared path for callouts that threw: account the block and leave
-        _a.Label(ref _abort);
+        Place(ref _abort);
         EmitAccounting();
         _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
         _a.jmp(rt.Epilogue);
         if (tierUpCounter != 0)
         {
-            _a.Label(ref tierUp);
+            Place(ref tierUp);
             _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
             _a.mov(State(OffTierUp), 1);
             _a.jmp(rt.Epilogue);
@@ -396,9 +397,9 @@ public sealed unsafe class X64Emitter
                     a.jz(zero);
                     a.xor(G32[d], 31);
                     a.jmp(done);
-                    a.Label(ref zero);
+                    Place(ref zero);
                     a.mov(G32[d], 32u);
-                    a.Label(ref done);
+                    Place(ref done);
                 }
                 Commit(x.D, d);
                 return;
@@ -491,14 +492,14 @@ public sealed unsafe class X64Emitter
                     a.jne(div);
                     a.cmp(eax, unchecked((int)0x80000000));
                     a.je(done); // INT_MIN / -1 = INT_MIN (x64 would fault)
-                    a.Label(ref div);
+                    Place(ref div);
                     a.cdq();
                     a.idiv(ecx);
                 }
                 a.jmp(done);
-                a.Label(ref zero);
+                Place(ref zero);
                 a.xor(eax, eax);
-                a.Label(ref done);
+                Place(ref done);
                 int d = Def(x.D, RAX);
                 if (d != RAX) a.mov(G32[d], eax);
                 Commit(x.D, d);
@@ -559,6 +560,7 @@ public sealed unsafe class X64Emitter
             }
             case IrOp.Store8: case IrOp.Store16: case IrOp.Store32:
             {
+                if (LogStores) EmitStoreLog(x);
                 var mem = GuestMem(x.A, x.Op == IrOp.Store8 ? MemorySize.UInt8 : x.Op == IrOp.Store16 ? MemorySize.UInt16 : MemorySize.UInt32);
                 if (IsConst(x.B, out uint v))
                 {
@@ -579,7 +581,7 @@ public sealed unsafe class X64Emitter
             case IrOp.FpOp: FpOp(x, rt); return;
 
             // ---------------- control
-            case IrOp.Label: { var l = _labels[x.Imm]; a.Label(ref l); _labels[x.Imm] = l; return; }
+            case IrOp.Label: { var l = _labels[x.Imm]; Place(ref l); _labels[x.Imm] = l; return; }
             case IrOp.BranchIf:
             {
                 int s = Use(x.A, RAX);
@@ -626,7 +628,7 @@ public sealed unsafe class X64Emitter
                 a.test(rax, rax);
                 a.jz(ret);
                 a.jmp(rax);
-                a.Label(ref ret);
+                Place(ref ret);
                 a.mov(rax, (ulong)slot);
                 a.mov(__qword_ptr[rbx + OffLastExitSlot], rax);
                 a.jmp(rt.Epilogue);
@@ -638,7 +640,7 @@ public sealed unsafe class X64Emitter
                 EmitAccounting();
                 if (x.Imm == 0 && rt.DispatchTable != 0)
                 {
-                    // indirect exit: look the target up in the dispatch table (code is read before the key, see
+                    // indirect exit: look the target up in the dispatch table (key, code, key: see
                     // NativeRuntime.Publish) and jump straight to it when the pacing window allows
                     a.mov(rax, __qword_ptr[rbx + OffCycleAcc]);
                     a.cmp(rax, __qword_ptr[rbx + OffCheckWindow]);
@@ -654,12 +656,16 @@ public sealed unsafe class X64Emitter
                     a.shl(rdx, (byte)4);
                     a.mov(rcx, rt.DispatchTable);
                     a.add(rcx, rdx);
+                    // key, code, key again: a concurrent republish (key=invalid, code=new, key=new) between the
+                    // loads is detected by the second compare (x64 never reorders loads with other loads)
+                    a.cmp(__dword_ptr[rcx], eax);
+                    a.jne(ret);
                     a.mov(rdx, __qword_ptr[rcx + 8]);
                     a.cmp(__dword_ptr[rcx], eax);
                     a.jne(ret);
                     a.jmp(rdx);
                 }
-                a.Label(ref ret);
+                Place(ref ret);
                 a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
                 a.jmp(rt.Epilogue);
                 return;
@@ -734,7 +740,7 @@ public sealed unsafe class X64Emitter
                 a.mov(eax, 0x80000000u); // less: N
                 a.jb(set);
                 a.mov(eax, 0x20000000u); // greater: C
-                a.Label(ref set);
+                Place(ref set);
                 a.ldmxcsr(State(OffMxcsrHost));
                 a.mov(edx, State(OffFpscr));
                 a.and(edx, 0x0FFFFFFF);
@@ -785,12 +791,12 @@ public sealed unsafe class X64Emitter
                 a.jns(pos);
                 a.xor(eax, eax);       // negative: 0
                 a.jmp(store);
-                a.Label(ref pos);
+                Place(ref pos);
                 a.mov(edx, 0xFFFFFFFFu);
                 a.cmp(rax, rdx);
                 a.jbe(store);
                 a.mov(eax, edx);       // saturate
-                a.Label(ref store);
+                Place(ref store);
                 a.ldmxcsr(State(OffMxcsrHost));
                 a.mov(S(dOff), eax);
                 a.jmp(done);
@@ -801,16 +807,16 @@ public sealed unsafe class X64Emitter
                 break;
         }
 
-        a.Label(ref slowGuest);
+        Place(ref slowGuest);
         a.ldmxcsr(State(OffMxcsrHost));
-        a.Label(ref slow);
+        Place(ref slow);
         if (Windows) { a.mov(rcx, rbx); a.mov(edx, (uint)op); a.mov(r8d, x.Imm2); a.mov(r9d, x.Imm3); }
         else { a.mov(rdi, rbx); a.mov(esi, (uint)op); a.mov(edx, x.Imm2); a.mov(ecx, x.Imm3); }
         a.mov(rax, rt.Callout);
         a.call(rax);
         a.test(eax, eax);
         a.jnz(_abort);
-        a.Label(ref done);
+        Place(ref done);
     }
 
     void NegateXmm0(bool dbl)
@@ -839,9 +845,9 @@ public sealed unsafe class X64Emitter
             a.cmp(rdx, rcx);
             a.je(slowGuest);
             a.jmp(store);
-            a.Label(ref nan);
+            Place(ref nan);
             a.mov(rax, 0x7FF8000000000000UL);
-            a.Label(ref store);
+            Place(ref store);
             if (negate) a.btc(rax, 63);
             a.ldmxcsr(State(OffMxcsrHost));
             a.mov(__qword_ptr[rbx + dOff], rax);
@@ -856,14 +862,48 @@ public sealed unsafe class X64Emitter
             a.cmp(edx, 0x00800000);
             a.je(slowGuest);
             a.jmp(store);
-            a.Label(ref nan);
+            Place(ref nan);
             a.mov(eax, 0x7FC00000u);
-            a.Label(ref store);
+            Place(ref store);
             if (negate) a.xor(eax, unchecked((int)0x80000000));
             a.ldmxcsr(State(OffMxcsrHost));
             a.mov(State(dOff), eax);
         }
         a.jmp(done);
+    }
+
+    /// <summary>Verify mode: blocks record every guest store (address, size, previous value) so it can be undone.</summary>
+    public static bool LogStores = NativeVerifier.Enabled;
+    public const int StoreLogEntries = 8192;
+    static readonly int OffStoreLog = StateLayout.Of(nameof(CpuState.StoreLog));
+    static readonly int OffStoreLogCount = StateLayout.Of(nameof(CpuState.StoreLogCount));
+
+    /// <summary>Appends {address, size, old value} (16-byte entry) to the state's store log; clobbers rcx, rdx, flags.</summary>
+    void EmitStoreLog(IrInst x)
+    {
+        var a = _a;
+        int size = x.Op == IrOp.Store8 ? 1 : x.Op == IrOp.Store16 ? 2 : 4;
+        LoadTo(RCX, x.A);
+        a.mov(edx, State(OffStoreLogCount));
+        a.shl(rdx, (byte)4);
+        a.add(rdx, __qword_ptr[rbx + OffStoreLog]);
+        a.mov(__dword_ptr[rdx], ecx);
+        a.mov(__dword_ptr[rdx + 4], size);
+        if (size == 1) a.movzx(ecx, __byte_ptr[r15 + rcx]);
+        else if (size == 2) a.movzx(ecx, __word_ptr[r15 + rcx]);
+        else a.mov(ecx, __dword_ptr[r15 + rcx]);
+        a.mov(__dword_ptr[rdx + 8], ecx);
+        a.inc(State(OffStoreLogCount));
+    }
+
+    int _lastLabelAt = -1;
+
+    /// <summary>Places a label; Iced allows one label per instruction, so two in a row get a nop between them.</summary>
+    void Place(ref Label l)
+    {
+        if (_a.Instructions.Count == _lastLabelAt) _a.nop();
+        _a.Label(ref l);
+        _lastLabelAt = _a.Instructions.Count;
     }
 
     void StoreTo(AssemblerMemoryOperand m, int t)
@@ -992,7 +1032,7 @@ public sealed unsafe class X64Emitter
                     a.jb(small);
                     a.xor(D, D);
                     a.jmp(done);
-                    a.Label(ref small);
+                    Place(ref small);
                     if (type == 0) a.shl(D, cl); else a.shr(D, cl);
                     break;
                 }
@@ -1002,13 +1042,13 @@ public sealed unsafe class X64Emitter
                     a.cmp(ecx, 32);
                     a.jb(small);
                     a.mov(ecx, 31u);
-                    a.Label(ref small);
+                    Place(ref small);
                     a.sar(D, cl);
                     break;
                 }
                 default: a.ror(D, cl); break;
             }
-            a.Label(ref done);
+            Place(ref done);
             Commit(x.D, d);
             return;
         }
@@ -1026,12 +1066,12 @@ public sealed unsafe class X64Emitter
                 a.ja(gt);
                 if (type == 0) a.shl(D, cl); else a.shr(D, cl);
                 a.jmp(setc);
-                a.Label(ref eq);
+                Place(ref eq);
                 a.mov(edx, D);
                 if (type == 0) a.and(edx, 1); else a.shr(edx, (byte)31);
                 a.xor(D, D);
                 a.jmp(store);
-                a.Label(ref gt);
+                Place(ref gt);
                 a.xor(edx, edx);
                 a.xor(D, D);
                 a.jmp(store);
@@ -1044,7 +1084,7 @@ public sealed unsafe class X64Emitter
                 a.jae(big);
                 a.sar(D, cl);
                 a.jmp(setc);
-                a.Label(ref big);
+                Place(ref big);
                 a.sar(D, (byte)31);
                 a.mov(edx, D);
                 a.and(edx, 1);
@@ -1058,20 +1098,20 @@ public sealed unsafe class X64Emitter
                 a.jz(mult);
                 a.ror(D, cl);
                 a.jmp(setc);
-                a.Label(ref mult);
+                Place(ref mult);
                 a.mov(edx, D);
                 a.shr(edx, (byte)31);
                 a.jmp(store);
                 break;
             }
         }
-        a.Label(ref zero);
+        Place(ref zero);
         if (x.C >= 0) LoadTo(RDX, x.C); else a.xor(edx, edx);
         a.jmp(store);
-        a.Label(ref setc);
+        Place(ref setc);
         a.setb(dl);
         a.movzx(edx, dl);
-        a.Label(ref store);
+        Place(ref store);
         Commit(x.Fc, RDX);
         Commit(x.D, d);
     }
@@ -1120,6 +1160,33 @@ public sealed unsafe class X64Emitter
     /// The entry trampoline: saves the callee-saved registers, builds the frame, loads rbx/r15 and jumps to the block.
     /// Blocks leave through the epilogue (returned in <paramref name="epilogueOffset"/>).
     /// </summary>
+    /// <summary>
+    /// Vectored exception handler front: tail-calls <paramref name="handler"/> only when the faulting RIP lies in
+    /// [lo, hi) (Windows x64: rcx = EXCEPTION_POINTERS*), else returns EXCEPTION_CONTINUE_SEARCH without touching
+    /// managed code.
+    /// </summary>
+    public static byte[] EmitFaultFilter(ulong rip, ulong lo, ulong hi, ulong handler)
+    {
+        var a = new Assembler(64);
+        var no = a.CreateLabel();
+        a.mov(rax, __qword_ptr[rcx + 8]);
+        a.mov(rax, __qword_ptr[rax + 0xF8]);
+        a.mov(rdx, lo);
+        a.cmp(rax, rdx);
+        a.jb(no);
+        a.mov(rdx, hi);
+        a.cmp(rax, rdx);
+        a.jae(no);
+        a.mov(rax, handler);
+        a.jmp(rax);
+        a.Label(ref no);
+        a.xor(eax, eax);
+        a.ret();
+        using var ms = new MemoryStream();
+        a.Assemble(new StreamCodeWriter(ms), rip);
+        return ms.ToArray();
+    }
+
     public static byte[] EmitTrampoline(ulong rip, ulong memBase, out int epilogueOffset)
     {
         var a = new Assembler(64);

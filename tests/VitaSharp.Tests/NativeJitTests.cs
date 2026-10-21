@@ -369,6 +369,54 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     }
 
     /// <summary>
+    /// Code rewritten under a running native cache (module unload/reload, guest JIT + sceKernelSyncVMDomain):
+    /// after BlockCache.Invalidate the linked, compiled blocks of the range must never run again.
+    /// </summary>
+    [Fact]
+    public void InvalidationRetiresLinkedNativeCode()
+    {
+        EnsureGuestPages();
+        // loop: r0 += 3 (patched to r0 += 5), 4096 times, then svc
+        uint[] prog(uint addImm) =>
+        [
+            0xE3A00000, // mov r0, #0
+            0xE3A01000, // mov r1, #0
+            0xE2800000 | addImm, // loop: add r0, r0, #imm
+            0xE2811001, // add r1, r1, #1
+            0xE3510A01, // cmp r1, #0x1000
+            0xBAFFFFFB, // blt loop
+            0xEF000042, // svc #0x42
+        ];
+        long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions;
+        var oldMode = Jit.Mode;
+        CpuCore.InstructionsPerSecond = 0;
+        NativeX64Compiler.Instance.HotInstructions = 1;
+        try
+        {
+            Assert.True(Jit.Select("native"));
+            var cache = new BlockCache();
+            using var core = new CpuCore(cache);
+            var s = core.State;
+            void Load(uint imm) { var c = GuestMemory.Span(CodeBase, 0x1000); c.Clear(); var p = prog(imm); for (int i = 0; i < p.Length; i++) BitConverter.GetBytes(p[i]).CopyTo(c[(i * 4)..]); }
+            uint RunOnce() { s->R[15] = CodeBase; s->Thumb = 0; Assert.Equal(ExitReason.Svc, core.Run()); return s->R[0]; }
+            Load(3);
+            for (int i = 0; i < 5; i++) { Assert.Equal(3u * 0x1000, RunOnce()); Thread.Sleep(30); }
+            var loop = cache.Get(CodeBase + 8, false);
+            Assert.True(loop.NativeEntry != 0, "loop block was not compiled natively");
+            Load(5);
+            cache.Invalidate(CodeBase, 0x1000);
+            Assert.True(loop.Invalidated);
+            for (int i = 0; i < 5; i++) { Assert.Equal(5u * 0x1000, RunOnce()); Thread.Sleep(30); }
+        }
+        finally
+        {
+            CpuCore.InstructionsPerSecond = oldRate;
+            NativeX64Compiler.Instance.HotInstructions = oldHot;
+            Jit.Select(oldMode);
+        }
+    }
+
+    /// <summary>
     /// A NEON-heavy loop: its native block carries a tier-up budget, gets recompiled by the IL backend while running
     /// and its native code is retired (unlinked). State and dispatcher counters must still match the interpreter.
     /// </summary>

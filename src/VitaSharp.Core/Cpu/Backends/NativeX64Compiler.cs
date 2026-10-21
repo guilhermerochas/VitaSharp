@@ -60,8 +60,11 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         int size = 0;
         byte* code = rt.Code.Place(rip => { var bytes = em.Assemble(rip); size = bytes.Length; return bytes; });
         Interlocked.Add(ref CodeBytes, size);
+        rt.Register((nint)code, size, b);
         if (DumpCode) Console.Error.WriteLine($"[native] {b}\n{ir}\n{X64Disassembler.Disassemble((nint)code, size)}");
-        return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits));
+        bool unlogged = false; // callouts that may store to memory: the verifier cannot undo them
+        foreach (var x in ir.Insts) if (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm)) unlogged = true;
+        return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged));
     }
 
     /// <summary>Recompile NEON-callout-heavy blocks with the IL backend once hot (VITASHARP_NATIVE_TIERUP=0 disables).</summary>
@@ -90,7 +93,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
 }
 
 /// <summary>Size of a native block's code and its number of linkable exits.</summary>
-public sealed record NativeCodeInfo(int Size, int Exits)
+public sealed record NativeCodeInfo(int Size, int Exits, bool UnloggedStores = false)
 {
     public string Disassemble(nint entry) => X64Disassembler.Disassemble(entry, Size);
 }
