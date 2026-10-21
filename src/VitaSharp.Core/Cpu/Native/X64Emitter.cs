@@ -579,6 +579,8 @@ public sealed unsafe class X64Emitter
             }
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
+            case IrOp.LdrEx: LoadExclusive(x); return;
+            case IrOp.StrEx: StoreExclusive(x); return;
 
             // ---------------- control
             case IrOp.Label: { var l = _labels[x.Imm]; Place(ref l); _labels[x.Imm] = l; return; }
@@ -672,6 +674,100 @@ public sealed unsafe class X64Emitter
             }
             default: throw new NotSupportedException($"IR op {x.Op}");
         }
+    }
+
+    // ------------------------------------------------------------------ exclusive monitor
+
+    static readonly ulong GensBase = (ulong)System.Runtime.InteropServices.Marshal.UnsafeAddrOfPinnedArrayElement(Arm.ExclusiveGens, 0);
+    static readonly int OffExAddr = StateLayout.Of(nameof(CpuState.ExclusiveAddr));
+    static readonly int OffExValue = StateLayout.Of(nameof(CpuState.ExclusiveValue));
+    static readonly int OffExValid = StateLayout.Of(nameof(CpuState.ExclusiveValid));
+    static readonly int OffExGen = StateLayout.Of(nameof(CpuState.ExclusiveGen));
+    static readonly int OffExTmp = StateLayout.Of(nameof(CpuState.ExTmp));
+
+    /// <summary>rdx = address of the generation counter of the granule of guest address ecx (clobbers rax, rdx).</summary>
+    void GenPointer()
+    {
+        var a = _a;
+        a.mov(edx, ecx);
+        a.shr(edx, (byte)3);
+        a.and(edx, Arm.ExclusiveStripes - 1);
+        a.mov(rax, GensBase);
+        a.lea(rdx, __[rax + rdx * 4]);
+    }
+
+    /// <summary>LDREX (word): Arm.ReserveExclusive + read + SetExclusive.</summary>
+    void LoadExclusive(IrInst x)
+    {
+        var a = _a;
+        var spin = a.CreateLabel(); var ok = a.CreateLabel();
+        LoadTo(RCX, x.A);
+        GenPointer();
+        Place(ref spin);
+        a.mov(eax, __dword_ptr[rdx]);
+        a.test(eax, 1);
+        a.jz(ok);
+        a.pause();                           // an exclusive store of another core is in flight
+        a.jmp(spin);
+        Place(ref ok);
+        a.mov(State(OffExGen), eax);
+        a.mov(eax, __dword_ptr[r15 + rcx]);
+        a.mov(State(OffExAddr), ecx);
+        a.mov(__qword_ptr[rbx + OffExValue], rax); // value zero-extended to 64 bits, like SetExclusive(uint)
+        a.mov(State(OffExValid), 1);
+        int d = Def(x.D, RAX);
+        if (d != RAX) a.mov(G32[d], eax);
+        Commit(x.D, d);
+    }
+
+    /// <summary>STREX (word): Arm.StoreExclusive32 (generation lock, value CAS against the LDREX value, release).</summary>
+    void StoreExclusive(IrInst x)
+    {
+        var a = _a;
+        var fail = a.CreateLabel(); var done = a.CreateLabel(); var keep = a.CreateLabel();
+        // the value goes through the state: only rax/rcx/rdx are free here
+        if (IsConst(x.B, out uint bv)) a.mov(State(OffExTmp), (int)bv);
+        else a.mov(State(OffExTmp), G32[Use(x.B, RAX)]);
+        LoadTo(RCX, x.A);
+        a.cmp(State(OffExValid), 0);
+        a.je(fail);
+        a.cmp(State(OffExAddr), ecx);
+        a.jne(fail);
+        a.mov(State(OffExValid), 0);
+        GenPointer();
+        a.mov(eax, State(OffExGen));
+        a.lea(ecx, __dword_ptr[rax + 1]);
+        a.@lock.cmpxchg(__dword_ptr[rdx], ecx); // gen: snap -> snap+1 (odd: store in flight)
+        a.jne(fail);
+        a.mov(ecx, State(OffExTmp));
+        a.mov(eax, State(OffExValue));
+        a.mov(edx, State(OffExAddr));
+        a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
+        a.sete(cl);
+        a.movzx(ecx, cl);                       // ecx = ok
+        a.mov(edx, State(OffExAddr));
+        a.mov(eax, edx);
+        a.mov(edx, ecx);                        // keep ok in edx while computing the gen pointer in rcx/rax
+        a.mov(ecx, eax);
+        a.shr(ecx, (byte)3);
+        a.and(ecx, Arm.ExclusiveStripes - 1);
+        a.mov(rax, GensBase);
+        a.lea(rcx, __[rax + rcx * 4]);
+        a.mov(eax, State(OffExGen));
+        a.test(edx, edx);
+        a.jz(keep);
+        a.add(eax, 2);
+        Place(ref keep);
+        a.mov(__dword_ptr[rcx], eax);           // release: snap+2 on success, snap on failure
+        a.mov(ecx, edx);
+        a.xor(ecx, 1);                          // status: 0 ok, 1 failed
+        a.jmp(done);
+        Place(ref fail);
+        a.mov(ecx, 1u);
+        Place(ref done);
+        int d = Def(x.D, RCX);
+        if (d != RCX) a.mov(G32[d], ecx);
+        Commit(x.D, d);
     }
 
     // ------------------------------------------------------------------ VFP

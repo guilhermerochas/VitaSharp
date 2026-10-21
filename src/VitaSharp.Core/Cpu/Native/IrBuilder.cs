@@ -357,4 +357,7 @@ public sealed unsafe class IrBuilder
     }
 
     public void Store(IrOp op, int addr, int value) => Emit(new IrInst(op) { A = addr, B = value });
+
+    public int LoadExclusive(int addr) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr }); return t; }
+    public int StoreExclusive(int addr, int value) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value }); return t; }
 }

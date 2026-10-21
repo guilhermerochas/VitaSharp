@@ -41,6 +41,8 @@ public enum IrOp : byte
     Load8, Load8S, Load16, Load16S, Load32,
     Store8, Store16, Store32,   // value B
     Fence,
+    LdrEx,        // D = word at guest address A, arming the exclusive monitor (interpreter generation-counter protocol)
+    StrEx,        // exclusive store of B to address A; D = 0 on success, 1 on failure
     // ---- control
     Label,        // Imm = label id
     CondBranch,   // if ARM condition Imm does NOT hold on (A=N, B=Z, C=C, E=V) goto label Imm2
@@ -65,7 +67,7 @@ public struct IrInst
     public IrInst(IrOp op) { Op = op; }
 
     public readonly bool HasSideEffects => Op is IrOp.SetReg or IrOp.SetFlag or IrOp.StoreState or IrOp.Store8 or IrOp.Store16
-        or IrOp.Store32 or IrOp.Fence or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
+        or IrOp.Store32 or IrOp.Fence or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
         or IrOp.ExitDynamic or IrOp.FpOp
         // loads may fault on unmapped memory exactly like the interpreter: keep them
         or IrOp.Load8 or IrOp.Load8S or IrOp.Load16 or IrOp.Load16S or IrOp.Load32;

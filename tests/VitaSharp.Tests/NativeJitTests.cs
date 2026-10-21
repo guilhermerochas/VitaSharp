@@ -369,6 +369,120 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
     }
 
     /// <summary>
+    /// Inline LDREX/STREX (word) against the interpreter: monitor armed or not, other address, stale generation (an
+    /// exclusive store by another core happened), value changed by a plain store. Status, memory, registers and the
+    /// monitor fields must match, and the generation must advance the same way.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExclusivesMatchInterpreter(bool thumb)
+    {
+        EnsureGuestPages();
+        // r0 = address: [ldrex r1,[r0]; add r1,r1,#1;] strex r2,r1,[r0]; b .
+        uint[] armFull = [0xE1901F9F, 0xE2811001, 0xE1802F91, 0xEAFFFFFE];
+        uint[] armStore = [0xE1802F91, 0xEAFFFFFE];
+        string[] thumbFull = ["E8501F00", "3101", "E8401200", "E7FE"];  // ldrex r1,[r0]; adds r1,#1; strex r2,r1,[r0]; b .
+        string[] thumbStore = ["E8401200", "E7FE"];
+        uint addr = DataBase + 0x100;
+        var s = CpuState.Allocate();
+        try
+        {
+            for (int scenario = 0; scenario < 6; scenario++)
+            {
+                bool storeOnly = scenario >= 1;
+                var bytes = new List<byte>();
+                if (!thumb) foreach (var w in storeOnly ? armStore : armFull) bytes.AddRange(BitConverter.GetBytes(w));
+                else foreach (var w in storeOnly ? thumbStore : thumbFull)
+                {
+                    uint v = Convert.ToUInt32(w, 16);
+                    if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                }
+                bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
+                var gens = VitaSharp.Core.Cpu.Arm.ExclusiveGens;
+
+                (Snapshot Snap, uint GenDelta) Run(bool native)
+                {
+                    *s = default;
+                    s->R[0] = addr; s->R[1] = 0x1234; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
+                    GuestMemory.Write(addr, 41u);
+                    uint g0 = gens[genIdx];
+                    switch (scenario)
+                    {
+                        case 1: s->ExclusiveValid = 0; break;                                                         // no LDREX
+                        case 2: s->ExclusiveValid = 1; s->ExclusiveAddr = addr + 8; s->ExclusiveGen = g0; s->ExclusiveValue = 41; break; // other address
+                        case 3: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0 - 2; s->ExclusiveValue = 41; break;  // stale generation
+                        case 4: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = 40; break;      // value changed
+                        case 5: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = 41; break;      // armed: succeeds
+                    }
+                    if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                    return (Take(s, null), gens[genIdx] - g0);
+                }
+                var i = Run(false);
+                var n = Run(true);
+                string diff = Diff(i.Snap, n.Snap);
+                Assert.True(diff.Length == 0, $"scenario {scenario}: {diff}");
+                Assert.Equal(i.GenDelta, n.GenDelta);
+                output.WriteLine($"scenario {scenario}: status r2={n.Snap.R[2]} gen +{n.GenDelta}");
+            }
+        }
+        finally { CpuState.Free(s); }
+    }
+
+    /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
+    [Fact]
+    public void ExclusiveIncrementIsAtomicAcrossThreads()
+    {
+        EnsureGuestPages();
+        uint counter = DataBase + 0x200;
+        uint[] arm =
+        [
+            0xE1901F9F, // 00 loop: ldrex r1, [r0]
+            0xE2811001, // 04 add r1, r1, #1
+            0xE1802F91, // 08 strex r2, r1, [r0]
+            0xE3520000, // 0C cmp r2, #0
+            0x1AFFFFFA, // 10 bne loop
+            0xE2533001, // 14 subs r3, r3, #1
+            0x1AFFFFF8, // 18 bne loop
+            0xEF000042, // 1C svc #0x42
+        ];
+        var code = GuestMemory.Span(CodeBase, 0x1000);
+        code.Clear();
+        for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+        GuestMemory.Write(counter, 0u);
+        long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions;
+        var oldMode = Jit.Mode;
+        CpuCore.InstructionsPerSecond = 0;
+        NativeX64Compiler.Instance.HotInstructions = 1;
+        const int Threads = 4, Per = 1_000_000;
+        try
+        {
+            Assert.True(Jit.Select("native"));
+            var cache = new BlockCache();
+            var threads = Enumerable.Range(0, Threads).Select(_ => new Thread(() =>
+            {
+                using var core = new CpuCore(cache);
+                var s = core.State;
+                s->R[0] = counter; s->R[3] = Per; s->R[15] = CodeBase;
+                while (true) { var e = core.Run(); if (e == ExitReason.Svc) break; }
+            })).ToArray();
+            foreach (var t in threads) t.Start();
+            foreach (var t in threads) t.Join();
+            Assert.Equal((uint)(Threads * Per), GuestMemory.Read<uint>(counter));
+            Assert.True(cache.Get(CodeBase, false).NativeEntry != 0, "the loop never ran natively");
+        }
+        finally
+        {
+            CpuCore.InstructionsPerSecond = oldRate;
+            NativeX64Compiler.Instance.HotInstructions = oldHot;
+            Jit.Select(oldMode);
+        }
+    }
+
+    /// <summary>
     /// Code rewritten under a running native cache (module unload/reload, guest JIT + sceKernelSyncVMDomain):
     /// after BlockCache.Invalidate the linked, compiled blocks of the range must never run again.
     /// </summary>

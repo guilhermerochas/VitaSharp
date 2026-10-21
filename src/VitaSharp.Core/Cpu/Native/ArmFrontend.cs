@@ -201,6 +201,8 @@ public sealed unsafe class ArmFrontend
             Op.T32_LdStDual => T32LdStDual(in d),
             Op.T32_LdSt => T32LdSt(in d),
 
+            Op.A32_Exclusive => A32Exclusive(in d),
+            Op.T32_ExclusiveWord => T32ExclusiveWord(in d),
             Op.Vfp_LdrStrArm => VfpLdrStr(in d, false),
             Op.Vfp_LdrStrThumb => VfpLdrStr(in d, true),
             Op.Vfp_LdmStm => VfpLdmStm(in d),
@@ -1246,5 +1248,30 @@ public sealed unsafe class ArmFrontend
             }
             default: return null; // half-precision and fixed-point conversions
         }
+    }
+
+    // ------------------------------------------------------------------ exclusive monitor (word forms)
+
+    /// <summary>LDREX/STREX word (A32.ExclusiveCore op 0); byte/halfword/doubleword forms stay callouts.</summary>
+    bool? A32Exclusive(in DecodedInst d)
+    {
+        uint ins = d.Raw, op = Bits(ins, 22, 21), rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rt = ins & 0xF;
+        bool L = Bit(ins, 20) != 0;
+        if (op != 0 || rn == 15 || rd == 15 || (!L && rt == 15)) return null;
+        int addr = Reg(rn);
+        if (L) SetReg(rd, B.LoadExclusive(addr));
+        else SetReg(rd, B.StoreExclusive(addr, Reg(rt)));
+        return false;
+    }
+
+    bool? T32ExclusiveWord(in DecodedInst d)
+    {
+        uint ins = d.Raw, rn = Bits(ins, 19, 16), rt = Bits(ins, 15, 12), rd = Bits(ins, 11, 8);
+        bool L = Bit(ins, 20) != 0;
+        if (rn == 15 || rt == 15 || (!L && rd == 15)) return null;
+        int addr = B.AddK(Reg(rn), (ins & 0xFF) << 2);
+        if (L) SetReg(rt, B.LoadExclusive(addr));
+        else SetReg(rd, B.StoreExclusive(addr, Reg(rt)));
+        return false;
     }
 }
