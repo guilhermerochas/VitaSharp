@@ -418,13 +418,15 @@ public sealed class CondVar : KernelObject
     public int Waiters;
     bool _deleted;
 
-    sealed class Waiter(GuestThread thread)
+    sealed class Waiter
     {
-        public readonly GuestThread Thread = thread;
+        public GuestThread Thread = null!;
         public bool Released;
     }
 
     readonly LinkedList<Waiter> _queue = new();
+    /// <summary>Queue nodes of finished waits, reused by later waits (guarded by this object's lock).</summary>
+    readonly Stack<LinkedListNode<Waiter>> _freeNodes = new();
 
     public int WaitCond(GuestThread self, Ptr<uint> timeout)
     {
@@ -434,8 +436,11 @@ public sealed class CondVar : KernelObject
             count = Mutex.ReleaseAll(self);
             if (count < 0) return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
             Waiters++;
-            var w = new Waiter(self);
-            var node = _queue.AddLast(w);
+            var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
+            var w = node.Value;
+            w.Thread = self;
+            w.Released = false;
+            _queue.AddLast(node);
             int r;
             try
             {
@@ -446,6 +451,8 @@ public sealed class CondVar : KernelObject
             {
                 Waiters--;
                 if (!w.Released) _queue.Remove(node);
+                w.Thread = null!;
+                if (_freeNodes.Count < 64) _freeNodes.Push(node);
             }
             // reacquire outside our lock to avoid lock-order inversion with the mutex
             Monitor.Exit(this);
