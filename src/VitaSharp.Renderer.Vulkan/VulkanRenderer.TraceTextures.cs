@@ -86,7 +86,7 @@ public sealed unsafe partial class VulkanRenderer
         uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(d.LodMin, mips - 1);
         // the face stride depends on the whole chain, so lay out every level when a later cube face is wanted
         var layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
-        var lv = layout.Levels[lodMin];
+        var lv = layout.Levels[(int)lodMin];
         w = lv.Width; h = lv.Height;
         byte[] data; using (var texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _)) data = texels.ToArray();
         iw = w; ih = h;

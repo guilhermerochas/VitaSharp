@@ -91,7 +91,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             for (uint m = 1; m < mips; m++)
             {
-                var lv = layout.Levels[m];
+                var lv = layout.Levels[(int)m];
                 using var data = TextureDecoder.Decode(d, info, d.DataAddress + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
                 var (buf, off) = UploadSpan(data.Span, 16);
                 var region = new BufferImageCopy

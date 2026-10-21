@@ -266,7 +266,7 @@ public sealed unsafe partial class VulkanRenderer
         // LOD min (texture streaming): levels below it are not resident, so the texture is uploaded from that level on
         uint lodMin = Math.Min(d.LodMin, mips - 1);
         uint baseW = Math.Max(w >> (int)lodMin, 1), baseH = Math.Max(h >> (int)lodMin, 1);
-        uint residentOffset = layout.Levels[lodMin].Offset;
+        uint residentOffset = layout.Levels[(int)lodMin].Offset;
         if (total == 0 || total > 64u << 20)
         {
             Log.WarnOnce($"texsize{d.Format:X}{w}{h}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} type 0x{d.TextureType:X8}: bad size {total}");
@@ -323,7 +323,8 @@ public sealed unsafe partial class VulkanRenderer
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
         uint level = Math.Min(d.LodMin, mips - 1);
         if (level == 0) return null;
-        var lv = ComputeLayout(d, info, w, h, mips, 1).Levels[level];
+        var levelLayout = ComputeLayout(d, info, w, h, mips, 1);
+        var lv = levelLayout.Levels[(int)level];
         bool pow2 = d.TextureType is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
         uint w1 = pow2
             ? (d.W1 & ~0x000F000Fu) | ((uint)BitOperations.Log2(lv.Width) << 16) | (uint)BitOperations.Log2(lv.Height)
@@ -464,13 +465,17 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     readonly record struct MipLayout(uint Offset, uint Width, uint Height, uint RowPitch, uint Bytes);
-    readonly record struct TexLayout(MipLayout[] Levels, uint FaceStride, uint TotalBytes);
+    /// <summary>Per-level layout stored inline (at most 16 levels): computed for every texture check, so no array per call.</summary>
+    [System.Runtime.CompilerServices.InlineArray(16)]
+    struct MipChain { MipLayout _level; }
+
+    readonly record struct TexLayout(MipChain Levels, uint FaceStride, uint TotalBytes);
 
     static uint Align(uint v, uint a) => (v + a - 1) / a * a;
 
     static TexLayout ComputeLayout(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, uint mips, uint faces)
     {
-        var levels = new MipLayout[mips];
+        var levels = new MipChain();
         uint type = d.TextureType;
         bool swizzled = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube or GxmTextureDesc.TypeSwizzledArbitrary or GxmTextureDesc.TypeCubeArbitrary;
         bool pow2 = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
@@ -520,7 +525,7 @@ public sealed unsafe partial class VulkanRenderer
                 rowPitch = (uint)(aw * info.BitsPerPixel / 8);
                 bytes = rowPitch * mh;
             }
-            levels[m] = new MipLayout(offset, mw, mh, rowPitch, bytes);
+            levels[(int)m] = new MipLayout(offset, mw, mh, rowPitch, bytes);
             // mipmapped linear/tiled textures reserve each level at the power-of-two size (rows keep their own pitch):
             // a 384x64 level 0 occupies 512x64 texels before level 1 starts (as in Vita3K's texture cache). A raw mip
             // count of 0xF (no mips) packs the data without padding.
@@ -569,25 +574,24 @@ public sealed unsafe partial class VulkanRenderer
         EndRendering();
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
-        var regions = new List<BufferImageCopy>();
+
         for (uint face = 0; face < faces; face++)
         {
             for (uint m = baseLevel; m < mips; m++)
             {
-                var lv = layout.Levels[m];
+                var lv = layout.Levels[(int)m];
                 uint baseAddr = d.DataAddress + face * layout.FaceStride + lv.Offset;
                 using var linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
                 var (buf, off) = UploadSpan(linear.Span, 16);
-                regions.Add(new BufferImageCopy
+                var r = new BufferImageCopy
                 {
                     BufferOffset = off,
                     BufferRowLength = info.Compressed && info.Convert == TexConvert.None ? Align(outW, (uint)info.BlockW) : outW,
                     BufferImageHeight = info.Compressed && info.Convert == TexConvert.None ? Align(outH, (uint)info.BlockH) : outH,
                     ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, m - baseLevel, face, 1),
                     ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
-                });
+                };
                 // every region may live in a different overflow buffer: submit one copy per region
-                var r = regions[^1];
                 _vk.CmdCopyBufferToImage(Cmd, buf, tex.Image, ImageLayout.TransferDstOptimal, 1, in r);
             }
         }

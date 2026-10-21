@@ -19,6 +19,9 @@ public sealed unsafe partial class VulkanRenderer
         public QueryPool Pool;
         public uint Used;
         public readonly List<(uint Address, bool Increment)> Queries = new();
+        /// <summary>Reused per completion (no per-frame garbage): query results and per-address sums.</summary>
+        public uint[] Results = [];
+        public readonly Dictionary<uint, (ulong Samples, bool Increment)> Sums = new();
     }
 
     VisibilityFrame Vis(Frame f)
@@ -61,10 +64,12 @@ public sealed unsafe partial class VulkanRenderer
     {
         var v = f.Visibility;
         if (v == null || v.Used == 0) return;
-        var results = new uint[v.Used];
+        if (v.Results.Length < v.Used) v.Results = new uint[Math.Max(v.Used, Math.Min(v.Results.Length * 2, VisQueriesPerFrame))];
+        var results = v.Results;
         fixed (uint* p = results)
             _vk.GetQueryPoolResults(_dev, v.Pool, 0, v.Used, (nuint)(v.Used * 4), p, 4, QueryResultFlags.ResultWaitBit);
-        var sums = new Dictionary<uint, (ulong Samples, bool Increment)>();
+        var sums = v.Sums;
+        sums.Clear();
         for (int i = 0; i < v.Queries.Count; i++)
         {
             var (addr, inc) = v.Queries[i];

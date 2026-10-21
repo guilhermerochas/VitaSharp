@@ -58,7 +58,7 @@ public static class TextureDecoder
                 var bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
-                return Texels.Wrap(Pvrtc.Decode(GuestMemory.Span(addr, (int)(nx * ny * 8)), w, h, two, ii));
+                return Pvrtc.Decode(GuestMemory.Span(addr, (int)(nx * ny * 8)), w, h, two, ii);
             }
             uint bw = (w + 3) / 4, bh = (h + 3) / 4;
             int bb = info.BlockBytes;
