@@ -62,6 +62,18 @@ public static class Log
         if (Once.TryAdd(key, 0)) Warn(m);
     }
 
+    /// <summary><see cref="WarnOnce(string, string)"/> for interpolated keys: a key seen before costs no allocation and the
+    /// message is only formatted the first time.</summary>
+    public static void WarnOnce(ref OnceKeyHandler key, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument("key")] ref OnceMessageHandler m)
+    {
+        if (m.Enabled) Warn(m.ToStringAndClear());
+    }
+
+    static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> OnceBySpan = Once.GetAlternateLookup<ReadOnlySpan<char>>();
+
+    /// <summary>True the first time <paramref name="key"/> is seen (shared with the string-keyed WarnOnce).</summary>
+    internal static bool TryAddOnce(ReadOnlySpan<char> key) => !OnceBySpan.ContainsKey(key) && OnceBySpan.TryAdd(key, 0);
+
     /// <summary>Debug-level message logged only the first time a given key is seen.</summary>
     public static void DebugOnce(string key, string m)
     {
