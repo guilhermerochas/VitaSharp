@@ -162,8 +162,8 @@ public sealed unsafe partial class VulkanRenderer
             if (_fbCopy.Handle != 0)
             {
                 var old = (_fbCopy, _fbCopyView, _fbCopyMem);
-                // bounded: at most 32 spare copies and 16 M pixels (64 MB at 4 bytes per pixel)
-                if (_fbCopies.Count < 32 && _fbCopiesPixels + (long)_fbCopyW * _fbCopyH <= 16L << 20)
+                // bounded: at most 32 spare copies and 4 M pixels (16 MB at 4 bytes per pixel)
+                if (_fbCopies.Count < 32 && _fbCopiesPixels + (long)_fbCopyW * _fbCopyH <= 4L << 20)
                 {
                     _fbCopies[(_fbCopyW, _fbCopyH, _fbCopyFormat)] = old;
                     _fbCopiesPixels += (long)_fbCopyW * _fbCopyH;

@@ -16,7 +16,7 @@ public sealed class UniformChunk(int size)
 /// </summary>
 public static class UniformArena
 {
-    const int ChunkSize = 1 << 20, MaxFreeChunks = 64;
+    const int ChunkSize = 1 << 20, MaxFreeChunks = 16; // spare chunks kept after a burst of queued work (16 MB)
     static readonly object Lock = new();
     static readonly Stack<UniformChunk> Free = new();
     static UniformChunk? _current;
