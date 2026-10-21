@@ -213,6 +213,17 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         lock (_inputLock) return back ? _backTouches.ToArray() : _touches.ToArray();
     }
 
+    public int GetTouches(bool back, Span<TouchPoint> dest)
+    {
+        lock (_inputLock)
+        {
+            var list = back ? _backTouches : _touches;
+            int n = Math.Min(list.Count, dest.Length);
+            for (int i = 0; i < n; i++) dest[i] = list[i];
+            return n;
+        }
+    }
+
     public void Dispose()
     {
         _input?.Dispose();

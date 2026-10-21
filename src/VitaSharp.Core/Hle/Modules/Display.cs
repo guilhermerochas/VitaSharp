@@ -418,13 +418,32 @@ public sealed class Touch : HleModule
         if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
         if (count == 0) return 0;
         // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
-        var touches = _sampling[port] != 0 ? Emu.Host.Input?.GetTouches(port == 1) ?? [] : [];
-        int reports = Math.Min(touches.Count, 8);
-        byte[] ids = new byte[reports];
+        // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
+        Span<TouchPoint> touches = stackalloc TouchPoint[8];
+        int reports = _sampling[port] != 0 && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        Span<byte> ids = stackalloc byte[8];
         lock (_ids)
         {
             var map = _ids[port];
-            foreach (var gone in map.Keys.Where(k => !touches.Take(reports).Any(t => t.Id == k)).ToList()) map.Remove(gone);
+            // forget contacts that are no longer reported
+            Span<int> gone = stackalloc int[8];
+            int nGone = 0;
+            bool overflow = false;
+            foreach (var k in map.Keys)
+            {
+                bool present = false;
+                for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
+                if (present) continue;
+                if (nGone < gone.Length) gone[nGone++] = k; else overflow = true;
+            }
+            for (int i = 0; i < nGone; i++) map.Remove(gone[i]);
+            if (overflow)
+                foreach (var k in map.Keys.ToList())
+                {
+                    bool present = false;
+                    for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
+                    if (!present) map.Remove(k);
+                }
             for (int r = 0; r < reports; r++)
             {
                 if (!map.TryGetValue(touches[r].Id, out ids[r]))

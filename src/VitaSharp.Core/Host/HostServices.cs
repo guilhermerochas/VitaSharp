@@ -26,6 +26,16 @@ public interface IInputBackend
 {
     ControllerState GetController(int port);
     IReadOnlyList<TouchPoint> GetTouches(bool back);
+
+    /// <summary>Copies up to <c>dest.Length</c> current touches into <paramref name="dest"/> and returns how many were
+    /// written; front-ends override it to avoid allocating a list on every poll (games poll touch every frame).</summary>
+    int GetTouches(bool back, Span<TouchPoint> dest)
+    {
+        var list = GetTouches(back);
+        int n = Math.Min(list.Count, dest.Length);
+        for (int i = 0; i < n; i++) dest[i] = list[i];
+        return n;
+    }
 }
 
 /// <summary>An audio output stream fed with interleaved signed 16-bit samples.</summary>
