@@ -34,7 +34,7 @@ public sealed class Gxm : HleModule
     bool _initialized;
     uint _notificationRegion, _parameterBufferSize;
     uint _displayCallback, _displayDataSize;
-    BlockingCollection<(uint Data, long GpuSeq)>? _displayQueue;
+    BoundedQueue<(uint Data, long GpuSeq)>? _displayQueue;
     int _displayPending;
     readonly object _displayLock = new();
     GuestThread? _displayThread;
@@ -62,7 +62,7 @@ public sealed class Gxm : HleModule
         _notificationRegion = Emu.Memory.Alloc(1 << 20, "SceGxmNotificationRegion", MemoryRegion.User);
         GuestMemory.Fill(_notificationRegion, 0, 1 << 20);
         int capacity = (int)Math.Max(Math.Min(pendingMax, 3u) - 1, 1u);
-        _displayQueue = new BlockingCollection<(uint, long)>(capacity);
+        _displayQueue = new BoundedQueue<(uint, long)>(capacity);
         var t = K.CreateThread("SceGxmDisplayQueue", 0, 64, 0x4000, 0, 0);
         t.HostBody = DisplayQueueThread;
         _displayThread = t;
