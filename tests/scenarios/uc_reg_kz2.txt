@@ -1,3 +1,0 @@
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--turbo --frames=3000 --seconds=120 --dump-every=150

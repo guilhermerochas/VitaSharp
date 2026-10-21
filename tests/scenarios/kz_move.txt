@@ -1,4 +1,0 @@
-# Killzone: reach gameplay, then walk forward, turn, and idle (falling / stuck detection)
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--speed=3 --frames=6600 --seconds=300 --dump-every=150 --input=tap@8:0.36:0.84,tap@22:0.815:0.763,tap@30:0.25:0.37,tap@36:0.5:0.5,tap@40:0.5:0.5,tap@44:0.5:0.5,tap@48:0.5:0.5,lstick@f5000:0:-1:f150,rstick@f5300:1:0:f20,lstick@f5400:0:-1:f150

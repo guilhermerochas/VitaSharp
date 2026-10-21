@@ -1,4 +1,0 @@
-# Killzone: 60 s at real speed through the menus (performance check)
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--seconds=60 --dump-every=300 --profile --input=tap@20:0.36:0.84,tap@50:0.815:0.763

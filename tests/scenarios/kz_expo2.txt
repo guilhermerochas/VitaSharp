@@ -1,3 +1,0 @@
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--frames=5600 --seconds=400 --dump-every=100 --watch-read=663D6000:130560:5200:5230 --input=tap@f450:0.36:0.84,tap@f1000:0.815:0.763,tap@f1900:0.25:0.37,tap@f2550:0.5:0.5,tap@f2700:0.5:0.5,tap@f2850:0.5:0.5,lstick@f4150:0:-1:f200,rstick@f4400:1:0:f20,lstick@f4500:0:-1:f250,rstick@f4800:-1:0:f20,lstick@f4900:0:-1:f300

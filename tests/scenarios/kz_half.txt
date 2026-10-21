@@ -1,4 +1,0 @@
-# Killzone at half guest speed (host always ahead: steady 30 fps like hardware)
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--speed=0.5 --frames=4500 --seconds=560 --dump-every=50 --input=tap@40:0.36:0.84,tap@120:0.815:0.763,tap@160:0.25:0.37,tap@190:0.5:0.5,tap@210:0.5:0.5
