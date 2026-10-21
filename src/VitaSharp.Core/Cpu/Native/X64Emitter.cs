@@ -579,6 +579,7 @@ public sealed unsafe class X64Emitter
             }
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
+            case IrOp.VecOp: VecOp(x); return;
             case IrOp.LdrEx: LoadExclusive(x); return;
             case IrOp.StrEx: StoreExclusive(x); return;
 
@@ -674,6 +675,80 @@ public sealed unsafe class X64Emitter
             }
             default: throw new NotSupportedException($"IR op {x.Op}");
         }
+    }
+
+    // ------------------------------------------------------------------ NEON
+
+    static readonly ulong DefaultNaN4 = MakeConst(0x7FC00000);
+
+    static ulong MakeConst(uint v)
+    {
+        var p = (uint*)System.Runtime.InteropServices.NativeMemory.AlignedAlloc(16, 16);
+        p[0] = p[1] = p[2] = p[3] = v;
+        return (ulong)p;
+    }
+
+    /// <summary>
+    /// NEON three-same subset on xmm0-xmm2. Q ops use all 16 bytes, D ops the low 8 (loaded with movq, stored with
+    /// movq: the other half of the guest register file is untouched). Float lanes run under FTZ+DAZ (the Advanced SIMD
+    /// standard mode the handlers implement: flushed inputs, flushed denormal results, round to nearest) and NaN
+    /// lanes are replaced by the default NaN.
+    /// </summary>
+    void VecOp(IrInst x)
+    {
+        var a = _a;
+        var kind = (VecKind)(x.Imm & 0xFF);
+        bool q = (x.Imm & 0x100) != 0;
+        uint size = (x.Imm >> 9) & 3;
+        int dOff = OffD + (int)(x.Imm4 & 0xFF), nOff = OffD + (int)((x.Imm4 >> 8) & 0xFF), mOff = OffD + (int)((x.Imm4 >> 16) & 0xFF);
+        void Ld(AssemblerRegisterXMM r, int off) { if (q) a.movups(r, __xmmword_ptr[rbx + off]); else a.movq(r, __qword_ptr[rbx + off]); }
+        Ld(xmm0, nOff);
+        Ld(xmm1, mOff);
+        switch (kind)
+        {
+            case VecKind.And: a.pand(xmm0, xmm1); break;
+            case VecKind.Bic: a.pandn(xmm1, xmm0); a.movdqa(xmm0, xmm1); break;          // n & ~m
+            case VecKind.Orr: a.por(xmm0, xmm1); break;
+            case VecKind.Orn: a.pcmpeqd(xmm2, xmm2); a.pxor(xmm1, xmm2); a.por(xmm0, xmm1); break;
+            case VecKind.Eor: a.pxor(xmm0, xmm1); break;
+            case VecKind.Bsl: Ld(xmm2, dOff); a.pand(xmm0, xmm2); a.pandn(xmm2, xmm1); a.por(xmm0, xmm2); break; // (n&d)|(m&~d)
+            case VecKind.Bit: Ld(xmm2, dOff); a.pand(xmm0, xmm1); a.pandn(xmm1, xmm2); a.por(xmm0, xmm1); break; // (n&m)|(d&~m)
+            case VecKind.Bif: Ld(xmm2, dOff); a.pand(xmm2, xmm1); a.pandn(xmm1, xmm0); a.movdqa(xmm0, xmm2); a.por(xmm0, xmm1); break; // (d&m)|(n&~m)
+            case VecKind.AddI:
+                switch (size) { case 0: a.paddb(xmm0, xmm1); break; case 1: a.paddw(xmm0, xmm1); break; case 2: a.paddd(xmm0, xmm1); break; default: a.paddq(xmm0, xmm1); break; }
+                break;
+            case VecKind.SubI:
+                switch (size) { case 0: a.psubb(xmm0, xmm1); break; case 1: a.psubw(xmm0, xmm1); break; case 2: a.psubd(xmm0, xmm1); break; default: a.psubq(xmm0, xmm1); break; }
+                break;
+            default:
+            {
+                a.ldmxcsr(State(OffMxcsrGuest));
+                switch (kind)
+                {
+                    case VecKind.AddF: a.addps(xmm0, xmm1); break;
+                    case VecKind.SubF: a.subps(xmm0, xmm1); break;
+                    case VecKind.MulF: a.mulps(xmm0, xmm1); break;
+                    default: // VMLA/VMLS: d +/- round(n * m)
+                        a.mulps(xmm0, xmm1);
+                        Ld(xmm1, dOff);
+                        if (kind == VecKind.MlaF) a.addps(xmm1, xmm0); else a.subps(xmm1, xmm0);
+                        a.movaps(xmm0, xmm1);
+                        break;
+                }
+                // NaN lanes -> default NaN
+                a.movaps(xmm1, xmm0);
+                a.cmpunordps(xmm1, xmm1);
+                a.mov(rax, DefaultNaN4);
+                a.movaps(xmm2, __xmmword_ptr[rax]);
+                a.andps(xmm2, xmm1);
+                a.andnps(xmm1, xmm0);
+                a.orps(xmm1, xmm2);
+                a.movaps(xmm0, xmm1);
+                a.ldmxcsr(State(OffMxcsrHost));
+                break;
+            }
+        }
+        if (q) a.movups(__xmmword_ptr[rbx + dOff], xmm0); else a.movq(__qword_ptr[rbx + dOff], xmm0);
     }
 
     // ------------------------------------------------------------------ exclusive monitor

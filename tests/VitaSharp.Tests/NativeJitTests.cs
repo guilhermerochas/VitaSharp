@@ -740,6 +740,14 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
                     uint r = (uint)rng.NextInt64();
                     uint ins = rng.Next(5) == 0 ? 0xEE000A10u | (r & 0x00FFF1EF) : 0xEE000A00u | (r & 0x00FFF1EF);
                     if (rng.Next(3) == 0) ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40); // bias: opc1 0..7
+                    if (rng.Next(3) == 0)
+                    {
+                        // NEON three-same (ARM form 1111 001U 0Dsz nnnn dddd AAAA NQMB mmmm), biased to the inline subset
+                        uint[] aField = [0x1, 0x8, 0xD, 0xD, 0xD, (uint)rng.Next(16)];
+                        uint arm = 0xF2000000u | ((r & 1) << 24) | (r & 0x007FF0FF & ~0xF00u) | (aField[rng.Next(aField.Length)] << 8);
+                        if (!SimdDefined(thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm, thumb)) continue;
+                        ins = thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm;
+                    }
                     var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
                     if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb)) continue;
                     code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);

@@ -358,6 +358,9 @@ public sealed unsafe class IrBuilder
 
     public void Store(IrOp op, int addr, int value) => Emit(new IrInst(op) { A = addr, B = value });
 
+    public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff)
+        => Emit(new IrInst(IrOp.VecOp) { Imm = (uint)kind | (q ? 0x100u : 0) | (size << 9), Imm4 = dOff | (nOff << 8) | (mOff << 16) });
+
     public int LoadExclusive(int addr) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr }); return t; }
     public int StoreExclusive(int addr, int value) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value }); return t; }
 }
