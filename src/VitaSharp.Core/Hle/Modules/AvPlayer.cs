@@ -342,6 +342,7 @@ public sealed class AvPlayer : HleModule
             }
             uint buf = p.VideoBuffers[p.VideoIndex++ % p.VideoBuffers.Length];
             frame.Nv12.CopyTo(GuestMemory.Span(buf, (int)size));
+            m.Recycle(frame); // only its timestamp and size are read from here on
             p.LastFrame = frame;
             p.LastFrameBuffer = buf;
             p.LastTimeUs = frame.TimeUs;
@@ -372,6 +373,7 @@ public sealed class AvPlayer : HleModule
         }
         uint buf = p.AudioBuffers[slot];
         System.Runtime.InteropServices.MemoryMarshal.AsBytes(chunk.Samples.AsSpan()).CopyTo(GuestMemory.Span(buf, (int)size));
+        m.Recycle(chunk);
         if (!m.HasVideo) p.LastTimeUs = chunk.TimeUs;
         GuestMemory.Fill(frameInfo, 0, 32);
         GuestMemory.W32(frameInfo, buf);

@@ -101,12 +101,62 @@ public sealed unsafe class CpuCore : IDisposable
         }
         else if (expected > now + freq / 1000) // ahead by > 1 ms: sleep it off (no spinning: on a phone that is battery)
         {
-            InThrottle = true; long t0 = Util.GuestClock.Ticks; Util.GuestClock.WaitUntil(expected, allowSpin: false); InThrottle = false; Stat(ref SleepStats[0], t0, expected);
+            PaceSleep(expected, ref SleepStats[0]);
         }
     }
 
-    /// <summary>Called when the thread resumes after a blocking wait: time spent blocked is not CPU time.</summary>
-    public void ResetThrottle() { _throttleStart = -1; _throttleInstrs = 0; }
+    /// <summary>How late host sleeps wake up, on average (ticks; shared: it is a property of the host's timers).</summary>
+    static long _wakeLate;
+
+    /// <summary>
+    /// Sleeps off pacing until <paramref name="expected"/>. Host sleeps wake 0.3-0.7 ms late (more under load), and the
+    /// thread can only make that up at the host's speed margin over the emulated CPU, which for CPU-heavy games is
+    /// small: aiming early by the average lateness makes the wake-ups land on the deadline on average instead.
+    /// </summary>
+    void PaceSleep(long expected, ref SleepStat stat)
+    {
+        InThrottle = true;
+        long t0 = Util.GuestClock.Ticks, target = Math.Max(t0, expected - Volatile.Read(ref _wakeLate));
+        Util.GuestClock.WaitUntil(target, allowSpin: false);
+        if (target > t0)
+        {
+            long late = Math.Clamp(Util.GuestClock.Ticks - target, 0, MaxWakeCredit), avg = Volatile.Read(ref _wakeLate);
+            Volatile.Write(ref _wakeLate, avg + (late - avg) / 16); // racy by design: a lost update only slows the average
+        }
+        InThrottle = false;
+        Stat(ref stat, t0, expected);
+    }
+
+    /// <summary>
+    /// Called when the thread resumes after a blocking wait: time spent blocked is not CPU time, so the ledger restarts.
+    /// It restarts where the thread resumes on hardware, not at "now": a thread blocks at its emulated position P
+    /// (<see cref="SettleThrottle"/>), and on hardware it resumes at max(P, signal) for an event wait, or at the
+    /// deadline of a timed wait (<see cref="WokeAt"/>). Restarting at "now" threw away the host's wake-up lateness
+    /// (0.3-0.7 ms per sleep, more under load) at every block, which made frequently blocking threads slower than
+    /// their emulated clock; restarting lazily at the first check let short bursts between waits run unpaced.
+    /// </summary>
+    public void ResetThrottle()
+    {
+        long rate = InstructionsPerSecond, now = Util.GuestClock.Ticks;
+        if (rate <= 0 || Util.GuestClock.Turbo) { _throttleStart = -1; _throttleInstrs = 0; _blockedAt = _wakeDeadline = 0; return; }
+        long start = now;
+        if (_wakeDeadline != 0) start = Math.Max(_wakeDeadline, now - MaxWakeCredit); // timed wait: resume at its deadline
+        else if (_blockedAt != 0) start = Math.Max(now, Math.Min(_blockedAt, now + MaxWakeCredit)); // event: max(P, signal)
+        _throttleStart = start; _throttleInstrs = 0; _blockedAt = _wakeDeadline = 0;
+    }
+
+    /// <summary>Most wake-up lateness a timed wait may recover (ticks); bounds the effect of a stalled host.</summary>
+    static readonly long MaxWakeCredit = System.Diagnostics.Stopwatch.Frequency / 500; // 2 ms
+    long _blockedAt, _wakeDeadline;
+
+    /// <summary>The thread's emulated position when it last blocked (guest clock ticks), or real time when unpaced/
+    /// unknown. Timed waits measure their delay from here: on hardware the delay starts where the thread is, and a
+    /// thread still catching up after a late pacing wake-up (bounded) would have reached the call earlier.</summary>
+    public long BlockedAt => _blockedAt != 0 ? Math.Max(_blockedAt, Util.GuestClock.Ticks - MaxWakeCredit) : Util.GuestClock.Ticks;
+
+    /// <summary>A timed wait (delay, vblank) ended: on hardware the thread resumes at <paramref name="deadline"/> (or
+    /// where it blocked, if that was later), however late the host woke it.</summary>
+    public void WokeAt(long deadline) { if (_blockedAt != 0) _wakeDeadline = Math.Max(deadline, _blockedAt); }
 
     /// <summary>
     /// Where this thread's emulated CPU time is (guest clock ticks), or 0 when unknown/unpaced. A paced thread runs in
@@ -121,15 +171,24 @@ public sealed unsafe class CpuCore : IDisposable
         return _throttleStart + (_throttleInstrs + PendingInstructions) * System.Diagnostics.Stopwatch.Frequency / rate;
     }
 
-    /// <summary>Called before the thread blocks: work done since the last check must take its emulated time first, so
-    /// short bursts between waits (job systems) are paced too, not only long runs.</summary>
+    /// <summary>
+    /// Called before the thread blocks: work done since the last check is added to the ledger, and the position where
+    /// the thread blocks is kept for <see cref="ResetThrottle"/>, so short bursts between waits (job systems) are paced
+    /// too and their emulated time carries over the wait. Like <see cref="Throttle"/>, it only sleeps once the thread
+    /// is more than 1 ms ahead of real time: every host sleep wakes late, and a thread that runs a little ahead before
+    /// it blocks loses nothing (it resumes at max(position, signal)).
+    /// </summary>
     public void SettleThrottle(long pendingInstructions)
     {
         long rate = InstructionsPerSecond;
         if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return;
         _throttleInstrs += pendingInstructions;
         long expected = _throttleStart + _throttleInstrs * System.Diagnostics.Stopwatch.Frequency / rate;
-        if (expected > Util.GuestClock.Ticks) { InThrottle = true; long t0 = Util.GuestClock.Ticks; Util.GuestClock.WaitUntil(expected, allowSpin: false); InThrottle = false; Stat(ref SleepStats[1], t0, expected); }
+        _blockedAt = expected;
+        if (expected > Util.GuestClock.Ticks + System.Diagnostics.Stopwatch.Frequency / 1000)
+        {
+            PaceSleep(expected, ref SleepStats[1]);
+        }
     }
     /// <summary>Instructions executed since the last ledger check (the block loop keeps the running count here).</summary>
     public long PendingInstructions;

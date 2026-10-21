@@ -29,6 +29,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     public WindowHost(string title, int scale = 1, bool fullscreen = false)
     {
+        SelectGlfwPlatform();
         var opts = WindowOptions.DefaultVulkan with
         {
             Size = new Vector2D<int>(960 * scale, 544 * scale),
@@ -40,6 +41,39 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _window.Load += OnLoad;
         _window.Closing += () => Closing?.Invoke();
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
+    }
+
+    /// <summary>
+    /// Linux: GLFW 3.4 prefers Wayland whenever WAYLAND_DISPLAY is set and fails outright (no X11 fallback) when the
+    /// Wayland client libraries are missing, which is common on minimal installs and WSLg. Then X11 (XWayland) is
+    /// selected up front. VITASHARP_GLFW_PLATFORM=x11|wayland forces a backend. Init hints are global state of the
+    /// GLFW library, so setting one here applies to Silk.NET's own glfwInit that follows.
+    /// </summary>
+    static void SelectGlfwPlatform()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsFreeBSD()) return;
+        var want = Environment.GetEnvironmentVariable("VITASHARP_GLFW_PLATFORM")?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(want))
+        {
+            bool wayland = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
+            bool x11 = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
+            if (!wayland || !x11) return;
+            var missing = new[] { "libwayland-client.so.0", "libwayland-cursor.so.0", "libxkbcommon.so.0" }.Where(l => !CanLoad(l)).ToList();
+            if (missing.Count == 0) return;
+            Log.Info($"Window: Wayland libraries missing ({string.Join(", ", missing)}), using X11");
+            want = "x11";
+        }
+        const int GLFW_PLATFORM = 0x00050003;
+        int platform = want switch { "x11" => 0x00060004, "wayland" => 0x00060003, _ => 0x00060000 /* any */ };
+        try { Silk.NET.GLFW.Glfw.GetApi().InitHint((Silk.NET.GLFW.InitHint)GLFW_PLATFORM, platform); }
+        catch (Exception e) { Log.Warn($"Window: could not select the GLFW platform '{want}': {e.Message}"); }
+    }
+
+    static bool CanLoad(string lib)
+    {
+        if (!NativeLibrary.TryLoad(lib, out var h)) return false;
+        NativeLibrary.Free(h);
+        return true;
     }
 
     public string Title { get => _window.Title; set => _window.Title = value; }
@@ -177,6 +211,17 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
         lock (_inputLock) return back ? _backTouches.ToArray() : _touches.ToArray();
+    }
+
+    public int GetTouches(bool back, Span<TouchPoint> dest)
+    {
+        lock (_inputLock)
+        {
+            var list = back ? _backTouches : _touches;
+            int n = Math.Min(list.Count, dest.Length);
+            for (int i = 0; i < n; i++) dest[i] = list[i];
+            return n;
+        }
     }
 
     public void Dispose()

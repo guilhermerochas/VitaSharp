@@ -89,9 +89,11 @@ public sealed unsafe class GuestMemory : IDisposable
 
     public static void WriteCString(uint addr, string s, int max = int.MaxValue)
     {
-        var bytes = Encoding.UTF8.GetBytes(s);
-        int n = Math.Min(bytes.Length, max - 1);
-        bytes.AsSpan(0, n).CopyTo(new Span<byte>(Base + addr, n));
+        int len = Encoding.UTF8.GetByteCount(s);
+        Span<byte> bytes = len <= 256 ? stackalloc byte[256] : new byte[len]; // short names: no garbage
+        Encoding.UTF8.GetBytes(s, bytes);
+        int n = Math.Min(len, max - 1);
+        bytes[..n].CopyTo(new Span<byte>(Base + addr, n));
         Base[addr + (uint)n] = 0;
     }
 

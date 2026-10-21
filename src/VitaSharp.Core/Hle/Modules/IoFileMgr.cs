@@ -66,7 +66,7 @@ public sealed partial class IoFileMgr : HleModule
         {
             if (fm != FileMode.Open && fm != FileMode.Truncate) Directory.CreateDirectory(Path.GetDirectoryName(host)!);
             var fs = new FileStream(host, fm, write ? ((flags & O_RDONLY) != 0 ? FileAccess.ReadWrite : FileAccess.Write) : FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
+                FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.RandomAccess); // per-open buffer: games open files continuously (larger reads bypass it)
             if ((flags & O_APPEND) != 0) fs.Seek(0, SeekOrigin.End);
             int fd = Interlocked.Increment(ref _nextFd);
             _files[fd] = new OpenFile { VitaPath = path, Stream = fs };

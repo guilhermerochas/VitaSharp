@@ -283,27 +283,36 @@ public sealed class ThreadMgr : HleModule
         if ((++_getThreadInfoCalls & 0x3FFFFF) == 0) // debug: games poll this to join threads; show what they wait for
             Log.Info($"sceKernelGetThreadInfo polled {_getThreadInfoCalls} times, now '{t.Name}' ({t.Status}, wait {t.WaitingOn}) from {Self.Name}");
         uint size = GuestMemory.R32(info);
-        var buf = new byte[Math.Max(size, 0x80)];
-        var w = new BinaryWriter(new MemoryStream(buf));
-        w.Write(size);
-        w.Write(0x40010003);                               // processId
-        var name = new byte[32];
-        System.Text.Encoding.UTF8.GetBytes(t.Name).AsSpan(0, Math.Min(31, System.Text.Encoding.UTF8.GetByteCount(t.Name))).CopyTo(name);
-        w.Write(name);
-        w.Write(t.Attr);
-        w.Write((uint)t.Status);
-        w.Write(t.Entry);
-        w.Write(t.StackAddr);
-        w.Write((int)t.StackSize);
-        w.Write(t.InitPriority);
-        w.Write(t.Priority);
-        w.Write(t.Affinity);
-        w.Write(t.Affinity);
-        w.Write(0); w.Write(0);                            // cpu ids
-        w.Write(0u); w.Write(0);                           // waitType / waitId
-        w.Write(t.ExitStatus);
-        w.Write(0ul);                                      // runClocks
-        buf.AsSpan(0, (int)Math.Min(size, (uint)buf.Length)).CopyTo(GuestMemory.Span(info, (int)size));
+        // SceKernelThreadInfo built on the stack (games poll this every frame to join threads)
+        int len = (int)Math.Max(size, 0x80);
+        Span<byte> buf = len <= 512 ? stackalloc byte[512] : new byte[len];
+        buf = buf[..len];
+        buf.Clear();
+        int o = 0;
+        void U32(Span<byte> b, uint v) { System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(b[o..], v); o += 4; }
+        U32(buf, size);
+        U32(buf, 0x40010003);                              // processId
+        var nameField = buf.Slice(o, 32);
+        int nameLen = Math.Min(31, System.Text.Encoding.UTF8.GetByteCount(t.Name));
+        Span<byte> nameBytes = stackalloc byte[System.Text.Encoding.UTF8.GetMaxByteCount(31)];
+        if (System.Text.Encoding.UTF8.GetByteCount(t.Name) <= nameBytes.Length) System.Text.Encoding.UTF8.GetBytes(t.Name, nameBytes);
+        else System.Text.Encoding.UTF8.GetBytes(t.Name).AsSpan(0, nameLen).CopyTo(nameBytes);
+        nameBytes[..nameLen].CopyTo(nameField);
+        o += 32;
+        U32(buf, t.Attr);
+        U32(buf, (uint)t.Status);
+        U32(buf, t.Entry);
+        U32(buf, t.StackAddr);
+        U32(buf, t.StackSize);
+        U32(buf, (uint)t.InitPriority);
+        U32(buf, (uint)t.Priority);
+        U32(buf, (uint)t.Affinity);
+        U32(buf, (uint)t.Affinity);
+        U32(buf, 0); U32(buf, 0);                          // cpu ids
+        U32(buf, 0); U32(buf, 0);                          // waitType / waitId
+        U32(buf, (uint)t.ExitStatus);
+        U32(buf, 0); U32(buf, 0);                          // runClocks
+        buf[..(int)Math.Min(size, (uint)buf.Length)].CopyTo(GuestMemory.Span(info, (int)size));
         return 0;
     }
 

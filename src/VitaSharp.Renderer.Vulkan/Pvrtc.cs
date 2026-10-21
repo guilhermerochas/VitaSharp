@@ -10,58 +10,80 @@ public static class Pvrtc
 {
     struct C { public int R, G, B, A; public C(int r, int g, int b, int a) { R = r; G = g; B = b; A = a; } }
 
-    public static byte[] Decode(ReadOnlySpan<byte> src, uint width, uint height, bool twoBpp, bool ii)
+    /// <summary>Per-thread block scratch (texture decoding runs on the GPU worker; no garbage per texture).</summary>
+    [ThreadStatic] static Scratch? _scratch;
+
+    sealed class Scratch
+    {
+        public readonly C[] Block = new C[32];
+        public readonly int[,] ModVals = new int[16, 8];
+        public readonly int[,] ModModes = new int[16, 8];
+        public readonly C[] UpA = new C[32];
+        public readonly C[] UpB = new C[32];
+    }
+
+    /// <summary>Decodes to RGBA8; the result is pooled (dispose it once copied).</summary>
+    public static Texels Decode(ReadOnlySpan<byte> src, uint width, uint height, bool twoBpp, bool ii)
     {
         int ww = twoBpp ? 8 : 4, wh = 4;
         int tw = Math.Max((int)width, ww * 2), th = Math.Max((int)height, wh * 2);
         int nx = (tw + ww - 1) / ww, ny = (th + wh - 1) / wh;
         tw = nx * ww; th = ny * wh;
-        var full = new byte[tw * th * 4];
-        var words = new uint[nx * ny * 2];
-        int px2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)nx), py2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)ny);
-        for (int y = 0; y < ny; y++)
-            for (int x = 0; x < nx; x++)
-            {
-                int o = (int)Twiddle((uint)px2, (uint)py2, (uint)x, (uint)y) * 8;
-                if (o + 8 > src.Length) continue;
-                words[(y * nx + x) * 2] = BitConverter.ToUInt32(src.Slice(o, 4));
-                words[(y * nx + x) * 2 + 1] = BitConverter.ToUInt32(src.Slice(o + 4, 4));
-            }
-
-        var block = new C[ww * wh];
-        var modVals = new int[16, 8];
-        var modModes = new int[16, 8];
-        var upA = new C[32];
-        var upB = new C[32];
-        for (int wy = -1; wy < ny - 1; wy++)
-            for (int wx = -1; wx < nx - 1; wx++)
-            {
-                int p0 = Wrap(nx, wx), p1 = Wrap(ny, wy), q0 = Wrap(nx, wx + 1), r1 = Wrap(ny, wy + 1);
-                (uint Mod, uint Col) P = W(p0, p1), Q = W(q0, p1), R = W(p0, r1), S = W(q0, r1);
-                DecodeBlock(P, Q, R, S, block, modVals, modModes, upA, upB, twoBpp, ii);
-                // map the 4 quadrants (the block spans the centres of P, Q, R, S)
-                for (int y = 0; y < wh / 2; y++)
-                    for (int x = 0; x < ww / 2; x++)
-                    {
-                        Put(p0 * ww + x + ww / 2, p1 * wh + y + wh / 2, block[y * ww + x]);
-                        Put(q0 * ww + x, p1 * wh + y + wh / 2, block[y * ww + x + ww / 2]);
-                        Put(p0 * ww + x + ww / 2, r1 * wh + y, block[(y + wh / 2) * ww + x]);
-                        Put(q0 * ww + x, r1 * wh + y, block[(y + wh / 2) * ww + x + ww / 2]);
-                    }
-            }
-
-        if (tw == width && th == height) return full;
-        var outBuf = new byte[width * height * 4];
-        for (int y = 0; y < height; y++)
-            Buffer.BlockCopy(full, y * tw * 4, outBuf, (int)(y * width * 4), (int)width * 4);
-        return outBuf;
-
-        (uint, uint) W(int x, int y) => (words[(y * nx + x) * 2], words[(y * nx + x) * 2 + 1]);
-        void Put(int x, int y, C c)
+        var fullT = Texels.Rent((long)tw * th * 4);
+        var full = fullT.Array;
+        var wordsArr = System.Buffers.ArrayPool<uint>.Shared.Rent(nx * ny * 2);
+        var words = wordsArr.AsSpan(0, nx * ny * 2);
+        words.Clear();
+        try
         {
-            int o = (y * tw + x) * 4;
-            full[o] = (byte)c.R; full[o + 1] = (byte)c.G; full[o + 2] = (byte)c.B; full[o + 3] = (byte)c.A;
+            int px2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)nx), py2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)ny);
+            for (int y = 0; y < ny; y++)
+                for (int x = 0; x < nx; x++)
+                {
+                    int o = (int)Twiddle((uint)px2, (uint)py2, (uint)x, (uint)y) * 8;
+                    if (o + 8 > src.Length) continue;
+                    words[(y * nx + x) * 2] = BitConverter.ToUInt32(src.Slice(o, 4));
+                    words[(y * nx + x) * 2 + 1] = BitConverter.ToUInt32(src.Slice(o + 4, 4));
+                }
+
+            var sc = _scratch ??= new Scratch();
+            var block = sc.Block;
+            System.Array.Clear(block); System.Array.Clear(sc.UpA); System.Array.Clear(sc.UpB); // fresh state per texture, as before
+            for (int wy = -1; wy < ny - 1; wy++)
+                for (int wx = -1; wx < nx - 1; wx++)
+                {
+                    int p0 = Wrap(nx, wx), p1 = Wrap(ny, wy), q0 = Wrap(nx, wx + 1), r1 = Wrap(ny, wy + 1);
+                    (uint Mod, uint Col) P = W(words, nx, p0, p1), Q = W(words, nx, q0, p1), R = W(words, nx, p0, r1), S = W(words, nx, q0, r1);
+                    DecodeBlock(P, Q, R, S, block, sc.ModVals, sc.ModModes, sc.UpA, sc.UpB, twoBpp, ii);
+                    // map the 4 quadrants (the block spans the centres of P, Q, R, S)
+                    for (int y = 0; y < wh / 2; y++)
+                        for (int x = 0; x < ww / 2; x++)
+                        {
+                            Put(full, tw, p0 * ww + x + ww / 2, p1 * wh + y + wh / 2, block[y * ww + x]);
+                            Put(full, tw, q0 * ww + x, p1 * wh + y + wh / 2, block[y * ww + x + ww / 2]);
+                            Put(full, tw, p0 * ww + x + ww / 2, r1 * wh + y, block[(y + wh / 2) * ww + x]);
+                            Put(full, tw, q0 * ww + x, r1 * wh + y, block[(y + wh / 2) * ww + x + ww / 2]);
+                        }
+                }
         }
+        finally { System.Buffers.ArrayPool<uint>.Shared.Return(wordsArr); }
+
+        if (tw == width && th == height) return fullT;
+        using (fullT)
+        {
+            var outBuf = Texels.Rent((long)width * height * 4);
+            for (int y = 0; y < height; y++)
+                Buffer.BlockCopy(full, y * tw * 4, outBuf.Array, (int)(y * width * 4), (int)width * 4);
+            return outBuf;
+        }
+    }
+
+    static (uint, uint) W(ReadOnlySpan<uint> words, int nx, int x, int y) => (words[(y * nx + x) * 2], words[(y * nx + x) * 2 + 1]);
+
+    static void Put(byte[] full, int tw, int x, int y, C c)
+    {
+        int o = (y * tw + x) * 4;
+        full[o] = (byte)c.R; full[o + 1] = (byte)c.G; full[o + 2] = (byte)c.B; full[o + 3] = (byte)c.A;
     }
 
     static int Wrap(int n, int i) => (i + n) % n;

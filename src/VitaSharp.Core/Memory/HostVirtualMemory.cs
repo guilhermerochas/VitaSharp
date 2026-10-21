@@ -68,10 +68,27 @@ internal static unsafe partial class HostVirtualMemory
         if (OperatingSystem.IsWindows()) VirtualFree(addr, size, MEM_DECOMMIT);
         else
         {
-            // Drop the pages and remap fresh zero pages.
-            int flags = MAP_PRIVATE | 0x10 /*MAP_FIXED*/ | (OperatingSystem.IsMacOS() ? MAP_ANON_MAC : MAP_ANONYMOUS_LINUX | MAP_NORESERVE_LINUX);
-            mmap(addr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+            // Drop the whole host pages inside the range by remapping fresh zero pages over them, and clear the
+            // partial pages at the edges by hand: guest pages are 4 KB but host pages can be 16 KB (Apple Silicon,
+            // some arm64 Linux kernels), and remapping a whole host page would wipe neighbouring live blocks.
+            nuint page = (nuint)Environment.SystemPageSize;
+            nuint start = (nuint)addr, end = start + size;
+            nuint innerStart = (start + page - 1) & ~(page - 1), innerEnd = end & ~(page - 1);
+            if (innerEnd > innerStart)
+            {
+                int flags = MAP_PRIVATE | 0x10 /*MAP_FIXED*/ | (OperatingSystem.IsMacOS() ? MAP_ANON_MAC : MAP_ANONYMOUS_LINUX | MAP_NORESERVE_LINUX);
+                if (mmap((void*)innerStart, innerEnd - innerStart, PROT_READ | PROT_WRITE, flags, -1, 0) == (void*)-1)
+                    Clear(innerStart, innerEnd);
+                Clear(start, innerStart);
+                Clear(innerEnd, end);
+            }
+            else Clear(start, end);
         }
+    }
+
+    static void Clear(nuint from, nuint to)
+    {
+        if (to > from) NativeMemory.Clear((void*)from, to - from);
     }
 
     public static void Release(byte* addr, nuint size)

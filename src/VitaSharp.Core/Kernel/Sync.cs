@@ -111,13 +111,16 @@ public static class Wait
         if (microseconds < (ulong)SyscallLatencyUs) microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
         // guest time: follows the test speed factor, and turbo mode skips the wait
         using var blocked = Scheduler.Block();
-        long end = GuestClock.Ticks + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+        // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
+        // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
+        long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
         while (GuestClock.Ticks < end)
         {
             if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
             // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
             GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice));
         }
+        self?.Core.WokeAt(end);
     }
 }
 
@@ -418,13 +421,15 @@ public sealed class CondVar : KernelObject
     public int Waiters;
     bool _deleted;
 
-    sealed class Waiter(GuestThread thread)
+    sealed class Waiter
     {
-        public readonly GuestThread Thread = thread;
+        public GuestThread Thread = null!;
         public bool Released;
     }
 
     readonly LinkedList<Waiter> _queue = new();
+    /// <summary>Queue nodes of finished waits, reused by later waits (guarded by this object's lock).</summary>
+    readonly Stack<LinkedListNode<Waiter>> _freeNodes = new();
 
     public int WaitCond(GuestThread self, Ptr<uint> timeout)
     {
@@ -434,8 +439,11 @@ public sealed class CondVar : KernelObject
             count = Mutex.ReleaseAll(self);
             if (count < 0) return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
             Waiters++;
-            var w = new Waiter(self);
-            var node = _queue.AddLast(w);
+            var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
+            var w = node.Value;
+            w.Thread = self;
+            w.Released = false;
+            _queue.AddLast(node);
             int r;
             try
             {
@@ -446,6 +454,8 @@ public sealed class CondVar : KernelObject
             {
                 Waiters--;
                 if (!w.Released) _queue.Remove(node);
+                w.Thread = null!;
+                if (_freeNodes.Count < 64) _freeNodes.Push(node);
             }
             // reacquire outside our lock to avoid lock-order inversion with the mutex
             Monitor.Exit(this);

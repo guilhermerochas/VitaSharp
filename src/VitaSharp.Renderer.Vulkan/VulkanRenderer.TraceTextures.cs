@@ -68,9 +68,10 @@ public sealed unsafe partial class VulkanRenderer
     {
         try
         {
-            byte[]? rgba = DecodeForInspection(d, info, w, h, out uint iw, out uint ih);
-            if (rgba == null || iw * ih < 256) return;
-            string stats = Inspect(rgba, (int)iw, (int)ih);
+            // pooled decode: every upload of a test run is inspected (video textures every frame)
+            using var rgba = DecodeForInspectionPooled(d, info, w, h, out uint iw, out uint ih);
+            if (rgba.Array == null || iw * ih < 256) return;
+            string stats = Inspect(rgba.Span, (int)iw, (int)ih);
             if (!stats.Contains("SUSPECT")) return;
             _suspectTextures++;
             Log.WarnOnce($"texsuspect{d.DataAddress:X}{d.Format:X}", $"[gpu] TEXTURE SUSPECT 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} lodMin {d.LodMin}: {stats}");
@@ -81,15 +82,25 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Mip 0 of face 0 as RGBA8 for formats the CPU decodes; BC formats are expanded here too.</summary>
     static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
+        using var t = DecodeForInspectionPooled(d, info, w, h, out iw, out ih, level, face);
+        return t.Array == null ? null : t.ToArray();
+    }
+
+    /// <summary><see cref="DecodeForInspection"/> with a pooled result (default when the format is not inspected).</summary>
+    static Texels DecodeForInspectionPooled(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
+    {
         // inspect the first resident level (LOD min), the one the GPU samples at full detail (or a given level)
         uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
         uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(d.LodMin, mips - 1);
         // the face stride depends on the whole chain, so lay out every level when a later cube face is wanted
         var layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
-        var lv = layout.Levels[lodMin];
+        var lv = layout.Levels[(int)lodMin];
         w = lv.Width; h = lv.Height;
-        byte[] data = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+        var texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _);
         iw = w; ih = h;
+        if (!(info.Compressed && info.Convert == TexConvert.None) && info.Format is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb) return texels;
+        byte[] data;
+        using (texels) data = texels.ToArray();
         if (info.Compressed && info.Convert == TexConvert.None)
         {
             return GxmFormats.BaseOf(d.Format) switch
@@ -97,10 +108,10 @@ public sealed unsafe partial class VulkanRenderer
                 TexBase.UBC1 => BcDecode.Bc1(data, w, h),
                 TexBase.UBC2 => BcDecode.Bc2(data, w, h),
                 TexBase.UBC3 => BcDecode.Bc3(data, w, h),
-                _ => null,
+                _ => default,
             };
         }
-        return info.Format switch
+        return Wrap(info.Format switch
         {
             Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb => data,
             Format.R8Unorm => Expand(data, w * h, 1, (s, i) => (s[i], s[i], s[i], (byte)255)),
@@ -113,7 +124,9 @@ public sealed unsafe partial class VulkanRenderer
             Format.A1R5G5B5UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)(((v >> 10) & 31) * 255 / 31), (byte)(((v >> 5) & 31) * 255 / 31), (byte)((v & 31) * 255 / 31), (byte)((v >> 15) * 255)); }),
             Format.R8G8B8A8SNorm => Expand(data, w * h, 4, (s, i) => ((byte)(s[i] + 128), (byte)(s[i + 1] + 128), (byte)(s[i + 2] + 128), (byte)255)),
             _ => null,
-        };
+        });
+
+        static Texels Wrap(byte[]? a) => a == null ? default : Texels.Wrap(a);
     }
 
     /// <summary>
@@ -168,7 +181,7 @@ public sealed unsafe partial class VulkanRenderer
     /// around 0.02-0.15, random data around 0.33. seams: neighbour difference across 4-pixel block boundaries divided
     /// by the difference inside blocks; a correctly decoded block format stays near 1, a broken one jumps well above.
     /// </summary>
-    static string Inspect(byte[] px, int w, int h)
+    static string Inspect(ReadOnlySpan<byte> px, int w, int h)
     {
         double sum = 0, sumA = 0, diffIn = 0, diffEdge = 0; long nIn = 0, nEdge = 0;
         int n = w * h;
@@ -190,33 +203,34 @@ public sealed unsafe partial class VulkanRenderer
 /// <summary>CPU BC1/2/3 decoding for inspection only (the GPU samples the compressed data directly).</summary>
 static class BcDecode
 {
-    public static byte[] Bc1(byte[] src, uint w, uint h) => Decode(src, w, h, 8, false, false);
-    public static byte[] Bc2(byte[] src, uint w, uint h) => Decode(src, w, h, 16, true, false);
-    public static byte[] Bc3(byte[] src, uint w, uint h) => Decode(src, w, h, 16, false, true);
+    public static Texels Bc1(byte[] src, uint w, uint h) => Decode(src, w, h, 8, false, false);
+    public static Texels Bc2(byte[] src, uint w, uint h) => Decode(src, w, h, 16, true, false);
+    public static Texels Bc3(byte[] src, uint w, uint h) => Decode(src, w, h, 16, false, true);
 
     /// <summary>Any BC base format to RGBA8 (signed BC4/BC5 are decoded as unsigned: a close approximation).</summary>
-    public static byte[] Decode(TexBase format, byte[] src, uint w, uint h) => format switch
+    public static Texels Decode(TexBase format, byte[] src, uint w, uint h) => format switch
     {
         TexBase.UBC1 => Bc1(src, w, h),
         TexBase.UBC2 => Bc2(src, w, h),
         TexBase.UBC3 => Bc3(src, w, h),
         TexBase.UBC4 or TexBase.SBC4 => Bc45(src, w, h, false),
         TexBase.UBC5 or TexBase.SBC5 => Bc45(src, w, h, true),
-        _ => src,
+        _ => Texels.Wrap(src),
     };
 
     /// <summary>BC4 (one 8-byte alpha-style block = R) and BC5 (two blocks = R, G).</summary>
-    static byte[] Bc45(byte[] src, uint w, uint h, bool two)
+    static Texels Bc45(byte[] src, uint w, uint h, bool two)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
         int blockBytes = two ? 16 : 8;
-        var dst = new byte[w * h * 4];
+        var dstT = Texels.Rent(w * h * 4L); // pooled: dispose once used
+        var dst = dstT.Array;
         Span<byte> ch = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
             for (uint bx = 0; bx < bw; bx++)
             {
                 int o = (int)((by * bw + bx) * blockBytes);
-                if (o + blockBytes > src.Length) return dst;
+                if (o + blockBytes > src.Length) return dstT;
                 for (int c = 0; c < (two ? 2 : 1); c++)
                 {
                     DecodeAlphaBlock(src, o + c * 8, ch);
@@ -231,7 +245,7 @@ static class BcDecode
                     }
                 }
             }
-        return dst;
+        return dstT;
     }
 
     static void DecodeAlphaBlock(byte[] src, int o, Span<byte> alpha)
@@ -253,17 +267,18 @@ static class BcDecode
         }
     }
 
-    static byte[] Decode(byte[] src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
+    static Texels Decode(byte[] src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
-        var dst = new byte[w * h * 4];
+        var dstT = Texels.Rent(w * h * 4L); // pooled: dispose once used
+        var dst = dstT.Array;
         Span<byte> c = stackalloc byte[16];
         Span<byte> alpha = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
             for (uint bx = 0; bx < bw; bx++)
             {
                 int o = (int)((by * bw + bx) * blockBytes);
-                if (o + blockBytes > src.Length) return dst;
+                if (o + blockBytes > src.Length) return dstT;
                 int colorOff = o + (bc2 || bc3 ? 8 : 0);
                 alpha.Fill(255);
                 if (bc2)
@@ -305,7 +320,7 @@ static class BcDecode
                     dst[p + 3] = bc2 || bc3 ? alpha[i] : c[ci + 3];
                 }
             }
-        return dst;
+        return dstT;
     }
 
     static void Rgb565(int v, Span<byte> c, int o)

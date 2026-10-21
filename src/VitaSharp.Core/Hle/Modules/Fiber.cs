@@ -34,6 +34,33 @@ public sealed unsafe class Fiber : HleModule
     }
 
     readonly Dictionary<uint, FiberObj> _fibers = new();
+    /// <summary>Finalized fiber objects, reused by the next initialize (guarded by the _fibers lock).</summary>
+    readonly Stack<FiberObj> _freeFibers = new();
+    /// <summary>Fiber names already decoded (keyed by the UTF-8 bytes hash, verified on hit): no string per initialize.</summary>
+    readonly Dictionary<ulong, string> _names = new();
+
+    string FiberName(uint addr)
+    {
+        // same result as GuestMemory.ReadCString(addr, 31)
+        int n = 0;
+        while (n < 31 && GuestMemory.Read<byte>(addr + (uint)n) != 0) n++;
+        var raw = GuestMemory.Span(addr, n);
+        ulong h = System.IO.Hashing.XxHash3.HashToUInt64(raw);
+        lock (_names)
+        {
+            if (_names.TryGetValue(h, out var s) && Matches(s, raw)) return s;
+            s = GuestMemory.ReadCString(addr, 31);
+            if (_names.Count < 4096) _names[h] = s;
+            return s;
+        }
+
+        static bool Matches(string s, ReadOnlySpan<byte> raw)
+        {
+            Span<char> chars = stackalloc char[64];
+            int c = System.Text.Encoding.UTF8.GetChars(raw, chars);
+            return chars[..c].SequenceEqual(s);
+        }
+    }
     readonly Dictionary<GuestThread, ThreadFibers> _threads = new();
 
     ThreadFibers Self(GuestThread t)
@@ -95,11 +122,12 @@ public sealed unsafe class Fiber : HleModule
         if ((fiber & 7) != 0) return ERR_ALIGNMENT;
         if (sizeContext != 0 && sizeContext < ContextMinimumSize) return ERR_RANGE;
         if ((addrContext == 0) != (sizeContext == 0) || (sizeContext & 7) != 0) return ERR_INVALID;
-        var f = new FiberObj
-        {
-            Address = fiber, Entry = entry, ArgOnInitialize = argOnInitialize, ContextAddr = addrContext, ContextSize = sizeContext,
-            Name = GuestMemory.ReadCString(name, 31), Status = Status.Init,
-        };
+        FiberObj f;
+        lock (_fibers) f = _freeFibers.Count > 0 ? _freeFibers.Pop() : new FiberObj(); // job systems create fibers continuously
+        f.Address = fiber; f.Entry = entry; f.ArgOnInitialize = argOnInitialize; f.ContextAddr = addrContext; f.ContextSize = sizeContext;
+        f.ArgOnRunPtr = 0; f.Context = default;
+        f.Name = FiberName(name);
+        f.Status = Status.Init;
         GuestMemory.Fill(fiber, 0, 128);
         GuestMemory.W32(fiber, entry);
         GuestMemory.WriteCString(fiber + 16, f.Name, 32);
@@ -126,6 +154,7 @@ public sealed unsafe class Fiber : HleModule
             if (!_fibers.TryGetValue(fiber, out var f)) return ERR_INVALID;
             if (f.Status == Status.Running) return ERR_STATE;
             _fibers.Remove(fiber);
+            if (_freeFibers.Count < 256) _freeFibers.Push(f);
         }
         return OK;
     }

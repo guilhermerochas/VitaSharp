@@ -121,11 +121,12 @@ public sealed unsafe partial class VulkanRenderer
         return set;
     }
 
-    DescriptorSet BuildEmptyFbSet() => BuildSingleTextureSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal);
+    // cached in _emptyFbSet for the renderer's lifetime: allocated from the persistent pool, not a frame pool
+    DescriptorSet BuildEmptyFbSet() => BuildSingleTextureSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, persistent: true);
 
-    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout)
+    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout, bool persistent = false)
     {
-        var set = AllocSet(_fbLayout);
+        var set = persistent ? AllocPersistentSet(_fbLayout) : AllocSet(_fbLayout);
         var info = new DescriptorImageInfo(_dummySampler, view, layout);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &w, 0, null);
@@ -138,6 +139,9 @@ public sealed unsafe partial class VulkanRenderer
     ImageMemoryPool.Allocation _fbCopyMem;
     uint _fbCopyW, _fbCopyH;
     Format _fbCopyFormat;
+    /// <summary>Framebuffer-fetch copies of other sizes/formats, kept for reuse (all in GENERAL layout).</summary>
+    readonly Dictionary<(uint W, uint H, Format F), (Image Image, ImageView View, ImageMemoryPool.Allocation Mem)> _fbCopies = new();
+    long _fbCopiesPixels;
     readonly HashSet<uint> _ssFetchLogged = new();
 
     DescriptorSet BuildFramebufferFetchSet()
@@ -153,15 +157,36 @@ public sealed unsafe partial class VulkanRenderer
         uint w = ss?.Width ?? _rt.Width, h = ss?.Height ?? _rt.Height;
         if (_fbCopy.Handle == 0 || _fbCopyW != w || _fbCopyH != h || _fbCopyFormat != _rtAttachFormat)
         {
+            // games alternate between targets of different sizes: keep the copies per size/format instead of recreating
+            // one (image, memory, deferred destroy closure) on every switch
             if (_fbCopy.Handle != 0)
             {
-                var (oi, ov, om) = (_fbCopy, _fbCopyView, _fbCopyMem);
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                var old = (_fbCopy, _fbCopyView, _fbCopyMem);
+                // bounded: at most 32 spare copies and 4 M pixels (16 MB at 4 bytes per pixel)
+                if (_fbCopies.Count < 32 && _fbCopiesPixels + (long)_fbCopyW * _fbCopyH <= 4L << 20)
+                {
+                    _fbCopies[(_fbCopyW, _fbCopyH, _fbCopyFormat)] = old;
+                    _fbCopiesPixels += (long)_fbCopyW * _fbCopyH;
+                }
+                else
+                {
+                    var (oi, ov, om) = old;
+                    F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                }
             }
-            // with surface gamma the copy is sRGB too, so the shader reads linear values
-            (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
-            _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
-            Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            if (_fbCopies.Remove((w, h, _rtAttachFormat), out var cached))
+            {
+                _fbCopiesPixels -= (long)w * h;
+                (_fbCopy, _fbCopyView, _fbCopyMem) = cached; // already in GENERAL layout
+                _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
+            }
+            else
+            {
+                // with surface gamma the copy is sRGB too, so the shader reads linear values
+                (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+                _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
+                Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            }
         }
         var src = _rt.Image;
         if (ss != null)
@@ -239,7 +264,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             SyncRenderTargetForRead(rt);
             var sw = RtSwizzle(rt, d.Format);
-            if (rt.SampledView.Handle == 0 || !rt.SampledSwizzle.Equals(sw) || rt.SampledGamma != gamma)
+            if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
                 if (rt.SampledView.Handle != 0) { var old = rt.SampledView; F.Deferred.Add(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
@@ -265,7 +290,7 @@ public sealed unsafe partial class VulkanRenderer
         // LOD min (texture streaming): levels below it are not resident, so the texture is uploaded from that level on
         uint lodMin = Math.Min(d.LodMin, mips - 1);
         uint baseW = Math.Max(w >> (int)lodMin, 1), baseH = Math.Max(h >> (int)lodMin, 1);
-        uint residentOffset = layout.Levels[lodMin].Offset;
+        uint residentOffset = layout.Levels[(int)lodMin].Offset;
         if (total == 0 || total > 64u << 20)
         {
             Log.WarnOnce($"texsize{d.Format:X}{w}{h}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} type 0x{d.TextureType:X8}: bad size {total}");
@@ -322,7 +347,8 @@ public sealed unsafe partial class VulkanRenderer
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
         uint level = Math.Min(d.LodMin, mips - 1);
         if (level == 0) return null;
-        var lv = ComputeLayout(d, info, w, h, mips, 1).Levels[level];
+        var levelLayout = ComputeLayout(d, info, w, h, mips, 1);
+        var lv = levelLayout.Levels[(int)level];
         bool pow2 = d.TextureType is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
         uint w1 = pow2
             ? (d.W1 & ~0x000F000Fu) | ((uint)BitOperations.Log2(lv.Width) << 16) | (uint)BitOperations.Log2(lv.Height)
@@ -337,6 +363,9 @@ public sealed unsafe partial class VulkanRenderer
     /// Swizzle for sampling a rendered surface. 8888 surfaces keep memory byte order, so the texture swizzle applies;
     /// other surfaces are stored with logical channels (packed formats may have been widened), so they read as-is.
     /// </summary>
+    /// <summary>Field comparison (ComponentMapping.Equals(object) boxes both values on every texture lookup).</summary>
+    static bool SameSwizzle(in ComponentMapping a, in ComponentMapping b) => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
+
     static ComponentMapping RtSwizzle(RenderTarget rt, uint texFormat)
     {
         bool is8888 = rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm && (rt.ColorFormat & 0xF1800000) == 0;
@@ -463,13 +492,17 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     readonly record struct MipLayout(uint Offset, uint Width, uint Height, uint RowPitch, uint Bytes);
-    readonly record struct TexLayout(MipLayout[] Levels, uint FaceStride, uint TotalBytes);
+    /// <summary>Per-level layout stored inline (at most 16 levels): computed for every texture check, so no array per call.</summary>
+    [System.Runtime.CompilerServices.InlineArray(16)]
+    struct MipChain { MipLayout _level; }
+
+    readonly record struct TexLayout(MipChain Levels, uint FaceStride, uint TotalBytes);
 
     static uint Align(uint v, uint a) => (v + a - 1) / a * a;
 
     static TexLayout ComputeLayout(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, uint mips, uint faces)
     {
-        var levels = new MipLayout[mips];
+        var levels = new MipChain();
         uint type = d.TextureType;
         bool swizzled = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube or GxmTextureDesc.TypeSwizzledArbitrary or GxmTextureDesc.TypeCubeArbitrary;
         bool pow2 = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
@@ -519,7 +552,7 @@ public sealed unsafe partial class VulkanRenderer
                 rowPitch = (uint)(aw * info.BitsPerPixel / 8);
                 bytes = rowPitch * mh;
             }
-            levels[m] = new MipLayout(offset, mw, mh, rowPitch, bytes);
+            levels[(int)m] = new MipLayout(offset, mw, mh, rowPitch, bytes);
             // mipmapped linear/tiled textures reserve each level at the power-of-two size (rows keep their own pitch):
             // a 384x64 level 0 occupies 512x64 texels before level 1 starts (as in Vita3K's texture cache). A raw mip
             // count of 0xF (no mips) packs the data without padding.
@@ -568,25 +601,24 @@ public sealed unsafe partial class VulkanRenderer
         EndRendering();
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
-        var regions = new List<BufferImageCopy>();
+
         for (uint face = 0; face < faces; face++)
         {
             for (uint m = baseLevel; m < mips; m++)
             {
-                var lv = layout.Levels[m];
+                var lv = layout.Levels[(int)m];
                 uint baseAddr = d.DataAddress + face * layout.FaceStride + lv.Offset;
-                byte[] linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
-                var (buf, off) = UploadSpan(linear, 16);
-                regions.Add(new BufferImageCopy
+                using var linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+                var (buf, off) = UploadSpan(linear.Span, 16);
+                var r = new BufferImageCopy
                 {
                     BufferOffset = off,
                     BufferRowLength = info.Compressed && info.Convert == TexConvert.None ? Align(outW, (uint)info.BlockW) : outW,
                     BufferImageHeight = info.Compressed && info.Convert == TexConvert.None ? Align(outH, (uint)info.BlockH) : outH,
                     ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, m - baseLevel, face, 1),
                     ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
-                });
+                };
                 // every region may live in a different overflow buffer: submit one copy per region
-                var r = regions[^1];
                 _vk.CmdCopyBufferToImage(Cmd, buf, tex.Image, ImageLayout.TransferDstOptimal, 1, in r);
             }
         }
@@ -615,5 +647,6 @@ public sealed unsafe partial class VulkanRenderer
         _vk.DestroyImageView(_dev, _dummyCubeView, null);
         _vk.DestroyImage(_dev, _dummyImage, null);
         if (_fbCopy.Handle != 0) { _vk.DestroyImageView(_dev, _fbCopyView, null); _vk.DestroyImage(_dev, _fbCopy, null); }
+        foreach (var (img, view, _) in _fbCopies.Values) { _vk.DestroyImageView(_dev, view, null); _vk.DestroyImage(_dev, img, null); }
     }
 }

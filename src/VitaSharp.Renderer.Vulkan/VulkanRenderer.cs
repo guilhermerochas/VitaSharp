@@ -58,6 +58,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool Submitted;
         public (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H)? Readback;
         public int DumpIndex;
+        /// <summary>Readback holds a frame to dump (the buffer itself stays allocated and is reused by later dumps).</summary>
+        public bool DumpPending;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
         /// <summary>Scene notifications signalled once this frame (and its writebacks) completed.</summary>
@@ -332,7 +334,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var key = (c.Data, c.Width, c.Height, c.ColorFormat);
         if (_renderTargets.TryGetValue(key, out var rt)) return rt;
         // a different surface at the same address replaces the old one
-        foreach (var (k, old) in _renderTargets.Where(kv => kv.Key.Item1 == c.Data).ToList())
+        // (no lambda over c: its closure was allocated on every call, including cache hits)
+        var replaced = new List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>>();
+        foreach (var kv in _renderTargets) if (kv.Key.Item1 == c.Data) replaced.Add(kv);
+        foreach (var (k, old) in replaced)
         {
             _renderTargets.Remove(k);
             if (_opt.TraceDrawsFrame == _presentCount + 1 && _opt.ShaderCacheDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
@@ -607,7 +612,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         EndFrameStallStats();
         bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
-        else F.Readback = null;
+        else F.DumpPending = false;
 
         if (_opt.TraceDrawsFrame == _presentCount && _opt.ShaderCacheDir != null)
         {
@@ -666,10 +671,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         };
         _vk.CmdCopyImageToBuffer(Cmd, src.Image, ImageLayout.General, r.Buf, 1, in region);
         f.DumpIndex = (int)_presentCount;
+        f.DumpPending = true;
         _readbackIsBgra = src.Format == Format.B8G8R8A8Unorm;
     }
 
     bool _readbackIsBgra;
+    byte[]? _dumpPixels;
 
     /// <summary>Box-filtered downscale of an RGBA image.</summary>
     static byte[] Thumbnail(byte[] src, int w, int h, int tw, int th)
@@ -694,10 +701,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void WriteDump(Frame f, (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H) rb)
     {
+        if (!f.DumpPending) return;
         try
         {
             Directory.CreateDirectory(_opt.DumpFramesDir!);
-            var pixels = new ReadOnlySpan<byte>((void*)rb.Ptr, (int)(rb.W * rb.H * 4)).ToArray();
+            // one reused CPU copy (dumps run on the GPU worker only): a fresh 2 MB array per dump went to the large object heap
+            int bytes = (int)(rb.W * rb.H * 4);
+            if (_dumpPixels?.Length != bytes) _dumpPixels = new byte[bytes];
+            var pixels = _dumpPixels;
+            new ReadOnlySpan<byte>((void*)rb.Ptr, bytes).CopyTo(pixels);
             if (_readbackIsBgra)
                 for (int i = 0; i < pixels.Length; i += 4) (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
             for (int i = 3; i < pixels.Length; i += 4) pixels[i] = 255; // the display ignores alpha
@@ -706,7 +718,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 lock (thumbs) thumbs.Add((f.DumpIndex, Thumbnail(pixels, (int)rb.W, (int)rb.H, 240, 136)));
         }
         catch (Exception e) { Log.WarnOnce("dumpframe", $"frame dump failed: {e.Message}"); }
-        f.Readback = null;
+        f.DumpPending = false;
     }
 
     /// <summary>Debug: synchronously reads back every render target into PNGs.</summary>
@@ -835,6 +847,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var f in _frames)
         {
             if (f.Submitted && f.Readback is { } rb) WriteDump(f, rb);
+            if (f.Readback is { } rbuf) _core.DestroyBuffer(rbuf.Buf, rbuf.Mem);
             _vk.DestroyCommandPool(_dev, f.Pool, null);
             _vk.DestroyFence(_dev, f.Fence, null);
             _vk.DestroySemaphore(_dev, f.Acquire, null);
@@ -844,6 +857,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
             foreach (var a in f.Deferred) a();
         }
+        DestroyPersistentSets();
         DestroyPipelines();
         DestroyTextures();
         foreach (var rt in _renderTargets.Values)

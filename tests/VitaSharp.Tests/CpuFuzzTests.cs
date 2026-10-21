@@ -64,7 +64,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     }
 
     /// <summary>Re-runs specific encodings (from a fuzz failure) with many random states and prints every difference.</summary>
-    [Theory]
+    [UnicornTheory]
     [InlineData(true, "0000BF00")]
     [InlineData(false, "F3BBB58A,F3BBB50A,F3BB05CC,F3BB054C")] // VRSQRTE/VRECPE.F32 (D and Q): the estimate exponent parity was swapped
     public void Replay(bool thumb, string encodings)
@@ -75,7 +75,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             Fuzz(thumb, 400, 7, Convert.ToUInt32(enc, 16), simd: true);
     }
 
-    [Theory]
+    [UnicornTheory]
     [InlineData(false, 30_000, 1)]
     [InlineData(true, 30_000, 2)]
     public void FuzzAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null);
@@ -84,7 +84,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     /// VFP / Advanced SIMD only, with operands biased towards special values (denormals, zeros, infinities,
     /// NaNs, values near the float limits): physics code (Havok) lives on these instructions and their edge cases.
     /// </summary>
-    [Theory]
+    [UnicornTheory]
     [InlineData(false, 40_000, 11, false)]
     [InlineData(true, 40_000, 12, false)]
     // anyFpscr = true also runs with flush-to-zero / default NaN off and other rounding modes: not modelled for VFP

@@ -105,6 +105,8 @@ public sealed class HleFunction
     bool? _cbWait;
     public bool IsCallbackWait => _cbWait ??= Name.EndsWith("CB", StringComparison.Ordinal);
     public long CallCount;
+    /// <summary>The "unimplemented" warning was issued (skips building its key on every later call).</summary>
+    public bool WarnedUnimplemented;
     /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
     public long ChargedCycles;
 
