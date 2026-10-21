@@ -240,7 +240,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             SyncRenderTargetForRead(rt);
             var sw = RtSwizzle(rt, d.Format);
-            if (rt.SampledView.Handle == 0 || !rt.SampledSwizzle.Equals(sw) || rt.SampledGamma != gamma)
+            if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
                 if (rt.SampledView.Handle != 0) { var old = rt.SampledView; F.Deferred.Add(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
@@ -339,6 +339,9 @@ public sealed unsafe partial class VulkanRenderer
     /// Swizzle for sampling a rendered surface. 8888 surfaces keep memory byte order, so the texture swizzle applies;
     /// other surfaces are stored with logical channels (packed formats may have been widened), so they read as-is.
     /// </summary>
+    /// <summary>Field comparison (ComponentMapping.Equals(object) boxes both values on every texture lookup).</summary>
+    static bool SameSwizzle(in ComponentMapping a, in ComponentMapping b) => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
+
     static ComponentMapping RtSwizzle(RenderTarget rt, uint texFormat)
     {
         bool is8888 = rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm && (rt.ColorFormat & 0xF1800000) == 0;
