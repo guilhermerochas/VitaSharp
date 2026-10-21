@@ -1,3 +1,0 @@
-title=PCSA00126
-data=C:\Users\guisa\AppData\Roaming\VitaSharp
-args=--frames=6232 --seconds=400 --dump-every=200 --no-inspect --audio --debug --trace-hle-frames=6208:6230:sceGxm+sceKernelGetProcessTime+sceKernelGetThreadId+sceClib+sceNgs+sceCtrl+sceTouch+sceDisplay+sceKernelGetTLSAddr+sceKernelLockLwMutex+sceKernelUnlockLwMutex+sceKernelTryLockLwMutex+sceKernelWaitLwCond+sceKernelSignalLwCond --input=tap@f1500:0.17:0.58,tap@f1800:0.17:0.58

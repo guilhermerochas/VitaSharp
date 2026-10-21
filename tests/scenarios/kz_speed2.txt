@@ -1,3 +1,0 @@
-title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
-args=--speed=2 --seconds=130 --dump-every=300 --input=tap@11:0.36:0.84,tap@32:0.815:0.763,tap@44:0.25:0.37,tap@53:0.5:0.5,tap@58:0.5:0.5,tap@63:0.5:0.5,tap@68:0.5:0.5

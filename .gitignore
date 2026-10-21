@@ -489,3 +489,22 @@ third_party/ffmpeg/.download/
 
 # Avalonia build task cache (created by Linux/macOS builds)
 .avalonia-build-tasks/
+
+# Vita device folders created when the emulator runs with the repository as its file root
+/gro0/
+/grw0/
+/host0/
+/imc0/
+/music0/
+/os0/
+/pd0/
+/photo0/
+/sa0/
+/sd0/
+/tm0/
+/ud0/
+/uma0/
+/ur0/
+/ux0/
+/video0/
+/vs0/
