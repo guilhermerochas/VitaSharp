@@ -565,8 +565,8 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- uniforms
         var bufInfos = stackalloc DescriptorBufferInfo[4];
-        bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniforms, d.VertexUniformsLength, d.VertexUniformAddrs);
-        bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniforms, d.FragmentUniformsLength, d.FragmentUniformAddrs);
+        bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs);
+        bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs);
         var uSet = AllocSet(_uboLayout);
         bufInfos[0] = UniformInfo(d.VertexUniformSpan);
         bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
@@ -688,9 +688,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
-        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(d.VertexUniforms, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
-        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(d.FragmentUniforms, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
-        if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniforms, 0)},{BitConverter.ToSingle(d.FragmentUniforms, 4)},{BitConverter.ToSingle(d.FragmentUniforms, 8)},{BitConverter.ToSingle(d.FragmentUniforms, 12)})");
+        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(d.VertexUniforms, d.VertexUniformsOffset + k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(d.FragmentUniforms, d.FragmentUniformsOffset + k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");
         Log.Info(sb.ToString());
         if (_opt.ShaderCacheDir != null)
         {

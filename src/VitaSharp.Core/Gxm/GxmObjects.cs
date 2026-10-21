@@ -86,6 +86,9 @@ public sealed class GxmRenderTarget
 public sealed class GxmContext
 {
     public readonly uint[] StreamScratch = new uint[16];
+    /// <summary>sceGxmDrawPrecomputed scratch copies of the bound uniform buffers/textures (copied into the draw command).</summary>
+    public readonly uint[] PreVertexUbs = new uint[15], PreFragmentUbs = new uint[15];
+    public readonly GxmTextureDesc[] PreVertexTextures = new GxmTextureDesc[16], PreFragmentTextures = new GxmTextureDesc[16];
     public required uint Handle;
     public uint VdmRing, VdmRingSize, VertexRing, VertexRingSize, FragmentRing, FragmentRingSize;
     public uint VertexRingUsed, FragmentRingUsed;

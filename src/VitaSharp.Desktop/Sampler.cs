@@ -17,7 +17,7 @@ sealed class Sampler
     readonly List<double> _fps = new();
 
     readonly long _from;
-    Dictionary<VitaSharp.Core.Kernel.GuestThread, (long Cycles, long Blocks, long Hle)>? _base;
+    Dictionary<VitaSharp.Core.Kernel.GuestThread, (long Cycles, long Blocks, long Hle, long Instrs)>? _base;
     readonly Dictionary<VitaSharp.Core.Hle.HleFunction, (long Calls, long Charged)> _baseFn = new();
     VitaSharp.Core.Cpu.CpuCore.SleepStat[] _baseSleep = new VitaSharp.Core.Cpu.CpuCore.SleepStat[2];
     long _baseFrame, _endFrame;
@@ -40,7 +40,7 @@ sealed class Sampler
         {
             Thread.Sleep(1);
             if (VitaSharp.Core.Hle.Modules.Display.FramesPresented < _from) { lastFpsTime = sw.Elapsed.TotalSeconds; _fpsFrames = VitaSharp.Core.Hle.Modules.Display.FramesPresented; continue; }
-            if (_base == null) { _base = new(); _baseFrame = VitaSharp.Core.Hle.Modules.Display.FramesPresented; _baseTime = sw.Elapsed.TotalSeconds; foreach (var t in _emu.Kernel.Threads) _base[t] = (t.Core.BlockCycles, t.Core.BlocksExecuted, t.Core.ChargedCycles); foreach (var f in _emu.Hle.Functions) _baseFn[f] = (f.CallCount, f.ChargedCycles); _baseSleep = (VitaSharp.Core.Cpu.CpuCore.SleepStat[])VitaSharp.Core.Cpu.CpuCore.SleepStats.Clone(); }
+            if (_base == null) { _base = new(); _baseFrame = VitaSharp.Core.Hle.Modules.Display.FramesPresented; _baseTime = sw.Elapsed.TotalSeconds; foreach (var t in _emu.Kernel.Threads) _base[t] = (t.Core.BlockCycles, t.Core.BlocksExecuted, t.Core.ChargedCycles, t.Core.InstructionsExecuted); foreach (var f in _emu.Hle.Functions) _baseFn[f] = (f.CallCount, f.ChargedCycles); _baseSleep = (VitaSharp.Core.Cpu.CpuCore.SleepStat[])VitaSharp.Core.Cpu.CpuCore.SleepStats.Clone(); }
             _endFrame = VitaSharp.Core.Hle.Modules.Display.FramesPresented; _endTime = sw.Elapsed.TotalSeconds;
             _samples++;
             foreach (var t in _emu.Kernel.Threads)
@@ -77,8 +77,8 @@ sealed class Sampler
             foreach (var t in _emu.Kernel.Threads)
             {
                 var b = _base.GetValueOrDefault(t);
-                long cyc = t.Core.BlockCycles - b.Cycles, ins = t.Core.BlocksExecuted - b.Blocks, hle = t.Core.ChargedCycles - b.Hle;
-                if (cyc + hle > frames * 10000) Log.Info($"PROFILE cycles {t.Name}: guest {cyc / 1e6 / frames:F2} M/frame ({ins / 1e3 / frames:F0} K blocks, {(double)cyc / Math.Max(1, ins):F1} cycles/block), charged HLE {hle / 1e6 / frames:F2} M/frame");
+                long cyc = t.Core.BlockCycles - b.Cycles, ins = t.Core.BlocksExecuted - b.Blocks, hle = t.Core.ChargedCycles - b.Hle, n = t.Core.InstructionsExecuted - b.Instrs;
+                if (cyc + hle > frames * 10000) Log.Info($"PROFILE cycles {t.Name}: guest {cyc / 1e6 / frames:F2} M/frame ({ins / 1e3 / frames:F0} K blocks, {(double)cyc / Math.Max(1, ins):F1} cycles/block, {(double)cyc / Math.Max(1, n):F2} cycles/instruction), charged HLE {hle / 1e6 / frames:F2} M/frame");
             }
         if (_endFrame - _baseFrame > 2 && _endFrame - _baseFrame < VitaSharp.Core.Hle.Modules.Display.PresentTimes.Length)
         {

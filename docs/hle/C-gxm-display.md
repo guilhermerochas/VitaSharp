@@ -1040,3 +1040,12 @@ argumento) e mover o checkbox.
 - **Estruturas:** nenhuma.
 - **Implementação no VitaSharp:** no-op.
 - **Validação:** só se importada.
+
+### NID_1625D348 (sceGxmPrecomputedVertexStateSetTexture, NID antigo)
+- [x] **Prioridade:** P1 (Uncharted) · **Biblioteca:** SceGxm · **NID:** 0x1625D348
+- **Protótipo:** `int sceGxmPrecomputedVertexStateSetTexture(SceGxmPrecomputedVertexState *state, unsigned int textureIndex, const SceGxmTexture *texture);`
+- **Identificação:** ausente do vita-headers e do Vita3K. O `uncharted.self` (SDK antigo) importa este NID e não importa
+  0x6A29EB06; os dois pontos de chamada (0x8123221A, 0x8123329A) escolhem entre ele e
+  `sceGxmPrecomputedFragmentStateSetTexture` (0x29118BF1) pelo tipo do estado pré-computado (1 = fragment), com os
+  mesmos argumentos `(state, index, texture)`. Logo é o SetTexture do estado de vértice.
+- **Implementação no VitaSharp:** segundo `[Hle(Nid = 0x1625D348)]` em `sceGxmPrecomputedVertexStateSetTexture` (`Gxm.cs`).

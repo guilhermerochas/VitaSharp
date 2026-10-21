@@ -8,7 +8,7 @@ namespace VitaSharp.Tests;
 
 public sealed class UnicornProbeTests(ITestOutputHelper output)
 {
-    [Fact]
+    [UnicornFact]
     public void RegisterRoundTrip()
     {
         var uc = new Unicorn(Common.UC_ARCH_ARM, Common.UC_MODE_ARM);

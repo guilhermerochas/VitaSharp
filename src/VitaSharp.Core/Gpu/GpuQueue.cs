@@ -127,6 +127,7 @@ public sealed class GpuQueue : IDisposable
             switch (cmd)
             {
                 case DrawCommand draw:
+                    draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
                     if (_drawPool.Count < 16384) _drawPool.Add(draw);
                     break;
                 case SignalCommand signal:

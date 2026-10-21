@@ -22,10 +22,9 @@ public static class VBlank
         using var blocked = Scheduler.Block();
         while (true)
         {
-            long cur = Count;
-            if (cur >= target) return cur;
-            // +1 tick so rounding cannot land just before the boundary
-            GuestClock.WaitUntil(GuestClock.FromSeconds(target * PeriodSeconds / TimeScale.VBlank) + 1);
+            long cur = Count, at = GuestClock.FromSeconds(target * PeriodSeconds / TimeScale.VBlank) + 1; // +1 tick: no rounding below the boundary
+            if (cur >= target) { GuestThread.Current?.Core.WokeAt(at); return cur; } // resumes at the vblank, not at the late host wake-up
+            GuestClock.WaitUntil(at);
         }
     }
 
@@ -368,6 +367,18 @@ public sealed class Hid : HleModule
     [Hle("sceHidKeyboardEnumerate")]
     [Hle("sceHidMouseEnumerate")]
     int sceHidEnumerate(uint handles, int count) => 0;
+
+    /// <summary>
+    /// psp2/hid.h: <c>int sceHidKeyboardRead/Peek(SceUInt32 handle, SceHidKeyboardReport *reports[], int nReports)</c>
+    /// and <c>int sceHidMouseRead(SceUInt32 handle, SceHidMouseReport *reports[], int nReports)</c>; the result is the
+    /// number of reports filled. No device is ever attached, so there is never a report: return 0 at once instead of
+    /// blocking (Read is documented as blocking, which would hang a caller polling a handle it never enumerated).
+    /// The report buffers are not touched.
+    /// </summary>
+    [Hle("sceHidKeyboardRead")]
+    [Hle("sceHidKeyboardPeek")]
+    [Hle("sceHidMouseRead")]
+    int sceHidRead(uint handle, uint reports, int nReports) => 0;
 }
 
 public sealed class Touch : HleModule
@@ -406,13 +417,32 @@ public sealed class Touch : HleModule
         if (data == 0 || port is < 0 or > 1 || count > MaxBuffers) return ERR_INVALID_ARG;
         if (count == 0) return 0;
         // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
-        var touches = _sampling[port] != 0 ? Emu.Host.Input?.GetTouches(port == 1) ?? [] : [];
-        int reports = Math.Min(touches.Count, 8);
-        byte[] ids = new byte[reports];
+        // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
+        Span<TouchPoint> touches = stackalloc TouchPoint[8];
+        int reports = _sampling[port] != 0 && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        Span<byte> ids = stackalloc byte[8];
         lock (_ids)
         {
             var map = _ids[port];
-            foreach (var gone in map.Keys.Where(k => !touches.Take(reports).Any(t => t.Id == k)).ToList()) map.Remove(gone);
+            // forget contacts that are no longer reported
+            Span<int> gone = stackalloc int[8];
+            int nGone = 0;
+            bool overflow = false;
+            foreach (var k in map.Keys)
+            {
+                bool present = false;
+                for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
+                if (present) continue;
+                if (nGone < gone.Length) gone[nGone++] = k; else overflow = true;
+            }
+            for (int i = 0; i < nGone; i++) map.Remove(gone[i]);
+            if (overflow)
+                foreach (var k in map.Keys.ToList())
+                {
+                    bool present = false;
+                    for (int r = 0; r < reports; r++) if (touches[r].Id == k) { present = true; break; }
+                    if (!present) map.Remove(k);
+                }
             for (int r = 0; r < reports; r++)
             {
                 if (!map.TryGetValue(touches[r].Id, out ids[r]))

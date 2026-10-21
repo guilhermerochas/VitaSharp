@@ -756,6 +756,7 @@ síncrona. Em jogo, só quando algum título importar a função.
 
 ### sceIoCompleteMultiple
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA792C404
+- **Status (p1):** continua não registrada: vita-headers só lista o NID (`db/360/SceLibKernel.yml`) e a syscall `_sceIoCompleteMultiple` 0x9111D004, sem protótipo nem struct; no Vita3K ambas são `UNIMPLEMENTED()` sem argumentos.
 - **Protótipo:** sem header. Inferido: `int sceIoCompleteMultiple(SceIoCompleteMultipleParam *params, int count);`,
   um array de `{ SceUID opid; int result; … }` (**a confirmar**; a syscall `_sceIoCompleteMultiple` 0x9111D004 é o
   backend).
@@ -889,6 +890,7 @@ com `NID_023EAA62`.
 
 ### sceIoRead2
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x713523E1
+- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
 - **Protótipo:** sem header. Inferido: `SceSSize sceIoRead2(SceUID fd, void *buf, SceSize nbyte /*, ? */);` (a
   confirmar)
 - **Comportamento:** provavelmente igual a `sceIoRead`. A confirmar pelo método acima.
@@ -900,6 +902,7 @@ com `NID_023EAA62`.
 
 ### sceIoWrite2
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x11FED231
+- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
 - **Protótipo:** sem header. Inferido: `SceSSize sceIoWrite2(SceUID fd, const void *buf, SceSize nbyte /*, ? */);` (a
   confirmar)
 - **Comportamento:** provavelmente igual a `sceIoWrite`.
@@ -910,6 +913,7 @@ com `NID_023EAA62`.
 
 ### sceIoClose2
 - [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xF5C6F098
+- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
 - **Protótipo:** sem header. Inferido: `int sceIoClose2(SceUID fd);` (a confirmar)
 - **Comportamento:** provavelmente igual a `sceIoClose`.
 - **Retorno/erros:** como `sceIoClose` (a confirmar).

@@ -46,7 +46,7 @@ public sealed class Linker(IImportResolver hle)
     readonly Dictionary<uint, uint> _funcExports = new();
     readonly Dictionary<(uint lib, uint nid), uint> _funcExportsByLib = new();
     readonly Dictionary<uint, uint> _varExports = new();
-    readonly List<(uint nid, uint libNid, uint stub)> _funcBindings = new();
+    readonly List<(uint nid, uint libNid, string libName, uint stub)> _funcBindings = new();
     readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
 
     public uint ProcessParam { get; private set; }
@@ -81,7 +81,7 @@ public sealed class Linker(IImportResolver hle)
                 WriteJumpStub(stub, target);
             else
                 WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
-            _funcBindings.Add((nid, libNid, stub));
+            _funcBindings.Add((nid, libNid, libName, stub));
         }
         // reftable: relocations applied against the stub address
         uint reftable = GuestMemory.R32(stub + 12);
@@ -127,7 +127,7 @@ public sealed class Linker(IImportResolver hle)
                     }
                     _funcExports.TryAdd(nid, addr);
                     _funcExportsByLib[(libNid, nid)] = addr;
-                    foreach (var (bnid, blib, stub) in _funcBindings)
+                    foreach (var (bnid, blib, _, stub) in _funcBindings)
                     {
                         if (bnid != nid || blib != libNid) continue;
                         WriteJumpStub(stub, addr);
@@ -144,6 +144,67 @@ public sealed class Linker(IImportResolver hle)
                 }
             }
         }
+    }
+
+    static bool InModule(LoadedModule m, uint addr)
+    {
+        addr &= ~1u; // Thumb entry points
+        foreach (var s in m.Segments.Values)
+            if (addr >= s.Address && addr - s.Address < s.Size) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Undoes what loading <paramref name="m"/> did to the symbol table (sceKernelUnloadModule): drops its exports and
+    /// its own import bindings, then rebinds every other module's import that pointed into it to the next provider
+    /// (another loaded module exporting the NID) or back to the HLE stub. Variable imports are relocated to an HLE
+    /// variable when one exists. Returns the number of function stubs rebound.
+    /// </summary>
+    public int UnregisterModule(LoadedModule m)
+    {
+        int rebound = 0;
+        lock (_lock)
+        {
+            // the module's own import stubs/relocations live in memory that is about to be freed
+            _funcBindings.RemoveAll(b => InModule(m, b.stub));
+            _varBindings.RemoveAll(b => ReferenceEquals(b.segs, m.Segments));
+
+            foreach (var key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+                _funcExportsByLib.Remove(key);
+            foreach (var nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            {
+                _funcExports.Remove(nid);
+                foreach (var kv in _funcExportsByLib)
+                    if (kv.Key.nid == nid) { _funcExports[nid] = kv.Value; break; }
+            }
+
+            foreach (var (nid, libNid, libName, stub) in _funcBindings)
+            {
+                // only stubs that jumped into the unloaded module change
+                uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4);
+                if ((w0 & 0xFFF0F000) != 0xE300C000 || (w1 & 0xFFF0F000) != 0xE340C000) continue;
+                uint target = ((w0 >> 4) & 0xF000) | (w0 & 0xFFF) | ((((w1 >> 4) & 0xF000) | (w1 & 0xFFF)) << 16);
+                if (!InModule(m, target)) continue;
+                if (_funcExportsByLib.TryGetValue((libNid, nid), out uint next) || _funcExports.TryGetValue(nid, out next))
+                    WriteJumpStub(stub, next);
+                else
+                    WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+                InvalidateCode?.Invoke(stub, 12);
+                rebound++;
+            }
+
+            var removedVars = _varExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToHashSet();
+            foreach (var nid in removedVars) _varExports.Remove(nid);
+            foreach (var (bnid, relocs, segs) in _varBindings)
+            {
+                if (!removedVars.Contains(bnid) || relocs.Length == 0) continue;
+                uint addr = hle.GetHleVariable(bnid);
+                if (addr != 0) Relocation.Relocate(relocs, segs, true, addr);
+                else Log?.Invoke($"Variable import NID {bnid:X8} pointed into unloaded module {m.Name}");
+            }
+            if (InModule(m, ProcessParam)) ProcessParam = 0;
+        }
+        return rebound;
     }
 }
 

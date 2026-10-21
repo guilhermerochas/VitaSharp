@@ -106,6 +106,7 @@ public sealed class Videodec : HleModule
             uint picture = GuestMemory.R32(list + n * 4);
             if (picture == 0) break;
             WritePicture(picture, pic);
+            if (d.Last != null && d.Last != pic) d.Codec!.Recycle(d.Last); // its planes were already written out
             d.Last = pic;
             n++;
         }

@@ -103,20 +103,34 @@ public sealed unsafe class Mp4Demuxer : IDisposable
 
     static byte[] ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header)
     {
-        var ms = new MemoryStream(avcc.Length + 64);
-        if (header != null) ms.Write(header);
-        int p = 0;
-        while (p + lenSize <= avcc.Length)
+        // two passes (size, then copy): one exact-size array instead of a growing stream plus a copy
+        int total = header?.Length ?? 0;
+        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);) total += 4 + l;
+        var result = new byte[total];
+        int o = 0;
+        if (header != null) { header.CopyTo(result, 0); o = header.Length; }
+        for (int p = 0; Nal(avcc, lenSize, ref p, out int start, out int l);)
         {
-            int l = 0;
-            for (int i = 0; i < lenSize; i++) l = (l << 8) | avcc[p + i];
-            p += lenSize;
-            if (l <= 0 || p + l > avcc.Length) break;
-            ms.Write([0, 0, 0, 1]);
-            ms.Write(avcc.Slice(p, l));
-            p += l;
+            result[o + 3] = 1; // start code 00 00 00 01
+            avcc.Slice(start, l).CopyTo(result.AsSpan(o + 4));
+            o += 4 + l;
         }
-        return ms.ToArray();
+        return result;
+    }
+
+    /// <summary>Next length-prefixed NAL unit at <paramref name="p"/> (advanced past it); false at the end or on a bad length.</summary>
+    static bool Nal(ReadOnlySpan<byte> avcc, int lenSize, ref int p, out int start, out int length)
+    {
+        start = length = 0;
+        if (p + lenSize > avcc.Length) return false;
+        int l = 0;
+        for (int i = 0; i < lenSize; i++) l = (l << 8) | avcc[p + i];
+        p += lenSize;
+        if (l <= 0 || p + l > avcc.Length) return false;
+        start = p;
+        length = l;
+        p += l;
+        return true;
     }
 
     public void Seek(long pts90k)

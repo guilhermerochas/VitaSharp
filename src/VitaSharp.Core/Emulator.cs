@@ -124,7 +124,7 @@ public sealed class Emulator : IDisposable
     {
         AppPath = Path.GetFullPath(appPath);
         Vfs.Mount("app0", AppPath);
-        var sfoPath = Path.Combine(AppPath, "sce_sys", "param.sfo");
+        var sfoPath = Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/param.sfo");
         if (File.Exists(sfoPath))
         {
             ParamSfo = Sfo.Load(sfoPath);
@@ -177,7 +177,7 @@ public sealed class Emulator : IDisposable
     {
         foreach (var p in new[]
                  {
-                     Path.Combine(AppPath, "sce_sys", "package", "work.bin"),
+                     Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/package/work.bin"),
                  }.Concat(Directory.Exists(Path.Combine(Options.FsRoot, "ux0", "license", TitleId))
                      ? Directory.GetFiles(Path.Combine(Options.FsRoot, "ux0", "license", TitleId), "*.rif") : []))
         {
@@ -196,6 +196,21 @@ public sealed class Emulator : IDisposable
         Code.Invalidate(0, uint.MaxValue);
         Log.Info($"Loaded module {m.Name} ({vitaPath}) start=0x{m.StartEntry:X8} imports={m.Imports.Sum(i => i.FuncNids.Length)}");
         return m;
+    }
+
+    /// <summary>Removes a loaded module (sceKernelUnloadModule): imports that pointed at its exports go back to the next
+    /// provider or to HLE, its segments are freed and the translated code of their range is dropped.</summary>
+    public void UnloadModule(LoadedModule m)
+    {
+        int rebound = Linker.UnregisterModule(m);
+        foreach (var s in m.Segments.Values)
+        {
+            Code.Invalidate(s.Address, s.Size);
+            Memory.Free(s.Address);
+        }
+        Kernel.Modules.TryRemove(m.Uid, out _);
+        Kernel.Objects.Remove(m.Uid);
+        Log.Info($"Unloaded module {m.Name} ({m.Path}): {rebound} import stub(s) rebound");
     }
 
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>

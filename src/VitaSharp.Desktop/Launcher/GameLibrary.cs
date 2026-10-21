@@ -39,9 +39,9 @@ public static class GameLibrary
 
     public static GameEntry? Read(string dir)
     {
-        if (!File.Exists(System.IO.Path.Combine(dir, "eboot.bin"))) return null;
+        if (!File.Exists(VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "eboot.bin"))) return null;
         string id = System.IO.Path.GetFileName(dir), title = id, version = "", category = "gd";
-        var sfoPath = System.IO.Path.Combine(dir, "sce_sys", "param.sfo");
+        var sfoPath = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
         try
         {
             if (File.Exists(sfoPath))
@@ -55,7 +55,7 @@ public static class GameLibrary
             }
         }
         catch (InvalidDataException) { }
-        var icon = System.IO.Path.Combine(dir, "sce_sys", "icon0.png");
+        var icon = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
         return new GameEntry(id, title, version, category, dir, File.Exists(icon) ? icon : null, DirectorySize(dir));
     }
 
