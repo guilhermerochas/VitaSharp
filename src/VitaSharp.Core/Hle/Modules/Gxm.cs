@@ -374,13 +374,23 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
+    static readonly Dictionary<(uint, uint, uint, uint, uint, uint, bool, uint), ColorSurfaceInfo> ColorSurfaces = new();
+    static readonly Dictionary<(uint, uint, uint, uint, uint, uint, byte, bool, bool), DepthSurfaceInfo> DepthSurfaces = new();
+
     static ColorSurfaceInfo? ReadColorSurface(uint s)
     {
         if (s == 0) return null;
         uint w0 = GuestMemory.R32(s);
         if ((w0 & 1) != 0) return null;
-        return new ColorSurfaceInfo(GuestMemory.R32(s + 16), GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), GuestMemory.R32(s + 12),
+        // scenes reuse the same few surfaces every frame: share one (immutable) record per distinct value
+        var key = (GuestMemory.R32(s + 16), GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), GuestMemory.R32(s + 12),
             GuestMemory.R32(s + 20), GuestMemory.R32(s + 24), (w0 & 2) != 0, (w0 >> 2) & 3);
+        lock (ColorSurfaces)
+        {
+            if (ColorSurfaces.TryGetValue(key, out var shared)) return shared;
+            if (ColorSurfaces.Count >= 256) ColorSurfaces.Clear();
+            return ColorSurfaces[key] = new ColorSurfaceInfo(key.Item1, key.Item2, key.Item3, key.Item4, key.Item5, key.Item6, key.Item7, key.Item8);
+        }
     }
 
     [Hle]
@@ -429,8 +439,14 @@ public sealed class Gxm : HleModule
         uint format = (taf & 0x7EEE) << 12;
         if (format == 0) return null;
         uint w4 = GuestMemory.R32(s + 16);
-        return new DepthSurfaceInfo(GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), (((w0 >> 3) & 0xFF) + 1) << 5, format, (taf & 0x11) << 12,
-            GuestMemory.Read<float>(s + 12), (byte)(w4 & 0xFF), (w0 & 2) != 0, (w0 & 4) != 0);
+        var key = (GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), (((w0 >> 3) & 0xFF) + 1) << 5, format, (taf & 0x11) << 12,
+            GuestMemory.R32(s + 12), (byte)(w4 & 0xFF), (w0 & 2) != 0, (w0 & 4) != 0); // depth as raw bits: exact match
+        lock (DepthSurfaces)
+        {
+            if (DepthSurfaces.TryGetValue(key, out var shared)) return shared;
+            if (DepthSurfaces.Count >= 256) DepthSurfaces.Clear();
+            return DepthSurfaces[key] = new DepthSurfaceInfo(key.Item1, key.Item2, key.Item3, key.Item4, key.Item5, BitConverter.UInt32BitsToSingle(key.Item6), key.Item7, key.Item8, key.Item9);
+        }
     }
 
     // =========================================================== scenes

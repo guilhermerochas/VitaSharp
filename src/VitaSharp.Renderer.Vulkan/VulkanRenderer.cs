@@ -334,7 +334,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var key = (c.Data, c.Width, c.Height, c.ColorFormat);
         if (_renderTargets.TryGetValue(key, out var rt)) return rt;
         // a different surface at the same address replaces the old one
-        foreach (var (k, old) in _renderTargets.Where(kv => kv.Key.Item1 == c.Data).ToList())
+        // (no lambda over c: its closure was allocated on every call, including cache hits)
+        var replaced = new List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>>();
+        foreach (var kv in _renderTargets) if (kv.Key.Item1 == c.Data) replaced.Add(kv);
+        foreach (var (k, old) in replaced)
         {
             _renderTargets.Remove(k);
             if (_opt.TraceDrawsFrame == _presentCount + 1 && _opt.ShaderCacheDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)

@@ -141,6 +141,7 @@ public sealed unsafe partial class VulkanRenderer
     Format _fbCopyFormat;
     /// <summary>Framebuffer-fetch copies of other sizes/formats, kept for reuse (all in GENERAL layout).</summary>
     readonly Dictionary<(uint W, uint H, Format F), (Image Image, ImageView View, ImageMemoryPool.Allocation Mem)> _fbCopies = new();
+    long _fbCopiesPixels;
     readonly HashSet<uint> _ssFetchLogged = new();
 
     DescriptorSet BuildFramebufferFetchSet()
@@ -161,7 +162,12 @@ public sealed unsafe partial class VulkanRenderer
             if (_fbCopy.Handle != 0)
             {
                 var old = (_fbCopy, _fbCopyView, _fbCopyMem);
-                if (_fbCopies.Count < 8) _fbCopies[(_fbCopyW, _fbCopyH, _fbCopyFormat)] = old;
+                // bounded: at most 32 spare copies and 16 M pixels (64 MB at 4 bytes per pixel)
+                if (_fbCopies.Count < 32 && _fbCopiesPixels + (long)_fbCopyW * _fbCopyH <= 16L << 20)
+                {
+                    _fbCopies[(_fbCopyW, _fbCopyH, _fbCopyFormat)] = old;
+                    _fbCopiesPixels += (long)_fbCopyW * _fbCopyH;
+                }
                 else
                 {
                     var (oi, ov, om) = old;
@@ -170,6 +176,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             if (_fbCopies.Remove((w, h, _rtAttachFormat), out var cached))
             {
+                _fbCopiesPixels -= (long)w * h;
                 (_fbCopy, _fbCopyView, _fbCopyMem) = cached; // already in GENERAL layout
                 _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
             }
