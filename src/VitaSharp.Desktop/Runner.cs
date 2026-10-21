@@ -147,6 +147,7 @@ public static class Runner
         Sampler? sampler = options.Contains("--profile") || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0) : null;
         if (Opt(options, "--seconds") == null && frameLimit > 0) seconds = 1800; // frames decide; seconds is a safety timeout
         long fpsFrames = 0; double fpsAt = 0;
+        var allocMarks = new List<AllocMark>();
         while (!fatal.Wait(50) && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
             double now = wall.Elapsed.TotalSeconds;
@@ -154,6 +155,7 @@ public static class Runner
             {
                 long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
                 Log.Info($"FPS frame {f}: {(f - fpsFrames) / (now - fpsAt):F1} frames/s");
+                LogAllocWindow(allocMarks, f);
                 fpsFrames = f; fpsAt = now;
             }
             if (emu.ExecRequest != null)
@@ -165,10 +167,36 @@ public static class Runner
         sampler?.Report();
         PrintStats(emu);
         long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+        LogSteadyAllocations(allocMarks, frames);
         emu.Stop();
         Log.Info($"Run finished: {frames} frames in {wall.Elapsed.TotalSeconds:F1} s ({frames / Math.Max(wall.Elapsed.TotalSeconds, 0.001):F1} frames/s)");
         if (dumpDir != null && thumbs != null) WriteContactSheet(dumpDir, thumbs);
         return 0;
+    }
+
+    readonly record struct AllocMark(long Frame, long Bytes, int Gen0, int Gen1, int Gen2);
+
+    static AllocMark TakeAllocMark(long frame) =>
+        new(frame, GC.GetTotalAllocatedBytes(), GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
+
+    /// <summary>ALLOC line: managed allocations since the previous periodic mark (allocation rate per stretch of the run).</summary>
+    static void LogAllocWindow(List<AllocMark> marks, long frame)
+    {
+        var m = TakeAllocMark(frame);
+        if (marks.Count > 0 && marks[^1] is var p && m.Frame > p.Frame)
+            Log.Info($"ALLOC frames {p.Frame}-{m.Frame}: {(m.Bytes - p.Bytes) / 1024.0 / (m.Frame - p.Frame):F1} KB/frame, GC +{m.Gen0 - p.Gen0}/+{m.Gen1 - p.Gen1}/+{m.Gen2 - p.Gen2}, working set {Environment.WorkingSet / 1048576.0:F0} MB");
+        marks.Add(m);
+    }
+
+    /// <summary>PERF line for the second half of the run (boot excluded): the steady-state allocation rate.</summary>
+    static void LogSteadyAllocations(List<AllocMark> marks, long frames)
+    {
+        int i = marks.FindIndex(m => m.Frame >= frames / 2);
+        if (i < 0) return;
+        var p = marks[i];
+        var m = TakeAllocMark(frames);
+        if (m.Frame <= p.Frame) return;
+        Log.Info($"PERF steady allocated (frames {p.Frame}-{m.Frame}): {(m.Bytes - p.Bytes) / 1024.0 / (m.Frame - p.Frame):F1} KB/frame, GC gen0 +{m.Gen0 - p.Gen0} gen1 +{m.Gen1 - p.Gen1} gen2 +{m.Gen2 - p.Gen2}");
     }
 
     /// <summary>Dumped frames as contact sheets (5 per row, 240x136 each, 30 per sheet: sheet.png, sheet_2.png, ...)
