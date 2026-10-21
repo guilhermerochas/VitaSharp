@@ -86,6 +86,7 @@ public sealed class NgsModuleData
     public NgsModuleKind Kind;
     public uint ParamAddr, ParamSize;
     public byte[]? Locked;            // parameters snapshot while the guest edits them (LockParams)
+    public byte[]? LockBuffer;        // reused storage of Locked (games lock and unlock parameters every tick)
     public bool Bypassed;
     public uint Callback, UserData;
     public byte[] GuestState = [];    // visible through sceNgsVoiceGetStateData

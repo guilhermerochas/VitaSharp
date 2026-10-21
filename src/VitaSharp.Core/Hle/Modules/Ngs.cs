@@ -463,7 +463,9 @@ public sealed class Ngs : HleModule
         lock (m.Voice.Rack.System.Lock)
         {
             if (m.Locked != null) return ERROR;
-            m.Locked = m.ParamSize == 0 ? [] : GuestMemory.Span(m.ParamAddr, (int)m.ParamSize).ToArray();
+            if (m.LockBuffer == null || m.LockBuffer.Length != (int)m.ParamSize) m.LockBuffer = new byte[m.ParamSize];
+            if (m.ParamSize != 0) GuestMemory.Span(m.ParamAddr, (int)m.ParamSize).CopyTo(m.LockBuffer);
+            m.Locked = m.LockBuffer;
             if (m.ParamAddr != 0) GuestMemory.W32(m.ParamAddr, paramId);
         }
         GuestMemory.W32(bufferInfo, m.ParamAddr);
