@@ -130,6 +130,12 @@ public sealed class GpuQueue : IDisposable
                     draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
                     if (_drawPool.Count < 16384) _drawPool.Add(draw);
                     break;
+                case SignalCommand signal:
+                    bool deferred = false;
+                    try { lock (_backendLock) deferred = Backend?.DeferSignal(signal.Signal) ?? false; }
+                    catch (Exception e) { Log.Error($"GPU backend signal failed: {e}"); }
+                    if (!deferred) signal.Signal();
+                    break;
                 case EndSceneCommand end:
                     if (end.Notifications.Length > 0 && !end.NotificationsDeferred)
                     {
@@ -150,20 +156,31 @@ public sealed class GpuQueue : IDisposable
         }
     }
 
-    /// <summary>Writes a notification in GPU order (after all previously submitted work).</summary>
-    public void Notify(uint address, uint value)
+    /// <summary>
+    /// Writes a notification in GPU order: after all previously submitted work completed and its results (writebacks,
+    /// visibility results) are in guest memory.
+    /// </summary>
+    public void Notify(uint address, uint value) => Submit(new SignalCommand { Signal = () => SignalNotification(address, value) });
+
+    /// <summary>A sync point the host can wait on: set once all work submitted before it is complete and published.</summary>
+    public sealed class Fence
     {
-        Submit(new CallbackCommand
+        bool _done;
+        public bool Done { get { lock (this) return _done; } }
+        public void Set() { lock (this) { _done = true; Monitor.PulseAll(this); } }
+        /// <summary>Waits until set (or <paramref name="keepWaiting"/> turns false).</summary>
+        public void Wait(Func<bool> keepWaiting)
         {
-            Action = () =>
-            {
-                lock (NotificationLock)
-                {
-                    GuestMemory.W32(address, value);
-                    Monitor.PulseAll(NotificationLock);
-                }
-            },
-        });
+            lock (this)
+                while (!_done && keepWaiting()) Monitor.Wait(this, 50);
+        }
+    }
+
+    public Fence SubmitFence()
+    {
+        var f = new Fence();
+        Submit(new SignalCommand { Signal = f.Set });
+        return f;
     }
 
     public void Dispose()

@@ -62,9 +62,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool DumpPending;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
-        /// <summary>Scene notifications signalled once this frame (and its writebacks) completed.</summary>
-        public readonly List<(uint Address, uint Value)> Notifications = new();
+        /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
+        public readonly List<Action> Signals = new();
         public bool Retired;
+        /// <summary>Submission order (frames retire oldest first so results are published in GPU order).</summary>
+        public long SubmitSeq;
         /// <summary>Occlusion queries of this frame's visibility tests.</summary>
         public VisibilityFrame? Visibility;
     }
@@ -158,6 +160,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence).Ok("vkQueueSubmit");
         f.Recording = false;
         f.Submitted = true;
+        f.SubmitSeq = ++_submitSeq;
         if (present) PresentSwapchain(swapIndex, done);
         _frameIndex = (_frameIndex + 1) % FramesInFlight;
         FrameCount++;
@@ -170,16 +173,46 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void RetireFrame(Frame f)
     {
         if (!f.Submitted || f.Retired) return;
+        // the GPU completes work in submission order: publish older frames' results first
+        foreach (var o in _frames)
+            if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
         _vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue);
         f.Retired = true;
         if (f.Readback is { } rb) WriteDump(f, rb);
         CompleteWritebacks(f);
         CompleteVisibility(f);
-        foreach (var (addr, value) in f.Notifications) GpuQueue.SignalNotification(addr, value);
-        f.Notifications.Clear();
+        foreach (var s in f.Signals) s();
+        f.Signals.Clear();
     }
 
-    bool HasPendingResults(Frame f) => f.Writebacks.Count > 0 || f.Notifications.Count > 0;
+    bool HasPendingResults(Frame f) => f.Writebacks.Count > 0 || f.Signals.Count > 0 || f.Visibility is { Used: > 0 };
+
+    long _submitSeq;
+
+    /// <summary>
+    /// True when GPU results recorded so far (render-target writebacks, visibility test results, deferred
+    /// notifications) are not yet in guest memory. A notification means that all earlier GPU work completed, so a
+    /// scene ending now must not signal before those results are published.
+    /// </summary>
+    bool ResultsPending()
+    {
+        foreach (var f in _frames)
+            if ((f.Recording || (f.Submitted && !f.Retired)) && HasPendingResults(f)) return true;
+        return false;
+    }
+
+    /// <summary>Sync points (notifications, display queue entries) wait for every result recorded before them.</summary>
+    public bool DeferSignal(Action signal)
+    {
+        if (!ResultsPending()) return false;
+        Frame? target = F.Recording ? F : null;
+        if (target == null)
+            foreach (var f in _frames)
+                if (f.Submitted && !f.Retired && (target == null || f.SubmitSeq > target.SubmitSeq)) target = f;
+        if (target == null) return false;
+        target.Signals.Add(signal);
+        return true;
+    }
 
     /// <summary>sceGxmFinish: submit what is recorded and retire every frame in flight.</summary>
     void Finish()
@@ -192,7 +225,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         // keep latency low when the guest stops producing work (loading screens etc.)
         bool resultsRecorded = F.Recording && HasPendingResults(F);
-        if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded)) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+        if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))
+        {
+            if (TraceVis) Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
+            SubmitFrame(false, 0); _drawsSinceSubmit = 0;
+        }
         // the guest may be waiting for results of a submitted frame: publish them now that nothing else is queued
         foreach (var f in _frames)
             if (f.Submitted && !f.Retired && HasPendingResults(f)) RetireFrame(f);
@@ -340,6 +377,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var (k, old) in replaced)
         {
             _renderTargets.Remove(k);
+            if (TraceVis) Log.Info($"[vis] render target 0x{c.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {c.Width}x{c.Height} fmt {c.ColorFormat:X8} present={_presentCount}");
             if (_opt.TraceDrawsFrame == _presentCount + 1 && _opt.ShaderCacheDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
             _mirroredRt.Remove(old);
@@ -460,7 +498,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
-        if (TracingScenes) Log.Info($"[scene] begin rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
+        if (TracingScenes || TraceVis) Log.Info($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
         if (_rt != null) CaptureSceneStart(_rt);
         // MSAA downscale surface: rendered 2x supersampled and box-filtered back (see VulkanRenderer.Msaa.cs)
         _ss = _rt != null && b.Multisample != 0 && b.Color!.Downscale && SupportsSupersample(_rt.Format);
@@ -495,8 +533,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         EndRendering();
         bool writeback = _rt != null && ScheduleWriteback(_rt);
-        // a scene whose pixels the CPU can read back signals its notifications only once they are in memory
-        if (writeback && e.Notifications.Length > 0) { F.Notifications.AddRange(e.Notifications); e.NotificationsDeferred = true; }
+        // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
+        // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
+        // games read occlusion results once the frame's last notification arrived
+        if (e.Notifications.Length > 0 && (writeback || ResultsPending())) { foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(addr, value)); e.NotificationsDeferred = true; }
+        if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;
         _ss = false;

@@ -14,6 +14,12 @@ public interface IGpuBackend : IDisposable
     void Idle() { }
 
     /// <summary>
+    /// Queues <paramref name="signal"/> to run once all work executed so far has completed on the GPU and its results
+    /// are in guest memory. Returns false when nothing is outstanding, so the caller runs it immediately.
+    /// </summary>
+    bool DeferSignal(Action signal) => false;
+
+    /// <summary>
     /// A title is about to start on this backend (called once its id is known, before its first command).
     /// Backends use it to load per-title caches (shaders, pipelines) and warm them up in the background.
     /// </summary>

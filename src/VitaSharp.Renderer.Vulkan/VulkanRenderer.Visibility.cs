@@ -13,6 +13,9 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     const uint VisQueriesPerFrame = 8192;
+    static readonly bool TraceVis = Environment.GetEnvironmentVariable("VITASHARP_TRACE_VIS") == "1";
+    /// <summary>Debug: report every visibility test as passed (VITASHARP_VIS_FORCE=1) to tell culling problems apart.</summary>
+    static readonly bool ForceVisible = Environment.GetEnvironmentVariable("VITASHARP_VIS_FORCE") == "1";
 
     sealed class VisibilityFrame
     {
@@ -74,10 +77,11 @@ public sealed unsafe partial class VulkanRenderer
         {
             var (addr, inc) = v.Queries[i];
             var cur = sums.GetValueOrDefault(addr);
-            sums[addr] = (cur.Samples + results[i], inc);
+            sums[addr] = (cur.Samples + (ForceVisible ? 1u << 16 : results[i]), inc);
         }
         foreach (var (addr, (samples, inc)) in sums)
             GuestMemory.W32(addr, inc ? (uint)Math.Min(samples, uint.MaxValue) : samples > 0 ? 1u : 0u);
+        if (TraceVis) Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key).Select(k => $"{k.Key:X}={k.Value.Samples}")));
         v.Used = 0;
         v.Queries.Clear();
     }

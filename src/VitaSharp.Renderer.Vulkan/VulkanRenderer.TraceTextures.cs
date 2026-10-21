@@ -350,6 +350,23 @@ public sealed unsafe partial class VulkanRenderer
         .Select(s => Convert.ToUInt32(s[3..], 16)).ToHashSet();
 
     readonly List<(int Id, RenderTarget Rt, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _traceSnaps = new();
+    readonly List<(int Id, uint W, uint H, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _depthSnaps = new();
+
+    /// <summary>"src:ADDR" entries: snapshot that surface whenever a draw samples it (id = draw id + 10000).</summary>
+    static readonly HashSet<uint> TraceSnapSampled = TraceSnapSpec.Where(s => s.StartsWith("src:"))
+        .Select(s => Convert.ToUInt32(s[4..], 16)).ToHashSet();
+
+    void TraceSampledSnapshot(RenderTarget rt)
+    {
+        if (!TracingThisFrame || !TraceSnapSampled.Contains(rt.Address)) return;
+        int bpp = HostBytesPerPixel(rt.Format);
+        if (bpp != 4 && bpp != 8) return;
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        EndRendering();
+        var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
+        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+        _traceSnaps.Add((_drawSerial + 10000, rt, buf, mem, ptr));
+    }
 
     void TraceSnapshot()
     {
@@ -364,6 +381,17 @@ public sealed unsafe partial class VulkanRenderer
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
         _traceSnaps.Add((_drawSerial, rt, buf, mem, ptr));
+        if (_depth != null && _core.DepthFormat == Format.D24UnormS8Uint)
+        {
+            var dt = _depth;
+            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit);
+            const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+            Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit, AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
+            var dregion = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1), ImageExtent = new Extent3D(dt.Width, dt.Height, 1) };
+            _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, dbuf, 1, in dregion);
+            Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds, PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+            _depthSnaps.Add((_drawSerial, dt.Width, dt.Height, dbuf, dmem, dptr));
+        }
     }
 
     /// <summary>Writes the snapshots (called after the traced frame completed on the GPU).</summary>
@@ -390,5 +418,18 @@ public sealed unsafe partial class VulkanRenderer
             _core.DestroyBuffer(buf, mem);
         }
         _traceSnaps.Clear();
+        foreach (var (id, w, h, buf, mem, ptr) in _depthSnaps)
+        {
+            int n = (int)(w * h);
+            var img = new byte[n * 4];
+            for (int i = 0; i < n; i++)
+            {
+                uint v = ((uint*)ptr)[i] & 0xFFFFFF;
+                img[i * 4] = (byte)(v >> 16); img[i * 4 + 1] = (byte)(v >> 8); img[i * 4 + 2] = (byte)v; img[i * 4 + 3] = 255;
+            }
+            Png.Write(Path.Combine(dir, $"depth_{id:D4}.png"), img, (int)w, (int)h);
+            _core.DestroyBuffer(buf, mem);
+        }
+        _depthSnaps.Clear();
     }
 }
