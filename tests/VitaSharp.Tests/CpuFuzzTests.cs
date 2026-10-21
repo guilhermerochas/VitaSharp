@@ -78,6 +78,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     [UnicornTheory]
     [InlineData(false, 30_000, 1)]
     [InlineData(true, 30_000, 2)]
+    [Trait("Category", "Slow")]
     public void FuzzAgainstUnicorn(bool thumb, int iterations, int seed) => Fuzz(thumb, iterations, seed, null);
 
     /// <summary>
@@ -89,6 +90,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     [InlineData(true, 40_000, 12, false)]
     // anyFpscr = true also runs with flush-to-zero / default NaN off and other rounding modes: not modelled for VFP
     // arithmetic (games run with the Vita default FPSCR: round to nearest, FZ, DN), so it is a manual diagnostic only
+    [Trait("Category", "Slow")]
     public void FuzzSimdAgainstUnicorn(bool thumb, int iterations, int seed, bool anyFpscr) => Fuzz(thumb, iterations, seed, null, simd: true, anyFpscr: anyFpscr);
 
     internal static uint RandomSimdInstruction(Random rng, bool thumb)
