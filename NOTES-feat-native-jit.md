@@ -141,6 +141,29 @@ half/fixed-point conversions are callouts.
   with VITASHARP_NATIVE_NOLINK.
 - Game runs and performance: see "Performance" below (latest batch).
 
+## Performance (final batch, commit 3320ff1 + main cf72b18, Windows x64, 8 logical CPUs)
+Each game ran once with `--cpu=native` and once with `--cpu=il`, back to back, one emulator at a time, private shader
+cache. Other agents were using the machine at the same time, so treat single-digit differences as noise; CPU times
+are process/thread CPU time per presented frame from the PERF lines.
+
+| Game (scenario) | fps native / IL | process CPU ms/frame native / IL | busiest guest thread ms/frame native / IL |
+|---|---|---|---|
+| Devious Dungeon (dd_boot, 60 s) | 51.6 / 43.5 | 11.6 / 20.3 (-43%) | Unity main 4.74 / 11.70 (-59%) |
+| Sonic Mania (mania_boot) | 47.4 / 44.5 | 9.6 / 15.5 (-38%) | main 4.85 / 7.42 (-35%); pthread 1.99 / 4.28 (-54%) |
+| Uncharted (uc_walk) | 34.6 / 34.0 | 23.1 / 34.0 (-32%) | main 7.23 / 13.02 (-44%); workers 2.8 / 4.0 (-30%) |
+| Killzone (kzl_walk3, 10,500 frames) | 24.2 / 22.4 | 80.4 / 101.3 (-21%) | main 30.4 / 33.9 (-10%); job threads 8.2-9.1 / 10.4-11.6 (-21%) |
+| F1 2011 (f1_trees_lod) | 38.3 / 35.9 | 17.1 / 31.0 (-45%) | main 7.90 / 20.63 (-62%) |
+| God of War (gow_play) | 59.1 / 59.1 (vsync) | 2.2 / 2.3 | main 0.26 / 0.46 (-43%) |
+
+fps is mostly capped (vsync/pacing at 30/60) or GPU-bound, so the gain shows as CPU time. Killzone's long walk: no
+deaths/limbo (no black frames after gameplay starts; player alive at frame 10,500, see
+`C:\Users\guisa\VitaSharp\.vitadata\tests\nj_b3_kzl_walk3_native\sheet_35.png`), 0 crashes.
+Remaining Killzone/Uncharted cost is NEON callouts (~470-480M executed per run: three-same forms outside the inline
+subset, two-register misc, scalar-by-element, VEXT, shifts) — next step 1.
+
+Earlier batch (before LDREX/STREX and NEON inline): Killzone's long walk ran at 5.4 fps natively (180M exclusive
+callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the exclusive/NEON work fixed.
+
 ## Debugging knobs
 - `--cpu=native|il|interp`, `VITASHARP_CPU`, launcher Settings > CPU.
 - `VITASHARP_NATIVE_DUMP=1`: IR + disassembly of every compiled block (stderr).
