@@ -108,11 +108,39 @@ public sealed unsafe class MediaPlayer : IDisposable
         lock (_lock)
         {
             VideoFrame? f = null;
-            while (_videoQueue.Count > 0 && _videoQueue.Peek().TimeUs <= clockUs) f = _videoQueue.Dequeue();
+            while (_videoQueue.Count > 0 && _videoQueue.Peek().TimeUs <= clockUs)
+            {
+                if (f != null) ReturnBuffer(_freeNv12, f.Nv12); // dropped late frame
+                f = _videoQueue.Dequeue();
+            }
             if (f != null) Monitor.PulseAll(_lock);
             return f;
         }
     }
+
+    // decoded planes/samples handed back by the consumer once copied out (no garbage per video frame or audio chunk);
+    // guarded by _lock, at most a few of each are kept
+    readonly Stack<byte[]> _freeNv12 = new();
+    readonly Stack<short[]> _freeSamples = new();
+
+    T[] RentBuffer<T>(Stack<T[]> free, int length)
+    {
+        lock (_lock)
+            while (free.Count > 0)
+                if (free.Pop() is var a && a.Length == length) return a; // buffers of another size are dropped
+        return new T[length];
+    }
+
+    void ReturnBuffer<T>(Stack<T[]> free, T[] buffer)
+    {
+        lock (_lock) if (free.Count < 4) free.Push(buffer);
+    }
+
+    /// <summary>The frame's planes were copied out and are not read again: reuse them for a later frame.</summary>
+    public void Recycle(VideoFrame f) => ReturnBuffer(_freeNv12, f.Nv12);
+
+    /// <summary>The chunk's samples were copied out and are not read again.</summary>
+    public void Recycle(AudioChunk c) => ReturnBuffer(_freeSamples, c.Samples);
 
     public AudioChunk? TakeAudio()
     {
@@ -234,7 +262,7 @@ public sealed unsafe class MediaPlayer : IDisposable
     void PushVideo(AVFrame* f)
     {
         int w = f->width & ~1, h = f->height & ~1;
-        var nv12 = new byte[w * h * 3 / 2];
+        var nv12 = RentBuffer(_freeNv12, w * h * 3 / 2);
         var fmt = (AVPixelFormat)f->format;
         fixed (byte* dst = nv12)
         {
@@ -276,7 +304,7 @@ public sealed unsafe class MediaPlayer : IDisposable
     {
         int ch = f->ch_layout.nb_channels, n = f->nb_samples;
         if (ch <= 0 || n <= 0) return;
-        var outS = new short[n * ch];
+        var outS = RentBuffer(_freeSamples, n * ch);
         var fmt = (AVSampleFormat)f->format;
         bool planar = ffmpeg.av_sample_fmt_is_planar(fmt) != 0;
         for (int c = 0; c < ch; c++)

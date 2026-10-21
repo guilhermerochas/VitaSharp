@@ -249,7 +249,10 @@ public sealed class SystemGesture : HleModule
             if (!_recognizers.TryGetValue(rec, out var r)) return ERR_INVALID_ARG;
             r.Events.Clear();
             r.UpdatedTime = _now;
-            var mine = _primitives.Where(p => p.Port == r.Port).ToList();
+            // reused scratch list (updated every frame per recognizer; no LINQ garbage)
+            var mine = _mine;
+            mine.Clear();
+            foreach (var p in _primitives) if (p.Port == r.Port) mine.Add(p);
             switch (r.Type)
             {
                 case TYPE_TAP: UpdateTap(r, mine); break;
@@ -259,6 +262,22 @@ public sealed class SystemGesture : HleModule
             }
         }
         return 0;
+    }
+
+    readonly List<Primitive> _mine = new(), _live = new();
+    readonly List<ushort> _staleTracks = new();
+
+    /// <summary>Forgets tracks whose primitive is gone (same as removing every key with no matching primitive).</summary>
+    void RemoveStaleTracks(Recognizer r, List<Primitive> prims)
+    {
+        _staleTracks.Clear();
+        foreach (var k in r.Tracks.Keys)
+        {
+            bool found = false;
+            foreach (var p in prims) if (p.Id == k) { found = true; break; }
+            if (!found) _staleTracks.Add(k);
+        }
+        foreach (var k in _staleTracks) r.Tracks.Remove(k);
     }
 
     void UpdateTap(Recognizer r, List<Primitive> prims)
@@ -309,7 +328,7 @@ public sealed class SystemGesture : HleModule
             V2(e, 34, p.PressX, p.PressY);
             if (t.State == STATE_END) r.Tracks.Remove(p.Id); else r.Tracks[p.Id] = t;
         }
-        foreach (var id in r.Tracks.Keys.Where(k => prims.All(p => p.Id != k)).ToList()) r.Tracks.Remove(id);
+        RemoveStaleTracks(r, prims);
     }
 
     void UpdateHold(Recognizer r, List<Primitive> prims)
@@ -330,12 +349,14 @@ public sealed class SystemGesture : HleModule
             V2(e, 26, p.PressX, p.PressY);
             if (t.State == STATE_END) r.Tracks[p.Id] = (STATE_END, t.Begin, t.EventId); else r.Tracks[p.Id] = t;
         }
-        foreach (var id in r.Tracks.Keys.Where(k => prims.All(p => p.Id != k)).ToList()) r.Tracks.Remove(id);
+        RemoveStaleTracks(r, prims);
     }
 
     void UpdatePinch(Recognizer r, List<Primitive> prims)
     {
-        var live = prims.Where(p => Inside(r, p.PressX, p.PressY)).Take(2).ToList();
+        var live = _live; // first two primitives pressed inside the recognizer (reused list)
+        live.Clear();
+        foreach (var p in prims) { if (live.Count == 2) break; if (Inside(r, p.PressX, p.PressY)) live.Add(p); }
         if (live.Count < 2)
         {
             if (r.PinchActive)
@@ -354,7 +375,7 @@ public sealed class SystemGesture : HleModule
             r.PinchStartDist = Math.Max(dist, 1);
             state = STATE_BEGIN;
         }
-        else state = live.Any(p => p.State == STATE_END) ? STATE_END : STATE_ACTIVE;
+        else state = live[0].State == STATE_END || live[1].State == STATE_END ? STATE_END : STATE_ACTIVE;
         var e = NewEvent(r, r.PinchEventId, state);
         BitConverter.TryWriteBytes(e.AsSpan(24), dist / r.PinchStartDist);
         for (int i = 0; i < 2; i++)

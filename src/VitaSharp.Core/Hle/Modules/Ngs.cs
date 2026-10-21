@@ -463,7 +463,9 @@ public sealed class Ngs : HleModule
         lock (m.Voice.Rack.System.Lock)
         {
             if (m.Locked != null) return ERROR;
-            m.Locked = m.ParamSize == 0 ? [] : GuestMemory.Span(m.ParamAddr, (int)m.ParamSize).ToArray();
+            if (m.LockBuffer == null || m.LockBuffer.Length != (int)m.ParamSize) m.LockBuffer = new byte[m.ParamSize];
+            if (m.ParamSize != 0) GuestMemory.Span(m.ParamAddr, (int)m.ParamSize).CopyTo(m.LockBuffer);
+            m.Locked = m.LockBuffer;
             if (m.ParamAddr != 0) GuestMemory.W32(m.ParamAddr, paramId);
         }
         GuestMemory.W32(bufferInfo, m.ParamAddr);
@@ -715,7 +717,26 @@ public sealed class Ngs : HleModule
         if (!_systems.TryGetValue(system, out var s)) return INVALID_HANDLE;
         lock (s.Lock)
         {
-            var queue = s.Queue.ToArray();
+            // snapshot (voices may leave the queue while it runs) into a reused buffer; a nested update gets its own
+            int n = s.Queue.Count;
+            NgsVoice[] buf;
+            if (s.UpdateDepth == 0)
+            {
+                if (s.UpdateSnapshot.Length < n) s.UpdateSnapshot = new NgsVoice[Math.Max(n, s.UpdateSnapshot.Length * 2)];
+                buf = s.UpdateSnapshot;
+            }
+            else buf = new NgsVoice[n];
+            s.Queue.CopyTo(buf);
+            s.UpdateDepth++;
+            try { Update(new ReadOnlySpan<NgsVoice>(buf, 0, n)); }
+            finally { s.UpdateDepth--; }
+        }
+        return OK;
+    }
+
+    void Update(ReadOnlySpan<NgsVoice> queue)
+    {
+        {
             foreach (var v in queue) Array.Clear(v.Input);
             foreach (var v in queue)
             {
@@ -742,16 +763,21 @@ public sealed class Ngs : HleModule
                 v.FrameCount++;
             }
         }
-        return OK;
     }
 
-    static void Deliver(NgsVoice v, NgsVoice[] queue)
+    static bool Contains(ReadOnlySpan<NgsVoice> queue, NgsVoice voice)
+    {
+        foreach (var q in queue) if (ReferenceEquals(q, voice)) return true;
+        return false;
+    }
+
+    static void Deliver(NgsVoice v, ReadOnlySpan<NgsVoice> queue)
     {
         var src = v.Product!;
         int g = v.Rack.System.Granularity;
         foreach (var p in v.Patches[0])
         {
-            if (p is not { Active: true } || Array.IndexOf(queue, p.Dest) < 0) continue;
+            if (p is not { Active: true } || !Contains(queue, p.Dest)) continue;
             var dst = p.Dest.Input;
             float m00 = p.Volume[0, 0], m01 = p.Volume[0, 1], m10 = p.Volume[1, 0], m11 = p.Volume[1, 1];
             if (v.Rack.ChannelsPerVoice == 1) { m10 = 0; m11 = 0; }
@@ -1024,14 +1050,14 @@ public sealed class Ngs : HleModule
                 InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_DECODE_ERROR, GetState(m, 0), buf);
                 continue;
             }
-            var pcm = new float[Math.Max(count, 0) * 2];
+            var pcm = st.DecodeBuffer(Math.Max(count, 0) * 2); // reused scratch: one superframe per call
             for (int i = 0; i < count; i++)
             {
                 float l = st.At9Out![0][start + i] / 32768f;
                 pcm[i * 2] = l;
                 pcm[i * 2 + 1] = st.At9Out.Length > 1 ? st.At9Out[1][start + i] / 32768f : l;
             }
-            st.Push(pcm, ratio);
+            st.Push(pcm.AsSpan(0, Math.Max(count, 0) * 2), ratio);
             SetState(m, 12, GetState(m, 12) + sfBytes);
             SetState(m, 20, GetState(m, 20) + sfBytes);
             int ch = Math.Max(1, (int)m.ParamI8(88));

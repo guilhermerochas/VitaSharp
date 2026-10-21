@@ -40,10 +40,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Fills the header of every mapped slot in <paramref name="data"/> and returns the stage's mapped-memory binding.</summary>
-    DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, byte[] data, int dataLength, uint[] addrs)
+    DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs)
     {
         var dummy = new DescriptorBufferInfo(_dummyBuffer, 0, 256);
-        if (dataLength == 0 || addrs.Length == 0) return dummy;
+        if (data.Length == 0 || addrs.Length == 0) return dummy;
         bool anyMapped = false;
         foreach (var s in slots) if (s.Mapped) { anyMapped = true; break; }
         if (!anyMapped) return dummy;
@@ -100,10 +100,10 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
     }
 
-    static void WriteHeader(byte[] data, UniformBufferSlot s, uint offset)
+    static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
     {
         if (s.ByteOffset + 4 <= data.Length)
-            BitConverter.TryWriteBytes(data.AsSpan(s.ByteOffset), ShaderGenerator.MappedFlag | offset);
+            BitConverter.TryWriteBytes(data[s.ByteOffset..], ShaderGenerator.MappedFlag | offset);
     }
 
     RenderTarget? RenderTargetContaining(uint addr)

@@ -57,13 +57,20 @@ public sealed class NpManager : HleModule
         return 0;
     }
 
+    // shared empty results of the per-frame poll (never modified)
+    static readonly List<(uint Func, uint Arg, bool Notified)> NoPending = [];
+    static readonly List<(int Id, uint Cb, uint Arg)> NoDone = [];
+
     [Hle]
     int sceNpCheckCallback()
     {
         List<(uint Func, uint Arg, bool Notified)> pending;
         lock (_npCallbacks)
         {
-            pending = _npCallbacks.Where(c => !c.Notified).ToList();
+            // polled every frame: only build the lists when something is pending
+            bool anyPending = false;
+            foreach (var c in _npCallbacks) if (!c.Notified) { anyPending = true; break; }
+            pending = anyPending ? _npCallbacks.Where(c => !c.Notified).ToList() : NoPending;
             for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
         }
         foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NP_STATE_SIGNED_OUT, 0, c.Arg);
@@ -72,7 +79,9 @@ public sealed class NpManager : HleModule
         List<(int Id, uint Cb, uint Arg)> done;
         lock (_authReqs)
         {
-            done = _authReqs.Where(kv => !kv.Value.Done && !kv.Value.Aborted && kv.Value.Cb != 0)
+            bool anyDone = false;
+            foreach (var r in _authReqs.Values) if (!r.Done && !r.Aborted && r.Cb != 0) { anyDone = true; break; }
+            done = !anyDone ? NoDone : _authReqs.Where(kv => !kv.Value.Done && !kv.Value.Aborted && kv.Value.Cb != 0)
                 .Select(kv => (kv.Key, kv.Value.Cb, kv.Value.Arg)).ToList();
             foreach (var d in done) _authReqs[d.Id].Done = true;
         }

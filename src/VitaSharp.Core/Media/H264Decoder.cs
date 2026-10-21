@@ -71,19 +71,32 @@ public sealed unsafe class H264Decoder : IDisposable
 
     public DecodedPicture? Take() => _ready.Count > 0 ? _ready.Dequeue() : null;
 
+    /// <summary>Pictures the caller is done with; their planes are reused by later frames of the same size.</summary>
+    readonly Stack<DecodedPicture> _free = new();
+
+    /// <summary>Hands a picture from <see cref="Take"/> back once its planes were consumed (no garbage per video frame).</summary>
+    public void Recycle(DecodedPicture p) { if (_free.Count < 4) _free.Push(p); }
+
+    DecodedPicture RentPicture(int w, int h, int cw, int ch)
+    {
+        while (_free.Count > 0)
+        {
+            var p = _free.Pop();
+            if (p.Y.Length == w * h && p.U.Length == cw * ch) return p; // other sizes are dropped
+        }
+        return new DecodedPicture { Y = new byte[w * h], U = new byte[cw * ch], V = new byte[cw * ch] };
+    }
+
     void Receive()
     {
         while (ffmpeg.avcodec_receive_frame(_ctx, _frame) == 0)
         {
             int w = _frame->width, h = _frame->height, cw = (w + 1) / 2, ch = (h + 1) / 2;
-            var p = new DecodedPicture
-            {
-                Width = w, Height = h, Pts = _frame->pts,
-                Y = new byte[w * h], U = new byte[cw * ch], V = new byte[cw * ch],
-                FullRange = _frame->color_range == AVColorRange.AVCOL_RANGE_JPEG
-                            || (AVPixelFormat)_frame->format == AVPixelFormat.AV_PIX_FMT_YUVJ420P,
-                Bt709 = _frame->colorspace == AVColorSpace.AVCOL_SPC_BT709,
-            };
+            var p = RentPicture(w, h, cw, ch);
+            p.Width = w; p.Height = h; p.Pts = _frame->pts;
+            p.FullRange = _frame->color_range == AVColorRange.AVCOL_RANGE_JPEG
+                            || (AVPixelFormat)_frame->format == AVPixelFormat.AV_PIX_FMT_YUVJ420P;
+            p.Bt709 = _frame->colorspace == AVColorSpace.AVCOL_SPC_BT709;
             Copy(_frame->data[0], _frame->linesize[0], p.Y, w, h);
             if ((AVPixelFormat)_frame->format == AVPixelFormat.AV_PIX_FMT_NV12)
             {

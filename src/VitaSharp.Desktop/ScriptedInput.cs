@@ -80,4 +80,13 @@ sealed class ScriptedInput : IInputBackend
             if (s.Kind == kind && Active(s)) return [new TouchPoint(back ? 2 : 1, s.X, s.Y)];
         return [];
     }
+
+    public int GetTouches(bool back, Span<TouchPoint> dest)
+    {
+        var kind = back ? Kind.BackTap : Kind.Tap;
+        if (dest.Length == 0) return 0;
+        foreach (var s in _steps)
+            if (s.Kind == kind && Active(s)) { dest[0] = new TouchPoint(back ? 2 : 1, s.X, s.Y); return 1; }
+        return 0;
+    }
 }

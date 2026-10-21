@@ -286,7 +286,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         }
         else
         {
-            Log.WarnOnce($"nid{f.Nid}", $"Unimplemented HLE function {f.Library}::{f.Name} (NID 0x{f.Nid:X8}) called from 0x{s->R[14]:X8}");
+            if (!f.WarnedUnimplemented) { f.WarnedUnimplemented = true; Log.WarnOnce($"nid{f.Nid}", $"Unimplemented HLE function {f.Library}::{f.Name} (NID 0x{f.Nid:X8}) called from 0x{s->R[14]:X8}"); }
             s->R[0] = 0;
         }
         // The stub's next instruction is "bx lr": return directly.
@@ -294,7 +294,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     }
 
     /// <summary>Calls a guest function on this (current) thread and returns R0. Re-entrant.</summary>
-    public uint CallGuest(uint addr, params uint[] args)
+    public uint CallGuest(uint addr, params ReadOnlySpan<uint> args)
     {
         var s = Core.State;
         CpuState saved = *s;
