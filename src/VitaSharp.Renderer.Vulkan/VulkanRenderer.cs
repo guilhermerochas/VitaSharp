@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
@@ -294,6 +294,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public ComponentMapping SampledSwizzle;
         public bool SampledGamma;
         public ImageView SrgbView;    // attachment view for scenes with surface gamma
+        public ImageView RawView;     // integer attachment view for raw-bit fragment outputs (see RawAttachmentView)
         public ImageMemoryPool.Allocation Mem;
         public bool Dirty;            // written since the last read barrier
         public long Version;          // bumped whenever the contents change
@@ -403,6 +404,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.DestroyImageView(_dev, rt.View, null);
             if (rt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, rt.SampledView, null);
             if (rt.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, rt.SrgbView, null);
+            if (rt.RawView.Handle != 0) _vk.DestroyImageView(_dev, rt.RawView, null);
             _vk.DestroyImage(_dev, rt.Image, null);
             _imagePool.Free(rt.Mem);
         });
@@ -544,13 +546,48 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _msaaNoDownscale = false;
     }
 
+    /// <summary>The current rendering writes through the surface's integer view (raw-bit fragment outputs).</summary>
+    bool _renderRaw;
+
+    /// <summary>
+    /// Integer format with the same texel layout as a colour surface's host format, used to write raw register bits
+    /// (<see cref="GeneratedShader.RawColorBits"/>) exactly: through a float attachment the host GPU converts the
+    /// values, canonicalising NaNs and flushing denormals, which corrupts packed data. Undefined when there is none
+    /// for raw components of <paramref name="bits"/> bits.
+    /// </summary>
+    static Format RawAttachmentFormat(Format f, int bits) => (f, bits) switch
+    {
+        (Format.R16G16B16A16Sfloat, 16) => Format.R16G16B16A16Uint,
+        (Format.R16G16Sfloat, 16) => Format.R16G16Uint,
+        (Format.R32G32Sfloat, 32) => Format.R32G32Uint,
+        (Format.R32Sfloat, 32) => Format.R32Uint,
+        (Format.R8G8B8A8Unorm, 8) => Format.R8G8B8A8Uint,
+        _ => Format.Undefined,
+    };
+
+    /// <summary>Integer view of the render target (or of its supersampled image) for raw-bit outputs.</summary>
+    ImageView RawAttachmentView(RenderTarget rt)
+    {
+        var format = _rawFormat;
+        if (_ss)
+        {
+            var ss = GetSupersampleImage(rt);
+            if (ss.RawView.Handle == 0) ss.RawView = CreateView(ss.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
+            return ss.RawView;
+        }
+        if (rt.RawView.Handle == 0) rt.RawView = CreateView(rt.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
+        return rt.RawView;
+    }
+
+    Format _rawFormat;
+
     void BeginRendering()
     {
         if (_rendering || !_inScene) return;
         var color = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
-            ImageView = _rt == null ? default : _ss ? SupersampleView(_rt) : _rtGamma ? _rt.SrgbView : _rt.View,
+            ImageView = _rt == null ? default : _renderRaw ? RawAttachmentView(_rt) : _ss ? SupersampleView(_rt) : _rtGamma ? _rt.SrgbView : _rt.View,
             ImageLayout = ImageLayout.General,
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
@@ -906,6 +943,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.DestroyImageView(_dev, rt.View, null);
             if (rt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, rt.SampledView, null);
             if (rt.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, rt.SrgbView, null);
+            if (rt.RawView.Handle != 0) _vk.DestroyImageView(_dev, rt.RawView, null);
             _vk.DestroyImage(_dev, rt.Image, null);
         }
         foreach (var d in _depthTargets.Values)

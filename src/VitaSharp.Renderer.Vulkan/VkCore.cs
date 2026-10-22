@@ -344,6 +344,13 @@ public sealed unsafe class VkCore : IDisposable
         return (props.OptimalTilingFeatures & FormatFeatureFlags.ColorAttachmentBlendBit) != 0;
     }
 
+    /// <summary>Colour attachment without blending (integer formats never blend).</summary>
+    public bool SupportsUnblendedColorAttachment(Format f)
+    {
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        return (props.OptimalTilingFeatures & FormatFeatureFlags.ColorAttachmentBit) != 0;
+    }
+
     public uint FindMemoryType(uint typeBits, MemoryPropertyFlags flags)
     {
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)

@@ -22,6 +22,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         public Image Image;
         public ImageView View, SrgbView;
+        public ImageView RawView;     // integer view for raw-bit fragment outputs (see RawAttachmentView)
         public ImageMemoryPool.Allocation Mem;
         public uint Width, Height;
     }
@@ -86,6 +87,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             _vk.DestroyImageView(_dev, ss.View, null);
             if (ss.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, ss.SrgbView, null);
+            if (ss.RawView.Handle != 0) _vk.DestroyImageView(_dev, ss.RawView, null);
             _vk.DestroyImage(_dev, ss.Image, null);
             _imagePool.Free(ss.Mem);
         });

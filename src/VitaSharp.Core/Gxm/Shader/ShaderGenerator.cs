@@ -47,6 +47,12 @@ public sealed class GeneratedShader
     public List<(uint Unit, bool IsCube)> Textures { get; } = new();
     public bool UsesFragColor { get; set; }
     public bool WritesDepth { get; set; }
+    /// <summary>
+    /// Non-zero when the fragment program writes raw register bits (see <see cref="ShaderGenerator.RawOutputBits"/>):
+    /// the colour output is a uvec4 of unsigned components of this many bits, laid out like the surface's own
+    /// components, and must be rendered through an integer view of the surface so no float conversion touches it.
+    /// </summary>
+    public int RawColorBits { get; set; }
     public HashSet<string> Warnings { get; set; } = new();
 }
 
@@ -64,7 +70,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 5;
+    public const int GeneratorVersion = 6;
 
     /// <summary>
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
@@ -332,6 +338,7 @@ float packC10(vec3 c) {
             UniformBytes = result.UniformBytes,
             UsesFragColor = result.UsesFragColor,
             WritesDepth = result.WritesDepth,
+            RawColorBits = result.RawColorBits,
             Warnings = result.Warnings,
         }.CopyLists(result);
     }
@@ -557,10 +564,36 @@ float packC10(vec3 c) {
         color.Type = OutputType(program, hints);
         int regOff = 0;
         if (!program.IsNativeColor && (byte)program.OutputParamType == 1) regOff = program.FragmentOutputStart;
-        var v = t.Load(color, 0xF, regOff);
-        if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
-        decl.AppendLine("layout(location = 0) out vec4 out_color;");
-        t.Line($"out_color = {v.E};");
+        int rawBits = RawOutputBits(program, hints.ColorFormat);
+        if (rawBits != 0)
+        {
+            // raw register bits: written through an integer view of the surface (exact bits, no float conversion)
+            result.RawColorBits = rawBits;
+            var words = Operand.Make(0);
+            words.Bank = color.Bank;
+            words.Num = 0;
+            words.Type = DataType.UInt32;
+            int count = program.OutputCompCount;
+            var w = t.Load(words, (1 << count) - 1, regOff);
+            decl.AppendLine("layout(location = 0) out uvec4 out_raw;");
+            decl.AppendLine("vec4 out_color;"); // debug overrides below assign it (re-packed as halves into out_raw)
+            t.Line($"uvec4 raw_words = uvec4({w.E}{string.Concat(Enumerable.Repeat(", 0u", 4 - count))});");
+            t.Line(rawBits switch
+            {
+                32 => "out_raw = raw_words;",
+                16 => "out_raw = uvec4(raw_words.x & 0xFFFFu, raw_words.x >> 16, raw_words.y & 0xFFFFu, raw_words.y >> 16);",
+                _ => "out_raw = uvec4(raw_words.x & 0xFFu, (raw_words.x >> 8) & 0xFFu, (raw_words.x >> 16) & 0xFFu, raw_words.x >> 24);",
+            });
+            t.Line("out_color = vec4(0.0);");
+        }
+        else
+        {
+            var v = t.Load(color, 0xF, regOff);
+            if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
+            decl.AppendLine("layout(location = 0) out vec4 out_color;");
+            t.Line($"out_color = {v.E};");
+        }
+        int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
         // shader math, to tell texture/coordinate problems from lighting/fog problems
         if (DebugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
@@ -574,6 +607,41 @@ float packC10(vec3 c) {
         // VITASHARP_DEBUG_TEX0=id: every pixel shows the number of the draw that wrote it, 4 bits per channel (R low, G mid, B high), so it survives packed float targets
         if (DebugId)
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
+        // a debug override replaced the colour of a raw-output program: store it as the surface's halves/bytes/floats
+        if (rawBits != 0 && t.Body.Length != bodyLength)
+            t.Line(rawBits switch
+            {
+                32 => "out_raw = floatBitsToUint(out_color);",
+                16 => "out_raw = uvec4(packHalf2x16(out_color.xy) & 0xFFFFu, packHalf2x16(out_color.xy) >> 16, packHalf2x16(out_color.zw) & 0xFFFFu, packHalf2x16(out_color.zw) >> 16);",
+                _ => "out_raw = uvec4(round(clamp(out_color, 0.0, 1.0) * 255.0));",
+            });
+    }
+
+    /// <summary>
+    /// Bits per unsigned component of a fragment program's raw colour output, or 0 when its output is converted.
+    /// A U32/S32 output parameter means the program wrote the registers' raw contents (e.g. VPCK-packed RGBA8 words);
+    /// when those registers exactly fill one pixel of the colour surface the hardware stores them unconverted.
+    /// Resistance: Burning Skies packs two RGBA8 G-buffer words into a 64-bit F16F16F16F16 surface and samples them
+    /// back as U8U8U8U8: written as halves through a float attachment, packed bytes that form half NaNs/denormals
+    /// (alpha 0xFF, normal components near 0x80) were canonicalised or flushed by the host GPU. The renderer writes
+    /// such outputs through an integer view with components of this size (the surface's own component layout).
+    /// Surfaces with a component swizzle or a host layout that differs from the guest are left to the float path.
+    /// </summary>
+    public static int RawOutputBits(GxpProgram program, uint colorFormat)
+    {
+        var type = GxpProgram.StoreType(program.OutputParamType);
+        if (type is not (DataType.Int32 or DataType.UInt32)) return 0;
+        if (((colorFormat >> 20) & 3) != 0 && (colorFormat & 0xF1800000) is 0x00000000 or 0x01000000) return 0; // swizzled
+        var (bits, bytes) = (colorFormat & 0xF1800000) switch
+        {
+            0x01000000 => (16, 8), // F16F16F16F16
+            0x00800000 => (16, 4), // F16F16
+            0x11000000 => (32, 8), // F32F32
+            0x10800000 => (32, 4), // F32
+            0x00000000 => (8, 4),  // U8U8U8U8
+            _ => (0, 0),
+        };
+        return bits != 0 && program.OutputCompCount * 4 == bytes ? bits : 0;
     }
 
     static readonly bool DebugTex0 = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") is "1" or "uv" or "alpha" or "lod";

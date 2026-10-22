@@ -26,8 +26,9 @@ public sealed unsafe partial class VulkanRenderer
     /// <remarks>2: version 1 lists could hold vertex layouts built from shader-pack metadata that had lost the raw
     /// (register-format) attribute sizes, i.e. normalised/float fetches where the shader expects raw integers.</remarks>
     const uint PipelineFormatVersion = 2;
-    /// <summary>Bump when the shader-pack record layout changes (2: vertex inputs carry the raw attribute size/count).</summary>
-    const uint ShaderPackFormatVersion = 2;
+    /// <summary>Bump when the shader-pack record layout changes (2: vertex inputs carry the raw attribute size/count;
+    /// 3: the flags carry the raw colour output component size).</summary>
+    const uint ShaderPackFormatVersion = 3;
     const uint VkCacheMagic = 0x43505356; // "VSPC"
     const uint VkCacheFormatVersion = 1;
     const int VkCacheHeaderSize = 48;
@@ -117,7 +118,8 @@ public sealed unsafe partial class VulkanRenderer
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }
 
-    // record: flags u8 (vertex, uses frag colour, writes depth, attribute fallback), input count u16,
+    // record: flags u8 (vertex, uses frag colour, writes depth, attribute fallback, bits 4-5 raw colour output size:
+    // 0 none, 1 = 8, 2 = 16, 3 = 32 bits), input count u16,
     // inputs (reg u32, location i32, kind u16, components i32, location count i32, raw size i32, raw components i32),
     // then the SPIR-V. Every VertexInputInfo field must round-trip: BuildVertexInput derives the Vulkan vertex formats
     // from them, and a lost raw size turns a raw U8/U16 register-format fetch into a normalised/float one (garbage
@@ -130,7 +132,8 @@ public sealed unsafe partial class VulkanRenderer
         if (pack == null) return;
         int n = gen.VertexInputs.Count;
         var buf = new byte[3 + n * InputRecordSize + spv.Length];
-        buf[0] = (byte)((gen.IsVertex ? 1 : 0) | (gen.UsesFragColor ? 2 : 0) | (gen.WritesDepth ? 4 : 0) | (gen.AttributeFallback ? 8 : 0));
+        buf[0] = (byte)((gen.IsVertex ? 1 : 0) | (gen.UsesFragColor ? 2 : 0) | (gen.WritesDepth ? 4 : 0) | (gen.AttributeFallback ? 8 : 0)
+            | (gen.RawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 4);
         BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)n);
         int o = 3;
         foreach (var vi in gen.VertexInputs)
@@ -167,6 +170,7 @@ public sealed unsafe partial class VulkanRenderer
             UsesFragColor = (flags & 2) != 0,
             WritesDepth = (flags & 4) != 0,
             AttributeFallback = (flags & 8) != 0,
+            RawColorBits = ((flags >> 4) & 3) switch { 1 => 8, 2 => 16, 3 => 32, _ => 0 },
         };
         for (int i = 0; i < n; i++)
         {
