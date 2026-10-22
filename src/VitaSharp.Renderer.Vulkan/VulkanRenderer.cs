@@ -138,6 +138,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var p in f.DescPools) _vk.ResetDescriptorPool(_dev, p, 0);
         f.DescPoolIndex = 0;
         f.SecondaryIndex = 0;
+        _frameSerial++; // the frame's descriptor pools were reset: per-frame cached sets are gone
         _vk.ResetCommandPool(_dev, f.Pool, 0);
         var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
         _vk.BeginCommandBuffer(f.Cmd, in bi);

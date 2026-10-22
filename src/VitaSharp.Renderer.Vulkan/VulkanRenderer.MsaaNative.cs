@@ -540,6 +540,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     }
 
     long _statMsInputFetches;
+    /// <summary>Serial of the frame recording (bumped when a frame slot's descriptor pools are reset).</summary>
+    long _frameSerial;
+    DescriptorSet _msInputSet;
+    ImageView _msInputSetView;
+    long _msInputSetFrame = -1;
 
     /// <summary>
     /// Programmable blending in a multisampled render pass: the shader reads the colour attachment itself as an input
@@ -549,7 +554,10 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     {
         var m = GetMsaaImage(_rt!, _msSamples);
         var view = MsaaView(m, _rtAttachFormat);
+        // the set only names the attachment view: reused by every such draw of the frame (lighting passes issue many)
+        if (_msInputSet.Handle != 0 && _msInputSetView.Handle == view.Handle && _msInputSetFrame == _frameSerial) return _msInputSet;
         var set = AllocSet(_fbLayout);
+        (_msInputSet, _msInputSetView, _msInputSetFrame) = (set, view, _frameSerial);
         var info = stackalloc DescriptorImageInfo[3]
         {
             new(_dummySampler, _dummyView, ImageLayout.ShaderReadOnlyOptimal),
