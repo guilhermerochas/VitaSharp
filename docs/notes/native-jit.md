@@ -13,9 +13,109 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | Merge of main cf72b18 (quarter-cycle CycleCost, pacing, alloc pooling, Linux/macOS) | done, commit d6cc00d |
 | 2c. LDREX/STREX (word) inline | done, commit 56e752a |
 | 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
+| 2e. NEON broad inline, LDREXD/STREXD, VCVTB/VCVTT (branch perf/neon-jit) | done, commits c36e70c, f587c79, a3740e2 (+ docs) |
 | ARM64 emitter | not started (design below) |
 
-Results and measurements: see "Verification" and "Performance" (filled in from the final runs).
+## perf/neon-jit (2026-10-22)
+
+Branch `perf/neon-jit` (worktree `.claude/worktrees/neon-jit`), merged with main 23efe56. Not merged into main, not
+pushed.
+
+### What is inline now
+- `Native/ArmFrontend.Neon.cs` + `Native/X64Emitter.Neon.cs` (one `IrOp.VecOp` per instruction on the register
+  file, SSE2-SSE4.1; AVX2 only for VSHL.reg.32, FMA for VFMA/VFMS, F16C for f16 conversions; every kind is checked
+  with `X64Emitter.SupportsVec`, so older hosts fall back to callouts):
+  - three-same: bitwise, VADD/VSUB, VMUL/VMLA/VMLS int, VCEQ/VTST/VCGT/VCGE, VMAX/VMIN, VABD/VABA, VHADD/VRHADD/VHSUB,
+    VQADD/VQSUB (QC), VPADD/VPMAX/VPMIN, VQDMULH/VQRDMULH.16 (QC), VSHL.reg.32, and the f32 forms VADD/VSUB/VMUL/VMLA/
+    VMLS/VFMA/VFMS/VABD/VPADD/VCEQ/VCGE/VCGT/VACGE/VACGT/VMAX/VMIN/VPMAX/VPMIN/VRECPS/VRSQRTS;
+  - by scalar: VMUL/VMLA/VMLS .I16/.I32/.F32;
+  - shifts: VSHR/VSRA/VRSHR/VRSRA, VSHL/VSLI/VSRI (all sizes incl. 64), VSHRN/VRSHRN, VQ(R)SHRN/VQ(R)SHRUN from 16/32-bit
+    lanes (QC), VSHLL/VMOVL;
+  - two-register misc: VREV16/32/64, VCNT, VCLZ, VMVN, VPADDL/VPADAL, compares with zero (int and f32), VABS/VNEG,
+    VSWP/VTRN/VUZP/VZIP, VMOVN, VSHLL (max shift), VCVT f16<->f32, VRECPE/VRSQRTE (f32 and u32: lookup tables generated
+    from the handlers' own estimate functions, so the ARM ARM tables are reproduced bit for bit), VCVT int<->f32;
+  - VEXT, VTBL/VTBX (pshufb per 16-byte chunk), VLD1/VST1 single lane and all lanes (plain IR).
+- Float semantics are the handlers': MXCSR = DAZ only during runs of vector ops (`CpuState.MxcsrNeon`), explicit result
+  flush/default NaN, compares on flushed inputs. ARM detects FZ tininess BEFORE rounding: a product (or fused result)
+  that rounds up to +/-2^-126 must flush to zero. The handlers now do that (`Neon.MulFz/FmaFz`, found by the Unicorn
+  test: VFMA gave 0x80800000, QEMU 0x80000000) and the native lowering checks the rounded lanes and sends the rare
+  match to the handler (`VecFlags.SlowPath`: a call site for register allocation).
+- LDREXD/STREXD (ARM and Thumb): `IrOp.LdrEx/StrEx` with Imm = 1, one 64-bit read / `lock cmpxchg qword` with the same
+  generation protocol as `Arm.StoreExclusive64`. Fixed in the interpreter at the same time: ARM-state LDREXD wrote the
+  high word to R0 (Rt2 was taken from bits 3:0 instead of Rt + 1).
+- VCVTB/VCVTT (VFP half <-> single) on the FpOp fast path with F16C (handler fallback outside the Vita FPSCR mode).
+- `CalloutClasses` splits executed callouts by encoding class (NEON A/B/U/size, load/store type, exclusive size, VFP
+  opc2, T32 multiply form); the CPU backend report ends with "by class: ...".
+- `CpuState.Pad2` keeps D 16-byte aligned; `ExTmpHi` is the STREXD scratch.
+
+### Still callouts (by executed count in the runs below)
+T32_Mul (SMUL/SMLA<x><y>, SMULW, SMMUL... about 120M in Sonic Mania), T32_Parallel (2.6M in Devious Dungeon),
+VSHL.reg.U64 (0.5M in Killzone), VLD2/VLD4/VST2 multiple (under 1M anywhere: `IrOp.VecLdSt` is declared but not
+lowered), VMULL/ThreeDiff, VCLS, VQSHL/VRSHL register forms, VQMOVN, VCVT fixed point, LDREXB/H.
+
+### Callout ranking before -> after (executed callouts per run)
+| Scenario | before (main b93da80) | after | top remaining |
+|---|---|---|---|
+| kz_skin | 145.3M (VTRN 25M, VLD1 all-lanes 17M, VRECPS 10M, VPADD 8M, VMLA.F32 scalar 7M...) | 0.21M | VSHL.reg.U64 |
+| kzl_walk3 | 465.2M | 0.59M | VSHL.reg.U64 |
+| uc_walk | 486.1M (VMLA.F32 scalar 85M, VTRN 76M, VPADD.F32 47M, VCGE.F32 37M, VEXT 36M, LDREXD 17M, STREXD 11M, VCVTB/T 9M...) | 0.34M | VSHL.reg.U64 |
+| mania_boot | 124.5M | 122.2M | T32_Mul (not NEON) |
+| dd_boot | 14.1M | 2.9M | T32_Parallel |
+| f1_trees_lod | 19.2M | 0 | - |
+| rbs_boot | 20.8M | 0 | - |
+
+### Performance
+One emulator at a time, private shader caches, branch then main back to back. Other agents shared the machine, so
+single-digit differences are noise.
+
+| Scenario | fps after / before | process CPU ms/frame after / before | busiest guest thread ms/frame after / before |
+|---|---|---|---|
+| kz_skin | 28.7, 28.1, 27.1 / 28.9, 28.9 | 36.5 / 30.9, 30.4 | killzone_vita 11.8, 12.4, 14.8 / 12.5, 12.5 |
+| kzl_walk3 (10,500 frames, no deaths) | 26.6 / 27.7 | 66.0 / 65.0 | killzone_vita 27.5 / 26.2 |
+| uc_walk | 34.7 / 35.1 | 15.7 / 20.3 (-23%) | ProjectUncharted 4.69 / 7.20 (-35%); workers 1.15 / 2.43 |
+| mania_boot | 43.0 / 44.1 | 11.2 / 10.6 | main 5.72 / 5.33 |
+| dd_boot | 51.4 / 51.9 | 10.7 / 11.1 | Unity main 4.40 / 4.42 |
+| f1_trees_lod | 38.2 / 38.6 | 15.0 / 14.7 | main 7.24 / 7.24 |
+| rbs_boot | 29.4 / 29.6 | 80.1 / 79.2 | JQ workers 33.3 / 33.1 |
+
+Killzone's main thread does not get faster although its NEON callouts are gone: its frame is dominated by HLE and
+waiting (PERF cycles: guest code 1.9 M cycles/frame against 4.9 M/frame charged for HLE), and main already tiered its
+NEON-heavy blocks up to IL. Uncharted's main and worker threads drop by a third. Resistance's two JQ_wrkr threads at
+33 ms/frame are the heaviest guest threads in the batch and do not depend on NEON.
+One of five Killzone runs of the branch build froze at frame 1275 with GPU commands pending (submitted 120,173,
+completed 119,794; the guest main thread idle, not spinning). Not reproduced in four later runs; whether it comes
+from the renderer (MSAA, new in main b93da80) or from the CPU is not established.
+
+### Verification
+- Tests: per-class NEON native vs interpreter with special values (lane extremes, denormals, NaN, infinities,
+  products that round up to the smallest normal), quick versions in the fast suite (`NativeNeonQuick`) and long ones
+  under Category=Slow (`NativeNeonMatchesInterpreter`, 2,000-6,000 blocks per class); native vs Unicorn (Slow, 8,000
+  blocks, 0 differences after the tininess fix); LDREXD/STREXD monitor scenarios (ARM/Thumb); VCVTB/VCVTT with
+  half-range edge values (Vita mode and other FPSCR modes). Fast suite 353/353 after the b93da80 merge (4 min); full
+  suite incl. Slow 385/385 after merging main 23efe56 (1 h 27 min). The fuzz tests now reset the JIT code arena when
+  they end (`ArenaScope`): before that, the full suite filled the 256 MiB arena and failed with "JIT code arena full".
+  Post-merge smoke (main 23efe56): kz_skin 26.4 fps, 0.19M callouts, all GPU commands completed; uc_walk 34.8 fps,
+  main 5.22 ms/frame.
+- VITASHARP_NATIVE_VERIFY=1 (needs `--speed=0.25` so the slower guest still reaches gameplay):
+  - Killzone kzl_walk3, 7,000 frames into gameplay: 3.80 billion block runs verified, 0 mismatches in blocks with
+    NEON/VFP arithmetic. 3 NEON/VFP-block reports were plain copies (VLDM/VSTM/VDUP/VLDR/VSTR) of float data other job
+    threads were writing at the time; the other 8,050 reports are integer/exclusive blocks reading shared counters and
+    flags (LDREX/LDREXD of job-queue indices advanced by another core between the two runs).
+  - Uncharted uc_walk: 9.49 billion block runs, 0 NEON/VFP mismatches (12,816 integer spin-wait/flag reads). The
+    verify run stalled at frame 1932 (main thread spinning on a flag); main b93da80 with verify stalls even earlier
+    (frame 121): the store undo of verify mode can erase a store another thread made in between, so long verify runs
+    of multi-threaded games are not expected to finish. Normal runs are unaffected.
+  - Verify now reports NEON/VFP-block mismatches separately ("N mismatches (M in blocks with NEON/VFP ops)").
+
+### Next steps
+1. Killzone main thread (about 27 ms/frame in kzl_walk3): profile host time (scratchpad cpurep on a nettrace); HLE,
+   waits and spins dominate, not guest NEON.
+2. T32_Mul halfword/word multiplies (SMULxy/SMLAxy with Q, SMULWy/SMLAWy, SMMUL/SMMLA) inline: about 120M callouts in
+   Sonic Mania; T32_Parallel (SADD16/UADD8/...) for Devious Dungeon.
+3. VLD2-4/VST2-4 (`IrOp.VecLdSt` with pshufb de/interleave), VSHL.reg.64, VMULL, VCLS: all below 1M per run.
+4. Keeping Q/D registers in XMM across ops/blocks: not attempted. With the callouts gone, per-op load/store of the
+   register file is the remaining NEON overhead, but no game here is NEON-bound any more; measure before doing it.
+5. Investigate the one-off Killzone GPU stall if it shows up again (submitted > completed GPU commands).
 
 ## Design
 
@@ -122,11 +222,12 @@ half/fixed-point conversions are callouts.
 - VFP: VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP, VMOV (all core<->S/D/scalar forms, immediate, register), VDUP (core),
   VMRS/VMSR, VABS/VNEG, VADD/VSUB/VMUL/VNMUL/VDIV/VMLA/VMLS/VNMLA/VNMLS/VSQRT/VCMP(E)/VCVT (f32<->f64, int<->float)
   with the fast-path rules above.
-- Exclusives: LDREX/STREX word (ARM, Thumb-2) with the interpreter's generation-counter monitor; CLREX.
-- NEON: VAND/VBIC/VORR/VORN/VEOR/VBSL/VBIT/VBIF, VADD/VSUB.I8-64, VADD/VSUB/VMUL/VMLA/VMLS.F32 (D and Q), VDUP
-  (scalar), VMOV/VMVN/VORR/VBIC (immediate), VLD1/VST1 (multiple, 1-4 registers, all writeback forms).
-- Callouts: other NEON (VLD2-4/VST2-4, single/all-lane loads, shifts, scalar-by-element, misc, VEXT, VTBL...),
-  byte/halfword/doubleword exclusives, SWP, saturating and parallel add/sub, SSAT/USAT, PKH, SEL, USAD8, halfword and
+- Exclusives: LDREX/STREX word and LDREXD/STREXD (ARM, Thumb-2) with the interpreter's generation-counter monitor;
+  CLREX.
+- VFP also VCVTB/VCVTT (F16C).
+- NEON: see "perf/neon-jit" above (nearly all three-same, by-scalar, shift, misc, VEXT, VTBL forms), VDUP (scalar),
+  VMOV/VMVN/VORR/VBIC (immediate), VLD1/VST1 (multiple 1-4 registers, single lane, all lanes).
+- Callouts: VLD2-4/VST2-4, the NEON forms listed under "Still callouts", byte/halfword exclusives, SWP, saturating and parallel add/sub, SSAT/USAT, PKH, SEL, USAD8, halfword and
   dual multiplies, MRS/MSR, SDIV/UDIV in ARM state (SignedMultiplyMedia), VFMA, half/fixed-point VCVT, BKPT/UDF/
   YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
 
@@ -180,10 +281,9 @@ callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the
   `VITASHARP_HUNT=T|A:words` + `VITASHARP_HUNT_NATIVE=1` searches states for a native/interpreter mismatch).
 
 ## Next steps
-1. More NEON natively (remaining callouts in Uncharted/Killzone, see the report line "executed callouts"): shifts
-   (Neon_Shift), scalar-by-element (Neon_Scalar), two-register misc (Neon_Misc), VLD2-4/VST2-4 and lane loads, VEXT,
-   VPADD/VMAX/VMIN/VCGT float compares; byte/halfword/doubleword exclusives. Then tier-up to IL can likely go.
-2. Keep SIMD registers in XMM across a block (today every VFP op loads/stores the register file).
+1. See "perf/neon-jit > Next steps" above (Killzone main-thread profile, T32 multiplies/parallel ops, VLD2-4).
+   With NEON inline, tier-up to IL no longer triggers in the tested games and can likely go.
+2. Keep SIMD registers in XMM across a block (today every VFP/NEON op loads/stores the register file).
 3. Fold `[base + imm]` into the addressing mode when the frontend can prove no 32-bit wrap; CMP+branch fusion
    (use host flags directly instead of materialised Z/N/C/V temps).
 4. Reduce compile allocations (IR lists, closures) — native compile is ~80-110 us/block today.

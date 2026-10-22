@@ -85,7 +85,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
             .Select(i => $"{(Op)i} {hits[i] / 1000}K");
         return $"Native backend: {CodeBytes / 1024} KB code, {NativeRuntime.Links} links ({NativeRuntime.Unlinks} undone), {NativeRuntime.TieredUp} blocks tiered up to IL, " +
                $"static instructions inline {inl} / callout {call} ({100.0 * inl / Math.Max(1, inl + call):F1}% inline); top callouts: {string.Join(", ", top)}; " +
-               $"executed callouts {hits.Sum() / 1000}K: {string.Join(", ", hot)}";
+               $"executed callouts {hits.Sum() / 1000}K: {string.Join(", ", hot)}; by class: {string.Join(", ", CalloutClasses.Top(40))}";
     }
 
     /// <summary>Debug: print IR and disassembly of every compiled block (VITASHARP_NATIVE_DUMP=1).</summary>

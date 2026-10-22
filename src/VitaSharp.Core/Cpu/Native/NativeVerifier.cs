@@ -17,7 +17,7 @@ namespace VitaSharp.Core.Cpu.Native;
 public static unsafe class NativeVerifier
 {
     public static readonly bool Enabled = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_VERIFY") == "1";
-    public static long Verified, Mismatches, Skipped;
+    public static long Verified, Mismatches, SimdMismatches, Skipped;
     public static Action<string>? Log;
     const int MaxReports = 40;
 
@@ -114,9 +114,21 @@ public static unsafe class NativeVerifier
         }
         if (sb.Length == 0) return;
         long k = Interlocked.Increment(ref Mismatches);
-        if (k > MaxReports) return;
+        // Blocks of plain integer code that read memory another host thread writes concurrently (HLE, GPU worker,
+        // other guest cores) can legitimately see different values in the two runs. Mismatches in blocks with
+        // NEON/VFP instructions (exclusive loads race by design: other cores update those words) are counted and reported separately so they are never drowned by those.
+        bool simd = b.Insts.Any(i => i.Op.ToString() is var n && (n.StartsWith("Neon_", StringComparison.Ordinal)
+            || n.StartsWith("Vfp_", StringComparison.Ordinal)));
+        string tag = "";
+        if (simd)
+        {
+            long ks = Interlocked.Increment(ref SimdMismatches);
+            if (ks > MaxReports) return;
+            tag = $" (SIMD/FP #{ks})";
+        }
+        else if (k - SimdMismatches > MaxReports) return;
         var regs = string.Join(" ", Enumerable.Range(0, 16).Select(r => s0->R[r].ToString("X8")));
-        var detail = $"NATIVE VERIFY MISMATCH #{k} {b}:{sb}\n  in: r=[{regs}] cpsr={s0->Cpsr:X8} fpscr={s0->Fpscr:X8}\n  " +
+        var detail = $"NATIVE VERIFY MISMATCH #{k}{tag} {b}:{sb}\n  in: r=[{regs}] cpsr={s0->Cpsr:X8} fpscr={s0->Fpscr:X8}\n  " +
                      string.Join(" ", b.Insts.Select(i => $"{i.Address:X8}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"));
         if (k <= 8 && b.Code?.Tag is NativeCodeInfo info)
         {

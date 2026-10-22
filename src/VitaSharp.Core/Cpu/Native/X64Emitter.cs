@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Cpu.Native;
 /// callee-saved registers or spilled. Every 32-bit value is kept zero-extended in its 64-bit register, so it can index
 /// guest memory directly. Windows x64 and System V calling conventions are both supported (callouts, trampoline).
 /// </summary>
-public sealed unsafe class X64Emitter
+public sealed unsafe partial class X64Emitter
 {
     const int RAX = 0, RCX = 1, RDX = 2, RBX = 3, RSP = 4, RBP = 5, RSI = 6, RDI = 7, R8 = 8, R9 = 9, R10 = 10, R11 = 11, R12 = 12, R13 = 13, R14 = 14, R15 = 15;
 
@@ -44,6 +44,7 @@ public sealed unsafe class X64Emitter
     static readonly int OffThumb = StateLayout.Of(nameof(CpuState.Thumb));
     static readonly int OffMxcsrHost = StateLayout.Of(nameof(CpuState.MxcsrHost));
     static readonly int OffMxcsrGuest = StateLayout.Of(nameof(CpuState.MxcsrGuest));
+    static readonly int OffMxcsrNeon = StateLayout.Of(nameof(CpuState.MxcsrNeon));
     static readonly int OffFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
     static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
     static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
@@ -79,6 +80,7 @@ public sealed unsafe class X64Emitter
         _ir = ir;
         if (_assembler == null) _assembler = new Assembler(64); else _assembler.Reset();
         _lastLabelAt = -1;
+        _neonMxcsr = false;
         if (!Allocate()) return false;
         _labels = new Label[ir.Labels];
         for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.CreateLabel();
@@ -134,7 +136,7 @@ public sealed unsafe class X64Emitter
         for (int i = 0; i < count; i++)
         {
             var x = insts[i];
-            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op is IrOp.Callout or IrOp.FpOp ? 1 : 0); // FpOp may call the handler
+            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op is IrOp.Callout or IrOp.FpOp || (x.Op == IrOp.VecOp && (x.Imm & (uint)VecFlags.SlowPath) != 0) ? 1 : 0); // FpOp / slow-path VecOp may call the handler
             void Out(int t, int idx) { if (t >= 0) def[t] = idx; }
             void In(int t, int idx) { if (t >= 0) last[t] = idx; }
             Out(x.D, i); Out(x.D2, i); Out(x.Fn, i); Out(x.Fz, i); Out(x.Fc, i); Out(x.Fv, i);
@@ -350,6 +352,7 @@ public sealed unsafe class X64Emitter
     void Lower(IrInst x, Runtime rt, Func<int, nint> slotFor, ref int exitIndex)
     {
         var a = _a;
+        if (_neonMxcsr && x.Op is not (IrOp.VecOp or IrOp.VecLdSt)) { a.ldmxcsr(State(OffMxcsrHost)); _neonMxcsr = false; }
         switch (x.Op)
         {
             case IrOp.Nop: return;
@@ -580,7 +583,7 @@ public sealed unsafe class X64Emitter
             }
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
-            case IrOp.VecOp: VecOp(x); return;
+            case IrOp.VecOp: VecOp(x, rt); return;
             case IrOp.LoadD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[r15 + G64[r]]); a.mov(__qword_ptr[rbx + (int)x.Imm], rcx); return; }
             case IrOp.StoreD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]); a.mov(__qword_ptr[r15 + G64[r]], rcx); MarkDirty(x.A); return; }
             case IrOp.LdrEx: LoadExclusive(x); return;
@@ -680,80 +683,6 @@ public sealed unsafe class X64Emitter
         }
     }
 
-    // ------------------------------------------------------------------ NEON
-
-    static readonly ulong DefaultNaN4 = MakeConst(0x7FC00000);
-
-    static ulong MakeConst(uint v)
-    {
-        var p = (uint*)System.Runtime.InteropServices.NativeMemory.AlignedAlloc(16, 16);
-        p[0] = p[1] = p[2] = p[3] = v;
-        return (ulong)p;
-    }
-
-    /// <summary>
-    /// NEON three-same subset on xmm0-xmm2. Q ops use all 16 bytes, D ops the low 8 (loaded with movq, stored with
-    /// movq: the other half of the guest register file is untouched). Float lanes run under FTZ+DAZ (the Advanced SIMD
-    /// standard mode the handlers implement: flushed inputs, flushed denormal results, round to nearest) and NaN
-    /// lanes are replaced by the default NaN.
-    /// </summary>
-    void VecOp(IrInst x)
-    {
-        var a = _a;
-        var kind = (VecKind)(x.Imm & 0xFF);
-        bool q = (x.Imm & 0x100) != 0;
-        uint size = (x.Imm >> 9) & 3;
-        int dOff = OffD + (int)(x.Imm4 & 0xFF), nOff = OffD + (int)((x.Imm4 >> 8) & 0xFF), mOff = OffD + (int)((x.Imm4 >> 16) & 0xFF);
-        void Ld(AssemblerRegisterXMM r, int off) { if (q) a.movups(r, __xmmword_ptr[rbx + off]); else a.movq(r, __qword_ptr[rbx + off]); }
-        Ld(xmm0, nOff);
-        Ld(xmm1, mOff);
-        switch (kind)
-        {
-            case VecKind.And: a.pand(xmm0, xmm1); break;
-            case VecKind.Bic: a.pandn(xmm1, xmm0); a.movdqa(xmm0, xmm1); break;          // n & ~m
-            case VecKind.Orr: a.por(xmm0, xmm1); break;
-            case VecKind.Orn: a.pcmpeqd(xmm2, xmm2); a.pxor(xmm1, xmm2); a.por(xmm0, xmm1); break;
-            case VecKind.Eor: a.pxor(xmm0, xmm1); break;
-            case VecKind.Bsl: Ld(xmm2, dOff); a.pand(xmm0, xmm2); a.pandn(xmm2, xmm1); a.por(xmm0, xmm2); break; // (n&d)|(m&~d)
-            case VecKind.Bit: Ld(xmm2, dOff); a.pand(xmm0, xmm1); a.pandn(xmm1, xmm2); a.por(xmm0, xmm1); break; // (n&m)|(d&~m)
-            case VecKind.Bif: Ld(xmm2, dOff); a.pand(xmm2, xmm1); a.pandn(xmm1, xmm0); a.movdqa(xmm0, xmm2); a.por(xmm0, xmm1); break; // (d&m)|(n&~m)
-            case VecKind.AddI:
-                switch (size) { case 0: a.paddb(xmm0, xmm1); break; case 1: a.paddw(xmm0, xmm1); break; case 2: a.paddd(xmm0, xmm1); break; default: a.paddq(xmm0, xmm1); break; }
-                break;
-            case VecKind.SubI:
-                switch (size) { case 0: a.psubb(xmm0, xmm1); break; case 1: a.psubw(xmm0, xmm1); break; case 2: a.psubd(xmm0, xmm1); break; default: a.psubq(xmm0, xmm1); break; }
-                break;
-            default:
-            {
-                a.ldmxcsr(State(OffMxcsrGuest));
-                switch (kind)
-                {
-                    case VecKind.AddF: a.addps(xmm0, xmm1); break;
-                    case VecKind.SubF: a.subps(xmm0, xmm1); break;
-                    case VecKind.MulF: a.mulps(xmm0, xmm1); break;
-                    default: // VMLA/VMLS: d +/- round(n * m)
-                        a.mulps(xmm0, xmm1);
-                        Ld(xmm1, dOff);
-                        if (kind == VecKind.MlaF) a.addps(xmm1, xmm0); else a.subps(xmm1, xmm0);
-                        a.movaps(xmm0, xmm1);
-                        break;
-                }
-                // NaN lanes -> default NaN
-                a.movaps(xmm1, xmm0);
-                a.cmpunordps(xmm1, xmm1);
-                a.mov(rax, DefaultNaN4);
-                a.movaps(xmm2, __xmmword_ptr[rax]);
-                a.andps(xmm2, xmm1);
-                a.andnps(xmm1, xmm0);
-                a.orps(xmm1, xmm2);
-                a.movaps(xmm0, xmm1);
-                a.ldmxcsr(State(OffMxcsrHost));
-                break;
-            }
-        }
-        if (q) a.movups(__xmmword_ptr[rbx + dOff], xmm0); else a.movq(__qword_ptr[rbx + dOff], xmm0);
-    }
-
     // ------------------------------------------------------------------ exclusive monitor
 
     static readonly ulong GensBase = (ulong)System.Runtime.InteropServices.Marshal.UnsafeAddrOfPinnedArrayElement(Arm.ExclusiveGens, 0);
@@ -762,6 +691,7 @@ public sealed unsafe class X64Emitter
     static readonly int OffExValid = StateLayout.Of(nameof(CpuState.ExclusiveValid));
     static readonly int OffExGen = StateLayout.Of(nameof(CpuState.ExclusiveGen));
     static readonly int OffExTmp = StateLayout.Of(nameof(CpuState.ExTmp));
+    static readonly int OffExTmpHi = StateLayout.Of(nameof(CpuState.ExTmpHi));
 
     /// <summary>rdx = address of the generation counter of the granule of guest address ecx (clobbers rax, rdx).</summary>
     void GenPointer()
@@ -789,13 +719,25 @@ public sealed unsafe class X64Emitter
         a.jmp(spin);
         Place(ref ok);
         a.mov(State(OffExGen), eax);
-        a.mov(eax, __dword_ptr[r15 + rcx]);
+        if (x.Imm == 1) a.mov(rax, __qword_ptr[r15 + rcx]); // LDREXD: one 64-bit read, like Volatile.Read(ulong)
+        else a.mov(eax, __dword_ptr[r15 + rcx]);
         a.mov(State(OffExAddr), ecx);
-        a.mov(__qword_ptr[rbx + OffExValue], rax); // value zero-extended to 64 bits, like SetExclusive(uint)
+        a.mov(__qword_ptr[rbx + OffExValue], rax); // word: zero-extended to 64 bits, like SetExclusive(uint)
         a.mov(State(OffExValid), 1);
-        int d = Def(x.D, RAX);
-        if (d != RAX) a.mov(G32[d], eax);
-        Commit(x.D, d);
+        if (x.Imm == 1 && x.D2 >= 0)
+        {
+            a.mov(rdx, rax);
+            a.shr(rdx, (byte)32);
+            int d2 = Def(x.D2, RDX);
+            if (d2 != RDX) a.mov(G32[d2], edx);
+            Commit(x.D2, d2);
+        }
+        if (x.D >= 0)
+        {
+            int d = Def(x.D, RAX);
+            if (d != RAX) a.mov(G32[d], eax);
+            Commit(x.D, d);
+        }
     }
 
     /// <summary>STREX (word): Arm.StoreExclusive32 (generation lock, value CAS against the LDREX value, release).</summary>
@@ -804,8 +746,14 @@ public sealed unsafe class X64Emitter
         var a = _a;
         var fail = a.CreateLabel(); var done = a.CreateLabel(); var keep = a.CreateLabel();
         // the value goes through the state: only rax/rcx/rdx are free here
+        bool dual = x.Imm == 1;
         if (IsConst(x.B, out uint bv)) a.mov(State(OffExTmp), (int)bv);
         else a.mov(State(OffExTmp), G32[Use(x.B, RAX)]);
+        if (dual)
+        {
+            if (IsConst(x.C, out uint cv)) a.mov(State(OffExTmpHi), (int)cv);
+            else a.mov(State(OffExTmpHi), G32[Use(x.C, RAX)]);
+        }
         LoadTo(RCX, x.A);
         a.cmp(State(OffExValid), 0);
         a.je(fail);
@@ -817,10 +765,19 @@ public sealed unsafe class X64Emitter
         a.lea(ecx, __dword_ptr[rax + 1]);
         a.@lock.cmpxchg(__dword_ptr[rdx], ecx); // gen: snap -> snap+1 (odd: store in flight)
         a.jne(fail);
-        a.mov(ecx, State(OffExTmp));
-        a.mov(eax, State(OffExValue));
         a.mov(edx, State(OffExAddr));
-        a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
+        if (dual)
+        {
+            a.mov(rcx, __qword_ptr[rbx + OffExTmp]);    // ExTmp:ExTmpHi = Rt | Rt2 << 32
+            a.mov(rax, __qword_ptr[rbx + OffExValue]);
+            a.@lock.cmpxchg(__qword_ptr[r15 + rdx], rcx); // 64-bit CAS against what LDREXD read
+        }
+        else
+        {
+            a.mov(ecx, State(OffExTmp));
+            a.mov(eax, State(OffExValue));
+            a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
+        }
         a.sete(cl);
         a.movzx(ecx, cl);                       // ecx = ok
         a.mov(edx, State(OffExAddr));
@@ -979,6 +936,40 @@ public sealed unsafe class X64Emitter
                 a.cmp(rax, rdx);
                 a.jbe(store);
                 a.mov(eax, edx);       // saturate
+                Place(ref store);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(S(dOff), eax);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtToHalf:
+            {
+                // round to nearest even; DAZ flushes the input like InF; half denormals are produced (vcvtps2ph ignores
+                // FTZ), like the handler's (Half) conversion; NaN -> the default half NaN (DN)
+                var store = a.CreateLabel();
+                a.movss(xmm0, S(mOff));
+                a.mov(eax, 0x7E00);
+                a.ucomiss(xmm0, xmm0);
+                a.jp(store);
+                a.vcvtps2ph(xmm0, xmm0, 0);
+                a.movd(eax, xmm0);
+                Place(ref store);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(__word_ptr[rbx + dOff], ax);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtFromHalf:
+            {
+                // exact (every half is a normal single or zero); NaN -> default NaN
+                var store = a.CreateLabel();
+                a.movzx(eax, __word_ptr[rbx + mOff]);
+                a.movd(xmm0, eax);
+                a.vcvtph2ps(xmm0, xmm0);
+                a.movd(eax, xmm0);
+                a.ucomiss(xmm0, xmm0);
+                a.jnp(store);
+                a.mov(eax, 0x7FC00000);
                 Place(ref store);
                 a.ldmxcsr(State(OffMxcsrHost));
                 a.mov(S(dOff), eax);
@@ -1412,6 +1403,9 @@ public sealed unsafe class X64Emitter
         a.and(eax, ~0x6000);
         a.or(eax, 0x8040 | 0x1F80);
         a.mov(__dword_ptr[rbx + OffMxcsrGuest], eax);
+        // NEON fast paths: DAZ only (denormal inputs read as zero), results are flushed explicitly like the handlers do
+        a.and(eax, ~0x8000);
+        a.mov(__dword_ptr[rbx + OffMxcsrNeon], eax);
         if (Windows) a.jmp(rdx); else a.jmp(rsi);
         a.Label(ref epi);
         a.add(rsp, frame);

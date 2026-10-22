@@ -85,6 +85,7 @@ public sealed unsafe partial class NativeRuntime
         try
         {
             CalloutHits[op]++; // racy on purpose: statistics only
+            CalloutClasses.Hits[op * CalloutClasses.Sub + CalloutClasses.Of(op, ins)]++;
             HandlerTable.Pointers[op](s, ins, pc);
             return 0; // an exit the handler raised (UDF, SVC...) is seen by the block exits, exactly like the interpreter
         }
