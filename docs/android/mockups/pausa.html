@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Menu de pausa · VitaSharp Android</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#05070A}
+a{color:#8FB2FF}a:hover{color:#B7CCFF}
+</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #1C2420; color: #E8ECF2; font-family: Inter, system-ui, sans-serif; position: relative; overflow: hidden">
+
+  <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 300px; box-sizing: border-box">
+    <span style="font-size: 12px; color: #7F8B86; letter-spacing: 0.08em; text-transform: uppercase">[Tela do jogo, pausada]</span>
+  </div>
+
+  <div style="position: absolute; top: 16px; left: 16px; display: flex; gap: 6px">
+    <span style="height: 26px; padding: 0 10px; border-radius: 9px; background: rgba(9,12,18,0.72); font: 600 12px Inter, sans-serif; color: #8FB2FF; display: flex; align-items: center">30 FPS</span>
+    <span style="height: 26px; padding: 0 10px; border-radius: 9px; background: rgba(9,12,18,0.72); font: 500 12px Inter, sans-serif; color: #C9D1DC; display: flex; align-items: center">CPU 18 ms · GPU 6 ms</span>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(6,8,12,0.55)"></div>
+
+  <section aria-label="Menu de pausa" style="position: absolute; left: 0; right: 0; bottom: 0; background: #12161C; border-radius: 28px 28px 0 0; border-top: 1px solid #262E3A; padding: 12px 20px 28px 20px; display: flex; flex-direction: column; gap: 16px">
+    <span style="align-self: center; width: 40px; height: 4px; border-radius: 999px; background: #3A4352"></span>
+
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="width: 48px; height: 48px; border-radius: 14px; background: #34405C; display: flex; align-items: center; justify-content: center; font: 700 15px Sora, sans-serif; color: #DCE5F7">KZ</div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font: 600 16px Sora, sans-serif">Killzone Mercenary</span>
+        <span style="font-size: 12px; color: #9AA4B2">Pausado · sessão de 42 min</span>
+      </div>
+    </div>
+
+    <button style="height: 54px; border-radius: 18px; border: none; background: #6E9BFF; color: #0B1220; font: 600 16px Inter, sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg>
+      Continuar
+    </button>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"></path></svg>
+          Salvar estado
+        </button>
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"></path></svg>
+          Carregar estado
+        </button>
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4zM12 16a3 3 0 1 0 0-6 3 3 0 0 0 0 6"></path></svg>
+          Capturar tela
+        </button>
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12a5 5 0 0 1 5-5h10a5 5 0 0 1 0 10H7a5 5 0 0 1-5-5zM7 10v4M5 12h4M16 11h.01M18 13h.01"></path></svg>
+          Controles
+        </button>
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M4 15l4-6 4 4 3-5 5 7"></path></svg>
+          Desempenho
+        </button>
+      
+        <button style="height: 84px; border-radius: 18px; border: 1px solid #232A35; background: #171B22; color: #E8ECF2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 500 12px Inter, sans-serif">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"></path></svg>
+          Ajustes
+        </button>
+      
+    </div>
+
+    <button style="height: 50px; border-radius: 16px; border: 1px solid #3A2A2E; background: transparent; color: #F0A8A8; font: 500 14px Inter, sans-serif">Sair do jogo</button>
+  </section>
+</div>
+</body>
+</html>

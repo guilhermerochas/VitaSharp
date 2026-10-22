@@ -78,7 +78,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 7;
+    public const int GeneratorVersion = 8;
 
     /// <summary>
     /// Programmable blending in a multisampled scene reads the sample the invocation shades (gl_SampleID, which makes
@@ -327,7 +327,7 @@ float packC10(vec3 c) {
         var sb = new StringBuilder();
         sb.AppendLine("#version 450");
         sb.AppendLine($"// gxp {program.Hash:X16} ({(vertex ? "vertex" : "fragment")}) vo1 0x{program.VertexOutputs1:X8} vo2 0x{program.VertexOutputs2:X8}" +
-                      (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} surface 0x{hints.ColorFormat:X8}"));
+                      (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} start {program.FragmentOutputStart} surface 0x{hints.ColorFormat:X8}"));
         if (result.UniformBuffers.Count > 0)
             sb.AppendLine("// ub " + string.Join(" ", result.UniformBuffers.Select(s => $"[{s.GuestIndex}]@{s.ByteOffset}+{s.ByteSize}{(s.Mapped ? "M" : "")}")));
         sb.AppendLine(PushConstants);
@@ -594,7 +594,12 @@ float packC10(vec3 c) {
         color.Num = 0;
         color.Type = OutputType(program, hints);
         int regOff = 0;
-        if (!program.IsNativeColor && (byte)program.OutputParamType == 1) regOff = program.FragmentOutputStart;
+        // the colour is read from the primary attributes starting at the program's fragment output register. Vita3K
+        // applies the offset to F16 outputs only; Resistance's window/lamp G-buffer programs write their two packed
+        // U32 words to PA2/PA3 (output start 2), and reading PA0/PA1 stored the unpacked normal's halves as albedo
+        // (saturated red/orange windows, red fringes along building edges)
+        if (!program.IsNativeColor && GxpProgram.StoreType(program.OutputParamType) is DataType.F16 or DataType.UInt32 or DataType.Int32)
+            regOff = program.FragmentOutputStart;
         int rawBits = RawOutputBits(program, hints.ColorFormat);
         if (rawBits != 0)
         {
@@ -630,8 +635,11 @@ float packC10(vec3 c) {
         if (DebugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
             t.Line(DebugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : DebugLod ? "out_color = vec4(clamp(textureQueryLod(ftex0, v_TexCoord0.xy).y / 16.0 + 0.5, 0.0, 1.0), clamp(log2(max(fwidth(v_TexCoord0.x), fwidth(v_TexCoord0.y)) * float(textureSize(ftex0, 0).x)) / 16.0 + 0.5, 0.0, 1.0), float(textureSize(ftex0, 0).x) / 1024.0, 1.0);" : DebugAlpha ? "out_color = vec4(texture(ftex0, v_TexCoord0.xy).aaa, 1.0);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
         // VITASHARP_DEBUG_FS=<hash>:<glsl vec4 expression>: replace one fragment program's output (term bisection)
-        if (DebugFs is { } dfs && dfs.StartsWith($"{program.Hash:X16}:", StringComparison.OrdinalIgnoreCase))
-            t.Line($"out_color = {dfs[17..]};");
+        // several programs: separate the entries with '|'
+        if (DebugFs != null)
+            foreach (var dfs in DebugFs.Split('|'))
+                if (dfs.StartsWith($"{program.Hash:X16}:", StringComparison.OrdinalIgnoreCase))
+                    t.Line($"out_color = {dfs[17..]};");
         // VITASHARP_DEBUG_TEX0=hash: every pixel shows the fragment program that wrote it (low 3 bytes of its hash as RGB)
         if (DebugHash)
             t.Line($"out_color = vec4({program.Hash & 0xFF}.0, {(program.Hash >> 8) & 0xFF}.0, {(program.Hash >> 16) & 0xFF}.0, 255.0) / 255.0;");

@@ -539,8 +539,8 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- textures (may need to leave the render pass)
         SetDrawArea(in st);
-        var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed);
-        var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed);
+        var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
+        var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
         // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
         bool inputFetch = fs.Gen!.UsesFragColor && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
