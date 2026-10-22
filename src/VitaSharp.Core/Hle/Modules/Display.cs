@@ -209,6 +209,7 @@ public sealed class Ctrl : HleModule
 {
     uint _samplingMode;
     long _lastRead;
+    static readonly string CtrlExp = Environment.GetEnvironmentVariable("VITASHARP_CTRL_EXP") ?? "";
 
     ControllerState State(int port) => Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
 
@@ -223,7 +224,19 @@ public sealed class Ctrl : HleModule
             uint buttons = ApplyRapidFire((uint)s.Buttons, VBlank.Count);
             if (buttons != 0) VitaSharp.Core.Util.Log.Debug($"ctrl port {port} buttons 0x{buttons:X} -> 0x{p:X8}");
             if (!ext) buttons &= 0xFFFF; // standard buttons only
+            if (CtrlExp.Contains("l1"))
+            {
+                if ((buttons & (uint)VitaButtons.LTrigger) != 0) buttons |= (uint)VitaButtons.L1;
+                if ((buttons & (uint)VitaButtons.RTrigger) != 0) buttons |= (uint)VitaButtons.R1;
+            }
             GuestMemory.W32(p + 8, negative ? ~buttons : buttons);
+            if (CtrlExp.Contains("pressure"))
+            {
+                // SceCtrlData +16: up, right, down, left, lt, rt, l1, r1, triangle, circle, cross, square
+                ReadOnlySpan<uint> order = [0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x100, 0x200, 0x1000, 0x2000, 0x4000, 0x8000];
+                for (int b = 0; b < order.Length; b++)
+                    if ((buttons & order[b]) != 0) GuestMemory.Write(p + 16 + (uint)b, (byte)255);
+            }
             bool analog = _samplingMode != 0;
             GuestMemory.Write(p + 12, analog ? s.Lx : (byte)128);
             GuestMemory.Write(p + 13, analog ? s.Ly : (byte)128);
