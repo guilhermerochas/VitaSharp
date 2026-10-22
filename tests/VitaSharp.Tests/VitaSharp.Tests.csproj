@@ -23,7 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
     <!-- the HLE binder generator also binds the probe module of HleBinderTests -->
-    <ProjectReference Include="..\..\src\VitaSharp.Core.Generators\VitaSharp.Core.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\VitaSharp.Core.Generators\VitaSharp.Core.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" UndefineProperties="RuntimeIdentifier;PublishAot;PublishTrimmed;SelfContained" />
   </ItemGroup>
 
 </Project>

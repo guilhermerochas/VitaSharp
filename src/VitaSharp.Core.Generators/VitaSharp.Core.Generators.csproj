@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot;PublishTrimmed;SelfContained">
 
   <!-- Roslyn incremental source generator for VitaSharp.Core: emits the HLE binder (AAPCS-VFP argument marshalling for
        every [Hle] method) and the module table at compile time, so the core needs no System.Linq.Expressions, no
@@ -10,6 +10,10 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- runs inside the compiler: never published, so `dotnet publish -p:PublishAot=true` of the app must not reach it -->
+    <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
+    <SelfContained>false</SelfContained>
     <!-- one internal diagnostic, no shipped analyzer release to track -->
     <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>

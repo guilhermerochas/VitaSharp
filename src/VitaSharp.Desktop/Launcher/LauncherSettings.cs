@@ -21,7 +21,7 @@ public sealed class LauncherSettings
     {
         try
         {
-            if (File.Exists(FilePath)) return JsonSerializer.Deserialize<LauncherSettings>(File.ReadAllText(FilePath)) ?? new();
+            if (File.Exists(FilePath)) return JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.LauncherSettings) ?? new();
         }
         catch (JsonException) { }
         catch (IOException) { }
@@ -31,7 +31,7 @@ public sealed class LauncherSettings
     public void Save()
     {
         Directory.CreateDirectory(Program.DataRoot);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, LauncherJson.Default.LauncherSettings));
     }
 
     /// <summary>Command-line options for "run".</summary>
@@ -45,3 +45,8 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
     }
 }
+
+/// <summary>Source-generated JSON metadata for the settings file (Native AOT has no reflection-based serializer).</summary>
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
+[System.Text.Json.Serialization.JsonSerializable(typeof(LauncherSettings))]
+internal sealed partial class LauncherJson : System.Text.Json.Serialization.JsonSerializerContext;
