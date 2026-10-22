@@ -1,4 +1,4 @@
-# Real Vulkan MSAA for GXM MSAA surfaces (branch perf/msaa-real)
+﻿# Real Vulkan MSAA for GXM MSAA surfaces (branch perf/msaa-real)
 
 Status notes, kept up to date in case the work is interrupted.
 
@@ -39,32 +39,39 @@ variant (`ShaderHints.FetchInputAttachment`, `subpassLoad(last_frag_in, gl_Sampl
 `InputFetchBarrier` before the draw. Raw integer renderings and `VITASHARP_MSAA_FETCH=copy` use the copy path.
 VK_KHR_dynamic_rendering_local_read was not used: not exposed by the dev drivers (GTX 1650 546.17, Intel 101.4502).
 
-## Status (checkpoint 2026-10-22 ~02:55)
+## Status (2026-10-22, done; branch not merged, not pushed)
 
-Commits: cef37ba (real MSAA, copy fetch), 6a28046 (input attachments). WIP commit on top: `PauseRendering(reads)` —
-renderings broken for texture uploads / reads of OTHER surfaces skip the resolve in MSAA scenes (Killzone: ~6
-renderings per MSAA scene, mostly ResolveTexture/RenderTargetRegion/RenderTargetMipmapped/UploadTexture breaks).
-WIP compiles (0 warnings) but is UNTESTED.
+Commits: cef37ba (real MSAA, copy fetch), 6a28046 (input attachments), 9f10d00 (resolve skipped on breaks that do not
+read the surface: `PauseRendering(reads)`), 193d274 (input-attachment descriptor set reused within a frame), merged
+with main 3fa9cd8. Fast unit tests 335/335.
 
-Measured (kz_skin, GTX 1650, warm cache, other agents sharing the GPU so noisy):
-- main (cold cache): 24.1 fps, GPU worker 11.1 ms/frame (cold compile).
-- VITASHARP_MSAA=ss (old path, same build): GPU 6.80 ms/frame, GPU worker 4.39 ms, 28.8 fps.
-- native + copy fetch (cef37ba): GPU 6.56 ms, worker 6.47 ms, 27.3 fps.
-- native + input attachments (6a28046): GPU 3.98 ms, worker 6.69 ms, 27.8 fps. Frames identical to ss/main by eye
-  (text smooth, gun dark/textured, light shafts OK, no artifacts). Frames: .vitadata/tests/n_kz_skin.
-- ucx_title (no MSAA) and rbs_boot (only MSAA without downscale) unaffected. rbs_boot no longer reaches gameplay
-  because a save now exists ("Continue" menu): tap@f1900 hits Intel. Use tap@f1900:0.28:0.24 (Continue) instead.
+Measurements (GTX 1650, warm caches, GPU shared with other agents: GPU worker CPU varies +-1.5 ms between runs):
 
-## Next steps
+| run | GPU ms/frame | GPU worker ms/frame | fps |
+|---|---|---|---|
+| kz_skin main (2d4c5c3) | n/a | 6.14 | 27.4 |
+| kz_skin VITASHARP_MSAA=ss | 5.66 | 5.11 | 28.3 |
+| kz_skin native (9f10d00) | 4.78 (3.98 in an earlier run) | 4.87 | 27.9 |
+| kzl_walk3 VITASHARP_MSAA=ss | 8.49 | 13.68 | 26.6 |
+| kzl_walk3 native (193d274) | 5.34 | 10.38 | 27.2 |
 
-1. Test the WIP commit on kz_skin (renderings/resolves count in `PERF gpu` line should drop; frames unchanged).
-2. Validation one game at a time: kzl_walk3, uc_walk, ucx_title, rbs (Continue variant), f1_trees_lod, dd_boot,
-   mania_boot; fast unit tests `--filter Category!=Slow`.
-3. Re-measure main with warm cache (bin_base, sc_b_kz_skin) for a fair before number.
-4. GPU worker CPU ms/frame rose (~4.4 -> 6.7): secondary command buffers + per-draw fetch set; look at it.
-5. Remove the WIP prefix (squash or new commit message) once tested. Do not merge/push.
+The "GPU worker 4.4 -> 6.7 ms" increase seen at the checkpoint was run-to-run noise: in back-to-back runs native is
+below ss in both scenarios. Fps is CPU-bound (~27-28). Saved frames: .vitadata/tests/msaa_frames.
+
+Validation (frames compared by eye against earlier runs): kz_skin and kzl_walk3 OK (text smooth, gun/arms dark and
+textured, light shafts, no quarter-screen artifact; METRICS black/flicker only at boot, cutscene explosions and scene
+cuts); uc_walk identical to the 00:47 main run (non-downscale MSAA path unchanged); ucx_title, f1_trees_lod, dd_boot,
+mania_boot metrics match earlier runs; Resistance with tap@f1900:0.28:0.24 reaches the in-game axe/door scene with
+normal colours (rbs_boot as committed no longer reaches gameplay because a save exists).
+
+## Possible follow-ups
+
+- VK_KHR_dynamic_rendering_local_read would allow the same input-attachment fetch in 1x scenes (their copies are still
+  ~100% of the target per programmable-blending draw); not exposed by the dev drivers.
+- FORCE_STORE of multisampled depth followed by a depth-texture read is warned, not implemented.
+- MoltenVK: render passes with input attachments, secondary command buffers, sampleRateShading and resolve
+  attachments are supported features of MoltenVK; not tested on macOS.
 
 ## Testing
 
 Scripts in the session scratchpad `msaa/` (`run.sh <bin> <prefix> <scenario> [ENV=..]`, `mkscen.sh`).
-Outputs: <data>/tests/<prefix>_<scenario>; delete test dirs (n_*, s_*, b_*, g_*) when done except cited frames.
