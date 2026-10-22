@@ -358,10 +358,10 @@ public sealed unsafe class IrBuilder
 
     public void Store(IrOp op, int addr, int value) => Emit(new IrInst(op) { A = addr, B = value });
 
-    public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff, VecFlags flags = 0, uint aux = 0)
+    public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff, VecFlags flags = 0, uint aux = 0, uint ins = 0)
         => Emit(new IrInst(IrOp.VecOp)
         {
-            Imm = (uint)kind | (q ? (uint)VecFlags.Q : 0) | ((size & 3) << 9) | (uint)flags, Imm2 = aux,
+            Imm = (uint)kind | (q ? (uint)VecFlags.Q : 0) | ((size & 3) << 9) | (uint)flags, Imm2 = aux, Imm3 = ins,
             Imm4 = dOff | (nOff << 8) | (mOff << 16),
         });
 
@@ -372,4 +372,20 @@ public sealed unsafe class IrBuilder
 
     public int LoadExclusive(int addr) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr }); return t; }
     public int StoreExclusive(int addr, int value) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value }); return t; }
+
+    /// <summary>LDREXD: D = low word, D2 = high word (Imm = 1 selects the doubleword form).</summary>
+    public (int Lo, int Hi) LoadExclusiveDual(int addr)
+    {
+        int lo = Block.NewTemp(), hi = Block.NewTemp();
+        Emit(new IrInst(IrOp.LdrEx) { D = lo, D2 = hi, A = addr, Imm = 1 });
+        return (lo, hi);
+    }
+
+    /// <summary>STREXD of B (low) and C (high); D = 0 on success, 1 on failure.</summary>
+    public int StoreExclusiveDual(int addr, int lo, int hi)
+    {
+        int t = Block.NewTemp();
+        Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = lo, C = hi, Imm = 1 });
+        return t;
+    }
 }

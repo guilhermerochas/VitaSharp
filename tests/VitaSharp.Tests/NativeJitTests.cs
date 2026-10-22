@@ -432,6 +432,69 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         finally { CpuState.Free(s); }
     }
 
+    /// <summary>Inline LDREXD/STREXD against the interpreter, same monitor scenarios as the word form.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DoublewordExclusivesMatchInterpreter(bool thumb)
+    {
+        EnsureGuestPages();
+        // r0 = address: [ldrexd r2,r3,[r0]; adds r2,r2,#1;] strexd r4,r2,r3,[r0]; b .
+        uint[] armFull = [0xE1B02F9F, 0xE2922001, 0xE1A04F92, 0xEAFFFFFE];
+        uint[] armStore = [0xE1A04F92, 0xEAFFFFFE];
+        string[] thumbFull = ["E8D0237F", "3201", "E8C02374", "E7FE"];
+        string[] thumbStore = ["E8C02374", "E7FE"];
+        uint addr = DataBase + 0x100;
+        const ulong Mem0 = 41 | (7ul << 32);
+        var s = CpuState.Allocate();
+        try
+        {
+            for (int scenario = 0; scenario < 6; scenario++)
+            {
+                bool storeOnly = scenario >= 1;
+                var bytes = new List<byte>();
+                if (!thumb) foreach (var w in storeOnly ? armStore : armFull) bytes.AddRange(BitConverter.GetBytes(w));
+                else foreach (var w in storeOnly ? thumbStore : thumbFull)
+                {
+                    uint v = Convert.ToUInt32(w, 16);
+                    if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                }
+                bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                Assert.Equal(0, new ArmFrontend().Translate(b).Callouts);
+                int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
+                var gens = VitaSharp.Core.Cpu.Arm.ExclusiveGens;
+
+                (Snapshot Snap, uint GenDelta) Run(bool native)
+                {
+                    *s = default;
+                    s->R[0] = addr; s->R[2] = 0x1234; s->R[3] = 0x5678; s->R[4] = 0x99; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
+                    GuestMemory.Write(addr, unchecked((uint)Mem0)); GuestMemory.Write(addr + 4, (uint)(Mem0 >> 32));
+                    uint g0 = gens[genIdx];
+                    switch (scenario)
+                    {
+                        case 1: s->ExclusiveValid = 0; break;
+                        case 2: s->ExclusiveValid = 1; s->ExclusiveAddr = addr + 8; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0; break;
+                        case 3: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0 - 2; s->ExclusiveValue = Mem0; break;
+                        case 4: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0 ^ (1ul << 40); break; // high word changed
+                        case 5: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0; break;
+                    }
+                    if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                    return (Take(s, null), gens[genIdx] - g0);
+                }
+                var i = Run(false);
+                var n = Run(true);
+                string diff = Diff(i.Snap, n.Snap);
+                Assert.True(diff.Length == 0, $"scenario {scenario}: {diff}");
+                Assert.Equal(i.GenDelta, n.GenDelta);
+                if (scenario == 0) { Assert.Equal(0u, n.Snap.R[4]); Assert.Equal(42u, n.Snap.R[2]); Assert.Equal(7u, n.Snap.R[3]); }
+                output.WriteLine($"scenario {scenario}: status r4={n.Snap.R[4]} gen +{n.GenDelta}");
+            }
+        }
+        finally { CpuState.Free(s); }
+    }
+
     /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
     [Fact]
     [Trait("Category", "Slow")]

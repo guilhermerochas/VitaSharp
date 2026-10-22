@@ -136,7 +136,7 @@ public sealed unsafe partial class X64Emitter
         for (int i = 0; i < count; i++)
         {
             var x = insts[i];
-            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op is IrOp.Callout or IrOp.FpOp ? 1 : 0); // FpOp may call the handler
+            calloutsBefore[i + 1] = calloutsBefore[i] + (x.Op is IrOp.Callout or IrOp.FpOp || (x.Op == IrOp.VecOp && (x.Imm & (uint)VecFlags.SlowPath) != 0) ? 1 : 0); // FpOp / slow-path VecOp may call the handler
             void Out(int t, int idx) { if (t >= 0) def[t] = idx; }
             void In(int t, int idx) { if (t >= 0) last[t] = idx; }
             Out(x.D, i); Out(x.D2, i); Out(x.Fn, i); Out(x.Fz, i); Out(x.Fc, i); Out(x.Fv, i);
@@ -583,7 +583,7 @@ public sealed unsafe partial class X64Emitter
             }
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
-            case IrOp.VecOp: VecOp(x); return;
+            case IrOp.VecOp: VecOp(x, rt); return;
             case IrOp.LoadD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[r15 + G64[r]]); a.mov(__qword_ptr[rbx + (int)x.Imm], rcx); return; }
             case IrOp.StoreD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]); a.mov(__qword_ptr[r15 + G64[r]], rcx); MarkDirty(x.A); return; }
             case IrOp.LdrEx: LoadExclusive(x); return;
@@ -691,6 +691,7 @@ public sealed unsafe partial class X64Emitter
     static readonly int OffExValid = StateLayout.Of(nameof(CpuState.ExclusiveValid));
     static readonly int OffExGen = StateLayout.Of(nameof(CpuState.ExclusiveGen));
     static readonly int OffExTmp = StateLayout.Of(nameof(CpuState.ExTmp));
+    static readonly int OffExTmpHi = StateLayout.Of(nameof(CpuState.ExTmpHi));
 
     /// <summary>rdx = address of the generation counter of the granule of guest address ecx (clobbers rax, rdx).</summary>
     void GenPointer()
@@ -718,13 +719,25 @@ public sealed unsafe partial class X64Emitter
         a.jmp(spin);
         Place(ref ok);
         a.mov(State(OffExGen), eax);
-        a.mov(eax, __dword_ptr[r15 + rcx]);
+        if (x.Imm == 1) a.mov(rax, __qword_ptr[r15 + rcx]); // LDREXD: one 64-bit read, like Volatile.Read(ulong)
+        else a.mov(eax, __dword_ptr[r15 + rcx]);
         a.mov(State(OffExAddr), ecx);
-        a.mov(__qword_ptr[rbx + OffExValue], rax); // value zero-extended to 64 bits, like SetExclusive(uint)
+        a.mov(__qword_ptr[rbx + OffExValue], rax); // word: zero-extended to 64 bits, like SetExclusive(uint)
         a.mov(State(OffExValid), 1);
-        int d = Def(x.D, RAX);
-        if (d != RAX) a.mov(G32[d], eax);
-        Commit(x.D, d);
+        if (x.Imm == 1 && x.D2 >= 0)
+        {
+            a.mov(rdx, rax);
+            a.shr(rdx, (byte)32);
+            int d2 = Def(x.D2, RDX);
+            if (d2 != RDX) a.mov(G32[d2], edx);
+            Commit(x.D2, d2);
+        }
+        if (x.D >= 0)
+        {
+            int d = Def(x.D, RAX);
+            if (d != RAX) a.mov(G32[d], eax);
+            Commit(x.D, d);
+        }
     }
 
     /// <summary>STREX (word): Arm.StoreExclusive32 (generation lock, value CAS against the LDREX value, release).</summary>
@@ -733,8 +746,14 @@ public sealed unsafe partial class X64Emitter
         var a = _a;
         var fail = a.CreateLabel(); var done = a.CreateLabel(); var keep = a.CreateLabel();
         // the value goes through the state: only rax/rcx/rdx are free here
+        bool dual = x.Imm == 1;
         if (IsConst(x.B, out uint bv)) a.mov(State(OffExTmp), (int)bv);
         else a.mov(State(OffExTmp), G32[Use(x.B, RAX)]);
+        if (dual)
+        {
+            if (IsConst(x.C, out uint cv)) a.mov(State(OffExTmpHi), (int)cv);
+            else a.mov(State(OffExTmpHi), G32[Use(x.C, RAX)]);
+        }
         LoadTo(RCX, x.A);
         a.cmp(State(OffExValid), 0);
         a.je(fail);
@@ -746,10 +765,19 @@ public sealed unsafe partial class X64Emitter
         a.lea(ecx, __dword_ptr[rax + 1]);
         a.@lock.cmpxchg(__dword_ptr[rdx], ecx); // gen: snap -> snap+1 (odd: store in flight)
         a.jne(fail);
-        a.mov(ecx, State(OffExTmp));
-        a.mov(eax, State(OffExValue));
         a.mov(edx, State(OffExAddr));
-        a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
+        if (dual)
+        {
+            a.mov(rcx, __qword_ptr[rbx + OffExTmp]);    // ExTmp:ExTmpHi = Rt | Rt2 << 32
+            a.mov(rax, __qword_ptr[rbx + OffExValue]);
+            a.@lock.cmpxchg(__qword_ptr[r15 + rdx], rcx); // 64-bit CAS against what LDREXD read
+        }
+        else
+        {
+            a.mov(ecx, State(OffExTmp));
+            a.mov(eax, State(OffExValue));
+            a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
+        }
         a.sete(cl);
         a.movzx(ecx, cl);                       // ecx = ok
         a.mov(edx, State(OffExAddr));
@@ -908,6 +936,40 @@ public sealed unsafe partial class X64Emitter
                 a.cmp(rax, rdx);
                 a.jbe(store);
                 a.mov(eax, edx);       // saturate
+                Place(ref store);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(S(dOff), eax);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtToHalf:
+            {
+                // round to nearest even; DAZ flushes the input like InF; half denormals are produced (vcvtps2ph ignores
+                // FTZ), like the handler's (Half) conversion; NaN -> the default half NaN (DN)
+                var store = a.CreateLabel();
+                a.movss(xmm0, S(mOff));
+                a.mov(eax, 0x7E00);
+                a.ucomiss(xmm0, xmm0);
+                a.jp(store);
+                a.vcvtps2ph(xmm0, xmm0, 0);
+                a.movd(eax, xmm0);
+                Place(ref store);
+                a.ldmxcsr(State(OffMxcsrHost));
+                a.mov(__word_ptr[rbx + dOff], ax);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtFromHalf:
+            {
+                // exact (every half is a normal single or zero); NaN -> default NaN
+                var store = a.CreateLabel();
+                a.movzx(eax, __word_ptr[rbx + mOff]);
+                a.movd(xmm0, eax);
+                a.vcvtph2ps(xmm0, xmm0);
+                a.movd(eax, xmm0);
+                a.ucomiss(xmm0, xmm0);
+                a.jnp(store);
+                a.mov(eax, 0x7FC00000);
                 Place(ref store);
                 a.ldmxcsr(State(OffMxcsrHost));
                 a.mov(S(dOff), eax);

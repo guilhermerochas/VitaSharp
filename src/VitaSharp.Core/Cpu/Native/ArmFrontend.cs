@@ -130,6 +130,7 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>Translates one instruction. Returns true when the block must end right after it without linking.</summary>
     bool Translate(DecodedInst d)
     {
+        _ins = d.Raw; _op = d.Op;
         if (NoInline != null && (NoInline.Length == 0 || NoInline[(int)d.Op])) return Callout(in d);
         bool? r = d.Op switch
         {
@@ -212,6 +213,7 @@ public sealed unsafe partial class ArmFrontend
             Op.Neon_Vext => NeonVext(in d),
             Op.Neon_Vtbl => NeonVtbl(in d),
             Op.T32_ExclusiveWord => T32ExclusiveWord(in d),
+            Op.T32_ExclusiveOther => T32ExclusiveOther(in d),
             Op.Vfp_LdrStrArm => VfpLdrStr(in d, false),
             Op.Vfp_LdrStrThumb => VfpLdrStr(in d, true),
             Op.Vfp_LdmStm => VfpLdmStm(in d),
@@ -1238,6 +1240,15 @@ public sealed unsafe partial class ArmFrontend
                     B.StoreState(DOffset + dd + 4, opc2 == 0 ? (b7 ? B.AndK(hi, 0x7FFFFFFF) : hi) : B.Xor(hi, C(0x80000000)));
                 }
                 return false;
+            case 2: case 3:
+            {
+                // VCVTB/VCVTT: the half lives in bits 15:0 (B) or 31:16 (T) of the single register
+                if (dbl || !X64Emitter.SupportsVec(VecKind.CvtF2H)) return null;
+                uint half = b7 ? 2u : 0u;
+                if (opc2 == 3) B.FpOp(FpKind.CvtToHalf, O, sd + half, 0, sm, ins, d.Address);
+                else B.FpOp(FpKind.CvtFromHalf, O, sd, 0, sm + half, ins, d.Address);
+                return false;
+            }
             case 4: case 5:
                 B.FpOp(opc2 == 5 ? FpKind.CmpZero : FpKind.Cmp, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dm : sm, ins, d.Address);
                 return false;
@@ -1266,10 +1277,39 @@ public sealed unsafe partial class ArmFrontend
     {
         uint ins = d.Raw, op = Bits(ins, 22, 21), rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rt = ins & 0xF;
         bool L = Bit(ins, 20) != 0;
+        if (op == 1)
+        {
+            // LDREXD Rt(15:12), Rt+1 / STREXD Rd(15:12), Rt(3:0), Rt+1; odd or R14 first registers are UNPREDICTABLE
+            uint first = L ? rd : rt;
+            if (rn == 15 || first >= 14 || (!L && rd == 15)) return null;
+            return ExclusiveDual(Reg(rn), L, first, first + 1, rd);
+        }
         if (op != 0 || rn == 15 || rd == 15 || (!L && rt == 15)) return null;
         int addr = Reg(rn);
         if (L) SetReg(rd, B.LoadExclusive(addr));
         else SetReg(rd, B.StoreExclusive(addr, Reg(rt)));
+        return false;
+    }
+
+    /// <summary>LDREXD/STREXD (Thumb-2); byte and halfword forms stay callouts.</summary>
+    bool? T32ExclusiveOther(in DecodedInst d)
+    {
+        uint ins = d.Raw, rn = Bits(ins, 19, 16), rt = Bits(ins, 15, 12), rt2 = Bits(ins, 11, 8), op3 = Bits(ins, 7, 4), rd = ins & 0xF;
+        bool L = Bit(ins, 20) != 0;
+        if (op3 != 7 || rn == 15 || rt == 15 || rt2 == 15 || (!L && rd == 15)) return null;
+        return ExclusiveDual(Reg(rn), L, rt, rt2, rd);
+    }
+
+    /// <summary>Doubleword exclusive: the interpreter's ExclusiveCore op 1 (64-bit read / 64-bit CAS).</summary>
+    bool? ExclusiveDual(int addr, bool load, uint rt, uint rt2, uint rd)
+    {
+        if (load)
+        {
+            var (lo, hi) = B.LoadExclusiveDual(addr);
+            SetReg(rt, lo);
+            SetReg(rt2, hi); // like the handler: R[rt2] written last
+        }
+        else SetReg(rd, B.StoreExclusiveDual(addr, Reg(rt), Reg(rt2)));
         return false;
     }
 

@@ -23,6 +23,8 @@ public static class CalloutClasses
         Op.Neon_Vtbl => (int)(Bit(ins, 6)),
         Op.A32_Exclusive => (int)((Bits(ins, 22, 21) << 1) | Bit(ins, 20)),
         Op.T32_ExclusiveOther => (int)((Bits(ins, 6, 4) << 1) | Bit(ins, 20)),
+        Op.Vfp_Other => (int)((Bits(ins, 19, 16) << 2) | (Bit(ins, 7) << 1) | Bit(ins, 8)),
+        Op.Vfp_Arith => (int)((((Bit(ins, 23) << 2) | Bits(ins, 21, 20)) << 2) | (Bit(ins, 6) << 1) | Bit(ins, 8)),
         _ => 0,
     };
 
@@ -108,6 +110,22 @@ public static class CalloutClasses
             {
                 uint o = s >> 1;
                 return $"{n}.{((s & 1) != 0 ? "LDREX" : "STREX")}{(o == 4 ? "B" : o == 5 ? "H" : "D")}";
+            }
+            case Op.Vfp_Other:
+            {
+                uint opc2 = s >> 2, b7 = (s >> 1) & 1;
+                string m = opc2 switch
+                {
+                    0 => b7 != 0 ? "VABS" : "VMOV", 1 => b7 != 0 ? "VSQRT" : "VNEG", 2 => "VCVTB/T.F32.F16", 3 => "VCVTB/T.F16.F32",
+                    4 => "VCMP", 5 => "VCMP#0", 7 => "VCVT.F64/F32", 8 => "VCVT.from.int",
+                    0xC or 0xD => b7 != 0 ? "VCVT.to.int" : "VCVTR.to.int", 0xA or 0xB or 0xE or 0xF => "VCVT.fixed", _ => "?",
+                };
+                return $"{n}.{m}{((s & 1) != 0 ? ".F64" : ".F32")}";
+            }
+            case Op.Vfp_Arith:
+            {
+                string[] names = ["VMLA", "VMLS", "VNMLS", "VNMLA", "VMUL", "VNMUL", "VADD", "VSUB", "VDIV", "?", "VFNMS/A", "VFNMS/A", "VFMA", "VFMS", "?", "?"];
+                return $"{n}.{names[s >> 1]}{((s & 1) != 0 ? ".F64" : ".F32")}";
             }
             default: return n;
         }

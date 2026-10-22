@@ -481,7 +481,48 @@ public sealed unsafe partial class X64Emitter
 
     // ------------------------------------------------------------------ VecOp
 
-    void VecOp(IrInst x)
+    Label _tinySlow;
+
+    /// <summary>
+    /// One vector op. Kinds flagged <see cref="VecFlags.SlowPath"/> check their rounded products for +/- the smallest
+    /// normal (possibly a tiny value rounded up, which ARM flushes) and run the interpreter handler for the whole
+    /// instruction in that rare case, before anything was written back.
+    /// </summary>
+    void VecOp(IrInst x, Runtime rt)
+    {
+        var a = _a;
+        if ((x.Imm & (uint)VecFlags.SlowPath) == 0) { VecOpCore(x); return; }
+        _tinySlow = a.CreateLabel();
+        var done = a.CreateLabel();
+        VecOpCore(x);
+        a.jmp(done);
+        Place(ref _tinySlow);
+        a.ldmxcsr(State(OffMxcsrHost));
+        uint op = x.Imm2 >> 16;
+        if (Windows) { a.mov(rcx, rbx); a.mov(edx, op); a.mov(r8d, x.Imm3); a.xor(r9d, r9d); }
+        else { a.mov(rdi, rbx); a.mov(esi, op); a.mov(edx, x.Imm3); a.xor(ecx, ecx); }
+        a.mov(rax, rt.Callout);
+        a.call(rax);
+        a.test(eax, eax);
+        a.jnz(_abort);
+        a.ldmxcsr(State(OffMxcsrNeon));   // the fast path's MXCSR state at the join
+        Place(ref done);
+    }
+
+    /// <summary>Jumps to the slow path when a lane of r is +/- the smallest normal (clobbers rax, xmm4).</summary>
+    void TinyGuard(AssemblerRegisterXMM r, bool q)
+    {
+        var a = _a;
+        a.movdqa(X4, r);
+        a.pand(X4, K32(0x7FFFFFFF));
+        a.pcmpeqd(X4, K32(0x00800000));
+        a.pmovmskb(eax, X4);
+        if (!q) a.and(eax, 0xFF);
+        a.test(eax, eax);
+        a.jnz(_tinySlow);
+    }
+
+    void VecOpCore(IrInst x)
     {
         var a = _a;
         var kind = (VecKind)(x.Imm & 0xFF);
@@ -490,7 +531,7 @@ public sealed unsafe partial class X64Emitter
         bool u = (x.Imm & (uint)VecFlags.Unsigned) != 0;
         bool round = (x.Imm & (uint)VecFlags.Round) != 0;
         bool acc = (x.Imm & (uint)VecFlags.Accumulate) != 0;
-        int aux = (int)x.Imm2;
+        int aux = (int)(x.Imm2 & 0xFFFF);
         int dOff = (int)(x.Imm4 & 0xFF), nOff = (int)((x.Imm4 >> 8) & 0xFF), mOff = (int)((x.Imm4 >> 16) & 0xFF);
         int bits = 8 << (int)size;
 
@@ -658,10 +699,11 @@ public sealed unsafe partial class X64Emitter
                 {
                     case VecKind.AddF: a.addps(X0, X1); break;
                     case VecKind.SubF: a.subps(X0, X1); break;
-                    case VecKind.MulF: a.mulps(X0, X1); break;
+                    case VecKind.MulF: a.mulps(X0, X1); TinyGuard(X0, q); break;
                     case VecKind.AbdF: a.subps(X0, X1); a.pand(X0, K32(0x7FFFFFFF)); break;
                     default: // VMLA/VMLS: d +/- round(n * m); a denormal product reads as zero (DAZ) like the handler's FRes
                         a.mulps(X0, X1);
+                        TinyGuard(X0, q);
                         LdV(X1, dOff, q);
                         if (kind == VecKind.MlaF) a.addps(X1, X0); else a.subps(X1, X0);
                         Mov(X0, X1);
@@ -675,6 +717,7 @@ public sealed unsafe partial class X64Emitter
                 LdV(X0, nOff, q); LdV(X1, mOff, q); LdV(X2, dOff, q);
                 if (kind == VecKind.FmsF) a.pxor(X0, K32(0x80000000));
                 a.vfmadd231ps(X2, X0, X1);
+                TinyGuard(X2, q);
                 FRes(X2);
                 StV(dOff, X2, q);
                 return;
@@ -746,6 +789,7 @@ public sealed unsafe partial class X64Emitter
                 LdV(X0, nOff, q);
                 Broadcast(X1, aux, 2);
                 a.mulps(X0, X1);
+                TinyGuard(X0, q);
                 if (kind != VecKind.MulFS)
                 {
                     LdV(X1, dOff, q);
@@ -940,6 +984,66 @@ public sealed unsafe partial class X64Emitter
                 NarrowTrunc(X0, size + 1);
                 StV(dOff, X0, false);
                 return;
+            case VecKind.Paddl: // pairs of size lanes -> one lane of size + 1 (exact: the sums never wrap)
+                LdV(X0, mOff, q);
+                switch (size)
+                {
+                    case 0:
+                        if (u) a.pmaddubsw(X0, K8(1));                       // unsigned bytes * signed 1
+                        else { a.movdqa(X1, K8(1)); a.pmaddubsw(X1, X0); Mov(X0, X1); } // signed bytes * unsigned 1
+                        break;
+                    case 1:
+                        if (u)
+                        {
+                            a.pxor(X0, K16(0x8000));                          // (a - 2^15) + (b - 2^15) = a + b - 2^16
+                            a.pmaddwd(X0, K16(1));
+                            a.paddd(X0, K32(0x10000));
+                        }
+                        else a.pmaddwd(X0, K16(1));
+                        break;
+                    default:
+                        a.pshufd(X1, X0, 0x08);                               // even lanes [0, 2]
+                        a.pshufd(X2, X0, 0x0D);                               // odd lanes [1, 3]
+                        Widen(X0, X1, 2, u);
+                        Widen(X3, X2, 2, u);
+                        a.paddq(X0, X3);
+                        break;
+                }
+                if (acc) { LdV(X1, dOff, q); PAdd(size + 1, X0, X1); }
+                StV(dOff, X0, q);
+                return;
+            case VecKind.Clz:
+            {
+                // bytes: clz8 = clz4(hi) + (hi == 0 ? clz4(lo) : 0); wider lanes combine the two halves the same way
+                var lut = new byte[16];
+                for (int i = 0; i < 16; i++) lut[i] = (byte)(i == 0 ? 4 : System.Numerics.BitOperations.LeadingZeroCount((uint)i) - 28);
+                LdV(X0, mOff, q);
+                a.movdqa(X3, K8(0x0F));
+                Mov(X1, X0);
+                a.psrlw(X1, 4);
+                a.pand(X1, X3);                // hi nibbles
+                a.pand(X0, X3);                // lo nibbles
+                a.movdqa(X2, KBytes(lut));
+                Mov(X4, X2);
+                a.pshufb(X2, X1);              // clz4(hi)
+                a.pshufb(X4, X0);              // clz4(lo)
+                a.pxor(X3, X3);
+                a.pcmpeqb(X1, X3);             // hi == 0
+                a.pand(X4, X1);
+                a.paddb(X2, X4);               // clz8 per byte
+                for (uint s = 1; s <= size; s++)
+                {
+                    Mov(X1, X2);
+                    if (s == 1) a.psrlw(X1, 8); else a.psrld(X1, 16);              // clz of the high half
+                    Mov(X4, X1);
+                    if (s == 1) a.pcmpeqw(X4, K16(8)); else a.pcmpeqd(X4, K32(16)); // high half all zero
+                    a.pand(X2, s == 1 ? K16(0x00FF) : K32(0xFFFF));               // clz of the low half
+                    a.pand(X2, X4);
+                    if (s == 1) a.paddw(X2, X1); else a.paddd(X2, X1);
+                }
+                StV(dOff, X2, q);
+                return;
+            }
             case VecKind.Cnt: // bytes: nibble popcount table
             {
                 var lut = new byte[16];

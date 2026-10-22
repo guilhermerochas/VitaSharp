@@ -103,12 +103,40 @@ public sealed unsafe partial class NativeJitTests
     static void NeonState(Random rng, RandomState st)
     {
         for (int i = 0; i < 32; i++) st.D[i] = rng.Next(3) == 0 ? SpecialInts(rng) : CpuFuzzTests.RandomSpecialSimd(rng);
+        // lanes whose products round up to +/- 2^-126 from below (ARM flushes them: tininess before rounding):
+        // (1 - 2^-24) * 2^-63 times 2^-63, with both signs
+        uint[] tinyEdge = [0x1FFFFFFF, 0x20000000, 0x9FFFFFFF, 0xA0000000, 0x20000001, 0x00800000];
+        for (int i = 0; i < 32; i++)
+            if (rng.Next(4) == 0)
+            {
+                ulong lo = tinyEdge[rng.Next(tinyEdge.Length)], hi = tinyEdge[rng.Next(tinyEdge.Length)];
+                st.D[i] = lo | (hi << 32);
+            }
         st.Fpscr = (uint)rng.Next(32) << 27 | 0x0300_0000; // NZCV and QC random, DN + FZ
         for (int r = 0; r < 4; r++) st.Regs[r] = (uint)rng.Next(-64, 64);
         for (int r = 4; r < 13; r++) st.Regs[r] = DataBase + 0x4000 + (uint)rng.Next(0x6000);
     }
 
+    /// <summary>Quick per-class pass for the fast suite (the long version below runs under Category=Slow).</summary>
     [Theory]
+    [InlineData(false, NeonClass.ThreeSame, 400, 1601)]
+    [InlineData(true, NeonClass.ThreeSame, 300, 1602)]
+    [InlineData(false, NeonClass.ThreeSameFloat, 400, 1603)]
+    [InlineData(false, NeonClass.Scalar, 300, 1604)]
+    [InlineData(false, NeonClass.Shift, 400, 1605)]
+    [InlineData(true, NeonClass.Shift, 300, 1606)]
+    [InlineData(false, NeonClass.Misc, 400, 1607)]
+    [InlineData(true, NeonClass.Misc, 300, 1608)]
+    [InlineData(false, NeonClass.Vext, 300, 1609)]
+    [InlineData(false, NeonClass.Vtbl, 300, 1610)]
+    [InlineData(false, NeonClass.LoadStore, 400, 1611)]
+    [InlineData(true, NeonClass.LoadStore, 300, 1612)]
+    [InlineData(false, NeonClass.Any, 400, 1613)]
+    [InlineData(true, NeonClass.Any, 400, 1614)]
+    public void NativeNeonQuick(bool thumb, NeonClass cls, int iterations, int seed) => NativeNeonMatchesInterpreter(thumb, cls, iterations, seed);
+
+    [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(false, NeonClass.ThreeSame, 6_000, 601)]
     [InlineData(true, NeonClass.ThreeSame, 3_000, 602)]
     [InlineData(false, NeonClass.ThreeSameFloat, 6_000, 603)]
@@ -159,6 +187,69 @@ public sealed unsafe partial class NativeJitTests
         finally { CpuState.Free(s); NativeX64Compiler.ValidateIr = oldValidate; }
         output.WriteLine($"compared {compared} NEON blocks ({inlined} fully inline); failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
+    /// VCVTB/VCVTT (half &lt;-&gt; single, inline with F16C) against the interpreter: values around the half range limits,
+    /// half denormals, rounding ties, f32 denormals, signalling/quiet NaNs, infinities; Vita FPSCR mode and others
+    /// (handler fallback).
+    /// </summary>
+    [Theory]
+    [InlineData(false, 3_000, 801)]
+    [InlineData(true, 3_000, 802)]
+    public void NativeHalfConversionsMatchInterpreter(bool thumb, int iterations, int seed)
+    {
+        EnsureGuestPages();
+        uint[] special =
+        [
+            0, 0x80000000, 0x33800000 /* 2^-24 */, 0x33000000 /* 2^-25 */, 0x33C00000 /* 1.5 * 2^-24 */, 0x387FC000 /* near half min normal */,
+            0x477FE000 /* 65504 */, 0x477FF000 /* 65520: rounds to inf */, 0x477FEFFF, 0x3F801000 /* tie */, 0x3F803000 /* tie */,
+            0x00000001, 0x807FFFFF /* f32 denormals */, 0x7F800000, 0xFF800000, 0x7F800001, 0xFFC00001, 0x7FC00000, 0x3F800000, 0xC0490FDB,
+            0x7C007C00 /* half infs */, 0x7C017E00 /* half NaNs */, 0x00010003 /* half denormals */, 0x83FF8400, 0x3C00BC00,
+        ];
+        var rng = new Random(seed);
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0;
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var code = new List<byte>();
+                int n = rng.Next(1, 6);
+                for (int k = 0; k < n; k++)
+                {
+                    // 1110 1D11 001o Vd 1010 T1M0 Vm (cond AL)
+                    uint ins = 0xEEB20A40u | ((uint)rng.Next(2) << 22) | ((uint)rng.Next(2) << 16) | ((uint)rng.Next(16) << 12)
+                        | ((uint)rng.Next(2) << 7) | ((uint)rng.Next(2) << 5) | (uint)rng.Next(16);
+                    code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
+                }
+                code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                var st = new RandomState(rng);
+                for (int i = 0; i < 32; i++)
+                {
+                    uint lo = rng.Next(3) == 0 ? (uint)rng.NextInt64() : special[rng.Next(special.Length)];
+                    uint hi = rng.Next(3) == 0 ? (uint)rng.NextInt64() : special[rng.Next(special.Length)];
+                    st.D[i] = lo | ((ulong)hi << 32);
+                }
+                st.Fpscr = rng.Next(5) != 0 ? 0x0300_0000u : (uint)rng.Next(16) << 22;
+                st.Apply(s, thumb);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                st.Apply(s, thumb);
+                var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
+                compared++;
+                string diff = Diff(interp, native);
+                if (diff.Length > 0) Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+            }
+        }
+        finally { CpuState.Free(s); }
+        output.WriteLine($"compared {compared} half-conversion blocks; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }

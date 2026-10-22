@@ -92,6 +92,34 @@ internal static unsafe partial class Neon
     [MethodImpl(MethodImplOptions.AggressiveInlining)] static float F(byte* v, int i) => Ftz(((float*)v)[i]);
     [MethodImpl(MethodImplOptions.AggressiveInlining)] static void SetF(byte* v, int i, float x) => ((float*)v)[i] = FRes(x);
 
+    const double MinNormal = 1.1754943508222875e-38; // 2^-126
+
+    /// <summary>
+    /// x * y (inputs already flushed) under Advanced SIMD FZ: ARM detects tininess before rounding, so a product that
+    /// rounds up to +/- 2^-126 from below is flushed to a signed zero (x86/.NET round first). The double product of
+    /// two singles is exact.
+    /// </summary>
+    internal static float MulFz(float x, float y)
+    {
+        float r = x * y;
+        uint b = BitConverter.SingleToUInt32Bits(r);
+        if ((b & 0x7FFFFFFF) == 0x00800000 && Math.Abs((double)x * y) < MinNormal) return BitConverter.UInt32BitsToSingle(b & 0x80000000);
+        return r;
+    }
+
+    /// <summary>Fused x * y + z with the same before-rounding tininess rule (exact via double product + TwoSum).</summary>
+    internal static float FmaFz(float x, float y, float z)
+    {
+        float r = MathF.FusedMultiplyAdd(x, y, z);
+        uint b = BitConverter.SingleToUInt32Bits(r);
+        if ((b & 0x7FFFFFFF) != 0x00800000) return r;
+        double p = (double)x * y, s = p + z;
+        double bb = s - p, e = (p - (s - bb)) + (z - bb); // s + e == p + z exactly
+        double mag = Math.Abs(s);
+        bool tiny = mag < MinNormal || (mag == MinNormal && e != 0 && Math.Sign(e) != Math.Sign(s));
+        return tiny ? BitConverter.UInt32BitsToSingle(b & 0x80000000) : r;
+    }
+
     internal static float FMax(float a, float b)
     {
         if (float.IsNaN(a) || float.IsNaN(b)) return BitConverter.UInt32BitsToSingle(0x7FC00000); // Advanced SIMD: always the default NaN

@@ -59,6 +59,7 @@ public unsafe struct CpuState
     public uint MxcsrNeon;     // Advanced SIMD fast paths: denormals-are-zero only, round to nearest (results flushed explicitly, like the handlers)
     public uint TierUpRequest; // a SIMD-heavy native block ran out of its execution budget: recompile it with the IL backend
     public uint ExTmp;         // native STREX scratch (value being stored)
+    public uint ExTmpHi;       // native STREXD scratch (high word; ExTmp:ExTmpHi are read as one 64-bit value)
     public uint StoreLogCount; // verify mode: guest stores of the current native block (address, size, old value)
     public nint StoreLog;
 

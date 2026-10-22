@@ -14,10 +14,22 @@ public sealed unsafe partial class ArmFrontend
     static uint NRn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
     static uint NRm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
 
+    uint _ins;
+    Op _op;
+
+    /// <summary>
+    /// Float kinds whose rounded product (or fused result) can be +/- the smallest normal while the exact value was
+    /// below it: ARM flushes those (FZ tininess is detected before rounding), so the emitter sends such lanes to the
+    /// interpreter handler (<see cref="VecFlags.SlowPath"/>, instruction word in Imm3, op in Imm2 bits 16+).
+    /// </summary>
+    static bool NeedsTinyCheck(VecKind k) => k is VecKind.MulF or VecKind.MlaF or VecKind.MlsF or VecKind.FmaF or VecKind.FmsF
+        or VecKind.MulFS or VecKind.MlaFS or VecKind.MlsFS;
+
     bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags f = 0, uint aux = 0)
     {
         if (!X64Emitter.SupportsVec(k, size)) return null;
-        B.VecOp(k, q, size, vd * 8, vn * 8, vm * 8, f, aux);
+        if (NeedsTinyCheck(k)) { f |= VecFlags.SlowPath; aux |= (uint)_op << 16; }
+        B.VecOp(k, q, size, vd * 8, vn * 8, vm * 8, f, aux, _ins);
         return false;
     }
 
@@ -97,9 +109,7 @@ public sealed unsafe partial class ArmFrontend
         if (size == 2) scalar = (ins & 0xF) * 8 + Bit(ins, 5) * 4;
         else if (size == 1 && !fp) scalar = (ins & 7) * 8 + ((Bit(ins, 5) << 1) | Bit(ins, 3)) * 2;
         else return null;
-        if (!X64Emitter.SupportsVec(kind, size)) return null;
-        B.VecOp(kind, q, size, vd * 8, vn * 8, 0, 0, scalar);
-        return false;
+        return Vec(kind, q, size, vd, vn, 0, 0, scalar);
     }
 
     /// <summary>Neon.Shift: two registers and a shift amount.</summary>
@@ -158,6 +168,12 @@ public sealed unsafe partial class ArmFrontend
                     if ((1u << (int)size) >= group) return null;
                     return Vec(VecKind.Rev, q, size, vd, 0, vm, 0, group);
                 }
+                if (op is 4 or 5 or 0xC or 0xD)
+                {
+                    if (size == 3) return null;
+                    return Vec(VecKind.Paddl, q, size, vd, 0, vm, ((op & 1) != 0 ? VecFlags.Unsigned : 0) | (op >= 0xC ? VecFlags.Accumulate : 0));
+                }
+                if (op == 9 && size != 3) return Vec(VecKind.Clz, q, size, vd, 0, vm);
                 if (op == 0xA && size == 0) return Vec(VecKind.Cnt, q, 0, vd, 0, vm);
                 if (op == 0xB) return Vec(VecKind.Mvn, q, size, vd, 0, vm);
                 return null;

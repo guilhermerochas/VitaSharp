@@ -183,7 +183,7 @@ internal static unsafe partial class Neon
                 for (int i = 0; i < count; i++)
                 {
                     float x = F(tn, i), y = F(tm, i);
-                    SetF(td, i, MathF.FusedMultiplyAdd(sz1 ? -x : x, y, F(td, i)));
+                    SetF(td, i, FmaFz(sz1 ? -x : x, y, F(td, i)));
                 }
                 break;
             case 0xD:
@@ -211,11 +211,11 @@ internal static unsafe partial class Neon
                     if (!u) // VMLA / VMLS (float)
                         for (int i = 0; i < count; i++)
                         {
-                            float p = FRes(F(tn, i) * F(tm, i));
+                            float p = FRes(MulFz(F(tn, i), F(tm, i)));
                             SetF(td, i, sz1 ? F(td, i) - p : F(td, i) + p);
                         }
                     else // VMUL.F32
-                        for (int i = 0; i < count; i++) SetF(td, i, F(tn, i) * F(tm, i));
+                        for (int i = 0; i < count; i++) SetF(td, i, MulFz(F(tn, i), F(tm, i)));
                 }
                 break;
             case 0xE:
@@ -354,7 +354,7 @@ internal static unsafe partial class Neon
             float y = F(sm, (int)index);
             for (int i = 0; i < count; i++)
             {
-                float p = FRes(F(tn, i) * y);
+                float p = FRes(MulFz(F(tn, i), y));
                 SetF(td, i, a == 1 ? F(td, i) + p : a == 5 ? F(td, i) - p : p);
             }
             Buffer.MemoryCopy(td, Reg(s, d), bytesIn, bytesIn);

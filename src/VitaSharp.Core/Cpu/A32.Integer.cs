@@ -762,7 +762,9 @@ internal static unsafe partial class A32
         uint op = Bits(ins, 22, 21);
         bool L = Bit(ins, 20) != 0;
         uint rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rt = ins & 0xF;
-        ExclusiveCore(s, op, L, s->R[rn], L ? rd : rt, rd, rt == 15 ? 0 : rt + 1);
+        // doubleword: Rt2 = Rt + 1, where Rt is bits 15:12 for LDREXD and bits 3:0 for STREXD
+        uint first = L ? rd : rt;
+        ExclusiveCore(s, op, L, s->R[rn], first, rd, (first + 1) & 15);
     }
 
     /// <summary>op: 0=word 1=doubleword 2=byte 3=halfword. For loads rt = destination; for stores rd = status.</summary>

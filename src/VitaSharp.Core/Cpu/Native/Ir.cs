@@ -133,6 +133,7 @@ public enum FpKind : byte
     CvtFromS32, CvtFromU32,    // integer in single m -> float d
     CvtToS32, CvtToU32,        // float m -> integer in single d, round towards zero
     CvtToS32R, CvtToU32R,      // ... with the FPSCR rounding mode
+    CvtToHalf, CvtFromHalf,    // VCVTB/VCVTT: single m -> half at byte offset d / half at byte offset m -> single d (F16C)
 }
 
 [Flags]
@@ -166,6 +167,8 @@ public enum VecKind : byte
     Mvn, AbsF, NegF, AbsI, NegI,
     CmpZeroI, CmpZeroF,                      // Imm2 = 0 >0, 1 >=0, 2 ==0, 3 <=0, 4 <0
     Swp, Trn, Uzp, Zip, Movn, Cnt,
+    Paddl,                                   // VPADDL / VPADAL (Accumulate): pairwise add long, size = source lanes
+    Clz,                                     // VCLZ
     RecpeF, RsqrteF, RecpeU, RsqrteU, CvtS2F, CvtU2F, CvtF2S, CvtF2U, CvtF2H, CvtH2F,
     Ext,                                     // VEXT: Imm2 = byte offset
     Tbl,                                     // VTBL/VTBX: Imm2 = length (1-4) | tbx << 4
@@ -179,4 +182,5 @@ public enum VecFlags : uint
     Unsigned = 1 << 11,
     Round = 1 << 12,
     Accumulate = 1 << 13,
+    SlowPath = 1 << 14,   // may call the interpreter handler (rare edge lanes): a call site for register allocation
 }
