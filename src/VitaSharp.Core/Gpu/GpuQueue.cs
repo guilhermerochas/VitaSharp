@@ -95,6 +95,10 @@ public sealed class GpuQueue : IDisposable
 
     public int Pending => (int)(Submitted - Completed);
 
+    /// <summary>The command the worker is executing (null between commands): hang reports show where the GPU thread is stuck.</summary>
+    public GpuCommand? Executing => _executing;
+    volatile GpuCommand? _executing;
+
     void Run()
     {
         NativeThread.Register("GPU worker");
@@ -123,6 +127,7 @@ public sealed class GpuQueue : IDisposable
             }
             try
             {
+                _executing = cmd;
                 lock (_backendLock) Backend?.Execute(cmd);
             }
             catch (Exception e)
@@ -156,6 +161,7 @@ public sealed class GpuQueue : IDisposable
 
             lock (_progress)
             {
+                _executing = null;
                 Interlocked.Exchange(ref _completed, cmd.Sequence);
                 Monitor.PulseAll(_progress);
             }

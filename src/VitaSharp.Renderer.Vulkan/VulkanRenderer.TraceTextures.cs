@@ -18,16 +18,16 @@ public sealed unsafe partial class VulkanRenderer
     StringBuilder? _traceTextureStats;
     long _traceTextureFrame = -1;
 
-    bool TracingThisFrame => _opt.TraceDrawsFrame == _presentCount && _opt.ShaderCacheDir != null;
+    bool TracingThisFrame => _traceFrame == _presentCount && _traceDir != null;
     /// <summary>Scene begins and mid-scene flushes are logged for the traced frame and the one after it (a frame's
     /// post-processing often runs after the previous frame was presented).</summary>
-    bool TracingScenes => _opt.ShaderCacheDir != null && _presentCount >= _opt.TraceDrawsFrame && _presentCount <= _opt.TraceDrawsFrame + 1 && _opt.TraceDrawsFrame >= 0;
+    bool TracingScenes => _traceDir != null && _traceFrame >= 0 && _presentCount >= _traceFrame && _presentCount <= _traceFrame + 1;
 
     void TraceTexture(TexKey key, GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
     {
         if (_traceTextureFrame != _presentCount) { _traceTextureFrame = _presentCount; _tracedTextures.Clear(); _traceTextureStats = new StringBuilder(); }
         if (!_tracedTextures.Add(key)) return;
-        string dir = Path.Combine(_opt.ShaderCacheDir!, "trace", "textures");
+        string dir = Path.Combine(_traceDir!, "textures");
         Directory.CreateDirectory(dir);
         var sb = _traceTextureStats!;
         sb.Append($"tex 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} mips {d.MipCount} lodMin {d.LodMin} gamma {d.GammaMode}");

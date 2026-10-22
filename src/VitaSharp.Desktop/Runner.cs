@@ -45,7 +45,13 @@ public static class Runner
         bool noJit = options.Contains("--no-jit");
         bool headless = options.Contains("--headless") || Opt(options, "--seconds") != null;
         if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
-        Log.OpenFile(Opt(options, "--log") ?? Path.Combine(Program.DataRoot, "logs", "last.log"));
+        // debug mode (launcher "Modo de depuração"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
+        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable("VITASHARP_DEBUG_MODE") is "1" or "on" or "true") DebugMode.Enable();
+        // logs/last.log for this session, the previous sessions kept as logs/<time>_<title>.log
+        if (Opt(options, "--log") is { } logPath) Log.OpenFile(logPath);
+        else LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
+        if (DebugMode.Enabled) Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");
+        InstallCrashLogging();
 
         // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
@@ -82,19 +88,37 @@ public static class Runner
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;
+        double fps = 0;
+        // short feedback in the title bar (diagnostic captures), shown for a few seconds instead of the FPS line
+        string? status = null;
+        long statusUntil = 0;
+        void ShowTitle()
+        {
+            string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
+            try { window.Title = st != null ? $"VitaSharp | {st}" : $"VitaSharp | {emu.TitleId} {emu.Title} | {fps:F0} FPS | {renderer?.DeviceName}"; } catch { }
+        }
         var titleTimer = new System.Threading.Timer(_ =>
         {
             long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            double fps = (frames - lastFrames) / 1.0;
+            fps = (frames - lastFrames) / 1.0;
             lastFrames = frames;
             if (++titleTicks % 5 == 0) Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
-            try { window.Title = $"VitaSharp | {emu.TitleId} {emu.Title} | {fps:F0} FPS | {renderer?.DeviceName}"; } catch { }
+            ShowTitle();
         }, null, 1000, 1000);
+        var diag = new Diagnostics(emu, () => renderer, options)
+        {
+            Status = s => { Volatile.Write(ref status, s); Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + 6000); ShowTitle(); },
+            HostInfo = () => $"Window: framebuffer {window.FramebufferSize.Width}x{window.FramebufferSize.Height}, scale option {Opt(options, "--scale") ?? "1"}, fullscreen at start {options.Contains("--fullscreen")}",
+        };
+        window.DiagnosticRequested += () => diag.Capture("F10");
+        using var watchdog = new Watchdog(emu, () => renderer);
+        StartScheduledCaptures(options, diag);
 
         window.Loaded += () =>
         {
             rendererOptions.Surface = window;
             renderer = new VulkanRenderer(rendererOptions);
+            renderer.AnomalyDetected += diag.OnAnomaly;
             emu.Gpu.Backend = renderer;
             emu.LoadTitle(appPath);
             emu.Start();
@@ -102,7 +126,7 @@ public static class Runner
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
         emu.ExecRequested += () => Task.Run(() =>
         {
-            try { emu.PerformExec(() => renderer = new VulkanRenderer(rendererOptions)); }
+            try { emu.PerformExec(() => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; return renderer = r; }); }
             catch (Exception e) { Log.Error($"LoadExec failed: {e}"); fatal.Set(); }
         });
         window.Resized += () => renderer?.NotifyResized();
@@ -111,12 +135,55 @@ public static class Runner
         window.Run();
         titleTimer.Dispose();
         emu.Stop();
+        diag.WaitIdle(20000);
         PrintStats(emu);
         return 0;
     }
 
+    /// <summary>--diag-at=FRAME[,FRAME...]: the F10 capture, triggered when the guest frame is reached (tests).</summary>
+    static void StartScheduledCaptures(string[] options, Diagnostics diag)
+    {
+        if (Opt(options, "--diag-at") is not { } spec) return;
+        var frames = new SortedSet<long>(spec.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))));
+        new Thread(() =>
+        {
+            while (frames.Count > 0)
+            {
+                if (VitaSharp.Core.Hle.Modules.Display.FramesPresented >= frames.Min)
+                {
+                    frames.Remove(frames.Min);
+                    diag.Capture("--diag-at");
+                }
+                Thread.Sleep(5);
+            }
+        }) { IsBackground = true, Name = "diag-at" }.Start();
+    }
+
+    /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed.</summary>
+    static void InstallCrashLogging()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            Log.Error($"UNHANDLED EXCEPTION (terminating: {e.IsTerminating}) on thread '{Thread.CurrentThread.Name}' at guest frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {e.ExceptionObject}");
+            Log.Flush();
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Error($"Unobserved task exception: {e.Exception}");
+            Log.Flush();
+        };
+    }
+
+    static VulkanRenderer NewHeadlessRenderer(VulkanRendererOptions ro, Diagnostics diag)
+    {
+        var r = new VulkanRenderer(ro);
+        r.AnomalyDetected += diag.OnAnomaly;
+        return r;
+    }
+
     static int RunHeadless(Emulator emu, string appPath, string[] options, VulkanRendererOptions ro, ManualResetEventSlim fatal)
     {
+        var diag = new Diagnostics(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
         var dumpOpt = options.FirstOrDefault(o => o.StartsWith("--dump-frames"));
         string? dumpDir = null;
         List<(long Frame, byte[] Rgba)>? thumbs = null;
@@ -129,7 +196,7 @@ public static class Runner
             ro.DumpFrom = long.TryParse(Opt(options, "--dump-from"), out var dfr) ? dfr : 0;
             ro.TraceDrawsFrame = long.TryParse(Opt(options, "--trace-draws"), out var tdf) ? tdf : -1;
             if (dumpOpt != null) { dumpDir = dir; ro.Thumbnails = thumbs = new(); ro.InspectTextures = !options.Contains("--no-inspect"); }
-            emu.Gpu.Backend = new VulkanRenderer(ro);
+            emu.Gpu.Backend = NewHeadlessRenderer(ro, diag);
         }
         // turbo: no vblank/audio pacing, guest time jumps one frame per frame (automated tests)
         VitaSharp.Core.Util.GuestClock.Turbo = options.Contains("--turbo");
@@ -164,6 +231,8 @@ public static class Runner
         if (Opt(options, "--watch-read") is { } watchRead) InstallReadWatch(watchRead);
         if (Opt(options, "--dump-mem") is { } dm) StartMemoryDumps(dm, Path.Combine(Program.DataRoot, "memdump"));
         if (Opt(options, "--peek") is { } pk) StartPeeks(pk);
+        using var watchdog = new Watchdog(emu, () => emu.Gpu.Backend as VulkanRenderer);
+        StartScheduledCaptures(options, diag);
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath);
         emu.Start();
@@ -185,10 +254,11 @@ public static class Runner
             }
             if (emu.ExecRequest != null)
             {
-                try { emu.PerformExec(emu.Gpu.Backend != null ? () => new VulkanRenderer(ro) : null); }
+                try { emu.PerformExec(emu.Gpu.Backend != null ? () => NewHeadlessRenderer(ro, diag) : null); }
                 catch (Exception e) { Log.Error($"LoadExec failed: {e}"); break; }
             }
         }
+        diag.WaitIdle();
         sampler?.Report();
         PrintStats(emu);
         long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
@@ -533,6 +603,7 @@ public static class Runner
                 Log.Info($"PERF video decode: {hwPics} pictures in hardware, {swPics} in software, {VitaSharp.Core.Media.FFmpegVideoDecoder.Fallbacks} hardware fallbacks, {VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms decoding ({VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / (hwPics + swPics):F2} ms/picture)");
         }
         Log.Info($"  GPU commands: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}; frames presented {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
+        Watchdog.LogSummaries();
         long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         var gcInfo = GC.GetGCMemoryInfo();
         var proc = System.Diagnostics.Process.GetCurrentProcess();

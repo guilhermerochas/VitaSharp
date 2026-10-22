@@ -71,8 +71,23 @@ public sealed class SettingsDialog : Window
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
             Text = "Teclado, controles e toque são configurados na aba Controles. F11 alterna a tela cheia no jogo. " +
+                   "F10 captura um diagnóstico (quadro, texturas, captura de tela e log) em um .zip na pasta de diagnósticos. " +
                    "Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.",
         });
+        var debugMode = new CheckBox { Content = "Modo de depuração (gera logs detalhados para diagnóstico)", IsChecked = settings.DebugMode };
+        general.Children.Add(WithHint(debugMode, "Registra no log o primeiro uso de shaders, alvos e formatos, erros de HLE e travamentos, " +
+                                                 "e salva um diagnóstico automático quando a imagem parece corrompida. Pode custar alguns por cento de desempenho."));
+        var openDiag = new Button { Content = "Abrir pasta de diagnósticos", HorizontalAlignment = HorizontalAlignment.Left };
+        openDiag.Click += (_, _) =>
+        {
+            try
+            {
+                Directory.CreateDirectory(Diagnostics.Root);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Diagnostics.Root) { UseShellExecute = true });
+            }
+            catch (Exception) { }
+        };
+        general.Children.Add(openDiag);
         general.Children.Add(new TextBlock { Text = "Pasta de dados: " + Program.DataRoot, Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap });
 
         var controlsHost = new ContentControl();
@@ -115,6 +130,7 @@ public sealed class SettingsDialog : Window
             settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
+            settings.DebugMode = debugMode.IsChecked == true;
             settings.Save();
             Controls?.Save();
             Close();

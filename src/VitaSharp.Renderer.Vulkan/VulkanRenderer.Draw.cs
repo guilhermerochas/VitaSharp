@@ -278,6 +278,8 @@ public sealed unsafe partial class VulkanRenderer
         e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk };
         if (me.Gen != null) BuildVertexInput(vp, me.Gen, e);
         _vsCache[(vp, hk)] = e;
+        _fNewShaders++;
+        if (DebugMode.Enabled) DbgVertexShader(e, d);
         return e;
     }
 
@@ -291,6 +293,8 @@ public sealed unsafe partial class VulkanRenderer
         var me = GetModule(fp.Info.Program, hk, fetchInput ? FragmentHintsInputFetch : FragmentHints, d, colorFormat);
         e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
         _fsCache[(fp, hk)] = e;
+        _fNewShaders++;
+        if (DebugMode.Enabled) DbgFragmentShader(e, d, fetchInput);
         return e;
     }
 
@@ -383,6 +387,8 @@ public sealed unsafe partial class VulkanRenderer
     Pipeline GetPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         if (_pipelines.TryGetValue(key, out var p)) return p;
+        _fNewPipelines++;
+        if (DebugMode.Enabled) DbgPipeline(key, topology);
         if (_sharedPipelines.TryGetValue(key, out p))
         {
             // compiled ahead of time by the prewarm thread
@@ -530,6 +536,7 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     _deviceLost = true; // stops the background shader/pipeline work
                     Log.WarnOnce("pipeline-device-lost", "vkCreateGraphicsPipelines failed: device lost");
+                    ReportDeviceLost("vkCreateGraphicsPipelines");
                 }
                 else Log.Error($"vkCreateGraphicsPipelines failed: {r}");
                 p = default;
@@ -587,7 +594,7 @@ public sealed unsafe partial class VulkanRenderer
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
         TraceSnapshot(d);
-        if (_opt.TraceDrawsFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
+        if (_traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
@@ -807,6 +814,20 @@ public sealed unsafe partial class VulkanRenderer
         if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(d.VertexUniforms, d.VertexUniformsOffset + k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(d.FragmentUniforms, d.FragmentUniformsOffset + k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");
+        sb.Append($" msaa={(_ms ? ((int)_msSamples).ToString() + "x" : _ss ? "ss2x" : "off")}");
+        if (_diagActive is { } capture)
+        {
+            // capture: the list goes to draws.txt, each program's GLSL once to shaders/ (shaders loaded from the
+            // per-title pack carry no GLSL: translated again here, without compiling)
+            capture.DrawCount++;
+            TraceLine(sb.ToString());
+            var dir = Path.Combine(capture.Dir, "shaders");
+            Directory.CreateDirectory(dir);
+            WriteTraceGlsl(capture, dir, d.VertexProgram.Info.Program, vs.HintKey, vs.Gen, () => VertexHints(d, 0));
+            uint colorFormat = _rt?.ColorFormat ?? 0;
+            WriteTraceGlsl(capture, dir, d.FragmentProgram.Info.Program, fs.HintKey, fs.Gen, () => FragmentHints(d, colorFormat));
+            return;
+        }
         Log.Info(sb.ToString());
         if (_opt.ShaderCacheDir != null)
         {
@@ -815,6 +836,17 @@ public sealed unsafe partial class VulkanRenderer
             if (!string.IsNullOrEmpty(vs.Gen?.Glsl)) File.WriteAllText(Path.Combine(dir, $"{d.VertexProgram.Info.Program.Hash:x16}.vert"), vs.Gen!.Glsl);
             if (!string.IsNullOrEmpty(fs.Gen?.Glsl)) File.WriteAllText(Path.Combine(dir, $"{d.FragmentProgram.Info.Program.Hash:x16}.frag"), fs.Gen!.Glsl);
         }
+    }
+
+    void WriteTraceGlsl(DiagRequest capture, string dir, GxpProgram program, ulong hintKey, GeneratedShader? gen, Func<ShaderHints> hints)
+    {
+        if (!capture.ShadersWritten.Add((program.Hash, hintKey))) return;
+        try
+        {
+            string glsl = !string.IsNullOrEmpty(gen?.Glsl) ? gen!.Glsl : ShaderGenerator.Generate(program, hints()).Glsl;
+            File.WriteAllText(Path.Combine(dir, $"{program.Hash:x16}_{hintKey:x16}.{(program.IsVertex ? "vert" : "frag")}"), glsl);
+        }
+        catch (Exception e) { Log.Warn($"[diag] GLSL of {program.Hash:X16} not written: {e.Message}"); }
     }
 
     static bool IsTrivial(in StencilState s) => s.Func == 7 && s.StencilFail == 0 && s.DepthFail == 0 && s.DepthPass == 0;

@@ -12,15 +12,34 @@ public static class Log
     static readonly object Lock = new();
     static readonly ConcurrentDictionary<string, int> Once = new();
 
+    /// <summary>Path of the open log file (null when logging to the console only).</summary>
+    public static string? FilePath { get; private set; }
+
+    /// <summary>
+    /// Debug mode: warnings are deduplicated by their text with numbers masked; the first three of a kind are written,
+    /// then only the 10th, 100th, ... occurrence with its count (<see cref="WarningSummary"/> lists them all).
+    /// </summary>
+    public static bool DedupeWarnings { get; set; }
+
+    /// <summary>Above this many characters written, Info/Debug lines are dropped (warnings and errors still go out),
+    /// so a runaway log cannot fill the disk.</summary>
+    public static long MaxFileChars { get; set; } = 256L << 20;
+    static long _written;
+    static bool _capNoted;
+    static readonly ConcurrentDictionary<string, int> WarnCounts = new();
+
     public static void OpenFile(string path)
     {
         lock (Lock)
         {
             _file?.Dispose();
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            FilePath = Path.GetFullPath(path);
+            _written = 0;
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             // buffered: a flush per line costs a syscall on every message; warnings/errors flush immediately and a
-            // timer flushes the rest so a crash loses at most a quarter second of log
-            _file = new StreamWriter(path, false, System.Text.Encoding.UTF8, 1 << 16);
+            // timer flushes the rest so a crash loses at most a quarter second of log. FileShare.ReadWrite: diagnostic
+            // captures copy the file while it is open
+            _file = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), System.Text.Encoding.UTF8, 1 << 16);
             _flushTimer ??= new Timer(_ => Flush(), null, 250, 250);
             AppDomain.CurrentDomain.ProcessExit += (_, _) => Flush();
         }
@@ -36,15 +55,58 @@ public static class Log
     public static void Write(LogLevel level, string msg)
     {
         if (level < Level) return;
+        if (level == LogLevel.Warn && DedupeWarnings)
+        {
+            int n = WarnCounts.AddOrUpdate(MaskNumbers(msg), 1, (_, c) => c + 1);
+            if (n > 3 && n is not (10 or 100 or 1000 or 10000 or 100000 or 1000000)) return;
+            if (n > 3) msg += $" (repeated {n} times)";
+        }
         var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString()}] {msg}";
         lock (Lock)
         {
             if (level >= LogLevel.Warn) Console.ForegroundColor = level == LogLevel.Error ? ConsoleColor.Red : ConsoleColor.Yellow;
             Console.WriteLine(line);
             if (level >= LogLevel.Warn) Console.ResetColor();
-            _file?.WriteLine(line);
-            if (level >= LogLevel.Warn) _file?.Flush();
+            if (_file != null)
+            {
+                _written += line.Length + 2;
+                if (_written <= MaxFileChars || level >= LogLevel.Warn) _file.WriteLine(line);
+                else if (!_capNoted) { _capNoted = true; _file.WriteLine($"[log] {MaxFileChars >> 20} M characters written: info/debug lines are dropped from now on"); }
+                if (level >= LogLevel.Warn) _file.Flush();
+            }
         }
+    }
+
+    /// <summary>Warnings with their numbers masked (# = any number), most frequent first (debug mode).</summary>
+    public static IEnumerable<string> WarningSummary(int max = 60) =>
+        WarnCounts.OrderByDescending(k => k.Value).Take(max).Select(k => $"[dbg] WARN x{k.Value}: {k.Key}");
+
+    /// <summary>Message text with numbers (decimal, or hexadecimal runs containing a digit) replaced by '#': the dedup
+    /// key of a warning.</summary>
+    static string MaskNumbers(string m)
+    {
+        var sb = new System.Text.StringBuilder(m.Length);
+        int i = 0;
+        while (i < m.Length)
+        {
+            if (char.IsAsciiHexDigit(m[i]) && (i == 0 || !char.IsAsciiLetterOrDigit(m[i - 1]) || m[i - 1] == 'x' && i >= 2 && char.IsAsciiDigit(m[i - 2])))
+            {
+                int j = i;
+                bool digit = false;
+                while (j < m.Length && char.IsAsciiHexDigit(m[j])) { digit |= char.IsAsciiDigit(m[j]); j++; }
+                if (digit && (j >= m.Length || !char.IsAsciiLetter(m[j]) || m[j] == 'x'))
+                {
+                    sb.Append('#');
+                    i = j;
+                    continue;
+                }
+                sb.Append(m, i, j - i);
+                i = j;
+                continue;
+            }
+            sb.Append(m[i++]);
+        }
+        return sb.ToString();
     }
 
     public static void Trace(string m) { if (Level <= LogLevel.Trace) Write(LogLevel.Trace, m); }

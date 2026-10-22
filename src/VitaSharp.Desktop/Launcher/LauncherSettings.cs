@@ -18,6 +18,8 @@ public sealed class LauncherSettings
     public bool FastShaderCompile { get; set; } = true;
     /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
     public bool BackgroundShaderCompile { get; set; } = true;
+    /// <summary>"Modo de depuração": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
+    public bool DebugMode { get; set; }
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -49,6 +51,7 @@ public sealed class LauncherSettings
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
+        if (DebugMode) yield return "--debug-mode";
     }
 }
 
