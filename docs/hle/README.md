@@ -12,6 +12,10 @@ Fonte da comparação (2026-10-18):
 - Uso real: `VitaSharp.Desktop imports <TITLEID>` nos 7 jogos instalados e logs `Unimplemented HLE function`.
 - Referência de comportamento: [Vita3K](https://github.com/Vita3K/Vita3K) @ `7059dc2` (`vita3k/modules/<Lib>/`).
   Use para entender semântica, layouts e códigos de erro; não copie código.
+- Itens marcados "a confirmar por desmontagem" na última passada (2026-10-22, branch `feat/hle-rest`) foram confirmados
+  nos módulos do firmware instalado pelo Vita3K do usuário (`os0:us`, `os0:kd`, `vs0:sys/external` e o SceAppMgr
+  embutido no `bootimage.skprx`; versão 3.6x, NIDs iguais ao `db/360`), lidos com `self2elf` + Capstone. Nada do
+  firmware entra no repositório; os textos citam só protótipos, offsets e códigos de erro.
 
 ## Arquivos
 
