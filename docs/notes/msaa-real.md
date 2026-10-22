@@ -30,12 +30,41 @@ Status notes, kept up to date in case the work is interrupted.
   multisampleable), `VITASHARP_MSAA=off` = one sample.
 - `VulkanRenderer.GpuTime.cs`: timestamp queries around each submitted command buffer, `PERF gpu:` line in report.
 
-## Input attachments (not done)
+## Input attachments (done, commit 6a28046)
 
-Framebuffer fetch via input attachments needs either classic render passes (renderer uses dynamic rendering) or
-VK_KHR_dynamic_rendering_local_read. The dev machine (GTX 1650, driver 546.17; Intel UHD 101.4502) exposes neither
-local_read, so such a path could not be tested; the copy path is used everywhere.
+Multisampled scenes render in classic render passes (`MsaaRenderPass`, one subpass: samples = colour + input
+attachment, by-region self-dependency; depth; optional resolve). Pipelines with Samples > 1 are created against
+`MsaaCompatPass(format, samples)` (single subpass: resolve/load/store do not affect compatibility). Fetch shaders get a
+variant (`ShaderHints.FetchInputAttachment`, `subpassLoad(last_frag_in, gl_SampleID)`, set 3 binding 2) and
+`InputFetchBarrier` before the draw. Raw integer renderings and `VITASHARP_MSAA_FETCH=copy` use the copy path.
+VK_KHR_dynamic_rendering_local_read was not used: not exposed by the dev drivers (GTX 1650 546.17, Intel 101.4502).
+
+## Status (checkpoint 2026-10-22 ~02:55)
+
+Commits: cef37ba (real MSAA, copy fetch), 6a28046 (input attachments). WIP commit on top: `PauseRendering(reads)` —
+renderings broken for texture uploads / reads of OTHER surfaces skip the resolve in MSAA scenes (Killzone: ~6
+renderings per MSAA scene, mostly ResolveTexture/RenderTargetRegion/RenderTargetMipmapped/UploadTexture breaks).
+WIP compiles (0 warnings) but is UNTESTED.
+
+Measured (kz_skin, GTX 1650, warm cache, other agents sharing the GPU so noisy):
+- main (cold cache): 24.1 fps, GPU worker 11.1 ms/frame (cold compile).
+- VITASHARP_MSAA=ss (old path, same build): GPU 6.80 ms/frame, GPU worker 4.39 ms, 28.8 fps.
+- native + copy fetch (cef37ba): GPU 6.56 ms, worker 6.47 ms, 27.3 fps.
+- native + input attachments (6a28046): GPU 3.98 ms, worker 6.69 ms, 27.8 fps. Frames identical to ss/main by eye
+  (text smooth, gun dark/textured, light shafts OK, no artifacts). Frames: .vitadata/tests/n_kz_skin.
+- ucx_title (no MSAA) and rbs_boot (only MSAA without downscale) unaffected. rbs_boot no longer reaches gameplay
+  because a save now exists ("Continue" menu): tap@f1900 hits Intel. Use tap@f1900:0.28:0.24 (Continue) instead.
+
+## Next steps
+
+1. Test the WIP commit on kz_skin (renderings/resolves count in `PERF gpu` line should drop; frames unchanged).
+2. Validation one game at a time: kzl_walk3, uc_walk, ucx_title, rbs (Continue variant), f1_trees_lod, dd_boot,
+   mania_boot; fast unit tests `--filter Category!=Slow`.
+3. Re-measure main with warm cache (bin_base, sc_b_kz_skin) for a fair before number.
+4. GPU worker CPU ms/frame rose (~4.4 -> 6.7): secondary command buffers + per-draw fetch set; look at it.
+5. Remove the WIP prefix (squash or new commit message) once tested. Do not merge/push.
 
 ## Testing
 
 Scripts in the session scratchpad `msaa/` (`run.sh <bin> <prefix> <scenario> [ENV=..]`, `mkscen.sh`).
+Outputs: <data>/tests/<prefix>_<scenario>; delete test dirs (n_*, s_*, b_*, g_*) when done except cited frames.

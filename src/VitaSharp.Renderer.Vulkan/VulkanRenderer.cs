@@ -664,10 +664,17 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     }
 
     /// <summary>Makes colour writes to <paramref name="rt"/> visible to shader reads / transfers.</summary>
+    /// <summary>
+    /// Ends the rendering for work outside it that reads <paramref name="reads"/> (or no surface): a multisampled
+    /// scene resolves its samples only when the work reads its own surface; otherwise the resolve waits for the next
+    /// rendering (texture uploads and reads of other surfaces break multisampled scenes often).
+    /// </summary>
+    void PauseRendering(RenderTarget? reads = null) => EndRendering(resolve: !_ms || (reads != null && reads == _rt));
+
     void SyncRenderTargetForRead(RenderTarget rt)
     {
         if (!rt.Dirty) return;
-        EndRendering();
+        PauseRendering(rt);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
