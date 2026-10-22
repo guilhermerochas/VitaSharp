@@ -41,11 +41,40 @@ static unsafe class Lockstep
     {
         if (Environment.GetEnvironmentVariable("VITASHARP_LOCKSTEP") is not { } spec) return;
         var p = spec.Split(':');
+        if (p[0] == "ALL") { InstallAll(long.Parse(p[1]), p.Length > 2 ? long.Parse(p[2]) : 0); return; }
         _start = Convert.ToUInt32(p[0], 16) & ~1u; _blocks = long.Parse(p[1]); _fromFrame = p.Length > 2 ? long.Parse(p[2]) : 0;
         Jit.Enabled = false;
         CpuCore.BlockHook = Hook;
         NewUc();
         Log.Info($"LOCKSTEP armed at {_start:X8} for {_blocks} blocks from frame {_fromFrame}");
+    }
+
+    static readonly object _allLock = new();
+    static readonly Dictionary<uint, int> _perAddress = new();
+    static readonly Dictionary<Op, long> _perOp = new();
+    static bool _all;
+
+    /// <summary>VITASHARP_LOCKSTEP=ALL:FRAMES:FROMFRAME: the backends run normally until FROMFRAME, then every block of
+    /// every thread is compared with Unicorn (serialised; best with --cores=1) for FRAMES frames. Mismatches are logged
+    /// at most 3 times per instruction address and summarised per opcode at the end.</summary>
+    static void InstallAll(long frames, long fromFrame)
+    {
+        _all = true;
+        NewUc();
+        Log.Info($"LOCKSTEP ALL armed for frames {fromFrame}..{fromFrame + frames}");
+        new Thread(() =>
+        {
+            while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < fromFrame) Thread.Sleep(5);
+            Log.Info($"LOCKSTEP ALL start at frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
+            CpuCore.BlockHook = (core, s, b) => { lock (_allLock) { _done++; StepBlock(s, b); } return true; };
+            while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < fromFrame + frames) Thread.Sleep(5);
+            CpuCore.BlockHook = null;
+            lock (_allLock)
+            {
+                Log.Info($"LOCKSTEP ALL done at frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {_done} blocks, {_mismatches} mismatches at {_perAddress.Count} addresses");
+                foreach (var (op, n) in _perOp.OrderByDescending(kv => kv.Value)) Log.Info($"LOCKSTEP ALL op {op}: {n}");
+            }
+        }) { IsBackground = true, Name = "lockstep" }.Start();
     }
 
     static void W(int reg, ulong v) => uc_reg_write(_uc, reg, &v);
@@ -102,23 +131,47 @@ static unsafe class Lockstep
         W(UcArm.UC_ARM_REG_C13_C0_3, s->TpidrUro);
     }
 
+    /// <summary>ARM ARM ConditionPassed() on the NZCV flags of a CPSR value.</summary>
+    static bool CondPassed(uint cpsr, uint cond)
+    {
+        bool n = (cpsr & 0x80000000) != 0, z = (cpsr & 0x40000000) != 0, c = (cpsr & 0x20000000) != 0, v = (cpsr & 0x10000000) != 0;
+        bool r = (cond >> 1) switch
+        {
+            0 => z, 1 => c, 2 => n, 3 => v, 4 => c && !z, 5 => n == v, 6 => n == v && !z, _ => true,
+        };
+        return (cond & 1) != 0 && cond != 15 ? !r : r;
+    }
+
     /// <summary>Executes the block one instruction at a time on Unicorn and on our interpreter, comparing after each.</summary>
     static void StepBlock(CpuState* s, Block b)
     {
         if (_uc == 0) NewUc();
         LoadUc(s);
         bool sync = true;
+        uint* preR = stackalloc uint[16];
+        ulong* preD = stackalloc ulong[32];
+        uint it = 0, nextIt = 0; // ITSTATE (firstcond:mask) of the current instruction, as in Block's decoder
         for (int i = 0; i < b.Insts.Length; i++)
         {
             var d = b.Insts[i];
+            it = nextIt;
+            nextIt = d.Op == Op.Thumb_It ? d.Raw & 0xFFu : (it & 7) == 0 ? 0 : (it & 0xE0) | ((it << 1) & 0x1F);
             bool svc = d.Op is Op.A32_Svc or Op.T16_Svc;
             uint pre15 = s->R[15];
-            uint* preR = stackalloc uint[16]; for (int r = 0; r < 16; r++) preR[r] = s->R[r];
-            ulong* preD = stackalloc ulong[32]; for (int r = 0; r < 32; r++) preD[r] = s->D[r];
+            for (int r = 0; r < 16; r++) preR[r] = s->R[r];
+            for (int r = 0; r < 32; r++) preD[r] = s->D[r];
             uint preFpscr = s->Fpscr, preCpsr = s->Cpsr;
             int e = 0;
-            if (sync && !svc)
+            // Unicorn single steps do not survive IT blocks or failed conditions (ITSTATE is lost between steps, and a
+            // skipped instruction does not count as a step, so it runs on into the next ones). Instructions whose
+            // condition fails and IT itself change nothing here: they are not stepped on Unicorn; the others run
+            // there unconditionally with ITSTATE cleared (a 16-bit flag-setting form then sets flags, so NZCV is
+            // not compared inside IT blocks).
+            bool conditional = (d.Flags & InstFlags.Conditional) != 0;
+            bool ucStep = sync && !svc && d.Op != Op.Thumb_It && (!conditional || CondPassed(s->Cpsr, d.Cond));
+            if (ucStep)
             {
+                if (b.Thumb) W(UcArm.UC_ARM_REG_CPSR, (uint)R(UcArm.UC_ARM_REG_CPSR) & ~0x0600FC00u);
                 _writes.Clear();
                 e = uc_emu_start(_uc, d.Address | (b.Thumb ? 1u : 0), 0xFFFFFFFF, 0, 1);
                 for (int r = 0; r < 16; r++) _ucR[r] = (uint)R(RegIds[r]);
@@ -131,8 +184,14 @@ static unsafe class Lockstep
             // ours: one instruction (its IT condition is already folded into the decoded form)
             var one = new Block { Start = d.Address, Thumb = b.Thumb, Insts = [d], End = d.Address + d.Size };
             CpuCore.Interpret(s, one);
-            if (sync && !svc && e == 0 && d.Op != Op.Thumb_It)
+            if (ucStep && e != 0 && _all) sync = false; // Unicorn faulted (e.g. memory it does not map): stop comparing this block
+            if (ucStep && e == 0)
             {
+                if (it != 0)
+                {
+                    _ucCpsr = (_ucCpsr & 0x07FFFFFF) | (s->Cpsr & 0xF8000000);
+                    W(UcArm.UC_ARM_REG_CPSR, _ucCpsr);
+                }
                 var sb = new System.Text.StringBuilder();
                 for (int r = 0; r < 15; r++) if (_ucR[r] != s->R[r]) sb.Append($" R{r}: uc={_ucR[r]:X8} us={s->R[r]:X8}");
                 if ((_ucR[15] & ~1u) != s->R[15]) sb.Append($" PC: uc={_ucR[15]:X8} us={s->R[15]:X8}");
@@ -143,7 +202,17 @@ static unsafe class Lockstep
                 foreach (var (a, v) in _ucBytes) if (GuestMemory.Base[a] != v && memDiff++ < 4) sb.Append($" MEM@{a:X8}: uc={v:X2} us={GuestMemory.Base[a]:X2}");
                 if (sb.Length > 0)
                 {
-                    if (_mismatches++ < 400)
+                    bool log;
+                    if (_all)
+                    {
+                        _mismatches++;
+                        _perOp[d.Op] = _perOp.GetValueOrDefault(d.Op) + 1;
+                        int n = _perAddress.GetValueOrDefault(d.Address);
+                        _perAddress[d.Address] = n + 1;
+                        log = n < 3;
+                    }
+                    else log = _mismatches++ < 400;
+                    if (log)
                     {
                         var rs = new System.Text.StringBuilder();
                         for (int r = 0; r < 16; r++) rs.Append($" {preR[r]:X}");

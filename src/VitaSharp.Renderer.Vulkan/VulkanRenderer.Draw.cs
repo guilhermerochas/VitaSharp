@@ -509,7 +509,7 @@ public sealed unsafe partial class VulkanRenderer
 
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
-        TraceSnapshot();
+        TraceSnapshot(d);
         if (_opt.TraceDrawsFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (vs.Failed || fs.Failed) return;
 
