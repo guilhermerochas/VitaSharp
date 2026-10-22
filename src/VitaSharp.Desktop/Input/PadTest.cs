@@ -100,6 +100,25 @@ static class PadTest
         pads.SetVirtual(v, axis: PadAxis.RightTrigger, value: 0f);
         Check(Read().State.Equals(ControllerState.Neutral), "released = neutral");
 
+        // the game window's path: keyboard (default keys) + every controller through HostInput
+        using (var host = new HostInput(Program.DataRoot, pads: pads))
+        {
+            host.KeyChanged("Space", true);
+            host.KeyChanged("W", true);
+            pads.SetVirtual(v, PadButton.North, true);
+            pads.SetVirtual(v, axis: PadAxis.RightX, value: -1f);
+            pads.Flush();
+            var h = host.Poll();
+            Check(h.State.Buttons == (VitaButtons.Cross | VitaButtons.Triangle) && h.State.Ly == 0 && h.State.Rx == 0,
+                $"HostInput: Space + W (keyboard) + Triangle + right stick left (pad) ({Format(h)})");
+            host.KeyChanged("Space", false);
+            host.KeyChanged("W", false);
+            pads.SetVirtual(v, PadButton.North, false);
+            pads.SetVirtual(v, axis: PadAxis.RightX, value: 0f);
+            pads.Flush();
+            Check(host.Poll().State.Equals(ControllerState.Neutral), "HostInput: released = neutral");
+        }
+
         pads.DetachVirtual(v);
         pads.Flush();
         Check(pads.Devices.Count == before, "hot-unplug: virtual controller removed");

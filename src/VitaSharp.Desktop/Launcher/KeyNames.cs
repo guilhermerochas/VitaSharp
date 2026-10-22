@@ -52,16 +52,4 @@ public static class KeyNames
             or PhysicalKey.Pause => k.ToString(),
         _ => null,
     };
-
-    /// <summary>Short label for a stored key name ("Number1" -> "1", "ShiftRight" -> "Right Shift").</summary>
-    public static string Pretty(string name) => name switch
-    {
-        _ when name.StartsWith("Number") && name.Length == 7 => name[6..],
-        _ when name.StartsWith("Keypad") => "Num " + name[6..],
-        "ShiftLeft" => "Left Shift", "ShiftRight" => "Right Shift", "ControlLeft" => "Left Ctrl", "ControlRight" => "Right Ctrl",
-        "AltLeft" => "Left Alt", "AltRight" => "Right Alt", "Up" => "↑", "Down" => "↓", "Left" => "←", "Right" => "→",
-        "Backspace" => "Backspace", "GraveAccent" => "`", "Apostrophe" => "'", "LeftBracket" => "[", "RightBracket" => "]",
-        "BackSlash" => "\\", "Comma" => ",", "Period" => ".", "Slash" => "/", "Semicolon" => ";", "Minus" => "-", "Equal" => "=",
-        _ => name,
-    };
 }

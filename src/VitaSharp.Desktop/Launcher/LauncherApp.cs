@@ -11,7 +11,8 @@ public sealed class LauncherApp : Application
 {
     public override void Initialize()
     {
-        Styles.Add(new FluentTheme());
+        // the launcher's blue accent everywhere (check boxes, sliders, tabs), not the OS accent colour
+        Styles.Add(new FluentTheme { Palettes = { [ThemeVariant.Dark] = new ColorPaletteResources { Accent = LauncherTheme.AccentColor } } });
         RequestedThemeVariant = ThemeVariant.Dark;
     }
 

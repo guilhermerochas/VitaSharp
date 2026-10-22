@@ -6,7 +6,7 @@ using VitaSharp.Desktop.Input;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Settings window: "General" (window, graphics, camera, CPU) and "Controls" (controller mapping).</summary>
+/// <summary>Settings window: "Geral" (window, graphics, camera, CPU) and "Controles" (keyboard / controller mapping).</summary>
 public sealed class SettingsDialog : Window
 {
     public const int GeneralTab = 0, ControlsTab = 1;
@@ -19,7 +19,7 @@ public sealed class SettingsDialog : Window
     /// <param name="pads">Controller backend for the Controls tab (tests / previews); null = its own.</param>
     public SettingsDialog(LauncherSettings settings, int initialTab = GeneralTab, SdlGamepads? pads = null)
     {
-        Title = "Settings";
+        Title = "Configurações";
         Width = 1120;
         Height = 760;
         MinWidth = 900;
@@ -27,49 +27,49 @@ public sealed class SettingsDialog : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = LauncherTheme.WindowBackground;
 
-        var fullscreen = new CheckBox { Content = "Start games in fullscreen (F11 toggles in game)", IsChecked = settings.Fullscreen };
+        var fullscreen = new CheckBox { Content = "Iniciar jogos em tela cheia (F11 alterna no jogo)", IsChecked = settings.Fullscreen };
         var vsync = new CheckBox { Content = "VSync", IsChecked = settings.VSync };
-        var validation = new CheckBox { Content = "Vulkan validation layers (debugging, slow)", IsChecked = settings.Validation };
+        var validation = new CheckBox { Content = "Camadas de validação do Vulkan (depuração, lento)", IsChecked = settings.Validation };
         var scale = new ComboBox { ItemsSource = new[] { "1x (960×544)", "2x (1920×1088)", "3x (2880×1632)" }, SelectedIndex = Math.Clamp(settings.Scale - 1, 0, 2), Width = 200 };
         // camera: "" = first device, "none" = disabled, otherwise a device name
         var cameraValues = new List<string> { "", "none" };
-        var cameraLabels = new List<string> { "Default (first camera)", "None (grey image)" };
+        var cameraLabels = new List<string> { "Padrão (primeira câmera)", "Nenhuma (imagem cinza)" };
         foreach (var d in VitaSharp.Desktop.Host.FlashCapCamera.ListDevices()) { cameraValues.Add(d.Name); cameraLabels.Add(d.Name); }
-        if (!cameraValues.Contains(settings.Camera, StringComparer.OrdinalIgnoreCase)) { cameraValues.Add(settings.Camera); cameraLabels.Add(settings.Camera + " (not connected)"); }
+        if (!cameraValues.Contains(settings.Camera, StringComparer.OrdinalIgnoreCase)) { cameraValues.Add(settings.Camera); cameraLabels.Add(settings.Camera + " (desconectada)"); }
         var camera = new ComboBox
         {
-            ItemsSource = cameraLabels, Width = 260,
+            ItemsSource = cameraLabels, Width = 320,
             SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(settings.Camera, StringComparison.OrdinalIgnoreCase))),
         };
         // CPU backend: "" = best supported on this PC, else --cpu=native|il|interp
         string[] cpuValues = ["", "native", "il", "interp"];
         var cpu = new ComboBox
         {
-            ItemsSource = new[] { "Auto (best for this PC)", "Native JIT (x64 machine code)", "IL JIT (.NET DynamicMethod)", "Interpreter (slowest, debugging)" },
-            Width = 260, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
+            ItemsSource = new[] { "Automático (o melhor para este PC)", "JIT nativo (código de máquina x64)", "JIT IL (.NET DynamicMethod)", "Interpretador (mais lento, depuração)" },
+            Width = 320, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
         };
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         general.Children.Add(fullscreen);
-        general.Children.Add(Row("Window size", scale));
+        general.Children.Add(Row("Tamanho", scale));
         general.Children.Add(vsync);
         general.Children.Add(validation);
-        general.Children.Add(Row("Camera", camera));
+        general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
         general.Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
-            Text = "Keyboard, controllers and touch are configured in the Controls tab. F11 toggles fullscreen in game. " +
-                   "Mouse: left button = front touch screen, right button = rear touch pad.",
+            Text = "Teclado, controles e toque são configurados na aba Controles. F11 alterna a tela cheia no jogo. " +
+                   "Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.",
         });
-        general.Children.Add(new TextBlock { Text = "Data folder: " + Program.DataRoot, Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap });
+        general.Children.Add(new TextBlock { Text = "Pasta de dados: " + Program.DataRoot, Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap });
 
         var controlsHost = new ContentControl();
         _tabs = new TabControl
         {
             Items =
             {
-                new TabItem { Header = "General", Content = new ScrollViewer { Content = general } },
-                new TabItem { Header = "Controls", Content = controlsHost },
+                new TabItem { Header = "Geral", Content = new ScrollViewer { Content = general } },
+                new TabItem { Header = "Controles", Content = controlsHost },
             },
         };
         _tabs.SelectionChanged += (_, _) =>
@@ -78,14 +78,14 @@ public sealed class SettingsDialog : Window
                 controlsHost.Content = Controls = new ControllerSettingsPanel(Program.DataRoot, pads) { Margin = new Thickness(4, 12, 4, 0) };
         };
 
-        var ok = new Button { Content = "Save", Background = LauncherTheme.Accent, Foreground = Brushes.White, IsDefault = true };
-        var cancel = new Button { Content = "Cancel" };
+        var ok = new Button { Content = "Salvar", Background = LauncherTheme.Accent, Foreground = Brushes.White, IsDefault = true };
+        var cancel = new Button { Content = "Cancelar" };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
         buttons.Children.Add(cancel);
         buttons.Children.Add(ok);
 
         var root = new DockPanel { Margin = new Thickness(20, 16, 20, 20) };
-        var title = new TextBlock { Text = "Settings", FontSize = 18, FontWeight = FontWeight.SemiBold };
+        var title = new TextBlock { Text = "Configurações", FontSize = 18, FontWeight = FontWeight.SemiBold };
         DockPanel.SetDock(title, Dock.Top);
         DockPanel.SetDock(buttons, Dock.Bottom);
         root.Children.Add(title);
@@ -108,6 +108,8 @@ public sealed class SettingsDialog : Window
         cancel.Click += (_, _) => Close();
         _tabs.SelectedIndex = initialTab;
     }
+
+    public void ShowTab(int index) => _tabs.SelectedIndex = index;
 
     static Control Row(string label, Control c)
     {

@@ -102,6 +102,16 @@ static class UiSnapshot
         pads.SetVirtual(v, axis: PadAxis.RightX, value: 0.07f);
         pads.SetVirtual(v, axis: PadAxis.RightTrigger, value: 1f);
         await Snap("dualsense_pressed");
+        // swap confirm (Cross on the pad lights Circle), bigger left deadzone (the stick at 0.2 stays centred),
+        // inverted right stick Y (pushed up = dot down)
+        pads.SetVirtual(v, axis: PadAxis.LeftX, value: 0.2f);
+        pads.SetVirtual(v, axis: PadAxis.LeftY, value: 0f);
+        pads.SetVirtual(v, axis: PadAxis.RightX, value: 0f);
+        pads.SetVirtual(v, axis: PadAxis.RightY, value: -0.8f);
+        panel.EditProfile(p => { p.SwapConfirm = true; p.LeftStick.Deadzone = 0.3f; p.RightStick.InvertY = true; });
+        await Snap("swap_deadzone_inverty");
+        panel.EditProfile(p => { p.SwapConfirm = false; p.LeftStick.Deadzone = StickSettings.DefaultDeadzone; p.RightStick.InvertY = false; });
+        pads.SetVirtual(v, axis: PadAxis.RightY, value: 0f);
         pads.SetVirtual(v, PadButton.South, false);
         pads.SetVirtual(v, PadButton.DpadUp, false);
         pads.SetVirtual(v, PadButton.LeftShoulder, false);
@@ -162,6 +172,8 @@ static class UiSnapshot
         bool roundTrip = reloaded.Get(VitaControl.Triangle).SequenceEqual([InputBinding.Of(PadButton.Back)]);
         Console.WriteLine($"profile reload: {(roundTrip ? "ok" : "FAILED")}");
         if (!roundTrip) failures++;
+        dlg.ShowTab(SettingsDialog.GeneralTab);
+        await Snap("general_tab");
         dlg.Close();
         Console.WriteLine(failures == 0 ? "PASS" : $"{failures} problem(s)");
         return failures == 0 ? 0 : 1;

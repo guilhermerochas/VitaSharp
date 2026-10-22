@@ -77,12 +77,12 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _device = new ComboBox { MinWidth = 340, VerticalAlignment = VerticalAlignment.Center };
         _device.SelectionChanged += (_, _) => { if (!_updatingUi && _device.SelectedItem is DeviceItem d) Select(d); };
-        var reset = new Button { Content = "Reset to default", VerticalAlignment = VerticalAlignment.Center };
+        var reset = new Button { Content = "Restaurar padrão", VerticalAlignment = VerticalAlignment.Center };
         reset.Click += (_, _) => ResetProfile();
         _deviceInfo = new TextBlock { Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
 
         var deviceRow = new DockPanel { LastChildFill = true };
-        var deviceLabel = new TextBlock { Text = "Device", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var deviceLabel = new TextBlock { Text = "Dispositivo", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         DockPanel.SetDock(deviceLabel, Dock.Left);
         DockPanel.SetDock(_device, Dock.Left);
         DockPanel.SetDock(reset, Dock.Right);
@@ -97,8 +97,8 @@ public sealed class ControllerSettingsPanel : UserControl
         _hint = new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
-            Text = "Click a control (or a row on the right), then press a button, move a stick or press a key. Esc cancels. " +
-                   "Clicking a stick binds its four directions in turn. Right-click the screen or the rear pad to place the tap point of the touch controls.",
+            Text = "Clique num controle (ou numa linha à direita) e aperte um botão, mova um analógico ou aperte uma tecla. Esc cancela. " +
+                   "Clicar num analógico mapeia as quatro direções em sequência. Botão direito na tela ou no touchpad traseiro posiciona o ponto de toque.",
         };
 
         var left = new DockPanel();
@@ -111,11 +111,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
         // right side: bindings + options
         _bindingRows = new StackPanel { Spacing = 2 };
-        _swap = new CheckBox { Content = "Swap Cross and Circle (Circle confirms)" };
+        _swap = new CheckBox { Content = "Trocar Cruz e Círculo (Círculo confirma)" };
         _swap.IsCheckedChanged += (_, _) => Edit(p => p.SwapConfirm = _swap.IsChecked == true);
-        _triggers = new CheckBox { Content = "Analog triggers also press L / R" };
+        _triggers = new CheckBox { Content = "Gatilhos analógicos também acionam L / R" };
         _triggers.IsCheckedChanged += (_, _) => Edit(p => DefaultMappings.SetTriggersAsShoulders(p, _triggers.IsChecked == true));
-        _touchpad = new CheckBox { Content = "Touch pad = front touch (hold L2: rear, R2: both)" };
+        _touchpad = new CheckBox { Content = "Touchpad = toque frontal (L2: traseiro, R2: ambos)" };
         _touchpad.IsCheckedChanged += (_, _) => Edit(p => p.TouchpadEnabled = _touchpad.IsChecked == true);
         var gp = new StackPanel { Spacing = 6 };
         gp.Children.Add(_triggers);
@@ -126,24 +126,24 @@ public sealed class ControllerSettingsPanel : UserControl
         (_sensL, _sensLText) = SliderRow(0.5, 2, v => Edit(p => p.LeftStick.Sensitivity = (float)v), v => $"{v:0.00}x");
         (_dzR, _dzRText) = SliderRow(0, 0.5, v => Edit(p => p.RightStick.Deadzone = (float)v), v => $"{v:P0}");
         (_sensR, _sensRText) = SliderRow(0.5, 2, v => Edit(p => p.RightStick.Sensitivity = (float)v), v => $"{v:0.00}x");
-        _invertL = new CheckBox { Content = "Invert Y" };
+        _invertL = new CheckBox { Content = "Inverter eixo Y" };
         _invertL.IsCheckedChanged += (_, _) => Edit(p => p.LeftStick.InvertY = _invertL.IsChecked == true);
-        _invertR = new CheckBox { Content = "Invert Y" };
+        _invertR = new CheckBox { Content = "Inverter eixo Y" };
         _invertR.IsCheckedChanged += (_, _) => Edit(p => p.RightStick.InvertY = _invertR.IsChecked == true);
 
         var options = new StackPanel { Spacing = 8 };
-        options.Children.Add(Header("Options"));
+        options.Children.Add(Header("Opções"));
         options.Children.Add(_swap);
         options.Children.Add(_gamepadOptions);
-        options.Children.Add(Header("Left stick"));
-        options.Children.Add(Row("Deadzone", _dzL, _dzLText));
-        options.Children.Add(Row("Sensitivity", _sensL, _sensLText));
+        options.Children.Add(Header("Analógico esquerdo"));
+        options.Children.Add(Row("Zona morta", _dzL, _dzLText));
+        options.Children.Add(Row("Sensibilidade", _sensL, _sensLText));
         options.Children.Add(_invertL);
-        options.Children.Add(Header("Right stick"));
-        options.Children.Add(Row("Deadzone", _dzR, _dzRText));
-        options.Children.Add(Row("Sensitivity", _sensR, _sensRText));
+        options.Children.Add(Header("Analógico direito"));
+        options.Children.Add(Row("Zona morta", _dzR, _dzRText));
+        options.Children.Add(Row("Sensibilidade", _sensR, _sensRText));
         options.Children.Add(_invertR);
-        options.Children.Add(Header("Bindings"));
+        options.Children.Add(Header("Mapeamento"));
         options.Children.Add(_bindingRows);
 
         var right = new Border
@@ -169,7 +169,7 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) => Tick());
         SyncDevices();
-        if (_pads == null) _status.Text = "Controller support is unavailable (SDL could not be loaded): only the keyboard can be configured.";
+        if (_pads == null) _status.Text = "Suporte a controles indisponível (não foi possível carregar o SDL2): só o teclado pode ser configurado.";
     }
 
     static TextBlock Header(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) };
@@ -230,19 +230,19 @@ public sealed class ControllerSettingsPanel : UserControl
     void SyncDevices()
     {
         _devicesChanged = false;
-        var items = new List<DeviceItem> { new(ControllerProfile.KeyboardId, "Keyboard", null, ControllerKind.Keyboard, false) };
+        var items = new List<DeviceItem> { new(ControllerProfile.KeyboardId, "Teclado", null, ControllerKind.Keyboard, false) };
         var pads = _pads?.Devices ?? [];
         PadInfo? fresh = null;
         foreach (var p in pads)
         {
-            items.Add(new DeviceItem(p.Guid, $"{p.Name} — {ControllerClassifier.KindLabel(p.Kind)}", p, p.Kind, p.IsGamepad));
+            items.Add(new DeviceItem(p.Guid, $"{p.Name} — {ControlNames.Kind(p.Kind)}", p, p.Kind, p.IsGamepad));
             if (_knownPads.Add(p.InstanceId) && !_firstSync) fresh = p;
         }
         _knownPads.IntersectWith(pads.Select(p => p.InstanceId));
         // saved profiles of controllers that are not connected stay editable
         foreach (var saved in _store.Config.Controllers)
             if (!items.Any(i => i.Id.Equals(saved.Id, StringComparison.OrdinalIgnoreCase)))
-                items.Add(new DeviceItem(saved.Id, $"{(saved.Name.Length > 0 ? saved.Name : saved.Id)} (not connected)", null, saved.Kind, saved.Bindings.Values.SelectMany(v => v).Any(b => b.StartsWith("pad:"))));
+                items.Add(new DeviceItem(saved.Id, $"{(saved.Name.Length > 0 ? saved.Name : saved.Id)} (desconectado)", null, saved.Kind, saved.Bindings.Values.SelectMany(v => v).Any(b => b.StartsWith("pad:"))));
 
         // a controller that was just plugged in is selected (that is the automatic recognition the player sees);
         // on opening, the first connected controller is preferred over the keyboard
@@ -255,14 +255,28 @@ public sealed class ControllerSettingsPanel : UserControl
         _device.SelectedItem = sel;
         _updatingUi = false;
         if (sel.Id != _current?.Id || sel.Pad?.InstanceId != _current?.Pad?.InstanceId) Select(sel);
-        if (fresh != null) _status.Text = $"Connected: {fresh.Name}. {MappingSource(fresh)}";
+        if (fresh != null) _status.Text = $"Conectado: {fresh.Name}. {MappingSource(fresh)}";
     }
 
     string MappingSource(PadInfo p)
     {
-        bool saved = _store.FindSaved(p.Guid, p.Name) != null;
-        string db = p.IsGamepad ? "Recognised by the SDL controller database (standard layout)" : "Not in the controller database: raw joystick layout";
-        return $"{db}; {(saved ? "using your saved profile" : "using the default mapping")}.";
+        string db = p.IsGamepad ? "Reconhecido pela base de controles do SDL (layout padrão)" : "Fora da base de controles: layout de joystick bruto";
+        return $"{db}; {ProfileState(p.Guid, _store.FindSaved(p.Guid, p.Name) != null)}.";
+    }
+
+    string ProfileState(string id, bool saved)
+        => _dirty.Contains(id) ? "perfil editado (não salvo)"
+            : _reset.Contains(id) ? "mapeamento padrão (não salvo)"
+            : saved ? "usando o seu perfil salvo" : "usando o mapeamento padrão";
+
+    void RefreshDeviceInfo()
+    {
+        if (_current is not { } d) return;
+        _deviceInfo.Text = d.IsKeyboard
+            ? $"Teclado da janela do jogo ({ProfileState(d.Id, _store.Config.Keyboard != null)}). Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro."
+            : d.Pad is { } info
+                ? $"{ControlNames.Kind(info.Kind)} · {ControlNames.Model(info.Model)} · {(info.IsGamepad ? "mapeamento da base SDL" : "joystick bruto")}{(info.HasTouchpad ? " · touchpad" : "")} · GUID {info.Guid}\n{MappingSource(info)}"
+                : $"Perfil salvo · GUID {d.Id} · conecte o controle para testá-lo.";
     }
 
     void Select(DeviceItem d)
@@ -280,11 +294,8 @@ public sealed class ControllerSettingsPanel : UserControl
         }
         _profile = p;
         _compiled = new CompiledProfile(p);
-        _deviceInfo.Text = d.IsKeyboard
-            ? "Keyboard of the game window. Mouse: left button = front touch screen, right button = rear touch pad."
-            : d.Pad is { } info
-                ? $"{ControllerClassifier.KindLabel(info.Kind)} · {info.Model} · {(info.IsGamepad ? "SDL database mapping" : "raw joystick")}{(info.HasTouchpad ? " · touch pad" : "")} · GUID {info.Guid}\n{MappingSource(info)}"
-                : $"Saved profile · GUID {d.Id} · connect the controller to test it.";
+        _status.Text = "";
+        RefreshDeviceInfo();
         RefreshOptions();
         RefreshBindings();
     }
@@ -299,6 +310,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _dirty.Add(_profile.Id);
         _reset.Remove(_profile.Id);
         RefreshBindings();
+        RefreshDeviceInfo();
         Changed?.Invoke();
     }
 
@@ -315,7 +327,8 @@ public sealed class ControllerSettingsPanel : UserControl
         _dirty.Remove(p.Id);
         RefreshOptions();
         RefreshBindings();
-        _status.Text = "Default mapping restored (saved when you press Save).";
+        RefreshDeviceInfo();
+        _status.Text = "Mapeamento padrão restaurado (gravado ao clicar em Salvar).";
         Changed?.Invoke();
     }
 
@@ -340,7 +353,7 @@ public sealed class ControllerSettingsPanel : UserControl
     string Describe(VitaControl c)
     {
         var kind = _current?.Kind ?? ControllerKind.Generic;
-        var list = _profile.Get(c).Select(b => b.Kind == BindingKind.Key ? KeyNames.Pretty(b.Key ?? "") : b.Describe(kind)).ToList();
+        var list = _profile.Get(c).Select(b => ControlNames.Describe(b, kind)).ToList();
         return list.Count == 0 ? "—" : string.Join(", ", list);
     }
 
@@ -350,10 +363,10 @@ public sealed class ControllerSettingsPanel : UserControl
         foreach (var c in VitaControls.All)
         {
             bool listening = _listen == c;
-            var name = new TextBlock { Text = VitaControls.Label(c), Width = 130, VerticalAlignment = VerticalAlignment.Center, FontSize = 13 };
+            var name = new TextBlock { Text = ControlNames.Label(c), Width = 140, VerticalAlignment = VerticalAlignment.Center, FontSize = 13 };
             var value = new TextBlock
             {
-                Text = listening ? (_listenMode == ListenMode.Add ? "add: press…" : "press…") : Describe(c),
+                Text = listening ? (_listenMode == ListenMode.Add ? "adicionar: aperte…" : "aperte…") : Describe(c),
                 Foreground = listening ? new SolidColorBrush(Color.Parse("#FFB547")) : LauncherTheme.Muted,
                 VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13,
             };
@@ -366,13 +379,13 @@ public sealed class ControllerSettingsPanel : UserControl
                 Content = rowContent, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Padding = new Thickness(8, 3), Background = _layout.SelectedControl == c || listening ? new SolidColorBrush(Color.Parse("#2A3550")) : Brushes.Transparent,
             };
-            ToolTip.SetTip(row, "Click to rebind");
+            ToolTip.SetTip(row, "Clique para remapear");
             row.Click += (_, _) => BeginListen(c, ListenMode.Replace);
             var add = new Button { Content = "+", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(add, "Add another binding");
+            ToolTip.SetTip(add, "Adicionar outro mapeamento");
             add.Click += (_, _) => BeginListen(c, ListenMode.Add);
             var clear = new Button { Content = "×", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(clear, "Remove all bindings");
+            ToolTip.SetTip(clear, "Remover todos os mapeamentos");
             clear.Click += (_, _) => { CancelListen(); Edit(p => p.Set(c, null)); };
             var line = new DockPanel();
             DockPanel.SetDock(clear, Dock.Right);
@@ -395,7 +408,7 @@ public sealed class ControllerSettingsPanel : UserControl
                 if (c == VitaControl.TouchFront) { p.TouchFrontX = (float)Math.Round(normalised.X, 3); p.TouchFrontY = (float)Math.Round(normalised.Y, 3); }
                 else { p.TouchBackX = (float)Math.Round(normalised.X, 3); p.TouchBackY = (float)Math.Round(normalised.Y, 3); }
             });
-            _status.Text = $"{VitaControls.Label(c)}: tap point set to {normalised.X:P0}, {normalised.Y:P0}.";
+            _status.Text = $"{ControlNames.Label(c)}: ponto de toque em {normalised.X:P0}, {normalised.Y:P0}.";
             return;
         }
         _sequence.Clear();
@@ -422,7 +435,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.SelectedControl = c;
         if (_current?.Pad is { } pad && _pads != null) _pads.TryGetState(pad.InstanceId, _baseline);
         else _baseline.Clear();
-        _status.Text = $"{VitaControls.Label(c)}: {(_current?.IsKeyboard == true ? "press a key" : "press a button or move a stick / trigger")} (Esc cancels)…";
+        _status.Text = $"{ControlNames.Label(c)}: {(_current?.IsKeyboard == true ? "aperte uma tecla" : "aperte um botão ou mova um analógico / gatilho")} (Esc cancela)…";
         RefreshBindings();
         Focus();
     }
@@ -444,7 +457,9 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.ListeningControl = null;
         Edit(p => { if (mode == ListenMode.Add) p.Add(c, b); else p.Set(c, b); });
         var kind = _current?.Kind ?? ControllerKind.Generic;
-        _status.Text = $"{VitaControls.Label(c)} = {(b.Kind == BindingKind.Key ? KeyNames.Pretty(b.Key ?? "") : b.Describe(kind))}";
+        var shared = VitaControls.All.Where(o => o != c && _profile.Has(o, b)).Select(ControlNames.Label).ToList();
+        _status.Text = $"{ControlNames.Label(c)} = {ControlNames.Describe(b, kind)}"
+                       + (shared.Count > 0 ? $"  (também aciona: {string.Join(", ", shared)})" : "");
         if (_sequence.Count > 0)
         {
             // next direction of the stick: wait until the stick is back near the centre first
@@ -458,7 +473,7 @@ public sealed class ControllerSettingsPanel : UserControl
         var name = KeyNames.FromAvalonia(e.PhysicalKey, e.Key);
         if (_listen != null)
         {
-            if (e.Key == Key.Escape) { CancelListen(); _status.Text = "Cancelled."; e.Handled = true; return; }
+            if (e.Key == Key.Escape) { CancelListen(); _status.Text = "Cancelado."; e.Handled = true; return; }
             if (_current?.IsKeyboard == true && name != null)
             {
                 Bound(InputBinding.OfKey(name));
@@ -491,6 +506,13 @@ public sealed class ControllerSettingsPanel : UserControl
         return true;
     }
 
+    /// <summary>Test hook: changes the current profile as the option controls would.</summary>
+    public void EditProfile(Action<ControllerProfile> change)
+    {
+        Edit(change);
+        RefreshOptions();
+    }
+
     /// <summary>Runs one update immediately (tests render right after changing the state).</summary>
     public void Pump() => Tick();
 
@@ -506,7 +528,7 @@ public sealed class ControllerSettingsPanel : UserControl
 
         if (_listen != null)
         {
-            if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = "No input detected."; }
+            if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = "Nenhuma entrada detectada."; }
             else if (pad != null && InputCapture.Detect(_baseline, pad) is { } b)
             {
                 // a pad binding of the other view (raw vs gamepad) would never fire: InputCapture follows the device
@@ -520,10 +542,12 @@ public sealed class ControllerSettingsPanel : UserControl
         var rawR = (V(VitaControl.RStickRight) - V(VitaControl.RStickLeft), V(VitaControl.RStickDown) - V(VitaControl.RStickUp));
         if (_profile.LeftStick.InvertY) rawL.Item2 = -rawL.Item2;
         if (_profile.RightStick.InvertY) rawR.Item2 = -rawR.Item2;
+        _layout.TapPointFront = _compiled[VitaControl.TouchFront].Length > 0 ? new Point(_profile.TouchFrontX, _profile.TouchFrontY) : null;
+        _layout.TapPointBack = _compiled[VitaControl.TouchBack].Length > 0 ? new Point(_profile.TouchBackX, _profile.TouchBackY) : null;
         _layout.SetState(m, rawL, rawR, _profile.LeftStick.Deadzone, _profile.RightStick.Deadzone);
 
         if (_listen == null && _ticks % 6 == 0 && (m.State.Buttons != 0 || m.FrontCount + m.BackCount > 0))
-            _status.Text = $"Pressed: {Pressed(m.State.Buttons)}{(m.FrontCount > 0 ? $"  · front touch {m.FrontCount}" : "")}{(m.BackCount > 0 ? $"  · rear touch {m.BackCount}" : "")}";
+            _status.Text = $"Pressionado: {Pressed(m.State.Buttons)}{(m.FrontCount > 0 ? $"  · toque frontal {m.FrontCount}" : "")}{(m.BackCount > 0 ? $"  · toque traseiro {m.BackCount}" : "")}";
     }
 
     static string Pressed(VitaButtons b)
@@ -532,7 +556,7 @@ public sealed class ControllerSettingsPanel : UserControl
         foreach (var c in VitaControls.All)
         {
             var bit = VitaControls.Button(c);
-            if (bit != 0 && (b & bit) != 0) names.Add(VitaControls.Label(c));
+            if (bit != 0 && (b & bit) != 0) names.Add(ControlNames.Label(c));
         }
         return names.Count == 0 ? "—" : string.Join(", ", names);
     }
@@ -550,6 +574,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _store.Save();
         _dirty.Clear();
         _reset.Clear();
+        RefreshDeviceInfo();
     }
 
     public bool HasChanges => _dirty.Count > 0 || _reset.Count > 0;

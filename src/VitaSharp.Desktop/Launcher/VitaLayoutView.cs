@@ -96,15 +96,16 @@ public sealed class VitaLayoutView : Control
         // shoulder buttons sit behind the top edge of the body
         DrawButton(ctx, VitaControl.L, new RoundedRect(LButton, 14), b.HasFlag(VitaButtons.LTrigger));
         DrawButton(ctx, VitaControl.R, new RoundedRect(RButton, 14), b.HasFlag(VitaButtons.RTrigger));
-        Label(ctx, "L", LButton.Center, 15, Muted);
-        Label(ctx, "R", RButton.Center, 15, Muted);
+        Label(ctx, "L", LButton.Center, 15, b.HasFlag(VitaButtons.LTrigger) ? Brushes.White : Muted);
+        Label(ctx, "R", RButton.Center, 15, b.HasFlag(VitaButtons.RTrigger) ? Brushes.White : Muted);
 
         ctx.DrawRectangle(BodyFill, new Pen(BodyStroke, 2), new RoundedRect(Body, Body.Height / 2));
 
         // front touch screen
         bool frontTouched = _state.FrontCount > 0;
         ctx.DrawRectangle(ScreenFill, new Pen(Outline(VitaControl.TouchFront) ?? (frontTouched ? Pressed : BodyStroke), Outline(VitaControl.TouchFront) != null ? 3 : 2), new RoundedRect(Screen, 6));
-        Label(ctx, "Front touch screen", new Point(Screen.Center.X, Screen.Bottom - 16), 13, Muted);
+        Label(ctx, "Tela de toque frontal", new Point(Screen.Center.X, Screen.Bottom - 16), 13, Muted);
+        if (TapPointFront is { } tf) DrawTapPoint(ctx, Screen, tf);
         for (int i = 0; i < _state.FrontCount; i++) DrawTouch(ctx, Screen, _state.Front[i]);
 
         // D-pad
@@ -137,7 +138,8 @@ public sealed class VitaLayoutView : Control
         var rearOutline = Outline(VitaControl.TouchBack);
         var dashed = new Pen(rearOutline ?? (backTouched ? Pressed : ControlStroke), rearOutline != null ? 3 : 2) { DashStyle = new DashStyle([6, 4], 0) };
         ctx.DrawRectangle(backTouched ? new SolidColorBrush(Color.Parse("#1A2440")) : BodyFill, dashed, new RoundedRect(RearPad, 26));
-        Label(ctx, "Rear touch pad (back of the console)", new Point(RearPad.Center.X, RearPad.Bottom - 16), 13, Muted);
+        Label(ctx, "Touchpad traseiro (parte de trás do console)", new Point(RearPad.Center.X, RearPad.Bottom - 16), 13, Muted);
+        if (TapPointBack is { } tb) DrawTapPoint(ctx, RearPad, tb);
         for (int i = 0; i < _state.BackCount; i++) DrawTouch(ctx, RearPad, _state.Back[i]);
     }
 
@@ -211,8 +213,24 @@ public sealed class VitaLayoutView : Control
         if (moved) ctx.DrawLine(new Pen(Pressed, 2), c, knob);
         ctx.DrawEllipse(clicked || moved ? Pressed : ControlFill, new Pen(clicked ? Brushes.White : ControlStroke, 2), knob, StickKnob, StickKnob);
         ctx.DrawEllipse(null, new Pen(Listening, 1.5), rawP, 5, 5);
-        Label(ctx, $"{bx},{by}", new Point(c.X, c.Y + StickBase + 14), 12, Muted);
-        Label(ctx, left ? "Left stick" : "Right stick", new Point(c.X, c.Y - StickBase - 12), 12, Muted);
+        // Vita byte values beside the stick (below it sit PS / Select / Start)
+        var valuePos = new Point(c.X + (left ? -1 : 1) * (StickBase + 34), c.Y);
+        Label(ctx, bx.ToString(CultureInfo.InvariantCulture), new Point(valuePos.X, valuePos.Y - 8), 12, Muted);
+        Label(ctx, by.ToString(CultureInfo.InvariantCulture), new Point(valuePos.X, valuePos.Y + 8), 12, Muted);
+        Label(ctx, left ? "Analógico esq." : "Analógico dir.", new Point(c.X, c.Y - StickBase - 12), 12, Muted);
+    }
+
+    /// <summary>Where the TouchFront / TouchBack controls touch (normalised), null when the control is unbound.</summary>
+    public Point? TapPointFront { get; set; }
+    public Point? TapPointBack { get; set; }
+
+    static void DrawTapPoint(DrawingContext ctx, Rect area, Point n)
+    {
+        var p = new Point(area.X + n.X * area.Width, area.Y + n.Y * area.Height);
+        var pen = new Pen(new SolidColorBrush(Color.Parse("#B0FFB547")), 1.5) { DashStyle = new DashStyle([3, 2], 0) };
+        ctx.DrawEllipse(null, pen, p, 11, 11);
+        ctx.DrawLine(pen, new Point(p.X - 16, p.Y), new Point(p.X + 16, p.Y));
+        ctx.DrawLine(pen, new Point(p.X, p.Y - 16), new Point(p.X, p.Y + 16));
     }
 
     static void DrawTouch(DrawingContext ctx, Rect area, TouchPoint t)

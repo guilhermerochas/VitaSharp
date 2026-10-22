@@ -90,7 +90,7 @@ public sealed unsafe class SdlGamepads : IDisposable
             Available = true;
             if (_mappingFile != null) Log.Info($"Input: extra controller mappings from {_mappingFile}");
         }
-        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException or FileNotFoundException or BadImageFormatException)
+        catch (Exception e) // SDL2 missing, wrong architecture, init failure...: the game window falls back to GLFW gamepads
         {
             Error = e.Message;
             Log.Warn($"Input: SDL game controller support unavailable ({e.Message})");

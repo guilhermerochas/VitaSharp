@@ -16,6 +16,7 @@ public sealed class HostInput : IDisposable
     readonly CompiledProfile _keyboard;
     readonly HashSet<string> _keys = new();
     readonly SdlGamepads? _pads;
+    readonly bool _ownsPads;
     readonly Dictionary<int, CompiledProfile> _padProfiles = new();
     readonly PadSnapshot _scratch = new();
     PadSnapshot? _fallback;
@@ -23,15 +24,18 @@ public sealed class HostInput : IDisposable
 
     public static string ConfigPath(string dataRoot) => Path.Combine(dataRoot, InputProfileStore.FileName);
 
-    public HostInput(string dataRoot, bool controllers = true)
+    /// <param name="pads">Controller backend to share (pad-test); null = start one when <paramref name="controllers"/> is set.</param>
+    public HostInput(string dataRoot, bool controllers = true, SdlGamepads? pads = null)
     {
         _store = InputProfileStore.Load(ConfigPath(dataRoot));
         _keyboard = new CompiledProfile(_store.KeyboardProfile());
         if (_store.Config.Keyboard != null || _store.Config.Controllers.Count > 0)
             Log.Info($"Input: profiles from {ConfigPath(dataRoot)} (keyboard {(_store.Config.Keyboard != null ? "custom" : "default")}, {_store.Config.Controllers.Count} controller profile(s))");
-        if (controllers)
+        if (pads != null) _pads = pads.Available ? pads : null;
+        else if (controllers)
         {
             _pads = new SdlGamepads(dataRoot);
+            _ownsPads = true;
             if (!_pads.Available) { _pads.Dispose(); _pads = null; }
         }
     }
@@ -92,5 +96,5 @@ public sealed class HostInput : IDisposable
         }
     }
 
-    public void Dispose() => _pads?.Dispose();
+    public void Dispose() { if (_ownsPads) _pads?.Dispose(); }
 }

@@ -248,6 +248,8 @@ public static class Program
         Console.WriteLine("  imports <TITLEID|folder> [x.self]    list the system functions a title (or one of its executables) needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
+        Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
+        Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
         Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
     }
