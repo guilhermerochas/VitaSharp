@@ -24,6 +24,7 @@ public sealed unsafe partial class VulkanRenderer
         public long Version = -1;
         public ulong UpperHash;
         public long CheckedFrame = -1;
+        public uint Stamp; // dirty-page epoch the upper levels were last hashed at
     }
 
     readonly Dictionary<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma), RtMipTexture> _rtMipTextures = new();
@@ -64,9 +65,14 @@ public sealed unsafe partial class VulkanRenderer
         if (t.CheckedFrame != FrameCount)
         {
             t.CheckedFrame = FrameCount;
-            ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.Span(d.DataAddress + upperStart, (int)(layout.TotalBytes - upperStart)));
-            uploadUpper = hash != t.UpperHash || t.Version < 0;
-            t.UpperHash = hash;
+            SweepDirtyPages();
+            if (t.Version < 0 || DirtyPages.Verify || DirtyPages.WrittenSince(d.DataAddress + upperStart, layout.TotalBytes - upperStart, t.Stamp))
+            {
+                ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.ReadSpan(d.DataAddress + upperStart, (int)(layout.TotalBytes - upperStart)));
+                uploadUpper = hash != t.UpperHash || t.Version < 0;
+                t.UpperHash = hash;
+                t.Stamp = DirtyPages.Epoch;
+            }
         }
         bool copyBase = t.Version != rt.Version;
         if (!copyBase && !uploadUpper) return t.View;

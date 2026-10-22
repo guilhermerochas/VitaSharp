@@ -484,12 +484,12 @@ public sealed unsafe partial class VulkanRenderer
         uint max = 0;
         if (i32)
         {
-            var s = GuestMemory.Span<uint>(addr, (int)count);
+            var s = GuestMemory.ReadSpan<uint>(addr, (int)count);
             foreach (var v in s) if (v > max) max = v;
         }
         else
         {
-            var s = GuestMemory.Span<ushort>(addr, (int)count);
+            var s = GuestMemory.ReadSpan<ushort>(addr, (int)count);
             foreach (var v in s) if (v > max) max = v;
         }
         return max;
@@ -537,7 +537,7 @@ public sealed unsafe partial class VulkanRenderer
         // ---- geometry upload
         int indexSize = d.Index32 ? 4 : 2;
         uint maxIndex = MaxIndex(d.IndexAddress, d.IndexCount, d.Index32);
-        var (ib, ibOff) = UploadSpan(GuestMemory.Span(d.IndexAddress, (int)(d.IndexCount * indexSize)), 4);
+        var (ib, ibOff) = UploadSpan(GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * indexSize)), 4);
         var vbufs = stackalloc Buffer[17];
         var voffs = stackalloc ulong[17];
         var vp = d.VertexProgram;
@@ -558,7 +558,7 @@ public sealed unsafe partial class VulkanRenderer
             uint length = (count - 1) * stream.Stride + end + 16;
             uint addr = d.Streams[s];
             if (addr == 0) { vbufs[s] = _dummyBuffer; voffs[s] = 0; continue; }
-            var (b, off) = UploadSpan(GuestMemory.Span(addr, (int)length), 4);
+            var (b, off) = UploadSpan(GuestMemory.ReadSpan(addr, (int)length), 4);
             vbufs[s] = b;
             voffs[s] = off;
         }
@@ -683,8 +683,8 @@ public sealed unsafe partial class VulkanRenderer
         if (d.VertexProgram.Streams.Length > 0 && d.Streams[0] != 0)
         {
             int stride = Math.Clamp((int)d.VertexProgram.Streams[0].Stride, 4, 64);
-            sb.Append($" v0@0x{d.Streams[0]:X8}=").Append(Convert.ToHexString(GuestMemory.Span(d.Streams[0], stride)));
-            sb.Append(" v1=").Append(Convert.ToHexString(GuestMemory.Span(d.Streams[0] + (uint)stride, stride)));
+            sb.Append($" v0@0x{d.Streams[0]:X8}=").Append(Convert.ToHexString(GuestMemory.ReadSpan(d.Streams[0], stride)));
+            sb.Append(" v1=").Append(Convert.ToHexString(GuestMemory.ReadSpan(d.Streams[0] + (uint)stride, stride)));
         }
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");

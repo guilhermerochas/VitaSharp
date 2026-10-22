@@ -440,7 +440,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (bpp == 4 && rt.Address != 0)
         {
             uint rowBytes = rt.Stride * 4;
-            var (buf, off) = UploadSpan(GuestMemory.Span(rt.Address, (int)(rowBytes * rt.Height)), 16);
+            var (buf, off) = UploadSpan(GuestMemory.ReadSpan(rt.Address, (int)(rowBytes * rt.Height)), 16);
             var region = new BufferImageCopy
             {
                 BufferOffset = off,

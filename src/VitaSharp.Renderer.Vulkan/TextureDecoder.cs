@@ -58,7 +58,7 @@ public static class TextureDecoder
                 var bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
-                return Pvrtc.Decode(GuestMemory.Span(addr, (int)(nx * ny * 8)), w, h, two, ii);
+                return Pvrtc.Decode(GuestMemory.ReadSpan(addr, (int)(nx * ny * 8)), w, h, two, ii);
             }
             uint bw = (w + 3) / 4, bh = (h + 3) / 4;
             int bb = info.BlockBytes;
@@ -67,7 +67,7 @@ public static class TextureDecoder
             if (!swizzled)
             {
                 for (uint y = 0; y < bh; y++)
-                    GuestMemory.Span(addr + y * rowPitch, (int)(bw * bb)).CopyTo(o[(int)(y * bw * bb)..]);
+                    GuestMemory.ReadSpan(addr + y * rowPitch, (int)(bw * bb)).CopyTo(o[(int)(y * bw * bb)..]);
             }
             else
             {
@@ -76,7 +76,7 @@ public static class TextureDecoder
                     for (uint x = 0; x < bw; x++)
                     {
                         uint idx = TextureLayout.Morton(x, y, pw, ph);
-                        GuestMemory.Span(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
+                        GuestMemory.ReadSpan(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
                     }
             }
             if (info.Convert == TexConvert.BcSoftware)
@@ -153,23 +153,23 @@ public static class TextureDecoder
             uint pw = BitOperations.RoundUpToPowerOf2(w), ph = BitOperations.RoundUpToPowerOf2(h);
             if (pw == w && ph == h)
             {
-                TextureLayout.SwizzledToLinear(dst, GuestMemory.Span(addr, (int)(w * h * bpp)), w, h, bpp);
+                TextureLayout.SwizzledToLinear(dst, GuestMemory.ReadSpan(addr, (int)(w * h * bpp)), w, h, bpp);
                 return result;
             }
             for (uint y = 0; y < h; y++)
                 for (uint x = 0; x < w; x++)
-                    GuestMemory.Span(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
+                    GuestMemory.ReadSpan(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
             return result;
         }
         if (tiled)
         {
             uint tw = (w + 31) & ~31u, th = (h + 31) & ~31u;
-            TextureLayout.TiledToLinear(dst, GuestMemory.Span(addr, (int)(tw * th * bpp)), w, h, bpp);
+            TextureLayout.TiledToLinear(dst, GuestMemory.ReadSpan(addr, (int)(tw * th * bpp)), w, h, bpp);
             return result;
         }
         int row = (int)(w * bpp);
         for (uint y = 0; y < h; y++)
-            GuestMemory.Span(addr + y * rowPitch, row).CopyTo(dst.Slice((int)(y * row), row));
+            GuestMemory.ReadSpan(addr + y * rowPitch, row).CopyTo(dst.Slice((int)(y * row), row));
         return result;
     }
 
@@ -178,7 +178,7 @@ public static class TextureDecoder
         var result = Texels.Rent(count * 4L);
         if (palette == 0) return result;
         var dst = result.Span;
-        var pal = GuestMemory.Span<uint>(palette, p4 ? 16 : 256);
+        var pal = GuestMemory.ReadSpan<uint>(palette, p4 ? 16 : 256);
         for (int i = 0; i < count; i++) BitConverter.TryWriteBytes(dst[(i * 4)..], pal[indices[i] & (p4 ? 0xF : 0xFF)]);
         return result;
     }
