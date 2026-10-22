@@ -789,6 +789,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     [Trait("Category", "Slow")]
     public void NativeVfpMatchesInterpreter(bool thumb, int iterations, int seed)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
@@ -857,6 +858,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     void Differential(bool thumb, int iterations, int seed, bool withIl, bool spillStress)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
@@ -956,6 +958,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     [Trait("Category", "Slow")]
     public void NativeBlocksMatchUnicorn(bool thumb, int iterations, int seed)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         var rng = new Random(seed);
         var s = CpuState.Allocate();

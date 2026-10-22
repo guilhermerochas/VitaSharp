@@ -23,6 +23,7 @@ public static class CalloutClasses
         Op.Neon_Vtbl => (int)(Bit(ins, 6)),
         Op.A32_Exclusive => (int)((Bits(ins, 22, 21) << 1) | Bit(ins, 20)),
         Op.T32_ExclusiveOther => (int)((Bits(ins, 6, 4) << 1) | Bit(ins, 20)),
+        Op.T32_Mul => (int)((Bits(ins, 22, 20) << 3) | (Bit(ins, 5) << 2) | (Bit(ins, 4) << 1) | (Bits(ins, 15, 12) == 15 ? 1u : 0u)),
         Op.Vfp_Other => (int)((Bits(ins, 19, 16) << 2) | (Bit(ins, 7) << 1) | Bit(ins, 8)),
         Op.Vfp_Arith => (int)((((Bit(ins, 23) << 2) | Bits(ins, 21, 20)) << 2) | (Bit(ins, 6) << 1) | Bit(ins, 8)),
         _ => 0,
@@ -110,6 +111,19 @@ public static class CalloutClasses
             {
                 uint o = s >> 1;
                 return $"{n}.{((s & 1) != 0 ? "LDREX" : "STREX")}{(o == 4 ? "B" : o == 5 ? "H" : "D")}";
+            }
+            case Op.T32_Mul:
+            {
+                uint op1 = s >> 3, n2 = (s >> 2) & 1, m2 = (s >> 1) & 1;
+                bool noAcc = (s & 1) != 0;
+                string xy = $"{(n2 != 0 ? "T" : "B")}{(m2 != 0 ? "T" : "B")}";
+                string m = op1 switch
+                {
+                    0 => noAcc ? "MUL" : m2 != 0 ? "MLS" : "MLA", 1 => (noAcc ? "SMUL" : "SMLA") + xy, 2 => noAcc ? "SMUAD" : "SMLAD",
+                    3 => (noAcc ? "SMULW" : "SMLAW") + (m2 != 0 ? "T" : "B"), 4 => noAcc ? "SMUSD" : "SMLSD", 5 => noAcc ? "SMMUL" : "SMMLA",
+                    6 => "SMMLS", _ => noAcc ? "USAD8" : "USADA8",
+                };
+                return $"{n}.{m}";
             }
             case Op.Vfp_Other:
             {

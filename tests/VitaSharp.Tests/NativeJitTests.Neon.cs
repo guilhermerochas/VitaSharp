@@ -16,6 +16,16 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed unsafe partial class NativeJitTests
 {
+    /// <summary>
+    /// Gives the code arena back after a fuzz test: the full suite compiles hundreds of thousands of throwaway blocks in
+    /// one process and would otherwise fill the 256 MiB arena. Only for tests whose blocks are dead when they end.
+    /// </summary>
+    sealed class ArenaScope : IDisposable
+    {
+        readonly int _used = NativeRuntime.Instance.Code.Used;
+        public void Dispose() => NativeRuntime.Instance.Code.Reset(_used);
+    }
+
     /// <summary>NEON classes the generator targets (each with its encoding template).</summary>
     public enum NeonClass { ThreeSame, ThreeSameFloat, Scalar, Shift, Misc, Vext, Vtbl, LoadStore, Any }
 
@@ -153,6 +163,7 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(true, NeonClass.Any, 6_000, 614)]
     public void NativeNeonMatchesInterpreter(bool thumb, NeonClass cls, int iterations, int seed)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
         bool oldValidate = NativeX64Compiler.ValidateIr;
@@ -201,6 +212,7 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(true, 3_000, 802)]
     public void NativeHalfConversionsMatchInterpreter(bool thumb, int iterations, int seed)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         uint[] special =
         [
@@ -261,6 +273,7 @@ public sealed unsafe partial class NativeJitTests
     [Trait("Category", "Slow")]
     public void NativeNeonMatchesUnicorn(bool thumb, int iterations, int seed)
     {
+        using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
