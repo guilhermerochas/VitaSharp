@@ -20,7 +20,7 @@ namespace VitaSharp.Tests;
 /// instruction fuzz) so the reference itself stays honest for multi-instruction sequences.
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelper output)
 {
     const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
 

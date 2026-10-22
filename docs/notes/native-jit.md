@@ -13,7 +13,61 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | Merge of main cf72b18 (quarter-cycle CycleCost, pacing, alloc pooling, Linux/macOS) | done, commit d6cc00d |
 | 2c. LDREX/STREX (word) inline | done, commit 56e752a |
 | 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
+| 2e. NEON broad inline (perf/neon-jit): see "perf/neon-jit status" below | WIP, not validated in games yet |
 | ARM64 emitter | not started (design below) |
+
+## perf/neon-jit status (WIP checkpoint, 2026-10-22)
+
+Branch `perf/neon-jit` (worktree `.claude/worktrees/neon-jit`, from main 2d4c5c3). Not merged, not pushed.
+
+Code in place (the WIP commit):
+- `Native/ArmFrontend.Neon.cs`: decoders for ThreeSame (almost all int/float forms), Scalar (VMUL/VMLA/VMLS
+  int16/32 + f32), Shift (VSHR/VSRA/VRSHR/VRSRA, VSHL/VSLI/VSRI, VSHRN/VRSHRN, VQ(R)SHR(U)N 16/32-bit sources,
+  VSHLL/VMOVL), Misc (VREV, VCNT, VMVN, compares with zero, VABS/VNEG int+f32, VSWP/VTRN/VUZP/VZIP, VMOVN,
+  VSHLL max, VCVT f16<->f32 (F16C), VRECPE/VRSQRTE f32+u32 via exact tables built from the handlers, VCVT int<->f32),
+  VEXT, VTBL/VTBX, VLD1/VST1 single lane + all lanes (plain IR). Unsupported forms return null = callout.
+- `Native/X64Emitter.Neon.cs`: SSE2-4.1 lowering of every VecKind (AVX2 for VSHL.reg, FMA for VFMA/VFMS, F16C),
+  MXCSR = DAZ-only during runs of vector ops (`CpuState.MxcsrNeon`, `CpuState.Pad2` keeps D 16-byte aligned),
+  explicit FRes (denormal -> signed zero, NaN -> default NaN), QC via pmovmskb.
+- `Native/CalloutClasses.cs`: per-encoding-class callout counters, printed as "by class:" in the CPU backend report.
+- `IrOp.VecLdSt` is declared but not emitted or lowered yet (meant for VLD2-4/VST2-4).
+- Tests: `tests/VitaSharp.Tests/NativeJitTests.Neon.cs` (native vs interpreter per class with special values,
+  native vs Unicorn [Slow]).
+
+Test results on the build before the last test fix (the interpreter test ran on the old test code):
+ThreeSame (ARM), ThreeSameFloat, Scalar, Shift (ARM), Misc (ARM+Thumb), Vtbl, Any (Thumb): 0 differences.
+Failures only in LoadStore / Any (ARM): all in blocks whose Rn was SP or a fully random register, i.e. addresses
+outside the data area `RandomState.Apply` restores, so the native run read what the interpreter run had stored
+(test artifact, e.g. `[F4ED0D7F F48D064A ...]`: VLD2 all-lanes from SP after a VST3 lane to SP). Fixed in the test
+(Rn = r4-r12 pointing into data, Rm = r0-r3 small increments, set in `NeonState`) but NOT re-run yet.
+Not yet run: Vext, Shift (Thumb), ThreeSame (Thumb), the Unicorn test, the rest of the fast suite.
+Note: the NEON tests are slow (2-8 min each, ~30 ms per block, most likely `SimdDefined`'s per-instruction Unicorn
+probe): consider smaller counts in the fast suite and larger ones under [Trait Slow].
+
+Callout ranking BEFORE this work (previous agent's runs, `scratchpad/nja_kz_skin.out`, `nja_uc_walk.out`):
+- kz_skin: 143.7M executed callouts; main thread 16.8 ms/frame (whole run incl. menus). Top: VTRN 25.4M, VLD1
+  all-lanes 16.5M, VRECPS 10.1M, VPADD.S32 7.8M, VMLA.F32 by scalar (Q) 7.4M, VCGT.F32 6.4M, VRECPE.F32 5.0M,
+  VSLI.64 4.4M, VMUL.F32 by scalar 4.2M, VRSQRTS 4.1M, VEXT 4.0M, VSHR.U 4.0M, VST1 lane.32 3.8M, VPADD.F32 3.5M...
+  LDREXD/STREXD 1.0M each, Vfp_Other 1.1M.
+- uc_walk: 504M executed callouts; main thread 8.1 ms/frame. Top: VMLA.F32 by scalar (Q) 85.4M, VTRN 76.4M,
+  VPADD.F32 46.8M, VCGE.F32 37.1M, VEXT 35.6M, VRECPS 30.7M, VNEG.F32 19.5M, LDREXD 16.8M, VRECPE.F32 15.4M,
+  VCGT.F32 15.1M, VSLI.64 11.1M, STREXD 10.6M, Vfp_Other 9.3M, VRSQRTS 9.3M ...
+All of those NEON classes now have an inline lowering; the exclusives and Vfp_Other do not.
+
+### Exact next steps
+1. Rebuild tests, re-run `--filter FullyQualifiedName~NativeNeonMatchesInterpreter` (expect 0 differences after
+   the test fix; if LoadStore still differs, debug the single-lane/all-lanes IR in ArmFrontend.Neon.cs), then the
+   Unicorn test and the rest of NativeJitTests. Commit a non-WIP milestone.
+2. Build the desktop app to a private dir (`scratchpad/nj2/bin`; `scratchpad/nj2/run.sh <bin> <scenario> <run name>
+   <shader cache> [args]` writes private scenario copies with --shader-cache inside args=) and run kz_skin and uc_walk
+   one at a time; read "by class:" from the CPU backend report for the after-ranking.
+3. Inline what remains hot: LDREXD/STREXD (T32_ExclusiveOther; Arm.StoreExclusive64 protocol), VLD2-4/VST2-4
+   (lower `IrOp.VecLdSt` with pshufb de/interleave), Vfp_Other (identify the forms first), ThreeDiff long/narrow,
+   VQSHL/VRSHL register forms, VPADDL/VPADAL, VQMOVN, VCLZ/VCLS, VCVT fixed-point, 64->32 saturating narrows.
+4. VITASHARP_NATIVE_VERIFY=1 on Killzone and Uncharted (a few thousand frames, 0 mismatches), then the game batch
+   one at a time: kz_skin, kzl_walk3 (no deaths), uc_walk, mania_boot, dd_boot, f1_trees_lod, rbs_boot; report
+   callouts, main-thread ms/frame and fps; full Slow suite once at the end.
+5. Then evaluate keeping Q/D registers in XMM across ops/blocks.
 
 Results and measurements: see "Verification" and "Performance" (filled in from the final runs).
 

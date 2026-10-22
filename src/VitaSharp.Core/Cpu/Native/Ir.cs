@@ -41,7 +41,9 @@ public enum IrOp : byte
     Load8, Load8S, Load16, Load16S, Load32,
     Store8, Store16, Store32,   // value B
     Fence,
-    VecOp,        // Advanced SIMD on the register file: Imm = VecKind | q << 8 | size << 9, Imm4 = byte offsets d | n << 8 | m << 16
+    VecOp,        // Advanced SIMD on the register file: Imm = VecKind | q << 8 | size << 9 | VecFlags, Imm2 = operand (shift, scalar
+                  // offset, ...), Imm4 = byte offsets (from D0) d | n << 8 | m << 16
+    VecLdSt,      // NEON interleaving structure load/store at guest address A: Imm = layout (see ArmFrontend.Neon), Imm4 = Vd
     LoadD,        // 8 bytes at guest address A -> state offset Imm (one unaligned 64-bit access, like Mem.R64)
     StoreD,       // state offset Imm (8 bytes) -> guest address A (like Mem.W64)
     LdrEx,        // D = word at guest address A, arming the exclusive monitor (interpreter generation-counter protocol)
@@ -70,7 +72,7 @@ public struct IrInst
     public IrInst(IrOp op) { Op = op; }
 
     public readonly bool HasSideEffects => Op is IrOp.SetReg or IrOp.SetFlag or IrOp.StoreState or IrOp.Store8 or IrOp.Store16
-        or IrOp.Store32 or IrOp.Fence or IrOp.VecOp or IrOp.LoadD or IrOp.StoreD or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
+        or IrOp.Store32 or IrOp.Fence or IrOp.VecOp or IrOp.VecLdSt or IrOp.LoadD or IrOp.StoreD or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
         or IrOp.ExitDynamic or IrOp.FpOp
         // loads may fault on unmapped memory exactly like the interpreter: keep them
         or IrOp.Load8 or IrOp.Load8S or IrOp.Load16 or IrOp.Load16S or IrOp.Load32;
@@ -140,11 +142,41 @@ public enum FpFlags : uint
     OtherOp = 1 << 9,          // the interpreter handler is Vfp_Other (else Vfp_Arith)
 }
 
-/// <summary>Operation of an <see cref="IrOp.VecOp"/> (NEON three-same; floats use the Advanced SIMD standard mode:
-/// inputs and denormal results flushed to zero, NaN results are the default NaN, round to nearest).</summary>
+/// <summary>
+/// Operation of an <see cref="IrOp.VecOp"/>. Every kind reproduces the interpreter handler (Neon.*) bit for bit,
+/// including the QC flag. Floats use the Advanced SIMD standard mode exactly like the handlers: inputs flushed to zero,
+/// IEEE round-to-nearest arithmetic, denormal results flushed to signed zero, NaN results replaced by the default NaN.
+/// Lane size is the instruction's size field (narrowing/widening ops: the narrow size).
+/// </summary>
 public enum VecKind : byte
 {
+    // three registers, same length
     And, Bic, Orr, Orn, Eor, Bsl, Bit, Bif,  // bitwise (d = f(n, m, d))
     AddI, SubI,                              // integer lanes of the given size
     AddF, SubF, MulF, MlaF, MlsF,            // f32 lanes
+    MulI, MlaI, MlsI, CeqI, TstI, CgtI, CgeI, MaxI, MinI, AbdI, AbaI, HaddI, RhaddI, HsubI, QaddI, QsubI,
+    PaddI, PmaxI, PminI, QdmulhI, QrdmulhI, ShlRegI,
+    PaddF, AbdF, CeqF, CgeF, CgtF, AcgeF, AcgtF, MaxF, MinF, PmaxF, PminF, RecpsF, RsqrtsF, FmaF, FmsF,
+    // by scalar: Imm2 = byte offset of the scalar element
+    MulFS, MlaFS, MlsFS, MulIS, MlaIS, MlsIS,
+    // shifts by immediate (Imm2 = shift amount)
+    ShrImm, ShlImm, SriImm, SliImm, ShrnImm, QshrnImm, QshrunImm, ShllImm,
+    // two registers, miscellaneous
+    Rev,                                     // Imm2 = group size in bytes (8, 4, 2)
+    Mvn, AbsF, NegF, AbsI, NegI,
+    CmpZeroI, CmpZeroF,                      // Imm2 = 0 >0, 1 >=0, 2 ==0, 3 <=0, 4 <0
+    Swp, Trn, Uzp, Zip, Movn, Cnt,
+    RecpeF, RsqrteF, RecpeU, RsqrteU, CvtS2F, CvtU2F, CvtF2S, CvtF2U, CvtF2H, CvtH2F,
+    Ext,                                     // VEXT: Imm2 = byte offset
+    Tbl,                                     // VTBL/VTBX: Imm2 = length (1-4) | tbx << 4
+}
+
+/// <summary>Modifier bits of an <see cref="IrOp.VecOp"/> (in Imm).</summary>
+[Flags]
+public enum VecFlags : uint
+{
+    Q = 1 << 8,
+    Unsigned = 1 << 11,
+    Round = 1 << 12,
+    Accumulate = 1 << 13,
 }

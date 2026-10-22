@@ -358,8 +358,14 @@ public sealed unsafe class IrBuilder
 
     public void Store(IrOp op, int addr, int value) => Emit(new IrInst(op) { A = addr, B = value });
 
-    public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff)
-        => Emit(new IrInst(IrOp.VecOp) { Imm = (uint)kind | (q ? 0x100u : 0) | (size << 9), Imm4 = dOff | (nOff << 8) | (mOff << 16) });
+    public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff, VecFlags flags = 0, uint aux = 0)
+        => Emit(new IrInst(IrOp.VecOp)
+        {
+            Imm = (uint)kind | (q ? (uint)VecFlags.Q : 0) | ((size & 3) << 9) | (uint)flags, Imm2 = aux,
+            Imm4 = dOff | (nOff << 8) | (mOff << 16),
+        });
+
+    public void VecLdSt(int addr, uint layout, uint vd) => Emit(new IrInst(IrOp.VecLdSt) { A = addr, Imm = layout, Imm4 = vd });
 
     public void LoadD(int addr, uint stateOff) => Emit(new IrInst(IrOp.LoadD) { A = addr, Imm = stateOff });
     public void StoreD(int addr, uint stateOff) => Emit(new IrInst(IrOp.StoreD) { A = addr, Imm = stateOff });
