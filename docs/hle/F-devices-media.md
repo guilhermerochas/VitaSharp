@@ -774,11 +774,11 @@ valida (devolve 0 sempre). Validar pelos enums da tabela e devolver PARAM em cas
   `mode = 0` (WAIT_NEXTFRAME_ON) bloqueia até o próximo quadro. Com `mode = 1` (OFF), se ainda não houver quadro novo,
   devolve 0 com `status = 1` (ALREADY_READ) e o `frame`/`timestamp` anteriores. Preenche `frame` (contador) e
   `timestamp` (µs).
-- **Retorno/erros:** 0. PARAM se `pRead == NULL`, `size <= 24` ou `size > 0x38`; NOT_OPEN; NOT_START; PARAM em
+- **Retorno/erros:** 0. PARAM se `pRead == NULL`, `size <= 24` ou `size > 0x48`; NOT_OPEN; NOT_START; PARAM em
   SETBYREAD com buffers nulos.
-- **Estruturas:** `SceCameraRead` (0x38): +0x00 size, +0x04 mode, +0x08 pad, +0x0C status (0 ACTIVE, 1 ALREADY_READ,
-  -1 NOT_ACTIVE), +0x10 frame (u64), +0x18 timestamp (u64), +0x20 sizeIBase, +0x24 sizeUBase, +0x28 sizeVBase,
-  +0x2C pIBase, +0x30 pUBase, +0x34 pVBase.
+- **Estruturas:** `SceCameraRead` (0x48, layout do Vita3K; o de vita-headers com 0x38 está errado e fazia toda leitura do Invizimals falhar com PARAM): +0x00 size, +0x04 mode, +0x08 pad, +0x0C status (0 ACTIVE, 1 ALREADY_READ,
+  -1 NOT_ACTIVE), +0x10 frame (u64), +0x18 timestamp (u64), +0x20 exposureTime, +0x24 exposureTimeGap, +0x28 raw8Format, +0x2C desconhecido, +0x30 sizeIBase, +0x34 sizeUBase, +0x38 sizeVBase,
+  +0x3C pIBase, +0x40 pUBase, +0x44 pVBase.
 - **Implementação no VitaSharp:** preencher o quadro neutro só na primeira vez e quando o formato mudar (a imagem não
   muda). Esperar com `Scheduler.Block()` + `PreciseSleep` até `NextFrameUs` (sem esperar em turbo). Classificar como
   espera em `ClassifyCost`.
