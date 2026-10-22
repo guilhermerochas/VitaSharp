@@ -55,6 +55,8 @@ public static class Program
                 Console.WriteLine($"Wrote {elf.Length} bytes");
                 return 0;
             }
+            case "ui-snapshot":
+                return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "pad-test":
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
