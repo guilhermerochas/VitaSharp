@@ -1015,7 +1015,8 @@ chamam em builds de debug. Se algum jogo importar, implementar como no-op `=> 0`
 argumento) e mover o checkbox.
 
 ### sceGxmAddRazorGpuCaptureBuffer
-- [ ] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0xE9E81073
+- [x] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0xE9E81073
+- **Status:** feito (`Gxm.cs`): no-op que devolve 0 (ponteiro base NULL → `INVALID_POINTER` 0x805B0004 nas duas de buffer; esse código de erro é suposição, o Vita3K não implementa).
 - **Protótipo (inferido):** `int sceGxmAddRazorGpuCaptureBuffer(void *base, SceSize size);`
 - **Comportamento:** registra memória para o Razor gravar capturas de GPU. Vita3K: `UNIMPLEMENTED()`.
 - **Retorno/erros:** 0.
@@ -1024,7 +1025,8 @@ argumento) e mover o checkbox.
 - **Validação:** só se importada.
 
 ### sceGxmRemoveRazorGpuCaptureBuffer
-- [ ] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0x0468E3F2
+- [x] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0x0468E3F2
+- **Status:** feito (`Gxm.cs`): no-op que devolve 0 (ponteiro base NULL → `INVALID_POINTER` 0x805B0004 nas duas de buffer; esse código de erro é suposição, o Vita3K não implementa).
 - **Protótipo (inferido):** `int sceGxmRemoveRazorGpuCaptureBuffer(void *base);`
 - **Comportamento:** desfaz o registro acima.
 - **Retorno/erros:** 0.
@@ -1033,7 +1035,8 @@ argumento) e mover o checkbox.
 - **Validação:** só se importada.
 
 ### sceGxmPadTriggerGpuPaTrace
-- [ ] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0x47E06984
+- [x] **Prioridade:** FORA (P1 no TSV; Razor) · **Biblioteca:** SceGxm · **NID:** 0x47E06984
+- **Status:** feito (`Gxm.cs`): no-op que devolve 0 (ponteiro base NULL → `INVALID_POINTER` 0x805B0004 nas duas de buffer; esse código de erro é suposição, o Vita3K não implementa).
 - **Protótipo:** `int sceGxmPadTriggerGpuPaTrace();` (`psp2/gxm.h`)
 - **Comportamento:** dispara um trace do parameter buffer para o Razor. Vita3K: `UNIMPLEMENTED()`.
 - **Retorno/erros:** 0.

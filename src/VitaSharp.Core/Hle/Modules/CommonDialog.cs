@@ -9,7 +9,7 @@ public enum DialogType
 {
     None, Msg, SaveData, Ime, NetCheck, NpMessage, NpTrophySetup, NpFriendList, NpFriendList2, KzUnknown,
     PhotoImport, PhotoReview, CameraImport, VideoImport, CompanionUtil, CrossController, RemoteOsk, StoreCheckout,
-    NpProfile, NpSnsFacebook, Tw, TwLogin,
+    NpProfile, NpSnsFacebook, Tw, TwLogin, PspSaveData,
 }
 
 /// <summary>SceCommonDialogErrorCode (psp2/common_dialog.h).</summary>
@@ -609,6 +609,19 @@ public sealed class CommonDialog : HleModule
     [Hle] int sceTwDialogGetResult(uint result) => SimpleResult(DialogType.Tw, result);
     [Hle] int sceTwDialogTerm() => State.Term(DialogType.Tw);
     [Hle] int sceTwDialogAbort() => State.Abort(DialogType.Tw);
+
+    // PSP save data dialog: a regular common dialog family in libcdlg (Init/Continue/GetResult/Term over the shared slot)
+    // that only the PSP emulator process drives. Its param/result layouts are not documented, so a Vita title calling
+    // it gets a dialog that is canceled at once and only the leading SceCommonDialog result word is written.
+    [Hle] int scePspSaveDataDialogInit(uint param) => SimpleInit(DialogType.PspSaveData, param, ResultUserCanceled);
+    [Hle]
+    int scePspSaveDataDialogContinue(uint param)
+    {
+        if (param == 0) return CommonDialogError.NULL;
+        return State.StatusOf(DialogType.PspSaveData) == StatusNone ? CommonDialogError.NOT_IN_USE : 0;
+    }
+    [Hle] int scePspSaveDataDialogGetResult(uint result) => SimpleResult(DialogType.PspSaveData, result);
+    [Hle] int scePspSaveDataDialogTerm() => State.Term(DialogType.PspSaveData);
 
     // the Init NID of TwLoginDialog is unknown, so it is never active
     [Hle] int sceTwLoginDialogGetStatus() => State.StatusOf(DialogType.TwLogin);
