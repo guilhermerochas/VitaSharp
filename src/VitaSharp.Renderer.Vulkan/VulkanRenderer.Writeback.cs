@@ -31,6 +31,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     readonly Dictionary<ulong, Stack<RtWriteback>> _writebackPool = new();
+    readonly HashSet<(uint, uint, uint)> _tracedWritebacks = new();
 
     /// <summary>How a host pixel row is turned into the guest layout; null when no conversion is known.</summary>
     static WritebackConvert? WritebackConversion(uint colorFormat, Format hostFormat, int hostBpp, int guestBpp)
@@ -85,12 +86,16 @@ public sealed unsafe partial class VulkanRenderer
         };
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, wb.Buffer, 1, in region);
         F.Writebacks.Add(wb);
+        if (TraceSync && _tracedWritebacks.Add((rt.Address, rt.Width, rt.Height)))
+            Log.Info($"[sync] writeback target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} ({rt.Format}, {conv}) present {_presentCount}");
         return true;
     }
 
     /// <summary>Runs after the frame's fence signalled: copies each target's rows into guest memory.</summary>
     void CompleteWritebacks(Frame f)
     {
+        if (f.Writebacks.Count == 0) return;
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (var wb in f.Writebacks)
         {
             var src = new ReadOnlySpan<byte>((void*)wb.Ptr, (int)wb.Size);
@@ -117,11 +122,10 @@ public sealed unsafe partial class VulkanRenderer
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
                         var h = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(row[..(int)(wb.Width * 8)]);
                         var d = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(dst);
+                        var lut = F10Lut;
                         for (int i = 0; i < d.Length; i++)
                         {
-                            uint r = HalfToF10(h[i * 4]), g = HalfToF10(h[i * 4 + 1]), b = HalfToF10(h[i * 4 + 2]);
-                            float a = (float)BitConverter.UInt16BitsToHalf(h[i * 4 + 3]);
-                            uint a2 = (uint)Math.Clamp((int)MathF.Round(a * 3f), 0, 3);
+                            uint r = lut[h[i * 4]] & 0x3FFu, g = lut[h[i * 4 + 1]] & 0x3FFu, b = lut[h[i * 4 + 2]] & 0x3FFu, a2 = (uint)lut[h[i * 4 + 3]] >> 10;
                             d[i] = r | (g << 10) | (b << 20) | (a2 << 30);
                         }
                         break;
@@ -135,11 +139,32 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
             _writebackPool[wb.Size].Push(wb);
+            _wbCount++;
+            _wbBytes += wb.Rows * wb.GuestStride;
         }
         // the rows just written mark their pages: sweep again before the next texture check, so a texture over that
         // memory is re-read in this frame already (as when every texture was hashed every frame)
-        if (f.Writebacks.Count > 0) _sweptFrame = -1;
+        _sweptFrame = -1;
         f.Writebacks.Clear();
+        _wbTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+    }
+
+    /// <summary>
+    /// Half bits to the guest U2F10F10F10 channels, one lookup per channel (luminance targets are converted every
+    /// frame): bits 0-9 hold the unsigned 10-bit float, bits 10-11 the half read as a 2-bit alpha.
+    /// </summary>
+    static readonly ushort[] F10Lut = BuildF10Lut();
+
+    static ushort[] BuildF10Lut()
+    {
+        var t = new ushort[65536];
+        for (int i = 0; i < t.Length; i++)
+        {
+            float a = (float)BitConverter.UInt16BitsToHalf((ushort)i);
+            uint a2 = (uint)Math.Clamp((int)MathF.Round(a * 3f), 0, 3); // NaN rounds to int.MinValue: 0
+            t[i] = (ushort)(HalfToF10((ushort)i) | a2 << 10);
+        }
+        return t;
     }
 
     /// <summary>Half (1.5.10) to the surface's unsigned 10-bit float (5.5): negatives clamp to zero, round to nearest.</summary>

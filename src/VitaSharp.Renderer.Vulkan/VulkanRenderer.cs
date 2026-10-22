@@ -41,7 +41,11 @@ public sealed class VulkanRendererOptions
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
 public sealed unsafe partial class VulkanRenderer : IGpuBackend
 {
-    const int FramesInFlight = 2;
+    /// <summary>
+    /// Command buffers in flight. Sync points submit early (see DeferSignal), so a frame is often split into 2-3
+    /// submissions; with only two slots, recording the next one regularly waited for the GPU (Slot fence waits).
+    /// </summary>
+    const int FramesInFlight = 3;
     const ulong RingSize = 64ul << 20;
 
     readonly VkCore _core;
@@ -138,7 +142,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         var f = F;
         if (f.Recording) return;
-        RetireFrame(f);
+        RetireFrame(f, RetireCause.Slot);
         f.Submitted = false;
         f.Retired = false;
         _vk.ResetFences(_dev, 1, in f.Fence);
@@ -197,17 +201,16 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// Waits for a submitted frame and publishes its results: dumps, render-target writebacks into guest memory,
     /// visibility results and the scene notifications that were deferred until the GPU really finished.
     /// </summary>
-    void RetireFrame(Frame f)
+    void RetireFrame(Frame f, RetireCause cause)
     {
         if (!f.Submitted || f.Retired) return;
         // the GPU completes work in submission order: publish older frames' results first
         foreach (var o in _frames)
-            if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
-        long tf = FrameLedger.Now();
-        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost) _deviceLost = true;
-        FrameLedger.AddSince(FrameLedger.Cat.FenceWait, tf);
+            if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o, RetireCause.Older);
+        WaitFrameFence(f, cause);
         f.Retired = true;
         CompleteGpuTime(f);
+        if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);
         using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
@@ -241,6 +244,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 if (f.Submitted && !f.Retired && (target == null || f.SubmitSeq > target.SubmitSeq)) target = f;
         if (target == null) return false;
         target.Signals.Add(signal);
+        // the guest will wait on this sync point (display queue entry, notification): start the GPU on everything
+        // recorded so far now, instead of once the guest has run out of work and the queue drained
+        if (target == F && !_inScene) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
         return true;
     }
 
@@ -248,21 +254,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void Finish()
     {
         if (F.Recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
-        foreach (var f in _frames) RetireFrame(f);
-    }
-
-    public void Idle()
-    {
-        // keep latency low when the guest stops producing work (loading screens etc.)
-        bool resultsRecorded = F.Recording && HasPendingResults(F);
-        if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))
-        {
-            if (TraceVis) Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
-            SubmitFrame(false, 0); _drawsSinceSubmit = 0;
-        }
-        // the guest may be waiting for results of a submitted frame: publish them now that nothing else is queued
-        foreach (var f in _frames)
-            if (f.Submitted && !f.Retired && HasPendingResults(f)) RetireFrame(f);
+        foreach (var f in _frames) RetireFrame(f, RetireCause.Finish);
     }
 
     int _drawsSinceSubmit;
@@ -532,6 +524,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void BeginScene(BeginSceneCommand b)
     {
+        PollRetire(); // publish finished frames' results without waiting (cheap fence status checks)
         BeginFrameIfNeeded();
         EndRendering();
         _scene = b;
@@ -771,16 +764,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         RetireFlippedFrame();
     }
 
-    /// <summary>
-    /// The display flip happens once the frame's rendering is complete on the hardware, so anything the CPU reads
-    /// after the flip (luminance buffers, picking results, notifications) must already be in memory.
-    /// </summary>
-    void RetireFlippedFrame()
-    {
-        var f = _frames[(_frameIndex + FramesInFlight - 1) % FramesInFlight];
-        if (HasPendingResults(f)) RetireFrame(f);
-    }
-
     void RecordReadback(RenderTarget src, uint w, uint h)
     {
         w = Math.Min(w, src.Width);
@@ -972,7 +955,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         CloseTitleCaches();
         _vk.DeviceWaitIdle(_dev);
         DestroyMirror();
-        foreach (var fr in _frames) RetireFrame(fr);
+        foreach (var fr in _frames) RetireFrame(fr, RetireCause.Dispose);
         foreach (var fr in _frames) DestroyVisibility(fr);
         DestroyWritebacks();
         foreach (var f in _frames)

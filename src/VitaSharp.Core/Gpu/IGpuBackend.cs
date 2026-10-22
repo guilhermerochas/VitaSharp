@@ -13,6 +13,9 @@ public interface IGpuBackend : IDisposable
     /// <summary>Called on the worker thread when the queue runs empty (good moment to flush/submit).</summary>
     void Idle() { }
 
+    /// <summary>The backend was installed on <paramref name="queue"/> (lets <see cref="Idle"/> notice newly queued work).</summary>
+    void Attach(GpuQueue queue) { }
+
     /// <summary>
     /// Queues <paramref name="signal"/> to run once all work executed so far has completed on the GPU and its results
     /// are in guest memory. Returns false when nothing is outstanding, so the caller runs it immediately.

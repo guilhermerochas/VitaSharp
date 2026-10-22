@@ -13,6 +13,7 @@ public sealed unsafe partial class VulkanRenderer
     bool _timeChecked, _timeOk;
     double _timePeriodNs;
     double _gpuNs;
+    double _lastGpuMs;
     long _gpuSubmits;
 
     bool TimestampsOk()
@@ -56,6 +57,7 @@ public sealed unsafe partial class VulkanRenderer
         var t = stackalloc ulong[2];
         if (_vk.GetQueryPoolResults(_dev, _timePool, (uint)f.TimeQuery, 2, 16, t, 8, QueryResultFlags.Result64Bit) == Result.Success && t[1] >= t[0])
         {
+            _lastGpuMs = (t[1] - t[0]) * _timePeriodNs / 1e6;
             _gpuNs += (t[1] - t[0]) * _timePeriodNs;
             _gpuSubmits++;
         }

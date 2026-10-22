@@ -47,6 +47,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- keep freed GC segments for reuse instead of returning them to the OS (steady per-frame allocation churn) -->
+    <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
     <TieredPGO>true</TieredPGO>
     <!-- platforms VitaSharp is published for (build/publish.sh, build/publish.ps1); plain builds stay portable -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
