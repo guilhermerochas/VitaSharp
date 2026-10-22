@@ -26,8 +26,8 @@ public sealed unsafe class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelp
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.TryAllocAt(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.TryAllocAt(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
     }
 
     /// <summary>VITASHARP_TEST_TRACE=file logs every block before it runs natively (finds the block that crashed the host).</summary>
