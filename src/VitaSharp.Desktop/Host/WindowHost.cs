@@ -211,6 +211,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     public ControllerState GetController(int port) => _hostInput.Poll().State;
 
+    /// <summary>Controller gyroscope/accelerometer for SceMotion.</summary>
+    public IMotionSource Motion => _hostInput;
+
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
         Span<TouchPoint> buf = stackalloc TouchPoint[16];

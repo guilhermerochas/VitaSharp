@@ -7,9 +7,10 @@ namespace VitaSharp.Desktop.Input;
 /// <summary>
 /// Keyboard + controllers of the game window mapped onto the Vita through the profiles of input.json (defaults when
 /// a device has none). Every connected controller drives the Vita at once; keys come from the window's key events.
-/// Thread-safe: the emulator polls from its own threads.
+/// Thread-safe: the emulator polls from its own threads. Also the motion source (SceMotion): the gyroscope and
+/// accelerometer of the first controller that has them.
 /// </summary>
-public sealed class HostInput : IDisposable
+public sealed class HostInput : IMotionSource, IDisposable
 {
     readonly object _lock = new();
     readonly InputProfileStore _store;
@@ -21,6 +22,9 @@ public sealed class HostInput : IDisposable
     readonly PadSnapshot _scratch = new();
     PadSnapshot? _fallback;
     CompiledProfile? _fallbackProfile;
+    int _motionPad = -1;
+    ulong _motionAfter;
+    readonly PadMotionSample[] _motionBuf = new PadMotionSample[SdlGamepads.MotionCapacity];
 
     public static string ConfigPath(string dataRoot) => Path.Combine(dataRoot, InputProfileStore.FileName);
 
@@ -93,6 +97,43 @@ public sealed class HostInput : IDisposable
             else if (_fallback != null && _fallbackProfile != null)
                 m = InputMapper.Combine(m, InputMapper.Map(_fallbackProfile, _fallback, null));
             return m;
+        }
+    }
+
+    // ------------------------------------------------------------------ motion (IMotionSource)
+
+    /// <summary>The controller whose sensors drive the Vita: the first connected one with a gyroscope and an
+    /// accelerometer whose profile keeps "Usar giroscópio do controle" on. Called under _lock.</summary>
+    PadInfo? MotionPad()
+    {
+        if (_pads == null) return null;
+        foreach (var info in _pads.Devices)
+            if (info.HasMotion && ProfileFor(info).Profile.MotionEnabled) return info;
+        return null;
+    }
+
+    public bool HasSensors { get { lock (_lock) return MotionPad() != null; } }
+
+    public int ReadSamples(Span<MotionSample> dest)
+    {
+        lock (_lock)
+        {
+            var pad = MotionPad();
+            if (pad == null) { _motionPad = -1; return 0; }
+            var orientation = ProfileFor(pad).Profile.MotionOrientation;
+            if (pad.InstanceId != _motionPad)
+            {
+                _motionPad = pad.InstanceId;
+                _motionAfter = 0;
+                Log.Info($"Input: motion sensors of {pad.Name} drive the Vita ({orientation})");
+            }
+            int n = _pads!.ReadMotion(pad.InstanceId, ref _motionAfter, _motionBuf.AsSpan(0, Math.Min(dest.Length, _motionBuf.Length)));
+            for (int i = 0; i < n; i++)
+            {
+                var m = _motionBuf[i];
+                dest[i] = MotionAxes.FromGamepad(m.TimestampUs, m.Accel, m.Gyro, orientation);
+            }
+            return n;
         }
     }
 

@@ -41,7 +41,9 @@ public sealed class ControllerSettingsPanel : UserControl
     readonly TextBlock _deviceInfo, _status, _hint;
     readonly VitaLayoutView _layout;
     readonly StackPanel _bindingRows;
-    readonly CheckBox _swap, _triggers, _touchpad, _invertL, _invertR;
+    readonly CheckBox _swap, _triggers, _touchpad, _invertL, _invertR, _motion;
+    readonly ComboBox _motionOrientation;
+    readonly TextBlock _motionLive;
     readonly Slider _dzL, _dzR, _sensL, _sensR;
     readonly TextBlock _dzLText, _dzRText, _sensLText, _sensRText;
     readonly Border _gamepadOptions;
@@ -117,9 +119,24 @@ public sealed class ControllerSettingsPanel : UserControl
         _triggers.IsCheckedChanged += (_, _) => Edit(p => DefaultMappings.SetTriggersAsShoulders(p, _triggers.IsChecked == true));
         _touchpad = new CheckBox { Content = "Touchpad = toque frontal (L2: traseiro, R2: ambos)" };
         _touchpad.IsCheckedChanged += (_, _) => Edit(p => p.TouchpadEnabled = _touchpad.IsChecked == true);
+        _motion = new CheckBox { Content = "Usar giroscópio do controle" };
+        ToolTip.SetTip(_motion, "O giroscópio e o acelerômetro do controle (DualShock 4, DualSense, Switch Pro, Joy-Con) movem os sensores de movimento do Vita.");
+        _motion.IsCheckedChanged += (_, _) => Edit(p => p.MotionEnabled = _motion.IsChecked == true);
+        _motionOrientation = new ComboBox
+        {
+            ItemsSource = new[] { "Face do controle = tela do Vita", "Controle deitado = Vita em pé (realidade aumentada)" },
+            HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12,
+        };
+        ToolTip.SetTip(_motionOrientation, "Natural: segure o controle como seguraria o Vita. Vita em pé: com o controle na horizontal o Vita fica de pé à sua frente, câmera traseira apontando para a frente.");
+        _motionOrientation.SelectionChanged += (_, _) =>
+            Edit(p => p.MotionOrientation = _motionOrientation.SelectedIndex == 1 ? MotionOrientation.FlatIsUpright : MotionOrientation.Natural);
+        _motionLive = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
         var gp = new StackPanel { Spacing = 6 };
         gp.Children.Add(_triggers);
         gp.Children.Add(_touchpad);
+        gp.Children.Add(_motion);
+        gp.Children.Add(_motionOrientation);
+        gp.Children.Add(_motionLive);
         _gamepadOptions = new Border { Child = gp };
 
         (_dzL, _dzLText) = SliderRow(0, 0.5, v => Edit(p => p.LeftStick.Deadzone = (float)v), v => $"{v:P0}");
@@ -342,6 +359,10 @@ public sealed class ControllerSettingsPanel : UserControl
         _triggers.IsEnabled = _current?.IsGamepad == true;
         _touchpad.IsChecked = _profile.TouchpadEnabled;
         _touchpad.IsEnabled = _current?.Pad?.HasTouchpad != false; // unknown when disconnected
+        _motion.IsChecked = _profile.MotionEnabled;
+        _motion.IsEnabled = _motionOrientation.IsEnabled = _current?.Pad?.HasMotion != false;
+        _motionOrientation.SelectedIndex = _profile.MotionOrientation == MotionOrientation.FlatIsUpright ? 1 : 0;
+        _motionLive.Text = _current?.Pad is { HasMotion: false } ? "Este controle não tem giroscópio: o Vita fica parado (deitado, tela para cima)." : "";
         _dzL.Value = _profile.LeftStick.Deadzone; _dzR.Value = _profile.RightStick.Deadzone;
         _sensL.Value = _profile.LeftStick.Sensitivity; _sensR.Value = _profile.RightStick.Sensitivity;
         _invertL.IsChecked = _profile.LeftStick.InvertY; _invertR.IsChecked = _profile.RightStick.InvertY;
@@ -545,6 +566,18 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.TapPointFront = _compiled[VitaControl.TouchFront].Length > 0 ? new Point(_profile.TouchFrontX, _profile.TouchFrontY) : null;
         _layout.TapPointBack = _compiled[VitaControl.TouchBack].Length > 0 ? new Point(_profile.TouchBackX, _profile.TouchBackY) : null;
         _layout.SetState(m, rawL, rawR, _profile.LeftStick.Deadzone, _profile.RightStick.Deadzone);
+
+        if (_ticks % 6 == 0 && pad is { HasMotion: true })
+        {
+            // live motion in the Vita's axes, as the game will see it
+            var s = MotionAxes.FromGamepad(0, pad.Accel, pad.Gyro, _profile.MotionOrientation);
+            var a = s.Acceleration;
+            float pitch = MathF.Atan2(-a.Y, -a.Z) * 180 / MathF.PI, roll = MathF.Atan2(a.X, MathF.Sqrt(a.Y * a.Y + a.Z * a.Z)) * 180 / MathF.PI;
+            _motionLive.Text = _profile.MotionEnabled
+                ? $"Vita: inclinação {pitch:+0;-0;0}° · rolagem {roll:+0;-0;0}° · rotação {s.AngularVelocity.Length() * 180 / MathF.PI:0}°/s\n" +
+                  $"acelerômetro {a.X:+0.00;-0.00} {a.Y:+0.00;-0.00} {a.Z:+0.00;-0.00} G"
+                : "Giroscópio desligado: o Vita fica parado.";
+        }
 
         if (_listen == null && _ticks % 6 == 0 && (m.State.Buttons != 0 || m.FrontCount + m.BackCount > 0))
             _status.Text = $"Pressionado: {Pressed(m.State.Buttons)}{(m.FrontCount > 0 ? $"  · toque frontal {m.FrontCount}" : "")}{(m.BackCount > 0 ? $"  · toque traseiro {m.BackCount}" : "")}";

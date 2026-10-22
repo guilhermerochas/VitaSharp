@@ -77,6 +77,8 @@ public sealed class HostServices : IDisposable
     public ITextInputBackend? TextInput { get; set; }
     /// <summary>Webcam / device camera backing SceCamera; null = emulated camera delivering grey frames.</summary>
     public ICameraSource? Camera { get; set; }
+    /// <summary>Motion sensors backing SceMotion (controller gyro, phone sensors); null = device at rest.</summary>
+    public IMotionSource? Motion { get; set; }
 
     /// <summary>Camera streams the guest has started; survives a process exec so the new process can release them.</summary>
     internal readonly List<ICameraStream> CameraStreams = new();

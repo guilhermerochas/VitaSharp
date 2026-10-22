@@ -54,7 +54,10 @@ public static class Runner
         using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
         using var audio = OpenAlAudio.TryCreate();
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
-        emu.Host.Input = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : window;
+        var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
+        emu.Host.Input = scripted ?? (IInputBackend)window;
+        // motion sensors: the controller's gyro (SDL), or the script's tilt steps
+        emu.Host.Motion = scripted ?? window.Motion;
         emu.Host.Audio = audio;
         // webcam for SceCamera: --camera=<name or index> picks a device, --camera=none disables it (grey frames)
         emu.Host.Camera = FlashCapCamera.TryCreate(Opt(options, "--camera"));
@@ -121,7 +124,7 @@ public static class Runner
         if (double.TryParse(Opt(options, "--io-speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ioMBps))
             VitaSharp.Core.Util.IoTiming.BytesPerSecond = ioMBps * 1e6; // 0 = instant reads
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
-        if (Opt(options, "--input") is { } script) emu.Host.Input = new ScriptedInput(script);
+        if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
         if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(); // real audio device, as in the window mode
         if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
         emu.BacktraceHle = Opt(options, "--bt");

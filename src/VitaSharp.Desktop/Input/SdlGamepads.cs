@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Silk.NET.SDL;
 using Thread = System.Threading.Thread;
@@ -7,8 +9,11 @@ using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Input;
 
+/// <summary>One controller motion report in SDL units and axes (accelerometer m/s², gyroscope rad/s), timestamp in us.</summary>
+public readonly record struct PadMotionSample(ulong TimestampUs, Vector3 Accel, Vector3 Gyro);
+
 /// <summary>A connected controller as seen by <see cref="SdlGamepads"/>.</summary>
-public sealed record PadInfo(int InstanceId, string Guid, string Name, ControllerKind Kind, bool IsGamepad, bool HasTouchpad, string Model, bool IsVirtual)
+public sealed record PadInfo(int InstanceId, string Guid, string Name, ControllerKind Kind, bool IsGamepad, bool HasTouchpad, string Model, bool IsVirtual, bool HasMotion = false)
 {
     public string Label => $"{Name} ({ControllerClassifier.KindLabel(Kind)})";
 }
@@ -32,7 +37,14 @@ public sealed unsafe class SdlGamepads : IDisposable
         public GameController* Controller;
         public Joystick* Joystick;
         public readonly PadSnapshot State = new();
+        // motion samples (ring, under _lock) for HostInput, which reads them at the guest's pace
+        public readonly PadMotionSample[] Motion = new PadMotionSample[MotionCapacity];
+        public int MotionHead, MotionCount;
+        public ulong LastMotionUs;
     }
+
+    /// <summary>Samples kept per controller (about 0.5 s at SDL's polling rate).</summary>
+    public const int MotionCapacity = 128;
 
     readonly Thread _thread;
     readonly object _lock = new();
@@ -141,7 +153,7 @@ public sealed unsafe class SdlGamepads : IDisposable
             if (d == null) continue;
             _devices[id] = d;
             changed = true;
-            Log.Info($"Input: controller connected: {d.Info.Name} [{d.Info.Model}, {(d.Info.IsGamepad ? "mapped" : "raw joystick")}{(d.Info.HasTouchpad ? ", touch pad" : "")}] guid {d.Info.Guid}");
+            Log.Info($"Input: controller connected: {d.Info.Name} [{d.Info.Model}, {(d.Info.IsGamepad ? "mapped" : "raw joystick")}{(d.Info.HasTouchpad ? ", touch pad" : "")}{(d.Info.HasMotion ? ", gyro + accelerometer" : "")}] guid {d.Info.Guid}");
         }
         foreach (var id in _devices.Keys.ToArray())
         {
@@ -188,6 +200,11 @@ public sealed unsafe class SdlGamepads : IDisposable
             _ => ControllerClassifier.Classify(guid, name),
         };
         bool touch = gc != null && sdl.GameControllerGetNumTouchpads(gc) > 0;
+        // gyroscope + accelerometer (DualShock 4, DualSense, Switch Pro, Joy-Con...): both are needed for SceMotion
+        bool motion = gc != null && sdl.GameControllerHasSensor(gc, SensorType.Gyro) == SdlBool.True
+                      && sdl.GameControllerHasSensor(gc, SensorType.Accel) == SdlBool.True
+                      && sdl.GameControllerSetSensorEnabled(gc, SensorType.Gyro, SdlBool.True) == 0
+                      && sdl.GameControllerSetSensorEnabled(gc, SensorType.Accel, SdlBool.True) == 0;
         string model = type switch
         {
             GameControllerType.Xbox360 => "Xbox 360", GameControllerType.Xboxone => "Xbox One / Series",
@@ -200,7 +217,7 @@ public sealed unsafe class SdlGamepads : IDisposable
         };
         return new Device
         {
-            Info = new PadInfo(id, guid, name, kind, isGamepad, touch, model, sdl.JoystickIsVirtual(index) == SdlBool.True),
+            Info = new PadInfo(id, guid, name, kind, isGamepad, touch, model, sdl.JoystickIsVirtual(index) == SdlBool.True, motion),
             Controller = gc, Joystick = js,
         };
     }
@@ -238,6 +255,7 @@ public sealed unsafe class SdlGamepads : IDisposable
                     s.FingerY[f] = y;
                 }
             }
+            if (d.Info.HasMotion) SampleMotion(d, gc);
         }
         var js = d.Joystick;
         s.JoyAxisCount = Math.Min(PadSnapshot.MaxJoyAxes, Math.Max(0, sdl.JoystickNumAxes(js)));
@@ -246,6 +264,54 @@ public sealed unsafe class SdlGamepads : IDisposable
         for (int i = 0; i < s.JoyAxisCount; i++) s.JoyAxes[i] = Math.Max(-1f, sdl.JoystickGetAxis(js, i) / 32767f);
         for (int i = 0; i < s.JoyButtonCount; i++) s.JoyButtons[i] = sdl.JoystickGetButton(js, i) != 0;
         for (int i = 0; i < s.JoyHatCount; i++) s.JoyHats[i] = sdl.JoystickGetHat(js, i);
+    }
+
+    void SampleMotion(Device d, GameController* gc)
+    {
+        var sdl = _sdl!;
+        var s = d.State;
+        float* a = stackalloc float[3];
+        float* g = stackalloc float[3];
+        ulong ta = 0, tg = 0;
+        if (sdl.GameControllerGetSensorDataWithTimestamp(gc, SensorType.Accel, &ta, a, 3) != 0
+            || sdl.GameControllerGetSensorDataWithTimestamp(gc, SensorType.Gyro, &tg, g, 3) != 0)
+            return;
+        s.HasMotion = true;
+        s.Accel = new Vector3(a[0], a[1], a[2]);
+        s.Gyro = new Vector3(g[0], g[1], g[2]);
+        if (ta == 0 && tg == 0 && s.Accel == Vector3.Zero && s.Gyro == Vector3.Zero) return; // no report received yet
+        // sensor timestamps (us) when the driver provides them, else the time of this poll
+        ulong ts = Math.Max(ta, tg);
+        if (ts == 0) ts = (ulong)(Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency * 1e6);
+        if (ts == d.LastMotionUs) return; // no new report since the last poll
+        d.LastMotionUs = ts;
+        d.Motion[d.MotionHead] = new PadMotionSample(ts, s.Accel, s.Gyro);
+        d.MotionHead = (d.MotionHead + 1) % MotionCapacity;
+        if (d.MotionCount < MotionCapacity) d.MotionCount++;
+    }
+
+    /// <summary>
+    /// Copies the motion samples of a controller newer than <paramref name="afterUs"/> (oldest first; when more than
+    /// fit, the newest ones) and advances <paramref name="afterUs"/> to the last one returned. 0 = none / unknown pad.
+    /// </summary>
+    public int ReadMotion(int instanceId, ref ulong afterUs, Span<PadMotionSample> dest)
+    {
+        lock (_lock)
+        {
+            if (!_devices.TryGetValue(instanceId, out var d) || d.MotionCount == 0) return 0;
+            int newer = 0;
+            for (int i = 0; i < d.MotionCount; i++)
+            {
+                var m = d.Motion[(d.MotionHead + MotionCapacity - 1 - i) % MotionCapacity];
+                if (m.TimestampUs <= afterUs) break;
+                newer++;
+            }
+            int n = Math.Min(newer, dest.Length);
+            for (int i = 0; i < n; i++)
+                dest[i] = d.Motion[(d.MotionHead + MotionCapacity - n + i) % MotionCapacity];
+            if (n > 0) afterUs = dest[n - 1].TimestampUs;
+            return n;
+        }
     }
 
     /// <summary>Copies the latest state of a controller; false when it is no longer connected.</summary>
