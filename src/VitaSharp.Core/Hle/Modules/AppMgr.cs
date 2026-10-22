@@ -70,6 +70,54 @@ public sealed class AppMgr : HleModule
         return MountAlias($"am{id}", rel, mountPoint);
     }
 
+    /// <summary>
+    /// Trophy data mounts (used by the LLE SceNpTrophy; the HLE one keeps its own files). The FW 3.60 kernel mounts
+    /// the fixed devices trophy_sys0:, trophy_dat0: and trophy_dbk0:; which id selects which, and their targets, are
+    /// inferred: 300 = the title's trophy configuration (app0:sce_sys/trophy), 302 = the user's trophy data folder,
+    /// 303/304 = another title's data folder and its _BK backup (title id "ABCD12345_67", an NP communication id).
+    /// </summary>
+    int TrophyMount(string device, string? hostDir, uint mountPoint)
+    {
+        if (mountPoint == 0) return ERR_NULL_POINTER;
+        if (hostDir == null) return ERR_NOT_FOUND;
+        Directory.CreateDirectory(hostDir);
+        Emu.Vfs.Mount(device, hostDir);
+        lock (_mounts) _mounts.Add(device);
+        GuestMemory.Fill(mountPoint, 0, 16);
+        GuestMemory.WriteCString(mountPoint, device + ":", 16);
+        return 0;
+    }
+
+    string TrophyData(string rel) => Path.Combine(Emu.Options.FsRoot, "ur0", "user", "00", "trophy", "data", rel);
+
+    /// <summary>psp2/appmgr.h (_sceAppMgrTrophyMount, which the wrapper calls directly): <c>int (int id, ScePID pid, char mount_point[16])</c>.</summary>
+    [Hle]
+    [Hle("_sceAppMgrTrophyMount")]
+    int sceAppMgrTrophyMount(int id, int pid, uint mountPoint) => id switch
+    {
+        300 => Emu.Vfs.Resolve("app0:sce_sys/trophy") is { } conf && Directory.Exists(conf)
+            ? TrophyMount("trophy_sys0", conf, mountPoint) : mountPoint == 0 ? ERR_NULL_POINTER : ERR_NOT_FOUND,
+        302 => TrophyMount("trophy_dat0", TrophyData(""), mountPoint),
+        _ => ERR_PARAM,
+    };
+
+    /// <summary>psp2/appmgr.h: <c>int (int id, const char *title_id, char mount_point[16])</c>; the syscall adds an ignored opt.</summary>
+    [Hle]
+    int sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint)
+    {
+        if (titleId == 0) return ERR_NULL_POINTER;
+        string tid = GuestMemory.ReadCString(titleId, 16);
+        if (tid.Length != 12 || tid[9] != '_') return ERR_PARAM;
+        return id switch
+        {
+            303 => TrophyMount("trophy_dat0", TrophyData(tid), mountPoint),
+            304 => TrophyMount("trophy_dbk0", TrophyData(tid + "_BK"), mountPoint),
+            _ => ERR_PARAM,
+        };
+    }
+
+    [Hle] int _sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint, uint opt) => sceAppMgrTrophyMountById(id, titleId, mountPoint);
+
     [Hle]
     int sceAppMgrUmount(uint mountPoint)
     {
@@ -170,23 +218,44 @@ public sealed class AppMgr : HleModule
 
     /// <summary>
     /// SceAppMgrBootParam (0x2C): +0 size, +4 reserved04[2] (zeroed on FW 3.60), +0xC reserved_0C[8] (left as is).
-    /// The syscall copies <c>opt->boot_param_size</c> bytes (above 0x2C → PARAM) and ignores the selector. Only the
-    /// syscall is registered: whether the public wrapper's third argument is the size or the opt is not documented.
+    /// The syscall copies <c>opt->boot_param_size</c> bytes (above 0x2C → PARAM) and ignores the selector.
     /// </summary>
     [Hle]
     int _sceAppMgrGetBootParam(uint selector, uint bootParam, uint opt)
     {
         if (bootParam == 0 || opt == 0) return ERR_NULL_POINTER;
-        uint size = GuestMemory.R32(opt);
+        return BootParam(bootParam, GuestMemory.R32(opt));
+    }
+
+    /// <summary>Public wrapper (FW 3.60 SceDriverUser): <c>int (SceUInt32 selector, SceAppMgrBootParam *bootParam)</c>,
+    /// the opt's boot_param_size taken from <c>bootParam->size</c>.</summary>
+    [Hle]
+    int sceAppMgrGetBootParam(uint selector, uint bootParam)
+    {
+        if (bootParam == 0) return ERR_NULL_POINTER;
+        return BootParam(bootParam, GuestMemory.R32(bootParam));
+    }
+
+    static int BootParam(uint bootParam, uint size)
+    {
         if (size > 0x2C) return ERR_PARAM;
         for (uint o = 4; o < Math.Min(size, 0xCu); o++) GuestMemory.Write(bootParam + o, (byte)0);
         return 0;
     }
 
+    /// <summary>Public wrapper (FW 3.60 SceDriverUser): <c>int (const char *path, const char *title_id, int
+    /// force_mount_ux, SceAppMgrGetSaveDataInfoResult *result)</c>, the result pointer moved into the opt.</summary>
+    [Hle]
+    int sceAppMgrGetSaveDataInfo(uint path, uint titleId, int forceMountUx, uint result)
+    {
+        if (result == 0) return ERR_NULL_POINTER;
+        return SaveDataInfo(titleId, result);
+    }
+
     /// <summary>
     /// psp2/appmgr.h: <c>int _sceAppMgrGetSaveDataInfo(const char *path, const char *title_id, int force_mount_ux,
     /// const SceAppMgrGetSaveDataInfoOpt *opt)</c>, result in <c>opt->result</c> (SceAppMgrGetSaveDataInfoResult,
-    /// 0x1C). Only the syscall is registered: the public wrapper's arguments are not documented.
+    /// 0x1C).
     /// </summary>
     [Hle]
     int _sceAppMgrGetSaveDataInfo(uint path, uint titleId, int forceMountUx, uint opt)
@@ -194,6 +263,12 @@ public sealed class AppMgr : HleModule
         if (titleId == 0 || opt == 0) return ERR_NULL_POINTER;
         uint result = GuestMemory.R32(opt);
         if (result == 0) return ERR_NULL_POINTER;
+        return SaveDataInfo(titleId, result);
+    }
+
+    int SaveDataInfo(uint titleId, uint result)
+    {
+        if (titleId == 0) return ERR_NULL_POINTER;
         string tid = GuestMemory.ReadCString(titleId, 16);
         if (tid.Length != 9) return ERR_PARAM;
         string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", tid);
@@ -227,6 +302,21 @@ public sealed class AppMgr : HleModule
         string? p = LaunchParam;
         LaunchParam = null;
         if (p == null) { GuestMemory.Write(param, (byte)0); return ERR_APP_PARAM_READ; }
+        GuestMemory.WriteCString(param, p, 0x400);
+        return 0;
+    }
+
+    /// <summary>FW 3.60 kernel: <c>int (void *param)</c> filling a 0x440-byte block (the 0x400 launch parameter at +0,
+    /// then launch bookkeeping, left zero here); same results as GetAppParam. The kernel gates it behind a permission
+    /// check whose outcome for a game process is not known (NOEXEC 0x8080201F when denied).</summary>
+    [Hle]
+    int sceAppMgrGetAppParam2(uint param)
+    {
+        if (param == 0) return ERR_NULL_POINTER;
+        GuestMemory.Fill(param, 0, 0x440);
+        string? p = LaunchParam;
+        LaunchParam = null;
+        if (p == null) return ERR_APP_PARAM_READ;
         GuestMemory.WriteCString(param, p, 0x400);
         return 0;
     }
@@ -277,6 +367,50 @@ public sealed class AppMgr : HleModule
 
     [Hle] int sceAppMgrSystemParamGetInt(uint id, Ptr<int> value) => AppUtil.sceAppUtilSystemParamGetInt(id, value);
     [Hle] int sceAppMgrSystemParamGetString(uint id, uint buf, uint size) => AppUtil.sceAppUtilSystemParamGetString(id, buf, size);
+
+    /// <summary>
+    /// <c>int (SceAppMgrDateTimeConf *conf)</c>, 0x14 bytes kept by the kernel for the shell (FW 3.60): +0 date format,
+    /// +4 time format, +8 unknown (written 0), +0xC time zone (minutes), +0x10 summer time; libSceAppUtil reads
+    /// system params 4..7 from these offsets. NULL → 0x80801001.
+    /// </summary>
+    [Hle]
+    [Hle("_sceAppMgrSystemParamDateTimeGetConf")]
+    int sceAppMgrSystemParamDateTimeGetConf(uint conf)
+    {
+        if (conf == 0) return unchecked((int)0x80801001);
+        GuestMemory.W32(conf + 0x00, (uint)AppUtil.SystemParamInt(4));
+        GuestMemory.W32(conf + 0x04, (uint)AppUtil.SystemParamInt(5));
+        GuestMemory.W32(conf + 0x08, 0);
+        GuestMemory.W32(conf + 0x0C, (uint)AppUtil.SystemParamInt(6));
+        GuestMemory.W32(conf + 0x10, (uint)AppUtil.SystemParamInt(7));
+        return 0;
+    }
+
+    /// <summary>
+    /// <c>int (const char drive[16], int *mediaType)</c> (FW 3.60 kernel): looks the drive up in the process's mount
+    /// table and classifies its target: ux0 = 4, gro0/grw0 (game card) = 3, ur0/vs0 = 2, anything else 1. A drive that
+    /// is not one of the process's mounts (a raw "ux0:", say) is 0x80800002. Here every app mount lives under the
+    /// emulated ux0 except the system partitions, so the host path decides.
+    /// </summary>
+    [Hle]
+    int sceAppMgrGetMediaTypeFromDrive(uint drive, Ptr<int> mediaType)
+    {
+        if (drive == 0 || mediaType.IsNull) return ERR_NULL;
+        string dev = GuestMemory.ReadCString(drive, 16);
+        int colon = dev.IndexOf(':');
+        if (colon >= 0) dev = dev[..colon];
+        bool processMount = dev.ToLowerInvariant() is "app0" or "savedata0" or "savedata1" or "addcont0" or "photo0"
+            || dev.StartsWith("trophy_", StringComparison.OrdinalIgnoreCase);
+        lock (_mounts) processMount |= _mounts.Contains(dev);
+        var host = processMount ? Emu.Vfs.Resolve(dev + ":") : null;
+        if (host == null) return unchecked((int)0x80800002);
+        string root = Path.GetFullPath(Emu.Options.FsRoot), full = Path.GetFullPath(host);
+        string first = full.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+            ? full[root.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0].ToLowerInvariant()
+            : "ux0"; // titles run from a folder outside the data root are installed apps too
+        mediaType.Value = first switch { "ux0" => 4, "gro0" or "grw0" => 3, "ur0" or "vs0" => 2, _ => 1 };
+        return 0;
+    }
 
     /// <summary>Partition 1 = "ur0:user/00", 2 = "ux0:user/00"; at most 32 bytes are written.</summary>
     [Hle]
@@ -408,6 +542,125 @@ public sealed class AppMgr : HleModule
     {
         if (data == 0) return ERR_NULL_POINTER;
         return AppUtil.sceAppUtilSaveDataSlotSetParam(GuestMemory.R32(data + 4), data + 8, 0);
+    }
+
+    // FW 3.60 SceDriverUser wrappers below hand their struct to the syscall with an 8-byte opt holding the struct's own
+    // size (+0); the kernel rejects a size above the struct (NO_MEMORY 0x8002710B) and its core a size other than the
+    // exact one (0x80800001). Layouts come from the FW 3.60 SceAppMgr kernel module and its user, libSceAppUtil.
+
+    const int ERR_SIZE = unchecked((int)0x8002710B);
+    const int ERR_SLOT_NOT_FOUND = unchecked((int)0x8080108B), ERR_SLOT_RANGE = unchecked((int)0x80801084);
+    const uint SlotMax = 256; // SCE_APPUTIL_SAVEDATA_SLOT_MAX
+
+    static int CheckSize(uint data, uint size, bool exact = true)
+    {
+        if (data == 0) return ERR_NULL;
+        uint s = GuestMemory.R32(data);
+        if (s > size) return ERR_SIZE;
+        return exact && s != size ? ERR_NULL : 0;
+    }
+
+    /// <summary>Same SceAppMgrSaveDataData (0x4C) as DataSave; the kernel shares the code and only adds a permission
+    /// check for the "2" variant.</summary>
+    [Hle]
+    int sceAppMgrSaveDataDataSave2(uint data)
+    {
+        int r = CheckSize(data, 0x4C);
+        return r < 0 ? r : sceAppMgrSaveDataDataSave(data);
+    }
+
+    /// <summary>Same arguments as DataRemove (SceAppMgrSaveDataDataDelete, 0x44); see DataSave2.</summary>
+    [Hle]
+    int sceAppMgrSaveDataDataRemove2(uint data)
+    {
+        int r = CheckSize(data, 0x44);
+        return r < 0 ? r : sceAppMgrSaveDataDataRemove(data);
+    }
+
+    /// <summary>SceAppMgrSaveDataQuota (0x1C, from libSceAppUtil's GetQuota): +0 size, +4 quota KiB (out), +8 used KiB
+    /// (out), +0xC mount point[16].</summary>
+    [Hle]
+    int sceAppMgrSaveDataGetQuota(uint data)
+    {
+        int r = CheckSize(data, 0x1C);
+        if (r < 0) return r;
+        return AppUtil.sceAppUtilSaveDataGetQuota(new Ptr<uint>(data + 4), new Ptr<uint>(data + 8), data + 0xC);
+    }
+
+    /// <summary>SceAppMgrSaveDataSlotStatus (0x1C): +0 size, +4 slotId, +8 status (the first word of the slot's
+    /// SceAppUtilSaveDataSlotParam), +0xC mount point[16]. A missing slot is 0x8080108B, an id past the slot table
+    /// 0x80801084.</summary>
+    int SlotStatusCheck(uint data, out uint slot)
+    {
+        slot = 0;
+        int r = CheckSize(data, 0x1C);
+        if (r < 0) return r;
+        slot = GuestMemory.R32(data + 4);
+        if (slot >= SlotMax) return ERR_SLOT_RANGE;
+        return AppUtil.SlotExists(slot) ? 0 : ERR_SLOT_NOT_FOUND;
+    }
+
+    [Hle]
+    int sceAppMgrSaveDataSlotGetStatus(uint data)
+    {
+        int r = SlotStatusCheck(data, out uint slot);
+        if (r < 0) return r;
+        var bytes = File.ReadAllBytes(AppUtil.SlotPath(slot));
+        GuestMemory.W32(data + 8, bytes.Length >= 4 ? BitConverter.ToUInt32(bytes, 0) : 0);
+        return 0;
+    }
+
+    [Hle]
+    int sceAppMgrSaveDataSlotSetStatus(uint data)
+    {
+        int r = SlotStatusCheck(data, out uint slot);
+        if (r < 0) return r;
+        var path = AppUtil.SlotPath(slot);
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Length < 4) Array.Resize(ref bytes, AppUtil.SlotParamSize);
+        BitConverter.TryWriteBytes(bytes.AsSpan(0, 4), GuestMemory.R32(data + 8));
+        File.WriteAllBytes(path, bytes);
+        return 0;
+    }
+
+    /// <summary><c>int (unsigned slotId, void *buf)</c> (libSceAppUtil's slot search): the kernel always writes a
+    /// 0x400-byte buffer whose start is the slot's SceAppUtilSaveDataSlotParam (0x34C).</summary>
+    [Hle]
+    int sceAppMgrSaveDataSlotFileGetParam(uint slot, uint buf)
+    {
+        if (buf == 0) return ERR_NULL;
+        if (slot >= SlotMax) return ERR_SLOT_RANGE;
+        GuestMemory.Fill(buf, 0, 0x400);
+        if (!AppUtil.SlotExists(slot)) return ERR_SLOT_NOT_FOUND;
+        AppUtil.ReadSlotParam(slot, buf);
+        return 0;
+    }
+
+    /// <summary>SceAppMgrSaveDataMount (0x3C): +0 size, +4 16 bytes (title id), +0x14 mount point name ("savedata0"),
+    /// rest unknown. The process's own savedata0: is mounted at boot, so this only validates the struct.</summary>
+    [Hle]
+    int sceAppMgrSaveDataMount(uint data)
+    {
+        int r = CheckSize(data, 0x3C);
+        if (r < 0) return r;
+        if (!Emu.Vfs.IsMounted("savedata0"))
+            Emu.Vfs.Mount("savedata0", Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", Emu.TitleId));
+        return 0;
+    }
+
+    /// <summary>SceAppMgrSaveDataUmount (0x14): +0 size, +4 mount point[16]. savedata0: stays mounted (games and the HLE
+    /// AppUtil keep using it); savedata1: and the aliases mounted here are removed.</summary>
+    [Hle]
+    int sceAppMgrSaveDataUmount(uint data)
+    {
+        int r = CheckSize(data, 0x14);
+        if (r < 0) return r;
+        string dev = GuestMemory.ReadCString(data + 4, 16).TrimEnd(':');
+        if (dev.Equals("savedata0", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (dev.Equals("savedata1", StringComparison.OrdinalIgnoreCase)) return Emu.Vfs.Unmount("savedata1") ? 0 : ERR_NOT_FOUND;
+        lock (_mounts) if (!_mounts.Remove(dev)) return ERR_NOT_FOUND;
+        Emu.Vfs.Unmount(dev);
+        return 0;
     }
 
     // the slot file is one file per slot here: nothing to initialise, open or close

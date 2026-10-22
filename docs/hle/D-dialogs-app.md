@@ -856,10 +856,12 @@ Login/postagem em Facebook e Twitter (serviços desativados). Sempre `USER_CANCE
 
 Diálogo de save do emulador de PSP (`ScePspemu`), usado pelo processo do PSP emulado e não por jogos Vita.
 
-- [ ] `scePspSaveDataDialogInit` · NID 0x4458B053 · FORA — uso exclusivo do PspEmu.
-- [ ] `scePspSaveDataDialogContinue` · NID 0x4A40C37F · FORA — idem.
-- [ ] `scePspSaveDataDialogGetResult` · NID 0x61C45E12 · FORA — idem.
-- [ ] `scePspSaveDataDialogTerm` · NID 0xB8E37F7C · FORA — idem.
+- [x] `scePspSaveDataDialogInit` · NID 0x4458B053 · FORA — uso exclusivo do PspEmu.
+- [x] `scePspSaveDataDialogContinue` · NID 0x4A40C37F · FORA — idem.
+- [x] `scePspSaveDataDialogGetResult` · NID 0x61C45E12 · FORA — idem.
+- [x] `scePspSaveDataDialogTerm` · NID 0xB8E37F7C · FORA — idem.
+
+Status: feito (`CommonDialog.cs`). No `libcdlg.suprx` do firmware é uma família comum do slot de diálogo (Init/Continue/GetResult/Term sobre o mesmo estado). Como os layouts de param/result não são documentados, um jogo Vita que chamar recebe um diálogo cancelado na hora: Init (NULL → `NULL`, slot ocupado → `BUSY`), Continue só valida, GetResult escreve apenas a palavra de resultado em +0 (`USER_CANCELED`), Term libera o slot. Aproximado: o diálogo de save de PSP não existe no VitaSharp.
 
 ---
 
@@ -1018,8 +1020,8 @@ documentação do SDK); só são necessários se o VitaSharp algum dia injetar e
 - **Validação:** teste unitário Mount → Umount → Resolve.
 
 ### sceAppUtilInit
-- [ ] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xDAFFE671
-- **Status (p1):** não alterado: o Vita3K não implementa `sceAppUtilInit` e nem vita-headers nem o Vita3K documentam a codificação de `appVersion` (o único precedente, `appVer` do SceNetCtl adhoc no Vita3K, usa `(major << 16) | minor` em decimal, que não é necessariamente o mesmo campo). Continua zerando `bootParam`.
+- [x] **Prioridade:** STUB · **Biblioteca:** SceAppUtil · **NID:** 0xDAFFE671
+- **Status:** feito (`AppUtil.cs`), seguindo o `apputil.suprx` do firmware: `appVersion` e `attr` vêm das palavras +4/+8 do `SceAppMgrBootParam`, que o firmware sempre devolve zeradas, então os dois são 0 no hardware também (a questão da codificação de `APP_VER` não se aplica). Init exige os dois ponteiros, `initParam->workBufSize` e os reservados zerados (`initParam` +0x04..0x3F, `bootParam` +0x08..0x27), senão `PARAMETER`; uma segunda Init devolve `BUSY` 0x80100603 quando o SDK do executável principal (SceProcessParam +0xC) é 1.50 ou maior; `sceAppUtilShutdown` sem Init devolve `NOT_INITIALIZED`. A chamada interna `sceAppMgrSaveDataSlotInit` não é reproduzida (o VitaSharp não tem arquivo de slots).
 - **Protótipo:** `int sceAppUtilInit(SceAppUtilInitParam *initParam, SceAppUtilBootParam *bootParam);` (`psp2/apputil.h`)
 - **Comportamento:** inicializa a biblioteca e preenche `bootParam` (0x28: 0x00 `attr`, 0x04 `appVersion`, 0x08
   reserved[32]). `appVersion` reflete o `APP_VER` do `param.sfo`/patch; `attr` indica o modo de boot.
@@ -1293,8 +1295,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x31F3CC59
-- **Status (p1):** não feito: sem protótipo em vita-headers (nem da syscall) e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x31F3CC59
+- **Status:** feito (`AppMgr.cs`). Wrapper do firmware (SceDriverUser): `int (SceAppMgrSaveDataMount *data)`, com `data->size` repassado num opt; o kernel (SceAppMgr) exige `size == 0x3C` (+4 16 bytes do title id, +0x14 nome do mount "savedata0"). Como o `savedata0:` do processo já é montado no boot, só valida a struct (NULL/tamanho errado → 0x80800001, maior que 0x3C → 0x8002710B) e remonta `savedata0:` se tiver sido desmontado. Os campos depois de +0x14 não foram identificados.
 - **Protótipo:** a confirmar (provável `int (const char *path?, char *mountPoint)`).
 - **Comportamento:** monta o `savedata0:` do processo. No VitaSharp `savedata0:` é montado no boot
   (`Emulator.LoadTitle`).
@@ -1304,8 +1306,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrSaveDataUmount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8F513CF5
-- **Status (p1):** não feito: sem protótipo em vita-headers (nem da syscall) e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x8F513CF5
+- **Status:** feito (`AppMgr.cs`). Mesmo padrão: `int (SceAppMgrSaveDataUmount *data)`, struct de 0x14 bytes (+0 size, +4 mount point[16]). `savedata0:` nunca é desmontado (o HLE de AppUtil e o jogo continuam usando; desvio consciente), `savedata1:` e os aliases montados pelo AppMgr são removidos, outro nome → `NOT_FOUND`.
 - **Protótipo:** a confirmar (provável `int (const char *mountPoint)`).
 - **Comportamento:** desmonta savedata montado por `SaveDataMount`/`SaveDataAddMount`. Nunca desmontar `savedata0:`.
 - **Retorno/erros:** 0; `NOT_FOUND` para mount desconhecido.
@@ -1314,8 +1316,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrTrophyMount
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84FE08EE
-- **Status (p1):** não feito. O protótipo da syscall está no header (ids 300/302), mas o destino de cada id não está documentado em lugar nenhum (Vita3K `UNIMPLEMENTED`) e só o SceNpTrophy LLE usaria; o VitaSharp usa NpTrophy HLE.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x84FE08EE
+- **Status:** feito (`AppMgr.cs`, export e syscall). O wrapper do firmware chama a syscall direto, `int (int id, ScePID pid, char mount_point[16])`. O kernel monta os dispositivos fixos `trophy_sys0:`, `trophy_dat0:` e `trophy_dbk0:`; a associação id → dispositivo/pasta é inferida: 300 = `trophy_sys0:` → `app0:sce_sys/trophy` (`NOT_FOUND` se o jogo não tiver), 302 = `trophy_dat0:` → `ur0:user/00/trophy/data`; outros ids → `PARAM`. Desmonta com `sceAppMgrUmount`.
 - **Protótipo:** `int sceAppMgrTrophyMount(int id, ScePID pid, char *mountPoint);` (inferido de `_sceAppMgrTrophyMount`)
 - **Comportamento:** IDs 300 e 302: monta os dados de troféu do processo (`ur0:user/00/trophy/data/<NPCOMMID>` e
   `app0:sce_sys/trophy`, mapeamento exato a confirmar). Usado por `SceNpTrophy` LLE.
@@ -1325,8 +1327,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** só se algum módulo LLE chamar.
 
 #### sceAppMgrTrophyMountById
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x316207F3
-- **Status (p1):** não feito: header documenta só ids (303 normal, 304 `_BK`) e o formato do title id, não o caminho; wrapper público sem protótipo.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x316207F3
+- **Status:** feito (`AppMgr.cs`, export e syscall com opt ignorado). Title id no formato `ABCD12345_67` (senão `PARAM`); 303 = `trophy_dat0:` → `ur0:user/00/trophy/data/<id>`, 304 = `trophy_dbk0:` → `.../<id>_BK` (caminhos inferidos; as pastas são criadas).
 - **Protótipo:** `int sceAppMgrTrophyMountById(int id, const char *titleId, char *mountPoint);` (`psp2/appmgr.h`)
 - **Comportamento:** 303 = troféus de outro título, 304 = backup `_BK`; titleId `ABCD12345_67`.
 - **Retorno/erros:** 0; `PARAM`.
@@ -1376,8 +1378,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetAppParam2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3D816DFA
-- **Status (p1):** não feito: sem protótipo em vita-headers (nem da syscall) e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3D816DFA
+- **Status:** feito (`AppMgr.cs`). Wrapper chama a syscall direto; o kernel escreve sempre um bloco de 0x440 bytes: o parâmetro de 0x400 em +0 e campos de controle do lançamento (deixados zerados). Mesmos resultados de `GetAppParam` (só a primeira leitura devolve o parâmetro, depois `APP_PARAM_READ`). Aproximado: o kernel protege a função com uma checagem de permissão cujo resultado para processo de jogo não foi determinado (`NOEXEC` 0x8080201F se negada).
 - **Protótipo:** a confirmar (provável `int (char *param, SceSize size)`).
 - **Comportamento:** variante de `GetAppParam` (tamanho explícito).
 - **Retorno/erros:** como `GetAppParam`.
@@ -1386,8 +1388,8 @@ erros da regra comum acima (0x80100620, ou 0x80100600 com `eventParam == NULL`),
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrGetBootParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x73E5D57D
-- **Status (p1):** só a syscall `_sceAppMgrGetBootParam` (0xEEFBC756, protótipo do header) foi registrada: copia `opt->boot_param_size` (> 0x2C → `PARAM`), zera `reserved04`, mantém o resto. O wrapper público continua sem registro: não se sabe se o 3º argumento é o tamanho ou o opt (Vita3K `UNIMPLEMENTED`).
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x73E5D57D
+- **Status:** feito (`AppMgr.cs`). Wrapper do firmware: `int (SceUInt32 selector, SceAppMgrBootParam *bootParam)`; o `boot_param_size` do opt vem de `bootParam->size`. Mesma lógica da syscall já registrada.
 - **Protótipo:** `int sceAppMgrGetBootParam(SceUInt32 selector, SceAppMgrBootParam *bootParam, SceSize size?);` (inferido de
   `_sceAppMgrGetBootParam`; confirmar no call site se o 3º argumento é tamanho ou ponteiro de `opt`)
 - **Comportamento:** copia os primeiros `boot_param_size` bytes (máx. 0x2C) do boot param; FW 3.60 ignora `selector`,
@@ -1477,8 +1479,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário comparando os arquivos gerados pelas duas APIs.
 
 #### sceAppMgrSaveDataDataSave2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD5CA4F56
-- **Status (p1):** não feito: sem protótipo/struct em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xD5CA4F56
+- **Status:** feito (`AppMgr.cs`). Mesma `SceAppMgrSaveDataData` (0x4C) de `DataSave`, repassada com `data->size` no opt; no kernel as duas compartilham o código, a "2" só acrescenta uma checagem de permissão. Tamanho diferente → 0x80800001, maior → 0x8002710B.
 - **Protótipo:** a confirmar (provável mesma struct com campos extras).
 - **Comportamento:** variante de `DataSave`.
 - **Retorno/erros:** idem.
@@ -1496,8 +1498,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataDataRemove2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x36040E1D
-- **Status (p1):** não feito: sem protótipo/struct em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x36040E1D
+- **Status:** feito (`AppMgr.cs`). Mesma `SceAppMgrSaveDataDataDelete` (0x44) de `DataRemove`; no kernel as duas rodam a mesma rotina com uma checagem de permissão extra.
 - **Protótipo:** a confirmar.
 - **Comportamento:** variante de `DataRemove`.
 - **Retorno/erros:** idem.
@@ -1506,8 +1508,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** só com jogo que importe.
 
 #### sceAppMgrSaveDataGetQuota
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0717E2AE
-- **Status (p1):** não feito: sem protótipo em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x0717E2AE
+- **Status:** feito (`AppMgr.cs`). `int (SceAppMgrSaveDataQuota *data)`, struct de 0x1C (layout lido no `libSceAppUtil`, que a usa para `sceAppUtilSaveDataGetQuota`): +0 size, +4 cota em KiB (saída), +8 usado em KiB (saída), +0xC mount point[16]. Os valores vêm do helper de `AppUtil` (cota do `param.sfo`).
 - **Protótipo:** a confirmar (provável `int (SceSize *quotaKiB, SceSize *usedKiB, const SceAppUtilSaveDataMountPoint *mp)`).
 - **Comportamento:** como `sceAppUtilSaveDataGetQuota` (corrigida: cota do `param.sfo`).
 - **Retorno/erros:** idem.
@@ -1552,8 +1554,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotGetStatus
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1F3A2F25
-- **Status (p1):** não feito: sem protótipo em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x1F3A2F25
+- **Status:** feito (`AppMgr.cs`). Struct de 0x1C (kernel SceAppMgr): +0 size, +4 slotId, +8 status (saída: a primeira palavra do `SceAppUtilSaveDataSlotParam` do slot), +0xC mount point[16]. Slot inexistente → 0x8080108B, id ≥ 256 → 0x80801084, size errado → 0x80800001.
 - **Protótipo:** a confirmar (provável `int (unsigned slotId, SceAppUtilSaveDataSlotStatus *status, const mountPoint*)`).
 - **Comportamento:** lê só o campo `status` (offset 0 do `SlotParam`; 0 = ok, outro = corrompido).
 - **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
@@ -1562,8 +1564,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSaveDataSlotSetStatus
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3FD3073C
-- **Status (p1):** não feito: sem protótipo em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x3FD3073C
+- **Status:** feito (`AppMgr.cs`). Mesma struct de 0x1C de `GetStatus`; grava +8 como a primeira palavra do param do slot; mesmos erros.
 - **Protótipo:** a confirmar.
 - **Comportamento:** grava o campo `status` do slot.
 - **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
@@ -1599,8 +1601,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** —
 
 #### sceAppMgrSaveDataSlotFileGetParam
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC176317B
-- **Status (p1):** não feito: sem protótipo em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC176317B
+- **Status:** feito (`AppMgr.cs`). `int (unsigned slotId, void *buf)` (uso no `libSceAppUtil`): o kernel escreve sempre 0x400 bytes, o `SceAppUtilSaveDataSlotParam` (0x34C) no início e zeros depois. Slot inexistente → 0x8080108B (o `libSceAppUtil` trata esse código como slot vazio).
 - **Protótipo:** a confirmar (provável `int (unsigned slotId, SceAppUtilSaveDataSlotParam *param)`).
 - **Comportamento:** lê o param de um slot com o arquivo de slots aberto.
 - **Retorno/erros:** 0; `SLOT_NOT_FOUND`.
@@ -1619,8 +1621,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** —
 
 #### sceAppMgrGetSaveDataInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6EF25378
-- **Status (p1):** só a syscall `_sceAppMgrGetSaveDataInfo` (0x6C52A377) foi registrada, com `opt->result` (header): storage USER 4, `is_mounted` = título próprio, `allocated_size_kb` = tamanho da pasta. O wrapper público fica sem registro (aridade e se o 4º argumento é o result ou o opt não estão documentados; escrever 0x1C bytes num opt de 0x10 corromperia a pilha).
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0x6EF25378
+- **Status:** feito (`AppMgr.cs`). Wrapper do firmware: `int (const char *path, const char *title_id, int force_mount_ux, SceAppMgrGetSaveDataInfoResult *result)`; ele põe o ponteiro do resultado no opt. Mesma lógica da syscall.
 - **Protótipo:** `int sceAppMgrGetSaveDataInfo(const char *path, const char *titleId, int forceMountUx, SceAppMgrGetSaveDataInfoResult *result);` (inferido de `_sceAppMgrGetSaveDataInfo`, `opt->result`)
 - **Comportamento:** informações do savedata de um título.
 - **Retorno/erros:** 0; `NOT_FOUND` sem save.
@@ -1651,8 +1653,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrSystemParamDateTimeGetConf
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xE39FC7D5
-- **Status (p1):** não feito: sem protótipo/struct em vita-headers e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xE39FC7D5
+- **Status:** feito (`AppMgr.cs`, export e syscall). `int (SceAppMgrDateTimeConf *conf)`, 0x14 bytes que o kernel guarda para o shell: +0 formato de data, +4 formato de hora, +8 desconhecido (escrito 0), +0xC fuso (minutos), +0x10 horário de verão; o `libSceAppUtil` lê os parâmetros 4..7 desses offsets. NULL → 0x80801001.
 - **Protótipo:** a confirmar (provável `int (SceSystemParamDateTimeConf *conf)` com formato de data/hora, fuso, DST).
 - **Comportamento:** configurações de data/hora do sistema de uma vez.
 - **Retorno/erros:** 0.
@@ -1717,8 +1719,8 @@ Todas validam `size` (`PARAM` 0x80802002 se diferente — a confirmar o código 
 - **Validação:** teste unitário.
 
 #### sceAppMgrGetMediaTypeFromDrive
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC014AA52
-- **Status (p1):** não feito: sem protótipo em vita-headers, valores de mídia não documentados e Vita3K `UNIMPLEMENTED`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceAppMgrUser · **NID:** 0xC014AA52
+- **Status:** feito (`AppMgr.cs`). `int (const char drive[16], int *mediaType)` (wrapper chama a syscall direto). O kernel procura o drive na tabela de mounts do processo e classifica o destino: `ux0:` = 4 (memory card), `gro0:`/`grw0:` (cartão de jogo) = 3, `ur0:`/`vs0:` = 2, outro = 1; drive que não é mount do processo (um `ux0:` cru) → 0x80800002, NULL → 0x80800001. No VitaSharp o caminho do host decide (`app0:`, `savedata0:`, `addcont0:` e os aliases ficam todos sob `ux0`).
 - **Protótipo:** `int sceAppMgrGetMediaTypeFromDrive(const char *drive, int *mediaType);` (inferido)
 - **Comportamento:** tipo de mídia de um dispositivo (cartão de jogo × memory card × interna). Valores a confirmar.
 - **Retorno/erros:** 0; `PARAM`.

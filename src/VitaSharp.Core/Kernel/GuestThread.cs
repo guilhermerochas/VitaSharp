@@ -296,13 +296,17 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     }
 
     /// <summary>Calls a guest function on this (current) thread and returns R0. Re-entrant.</summary>
-    public uint CallGuest(uint addr, params ReadOnlySpan<uint> args)
+    public uint CallGuest(uint addr, params ReadOnlySpan<uint> args) => CallGuestOnStack(addr, 0, args);
+
+    /// <summary>Like <see cref="CallGuest"/>, with sp set to <paramref name="stackTop"/> (0 = just below the current sp).</summary>
+    public uint CallGuestOnStack(uint addr, uint stackTop, params ReadOnlySpan<uint> args)
     {
         var s = Core.State;
         CpuState saved = *s;
         try
         {
-            uint sp = (s->R[13] - 64) & ~7u;
+            uint sp = stackTop != 0 ? stackTop & ~7u : (s->R[13] - 64) & ~7u;
+            if (stackTop != 0 && args.Length > 4) sp = (sp - (uint)(args.Length - 4) * 4) & ~7u; // stack arguments below the given top
             for (int i = 0; i < args.Length; i++)
             {
                 if (i < 4) s->R[i] = args[i];

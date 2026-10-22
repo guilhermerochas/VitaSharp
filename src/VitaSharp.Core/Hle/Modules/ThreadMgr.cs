@@ -349,8 +349,65 @@ public sealed class ThreadMgr : HleModule
     int sceKernelRegisterThreadEventHandler(string name, int thid, uint mask, uint handler, uint common)
     {
         // the handler is recorded but not called: VitaSharp emits no thread start/exit events (no installed game needs them)
-        var o = new ThreadEventHandler { Name = name, ThreadMask = thid, EventMask = mask, Handler = handler, Common = common };
+        // thid 0 targets the calling thread, recorded by UID like the kernel does
+        var o = new ThreadEventHandler { Name = name, ThreadMask = thid == SCE_KERNEL_THREAD_ID_SELF ? Self.Uid : thid, EventMask = mask, Handler = handler, Common = common };
         return K.Objects.Register(o);
+    }
+
+    /// <summary>
+    /// SceKernelThreadEventInfo (0x40, layout from the FW 3.60 threadmgr): +0 size, +4 uid, +8 name[32], +0x28 attr,
+    /// +0x2C event mask, +0x30 target thread (UID or the SCE_KERNEL_THREAD_ID_USER/... group value), +0x34 -1 for a
+    /// specific target or 0 for a thread group (the kernel's internal process field, approximated), +0x38 handler,
+    /// +0x3C common. The SceLibKernel wrapper passes <c>info->size</c> to the syscall in an 8-byte opt.
+    /// </summary>
+    [Hle]
+    int sceKernelGetThreadEventInfo(int uid, uint info)
+    {
+        if (info != 0 && GuestMemory.R32(info) > 0x40) return SceError.NO_MEMORY;
+        if (Obj<ThreadEventHandler>(uid) is not { } h) return SceError.UNKNOWN_THREAD_EVENT_ID;
+        Span<byte> full = stackalloc byte[0x40];
+        full.Clear();
+        KernelInfo.Header(full, uid, h.Name, 0);
+        KernelInfo.Put(full, 0x2C, h.EventMask);
+        KernelInfo.Put(full, 0x30, h.ThreadMask);
+        KernelInfo.Put(full, 0x34, h.ThreadMask == 0x10027 ? 0 : -1);
+        KernelInfo.Put(full, 0x38, h.Handler);
+        KernelInfo.Put(full, 0x3C, h.Common);
+        return KernelInfo.Write(info, full);
+    }
+
+    /// <summary>Syscall form: the copy size comes from <c>opt->size</c> (8-byte opt) instead of <c>info->size</c>.</summary>
+    [Hle]
+    int _sceKernelGetThreadEventInfo(int uid, uint info, uint opt)
+    {
+        if (info != 0 && opt != 0 && GuestMemory.R32(opt) > 0x40) return SceError.NO_MEMORY;
+        if (info != 0 && opt != 0) GuestMemory.W32(info, GuestMemory.R32(opt));
+        return sceKernelGetThreadEventInfo(uid, info);
+    }
+
+    /// <summary>
+    /// <c>int sceKernelCallWithChangeStack(void *stackBase, SceSize stackSize, int (*func)(void *), void *arg)</c>
+    /// (FW 3.60 SceLibKernel): runs <c>func(arg)</c> with sp = stackBase + stackSize, the kernel TLS stack bounds
+    /// (+8 top, +0xC bottom) switched to the new stack for the duration, and returns func's result. The firmware
+    /// probes the first and last word of the stack (a bad stack faults); here an empty one is rejected instead.
+    /// </summary>
+    [Hle]
+    int sceKernelCallWithChangeStack(uint stackBase, uint stackSize, uint func, uint arg)
+    {
+        if (stackBase == 0 || stackSize < 8 || func == 0) return SceError.ILLEGAL_ADDR;
+        var self = Self;
+        var tls = GuestMemory.Span<int>(self.TlsBase, (int)(GuestThread.KernelTlsSize / 4));
+        int top = tls[GuestThread.TlsSpTop], bottom = tls[GuestThread.TlsSpBottom];
+        uint newTop = stackBase + stackSize;
+        tls[GuestThread.TlsSpTop] = (int)newTop;
+        tls[GuestThread.TlsSpBottom] = (int)stackBase;
+        try { return (int)self.CallGuestOnStack(func, newTop, arg, 0xDEADBEEF, 0xDEADBEEF, 0xDEADBEEF); }
+        finally
+        {
+            tls = GuestMemory.Span<int>(self.TlsBase, (int)(GuestThread.KernelTlsSize / 4));
+            tls[GuestThread.TlsSpTop] = top;
+            tls[GuestThread.TlsSpBottom] = bottom;
+        }
     }
 
     [Hle]
@@ -374,9 +431,22 @@ public sealed class ThreadMgr : HleModule
         bool match = (ScaleThread == null || Self.Name == ScaleThread) && (ScaleLr == null || ScaleLr.Contains(Self.Core.State->R[14]));
         return match ? t : (ulong)(t / Util.TimeScale.Proc);
     }
-    [Hle] uint sceKernelGetProcessTimeLow() => (uint)ProcTime();
-    [Hle] ulong sceKernelGetProcessTimeWide() => ProcTime();
-    [Hle] int sceKernelGetProcessTime(Ptr<ulong> clock) { clock.TrySet(K.ProcessTimeUs); return 0; }
+    // the *Core forms are the SceProcessmgr syscalls behind the SceLibKernel wrappers
+    [Hle]
+    [Hle("sceKernelGetProcessTimeLowCore")]
+    uint sceKernelGetProcessTimeLow() => (uint)ProcTime();
+    [Hle]
+    [Hle("sceKernelGetProcessTimeWideCore")]
+    ulong sceKernelGetProcessTimeWide() => ProcTime();
+    [Hle] int sceKernelGetProcessTime(Ptr<ulong> clock) { clock.TrySet(ProcTime()); return 0; }
+    /// <summary>Copies the 8-byte clock to user memory; a NULL pointer fails the copy (error code approximated).</summary>
+    [Hle]
+    int sceKernelGetProcessTimeCore(Ptr<ulong> clock)
+    {
+        if (clock.IsNull) return SceError.ILLEGAL_ADDR;
+        clock.Value = ProcTime();
+        return 0;
+    }
     [Hle] ulong sceKernelGetSystemTimeWide() => K.ProcessTimeUs;
     [Hle] int sceKernelGetSystemTime(Ptr<ulong> clock) { clock.TrySet(K.ProcessTimeUs); return 0; }
 

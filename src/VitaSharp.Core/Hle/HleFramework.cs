@@ -135,7 +135,9 @@ public sealed class HleFunction
             || n.StartsWith("sceIo") || n.StartsWith("sceDisplay") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
             || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera")
             || n.StartsWith("sceNetEpollWait") || n.StartsWith("sceNetRecv") || n.StartsWith("sceRudpPollWait") || n.StartsWith("sceHttpWaitRequest")
-            || n is "sceKernelSendSignal" or "sceKernelSetEvent" or "sceKernelPulseEvent" or "sceKernelPollEvent" or "sceKernelClearEvent")
+            || n is "sceKernelSendSignal" or "sceKernelSetEvent" or "sceKernelPulseEvent" or "sceKernelPollEvent" or "sceKernelClearEvent"
+            || (n.StartsWith("sceUlt") && (n.EndsWith("Lock") || n.EndsWith("LockRead") || n.EndsWith("LockWrite") || n.EndsWith("Acquire")
+                || n.EndsWith("Wait") || n.EndsWith("Pop") || n.EndsWith("Push") || n.EndsWith("Join"))))
             return 12_000; // ~40 us at 300 MIPS: syscall + scheduler
         return 2_000;
     }
