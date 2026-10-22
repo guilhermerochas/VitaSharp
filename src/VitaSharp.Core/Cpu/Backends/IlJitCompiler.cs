@@ -27,7 +27,11 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     /// </summary>
     public long HotInstructions { get; set; } = 400_000;
 
-    public CompiledBlock? Compile(Block b)
+    /// <summary>Null when dynamic code is unavailable (Native AOT): the dispatcher then leaves the block to the next backend.</summary>
+    public CompiledBlock? Compile(Block b) => RuntimeFeature.IsDynamicCodeSupported ? CompileDynamic(b) : null;
+
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("The IL backend emits a DynamicMethod per block (Reflection.Emit); it is skipped when dynamic code is not supported.")]
+    CompiledBlock CompileDynamic(Block b)
     {
         var dm = new DynamicMethod($"blk_{b.Start:X8}{(b.Thumb ? "t" : "a")}", typeof(void), [typeof(CpuState*)], typeof(IlJitCompiler).Module, skipVisibility: true);
         var il = dm.GetILGenerator();

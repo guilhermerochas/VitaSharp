@@ -14,28 +14,5 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
             }
             return table;
         }
-
-        public static void GetJaggedArrayInfo(Type type, out Type baseType, out int rank)
-        {
-            rank = -1;
-            baseType = type;
-
-            while (type != null)
-            {
-                baseType = type;
-                type = type.GetElementType();
-                rank++;
-            }
-        }
-
-        public static Type MakeJaggedArrayType(Type elementType, int rank)
-        {
-            Type type = elementType;
-            for (int i = 0; i < rank; i++)
-            {
-                type = type.MakeArrayType();
-            }
-            return type;
-        }
     }
 }

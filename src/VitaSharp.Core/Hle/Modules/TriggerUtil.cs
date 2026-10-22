@@ -49,7 +49,7 @@ public sealed class TriggerUtil : HleModule
         try
         {
             if (File.Exists(StorePath))
-                _events = JsonSerializer.Deserialize<SortedDictionary<int, Event>>(File.ReadAllText(StorePath)) ?? new();
+                _events = JsonSerializer.Deserialize(File.ReadAllText(StorePath), CoreJson.Default.SortedDictionaryInt32Event) ?? new();
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -63,7 +63,7 @@ public sealed class TriggerUtil : HleModule
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
-            File.WriteAllText(StorePath, JsonSerializer.Serialize(_events));
+            File.WriteAllText(StorePath, JsonSerializer.Serialize(_events, CoreJson.Default.SortedDictionaryInt32Event));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

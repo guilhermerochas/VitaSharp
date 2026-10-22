@@ -1,6 +1,4 @@
-﻿using System.Linq.Expressions;
-using System.Reflection;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
@@ -166,29 +164,33 @@ public sealed class HleRegistry : IImportResolver
 
     public void RegisterVariable(uint nid, Func<uint> factory) => _varFactories[nid] = factory;
 
+    /// <summary>
+    /// Registers every [Hle] method of the module. The bindings (attribute data plus an argument marshalling invoker)
+    /// are generated at compile time by VitaSharp.Core.Generators, in declaration order; later registrations of a NID
+    /// replace earlier ones.
+    /// </summary>
     public void RegisterModule(HleModule module)
     {
+        var bindings = HleBindings.For(module.GetType())
+            ?? throw new InvalidOperationException($"HLE module {module.GetType().FullName} has no generated bindings (modules must live in VitaSharp.Core)");
         module.Emu = _emu;
         Modules.Add(module);
-        foreach (var mi in module.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+        foreach (var b in bindings)
         {
-            foreach (var attr in mi.GetCustomAttributes<HleAttribute>())
+            string name = b.Name ?? b.Method;
+            var nids = b.Nid != 0 ? [b.Nid]
+                : NidDatabase.LookupName(name).Where(n => b.Library == null || n.Library == b.Library).Select(n => n.Nid).ToArray();
+            if (nids.Length == 0)
             {
-                string name = attr.Name ?? mi.Name;
-                var nids = attr.Nid != 0 ? [attr.Nid]
-                    : NidDatabase.LookupName(name).Where(n => attr.Library == null || n.Library == attr.Library).Select(n => n.Nid).ToArray();
-                if (nids.Length == 0)
-                {
-                    Log.Warn($"HLE: no NID known for {module.GetType().Name}.{name}");
-                    continue;
-                }
-                var invoker = Bind(module, mi);
-                foreach (var nid in nids)
-                {
-                    _impls[nid] = invoker;
-                    _implNames[nid] = name;
-                    if (_indexByNid.TryGetValue(nid, out var idx)) _functions[idx].Invoke = invoker;
-                }
+                Log.Warn($"HLE: no NID known for {module.GetType().Name}.{name}");
+                continue;
+            }
+            var invoker = b.Bind(module);
+            foreach (var nid in nids)
+            {
+                _impls[nid] = invoker;
+                _implNames[nid] = name;
+                if (_indexByNid.TryGetValue(nid, out var idx)) _functions[idx].Invoke = invoker;
             }
         }
         module.Initialize();
@@ -229,87 +231,44 @@ public sealed class HleRegistry : IImportResolver
 
     public HleFunction GetFunction(uint index) => index < _functions.Count ? _functions[(int)index] : _functions[0];
 
-    // ------------------------------------------------------------------ binder
+}
 
-    static readonly MethodInfo MArgU32 = typeof(HleContext).GetMethod(nameof(HleContext.ArgU32))!;
-    static readonly MethodInfo MArgU64 = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64))!;
-    static readonly MethodInfo MArgU64Stack = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64Stack))!;
-    static readonly MethodInfo MArgStack = typeof(HleContext).GetMethod(nameof(HleContext.ArgStack))!;
-    static readonly MethodInfo MArgF32 = typeof(HleContext).GetMethod(nameof(HleContext.ArgF32))!;
-    static readonly MethodInfo MArgString = typeof(HleContext).GetMethod(nameof(HleContext.ArgString))!;
+/// <summary>One [Hle] attribute on a module method, as emitted by the source generator.</summary>
+/// <param name="Method">The C# method name.</param>
+/// <param name="Name">The attribute's explicit export name (null: the method name).</param>
+/// <param name="Nid">The attribute's explicit NID (0: looked up by name).</param>
+/// <param name="Library">The attribute's library restriction for the NID lookup.</param>
+/// <param name="Layout">Argument/return marshalling description (compared against a reflection reference in tests).</param>
+/// <param name="Bind">Creates the invoker for a module instance.</param>
+public sealed record HleBinding(string Method, string? Name, uint Nid, string? Library, string Layout, Func<HleModule, Action<HleContext>> Bind);
 
-    /// <summary>
-    /// Builds a compiled invoker following the AAPCS-VFP layout used by the Vita: 32-bit integers in
-    /// r0-r3 then stack, 64-bit values in aligned register pairs, floats in s0-s15.
-    /// </summary>
-    static Action<HleContext> Bind(HleModule module, MethodInfo mi)
+/// <summary>A concrete HLE module type with its factory and bindings.</summary>
+public sealed record HleModuleEntry(Type Type, Func<HleModule> Create, Func<HleBinding[]> Bindings);
+
+/// <summary>
+/// Compile-time HLE binder (VitaSharp.Core.Generators.HleBinderGenerator): the module table and every [Hle] method's
+/// AAPCS-VFP marshalling, generated from the source instead of built with reflection and System.Linq.Expressions at
+/// startup, so it works under Native AOT and trimming.
+/// </summary>
+public static partial class HleBindings
+{
+    static readonly HleModuleEntry[] _modules = GeneratedModules();
+    static readonly Dictionary<Type, HleBinding[]> _byType = new();
+
+    private static partial HleModuleEntry[] GeneratedModules();
+
+    /// <summary>Every concrete module type of the core.</summary>
+    public static IReadOnlyList<HleModuleEntry> Modules => _modules;
+
+    /// <summary>The bindings of a module type, in declaration order (null: not a generated module).</summary>
+    public static HleBinding[]? For(Type moduleType)
     {
-        var ctx = Expression.Parameter(typeof(HleContext), "ctx");
-        var args = new List<Expression>();
-        int gpr = 0, stack = 0, fpr = 0;
-        foreach (var p in mi.GetParameters())
+        lock (_byType)
         {
-            var t = p.ParameterType;
-            if (t == typeof(HleContext)) { args.Add(ctx); continue; }
-            if (t == typeof(VarArgs)) { args.Add(Expression.New(typeof(VarArgs).GetConstructors()[0], ctx, Expression.Constant(gpr))); continue; }
-            if (t == typeof(float))
-            {
-                args.Add(Expression.Call(MArgF32, ctx, Expression.Constant(fpr++)));
-                continue;
-            }
-            bool wide = t == typeof(long) || t == typeof(ulong) || t == typeof(double);
-            Expression raw;
-            if (wide)
-            {
-                if ((gpr & 1) != 0) gpr++;
-                if (gpr + 2 <= 4) { raw = Expression.Call(MArgU64, ctx, Expression.Constant(gpr)); gpr += 2; }
-                else { gpr = 4; stack = (stack + 7) & ~7; raw = Expression.Call(MArgU64Stack, ctx, Expression.Constant(stack)); stack += 8; }
-            }
-            else
-            {
-                if (gpr < 4) raw = Expression.Call(MArgU32, ctx, Expression.Constant(gpr++));
-                else { raw = Expression.Call(MArgStack, ctx, Expression.Constant(stack)); stack += 4; }
-            }
-            args.Add(Convert(raw, t));
+            if (_byType.TryGetValue(moduleType, out var b)) return b;
+            foreach (var m in _modules)
+                if (m.Type == moduleType) { b = m.Bindings(); _byType[moduleType] = b; return b; }
+            return null;
         }
-        Expression call = Expression.Call(Expression.Constant(module), mi, args);
-        Expression body;
-        var rt = mi.ReturnType;
-        if (rt == typeof(void)) body = call;
-        else
-        {
-            var ret = typeof(HleContext).GetMethods().First(m => m.Name == nameof(HleContext.Return)
-                && m.GetParameters()[0].ParameterType == NormalizeReturn(rt));
-            body = Expression.Call(ctx, ret, ConvertReturn(call, rt));
-        }
-        return Expression.Lambda<Action<HleContext>>(body, ctx).Compile();
-    }
-
-    static Type NormalizeReturn(Type t)
-    {
-        if (t == typeof(int) || t == typeof(uint) || t == typeof(ulong) || t == typeof(long) || t == typeof(float) || t == typeof(bool) || t == typeof(double)) return t;
-        if (t.IsEnum) return NormalizeReturn(Enum.GetUnderlyingType(t));
-        if (t == typeof(short) || t == typeof(sbyte)) return typeof(int);
-        return typeof(uint); // ushort, byte, Ptr<T>
-    }
-
-    static Expression ConvertReturn(Expression e, Type t)
-    {
-        var target = NormalizeReturn(t);
-        if (t == target) return e;
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Ptr<>)) return Expression.Field(e, "Address");
-        return Expression.Convert(e, target);
-    }
-
-    static Expression Convert(Expression raw, Type t)
-    {
-        if (t == raw.Type) return raw;
-        if (t == typeof(string)) return Expression.Call(MArgString, raw);
-        if (t == typeof(bool)) return Expression.NotEqual(raw, Expression.Constant(0u));
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Ptr<>))
-            return Expression.New(t.GetConstructor([typeof(uint)])!, raw);
-        if (t == typeof(double)) return Expression.Call(typeof(BitConverter).GetMethod(nameof(BitConverter.UInt64BitsToDouble))!, raw);
-        if (t.IsEnum) return Expression.Convert(Expression.Convert(raw, Enum.GetUnderlyingType(t)), t);
-        return Expression.Convert(raw, t);
     }
 }

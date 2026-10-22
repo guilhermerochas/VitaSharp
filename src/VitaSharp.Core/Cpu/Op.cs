@@ -42,26 +42,35 @@ internal static unsafe class Thumb
     public static void It(CpuState* s, uint ins, uint pc) { }
 }
 
-/// <summary>Op → handler method / raw function pointer table, resolved once by reflection.</summary>
-public static unsafe class HandlerTable
+/// <summary>
+/// Op → handler function pointer table (and MethodInfo for the IL backend). Generated at compile time by
+/// VitaSharp.Core.Generators.OpHandlerTableGenerator from the Op names, so it needs no reflection (Native AOT).
+/// </summary>
+public static unsafe partial class HandlerTable
 {
-    public static readonly MethodInfo[] Methods = new MethodInfo[(int)Op.Count];
-    public static readonly delegate*<CpuState*, uint, uint, void>[] Pointers = new delegate*<CpuState*, uint, uint, void>[(int)Op.Count];
+    public static readonly delegate*<CpuState*, uint, uint, void>[] Pointers = BuildPointers();
 
-    static HandlerTable()
+    static delegate*<CpuState*, uint, uint, void>[] BuildPointers()
     {
-        var asm = typeof(HandlerTable).Assembly;
-        var sig = new[] { typeof(CpuState*), typeof(uint), typeof(uint) };
-        for (int i = 1; i < (int)Op.Count; i++)
+        var p = new delegate*<CpuState*, uint, uint, void>[(int)Op.Count];
+        FillGenerated(p);
+        return p;
+    }
+
+    static partial void FillGenerated(delegate*<CpuState*, uint, uint, void>[] p);
+    static partial void FillMethods(MethodInfo[] m);
+
+    static MethodInfo[]? _methods;
+
+    /// <summary>Handler methods (IL backend only; looked up by constant name, so trimming keeps them).</summary>
+    public static MethodInfo[] Methods
+    {
+        get
         {
-            var name = ((Op)i).ToString();
-            int us = name.IndexOf('_');
-            var type = asm.GetType($"VitaSharp.Core.Cpu.{name[..us]}")
-                       ?? throw new InvalidOperationException($"Handler class for {name} not found");
-            var mi = type.GetMethod(name[(us + 1)..], BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, sig)
-                     ?? throw new InvalidOperationException($"Handler method for {name} not found");
-            Methods[i] = mi;
-            Pointers[i] = (delegate*<CpuState*, uint, uint, void>)mi.MethodHandle.GetFunctionPointer();
+            if (_methods != null) return _methods;
+            var m = new MethodInfo[(int)Op.Count];
+            FillMethods(m);
+            return _methods = m;
         }
     }
 

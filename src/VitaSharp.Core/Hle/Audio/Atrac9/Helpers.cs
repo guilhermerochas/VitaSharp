@@ -84,26 +84,6 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
             => !(alignmentMultiple != 0 && loopStart % alignmentMultiple != 0);
 
 
-        public static T CreateJaggedArray<T>(params int[] lengths)
-        {
-            return (T)InitializeJaggedArray(typeof(T).GetElementType(), 0, lengths);
-        }
-
-        private static object InitializeJaggedArray(Type type, int index, int[] lengths)
-        {
-            Array array = Array.CreateInstance(type, lengths[index]);
-
-            Type elementType = type.GetElementType();
-            if (elementType == null) return array;
-
-            for (int i = 0; i < lengths[index]; i++)
-            {
-                array.SetValue(InitializeJaggedArray(elementType, index + 1, lengths), i);
-            }
-
-            return array;
-        }
-
         public static int[] GetPrimes(int maxPrime)
         {
             int max = maxPrime / 2;

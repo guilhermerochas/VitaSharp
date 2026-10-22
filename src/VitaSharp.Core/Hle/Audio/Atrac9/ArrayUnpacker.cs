@@ -2,7 +2,6 @@
 using System;
 using System.IO;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 
 namespace VitaSharp.Core.Hle.Audio.Atrac9
 {
@@ -42,7 +41,7 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
 
             byte mode = Helpers.GetHighNibble(modeType);
             Type storedType = TypeLookup[Helpers.GetLowNibble(modeType)];
-            Type elementType = Arrays.MakeJaggedArrayType(outType, rank - 1);
+            Type elementType = JaggedType(outType, rank - 1);
 
             switch (mode)
             {
@@ -55,7 +54,7 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
                             return ReadArray(reader, storedType, elementType, length);
                         }
 
-                        Array array = Array.CreateInstance(elementType, length);
+                        Array array = NewArray(elementType, length);
 
                         for (int i = 0; i < length; i++)
                         {
@@ -85,7 +84,7 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
                             lengths[i] = reader.ReadUInt16();
                         }
 
-                        Array array = Array.CreateInstance(elementType, length);
+                        Array array = NewArray(elementType, length);
 
                         for (int i = 0; i < length; i++)
                         {
@@ -104,8 +103,8 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
         {
             if (length == ushort.MaxValue) return null;
 
-            int lengthBytes = length * Marshal.SizeOf(storedType);
-            Array array = Array.CreateInstance(storedType, length);
+            int lengthBytes = length * SizeOf(storedType);
+            Array array = NewArray(storedType, length);
             byte[] bytes = reader.ReadBytes(lengthBytes);
             Buffer.BlockCopy(bytes, 0, array, 0, lengthBytes);
 
@@ -114,7 +113,7 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
 
         private static Array CastArray(Array inArray, Type outType)
         {
-            Array outArray = Array.CreateInstance(outType, inArray.Length);
+            Array outArray = NewArray(outType, inArray.Length);
 
             for (int i = 0; i < inArray.Length; i++)
             {
@@ -159,7 +158,7 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
                 return ReadArray(reader, storedType, outType, dimensions[depth]);
             }
 
-            Array array = Array.CreateInstance(outType, dimensions[depth]);
+            Array array = NewArray(outType, dimensions[depth]);
 
             for (int i = 0; i < dimensions[depth]; i++)
             {
@@ -183,5 +182,43 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
             typeof(float),
             typeof(double)
         };
+
+        // VitaSharp: Native AOT. The tables only hold (jagged arrays of) the primitive types above, so the array types
+        // are enumerated statically instead of Array.CreateInstance / MakeArrayType / Marshal.SizeOf on runtime types.
+        private static readonly System.Collections.Generic.Dictionary<(Type, int), Type> Jagged = new(); // before Factories: filled by BuildFactories
+        private static readonly System.Collections.Generic.Dictionary<Type, Func<int, Array>> Factories = BuildFactories();
+
+        private static void Add<T>(System.Collections.Generic.Dictionary<Type, Func<int, Array>> f)
+        {
+            f[typeof(T)] = n => new T[n];
+            f[typeof(T[])] = n => new T[n][];
+            f[typeof(T[][])] = n => new T[n][][];
+            f[typeof(T[][][])] = n => new T[n][][][];
+            Jagged[(typeof(T), 0)] = typeof(T);
+            Jagged[(typeof(T), 1)] = typeof(T[]);
+            Jagged[(typeof(T), 2)] = typeof(T[][]);
+            Jagged[(typeof(T), 3)] = typeof(T[][][]);
+        }
+
+        private static System.Collections.Generic.Dictionary<Type, Func<int, Array>> BuildFactories()
+        {
+            var f = new System.Collections.Generic.Dictionary<Type, Func<int, Array>>();
+            Add<byte>(f); Add<sbyte>(f); Add<char>(f); Add<short>(f); Add<ushort>(f); Add<int>(f);
+            Add<uint>(f); Add<long>(f); Add<ulong>(f); Add<float>(f); Add<double>(f);
+            return f;
+        }
+
+        private static Array NewArray(Type elementType, int length) =>
+            Factories.TryGetValue(elementType, out var make) ? make(length) : throw new InvalidDataException($"unsupported table type {elementType}");
+
+        private static Type JaggedType(Type elementType, int rank) =>
+            Jagged.TryGetValue((elementType, rank), out var t) ? t : throw new InvalidDataException($"unsupported table rank {rank}");
+
+        /// <summary>Marshal.SizeOf of the stored primitive (char marshals as one byte).</summary>
+        private static int SizeOf(Type t) =>
+            t == typeof(byte) || t == typeof(sbyte) || t == typeof(char) ? 1
+            : t == typeof(short) || t == typeof(ushort) ? 2
+            : t == typeof(long) || t == typeof(ulong) || t == typeof(double) ? 8
+            : 4;
     }
 }

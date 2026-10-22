@@ -8,8 +8,13 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>VitaSharp.Core</RootNamespace>
-    <IsAotCompatible>false</IsAotCompatible>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- compile-time HLE binder (source generator, analyzer only) -->
+    <ProjectReference Include="..\VitaSharp.Core.Generators\VitaSharp.Core.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" UndefineProperties="RuntimeIdentifier;PublishAot;PublishTrimmed;SelfContained" />
+  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Hle\Data\nids.txt" LogicalName="nids.txt" />
