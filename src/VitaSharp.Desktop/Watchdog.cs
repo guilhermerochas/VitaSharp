@@ -91,7 +91,7 @@ public sealed class Watchdog : IDisposable
     }
 
     /// <summary>Threads, mutexes, GPU queue and renderer state (hang reports, diagnostic captures).</summary>
-    public static string DescribeState(Emulator emu, VulkanRenderer? renderer)
+    public static string DescribeState(Emulator emu, VulkanRenderer? renderer, int hleCalls = 6)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"guest frame {Core.Hle.Modules.Display.FramesPresented}; GPU queue: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}, executing {emu.Gpu.Executing?.GetType().Name ?? "nothing"}");
@@ -101,7 +101,7 @@ public sealed class Watchdog : IDisposable
             foreach (var t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
-                foreach (var call in t.RecentHleCalls()) sb.AppendLine("    hle " + call);
+                foreach (var call in t.RecentHleCalls(hleCalls)) sb.AppendLine("    hle " + call);
             }
             foreach (var m in emu.Kernel.Objects.All<Core.Kernel.Mutex>().ToArray())
                 if (m.Owner != null && m.Waiters > 0)

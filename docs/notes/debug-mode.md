@@ -99,7 +99,8 @@ last frames: ...
 ```
 
 and repeats it at 30 s and 120 s of the same stall. `executing` is the GPU command the worker is inside (stuck in the
-backend when it stays the same), `(not returned)` marks the HLE call a thread is blocked in (debug mode only).
+backend when it stays the same), `(not returned)` marks the HLE call a thread is blocked in (debug mode only; the last 6 calls per thread here, 16 in
+a capture's state.txt).
 
 ## Debug mode ("Modo de depuração")
 
@@ -154,7 +155,18 @@ half the image for 4 checks from that present on (`[anomaly] test injection ...`
 
 ## Cost
 
-Measured on Killzone kz_skin (see the branch report for the numbers):
+Measured on Killzone, the kz_skin route (4500 frames, paced, GTX 1650, 2026-10-22):
+
+| Build / mode | fps | process cpu ms/frame | GPU worker ms/frame | steady alloc KB/frame | shader cache |
+|---|---|---|---|---|---|
+| main 429721a | 28.7 | 31.4 | 4.83 | 482 | pack + 509 prewarmed pipelines, 0 compiled on the GPU thread |
+| this branch, debug off (2 runs) | 28.9 / 28.8 | 28.5 / 30.7 | 4.10 / 4.67 | 486 / 485 | same |
+| this branch, debug on | 28.8 | 31.6 | 5.02 | 490 | same |
+
+Run-to-run noise is about 2-3 ms/frame of process cpu, so debug off is not measurable and debug on costs about 3%
+(one more ms of process cpu, ~0.4 ms on the GPU worker). A debug-mode log of that route is ~340 KB for 2.5 minutes.
+A capture stalls the game while it writes: 4.2 s for a 298-draw gameplay frame (209 textures and 15 targets as PNG;
+the zip was 68 MB), 0.3 s for a menu frame.
 
 - Debug mode off: per present a few counter reads and field writes (frame summary ring) and one null check for a
   pending capture; per HLE call one static flag read; per GPU command two field writes; the watchdog wakes once per

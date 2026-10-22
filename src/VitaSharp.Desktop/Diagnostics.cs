@@ -114,7 +114,7 @@ public sealed class Diagnostics
     void Finish(string dir, string reason, long guestFrame, VulkanRenderer? renderer, DiagnosticCaptureResult? res, string? note)
     {
         // emulator state: threads, held mutexes, recent HLE calls (debug mode), GPU queue
-        File.WriteAllText(Path.Combine(dir, "state.txt"), Watchdog.DescribeState(_emu, renderer));
+        File.WriteAllText(Path.Combine(dir, "state.txt"), Watchdog.DescribeState(_emu, renderer, 16));
         if (res == null && renderer != null) File.WriteAllText(Path.Combine(dir, "frames.txt"), renderer.RecentFrames());
         File.WriteAllText(Path.Combine(dir, "info.txt"), BuildInfo(reason, guestFrame, renderer, res, note));
         string zip = dir + ".zip";

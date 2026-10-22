@@ -417,10 +417,10 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
 
     /// <summary>Debug mode: this thread's last HLE calls, oldest first (a call without a result has not returned: the
     /// thread is inside it, e.g. blocked in a wait).</summary>
-    public IEnumerable<string> RecentHleCalls()
+    public IEnumerable<string> RecentHleCalls(int max = HleRingSize)
     {
         if (_hleRing is not { } ring) yield break;
-        int n = Math.Min(_hleRingPos, HleRingSize);
+        int n = Math.Min(Math.Min(_hleRingPos, HleRingSize), max);
         for (int i = _hleRingPos - n; i < _hleRingPos; i++)
         {
             var r = ring[i % HleRingSize];
