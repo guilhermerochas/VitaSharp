@@ -49,15 +49,44 @@ public sealed class AppUtil : HleModule
         return data;
     }
 
+    const int ERR_BUSY = unchecked((int)0x80100603);
+    bool _initialized;
+
+    /// <summary>SDK version the main module was built with (SceProcessParam +0xC, as sceKernelGetMainModuleSdkVersion).</summary>
+    uint MainModuleSdkVersion()
+    {
+        uint pp = Emu.Linker.ProcessParam;
+        if (pp == 0 || GuestMemory.R32(pp + 4) != 0x32505350 /* "PSP2" */ || GuestMemory.R32(pp + 8) == 0) return 0;
+        return GuestMemory.R32(pp + 0xC);
+    }
+
+    /// <summary>
+    /// FW 3.60 libSceAppUtil: a second Init is BUSY for titles built with SDK 1.50 or later; both pointers are
+    /// required and every reserved byte must be zero (initParam->workBufSize included: SceAppUtilInitParam +0 and
+    /// +4..0x3F, SceAppUtilBootParam +8..0x27), else PARAMETER. attr and appVersion are copied from the AppMgr boot
+    /// param words that FW 3.60 always returns zeroed, so both are 0 on hardware too.
+    /// </summary>
     [Hle]
     int sceAppUtilInit(uint initParam, uint bootParam)
     {
-        if (bootParam != 0) GuestMemory.Fill(bootParam, 0, 40); // SceAppUtilBootParam: attr, appVersion, reserved[32]
+        if (_initialized && MainModuleSdkVersion() >= 0x01500000) return ERR_BUSY;
+        if (initParam == 0 || bootParam == 0 || GuestMemory.R32(initParam) != 0) return ERR_PARAMETER;
+        if (GuestMemory.ReadSpan(initParam + 4, 0x3C).IndexOfAnyExcept((byte)0) >= 0) return ERR_PARAMETER;
+        if (GuestMemory.ReadSpan(bootParam + 8, 0x20).IndexOfAnyExcept((byte)0) >= 0) return ERR_PARAMETER;
+        GuestMemory.W32(bootParam, 0);     // attr
+        GuestMemory.W32(bootParam + 4, 0); // appVersion
         Directory.CreateDirectory(SavePath(""));
+        _initialized = true;
         return 0;
     }
 
-    [Hle] int sceAppUtilShutdown() => 0;
+    [Hle]
+    int sceAppUtilShutdown()
+    {
+        if (!_initialized) return ERR_NOT_INITIALIZED;
+        _initialized = false;
+        return 0;
+    }
 
     [Hle]
     internal int sceAppUtilSystemParamGetInt(uint id, Ptr<int> value)
