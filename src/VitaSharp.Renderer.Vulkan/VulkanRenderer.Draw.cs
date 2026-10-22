@@ -405,6 +405,8 @@ public sealed unsafe partial class VulkanRenderer
                 LineWidth = 1,
                 CullMode = CullModeFlags.None,
                 FrontFace = FrontFace.CounterClockwise,
+                // no near-plane clipping, depth clamped per fragment (the vertex shader clips the far plane itself)
+                DepthClampEnable = _core.DepthClamp,
             };
             var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
             var ds = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.LessOrEqual };
