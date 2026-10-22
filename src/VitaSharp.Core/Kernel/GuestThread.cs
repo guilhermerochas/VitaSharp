@@ -268,6 +268,10 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         // tracing checks live in a separate method: a lambda capturing f here would allocate a closure on every HLE call
         bool trace = (_emu.TraceHle || _emu.TraceHleOnly != null || _emu.TraceHleFrames != null) && TraceHleCall(f, s);
         if (_emu.BacktraceHle != null && f.Name == _emu.BacktraceHle) Log.Info($"BT {f.Name}({s->R[0]:X}) lr={s->R[14]:X8} {Backtrace(s)}");
+        // debug mode: arguments kept for the error log and the recent-calls ring (one static read when off)
+        bool dbg = DebugMode.Enabled;
+        uint a0 = 0, a1 = 0, a2 = 0, a3 = 0, lr = 0;
+        if (dbg) { a0 = s->R[0]; a1 = s->R[1]; a2 = s->R[2]; a3 = s->R[3]; lr = s->R[14]; RecordHle(f, a0, a1, a2, a3, lr); }
         if (f.Invoke != null)
         {
             if (f.IsCallbackWait)
@@ -283,12 +287,14 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             }
             else f.Invoke(Hle);
             f.ChargedCycles += Core.ChargedCycles - charged0;
+            if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
             if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             if (ContextReplaced) { ContextReplaced = false; return; }
         }
         else
         {
             if (!f.WarnedUnimplemented) { f.WarnedUnimplemented = true; Log.WarnOnce($"nid{f.Nid}", $"Unimplemented HLE function {f.Library}::{f.Name} (NID 0x{f.Nid:X8}) called from 0x{s->R[14]:X8}"); }
+            if (dbg) DebugMode.HleUnimplemented(Name, f.Library, f.Name, f.Nid, lr);
             s->R[0] = 0;
         }
         // The stub's next instruction is "bx lr": return directly.
@@ -383,6 +389,44 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             found++;
         }
         return sb.ToString();
+    }
+
+    // ---- debug mode: the last HLE calls of this thread (watchdog / hang reports)
+    const int HleRingSize = 16;
+    struct HleRecord { public HleFunction F; public uint A0, A1, A2, A3, Lr, Ret; public bool Returned; public long Frame; }
+    HleRecord[]? _hleRing;
+    int _hleRingPos;
+
+    void RecordHle(HleFunction f, uint a0, uint a1, uint a2, uint a3, uint lr)
+    {
+        var ring = _hleRing ??= new HleRecord[HleRingSize];
+        ring[_hleRingPos++ % HleRingSize] = new HleRecord { F = f, A0 = a0, A1 = a1, A2 = a2, A3 = a3, Lr = lr, Frame = VitaSharp.Core.Hle.Modules.Display.FramesPresented };
+    }
+
+    void DebugHleReturn(HleFunction f, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
+    {
+        // the call may have re-entered guest code (callbacks): only complete the record if it is still the newest one
+        if (_hleRing is { } ring && _hleRingPos > 0 && ring[(_hleRingPos - 1) % HleRingSize].F == f)
+        {
+            ref var r = ref ring[(_hleRingPos - 1) % HleRingSize];
+            r.Ret = ret;
+            r.Returned = true;
+        }
+        if (ret is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, ret, a0, a1, a2, a3, lr);
+    }
+
+    /// <summary>Debug mode: this thread's last HLE calls, oldest first (a call without a result has not returned: the
+    /// thread is inside it, e.g. blocked in a wait).</summary>
+    public IEnumerable<string> RecentHleCalls(int max = HleRingSize)
+    {
+        if (_hleRing is not { } ring) yield break;
+        int n = Math.Min(Math.Min(_hleRingPos, HleRingSize), max);
+        for (int i = _hleRingPos - n; i < _hleRingPos; i++)
+        {
+            var r = ring[i % HleRingSize];
+            if (r.F == null) continue;
+            yield return $"f{r.Frame} {r.F.Name}(0x{r.A0:X}, 0x{r.A1:X}, 0x{r.A2:X}, 0x{r.A3:X}) lr=0x{r.Lr:X8} " + (r.Returned ? $"= 0x{r.Ret:X}" : "(not returned)");
+        }
     }
 
     public string Describe()

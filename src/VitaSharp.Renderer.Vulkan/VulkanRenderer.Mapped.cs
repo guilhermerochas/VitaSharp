@@ -131,6 +131,7 @@ public sealed unsafe partial class VulkanRenderer
             best = dt;
             stencil = !inDepth;
         }
+        if (DebugMode.Enabled && best != null) DbgDepthOverlap(addr, best, stencil);
         return best != null && MultisampledDepthRead(best, stencil) ? null : best;
     }
 

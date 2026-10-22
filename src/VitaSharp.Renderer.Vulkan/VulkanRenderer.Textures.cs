@@ -288,6 +288,7 @@ public sealed unsafe partial class VulkanRenderer
                 if (rt.LastScene > depthSrc.LastScene && addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height) { newerColor = true; break; }
             if (!newerColor) return DepthTexture(depthSrc, w, h);
         }
+        if (DebugMode.Enabled) DbgTextureOverlap(d);
         // rendered surfaces are used directly (or a region of them is copied out)
         foreach (var target in _renderTargets.Values)
         {
@@ -405,6 +406,8 @@ public sealed unsafe partial class VulkanRenderer
             (tex.Image, tex.View, tex.Mem) = CreateImage(baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips - lodMin, faces, cube: cube, swizzle: swizzle);
             _textures[key] = tex;
+            _fNewTextures++;
+            if (DebugMode.Enabled) DbgTextureFormat(d, w, h);
         }
         tex.Hash = hash;
         tex.Stamp = DirtyPages.Epoch;
@@ -415,7 +418,7 @@ public sealed unsafe partial class VulkanRenderer
         tex.DataStart = addr;
         tex.DataSize = total;
         UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
-        if (_opt.InspectTextures) InspectUploadedTexture(d, info, w, h);
+        if (_opt.InspectTextures || (DebugMode.Enabled && _inspectBudget-- > 0)) InspectUploadedTexture(d, info, w, h);
         return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
     }
 

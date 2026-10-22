@@ -41,7 +41,7 @@ public sealed unsafe partial class VulkanRenderer
         _retireCount[c]++;
         if (_vk.GetFenceStatus(_dev, f.Fence) == Result.Success) return;
         long t0 = Stopwatch.GetTimestamp();
-        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost) _deviceLost = true;
+        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkWaitForFences"); }
         FrameLedger.AddSince(FrameLedger.Cat.FenceWait, t0);
         _retireBlocked[c]++;
         long dt = Stopwatch.GetTimestamp() - t0;
@@ -96,7 +96,7 @@ public sealed unsafe partial class VulkanRenderer
                 var f = OldestInFlight()!;
                 var r = _vk.WaitForFences(_dev, 1, in f.Fence, true, 1_000_000);
                 if (r == Result.Success) RetireFrame(f, RetireCause.Idle);
-                else if (r == Result.ErrorDeviceLost) { _deviceLost = true; return; }
+                else if (r == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkWaitForFences (idle)"); return; }
                 else if (Ms(Stopwatch.GetTimestamp() - t0) > 50) return; // the queue loop calls again (and can stop)
             }
         }

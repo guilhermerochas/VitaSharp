@@ -75,6 +75,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public int DumpIndex;
         /// <summary>Readback holds a frame to dump (the buffer itself stays allocated and is reused by later dumps).</summary>
         public bool DumpPending;
+        /// <summary>Debug mode: copy of the presented image for the anomaly checks (VulkanRenderer.Diagnostics.cs).</summary>
+        public (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H)? Sample;
+        public bool SamplePending, SampleBgra;
+        public long SampleIndex;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
@@ -108,6 +112,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _imagePool = new ImageMemoryPool(_core);
         _compiler = new ShaderCompiler(options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
         ConfigureAsyncShaders(options);
+        InitTrace();
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
@@ -187,7 +192,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             PSignalSemaphores = &done,
         };
         var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
-        if (submitResult == Result.ErrorDeviceLost) _deviceLost = true; // stops background shader/pipeline work
+        if (submitResult == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkQueueSubmit"); } // stops background shader/pipeline work
         submitResult.Ok("vkQueueSubmit");
         f.Recording = false;
         f.Submitted = true;
@@ -212,6 +217,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         CompleteGpuTime(f);
         if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);
+        if (f.SamplePending) AnalyzeSample(f);
         using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
         foreach (var s in f.Signals) s();
@@ -294,7 +300,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             case EndSceneCommand e: EndScene(e); break;
             case FinishCommand: Finish(); break;
             case MidSceneFlushCommand:
-                if (TracingScenes) Log.Info($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={_drawSerial + 1})");
+                if (TracingScenes) TraceLine($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={_drawSerial + 1})");
                 if (_inScene && _rt != null) CaptureSceneStart(_rt);
                 break;
             case PresentCommand p: Present(p.Frame); break;
@@ -405,7 +411,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             _renderTargets.Remove(k);
             if (TraceVis) Log.Info($"[vis] render target 0x{c.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {c.Width}x{c.Height} fmt {c.ColorFormat:X8} present={_presentCount}");
-            if (_opt.TraceDrawsFrame == _presentCount + 1 && _opt.ShaderCacheDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
+            if (_traceDumpFrame == _presentCount + 1 && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
             _mirroredRt.Remove(old);
         }
@@ -418,6 +424,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
+        _fNewTargets++;
+        if (DebugMode.Enabled) DbgRenderTarget(rt, format, replaced);
         return rt;
     }
 
@@ -530,10 +538,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
-        if (TracingScenes || TraceVis) Log.Info($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
+        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface
         ChooseMsaaPath(b);
+        _fScenes++;
+        if (DebugMode.Enabled) DbgScene(b);
         if (_rt != null) CaptureSceneStart(_rt);
         if (_ss) LoadSupersample(_rt!);
         // surface gamma: shader output is linear and gets sRGB-encoded on write
@@ -730,17 +740,29 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = FrameCount;
 
+        RecordFrameSummary(frame);
         _presentCount++;
         _drawSerial = 0;
         EndFrameStallStats();
         bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.DumpPending = false;
+        if (DebugMode.Enabled) DebugPresent(src, frame);
 
-        if (_opt.TraceDrawsFrame == _presentCount && _opt.ShaderCacheDir != null)
+        // diagnostic capture (F10 / debug-mode anomaly): the frame that ends here is presented normally, then its
+        // targets are dumped; a pending request arms the trace for the frame that starts now
+        if (_diagActive is { } capture && _traceDumpFrame == _presentCount)
+        {
+            PresentOut(src, frame);
+            CompleteCapture(capture, src, frame);
+            return;
+        }
+        if (_diagRequest != null && _diagActive == null) ArmCapture();
+
+        if (_traceDumpFrame == _presentCount && _traceDir != null)
         {
             SubmitFrame(false, 0);
-            DumpAllTargets(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
+            DumpAllTargets(Path.Combine(_traceDir, "targets"));
             return;
         }
         if (_traceSnaps.Count > 0 && _opt.ShaderCacheDir != null)
@@ -750,6 +772,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             WriteTraceSnapshots(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
             return;
         }
+        PresentOut(src, frame);
+    }
+
+    /// <summary>Shows <paramref name="src"/> on the swapchain (or just submits the frame when there is none).</summary>
+    void PresentOut(RenderTarget src, DisplayFrame frame)
+    {
         if (_swapchain.Handle != 0)
         {
             if (AcquireSwapchain(out uint index))
@@ -834,8 +862,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         f.DumpPending = false;
     }
 
-    /// <summary>Debug: synchronously reads back every render target into PNGs.</summary>
-    void DumpAllTargets(string dir)
+    /// <summary>Debug: synchronously reads back every render target into PNGs. <paramref name="shot"/>: also writes the
+    /// presented region of that target (which may be the CPU framebuffer, not a render target) as a screenshot.</summary>
+    int DumpAllTargets(string dir, (RenderTarget Src, uint W, uint H, string Path)? shot = null)
     {
         _vk.DeviceWaitIdle(_dev);
         Directory.CreateDirectory(dir);
@@ -844,7 +873,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.CreateCommandPool(_dev, in pci, null, out var pool);
         var replaced = _traceReplaced.ToList();
         _traceReplaced.Clear();
-        foreach (var rt in _renderTargets.Values.Concat(replaced))
+        var all = _renderTargets.Values.Concat(replaced).ToList();
+        if (shot is { } s0 && !all.Contains(s0.Src)) all.Add(s0.Src);
+        foreach (var rt in all)
         {
             bool half = rt.Format == Format.R16G16B16A16Sfloat;
             bool raw64 = rt.Format == Format.R32G32Sfloat; // dumped as its first 32-bit word per pixel (packed data)
@@ -893,6 +924,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (rt.Format == Format.B8G8R8A8Unorm) for (int i = 0; i < px.Length; i += 4) (px[i], px[i + 2]) = (px[i + 2], px[i]);
             var opaque = (byte[])px.Clone();
             for (int i = 3; i < opaque.Length; i += 4) opaque[i] = 255;
+            if (shot is { } s && s.Src == rt) WriteScreenshot(s.Path, opaque, rt.Width, Math.Min(s.W, rt.Width), Math.Min(s.H, rt.Height));
             Png.Write(Path.Combine(dir, replaced.Contains(rt) ? $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}_{rt.ColorFormat:X8}.png" : $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.Width, (int)rt.Height);
             _core.DestroyBuffer(buf, mem);
         }
@@ -908,7 +940,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             return (1 + m / (float)(1 << mantissaBits)) * MathF.Pow(2, (int)e - 15);
         }
         _vk.DestroyCommandPool(_dev, pool, null);
-        Log.Info($"[gpu] dumped {_renderTargets.Count} render targets to {dir}");
+        Log.Info($"[gpu] dumped {all.Count} render targets to {dir}");
+        return all.Count;
+    }
+
+    static void WriteScreenshot(string path, byte[] rgba, uint stride, uint w, uint h)
+    {
+        var px = new byte[w * h * 4];
+        for (uint y = 0; y < h; y++) System.Buffer.BlockCopy(rgba, (int)(y * stride * 4), px, (int)(y * w * 4), (int)(w * 4));
+        Png.Write(path, px, (int)w, (int)h);
     }
 
     /// <summary>Numeric summary of a target (per-channel min/max/mean, NaN/Inf count) and, for surfaces the CPU reads
@@ -962,6 +1002,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             if (f.Submitted && f.Readback is { } rb) WriteDump(f, rb);
             if (f.Readback is { } rbuf) _core.DestroyBuffer(rbuf.Buf, rbuf.Mem);
+            if (f.Sample is { } sbuf) _core.DestroyBuffer(sbuf.Buf, sbuf.Mem);
             _vk.DestroyCommandPool(_dev, f.Pool, null);
             _vk.DestroyFence(_dev, f.Fence, null);
             _vk.DestroySemaphore(_dev, f.Acquire, null);

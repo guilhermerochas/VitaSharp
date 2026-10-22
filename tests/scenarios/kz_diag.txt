@@ -1,0 +1,5 @@
+# Diagnostic capture end to end (the F10 path, triggered by --diag-at): Killzone kz_skin route, capture at frame 4300
+# (gameplay), checked afterwards: <data>/diagnostics/PCSC00045_<time>/ and its .zip
+title=PCSC00045
+data=C:\Users\guisa\VitaSharp\.vitadata
+args=--shader-cache=C:\Users\guisa\VitaSharp\.vitadata\shadercache --diag-at=4300 --frames=4500 --seconds=400 --dump-every=50 --no-inspect --input=tap@f450:0.36:0.84,tap@f1000:0.815:0.763,tap@f1900:0.25:0.37,tap@f2550:0.5:0.5,tap@f2700:0.5:0.5,tap@f2850:0.5:0.5,lstick@f4150:0:-1:f200,rstick@f4400:1:0:f20,lstick@f4500:0:-1:f250
