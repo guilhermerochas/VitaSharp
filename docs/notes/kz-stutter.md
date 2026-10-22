@@ -50,3 +50,44 @@ loading frames that are present warm too (boot, menu transitions, level load: gp
 2. Optional Vita3K-style async pipelines that skip the draw until ready (removes the remaining burst, can lose
    one-shot render-to-texture draws: keep it opt-in).
 3. Guest-bound load hitches: the JIT warm-up (interpreting new code) and texture uploads at level load.
+
+## User settings (merge prep)
+- Launcher: Configurações > Geral > **Desempenho**: "Compilação rápida de shaders" (shaderc O0, off = Performance)
+  and "Compilar shaders e pipelines em segundo plano" (prefetch workers), both on by default, stored in
+  `launcher.json` (`FastShaderCompile`, `BackgroundShaderCompile`) and passed to `run` like the CPU backend.
+- CLI: `--shaderc-opt=zero|size|perf`, `--async-shaders=on|off`, `--async-pipelines=on|off`, `--shader-workers=N`.
+  `test <scenario> [options]` now forwards run options (they win over the scenario's `args=`; this also makes
+  `--shader-cache=` work on the `test` command line). Precedence: environment variable > option > default.
+- Options live in `VulkanRendererOptions` (per renderer), no longer in statics.
+
+## Review fixes (merge prep)
+- `.spv` disk cache written via temp file + rename: two threads compiling the same GLSL could hand a half-written
+  file to `vkCreateShaderModule` or fail on a sharing violation.
+- GPU thread: in-flight jobs are checked before the shader pack (no second module for a job that already stored
+  its SPIR-V), the module table is rechecked after an in-flight miss, and pipelines the GPU thread builds itself are
+  claimed in `_pipelineInflight` so a worker never builds the same pipeline concurrently.
+- Shutdown: running `Prefetch` calls are counted and drained, queued jobs are cancelled instead of compiled inside
+  `Dispose`, running jobs finish before the workers are joined, no pool starts after shutdown began.
+- Predicted scene state is one immutable record (several guest threads may submit).
+- `VK_ERROR_DEVICE_LOST` from submit, fence wait or pipeline creation stops background work.
+- VkPipelineCache: created without `EXTERNALLY_SYNCHRONIZED`, so concurrent `vkCreateGraphicsPipelines` and
+  `vkGetPipelineCacheData` are synchronised by the driver; `vkMergePipelineCaches` runs in BeginTitle before the
+  guest submits anything and `vkDestroyPipelineCache` after the workers are joined.
+- Upgrade from main: shaders.pack/pipelines.list keep their format and GeneratorVersion, so a main cache is reused
+  as is (dd_boot on a main-built cache: 0 compiled, 5 pipelines prewarmed). Only `.spv` loose files change name
+  (`.o0.spv`), which matters only for pack misses.
+
+## Validation 2026-10-22 (after merging main 257d3d7)
+Killzone kz_skin, 4500 frames, cold = fresh `--shader-cache` and NVIDIA driver cache:
+| run | hitch frames | excess | p99 | max | GPU-thread shader + pipeline |
+|---|---|---|---|---|---|
+| settings ON, cold (2 runs) | 67 / 47 | 11.4 / 9.6 s | 81 / 57 ms | 3.5 / 3.1 s | 1.0 + 1.3 s / 1.0 + 1.3 s |
+| settings ON, warm | 20 | 5.2 s | 37 ms | 1.5 s | 0.15 s + 0 |
+| settings OFF (perf, no async), cold | 86 | 43.6 s | 131 ms | 17.8 s | 29.7 s + 12.6 s |
+| settings OFF, warm | 18 | 4.6 s | 34 ms | 1.5 s | 0.2 s + 0 |
+
+A first set taken while the user was playing Killzone on the same GPU (plus another agent's test run) was
+fence-bound and is not comparable (ON cold 93.9 s with 128 s of fence waits, OFF cold 70.8 s).
+Frames vs main (cold caches): kz_skin, uc_walk, ucx_title, rbs_continue, mania_boot, dd_boot, f1_trees_lod,
+gow_play: no crashes or hangs, no new errors, same METRICS; differences are run-to-run timing only
+(mania/DD static frames pixel-identical).
