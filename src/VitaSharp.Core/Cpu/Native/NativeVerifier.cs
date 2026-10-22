@@ -116,15 +116,15 @@ public static unsafe class NativeVerifier
         long k = Interlocked.Increment(ref Mismatches);
         // Blocks of plain integer code that read memory another host thread writes concurrently (HLE, GPU worker,
         // other guest cores) can legitimately see different values in the two runs. Mismatches in blocks with
-        // SIMD/FP/exclusive instructions are counted and reported separately so they are never drowned by those.
+        // NEON/VFP instructions (exclusive loads race by design: other cores update those words) are counted and reported separately so they are never drowned by those.
         bool simd = b.Insts.Any(i => i.Op.ToString() is var n && (n.StartsWith("Neon_", StringComparison.Ordinal)
-            || n.StartsWith("Vfp_", StringComparison.Ordinal) || n.Contains("Exclusive", StringComparison.Ordinal)));
+            || n.StartsWith("Vfp_", StringComparison.Ordinal)));
         string tag = "";
         if (simd)
         {
             long ks = Interlocked.Increment(ref SimdMismatches);
             if (ks > MaxReports) return;
-            tag = $" (SIMD/FP/exclusive #{ks})";
+            tag = $" (SIMD/FP #{ks})";
         }
         else if (k - SimdMismatches > MaxReports) return;
         var regs = string.Join(" ", Enumerable.Range(0, 16).Select(r => s0->R[r].ToString("X8")));
