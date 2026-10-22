@@ -18,7 +18,7 @@ public sealed class Videodec : HleModule
 
     sealed class Decoder
     {
-        public H264Decoder? Codec;
+        public IVideoDecoder? Codec;
         public uint MaxWidth, MaxHeight;
         public DecodedPicture? Last;
     }
@@ -63,7 +63,7 @@ public sealed class Videodec : HleModule
         if (codecType != TYPE_HW_AVCDEC) return ERR_INVALID_PARAM;
         if (ctrl == 0 || query == 0) return ERR_INVALID_POINTER;
         if (!ValidQuery(query, out uint w, out uint h, out _)) return ERR_INVALID_PARAM;
-        var d = new Decoder { Codec = H264Decoder.Create(), MaxWidth = w, MaxHeight = h };
+        var d = new Decoder { Codec = VideoDecoders.CreateH264(new VideoDecoderOptions((int)w, (int)h)), MaxWidth = w, MaxHeight = h };
         if (d.Codec == null) Log.WarnOnce("avcdec-noffmpeg", "sceAvcdec: FFmpeg is unavailable, videos will be black");
         lock (_decoders)
         {

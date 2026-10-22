@@ -24,4 +24,7 @@
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
   </ItemGroup>
 
+  <!-- FFmpeg next to the test binaries, so the video decoder tests (software and hwaccel) actually decode -->
+  <Import Project="..\..\build\FFmpeg.targets" />
+
 </Project>

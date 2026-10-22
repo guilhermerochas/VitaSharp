@@ -58,7 +58,7 @@ public sealed unsafe class Mp4Demuxer : IDisposable
     static long To90k(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 90000L * tb.num / tb.den;
 
     /// <summary>avcC: SPS/PPS as Annex B, plus the NAL length field size.</summary>
-    static (byte[], int) ParseAvcC(ReadOnlySpan<byte> c)
+    internal static (byte[], int) ParseAvcC(ReadOnlySpan<byte> c)
     {
         int lenSize = (c[4] & 3) + 1;
         var ms = new MemoryStream();
@@ -99,6 +99,26 @@ public sealed unsafe class Mp4Demuxer : IDisposable
             finally { ffmpeg.av_packet_unref(_pkt); }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Converts a length-prefixed (MP4) access unit to Annex B in <paramref name="buffer"/> (grown as needed and reused
+    /// across calls), with <paramref name="header"/> (SPS/PPS) in front when given. Returns the length written.
+    /// </summary>
+    internal static int ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header, ref byte[] buffer)
+    {
+        int total = header?.Length ?? 0;
+        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);) total += 4 + l;
+        if (buffer.Length < total) buffer = new byte[Math.Max(total, buffer.Length * 2)];
+        int o = 0;
+        if (header != null) { header.CopyTo(buffer, 0); o = header.Length; }
+        for (int p = 0; Nal(avcc, lenSize, ref p, out int start, out int l);)
+        {
+            buffer[o] = 0; buffer[o + 1] = 0; buffer[o + 2] = 0; buffer[o + 3] = 1;
+            avcc.Slice(start, l).CopyTo(buffer.AsSpan(o + 4));
+            o += 4 + l;
+        }
+        return total;
     }
 
     static byte[] ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header)

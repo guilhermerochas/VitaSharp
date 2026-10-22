@@ -20,6 +20,11 @@ public sealed unsafe class MediaPlayer : IDisposable
 
     AVFormatContext* _fmt;
     AVCodecContext* _video, _audio;
+    // H.264 video: Annex B access units into the pluggable decoder (the MP4 avcC header goes in front of key frames)
+    IVideoDecoder? _videoDecoder;
+    byte[]? _annexBHeader;
+    int _nalLengthSize;
+    byte[] _annexB = new byte[64 * 1024];
     int _videoStream = -1, _audioStream = -1;
     AVRational _videoTb, _audioTb;
 
@@ -58,6 +63,17 @@ public sealed unsafe class MediaPlayer : IDisposable
         {
             Channels = _audio->ch_layout.nb_channels;
             SampleRate = _audio->sample_rate;
+        }
+        // H.264 goes through the pluggable video decoder (hardware when available); other codecs stay on avcodec
+        if (_video != null && _video->codec_id == AVCodecID.AV_CODEC_ID_H264 && VideoDecoders.CreateH264(new VideoDecoderOptions(Width, Height)) is { } dec)
+        {
+            var par = fmt->streams[_videoStream]->codecpar;
+            if (par->extradata_size > 7 && par->extradata[0] == 1)
+                (_annexBHeader, _nalLengthSize) = Mp4Demuxer.ParseAvcC(new ReadOnlySpan<byte>(par->extradata, par->extradata_size));
+            _videoDecoder = dec;
+            var v = _video;
+            ffmpeg.avcodec_free_context(&v);
+            _video = null;
         }
         _thread = new Thread(DecodeLoop) { IsBackground = true, Name = "AvPlayer decoder" };
         _thread.Start();
@@ -197,6 +213,7 @@ public sealed unsafe class MediaPlayer : IDisposable
                     {
                         ffmpeg.av_seek_frame(_fmt, -1, _seekRequestUs, ffmpeg.AVSEEK_FLAG_BACKWARD);
                         if (_video != null) ffmpeg.avcodec_flush_buffers(_video);
+                        _videoDecoder?.Reset();
                         if (_audio != null) ffmpeg.avcodec_flush_buffers(_audio);
                         _seekRequestUs = -1;
                     }
@@ -207,18 +224,20 @@ public sealed unsafe class MediaPlayer : IDisposable
                 {
                     // end of file: drain the decoders, then loop or finish
                     Drain(_video, frame, true);
+                    DrainDecoder();
                     Drain(_audio, frame, false);
                     if (Loop)
                     {
                         ffmpeg.av_seek_frame(_fmt, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
                         if (_video != null) ffmpeg.avcodec_flush_buffers(_video);
+                        _videoDecoder?.Reset();
                         if (_audio != null) ffmpeg.avcodec_flush_buffers(_audio);
                         continue;
                     }
                     lock (_lock) _demuxDone = true;
                     continue;
                 }
-                if (pkt->stream_index == _videoStream) Decode(_video, pkt, frame, true);
+                if (pkt->stream_index == _videoStream) { if (_videoDecoder != null) DecodeH264(pkt); else Decode(_video, pkt, frame, true); }
                 else if (pkt->stream_index == _audioStream) Decode(_audio, pkt, frame, false);
                 ffmpeg.av_packet_unref(pkt);
             }
@@ -258,6 +277,61 @@ public sealed unsafe class MediaPlayer : IDisposable
     }
 
     static long ToUs(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 1_000_000L * tb.num / tb.den;
+
+    /// <summary>One H.264 packet through the pluggable decoder (MP4 packets are converted to Annex B first).</summary>
+    void DecodeH264(AVPacket* pkt)
+    {
+        var data = new ReadOnlySpan<byte>(pkt->data, pkt->size);
+        long pts = pkt->pts != ffmpeg.AV_NOPTS_VALUE ? pkt->pts : pkt->dts;
+        if (_nalLengthSize > 0)
+        {
+            bool key = (pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
+            int n = Mp4Demuxer.ToAnnexB(data, _nalLengthSize, key ? _annexBHeader : null, ref _annexB);
+            _videoDecoder!.Send(_annexB.AsSpan(0, n), pts);
+        }
+        else _videoDecoder!.Send(data, pts);
+        PushDecoded();
+    }
+
+    void DrainDecoder()
+    {
+        if (_videoDecoder == null) return;
+        _videoDecoder.Flush();
+        PushDecoded();
+    }
+
+    void PushDecoded()
+    {
+        while (_videoDecoder!.Take() is { } p)
+        {
+            PushVideo(p);
+            _videoDecoder.Recycle(p);
+        }
+    }
+
+    /// <summary>Planar YUV 4:2:0 from the decoder into the NV21 frame layout the guest receives.</summary>
+    void PushVideo(DecodedPicture p)
+    {
+        int w = p.Width & ~1, h = p.Height & ~1, cw = (p.Width + 1) / 2;
+        var nv21 = RentBuffer(_freeNv12, w * h * 3 / 2);
+        for (int y = 0; y < h; y++) p.Y.AsSpan(y * p.Width, w).CopyTo(nv21.AsSpan(y * w));
+        int uvBase = w * h;
+        for (int y = 0; y < h / 2; y++)
+        {
+            int s = y * cw, d = uvBase + y * w;
+            for (int x = 0; x < w / 2; x++) { nv21[d + 2 * x] = p.V[s + x]; nv21[d + 2 * x + 1] = p.U[s + x]; }
+        }
+        Enqueue(new VideoFrame(nv21, w, h, ToUs(p.Pts, _videoTb)));
+    }
+
+    void Enqueue(VideoFrame vf)
+    {
+        lock (_lock)
+        {
+            while (!_stop && _seekRequestUs < 0 && _videoQueue.Count >= MaxVideoFrames) Monitor.Wait(_lock, 50);
+            if (_seekRequestUs < 0) _videoQueue.Enqueue(vf);
+        }
+    }
 
     void PushVideo(AVFrame* f)
     {
@@ -337,6 +411,8 @@ public sealed unsafe class MediaPlayer : IDisposable
         _stop = true;
         lock (_lock) Monitor.PulseAll(_lock);
         if (_thread.IsAlive && Thread.CurrentThread != _thread) _thread.Join(1000);
+        _videoDecoder?.Dispose();
+        _videoDecoder = null;
         var v = _video; var a = _audio; var fmt = _fmt;
         if (v != null) ffmpeg.avcodec_free_context(&v);
         if (a != null) ffmpeg.avcodec_free_context(&a);
