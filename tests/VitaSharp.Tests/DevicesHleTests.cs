@@ -68,6 +68,22 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void CtrlShoulderButtonsPerApiFamily()
+    {
+        // host L/R arrive as LTRIGGER/RTRIGGER; L3/R3 and the PS button may also be set by a DualShock
+        const uint L = 0x100, R = 0x200, L1 = 0x400, R1 = 0x800, L3 = 0x2, R3 = 0x4, Cross = 0x4000, Ps = 0x10000;
+        uint host = L | R | L3 | R3 | Cross | Ps;
+        // original API (sceCtrlPeekBufferPositive): shoulders = LTRIGGER/RTRIGGER, no L3/R3, standard bits only
+        Assert.Equal(L | R | Cross, Ctrl.MapButtons(host, Ctrl.Api.Standard));
+        // *Ext: same buttons, system bits kept
+        Assert.Equal(L | R | Cross | Ps, Ctrl.MapButtons(host, Ctrl.Api.Ext));
+        // "2" API (sceCtrlReadBufferPositive2): shoulders = L1/R1 (vita-headers, Vita3K is_v2), L3/R3 reported
+        Assert.Equal(L1 | R1 | L3 | R3 | Cross | Ps, Ctrl.MapButtons(host, Ctrl.Api.Ext | Ctrl.Api.V2));
+        Assert.Equal(L1, Ctrl.MapButtons(L, Ctrl.Api.Ext | Ctrl.Api.V2));
+        Assert.Equal(0u, Ctrl.MapButtons(0, Ctrl.Api.Ext | Ctrl.Api.V2));
+    }
+
+    [Fact]
     public void CtrlAnalogStickCheck()
     {
         var c = new Ctrl();

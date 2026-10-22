@@ -209,34 +209,41 @@ public sealed class Ctrl : HleModule
 {
     uint _samplingMode;
     long _lastRead;
-    static readonly string CtrlExp = Environment.GetEnvironmentVariable("VITASHARP_CTRL_EXP") ?? "";
 
     ControllerState State(int port) => Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
 
-    void WriteData(uint dst, uint count, bool negative, int port, bool ext)
+    /// <summary>Which sceCtrl buffer API family is reading: <c>Ext</c> = the *Ext / *2 functions (report the system
+    /// bits above 0xFFFF), <c>V2</c> = the "2" functions (sceCtrl*Buffer*2, *Ext2).</summary>
+    [Flags]
+    internal enum Api { Standard = 0, Ext = 1, V2 = 2 }
+
+    /// <summary>
+    /// Converts the host state (the handheld's L/R shoulder buttons arrive as LTRIGGER/RTRIGGER) into the buttons word
+    /// one sceCtrl API family reports. The original functions (sceCtrlPeek/ReadBuffer*, including *Ext) report the
+    /// shoulders as SCE_CTRL_LTRIGGER/RTRIGGER (0x100/0x200) and have no L3/R3. The "2" functions are the PS TV aware
+    /// ones: per vita-headers they "bind L/R trigger value to L1/R1 instead of LTRIGGER/RTRIGGER", so the shoulders are
+    /// SCE_CTRL_L1/R1 (0x400/0x800), 0x100/0x200 are the DualShock L2/R2 and L3/R3 exist (Vita3K ctrl.cpp, is_v2
+    /// bindings). PS2 ports (God of War Collection) read L/R only as L1/R1 through sceCtrlReadBufferPositive2.
+    /// </summary>
+    internal static uint MapButtons(uint host, Api api)
+    {
+        const uint Shoulders = (uint)(VitaButtons.LTrigger | VitaButtons.RTrigger);
+        if ((api & Api.Ext) == 0) host &= 0xFFFF; // standard buttons only
+        if ((api & Api.V2) == 0) return host & ~(uint)(VitaButtons.L3 | VitaButtons.R3 | VitaButtons.L1 | VitaButtons.R1);
+        return (host & ~Shoulders) | ((host & Shoulders) << 2); // LTRIGGER 0x100 -> L1 0x400, RTRIGGER 0x200 -> R1 0x800
+    }
+
+    void WriteData(uint dst, uint count, bool negative, int port, Api api)
     {
         var s = State(port);
         for (uint i = 0; i < Math.Max(count, 1); i++)
         {
             uint p = dst + i * 32;
-            GuestMemory.Fill(p, 0, 32);
+            GuestMemory.Fill(p, 0, 32); // pressure bytes (+16..+27) stay 0, as in Vita3K
             GuestMemory.Write(p, (ulong)(Emu.Kernel.ProcessTimeUs));
-            uint buttons = ApplyRapidFire((uint)s.Buttons, VBlank.Count);
+            uint buttons = MapButtons(ApplyRapidFire((uint)s.Buttons, VBlank.Count), api);
             if (buttons != 0) VitaSharp.Core.Util.Log.Debug($"ctrl port {port} buttons 0x{buttons:X} -> 0x{p:X8}");
-            if (!ext) buttons &= 0xFFFF; // standard buttons only
-            if (CtrlExp.Contains("l1"))
-            {
-                if ((buttons & (uint)VitaButtons.LTrigger) != 0) buttons |= (uint)VitaButtons.L1;
-                if ((buttons & (uint)VitaButtons.RTrigger) != 0) buttons |= (uint)VitaButtons.R1;
-            }
             GuestMemory.W32(p + 8, negative ? ~buttons : buttons);
-            if (CtrlExp.Contains("pressure"))
-            {
-                // SceCtrlData +16: up, right, down, left, lt, rt, l1, r1, triangle, circle, cross, square
-                ReadOnlySpan<uint> order = [0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x100, 0x200, 0x1000, 0x2000, 0x4000, 0x8000];
-                for (int b = 0; b < order.Length; b++)
-                    if ((buttons & order[b]) != 0) GuestMemory.Write(p + 16 + (uint)b, (byte)255);
-            }
             bool analog = _samplingMode != 0;
             GuestMemory.Write(p + 12, analog ? s.Lx : (byte)128);
             GuestMemory.Write(p + 13, analog ? s.Ly : (byte)128);
@@ -245,36 +252,37 @@ public sealed class Ctrl : HleModule
         }
     }
 
-    int Peek(int port, uint data, uint count, bool negative, bool ext)
+    int Peek(int port, uint data, uint count, bool negative, Api api)
     {
         if (data == 0) return unchecked((int)0x80340001); // SCE_CTRL_ERROR_INVALID_ARG
         if (count == 0) return 0;
-        WriteData(data, 1, negative, port, ext); // newest sample only
+        WriteData(data, 1, negative, port, api); // newest sample only
         return 1;
     }
 
-    int Read(int port, uint data, uint count, bool negative, bool ext)
+    int Read(int port, uint data, uint count, bool negative, Api api)
     {
         // reads block until the next sample (one per vblank)
         long target = Math.Max(_lastRead + 1, VBlank.Count);
         _lastRead = VBlank.WaitFor(target);
-        return Peek(port, data, count, negative, ext);
+        return Peek(port, data, count, negative, api);
     }
 
     static int Port(int port) => port <= 1 ? 0 : port - 1;
 
-    [Hle] int sceCtrlPeekBufferPositive(int port, uint data, uint count) => Peek(Port(port), data, count, false, false);
-    [Hle] int sceCtrlPeekBufferNegative(int port, uint data, uint count) => Peek(Port(port), data, count, true, false);
-    [Hle] int sceCtrlReadBufferPositive(int port, uint data, uint count) => Read(Port(port), data, count, false, false);
-    [Hle] int sceCtrlReadBufferNegative(int port, uint data, uint count) => Read(Port(port), data, count, true, false);
-    [Hle] int sceCtrlPeekBufferPositiveExt(int port, uint data, uint count) => Peek(Port(port), data, count, false, true);
-    [Hle] int sceCtrlReadBufferPositiveExt(int port, uint data, uint count) => Read(Port(port), data, count, false, true);
-    [Hle] int sceCtrlPeekBufferPositive2(int port, uint data, uint count) => Peek(Port(port), data, count, false, true);
-    [Hle] int sceCtrlReadBufferPositive2(int port, uint data, uint count) => Read(Port(port), data, count, false, true);
-    [Hle] int sceCtrlPeekBufferPositiveExt2(int port, uint data, uint count) => Peek(Port(port), data, count, false, true);
-    [Hle] int sceCtrlReadBufferPositiveExt2(int port, uint data, uint count) => Read(Port(port), data, count, false, true);
-    [Hle] int sceCtrlPeekBufferNegative2(int port, uint data, uint count) => Peek(Port(port), data, count, true, true);
-    [Hle] int sceCtrlReadBufferNegative2(int port, uint data, uint count) => Read(Port(port), data, count, true, true);
+    const Api Ext = Api.Ext, V2 = Api.Ext | Api.V2;
+    [Hle] int sceCtrlPeekBufferPositive(int port, uint data, uint count) => Peek(Port(port), data, count, false, Api.Standard);
+    [Hle] int sceCtrlPeekBufferNegative(int port, uint data, uint count) => Peek(Port(port), data, count, true, Api.Standard);
+    [Hle] int sceCtrlReadBufferPositive(int port, uint data, uint count) => Read(Port(port), data, count, false, Api.Standard);
+    [Hle] int sceCtrlReadBufferNegative(int port, uint data, uint count) => Read(Port(port), data, count, true, Api.Standard);
+    [Hle] int sceCtrlPeekBufferPositiveExt(int port, uint data, uint count) => Peek(Port(port), data, count, false, Ext);
+    [Hle] int sceCtrlReadBufferPositiveExt(int port, uint data, uint count) => Read(Port(port), data, count, false, Ext);
+    [Hle] int sceCtrlPeekBufferPositive2(int port, uint data, uint count) => Peek(Port(port), data, count, false, V2);
+    [Hle] int sceCtrlReadBufferPositive2(int port, uint data, uint count) => Read(Port(port), data, count, false, V2);
+    [Hle] int sceCtrlPeekBufferPositiveExt2(int port, uint data, uint count) => Peek(Port(port), data, count, false, V2);
+    [Hle] int sceCtrlReadBufferPositiveExt2(int port, uint data, uint count) => Read(Port(port), data, count, false, V2);
+    [Hle] int sceCtrlPeekBufferNegative2(int port, uint data, uint count) => Peek(Port(port), data, count, true, V2);
+    [Hle] int sceCtrlReadBufferNegative2(int port, uint data, uint count) => Read(Port(port), data, count, true, V2);
 
     [Hle] int sceCtrlSetSamplingMode(uint mode) { uint old = _samplingMode; _samplingMode = mode; return (int)old; }
     [Hle] int sceCtrlSetSamplingModeExt(uint mode) { uint old = _samplingMode; _samplingMode = mode; return (int)old; }
