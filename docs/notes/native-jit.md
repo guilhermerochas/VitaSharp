@@ -18,7 +18,7 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 
 ## perf/neon-jit (2026-10-22)
 
-Branch `perf/neon-jit` (worktree `.claude/worktrees/neon-jit`), merged with main b93da80. Not merged into main, not
+Branch `perf/neon-jit` (worktree `.claude/worktrees/neon-jit`), merged with main 23efe56. Not merged into main, not
 pushed.
 
 ### What is inline now
@@ -91,7 +91,11 @@ from the renderer (MSAA, new in main b93da80) or from the CPU is not established
   products that round up to the smallest normal), quick versions in the fast suite (`NativeNeonQuick`) and long ones
   under Category=Slow (`NativeNeonMatchesInterpreter`, 2,000-6,000 blocks per class); native vs Unicorn (Slow, 8,000
   blocks, 0 differences after the tininess fix); LDREXD/STREXD monitor scenarios (ARM/Thumb); VCVTB/VCVTT with
-  half-range edge values (Vita mode and other FPSCR modes). Fast suite 353/353 after the merge (4 min).
+  half-range edge values (Vita mode and other FPSCR modes). Fast suite 353/353 after the b93da80 merge (4 min); full
+  suite incl. Slow 385/385 after merging main 23efe56 (1 h 27 min). The fuzz tests now reset the JIT code arena when
+  they end (`ArenaScope`): before that, the full suite filled the 256 MiB arena and failed with "JIT code arena full".
+  Post-merge smoke (main 23efe56): kz_skin 26.4 fps, 0.19M callouts, all GPU commands completed; uc_walk 34.8 fps,
+  main 5.22 ms/frame.
 - VITASHARP_NATIVE_VERIFY=1 (needs `--speed=0.25` so the slower guest still reaches gameplay):
   - Killzone kzl_walk3, 7,000 frames into gameplay: 3.80 billion block runs verified, 0 mismatches in blocks with
     NEON/VFP arithmetic. 3 NEON/VFP-block reports were plain copies (VLDM/VSTM/VDUP/VLDR/VSTR) of float data other job
