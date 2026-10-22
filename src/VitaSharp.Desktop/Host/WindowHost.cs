@@ -27,6 +27,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? Closing;
     public event Action? Resized;
 
+    /// <summary>
+    /// Registers the GLFW window/input platforms explicitly: Silk.NET otherwise finds them by loading assemblies by
+    /// name through reflection, which trimming / Native AOT removes.
+    /// </summary>
+    static WindowHost()
+    {
+        Silk.NET.Windowing.Glfw.GlfwWindowing.RegisterPlatform();
+        Silk.NET.Input.Glfw.GlfwInput.RegisterPlatform();
+    }
+
     public WindowHost(string title, int scale = 1, bool fullscreen = false)
     {
         SelectGlfwPlatform();
