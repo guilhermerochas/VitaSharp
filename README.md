@@ -192,7 +192,7 @@ The same executable has a command-line mode, handy for testing and debugging:
 | *(no arguments)* | Open the game library window |
 | `install <game.pkg> <work.bin\|.rif>` | Install a package into the virtual `ux0:` |
 | `run <TITLEID\|folder> [options]` | Boot a title directly |
-| `test <scenario.txt>` | Run an automated scenario: frames, contact sheet and report |
+| `test <scenario.txt> [options]` | Run an automated scenario: frames, contact sheet and report (`run` options given here override the scenario's `args=`) |
 | `imports <TITLEID\|folder>` | List the system functions a title imports and which ones are still missing |
 | `self2elf <in> <out> [license]` | Decrypt a SELF executable to ELF |
 
@@ -204,6 +204,9 @@ Common `run` options:
 | `--no-vsync` | Uncap presentation |
 | `--no-jit` | Interpreter only |
 | `--cores <n>`, `--cpu-mhz <n>`, `--speed <x>` | Guest CPU cores, pacing and speed |
+| `--cpu=native\|il\|interp` | CPU backend (default: the best one this PC supports) |
+| `--shaderc-opt=zero\|size\|perf` | Shader optimisation level. `zero` (default) compiles ~6x faster and stutters far less when new shaders appear, with no measured GPU cost (launcher: *Compilação rápida de shaders*) |
+| `--async-shaders=on\|off` | Translate and compile new shaders and build their pipelines on worker threads as soon as the game submits them (default on; launcher: *Compilar shaders e pipelines em segundo plano*). `--async-pipelines=off` keeps only the shader part, `--shader-workers=<n>` sets the pool size (default: half the logical processors, 1-6) |
 | `--headless`, `--seconds <n>`, `--frames <n>` | Run without a window for a fixed time or number of frames |
 | `--input <script>` | Scripted input, e.g. `start@f3400,cross@f3600` |
 | `--dump-frames`, `--dump-every <n>` | Save rendered frames to disk |

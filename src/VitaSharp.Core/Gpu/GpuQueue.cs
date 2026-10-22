@@ -75,6 +75,7 @@ public sealed class GpuQueue : IDisposable
 
     public long Submit(GpuCommand cmd)
     {
+        try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
         cmd.Sequence = Interlocked.Increment(ref _submitted);
         _queue.Enqueue(cmd);
         _available.Release();
@@ -83,7 +84,9 @@ public sealed class GpuQueue : IDisposable
 
     public void WaitFor(long sequence)
     {
+        if (Completed >= sequence) return;
         using var blocked = Kernel.Scheduler.Block();
+        using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
         lock (_progress)
             while (Completed < sequence && !_stopping) Monitor.Wait(_progress, 100);
     }
@@ -103,7 +106,10 @@ public sealed class GpuQueue : IDisposable
                 if (!_queue.TryDequeue(out cmd))
                 {
                     try { lock (_backendLock) Backend?.Idle(); } catch (Exception e) { Log.Error($"GPU backend idle failed: {e}"); }
-                    if (!_available.Wait(50) || !_queue.TryDequeue(out cmd)) continue;
+                    long ti = FrameLedger.Now();
+                    bool got = _available.Wait(50);
+                    FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
+                    if (!got || !_queue.TryDequeue(out cmd)) continue;
                 }
                 else _available.Wait(0);
             }

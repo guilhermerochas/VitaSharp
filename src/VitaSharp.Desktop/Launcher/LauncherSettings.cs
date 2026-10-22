@@ -14,6 +14,10 @@ public sealed class LauncherSettings
     public string Camera { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
+    /// <summary>"Compilação rápida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
+    public bool FastShaderCompile { get; set; } = true;
+    /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
+    public bool BackgroundShaderCompile { get; set; } = true;
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -43,6 +47,8 @@ public sealed class LauncherSettings
         if (Validation) yield return "--validation";
         if (!string.IsNullOrWhiteSpace(Camera)) yield return $"--camera={Camera}";
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
+        yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
+        yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
     }
 }
 

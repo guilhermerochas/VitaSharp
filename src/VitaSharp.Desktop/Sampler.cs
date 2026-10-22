@@ -28,6 +28,7 @@ sealed class Sampler
     {
         _emu = emu;
         _from = fromFrame;
+        FrameLedger.Enable();
         _thread = new Thread(Loop) { IsBackground = true, Priority = ThreadPriority.Highest };
         _thread.Start();
     }
@@ -66,6 +67,46 @@ sealed class Sampler
         }
     }
 
+    /// <summary>
+    /// Per-cause host time (FrameLedger) of the frames whose present interval exceeded 50 ms, over the hitch frame and
+    /// the one before it (GPU-thread work runs about a frame behind the guest).
+    /// </summary>
+    void ReportHitchCauses(long[] pt, int mask)
+    {
+        if (!FrameLedger.Enabled) return;
+        double tk = System.Diagnostics.Stopwatch.Frequency / 1000.0;
+        var hitches = new List<(long F, double Ms)>();
+        for (long f = _baseFrame + 2; f < _endFrame - 1; f++)
+        {
+            double d = (pt[f & mask] - pt[(f - 1) & mask]) / tk;
+            if (d > 50) hitches.Add((f, d));
+        }
+        var all = FrameLedger.Window(_baseFrame + 1, _endFrame - 2);
+        double frames = Math.Max(1, _endFrame - _baseFrame - 2);
+        Log.Info($"PROFILE ledger per frame (all frames, ms/frame): " + string.Join(" ", Enumerable.Range(0, all.Length).Select(i => $"{FrameLedger.Names[i]}={all[i] / frames:F2}")));
+        if (hitches.Count == 0) return;
+        var sum = new double[(int)FrameLedger.Cat.Count];
+        double excess = 0;
+        foreach (var (f, ms) in hitches)
+        {
+            var w = FrameLedger.Window(f - 1, f);
+            for (int i = 0; i < sum.Length; i++) sum[i] += w[i];
+            excess += ms - 1000.0 / 30;
+        }
+        Log.Info($"PROFILE hitch frames >50 ms: {hitches.Count} (>100 ms: {hitches.Count(h => h.Ms > 100)}, >250 ms: {hitches.Count(h => h.Ms > 250)}), excess over 33.3 ms: {excess:F0} ms; causes summed over [f-1,f]: {FrameLedger.Format(sum)}");
+        // every hitch with its largest GPU-thread/guest cause (gpuIdle = the GPU thread had nothing to do: guest-bound)
+        string Top(long f)
+        {
+            var w = FrameLedger.Window(f - 1, f);
+            int best = 0;
+            for (int i = 1; i < w.Length; i++) if (i != (int)FrameLedger.Cat.BgShader && i != (int)FrameLedger.Cat.BgPipeline && w[i] > w[best]) best = i;
+            return FrameLedger.Names[best];
+        }
+        Log.Info($"PROFILE hitch list: {string.Join(" ", hitches.Take(300).Select(h => $"f{h.F}:{h.Ms:F0}:{Top(h.F)}"))}");
+        foreach (var (f, ms) in hitches.OrderByDescending(h => h.Ms).Take(30))
+            Log.Info($"PROFILE hitch f{f} {ms:F0} ms: {FrameLedger.Format(FrameLedger.Window(f - 1, f))}");
+    }
+
     public void Report()
     {
         _stop = true;
@@ -89,6 +130,7 @@ sealed class Sampler
             var slow = new List<string>();
             for (long f = _baseFrame + 1; f < _endFrame - 1; f++) { double d = (pt[f & mask] - pt[(f - 1) & mask]) * 1000.0 / System.Diagnostics.Stopwatch.Frequency; if (d > 50) slow.Add($"f{f}:{d:F0}ms"); }
             if (slow.Count > 0) Log.Info($"PROFILE hitches: {string.Join(" ", slow.Take(20))}");
+            ReportHitchCauses(pt, mask);
             ms.Sort();
             double P(double q) => ms[(int)Math.Min(ms.Count - 1, q * ms.Count)];
             Log.Info($"PROFILE frame interval ms: p10 {P(0.1):F2} p50 {P(0.5):F2} p90 {P(0.9):F2} p99 {P(0.99):F2} max {ms[^1]:F2}; >17.5 ms: {ms.Count(x => x > 17.5)}, >25 ms: {ms.Count(x => x > 25)} of {ms.Count}");

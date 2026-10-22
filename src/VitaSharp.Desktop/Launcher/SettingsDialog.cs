@@ -6,7 +6,7 @@ using VitaSharp.Desktop.Input;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Settings window: "Geral" (window, graphics, camera, CPU) and "Controles" (keyboard / controller mapping).</summary>
+/// <summary>Settings window: "Geral" (window, graphics, camera, CPU, Desempenho = shader compilation) and "Controles" (keyboard / controller mapping).</summary>
 public sealed class SettingsDialog : Window
 {
     public const int GeneralTab = 0, ControlsTab = 1;
@@ -48,6 +48,15 @@ public sealed class SettingsDialog : Window
             ItemsSource = new[] { "Automático (o melhor para este PC)", "JIT nativo (código de máquina x64)", "JIT IL (.NET DynamicMethod)", "Interpretador (mais lento, depuração)" },
             Width = 320, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
         };
+        // performance: shader compilation stutter (--shaderc-opt=, --async-shaders=)
+        const string fastShadersTip = "Reduz travamentos quando shaders novos aparecem; desligue se notar perda de desempenho.";
+        const string asyncShadersTip = "Prepara shaders e pipelines novos em outras threads enquanto o jogo ainda envia o quadro, " +
+                                       "reduzindo travamentos ao entrar em áreas novas.";
+        var fastShaders = new CheckBox { Content = "Compilação rápida de shaders", IsChecked = settings.FastShaderCompile };
+        ToolTip.SetTip(fastShaders, fastShadersTip);
+        var asyncShaders = new CheckBox { Content = "Compilar shaders e pipelines em segundo plano", IsChecked = settings.BackgroundShaderCompile };
+        ToolTip.SetTip(asyncShaders, asyncShadersTip);
+
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         general.Children.Add(fullscreen);
         general.Children.Add(Row("Tamanho", scale));
@@ -55,6 +64,9 @@ public sealed class SettingsDialog : Window
         general.Children.Add(validation);
         general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
+        general.Children.Add(new TextBlock { Text = "Desempenho", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        general.Children.Add(WithHint(fastShaders, fastShadersTip));
+        general.Children.Add(WithHint(asyncShaders, asyncShadersTip));
         general.Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
@@ -101,6 +113,8 @@ public sealed class SettingsDialog : Window
             settings.Scale = scale.SelectedIndex + 1;
             settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
             settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
+            settings.FastShaderCompile = fastShaders.IsChecked == true;
+            settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.Save();
             Controls?.Save();
             Close();
@@ -110,6 +124,15 @@ public sealed class SettingsDialog : Window
     }
 
     public void ShowTab(int index) => _tabs.SelectedIndex = index;
+
+    /// <summary>A check box with a short muted description under it.</summary>
+    static Control WithHint(Control c, string hint)
+    {
+        var p = new StackPanel { Spacing = 2 };
+        p.Children.Add(c);
+        p.Children.Add(new TextBlock { Text = hint, Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(28, 0, 0, 0) });
+        return p;
+    }
 
     static Control Row(string label, Control c)
     {
