@@ -24,8 +24,9 @@ public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Bump when the renderer changes what it puts in pipelines (vertex input layout, fixed-function state).</summary>
     /// <remarks>2: version 1 lists could hold vertex layouts built from shader-pack metadata that had lost the raw
-    /// (register-format) attribute sizes, i.e. normalised/float fetches where the shader expects raw integers.</remarks>
-    const uint PipelineFormatVersion = 2;
+    /// (register-format) attribute sizes, i.e. normalised/float fetches where the shader expects raw integers.
+    /// 3: records carry the rasterization sample count (real MSAA).</remarks>
+    const uint PipelineFormatVersion = 3;
     /// <summary>Bump when the shader-pack record layout changes (2: vertex inputs carry the raw attribute size/count;
     /// 3: the flags carry the raw colour output component size).</summary>
     const uint ShaderPackFormatVersion = 3;
@@ -114,7 +115,9 @@ public sealed unsafe partial class VulkanRenderer
 
     static ulong ShaderPackKey(ulong programHash, ulong hintKey)
     {
-        Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, (ulong)ShaderGenerator.GeneratorVersion };
+        // the per-sample framebuffer fetch choice changes the GLSL of programmable-blending shaders
+        ulong gen = (ulong)ShaderGenerator.GeneratorVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32);
+        Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, gen };
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }
 
@@ -186,9 +189,9 @@ public sealed unsafe partial class VulkanRenderer
 
     // record: vs program u64, vs hints u64, fs program u64, fs hints u64, colour format i32, has colour, blend,
     // colour func, alpha func, colour src, colour dst, alpha src, alpha dst, mask, topology, polygon mode (u8 each),
-    // binding count u16, attribute count u16, bindings (binding, stride, rate: u32), attributes (location, binding,
+    // binding count u16, attribute count u16, sample count u8, bindings (binding, stride, rate: u32), attributes (location, binding,
     // format, offset: u32)
-    const int PipelineRecordHead = 32 + 4 + 11 + 4;
+    const int PipelineRecordHead = 32 + 4 + 11 + 4 + 1;
 
     void RecordPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
@@ -209,6 +212,7 @@ public sealed unsafe partial class VulkanRenderer
         buf[46] = (byte)key.Polygon;
         BinaryPrimitives.WriteUInt16LittleEndian(buf[47..], (ushort)nb);
         BinaryPrimitives.WriteUInt16LittleEndian(buf[49..], (ushort)na);
+        buf[51] = (byte)key.Samples;
         MemoryMarshal.AsBytes(vs.Bindings.AsSpan()).CopyTo(buf[PipelineRecordHead..]);
         MemoryMarshal.AsBytes(vs.Attributes.AsSpan()).CopyTo(buf[(PipelineRecordHead + nb * 12)..]);
         list.Add(XxHash64.HashToUInt64(buf), buf);
@@ -242,7 +246,8 @@ public sealed unsafe partial class VulkanRenderer
                 var attrs = MemoryMarshal.Cast<byte, VertexInputAttributeDescription>(r.Slice(PipelineRecordHead + nb * 12, na * 16)).ToArray();
                 var topology = (PrimitiveTopology)r[45];
                 var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, LayoutHash(bindings, attrs), (Format)BinaryPrimitives.ReadInt32LittleEndian(r[32..]),
-                    r[36] != 0, r[37] != 0, r[38], r[39], r[40], r[41], r[42], r[43], r[44], TopologyClass(topology), (PolygonMode)r[46]);
+                    r[36] != 0, r[37] != 0, r[38], r[39], r[40], r[41], r[42], r[43], r[44], TopologyClass(topology), (PolygonMode)r[46],
+                    r[51] == 0 ? SampleCountFlags.Count1Bit : (SampleCountFlags)r[51]);
                 if (_sharedPipelines.ContainsKey(key)) continue;
                 var p = CreatePipeline(key, vs.Module, fs.Module, bindings, attrs, topology);
                 if (p.Handle == 0) { failed++; continue; }

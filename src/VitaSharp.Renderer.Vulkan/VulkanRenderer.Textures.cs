@@ -40,7 +40,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport();
 
     public string TextureCacheReport()
     {
@@ -78,6 +78,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(_dummyImage, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         _dummySampler = GetSampler(0, 0);
+        DummyMsView();
     }
 
     // =================================================================== samplers
@@ -159,14 +160,19 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // cached in _emptyFbSet for the renderer's lifetime: allocated from the persistent pool, not a frame pool
-    DescriptorSet BuildEmptyFbSet() => BuildSingleTextureSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, persistent: true);
+    DescriptorSet BuildEmptyFbSet() => BuildFetchSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, DummyMsView(), ImageLayout.General, persistent: true);
 
-    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout, bool persistent = false)
+    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout) => BuildFetchSet(view, layout, DummyMsView(), ImageLayout.General);
+
+    /// <summary>Framebuffer-fetch set: <paramref name="view"/> single-sampled, <paramref name="msView"/> multisampled.</summary>
+    DescriptorSet BuildFetchSet(ImageView view, ImageLayout layout, ImageView msView, ImageLayout msLayout, bool persistent = false)
     {
         var set = persistent ? AllocPersistentSet(_fbLayout) : AllocSet(_fbLayout);
-        var info = new DescriptorImageInfo(_dummySampler, view, layout);
-        var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
-        _vk.UpdateDescriptorSets(_dev, 1, &w, 0, null);
+        var info = stackalloc DescriptorImageInfo[2] { new(_dummySampler, view, layout), new(_dummySampler, msView, msLayout) };
+        var w = stackalloc WriteDescriptorSet[2];
+        for (int i = 0; i < 2; i++)
+            w[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info[i] };
+        _vk.UpdateDescriptorSets(_dev, 2, w, 0, null);
         return set;
     }
 
@@ -184,6 +190,7 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSet BuildFramebufferFetchSet()
     {
         if (_rt == null) return _emptyFbSet ??= BuildEmptyFbSet();
+        if (_ms) return BuildMsaaFetchSet();
         // A supersampled (MSAA downscale) scene rasterises at 2x, so gl_FragCoord addresses samples and the shader
         // must read the sample image, not the 1x surface (reading the surface put a half-size copy of the scene into
         // the top-left quarter of every programmable-blending pass). Each sample reads its own value, as on hardware;
@@ -238,20 +245,22 @@ public sealed unsafe partial class VulkanRenderer
             _rt.Dirty = true;
             SyncRenderTargetForRead(_rt);
         }
+        // only the draw's region clip is read (shaders fetch at their own fragment)
+        if (FetchRegion(SceneScale, w, h) is not (var offset, var extent)) return BuildSingleTextureSet(_fbCopyView, ImageLayout.General);
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            Extent = new Extent3D(w, h, 1),
+            SrcOffset = offset, DstOffset = offset, Extent = extent,
         };
         _vk.CmdCopyImage(Cmd, src, ImageLayout.General, _fbCopy, ImageLayout.General, 1, in copy);
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
-        if (ss != null) // the copy must finish before the scene renders into the samples again
-            Barrier(src, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
-                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
+        // the copy must finish before the scene renders into the samples / surface again
+        Barrier(src, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
+            AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
         return BuildSingleTextureSet(_fbCopyView, ImageLayout.General);
     }
 
@@ -472,7 +481,7 @@ public sealed unsafe partial class VulkanRenderer
             r.View = CreateView(r.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, RtSwizzle(rt, texFormat));
             _rtRegions[key] = r;
             BeginFrameIfNeeded();
-            EndRendering();
+            PauseRendering();
             Barrier(r.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
@@ -480,7 +489,7 @@ public sealed unsafe partial class VulkanRenderer
         r.Version = rt.Version;
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
-        EndRendering();
+        PauseRendering(rt);
         Barrier(r.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
@@ -540,14 +549,14 @@ public sealed unsafe partial class VulkanRenderer
             _rtAliases[key] = a;
             Log.WarnOnce($"rtalias-{addr:X8}-{d.Format:X8}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} reinterprets render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}");
             BeginFrameIfNeeded();
-            EndRendering();
+            PauseRendering();
             Barrier(a.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
         if (a.Source == rt && a.Version == rt.Version) return a.View;
         a.Source = rt;
         a.Version = rt.Version;
-        EndRendering();
+        PauseRendering(rt);
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.TransferWriteBit | AccessFlags.ShaderReadBit, AccessFlags.TransferReadBit);
         Barrier(a.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
@@ -673,7 +682,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void UploadTexture(Texture tex, GxmTextureDesc d, TexFormatInfo info, TexLayout layout, uint w, uint h, uint mips, uint faces, Format format, uint baseLevel = 0)
     {
-        EndRendering();
+        PauseRendering();
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
 
