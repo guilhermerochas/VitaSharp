@@ -368,11 +368,23 @@ public sealed unsafe partial class VulkanRenderer
         _traceSnaps.Add((_drawSerial + 10000, rt, buf, mem, ptr));
     }
 
-    void TraceSnapshot()
+    /// <summary>Debug: VITASHARP_SNAP_FS=FSHASH:FROM:TO snapshots colour and depth before every draw of that fragment
+    /// program in presented frames FROM..TO (files f{frame}_snap_*), e.g. to see what a mesh is drawn over.</summary>
+    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable("VITASHARP_SNAP_FS")?.Split(':') is { Length: 3 } sf
+        ? (Convert.ToUInt64(sf[0], 16), long.Parse(sf[1]), long.Parse(sf[2])) : null;
+
+    void TraceSnapshot(DrawCommand d)
     {
+        bool snapFs = SnapFs is { } sf && d.FragmentProgram.Info.Program.Hash == sf.Hash && _presentCount >= sf.From && _presentCount <= sf.To;
+        if (snapFs && _rt is { } srt) { TakeSnapshot(srt); return; }
         // snapshots are taken in the logged frame (draw ids match the draw trace) and written when it is presented
         if (TraceSnapSpec.Length == 0 || _opt.ShaderCacheDir == null || !TracingThisFrame || _rt is not { } rt) return;
         if (!TraceSnapIds.Contains(_drawSerial) && !TraceSnapTargets.Contains(rt.Address)) return;
+        TakeSnapshot(rt);
+    }
+
+    void TakeSnapshot(RenderTarget rt)
+    {
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8) return;
         var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
@@ -397,6 +409,8 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Writes the snapshots (called after the traced frame completed on the GPU).</summary>
     void WriteTraceSnapshots(string dir)
     {
+        Directory.CreateDirectory(dir);
+        string prefix = SnapFs != null ? $"f{_presentCount}_" : "";
         foreach (var (id, rt, buf, mem, ptr) in _traceSnaps)
         {
             int n = (int)(rt.Width * rt.Height);
@@ -413,8 +427,8 @@ public sealed unsafe partial class VulkanRenderer
                 if (rt.Format == Format.B8G8R8A8Unorm) (rgb[i * 4], rgb[i * 4 + 2]) = (rgb[i * 4 + 2], rgb[i * 4]);
                 rgb[i * 4 + 3] = alpha[i * 4 + 3] = 255;
             }
-            Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}.png"), rgb, (int)rt.Width, (int)rt.Height);
-            Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}_alpha.png"), alpha, (int)rt.Width, (int)rt.Height);
+            Png.Write(Path.Combine(dir, $"{prefix}snap_{id:D4}_rt_{rt.Address:X8}.png"), rgb, (int)rt.Width, (int)rt.Height);
+            if (SnapFs == null) Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}_alpha.png"), alpha, (int)rt.Width, (int)rt.Height);
             _core.DestroyBuffer(buf, mem);
         }
         _traceSnaps.Clear();
@@ -427,7 +441,7 @@ public sealed unsafe partial class VulkanRenderer
                 uint v = ((uint*)ptr)[i] & 0xFFFFFF;
                 img[i * 4] = (byte)(v >> 16); img[i * 4 + 1] = (byte)(v >> 8); img[i * 4 + 2] = (byte)v; img[i * 4 + 3] = 255;
             }
-            Png.Write(Path.Combine(dir, $"depth_{id:D4}.png"), img, (int)w, (int)h);
+            Png.Write(Path.Combine(dir, $"{prefix}depth_{id:D4}.png"), img, (int)w, (int)h);
             _core.DestroyBuffer(buf, mem);
         }
         _depthSnaps.Clear();
