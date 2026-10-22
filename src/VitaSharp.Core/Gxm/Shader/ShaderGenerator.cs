@@ -3,15 +3,22 @@ using System.Text;
 namespace VitaSharp.Core.Gxm.Shader;
 
 /// <summary>Information the shader translation depends on besides the program itself (part of the cache key).</summary>
-public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat)
+/// <param name="FetchInputAttachment">programmable blending reads the colour attachment as a multisampled input
+/// attachment (set 3 binding 2) instead of a copy of the target</param>
+public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
+    bool FetchInputAttachment = false)
 {
+    /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
+    public const uint FetchInputKey = 0x46494E50;
+
     /// <summary>Allocation-free FNV-1a key; <see cref="KeyOf"/> computes the same value straight from draw state.</summary>
     public ulong Key()
     {
         ulong h = Fnv.Offset;
         foreach (var t in TextureFormats) h = Fnv.Mix(h, t);
         foreach (var a in Attributes) { h = Fnv.Mix(h, a.RegIndex); h = Fnv.Mix(h, (uint)a.ComponentCount); h = Fnv.Mix(h, a.Format); }
-        return Fnv.Mix(h, ColorFormat);
+        h = Fnv.Mix(h, ColorFormat);
+        return FetchInputAttachment ? Fnv.Mix(h, FetchInputKey) : h;
     }
 
     public static class Fnv
@@ -59,7 +66,8 @@ public sealed class GeneratedShader
 /// <summary>
 /// Builds complete Vulkan GLSL for a GXP program. Descriptor layout:
 /// set 0 binding 0 = vertex uniform SSBO, binding 1 = fragment uniform SSBO;
-/// set 1 = vertex textures (binding = texture unit); set 2 = fragment textures; set 3 binding 0 = colour input attachment.
+/// set 1 = vertex textures (binding = texture unit); set 2 = fragment textures; set 3 = framebuffer fetch (binding 0 =
+/// single-sampled copy of the target, 1 = multisampled copy, 2 = multisampled colour input attachment).
 /// The render state lives in a push-constant block shared by both stages.
 /// </summary>
 public static class ShaderGenerator
@@ -70,7 +78,14 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 6;
+    public const int GeneratorVersion = 7;
+
+    /// <summary>
+    /// Programmable blending in a multisampled scene reads the sample the invocation shades (gl_SampleID, which makes
+    /// such shaders run per sample, like GXM's NATIVECOLOR_MSAA programs). Set to false by a renderer whose device
+    /// lacks sampleRateShading: the shaders then read sample 0. Part of the shader cache key.
+    /// </summary>
+    public static bool PerSampleFramebufferFetch = true;
 
     /// <summary>
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
@@ -87,6 +102,7 @@ layout(push_constant) uniform RenderInfo {
     float z_scale;
     float res_multiplier;
     float draw_id;
+    float fb_samples;
 } rinfo;
 """;
 
@@ -527,10 +543,25 @@ float packC10(vec3 c) {
         if (program.IsFragColorUsed)
         {
             result.UsesFragColor = true;
-            decl.AppendLine("layout(set = 3, binding = 0) uniform sampler2D last_frag_tex;");
             var target = Operand.Make(3); target.Bank = Bank.Output; target.Num = 0;
             target.Type = OutputType(program, hints);
-            var src = new Val("texelFetch(last_frag_tex, ivec2(gl_FragCoord.xy), 0)", 'f', 4);
+            string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
+            Val src;
+            if (hints.FetchInputAttachment)
+            {
+                // multisampled scene rendered in a render pass: the colour attachment itself is the input attachment
+                // (subpass self-dependency), read per sample
+                decl.AppendLine("layout(input_attachment_index = 0, set = 3, binding = 2) uniform subpassInputMS last_frag_in;");
+                src = new Val($"subpassLoad(last_frag_in, {sample})", 'f', 4);
+            }
+            else
+            {
+                // binding 0: single-sampled copy of the target; binding 1: multisampled copy (scenes rendered with
+                // real MSAA, rinfo.fb_samples > 1), read per sample
+                decl.AppendLine("layout(set = 3, binding = 0) uniform sampler2D last_frag_tex;");
+                decl.AppendLine("layout(set = 3, binding = 1) uniform sampler2DMS last_frag_ms;");
+                src = new Val($"(rinfo.fb_samples > 1.5 ? texelFetch(last_frag_ms, ivec2(gl_FragCoord.xy), {sample}) : texelFetch(last_frag_tex, ivec2(gl_FragCoord.xy), 0))", 'f', 4);
+            }
             if (!GxpProgram.IsFloat(target.Type)) src = t.ToInt(src, target.Type, true);
             t.Store(target, src, 0b1111);
         }

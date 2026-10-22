@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
 
@@ -29,7 +30,7 @@ public sealed unsafe partial class VulkanRenderer
         DepthTarget? best = null;
         foreach (var dt in _depthTargets.Values)
             if (dt.Address == addr && (best == null || dt.LastScene > best.LastScene)) best = dt;
-        return best;
+        return best != null && MultisampledDepthRead(best, false) ? null : best;
     }
 
     (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)

@@ -18,6 +18,8 @@ public sealed unsafe partial class VulkanRenderer
         public RenderTarget Shadow = null!;
         public ImageMemoryPool.Allocation Mem;
         public bool Valid;
+        /// <summary>Views in other formats (sRGB, raw integer) for the MSAA scene-start load.</summary>
+        public readonly Dictionary<Format, ImageView> Views = new();
     }
 
     readonly Dictionary<RenderTarget, SceneStartCopy> _sceneStartCopies = new();
@@ -44,6 +46,40 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_sceneStartCopies.TryGetValue(rt, out var c)) return c.Valid ? c.Shadow : rt;
         Log.WarnOnce($"selfsample-{rt.Address:X8}", $"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} is sampled while it is rendered: textures read its content from the start of the scene");
+        CreateSceneStartCopy(rt);
+        // usable from the next scene of this surface on
+        return rt;
+    }
+
+    /// <summary>Multisampled scenes always keep a scene-start copy: their first rendering loads the samples from it.</summary>
+    void EnsureSceneStartCopy(RenderTarget rt)
+    {
+        if (!_sceneStartCopies.ContainsKey(rt)) CreateSceneStartCopy(rt);
+    }
+
+    /// <summary>The scene-start copy viewed as <paramref name="format"/> (same texel size as the surface).</summary>
+    ImageView SceneStartCopyView(RenderTarget rt, Format format)
+    {
+        var c = _sceneStartCopies[rt];
+        if (format == c.Shadow.Format) return c.Shadow.View;
+        if (c.Views.TryGetValue(format, out var v)) return v;
+        return c.Views[format] = CreateView(c.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
+    }
+
+    void DestroySceneStartCopyLater(RenderTarget rt)
+    {
+        if (!_sceneStartCopies.Remove(rt, out var c)) return;
+        F.Deferred.Add(() =>
+        {
+            foreach (var v in c.Views.Values) _vk.DestroyImageView(_dev, v, null);
+            _vk.DestroyImageView(_dev, c.Shadow.View, null);
+            _vk.DestroyImage(_dev, c.Shadow.Image, null);
+            _imagePool.Free(c.Mem);
+        });
+    }
+
+    void CreateSceneStartCopy(RenderTarget rt)
+    {
         var (img, view, mem) = CreateImage(rt.Width, rt.Height, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
             ImageAspectFlags.ColorBit, mutable: true);
         var shadow = new RenderTarget
@@ -52,8 +88,6 @@ public sealed unsafe partial class VulkanRenderer
             Image = img, View = view, Version = 0,
         };
         _sceneStartCopies[rt] = new SceneStartCopy { Shadow = shadow, Mem = mem };
-        // usable from the next scene of this surface on
-        return rt;
     }
 
     /// <summary>Called when a scene begins: refreshes the copy of a surface that its own draws sample.</summary>

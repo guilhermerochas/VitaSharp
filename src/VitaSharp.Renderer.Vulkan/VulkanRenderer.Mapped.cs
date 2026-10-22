@@ -131,7 +131,7 @@ public sealed unsafe partial class VulkanRenderer
             best = dt;
             stencil = !inDepth;
         }
-        return best;
+        return best != null && MultisampledDepthRead(best, stencil) ? null : best;
     }
 
     static int HostBytesPerPixel(Format f) => f switch

@@ -21,6 +21,8 @@ public sealed unsafe partial class VulkanRenderer
     struct PushConstants
     {
         public float ViewportFlag, ScreenWidth, ScreenHeight, ZOffset, ZScale, ResMultiplier, DrawId;
+        /// <summary>Samples of the framebuffer-fetch copy: above 1 the shaders read the multisampled binding.</summary>
+        public float FbSamples;
     }
 
     void CreateLayouts()
@@ -36,7 +38,14 @@ public sealed unsafe partial class VulkanRenderer
 
         _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, 16);
         _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, 16);
-        _fbLayout = TextureSetLayout(ShaderStageFlags.FragmentBit, 1);
+        // binding 0: single-sampled framebuffer copy, binding 1: multisampled copy (real MSAA scenes), binding 2: the
+        // multisampled colour attachment as input attachment (real MSAA scenes rendered in render passes)
+        var fb = stackalloc DescriptorSetLayoutBinding[3];
+        fb[0] = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        fb[1] = new DescriptorSetLayoutBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        fb[2] = new DescriptorSetLayoutBinding(2, DescriptorType.InputAttachment, 1, ShaderStageFlags.FragmentBit);
+        var fbci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 3, PBindings = fb };
+        _vk.CreateDescriptorSetLayout(_dev, in fbci, null, out _fbLayout).Ok("set layout");
 
         var layouts = stackalloc DescriptorSetLayout[4] { _uboLayout, _texLayoutV, _texLayoutF, _fbLayout };
         var pcr = new PushConstantRange(ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants));
@@ -77,14 +86,15 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSet AllocSet(DescriptorSetLayout layout)
     {
         var f = F;
-        var sizes = stackalloc DescriptorPoolSize[2]; // outside the loop (CA2014)
+        var sizes = stackalloc DescriptorPoolSize[3]; // outside the loop (CA2014)
         while (true)
         {
             if (f.DescPoolIndex >= f.DescPools.Count)
             {
                 sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 4 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
-                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 2, PPoolSizes = sizes };
+                sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 8192);
+                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 3, PPoolSizes = sizes };
                 _vk.CreateDescriptorPool(_dev, in pci, null, out var pool).Ok("descriptor pool");
                 f.DescPools.Add(pool);
             }
@@ -127,13 +137,14 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat)
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
         if (attrs != null)
             foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, a.Format); }
-        return ShaderHints.Fnv.Mix(h, colorFormat);
+        h = ShaderHints.Fnv.Mix(h, colorFormat);
+        return fetchInput ? ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey) : h;
     }
 
     static uint[] TextureFormats(GxmTextureDesc[] tex, uint used)
@@ -198,6 +209,9 @@ public sealed unsafe partial class VulkanRenderer
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat);
 
+    static ShaderHints FragmentHintsInputFetch(DrawCommand d, uint colorFormat) =>
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true);
+
     ShaderModule CreateShaderModule(ReadOnlySpan<byte> spv)
     {
         fixed (byte* p = spv)
@@ -242,13 +256,14 @@ public sealed unsafe partial class VulkanRenderer
         return e;
     }
 
-    FsEntry GetFragmentShader(DrawCommand d)
+    /// <param name="fetchInput">the variant whose programmable blending reads the input attachment</param>
+    FsEntry GetFragmentShader(DrawCommand d, bool fetchInput = false)
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
-        var me = GetModule(fp.Info.Program, hk, FragmentHints, d, colorFormat);
+        var me = GetModule(fp.Info.Program, hk, fetchInput ? FragmentHintsInputFetch : FragmentHints, d, colorFormat);
         e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
         _fsCache[(fp, hk)] = e;
         return e;
@@ -325,7 +340,7 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -408,7 +423,7 @@ public sealed unsafe partial class VulkanRenderer
                 // no near-plane clipping, depth clamped per fragment (the vertex shader clips the far plane itself)
                 DepthClampEnable = _core.DepthClamp,
             };
-            var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
+            var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = key.Samples };
             var ds = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.LessOrEqual };
             var att = new PipelineColorBlendAttachmentState
             {
@@ -440,10 +455,14 @@ public sealed unsafe partial class VulkanRenderer
                 DepthAttachmentFormat = _core.DepthFormat,
                 StencilAttachmentFormat = _core.DepthFormat,
             };
+            // multisampled scenes render in render passes (input attachments for programmable blending)
+            bool msPass = key.Samples != SampleCountFlags.Count1Bit;
             var gci = new GraphicsPipelineCreateInfo
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
-                PNext = &rendering,
+                PNext = msPass ? null : &rendering,
+                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples) : default,
+                Subpass = 0,
                 StageCount = 2,
                 PStages = stages,
                 PVertexInputState = &vi,
@@ -522,7 +541,15 @@ public sealed unsafe partial class VulkanRenderer
         SetDrawArea(in st);
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed);
-        var fbSet = fs.Gen!.UsesFragColor ? BuildFramebufferFetchSet() : _emptyFbSet ??= BuildEmptyFbSet();
+        // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
+        // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
+        bool inputFetch = fs.Gen!.UsesFragColor && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
+        if (inputFetch)
+        {
+            fs = GetFragmentShader(d, fetchInput: true);
+            if (fs.Failed) return;
+        }
+        var fbSet = inputFetch ? BuildMsaaInputFetchSet() : fs.Gen!.UsesFragColor ? BuildFramebufferFetchSet() : _emptyFbSet ??= BuildEmptyFbSet();
 
         // ---- pipeline
         var topology = Formats.Topology(d.PrimitiveType);
@@ -545,6 +572,11 @@ public sealed unsafe partial class VulkanRenderer
                 return;
             }
             if (!_rawFormatOk.TryGetValue(attachFormat, out bool ok)) _rawFormatOk[attachFormat] = ok = _core.SupportsUnblendedColorAttachment(attachFormat);
+            if (ok && _ms && (_core.ImageSampleCounts(attachFormat, ImageUsageFlags.ColorAttachmentBit) & _msSamples) == 0)
+            {
+                Log.WarnOnce($"raw-ms-{attachFormat}-{_msSamples}", $"[gpu] {attachFormat} cannot be multisampled ({_msSamples}) on this GPU: raw fragment outputs in MSAA scenes skipped");
+                return;
+            }
             if (!ok)
             {
                 Log.WarnOnce($"raw-att-{attachFormat}", $"[gpu] {attachFormat} is not a colour attachment format on this GPU: raw fragment outputs skipped");
@@ -556,7 +588,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode));
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (pipeline.Handle == 0) return;
 
@@ -607,6 +639,7 @@ public sealed unsafe partial class VulkanRenderer
         if (raw) _rawFormat = attachFormat;
         BeginRendering();
         var cmd = Cmd;
+        if (inputFetch) InputFetchBarrier(cmd);
         if (_boundPipeline.Handle != pipeline.Handle)
         {
             _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -642,7 +675,8 @@ public sealed unsafe partial class VulkanRenderer
     {
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
-        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial };
+        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial,
+            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1 };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;
