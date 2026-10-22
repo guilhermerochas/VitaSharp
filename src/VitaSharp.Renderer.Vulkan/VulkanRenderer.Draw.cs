@@ -520,8 +520,8 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- textures (may need to leave the render pass)
         SetDrawArea(in st);
-        var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed);
-        var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed);
+        var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
+        var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
         var fbSet = fs.Gen!.UsesFragColor ? BuildFramebufferFetchSet() : _emptyFbSet ??= BuildEmptyFbSet();
 
         // ---- pipeline

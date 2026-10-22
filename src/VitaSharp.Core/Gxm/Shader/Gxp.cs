@@ -152,6 +152,15 @@ public sealed class GxpProgram
         return m;
     }
 
+    /// <summary>Bitmask of texture units (0..15) whose sampler parameter is a samplerCube.</summary>
+    public uint CubeSamplers()
+    {
+        uint m = 0;
+        foreach (var p in Parameters)
+            if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16 && p.IsSamplerCube) m |= 1u << (int)p.ResourceIndex;
+        return m;
+    }
+
     // ---- vertex outputs (gxp::get_vertex_outputs)
     public const int OutPosition = 1 << 0, OutFog = 1 << 1, OutColor0 = 1 << 2, OutColor1 = 1 << 3, OutTexcoord0 = 1 << 4, OutPsize = 1 << 14;
 

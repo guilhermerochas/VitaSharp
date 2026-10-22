@@ -13,6 +13,8 @@ public sealed class GxmProgramInfo
     public required List<UniformBufferSlot> UniformSlots;
     public required int UniformBytes;
     public required uint TexturesUsed;
+    /// <summary>Texture units the program samples as cube maps (samplerCube parameters).</summary>
+    public uint CubeSamplers;
 
     static readonly ConcurrentDictionary<uint, GxmProgramInfo> Cache = new();
 
@@ -26,7 +28,7 @@ public sealed class GxmProgramInfo
         }
         var p = GxpProgram.FromGuest(address);
         var (slots, bytes) = ShaderGenerator.UniformLayout(p);
-        info = new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed() };
+        info = new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed(), CubeSamplers = p.CubeSamplers() };
         Cache[address] = info;
         return info;
     }

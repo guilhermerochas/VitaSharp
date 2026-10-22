@@ -123,7 +123,7 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== descriptor sets
 
-    DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used)
+    DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         var set = AllocSet(layout);
         var infos = stackalloc DescriptorImageInfo[16];
@@ -135,9 +135,14 @@ public sealed unsafe partial class VulkanRenderer
             Sampler sampler = _dummySampler;
             ImageLayout layout2 = ImageLayout.ShaderReadOnlyOptimal;
             bool cubeType = desc.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
+            // a 2D texture bound to a samplerCube (Resistance's window reflections): binding the 2D view there is
+            // undefined in Vulkan (NVIDIA returned saturated red), so the texture is read as a cube whose six faces
+            // are the 2D image
+            bool asCube = !cubeType && (cubeSamplers & (1u << i)) != 0;
+            if (asCube) cubeType = true;
             if ((used & (1u << i)) != 0 && !desc.IsNull)
             {
-                var (v, l) = ResolveTexture(desc);
+                var (v, l) = ResolveTexture(desc, asCube);
                 if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); }
                 else if (cubeType) view = _dummyCubeView;
             }
@@ -252,11 +257,14 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== texture resolution
 
-    (ImageView, ImageLayout) ResolveTexture(GxmTextureDesc d)
+    (ImageView, ImageLayout) ResolveTexture(GxmTextureDesc d, bool asCube = false)
     {
         uint addr = d.DataAddress;
         uint w = d.Width, h = d.Height;
         bool gamma = d.GammaMode != 0;
+        // a 2D texture sampled as a cube: only plain square textures (rendered surfaces keep the dummy cube)
+        if (asCube && (w != h || RenderTargetContaining(addr) != null)) return (default, default);
+        if (asCube) return ResolveMemoryTexture(d, addr, w, h, gamma, asCube);
         // LOD min on a texture whose base level is a rendered surface: the sampler never reads level 0, it reads the
         // smaller levels that follow it in memory (which are usually not part of the surface)
         if (d.LodMin > 0 && d.MipCount > 1 && d.TextureType is not (GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
@@ -308,17 +316,25 @@ public sealed unsafe partial class VulkanRenderer
             }
             return (rt.SampledView, ImageLayout.General);
         }
+        return ResolveMemoryTexture(d, addr, w, h, gamma, false);
+    }
 
-        var key = new TexKey(addr, d.Format, w, h, d.TextureType, d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
+    /// <summary>A texture read from guest memory (cached, re-uploaded when its memory changes). <paramref name="asCube"/>:
+    /// a 2D texture uploaded into all six faces of a cube image.</summary>
+    (ImageView, ImageLayout) ResolveMemoryTexture(GxmTextureDesc d, uint addr, uint w, uint h, bool gamma, bool asCube)
+    {
+        var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         _textures.TryGetValue(key, out var tex);
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
         if (tex != null && tex.CheckedFrame == FrameCount) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
 
         var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
-        bool cube = d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
+        bool cube = asCube || d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
         uint faces = cube ? 6u : 1u;
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
-        var layout = ComputeLayout(d, info, w, h, mips, faces);
+        // as a cube, every face reads the same memory
+        var layout = asCube ? ComputeLayout(d, info, w, h, mips, 1) with { FaceStride = 0 } : ComputeLayout(d, info, w, h, mips, faces);
+        if (asCube) Log.WarnOnce($"tex2dcube{addr:X8}", $"[gpu] 2D texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} is sampled as a cube map: its image is used for all six faces");
         uint total = layout.TotalBytes;
         // LOD min (texture streaming): levels below it are not resident, so the texture is uploaded from that level on
         uint lodMin = Math.Min(d.LodMin, mips - 1);
