@@ -80,6 +80,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
+    [Hle("sceIoClose2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same argument
     int sceIoClose(int fd)
     {
         if (fd is >= 0x10 and <= 0x12) return 0;
@@ -89,6 +90,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
+    [Hle("sceIoRead2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same arguments
     int sceIoRead(int fd, uint buf, uint size)
     {
         if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
@@ -106,6 +108,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
+    [Hle("sceIoWrite2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same arguments
     int sceIoWrite(int fd, uint buf, uint size)
     {
         if (fd is 0x11 or 0x12)
