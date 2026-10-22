@@ -102,6 +102,14 @@ public ref struct OnceKeyHandler
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void AppendFormatted<T>(T value, string? format)
     {
+        // the common key holes (addresses, ids) are formatted without the interface cast: the JIT only removes the box
+        // of `(ISpanFormattable)value` for optimised IL, so Debug builds allocated 24 bytes per seen key
+        if (typeof(T) == typeof(uint)) { Append(Unsafe.As<T, uint>(ref value), format); return; }
+        if (typeof(T) == typeof(int)) { Append(Unsafe.As<T, int>(ref value), format); return; }
+        if (typeof(T) == typeof(ulong)) { Append(Unsafe.As<T, ulong>(ref value), format); return; }
+        if (typeof(T) == typeof(long)) { Append(Unsafe.As<T, long>(ref value), format); return; }
+        if (typeof(T) == typeof(ushort)) { Append(Unsafe.As<T, ushort>(ref value), format); return; }
+        if (typeof(T) == typeof(byte)) { Append(Unsafe.As<T, byte>(ref value), format); return; }
         if (value is ISpanFormattable)
         {
             int written;
@@ -109,6 +117,13 @@ public ref struct OnceKeyHandler
             _pos += written;
         }
         else AppendFormatted(value is IFormattable f ? f.ToString(format, null) : value?.ToString());
+    }
+
+    void Append<TF>(TF value, string? format) where TF : ISpanFormattable
+    {
+        int written;
+        while (!value.TryFormat(_buf.AsSpan(_pos), out written, format, null)) Grow(64);
+        _pos += written;
     }
 }
 
