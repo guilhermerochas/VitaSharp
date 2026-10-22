@@ -167,6 +167,8 @@ public sealed class Emulator : IDisposable
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
+        foreach (uint nid in Linker.UnresolvedVariables())
+            Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"})");
     }
 
     uint ProcessParamField(int offset)
