@@ -245,5 +245,6 @@ public static class Program
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
+        Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
     }
 }
