@@ -105,7 +105,11 @@ public static class TextureDecoder
 
         int bpp = bits / 8;
         var linear = Gather(addr, w, h, rowPitch, bpp, swizzled, tiled, halfBytes: false);
-        if (info.Convert is TexConvert.None) return linear;
+        if (info.Convert is TexConvert.None)
+        {
+            if (IsU5U5U5U1(d.Format)) U5U5U5U1ToU1U5U5U5(linear.Span[..(int)(w * h * 2)]);
+            return linear;
+        }
         using (linear)
         {
             var src = linear.Span;
@@ -121,6 +125,17 @@ public static class TextureDecoder
                 _ => Unhandled(info, src),
             };
         }
+    }
+
+    /// <summary>U1U5U5U5 with a RGBA/BGRA/RGB1/BGR1 swizzle keeps its 1-bit field in bit 0 (U5U5U5U1).</summary>
+    public static bool IsU5U5U5U1(uint format) =>
+        GxmFormats.BaseOf(format) == TexBase.U1U5U5U5 && (GxmFormats.SwizzleOf(format) >> 12) is 2 or 3 or 6 or 7;
+
+    /// <summary>Moves the 1-bit field from bit 0 to bit 15 so the texels fit A1R5G5B5 (the 5-bit fields keep their order).</summary>
+    static void U5U5U5U1ToU1U5U5U5(Span<byte> texels)
+    {
+        var px = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(texels);
+        for (int i = 0; i < px.Length; i++) px[i] = (ushort)((px[i] >> 1) | (px[i] << 15));
     }
 
     static Texels Unhandled(TexFormatInfo info, ReadOnlySpan<byte> data)
