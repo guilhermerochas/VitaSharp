@@ -11,20 +11,24 @@ public sealed class LauncherApp : Application
 {
     public override void Initialize()
     {
-        Styles.Add(new FluentTheme());
+        // the launcher's blue accent everywhere (check boxes, sliders, tabs), not the OS accent colour
+        Styles.Add(new FluentTheme { Palettes = { [ThemeVariant.Dark] = new ColorPaletteResources { Accent = LauncherTheme.AccentColor } } });
         RequestedThemeVariant = ThemeVariant.Dark;
     }
+
+    /// <summary>Replaces the library window (ui-snapshot renders the settings screens instead).</summary>
+    internal static Action<IClassicDesktopStyleApplicationLifetime>? StartupOverride;
 
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow();
+            if (StartupOverride != null) StartupOverride(desktop); else desktop.MainWindow = new MainWindow();
         base.OnFrameworkInitializationCompleted();
     }
 
     public static int Run(string[] args)
     {
-        HideOwnConsole();
+        if (StartupOverride == null) HideOwnConsole();
         return AppBuilder.Configure<LauncherApp>()
             .UsePlatformDetect()
             .LogToTrace()

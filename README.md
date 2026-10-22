@@ -122,8 +122,9 @@ libraries; there is no prebuilt macOS build, so VitaSharp uses Homebrew's (`/opt
 the folder named by `VITASHARP_FFMPEG`. To build offline, pass `-p:VitaSharpSkipFFmpeg=true` (videos and MP3/AAC
 audio are then disabled). Details in [`third_party/ffmpeg`](third_party/ffmpeg/README.md).
 
-Other native libraries come from NuGet for every platform: GLFW (window), OpenAL Soft (audio), shaderc (shader
-compiler), Skia (launcher UI). The webcam (SceCamera) uses DirectShow / Media Foundation on Windows, V4L2 on Linux and
+Other native libraries come from NuGet for every platform: GLFW (window), OpenAL Soft (audio), SDL2 (game
+controllers), shaderc (shader compiler), Skia (launcher UI). Without SDL2 the keyboard still works and gamepads fall
+back to GLFW (no touch pads, no hot-plug list in the settings). The webcam (SceCamera) uses DirectShow / Media Foundation on Windows, V4L2 on Linux and
 AVFoundation on macOS; without a camera, or when access is denied, games get "no camera".
 
 ### Build
@@ -223,7 +224,18 @@ Common `run` options:
 | Front touch / rear touch | Left / right mouse button |
 | Fullscreen | `F11` |
 
-Gamepads are detected automatically.
+These are the defaults. Gamepads are detected automatically (including hot-plug) through SDL2 and its controller
+database: the layout is positional, so the bottom face button is Cross on Xbox, PlayStation and Nintendo pads alike,
+both bumpers and triggers act as L / R, and a DualShock 4 / DualSense touch pad touches the front screen (the rear pad
+while L2 is held, both while R2 is held).
+
+**Settings > Controles** in the launcher shows a live drawing of the Vita's controls for the keyboard or the selected
+controller (pressed buttons light up, the stick dots move inside their deadzone ring) and remaps any control: click it,
+then press a button, move a stick or press a key. Per controller: swap Cross / Circle, deadzone, sensitivity and
+invert Y per stick, a button or key held as a front / rear touch at a chosen point, reset to default. Profiles are kept
+per controller (GUID, then name) in `input.json` in the data folder and load automatically when that controller
+connects; extra SDL mappings can be added in `<data>/gamecontrollerdb.txt`. `pad-test` lists the connected
+controllers and prints their mapped input.
 
 ### Data folder
 
