@@ -16,10 +16,10 @@ namespace VitaSharp.Desktop.Launcher;
 /// <summary>Game library: lists installed titles, installs new ones and launches the emulator for the selected game.</summary>
 public sealed class MainWindow : Window
 {
-    static readonly IBrush Accent = new SolidColorBrush(Color.Parse("#3D7BFF"));
-    static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#9AA3B2"));
-    static readonly IBrush Panel = new SolidColorBrush(Color.Parse("#1B1F27"));
-    static readonly IBrush WindowBackground = new SolidColorBrush(Color.Parse("#12151B"));
+    static readonly IBrush Accent = LauncherTheme.Accent;
+    static readonly IBrush Muted = LauncherTheme.Muted;
+    static readonly IBrush Panel = LauncherTheme.Panel;
+    static readonly IBrush WindowBackground = LauncherTheme.WindowBackground;
 
     readonly LauncherSettings _settings = LauncherSettings.Load();
     readonly ObservableCollection<GameEntry> _visible = new();
@@ -547,75 +547,7 @@ public sealed class MainWindow : Window
 
     // ------------------------------------------------------------------ dialogs
 
-    async Task OpenSettings()
-    {
-        var fullscreen = new CheckBox { Content = "Start games in fullscreen (F11 toggles in game)", IsChecked = _settings.Fullscreen };
-        var vsync = new CheckBox { Content = "VSync", IsChecked = _settings.VSync };
-        var validation = new CheckBox { Content = "Vulkan validation layers (debugging, slow)", IsChecked = _settings.Validation };
-        var scale = new ComboBox { ItemsSource = new[] { "1x (960×544)", "2x (1920×1088)", "3x (2880×1632)" }, SelectedIndex = Math.Clamp(_settings.Scale - 1, 0, 2), Width = 200 };
-        var scaleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        scaleRow.Children.Add(new TextBlock { Text = "Window size", VerticalAlignment = VerticalAlignment.Center });
-        scaleRow.Children.Add(scale);
-        // camera: "" = first device, "none" = disabled, otherwise a device name
-        var cameraValues = new List<string> { "", "none" };
-        var cameraLabels = new List<string> { "Default (first camera)", "None (grey image)" };
-        foreach (var d in VitaSharp.Desktop.Host.FlashCapCamera.ListDevices()) { cameraValues.Add(d.Name); cameraLabels.Add(d.Name); }
-        if (!cameraValues.Contains(_settings.Camera, StringComparer.OrdinalIgnoreCase)) { cameraValues.Add(_settings.Camera); cameraLabels.Add(_settings.Camera + " (not connected)"); }
-        var camera = new ComboBox
-        {
-            ItemsSource = cameraLabels, Width = 260,
-            SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(_settings.Camera, StringComparison.OrdinalIgnoreCase))),
-        };
-        // CPU backend: "" = best supported on this PC, else --cpu=native|il|interp
-        string[] cpuValues = ["", "native", "il", "interp"];
-        var cpu = new ComboBox
-        {
-            ItemsSource = new[] { "Auto (best for this PC)", "Native JIT (x64 machine code)", "IL JIT (.NET DynamicMethod)", "Interpreter (slowest, debugging)" },
-            Width = 260, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(_settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
-        };
-        var cpuRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        cpuRow.Children.Add(new TextBlock { Text = "CPU", VerticalAlignment = VerticalAlignment.Center });
-        cpuRow.Children.Add(cpu);
-        var cameraRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        cameraRow.Children.Add(new TextBlock { Text = "Camera", VerticalAlignment = VerticalAlignment.Center });
-        cameraRow.Children.Add(camera);
-        var keys = new TextBlock
-        {
-            Foreground = Muted, TextWrapping = TextWrapping.Wrap,
-            Text = "Keyboard: arrows = D-pad, X/Space = Cross, C = Circle, Z = Square, V = Triangle, Q/E = L/R, Enter = Start, " +
-                   "Backspace = Select, WASD = left stick, IJKL = right stick, F11 = fullscreen. Mouse = front touch screen. Gamepads are detected automatically.",
-        };
-        var ok = new Button { Content = "Save", Background = Accent, Foreground = Brushes.White, IsDefault = true };
-        var cancel = new Button { Content = "Cancel", IsCancel = true };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(ok);
-        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = "Settings", FontSize = 18, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(fullscreen);
-        panel.Children.Add(scaleRow);
-        panel.Children.Add(vsync);
-        panel.Children.Add(validation);
-        panel.Children.Add(cameraRow);
-        panel.Children.Add(cpuRow);
-        panel.Children.Add(keys);
-        panel.Children.Add(new TextBlock { Text = "Data folder: " + Program.DataRoot, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(buttons);
-        var dlg = new Window { Title = "Settings", Width = 460, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
-        ok.Click += (_, _) =>
-        {
-            _settings.Fullscreen = fullscreen.IsChecked == true;
-            _settings.VSync = vsync.IsChecked == true;
-            _settings.Validation = validation.IsChecked == true;
-            _settings.Scale = scale.SelectedIndex + 1;
-            _settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
-            _settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
-            _settings.Save();
-            dlg.Close();
-        };
-        cancel.Click += (_, _) => dlg.Close();
-        await dlg.ShowDialog(this);
-    }
+    async Task OpenSettings() => await new SettingsDialog(_settings).ShowDialog(this);
 
     async Task ShowMessage(string title, string message)
     {
