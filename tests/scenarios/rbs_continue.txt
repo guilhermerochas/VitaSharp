@@ -1,0 +1,4 @@
+# Resistance: Burning Skies with an existing save: boot, dismiss the save prompt, Single Player > Continue, skip, walk forward past the fire truck
+title=PCSA00008
+data=C:\Users\guisa\AppData\Roaming\VitaSharp
+args=--frames=7000 --seconds=700 --dump-every=50 --input=tap@f900:0.5:0.66:f10,cross@f1300:f10,tap@f1600:0.28:0.33:f10,tap@f1900:0.28:0.24:f10,cross@f2300:f10,cross@f2700:f10,cross@f3100:f10,cross@f3500:f10,lstick@f4600:0:-1:f600,rstick@f5200:1:0:f30,lstick@f5300:0:-1:f600,rstick@f5900:-1:0:f60,lstick@f6000:0:-1:f800
