@@ -6,7 +6,9 @@ using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using VitaSharp.Core;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
+using VitaSharp.Desktop.Input;
 using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Desktop.Host;
@@ -18,7 +20,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     IInputContext? _input;
     volatile int _fbW, _fbH;
     readonly object _inputLock = new();
-    ControllerState _keys = ControllerState.Neutral;
+    // keyboard + controllers through the input.json profiles (SDL controllers, defaults when no profile exists)
+    readonly HostInput _hostInput = new(Program.DataRoot);
+    readonly PadSnapshot _fallbackPad = new();
+    long _lastFallbackPoll;
     readonly List<TouchPoint> _touches = new();
     // rear touch panel: right mouse button (the Vita's back panel has no screen, so the window maps onto its full area)
     readonly List<TouchPoint> _backTouches = new();
@@ -51,6 +56,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _window.Load += OnLoad;
         _window.Closing += () => Closing?.Invoke();
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
+        // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
+        _window.Update += _ =>
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250) return;
+            _lastFallbackPoll = now;
+            PollFallbackGamepad();
+        };
     }
 
     /// <summary>
@@ -135,36 +148,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     // ---------------------------------------------------------------- input
 
-    static readonly Dictionary<Key, VitaButtons> KeyMap = new()
-    {
-        [Key.Up] = VitaButtons.Up, [Key.Down] = VitaButtons.Down, [Key.Left] = VitaButtons.Left, [Key.Right] = VitaButtons.Right,
-        [Key.X] = VitaButtons.Cross, [Key.C] = VitaButtons.Circle, [Key.Z] = VitaButtons.Square, [Key.V] = VitaButtons.Triangle,
-        [Key.Q] = VitaButtons.LTrigger, [Key.E] = VitaButtons.RTrigger, [Key.Enter] = VitaButtons.Start, [Key.Backspace] = VitaButtons.Select,
-        [Key.ShiftRight] = VitaButtons.Select, [Key.Space] = VitaButtons.Cross,
-    };
-
     void OnKey(Key key, bool down)
     {
-        lock (_inputLock)
-        {
-            if (KeyMap.TryGetValue(key, out var b))
-            {
-                if (down) _keys.Buttons |= b; else _keys.Buttons &= ~b;
-            }
-            byte v = down ? (byte)0 : (byte)128, v2 = down ? (byte)255 : (byte)128;
-            switch (key)
-            {
-                case Key.A: _keys.Lx = down ? (byte)0 : (byte)128; break;
-                case Key.D: _keys.Lx = v2; break;
-                case Key.W: _keys.Ly = v; break;
-                case Key.S: _keys.Ly = v2; break;
-                case Key.J: _keys.Rx = v; break;
-                case Key.L: _keys.Rx = v2; break;
-                case Key.I: _keys.Ry = v; break;
-                case Key.K: _keys.Ry = v2; break;
-                case Key.F11 when down: ToggleFullscreen(); break;
-            }
-        }
+        if (key == Key.F11 && down) { ToggleFullscreen(); return; }
+        // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
+        _hostInput.KeyChanged(key.ToString(), down);
     }
 
     void ToggleFullscreen() => _window.WindowState = _window.WindowState == WindowState.Fullscreen ? WindowState.Normal : WindowState.Fullscreen;
@@ -184,58 +172,69 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         }
     }
 
-    static byte Axis(float v) => (byte)Math.Clamp((int)((v + 1) * 127.5f), 0, 255);
-
-    public ControllerState GetController(int port)
+    /// <summary>
+    /// GLFW gamepads, used only when SDL (the normal controller backend) could not be loaded: the first connected
+    /// gamepad is handed to the mapper in the standard layout.
+    /// </summary>
+    void PollFallbackGamepad()
     {
-        ControllerState s;
-        lock (_inputLock) s = _keys;
-        var pads = _input?.Gamepads;
-        if (pads != null)
+        if (_hostInput.ControllersAvailable || _input == null) return;
+        foreach (var g in _input.Gamepads)
         {
-            foreach (var g in pads)
+            if (!g.IsConnected) continue;
+            _fallbackPad.Clear();
+            _fallbackPad.IsGamepad = true;
+            foreach (var b in g.Buttons)
             {
-                if (!g.IsConnected) continue;
-                foreach (var b in g.Buttons)
+                PadButton? pb = b.Name switch
                 {
-                    if (!b.Pressed) continue;
-                    s.Buttons |= b.Name switch
-                    {
-                        ButtonName.A => VitaButtons.Cross, ButtonName.B => VitaButtons.Circle, ButtonName.X => VitaButtons.Square, ButtonName.Y => VitaButtons.Triangle,
-                        ButtonName.LeftBumper => VitaButtons.LTrigger, ButtonName.RightBumper => VitaButtons.RTrigger, ButtonName.Start => VitaButtons.Start, ButtonName.Back => VitaButtons.Select,
-                        ButtonName.DPadUp => VitaButtons.Up, ButtonName.DPadDown => VitaButtons.Down, ButtonName.DPadLeft => VitaButtons.Left, ButtonName.DPadRight => VitaButtons.Right,
-                        ButtonName.LeftStick => VitaButtons.L3, ButtonName.RightStick => VitaButtons.R3,
-                        _ => VitaButtons.None,
-                    };
-                }
-                if (g.Thumbsticks.Count > 0) { s.Lx = Axis(g.Thumbsticks[0].X); s.Ly = Axis(g.Thumbsticks[0].Y); }
-                if (g.Thumbsticks.Count > 1) { s.Rx = Axis(g.Thumbsticks[1].X); s.Ry = Axis(g.Thumbsticks[1].Y); }
-                if (g.Triggers.Count > 0 && g.Triggers[0].Position > 0.5f) s.Buttons |= VitaButtons.LTrigger; // the handheld has a single L/R pair (SCE_CTRL_LTRIGGER/RTRIGGER)
-                if (g.Triggers.Count > 1 && g.Triggers[1].Position > 0.5f) s.Buttons |= VitaButtons.RTrigger;
-                break;
+                    ButtonName.A => PadButton.South, ButtonName.B => PadButton.East, ButtonName.X => PadButton.West, ButtonName.Y => PadButton.North,
+                    ButtonName.LeftBumper => PadButton.LeftShoulder, ButtonName.RightBumper => PadButton.RightShoulder,
+                    ButtonName.Start => PadButton.Start, ButtonName.Back => PadButton.Back, ButtonName.Home => PadButton.Guide,
+                    ButtonName.DPadUp => PadButton.DpadUp, ButtonName.DPadDown => PadButton.DpadDown,
+                    ButtonName.DPadLeft => PadButton.DpadLeft, ButtonName.DPadRight => PadButton.DpadRight,
+                    ButtonName.LeftStick => PadButton.LeftStick, ButtonName.RightStick => PadButton.RightStick,
+                    _ => null,
+                };
+                if (pb is { } p) _fallbackPad.Buttons[(int)p] = b.Pressed;
             }
+            if (g.Thumbsticks.Count > 0) { _fallbackPad.Axes[0] = g.Thumbsticks[0].X; _fallbackPad.Axes[1] = g.Thumbsticks[0].Y; }
+            if (g.Thumbsticks.Count > 1) { _fallbackPad.Axes[2] = g.Thumbsticks[1].X; _fallbackPad.Axes[3] = g.Thumbsticks[1].Y; }
+            // GLFW triggers rest at -1
+            if (g.Triggers.Count > 0) _fallbackPad.Axes[4] = Math.Clamp((g.Triggers[0].Position + 1) / 2, 0, 1);
+            if (g.Triggers.Count > 1) _fallbackPad.Axes[5] = Math.Clamp((g.Triggers[1].Position + 1) / 2, 0, 1);
+            _hostInput.SetFallbackPad(_fallbackPad, g.Name, g.Name);
+            return;
         }
-        return s;
+        _hostInput.SetFallbackPad(null, "", "");
     }
+
+    public ControllerState GetController(int port) => _hostInput.Poll().State;
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
-        lock (_inputLock) return back ? _backTouches.ToArray() : _touches.ToArray();
+        Span<TouchPoint> buf = stackalloc TouchPoint[16];
+        int n = GetTouches(back, buf);
+        return buf[..n].ToArray();
     }
 
     public int GetTouches(bool back, Span<TouchPoint> dest)
     {
+        int n;
         lock (_inputLock)
         {
             var list = back ? _backTouches : _touches;
-            int n = Math.Min(list.Count, dest.Length);
+            n = Math.Min(list.Count, dest.Length);
             for (int i = 0; i < n; i++) dest[i] = list[i];
-            return n;
         }
+        // touch pad fingers and buttons mapped to a touch point
+        var m = _hostInput.Poll();
+        return n + m.CopyTouches(back, dest[n..]);
     }
 
     public void Dispose()
     {
+        _hostInput.Dispose();
         _input?.Dispose();
         _window.Dispose();
     }

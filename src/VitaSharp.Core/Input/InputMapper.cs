@@ -235,7 +235,7 @@ public static class InputMapper
 
     /// <summary>Merges two devices driving the same Vita (keyboard + controller): buttons are OR-ed, each stick axis
     /// takes the value further from the centre.</summary>
-    public static MappedInput Combine(in MappedInput a, in MappedInput b)
+    public static MappedInput Combine(in MappedInput a, in MappedInput b, int idOffset = 100)
     {
         var r = a;
         r.State.Buttons |= b.State.Buttons;
@@ -246,8 +246,8 @@ public static class InputMapper
         if (Math.Abs(b.Rx) > Math.Abs(r.Rx)) r.Rx = b.Rx;
         if (Math.Abs(b.Ry) > Math.Abs(r.Ry)) r.Ry = b.Ry;
         // contacts of the second device get distinct host ids so the two never merge into one finger
-        for (int i = 0; i < b.FrontCount; i++) r.AddTouch(false, b.Front[i] with { Id = b.Front[i].Id + 100 });
-        for (int i = 0; i < b.BackCount; i++) r.AddTouch(true, b.Back[i] with { Id = b.Back[i].Id + 100 });
+        for (int i = 0; i < b.FrontCount; i++) r.AddTouch(false, b.Front[i] with { Id = b.Front[i].Id + idOffset });
+        for (int i = 0; i < b.BackCount; i++) r.AddTouch(true, b.Back[i] with { Id = b.Back[i].Id + idOffset });
         return r;
     }
 

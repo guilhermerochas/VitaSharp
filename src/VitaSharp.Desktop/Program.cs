@@ -55,6 +55,8 @@ public static class Program
                 Console.WriteLine($"Wrote {elf.Length} bytes");
                 return 0;
             }
+            case "pad-test":
+                return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
             case "imports" when args.Length >= 2:
