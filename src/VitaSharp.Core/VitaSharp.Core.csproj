@@ -25,6 +25,7 @@
     <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
     <!-- x86-64 encoder for the native CPU backend (MIT, pure C#, Native AOT compatible) -->
     <PackageReference Include="Iced" Version="1.21.0" />
+    <PackageReference Include="StbTrueTypeSharp" Version="1.26.13" />
     <PackageReference Include="System.IO.Hashing" Version="10.0.13" />
   </ItemGroup>
 
