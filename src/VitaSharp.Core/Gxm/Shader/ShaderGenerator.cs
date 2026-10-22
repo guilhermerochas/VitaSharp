@@ -64,7 +64,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 3;
+    public const int GeneratorVersion = 4;
 
     /// <summary>
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
@@ -304,7 +304,8 @@ float packC10(vec3 c) {
         // ---- assemble
         var sb = new StringBuilder();
         sb.AppendLine("#version 450");
-        sb.AppendLine($"// gxp {program.Hash:X16} ({(vertex ? "vertex" : "fragment")}) vo1 0x{program.VertexOutputs1:X8} vo2 0x{program.VertexOutputs2:X8}");
+        sb.AppendLine($"// gxp {program.Hash:X16} ({(vertex ? "vertex" : "fragment")}) vo1 0x{program.VertexOutputs1:X8} vo2 0x{program.VertexOutputs2:X8}" +
+                      (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} surface 0x{hints.ColorFormat:X8}"));
         if (result.UniformBuffers.Count > 0)
             sb.AppendLine("// ub " + string.Join(" ", result.UniformBuffers.Select(s => $"[{s.GuestIndex}]@{s.ByteOffset}+{s.ByteSize}{(s.Mapped ? "M" : "")}")));
         sb.AppendLine(PushConstants);
@@ -533,6 +534,15 @@ float packC10(vec3 c) {
     static DataType OutputType(GxpProgram program, ShaderHints hints)
     {
         var type = GxpProgram.StoreType(program.OutputParamType);
+        // U32/S32 outputs are raw bits: the surface stores the output registers unconverted, so read them in the
+        // surface's own component layout. Resistance: Burning Skies packs two RGBA8 G-buffer words (VPCK) into a
+        // 64-bit F16F16F16F16 target and samples it back as a 1440-wide U8U8U8U8 texture; reading the registers as
+        // four F32 values instead stored four converted floats (garbage halves, red/cyan world).
+        if (type is DataType.Int32 or DataType.UInt32)
+        {
+            uint fmt = hints.ColorFormat & 0xF1800000;
+            if (fmt == 0x01000000) return DataType.F16;        // F16F16F16F16
+        }
         if (type is DataType.Int32 or DataType.UInt32 or DataType.Unk) type = DataType.F32;
         // F32F32 colour surfaces with more than 2 components pack lower precision data
         if ((hints.ColorFormat & 0xF1800000) == 0x11000000 && program.OutputCompCount > 2 && type == DataType.F16) type = DataType.F32;

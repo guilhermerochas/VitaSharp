@@ -11,6 +11,8 @@ public enum MemoryRegion
     Cdram,
     /// <summary>Emulator-internal allocations (HLE trampolines, kernel objects visible to the guest).</summary>
     Kernel,
+    /// <summary>A fixed range outside the three allocator regions (<see cref="GuestMemory.MapFixed"/>: tests and tools).</summary>
+    Fixed,
 }
 
 /// <summary>
@@ -154,6 +156,23 @@ public sealed unsafe class GuestMemory : IDisposable
         return 0;
     }
 
+    /// <summary>Maps a fixed range that lies outside the user/CDRAM/kernel regions (CPU tests place code at low
+    /// addresses). Returns false when it overlaps a region or an existing block.</summary>
+    public bool MapFixed(uint addr, uint size, string name)
+    {
+        uint start = addr & ~(PageSize - 1), end = AlignUp(addr + size, PageSize);
+        static bool Overlaps(uint s, uint e, uint rs, uint re) => s < re && rs < e;
+        if (Overlaps(start, end, UserStart, UserEnd) || Overlaps(start, end, CdramStart, CdramEnd) || Overlaps(start, end, KernelStart, KernelEnd))
+            return false;
+        lock (_lock)
+        {
+            foreach (var b in _blocks.Values)
+                if (Overlaps(start, end, b.Address, b.Address + b.Size)) return false;
+            Commit(start, end - start, name, MemoryRegion.Fixed);
+        }
+        return true;
+    }
+
     static void Carve(SortedList<uint, uint> free, uint fs, uint fl, uint start, uint size)
     {
         free.Remove(fs);
@@ -165,6 +184,7 @@ public sealed unsafe class GuestMemory : IDisposable
     uint Commit(uint addr, uint size, string name, MemoryRegion region)
     {
         HostVirtualMemory.Commit(Base + addr, size);
+        SetMapped(addr, size, true);
         new Span<byte>(Base + addr, (int)size).Clear();
         _blocks[addr] = new Block(addr, size, name, region);
         CommittedBytes += size;
@@ -186,6 +206,8 @@ public sealed unsafe class GuestMemory : IDisposable
             if (!_blocks.Remove(addr, out var b)) return;
             CommittedBytes -= b.Size;
             HostVirtualMemory.Decommit(Base + b.Address, b.Size);
+            SetMapped(b.Address, b.Size, false);
+            if (b.Region == MemoryRegion.Fixed) return;
             var free = FreeList(b.Region);
             uint start = b.Address, size = b.Size;
             // merge with neighbours
@@ -217,11 +239,29 @@ public sealed unsafe class GuestMemory : IDisposable
         return null;
     }
 
+    // One bit per 4 KB page: set while the page belongs to an allocated block. Data accesses to other pages still
+    // succeed (lazy commit reads zeros), but instruction fetches check it so a jump to a bad address faults instead
+    // of sliding through gigabytes of zero words ("andeq r0, r0, r0") and translating each 192-instruction block.
+    static readonly ulong[] s_mappedPages = new ulong[(1 << 20) / 64];
+
+    static void SetMapped(uint addr, uint size, bool mapped)
+    {
+        for (ulong p = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize; p < end; p++)
+        {
+            ref ulong w = ref s_mappedPages[p >> 6];
+            if (mapped) w |= 1UL << (int)(p & 63); else w &= ~(1UL << (int)(p & 63));
+        }
+    }
+
+    /// <summary>True when <paramref name="addr"/> lies in an allocated block (module segment, memblock, stack, ...).</summary>
+    public static bool IsMapped(uint addr) => (Volatile.Read(ref s_mappedPages[addr >> 18]) & (1UL << (int)((addr >> 12) & 63))) != 0;
+
     public static uint AlignUp(uint v, uint a) => (v + a - 1) & ~(a - 1);
 
     public void Dispose()
     {
         if (Base != null) HostVirtualMemory.Release(Base, unchecked((nuint)ReserveSize));
         Base = null;
+        Array.Clear(s_mappedPages);
     }
 }

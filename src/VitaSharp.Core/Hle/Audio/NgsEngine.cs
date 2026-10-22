@@ -123,9 +123,12 @@ public sealed class NgsRack
     public readonly List<NgsVoice> Voices = new();
     public uint AllocCursor, AllocEnd;
 
+    /// <summary>Carves <paramref name="size"/> bytes out of the rack buffer. Offsets are 16-byte aligned relative to the
+    /// buffer start, not absolutely: the game's buffer is only as aligned as its allocator makes it (FMOD hands out
+    /// 8-aligned blocks of exactly sceNgsRackGetRequiredMemorySize bytes), and absolute rounding would overrun it.</summary>
     public uint Alloc(uint size)
     {
-        uint a = (AllocCursor + 15) & ~15u;
+        uint a = Handle + ((AllocCursor - Handle + 15) & ~15u);
         if (a + size > AllocEnd) return 0;
         AllocCursor = a + size;
         return a;

@@ -36,6 +36,18 @@ public static unsafe class BlockBuilder
 {
     public const int MaxInstructions = 192;
 
+    /// <summary>
+    /// Instruction fetch from a page no allocation covers (a jump through a null or garbage pointer). The hardware
+    /// raises a prefetch abort and the kernel kills the thread; here the block ends in a permanently undefined
+    /// instruction at that address, which the thread reports as a prefetch abort (Vita3K stops the thread too).
+    /// </summary>
+    static DecodedInst FetchFault(uint addr, bool thumb)
+    {
+        var d = thumb ? Decoder.DecodeThumb16(0xDE00, addr, false, 14) : Decoder.DecodeArm(0xE7F000F0, addr);
+        d.Flags |= InstFlags.EndsBlock;
+        return d;
+    }
+
     public static Block Build(uint pc, bool thumb)
     {
         var list = new List<DecodedInst>(16);
@@ -45,6 +57,7 @@ public static unsafe class BlockBuilder
             while (true)
             {
                 if (addr != pc && CpuCore.Probes is { } pa && pa.Contains(addr)) break; // probes are block starts
+                if (!GuestMemory.IsMapped(addr)) { list.Add(FetchFault(addr, false)); break; }
                 var d = Decoder.DecodeArm(Mem.R32(addr), addr);
                 list.Add(d);
                 addr += 4;
@@ -59,6 +72,7 @@ public static unsafe class BlockBuilder
                 if (addr != pc && CpuCore.Probes is { } pt && pt.Contains(addr) && (itState & 0xF) == 0) break; // probes are block starts
                 bool inIt = (itState & 0xF) != 0;
                 byte itCond = (byte)(itState >> 4);
+                if (!GuestMemory.IsMapped(addr) || (Decoder.IsThumb32(Mem.R16(addr)) && !GuestMemory.IsMapped(addr + 2))) { list.Add(FetchFault(addr, true)); break; }
                 ushort hw1 = Mem.R16(addr);
                 DecodedInst d;
                 if (Decoder.IsThumb32(hw1))

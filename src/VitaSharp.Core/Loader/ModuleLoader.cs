@@ -102,12 +102,22 @@ public sealed class Linker(IImportResolver hle)
         {
             if (!_varExports.TryGetValue(nid, out addr))
             {
+                // 0 = not provided yet: a module loaded later (the game's own libc.suprx, say) can still export it;
+                // RegisterExports then applies these relocations, and UnresolvedVariables lists what is left
                 addr = hle.GetHleVariable(nid);
-                if (addr == 0) Log?.Invoke($"Unresolved variable import NID {nid:X8}");
             }
             _varBindings.Add((nid, relocs, segs));
         }
         if (relocs.Length > 0 && addr != 0) Relocation.Relocate(relocs, segs, true, addr);
+    }
+
+    /// <summary>NIDs of variable imports that neither a loaded module nor HLE provides (their relocations were never
+    /// applied, so the importing code reads whatever the linker left in its literal pools).</summary>
+    public List<uint> UnresolvedVariables()
+    {
+        lock (_lock)
+            return _varBindings.Select(b => b.nid).Distinct()
+                .Where(n => !_varExports.ContainsKey(n) && hle.GetHleVariable(n) == 0).ToList();
     }
 
     internal void RegisterExports(LoadedModule m, uint libNid, uint[] nids, uint[] entries, int funcCount)

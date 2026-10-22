@@ -225,6 +225,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 case ExitReason.Breakpoint:
                     throw new GuestFaultException($"BKPT #{s->SvcImm} at 0x{s->SvcPc:X8}");
                 case ExitReason.Undefined:
+                    if (!GuestMemory.IsMapped(s->SvcPc))
+                        throw new GuestFaultException($"Prefetch abort: jump to unmapped address 0x{s->SvcPc:X8} (lr=0x{s->R[14]:X8})");
                     throw new GuestFaultException($"Undefined instruction 0x{s->SvcImm:X8} at 0x{s->SvcPc:X8} ({(s->Thumb != 0 ? "Thumb" : "ARM")})");
                 default:
                     throw new GuestFaultException($"Unexpected CPU exit {exit}");

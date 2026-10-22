@@ -59,8 +59,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.TryAllocAt(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.TryAllocAt(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
     }
 
     /// <summary>Re-runs specific encodings (from a fuzz failure) with many random states and prints every difference.</summary>
