@@ -30,7 +30,11 @@ public sealed class VulkanRendererOptions
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
 public sealed unsafe partial class VulkanRenderer : IGpuBackend
 {
-    const int FramesInFlight = 2;
+    /// <summary>
+    /// Command buffers in flight. Sync points submit early (see DeferSignal), so a frame is often split into 2-3
+    /// submissions; with only two slots, recording the next one regularly waited for the GPU (Slot fence waits).
+    /// </summary>
+    const int FramesInFlight = 3;
     const ulong RingSize = 64ul << 20;
 
     readonly VkCore _core;
