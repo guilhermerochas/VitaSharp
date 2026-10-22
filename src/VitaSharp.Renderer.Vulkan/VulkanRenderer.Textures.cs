@@ -18,6 +18,38 @@ public sealed unsafe partial class VulkanRenderer
         public long CheckedFrame = -1;
         public uint DataStart, DataSize;
         public long LastUsedFrame;
+        /// <summary>Dirty-page epoch the contents were last validated at (<see cref="DirtyPages"/>).</summary>
+        public uint Stamp;
+        /// <summary>Set by GPU transfers into the texture's memory: re-check regardless of the dirty pages.</summary>
+        public bool ForceCheck;
+    }
+
+    /// <summary>Texture cache counters (PERF texcache line).</summary>
+    long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
+    long _sweptFrame = -1;
+    long _sweepTicks;
+
+    /// <summary>Folds the CPU/HLE page dirty table into page versions, once per frame (GPU worker thread).</summary>
+    void SweepDirtyPages()
+    {
+        if (_sweptFrame == FrameCount) return;
+        _sweptFrame = FrameCount;
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        DirtyPages.Sweep();
+        _sweepTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+    }
+
+    /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
+    public string? Report() => TextureCacheReport();
+
+    public string TextureCacheReport()
+    {
+        double frames = Math.Max(1, FrameCount);
+        double f = System.Diagnostics.Stopwatch.Frequency / 1000.0;
+        return $"PERF texcache ({DirtyPages.Mode switch { "0" => "dirty tracking off", "verify" => "verify", _ => "dirty tracking" }}): " +
+               $"{_texChecks / frames:F1} checks/frame, {_texSkipped / frames:F1} clean (skipped), {_texHashed / frames:F1} hashed " +
+               $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame, " +
+               $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "");
     }
 
     readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
@@ -298,14 +330,37 @@ public sealed unsafe partial class VulkanRenderer
             return (default, default);
         }
 
-        var src = GuestMemory.Span(addr + residentOffset, (int)(total - residentOffset));
+        // only memory that may have been written since the texture was last validated is hashed again
+        bool paletted = info.Convert is TexConvert.Palette4 or TexConvert.Palette8 && d.PaletteAddress != 0;
+        uint paletteBytes = info.Convert == TexConvert.Palette4 ? 64u : 1024u;
+        SweepDirtyPages();
+        _texChecks++;
+        bool written = tex == null || tex.ForceCheck
+            || DirtyPages.WrittenSince(addr + residentOffset, total - residentOffset, tex.Stamp)
+            || (paletted && DirtyPages.WrittenSince(d.PaletteAddress, paletteBytes, tex.Stamp));
+        if (!written && !DirtyPages.Verify)
+        {
+            _texSkipped++;
+            tex!.CheckedFrame = FrameCount;
+            tex.LastUsedFrame = FrameCount;
+            return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
+        }
+        long h0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var src = GuestMemory.ReadSpan(addr + residentOffset, (int)(total - residentOffset));
         ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(src);
-        if (info.Convert is TexConvert.Palette4 or TexConvert.Palette8 && d.PaletteAddress != 0)
-            hash ^= System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.Span(d.PaletteAddress, info.Convert == TexConvert.Palette4 ? 64 : 1024)) * 31;
+        if (paletted)
+            hash ^= System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.ReadSpan(d.PaletteAddress, (int)paletteBytes)) * 31;
+        _texHashTicks += System.Diagnostics.Stopwatch.GetTimestamp() - h0;
+        _texHashed++;
+        _texHashedBytes += src.Length;
+        if (tex != null && !written && tex.Hash != hash && _texMissed++ < 50)
+            Log.Warn($"[gpu] texdirty verify: texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} changed without a dirty page (frame {FrameCount})");
         if (tex != null && tex.Hash == hash)
         {
             tex.CheckedFrame = FrameCount;
             tex.LastUsedFrame = FrameCount;
+            tex.Stamp = DirtyPages.Epoch;
+            tex.ForceCheck = false;
             return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
         }
 
@@ -327,6 +382,9 @@ public sealed unsafe partial class VulkanRenderer
             _textures[key] = tex;
         }
         tex.Hash = hash;
+        tex.Stamp = DirtyPages.Epoch;
+        tex.ForceCheck = false;
+        _texUploads++;
         tex.CheckedFrame = FrameCount;
         tex.LastUsedFrame = FrameCount;
         tex.DataStart = addr;
@@ -630,7 +688,7 @@ public sealed unsafe partial class VulkanRenderer
     void InvalidateTextures(uint addr, uint size)
     {
         foreach (var t in _textures.Values)
-            if (t.DataStart < addr + size && addr < t.DataStart + t.DataSize) t.CheckedFrame = -1;
+            if (t.DataStart < addr + size && addr < t.DataStart + t.DataSize) { t.CheckedFrame = -1; t.ForceCheck = true; }
         // a CPU transfer into a render target's memory: reload it
         foreach (var rt in _renderTargets.Values)
             if (rt.Address < addr + size && addr < rt.Address + rt.Stride * rt.Height * 4) UploadSurfaceFromGuest(rt);

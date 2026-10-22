@@ -122,7 +122,7 @@ public sealed class GxpProgram
     {
         uint size = Memory.GuestMemory.R32(address + 8);
         if (size == 0 || size > 16 * 1024 * 1024) size = 0x1000;
-        return new GxpProgram(Memory.GuestMemory.Span(address, (int)size).ToArray(), address);
+        return new GxpProgram(Memory.GuestMemory.ReadSpan(address, (int)size).ToArray(), address);
     }
 
     public IEnumerable<GxpAttributeDescriptor> FragmentAttributeDescriptors()

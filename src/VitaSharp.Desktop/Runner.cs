@@ -423,7 +423,7 @@ public static class Runner
                     foreach (var b in VitaSharp.Core.Memory.GuestMemory.Instance!.Blocks().Where(b => b.Region == VitaSharp.Core.Memory.MemoryRegion.User))
                     {
                         w.Write(b.Address); w.Write(b.Size);
-                        w.Write(VitaSharp.Core.Memory.GuestMemory.Span(b.Address, (int)b.Size));
+                        w.Write(VitaSharp.Core.Memory.GuestMemory.ReadSpan(b.Address, (int)b.Size));
                     }
                     Log.Info($"Memory dump {path}");
                 }
@@ -502,6 +502,7 @@ public static class Runner
         foreach (var m in emu.Kernel.Objects.All<VitaSharp.Core.Kernel.Mutex>())
             if (m.Owner != null && m.Waiters > 0)
                 Log.Info($"  mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
+        if (emu.Gpu.Backend?.Report() is { } gpuReport) Log.Info(gpuReport);
         Log.Info($"  GPU commands: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}; frames presented {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
         long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         var gcInfo = GC.GetGCMemoryInfo();

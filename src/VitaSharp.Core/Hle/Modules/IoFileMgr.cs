@@ -98,6 +98,7 @@ public sealed partial class IoFileMgr : HleModule
         lock (f)
         {
             n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
+            DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
         }
         IoTiming.Read(n);
@@ -109,18 +110,18 @@ public sealed partial class IoFileMgr : HleModule
     {
         if (fd is 0x11 or 0x12)
         {
-            Log.Info("[guest stdout] " + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
+            Log.Info("[guest stdout] " + System.Text.Encoding.UTF8.GetString(GuestMemory.ReadSpan(buf, (int)size)).TrimEnd('\n'));
             return (int)size;
         }
         if (_files.TryGetValue(fd, out var tf) && tf.Tty >= 0)
         {
-            Log.Info((tf.Tty == 1 ? "[guest stderr] " : "[guest stdout] ") + System.Text.Encoding.UTF8.GetString(GuestMemory.Span(buf, (int)size)).TrimEnd('\n'));
+            Log.Info((tf.Tty == 1 ? "[guest stderr] " : "[guest stdout] ") + System.Text.Encoding.UTF8.GetString(GuestMemory.ReadSpan(buf, (int)size)).TrimEnd('\n'));
             return (int)size;
         }
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f)
         {
-            f.Stream.Write(GuestMemory.Span(buf, (int)size));
+            f.Stream.Write(GuestMemory.ReadSpan(buf, (int)size));
             return (int)size;
         }
     }
@@ -139,6 +140,7 @@ public sealed partial class IoFileMgr : HleModule
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+        DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
         Interlocked.Add(ref BytesRead, n);
         IoTiming.Read(n);
         return n;
@@ -148,7 +150,7 @@ public sealed partial class IoFileMgr : HleModule
     int sceIoPwrite(int fd, uint buf, uint size, long offset)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
-        RandomAccess.Write(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
+        RandomAccess.Write(f.Stream.SafeFileHandle, GuestMemory.ReadSpan(buf, (int)size), offset);
         return (int)size;
     }
 

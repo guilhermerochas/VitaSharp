@@ -8,9 +8,10 @@ public readonly struct Ptr<T>(uint address) where T : unmanaged
     public readonly uint Address = address;
 
     public bool IsNull => Address == 0;
-    public unsafe ref T Value => ref Unsafe.AsRef<T>(GuestMemory.Ptr(Address));
-    public unsafe ref T this[int i] => ref Unsafe.AsRef<T>(GuestMemory.Ptr(Address + (uint)(i * sizeof(T))));
-    public unsafe Span<T> AsSpan(int count) => new(GuestMemory.Ptr(Address), count);
+    // writable references and spans mark the pages written (see DirtyPages): callers may store through them
+    public unsafe ref T Value { get { DirtyPages.MarkRange(Address, (uint)sizeof(T)); return ref Unsafe.AsRef<T>(GuestMemory.Ptr(Address)); } }
+    public unsafe ref T this[int i] { get { uint a = Address + (uint)(i * sizeof(T)); DirtyPages.MarkRange(a, (uint)sizeof(T)); return ref Unsafe.AsRef<T>(GuestMemory.Ptr(a)); } }
+    public unsafe Span<T> AsSpan(int count) { DirtyPages.MarkRange(Address, (uint)((long)count * sizeof(T))); return new(GuestMemory.Ptr(Address), count); }
     public unsafe Ptr<T> Offset(int elements) => new(Address + (uint)(elements * sizeof(T)));
     public Ptr<U> Cast<U>() where U : unmanaged => new(Address);
 

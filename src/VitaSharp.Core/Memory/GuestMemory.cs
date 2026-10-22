@@ -24,6 +24,11 @@ public sealed unsafe class GuestMemory : IDisposable
 {
     public const uint PageSize = 0x1000;
     const ulong ReserveSize = 0x1_0001_0000; // 4 GiB + slack so 16-byte accesses at the top don't fault
+    /// <summary>
+    /// The page dirty table (<see cref="DirtyPages"/>) sits right below guest address 0, inside the same reservation,
+    /// so native code reaches it from the guest base register with a 32-bit displacement.
+    /// </summary>
+    const ulong DirtyTableBytes = DirtyPages.TableBytes;
 
     /// <summary>Host address of guest address 0. Static so JIT-compiled code can embed it.</summary>
     public static byte* Base { get; private set; }
@@ -52,7 +57,9 @@ public sealed unsafe class GuestMemory : IDisposable
     public GuestMemory()
     {
         if (Base != null) throw new InvalidOperationException("Only one guest address space per process");
-        Base = HostVirtualMemory.Reserve(unchecked((nuint)ReserveSize), out _lazy);
+        byte* reservation = HostVirtualMemory.Reserve(unchecked((nuint)(ReserveSize + DirtyTableBytes)), out _lazy);
+        HostVirtualMemory.Commit(reservation, (nuint)DirtyTableBytes);
+        Base = reservation + DirtyTableBytes;
         Instance = this;
         if (!_lazy) _lazy = HostVirtualMemory.InstallLazyCommitHandler(Base, ReserveSize);
         _freeUser.Add(UserStart, UserEnd - UserStart);
@@ -69,16 +76,44 @@ public sealed unsafe class GuestMemory : IDisposable
     public static T Read<T>(uint addr) where T : unmanaged => Unsafe.ReadUnaligned<T>(Base + addr);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Write<T>(uint addr, T value) where T : unmanaged => Unsafe.WriteUnaligned(Base + addr, value);
+    public static void Write<T>(uint addr, T value) where T : unmanaged
+    {
+        Unsafe.WriteUnaligned(Base + addr, value);
+        DirtyPages.Mark(addr); // after the store (see DirtyPages); a store crossing into the next page is covered by the sweep
+    }
 
+    /// <summary>Writable reference: the pages are marked written (callers may store through it).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ref T Ref<T>(uint addr) where T : unmanaged => ref Unsafe.AsRef<T>(Base + addr);
+    public static ref T Ref<T>(uint addr) where T : unmanaged
+    {
+        DirtyPages.MarkRange(addr, (uint)sizeof(T));
+        return ref Unsafe.AsRef<T>(Base + addr);
+    }
 
     public static uint R32(uint a) => Read<uint>(a);
     public static void W32(uint a, uint v) => Write(a, v);
 
-    public static Span<byte> Span(uint addr, int length) => new(Base + addr, length);
-    public static Span<T> Span<T>(uint addr, int count) where T : unmanaged => new(Base + addr, count);
+    /// <summary>
+    /// Writable view of guest memory. The range is marked written (conservatively: the caller may store through the
+    /// span), so code that only reads must use <see cref="ReadSpan(uint, int)"/>.
+    /// </summary>
+    public static Span<byte> Span(uint addr, int length)
+    {
+        DirtyPages.MarkRange(addr, (uint)length);
+        return new(Base + addr, length);
+    }
+
+    /// <inheritdoc cref="Span(uint, int)"/>
+    public static Span<T> Span<T>(uint addr, int count) where T : unmanaged
+    {
+        DirtyPages.MarkRange(addr, (uint)((long)count * sizeof(T)));
+        return new(Base + addr, count);
+    }
+
+    /// <summary>Read-only view of guest memory (the pages are not marked written).</summary>
+    public static ReadOnlySpan<byte> ReadSpan(uint addr, int length) => new(Base + addr, length);
+    /// <inheritdoc cref="ReadSpan(uint, int)"/>
+    public static ReadOnlySpan<T> ReadSpan<T>(uint addr, int count) where T : unmanaged => new(Base + addr, count);
 
     public static string ReadCString(uint addr, int max = 4096)
     {
@@ -97,10 +132,20 @@ public sealed unsafe class GuestMemory : IDisposable
         int n = Math.Min(len, max - 1);
         bytes[..n].CopyTo(new Span<byte>(Base + addr, n));
         Base[addr + (uint)n] = 0;
+        DirtyPages.MarkRange(addr, (uint)n + 1);
     }
 
-    public static void Copy(uint dst, uint src, uint len) => Buffer.MemoryCopy(Base + src, Base + dst, len, len);
-    public static void Fill(uint dst, byte value, uint len) => new Span<byte>(Base + dst, (int)len).Fill(value);
+    public static void Copy(uint dst, uint src, uint len)
+    {
+        Buffer.MemoryCopy(Base + src, Base + dst, len, len);
+        DirtyPages.MarkRange(dst, len);
+    }
+
+    public static void Fill(uint dst, byte value, uint len)
+    {
+        new Span<byte>(Base + dst, (int)len).Fill(value);
+        DirtyPages.MarkRange(dst, len);
+    }
 
     // ---------------- allocation ----------------
 
@@ -186,6 +231,7 @@ public sealed unsafe class GuestMemory : IDisposable
         HostVirtualMemory.Commit(Base + addr, size);
         SetMapped(addr, size, true);
         new Span<byte>(Base + addr, (int)size).Clear();
+        DirtyPages.MarkRange(addr, size);
         _blocks[addr] = new Block(addr, size, name, region);
         CommittedBytes += size;
         return addr;
@@ -207,6 +253,7 @@ public sealed unsafe class GuestMemory : IDisposable
             CommittedBytes -= b.Size;
             HostVirtualMemory.Decommit(Base + b.Address, b.Size);
             SetMapped(b.Address, b.Size, false);
+            DirtyPages.MarkRange(b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed) return;
             var free = FreeList(b.Region);
             uint start = b.Address, size = b.Size;
@@ -260,7 +307,7 @@ public sealed unsafe class GuestMemory : IDisposable
 
     public void Dispose()
     {
-        if (Base != null) HostVirtualMemory.Release(Base, unchecked((nuint)ReserveSize));
+        if (Base != null) HostVirtualMemory.Release(Base - DirtyTableBytes, unchecked((nuint)(ReserveSize + DirtyTableBytes)));
         Base = null;
         Array.Clear(s_mappedPages);
     }

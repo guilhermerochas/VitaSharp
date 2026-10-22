@@ -24,6 +24,9 @@ public interface IGpuBackend : IDisposable
     /// Backends use it to load per-title caches (shaders, pipelines) and warm them up in the background.
     /// </summary>
     void BeginTitle(string titleId) { }
+
+    /// <summary>Backend statistics for the end-of-run PERF report (null: nothing to report).</summary>
+    string? Report() => null;
 }
 
 public enum DisplayPixelFormat : uint

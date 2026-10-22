@@ -575,13 +575,14 @@ public sealed unsafe class X64Emitter
                     else if (x.Op == IrOp.Store16) a.mov(mem, G16[s]);
                     else a.mov(mem, G32[s]);
                 }
+                MarkDirty(x.A);
                 return;
             }
             case IrOp.Fence: a.mfence(); return;
             case IrOp.FpOp: FpOp(x, rt); return;
             case IrOp.VecOp: VecOp(x); return;
             case IrOp.LoadD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[r15 + G64[r]]); a.mov(__qword_ptr[rbx + (int)x.Imm], rcx); return; }
-            case IrOp.StoreD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]); a.mov(__qword_ptr[r15 + G64[r]], rcx); return; }
+            case IrOp.StoreD: { int r = Use(x.A, RAX); a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]); a.mov(__qword_ptr[r15 + G64[r]], rcx); MarkDirty(x.A); return; }
             case IrOp.LdrEx: LoadExclusive(x); return;
             case IrOp.StrEx: StoreExclusive(x); return;
 
@@ -836,6 +837,15 @@ public sealed unsafe class X64Emitter
         a.add(eax, 2);
         Place(ref keep);
         a.mov(__dword_ptr[rcx], eax);           // release: snap+2 on success, snap on failure
+        if (Memory.DirtyPages.Enabled)
+        {
+            var clean = a.CreateLabel();
+            a.test(edx, edx);
+            a.jz(clean);
+            a.mov(ecx, State(OffExAddr));
+            MarkDirtyEcx();
+            Place(ref clean);
+        }
         a.mov(ecx, edx);
         a.xor(ecx, 1);                          // status: 0 ok, 1 failed
         a.jmp(done);
@@ -1072,6 +1082,31 @@ public sealed unsafe class X64Emitter
     int _lastLabelAt = -1;
 
     /// <summary>Places a label; Iced allows one label per instruction, so two in a row get a nop between them.</summary>
+    /// <summary>
+    /// Marks the page of the guest address in temp t as written (<see cref="Memory.DirtyPages"/>), after the store.
+    /// The table sits right below guest address 0, so it is addressed from the guest base register. Clobbers rcx and
+    /// flags (no flags are live across IR instructions).
+    /// </summary>
+    void MarkDirty(int t)
+    {
+        if (!Memory.DirtyPages.Enabled) return;
+        if (IsConst(t, out uint addr)) _a.mov(ecx, addr);
+        else _a.mov(ecx, G32[Use(t, RAX)]);
+        MarkDirtyEcx();
+    }
+
+    /// <summary>Dirty mark for the guest address in ecx: the byte is only written while clear (keeps the line shared).</summary>
+    void MarkDirtyEcx()
+    {
+        var a = _a;
+        var done = a.CreateLabel();
+        a.shr(ecx, (byte)Memory.DirtyPages.PageShift);
+        a.cmp(__byte_ptr[r15 + rcx - (int)Memory.DirtyPages.TableBytes], 0);
+        a.jne(done);
+        a.mov(__byte_ptr[r15 + rcx - (int)Memory.DirtyPages.TableBytes], 1);
+        Place(ref done);
+    }
+
     void Place(ref Label l)
     {
         if (_a.Instructions.Count == _lastLabelAt) _a.nop();

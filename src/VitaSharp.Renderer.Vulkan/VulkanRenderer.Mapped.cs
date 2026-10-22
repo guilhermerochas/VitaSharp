@@ -90,7 +90,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)
     {
-        var (src, srcOff) = UploadSpan(GuestMemory.Span(addr, (int)size), 16);
+        var (src, srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
         EndRendering();
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);

@@ -809,6 +809,7 @@ internal static unsafe partial class A32
         else
         {
             s->R[rt] = Interlocked.Exchange(ref *(uint*)(Mem.Base + addr), s->R[rt2]);
+            Mem.MarkDirty(addr);
         }
     }
 }
