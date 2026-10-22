@@ -33,10 +33,12 @@ public sealed class Camera : HleModule
         INFO_I = 0x20, INFO_U = 0x24, INFO_V = 0x28, INFO_PITCH = 0x2C, INFO_BUFFER = 0x2E;
     const uint INFO_STRUCT_SIZE = 0x30;
 
-    // SceCameraRead (0x38 bytes)
+    // SceCameraRead (0x48 bytes, the SDK layout Vita3K uses: exposure time, exposure gap, raw8 format and an unknown
+    // word sit between timestamp and the buffer sizes). vita-headers' 0x38 version lacks them: Invizimals passes
+    // size 0x48 with the planes at 0x30..0x44, and the old 0x38 layout made every read fail with PARAM.
     const uint READ_SIZE = 0x00, READ_MODE = 0x04, READ_STATUS = 0x0C, READ_FRAME = 0x10, READ_TIMESTAMP = 0x18,
-        READ_SIZE_I = 0x20, READ_SIZE_U = 0x24, READ_SIZE_V = 0x28, READ_I = 0x2C, READ_U = 0x30, READ_V = 0x34;
-    const uint READ_STRUCT_SIZE = 0x38;
+        READ_SIZE_I = 0x30, READ_SIZE_U = 0x34, READ_SIZE_V = 0x38, READ_I = 0x3C, READ_U = 0x40, READ_V = 0x44;
+    const uint READ_STRUCT_SIZE = 0x48;
 
     const int READ_MODE_WAIT_NEXTFRAME_ON = 0;
     const int STATUS_IS_ACTIVE = 0, STATUS_IS_ALREADY_READ = 1;
@@ -316,7 +318,7 @@ public sealed class Camera : HleModule
         if (!d.LoggedRead)
         {
             d.LoggedRead = true;
-            Log.Debug($"Camera: first read {d.Width}x{d.Height} format={d.Format} stride={stride} I={pI:X8}/{sI} U={pU:X8}/{sU} V={pV:X8}/{sV} host={(d.Stream != null ? "yes" : "grey")}");
+            Log.Info($"Camera: first read {d.Width}x{d.Height} format={d.Format} stride={stride} I={pI:X8}/{sI} U={pU:X8}/{sU} V={pV:X8}/{sV} host={(d.Stream != null ? "yes" : "grey")}");
         }
         var rgba = CurrentImage(d);
         CameraImage.Encode(rgba, d.Width, d.Height, d.Format, d.Range == DATA_RANGE_FULL, stride,

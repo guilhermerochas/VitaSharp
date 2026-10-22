@@ -104,17 +104,17 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(cam, "sceCameraClose", 1));
 
             // Read, waiting for the next frame
-            GuestMemory.Fill(read, 0xEE, 0x40);
+            GuestMemory.Fill(read, 0xEE, 0x50);
             GuestMemory.Fill(buf, 0, (uint)size + 16);
             GuestMemory.Fill(buf + size, 0xCC, 16);
-            GuestMemory.W32(read + 0x00, 0x38);
+            GuestMemory.W32(read + 0x00, 0x48);
             GuestMemory.W32(read + 0x04, 0); // WAIT_NEXTFRAME_ON
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
             Assert.Equal(0u, GuestMemory.R32(read + 0x0C)); // status ACTIVE
             ulong frame = GuestMemory.Read<ulong>(read + 0x10);
             Assert.True(frame >= 1);
             Assert.True(GuestMemory.Read<ulong>(read + 0x18) > 0);
-            Assert.Equal(0xEEu, (uint)GuestMemory.Read<byte>(read + 0x38)); // nothing written past SceCameraRead
+            Assert.Equal(0xEEu, (uint)GuestMemory.Read<byte>(read + 0x48)); // nothing written past SceCameraRead
             var px = GuestMemory.Span(buf, size);
             for (int i = 0; i < size; i += 4) { Assert.Equal(200, px[i]); Assert.Equal(100, px[i + 1]); Assert.Equal(50, px[i + 2]); Assert.Equal(255, px[i + 3]); }
             Assert.Equal(0xCC, GuestMemory.Read<byte>(buf + size)); // buffer end respected
@@ -160,12 +160,12 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.Write<ushort>(info + 0x2E, 1); // SETBYREAD
             Assert.Equal(0, Call(cam, "sceCameraOpen", 0, info));
             Assert.Equal(0, Call(cam, "sceCameraStart", 0));
-            GuestMemory.W32(read + 0x00, 0x38);
+            GuestMemory.W32(read + 0x00, 0x48);
             GuestMemory.W32(read + 0x04, 0);
-            GuestMemory.W32(read + 0x2C, 0); // SETBYREAD needs buffers in the read struct
+            GuestMemory.W32(read + 0x3C, 0); // SETBYREAD needs buffers in the read struct
             Assert.Equal(PARAM, Call(cam, "sceCameraRead", 0, read));
-            GuestMemory.W32(read + 0x20, w * h); GuestMemory.W32(read + 0x24, w * h / 4); GuestMemory.W32(read + 0x28, w * h / 4);
-            GuestMemory.W32(read + 0x2C, y); GuestMemory.W32(read + 0x30, u); GuestMemory.W32(read + 0x34, v);
+            GuestMemory.W32(read + 0x30, w * h); GuestMemory.W32(read + 0x34, w * h / 4); GuestMemory.W32(read + 0x38, w * h / 4);
+            GuestMemory.W32(read + 0x3C, y); GuestMemory.W32(read + 0x40, u); GuestMemory.W32(read + 0x44, v);
             GuestMemory.Fill(y, 0, 0x10000); GuestMemory.Fill(u, 0, 0x10000); GuestMemory.Fill(v, 0, 0x10000);
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
             Assert.All(GuestMemory.Span(y, w * h).ToArray(), b => Assert.Equal(128, b));

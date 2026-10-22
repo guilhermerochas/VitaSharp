@@ -47,6 +47,12 @@ public sealed class ControllerProfile
     public string TouchpadRearModifier { get; set; } = DefaultRearModifier;
     /// <summary>Binding held to send touch pad fingers to both panels; "" = none.</summary>
     public string TouchpadBothModifier { get; set; } = DefaultBothModifier;
+    /// <summary>The controller's gyroscope + accelerometer (DualShock 4, DualSense, Switch Pro, Joy-Con...) drive the
+    /// Vita's motion sensors. No effect on devices without sensors.</summary>
+    public bool MotionEnabled { get; set; } = true;
+    /// <summary>How the controller's attitude maps onto the Vita's.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<MotionOrientation>))]
+    public MotionOrientation MotionOrientation { get; set; }
 
     public const string DefaultRearModifier = "pad:lefttrigger", DefaultBothModifier = "pad:righttrigger";
 
@@ -89,6 +95,7 @@ public sealed class ControllerProfile
         LeftStick = LeftStick.Clone(), RightStick = RightStick.Clone(), SwapConfirm = SwapConfirm, ButtonThreshold = ButtonThreshold,
         TouchFrontX = TouchFrontX, TouchFrontY = TouchFrontY, TouchBackX = TouchBackX, TouchBackY = TouchBackY,
         TouchpadEnabled = TouchpadEnabled, TouchpadRearModifier = TouchpadRearModifier, TouchpadBothModifier = TouchpadBothModifier,
+        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation,
     };
 }
 

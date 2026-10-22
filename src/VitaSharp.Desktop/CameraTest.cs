@@ -22,15 +22,19 @@ public static class CameraTest
         var sw = Stopwatch.StartNew();
         using var stream = source.Open(CameraFacing.Front, 640, 480, 30);
         if (stream == null) { Console.WriteLine("no camera available"); return 1; }
-        // skip the first frames (auto exposure settles)
-        while (stream.Frames.Sequence < 10 && sw.Elapsed < TimeSpan.FromSeconds(15)) Thread.Sleep(20);
+        // skip the first frames (auto exposure settles: about 2 s at 30 fps)
+        while (stream.Frames.Sequence < 60 && sw.Elapsed < TimeSpan.FromSeconds(15)) Thread.Sleep(20);
         byte[] host = [];
         if (!stream.Frames.CopyLatest(ref host, out int w, out int h, out long seq))
         {
             Console.WriteLine($"no frame received after {sw.Elapsed.TotalSeconds:F1} s");
             return 1;
         }
-        Console.WriteLine($"frame #{seq} {w}x{h} after {sw.Elapsed.TotalSeconds:F1} s");
+        Console.WriteLine($"frame #{seq} {w}x{h} after {sw.Elapsed.TotalSeconds:F1} s ({seq / Math.Max(0.1, sw.Elapsed.TotalSeconds):F0} fps)");
+        long sum = 0;
+        for (int i = 0; i + 2 < host.Length; i += 4) sum += (host[i] * 77 + host[i + 1] * 150 + host[i + 2] * 29) >> 8;
+        double luma = sum / Math.Max(1.0, host.Length / 4.0);
+        Console.WriteLine($"mean brightness {luma:F0}/255{(luma < 24 ? " (very dark: lens covered, privacy shutter closed or a dark room?)" : "")}");
         Png.Write(prefix + "-host.png", host, w, h);
 
         // Vita pipeline: centre crop + scale to the guest resolution, encode as YUV422 packed, decode back

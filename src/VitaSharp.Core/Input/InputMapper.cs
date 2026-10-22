@@ -23,10 +23,17 @@ public sealed class PadSnapshot
     /// <summary>Fingers on the first touch pad, positions normalised 0..1 (origin top-left).</summary>
     public readonly bool[] FingerDown = new bool[MaxFingers];
     public readonly float[] FingerX = new float[MaxFingers], FingerY = new float[MaxFingers];
+    /// <summary>The controller reports a gyroscope and an accelerometer (<see cref="Accel"/>, <see cref="Gyro"/>).</summary>
+    public bool HasMotion;
+    /// <summary>Latest accelerometer reading in the controller's SDL axes, m/s² (lying flat: +9.8 on y).</summary>
+    public System.Numerics.Vector3 Accel;
+    /// <summary>Latest gyroscope reading in the controller's SDL axes, rad/s.</summary>
+    public System.Numerics.Vector3 Gyro;
 
     public void CopyTo(PadSnapshot d)
     {
         d.IsGamepad = IsGamepad;
+        d.HasMotion = HasMotion; d.Accel = Accel; d.Gyro = Gyro;
         d.HasTouchpad = HasTouchpad;
         FingerDown.CopyTo(d.FingerDown, 0); FingerX.CopyTo(d.FingerX, 0); FingerY.CopyTo(d.FingerY, 0);
         Buttons.CopyTo(d.Buttons, 0);
@@ -44,6 +51,7 @@ public sealed class PadSnapshot
         Array.Clear(Buttons); Array.Clear(Axes); Array.Clear(JoyAxes); Array.Clear(JoyButtons); Array.Clear(JoyHats);
         JoyAxisCount = JoyButtonCount = JoyHatCount = 0;
         HasTouchpad = false;
+        HasMotion = false; Accel = default; Gyro = default;
         Array.Clear(FingerDown); Array.Clear(FingerX); Array.Clear(FingerY);
     }
 }
