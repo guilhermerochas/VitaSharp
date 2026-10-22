@@ -112,8 +112,18 @@ public static class Formats
                 return s == 0 ? M(R, G, B, O) : M(B, G, R, O);
             case TexBase.U5U6U5:
                 return s == 0 ? M(B, G, R, O) : M(R, G, B, O);
-            case TexBase.U4U4U4U4: case TexBase.U1U5U5U5:
+            case TexBase.U4U4U4U4:
                 return s switch { 0 => M(A, B, G, R), 1 => M(G, B, A, R), 2 => M(R, G, B, A), 3 => M(B, G, R, A), _ => Identity };
+            case TexBase.U1U5U5U5:
+                // uploaded as A1R5G5B5 (A in bit 15, then 5-bit fields from the top). GXM names the fields from the most
+                // significant bit, so ABGR is A1B5G5R5 and ARGB is A1R5G5B5; the U5U5U5U1 variants (RGBA, BGRA, RGB1,
+                // BGR1) get their 1-bit field moved to bit 15 on upload (TextureDecoder) and become ARGB/ABGR/1RGB/1BGR
+                // (Vita3K translate_swizzle4_a1r5g5b5)
+                return s switch
+                {
+                    0 or 3 => M(B, G, R, A), 1 or 2 => M(R, G, B, A),
+                    4 or 7 => M(B, G, R, O), _ => M(R, G, B, O),
+                };
             case TexBase.YUV420P2: case TexBase.YUV420P3: case TexBase.YUV422:
                 return Identity;
             default:
