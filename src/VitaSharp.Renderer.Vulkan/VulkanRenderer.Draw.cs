@@ -21,6 +21,8 @@ public sealed unsafe partial class VulkanRenderer
     struct PushConstants
     {
         public float ViewportFlag, ScreenWidth, ScreenHeight, ZOffset, ZScale, ResMultiplier, DrawId;
+        /// <summary>Samples of the framebuffer-fetch copy: above 1 the shaders read the multisampled binding.</summary>
+        public float FbSamples;
     }
 
     void CreateLayouts()
@@ -36,7 +38,8 @@ public sealed unsafe partial class VulkanRenderer
 
         _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, 16);
         _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, 16);
-        _fbLayout = TextureSetLayout(ShaderStageFlags.FragmentBit, 1);
+        // binding 0: single-sampled framebuffer copy, binding 1: multisampled copy (real MSAA scenes)
+        _fbLayout = TextureSetLayout(ShaderStageFlags.FragmentBit, 2);
 
         var layouts = stackalloc DescriptorSetLayout[4] { _uboLayout, _texLayoutV, _texLayoutF, _fbLayout };
         var pcr = new PushConstantRange(ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants));
@@ -325,7 +328,7 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -408,7 +411,7 @@ public sealed unsafe partial class VulkanRenderer
                 // no near-plane clipping, depth clamped per fragment (the vertex shader clips the far plane itself)
                 DepthClampEnable = _core.DepthClamp,
             };
-            var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
+            var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = key.Samples };
             var ds = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.LessOrEqual };
             var att = new PipelineColorBlendAttachmentState
             {
@@ -545,6 +548,11 @@ public sealed unsafe partial class VulkanRenderer
                 return;
             }
             if (!_rawFormatOk.TryGetValue(attachFormat, out bool ok)) _rawFormatOk[attachFormat] = ok = _core.SupportsUnblendedColorAttachment(attachFormat);
+            if (ok && _ms && (_core.ImageSampleCounts(attachFormat, ImageUsageFlags.ColorAttachmentBit) & _msSamples) == 0)
+            {
+                Log.WarnOnce($"raw-ms-{attachFormat}-{_msSamples}", $"[gpu] {attachFormat} cannot be multisampled ({_msSamples}) on this GPU: raw fragment outputs in MSAA scenes skipped");
+                return;
+            }
             if (!ok)
             {
                 Log.WarnOnce($"raw-att-{attachFormat}", $"[gpu] {attachFormat} is not a colour attachment format on this GPU: raw fragment outputs skipped");
@@ -556,7 +564,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode));
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (pipeline.Handle == 0) return;
 
@@ -642,7 +650,8 @@ public sealed unsafe partial class VulkanRenderer
     {
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
-        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial };
+        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial,
+            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1 };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;

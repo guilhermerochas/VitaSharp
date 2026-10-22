@@ -70,7 +70,14 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 6;
+    public const int GeneratorVersion = 7;
+
+    /// <summary>
+    /// Programmable blending in a multisampled scene reads the sample the invocation shades (gl_SampleID, which makes
+    /// such shaders run per sample, like GXM's NATIVECOLOR_MSAA programs). Set to false by a renderer whose device
+    /// lacks sampleRateShading: the shaders then read sample 0. Part of the shader cache key.
+    /// </summary>
+    public static bool PerSampleFramebufferFetch = true;
 
     /// <summary>
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
@@ -87,6 +94,7 @@ layout(push_constant) uniform RenderInfo {
     float z_scale;
     float res_multiplier;
     float draw_id;
+    float fb_samples;
 } rinfo;
 """;
 
@@ -527,10 +535,14 @@ float packC10(vec3 c) {
         if (program.IsFragColorUsed)
         {
             result.UsesFragColor = true;
+            // binding 0: single-sampled copy of the target; binding 1: multisampled copy (scenes rendered with real
+            // MSAA, rinfo.fb_samples > 1), read per sample
             decl.AppendLine("layout(set = 3, binding = 0) uniform sampler2D last_frag_tex;");
+            decl.AppendLine("layout(set = 3, binding = 1) uniform sampler2DMS last_frag_ms;");
             var target = Operand.Make(3); target.Bank = Bank.Output; target.Num = 0;
             target.Type = OutputType(program, hints);
-            var src = new Val("texelFetch(last_frag_tex, ivec2(gl_FragCoord.xy), 0)", 'f', 4);
+            string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
+            var src = new Val($"(rinfo.fb_samples > 1.5 ? texelFetch(last_frag_ms, ivec2(gl_FragCoord.xy), {sample}) : texelFetch(last_frag_tex, ivec2(gl_FragCoord.xy), 0))", 'f', 4);
             if (!GxpProgram.IsFloat(target.Type)) src = t.ToInt(src, target.Type, true);
             t.Store(target, src, 0b1111);
         }

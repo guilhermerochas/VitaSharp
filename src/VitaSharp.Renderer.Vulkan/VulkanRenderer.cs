@@ -69,12 +69,19 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public long SubmitSeq;
         /// <summary>Occlusion queries of this frame's visibility tests.</summary>
         public VisibilityFrame? Visibility;
+        /// <summary>Secondary command buffers of multisampled renderings (reused every time the frame slot is recorded).</summary>
+        public readonly List<CommandBuffer> Secondaries = new();
+        public int SecondaryIndex;
+        /// <summary>First of this frame's two timestamp queries (-1 = none), and whether they were written.</summary>
+        public int TimeQuery = -1;
+        public bool TimePending;
     }
 
     readonly Frame[] _frames = new Frame[FramesInFlight];
     int _frameIndex;
     Frame F => _frames[_frameIndex];
-    CommandBuffer Cmd => F.Cmd;
+    /// <summary>Where commands go: the open multisampled rendering's secondary command buffer, else the frame's.</summary>
+    CommandBuffer Cmd => _msCmd.Handle != 0 ? _msCmd : F.Cmd;
     public long FrameCount { get; private set; }
 
     public VulkanRenderer(VulkanRendererOptions options)
@@ -85,6 +92,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);
         _compiler = new ShaderCompiler(options.ShaderCacheDir);
+        // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
+        Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
@@ -128,11 +137,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         f.RingOffset = 0;
         foreach (var p in f.DescPools) _vk.ResetDescriptorPool(_dev, p, 0);
         f.DescPoolIndex = 0;
+        f.SecondaryIndex = 0;
         _vk.ResetCommandPool(_dev, f.Pool, 0);
         var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
         _vk.BeginCommandBuffer(f.Cmd, in bi);
         f.Recording = true;
         ResetVisibility(f);
+        BeginGpuTime(f);
         _boundPipeline = default;
     }
 
@@ -141,6 +152,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var f = F;
         if (!f.Recording) return;
         EndRendering();
+        EndGpuTime(f);
         _vk.EndCommandBuffer(f.Cmd);
         var cmd = f.Cmd;
         var waitStage = PipelineStageFlags.TransferBit;
@@ -178,6 +190,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
         _vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue);
         f.Retired = true;
+        CompleteGpuTime(f);
         if (f.Readback is { } rb) WriteDump(f, rb);
         CompleteWritebacks(f);
         CompleteVisibility(f);
@@ -313,14 +326,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public ImageView View;
         public ImageMemoryPool.Allocation Mem;
         public long LastUsedFrame;
+        /// <summary>Multisampled depth of a scene rendered with real MSAA (one sample per GXM sample).</summary>
+        public SampleCountFlags Samples = SampleCountFlags.Count1Bit;
+        /// <summary>A scene stored it with SCE_GXM_DEPTH_STENCIL_FORCE_STORE.</summary>
+        public bool ForceStored;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
     readonly List<RenderTarget> _traceReplaced = new();
-    readonly Dictionary<(uint, uint, uint), DepthTarget> _depthTargets = new();
+    readonly Dictionary<(uint, uint, uint, SampleCountFlags), DepthTarget> _depthTargets = new();
 
     (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
-        uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null)
+        uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null, SampleCountFlags samples = SampleCountFlags.Count1Bit)
     {
         var ici = new ImageCreateInfo
         {
@@ -330,7 +347,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             Extent = new Extent3D(Math.Max(w, 1), Math.Max(h, 1), 1),
             MipLevels = mips,
             ArrayLayers = layers,
-            Samples = SampleCountFlags.Count1Bit,
+            Samples = samples,
             Tiling = ImageTiling.Optimal,
             Usage = usage,
             SharingMode = SharingMode.Exclusive,
@@ -398,6 +415,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void DestroyLater(RenderTarget rt)
     {
         DestroySupersampleLater(rt);
+        DestroyMsaaLater(rt);
+        DestroySceneStartCopyLater(rt);
         var f = F;
         f.Deferred.Add(() =>
         {
@@ -410,15 +429,16 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         });
     }
 
-    DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h)
+    DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h, SampleCountFlags samples = SampleCountFlags.Count1Bit)
     {
         uint addr = d?.DepthData ?? 0;
-        var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h);
+        var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
         if (_depthTargets.TryGetValue(key, out var dt)) return dt;
         var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
-            ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit);
+            ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, samples: samples);
         dt = new DepthTarget
         {
+            Samples = samples,
             Address = addr, Width = w, Height = h, StrideBytes = (d?.StrideInSamples ?? w) * 4,
             StencilAddress = d?.StencilData ?? 0, StencilStrideBytes = d?.StrideInSamples ?? w,
             Image = img, View = view, Mem = mem,
@@ -501,13 +521,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
         if (TracingScenes || TraceVis) Log.Info($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
+        // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
+        // MSAA without downscale renders at 2x into the sample-sized surface
+        ChooseMsaaPath(b);
         if (_rt != null) CaptureSceneStart(_rt);
-        // MSAA downscale surface: rendered 2x supersampled and box-filtered back (see VulkanRenderer.Msaa.cs)
-        _ss = _rt != null && b.Multisample != 0 && b.Color!.Downscale && SupportsSupersample(_rt.Format);
         if (_ss) LoadSupersample(_rt!);
-        // MSAA without downscale: the surface holds the samples, render into it at 2x (see VulkanRenderer.Msaa.cs)
-        _msaaNoDownscale = _rt != null && b.Multisample != 0 && !b.Color!.Downscale;
-        if (_msaaNoDownscale && _msaaNoDownscaleLogged.Add(_rt!.Address)) Log.Info($"[gpu] render target 0x{_rt.Address:X8} {b.Width}x{b.Height} MSAA {(b.Multisample == 2 ? "4X" : "2X")} without downscale: rendering at 2x into the {_rt.Width}x{_rt.Height} sample surface");
         // surface gamma: shader output is linear and gets sRGB-encoded on write
         var srgb = _rt != null ? Formats.Srgb(_rt.Format) : Format.Undefined;
         _rtGamma = _rt != null && b.Color!.GammaMode != 0 && srgb != _rt.Format && _core.SupportsColorAttachment(srgb);
@@ -523,17 +541,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _sceneH = Math.Min(b.Height, surfH);
         _depth = _msaaNoDownscale
             ? GetDepthTarget(b.Depth, Math.Max(b.Width * 2, _rt!.Width), Math.Max(b.Height * 2, _rt.Height))
-            : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale);
+            : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
         _sceneSerial++;
         if (_rt != null) _rt.LastScene = _sceneSerial;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = FrameCount;
+        if (b.Depth is { ForceStore: true }) _depth.ForceStored = true;
         _depthNeedsClear = b.Depth == null || !b.Depth.ForceLoad;
     }
 
     void EndScene(EndSceneCommand e)
     {
-        EndRendering();
+        EndRendering(final: true);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
@@ -543,6 +562,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = false;
         _scene = null;
         _ss = false;
+        _ms = false;
         _msaaNoDownscale = false;
     }
 
@@ -584,6 +604,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void BeginRendering()
     {
         if (_rendering || !_inScene) return;
+        if (_ms) { BeginMsaaRendering(); return; }
         var color = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
@@ -620,8 +641,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     }
 
     /// <param name="resolve">false keeps a supersampled scene's samples unfiltered (the next pause filters them)</param>
-    void EndRendering(bool resolve = true)
+    /// <param name="final">the scene ends: a multisampled rendering discards its samples instead of storing them</param>
+    void EndRendering(bool resolve = true, bool final = false)
     {
+        if (_rendering && _msCmd.Handle != 0)
+        {
+            _rendering = false;
+            EndMsaaRendering(final, resolve);
+        }
+        else if (_ms && _msUnresolved && (resolve || final)) ResolveMsaa(final);
         if (_rendering)
         {
             _vk.CmdEndRendering(Cmd);
@@ -936,6 +964,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var a in f.Deferred) a();
         }
         DestroyPersistentSets();
+        DestroyMsaa();
+        DestroyGpuTime();
         DestroyPipelines();
         DestroyTextures();
         foreach (var rt in _renderTargets.Values)
