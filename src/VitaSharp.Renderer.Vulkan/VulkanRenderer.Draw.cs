@@ -167,14 +167,9 @@ public sealed unsafe partial class VulkanRenderer
             return cached;
         }
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (LoadPackedShader(program.Hash, hintKey, program.IsVertex) is { } packed)
-        {
-            Interlocked.Increment(ref _statShaderPackHits);
-            NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
-            FrameLedger.AddSince(FrameLedger.Cat.ShaderPackLoad, t0);
-            return PublishModule(key, packed);
-        }
-        // queued by Prefetch on the submitting thread: wait for it (or run it here if no worker picked it up yet)
+        // queued by Prefetch on the submitting thread: wait for it (or run it here if no worker picked it up yet). Checked
+        // before the pack: a running job may already have stored its SPIR-V there, and loading it again here would
+        // create a second module for nothing
         if (_inflight.TryGetValue(key, out var job))
         {
             var r = job.RunOrWait(this);
@@ -182,6 +177,15 @@ public sealed unsafe partial class VulkanRenderer
             NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             Interlocked.Increment(ref _statAsyncWaited);
             return r;
+        }
+        // a job publishes its module before it leaves the in-flight table: one may have finished since the first lookup
+        if (_modules.TryGetValue(key, out cached)) return cached;
+        if (LoadPackedShader(program.Hash, hintKey, program.IsVertex) is { } packed)
+        {
+            Interlocked.Increment(ref _statShaderPackHits);
+            NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            FrameLedger.AddSince(FrameLedger.Cat.ShaderPackLoad, t0);
+            return PublishModule(key, packed);
         }
         Interlocked.Increment(ref _statShaderMisses);
         var entry = TranslateAndCompile(program, hintKey, hints(d, colorFormat), background: false);
@@ -386,13 +390,29 @@ public sealed unsafe partial class VulkanRenderer
             _pipelines[key] = p;
             return p;
         }
-        if (WaitPrefetchedPipeline(key, out p))
+        if (WaitPrefetchedPipeline(key, out p) || _sharedPipelines.TryGetValue(key, out p)) // (a worker may finish between the lookups)
         {
             _pipelines[key] = p;
             return p;
         }
+        // claim the key so a prefetch worker does not start the same pipeline while this thread builds it
+        ManualResetEventSlim? claim = null;
+        if (_asyncPipelines)
+        {
+            claim = new ManualResetEventSlim();
+            if (!_pipelineInflight.TryAdd(key, claim))
+            {
+                claim = null;
+                if (WaitPrefetchedPipeline(key, out p)) { _pipelines[key] = p; return p; }
+            }
+        }
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology);
+        try { p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology); }
+        catch
+        {
+            if (claim != null) { _pipelineInflight.TryRemove(key, out _); claim.Set(); }
+            throw;
+        }
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         _statGpuPipelines++;
         FrameLedger.Add(FrameLedger.Cat.PipelineCreate, dt);
@@ -413,6 +433,7 @@ public sealed unsafe partial class VulkanRenderer
                 p = _sharedPipelines[key];
             }
         }
+        if (claim != null) { _pipelineInflight.TryRemove(key, out _); claim.Set(); } // after publishing
         _pipelines[key] = p;
         return p;
     }
@@ -505,7 +526,12 @@ public sealed unsafe partial class VulkanRenderer
             var r = _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out p);
             if (r != Result.Success)
             {
-                Log.Error($"vkCreateGraphicsPipelines failed: {r}");
+                if (r == Result.ErrorDeviceLost)
+                {
+                    _deviceLost = true; // stops the background shader/pipeline work
+                    Log.WarnOnce("pipeline-device-lost", "vkCreateGraphicsPipelines failed: device lost");
+                }
+                else Log.Error($"vkCreateGraphicsPipelines failed: {r}");
                 p = default;
             }
         }

@@ -25,6 +25,17 @@ public sealed class VulkanRendererOptions
     public List<(long Frame, byte[] Rgba)>? Thumbnails;
     /// <summary>Automated tests: decode every uploaded texture on the CPU and warn when it looks like garbage.</summary>
     public bool InspectTextures;
+    /// <summary>shaderc optimisation level: "zero" (default: fast compiles, less stutter when new shaders appear),
+    /// "size" or "perf". VITASHARP_SHADERC_OPT overrides it.</summary>
+    public string? ShaderOptimization;
+    /// <summary>Translate/compile new shaders and build their pipelines on worker threads as soon as the guest submits
+    /// the draws (VITASHARP_ASYNC_SHADERS=0|1 overrides it).</summary>
+    public bool AsyncShaders = true;
+    /// <summary>Also build predicted pipelines in the background (needs <see cref="AsyncShaders"/>;
+    /// VITASHARP_ASYNC_PIPELINES=0|1 overrides it).</summary>
+    public bool AsyncPipelines = true;
+    /// <summary>Shader worker threads, 0 = automatic (half the logical processors, 1-6). VITASHARP_SHADER_WORKERS overrides it.</summary>
+    public int ShaderWorkers;
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -91,7 +102,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk = _core.Vk;
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);
-        _compiler = new ShaderCompiler(options.ShaderCacheDir);
+        _compiler = new ShaderCompiler(options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
+        ConfigureAsyncShaders(options);
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
@@ -170,7 +182,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             SignalSemaphoreCount = present ? 1u : 0u,
             PSignalSemaphores = &done,
         };
-        _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence).Ok("vkQueueSubmit");
+        var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+        if (submitResult == Result.ErrorDeviceLost) _deviceLost = true; // stops background shader/pipeline work
+        submitResult.Ok("vkQueueSubmit");
         f.Recording = false;
         f.Submitted = true;
         f.SubmitSeq = ++_submitSeq;
@@ -190,7 +204,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var o in _frames)
             if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
         long tf = FrameLedger.Now();
-        _vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue);
+        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost) _deviceLost = true;
         FrameLedger.AddSince(FrameLedger.Cat.FenceWait, tf);
         f.Retired = true;
         CompleteGpuTime(f);

@@ -13,21 +13,31 @@ public sealed unsafe class ShaderCompiler : IDisposable
     readonly ThreadLocal<nint> _compilers;
     readonly string? _cacheDir;
 
-    /// <summary>shaderc optimisation level: VITASHARP_SHADERC_OPT=zero (default), size or perf. spirv-opt was ~85% of the
-    /// GLSL to SPIR-V time (Killzone: 44 ms -> 7 ms per shader) and the driver optimises the SPIR-V again when it builds
-    /// the pipeline (no measurable GPU time difference on NVIDIA).</summary>
-    public static readonly OptimizationLevel OptLevel = Environment.GetEnvironmentVariable("VITASHARP_SHADERC_OPT")?.ToLowerInvariant() switch
+    /// <summary>shaderc optimisation level (default Zero = the launcher's "Compilação rápida de shaders"; --shaderc-opt=,
+    /// and VITASHARP_SHADERC_OPT overrides both). spirv-opt was ~85% of the GLSL to SPIR-V time (Killzone: 44 ms -> 7 ms
+    /// per shader) and the driver optimises the SPIR-V again when it builds the pipeline (no measurable GPU time
+    /// difference on NVIDIA).</summary>
+    public OptimizationLevel OptLevel { get; }
+
+    /// <summary>Parses zero|size|perf (also performance, o0, os, o3); null for anything else.</summary>
+    public static OptimizationLevel? ParseOptLevel(string? s) => s?.Trim().ToLowerInvariant() switch
     {
-        "perf" or "performance" => OptimizationLevel.Performance,
-        "size" => OptimizationLevel.Size,
-        _ => OptimizationLevel.Zero,
+        "perf" or "performance" or "o3" => OptimizationLevel.Performance,
+        "size" or "os" => OptimizationLevel.Size,
+        "zero" or "o0" or "none" => OptimizationLevel.Zero,
+        _ => null,
     };
+
+    /// <summary>The level to use: VITASHARP_SHADERC_OPT, else <paramref name="configured"/>, else Zero.</summary>
+    public static OptimizationLevel ResolveOptLevel(string? configured) =>
+        ParseOptLevel(Environment.GetEnvironmentVariable("VITASHARP_SHADERC_OPT")) ?? ParseOptLevel(configured) ?? OptimizationLevel.Zero;
 
     /// <summary>Shaders really compiled by shaderc, their total time (stopwatch ticks), and disk cache hits.</summary>
     public static long Compiled, CompileTicks, DiskHits;
 
-    public ShaderCompiler(string? cacheDir)
+    public ShaderCompiler(string? cacheDir, OptimizationLevel optLevel = OptimizationLevel.Zero)
     {
+        OptLevel = optLevel;
         _compilers = new(() => (nint)_sc.CompilerInitialize(), trackAllValues: true);
         _cacheDir = cacheDir;
         if (cacheDir != null) Directory.CreateDirectory(cacheDir);
@@ -73,7 +83,16 @@ public sealed unsafe class ShaderCompiler : IDisposable
             new ReadOnlySpan<byte>(_sc.ResultGetBytes(res), len).CopyTo(bytes);
             if (cachePath != null)
             {
-                try { File.WriteAllBytes(cachePath, bytes); } catch (Exception ex) { Log.Warn($"shader cache write failed: {ex.Message}"); }
+                // several threads may compile the same GLSL at once (shader workers and the GPU thread, or two hint keys
+                // that generate identical source): write a private temp file and rename it, so a reader never sees a
+                // partially written .spv and concurrent writers do not fail on a sharing violation
+                string tmp = $"{cachePath}.{Environment.CurrentManagedThreadId}.tmp";
+                try { File.WriteAllBytes(tmp, bytes); File.Move(tmp, cachePath, true); }
+                catch (Exception ex)
+                {
+                    try { File.Delete(tmp); } catch { }
+                    if (!File.Exists(cachePath)) Log.WarnOnce("spv-cache-write", $"shader cache write failed: {ex.Message}");
+                }
             }
             return bytes;
         }

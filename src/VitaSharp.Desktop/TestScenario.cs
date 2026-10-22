@@ -12,7 +12,8 @@ namespace VitaSharp.Desktop;
 /// </summary>
 static class TestScenario
 {
-    public static int Run(string file)
+    /// <param name="extraArgs">run options from the command line (test &lt;scenario&gt; [options]); they win over the scenario's args=</param>
+    public static int Run(string file, string[]? extraArgs = null)
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var line in File.ReadAllLines(file))
@@ -36,7 +37,8 @@ static class TestScenario
         string name = Path.GetFileNameWithoutExtension(file);
         string outDir = Path.Combine(Program.DataRoot, "tests", name);
         Directory.CreateDirectory(outDir);
-        var args = SplitArgs(values.GetValueOrDefault("args", "")).ToList();
+        // options are looked up first-match-wins: command-line options go first so they override the scenario's
+        var args = (extraArgs ?? []).Concat(SplitArgs(values.GetValueOrDefault("args", ""))).ToList();
         if (!args.Any(a => a.StartsWith("--dump-frames"))) args.Add("--dump-frames=" + outDir);
         if (!args.Contains("--headless")) args.Add("--headless");
         string log = Path.Combine(outDir, "log.txt");

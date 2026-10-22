@@ -13,6 +13,19 @@ public static class Runner
     static string? Opt(string[] options, string name) =>
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
+    /// <summary>--name=on|off (also 1/0, true/false, yes/no); null when absent or not recognised.</summary>
+    static bool? OnOff(string[] options, string name)
+    {
+        var v = Opt(options, name);
+        if (v == null) return null;
+        switch (v.Trim().ToLowerInvariant())
+        {
+            case "on" or "1" or "true" or "yes": return true;
+            case "off" or "0" or "false" or "no": return false;
+            default: Log.Warn($"{name}={v} not recognised (use on or off): using the default"); return null;
+        }
+    }
+
     public static int Run(string appPath, string[] options)
     {
         // 1 ms system timer resolution while a game runs (guest wait timeouts and audio/vsync pacing rely on it)
@@ -47,7 +60,15 @@ public static class Runner
             ShaderCacheDir = Opt(options, "--shader-cache") ?? Path.Combine(Program.DataRoot, "shadercache"),
             Validation = options.Contains("--validation"),
             VSync = !options.Contains("--no-vsync"),
+            // stutter options (launcher: Configurações > Geral > Desempenho); VITASHARP_SHADERC_OPT, VITASHARP_ASYNC_SHADERS,
+            // VITASHARP_ASYNC_PIPELINES and VITASHARP_SHADER_WORKERS override them
+            ShaderOptimization = Opt(options, "--shaderc-opt"),
+            AsyncShaders = OnOff(options, "--async-shaders") ?? true,
+            AsyncPipelines = OnOff(options, "--async-pipelines") ?? true,
+            ShaderWorkers = int.TryParse(Opt(options, "--shader-workers"), out var shaderWorkers) && shaderWorkers > 0 ? shaderWorkers : 0,
         };
+        if (rendererOptions.ShaderOptimization is { } so && ShaderCompiler.ParseOptLevel(so) == null)
+            Log.Warn($"--shaderc-opt={so} not recognised (use zero, size or perf): using the default");
 
         if (headless) return RunHeadless(emu, appPath, options, rendererOptions, fatal);
 

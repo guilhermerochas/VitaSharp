@@ -98,7 +98,7 @@ public static class Program
             case "memdiff" when args.Length >= 3:
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
             case "test" when args.Length >= 2:
-                return TestScenario.Run(args[1]);
+                return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
                 return Runner.Run(ResolveApp(args[1]), args.Skip(2).ToArray());
             default:
@@ -244,7 +244,7 @@ public static class Program
         Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
-        Console.WriteLine("  test <scenario.txt>                  run an automated scenario (frames, contact sheet, report)");
+        Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]    list the system functions a title (or one of its executables) needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
@@ -252,5 +252,8 @@ public static class Program
         Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
         Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
+        Console.WriteLine("               --shaderc-opt=zero|size|perf  shader optimisation (default zero: fast compiles, less stutter)");
+        Console.WriteLine("               --async-shaders=on|off  compile new shaders and pipelines on worker threads (default on)");
+        Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
     }
 }
