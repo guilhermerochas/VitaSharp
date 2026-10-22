@@ -842,6 +842,26 @@ public sealed class Gxm : HleModule
         return info.UniformBytes;
     }
 
+    /// <summary>Debug (env VITASHARP_BT_DRAW=indexCount): logs a guest backtrace for every draw with that index count,
+    /// to find the game code that issues a given mesh.</summary>
+    static readonly uint BtDrawIndexCount = uint.TryParse(Environment.GetEnvironmentVariable("VITASHARP_BT_DRAW"), out var btd) ? btd : 0;
+
+    static unsafe void LogDrawBacktrace(GxmVertexProgram vp, GxmFragmentProgram fp, uint indexData, uint indexCount)
+    {
+        var t = Kernel.GuestThread.Current;
+        if (t == null) return;
+        var s = t.Core.State;
+        Log.Info($"BT DRAW f{Display.FramesPresented} [{t.Name}] vp={vp.Handle:X8} fp={fp.Handle:X8} idx={indexData:X8}x{indexCount} lr={s->R[14]:X8} {t.Backtrace(s)}");
+    }
+
+    static void LogDrawUniforms(GxmVertexProgram vp, ReadOnlySpan<byte> data)
+    {
+        var sb = new System.Text.StringBuilder($"BT DRAW f{Display.FramesPresented} vp={vp.Handle:X8} executed, vertex uniforms:");
+        for (int i = 0; i + 4 <= data.Length && i < 64 * 4; i += 4)
+            sb.Append(' ').Append(BitConverter.ToSingle(data.Slice(i, 4)).ToString("G6", System.Globalization.CultureInfo.InvariantCulture));
+        Log.Info(sb.ToString());
+    }
+
     int Draw(GxmContext c, GxmVertexProgram? vp, GxmFragmentProgram? fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex, GxmTextureDesc[] fTex,
         uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount)
     {
@@ -849,6 +869,7 @@ public sealed class Gxm : HleModule
         else if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         if (vp == null || fp == null) return ERR_NULL_PROGRAM;
         if (indexData == 0) return ERR_INVALID_POINTER;
+        if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawBacktrace(vp, fp, indexData, indexCount);
         // visibility test (front state; the back state applies when only it is enabled)
         uint visAddress = 0;
         bool visIncrement = false;
@@ -901,6 +922,7 @@ public sealed class Gxm : HleModule
         }
         cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, cmd.VertexUniforms.AsSpan(cmd.VertexUniformsOffset, vBytes));
         cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, cmd.FragmentUniforms.AsSpan(cmd.FragmentUniformsOffset, fBytes)) : 0;
+        if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, cmd.VertexUniforms.AsSpan(cmd.VertexUniformsOffset, vBytes));
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);
         cmd.PrimitiveType = (byte)(primType >> 26);

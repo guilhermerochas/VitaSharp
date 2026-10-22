@@ -690,9 +690,16 @@ float packC10(vec3 c) {
                 t.Line("gl_Position.z = gl_Position.w;");
                 t.Close();
                 t.Open("else");
+                // screen z = z / w * z_scale + z_offset, kept affine in clip space (multiplied back by w). GXM does
+                // not clip at the near plane: depth below 0 is clamped, which must happen per fragment (the
+                // renderer enables depth clamp). Clamping per vertex, as before, bent the depth interpolated across
+                // a triangle with a vertex in front of the near plane (a wall next to the camera then lost the depth
+                // test against the geometry behind it). Depth clamp also disables the far-plane clip, so that one
+                // is done with a clip distance (z <= w).
                 t.Line("gl_Position = vpos;");
-                t.Line("gl_Position.z = max(vpos.z / vpos.w * rinfo.z_scale + rinfo.z_offset, 0.0) * vpos.w;");
+                t.Line("gl_Position.z = vpos.z * rinfo.z_scale + rinfo.z_offset * vpos.w;");
                 t.Close();
+                t.Line("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;");
             }
             else if (flag == GxpProgram.OutPsize)
             {

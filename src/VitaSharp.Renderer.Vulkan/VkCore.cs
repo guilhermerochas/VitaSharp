@@ -245,8 +245,13 @@ public sealed unsafe class VkCore : IDisposable
             DepthBiasClamp = supported2.Features.DepthBiasClamp,
             FragmentStoresAndAtomics = supported2.Features.FragmentStoresAndAtomics,
             OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise,
+            DepthClamp = supported2.Features.DepthClamp,
+            ShaderClipDistance = supported2.Features.ShaderClipDistance,
         };
         OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise;
+        DepthClamp = supported2.Features.DepthClamp;
+        if (!supported2.Features.ShaderClipDistance)
+            throw new InvalidOperationException($"{DeviceName} lacks shaderClipDistance (needed for the GXM far plane). {VulkanLoader.InstallHint()}");
         TextureCompressionBC = supported2.Features.TextureCompressionBC;
         FillModeNonSolid = supported2.Features.FillModeNonSolid;
         WideLines = supported2.Features.WideLines;
@@ -277,6 +282,9 @@ public sealed unsafe class VkCore : IDisposable
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+    /// <summary>depthClamp: GXM does not clip at the near plane, fragments in front of it get depth 0 (clamped per
+    /// fragment). Without the feature the near plane clips instead.</summary>
+    public bool DepthClamp;
 
     /// <summary>True on a portability-subset implementation (MoltenVK) that reports no triangle fan support. GXM fan
     /// draws are still issued as fans (MoltenVK converts them internally for most draws); a fan-to-list index rewrite
