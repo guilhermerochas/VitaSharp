@@ -525,6 +525,12 @@ public sealed class Touch : HleModule
     [Hle] int sceTouchClearRegion() => 0;
     [Hle] int sceTouchEnableIdleTimerCancelSetting(int port, int enable) => 0; // no idle timer
 
+    // system-only queries: a game process lacks the privilege (SCE_TOUCH_ERROR_PRIV_REQUIRED, psp2/touch.h)
+    const int ERR_PRIV_REQUIRED = unchecked((int)0x80350002);
+    [Hle] int sceTouchGetDeviceInfo(uint portType, uint info) => ERR_PRIV_REQUIRED;
+    [Hle] int sceTouchGetProcessInfo(uint a0, uint a1) => ERR_PRIV_REQUIRED;
+    [Hle] int sceTouchSetProcessPrivilege(uint a0, uint a1) => ERR_PRIV_REQUIRED;
+
     [Hle("sceTouchSetSamplingState")]
     [Hle("sceTouchSetSamplingStateExt")]
     int sceTouchSetSamplingState(int port, uint state)

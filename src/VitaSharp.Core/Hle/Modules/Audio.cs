@@ -264,6 +264,22 @@ public sealed class Audio : HleModule
         return InPortId;
     }
 
+    /// <summary>Diagnostic entry (psp2/audioin.h): like sceAudioInOpenPort, and also accepts the DIAG port type (14)
+    /// without validating grain/frequency.</summary>
+    [Hle]
+    int sceAudioInOpenPortForDiag(int type, int grain, int freq, int param)
+    {
+        if (type != 14) return sceAudioInOpenPort(type, grain, freq, param);
+        if (param != 0) return IN_ERR_INVALID_PORT_PARAM;
+        lock (this)
+        {
+            if (_inPort != null) return IN_ERR_PORT_FULL;
+            // unvalidated values still have to pace and size the silent capture
+            _inPort = new InPort { Type = type, Grain = grain is > 0 and <= 4096 ? grain : 256, Freq = freq > 0 ? freq : 16000, RouteReports = 2 };
+        }
+        return InPortId;
+    }
+
     InPort? InGet(int port) { lock (this) return port == InPortId ? _inPort : null; }
 
     [Hle]

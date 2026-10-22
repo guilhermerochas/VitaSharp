@@ -197,7 +197,8 @@ antes de implementar.
 
 ### Seção comum do fallback HLE
 
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceUlt (NID lib 0x220668A5)
+- [x] **Prioridade:** P2 · **Biblioteca:** SceUlt (NID lib 0x220668A5)
+- **Status:** feito (`Hle/Modules/Ult.cs`), só usado quando nenhum `libult.suprx` é carregado (os exports do módulo LLE substituem os stubs). Conferido contra o `libult.suprx` do firmware (desmontagem e um harness que roda as mesmas chamadas no HLE e no LLE, em threads de guest, com os mesmos resultados): erros 0x80810001.. (NULL 1, ALIGNMENT 2, RANGE 3, INVALID 4, PERMISSION 5, STATE 6, BUSY 7, AGAIN 8); objetos e parâmetros alinhados a 8; OptParam de 0x80 (três palavras mágicas, build version em +0xC, nos pools os bytes de +0x10 em diante precisam ser zero); Info de 0x80 (+0 size = 0x80 obrigatório, +4 objeto, +8 nome); fórmulas de `GetWorkAreaSize`; ordem dos argumentos dos Create, que recebem um último argumento com a build version (ignorado). Correções na tabela abaixo: `_sceUltConditionVariableCreate(cv, name, mutex, opt, buildVersion)` amarra o mutex na criação e `sceUltConditionVariableWait(cv)` só recebe a condvar; `_sceUlt*OptParamInitialize(opt, buildVersion)`. Semântica observada no LLE: Try* sem recurso → AGAIN (não BUSY); destruir pool em uso ou mutex travado → STATE; rwlock pode ser destruído travado e `UnlockWrite` não confere o dono; objeto destruído → STATE. Como no libult, o nome fica em +0 do objeto; o HLE grava uma marca em +0x20 e o UID em +0x24. Aproximado: ulthreads viram threads de guest (sem multiplexar nas workers do runtime; o buffer de contexto do jogo não é usado como pilha), os campos de Info depois do nome ficam zerados, o atributo recursivo do mutex é lido de OptParam +0x10 bit 0 (inferido) e o erro de `UlthreadCreate` acima de `numMaxUlthread` (AGAIN) não foi conferido. Testes: `UltHleTests`.
 - **Protótipos:** **(inferidos)**, ver tabela. Todos retornam `int32_t` (0 = sucesso, < 0 = erro). Objetos
   (`SceUltMutex*`, `SceUltQueue*` etc.) são áreas de memória do jogo, opacas; as funções `_sceUlt*Create` e
   `_sceUlt*OptParamInitialize` provavelmente recebem um argumento extra final com a versão do SDK (a confirmar).
@@ -251,9 +252,9 @@ antes de implementar.
 | 0x897C9097 | `sceUltMutexUnlock` | `int (SceUltMutex *mutex)` | destrava; não dono → erro PERMISSION |
 | 0x58D8DDE6 | `sceUltGetMutexInfo` | `int (SceUltMutex *mutex, SceUltMutexInfo *info)` | preenche info |
 | 0x0603FCC1 | `_sceUltConditionVariableOptParamInitialize` | `int (SceUltConditionVariableOptParam *opt)` | zera o OptParam |
-| 0xD76A156C | `_sceUltConditionVariableCreate` | `int (SceUltConditionVariable *cv, const char *name, const SceUltConditionVariableOptParam *opt)` | cria condvar |
+| 0xD76A156C | `_sceUltConditionVariableCreate` | `int (SceUltConditionVariable *cv, const char *name, SceUltMutex *mutex, const SceUltConditionVariableOptParam *opt, uint32_t buildVersion)` (confirmado) | cria condvar ligada ao mutex |
 | 0x53420ED2 | `sceUltConditionVariableDestroy` | `int (SceUltConditionVariable *cv)` | destrói |
-| 0x2CD0F57C | `sceUltConditionVariableWait` | `int (SceUltConditionVariable *cv, SceUltMutex *mutex)` | libera o mutex, espera sinal, retrava |
+| 0x2CD0F57C | `sceUltConditionVariableWait` | `int (SceUltConditionVariable *cv)` (confirmado) | libera o mutex da condvar, espera sinal, retrava |
 | 0x9FE7CB9F | `sceUltConditionVariableSignal` | `int (SceUltConditionVariable *cv)` | acorda um |
 | 0xEBB6FC1E | `sceUltConditionVariableSignalAll` | `int (SceUltConditionVariable *cv)` | acorda todos |
 | 0xC7AA4779 | `sceUltGetConditionVariableInfo` | `int (SceUltConditionVariable *cv, SceUltConditionVariableInfo *info)` | preenche info |

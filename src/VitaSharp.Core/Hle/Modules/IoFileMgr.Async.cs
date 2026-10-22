@@ -104,6 +104,34 @@ public sealed partial class IoFileMgr
         return op.Cancelled ? IO_ECANCELED : (int)op.Result;
     }
 
+    /// <summary>
+    /// <c>int (const SceIoAsyncParam *params, int count, int *numCompleted)</c> (the SceLibKernel export forwards to the
+    /// syscall; layout from the firmware's iofilemgr): <paramref name="count"/> entries of 0x18 bytes whose first word
+    /// is an opid. Each request is finished and its opid released, in order, stopping at the first one still running
+    /// (EBUSY 0x80010010) or unknown; <c>*numCompleted</c> gets how many were finished. Only that count is written:
+    /// the firmware returns no per-request results here (they are read with sceIoComplete beforehand or not at all).
+    /// The firmware caps <paramref name="count"/> at a per-process limit of at least 0x5C (EINVAL above it).
+    /// </summary>
+    [Hle]
+    [Hle("_sceIoCompleteMultiple")]
+    int sceIoCompleteMultiple(uint parameters, int count, Ptr<int> numCompleted)
+    {
+        const int EINVAL = unchecked((int)0x80010016), EBUSY = unchecked((int)0x80010010);
+        if (count > 0x5C) return EINVAL;
+        int done = 0, r = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int opid = (int)GuestMemory.R32(parameters + (uint)i * 0x18);
+            if (!_ops.TryGetValue(opid, out var op)) { r = SceError.UNKNOWN_EVENT_ID; break; }
+            lock (op) if (!op.Done) { r = EBUSY; break; }
+            _ops.TryRemove(opid, out _);
+            if (Emu != null) K.Objects.Remove(opid);
+            done++;
+        }
+        numCompleted.TrySet(done);
+        return r;
+    }
+
     /// <summary>Cancels pending requests by opid or by fd. Phase 1 requests are already complete when the opid is
     /// returned, so there is never anything left to cancel: a known opid/fd returns 0, anything else EBADF.</summary>
     [Hle]
@@ -137,6 +165,7 @@ public sealed partial class IoFileMgr
     }
 
     [Hle]
+    [Hle("sceIoGetPriorityForSystem")]
     int sceIoGetPriority(int fd)
     {
         if (!_files.TryGetValue(fd, out var f)) return IsSpecialFd(fd) ? ThreadDefaultPriority : SceError.IO_EBADF;
@@ -144,6 +173,7 @@ public sealed partial class IoFileMgr
     }
 
     [Hle]
+    [Hle("sceIoSetPriorityForSystem")]
     int sceIoSetPriority(int fd, int priority)
     {
         if (!_files.TryGetValue(fd, out var f)) return SceError.IO_EBADF;
@@ -152,9 +182,12 @@ public sealed partial class IoFileMgr
         return 0;
     }
 
-    [Hle] int sceIoGetThreadDefaultPriority() => ThreadDefaultPriority;
+    [Hle]
+    [Hle("sceIoGetThreadDefaultPriorityForSystem")]
+    int sceIoGetThreadDefaultPriority() => ThreadDefaultPriority;
 
     [Hle]
+    [Hle("sceIoSetThreadDefaultPriorityForSystem")]
     int sceIoSetThreadDefaultPriority(int priority)
     {
         if (priority < 0) return SceError.ILLEGAL_PRIORITY;
@@ -173,4 +206,11 @@ public sealed partial class IoFileMgr
         _processDefaultPriority = priority;
         return 0;
     }
+
+    // The *ForSystem aliases above are the privileged entries used by system modules (they also accept system
+    // priorities, which the plain range check here does not distinguish).
+
+    /// <summary>File lock for system processes, no public prototype (inferred <c>int (SceUID fd, int op)</c>). Files are
+    /// never shared between processes here, so only the descriptor is checked.</summary>
+    [Hle] int sceIoFlockForSystem(int fd, int op) => _files.ContainsKey(fd) ? 0 : SceError.IO_EBADF;
 }

@@ -755,8 +755,8 @@ síncrona. Em jogo, só quando algum título importar a função.
 - **Validação:** unitário; ver "Como confirmar" na arquitetura.
 
 ### sceIoCompleteMultiple
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA792C404
-- **Status (p1):** continua não registrada: vita-headers só lista o NID (`db/360/SceLibKernel.yml`) e a syscall `_sceIoCompleteMultiple` 0x9111D004, sem protótipo nem struct; no Vita3K ambas são `UNIMPLEMENTED()` sem argumentos.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xA792C404
+- **Status:** feito (`IoFileMgr.Async.cs`, export e syscall). Layout confirmado no `iofilemgr.skprx` do firmware (o export da SceLibKernel só repassa os argumentos): `int (const SceIoAsyncParam *params, int count, int *numCompleted)`, entradas de 0x18 bytes com o opid em +0. Cada pedido é finalizado e seu opid liberado, em ordem, parando no primeiro ainda em andamento (`EBUSY` 0x80010010) ou desconhecido; só `*numCompleted` é escrito (o firmware não devolve resultados por pedido). `count` acima do limite do processo (no mínimo 0x5C) → `EINVAL` 0x80010016. Aproximado: o código de opid desconhecido (`UNKNOWN_EVENT_ID`, como `sceIoComplete`) e o limite fixo em 0x5C.
 - **Protótipo:** sem header. Inferido: `int sceIoCompleteMultiple(SceIoCompleteMultipleParam *params, int count);`,
   um array de `{ SceUID opid; int result; … }` (**a confirmar**; a syscall `_sceIoCompleteMultiple` 0x9111D004 é o
   backend).
@@ -854,25 +854,30 @@ Implementação comum: em `IoFileMgr`, guarde `int Priority` em `OpenFile` (‑1
 - **Validação:** unitário.
 
 ### sceIoGetPriorityForSystem
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xEF5432ED
+- [x] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xEF5432ED
 - Variante privilegiada de `sceIoGetPriority`, usada por módulos de sistema (shell, NP); jogos usam a versão comum.
+- **Status:** alias de `sceIoGetPriority` (`IoFileMgr.Async.cs`).
 
 ### sceIoSetPriorityForSystem
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0x27373135
+- [x] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0x27373135
 - Variante privilegiada de `sceIoSetPriority` (aceita prioridades de sistema); não é chamada por jogos.
+- **Status:** alias de `sceIoSetPriority` (`IoFileMgr.Async.cs`); a faixa extra de prioridades de sistema não é distinguida.
 
 ### sceIoGetThreadDefaultPriorityForSystem
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xFCBCEAED
+- [x] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xFCBCEAED
 - Variante de sistema de `sceIoGetThreadDefaultPriority`; só módulos de sistema.
+- **Status:** alias de `sceIoGetThreadDefaultPriority` (`IoFileMgr.Async.cs`).
 
 ### sceIoSetThreadDefaultPriorityForSystem
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xB9C9C9CF
+- [x] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0xB9C9C9CF
 - Variante de sistema de `sceIoSetThreadDefaultPriority`; só módulos de sistema.
+- **Status:** alias de `sceIoSetThreadDefaultPriority` (`IoFileMgr.Async.cs`); a faixa extra de prioridades de sistema não é distinguida.
 
 ### sceIoFlockForSystem
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0x3E98E422
+- [x] **Prioridade:** FORA · **Biblioteca:** SceIofilemgr · **NID:** 0x3E98E422
 - Lock de arquivo para processos de sistema (sem protótipo público); jogos usam `SCE_O_RDLOCK`/`WRLOCK` no open,
   quando usam.
+- **Status:** registrada (`IoFileMgr.Async.cs`) com protótipo inferido `int (SceUID fd, int op)`: só valida o fd (`IO_EBADF`) e devolve 0, porque no VitaSharp nenhum arquivo é compartilhado entre processos.
 
 ---
 
@@ -889,8 +894,8 @@ qualquer módulo que os importe (`imports` de outros títulos), lendo os argumen
 com `NID_023EAA62`.
 
 ### sceIoRead2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x713523E1
-- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x713523E1
+- **Status:** feito (`IoFileMgr.cs`, alias de `sceIoRead`). Confirmado desmontando o `libkernel.suprx` do firmware: o export 0x713523E1 aponta para o stub de import da syscall `sceIoRead` (SceIofilemgr 0xFDB32293), então os argumentos e erros são os de `sceIoRead`.
 - **Protótipo:** sem header. Inferido: `SceSSize sceIoRead2(SceUID fd, void *buf, SceSize nbyte /*, ? */);` (a
   confirmar)
 - **Comportamento:** provavelmente igual a `sceIoRead`. A confirmar pelo método acima.
@@ -901,8 +906,8 @@ com `NID_023EAA62`.
 - **Validação:** um título que importe a função; não há nenhum hoje.
 
 ### sceIoWrite2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x11FED231
-- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0x11FED231
+- **Status:** feito (`IoFileMgr.cs`, alias de `sceIoWrite`). Confirmado como em `sceIoRead2`: o export é o stub da syscall `sceIoWrite` (SceIofilemgr 0x34EFD876).
 - **Protótipo:** sem header. Inferido: `SceSSize sceIoWrite2(SceUID fd, const void *buf, SceSize nbyte /*, ? */);` (a
   confirmar)
 - **Comportamento:** provavelmente igual a `sceIoWrite`.
@@ -912,8 +917,8 @@ com `NID_023EAA62`.
 - **Validação:** idem.
 
 ### sceIoClose2
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xF5C6F098
-- **Status (p1):** continua não registrada: só o NID em `db/360/SceLibKernel.yml`; sem header e Vita3K `UNIMPLEMENTED()`.
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xF5C6F098
+- **Status:** feito (`IoFileMgr.cs`, alias de `sceIoClose`). Confirmado na tabela de exports do `libkernel.suprx` do firmware: a entrada 0xF5C6F098 é o próprio stub de import da syscall `sceIoClose` (SceIofilemgr 0xC70B8886), mesmos argumentos e erros.
 - **Protótipo:** sem header. Inferido: `int sceIoClose2(SceUID fd);` (a confirmar)
 - **Comportamento:** provavelmente igual a `sceIoClose`.
 - **Retorno/erros:** como `sceIoClose` (a confirmar).

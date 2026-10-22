@@ -172,7 +172,8 @@ recebem os mesmos argumentos da base. Para confirmar, desmontar o SceTouch do FW
 Validação: teste unitário de cada alias; nenhum jogo instalado importa.
 
 ### FORA: sceTouchGetDeviceInfo, sceTouchGetProcessInfo, sceTouchSetProcessPrivilege
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceTouch · **NID:** 0xD7889B91 / 0xAB364C23 / 0x609EA489
+- [x] **Prioridade:** FORA · **Biblioteca:** SceTouch · **NID:** 0xD7889B91 / 0xAB364C23 / 0x609EA489
+- **Status:** feito (`Display.cs`, classe `Touch`): as três devolvem `SCE_TOUCH_ERROR_PRIV_REQUIRED` 0x80350002 sem escrever nada (protótipos de `GetProcessInfo`/`SetProcessPrivilege` inferidos com dois argumentos, ignorados).
 - **Protótipo:** `int sceTouchGetDeviceInfo(SceUInt32 port_type, SceTouchDeviceInfo *info);` (`psp2/touch.h`); as
   outras duas sem protótipo.
 - **Comportamento:** só programas de sistema. Para um jogo, `GetDeviceInfo` devolve `SCE_TOUCH_ERROR_PRIV_REQUIRED`
@@ -538,7 +539,8 @@ NextDeadline, MicGain = 0x1060}`, `bool _muted = false` e `int _inputRoute = 0` 
 - **Validação:** teste unitário: Get logo após Open == 0x1060.
 
 ### FORA: sceAudioInOpenPortForDiag
-- [ ] **Prioridade:** FORA · **Biblioteca:** SceAudioIn · **NID:** 0xC6962E84
+- [x] **Prioridade:** FORA · **Biblioteca:** SceAudioIn · **NID:** 0xC6962E84
+- **Status:** feito (`Audio.cs`): outros tipos vão para `sceAudioInOpenPort`; DIAG (14) abre a porta única sem validar grain/freq (valores fora de faixa viram 256 amostras / 16 kHz só para dimensionar e cadenciar o silêncio capturado).
 - **Protótipo:** `int sceAudioInOpenPortForDiag(SceAudioInPortType port_type, int grain, int freq, SceAudioInParam param);` (`psp2/audioin.h`)
 - **Comportamento:** entrada de diagnóstico: igual a `OpenPort` e também aceita DIAG (14) sem validar grain/freq. Jogos
   não usam.
@@ -1044,7 +1046,8 @@ Implementação em `SystemMisc`. Validação: teste unitário.
 - **Validação:** idem `DetectionEx`.
 
 ### sceFaceAllParts
-- [ ] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xE521EB6F
+- [x] **Prioridade:** P0 (Invizimals) · **Biblioteca:** SceFace · **NID:** 0xE521EB6F
+- **Status:** coberto pelo LLE (como as demais P0 de SceFace). Validado num harness de guest com o `libface.suprx` do PCSA00552 carregado: o export resolve (`imports PCSA00552`: SceFace 6 imports, 0 faltando), `sceFaceAllPartsGetWorkingMemorySize` sem dicionário devolve 0 e `sceFaceAllParts` com os 14 argumentos da chamada do jogo e dicionário NULL devolve 0x808B0003 sem escrever `*numParts`. Com dicionário real e rosto detectado não foi exercitado: no cenário roteirizado o jogo ainda não chega ao `sceSysmoduleLoadModule(0x38)`.
 - **Protótipo:** inferido da chamada em `0x814D26F0`: `SceInt32 sceFaceAllParts(const SceUChar8 *img, SceInt32 w, SceInt32 h, SceInt32 rowstride, const void *partsDict, SceInt32 a5 /*0*/, SceInt32 a6 /*10*/, SceInt32 a7 /*10*/, const SceFaceDetectionResult *face, SceFacePartsResult *parts, SceInt32 maxParts /*55*/, SceInt32 *numParts, void *workMem, SceInt32 workMemSize);`
 - **Comportamento:** localiza as partes do rosto (olhos, boca etc.) dentro da região de um rosto detectado. O jogo
   percorre o resultado em registros de 0x30 bytes, procura os IDs de parte 0x9A e 0x9D e exige score ≥ 3.0.

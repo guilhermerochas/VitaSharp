@@ -191,6 +191,14 @@ public sealed class Gxm : HleModule
 
     [Hle] int sceGxmSetUserMarker(uint ctx, uint tag) => Ctx(ctx) == null ? ERR_INVALID_POINTER : 0;
 
+    // ---- Razor GPU capture/trace (devkit profiler): no capture is ever taken, so registering memory is a no-op
+
+    /// <summary>Inferred <c>int (void *base, SceSize size)</c>.</summary>
+    [Hle] int sceGxmAddRazorGpuCaptureBuffer(uint baseAddr, uint size) => baseAddr == 0 ? ERR_INVALID_POINTER : 0;
+    /// <summary>Inferred <c>int (void *base)</c>.</summary>
+    [Hle] int sceGxmRemoveRazorGpuCaptureBuffer(uint baseAddr) => baseAddr == 0 ? ERR_INVALID_POINTER : 0;
+    [Hle] int sceGxmPadTriggerGpuPaTrace() => 0;
+
     // =========================================================== contexts / render targets / sync
 
     [Hle]

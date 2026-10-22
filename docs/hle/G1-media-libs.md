@@ -801,6 +801,69 @@ o `SasEngine` sob o lock. Validação: homebrew de teste comparando com Vita3K e
 
 ## Fontes do sistema: ScePgf e ScePvf (visão comum)
 
+### Estado da implementação (2026-10-22, branch `feat/hle-g1`)
+
+Implementado em `Hle/Modules/Pgf.cs`, `Hle/Modules/Pvf.cs` e `Hle/Font/` (`PgfFont.cs`, `PvfFace.cs`, `FontBlit.cs`).
+Testes: `tests/VitaSharp.Tests/PgfHleTests.cs`, `PvfHleTests.cs` (fontes sintéticas em `FontTestData.cs`, mais
+checagens opcionais contra as fontes do firmware quando há uma instalação do Vita3K). Nenhum jogo instalado importa
+estas bibliotecas hoje.
+
+**Confirmado desmontando `libpgf.suprx`/`libpvf.suprx` do firmware** (carregados pelo próprio VitaSharp numa
+ferramenta de scratch). Isto corrige vários "a confirmar" das seções abaixo; onde o texto antigo diverge, vale esta
+lista:
+
+- Fontes: lidas de `sa0:data/font/pgf|pvf/` pelo VFS. O VitaSharp não traz fontes; sem os arquivos do firmware,
+  `sceFontOpen` falha com `HANDLER_OPEN_FAILED` (0x80460005) e `scePvfOpen` com `FILEOPEN` (0x80460005).
+- `sceFontNewLib`: `errorCode == NULL` ⇒ retorna 0 sem escrever; exige `allocFunc` e `freeFunc`; `numFonts` 1..9
+  (fora ⇒ 0x80460003); aloca 0x4C (lib), `numFonts`×0x4C (tabela de fontes = handles) e `numFonts`×0x234 pelo
+  `allocFunc`. Defaults: 128 dpi, alt char 0x5F.
+- `scePvfNewLib`: `reserved` (+0xC) precisa ser 0; exige alloc/realloc/free; `maxNumFonts` 1..18; aloca 0x460,
+  n×0x84 e n×0x114. Defaults: 128 dpi, tamanho 10,125 pt (= 18 px/em), EM 1000, alt char 0x5F.
+- Listas do sistema (copiadas do segmento de dados): PGF = 18 entradas `jpn0, ltn0..ltn15, kr0` (jpn0 estilo 103 DB,
+  kr0 "AsiaNHH(512Johab)" país 3; arib fora); PVF = 18 entradas `jpn0..3, ltn0..7, kr0..3, cn0..1`, peso 0, nomes
+  vazios, só `fileName` (music_arib/psexchar fora). `fontFileName` é só o nome do arquivo.
+- `sceFontGetFontInfoByIndexNumber`: o índice é o **terceiro** argumento (o "unknown" do header); o quarto é ignorado.
+- Busca (PGF): máscara de critérios não-nulos; peso/tamanho comparados com tolerância de 0,1 %; tamanho = tamanho ×
+  resolução (a da lib quando o estilo não traz). `FindOptimumFont`: casamento exato de tamanho ganha na hora, senão o
+  mais próximo (H e V dividem o mesmo mínimo), sem critério de tamanho ganha a **última** fonte que casa; sem
+  resultado repete só com o idioma. `FindFont`: primeira que casa ou −1. PVF: sem tamanho; Optimum = primeira que casa,
+  com o mesmo fallback de idioma, senão 0.
+- `SceFontInfo+0x54` ("charMapLength") é o número de glifos (header 0x14); `shadowMapLength` é sempre 0. Fontes de
+  usuário têm estilo zerado, exceto os floats de tamanho/resolução tirados do header.
+- Caractere sem glifo (PGF): códigos > 0x1F usam o alt char; se nem ele existe, info zerada e nada desenhado, retorno
+  0. Revisão 3 (kr0): tabela de faixas comprimida para o charmap, faixas de glifos internos (0x1200/0x1400…) que
+  respondem com o alt char, e glifos "overlay" (layout 3) que são listas de 3 códigos desenhados com o deslocamento
+  de cada parte; `GetCharImageRect` devolve a união.
+- Blit (as duas libs): **soma saturada** no buffer, com a fração de `xPos64` espalhando cada pixel para x+1; só
+  formatos 0 (4 bpp, x par no nibble baixo) e 2 (8 bpp) — 1, 3 e 4 ⇒ 0x80460003. PGF: posição = canto superior
+  esquerdo do bitmap; PVF: pena na baseline + (bitmapLeft, −bitmapTop). `_Clip`: retângulo em pixels do buffer;
+  largura/altura 0, `x+w == 0`, `y+h == 0` ou início fora do buffer ⇒ retorna 0 sem desenhar.
+- PVF `GetCharInfo` só carrega métricas (campos de bitmap ficam 0); código ausente ou 0xFFFF usa o alt char; alt char
+  0 ⇒ 0x8046000D (sem nome no header). `SetCharSize` > 0, `SetEmboldenRate` −20..40, `SetSkewValue` ±30 (fora ⇒
+  0x80460003). `scePvfSetEM` aceita 0 e só é guardado. Conversões ponto↔pixel: `px·72/res` e `pt·res/72`; resultado
+  inf/NaN ⇒ 0x8046000E.
+- `scePvfGetCharGlyphOutline(font, code, outline)`: o terceiro argumento é uma struct do chamador no formato
+  `FT_Outline` (0x14: s16 n_contours, s16 n_points, points*, tags*, contours*, s32 flags) cujos arrays a lib aloca
+  com o `allocFunc`; `scePvfReleaseCharGlyphOutline(font, outline)` libera os três ponteiros.
+- `__scePvfSetFt2LibCHook`/`DoneLibCHook`: só repassam a tabela ao libSceFt2; o HLE registra e retorna 0.
+
+**Aproximado (honesto):**
+
+- PVF rasteriza com stb_truetype (StbTrueTypeSharp, MIT/Unlicense, gerenciado e compatível com AOT) em vez do
+  FreeType da Sony: tamanhos, caixas e posições seguem as regras do FreeType (cbox, grid-fit das métricas), mas sem
+  hinting, então os valores de cobertura do antialias diferem um pouco.
+- Embolden: força = taxa × tamanho(pt) × 64 / 100 em 26.6 (o valor que a libpvf passa ao libSceFt2; a unidade final
+  não foi confirmada). Skew: cisalhamento `x += y·tan(ângulo)`. Kerning só da tabela `kern`, arredondado ao pixel
+  (como `FT_Get_Kerning`); as PVF do firmware não têm `kern`, então dá 0.
+- `scePvfGetFontInfo`: máximos tirados de head/hhea/vhea no tamanho atual (a fórmula real usa o EM e não foi
+  reproduzida). `scePvfIsVertElement` = existe forma vertical via GSUB `vert`/`vrt2`. Imagens verticais posicionadas
+  pela origem vertical (pena + vertBearingX/Y).
+- `scePvfOpenDefault*FontOnSharedMemory` abrem `jpn0.pvf`/`ltn0.pvf` dos arquivos (a lib real usa blocos de memória
+  compartilhada "SceSysDefaultJpnFont"/"SceSysDefaultLtnFont").
+- Fontes são lidas inteiras ao abrir (a lib real faz streaming com cache). `sceFontOpenUserFile` em modo ≠ 1 lê pelos
+  callbacks de I/O do jogo, como a lib real exige; `scePvfOpenUserFile` lê pelo VFS.
+- Shadow flags do glifo PGF seguem a decomposição 2+2+3 bits do PPSSPP.
+
 As duas bibliotecas são renderizadores de fonte em software (CPU) que escrevem bitmaps de glifos em buffers do
 jogo. Não há GPU nem áudio envolvidos: o jogo pede métricas e um bitmap 4/8 bpp e depois sobe esse bitmap como
 textura. Isso torna as duas fáceis de validar byte a byte contra o firmware real.
@@ -1079,7 +1142,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 ---
 
 ### sceFontNewLib
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x1055ABA3
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x1055ABA3
 - **Protótipo:** `SceFontLibHandle sceFontNewLib(SceFontNewLibParams *params, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** cria uma instância da biblioteca de fontes. Copia `params` (callbacks e `numFonts` = máximo de
   fontes abertas simultaneamente nesta instância), aloca a memória interna pelo `allocFunc` do jogo e zera
@@ -1095,7 +1158,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
   e tamanho das alocações.
 
 ### sceFontDoneLib
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x07EE1733
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x07EE1733
 - **Protótipo:** `int sceFontDoneLib(SceFontLibHandle libHandle);` (`psp2/pgf.h`)
 - **Comportamento:** destrói a instância: fecha fontes ainda abertas dela e devolve a memória pelo `freeFunc`.
 - **Retorno/erros:** 0. Handle desconhecido ⇒ `SCE_FONT_ERROR_INVALID_LIBID` (0x80460002).
@@ -1103,7 +1166,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** mesmo homebrew; contador de `free` igual ao de `alloc` após `DoneLib`.
 
 ### sceFontGetNumFontList
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x9F842307
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x9F842307
 - **Protótipo:** `int sceFontGetNumFontList(SceFontLibHandle libHandle, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** número de fontes do sistema registradas (as que `sceFontOpen` aceita por índice).
 - **Retorno/erros:** contagem (≥ 0) e `*errorCode = 0`; lib inválida ⇒ retorna `SCE_FONT_ERROR_INVALID_LIBID`
@@ -1114,7 +1177,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** LLE no homebrew de teste, imprimindo o valor.
 
 ### sceFontGetFontList
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xD56DCCEA
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xD56DCCEA
 - **Protótipo:** `int sceFontGetFontList(SceFontLibHandle libHandle, SceFontStyle *fontStyle, int numFonts);`
   (`psp2/pgf.h`)
 - **Comportamento:** preenche `min(numFonts, total)` entradas `SceFontStyle` (0xA8 cada) com o estilo de cada fonte
@@ -1130,7 +1193,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** dump hexadecimal das N×0xA8 bytes no LLE vs HLE (devem ser idênticos).
 
 ### sceFontGetFontInfoByIndexNumber
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xAB034738
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xAB034738
 - **Protótipo:** `int sceFontGetFontInfoByIndexNumber(SceFontLibHandle libHandle, SceFontStyle *fontStyle, int unknown, int fontIndex);` (`psp2/pgf.h`; o terceiro parâmetro é "unknown" no header)
 - **Comportamento:** copia o `SceFontStyle` da fonte do sistema `fontIndex` para `*fontStyle`. O `unknown` não tem
   semântica conhecida (no PSP a assinatura era `(lib, style*, index)`; no Vita há um argumento a mais — a confirmar
@@ -1141,7 +1204,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** LLE com `unknown` = 0 e ≠ 0 e índices variados.
 
 ### sceFontFindOptimumFont
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x8DFBAE1B
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x8DFBAE1B
 - **Protótipo:** `int sceFontFindOptimumFont(SceFontLibHandle libHandle, SceFontStyle *fontStyle, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** devolve o índice da fonte do sistema que melhor casa com os critérios em `*fontStyle`. Campos
   zerados/vazios são ignorados (curinga). Sempre devolve algum índice válido (melhor pontuação; empate ⇒ menor
@@ -1154,7 +1217,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** bateria de estilos (família × estilo × tamanho) no LLE e HLE; índices iguais.
 
 ### sceFontFindFont
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x51061D87
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x51061D87
 - **Protótipo:** `int sceFontFindFont(SceFontLibHandle libHandle, SceFontStyle *fontStyle, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** como `FindOptimumFont`, mas só aceita casamento exato de todos os campos não-curinga; sem
   casamento devolve −1 (PSP/PPSSPP) com `*errorCode = 0` (a confirmar no Vita).
@@ -1163,7 +1226,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** mesma bateria, incluindo um estilo inexistente (família 3 = rounded).
 
 ### sceFontOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xBD2DFCFF
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xBD2DFCFF
 - **Protótipo:** `SceFontHandle sceFontOpen(SceFontLibHandle libHandle, int index, int mode, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** abre a fonte do sistema `index`. `mode` escolhe entre ler o arquivo sob demanda (0, usando o
   driver de I/O) e carregar o arquivo inteiro na memória (1) — no PSP era assim; a confirmar no Vita. Conta contra
@@ -1178,7 +1241,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** abrir índices 0..N−1 e N; abrir `numFonts+1` fontes; comparar com LLE.
 
 ### sceFontOpenUserFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xE260E740
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xE260E740
 - **Protótipo:** `SceFontHandle sceFontOpenUserFile(SceFontLibHandle libHandle, char *file, int mode, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** abre um `.pgf` arbitrário (ex. `app0:font/x.pgf`). Mesmo `mode` de `sceFontOpen`. Se a lib tiver
   `openFunc/readFunc/...`, a lib real lê o arquivo por esses callbacks (a confirmar); caso contrário usa `sceIo*`.
@@ -1189,7 +1252,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** homebrew com um `.pgf` em `app0:`; caminho inexistente.
 
 ### sceFontOpenUserMemory
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xB23ED47C
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xB23ED47C
 - **Protótipo:** `SceFontHandle sceFontOpenUserMemory(SceFontLibHandle libHandle, void *pMemoryFont, SceSize pMemoryFontSize, unsigned int *errorCode);` (`psp2/pgf.h`)
 - **Comportamento:** abre um PGF já carregado na memória do jogo. A lib real usa os dados in-place (o jogo não pode
   liberar o buffer antes de `sceFontClose`).
@@ -1199,7 +1262,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** homebrew que carrega `ltn0.pgf` com `sceIoRead` e abre da memória; mesmos bitmaps do `sceFontOpen`.
 
 ### sceFontClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x4A7293E9
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x4A7293E9
 - **Protótipo:** `int sceFontClose(SceFontHandle fontHandle);` (`psp2/pgf.h`)
 - **Comportamento:** fecha a fonte, libera a vaga em `numFonts` e a memória interna (via `freeFunc`).
 - **Retorno/erros:** 0; handle inválido ⇒ 0x80460003 (a confirmar; pode ser 0x80460002).
@@ -1207,7 +1270,7 @@ u16, 0x10 `bytesPerLine` u16, 0x12 pad, 0x14 `bufferPtr` u32.
 - **Validação:** abrir `numFonts`, fechar uma, abrir outra com sucesso.
 
 ### sceFontSetResolution
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xDE47674C
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xDE47674C
 - **Protótipo:** `int sceFontSetResolution(SceFontLibHandle libHandle, float hRes, float vRes);` (`psp2/pgf.h`)
 - **Comportamento:** define a resolução (dpi) usada pelas conversões ponto↔pixel da instância. Não muda os bitmaps
   (PGF é bitmap fixo).
@@ -1224,15 +1287,15 @@ resolução default e após `SetResolution`.
 
 | Função | NID | Protótipo (`psp2/pgf.h`) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] sceFontPixelToPointH | 0x9E38F4D6 | `float sceFontPixelToPointH(SceFontLibHandle libHandle, float fontPixelsH, unsigned int *errorCode);` | `fontPixelsH * 72 / hRes` |
-| - [ ] sceFontPixelToPointV | 0x7B45E2D1 | `float sceFontPixelToPointV(SceFontLibHandle libHandle, float fontPixelsV, unsigned int *errorCode);` | `fontPixelsV * 72 / vRes` |
-| - [ ] sceFontPointToPixelH | 0x39B9AEFF | `float sceFontPointToPixelH(SceFontLibHandle libHandle, float fontPointsH, unsigned int *errorCode);` | `fontPointsH * hRes / 72` |
-| - [ ] sceFontPointToPixelV | 0x03F10EC8 | `float sceFontPointToPixelV(SceFontLibHandle libHandle, float fontPointsV, unsigned int *errorCode);` | `fontPointsV * vRes / 72` |
+| - [x] sceFontPixelToPointH | 0x9E38F4D6 | `float sceFontPixelToPointH(SceFontLibHandle libHandle, float fontPixelsH, unsigned int *errorCode);` | `fontPixelsH * 72 / hRes` |
+| - [x] sceFontPixelToPointV | 0x7B45E2D1 | `float sceFontPixelToPointV(SceFontLibHandle libHandle, float fontPixelsV, unsigned int *errorCode);` | `fontPixelsV * 72 / vRes` |
+| - [x] sceFontPointToPixelH | 0x39B9AEFF | `float sceFontPointToPixelH(SceFontLibHandle libHandle, float fontPointsH, unsigned int *errorCode);` | `fontPointsH * hRes / 72` |
+| - [x] sceFontPointToPixelV | 0x03F10EC8 | `float sceFontPointToPixelV(SceFontLibHandle libHandle, float fontPointsV, unsigned int *errorCode);` | `fontPointsV * vRes / 72` |
 
 Prioridade de todas: P2 · Biblioteca: ScePgf.
 
 ### sceFontSetAltCharacterCode
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x8D5B44DF
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x8D5B44DF
 - **Protótipo:** `int sceFontSetAltCharacterCode(SceFontLibHandle libHandle, unsigned int charCode);` (`psp2/pgf.h`)
 - **Comportamento:** define o caractere usado no lugar de códigos sem glifo em `GetCharInfo`/`GetCharGlyphImage*`/
   `GetCharImageRect` das fontes dessa instância.
@@ -1242,7 +1305,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
 - **Validação:** como acima, antes e depois de setar.
 
 ### sceFontFlush
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x7D8CB13B
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x7D8CB13B
 - **Protótipo:** `int sceFontFlush(SceFontHandle fontHandle);` (`psp2/pgf.h`)
 - **Comportamento:** descarta o cache de glifos da fonte (`cacheData` da lib). Sem efeito visível.
 - **Retorno/erros:** 0; handle inválido 0x80460003 (a confirmar).
@@ -1250,7 +1313,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
 - **Validação:** chamada entre renders não muda o resultado.
 
 ### sceFontGetFontInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xF9414FA2
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xF9414FA2
 - **Protótipo:** `int sceFontGetFontInfo(SceFontHandle fontHandle, SceFontInfo *fontInfo);` (`psp2/pgf.h`)
 - **Comportamento:** preenche `SceFontInfo` (0x108 bytes) com as métricas máximas do header PGF e o `SceFontStyle` da
   fonte (para fonte de usuário: estilo derivado do header, `fontFileName` vazio — a confirmar).
@@ -1260,7 +1323,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
 - **Validação:** diff byte a byte LLE × HLE para ltn0, ltn8, jpn0, kr0.
 
 ### sceFontGetCharInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x6FD1BA65
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x6FD1BA65
 - **Protótipo:** `int sceFontGetCharInfo(SceFontHandle fontHandle, unsigned int charCode, SceFontCharInfo *charInfo);` (`psp2/pgf.h`)
 - **Comportamento:** métricas de um caractere. `bitmapWidth/Height/Left/Top` = campos do glifo (left/top com sinal
   gravados em `unsigned int`); `sfp26*` = valores das tabelas (H/V de dim, xAdjust, yAdjust, advance);
@@ -1273,7 +1336,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
 - **Validação:** dump de `0x20..0x7E` e alguns kana em LLE × HLE.
 
 ### sceFontGetCharImageRect
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x70C86B3E
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0x70C86B3E
 - **Protótipo:** `int sceFontGetCharImageRect(SceFontHandle fontHandle, unsigned int charCode, SceFontImageRect *charRect);` (`psp2/pgf.h`)
 - **Comportamento:** tamanho em pixels do bitmap do glifo (`width`, `height` u16); o jogo usa para dimensionar o
   buffer antes de `GetCharGlyphImage`.
@@ -1282,7 +1345,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
 - **Validação:** igual ao `bitmapWidth/Height` de `GetCharInfo`.
 
 ### sceFontGetCharGlyphImage
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xAB45AAD3
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xAB45AAD3
 - **Protótipo:** `int sceFontGetCharGlyphImage(SceFontHandle fontHandle, unsigned int charCode, SceFontGlyphImage *glyphImage);` (`psp2/pgf.h`)
 - **Comportamento:** desenha o glifo no buffer descrito por `glyphImage`. Posição do canto superior esquerdo:
   `x = xPos64 >> 6`, `y = yPos64 >> 6` (PPSSPP; a parte fracionária é ignorada, e se a posição é a da origem/baseline
@@ -1299,7 +1362,7 @@ Prioridade de todas: P2 · Biblioteca: ScePgf.
   (pega posição, ordem de nibble e política de fundo de uma vez); repetir para os 5 formatos.
 
 ### sceFontGetCharGlyphImage_Clip
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xEB589530
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePgf · **NID:** 0xEB589530
 - **Protótipo:** `int sceFontGetCharGlyphImage_Clip(SceFontHandle fontHandle, unsigned int charCode, SceFontGlyphImage *glyphImage, int clipXPos, int clipYPos, int clipWidth, int clipHeight);` (`psp2/pgf.h`; 3 últimos args na pilha)
 - **Comportamento:** igual a `GetCharGlyphImage`, mas só escreve pixels dentro do retângulo de recorte
   (`clipXPos, clipYPos, clipWidth, clipHeight`, em coordenadas do buffer — a confirmar se são relativas ao buffer
@@ -1383,7 +1446,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 ---
 
 ### __scePvfSetFt2LibCHook
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x997161C3
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x997161C3
 - **Protótipo:** sem protótipo no `psp2/pvf.h`. Inferido: `int __scePvfSetFt2LibCHook(void *hooks);` (tabela de
   ponteiros de funções libc — malloc/free/realloc/memcpy… — que o `libpvf` repassa ao `libSceFt2`). Assinatura e
   layout da tabela **a confirmar** desmontando `libpvf.suprx` ou um jogo que a importe.
@@ -1394,7 +1457,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** jogo/homebrew que a importe não deve travar; logar o argumento na primeira chamada.
 
 ### __scePvfSetFt2DoneLibCHook
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x58142D71
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x58142D71
 - **Protótipo:** sem protótipo. Inferido: `int __scePvfSetFt2DoneLibCHook(void *hook);` (callback chamado no
   `DoneLib` do FreeType). A confirmar como acima.
 - **Comportamento:** registra/limpa o hook de finalização da libc do FreeType.
@@ -1403,7 +1466,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** idem.
 
 ### scePvfNewLib
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x72E58672
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x72E58672
 - **Protótipo:** `ScePvfLibId scePvfNewLib(ScePvfInitRec *initParam, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** cria a instância (como `sceFontNewLib`): copia `ScePvfInitRec`, aloca memória interna pelo
   `allocFunc`, inicializa FreeType, defaults de EM/resolução/alt char.
@@ -1416,7 +1479,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** homebrew com allocator contador; LLE × HLE.
 
 ### scePvfDoneLib
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE17717EC
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE17717EC
 - **Protótipo:** `ScePvfError scePvfDoneLib(ScePvfLibId libID);` (`psp2/pvf.h`)
 - **Comportamento:** fecha as fontes da lib, finaliza FreeType, libera memória via `freeFunc`.
 - **Retorno/erros:** 0; lib inválida `SCE_PVF_ERROR_LIBID` (0x80460002).
@@ -1424,7 +1487,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** contador de alloc/free.
 
 ### scePvfSetEM
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xDFB677C5
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xDFB677C5
 - **Protótipo:** `ScePvfError scePvfSetEM(ScePvfLibId libID, ScePvfFloat32 emValue);` (`psp2/pvf.h`)
 - **Comportamento:** define o tamanho do EM (unidade de referência para converter tamanhos em pontos) da instância.
   Semântica exata (valor em pontos por EM? fator global de escala?) **a confirmar** via LLE: renderizar o mesmo
@@ -1434,7 +1497,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** como descrito.
 
 ### scePvfSetResolution
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xC4444FB3
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xC4444FB3
 - **Protótipo:** `ScePvfError scePvfSetResolution(ScePvfLibId libID, ScePvfFloat32 hResolution, ScePvfFloat32 vResolution);` (`psp2/pvf.h`)
 - **Comportamento:** dpi da instância; afeta o tamanho em pixels dos glifos (`FT_Set_Char_Size(face, h*64, v*64,
   hRes, vRes)`) e as conversões ponto↔pixel.
@@ -1443,7 +1506,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** `PointToPixelH(72)` == `hResolution`.
 
 ### scePvfGetNumFontList
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF6C4A855
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF6C4A855
 - **Protótipo:** `ScePvfInt scePvfGetNumFontList(ScePvfLibId libID, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** número de fontes PVF do sistema.
 - **Retorno/erros:** contagem e `*errorCode = 0`; lib inválida ⇒ 0x80460002. Valor esperado **a confirmar** (20
@@ -1452,7 +1515,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** LLE.
 
 ### scePvfGetFontList
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x66F2D767
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x66F2D767
 - **Protótipo:** `ScePvfError scePvfGetFontList(ScePvfLibId libID, ScePvfFontStyleInfo *fontStyleInfo, ScePvfInt arraySize);` (`psp2/pvf.h`)
 - **Comportamento:** preenche até `arraySize` `ScePvfFontStyleInfo` (0xD8 cada) na ordem dos índices de `scePvfOpen`.
 - **Retorno/erros:** 0; 0x80460002; ponteiro nulo/tamanho negativo 0x80460003.
@@ -1463,7 +1526,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** diff byte a byte LLE × HLE.
 
 ### scePvfGetFontInfoByIndexNumber
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF3E1E8BD
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF3E1E8BD
 - **Protótipo:** `ScePvfError scePvfGetFontInfoByIndexNumber(ScePvfLibId libID, ScePvfFontStyleInfo *fontStyleInfo, ScePvfFontIndex fontIndex);` (`psp2/pvf.h`)
 - **Comportamento:** copia o estilo da fonte `fontIndex`.
 - **Retorno/erros:** 0; 0x80460002; índice inválido/ponteiro nulo 0x80460003.
@@ -1471,7 +1534,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** igual à entrada correspondente de `GetFontList`.
 
 ### scePvfFindOptimumFont
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x2761FEAC
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x2761FEAC
 - **Protótipo:** `ScePvfFontIndex scePvfFindOptimumFont(ScePvfLibId libID, ScePvfFontStyleInfo *fontStyleInfo, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** índice da fonte que melhor atende aos critérios (regras de curinga do header, ver Estruturas);
   sempre devolve um índice válido.
@@ -1481,7 +1544,7 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 - **Validação:** bateria de critérios no LLE × HLE (ex. `languageCode = 1` deve dar jpn0).
 
 ### scePvfFindFont
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x984E5BFE
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x984E5BFE
 - **Protótipo:** `ScePvfFontIndex scePvfFindFont(ScePvfLibId libID, ScePvfFontStyleInfo *fontStyleInfo, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** casamento exato; sem resultado ⇒ −1 (a confirmar se com `*errorCode = 0` ou erro).
 - **Retorno/erros:** índice ou −1; demais como acima.
@@ -1500,7 +1563,7 @@ subIndex)` (`FT_New_Memory_Face`; manter o `byte[]` pinado enquanto a face exist
 Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho inválido; `maxNumFonts + 1` aberturas.
 
 #### scePvfOpen
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE35434BB
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE35434BB
 - **Protótipo:** `ScePvfFontId scePvfOpen(ScePvfLibId libID, ScePvfFontIndex fontIndex, ScePvfU32 mode, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** abre a fonte do sistema `fontIndex` de `sa0:data/font/pvf/`. `mode` = `ScePvfDataAccessMode`
   (0 = `SCE_PVF_FILEBASEDSTREAM`, lê do arquivo sob demanda; 1 = `SCE_PVF_MEMORYBASEDSTREAM`, carrega tudo).
@@ -1508,32 +1571,32 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
   `allocFunc` em modo 1 se o LLE mostrar que a lib real faz isso.
 
 #### scePvfOpenUserFile
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xD535520F
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xD535520F
 - **Protótipo:** `ScePvfFontId scePvfOpenUserFile(ScePvfLibId libID, ScePvfPointer filename, ScePvfU32 mode, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** abre um arquivo de fonte do jogo (`filename` é `char*` de caminho Vita). Aceita qualquer
   formato que o FreeType da Sony suporte (TTF/OTF/TTC; a confirmar se aceita TTF puro).
 - **Implementação no VitaSharp:** ler pelo `Vfs` e abrir com subfont 0.
 
 #### scePvfOpenUserFileWithSubfontIndex
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x10452B86
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x10452B86
 - **Protótipo:** `ScePvfFontId scePvfOpenUserFileWithSubfontIndex(ScePvfLibId libID, ScePvfPointer filename, ScePvfU32 mode, ScePvfU32 subFontIndex, ScePvfError *errorCode);` (`psp2/pvf.h`; `errorCode` na pilha)
 - **Comportamento:** como `OpenUserFile`, escolhendo a face `subFontIndex` de uma coleção (`.ttc`/`.otc`).
 - **Retorno/erros:** índice inexistente ⇒ 0x80460003 (a confirmar).
 - **Implementação no VitaSharp:** `FT_New_Memory_Face(..., subFontIndex)`.
 
 #### scePvfOpenUserMemory
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9E65E4ED
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9E65E4ED
 - **Protótipo:** `ScePvfFontId scePvfOpenUserMemory(ScePvfLibId libID, ScePvfPointer addr, ScePvfU32 size, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** abre fonte já carregada pelo jogo em `addr` (usada in-place; o jogo mantém o buffer vivo).
 - **Implementação no VitaSharp:** copiar para `byte[]` (conteúdo imutável).
 
 #### scePvfOpenUserMemoryWithSubfontIndex
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA81570EB
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA81570EB
 - **Protótipo:** `ScePvfFontId scePvfOpenUserMemoryWithSubfontIndex(ScePvfLibId libID, ScePvfPointer addr, ScePvfU32 size, ScePvfU32 subFontIndex, ScePvfError *errorCode);` (`psp2/pvf.h`; `errorCode` na pilha)
 - **Comportamento:** `OpenUserMemory` + subfont.
 
 #### scePvfOpenDefaultJapaneseFontOnSharedMemory
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xFEEE373A
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xFEEE373A
 - **Protótipo:** `ScePvfFontId scePvfOpenDefaultJapaneseFontOnSharedMemory(ScePvfLibId libID, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** abre a fonte japonesa padrão que o sistema mantém carregada numa região de memória
   compartilhada (economiza memória do jogo: não aloca o arquivo). Qual arquivo é o "default japonês" (provável
@@ -1542,13 +1605,13 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
   `allocFunc`; cache estático de bytes compartilhado entre libs.
 
 #### scePvfOpenDefaultLatinFontOnSharedMemory
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9CBC1A46
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9CBC1A46
 - **Protótipo:** `ScePvfFontId scePvfOpenDefaultLatinFontOnSharedMemory(ScePvfLibId libID, ScePvfError *errorCode);` (`psp2/pvf.h`)
 - **Comportamento:** idem para a latina padrão (provável `ltn0.pvf`; a confirmar).
 - **Implementação no VitaSharp:** idem com `ltn0.pvf`.
 
 #### scePvfClose
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xD282C23C
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xD282C23C
 - **Protótipo:** `ScePvfError scePvfClose(ScePvfFontId fontID);` (`psp2/pvf.h`)
 - **Comportamento:** fecha a fonte (libera face, cache e memória via `freeFunc`).
 - **Retorno/erros:** 0; handle inválido 0x80460003 (a confirmar).
@@ -1556,7 +1619,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** reabrir após fechar com a lib cheia.
 
 ### scePvfFlush
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x687FF765
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x687FF765
 - **Protótipo:** `ScePvfError scePvfFlush(ScePvfFontId fontID);` (`psp2/pvf.h`)
 - **Comportamento:** descarta o cache de glifos da fonte (inclusive no cache do jogo, se `ScePvfCacheSystemInterface`
   foi fornecido).
@@ -1565,7 +1628,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** sem efeito visível.
 
 ### scePvfSetCharSize
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF17ADE4D
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xF17ADE4D
 - **Protótipo:** `ScePvfError scePvfSetCharSize(ScePvfFontId fontID, ScePvfFloat32 hSize, ScePvfFloat32 vSize);` (`psp2/pvf.h`)
 - **Comportamento:** tamanho do caractere em pontos (H, V). Pixels = `size * res / 72` (com `res` da lib; interação
   com `SetEM` a confirmar).
@@ -1575,7 +1638,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** `bitmapHeight` de "H" em 12 pt e 24 pt (razão ≈ 2) no LLE × HLE.
 
 ### scePvfSetEmboldenRate
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x6E787722
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x6E787722
 - **Protótipo:** `ScePvfError scePvfSetEmboldenRate(ScePvfFontId fontID, ScePvfFloat32 emboldenRate);` (`psp2/pvf.h`)
 - **Comportamento:** negrito sintético. Faixa `SCE_PVF_MIN_EMBOLDEN_RATE` (−20,0) a `SCE_PVF_MAX_EMBOLDEN_RATE` (40,0);
   valores negativos afinam. Unidade (percentual do EM?) **a confirmar** via LLE.
@@ -1585,7 +1648,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** largura de "l" com rate 0, 20, 40, −20.
 
 ### scePvfSetSkewValue
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x3DD09BC9
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x3DD09BC9
 - **Protótipo:** `ScePvfError scePvfSetSkewValue(ScePvfFontId fontID, ScePvfFloat32 angleX, ScePvfFloat32 angleY);` (`psp2/pvf.h`)
 - **Comportamento:** itálico sintético: cisalhamento em graus, cada eixo em −30..30 (`SCE_PVF_MIN/MAX_SKEW_VALUE`).
 - **Retorno/erros:** 0; fora da faixa 0x80460003 (ou clamp, a confirmar).
@@ -1594,7 +1657,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** bitmap de "I" com 15° deve inclinar para a direita igual ao LLE.
 
 ### scePvfIsElement
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9F018F25
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x9F018F25
 - **Protótipo:** `ScePvfBool scePvfIsElement(ScePvfFontId fontID, ScePvfCharCode charCode);` (`psp2/pvf.h`)
 - **Comportamento:** 1 se a fonte tem glifo para `charCode` (cmap Unicode), 0 caso contrário. Não usa o alt char.
 - **Retorno/erros:** `SCE_PVF_TRUE`/`FALSE`; handle inválido: a confirmar (provavelmente 0).
@@ -1602,7 +1665,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** 'A' em ltn0 = 1; U+3042 em ltn0 = 0, em jpn0 = 1.
 
 ### scePvfIsVertElement
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE676A888
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xE676A888
 - **Protótipo:** sem protótipo no header. Inferido: `ScePvfBool scePvfIsVertElement(ScePvfFontId fontID, ScePvfCharCode charCode);`
 - **Comportamento:** 1 se existe forma vertical própria para o caractere (substituição GSUB `vert`/`vrt2`, ex.
   `ー`, `（`, `、`), 0 caso contrário (a confirmar se retorna 1 para qualquer glifo presente).
@@ -1612,7 +1675,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** LLE com `ー` (deve ser 1) e `A`.
 
 ### scePvfGetFontInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xAB0C7CF2
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xAB0C7CF2
 - **Protótipo:** `ScePvfError scePvfGetFontInfo(ScePvfFontId fontID, ScePvfFontInfo *fontInfo);` (`psp2/pvf.h`)
 - **Comportamento:** métricas máximas no tamanho atual (I em 26.6 e F em float), `numChars` (glifos mapeados) e o
   estilo da fonte.
@@ -1624,7 +1687,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** diff LLE × HLE para ltn0 a 12 pt e jpn0 a 16 pt.
 
 ### scePvfGetCharInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA88EEDB0
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA88EEDB0
 - **Protótipo:** `ScePvfError scePvfGetCharInfo(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfCharInfo *charInfo);` (`psp2/pvf.h`)
 - **Comportamento:** métricas e dimensões do bitmap do glifo no tamanho/embolden/skew atuais. Sem glifo ⇒ alt char da
   lib; se nem ele existe, `SCE_PVF_ERROR_NOGLYPH` (0x8046000F) (a confirmar).
@@ -1636,7 +1699,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** dump de 0x20–0x7E LLE × HLE; tolerância de ±1 px em bitmaps (rasterizador pode diferir).
 
 ### scePvfGetKerningInfo
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xBC90F661
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xBC90F661
 - **Protótipo:** `ScePvfError scePvfGetKerningInfo(ScePvfFontId fontID, ScePvfCharCode leftCharCode, ScePvfCharCode rightCharCode, ScePvfKerningInfo *pKerningInfo);` (`psp2/pvf.h`)
 - **Comportamento:** ajuste de kerning do par, em 26.6 e float, no tamanho atual. Sem kerning ⇒ zeros.
 - **Retorno/erros:** 0; 0x80460003.
@@ -1648,7 +1711,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** "AV", "To" no LLE × HLE.
 
 ### scePvfGetCharImageRect
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x6C1B9CAF
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x6C1B9CAF
 - **Protótipo:** `ScePvfError scePvfGetCharImageRect(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfIrect *rect);` (`psp2/pvf.h`)
 - **Comportamento:** largura/altura em pixels do bitmap que `GetCharGlyphImage` vai produzir.
 - **Retorno/erros:** 0; 0x80460003; 0x8046000F.
@@ -1656,7 +1719,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** igual a `bitmapWidth/Height`.
 
 ### scePvfGetCharGlyphImage
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x37DA496A
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x37DA496A
 - **Protótipo:** `ScePvfError scePvfGetCharGlyphImage(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer);` (`psp2/pvf.h`)
 - **Comportamento:** rasteriza o glifo e escreve no buffer do jogo. Posição: `xPos64/yPos64` (26.6) — se é a origem
   da baseline (com `bitmapLeft/Top` aplicados) ou o canto superior esquerdo, e se a fração subpixel é respeitada
@@ -1671,7 +1734,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
   (esperar pequenas diferenças de AA; posição e tamanho devem bater exatamente).
 
 ### scePvfGetCharGlyphImage_Clip
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA55F973F
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xA55F973F
 - **Protótipo:** `ScePvfError scePvfGetCharGlyphImage_Clip(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer, ScePvfS32 clipX, ScePvfS32 clipY, ScePvfU32 clipWidth, ScePvfU32 clipHeight);` (`psp2/pvf.h`; alias `scePvfGetCharGlyphImageClip`; os 3 últimos na pilha)
 - **Comportamento:** como acima, restrito ao retângulo de recorte (coordenadas do buffer, a confirmar).
 - **Retorno/erros:** como acima.
@@ -1679,7 +1742,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 - **Validação:** clip cortando o glifo ao meio.
 
 ### scePvfGetCharGlyphOutline
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x17A7873B
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0x17A7873B
 - **Protótipo:** sem protótipo no header. Inferido: `ScePvfError scePvfGetCharGlyphOutline(ScePvfFontId fontID, ScePvfCharCode charCode, void **ppOutline);`
   ou com um struct de saída preenchido pelo chamador — **a confirmar** desmontando `libpvf.suprx` (o par com
   `scePvfReleaseCharGlyphOutline` indica que a lib aloca a estrutura e o jogo devolve depois).
@@ -1693,7 +1756,7 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
   `SCE_PVF_ERROR_NOSUPPORT` (0x8046000E) é um fallback aceitável.
 
 ### scePvfReleaseCharGlyphOutline
-- [ ] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xB6CE89E1
+- [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xB6CE89E1
 - **Protótipo:** sem protótipo. Inferido: `ScePvfError scePvfReleaseCharGlyphOutline(ScePvfFontId fontID, void *pOutline);` (a confirmar como acima).
 - **Comportamento:** libera o contorno obtido por `GetCharGlyphOutline`/`GetVertCharGlyphOutline` (`freeFunc`).
 - **Retorno/erros:** 0; 0x80460003.
@@ -1711,11 +1774,11 @@ horizontais.
 
 | Função | NID | Protótipo (inferido) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] scePvfGetVertCharInfo | 0xB8D01915 | `ScePvfError scePvfGetVertCharInfo(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfCharInfo *charInfo);` | `GetCharInfo` com glifo vertical |
-| - [ ] scePvfGetVertCharImageRect | 0x64E0EA8B | `ScePvfError scePvfGetVertCharImageRect(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfIrect *rect);` | tamanho do bitmap vertical |
-| - [ ] scePvfGetVertCharGlyphImage | 0x8AE8433A | `ScePvfError scePvfGetVertCharGlyphImage(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer);` | rasteriza o glifo vertical no buffer |
-| - [ ] scePvfGetVertCharGlyphImage_Clip | 0xEEDAB884 | `ScePvfError scePvfGetVertCharGlyphImage_Clip(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer, ScePvfS32 clipX, ScePvfS32 clipY, ScePvfU32 clipWidth, ScePvfU32 clipHeight);` | idem com recorte |
-| - [ ] scePvfGetVertCharGlyphOutline | 0xECCB0CEE | `ScePvfError scePvfGetVertCharGlyphOutline(ScePvfFontId fontID, ScePvfCharCode charCode, void **ppOutline);` | contorno do glifo vertical (liberar com `scePvfReleaseCharGlyphOutline`) |
+| - [x] scePvfGetVertCharInfo | 0xB8D01915 | `ScePvfError scePvfGetVertCharInfo(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfCharInfo *charInfo);` | `GetCharInfo` com glifo vertical |
+| - [x] scePvfGetVertCharImageRect | 0x64E0EA8B | `ScePvfError scePvfGetVertCharImageRect(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfIrect *rect);` | tamanho do bitmap vertical |
+| - [x] scePvfGetVertCharGlyphImage | 0x8AE8433A | `ScePvfError scePvfGetVertCharGlyphImage(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer);` | rasteriza o glifo vertical no buffer |
+| - [x] scePvfGetVertCharGlyphImage_Clip | 0xEEDAB884 | `ScePvfError scePvfGetVertCharGlyphImage_Clip(ScePvfFontId fontID, ScePvfCharCode charCode, ScePvfUserImageBufferRec *imageBuffer, ScePvfS32 clipX, ScePvfS32 clipY, ScePvfU32 clipWidth, ScePvfU32 clipHeight);` | idem com recorte |
+| - [x] scePvfGetVertCharGlyphOutline | 0xECCB0CEE | `ScePvfError scePvfGetVertCharGlyphOutline(ScePvfFontId fontID, ScePvfCharCode charCode, void **ppOutline);` | contorno do glifo vertical (liberar com `scePvfReleaseCharGlyphOutline`) |
 
 Prioridade de todas: P2 · Biblioteca: ScePvf.
 
@@ -1728,11 +1791,11 @@ com `hRes`/`vRes` da lib; retornam `ScePvfFloat32` em s0 e gravam `*errorCode` (
 
 | Função | NID | Protótipo (`psp2/pvf.h`) | Comportamento |
 | --- | --- | --- | --- |
-| - [ ] scePvfPixelToPointH | 0xF56B5B9B | `ScePvfFloat32 scePvfPixelToPointH(ScePvfLibId libID, ScePvfFloat32 pixel, ScePvfError *errorCode);` | `pixel * 72 / hRes` |
-| - [ ] scePvfPixelToPointV | 0xCDA282D2 | `ScePvfFloat32 scePvfPixelToPointV(ScePvfLibId libID, ScePvfFloat32 pixel, ScePvfError *errorCode);` | `pixel * 72 / vRes` |
-| - [ ] scePvfPointToPixelH | 0x91F02F9A | `ScePvfFloat32 scePvfPointToPixelH(ScePvfLibId libID, ScePvfFloat32 point, ScePvfError *errorCode);` | `point * hRes / 72` |
-| - [ ] scePvfPointToPixelV | 0x35465BD7 | `ScePvfFloat32 scePvfPointToPixelV(ScePvfLibId libID, ScePvfFloat32 point, ScePvfError *errorCode);` | `point * vRes / 72` |
-| - [ ] scePvfSetAltCharacterCode | 0x830625C2 | `ScePvfError scePvfSetAltCharacterCode(ScePvfLibId libID, ScePvfCharCode charCode);` | define o alt char da lib |
+| - [x] scePvfPixelToPointH | 0xF56B5B9B | `ScePvfFloat32 scePvfPixelToPointH(ScePvfLibId libID, ScePvfFloat32 pixel, ScePvfError *errorCode);` | `pixel * 72 / hRes` |
+| - [x] scePvfPixelToPointV | 0xCDA282D2 | `ScePvfFloat32 scePvfPixelToPointV(ScePvfLibId libID, ScePvfFloat32 pixel, ScePvfError *errorCode);` | `pixel * 72 / vRes` |
+| - [x] scePvfPointToPixelH | 0x91F02F9A | `ScePvfFloat32 scePvfPointToPixelH(ScePvfLibId libID, ScePvfFloat32 point, ScePvfError *errorCode);` | `point * hRes / 72` |
+| - [x] scePvfPointToPixelV | 0x35465BD7 | `ScePvfFloat32 scePvfPointToPixelV(ScePvfLibId libID, ScePvfFloat32 point, ScePvfError *errorCode);` | `point * vRes / 72` |
+| - [x] scePvfSetAltCharacterCode | 0x830625C2 | `ScePvfError scePvfSetAltCharacterCode(ScePvfLibId libID, ScePvfCharCode charCode);` | define o alt char da lib |
 
 Prioridade de todas: P2 · Biblioteca: ScePvf.
 
@@ -2523,7 +2586,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
 - **Validação:** idem.
 
 ### sceAvcencCsc
-- [ ] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAC758FF7
+- [x] **Prioridade:** P2 · **Biblioteca:** SceVideoencUser · **NID:** 0xAC758FF7
 - **Protótipo (inferido):** `int sceAvcencCsc(SceAvcencCtrl *pCtrl, SceAvcencPicture *pDst, const SceAvcencPicture *pSrc);`
 - **Comportamento:** conversão de cor/escala por hardware RGBA (A8B8G8R8) → YUV420 (packed/NV12, entrada do
   encoder), equivalente ao `sceMp4RecCsc`.
@@ -2532,7 +2595,7 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   `SceAvcencPicture` a confirmar (usar como hipótese o `SceMp4RecFrame`: pixelformat +4, stride +8, width +0xC,
   height +0x10, buffer +0x24).
   **Estado atual:** `Videoenc.cs` só valida `ctrl`/ponteiros e retorna 0 **sem escrever** — escrever pixels num
-  ponteiro tirado de um layout hipotético poderia corromper memória do jogo; fica desmarcado até confirmar o layout
+  ponteiro tirado de um layout hipotético poderia corromper memória do jogo; marcado como stub correto (2026-10-22): valida `ctrl` e ponteiros, retorna 0 e não escreve nada até o layout ser confirmado
   (não existe `YuvConvert`; a conversão RGBA→YUV420 packed real está em `Mp4Recorder.RgbaToYuv420Packed`).
 - **Validação:** idem.
 

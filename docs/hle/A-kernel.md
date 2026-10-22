@@ -605,7 +605,8 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** Change(0, 0x2) → Get devolve 0x2.
 
 #### sceKernelGetThreadEventInfo
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE48476FE
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xE48476FE
+- **Status:** feito (`ThreadMgr.cs`). Layout confirmado no FW 3.60 (wrapper do `libkernel.suprx` e syscall `_sceKernelGetThreadEventInfo` do `threadmgr.skprx`): `int (SceUID id, SceKernelThreadEventInfo *info)`; o wrapper passa `info->size` num opt de 8 bytes. `SceKernelThreadEventInfo` (0x40): +0 size, +4 uid, +8 name[32], +0x28 attr, +0x2C máscara de eventos, +0x30 thread alvo (UID ou grupo como 0x10027), +0x34 campo interno (-1 para alvo específico, 0 para grupo; aproximado), +0x38 handler, +0x3C common. size > 0x40 → `NO_MEMORY`, `info` NULL → `ILLEGAL_ADDR`, UID desconhecido → `UNKNOWN_THREAD_EVENT_ID`. Registrar com thid 0 agora guarda o UID da thread chamadora, como o kernel faz.
 - **Protótipo:** **a confirmar**; provável `int sceKernelGetThreadEventInfo(SceUID handlerId, SceKernelThreadEventInfo *info);`
 - **Comportamento:** informações de um handler criado por `sceKernelRegisterThreadEventHandler`. Struct não
   documentada (nem VitaSDK nem Vita3K). Provável: size, id, name[32], thread mask, event mask, handler, common.
@@ -682,7 +683,8 @@ Custo de todos: 2_000. Validação: teste unitário Open→Close→Delete.
 - **Validação:** teste unitário (Send antes do Wait → Wait retorna 0 imediato; segundo Send → `ALREADY_SENT`).
 
 #### sceKernelCallWithChangeStack
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xAFE2B300
+- [x] **Prioridade:** P1 · **Biblioteca:** SceLibKernel · **NID:** 0xAFE2B300
+- **Status:** feito (`ThreadMgr.cs`, `GuestThread.CallGuestOnStack`). Protótipo confirmado desmontando o export do `libkernel.suprx` do FW 3.60: `int sceKernelCallWithChangeStack(void *stackBase, SceSize stackSize, int (*func)(void *), void *arg)`. O firmware lê a primeira e a última palavra da pilha, troca as palavras +8 (topo) e +0xC (base) do TLS do kernel para a pilha nova, chama `func(arg)` com sp = base + tamanho e r1-r3 = 0xDEADBEEF, e restaura TLS e sp. Diferença: pilha NULL ou menor que 8 bytes devolve `ILLEGAL_ADDR` em vez de falhar no acesso. Validado num harness de guest (sp e topo do TLS vistos dentro da chamada) e por teste unitário (`HleRestTests`).
 - **Protótipo:** **a confirmar** (sem header, Vita3K `UNIMPLEMENTED`). Pelo nome: chama uma função numa pilha
   fornecida pelo chamador, algo como `int (void *stackTop, SceSize stackSize, int (*func)(void *), void *arg)`.
 - **Comportamento:** troca `sp` para a pilha nova, chama `func(arg)`, restaura `sp`, devolve o retorno de `func`.
@@ -1003,8 +1005,8 @@ As funções de SceThreadmgr ligadas a eventos, timers, message pipes, cond/rwlo
 ## 4. SceProcessmgr
 
 #### sceKernelGetProcessTimeCore / sceKernelGetProcessTimeLowCore / sceKernelGetProcessTimeWideCore
-- [ ] **Prioridade:** P1 · **Biblioteca:** SceProcessmgr · **NID:** 0xD37A8437 (Core), 0xF5D0D4C6 (LowCore), 0x89DA0967 (WideCore)
-- **Status:** não feito nesta passada: fontes de tempo estão sendo alteradas em outro branch (fix/kz-limbo).
+- [x] **Prioridade:** P1 · **Biblioteca:** SceProcessmgr · **NID:** 0xD37A8437 (Core), 0xF5D0D4C6 (LowCore), 0x89DA0967 (WideCore)
+- **Status:** feito (`ThreadMgr.cs`): `Low`/`Wide` são aliases de `sceKernelGetProcessTimeLow`/`Wide`; `Core` copia o relógio de 8 bytes. No FW 3.60 (processmgr.skprx) um ponteiro NULL faz a cópia para o usuário falhar; o código exato não foi lido e o VitaSharp devolve `ILLEGAL_ADDR` (aproximado). `sceKernelGetProcessTime` passou a usar `ProcTime()` como as outras.
 - **Protótipo:** `int sceKernelGetProcessTimeCore(SceKernelSysClock *time);`, `SceUInt32 sceKernelGetProcessTimeLowCore(void);`,
   `SceKernelSysClock sceKernelGetProcessTimeWideCore(void);` (`psp2/kernel/processmgr.h`)
 - **Comportamento:** syscalls por trás de `sceKernelGetProcessTime*` da SceLibKernel: tempo de processo em µs.
