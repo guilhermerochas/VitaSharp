@@ -189,11 +189,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // the GPU completes work in submission order: publish older frames' results first
         foreach (var o in _frames)
             if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o);
+        long tf = FrameLedger.Now();
         _vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue);
+        FrameLedger.AddSince(FrameLedger.Cat.FenceWait, tf);
         f.Retired = true;
         CompleteGpuTime(f);
         if (f.Readback is { } rb) WriteDump(f, rb);
-        CompleteWritebacks(f);
+        using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
         foreach (var s in f.Signals) s();
         f.Signals.Clear();
@@ -952,6 +954,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     public void Dispose()
     {
+        StopShaderWorkers();
         CloseTitleCaches();
         _vk.DeviceWaitIdle(_dev);
         DestroyMirror();

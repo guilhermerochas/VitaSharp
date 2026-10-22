@@ -25,6 +25,10 @@ public interface IGpuBackend : IDisposable
     /// </summary>
     void BeginTitle(string titleId) { }
 
+    /// <summary>Called on the submitting thread for each command before it is queued (no worker state may be touched):
+    /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution.</summary>
+    void Prefetch(GpuCommand command) { }
+
     /// <summary>Backend statistics for the end-of-run PERF report (null: nothing to report).</summary>
     string? Report() => null;
 }

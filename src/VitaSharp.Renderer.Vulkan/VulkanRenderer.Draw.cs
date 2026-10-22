@@ -171,15 +171,37 @@ public sealed unsafe partial class VulkanRenderer
         {
             Interlocked.Increment(ref _statShaderPackHits);
             NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            FrameLedger.AddSince(FrameLedger.Cat.ShaderPackLoad, t0);
             return PublishModule(key, packed);
         }
+        // queued by Prefetch on the submitting thread: wait for it (or run it here if no worker picked it up yet)
+        if (_inflight.TryGetValue(key, out var job))
+        {
+            var r = job.RunOrWait(this);
+            FrameLedger.AddSince(FrameLedger.Cat.ShaderWait, t0);
+            NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            Interlocked.Increment(ref _statAsyncWaited);
+            return r;
+        }
         Interlocked.Increment(ref _statShaderMisses);
+        var entry = TranslateAndCompile(program, hintKey, hints(d, colorFormat), background: false);
+        NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        return PublishModule(key, entry);
+    }
+
+    /// <summary>GXP → GLSL → SPIR-V → module, stored in the shader pack (thread-safe: also run by the shader workers).</summary>
+    ModuleEntry TranslateAndCompile(GxpProgram program, ulong hintKey, ShaderHints hints, bool background)
+    {
         GeneratedShader? gen = null;
         ShaderModule m = default;
         try
         {
-            gen = ShaderGenerator.Generate(program, hints(d, colorFormat));
+            long tg = System.Diagnostics.Stopwatch.GetTimestamp();
+            gen = ShaderGenerator.Generate(program, hints);
+            long tc = System.Diagnostics.Stopwatch.GetTimestamp();
+            FrameLedger.Add(background ? FrameLedger.Cat.BgShader : FrameLedger.Cat.ShaderTranslate, tc - tg);
             var spv = _compiler.Compile(gen.Glsl, gen.IsVertex, out var err);
+            FrameLedger.AddSince(background ? FrameLedger.Cat.BgShader : FrameLedger.Cat.ShaderCompile, tc);
             if (spv == null)
             {
                 Log.Error($"Shader {program.Hash:X16} failed to compile: {err}");
@@ -198,8 +220,7 @@ public sealed unsafe partial class VulkanRenderer
             if (m.Handle != 0) _vk.DestroyShaderModule(_dev, m, null);
             m = default;
         }
-        NoteShaderTime(System.Diagnostics.Stopwatch.GetTimestamp() - t0);
-        return PublishModule(key, new ModuleEntry(m, gen));
+        return new ModuleEntry(m, gen);
     }
 
     // hints are only built when a shader really has to be translated (static: no per-draw closure allocation)
@@ -365,10 +386,16 @@ public sealed unsafe partial class VulkanRenderer
             _pipelines[key] = p;
             return p;
         }
+        if (WaitPrefetchedPipeline(key, out p))
+        {
+            _pipelines[key] = p;
+            return p;
+        }
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology);
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         _statGpuPipelines++;
+        FrameLedger.Add(FrameLedger.Cat.PipelineCreate, dt);
         _statGpuPipelineTicks += dt;
         _frameStallTicks += dt;
         if (dt > _statGpuPipelineMaxTicks) _statGpuPipelineMaxTicks = dt;

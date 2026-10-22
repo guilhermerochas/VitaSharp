@@ -131,6 +131,7 @@ public static unsafe class Jit
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         var st = backend.Stats;
         Interlocked.Add(ref st.Ticks, dt);
+        Util.FrameLedger.Add(Util.FrameLedger.Cat.JitCompile, dt);
         if (cb == null)
         {
             Interlocked.Increment(ref st.Rejected);

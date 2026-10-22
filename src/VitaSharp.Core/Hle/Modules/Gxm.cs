@@ -555,6 +555,7 @@ public sealed class Gxm : HleModule
         if (GuestMemory.R32(addr) != value)
         {
             using var blocked = Scheduler.Block();
+            using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
             lock (Gpu.NotificationLock)
             {
                 while (GuestMemory.R32(addr) != value && Emu.Running)
@@ -576,7 +577,7 @@ public sealed class Gxm : HleModule
         // the queue has pendingCount-1 slots: when the render thread runs ahead it blocks here until the display thread
         // flips, and that wait must not hold an emulated core (it starved every lower-priority thread, e.g. God of
         // War's Bink audio thread, making the video audio port restart every 100 ms)
-        using (Scheduler.Block()) _displayQueue.Add((copy, Gpu.SubmitFence()));
+        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence()));
         return 0;
     }
 

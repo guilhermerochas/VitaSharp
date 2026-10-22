@@ -9,13 +9,26 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe class ShaderCompiler : IDisposable
 {
     readonly Shaderc _sc = Shaderc.GetApi();
-    readonly Compiler* _compiler;
+    // one shaderc compiler per thread: the GPU thread and the shader workers compile concurrently
+    readonly ThreadLocal<nint> _compilers;
     readonly string? _cacheDir;
-    readonly object _lock = new();
+
+    /// <summary>shaderc optimisation level: VITASHARP_SHADERC_OPT=zero (default), size or perf. spirv-opt was ~85% of the
+    /// GLSL to SPIR-V time (Killzone: 44 ms -> 7 ms per shader) and the driver optimises the SPIR-V again when it builds
+    /// the pipeline (no measurable GPU time difference on NVIDIA).</summary>
+    public static readonly OptimizationLevel OptLevel = Environment.GetEnvironmentVariable("VITASHARP_SHADERC_OPT")?.ToLowerInvariant() switch
+    {
+        "perf" or "performance" => OptimizationLevel.Performance,
+        "size" => OptimizationLevel.Size,
+        _ => OptimizationLevel.Zero,
+    };
+
+    /// <summary>Shaders really compiled by shaderc, their total time (stopwatch ticks), and disk cache hits.</summary>
+    public static long Compiled, CompileTicks, DiskHits;
 
     public ShaderCompiler(string? cacheDir)
     {
-        _compiler = _sc.CompilerInitialize();
+        _compilers = new(() => (nint)_sc.CompilerInitialize(), trackAllValues: true);
         _cacheDir = cacheDir;
         if (cacheDir != null) Directory.CreateDirectory(cacheDir);
     }
@@ -24,23 +37,28 @@ public sealed unsafe class ShaderCompiler : IDisposable
     {
         error = null;
         ulong hash = System.IO.Hashing.XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(glsl));
-        string? cachePath = _cacheDir != null ? Path.Combine(_cacheDir, $"{hash:x16}.spv") : null;
+        // the optimisation level is part of the key (performance keeps the historical file names)
+        string suffix = OptLevel == OptimizationLevel.Performance ? "" : OptLevel == OptimizationLevel.Zero ? ".o0" : ".os";
+        string? cachePath = _cacheDir != null ? Path.Combine(_cacheDir, $"{hash:x16}{suffix}.spv") : null;
         if (cachePath != null && File.Exists(cachePath))
         {
-            try { return File.ReadAllBytes(cachePath); } catch { }
+            try { var cached = File.ReadAllBytes(cachePath); Interlocked.Increment(ref DiskHits); return cached; } catch { }
         }
 
         byte[] src = Encoding.UTF8.GetBytes(glsl);
         byte[] name = Encoding.ASCII.GetBytes((vertex ? "shader.vert" : "shader.frag") + "\0");
         byte[] entry = "main\0"u8.ToArray();
         CompilationResult* res;
-        lock (_lock)
+        Compiler* compiler = (Compiler*)_compilers.Value;
         {
             var opts = _sc.CompileOptionsInitialize();
             _sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
-            _sc.CompileOptionsSetOptimizationLevel(opts, OptimizationLevel.Performance);
+            _sc.CompileOptionsSetOptimizationLevel(opts, OptLevel);
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             fixed (byte* s = src) fixed (byte* n = name) fixed (byte* e = entry)
-                res = _sc.CompileIntoSpv(_compiler, s, (nuint)src.Length, vertex ? ShaderKind.VertexShader : ShaderKind.FragmentShader, n, e, opts);
+                res = _sc.CompileIntoSpv(compiler, s, (nuint)src.Length, vertex ? ShaderKind.VertexShader : ShaderKind.FragmentShader, n, e, opts);
+            Interlocked.Add(ref CompileTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+            Interlocked.Increment(ref Compiled);
             _sc.CompileOptionsRelease(opts);
         }
         try
@@ -64,7 +82,8 @@ public sealed unsafe class ShaderCompiler : IDisposable
 
     public void Dispose()
     {
-        _sc.CompilerRelease(_compiler);
+        foreach (var c in _compilers.Values) _sc.CompilerRelease((Compiler*)c);
+        _compilers.Dispose();
         // The shaderc library is deliberately not unloaded (no _sc.Dispose()): it registers a process-exit handler
         // that stays behind after dlclose, so on Linux exit() jumped into the unmapped library (SIGSEGV after every
         // clean run). Keeping it mapped until the process ends costs nothing; a new renderer reuses it.
