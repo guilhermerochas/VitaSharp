@@ -20,7 +20,8 @@ public sealed class GpuQueue : IDisposable
     long _completed;
     volatile bool _stopping;
 
-    public IGpuBackend? Backend { get; set; }
+    IGpuBackend? _backend;
+    public IGpuBackend? Backend { get => _backend; set { _backend = value; value?.Attach(this); } }
 
     /// <summary>Drains the queue, disposes the current backend and installs a new one (process exec).</summary>
     /// <summary>Held by the worker while it is inside the backend (Execute / Idle); backend replacement takes it too, so a
