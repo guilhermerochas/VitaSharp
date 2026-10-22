@@ -115,7 +115,7 @@ public sealed class NpTrophy : HleModule
         try
         {
             if (File.Exists(set.SavePath))
-                set.Unlocked = JsonSerializer.Deserialize<Dictionary<int, ulong>>(File.ReadAllText(set.SavePath)) ?? new();
+                set.Unlocked = JsonSerializer.Deserialize(File.ReadAllText(set.SavePath), CoreJson.Default.DictionaryInt32UInt64) ?? new();
         }
         catch (JsonException) { }
         Log.Info($"Trophy set {commId} \"{set.Title}\": {set.Trophies.Count} trophies, {set.Unlocked.Count} unlocked");
@@ -151,7 +151,7 @@ public sealed class NpTrophy : HleModule
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(set.SavePath)!);
-            File.WriteAllText(set.SavePath, JsonSerializer.Serialize(set.Unlocked));
+            File.WriteAllText(set.SavePath, JsonSerializer.Serialize(set.Unlocked, CoreJson.Default.DictionaryInt32UInt64));
         }
         catch (IOException e) { Log.Warn($"Trophy: could not save {set.SavePath}: {e.Message}"); }
     }

@@ -112,7 +112,7 @@ public sealed class RegMgr : HleModule
         {
             if (File.Exists(StorePath))
             {
-                var raw = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(StorePath)) ?? new();
+                var raw = JsonSerializer.Deserialize(File.ReadAllText(StorePath), CoreJson.Default.DictionaryStringString) ?? new();
                 foreach (var (k, v) in raw)
                 {
                     if (!uint.TryParse(k.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? k[2..] : k,
@@ -138,7 +138,7 @@ public sealed class RegMgr : HleModule
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
-            File.WriteAllText(StorePath, JsonSerializer.Serialize(raw, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(StorePath, JsonSerializer.Serialize(raw, CoreJson.Indented.SortedDictionaryStringString));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

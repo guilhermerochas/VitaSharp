@@ -83,10 +83,9 @@ public sealed class Emulator : IDisposable
         Hle = new HleRegistry(this);
         Linker = new Linker(Hle) { InvalidateCode = Code.Invalidate, Log = Log.Warn };
         Kernel.Initialize();
-        foreach (var t in typeof(Emulator).Assembly.GetTypes()
-                     .Where(t => t.IsSubclassOf(typeof(HleModule)) && !t.IsAbstract)
-                     .OrderBy(t => t.FullName))
-            Hle.RegisterModule((HleModule)Activator.CreateInstance(t)!);
+        // every concrete HleModule of the core (generated table), in full type name order as before
+        foreach (var m in HleBindings.Modules.OrderBy(m => m.Type.FullName))
+            Hle.RegisterModule(m.Create());
     }
 
     // ------------------------------------------------------------------ process exec (sceAppMgrLoadExec)
