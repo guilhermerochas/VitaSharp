@@ -284,6 +284,7 @@ flowchart LR
 | [`tests/VitaSharp.Tests`](tests/VitaSharp.Tests) | Unit tests, including CPU fuzzing against Unicorn |
 | [`tests/scenarios`](tests/scenarios) | Automated game scenarios |
 | [`docs/hle`](docs/hle/README.md) | Function-by-function specs of the system functions still to implement |
+| [`docs/android`](docs/android/README.md) | Mockups of the planned Android interface |
 
 ## Testing
 
