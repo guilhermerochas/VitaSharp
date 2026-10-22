@@ -136,6 +136,9 @@ public sealed unsafe partial class VulkanRenderer
             }
             _writebackPool[wb.Size].Push(wb);
         }
+        // the rows just written mark their pages: sweep again before the next texture check, so a texture over that
+        // memory is re-read in this frame already (as when every texture was hashed every frame)
+        if (f.Writebacks.Count > 0) _sweptFrame = -1;
         f.Writebacks.Clear();
     }
 
