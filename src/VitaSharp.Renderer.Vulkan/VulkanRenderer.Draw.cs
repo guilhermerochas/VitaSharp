@@ -498,6 +498,9 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Draw number within the presented frame (debug: VITASHARP_DEBUG_TEX0=id paints it, the draw trace logs it).</summary>
     int _drawSerial;
 
+    readonly HashSet<(uint, Format)> _rawLogged = new();
+    readonly Dictionary<Format, bool> _rawFormatOk = new();
+
     void Draw(DrawCommand d)
     {
         _drawSerial++;
@@ -528,7 +531,28 @@ public sealed unsafe partial class VulkanRenderer
         // a fragment program that reads the current framebuffer colour carries its blend in the shader itself (the
         // shader patcher compiles the blend info into USSE code): the fixed-function blend must not be applied on top
         bool blendOn = blend is { } bi && !fs.Gen!.UsesFragColor && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0) && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);
-        var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, _rtAttachFormat, hasColor,
+        // raw register bits go through an integer view of the surface (exact bits; integer attachments do not blend)
+        var attachFormat = _rtAttachFormat;
+        bool raw = hasColor && fs.Gen!.RawColorBits != 0;
+        if (raw)
+        {
+            attachFormat = RawAttachmentFormat(_rt!.Format, fs.Gen!.RawColorBits);
+            if (attachFormat == Format.Undefined)
+            {
+                Log.WarnOnce($"raw-out-{_rt.Format}-{fs.Gen.RawColorBits}", $"[gpu] raw {fs.Gen.RawColorBits}-bit fragment output on render target 0x{_rt.Address:X8} fmt 0x{_rt.ColorFormat:X8} ({_rt.Format}) has no integer view: draw skipped");
+                return;
+            }
+            if (!_rawFormatOk.TryGetValue(attachFormat, out bool ok)) _rawFormatOk[attachFormat] = ok = _core.SupportsUnblendedColorAttachment(attachFormat);
+            if (!ok)
+            {
+                Log.WarnOnce($"raw-att-{attachFormat}", $"[gpu] {attachFormat} is not a colour attachment format on this GPU: raw fragment outputs skipped");
+                return;
+            }
+            blendOn = false;
+            if (_rawLogged.Add((_rt.Address, attachFormat)))
+                Log.Info($"[gpu] render target 0x{_rt.Address:X8} {_rt.Width}x{_rt.Height} fmt 0x{_rt.ColorFormat:X8}: raw {fs.Gen.RawColorBits}-bit fragment outputs written through a {attachFormat} view");
+        }
+        var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode));
         var pipeline = GetPipeline(key, vs, fs, topology);
@@ -576,6 +600,9 @@ public sealed unsafe partial class VulkanRenderer
         _vk.UpdateDescriptorSets(_dev, 4, writes, 0, null);
 
         // ---- record
+        if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
+        _renderRaw = raw;
+        if (raw) _rawFormat = attachFormat;
         BeginRendering();
         var cmd = Cmd;
         if (_boundPipeline.Handle != pipeline.Handle)
