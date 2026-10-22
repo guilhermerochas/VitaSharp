@@ -247,6 +247,7 @@ public sealed unsafe class VkCore : IDisposable
             OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise,
             DepthClamp = supported2.Features.DepthClamp,
             ShaderClipDistance = supported2.Features.ShaderClipDistance,
+            SampleRateShading = supported2.Features.SampleRateShading,
         };
         OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise;
         DepthClamp = supported2.Features.DepthClamp;
@@ -255,6 +256,7 @@ public sealed unsafe class VkCore : IDisposable
         TextureCompressionBC = supported2.Features.TextureCompressionBC;
         FillModeNonSolid = supported2.Features.FillModeNonSolid;
         WideLines = supported2.Features.WideLines;
+        SampleRateShading = supported2.Features.SampleRateShading;
         if (portability) ApplyPortabilityLimits(hasPortability, ref feats);
 
         var exts = new List<string>();
@@ -282,6 +284,17 @@ public sealed unsafe class VkCore : IDisposable
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+    /// <summary>sampleRateShading: fragment shaders that read the framebuffer in a multisampled scene run per sample
+    /// (as GXM's NATIVECOLOR_MSAA programs do). Without it they read sample 0 and their output covers the pixel.</summary>
+    public bool SampleRateShading;
+
+    /// <summary>Sample counts usable for an attachment of <paramref name="format"/> with <paramref name="usage"/>
+    /// (image format properties, mutable views allowed).</summary>
+    public SampleCountFlags ImageSampleCounts(Format format, ImageUsageFlags usage, ImageCreateFlags flags = ImageCreateFlags.CreateMutableFormatBit)
+    {
+        var r = Vk.GetPhysicalDeviceImageFormatProperties(Physical, format, ImageType.Type2D, ImageTiling.Optimal, usage, flags, out var props);
+        return r == Result.Success ? props.SampleCounts : SampleCountFlags.Count1Bit;
+    }
     /// <summary>depthClamp: GXM does not clip at the near plane, fragments in front of it get depth 0 (clamped per
     /// fragment). Without the feature the near plane clips instead.</summary>
     public bool DepthClamp;
