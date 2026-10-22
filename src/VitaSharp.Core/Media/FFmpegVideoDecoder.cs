@@ -95,6 +95,8 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
 
     /// <summary>Process-wide counters (tests, PERF): pictures decoded in hardware/software, hardware fallbacks.</summary>
     public static long HardwarePictures, SoftwarePictures, Fallbacks;
+    /// <summary>Host time spent decoding (send + receive + surface download), in Stopwatch ticks, all decoders.</summary>
+    public static long DecodeTicks;
 
     FFmpegVideoDecoder(AVCodecID codecId)
     {
@@ -228,7 +230,9 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             if (_sinceIdrBytes + au.Length <= MaxReplayBytes) { _sinceIdr.Add((au.ToArray(), pts)); _sinceIdrBytes += au.Length; }
             else _replayable = false; // too long since the last IDR: a fallback restarts at the next one
         }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SendPacket(au, pts);
+        Interlocked.Add(ref DecodeTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
     }
 
     void SendPacket(ReadOnlySpan<byte> au, long pts)
