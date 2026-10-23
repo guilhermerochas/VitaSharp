@@ -1,0 +1,4 @@
+# Gravity Rush (PCSF00024): boot, logos, opening movie, title, then Cross through the menus into a new game.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/gr_boot.txt --data=<scratch root>
+title=PCSF00024
+args=--frames=6000 --seconds=900 --dump-every=25 --shader-cache --debug-mode --input=cross@f900:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8,cross@f1950:f8,cross@f2100:f8,cross@f2250:f8,cross@f2400:f8,cross@f2550:f8,cross@f2700:f8,cross@f2850:f8,cross@f3000:f8,cross@f3150:f8,cross@f3300:f8,cross@f3450:f8,cross@f3600:f8,cross@f3750:f8,cross@f3900:f8,cross@f4050:f8,cross@f4200:f8,cross@f4350:f8,cross@f4500:f8,cross@f4650:f8,cross@f4800:f8,cross@f4950:f8,cross@f5100:f8,cross@f5250:f8,cross@f5400:f8,cross@f5550:f8,cross@f5700:f8

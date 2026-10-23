@@ -154,6 +154,8 @@ public sealed class SysMem : HleModule
     [Hle] int sceKernelGetModel() => 0x10000;          // PS Vita (not PS TV)
     [Hle] int sceKernelGetModelForCDialog() => 0x10000;
     [Hle] int sceKernelIsPSVitaTV() => 0;
+    /// <summary>SceDebugLed: sets the development-kit GPO debug LEDs; retail units have none (Vita3K: no-op).</summary>
+    [Hle] int sceKernelSetGPO(uint state) => 0;
     /// <summary>SceKernelSubbudgetInfo (0xC): +0 size, +4 total_size, +8 free_size. MAIN (0) follows
     /// sceKernelGetFreeMemorySize; CDLG (1, common dialog memory) size is a confirmar (reported as 0).</summary>
     [Hle]

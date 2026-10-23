@@ -1,0 +1,9 @@
+# Ninja Gaiden Sigma Plus (PCSB00097): boot, logos, the intro movie (SceAvPlayer H.264 from ~f125), title screen
+# (PRESS START ~f1100), then Start and Cross through the menus into a new game.
+# Regression: from ~f193 every frame was black while the movie audio played. The game builds its vertex streams
+# from the attribute semantics (_sceGxmProgramParameterGetSemantic, old-SDK NID 0xAAFD61D5); unimplemented, it
+# bound v_Color0 to zero and the movie quad (out = colour * texture) rendered black. Frames 350-750 must show the
+# stormy sea / clouds movie.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/ngs_boot.txt --data=<scratch root>
+title=PCSB00097
+args=--frames=6000 --seconds=900 --dump-every=25 --shader-cache --debug-mode --input=start@f1200:f10,cross@f1400:f8,cross@f1520:f8,cross@f1640:f8,cross@f1760:f8,cross@f1880:f8,cross@f2000:f8,cross@f2120:f8,cross@f2240:f8,cross@f2360:f8,cross@f2480:f8,cross@f2600:f8,cross@f2720:f8,cross@f2840:f8,cross@f2960:f8,cross@f3080:f8,cross@f3200:f8,cross@f3320:f8,cross@f3440:f8,cross@f3560:f8,cross@f3680:f8,cross@f3800:f8,cross@f3920:f8,cross@f4040:f8,cross@f4160:f8,cross@f4280:f8,cross@f4400:f8

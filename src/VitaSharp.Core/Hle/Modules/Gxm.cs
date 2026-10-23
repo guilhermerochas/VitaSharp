@@ -531,6 +531,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle(Nid = 0x51FE0899, Library = "SceGxm")] // _sceGxmMidSceneFlush (old SDK)
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
         if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
@@ -624,6 +625,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle(Nid = 0x16C9D339, Library = "SceGxm")] // _sceGxmSetVertexTexture (old SDK)
     int sceGxmSetVertexTexture(uint ctx, uint index, uint texture)
     {
         var c = Ctx(ctx);
@@ -1525,10 +1527,15 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
+    // SceGxmProgramParameter (vita-headers psp2/gxm.h, Vita3K gxm/types.h): +4 category:4 type:4, +5 components:4
+    // container:4, +6 semantic (SceGxmParameterSemantic; 0 = NONE for everything but vertex attributes), +7 semantic
+    // index (low nibble; bit 4 marks a cube sampler). The `_`-prefixed exports are the old-SDK NIDs of the same
+    // functions (Vita3K forwards them unchanged); Ninja Gaiden Sigma Plus and Gravity Rush import those.
     [Hle]
+    [Hle(Nid = 0x7FFFDD7A, Library = "SceGxm")]
     uint sceGxmProgramFindParameterBySemantic(uint program, uint semantic, uint index)
     {
-        if (program == 0) return 0;
+        if (program == 0 || semantic == 0) return 0;
         foreach (var p in GxmProgramInfo.Get(program).Program.Parameters)
             if (p.Category == ParamCategory.Attribute && p.Semantic == semantic && (p.SemanticIndex & 0xF) == index) return program + p.Offset;
         return 0;
@@ -1546,7 +1553,9 @@ public sealed class Gxm : HleModule
     [Hle] uint sceGxmProgramParameterGetType(uint param) => (uint)GuestMemory.Read<byte>(param + 4) >> 4;
     [Hle] uint sceGxmProgramParameterGetComponentCount(uint param) => GuestMemory.Read<byte>(param + 5) & 0xFu;
     [Hle] uint sceGxmProgramParameterGetContainerIndex(uint param) => (uint)GuestMemory.Read<byte>(param + 5) >> 4;
-    [Hle] uint sceGxmProgramParameterGetSemantic(uint param) => (GuestMemory.Read<byte>(param + 4) & 0xF) == 0 ? GuestMemory.Read<byte>(param + 6) : 0u;
+    [Hle]
+    [Hle(Nid = 0xAAFD61D5, Library = "SceGxm")]
+    uint sceGxmProgramParameterGetSemantic(uint param) => (GuestMemory.Read<byte>(param + 4) & 0xF) == 0 ? GuestMemory.Read<byte>(param + 6) : 0u;
     [Hle] uint sceGxmProgramParameterGetSemanticIndex(uint param) => GuestMemory.Read<byte>(param + 7) & 0xFu;
     [Hle] uint sceGxmProgramParameterGetArraySize(uint param) => GuestMemory.R32(param + 8);
     [Hle] uint sceGxmProgramParameterGetResourceIndex(uint param) => GuestMemory.R32(param + 12);
@@ -1923,6 +1932,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle(Nid = 0x5A690B60, Library = "SceGxm")] // _sceGxmTextureSetWidth (old SDK)
     int sceGxmTextureSetWidth(uint tex, uint width)
     {
         if (tex == 0) return ERR_INVALID_POINTER;
@@ -1931,6 +1941,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle(Nid = 0x1B20D5DF, Library = "SceGxm")] // _sceGxmTextureSetHeight (old SDK)
     int sceGxmTextureSetHeight(uint tex, uint height)
     {
         if (tex == 0) return ERR_INVALID_POINTER;
