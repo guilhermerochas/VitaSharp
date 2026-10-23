@@ -241,6 +241,7 @@ public static class Runner
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
         if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
         if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(); // real audio device, as in the window mode
+        if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
         if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
         emu.BacktraceHle = Opt(options, "--bt");
         if (Opt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');

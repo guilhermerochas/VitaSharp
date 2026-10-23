@@ -197,7 +197,9 @@ the ports released earlier in the session, NGS systems and decoder streams.
 
 **Tests:** `--audio` uses the OpenAL device in headless runs. For a silent run that records the mixed output, set
 `ALSOFT_CONF` to a file with `[general]` `drivers=wave`, `sample-type=int16` and `[wave]` `file=<path>.wav` (OpenAL
-Soft's wave writer runs in real time, like a device). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
+Soft's wave writer runs in real time, like a device). `--audio-dump=<dir>` instead writes exactly what the game sent to each port, one
+WAV per opened port (`NN_portP_TYPE_RATE.wav`, after port volume, no device timing), the input for content analysis
+(clipping, clicks, pitch, comparison with a reference decode). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
 when the guest frame is reached (`[dbg] debug mode on (--debug-mode-at) at guest frame N`).
 
 ## Cost
