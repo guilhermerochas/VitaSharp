@@ -132,6 +132,11 @@ public sealed class Rudp : HleModule
     ushort _mss = 1280;
     readonly Dictionary<int, Context> _contexts = new();
     readonly Dictionary<int, Poll> _polls = new();
+    int _blockedPollWaits;
+
+    /// <summary>Threads blocked in sceRudpPollWait. sceRudpPollCancel only wakes the waits already in progress, so
+    /// callers that cancel another thread's wait (tests) need to know when it really started.</summary>
+    internal int BlockedPollWaits { get { lock (_lock) return _blockedPollWaits; } }
 
     [Hle] int sceRudpInit(uint pool, uint poolSize) { _initialized = true; return 0; }
 
@@ -367,7 +372,9 @@ public sealed class Rudp : HleModule
             if (timeout == 0) return 0;
             int gen = p.CancelGen;
             long? limit = timeout >= 1UL << 63 ? null : (long)timeout;
-            Kernel.Wait.Until(_lock, () => p.Destroyed || p.CancelGen != gen, limit, what: "rudp poll");
+            _blockedPollWaits++;
+            try { Kernel.Wait.Until(_lock, () => p.Destroyed || p.CancelGen != gen, limit, what: "rudp poll"); }
+            finally { _blockedPollWaits--; }
             return 0;
         }
     }

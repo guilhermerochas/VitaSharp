@@ -56,6 +56,21 @@ public sealed partial class Net
     readonly Dictionary<int, NetDump> _dumps = new();
     readonly byte[][] _emulation = [new byte[0x200], new byte[0x200]];
     uint _dns0, _dns1;
+    int _blockedWaits;
+
+    /// <summary>Threads blocked in a recv, epoll or dump wait. A non-preserving abort only interrupts the waits already
+    /// in progress (vita-headers SCE_NET_*_ABORT_FLAG_*_PRESERVATION), so callers that abort another thread's wait -
+    /// tests, debug tooling - need to know when it really started.</summary>
+    internal int BlockedWaits { get { lock (_netLock) return _blockedWaits; } }
+
+    /// <summary><see cref="Kernel.Wait.Until(object, Func{bool}, long?, Func{int}?, string)"/> on the net lock (held by
+    /// the caller), counted in <see cref="BlockedWaits"/>.</summary>
+    int Block(Func<bool> ready, long? timeoutUs, string what)
+    {
+        _blockedWaits++;
+        try { return Kernel.Wait.Until(_netLock, ready, timeoutUs, what: what); }
+        finally { _blockedWaits--; }
+    }
 
     /// <summary>Records errno for a failed call and returns the code (Vita3K ret_net_errno behaviour).</summary>
     int NetErr(int code)
@@ -183,8 +198,7 @@ public sealed partial class Net
             if (so.AbortRecvSticky) return NetErr(EINTR);
             if (so.Nbio || (flags & MSG_DONTWAIT) != 0) return NetErr(EAGAIN);
             int gen = so.AbortGen;
-            int w = Kernel.Wait.Until(_netLock, () => so.Closed || so.AbortGen != gen, so.RcvTimeoUs == 0 ? null : so.RcvTimeoUs,
-                what: "net recv");
+            int w = Block(() => so.Closed || so.AbortGen != gen, so.RcvTimeoUs == 0 ? null : so.RcvTimeoUs, "net recv");
             if (so.Closed) return NetErr(EBADF);
             if (so.AbortGen != gen) return NetErr(EINTR);
             return NetErr(w == SceError.WAIT_TIMEOUT ? EAGAIN : EINTR);
@@ -362,7 +376,7 @@ public sealed partial class Net
             if (e.AbortSticky) return NetErr(EINTR);
             if (timeout == 0) return 0;
             int gen = e.AbortGen;
-            int w = Kernel.Wait.Until(_netLock, () => e.Destroyed || e.AbortGen != gen, timeout < 0 ? null : timeout, what: "net epoll");
+            int w = Block(() => e.Destroyed || e.AbortGen != gen, timeout < 0 ? null : timeout, "net epoll");
             if (e.Destroyed || e.AbortGen != gen) return NetErr(EINTR);
             return w == SceError.WAIT_TIMEOUT ? 0 : NetErr(EINTR);
         }
@@ -488,7 +502,7 @@ public sealed partial class Net
             if (d.AbortSticky) return NetErr(EINTR);
             if ((f & DUMP_DONTWAIT) != 0) return NetErr(EAGAIN);
             int gen = d.AbortGen;
-            Kernel.Wait.Until(_netLock, () => d.Destroyed || d.AbortGen != gen, (long?)null, what: "net dump");
+            Block(() => d.Destroyed || d.AbortGen != gen, null, "net dump");
             return NetErr(d.Destroyed ? EBADF : EINTR);
         }
     }
