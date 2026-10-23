@@ -1213,8 +1213,7 @@ public sealed class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null) return ERR_INVALID_POINTER;
-        return Draw(c, c.VertexProgram, c.FragmentProgram, c.VertexUniformBuffers, c.FragmentUniformBuffers, c.VertexTextures, c.FragmentTextures,
-            c.Streams, primType, indexType, indexData, indexCount, 1);
+        return DrawImmediate(c, primType, indexType, indexData, indexCount, 1);
     }
 
     [Hle]
@@ -1223,8 +1222,38 @@ public sealed class Gxm : HleModule
         var c = Ctx(ctx);
         if (c == null) return ERR_INVALID_POINTER;
         if (indexWrap == 0 || indexCount % indexWrap != 0) return ERR_INVALID_VALUE;
-        return Draw(c, c.VertexProgram, c.FragmentProgram, c.VertexUniformBuffers, c.FragmentUniformBuffers, c.VertexTextures, c.FragmentTextures,
-            c.Streams, primType, indexType, indexData, indexWrap, indexCount / indexWrap);
+        return DrawImmediate(c, primType, indexType, indexData, indexWrap, indexCount / indexWrap);
+    }
+
+    /// <summary>sceGxmDraw/sceGxmDrawInstanced: the context's programs and streams. The uniform buffers and textures
+    /// come from the precomputed vertex/fragment state when one is set (sceGxmSetPrecomputed*State), as for
+    /// sceGxmDrawPrecomputed: the state replaces the context's vertex/fragment state for every kind of draw until it is
+    /// set back to NULL. WRC 4 writes each object's uniforms into the default uniform buffer of its precomputed state
+    /// and draws with sceGxmDraw; reading the context's buffers instead gave the sky and terrain the last reserved
+    /// ring block (a stale matrix: flat full-screen colours).</summary>
+    int DrawImmediate(GxmContext c, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount)
+    {
+        ImmediateDrawState(c, out var vUbs, out var fUbs, out var vTex, out var fTex);
+        return Draw(c, c.VertexProgram, c.FragmentProgram, vUbs, fUbs, vTex, fTex, c.Streams, primType, indexType, indexData, indexCount, instanceCount);
+    }
+
+    /// <summary>The uniform buffers and textures an immediate draw uses (see <see cref="DrawImmediate"/>).</summary>
+    internal static void ImmediateDrawState(GxmContext c, out uint[] vUbs, out uint[] fUbs, out GxmTextureDesc[] vTex, out GxmTextureDesc[] fTex)
+    {
+        vUbs = c.VertexUniformBuffers; fUbs = c.FragmentUniformBuffers;
+        vTex = c.VertexTextures; fTex = c.FragmentTextures;
+        if (c.PrecomputedVertexState != 0)
+        {
+            vUbs = c.PreVertexUbs; vTex = c.PreVertexTextures;
+            c.VertexUniformBuffers.CopyTo(vUbs, 0); c.VertexTextures.CopyTo(vTex, 0);
+            ReadStateArrays(c.PrecomputedVertexState, vUbs, vTex);
+        }
+        if (c.PrecomputedFragmentState != 0)
+        {
+            fUbs = c.PreFragmentUbs; fTex = c.PreFragmentTextures;
+            c.FragmentUniformBuffers.CopyTo(fUbs, 0); c.FragmentTextures.CopyTo(fTex, 0);
+            ReadStateArrays(c.PrecomputedFragmentState, fUbs, fTex);
+        }
     }
 
     // ---- precomputed state (layouts are ours; the guest only allocates them)

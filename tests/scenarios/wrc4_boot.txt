@@ -1,0 +1,5 @@
+# WRC 4 FIA World Rally Championship (PCSE00411): boot, skip the movies and mash Cross through the menus into a quick
+# race (Coates Hire Rally Australia loading screen ~f1750, countdown ~f2000, driving from ~f2200).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/wrc4_boot.txt --data=<scratch root>
+title=PCSE00411
+args=--frames=2400 --seconds=900 --dump-every=50 --shader-cache --diag-at=2300 --input=cross@f300:f8,cross@f450:f8,cross@f600:f8,cross@f750:f8,cross@f900:f8,cross@f1050:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8
