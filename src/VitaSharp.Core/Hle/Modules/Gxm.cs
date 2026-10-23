@@ -2011,6 +2011,7 @@ public sealed class Gxm : HleModule
         Gpu.Submit(new CallbackCommand
         {
             WriteAddress = dstAddr, WriteSize = (uint)Math.Abs(dstStride) * (dstY + height),
+            ReadAddress = srcAddr, ReadSize = (uint)Math.Abs(srcStride) * (srcY + height),
             Action = () =>
             {
                 for (uint y = 0; y < height; y++)
@@ -2078,6 +2079,7 @@ public sealed class Gxm : HleModule
         Gpu.Submit(new CallbackCommand
         {
             WriteAddress = dstAddr, WriteSize = (uint)Math.Abs(dstStride) * (dstY + srcHeight / 2),
+            ReadAddress = srcAddr, ReadSize = (uint)Math.Abs(srcStride) * (srcY + srcHeight),
             Action = () =>
             {
                 uint ss = (uint)Math.Abs(srcStride), ds = (uint)Math.Abs(dstStride);

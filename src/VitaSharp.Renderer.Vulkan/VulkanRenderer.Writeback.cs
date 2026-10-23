@@ -1,4 +1,5 @@
 using Silk.NET.Vulkan;
+using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Util;
 using VitaSharp.Core.Memory;
@@ -99,8 +100,9 @@ public sealed unsafe partial class VulkanRenderer
         uint width = Math.Min(rt.Width, rt.Stride);
 
         rt.Dirty = true;
+        rt.WrittenBack = true;
         SyncRenderTargetForRead(rt);
-        if (whole) CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value);
+        if (whole) { CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value); rt.MemVersion = rt.Version; }
         else
             foreach (var r in _sceneRegions)
             {
@@ -112,6 +114,50 @@ public sealed unsafe partial class VulkanRenderer
                 (whole ? "" : $", regions {string.Join(" ", _sceneRegions.Select(r => $"({r.X},{r.Y} {r.W}x{r.H})"))}"));
         return true;
     }
+
+    /// <summary>
+    /// GPU transfers (sceGxmTransferCopy/Downscale) run on the CPU over guest memory. When their source is a rendered
+    /// surface whose pixels are only on the GPU (too large for the per-scene writeback), the surface is copied out and
+    /// the GPU work so far is waited for first. WRC 4 renders each car's livery into a 1024x1024 surface at load time
+    /// and builds the car texture's mip chain from it with TransferCopy + TransferDownscale; reading the never
+    /// written-back memory made every car black.
+    /// </summary>
+    public void BeforeCallback(CallbackCommand cb)
+    {
+        if (cb.ReadSize == 0) return;
+        ulong lo = cb.ReadAddress, hi = lo + cb.ReadSize;
+        bool any = false, swept = false;
+        foreach (var rt in _renderTargets.Values)
+        {
+            if (rt.Address == 0 || rt.Version == rt.MemVersion) continue;
+            ulong end = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
+            if (lo >= end || hi <= rt.Address) continue;
+            // memory written after the surface was last rendered (an earlier transfer into a stale surface's memory,
+            // data loaded there) is newer than the surface: the writeback would overwrite it
+            if (!swept) { _sweptFrame = -1; swept = true; } // fold the stores made since this frame's sweep
+            if (OverwrittenSinceRendered(rt, cb.ReadAddress, cb.ReadSize)) continue;
+            // a surface still being rendered (transfers come between scenes; never seen inside one)
+            if (_inScene) { Log.WarnOnce($"xfer-inscene-{rt.Address:X8}", $"[gpu] transfer reads render target 0x{rt.Address:X8} while a scene is open: not written back"); continue; }
+            int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat), hostBpp = HostBytesPerPixel(rt.Format);
+            if (WritebackConversion(rt.ColorFormat, rt.Format, hostBpp, guestBpp) is not { } conv)
+            {
+                Log.WarnOnce($"writeback-fmt-{rt.ColorFormat:X8}", $"[gpu] render target 0x{rt.Address:X8} ({rt.Format}) is not written back: no conversion to guest format 0x{rt.ColorFormat:X8}");
+                continue;
+            }
+            BeginFrameIfNeeded();
+            rt.Dirty = true;
+            rt.WrittenBack = true;
+            SyncRenderTargetForRead(rt);
+            CopyOutRect(rt, 0, 0, Math.Min(rt.Width, rt.Stride), rt.Height, hostBpp, guestBpp, conv);
+            rt.MemVersion = rt.Version;
+            if (_xferWritebacks++ < 20 || TraceSync)
+                Log.Info($"[gpu] transfer reads render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}: written back first (present {_presentCount})");
+            any = true;
+        }
+        if (any) Finish(); // submits and retires every frame: the rows are in guest memory when it returns
+    }
+
+    int _xferWritebacks;
 
     /// <summary>Copies one pixel rectangle of the target into a host buffer (into guest memory once the frame completed).</summary>
     void CopyOutRect(RenderTarget rt, uint x, uint y, uint w, uint h, int hostBpp, int guestBpp, WritebackConvert conv)

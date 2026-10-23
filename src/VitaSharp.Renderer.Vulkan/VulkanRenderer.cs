@@ -334,6 +334,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public long Version;          // bumped whenever the contents change
         public long LastScene;        // serial of the last scene that rendered into it
         public long LastUsedFrame;
+        /// <summary>Dirty-page stamp from which on a write into the surface's memory is newer than its last scene
+        /// (see <see cref="OverwrittenSinceRendered"/>); 0 = never rendered.</summary>
+        public uint MemStamp;
+        /// <summary>The GPU has written (part of) the surface back into guest memory: its pages are dirtied by the
+        /// renderer itself, so they cannot tell CPU writes apart.</summary>
+        public bool WrittenBack;
+        /// <summary><see cref="Version"/> whose pixels are (or, once the frame retires, will be) in guest memory: the
+        /// surface starts from the memory content and whole writebacks copy it out again.</summary>
+        public long MemVersion;
     }
 
     sealed class DepthTarget
@@ -571,7 +580,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
         _sceneSerial++;
         _sceneRegions.Clear();
-        if (_rt != null) _rt.LastScene = _sceneSerial;
+        if (_rt != null)
+        {
+            _rt.LastScene = _sceneSerial;
+            // writes found by the sweeps after the next one: the sweep window this scene falls into may still hold
+            // stores made before it (a CPU fill of the surface before rendering into it)
+            _rt.MemStamp = DirtyPages.Epoch + 2;
+        }
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = FrameCount;
         if (b.Depth is { ForceStore: true }) _depth.ForceStored = true;
