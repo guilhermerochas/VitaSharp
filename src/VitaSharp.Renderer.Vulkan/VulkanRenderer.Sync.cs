@@ -99,6 +99,8 @@ public sealed unsafe partial class VulkanRenderer
                 else if (r == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkWaitForFences (idle)"); return; }
                 else if (Ms(Stopwatch.GetTimestamp() - t0) > 50) return; // the queue loop calls again (and can stop)
             }
+            // nothing in flight and nothing queued: time for test-run texture inspections that did not fit their frame
+            if (_inspectQueue.Count > 0) DrainInspectQueue();
         }
         finally { _idleWaitTicks += Stopwatch.GetTimestamp() - t0; }
     }

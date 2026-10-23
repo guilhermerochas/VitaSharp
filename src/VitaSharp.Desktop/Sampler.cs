@@ -25,7 +25,10 @@ sealed class Sampler
         Log.Info($"PROFILE slow window f{from}..f{to}: {fps:F1} fps");
         // threads that ran (guest code, HLE holding a core, waiting for a core or pacing), with the emulated cycles they
         // executed and were charged in the window: (guest + HLE) near the pacing rate means the CPU model limits
-        foreach (var (name, d) in _wStates.OrderByDescending(kv => kv.Value.Where(x => x.Key.StartsWith("Running") || x.Key is "core-wait" or "throttle").Sum(x => x.Value)).Take(5))
+        // every thread that was not mostly asleep in a kernel wait (running, holding a core in HLE, or blocked in the host
+        // inside an HLE call such as a delay, I/O or display wait), busiest first
+        foreach (var (name, d) in _wStates.Where(kv => kv.Value.Where(x => x.Key.StartsWith("wait:")).Sum(x => x.Value) < 0.9 * kv.Value.Values.Sum())
+            .OrderByDescending(kv => kv.Value.Where(x => x.Key.StartsWith("Running") || x.Key is "core-wait" or "throttle").Sum(x => x.Value)).Take(12))
         {
             int total = d.Values.Sum();
             var t = _emu.Kernel.Threads.FirstOrDefault(x => x.Name == name);

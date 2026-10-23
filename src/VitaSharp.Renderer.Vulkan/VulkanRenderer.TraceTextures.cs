@@ -63,7 +63,7 @@ public sealed unsafe partial class VulkanRenderer
     // Test-run inspection cost control. Decoding and scanning every upload on the GPU thread took half of its time in
     // Killzone's streaming-heavy stretches (BC/PVRTC decode of each new texture), which made test runs GPU-thread bound
     // where the game itself is not. Each distinct content (hash, format, size) is inspected once, and at most
-    // InspectBudgetMs per frame; uploads over the budget wait in a queue and are inspected in a later frame if their
+    // InspectBudgetMs per frame; uploads over the budget wait in a queue and are inspected when the GPU worker is idle, if their
     // memory still holds the same data (re-hashed), so coverage is kept for textures that stay resident.
     const double InspectBudgetMs = 1.5;
     readonly HashSet<ulong> _inspected = new();
@@ -75,18 +75,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
     {
-        if (_inspectFrame != FrameCount)
-        {
-            _inspectFrame = FrameCount;
-            _inspectFrameTicks = 0;
-            // textures that did not fit an earlier frame's budget, while their memory still holds the uploaded data
-            while (_inspectQueue.Count > 0 && !InspectOverBudget())
-            {
-                var q = _inspectQueue.Dequeue();
-                if (System.IO.Hashing.XxHash3.HashToUInt64(VitaSharp.Core.Memory.GuestMemory.ReadSpan(q.Addr, q.Len)) != q.Hash) continue;
-                InspectTimed(q.D, q.Info, q.W, q.H, q.Hash);
-            }
-        }
+        if (_inspectFrame != FrameCount) { _inspectFrame = FrameCount; _inspectFrameTicks = 0; }
         if (_inspected.Contains(InspectKey(d, w, h, hash))) { _inspectDuplicate++; return; }
         if (InspectOverBudget())
         {
@@ -96,6 +85,26 @@ public sealed unsafe partial class VulkanRenderer
         }
         InspectTimed(d, info, w, h, hash);
     }
+
+    /// <summary>
+    /// Inspects queued uploads while the GPU worker has nothing else to do (called from <see cref="Idle"/>), one at a
+    /// time and only while no command is waiting, if their memory still holds the uploaded data. Draining them at the
+    /// start of the next frame instead moved a loading screen's inspections into the first gameplay frames.
+    /// </summary>
+    void DrainInspectQueue()
+    {
+        while (_inspectQueue.Count > 0 && _queue is not { Pending: > 0 })
+        {
+            var q = _inspectQueue.Dequeue();
+            if (System.IO.Hashing.XxHash3.HashToUInt64(VitaSharp.Core.Memory.GuestMemory.ReadSpan(q.Addr, q.Len)) != q.Hash) { _inspectStale++; continue; }
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            InspectTimed(q.D, q.Info, q.W, q.H, q.Hash);
+            long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            _inspectFrameTicks -= dt; // idle time: not charged to the frame budget
+            _idleWaitTicks -= dt; // nor to the idle fence-wait statistics (Idle times its whole body)
+        }
+    }
+    long _inspectStale;
 
     bool InspectOverBudget() => _inspectFrameTicks > InspectBudgetMs * System.Diagnostics.Stopwatch.Frequency / 1000;
 
