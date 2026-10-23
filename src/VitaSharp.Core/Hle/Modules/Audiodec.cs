@@ -215,7 +215,10 @@ public sealed unsafe class Audiodec : HleModule
         {
             var head = GuestMemory.Span(es, 8);
             consumed = d.Type == TYPE_MP3 ? FrameDecoder.Mp3FrameLength(head)
-                     : d.Adts ? FrameDecoder.AdtsFrameLength(head) : (int)esMax;
+                     : d.Adts ? FrameDecoder.AdtsFrameLength(head)
+                     // raw AAC carries no length: decode exactly one raw_data_block and report its size, like the
+                     // hardware (the bytes after it are the next frame or stale data, not part of this one)
+                     : d.Codec?.RawFrameLength(GuestMemory.Ptr(es), (int)esMax) ?? (int)esMax;
             samples = 0;
             if (consumed <= 0) return ERR_API_FAIL;
             consumed = (int)Math.Min((uint)consumed, esMax);

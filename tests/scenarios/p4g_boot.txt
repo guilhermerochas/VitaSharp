@@ -3,5 +3,9 @@
 # stereo) from NGS: expect 187.5 outputs/s and 0 underruns in the report's AUDIO summary lines. --audio opens OpenAL;
 # for a silent run that records a WAV instead, set ALSOFT_CONF to a file with [general] drivers=wave, sample-type=int16
 # and [wave] file=<path>.wav. Use a scratch data root (--data=): the game writes saves.
+# Audio content: add --audio-dump=<dir> for one WAV per port. Port 0 is NGS (CRI streams ATRAC9 voices: SFX, title music,
+# voice lines). Each port 1 is a movie (raw AAC in 0x200-byte ES slots through sceAudiodec): the attract movie is
+# data/movie/P4CTOP3.mp4 and must match an FFmpeg decode of that file sample for sample (3072-sample offset). It used
+# to fall apart after ~5 s into silence and clipped garbage because whole 1536-byte slots were decoded as one frame.
 title=PCSB00245
 args=--frames=4200 --seconds=300 --dump-every=100 --no-inspect --audio --input=cross@f400:f10,cross@f550:f10,start@f2400:f10,cross@f2700:f10,cross@f3000:f10

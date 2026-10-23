@@ -8,13 +8,21 @@ public sealed unsafe class FrameDecoder : IDisposable
     AVCodecContext* _ctx;
     readonly AVPacket* _pkt;
     readonly AVFrame* _frame;
+    readonly AVCodecID _id;
+    readonly int _rate, _channels;
+    readonly byte[]? _extradata;
+    /// <summary>Second decoder of the same stream that only measures raw frame lengths (see <see cref="RawFrameLength"/>).</summary>
+    AVCodecContext* _probe;
+    AVFrame* _probeFrame;
+    AVPacket* _probePkt;
 
     public int Channels => _ctx->ch_layout.nb_channels;
     public int SampleRate => _ctx->sample_rate;
 
-    FrameDecoder(AVCodecContext* ctx)
+    FrameDecoder(AVCodecContext* ctx, AVCodecID id, int rate, int channels, byte[]? extradata)
     {
         _ctx = ctx;
+        _id = id; _rate = rate; _channels = channels; _extradata = extradata;
         _pkt = ffmpeg.av_packet_alloc();
         _frame = ffmpeg.av_frame_alloc();
     }
@@ -23,6 +31,12 @@ public sealed unsafe class FrameDecoder : IDisposable
     public static FrameDecoder? Create(AVCodecID id, int sampleRate, int channels, byte[]? extradata = null)
     {
         if (!FFmpegLoader.Available) return null;
+        var ctx = Open(id, sampleRate, channels, extradata);
+        return ctx == null ? null : new FrameDecoder(ctx, id, sampleRate, channels, extradata);
+    }
+
+    static AVCodecContext* Open(AVCodecID id, int sampleRate, int channels, byte[]? extradata)
+    {
         var codec = ffmpeg.avcodec_find_decoder(id);
         if (codec == null) return null;
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
@@ -44,7 +58,54 @@ public sealed unsafe class FrameDecoder : IDisposable
             ffmpeg.avcodec_free_context(&ctx);
             return null;
         }
-        return new FrameDecoder(ctx);
+        return ctx;
+    }
+
+    /// <summary>
+    /// Byte length of the raw (unframed, e.g. MP4-style AAC) frame at <paramref name="data"/>: hardware decoders parse
+    /// exactly one frame from the buffer and report how many bytes it used (SceAudiodecCtrl.inputEsSize). FFmpeg's
+    /// send/receive API has no such count, and it decodes whatever follows the frame in the packet as further frames,
+    /// which for a game's fixed-size ES slots means the next slot's data or stale bytes: errors, wrong overlap state,
+    /// garbage PCM. The length is found on a separate probe decoder as the shortest prefix that decodes one frame
+    /// (a truncated raw_data_block fails before its END element); the probe never touches the real decoder's state.
+    /// Returns <paramref name="maxSize"/> when no shorter prefix decodes.
+    /// </summary>
+    public int RawFrameLength(byte* data, int maxSize)
+    {
+        if (maxSize <= 1) return maxSize;
+        if (_probe == null)
+        {
+            _probe = Open(_id, _rate, _channels, _extradata);
+            if (_probe == null) return maxSize;
+            _probe->log_level_offset = 32; // the failing trials are expected: keep them out of the error log
+            _probeFrame = ffmpeg.av_frame_alloc();
+            _probePkt = ffmpeg.av_packet_alloc();
+        }
+        if (!ProbeDecodes(data, maxSize)) return maxSize;
+        int lo = 0, hi = maxSize; // lo fails, hi decodes
+        while (hi - lo > 1)
+        {
+            int mid = (lo + hi) / 2;
+            if (ProbeDecodes(data, mid)) hi = mid; else lo = mid;
+        }
+        return hi;
+    }
+
+    bool ProbeDecodes(byte* data, int size)
+    {
+        ffmpeg.avcodec_flush_buffers(_probe);
+        var buf = (byte*)ffmpeg.av_malloc((ulong)size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
+        Buffer.MemoryCopy(data, buf, size, size);
+        new Span<byte>(buf + size, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
+        if (ffmpeg.av_packet_from_data(_probePkt, buf, size) < 0)
+        {
+            ffmpeg.av_free(buf);
+            return false;
+        }
+        bool ok = ffmpeg.avcodec_send_packet(_probe, _probePkt) >= 0 && ffmpeg.avcodec_receive_frame(_probe, _probeFrame) == 0;
+        ffmpeg.av_frame_unref(_probeFrame);
+        ffmpeg.av_packet_unref(_probePkt);
+        return ok;
     }
 
     /// <summary>AudioSpecificConfig for AAC-LC with the given rate and channel count.</summary>
@@ -116,6 +177,13 @@ public sealed unsafe class FrameDecoder : IDisposable
         _ctx = null;
         var p = _pkt; ffmpeg.av_packet_free(&p);
         var f = _frame; ffmpeg.av_frame_free(&f);
+        if (_probe != null)
+        {
+            var pc = _probe; ffmpeg.avcodec_free_context(&pc);
+            _probe = null;
+            var pf = _probeFrame; ffmpeg.av_frame_free(&pf);
+            var pp = _probePkt; ffmpeg.av_packet_free(&pp);
+        }
     }
 
     // ------------------------------------------------------------------ frame sizes from headers

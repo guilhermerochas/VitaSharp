@@ -56,3 +56,92 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
         }
     }
 }
+
+/// <summary>
+/// Raw (MP4-style) AAC has no frame header, so the hardware decoder parses one raw_data_block and reports the bytes it
+/// used. Persona 4 Golden's movie player puts each access unit at the start of a 0x200-byte slot and passes the slot
+/// with maxEsSize 1536: handing FFmpeg the whole 1536 bytes made it decode the next slots as extra frames (errors,
+/// broken overlap state, garbage or silent movie audio).
+/// </summary>
+public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
+{
+    static unsafe List<byte[]> EncodeSine(int frames, out byte[] config)
+    {
+        config = [];
+        var packets = new List<byte[]>();
+        var codec = ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_AAC);
+        if (codec == null) return packets;
+        var ctx = ffmpeg.avcodec_alloc_context3(codec);
+        ctx->sample_rate = 48000;
+        ctx->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
+        ctx->bit_rate = 128000;
+        ffmpeg.av_channel_layout_default(&ctx->ch_layout, 2);
+        ctx->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
+        if (ffmpeg.avcodec_open2(ctx, codec, null) < 0) { ffmpeg.avcodec_free_context(&ctx); return packets; }
+        config = new Span<byte>(ctx->extradata, ctx->extradata_size).ToArray();
+        var frame = ffmpeg.av_frame_alloc();
+        var pkt = ffmpeg.av_packet_alloc();
+        long t = 0;
+        for (int f = 0; f <= frames; f++)
+        {
+            if (f < frames)
+            {
+                frame->nb_samples = ctx->frame_size;
+                frame->format = (int)AVSampleFormat.AV_SAMPLE_FMT_FLTP;
+                frame->sample_rate = 48000;
+                ffmpeg.av_channel_layout_copy(&frame->ch_layout, &ctx->ch_layout);
+                ffmpeg.av_frame_get_buffer(frame, 0);
+                for (int i = 0; i < frame->nb_samples; i++, t++)
+                {
+                    ((float*)frame->extended_data[0u])[i] = 0.4f * MathF.Sin(t * 2 * MathF.PI * 440 / 48000);
+                    ((float*)frame->extended_data[1u])[i] = 0.3f * MathF.Sin(t * 2 * MathF.PI * 660 / 48000);
+                }
+                ffmpeg.avcodec_send_frame(ctx, frame);
+                ffmpeg.av_frame_unref(frame);
+            }
+            else ffmpeg.avcodec_send_frame(ctx, null);
+            while (ffmpeg.avcodec_receive_packet(ctx, pkt) == 0)
+            {
+                packets.Add(new Span<byte>(pkt->data, pkt->size).ToArray());
+                ffmpeg.av_packet_unref(pkt);
+            }
+        }
+        ffmpeg.av_packet_free(&pkt);
+        ffmpeg.av_frame_free(&frame);
+        ffmpeg.avcodec_free_context(&ctx);
+        return packets;
+    }
+
+    [Fact]
+    public unsafe void FramesInFixedSlotsDecodeLikeExactPackets()
+    {
+        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        var packets = EncodeSine(40, out var config);
+        if (packets.Count == 0) { output.WriteLine("no AAC encoder: skipped"); return; }
+        const int Slot = 0x200, MaxEs = 1536;
+        Assert.All(packets, p => Assert.True(p.Length < Slot));
+        // the game's layout: each access unit at the start of its slot, the rest of the slot stale (non-zero) bytes
+        var es = new byte[packets.Count * Slot + MaxEs];
+        new Random(1).NextBytes(es);
+        for (int i = 0; i < packets.Count; i++) packets[i].CopyTo(es, i * Slot);
+
+        using var exact = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 2, config);
+        using var slotted = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 2, config);
+        Assert.NotNull(exact);
+        Assert.NotNull(slotted);
+        var want = new short[8192];
+        var got = new short[8192];
+        fixed (byte* e = es)
+            for (int i = 0; i < packets.Count; i++)
+            {
+                byte* slot = e + i * Slot;
+                int len = slotted!.RawFrameLength(slot, MaxEs);
+                Assert.Equal(packets[i].Length, len);
+                int n1, n2;
+                fixed (byte* p = packets[i]) n1 = exact!.Decode(p, packets[i].Length, want, 2);
+                n2 = slotted.Decode(slot, len, got, 2);
+                Assert.Equal(n1, n2);
+                Assert.True(want.AsSpan(0, n1 * 2).SequenceEqual(got.AsSpan(0, n2 * 2)), $"frame {i} differs");
+            }
+    }
+}
