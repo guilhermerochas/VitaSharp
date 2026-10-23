@@ -331,6 +331,23 @@ public sealed class ProgramInput
             }
         }
 
+        // A buffer declared only as a whole (UNIFORM_BUFFER parameter, no uniform parameters inside it) can still be
+        // register resident: its container gives the secondary attribute registers the driver preloads with the
+        // buffer's first words. Killzone Mercenary's lit programs keep the packed light indices of a draw in buffer 4
+        // (container 4: SA 0, one word) and read SA 0 without any load; left unset, SA 0 held whatever the host
+        // register contained, the light table was indexed with garbage and the HDR scene got blocks of +-65504.
+        // Vita3K's get_program_input leaves these with reg_block_size 0 as well.
+        foreach (var (idx, b) in ubs)
+        {
+            if (b.RegBlockSize != 0 || idx >= TextureBuffer) continue;
+            if (program.ContainerByIndex((int)idx) is { SizeInF32: > 0 } c)
+            {
+                b.RegBlockSize = c.SizeInF32;
+                b.RegStartOffset = c.BaseSaOffset;
+                b.Size = Math.Max(b.Size, c.SizeInF32);
+            }
+        }
+
         foreach (var (idx, b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024) b.Size = MaxUbInFloat;
