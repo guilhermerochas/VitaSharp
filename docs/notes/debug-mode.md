@@ -268,6 +268,9 @@ its draws (40 lines per submission at most); the per-submission summary at most 
 - it counts *shaded* fragments: a fragment later rejected by the depth/stencil test, a colour mask of 0 or
   blending with a zero factor still counts (the atomics make the shader run late-Z). Compare with layer 1 to see
   whether the NaN lands in a target.
+- only the components the colour surface stores are checked (an F32F32/F16F16 target ignores .zw, F11F11F10 has
+  no alpha): Uncharted writes NaN into the unused .zw of an F32x2 target in thousands of draws, which is harmless.
+  A per-draw colour mask is not taken into account.
 - raw-bit outputs (packed data) are not checked unless a debug override replaced them.
 - the instrumented GLSL counts as a debug override (`ShaderGenerator.DebugOverridesActive`): `shaders.pack`,
   `programs.pack` and `pipelines.list` are bypassed exactly as for `VITASHARP_DEBUG_FS`, the SPIR-V is not written to
@@ -280,6 +283,29 @@ its draws (40 lines per submission at most); the per-submission summary at most 
 **Test injection.** `VITASHARP_DEBUG_FS=<fragment program hash>:vec4(uintBitsToFloat(0x7FC00000u))` forces a NaN
 output in one fragment program (all its draws). With `--debug-mode` the scan reports the target and auto-captures;
 with `VITASHARP_DEBUG_NAN=draws` as well, the `[nan-draw]` lines name exactly that program's draws.
+
+Verified on Killzone kz_skin with `91AB29A92F527931` (vs 8029D59D2F677BE2, 30-index sprites into the HDR scene): the
+scan reported 13 NaN pixels in `0x65C78000` and the NaN reaching the luminance target `0x663D6000`, the `nan`
+anomaly auto-captured (replay/ with 127 frames, nan.txt); draws mode named each of that program's draws, then the
+propagation: luminance downsample `87AA82B962069A7A` (rt 0x663D6000), RGBM encode `94A7330124AABFB7` and
+`1A2ADF5414A841E0` into the post atlas `0x66272000`.
+
+**Natural findings (2026-10-23).**
+- Killzone (kz_skin, kzl_walk3), default native 4x MSAA: from the first 3D scene (~f3083) the HDR scene
+  `0x65C78000` holds 1-2 NaN or Inf pixels in ~5% of the presents (kz_skin: 49 bad presents in f3093-f3945;
+  kzl_walk3: 18 NaN/Inf episodes over 10500 frames), and the 240x136 luminance target `0x663D6000` (U2F10F10F10)
+  picks them up through the downsample (`87AA82B962069A7A`), i.e. they reach auto-exposure and the post atlas. Draws
+  mode: ~30 different scene fragment programs each emit a single NaN/Inf fragment now and then
+  (`A4BEB71A61321C78` with vs `C8D905EEB7CFE2E6` most often, `66DF0A5D1E0FAA67`, `A3025415177842D0`,
+  `F2E38FC6C187C762`, `BEF0ABB514D82E6B`, ...): a shared cause, not one shader. With `VITASHARP_MSAA=off` (same route
+  to f3700): no NaN/Inf draw output and no NaN/Inf in any target. Prime suspect: varyings evaluated outside the
+  triangle on partly covered pixels (inputs not `centroid`) feeding normalize/rsq/log (followed up on
+  `fix/kz-nan-msaa`). The MSAA-off run also had one burst of 7085 huge (>= 65000) pixels in the HDR target (f3411).
+  The luminance target regularly holds a few negative pixels, which its unsigned guest format cannot store.
+- Uncharted (uc_walk): 8 float targets, never NaN/Inf/huge in any of them. Draws mode: fs `B5F1A9DDE7A45CCD`
+  (vs `2D58FB908DF9D2B4`, rt `0x60600000` 720x408 U2F10F10F10) outputs a single NaN fragment near the left edge in
+  a few presents, which never lands in the target.
+- God of War (gow_game, into gameplay): no float render targets at all; no NaN/Inf output.
 
 ## Audio
 
@@ -372,6 +398,29 @@ debug mode is on, nothing while it is off. Debug off runs exactly the code of be
 (`_replay != null`, to free the ring after F9). A capture adds ~64 MB of temporary managed copies and about 1 s of
 background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
 the whole route (only the expected `black` on the loading screen).
+
+### NaN/Inf scan cost
+
+Killzone kz_skin route (4500 frames, paced, `--shader-cache` in `args=`, GTX 1650, 2026-10-23, branch
+`feat/diag-nan`). Another emulator was running during these runs, so fps and GPU time swing as in the replay table;
+each debug-on run also contains one automatic `nan` capture, whose 3.8-4 s trace (target readbacks on the GPU worker)
+alone adds ~0.85 ms/frame to the GPU-worker average over the run.
+
+| Mode | fps | process cpu ms/frame | GPU worker ms/frame | GPU ms/frame |
+|---|---|---|---|---|
+| debug off | 25.9 | 30.2 | 4.16 | 5.39 |
+| debug on (replay ring + NaN scan, 1 auto capture) | 26.8 | 35.2 | 5.36 | 3.52 |
+| debug on + `VITASHARP_DEBUG_NAN=draws` (1 auto capture, caches bypassed) | 26.6 | 46.0 | 5.90 | 3.85 |
+
+Direct measurement (`PERF nan`): recording a scan costs **10-12 us** on the GPU worker (barrier, descriptor set,
+dispatch; ~2 scans per frame in Killzone gameplay: the HDR scene and the luminance target), reading the results
+back **22-24 us per retired frame** (debug mode) and **29-41 us** with the draws table (4096 entries checked per
+submission). That is ~0.05 ms (debug) to ~0.1 ms (draws) of GPU-worker time per frame, 1-2% of its ~4.5 ms. The
+GPU work is one full-resolution read of each float target per scene (960x544 F16x4 = 4 MB), not separable from
+the noise above. Memory: 2 KB host-visible buffer per frame slot (66 KB in draws mode). Debug off: one static flag
+test per scene end and one null test per retire. Draws mode costs mostly through the cache bypass (every shader
+and pipeline translated/compiled in the session: ~1 s of GPU-thread compile time over the route, same as
+`VITASHARP_DEBUG_FS`) and late depth testing of every instrumented fragment shader.
 
 ## Implementation map
 
