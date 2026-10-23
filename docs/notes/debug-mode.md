@@ -107,6 +107,9 @@ a capture's state.txt).
 Launcher: Configurações > Geral > "Modo de depuração (gera logs detalhados para diagnóstico)", saved in
 `launcher.json` (`DebugMode`) and passed as `--debug-mode`; also `VITASHARP_DEBUG_MODE=1`. (`--debug` is unrelated:
 it sets the log level to Debug, which is far more verbose.) The log says `[dbg] debug mode on` at the start.
+F9 in the game window toggles it at runtime (`[dbg] debug mode on|off (F9) at guest frame N`): turned on mid-game,
+the first-use lines report every shader, pipeline, target and texture format used from that frame on, and the
+per-thread HLE rings start filling then.
 
 All lines carry the log timestamp; `[dbg]` lines also `f<guest frame> p<renderer present>`.
 

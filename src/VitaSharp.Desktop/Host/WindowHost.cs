@@ -33,6 +33,8 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? Resized;
     /// <summary>F10: "Capturar diagnóstico" (raised on the window thread; the handler must not block).</summary>
     public event Action? DiagnosticRequested;
+    /// <summary>F9: turns debug mode on or off in game (raised on the window thread).</summary>
+    public event Action? DebugModeToggled;
 
     /// <summary>
     /// Registers the GLFW window/input platforms explicitly: Silk.NET otherwise finds them by loading assemblies by
@@ -154,6 +156,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     {
         if (key == Key.F11 && down) { ToggleFullscreen(); return; }
         if (key == Key.F10) { if (down) DiagnosticRequested?.Invoke(); return; }
+        if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
         // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
         _hostInput.KeyChanged(key.ToString(), down);
     }
