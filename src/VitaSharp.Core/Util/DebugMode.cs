@@ -6,8 +6,9 @@ namespace VitaSharp.Core.Util;
 /// "Modo de depuração" (--debug-mode, launcher Configurações > Geral, or VITASHARP_DEBUG_MODE=1): extra, rate-limited
 /// logging meant to diagnose problems from the log alone (first use of shaders/pipelines/targets/texture formats,
 /// HLE error returns, address-overlap choices, periodic PERF lines, deduplicated warnings, frame anomaly checks).
-/// Set once at startup, before the emulator is created; every site checks this flag first, so the cost when it is
-/// off is one static read. See docs/notes/debug-mode.md.
+/// Set at startup or toggled in game (F9); every site checks this flag first, so the cost when it is off is one
+/// static read. Turned on mid-game, the first-use logs report everything used from then on. See
+/// docs/notes/debug-mode.md.
 /// </summary>
 public static class DebugMode
 {
@@ -17,6 +18,12 @@ public static class DebugMode
     {
         Enabled = true;
         Log.DedupeWarnings = true;
+    }
+
+    public static void Disable()
+    {
+        Enabled = false;
+        Log.DedupeWarnings = false;
     }
 
     /// <summary>Guest frame number for log lines (frames presented by the display).</summary>
