@@ -28,7 +28,7 @@ public sealed unsafe class Audiodec : HleModule
         // ATRAC9
         public At9Decoder? At9;
         public short[][] At9Pcm = [];
-        public int FrameIndex;
+        public int FrameIndex, SuperframeUsed;
         public byte[] Staging = [];
         // MP3 / AAC
         public FrameDecoder? Codec;
@@ -201,9 +201,18 @@ public sealed unsafe class Audiodec : HleModule
             try { consumed = d.At9.DecodeFrame(d.Staging, d.FrameIndex, d.At9Pcm); }
             catch (Exception e) when (e is IndexOutOfRangeException or InvalidDataException or ArgumentException)
             {
-                Log.WarnOnce("audiodec-at9", $"sceAudiodec ATRAC9 frame error: {e.Message}");
+                Log.WarnOnce("audiodec-at9", $"sceAudiodec ATRAC9 frame error: {e.GetType().Name}: {e.Message} at 0x{es:X8}, frame {d.FrameIndex}/{d.At9.Config.FramesPerSuperframe}, data {Convert.ToHexString(d.Staging, 0, Math.Min(16, avail))}");
                 consumed = samples = 0;
                 return ERR_API_FAIL;
+            }
+            // The frames of a superframe follow each other byte-aligned and the superframe is padded to its fixed size
+            // (Config.SuperframeBytes): the last frame also consumes that padding, otherwise the next superframe is
+            // read a few bytes early (Gravity Rush: 1 padding byte, decoded from 0x...7FF instead of 0x...800).
+            d.SuperframeUsed += consumed;
+            if (d.FrameIndex == d.At9.Config.FramesPerSuperframe - 1)
+            {
+                consumed += Math.Max(0, d.At9.Config.SuperframeBytes - d.SuperframeUsed);
+                d.SuperframeUsed = 0;
             }
             d.FrameIndex = (d.FrameIndex + 1) % d.At9.Config.FramesPerSuperframe;
             samples = d.At9.Config.FrameSamples;
@@ -299,7 +308,7 @@ public sealed unsafe class Audiodec : HleModule
     {
         var d = Find(ctrl, out int err);
         if (d == null) return err;
-        d.FrameIndex = 0;
+        d.FrameIndex = d.SuperframeUsed = 0;
         d.Codec?.Flush();
         return 0;
     }

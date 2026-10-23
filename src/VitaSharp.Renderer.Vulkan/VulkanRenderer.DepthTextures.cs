@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
+using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -82,5 +83,81 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
+    }
+
+    // ------------------------------------------------------------------ stencil planes sampled as U8 textures
+
+    sealed class StencilTex
+    {
+        public Image Image;
+        public ImageView View;
+        public ImageMemoryPool.Allocation Mem;
+        public uint W, H, Swizzle;
+        public long Version = -1;
+    }
+
+    readonly Dictionary<DepthTarget, StencilTex> _stencilTextures = new();
+
+    /// <summary>
+    /// A separate S8 stencil plane (DF32_S8, DF32M_S8, S8) read as a U8 texture: games use the stencil they rendered
+    /// as a mask in post-processing (Gravity Rush's tone-mapping composite reads it to tell the characters from the
+    /// background). The plane only exists on the GPU, so the texture is built from the stencil aspect.
+    /// </summary>
+    DepthTarget? StencilTextureSource(uint addr, GxmTextureDesc d)
+    {
+        if (GxmFormats.BaseOf(d.Format) != TexBase.U8 || addr is < GuestMemory.CdramStart or >= GuestMemory.CdramEnd) return null;
+        DepthTarget? best = null;
+        foreach (var dt in _depthTargets.Values)
+            if (dt.StencilAddress == addr && (best == null || dt.LastScene > best.LastScene)) best = dt;
+        return best != null && MultisampledDepthRead(best, true) ? null : best;
+    }
+
+    (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
+    {
+        uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
+        uint swz = d.Format & GxmFormats.TextureSwizzleMask;
+        if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)
+        {
+            if (t != null)
+            {
+                var old = t;
+                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+            }
+            t = new StencilTex { W = w, H = h, Swizzle = swz };
+            (t.Image, t.View, t.Mem) = CreateImage(w, h, Format.R8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+                ImageAspectFlags.ColorBit, swizzle: Formats.TextureSwizzle(d.Format));
+            _stencilTextures[dt] = t;
+            BeginFrameIfNeeded();
+            EndRendering();
+            Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
+        }
+        if (t.Version == dt.Version) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        t.Version = dt.Version;
+        // stencil aspect -> CDRAM mirror (guest layout, one byte per pixel) -> R8 image
+        EnsureMirror();
+        _mirroredDepth.Remove((dt, true));
+        if (!MirrorDepthTarget(dt, true)) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        EndRendering();
+        Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit,
+            AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
+        BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
+            PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        var region = new BufferImageCopy
+        {
+            BufferOffset = dt.StencilAddress - GuestMemory.CdramStart,
+            BufferRowLength = dt.StencilStrideBytes,
+            BufferImageHeight = dt.Height,
+            ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            ImageExtent = new Extent3D(w, h, 1),
+        };
+        _vk.CmdCopyBufferToImage(Cmd, _mirror, t.Image, ImageLayout.TransferDstOptimal, 1, in region);
+        Barrier(t.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
+            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+        BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
+            AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit);
+        return (t.View, ImageLayout.ShaderReadOnlyOptimal);
     }
 }
