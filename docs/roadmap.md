@@ -74,6 +74,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Gravity Rush: intro do sonho e tela de título muito lavadas/claras; a cena em si sai colorida, o clareamento vem da composição final (tone-map/bloom, fs 43E841F998350713). Pode ser o estilo do jogo; comparar com um print do Vita real ou do Vita3K
+- [ ] Gravity Rush: um toque em 0,46/0,48 no quadro 1000 da tela de título não registrou (o toque no centro funciona)
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
