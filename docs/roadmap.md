@@ -23,7 +23,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)
 - [ ] JIT: compilação mais barata por bloco
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
-- [ ] Native AOT no Windows (falta instalar as ferramentas de C++ do Visual Studio)
 - [ ] Prioridade das threads da CPU emulada e da GPU (depois de medir)
 
 ## Android
