@@ -49,6 +49,8 @@ public sealed unsafe class ShaderCompiler : IDisposable
         ulong hash = System.IO.Hashing.XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(glsl));
         // the optimisation level is part of the key (performance keeps the historical file names)
         string suffix = OptLevel == OptimizationLevel.Performance ? "" : OptLevel == OptimizationLevel.Zero ? ".o0" : ".os";
+        // simulated generator bump (test only): as if every GLSL had changed
+        if (VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt != 0) suffix += $".salt{VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt}";
         string? cachePath = _cacheDir != null ? Path.Combine(_cacheDir, $"{hash:x16}{suffix}.spv") : null;
         if (cachePath != null && File.Exists(cachePath))
         {
