@@ -45,6 +45,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
 - [ ] Compatibilidade com drivers Vulkan de celular (Adreno, Mali, PowerVR) e testes em aparelhos reais
 
+## HLE
+
+- [ ] `sce::Json` (SceLibJson, 179 métodos C++, importado pelo Devious Dungeon): implementar em HLE para não
+  depender do `libSceJson.suprx` do firmware; exige reproduzir o layout de `Value`/`Array`/`Object`, os iteradores e
+  o `MemAllocator` que o jogo herda (ver `docs/hle/G2-support-libs.md` §3.1)
+
 ## Firmware e sistema
 
 - [ ] Usar automaticamente o firmware da instalação do Vita3K (vs0: Json, Xml, Sqlite; sa0: fontes)
