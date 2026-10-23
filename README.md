@@ -210,6 +210,7 @@ Common `run` options:
 | `--headless`, `--seconds <n>`, `--frames <n>` | Run without a window for a fixed time or number of frames |
 | `--input <script>` | Scripted input, e.g. `start@f3400,cross@f3600` |
 | `--dump-frames`, `--dump-every <n>` | Save rendered frames to disk |
+| `--audio-dump <dir>` | Write what the game sends to each audio port (after port volume) as one WAV per port, independent of the audio device |
 | `--trace-hle`, `--trace-hle-only <a+b>` | Log system calls |
 | `--validation` | Enable the Vulkan validation layers |
 | `--log <file>`, `--debug` | Log destination and verbosity |

@@ -43,10 +43,7 @@ loading frames that are present warm too (boot, menu transitions, level load: gp
   `VITASHARP_SHADER_WORKER_PRIO=below` (no measurable difference).
 
 ## Next steps (not done)
-1. Rebuild after a GeneratorVersion bump at boot: store GXP bytes + ShaderHints per (program, hints) in a
-   version-independent pack, keep pipelines.list across generator bumps, and let the prewarm translate/compile the
-   modules in parallel. First session after an update would then behave like a warm one (rebuild ~700 shaders +
-   500 pipelines is ~30 s of CPU, ~8 s on 4 workers, well before gameplay).
+1. ~~Rebuild after a GeneratorVersion bump at boot~~: done in perf/cache-rebuild, see "Boot rebuild" below.
 2. Optional Vita3K-style async pipelines that skip the draw until ready (removes the remaining burst, can lose
    one-shot render-to-texture draws: keep it opt-in).
 3. Guest-bound load hitches: the JIT warm-up (interpreting new code) and texture uploads at level load.
@@ -91,3 +88,77 @@ fence-bound and is not comparable (ON cold 93.9 s with 128 s of fence waits, OFF
 Frames vs main (cold caches): kz_skin, uc_walk, ucx_title, rbs_continue, mania_boot, dd_boot, f1_trees_lod,
 gow_play: no crashes or hangs, no new errors, same METRICS; differences are run-to-run timing only
 (mania/DD static frames pixel-identical).
+
+## Boot rebuild after a generator bump (perf/cache-rebuild)
+Before: `shaders.pack` and `pipelines.list` were both keyed by `ShaderGenerator.GeneratorVersion`, so the first
+session after an emulator update retranslated every shader during gameplay and had no prewarm at all.
+
+Layout under `<cache>/titles/<ID>/` now:
+- `shaders.pack` (unchanged format v3, keyed by generator version): translated metadata + SPIR-V.
+- `programs.pack` (new, `ShaderRecipeStore`, format "RC" v1, **not** keyed by the generator): GXP bytes once per
+  program (verified against the program hash on read) + one recipe per (program, hint key) = the serialized
+  `ShaderHints`, in first-use order. A recipe whose hints no longer produce its key is rejected.
+- `pipelines.list` (format v4, `PipelineRecipe`, **not** keyed by the generator): shader identities (program hash +
+  hint key), the resolved fixed-function state and the *guest* vertex attributes/streams. The Vulkan vertex layout
+  is re-derived from them and the current vertex shader's inputs (v3 stored the resolved layout, which depends on
+  the generator). The record also stores the fragment shader's UsesFragColor/RawColorBits the blend/attachment
+  state was resolved against; a retranslated shader that disagrees makes the record "stale" (skipped, the draw
+  builds its pipeline normally).
+- `vk_*.cache`: unchanged.
+
+Recording: both packs are written on the GPU thread at the first use of a shader/pipeline in a session (a lookup
+when already on record). Prefetched pipelines the game never used are no longer recorded.
+
+Boot (`BeginTitle`): if some recipes are missing from `shaders.pack` (generator bump, or a partial pack), the
+**rebuild** starts: a coordinator thread queues, in first-use order, each recorded pipeline right after its two
+shaders, then the remaining recipes, to the existing shader-worker pool (`_rebuildJobs`, served after the
+draw-driven prefetch queues). Shader jobs are registered in the in-flight table, so:
+- a draw that needs a shader first finds the job: `Prefetch` promotes it to the front queue, or the GPU thread runs
+  it itself if no worker started it (counted as "reached by the game first"); nothing is compiled twice;
+- pipeline jobs claim their key like prefetched ones (`BuildSharedPipeline`), so the GPU thread waits for an
+  in-progress build instead of duplicating it.
+Otherwise (pack up to date) the old single-thread prewarm runs on the v4 list. A v3 list of the *current* generator
+is still prewarmed once and migrates as the game uses its pipelines (upgrade from main keeps its prewarm).
+
+Settings: with "Compilar shaders e pipelines em segundo plano" off (`--async-shaders=off`) the rebuild runs
+**synchronously before the game starts** (BeginTitle joins it; the workers are started just for it). Chosen over
+skipping because it costs a few seconds once (3.6 s for Killzone on 4 workers) instead of 10+ s of GPU-thread
+compiles and multi-second freezes during play. `VITASHARP_SHADER_REBUILD=0` disables the rebuild.
+Test-only: `VITASHARP_GENERATOR_VERSION_SALT=N` makes every version-keyed cache (shader pack and loose `.spv`
+names) behave as if the generator had been bumped and every GLSL changed (the SPIR-V itself is unchanged, so the
+VkPipelineCache still hits, as for a real bump that leaves most shaders alone).
+
+Logs: `[shadercache] rebuilt N shaders + M pipelines for generator vX in Y s on K workers (...)` and the same text in
+the `[shadercache] session` summary (`rebuild: ...`).
+
+Robustness: torn/corrupted records (per-record checksums) are skipped and counted; corrupted program bytes fail the
+hash check; malformed recipes/pipeline records are rejected by exact-size decoding; older formats (shader pack
+v2, pipeline list v1-v3 of other generators, anything without the right header) are discarded as before. A second
+concurrent session now gets a **read-only** view of each pack (`BlobPack.IsReadOnly`: no reset, no truncation,
+appends are no-ops) instead of no cache at all. Shutdown during the rebuild cancels queued jobs and logs "stopped
+early"; the remaining recipes are rebuilt next boot.
+
+### Measurements 2026-10-23 (Killzone kz_skin, 4500 frames, `--profile`, NVIDIA cache isolated per run)
+Cache populated by one cold run of this branch (727 shaders, 541 pipelines recorded). Bump = salt 1 on a copy of
+it; "old" = `VITASHARP_SHADER_REBUILD=0`, which behaves like main after a bump (stale pack, no usable prewarm).
+| run | hitch frames | excess | p99 | max | GPU-thread shader + pipeline | frames stalled by shader work (worst) |
+|---|---|---|---|---|---|---|
+| warm (settings on) | 38 | 5.6 s | 48 ms | 1.40 s | 0.17 s + 0 | 1 (167 ms) |
+| bump, old behaviour (on) | 34 | 5.8 s | 39 ms | 1.85 s | 1.30 s + 0.39 s (103 pipelines) | 93 (184 ms) |
+| bump, rebuild (on) * | 44 | 6.5 s | 51 ms | 1.64 s | 0.01 s + 0 | 1 (5.7 ms) |
+| warm (async off) * | 17 | 4.8 s | 34 ms | 1.56 s | 0.16 s + 0.02 s | 1 (172 ms) |
+| bump, old behaviour (async off) * | 119 | 17.3 s | 102 ms | 4.95 s | 10.4 s + 1.9 s (506 pipelines) | 104 (3.6 s) |
+| bump, rebuild (async off) * | 170 | 17.3 s | 109 ms | 1.39 s | 0 + 0 | 0 |
+
+Rebuild: 727 shaders + 541 pipelines in 4.0-5.4 s on 4 workers in the background, 3.6 s before the game started
+with async off; 0 shaders reached by the game first. \* other agents ran games on the machine during these runs
+(hitch counts/excess inflated by CPU contention: jit/gpuIdle causes, 0 shader stalls); the GPU-thread and
+shader-stall columns are not affected. With background compilation on, the old behaviour already hid most of a
+bump behind the prefetch workers (the hitch metrics are dominated by guest-bound loading frames present warm too);
+the rebuild removes the remaining GPU-thread compile time (1.7 s -> 0.01 s) and 92 shader-stalled frames, and with
+async off it removes 12.3 s of GPU-thread compiles and the 3.6 s worst freeze.
+
+Regressions (scratch data root, cold then bump): mania_boot frames pixel-identical to main (cold and after the
+rebuild); uc_walk same METRICS as main, no errors (frames differ only by the usual camera nondeterminism);
+Uncharted recreates its renderer once at boot, and the second renderer correctly rebuilds only what the first one
+had not finished.

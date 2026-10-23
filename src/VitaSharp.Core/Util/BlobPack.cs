@@ -10,6 +10,9 @@ namespace VitaSharp.Core.Util;
 /// Every record carries its own checksum, so a write torn by a crash or a killed process only loses that record:
 /// the truncated tail is cut off on the next open and later appends stay aligned.
 /// Thread-safe: reads are positional and may run concurrently with an append.
+/// <para>Concurrent sessions: the first process holds the file for writing; another process opening it gets a
+/// read-only view (<see cref="IsReadOnly"/>): it reads what was complete at open time, never truncates or resets the
+/// file (a version mismatch just reads as empty), and its <see cref="Add"/> calls are no-ops.</para>
 /// </summary>
 public sealed class BlobPack : IDisposable
 {
@@ -28,44 +31,71 @@ public sealed class BlobPack : IDisposable
 
     public string Path { get; }
     public int Count { get { lock (_lock) return _index.Count; } }
+    /// <summary>Another process holds the file for writing: this view only reads.</summary>
+    public bool IsReadOnly { get; }
 
-    BlobPack(string path, FileStream fs)
+    BlobPack(string path, FileStream fs, bool readOnly)
     {
         Path = path;
         _fs = fs;
         _h = fs.SafeFileHandle;
+        IsReadOnly = readOnly;
     }
 
     /// <summary>Opens (or creates) a pack. A pack written with another <paramref name="version"/> is discarded.
-    /// Returns null when the file cannot be opened (read-only storage, another instance holds it).</summary>
+    /// Falls back to a read-only view when another process holds the file; returns null when it cannot be opened at
+    /// all (read-only storage).</summary>
     public static BlobPack? Open(string path, uint version)
     {
         FileStream fs;
+        bool readOnly = false;
         try
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1, FileOptions.RandomAccess);
         }
+        catch (IOException e) when (File.Exists(path))
+        {
+            // sharing violation: another session writes this pack
+            try { fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.RandomAccess); readOnly = true; }
+            catch (Exception e2) { Log.Warn($"[shadercache] cannot open {path}: {e.Message} / {e2.Message}"); return null; }
+            Log.Info($"[shadercache] {System.IO.Path.GetFileName(path)} is in use by another session: read-only");
+        }
         catch (Exception e) { Log.Warn($"[shadercache] cannot open {path}: {e.Message}"); return null; }
-        var pack = new BlobPack(path, fs);
+        var pack = new BlobPack(path, fs, readOnly);
         try { pack.Load(version); }
         catch (Exception e)
         {
             Log.Warn($"[shadercache] {path} unreadable ({e.Message}), starting over");
+            if (readOnly) { pack._index.Clear(); pack._order.Clear(); return pack; }
             try { pack.Reset(version); } catch { pack.Dispose(); return null; }
         }
         return pack;
+    }
+
+    /// <summary>The version a pack file was written with, or null (missing, unreadable, not a pack). Never modifies it.</summary>
+    public static uint? PeekVersion(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1);
+            Span<byte> hdr = stackalloc byte[FileHeaderSize];
+            if (fs.Read(hdr) != FileHeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic) return null;
+            return BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]);
+        }
+        catch (Exception) { return null; }
     }
 
     void Load(uint version)
     {
         long len = RandomAccess.GetLength(_h);
         Span<byte> hdr = stackalloc byte[RecordHeaderSize];
-        if (len < FileHeaderSize) { Reset(version); return; }
+        if (len < FileHeaderSize) { if (!IsReadOnly) Reset(version); return; }
         RandomAccess.Read(_h, hdr[..FileHeaderSize], 0);
         if (BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic || BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]) != version)
         {
-            Reset(version);
+            if (!IsReadOnly) Reset(version);
             return;
         }
         long pos = FileHeaderSize;
@@ -80,7 +110,7 @@ public sealed class BlobPack : IDisposable
             else _index[key] = (pos + RecordHeaderSize, size);
             pos += RecordHeaderSize + size;
         }
-        if (pos != len)
+        if (pos != len && !IsReadOnly) // (read-only: the writer may be appending that tail right now)
         {
             Log.Warn($"[shadercache] {System.IO.Path.GetFileName(Path)}: dropped {len - pos} bytes of a torn record");
             _fs.SetLength(pos);
@@ -131,7 +161,7 @@ public sealed class BlobPack : IDisposable
     /// <summary>Appends a blob (no-op when the key is already stored).</summary>
     public void Add(ulong key, ReadOnlySpan<byte> data)
     {
-        if (data.Length > MaxBlob) return;
+        if (data.Length > MaxBlob || IsReadOnly) return;
         lock (_lock)
         {
             if (_disposed || _index.ContainsKey(key)) return;

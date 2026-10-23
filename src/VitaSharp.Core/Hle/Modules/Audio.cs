@@ -21,6 +21,7 @@ public sealed class Audio : HleModule
         public float[] Volume = [1, 1];
         public double NextDeadline;
         public short[] Buffer = [];
+        public AudioDump.Writer? Dump;
         public readonly object Lock = new();
     }
 
@@ -62,6 +63,7 @@ public sealed class Audio : HleModule
             var p = new Port { Type = type, Grain = len, Freq = freq <= 0 ? 48000 : freq, Channels = mode == 0 ? 1 : 2 };
             try { p.Stream = Emu.Host.Audio?.OpenStream(p.Freq, 2, len); } catch { p.Stream = null; }
             p.Stats = AudioDiagnostics.OpenPort($"port {id} {TypeName(type)}{(ext ? " (ext)" : "")}", p.Grain, p.Freq, p.Channels, p.Stream);
+            p.Dump = AudioDump.Open($"port{id}_{TypeName(type)}", p.Freq);
             _ports[id] = p;
             return id;
         }
@@ -74,6 +76,7 @@ public sealed class Audio : HleModule
         lock (_ports) { if (!_ports.Remove(port, out p)) return ERR_INVALID_PORT; }
         if (p.Stats != null) AudioDiagnostics.ClosePort(p.Stats);
         p.Stream?.Dispose();
+        lock (p.Lock) { p.Dump?.Dispose(); p.Dump = null; }
         return 0;
     }
 
@@ -88,7 +91,7 @@ public sealed class Audio : HleModule
         if (p == null) return ERR_INVALID_PORT;
         lock (p.Lock)
         {
-            if (p.Stream != null)
+            if (p.Stream != null || p.Dump != null)
             {
                 int n = p.Grain * 2;
                 if (p.Buffer.Length != n) p.Buffer = new short[n];
@@ -115,11 +118,15 @@ public sealed class Audio : HleModule
                         p.Buffer[2 * i] = p.Buffer[2 * i + 1] = (short)Math.Clamp(src[i] * v, short.MinValue, short.MaxValue);
                     }
                 }
-                if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any == 0);
-                using (Scheduler.Block()) p.Stream.Submit(p.Buffer); // blocks while the host buffer is full: not CPU time
-                if (p.Stats != null) AudioDiagnostics.AfterSubmit(p.Stats);
+                p.Dump?.Write(p.Buffer);
+                if (p.Stream != null)
+                {
+                    if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any == 0);
+                    using (Scheduler.Block()) p.Stream.Submit(p.Buffer); // blocks while the host buffer is full: not CPU time
+                    if (p.Stats != null) AudioDiagnostics.AfterSubmit(p.Stats);
+                    return p.Grain;
+                }
             }
-            else
             {
                 if (p.Stats != null) AudioDiagnostics.Output(p.Stats, buf == 0);
                 // no audio device: keep real-time pacing so games run at the right speed (none in turbo mode)

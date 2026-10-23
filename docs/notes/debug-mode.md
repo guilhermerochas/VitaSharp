@@ -33,12 +33,18 @@ The renderer arms the trace at the next present and traces the **whole following
 frame is presented normally, then every render target is read back. The game stalls for the readbacks (typically
 0.5-2 s for a 3D scene) and then continues; the trace mode is switched off again afterwards.
 
+The traced frame is the one *after* the request, so a glitch that lasts a few frames is usually gone by then. In
+debug mode the capture therefore also contains `replay/`: the last ~128 presented frames before the traced one (see
+"Replay ring" below), written when the trace is armed. An automatic capture waits 30 more presents (~1 s) before it
+arms, so `replay/` holds both sides of the frame that triggered it.
+
 Folder contents:
 
 | File | Content |
 |---|---|
 | `info.txt` | reason, title, guest frame, build (version+commit), runtime/OS, command line, CPU backend, debug mode, window size, GPU/driver/Vulkan version, MSAA mode, shader settings, shader cache state, GPU queue counters, every `VITASHARP_*` environment variable |
 | `screenshot.png` | the presented frame at the end of the traced frame |
+| `replay/` | debug mode only: `frame_<present>.png` for each of the last ~128 presented frames (480x272), `sheet_<first>-<last>.png` contact sheets of 30 frames (6 per row, oldest top left; red border = the trigger frame, yellow = a frame over a per-frame threshold), `replay.txt` (below) |
 | `draws.txt` | every `[scene] begin` (render target, GXM MSAA mode, downscale, depth surface) and `[draw]` of the frame, in order |
 | `shaders/` | GLSL of every program drawn, `<gxp hash>_<hint key>.vert/.frag` (shaders loaded from the shader pack are re-translated for this, nothing is recompiled) |
 | `targets/` | every render target as `rt_<addr>_<w>x<h>.png` (replaced targets with `_<fmt>`), plus `targets.txt` |
@@ -128,8 +134,8 @@ All lines carry the log timestamp; `[dbg]` lines also `f<guest frame> p<renderer
 | `[dbg] f.. HLE-UNIMPL [thread] lib::func (NID ..) lr=.. (#n)` | unimplemented calls, same rate limit |
 | `PERF periodic f..: fps, process cpu ms/frame, allocated KB/frame, GC counts, working set, GPU queue pending, threads` | every 60 s |
 | `[dbg] WARN x<n>: <warning with numbers as #>`, `[dbg] HLE-ERR summary: ...`, `[dbg] HLE-UNIMPL summary: ...` | every 10 minutes and at the end of the session |
-| `[frame-metrics] p.. mean white black magenta green blue` | every 10th anomaly check (~every 300 presents) |
-| `[anomaly] p.. f.. <kind>: <details>` / `... cleared after n checks` | see below |
+| `[frame-metrics] p.. mean white black magenta green blue` | every 300 presents |
+| `[anomaly] p.. f.. <kind>: <details>` / `... cleared (after n frames)` | see below |
 
 Warnings are deduplicated by their text with numbers masked (`#`): the first three of a kind are written, then the
 10th, 100th, ... with `(repeated n times)`.
@@ -137,25 +143,69 @@ Warnings are deduplicated by their text with numbers masked (`#`): the first thr
 Texture inspection (the test harness's TEXTURE SUSPECT check: noise ~0.33 = random data, seams > 1.8 = broken block
 decoding) runs on at most 2 texture uploads per frame.
 
-### Anomaly checks and automatic captures
+### Replay ring, per-frame anomaly checks and automatic captures
 
-Every 30 presents the presented image is copied to the CPU with the frame's own command buffer (no stall) and checked
-on every 2nd pixel of every 2nd row when the frame retires:
+While debug mode is on (from the start or after F9; F9 off frees it), **every** present blits the presented image,
+downscaled to fit 480x272, into a small device-local staging image and copies it into the next slot of a ring of
+128 host-visible (cached) staging slots, all with the frame's own command buffer: nothing waits for the GPU. When
+the frame retires (non-blocking, `VulkanRenderer.Sync.cs`), its slot is measured on every 4th pixel of every 4th row
+(~8K samples, a 120x68 grid of the 960x544 frame) and fed to the anomaly rules. The log says `[dbg] ... replay ring on: 128 frames at up to 480x272
+(64 MB host memory)`.
 
-| Kind | Rule | Confirmed after | Auto capture |
-|---|---|---|---|
-| `magenta` | > 5% pixels r>200, b>200, g<80 (missing/garbage textures) | 2 checks in a row | yes |
-| `saturated` | > 8% pure green (g>180, r,b<60) or pure blue (b>180, r,g<60) pixels (garbage target/effect) | 2 | yes |
-| `blown-out` | > 35% saturated white, or mean brightness > 0.85 | 2 | yes |
-| `flicker` | mean brightness changes by > 0.35 between two checks (30 presents apart), neither black | 1 | yes |
-| `black` | > 97% black | 1 | no (loading screens) |
-| `frozen` | identical image for 20 checks (~600 presents) | 1 | no (pause menus) |
+Size: 128 slots = 4.3 s at 30 fps, 2.1 s at 60 fps; 480x272 RGBA8 is 510 KB per slot, 64 MB of system memory in
+all (no VRAM besides one 510 KB staging image). Full 960x544 would be 255 MB for the same time span, and half
+resolution is plenty to see what a glitch looks like (the PNGs in `targets/` of the traced frame are full size).
 
-A confirmed anomaly with "auto capture" triggers the same capture as F10 (`[diag] capture requested (auto: <kind> -
-<details>)`), at most one every 5 minutes and 3 per session (`[diag] anomaly ...: skipped` otherwise).
+Per-frame metrics (same thresholds as the test harness): mean brightness, white (all channels > 235), black (all
+< 10), magenta (r,b > 200, g < 80: missing/garbage textures), green (g > 180, r,b < 60) and blue (b > 180, r,g < 60:
+garbage render target / effect).
 
-Test switch: `VITASHARP_DEBUG_INJECT=magenta@<present>` (or `green@<present>`) makes the check see that colour over
-half the image for 4 checks from that present on (`[anomaly] test injection ...`); the rendered frame is untouched.
+| Kind | Rule | Auto capture |
+|---|---|---|
+| `magenta` | > 5% magenta in 2 of 3 consecutive frames | yes |
+| `saturated` | > 8% pure green + pure blue in 2 of 3 consecutive frames (a 2-frame burst, or on/off/on) | yes |
+| `flicker` | the mean brightness jumps by > 0.35 for 1-3 frames and then comes back to within 0.12 of the frame before (a transient flash or black frame; a cut or fade that stays is not one). The frames before and after must not be black | yes |
+| `blown-out` | > 35% saturated white, or mean brightness > 0.85, for 60 frames | yes |
+| `black` | > 97% black for 30 frames | no (loading screens) |
+| `frozen` | identical image for 600 presents | no (pause menus) |
+
+A single-frame spike is ignored. Lines: `[anomaly] p<present> f<guest frame> <kind>: <details>` when confirmed,
+`... <kind> cleared` / `cleared after n frames` when it ends, `[frame-metrics] p.. mean white black magenta green
+blue` every 300 presents.
+
+A confirmed anomaly with "auto capture" triggers the same capture as F10 (`[diag] capture requested (auto: <kind> at
+present #N - <details>)`), at most one every 5 minutes and 3 per session (`[diag] anomaly ...: skipped` otherwise).
+The renderer keeps filling the ring for 30 more presents (~1 s) before it arms the trace, so `replay/` covers about
+3 s before the spike and 1 s after it. F10 and `--diag-at` arm at the next present as before (their `replay/` ends
+at the present before the traced frame).
+
+At arm time the renderer retires the frames in flight (a wait of at most a frame's GPU work, during a capture that
+stalls anyway), copies the measured slots out of the ring (~64 MB memcpy) and writes the PNGs on a worker thread
+while the next frame is traced; the capture is zipped once both are done (`[diag] replay: N frames (presents
+#a-#b), trigger #t` and `[diag] replay written: ...`; info.txt says `Replay: N presented frames ...`, or `off` when
+debug mode was off).
+
+`replay/replay.txt`:
+
+```
+# present guestFrame time(local) dt_to_trigger_ms size(src) mean white black magenta green blue hits
+p2999 f2999 23:58:01.402 -33 480x272(960x544) 0.312 0.000 0.020 0.000 0.000 0.001 -
+p3000 f3000 23:58:01.435 0 480x272(960x544) 0.512 0.000 0.010 0.000 0.500 0.001 S  <== trigger
+...
+# recent anomaly events (debug mode, newest last)
+p3001 saturated [capture]: 50% pure green and 0% pure blue pixels (...), in 2 of the last 3 frames
+```
+
+`hits` = per-frame thresholds the frame is over (M magenta, S saturated, B blown-out, K black); the trigger is the
+present the anomaly was confirmed on (auto) or the present when the request arrived (F10/--diag-at); `dt` is
+relative to it.
+
+Test switch: `VITASHARP_DEBUG_INJECT=<kind>@<present>[:<count>]` (kind = green, blue, magenta, black, white; count
+default 4) paints the replay copies of those presents (green/blue/magenta over the top half, black/white over the
+whole frame) before they are measured (`[anomaly] test injection (green) into present #N`), so both the detector and
+the saved `replay/` see it; the rendered frame is untouched. `tests/scenarios/kz_replay.txt` with
+`VITASHARP_DEBUG_INJECT=green@3000:2` checks a 2-frame burst end to end (auto capture with the green frames in
+`replay/`) and the `--diag-at` path. The rules themselves are unit-tested (`FrameAnomalyDetectorTests`).
 
 ## Audio
 
@@ -197,7 +247,9 @@ the ports released earlier in the session, NGS systems and decoder streams.
 
 **Tests:** `--audio` uses the OpenAL device in headless runs. For a silent run that records the mixed output, set
 `ALSOFT_CONF` to a file with `[general]` `drivers=wave`, `sample-type=int16` and `[wave]` `file=<path>.wav` (OpenAL
-Soft's wave writer runs in real time, like a device). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
+Soft's wave writer runs in real time, like a device). `--audio-dump=<dir>` instead writes exactly what the game sent to each port, one
+WAV per opened port (`NN_portP_TYPE_RATE.wav`, after port volume, no device timing), the input for content analysis
+(clipping, clicks, pitch, comparison with a reference decode). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
 when the guest frame is reached (`[dbg] debug mode on (--debug-mode-at) at guest frame N`).
 
 ## Cost
@@ -219,13 +271,42 @@ the zip was 68 MB), 0.3 s for a menu frame.
   pending capture; per HLE call one static flag read; per GPU command two field writes; the watchdog wakes once per
   second. The shader/pipeline cache is not touched (only `--trace-draws` still bypasses it, as before: it is chosen at
   launch and needs freshly generated GLSL for every shader).
-- Debug mode on: one 2 MB image copy and a ~65K-pixel scan every 30 presents, a 16-entry HLE call ring per thread, the
-  rate-limited lines above.
+- Debug mode on: per present a 960x544 -> 480x272 blit and a 510 KB copy into the replay ring (GPU, no wait) and, when
+  the frame retires, an ~8K-sample scan plus the anomaly rules on the GPU worker; 64 MB of host memory for the ring; a
+  16-entry HLE call ring per thread; the rate-limited lines above. Measured cost: see "Replay ring cost" below.
+
+### Replay ring cost
+
+Killzone kz_skin route (4500 frames, paced, `--shader-cache` in `args=`, GTX 1650, 2026-10-23), branch
+`feat/diag-replay` against main 00ffb73. Other agents were running emulators on the same machine during these
+runs, so the GPU time per frame in particular swings by 2-3 ms between identical runs; each line is one run.
+
+| Build / mode | fps | process cpu ms/frame | GPU worker ms/frame | main thread ms/frame | GPU ms/frame |
+|---|---|---|---|---|---|
+| main, debug off | 28.4 / 28.4 | 33.6 / 33.8 | 4.59 / 5.06 | 13.2 / 12.7 | 3.07 / 5.25 |
+| this branch, debug off | 27.4 / 28.5 | 31.9 / 33.4 | 5.01 / 4.96 | 11.2 / 12.6 | 4.35 / 5.34 |
+| main, debug on (check every 30 presents) | 28.4 / 26.2 | 34.7 / 35.7 | 5.39 / 5.17 | 12.5 / 12.2 | 4.89 / 5.92 |
+| this branch, debug on (final, 4x4 sampling) | 28.8 | 29.5 | 4.11 | 12.6 | 4.20 |
+| this branch, debug on (first version, 2x2 sampling) | 28.2 / 27.6 / 28.7 | 35.1 / 34.7 / 31.9 | 5.39 / 5.47 / 4.93 | 12.3 / 11.9 / 12.5 | 6.55 / 6.06 / 3.02 |
+
+The differences are inside the run-to-run noise, so the replay's own cost is measured directly instead: the
+`PERF replay` line of the report (debug mode only) gives **15 us/frame** to record the blit + copy and **55-63
+us/frame** for the metrics and rules when the frame retires (~190 us with 2x2 sampling, hence 4x4), i.e. ~0.07 ms of
+GPU-worker time per frame (~1.5% of its ~4.6 ms). The GPU work is one 960x544 -> 480x272 linear blit and a 510 KB
+image-to-buffer copy per present. Memory: 64 MB of host-visible system memory and a 510 KB device-local image while
+debug mode is on, nothing while it is off. Debug off runs exactly the code of before plus one null check per present
+(`_replay != null`, to free the ring after F9). A capture adds ~64 MB of temporary managed copies and about 1 s of
+background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
+the whole route (only the expected `black` on the loading screen).
 
 ## Implementation map
 
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Diagnostics.cs`: capture arming/completion, frame ring, describe/state,
-  device lost, debug first-use lines, anomaly sampler.
+  device lost, debug first-use lines.
+- `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Replay.cs`: replay ring (per-present blit + copy, per-frame metrics at
+  retire, snapshot + replay/ writer), `VITASHARP_DEBUG_INJECT`.
+- `src/VitaSharp.Core/Util/FrameAnomalyDetector.cs`: `FrameMetrics` (colour metrics) and the per-frame anomaly rules
+  (pure logic, unit-tested in `tests/VitaSharp.Tests/FrameAnomalyDetectorTests.cs`).
 - `VulkanRenderer.cs` Present: `_traceFrame`/`_traceDumpFrame`/`_traceDir` replace the launch-time `TraceDrawsFrame`
   checks; `--trace-draws=N` sets both frames to N (its old behaviour, including the cache bypass and the skipped present).
 - `src/VitaSharp.Desktop/Diagnostics.cs`: F10 / `--diag-at` / anomaly captures, info.txt, log copy, zip.

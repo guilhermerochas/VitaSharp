@@ -1,0 +1,10 @@
+# Persona 4 Golden (EU): skip the opening movie (Start at f800), then leave the title screen idle. About 30 s later
+# the title loops back to the ATLUS/CRIWARE logos and plays the opening movie again as an attract demo (second
+# 'movie player init' thread around f1742), then returns to the title (~f4800). Regression for the permanent black
+# screen: the first movie frame used to decode to 0 PCM bytes (FFmpeg trimmed libfaac's encoder delay), the game's
+# movie player turned that into a 0 Hz sceAudioOutOpenPort, kept 0 Hz as its "current rate", and the next movie
+# start failed to open its port -> black from ~f1800 forever. Expect no long black/frozen METRICS runs, the attract
+# movie in the sheets, and two "port 1 MAIN grain 1024 48000 Hz" AUDIO summaries.
+# Use a scratch data root (--data=): the game writes saves.
+title=PCSB00245
+args=--frames=5000 --seconds=400 --dump-every=100 --no-inspect --input=cross@f400:f10,cross@f550:f10,start@f800:f10

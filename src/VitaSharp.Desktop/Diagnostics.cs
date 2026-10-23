@@ -44,7 +44,9 @@ public sealed class Diagnostics
     public static string Root => Path.Combine(Program.DataRoot, "diagnostics");
 
     /// <summary>Starts a capture unless one is running. Never blocks the caller (window/input thread).</summary>
-    public bool Capture(string reason)
+    /// <param name="postFrames">presents the renderer keeps collecting replay frames before it traces (auto captures)</param>
+    /// <param name="triggerPresent">the renderer present that caused the capture (marked in replay/replay.txt)</param>
+    public bool Capture(string reason, int postFrames = 0, long triggerPresent = -1)
     {
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
         {
@@ -71,7 +73,7 @@ public sealed class Diagnostics
         Status?.Invoke("Capturando diagnóstico...");
         var renderer = _renderer();
         var tcs = new TaskCompletionSource<DiagnosticCaptureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        bool requested = renderer != null && renderer.RequestDiagnosticCapture(dir, r => tcs.TrySetResult(r));
+        bool requested = renderer != null && renderer.RequestDiagnosticCapture(dir, r => tcs.TrySetResult(r), postFrames, triggerPresent);
         _last = Task.Run(async () =>
         {
             string? note = null;
@@ -96,13 +98,14 @@ public sealed class Diagnostics
     }
 
     /// <summary>Debug mode: an anomaly on the presented image. Rate-limited automatic capture.</summary>
-    public void OnAnomaly(string kind, string detail)
+    public void OnAnomaly(string kind, string detail, long present)
     {
         lock (this)
         {
             if (_autoCount >= AutoMax) { Log.Info($"[diag] anomaly '{kind}': automatic capture limit ({AutoMax} per session) reached"); return; }
             if (DateTime.Now - _lastAuto < AutoInterval) { Log.Info($"[diag] anomaly '{kind}': last automatic capture less than {AutoInterval.TotalMinutes:F0} min ago, skipped"); return; }
-            if (!Capture($"auto: {kind} - {detail}")) return;
+            // keep the replay ring running ~1 s past the spike so both sides of it are saved
+            if (!Capture($"auto: {kind} at present #{present} - {detail}", VulkanRenderer.ReplayPostFrames, present)) return;
             _lastAuto = DateTime.Now;
             _autoCount++;
         }
@@ -151,6 +154,8 @@ public sealed class Diagnostics
         {
             sb.AppendLine($"Traced frame: between renderer presents #{res.Present} and #{res.Present + 1}; {res.Draws} draws, {res.Targets} render targets dumped, {res.Textures} textures sampled ({res.Milliseconds:F0} ms)");
             sb.AppendLine($"Presented frame: {res.FrameWidth}x{res.FrameHeight}{(res.Screenshot ? "" : " (no screenshot)")}");
+            sb.AppendLine(res.ReplayFrames > 0 ? $"Replay: {res.ReplayFrames} presented frames before the traced one in replay/ (see replay/replay.txt)"
+                : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only in debug mode, F9)");
             if (res.Error != null) sb.AppendLine($"Renderer error: {res.Error}");
         }
         sb.AppendLine($"Build: {BuildVersion()}");
@@ -170,6 +175,7 @@ public sealed class Diagnostics
         sb.AppendLine();
         sb.AppendLine("Files:");
         sb.AppendLine("  screenshot.png      the presented frame at the end of the traced frame");
+        sb.AppendLine("  replay/             debug mode: the last ~128 presented frames (480x272) before the traced frame, sheets of 30, replay.txt with per-frame metrics");
         sb.AppendLine("  draws.txt           every scene and draw of the traced frame (programs, targets, textures, MSAA, state)");
         sb.AppendLine("  shaders/            GLSL of every program drawn (<gxp hash>_<hint key>.vert/.frag)");
         sb.AppendLine("  targets/            every render target as PNG + targets.txt (per-channel min/max/mean, NaN/Inf, guest copy)");

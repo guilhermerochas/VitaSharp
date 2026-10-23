@@ -117,6 +117,8 @@ public sealed unsafe partial class VulkanRenderer
         public uint StreamMask;
         public bool Failed;
         public ulong ProgramHash, HintKey;
+        /// <summary>Guest vertex program (its attributes/streams are recorded with the pipelines this shader is used in).</summary>
+        public GxmVertexProgram? Vp;
     }
 
     sealed class FsEntry
@@ -161,6 +163,8 @@ public sealed unsafe partial class VulkanRenderer
     ModuleEntry GetModule(GxpProgram program, ulong hintKey, Func<DrawCommand, uint, ShaderHints> hints, DrawCommand d, uint colorFormat)
     {
         var key = (program.Hash, hintKey);
+        // first use by the GPU thread in this session: make sure the version-independent record knows how to rebuild it
+        RecordShaderRecipe(program, hintKey, hints, d, colorFormat);
         if (_modules.TryGetValue(key, out var cached))
         {
             Interlocked.Increment(ref _statShaderMemHits);
@@ -275,7 +279,7 @@ public sealed unsafe partial class VulkanRenderer
         ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
         var me = GetModule(vp.Info.Program, hk, VertexHints, d, 0);
-        e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk };
+        e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk, Vp = vp };
         if (me.Gen != null) BuildVertexInput(vp, me.Gen, e);
         _vsCache[(vp, hk)] = e;
         _fNewShaders++;
@@ -305,7 +309,10 @@ public sealed unsafe partial class VulkanRenderer
         (_, 1) => Format.R32Uint, (_, 2) => Format.R32G32Uint, (_, 3) => Format.R32G32B32Uint, _ => Format.R32G32B32A32Uint,
     };
 
-    void BuildVertexInput(GxmVertexProgram vp, GeneratedShader gen, VsEntry e)
+    void BuildVertexInput(GxmVertexProgram vp, GeneratedShader gen, VsEntry e) => BuildVertexInput(vp.Attributes, vp.Streams, gen, e);
+
+    /// <summary>Vulkan vertex input of a vertex shader fed by these guest attributes/streams (also used for recorded pipelines).</summary>
+    void BuildVertexInput(GxmVertexAttribute[] attributes, GxmVertexStream[] streams, GeneratedShader gen, VsEntry e)
     {
         var bindings = new List<VertexInputBindingDescription>();
         var attrs = new List<VertexInputAttributeDescription>();
@@ -313,11 +320,11 @@ public sealed unsafe partial class VulkanRenderer
         bool needDummy = false;
         foreach (var input in gen.VertexInputs)
         {
-            var a = vp.Attributes.FirstOrDefault(x => x.RegIndex == input.RegIndex);
-            bool found = vp.Attributes.Any(x => x.RegIndex == input.RegIndex);
+            var a = attributes.FirstOrDefault(x => x.RegIndex == input.RegIndex);
+            bool found = attributes.Any(x => x.RegIndex == input.RegIndex);
             for (int l = 0; l < input.LocationCount; l++)
             {
-                if (!found || a.StreamIndex >= vp.Streams.Length)
+                if (!found || a.StreamIndex >= streams.Length)
                 {
                     needDummy = true;
                     var fmt = input.Kind switch { 'i' => Format.R32G32B32A32Sint, 'u' => Format.R32G32B32A32Uint, _ => Format.R32G32B32A32Sfloat };
@@ -346,7 +353,7 @@ public sealed unsafe partial class VulkanRenderer
         for (int s = 0; s < 16; s++)
         {
             if ((streamMask & (1u << s)) == 0) continue;
-            var st = vp.Streams[s];
+            var st = streams[s];
             bool instanced = st.IndexSource is 2 or 3;
             bindings.Add(new VertexInputBindingDescription((uint)s, st.Stride, instanced ? VertexInputRate.Instance : VertexInputRate.Vertex));
         }
@@ -387,6 +394,15 @@ public sealed unsafe partial class VulkanRenderer
     Pipeline GetPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         if (_pipelines.TryGetValue(key, out var p)) return p;
+        p = ResolvePipeline(key, vs, fs, topology);
+        // first use by the GPU thread in this session (whoever built it): pipelines.list keeps first-use order
+        if (p.Handle != 0) RecordPipeline(key, vs, fs, topology);
+        return p;
+    }
+
+    Pipeline ResolvePipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
+    {
+        Pipeline p;
         _fNewPipelines++;
         if (DebugMode.Enabled) DbgPipeline(key, vs, fs, topology);
         if (_sharedPipelines.TryGetValue(key, out p))
@@ -403,7 +419,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         // claim the key so a prefetch worker does not start the same pipeline while this thread builds it
         ManualResetEventSlim? claim = null;
-        if (_asyncPipelines)
+        if (_asyncPipelines || _rebuildActive) // (the boot rebuild builds recorded pipelines on workers too)
         {
             claim = new ManualResetEventSlim();
             if (!_pipelineInflight.TryAdd(key, claim))
@@ -427,11 +443,7 @@ public sealed unsafe partial class VulkanRenderer
         if (dt > _statGpuPipelineMaxTicks) _statGpuPipelineMaxTicks = dt;
         if (p.Handle != 0)
         {
-            if (_sharedPipelines.TryAdd(key, p))
-            {
-                RecordPipeline(key, vs, fs, topology);
-                NotePipelineCreated();
-            }
+            if (_sharedPipelines.TryAdd(key, p)) NotePipelineCreated();
             else
             {
                 // the prewarm thread finished the same pipeline meanwhile

@@ -1,0 +1,7 @@
+# Replay ring + per-frame anomaly detector end to end (debug mode). Run with VITASHARP_DEBUG_INJECT=green@3000:2: the
+# replay copies of presents 3000-3001 are painted green, the detector must auto-capture (2-frame burst) with ~1 s of
+# post-roll, and replay/ of that capture must show the two green frames. --diag-at=3400 then checks the F10 path
+# writes replay/ too. Output: <data>/diagnostics/PCSC00045_<time>/ (two captures) and their .zip.
+title=PCSC00045
+data=C:\Users\guisa\VitaSharp\.vitadata
+args=--shader-cache=C:\Users\guisa\VitaSharp\.vitadata\shadercache --debug-mode --diag-at=3400 --frames=3500 --seconds=400 --dump-every=50 --no-inspect --input=tap@f450:0.36:0.84,tap@f1000:0.815:0.763,tap@f1900:0.25:0.37,tap@f2550:0.5:0.5,tap@f2700:0.5:0.5,tap@f2850:0.5:0.5

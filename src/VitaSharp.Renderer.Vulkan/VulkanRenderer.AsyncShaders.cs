@@ -53,26 +53,38 @@ public sealed unsafe partial class VulkanRenderer
             + (_asyncShaders ? $"on ({_shaderWorkerCount} workers, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));
     }
 
-    sealed class ShaderJob(GxpProgram program, ulong hintKey, ShaderHints hints)
+    /// <param name="rebuild">queued by the boot rebuild (<see cref="RebuildFromRecipes"/>) rather than by a draw</param>
+    sealed class ShaderJob(GxpProgram program, ulong hintKey, ShaderHints hints, bool rebuild = false)
     {
         int _state; // 0 queued, 1 running/cancelled, 2 done
+        int _promoted;
         readonly ManualResetEventSlim _done = new();
         ModuleEntry? _result;
 
         /// <summary>Runs the job if nobody started it yet, else waits for it; returns the published module (an empty
         /// one if the job was cancelled at shutdown).</summary>
-        public ModuleEntry RunOrWait(VulkanRenderer r)
+        public ModuleEntry RunOrWait(VulkanRenderer r, bool byGame = true)
         {
-            if (Interlocked.CompareExchange(ref _state, 1, 0) == 0) Run(r);
+            if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
+            {
+                if (rebuild && byGame) Interlocked.Increment(ref r._statRebuildTakenByGame); // the game got there before the rebuild
+                Run(r);
+            }
             else _done.Wait();
             return _result!;
         }
 
-        /// <summary>Worker side: runs the job unless the GPU thread took it.</summary>
-        public void TryRun(VulkanRenderer r)
+        /// <summary>Worker side: runs the job unless the GPU thread took it (true when this call ran it).</summary>
+        public bool TryRun(VulkanRenderer r)
         {
-            if (Interlocked.CompareExchange(ref _state, 1, 0) == 0) Run(r);
+            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) return false;
+            Run(r);
+            return true;
         }
+
+        /// <summary>A rebuild job a draw needs now: true once, if it has not started (the caller moves it to the
+        /// draw-driven queue, ahead of the rest of the rebuild; whichever queue reaches it first runs it).</summary>
+        public bool TryPromote() => rebuild && Volatile.Read(ref _state) == 0 && Interlocked.Exchange(ref _promoted, 1) == 0;
 
         /// <summary>Shutdown: completes a job nobody started without compiling it (nothing is published, so a later
         /// renderer state never sees it; a waiter gets an empty module).</summary>
@@ -88,7 +100,12 @@ public sealed unsafe partial class VulkanRenderer
             var key = (program.Hash, hintKey);
             try
             {
-                var e = r.LoadPackedShader(program.Hash, hintKey, program.IsVertex) ?? r.TranslateAndCompile(program, hintKey, hints, background: true);
+                var e = r.LoadPackedShader(program.Hash, hintKey, program.IsVertex);
+                if (e == null)
+                {
+                    e = r.TranslateAndCompile(program, hintKey, hints, background: true);
+                    if (rebuild) Interlocked.Increment(ref r._statRebuiltShaders);
+                }
                 _result = r.PublishModule(key, e);
             }
             catch (Exception ex)
@@ -139,10 +156,12 @@ public sealed unsafe partial class VulkanRenderer
                     var vp = d.VertexProgram;
                     ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
                     if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, 0));
+                    else PromoteRebuildJob(vp.Info.Program.Hash, vk);
                     var fp = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;
                     ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, cf);
                     if (NeedsJob(fp.Info.Program, fk)) Queue(fp.Info.Program, fk, FragmentHints(d, cf));
+                    else PromoteRebuildJob(fp.Info.Program.Hash, fk);
                     if (_asyncPipelines) PrefetchPipeline(d, vk, fk, cf);
                     break;
             }
@@ -248,24 +267,34 @@ public sealed unsafe partial class VulkanRenderer
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, s.Attach, s.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), s.Samples);
-        if (_sharedPipelines.ContainsKey(key)) return;
-        // claim the key (the GPU thread claims it too when it builds one itself): nobody builds the same pipeline twice
+        // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
+        if (BuildSharedPipeline(key, vs, fs.Module, topology) == SharedBuild.Built) Interlocked.Increment(ref _statPipelinesPrefetched);
+    }
+
+    enum SharedBuild { Exists, Built, Failed }
+
+    /// <summary>Background thread (worker or prewarm): builds a pipeline into the shared table unless it exists or
+    /// someone else is building it. The key is claimed first (the GPU thread claims it too when it builds one
+    /// itself), so nobody builds the same pipeline twice.</summary>
+    SharedBuild BuildSharedPipeline(in PipelineKey key, VsEntry vs, ShaderModule fsModule, PrimitiveTopology topology)
+    {
+        if (_sharedPipelines.ContainsKey(key)) return SharedBuild.Exists;
         var done = new ManualResetEventSlim();
-        if (!_pipelineInflight.TryAdd(key, done)) return;
+        if (!_pipelineInflight.TryAdd(key, done)) return SharedBuild.Exists;
         try
         {
-            if (_sharedPipelines.ContainsKey(key)) return;
+            if (_sharedPipelines.ContainsKey(key)) return SharedBuild.Exists;
             long t0 = FrameLedger.Now();
-            var p = CreatePipeline(key, vs.Module, fs.Module, vs.Bindings, vs.Attributes, topology);
+            var p = CreatePipeline(key, vs.Module, fsModule, vs.Bindings, vs.Attributes, topology);
             FrameLedger.AddSince(FrameLedger.Cat.BgPipeline, t0);
-            if (p.Handle == 0) return;
+            if (p.Handle == 0) return SharedBuild.Failed;
             if (_sharedPipelines.TryAdd(key, p))
             {
-                Interlocked.Increment(ref _statPipelinesPrefetched);
-                RecordPipeline(key, vs, fs, topology); // BlobPack is thread-safe
                 NotePipelineCreated();
+                return SharedBuild.Built;
             }
-            else _vk.DestroyPipeline(_dev, p, null); // the prewarm thread got there first
+            _vk.DestroyPipeline(_dev, p, null); // another thread got there first
+            return SharedBuild.Exists;
         }
         finally
         {
@@ -340,6 +369,12 @@ public sealed unsafe partial class VulkanRenderer
                     catch (Exception e) { Log.WarnOnce("pipeline-prefetch", $"[shader worker] pipeline prefetch failed: {e.Message}"); }
                 continue;
             }
+            // the boot rebuild comes last: whatever the running game asks for goes first
+            if (_rebuildJobs.TryDequeue(out var rj))
+            {
+                RunRebuildItem(rj);
+                continue;
+            }
             if (_stopShaderJobs) return;
             _workAvailable.Wait(50);
         }
@@ -365,6 +400,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         while (_shaderJobs.TryDequeue(out var sj)) sj.Cancel(this);
         _pipelineJobs.Clear();
+        DrainRebuildQueue();
         foreach (var job in _inflight.Values) job.Cancel(this);
     }
 }

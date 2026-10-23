@@ -81,6 +81,16 @@ public static class ShaderGenerator
     public const int GeneratorVersion = 8;
 
     /// <summary>
+    /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
+    /// files) behave as if <see cref="GeneratorVersion"/> had been bumped N times and every GLSL had changed, without
+    /// changing the generated code. Used to measure the first session after an emulator update.
+    /// </summary>
+    public static readonly int VersionSalt = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_GENERATOR_VERSION_SALT"), out var s) && s is > 0 and < 1000 ? s : 0;
+
+    /// <summary>The version persistent caches are keyed by (<see cref="GeneratorVersion"/> + <see cref="VersionSalt"/>).</summary>
+    public static int CacheVersion => GeneratorVersion + VersionSalt;
+
+    /// <summary>
     /// Programmable blending in a multisampled scene reads the sample the invocation shades (gl_SampleID, which makes
     /// such shaders run per sample, like GXM's NATIVECOLOR_MSAA programs). Set to false by a renderer whose device
     /// lacks sampleRateShading: the shaders then read sample 0. Part of the shader cache key.
