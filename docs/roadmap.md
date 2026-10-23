@@ -54,6 +54,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
 
+## CI (testes quebrando no macOS)
+
+- [ ] `VfsTests.NewFilesKeepTheMatchedDirectoryCase`: o sistema de arquivos do macOS (APFS) não diferencia maiúsculas de
+  minúsculas, então o caminho criado sai com a caixa do diretório existente (`DATA/sub` em vez de `Data/Sub`)
+- [ ] `ShaderRecipeTests.SecondSessionGetsReadOnlyView` e `ReadOnlyViewOfOtherVersionIsEmptyAndUntouched`: a segunda
+  sessão não recebe a visão somente leitura; o bloqueio de arquivo (`FileShare`) não é aplicado no Unix como no Windows
+- [ ] `NativeJitTests.InvalidationRetiresLinkedNativeCode`: o JIT nativo é só x64 e o runner do macOS é ARM64; os testes
+  do JIT nativo devem ser pulados (ou usar outro backend) onde ele não existe
+- [ ] `NativeJitTests.NativeNeonQuick` (todas as variações): `DllNotFoundException` da biblioteca `unicorn` no macOS;
+  empacotar a biblioteca para osx-arm64/osx-x64 ou pular os testes quando ela não estiver disponível
+- [ ] O processo de teste travou ("Test host process crashed") no fim da execução no macOS; descobrir qual teste derruba
+  o processo (provavelmente o JIT nativo x64 em ARM64)
+
 ## Bugs em aberto
 
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
