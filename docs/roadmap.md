@@ -1,12 +1,9 @@
 # Roadmap
 
-Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído e mova para "Feito" se quiser
-manter o histórico. Itens com "(em andamento)" têm um agente trabalhando numa branch.
+Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
-- [ ] (em andamento) Replay dos últimos ~3 s de quadros em toda captura e detecção de anomalia a cada quadro
-  (branch `feat/diag-replay`)
 - [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
 - [ ] Detecção de NaN e infinito nas imagens intermediárias a cada quadro, e versão instrumentada que aponta o desenho
   que gerou o valor inválido
@@ -25,8 +22,6 @@ manter o histórico. Itens com "(em andamento)" têm um agente trabalhando numa 
 
 ## Desempenho (PC)
 
-- [ ] (em andamento) Cache de shaders que sobrevive às atualizações do emulador (branch `perf/cache-rebuild`)
-- [ ] (em andamento) Thread principal do Killzone: custo das funções de sistema e esperas (branch `perf/kz-mainthread`)
 - [ ] Opção de pular o desenho enquanto o pipeline não fica pronto (tira os últimos engasgos da primeira vez)
 - [ ] JIT: multiplicações Thumb (SMULxy/SMLAxy/SMULW/SMMUL) e somas/subtrações paralelas (Mania, Devious Dungeon)
 - [ ] JIT: VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS inline
@@ -62,9 +57,6 @@ manter o histórico. Itens com "(em andamento)" têm um agente trabalhando numa 
 
 - [ ] Killzone: blocos verdes e azuis passageiros na área subterrânea (esperando captura com replay)
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
-- [ ] (em andamento) Persona 4: som ainda ruim no NGS (branch `fix/p4g-sound`)
-- [ ] (em andamento) Persona 4: o jogo aborta com `SCE_GXM_ERROR_INVALID_VALUE` em `gmq_precomp.cpp` (branch
-  `fix/p4g-gxm-assert`)
 - [ ] sceAudiodec AAC: bytes consumidos reportados como `esMax` em vez do tamanho real do quadro
 - [ ] PS TV: L2/R2 como botões separados
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
