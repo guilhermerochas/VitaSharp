@@ -290,24 +290,46 @@ public sealed unsafe partial class VulkanRenderer
         foreach (var e in c)
         {
             if (freed >= target) break;
+            // an entry may already be gone: releasing a render target or depth target releases its views too
             switch (e.Kind)
             {
-                case 0: ReleaseTexture((TexKey)e.Key, (Texture)e.Value, now); break;
-                case 1: _rtRegions.Remove(((RenderTarget, uint, uint, uint, uint, uint, bool))e.Key); { var r = (RtRegion)e.Value; ReleaseImage(r.Image, r.View, r.Mem, now); } break;
-                case 2: _rtAliases.Remove(((uint, uint, uint, uint, uint, bool))e.Key); { var a = (RtAlias)e.Value; ReleaseImage(a.Image, a.View, a.Mem, now); } break;
-                case 3: _rtMipTextures.Remove(((RenderTarget, uint, uint, uint, uint, uint, uint, bool))e.Key); { var m = (RtMipTexture)e.Value; ReleaseImage(m.Image, m.View, m.Mem, now); } break;
-                case 4: _depthTextures.Remove((DepthTarget)e.Key); { var d = (DepthTex)e.Value; ReleaseImage(d.Image, d.View, d.Mem, now); } break;
-                case 5: _stencilTextures.Remove((DepthTarget)e.Key); { var s = (StencilTex)e.Value; ReleaseImage(s.Image, s.View, s.Mem, now); } break;
+                case 0:
+                    if (!_textures.ContainsKey((TexKey)e.Key)) continue;
+                    ReleaseTexture((TexKey)e.Key, (Texture)e.Value, now);
+                    break;
+                case 1:
+                    if (!_rtRegions.Remove(((RenderTarget, uint, uint, uint, uint, uint, bool))e.Key)) continue;
+                    { var r = (RtRegion)e.Value; ReleaseImage(r.Image, r.View, r.Mem, now); }
+                    break;
+                case 2:
+                    if (!_rtAliases.Remove(((uint, uint, uint, uint, uint, bool))e.Key)) continue;
+                    { var a = (RtAlias)e.Value; ReleaseImage(a.Image, a.View, a.Mem, now); }
+                    break;
+                case 3:
+                    if (!_rtMipTextures.Remove(((RenderTarget, uint, uint, uint, uint, uint, uint, bool))e.Key)) continue;
+                    { var m = (RtMipTexture)e.Value; ReleaseImage(m.Image, m.View, m.Mem, now); }
+                    break;
+                case 4:
+                    if (!_depthTextures.Remove((DepthTarget)e.Key)) continue;
+                    { var d = (DepthTex)e.Value; ReleaseImage(d.Image, d.View, d.Mem, now); }
+                    break;
+                case 5:
+                    if (!_stencilTextures.Remove((DepthTarget)e.Key)) continue;
+                    { var s = (StencilTex)e.Value; ReleaseImage(s.Image, s.View, s.Mem, now); }
+                    break;
                 case 6:
                 {
                     var rt = (RenderTarget)e.Value;
-                    _renderTargets.Remove(((uint, uint, uint, uint))e.Key);
+                    if (!_renderTargets.Remove(((uint, uint, uint, uint))e.Key)) continue;
                     _evTargets++;
                     _evTargetBytes += (long)e.Bytes;
                     ReleaseRenderTarget(rt, now);
                     break;
                 }
-                case 7: ReleaseDepthTarget(((uint, uint, uint, SampleCountFlags))e.Key, (DepthTarget)e.Value, now); break;
+                case 7:
+                    if (!_depthTargets.ContainsKey(((uint, uint, uint, SampleCountFlags))e.Key)) continue;
+                    ReleaseDepthTarget(((uint, uint, uint, SampleCountFlags))e.Key, (DepthTarget)e.Value, now);
+                    break;
             }
             freed += e.Bytes;
         }

@@ -563,13 +563,30 @@ public sealed unsafe class VkCore : IDisposable
         var r = TryAllocateMemory(size, type, cat, false, out var mem);
         if (r == Result.Success) return mem;
         if (!VkCheck.IsOutOfMemory(r)) throw new InvalidOperationException($"Vulkan {what} failed: {r}");
-        for (int level = 0; level < ReclaimLevels; level++)
+        for (int level = 0; level < ReclaimLevels && !ReclaimHopeless(size); level++)
         {
             if (Reclaim?.Invoke(size, IsDeviceLocal(type), level) != true) continue;
             r = TryAllocateMemory(size, type, cat, false, out mem);
             if (r == Result.Success) return mem;
         }
+        MarkHopeless(size);
         throw OutOfMemory(r, what, size, cat);
+    }
+
+    ulong _hopelessSize = ulong.MaxValue;
+    long _hopelessUntil;
+
+    /// <summary>
+    /// An allocation at least this large failed even after every reclaim level less than 2 s ago: retrying the
+    /// reclaim for each such request (e.g. every draw needing a buffer that cannot fit) would evict every cache over
+    /// and over for nothing, so those requests fail at once until then.
+    /// </summary>
+    public bool ReclaimHopeless(ulong size) => size >= _hopelessSize && Environment.TickCount64 < _hopelessUntil;
+
+    public void MarkHopeless(ulong size)
+    {
+        _hopelessSize = Environment.TickCount64 < _hopelessUntil ? Math.Min(_hopelessSize, size) : size;
+        _hopelessUntil = Environment.TickCount64 + 2000;
     }
 
     public VkOutOfMemoryException OutOfMemory(Result r, string what, ulong size, MemCat cat)
@@ -758,15 +775,19 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         if (!VkCheck.IsOutOfMemory(r)) throw new InvalidOperationException($"Vulkan vkAllocateMemory(image page) failed: {r}");
         // out of memory: free what the renderer can recreate, then use the space that freed up, a new page, or a
         // smaller one (a full page may not fit although the image would)
+        bool hopeless = _vk.ReclaimHopeless(need);
         for (int level = 0; level < VkCore.ReclaimLevels; level++)
         {
-            if (_vk.Reclaim?.Invoke(need, true, level) == true)
+            if (!hopeless && _vk.Reclaim?.Invoke(need, true, level) == true)
             {
                 if (TryExisting(type, req.Size, align, cat, out a)) return a;
                 if (level == 0 && (r = TryNewPage(full, type, req.Size, align, cat, out a)) == Result.Success) return a;
             }
             if (small < full && (r = TryNewPage(small, type, req.Size, align, cat, out a)) == Result.Success) return a;
         }
+        // last resort: a page of exactly this image (what is left under a budget may be smaller than a small page)
+        if (need < small && (r = TryNewPage(need, type, req.Size, align, cat, out a)) == Result.Success) return a;
+        _vk.MarkHopeless(need);
         throw _vk.OutOfMemory(r, "vkAllocateMemory(image page)", req.Size, cat);
     }
 

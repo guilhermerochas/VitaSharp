@@ -64,6 +64,42 @@ frame still used the object.
   OOM.
 - `VITASHARP_VRAM_EVICT=0` turns off expiry, overlap and pressure eviction. Use it to measure the old behaviour.
 
+- **Repeated hopeless requests.** After an allocation fails at every reclaim level, requests at least that large
+  fail at once for 2 s (`ReclaimHopeless`). Without this, every draw needing a buffer that cannot fit evicted every
+  cache again.
+
+## Measurements
+
+Killzone, GTX 1650 4 GB, native 4x MSAA, 2026-10-23. Other agents' emulators shared the GPU during these runs, so
+the heap budget moved between 2.0 and 3.4 GB.
+
+- **kzl_walk3 with eviction (10,500 frames, debug mode).** The renderer holds 544 MB device-local from the first
+  gameplay frames (~f3300) to the end, with no growth:
+  - pipeline buffers 288 MB: the CDRAM mirror (256 MB) plus 32 MB scratch;
+  - two 128 MB pool pages, about 60-90 MB of them free;
+  - textures peak at 120 MB (1,245 cached) around f4200, then settle at 76-82 MB;
+  - render targets 27 MB, MSAA 22 MB (three 4x images), depth 20 MB, views about 15 MB;
+  - host: upload rings 192 MB, replay ring 64 MB, writeback 9 MB.
+
+  Turning debug mode off and on 6 times (f5000-5750), a GPU dump (f7000-7040) and an F10 capture (f8000) changed
+  nothing device-local. The replay ring is 64 MB of host memory plus a 0.5 MB image, freed at every off.
+- **The same route with `VITASHARP_VRAM_EVICT=0` (the old cache behaviour).**
+  - textures 412 MB at f3600, 831 MB at f4200, 1385 MB at f4800, 1929 MB at f6000 (22,762 textures);
+  - device-local total 2.3 GB at f6000, still rising by about 0.5 GB per 1000 frames;
+  - with three other emulators running, usage reached 95% of a 2.07 GB budget at f4800.
+
+  That is the reported failure at about f4540: a 4 GB card shared with other emulator instances, and a renderer
+  that leaks textures.
+- **kz_skin capped below its natural 544 MB (`VITASHARP_VRAM_BUDGET_MB=480`).** It completed (4,500 frames,
+  28 fps):
+  - 221 pressure trims and 60 level-0 reclaims (5-20 ms each);
+  - 21,748 textures evicted;
+  - 0 draws dropped, 0 textures skipped.
+- **`VITASHARP_VRAM_BUDGET_MB=500` with `VITASHARP_VRAM_EVICT=0`.** Only the out-of-memory path was active. It
+  completed with 143 level-0 reclaims and 0 drops.
+- **`VITASHARP_VRAM_BUDGET_MB=400` (absurd).** The 288 MB mirror cannot fit next to the pool pages, so draws that
+  read mapped memory are dropped. The run continues, with warnings once every 10 s.
+
 ## Leaks found
 
 - **The texture cache never freed anything.** Killzone streams textures into reused memory with other

@@ -37,6 +37,7 @@ public sealed unsafe partial class VulkanRenderer
 
     (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
     {
+        dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
         if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
@@ -117,6 +118,7 @@ public sealed unsafe partial class VulkanRenderer
 
     (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
     {
+        dt.LastTouchedFrame = FrameCount;
         uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
         uint swz = d.Format & GxmFormats.TextureSwizzleMask;
         if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)

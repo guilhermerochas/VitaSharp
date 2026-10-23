@@ -316,6 +316,8 @@ public sealed unsafe partial class VulkanRenderer
         foreach (var target in TargetsContaining(addr))
         {
             var rt = target;
+            // in use from here on: an allocation below (region, alias, mip chain, mirror) that runs out of memory must not evict it
+            target.LastTouchedFrame = FrameCount;
             int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
             uint rowBytes = rt.Stride * (uint)bpp;
             if (addr < rt.Address || addr >= rt.Address + rowBytes * rt.Height) continue;
