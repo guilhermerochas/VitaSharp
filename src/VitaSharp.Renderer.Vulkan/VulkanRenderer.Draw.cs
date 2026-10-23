@@ -28,12 +28,14 @@ public sealed unsafe partial class VulkanRenderer
     void CreateLayouts()
     {
         // 0/1: vertex/fragment uniform data, 2/3: vertex/fragment mapped memory (large buffers read in place)
-        var ssbo = stackalloc DescriptorSetLayoutBinding[4];
+        var ssbo = stackalloc DescriptorSetLayoutBinding[5];
         ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
         ssbo[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
         ssbo[2] = new DescriptorSetLayoutBinding(2, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
         ssbo[3] = new DescriptorSetLayoutBinding(3, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
-        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 4, PBindings = ssbo };
+        // 4: VITASHARP_DEBUG_NAN=draws only, the NaN draw buffer the instrumented fragment shaders write (NanCheck.cs)
+        ssbo[4] = new DescriptorSetLayoutBinding((uint)ShaderGenerator.NanDrawBinding, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
+        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = ShaderGenerator.NanDraws ? 5u : 4u, PBindings = ssbo };
         _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _uboLayout).Ok("set layout");
 
         _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, 16);
@@ -91,7 +93,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (f.DescPoolIndex >= f.DescPools.Count)
             {
-                sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 4 * 8192);
+                sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 5 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
                 sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 8192);
                 var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 3, PPoolSizes = sizes };
@@ -705,6 +707,7 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = 0; i < 4; i++)
             writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
         _vk.UpdateDescriptorSets(_dev, 4, writes, 0, null);
+        if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
 
         // ---- record
         if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
@@ -732,6 +735,7 @@ public sealed unsafe partial class VulkanRenderer
         bool visQuery = BeginVisibilityQuery(d, out uint query);
         _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
         if (visQuery) EndVisibilityQuery(query);
+        if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; }
     }

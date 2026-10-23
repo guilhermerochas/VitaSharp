@@ -105,7 +105,10 @@ public sealed class Diagnostics
             if (_autoCount >= AutoMax) { Log.Info($"[diag] anomaly '{kind}': automatic capture limit ({AutoMax} per session) reached"); return; }
             if (DateTime.Now - _lastAuto < AutoInterval) { Log.Info($"[diag] anomaly '{kind}': last automatic capture less than {AutoInterval.TotalMinutes:F0} min ago, skipped"); return; }
             // keep the replay ring running ~1 s past the spike so both sides of it are saved
-            if (!Capture($"auto: {kind} at present #{present} - {detail}", VulkanRenderer.ReplayPostFrames, present)) return;
+            // NaN/Inf in a render target: trace the very next frame (the NaN may be gone a second later, and the
+            // visible frame may look fine); the presented-image anomalies keep ~1 s of replay after the spike
+            int post = kind == VulkanRenderer.NanAnomalyKind ? 0 : VulkanRenderer.ReplayPostFrames;
+            if (!Capture($"auto: {kind} at present #{present} - {detail}", post, present)) return;
             _lastAuto = DateTime.Now;
             _autoCount++;
         }
@@ -187,6 +190,7 @@ public sealed class Diagnostics
         sb.AppendLine("  targets/            every render target as PNG + targets.txt (per-channel min/max/mean, NaN/Inf, guest copy)");
         sb.AppendLine("  textures/           every texture sampled in the frame as PNG + textures.txt (noise/seam checks, mips)");
         sb.AppendLine("  frames.txt          the last 120 frames: draws, scenes, new shaders/pipelines/targets, biggest hitch cause");
+        sb.AppendLine("  nan.txt             debug mode: NaN/Inf history of every float render target (and, with VITASHARP_DEBUG_NAN=draws, the programs that produced it)");
         sb.AppendLine("  renderer.txt        GPU/driver/settings, renderer state and statistics so far");
         sb.AppendLine("  state.txt           guest threads (wait state, backtrace, recent HLE calls in debug mode), mutexes, GPU queue");
         sb.AppendLine("  audio.txt           audio device and buffering, open/released ports (outputs/s, gaps, underruns, silence), NGS and decoder streams");

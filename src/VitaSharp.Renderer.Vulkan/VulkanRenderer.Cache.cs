@@ -109,6 +109,8 @@ public sealed unsafe partial class VulkanRenderer
             if (ShaderGenerator.DebugOverridesActive || _opt.TraceDrawsFrame >= 0)
             {
                 Log.Info($"[shadercache] {titleId}: shader/pipeline caches bypassed (debug shader overrides or draw trace active); driver cache {vkStatus}");
+                // VITASHARP_DEBUG_NAN=draws: every pipeline is an instrumented variant, kept out of the driver cache file
+                if (ShaderGenerator.NanDraws) _vkCachePath = null;
                 return;
             }
             _shaderPack = BlobPack.Open(Path.Combine(dir, "shaders.pack"), ShaderPackFormatVersion << 16 | (uint)ShaderGenerator.CacheVersion);

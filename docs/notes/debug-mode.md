@@ -284,6 +284,106 @@ the saved `replay/` see it; the rendered frame is untouched. `tests/scenarios/kz
 `VITASHARP_DEBUG_INJECT=green@3000:2` checks a 2-frame burst end to end (auto capture with the green frames in
 `replay/`) and the `--diag-at` path. The rules themselves are unit-tested (`FrameAnomalyDetectorTests`).
 
+### NaN/Inf detection
+
+Branch `feat/diag-nan`, `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.NanCheck.cs`. Meant for glitches that look
+like NaN/Inf spreading through post-processing (saturated blocky areas growing out of bloom/blur/exposure passes),
+which the presented image alone does not explain.
+
+**Layer 1, per-scene target scan (debug mode, follows F9).** At the end of every scene whose colour surface is a float
+format (host F16x4: guest F16x4 HDR and U2F10F10F10; F11F11F10; F16/F16x2/F32/F32x2), a 16x16 compute shader reads
+**every** pixel of the surface and counts the pixels with a NaN, an Inf, a huge finite value (>= 65000 for 16-bit and
+packed formats, >= 1e30 for F32) or a negative value, plus the first NaN/Inf (and first huge) pixel in raster order.
+It is recorded into the frame's own command buffer (barrier, dispatch, barrier); the 2 KB result buffer of the frame
+slot is host-visible and read when the frame retires (non-blocking retire path, `VulkanRenderer.Sync.cs`), so the GPU
+worker never waits for it. Up to 64 scans per submission. Surfaces written with raw register bits (packed data in an
+F16x4 surface, see `RawOutputBits`) are skipped: their bits are not colours. A scene that does not render into a
+float surface costs nothing.
+
+A target is *bad* in a scan when it has NaN, Inf or huge values, or negative values in a guest format that cannot
+hold them (U2F10F10F10, F11F11F10: the hardware stores 0 there, so a negative value in our F16 image is itself an
+emulation difference). Per target (address, size, format) the renderer keeps a history:
+
+```
+[nan] f4321 p4321 rt 0x65C78000 960x544 F16x4: 1234 NaN, 56 Inf, 0 huge, 0 negative of 522240 px (first NaN/Inf at 312,140) after scene 3 (draws 120-410) - first time in this target
+[nan] f4621 p4621 rt 0x65C78000 960x544 F16x4: still 980 NaN, ... (since present 4321)
+[nan] f4700 p4700 rt 0x65C78000 960x544 F16x4: clean again (bad in presents 4321-4697, 377 bad presents in all so far)
+```
+
+`after scene N` = the N-th scene of that present (`draws a-b` = the draw ids of that scene, as in draws.txt).
+Rate limits per target: a new episode is logged when it is the first one or at least 30 presents after the
+previous line (shorter ones are counted and mentioned in the next line), an ongoing one repeats every 300 presents,
+and a target is clean again after 3 presents without a bad scan.
+
+A target going from clean to NaN/Inf (not huge/negative alone) is an anomaly of kind `nan`: `[anomaly] p.. f.. nan:
+<the line above>`, listed in replay.txt's events, and an automatic capture under the usual limits (one every 5
+minutes, 3 per session; the renderer itself raises at most one `nan` anomaly every 300 presents). Unlike the
+presented-image anomalies it arms at the **next** present (no 1 s post-roll), so the traced frame, `targets/` and
+`targets.txt` (NaN/Inf counts of F16x4 targets) are taken right after the NaN appeared, while `replay/` holds the
+~4 s before. Every capture taken while scans ran has `nan.txt`: per float target the scans, bad presents, episodes
+(present ranges), maxima and the last scan result; in draws mode also the program list below.
+
+**Layer 2, "which draw produced it": `VITASHARP_DEBUG_NAN=draws`** (environment, chosen at launch; heavier, works with
+or without debug mode, use both for captures). Every generated fragment shader gets, after its output (and after
+the `VITASHARP_DEBUG_FS`/`DEBUG_TEX0` overrides):
+
+```glsl
+if (any(isnan(out_color)) || any(isinf(out_color))) { atomics into nan_hits[draw_id]: fragments, NaN/Inf flags, first pixel }
+```
+
+`draw_id` is the existing push constant (the draw id of draws.txt, per present); the table (4096 entries, ids above
+share the last one) is set 0 binding 4, a 64 KB region of the frame slot's NaN buffer, read at retire. The draws of
+each submission are remembered (programs, hints, render target, textures), and every hit is logged:
+
+```
+[nan-draw] f4321 p4321 draw id=211 scene 3: 4096 fragments NaN (first at 312,140) vs=... fs=94A7330124AABFB7 fsHint=... rt=0x65C78000 960x544 F16x4 prim=0 n=6x1 msaa=off t0=0x...:fmt:WxH ...
+[nan-draw] p4321 3 draws with NaN/Inf output in this submission: id=211:fs=...(4096) ...
+```
+
+Per vs/fs/render-target combination, the presents 1-3, 10, 100, ... in which it produced NaN are logged with all
+its draws (40 lines per submission at most); the per-submission summary at most every 30 presents. Notes:
+- it counts *shaded* fragments: a fragment later rejected by the depth/stencil test, a colour mask of 0 or
+  blending with a zero factor still counts (the atomics make the shader run late-Z). Compare with layer 1 to see
+  whether the NaN lands in a target.
+- only the components the colour surface stores are checked (an F32F32/F16F16 target ignores .zw, F11F11F10 has
+  no alpha): Uncharted writes NaN into the unused .zw of an F32x2 target in thousands of draws, which is harmless.
+  A per-draw colour mask is not taken into account.
+- raw-bit outputs (packed data) are not checked unless a debug override replaced them.
+- the instrumented GLSL counts as a debug override (`ShaderGenerator.DebugOverridesActive`): `shaders.pack`,
+  `programs.pack` and `pipelines.list` are bypassed exactly as for `VITASHARP_DEBUG_FS`, the SPIR-V is not written to
+  the loose `.spv` cache and the driver pipeline cache file is loaded but not saved, so the normal caches never
+  see an instrumented shader. The normal generator output is unchanged (no `GeneratorVersion` bump), and with the
+  variable unset the set 0 layout keeps its 4 bindings.
+- it is a launch switch rather than a runtime toggle (Shift+F9) because switching would need a second variant of
+  every shader and pipeline at runtime.
+
+**Test injection.** `VITASHARP_DEBUG_FS=<fragment program hash>:vec4(uintBitsToFloat(0x7FC00000u))` forces a NaN
+output in one fragment program (all its draws). With `--debug-mode` the scan reports the target and auto-captures;
+with `VITASHARP_DEBUG_NAN=draws` as well, the `[nan-draw]` lines name exactly that program's draws.
+
+Verified on Killzone kz_skin with `91AB29A92F527931` (vs 8029D59D2F677BE2, 30-index sprites into the HDR scene): the
+scan reported 13 NaN pixels in `0x65C78000` and the NaN reaching the luminance target `0x663D6000`, the `nan`
+anomaly auto-captured (replay/ with 127 frames, nan.txt); draws mode named each of that program's draws, then the
+propagation: luminance downsample `87AA82B962069A7A` (rt 0x663D6000), RGBM encode `94A7330124AABFB7` and
+`1A2ADF5414A841E0` into the post atlas `0x66272000`.
+
+**Natural findings (2026-10-23).**
+- Killzone (kz_skin, kzl_walk3), default native 4x MSAA: from the first 3D scene (~f3083) the HDR scene
+  `0x65C78000` holds 1-2 NaN or Inf pixels in ~5% of the presents (kz_skin: 49 bad presents in f3093-f3945;
+  kzl_walk3: 18 NaN/Inf episodes over 10500 frames), and the 240x136 luminance target `0x663D6000` (U2F10F10F10)
+  picks them up through the downsample (`87AA82B962069A7A`), i.e. they reach auto-exposure and the post atlas. Draws
+  mode: ~30 different scene fragment programs each emit a single NaN/Inf fragment now and then
+  (`A4BEB71A61321C78` with vs `C8D905EEB7CFE2E6` most often, `66DF0A5D1E0FAA67`, `A3025415177842D0`,
+  `F2E38FC6C187C762`, `BEF0ABB514D82E6B`, ...): a shared cause, not one shader. With `VITASHARP_MSAA=off` (same route
+  to f3700): no NaN/Inf draw output and no NaN/Inf in any target. Prime suspect: varyings evaluated outside the
+  triangle on partly covered pixels (inputs not `centroid`) feeding normalize/rsq/log (followed up on
+  `fix/kz-nan-msaa`). The MSAA-off run also had one burst of 7085 huge (>= 65000) pixels in the HDR target (f3411).
+  The luminance target regularly holds a few negative pixels, which its unsigned guest format cannot store.
+- Uncharted (uc_walk): 8 float targets, never NaN/Inf/huge in any of them. Draws mode: fs `B5F1A9DDE7A45CCD`
+  (vs `2D58FB908DF9D2B4`, rt `0x60600000` 720x408 U2F10F10F10) outputs a single NaN fragment near the left edge in
+  a few presents, which never lands in the target.
+- God of War (gow_game, into gameplay): no float render targets at all; no NaN/Inf output.
+
 ## Audio
 
 `src/VitaSharp.Core/Util/AudioDiagnostics.cs` counts, for every sceAudioOut port, the guest outputs, the gaps
@@ -376,6 +476,28 @@ debug mode is on, nothing while it is off. Debug off runs exactly the code of be
 background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
 the whole route (only the expected `black` on the loading screen).
 
+### NaN/Inf scan cost
+
+Killzone kz_skin route (4500 frames, paced, `--shader-cache` in `args=`, GTX 1650, 2026-10-23, branch
+`feat/diag-nan`). Another emulator was running during these runs, so fps and GPU time swing as in the replay table;
+each debug-on run also contains one automatic `nan` capture, whose 3.8-4 s trace (target readbacks on the GPU worker)
+alone adds ~0.85 ms/frame to the GPU-worker average over the run.
+
+| Mode | fps | process cpu ms/frame | GPU worker ms/frame | GPU ms/frame |
+|---|---|---|---|---|
+| debug off | 25.9 | 30.2 | 4.16 | 5.39 |
+| debug on (replay ring + NaN scan, 1 auto capture) | 26.8 | 35.2 | 5.36 | 3.52 |
+| debug on + `VITASHARP_DEBUG_NAN=draws` (1 auto capture, caches bypassed) | 26.6 | 46.0 | 5.90 | 3.85 |
+
+Direct measurement (`PERF nan`): recording a scan costs **10-12 us** on the GPU worker (barrier, descriptor set,
+dispatch; ~2 scans per frame in Killzone gameplay: the HDR scene and the luminance target), reading the results
+back **22-24 us per retired frame** (debug mode) and **29-41 us** with the draws table (4096 entries checked per
+submission). That is ~0.05 ms (debug) to ~0.1 ms (draws) of GPU-worker time per frame, 1-2% of its ~4.5 ms. The
+GPU work is one full-resolution read of each float target per scene (960x544 F16x4 = 4 MB), not separable from
+the noise above. Memory: 2 KB host-visible buffer per frame slot (66 KB in draws mode). Debug off: one static flag
+test per scene end and one null test per retire. Draws mode costs mostly through the cache bypass (every shader
+and pipeline translated/compiled in the session: ~1 s of GPU-thread compile time over the route, same as
+`VITASHARP_DEBUG_FS`) and late depth testing of every instrumented fragment shader.
 ### Draw ring cost
 
 Same route and machine (2026-10-23), branch `feat/diag-drawring` against main 0836830; other agents' emulators were
@@ -407,6 +529,9 @@ F8 records the GPU work (commands plus the guest memory they read) until F8 is p
   device lost, debug first-use lines.
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Replay.cs`: replay ring (per-present blit + copy, per-frame metrics at
   retire, snapshot + replay/ writer), `VITASHARP_DEBUG_INJECT`.
+- `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.NanCheck.cs`: NaN/Inf scan of float targets (compute shader at scene end,
+  results at retire, per-target history, `nan` anomaly, nan.txt) and the `VITASHARP_DEBUG_NAN=draws` draw table;
+  the instrumentation itself is `ShaderGenerator.EmitNanDrawCheck`.
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.DrawRing.cs`: draw ring (records from Draw/BeginScene/BuildTextureSet,
   frame close at Present, snapshot at ArmCapture, drawring/ writer with index and diff); ResolveTexture sets
   `_texSrc`/`_texSrcAddr` for it.

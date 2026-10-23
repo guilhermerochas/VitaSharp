@@ -133,6 +133,7 @@ public sealed unsafe partial class VulkanRenderer
             res.Screenshot = File.Exists(shot);
             File.WriteAllText(Path.Combine(dc.Dir, "draws.txt"), dc.Draws.ToString());
             File.WriteAllText(Path.Combine(dc.Dir, "frames.txt"), RecentFrames(FrameRingSize));
+            if (_nanScans > 0 || Core.Gxm.Shader.ShaderGenerator.NanDraws) File.WriteAllText(Path.Combine(dc.Dir, "nan.txt"), NanHistory());
             File.WriteAllText(Path.Combine(dc.Dir, "renderer.txt"),
                 DescribeForDiagnostics() + "\n\n# state\n" + DebugState() + "\n\n# statistics so far\n" + (((IGpuBackend)this).Report() ?? "") + "\n");
         }
