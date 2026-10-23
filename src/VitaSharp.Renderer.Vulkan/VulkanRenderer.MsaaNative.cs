@@ -458,21 +458,26 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         return CreateShaderModule(spv);
     }
 
+    /// <summary>Layout of the built-in full-screen passes (one combined image sampler) and their shared shaders.</summary>
+    DescriptorSetLayout EnsureLoadLayout()
+    {
+        if (_msLoadLayout.Handle != 0) return _msLoadSetLayout;
+        var b = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &b };
+        _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _msLoadSetLayout).Ok("load set layout");
+        var sl = _msLoadSetLayout;
+        var pli = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &sl };
+        _vk.CreatePipelineLayout(_dev, in pli, null, out _msLoadLayout).Ok("load pipeline layout");
+        _msLoadVs = CompileBuiltin(LoadVs, true);
+        _msLoadFsFloat = CompileBuiltin(LoadFsFloat, false);
+        _msLoadFsUint = CompileBuiltin(LoadFsUint, false);
+        return _msLoadSetLayout;
+    }
+
     Pipeline MsaaLoadPipeline(Format format, SampleCountFlags samples)
     {
         if (_msLoadPipelines.TryGetValue((format, samples), out var p)) return p;
-        if (_msLoadLayout.Handle == 0)
-        {
-            var b = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
-            var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &b };
-            _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _msLoadSetLayout).Ok("load set layout");
-            var sl = _msLoadSetLayout;
-            var pli = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &sl };
-            _vk.CreatePipelineLayout(_dev, in pli, null, out _msLoadLayout).Ok("load pipeline layout");
-            _msLoadVs = CompileBuiltin(LoadVs, true);
-            _msLoadFsFloat = CompileBuiltin(LoadFsFloat, false);
-            _msLoadFsUint = CompileBuiltin(LoadFsUint, false);
-        }
+        EnsureLoadLayout();
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
@@ -642,15 +647,16 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
 
     /// <summary>
     /// A depth texture or a mapped (CDRAM mirror) read hits the depth/stencil surface of a multisampled scene. Its
-    /// samples are not stored to memory unless the scene forces the store (none of the tested games do: their MSAA
-    /// depth is transient, as Vita3K treats it too), so the read sees guest memory, like on hardware. A forced store
-    /// would need the samples unpacked into the surface's sample layout, which is not implemented yet: warned once.
+    /// samples are not stored to memory unless the scene forces the store, so the read sees guest memory, like on
+    /// hardware: warned once, and true is returned. A forced-stored 4X depth read as a depth texture is served by
+    /// unpacking the samples instead (<see cref="UnpackedDepthTexture"/>; <paramref name="unpack"/>).
     /// </summary>
-    bool MultisampledDepthRead(DepthTarget dt, bool stencil)
+    bool MultisampledDepthRead(DepthTarget dt, bool stencil, bool unpack = false)
     {
         if (dt.Samples == SampleCountFlags.Count1Bit) return false;
+        if (unpack && !stencil && dt.ForceStored && dt.Samples == SampleCountFlags.Count4Bit) return false;
         Log.WarnOnce($"msdepth-read-{dt.Address:X8}-{stencil}", $"[gpu] {(stencil ? "stencil" : "depth")} surface 0x{(stencil ? dt.StencilAddress : dt.Address):X8} of a multisampled scene is read: " +
-            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene FORCES THE STORE, which is not implemented for real MSAA (VITASHARP_MSAA=ss renders it supersampled)" : ""));
+            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene forces the store, but only 4X depth read as a texture is unpacked" : ""));
         return true;
     }
 
@@ -659,7 +665,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         MsaaEmulation.Supersample => "supersampled (VITASHARP_MSAA=ss)",
         MsaaEmulation.Off => "off (VITASHARP_MSAA=off)",
         _ => $"native: {_statMsScenes} scenes, {_statMsPasses} renderings ({_statMsDiscards} discarding their samples at scene end), {_statMsResolves} resolves, {_statMsInputFetches} input-attachment fetches, {_statMsFetchCopies} multisampled framebuffer-fetch copies",
-    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels";
+    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split per triangle";
 
     void DestroyMsaa()
     {
@@ -672,6 +678,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         if (_dummyMsView.Handle != 0) { _vk.DestroyImageView(_dev, _dummyMsView, null); _vk.DestroyImage(_dev, _dummyMsImage, null); }
         foreach (var p in _msLoadPipelines.Values) _vk.DestroyPipeline(_dev, p, null);
         _msLoadPipelines.Clear();
+        if (_depthUnpackPipeline.Handle != 0) { _vk.DestroyPipeline(_dev, _depthUnpackPipeline, null); _vk.DestroyShaderModule(_dev, _depthUnpackFs, null); }
         if (_msLoadLayout.Handle != 0)
         {
             _vk.DestroyPipelineLayout(_dev, _msLoadLayout, null);

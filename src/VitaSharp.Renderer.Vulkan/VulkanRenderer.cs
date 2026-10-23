@@ -351,6 +351,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public SampleCountFlags Samples = SampleCountFlags.Count1Bit;
         /// <summary>A scene stored it with SCE_GXM_DEPTH_STENCIL_FORCE_STORE.</summary>
         public bool ForceStored;
+        /// <summary>Depth-aspect view of a multisampled depth image, for unpacking its samples.</summary>
+        public ImageView SampledView;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -457,7 +459,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         uint addr = d?.DepthData ?? 0;
         var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
         if (_depthTargets.TryGetValue(key, out var dt)) return dt;
-        var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
+        // multisampled depth is sampled when a forced-stored 4X depth surface is read as a texture (UnpackedDepthTexture)
+        var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
+            | (samples != SampleCountFlags.Count1Bit ? ImageUsageFlags.SampledBit : 0);
+        var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, usage,
             ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, samples: samples);
         dt = new DepthTarget
         {
@@ -570,6 +575,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ? GetDepthTarget(b.Depth, Math.Max(b.Width * 2, _rt!.Width), Math.Max(b.Height * 2, _rt.Height))
             : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
         _sceneSerial++;
+        _sceneRegions.Clear();
         if (_rt != null) _rt.LastScene = _sceneSerial;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = FrameCount;
@@ -582,6 +588,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         EndRendering(final: true);
         if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
+        _sceneRegions.Clear();
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
@@ -896,12 +903,22 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
             _vk.BeginCommandBuffer(cmd, in bi);
             var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-            if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm)
+            // single-channel 16-bit targets (shadow maps, depth packed into U16 colour) are dumped as grey, 8 bits of 16
+            bool r16 = rt.Format == Format.R16Unorm;
+            if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm || r16)
                 _vk.CmdCopyImageToBuffer(cmd, rt.Image, ImageLayout.General, buf, 1, in region);
             _vk.EndCommandBuffer(cmd);
             var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cmd };
             _vk.QueueSubmit(_core.Queue, 1, in si, default);
             _vk.QueueWaitIdle(_core.Queue);
+            if (r16)
+            {
+                var grey = new ReadOnlySpan<ushort>((void*)ptr, (int)(rt.Width * rt.Height)).ToArray();
+                var dst = new Span<byte>((void*)ptr, grey.Length * 4);
+                for (int i = 0; i < grey.Length; i++) { byte g = (byte)(grey[i] >> 8); dst[i * 4] = dst[i * 4 + 1] = dst[i * 4 + 2] = g; dst[i * 4 + 3] = 255; }
+            }
+            else if (!(half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm))
+                new Span<byte>((void*)ptr, (int)(rt.Width * rt.Height * 4)).Clear(); // not read back: dumped black, not as stale memory
             stats.AppendLine(TargetStats(rt, ptr));
             byte[] px;
             if (half)
@@ -1040,6 +1057,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var d in _depthTargets.Values)
         {
             _vk.DestroyImageView(_dev, d.View, null);
+            if (d.SampledView.Handle != 0) _vk.DestroyImageView(_dev, d.SampledView, null);
             _vk.DestroyImage(_dev, d.Image, null);
         }
         DestroySwapchain();
