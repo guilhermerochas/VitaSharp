@@ -46,9 +46,12 @@ public sealed class VfsTests : IDisposable
     {
         var vfs = NewVfs();
         var host = vfs.Resolve("app0:DATA/sub/NewDir/new.bin", forWrite: true)!;
-        // the existing directories resolve to their on-disk spelling; the new components keep the guest's
-        // (Windows returns the guest spelling: its file system ignores case anyway)
-        Assert.Equal(Path.Combine(_root, "app", "Data", "Sub", "NewDir", "new.bin"), host, ignoreCase: OperatingSystem.IsWindows());
+        // the existing directories resolve to their on-disk spelling on a case-sensitive file system (Linux); where the
+        // file system itself ignores case (NTFS, default APFS on macOS) the guest spelling already reaches them and
+        // is returned as is. Either way the new components keep the guest's spelling exactly.
+        bool caseInsensitiveFs = Directory.Exists(Path.Combine(_root, "APP", "DATA", "SUB"));
+        Assert.Equal(Path.Combine(_root, "app", "Data", "Sub", "NewDir", "new.bin"), host, ignoreCase: caseInsensitiveFs);
+        Assert.EndsWith(Path.Combine("NewDir", "new.bin"), host, StringComparison.Ordinal);
         Directory.CreateDirectory(Path.GetDirectoryName(host)!);
         File.WriteAllText(host, "y");
         // a file created after the directory was listed is found (listings are revalidated)
