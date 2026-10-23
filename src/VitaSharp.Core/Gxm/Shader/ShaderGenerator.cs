@@ -648,6 +648,11 @@ float packC10(vec3 c) {
             if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
             decl.AppendLine("layout(location = 0) out vec4 out_color;");
             t.Line($"out_color = {v.E};");
+            // U2F10F10F10 surfaces are rendered into a host F16x4 image, which also stores what the guest format
+            // cannot: unsigned 10-bit floats hold no negative values and the 2-bit alpha is normalised. Killzone's
+            // 240x136 luminance target (auto exposure) regularly received a few slightly negative pixels.
+            if ((hints.ColorFormat & 0xF1800000) == 0x41000000)
+                t.Line("out_color = vec4(max(out_color.rgb, vec3(0.0)), clamp(out_color.a, 0.0, 1.0));");
         }
         int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
