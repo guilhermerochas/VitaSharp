@@ -32,6 +32,13 @@ public interface IGpuBackend : IDisposable
     /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution.</summary>
     void Prefetch(GpuCommand command) { }
 
+    /// <summary>Presents executed so far (frame numbering of dumps and traces); -1 when the backend does not count them.</summary>
+    long PresentCount => -1;
+
+    /// <summary>GPU dump start (GPU worker, frame boundary): backend state that lives only on the GPU (render target
+    /// contents), opaque to the core; the replaying backend gets it back before the first command. Null: none.</summary>
+    byte[]? ExportDumpState() => null;
+
     /// <summary>Backend statistics for the end-of-run PERF report (null: nothing to report).</summary>
     string? Report() => null;
 }

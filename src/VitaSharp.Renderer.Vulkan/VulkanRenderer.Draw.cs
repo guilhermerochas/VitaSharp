@@ -609,6 +609,7 @@ public sealed unsafe partial class VulkanRenderer
         var fs = GetFragmentShader(d);
         TraceSnapshot(d);
         if (_traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
+        if (_drawRing != null) DrawRingDraw(d, vs, fs);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
