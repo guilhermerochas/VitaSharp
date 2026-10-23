@@ -398,7 +398,7 @@ void main() {
             hits++;
             _nanDrawHits++;
             int idx = NanFindDraw(nf.Draws, id);
-            string what = flags switch { 1 => "NaN", 2 => "Inf", _ => "NaN+Inf" };
+            string what = string.Join("+", new[] { (flags & 1) != 0 ? "NaN" : null, (flags & 2) != 0 ? "Inf" : null, (flags & 4) != 0 ? "huge" : null }.Where(s => s != null));
             if (idx < 0)
             {
                 Log.Info($"[nan-draw] p{present} draw id={id}{(id == ShaderGenerator.NanDrawSlots - 1 ? "+ (ids above the table share the last slot)" : "")}: {frags} fragments {what} (first at {NanAt(firstInv)}), draw not recorded");

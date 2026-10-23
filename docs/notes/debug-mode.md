@@ -349,6 +349,11 @@ its draws (40 lines per submission at most); the per-submission summary at most 
   no alpha): Uncharted writes NaN into the unused .zw of an F32x2 target in thousands of draws, which is harmless.
   A per-draw colour mask is not taken into account.
 - raw-bit outputs (packed data) are not checked unless a debug override replaced them.
+- outputs into 16-bit and packed float surfaces are also flagged when finite but huge (>= 65000, the scan's
+  threshold; the line says `huge`, `NaN+huge`, ...): a value past the F16 range is stored as Inf or clamped to
+  65504 depending on the host GPU (the GTX 1650 clamps, so its scans show `huge` rather than `Inf`). Programs that
+  blend in the shader (they read the destination) repeat the huge values of earlier draws, so the first draw of the
+  present in the list is the one to look at.
 - the instrumented GLSL counts as a debug override (`ShaderGenerator.DebugOverridesActive`): `shaders.pack`,
   `programs.pack` and `pipelines.list` are bypassed exactly as for `VITASHARP_DEBUG_FS`, the SPIR-V is not written to
   the loose `.spv` cache and the driver pipeline cache file is loaded but not saved, so the normal caches never
