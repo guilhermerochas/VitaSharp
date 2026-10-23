@@ -78,7 +78,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 9;
+    public const int GeneratorVersion = 10;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -743,12 +743,17 @@ float packC10(vec3 c) {
         };
         string v = stored switch { 1 => "vec4(out_color.x)", 2 => "out_color.xyxy", 3 => "out_color.xyzx", _ => "out_color" };
         decl.AppendLine($"layout(std430, set = 0, binding = {NanDrawBinding}) buffer NanDrawHits {{ uint nan_hits[]; }} nanh;");
+        // 16-bit and packed float surfaces also flag huge finite values (>= 65000, the scan's threshold): a value
+        // past the F16 range is stored as Inf or clamped to 65504 depending on the host GPU
+        bool f32 = (colorFormat & 0xF1800000) is 0x10800000 or 0x11000000;
+        string huge = f32 ? "false" : "any(greaterThanEqual(abs(nan_out), vec4(65000.0)))";
         t.Line($"vec4 nan_out = {v};");
-        t.Open("if (any(isnan(nan_out)) || any(isinf(nan_out)))");
+        t.Line($"bool nan_huge = !any(isnan(nan_out)) && !any(isinf(nan_out)) && {huge};");
+        t.Open("if (any(isnan(nan_out)) || any(isinf(nan_out)) || nan_huge)");
         t.Line($"uint nan_slot = min(uint(rinfo.draw_id), {NanDrawSlots - 1}u) * 4u;");
         t.Line("uvec2 nan_px = uvec2(gl_FragCoord.xy / max(rinfo.res_multiplier, 1.0));");
         t.Line("atomicAdd(nanh.nan_hits[nan_slot], 1u);");
-        t.Line("atomicOr(nanh.nan_hits[nan_slot + 1u], (any(isnan(nan_out)) ? 1u : 0u) | (any(isinf(nan_out)) ? 2u : 0u));");
+        t.Line("atomicOr(nanh.nan_hits[nan_slot + 1u], (any(isnan(nan_out)) ? 1u : 0u) | (any(isinf(nan_out)) ? 2u : 0u) | (nan_huge ? 4u : 0u));");
         t.Line("atomicMax(nanh.nan_hits[nan_slot + 2u], 0xFFFFFFFFu - ((min(nan_px.y, 0xFFFFu) << 16) | min(nan_px.x, 0xFFFFu)));");
         t.Close();
     }

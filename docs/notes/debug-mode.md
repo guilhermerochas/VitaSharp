@@ -349,6 +349,11 @@ its draws (40 lines per submission at most); the per-submission summary at most 
   no alpha): Uncharted writes NaN into the unused .zw of an F32x2 target in thousands of draws, which is harmless.
   A per-draw colour mask is not taken into account.
 - raw-bit outputs (packed data) are not checked unless a debug override replaced them.
+- outputs into 16-bit and packed float surfaces are also flagged when finite but huge (>= 65000, the scan's
+  threshold; the line says `huge`, `NaN+huge`, ...): a value past the F16 range is stored as Inf or clamped to
+  65504 depending on the host GPU (the GTX 1650 clamps, so its scans show `huge` rather than `Inf`). Programs that
+  blend in the shader (they read the destination) repeat the huge values of earlier draws, so the first draw of the
+  present in the list is the one to look at.
 - the instrumented GLSL counts as a debug override (`ShaderGenerator.DebugOverridesActive`): `shaders.pack`,
   `programs.pack` and `pipelines.list` are bypassed exactly as for `VITASHARP_DEBUG_FS`, the SPIR-V is not written to
   the loose `.spv` cache and the driver pipeline cache file is loaded but not saved, so the normal caches never
@@ -379,6 +384,13 @@ propagation: luminance downsample `87AA82B962069A7A` (rt 0x663D6000), RGBM encod
   triangle on partly covered pixels (inputs not `centroid`) feeding normalize/rsq/log (followed up on
   `fix/kz-nan-msaa`). The MSAA-off run also had one burst of 7085 huge (>= 65000) pixels in the HDR target (f3411).
   The luminance target regularly holds a few negative pixels, which its unsigned guest format cannot store.
+- Killzone in combat (after the centroid fix): bursts of up to ~150K huge (+-65504) and ~100K negative pixels in
+  `0x65C78000`, blocky green/blue in the post chain. Draws mode with the huge flag: ~30 lit scene and particle
+  programs at once (`D2D69337D6698F05`, `31F9EB2EF8209855`, `2D7155C0CE3E47D7`, `C2D044F0077FEB91`, ...). They take
+  the draw's two light indices from SA 0, which the driver preloads from uniform buffer 4 (a `UNIFORM_BUFFER`
+  parameter with container 4: SA 0, one word); the generator never copied it, so SA 0 was an uninitialised host
+  register and the light table was indexed with garbage (hence the warp-shaped blocks). Fixed on
+  `fix/kz-combat-nan` (`ProgramInput`: register-resident containers of whole uniform buffers).
 - Uncharted (uc_walk): 8 float targets, never NaN/Inf/huge in any of them. Draws mode: fs `B5F1A9DDE7A45CCD`
   (vs `2D58FB908DF9D2B4`, rt `0x60600000` 720x408 U2F10F10F10) outputs a single NaN fragment near the left edge in
   a few presents, which never lands in the target.
