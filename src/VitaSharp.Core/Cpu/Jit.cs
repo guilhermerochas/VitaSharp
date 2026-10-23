@@ -92,10 +92,19 @@ public static unsafe class Jit
 
     static readonly BlockingCollection<Block> Queue = new(new ConcurrentQueue<Block>());
     static int _workersStarted;
+    static int _inFlight; // queued or compiling
+
+    /// <summary>
+    /// Waits until every queued block has been compiled (or rejected); false on timeout. Compilation is asynchronous,
+    /// so callers that need a deterministic state - tests comparing backends, diagnostics - wait here instead of
+    /// sleeping for a guessed time.
+    /// </summary>
+    public static bool WaitIdle(TimeSpan timeout) => SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, timeout);
 
     public static void Enqueue(Block b)
     {
         if (!Enabled || Interlocked.CompareExchange(ref b.JitState, 1, 0) != 0) return;
+        Interlocked.Increment(ref _inFlight);
         EnsureWorkers();
         Queue.Add(b);
     }
@@ -113,6 +122,7 @@ public static unsafe class Jit
                 {
                     try { Compile(b); }
                     catch (Exception e) { Console.Error.WriteLine($"[JIT] {b}: {e.Message}"); b.JitState = 3; }
+                    finally { Interlocked.Decrement(ref _inFlight); }
                 }
             })
             { IsBackground = true, Name = $"JIT worker {i}", Priority = ThreadPriority.BelowNormal };

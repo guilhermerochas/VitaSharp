@@ -30,6 +30,19 @@ public class BlobPackTests : IDisposable
     }
 
     [Fact]
+    public void OwnershipPassesToTheNextSessionOnDispose()
+    {
+        var first = BlobPack.Open(PackPath, 1)!;
+        using (var second = BlobPack.Open(PackPath, 1)!) Assert.True(second.IsReadOnly);
+        first.Add(1, [1]);
+        first.Dispose();
+        using var third = BlobPack.Open(PackPath, 1)!;
+        Assert.False(third.IsReadOnly);
+        third.Add(2, [2]);
+        Assert.Equal([1ul, 2ul], third.Keys());
+    }
+
+    [Fact]
     public void OtherVersionStartsOver()
     {
         using (var p = BlobPack.Open(PackPath, 1)!) p.Add(1, [1]);

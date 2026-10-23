@@ -10,9 +10,13 @@ namespace VitaSharp.Core.Util;
 /// Every record carries its own checksum, so a write torn by a crash or a killed process only loses that record:
 /// the truncated tail is cut off on the next open and later appends stay aligned.
 /// Thread-safe: reads are positional and may run concurrently with an append.
-/// <para>Concurrent sessions: the first process holds the file for writing; another process opening it gets a
-/// read-only view (<see cref="IsReadOnly"/>): it reads what was complete at open time, never truncates or resets the
-/// file (a version mismatch just reads as empty), and its <see cref="Add"/> calls are no-ops.</para>
+/// <para>Concurrent sessions: the first session to open a pack owns it for writing; another one (another process, or
+/// another open in this process) gets a read-only view (<see cref="IsReadOnly"/>): it reads what was complete at open
+/// time, never truncates or resets the file (a version mismatch just reads as empty), and its <see cref="Add"/> calls
+/// are no-ops. Ownership is an exclusive open (FileShare.None) of a "&lt;pack&gt;.lock" file next to the pack, held
+/// until <see cref="Dispose"/>: a sharing lock on Windows and an flock(LOCK_EX) on Unix, so it holds on every host -
+/// unlike the sharing modes of the pack itself, which .NET only maps to shared flock locks on Unix (a second writer is
+/// never refused there). The lock file stays in place: deleting it on close would race with a session locking it.</para>
 /// </summary>
 public sealed class BlobPack : IDisposable
 {
@@ -22,6 +26,7 @@ public sealed class BlobPack : IDisposable
     const int MaxBlob = 16 << 20;
 
     readonly FileStream _fs;
+    readonly FileStream? _owner; // the exclusive lock on "<pack>.lock" (null: read-only view)
     readonly SafeFileHandle _h;
     readonly Dictionary<ulong, (long Offset, int Length)> _index = new();
     readonly List<ulong> _order = new();
@@ -31,47 +36,66 @@ public sealed class BlobPack : IDisposable
 
     public string Path { get; }
     public int Count { get { lock (_lock) return _index.Count; } }
-    /// <summary>Another process holds the file for writing: this view only reads.</summary>
-    public bool IsReadOnly { get; }
+    /// <summary>Another session owns the pack for writing: this view only reads.</summary>
+    public bool IsReadOnly => _owner == null;
 
-    BlobPack(string path, FileStream fs, bool readOnly)
+    BlobPack(string path, FileStream fs, FileStream? owner)
     {
         Path = path;
         _fs = fs;
+        _owner = owner;
         _h = fs.SafeFileHandle;
-        IsReadOnly = readOnly;
     }
 
     /// <summary>Opens (or creates) a pack. A pack written with another <paramref name="version"/> is discarded.
-    /// Falls back to a read-only view when another process holds the file; returns null when it cannot be opened at
+    /// Falls back to a read-only view when another session owns the pack; returns null when it cannot be opened at
     /// all (read-only storage).</summary>
     public static BlobPack? Open(string path, uint version)
     {
         FileStream fs;
-        bool readOnly = false;
+        FileStream? owner = null;
+        string lockPath = path + ".lock";
         try
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
-            fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1, FileOptions.RandomAccess);
+            try { owner = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1); }
+            catch (IOException) when (File.Exists(lockPath)) { } // locked: another session owns this pack
+            // the owner still opens the pack with FileShare.Read: a session of an older build, which only relied on
+            // the sharing mode, then cannot write it at the same time on Windows (one of the two falls back below)
+            fs = owner != null
+                ? new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1, FileOptions.RandomAccess)
+                : OpenReadOnly(path);
         }
-        catch (IOException e) when (File.Exists(path))
+        catch (IOException e) when (owner != null && File.Exists(path))
         {
-            // sharing violation: another session writes this pack
-            try { fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.RandomAccess); readOnly = true; }
+            // sharing violation on the pack itself: a session that does not use the lock file writes it
+            owner.Dispose();
+            owner = null;
+            try { fs = OpenReadOnly(path); }
             catch (Exception e2) { Log.Warn($"[shadercache] cannot open {path}: {e.Message} / {e2.Message}"); return null; }
-            Log.Info($"[shadercache] {System.IO.Path.GetFileName(path)} is in use by another session: read-only");
         }
-        catch (Exception e) { Log.Warn($"[shadercache] cannot open {path}: {e.Message}"); return null; }
-        var pack = new BlobPack(path, fs, readOnly);
+        catch (Exception e)
+        {
+            owner?.Dispose();
+            Log.Warn($"[shadercache] cannot open {path}: {e.Message}");
+            return null;
+        }
+        if (owner == null) Log.Info($"[shadercache] {System.IO.Path.GetFileName(path)} is in use by another session: read-only");
+        var pack = new BlobPack(path, fs, owner);
         try { pack.Load(version); }
         catch (Exception e)
         {
             Log.Warn($"[shadercache] {path} unreadable ({e.Message}), starting over");
-            if (readOnly) { pack._index.Clear(); pack._order.Clear(); return pack; }
+            if (pack.IsReadOnly) { pack._index.Clear(); pack._order.Clear(); return pack; }
             try { pack.Reset(version); } catch { pack.Dispose(); return null; }
         }
         return pack;
     }
+
+    /// <summary>A read-only view of a pack another session owns (which may not have created the file yet: it then
+    /// reads as empty).</summary>
+    static FileStream OpenReadOnly(string path) =>
+        new(path, FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.RandomAccess);
 
     /// <summary>The version a pack file was written with, or null (missing, unreadable, not a pack). Never modifies it.</summary>
     public static uint? PeekVersion(string path)
@@ -194,6 +218,7 @@ public sealed class BlobPack : IDisposable
             if (_disposed) return;
             _disposed = true;
             _fs.Dispose();
+            _owner?.Dispose(); // last: the next owner only starts writing once this session has stopped
         }
     }
 }
