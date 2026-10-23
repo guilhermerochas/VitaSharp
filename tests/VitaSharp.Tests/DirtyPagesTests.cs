@@ -18,8 +18,8 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.TryAllocAt(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.TryAllocAt(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
     }
 
     /// <summary>Sweeps twice with no writes in between: a stamp nothing earlier counts against.</summary>
