@@ -20,6 +20,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageMemoryPool.Allocation Mem;
         public uint W, H;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<DepthTarget, DepthTex> _depthTextures = new();
@@ -43,10 +44,10 @@ public sealed unsafe partial class VulkanRenderer
             if (t != null)
             {
                 var old = t;
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+                DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
             }
             t = new DepthTex { W = w, H = h };
-            (t.Image, t.View, t.Mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
                 ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit);
             _vk.DestroyImageView(_dev, t.View, null);
             // depth-only view: sampling returns depth in .r (replicated to all channels like an X8U24 fetch)
@@ -58,6 +59,7 @@ public sealed unsafe partial class VulkanRenderer
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
+        t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
         t.Version = dt.Version;
 
@@ -94,6 +96,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageMemoryPool.Allocation Mem;
         public uint W, H, Swizzle;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<DepthTarget, StencilTex> _stencilTextures = new();
@@ -121,10 +124,10 @@ public sealed unsafe partial class VulkanRenderer
             if (t != null)
             {
                 var old = t;
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+                DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
             }
             t = new StencilTex { W = w, H = h, Swizzle = swz };
-            (t.Image, t.View, t.Mem) = CreateImage(w, h, Format.R8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, Format.R8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
                 ImageAspectFlags.ColorBit, swizzle: Formats.TextureSwizzle(d.Format));
             _stencilTextures[dt] = t;
             BeginFrameIfNeeded();
@@ -132,6 +135,7 @@ public sealed unsafe partial class VulkanRenderer
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
+        t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
         t.Version = dt.Version;
         // stencil aspect -> CDRAM mirror (guest layout, one byte per pixel) -> R8 image

@@ -21,8 +21,53 @@ public static class VkCheck
 {
     public static void Ok(this Result r, string what)
     {
-        if (r != Result.Success) throw new InvalidOperationException($"Vulkan {what} failed: {r}");
+        if (r == Result.Success) return;
+        if (IsOutOfMemory(r)) throw new VkOutOfMemoryException(r, what, 0, MemCat.Other, "");
+        throw new InvalidOperationException($"Vulkan {what} failed: {r}");
     }
+
+    public static bool IsOutOfMemory(Result r) => r is Result.ErrorOutOfDeviceMemory or Result.ErrorOutOfHostMemory;
+}
+
+/// <summary>
+/// What the renderer's Vulkan memory is used for (VRAM accounting: logs, PERF vram line, renderer.txt and every
+/// allocation-failure message). Image memory is sub-allocated from <see cref="ImageMemoryPool"/> pages and counted by
+/// what each image is for; buffers are counted at allocation (<see cref="VkCore.AllocateMemory"/>).
+/// </summary>
+public enum MemCat
+{
+    /// <summary>Colour render targets (single-sampled surfaces, the CPU framebuffer).</summary>
+    RenderTarget,
+    /// <summary>Multisampled images of render targets (native MSAA samples, 2x supersampled images).</summary>
+    Msaa,
+    /// <summary>Depth/stencil targets (including multisampled ones).</summary>
+    Depth,
+    /// <summary>Textures uploaded from guest memory (the texture cache).</summary>
+    Texture,
+    /// <summary>Views of render targets with their own image: regions, reinterpreted (alias) and mip-chained
+    /// textures, depth/stencil textures, scene-start copies, framebuffer-fetch copies.</summary>
+    Region,
+    /// <summary>Buffers the pipelines read: the CDRAM mirror (mapped uniform/memory reads), dummy buffers.</summary>
+    PipelineBuffer,
+    /// <summary>Per-frame upload rings and their overflow buffers.</summary>
+    UploadRing,
+    /// <summary>Readback buffers: render-target writebacks, frame dumps, trace snapshots.</summary>
+    Readback,
+    /// <summary>Debug mode: replay ring, NaN scan buffers.</summary>
+    DebugRing,
+    /// <summary>GPU dump export buffers.</summary>
+    GpuDump,
+    Other,
+}
+
+/// <summary>A Vulkan allocation failed with ErrorOutOfDeviceMemory / ErrorOutOfHostMemory even after the renderer
+/// evicted what it could. The message carries the heap budgets and what the renderer holds.</summary>
+public sealed class VkOutOfMemoryException(Result result, string what, ulong size, MemCat category, string budget)
+    : InvalidOperationException($"Vulkan {what} failed: {result}" + (size > 0 ? $" ({size / 1048576.0:F1} MB for {category})" : "") + (budget.Length > 0 ? $"; {budget}" : ""))
+{
+    public Result Result { get; } = result;
+    public ulong Size { get; } = size;
+    public MemCat Category { get; } = category;
 }
 
 /// <summary>Instance, device, queue and memory management.</summary>
@@ -262,6 +307,9 @@ public sealed unsafe class VkCore : IDisposable
         var exts = new List<string>();
         if (present) exts.Add(KhrSwapchain.ExtensionName);
         if (portability) exts.Add(PortabilitySubset);
+        // per-heap budget and this process's usage (VRAM logs, eviction under memory pressure)
+        MemoryBudgetSupported = devExts.Contains(MemoryBudgetExtension);
+        if (MemoryBudgetSupported) exts.Add(MemoryBudgetExtension);
         var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
@@ -371,38 +419,279 @@ public sealed unsafe class VkCore : IDisposable
         throw new InvalidOperationException($"No memory type for {flags}");
     }
 
-    public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage)
+    public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage, MemCat category)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
         Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
-        Vk.GetBufferMemoryRequirements(Device, buf, out var req);
-        uint type;
-        try { type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit | MemoryPropertyFlags.HostCachedBit); }
-        catch { type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit); }
-        var mai = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = req.Size, MemoryTypeIndex = type };
-        Vk.AllocateMemory(Device, in mai, null, out var mem).Ok("vkAllocateMemory");
-        Vk.BindBufferMemory(Device, buf, mem, 0);
-        void* p;
-        Vk.MapMemory(Device, mem, 0, size, 0, &p);
-        return (buf, mem, (nint)p);
+        try
+        {
+            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
+            uint type;
+            try { type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit | MemoryPropertyFlags.HostCachedBit); }
+            catch { type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit); }
+            var mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(host buffer)");
+            Vk.BindBufferMemory(Device, buf, mem, 0);
+            void* p;
+            var r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
+            if (r != Result.Success) { FreeMemory(mem); r.Ok("vkMapMemory"); }
+            return (buf, mem, (nint)p);
+        }
+        catch
+        {
+            Vk.DestroyBuffer(Device, buf, null);
+            throw;
+        }
     }
 
-    public (Buffer Buffer, DeviceMemory Memory) CreateDeviceBuffer(ulong size, BufferUsageFlags usage)
+    public (Buffer Buffer, DeviceMemory Memory) CreateDeviceBuffer(ulong size, BufferUsageFlags usage, MemCat category)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
         Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
-        Vk.GetBufferMemoryRequirements(Device, buf, out var req);
-        var mai = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = req.Size, MemoryTypeIndex = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit) };
-        Vk.AllocateMemory(Device, in mai, null, out var mem).Ok("vkAllocateMemory");
-        Vk.BindBufferMemory(Device, buf, mem, 0);
-        return (buf, mem);
+        try
+        {
+            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
+            var mem = AllocateMemory(req.Size, FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit), category, "vkAllocateMemory(device buffer)");
+            Vk.BindBufferMemory(Device, buf, mem, 0);
+            return (buf, mem);
+        }
+        catch
+        {
+            Vk.DestroyBuffer(Device, buf, null);
+            throw;
+        }
     }
 
     public void DestroyBuffer(Buffer b, DeviceMemory m)
     {
         Vk.DestroyBuffer(Device, b, null);
-        Vk.FreeMemory(Device, m, null);
+        FreeMemory(m);
     }
+
+    // =================================================================== memory accounting and budget
+
+    const string MemoryBudgetExtension = "VK_EXT_memory_budget";
+    /// <summary>VK_EXT_memory_budget is enabled: <see cref="Heaps"/> reports per-heap budgets and this process's usage.</summary>
+    public bool MemoryBudgetSupported;
+
+    /// <summary>
+    /// Test switch VITASHARP_VRAM_BUDGET_MB=N: the renderer may hold at most N MB of device-local memory (image pool
+    /// pages + device buffers). An allocation beyond it fails as ErrorOutOfDeviceMemory without reaching the driver,
+    /// which exercises the eviction path on any GPU. 0 = no cap.
+    /// </summary>
+    public readonly ulong BudgetCap = ParseBudgetCap(Environment.GetEnvironmentVariable("VITASHARP_VRAM_BUDGET_MB"));
+
+    static ulong ParseBudgetCap(string? s) => ulong.TryParse(s?.Trim(), out var mb) && mb > 0 ? mb << 20 : 0;
+
+    public const int MemCats = (int)MemCat.Other + 1;
+    readonly long[] _poolUsed = new long[MemCats];      // image pool sub-allocations (device-local)
+    readonly long[] _directDevice = new long[MemCats];  // whole allocations in device-local heaps
+    readonly long[] _directHost = new long[MemCats];    // whole allocations in host heaps
+    long _poolPages, _peakDevice, _peakHost, _failures, _capRefusals;
+    readonly Dictionary<ulong, (ulong Size, MemCat Cat, bool Device, bool Pooled)> _allocations = new();
+
+    /// <summary>
+    /// Called when an allocation failed with an out-of-memory error: frees memory the renderer can recreate (level 0:
+    /// caches not used recently; level 1: everything not used by the frame being recorded) and returns whether
+    /// anything was freed, so the allocation is retried. Runs on the allocating (GPU worker) thread.
+    /// </summary>
+    public Func<ulong, bool, int, bool>? Reclaim;
+    public const int ReclaimLevels = 2;
+    /// <summary>Text appended to allocation failures (budgets and what the renderer holds by category).</summary>
+    public Func<string>? DescribeMemory;
+
+    public bool IsDeviceLocal(uint type) => (MemoryProperties.MemoryTypes[(int)type].PropertyFlags & MemoryPropertyFlags.DeviceLocalBit) != 0;
+
+    /// <summary>Device-local memory the renderer holds (image pool pages + device buffers).</summary>
+    public long DeviceBytes
+    {
+        get
+        {
+            long sum = Volatile.Read(ref _poolPages);
+            for (int i = 0; i < MemCats; i++) sum += Volatile.Read(ref _directDevice[i]);
+            return sum;
+        }
+    }
+
+    public long HostBytes
+    {
+        get
+        {
+            long sum = 0;
+            for (int i = 0; i < MemCats; i++) sum += Volatile.Read(ref _directHost[i]);
+            return sum;
+        }
+    }
+
+    public long PoolPageBytes => Volatile.Read(ref _poolPages);
+    public long PeakDeviceBytes => Volatile.Read(ref _peakDevice);
+    public long PeakHostBytes => Volatile.Read(ref _peakHost);
+    public long AllocationFailures => Volatile.Read(ref _failures);
+    public long CapRefusals => Volatile.Read(ref _capRefusals);
+
+    /// <summary>Bytes the renderer holds for <paramref name="cat"/>: device-local (pool sub-allocations + device buffers) and host.</summary>
+    public (long Device, long Host) CategoryBytes(MemCat cat) =>
+        (Volatile.Read(ref _poolUsed[(int)cat]) + Volatile.Read(ref _directDevice[(int)cat]), Volatile.Read(ref _directHost[(int)cat]));
+
+    internal void PoolAccount(MemCat cat, long delta) => Interlocked.Add(ref _poolUsed[(int)cat], delta);
+
+    /// <summary>One vkAllocateMemory with accounting; the budget cap refuses device-local allocations past it. No eviction.</summary>
+    public Result TryAllocateMemory(ulong size, uint type, MemCat cat, bool pooled, out DeviceMemory mem)
+    {
+        mem = default;
+        bool device = IsDeviceLocal(type);
+        if (device && BudgetCap > 0 && (ulong)DeviceBytes + size > BudgetCap)
+        {
+            Interlocked.Increment(ref _capRefusals);
+            return Result.ErrorOutOfDeviceMemory;
+        }
+        var mai = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = size, MemoryTypeIndex = type };
+        var r = Vk.AllocateMemory(Device, in mai, null, out mem);
+        if (r != Result.Success) return r;
+        lock (_allocations) _allocations[mem.Handle] = (size, cat, device, pooled);
+        if (pooled) Interlocked.Add(ref _poolPages, (long)size);
+        else if (device) Interlocked.Add(ref _directDevice[(int)cat], (long)size);
+        else Interlocked.Add(ref _directHost[(int)cat], (long)size);
+        if (device) { long d = DeviceBytes; if (d > _peakDevice) _peakDevice = d; }
+        else { long h = HostBytes; if (h > _peakHost) _peakHost = h; }
+        return r;
+    }
+
+    /// <summary>vkAllocateMemory for a whole buffer: on out-of-memory the renderer reclaims memory and it is retried;
+    /// throws <see cref="VkOutOfMemoryException"/> when nothing helped.</summary>
+    public DeviceMemory AllocateMemory(ulong size, uint type, MemCat cat, string what)
+    {
+        var r = TryAllocateMemory(size, type, cat, false, out var mem);
+        if (r == Result.Success) return mem;
+        if (!VkCheck.IsOutOfMemory(r)) throw new InvalidOperationException($"Vulkan {what} failed: {r}");
+        for (int level = 0; level < ReclaimLevels; level++)
+        {
+            if (Reclaim?.Invoke(size, IsDeviceLocal(type), level) != true) continue;
+            r = TryAllocateMemory(size, type, cat, false, out mem);
+            if (r == Result.Success) return mem;
+        }
+        throw OutOfMemory(r, what, size, cat);
+    }
+
+    public VkOutOfMemoryException OutOfMemory(Result r, string what, ulong size, MemCat cat)
+    {
+        Interlocked.Increment(ref _failures);
+        string desc;
+        try { desc = DescribeMemory?.Invoke() ?? MemorySummary(); }
+        catch (Exception e) { desc = $"(memory summary failed: {e.Message})"; }
+        return new VkOutOfMemoryException(r, what, size, cat, desc);
+    }
+
+    public void FreeMemory(DeviceMemory mem)
+    {
+        if (mem.Handle == 0) return;
+        (ulong Size, MemCat Cat, bool Device, bool Pooled) a;
+        bool known;
+        lock (_allocations) known = _allocations.Remove(mem.Handle, out a);
+        if (known)
+        {
+            if (a.Pooled) Interlocked.Add(ref _poolPages, -(long)a.Size);
+            else if (a.Device) Interlocked.Add(ref _directDevice[(int)a.Cat], -(long)a.Size);
+            else Interlocked.Add(ref _directHost[(int)a.Cat], -(long)a.Size);
+        }
+        Vk.FreeMemory(Device, mem, null);
+    }
+
+    public readonly record struct HeapInfo(int Index, ulong Size, bool DeviceLocal, ulong Budget, ulong Usage);
+
+    /// <summary>Memory heaps with this process's usage and its budget (VK_EXT_memory_budget; 0 when unsupported).
+    /// Any thread (a physical-device query).</summary>
+    public HeapInfo[] Heaps()
+    {
+        int n = (int)MemoryProperties.MemoryHeapCount;
+        var heaps = new HeapInfo[n];
+        var budget = new PhysicalDeviceMemoryBudgetPropertiesEXT { SType = StructureType.PhysicalDeviceMemoryBudgetPropertiesExt };
+        var p2 = new PhysicalDeviceMemoryProperties2 { SType = StructureType.PhysicalDeviceMemoryProperties2, PNext = &budget };
+        if (MemoryBudgetSupported) Vk.GetPhysicalDeviceMemoryProperties2(Physical, &p2);
+        for (int i = 0; i < n; i++)
+        {
+            var h = MemoryProperties.MemoryHeaps[i];
+            heaps[i] = new HeapInfo(i, h.Size, (h.Flags & MemoryHeapFlags.DeviceLocalBit) != 0,
+                MemoryBudgetSupported ? budget.HeapBudget[i] : 0, MemoryBudgetSupported ? budget.HeapUsage[i] : 0);
+        }
+        return heaps;
+    }
+
+    /// <summary>
+    /// How full device-local memory is, 0..1+: with the budget cap, the renderer's device-local bytes over the cap;
+    /// with VK_EXT_memory_budget, the fullest device-local heap's usage over its budget (the budget shrinks when other
+    /// processes use the GPU); otherwise the renderer's bytes over 80% of the largest device-local heap.
+    /// </summary>
+    public double DevicePressure()
+    {
+        if (BudgetCap > 0) return DeviceBytes / (double)BudgetCap;
+        double worst = 0;
+        ulong largest = 0;
+        foreach (var h in Heaps())
+        {
+            if (!h.DeviceLocal) continue;
+            largest = Math.Max(largest, h.Size);
+            if (h.Budget > 0) worst = Math.Max(worst, h.Usage / (double)h.Budget);
+        }
+        if (MemoryBudgetSupported) return worst;
+        return largest == 0 ? 0 : DeviceBytes / (largest * 0.8);
+    }
+
+    static string Mb(double bytes) => $"{bytes / 1048576.0:F0} MB";
+
+    /// <summary>"heap 0 device-local 3.9 GB: budget 3.4 GB, usage 1.2 GB (35%); heap 1 ..." (sizes only without the extension).</summary>
+    public string HeapSummary()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var h in Heaps())
+        {
+            if (sb.Length > 0) sb.Append("; ");
+            sb.Append($"heap {h.Index} {(h.DeviceLocal ? "device-local" : "host")} {h.Size / 1073741824.0:F1} GB");
+            if (h.Budget > 0) sb.Append($": budget {Mb(h.Budget)}, usage {Mb(h.Usage)} ({100.0 * h.Usage / h.Budget:F0}%)");
+        }
+        if (!MemoryBudgetSupported) sb.Append(" (no VK_EXT_memory_budget: budget/usage unknown)");
+        return sb.ToString();
+    }
+
+    /// <summary>Heap budgets plus the renderer's own allocations by category.</summary>
+    public string MemorySummary(Func<MemCat, string>? detail = null)
+    {
+        var sb = new System.Text.StringBuilder("VRAM ");
+        sb.Append(HeapSummary());
+        sb.Append($"; renderer holds {Mb(DeviceBytes)} device-local (image pool pages {Mb(PoolPageBytes)}");
+        long used = 0;
+        for (int i = 0; i < MemCats; i++) used += Volatile.Read(ref _poolUsed[i]);
+        sb.Append($", {Mb(PoolPageBytes - used)} of them free)");
+        sb.Append($" + {Mb(HostBytes)} host:");
+        for (int i = 0; i < MemCats; i++)
+        {
+            var (d, h) = CategoryBytes((MemCat)i);
+            string extra = detail?.Invoke((MemCat)i) ?? "";
+            if (d == 0 && h == 0 && extra.Length == 0) continue;
+            sb.Append($" {CategoryName((MemCat)i)} {Mb(d)}");
+            if (h > 0) sb.Append($" (+{Mb(h)} host)");
+            if (extra.Length > 0) sb.Append($" [{extra}]");
+            sb.Append(',');
+        }
+        if (sb[^1] == ',') sb.Length--;
+        sb.Append($"; peak {Mb(PeakDeviceBytes)} device-local, {Mb(PeakHostBytes)} host");
+        if (BudgetCap > 0) sb.Append($"; test cap VITASHARP_VRAM_BUDGET_MB={BudgetCap >> 20} ({CapRefusals} allocations refused)");
+        return sb.ToString();
+    }
+
+    public static string CategoryName(MemCat c) => c switch
+    {
+        MemCat.RenderTarget => "render targets",
+        MemCat.Msaa => "MSAA/supersample images",
+        MemCat.Depth => "depth/stencil",
+        MemCat.Texture => "textures",
+        MemCat.Region => "regions/reinterpret/mip views",
+        MemCat.PipelineBuffer => "pipeline buffers",
+        MemCat.UploadRing => "upload rings",
+        MemCat.Readback => "readback/writeback",
+        MemCat.DebugRing => "debug rings",
+        MemCat.GpuDump => "GPU dump",
+        _ => "other",
+    };
 
     public void Dispose()
     {
@@ -414,10 +703,17 @@ public sealed unsafe class VkCore : IDisposable
     }
 }
 
-/// <summary>Sub-allocates device-local memory for images from large pages (first fit, coalescing free list).</summary>
+/// <summary>
+/// Sub-allocates device-local memory for images from large pages (first fit, coalescing free list). Each allocation
+/// is counted by what it is for (<see cref="MemCat"/>). When a new page cannot be allocated the renderer is asked to
+/// free memory (<see cref="VkCore.Reclaim"/>) and the free space and smaller pages are tried before giving up; empty
+/// pages are returned to the driver by <see cref="TrimEmptyPages"/>.
+/// </summary>
 public sealed unsafe class ImageMemoryPool : IDisposable
 {
     const ulong PageSize = 128ul << 20;
+    /// <summary>Page size tried when a full page cannot be allocated (memory pressure or the budget cap).</summary>
+    const ulong SmallPageSize = 16ul << 20;
     readonly VkCore _vk;
 
     sealed class Page
@@ -425,31 +721,84 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         public DeviceMemory Memory;
         public ulong Size;
         public uint Type;
+        public ulong Used;
         public readonly SortedList<ulong, ulong> Free = new(); // offset -> size
     }
 
     readonly List<Page> _pages = new();
+    long _pagesFreed;
 
     public ImageMemoryPool(VkCore vk) => _vk = vk;
 
-    public readonly record struct Allocation(DeviceMemory Memory, ulong Offset, ulong Size, object Page);
+    public readonly record struct Allocation(DeviceMemory Memory, ulong Offset, ulong Size, object Page, MemCat Category);
 
-    public Allocation Allocate(MemoryRequirements req)
+    public int PageCount => _pages.Count;
+    public long PagesFreed => _pagesFreed;
+
+    /// <summary>Bytes in pages not allocated to any image.</summary>
+    public ulong FreeBytes
+    {
+        get
+        {
+            ulong free = 0;
+            foreach (var p in _pages) free += p.Size - p.Used;
+            return free;
+        }
+    }
+
+    public Allocation Allocate(MemoryRequirements req, MemCat cat)
     {
         uint type = _vk.FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit);
         ulong align = Math.Max(req.Alignment, 256);
+        if (TryExisting(type, req.Size, align, cat, out var a)) return a;
+        ulong need = (req.Size + align - 1) & ~(align - 1);
+        ulong full = Math.Max(PageSize, need), small = Math.Max(SmallPageSize, need);
+        var r = TryNewPage(full, type, req.Size, align, cat, out a);
+        if (r == Result.Success) return a;
+        if (!VkCheck.IsOutOfMemory(r)) throw new InvalidOperationException($"Vulkan vkAllocateMemory(image page) failed: {r}");
+        // out of memory: free what the renderer can recreate, then use the space that freed up, a new page, or a
+        // smaller one (a full page may not fit although the image would)
+        for (int level = 0; level < VkCore.ReclaimLevels; level++)
+        {
+            if (_vk.Reclaim?.Invoke(need, true, level) == true)
+            {
+                if (TryExisting(type, req.Size, align, cat, out a)) return a;
+                if (level == 0 && (r = TryNewPage(full, type, req.Size, align, cat, out a)) == Result.Success) return a;
+            }
+            if (small < full && (r = TryNewPage(small, type, req.Size, align, cat, out a)) == Result.Success) return a;
+        }
+        throw _vk.OutOfMemory(r, "vkAllocateMemory(image page)", req.Size, cat);
+    }
+
+    bool TryExisting(uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    {
         foreach (var p in _pages)
         {
-            if (p.Type != type) continue;
-            if (TryTake(p, req.Size, align, out var off)) return new Allocation(p.Memory, off, req.Size, p);
+            if (p.Type != type || p.Size - p.Used < size) continue;
+            if (TryTake(p, size, align, out var off)) { a = Take(p, off, size, cat); return true; }
         }
-        var page = new Page { Size = Math.Max(PageSize, (req.Size + align) & ~(align - 1)), Type = type };
-        var mai = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = page.Size, MemoryTypeIndex = type };
-        _vk.Vk.AllocateMemory(_vk.Device, in mai, null, out page.Memory).Ok("vkAllocateMemory(image page)");
+        a = default;
+        return false;
+    }
+
+    Result TryNewPage(ulong pageSize, uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    {
+        a = default;
+        var r = _vk.TryAllocateMemory(pageSize, type, MemCat.Other, true, out var mem);
+        if (r != Result.Success) return r;
+        var page = new Page { Memory = mem, Size = pageSize, Type = type };
         page.Free.Add(0, page.Size);
         _pages.Add(page);
-        TryTake(page, req.Size, align, out var o2);
-        return new Allocation(page.Memory, o2, req.Size, page);
+        TryTake(page, size, align, out var off);
+        a = Take(page, off, size, cat);
+        return r;
+    }
+
+    Allocation Take(Page p, ulong offset, ulong size, MemCat cat)
+    {
+        p.Used += size;
+        _vk.PoolAccount(cat, (long)size);
+        return new Allocation(p.Memory, offset, size, p, cat);
     }
 
     static bool TryTake(Page p, ulong size, ulong align, out ulong offset)
@@ -473,7 +822,9 @@ public sealed unsafe class ImageMemoryPool : IDisposable
 
     public void Free(Allocation a)
     {
-        var p = (Page)a.Page;
+        if (a.Page is not Page p) return;
+        p.Used -= a.Size;
+        _vk.PoolAccount(a.Category, -(long)a.Size);
         p.Free.Add(a.Offset, a.Size);
         // coalesce neighbours
         for (int i = 0; i < p.Free.Count - 1;)
@@ -489,9 +840,29 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         }
     }
 
+    /// <summary>Returns empty pages to the driver, keeping up to <paramref name="keepSpare"/> of them for reuse
+    /// (the largest). Returns the bytes freed.</summary>
+    public ulong TrimEmptyPages(int keepSpare)
+    {
+        ulong freed = 0;
+        int spare = 0;
+        // keep the largest empty pages as spares
+        _pages.Sort((x, y) => y.Size.CompareTo(x.Size));
+        for (int i = 0; i < _pages.Count;)
+        {
+            var p = _pages[i];
+            if (p.Used != 0 || spare++ < keepSpare) { i++; continue; }
+            _vk.FreeMemory(p.Memory);
+            freed += p.Size;
+            _pages.RemoveAt(i);
+            _pagesFreed++;
+        }
+        return freed;
+    }
+
     public void Dispose()
     {
-        foreach (var p in _pages) _vk.Vk.FreeMemory(_vk.Device, p.Memory, null);
+        foreach (var p in _pages) _vk.FreeMemory(p.Memory);
         _pages.Clear();
     }
 }

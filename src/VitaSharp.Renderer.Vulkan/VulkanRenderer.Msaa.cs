@@ -64,7 +64,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_ssImages.TryGetValue(rt, out var ss)) return ss;
         ss = new SupersampleImage { Width = rt.Width * 2, Height = rt.Height * 2 };
-        (ss.Image, ss.View, ss.Mem) = CreateImage(ss.Width, ss.Height, rt.Format,
+        (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, mutable: true);
         var srgb = Formats.Srgb(rt.Format);
         if (srgb != rt.Format && _core.SupportsColorAttachment(srgb))
@@ -80,17 +80,17 @@ public sealed unsafe partial class VulkanRenderer
         return _rtGamma && ss.SrgbView.Handle != 0 ? ss.SrgbView : ss.View;
     }
 
-    void DestroySupersampleLater(RenderTarget rt)
+    void DestroySupersampleLater(RenderTarget rt, bool now = false)
     {
         if (!_ssImages.Remove(rt, out var ss)) return;
-        F.Deferred.Add(() =>
+        Release(() =>
         {
             _vk.DestroyImageView(_dev, ss.View, null);
             if (ss.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, ss.SrgbView, null);
             if (ss.RawView.Handle != 0) _vk.DestroyImageView(_dev, ss.RawView, null);
             _vk.DestroyImage(_dev, ss.Image, null);
             _imagePool.Free(ss.Mem);
-        });
+        }, now);
     }
 
     /// <summary>Scene start: every sample takes the surface's pixel (the hardware loads the surface into all samples).</summary>

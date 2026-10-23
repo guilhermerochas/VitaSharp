@@ -64,7 +64,7 @@ public sealed unsafe partial class VulkanRenderer
         if (wb == null)
         {
             wb = new RtWriteback { Size = size };
-            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
+            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         }
         wb.Address = rt.Address;
         wb.Width = width;
@@ -73,6 +73,9 @@ public sealed unsafe partial class VulkanRenderer
         wb.GuestStride = rt.Stride * (uint)guestBpp;
         wb.GuestBpp = (uint)guestBpp;
         wb.Convert = conv.Value;
+        // a lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
+        if (conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
+        rt.LastTouchedFrame = FrameCount;
 
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);

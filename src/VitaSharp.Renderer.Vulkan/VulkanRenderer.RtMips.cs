@@ -22,6 +22,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageView View;
         public ImageMemoryPool.Allocation Mem;
         public long Version = -1;
+        public long LastUsedFrame;
         public ulong UpperHash;
         public long CheckedFrame = -1;
         public uint Stamp; // dirty-page epoch the upper levels were last hashed at
@@ -46,7 +47,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!_rtMipTextures.TryGetValue(key, out var t))
         {
             t = new RtMipTexture();
-            (t.Image, t.View, t.Mem) = CreateImage(w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips, mutable: true);
             _vk.DestroyImageView(_dev, t.View, null);
             t.View = CreateView(t.Image, viewFormat, ImageAspectFlags.ColorBit, mips, 1, false, RtSwizzle(rt, d.Format));
@@ -58,6 +59,7 @@ public sealed unsafe partial class VulkanRenderer
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
 
+        t.LastUsedFrame = FrameCount;
         // the levels after the surface live in guest memory: re-upload them when that memory changes
         var layout = ComputeLayout(d, info, w, h, mips, 1);
         uint upperStart = layout.Levels[1].Offset;
