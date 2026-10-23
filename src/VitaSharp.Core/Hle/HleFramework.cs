@@ -107,10 +107,10 @@ public sealed class HleFunction
     public bool WarnedUnimplemented;
     /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
     public long ChargedCycles;
-    /// <summary>Profiling (<see cref="Profile"/>): host wall time (Stopwatch ticks) spent inside the implementation,
-    /// blocking included, and host CPU cycles the calling thread consumed there (Windows only).</summary>
-    public long HostTicks, HostCycles;
-    /// <summary>Times every HLE call (--profile): two timestamps and a thread cycle-counter read per call.</summary>
+    /// <summary>--profile: guest threads record the HLE function they are in (GuestThread.CurrentHle).</summary>
+    public static bool Track;
+    /// <summary>--profile-hle: also times every HLE call per thread (GuestThread.HleProfile): two timestamps and two
+    /// thread cycle-counter reads per call, which slows HLE-heavy games noticeably.</summary>
     public static bool Profile;
 
     long _cost = -1;

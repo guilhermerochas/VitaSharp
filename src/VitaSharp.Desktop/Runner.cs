@@ -270,7 +270,8 @@ public static class Runner
         emu.Start();
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
-        Sampler? sampler = options.Contains("--profile") || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0) : null;
+        bool profileHle = options.Contains("--profile-hle");
+        Sampler? sampler = options.Contains("--profile") || profileHle || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0, profileHle) : null;
         if (Opt(options, "--seconds") == null && frameLimit > 0) seconds = 1800; // frames decide; seconds is a safety timeout
         long fpsFrames = 0; double fpsAt = 0;
         var allocMarks = new List<AllocMark>();

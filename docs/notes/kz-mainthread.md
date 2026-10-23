@@ -77,14 +77,14 @@ upload that fits the budget or survives in memory until a later frame.
 ## Tried and reverted: lower `DelayThread` charge
 Charging the `sceKernelDelay*` calls 2,000 cycles (kernel entry only, because the 30 us floor already models the
 reschedule) cut each poll from 57 to 30 us and the main thread's charged HLE from 5.9 to 1.7 M cycles/frame
-(`kz_skin`). In both `kzl_walk3` runs, though, the scripted walk took a different route: the player ended on a
-staircase instead of the usual room. In that area the renderer hit `vkAllocateMemory(image page) failed:
-ErrorOutOfDeviceMemory` and ran at ~6 fps for ~600 frames. The builds without the change never went there in 3 runs.
-That is a change of game logic (the frame-scripted input moves the player by game time), so the charge is unchanged.
-Two follow-ups:
-- the charge classes (12,000 cycles for any blocking syscall, plus the latency floor for delays and woken waits)
-  need a hardware reference before they move;
-- the VRAM exhaustion on that staircase is a separate renderer issue, likely reachable on main by walking there.
+(`kz_skin`). It brought no fps, because every measured stretch is already at the 30 fps vsync cap once the test
+inspection is fixed. It does move emulated time, which the game measures, so it was not kept. Both `kzl_walk3` runs with
+it took a different route: the player ended on a staircase instead of the usual room, and that area ran at ~6 fps
+for ~600 frames (one run also logged `ErrorOutOfDeviceMemory`). A later run of the build without the change (only the
+inspection fix) took the same staircase route and slowed down the same way, so the route changes from run to run.
+It is not caused by the charge. The slow staircase stretch is analysed below.
+The charge classes (12,000 cycles for any blocking syscall, plus the latency floor for delays and woken waits) need
+a hardware reference before they move.
 
 ## Next steps
 - POSIX hosts: `nanosleep` is precise to tens of microseconds, so `PreciseSleep.Until` could sleep most of a short

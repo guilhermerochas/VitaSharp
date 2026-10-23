@@ -259,10 +259,15 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         return trace;
     }
 
-    /// <summary>Profiling: per HLE function (by name) calls, host wall ticks and host CPU cycles on this thread.</summary>
-    public readonly Dictionary<HleFunction, long[]> HleProfile = new();
+    /// <summary>Profiling (--profile-hle): per HLE function index (<see cref="CpuState.SvcImm"/>) three counters:
+    /// calls, host wall ticks inside the implementation (blocking included) and host CPU cycles the thread used there.
+    /// Written only by this thread; the sampler reads it racily at the end.</summary>
+    public long[] HleProfile = [];
+    /// <summary>Profiling (--profile): the HLE function the thread is inside (null in guest code); the sampler names
+    /// host waits with it.</summary>
+    public volatile HleFunction? CurrentHle;
 
-    void InvokeTimed(HleFunction f)
+    void InvokeTimed(HleFunction f, uint index)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         ulong c0 = Util.NativeThread.CycleTime();
@@ -270,14 +275,20 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         finally
         {
             long cyc = (long)(Util.NativeThread.CycleTime() - c0), ticks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-            Interlocked.Add(ref f.HostCycles, cyc);
-            Interlocked.Add(ref f.HostTicks, ticks);
-            lock (HleProfile)
-            {
-                if (!HleProfile.TryGetValue(f, out var p)) HleProfile[f] = p = new long[3];
-                p[0]++; p[1] += ticks; p[2] += cyc;
-            }
+            var p = HleProfile;
+            int i = (int)index * 3;
+            if (i + 3 > p.Length) { Array.Resize(ref p, Math.Max(i + 3, p.Length * 2)); HleProfile = p; }
+            p[i]++; p[i + 1] += ticks; p[i + 2] += cyc;
         }
+    }
+
+    void Invoke(HleFunction f, uint index)
+    {
+        if (!HleFunction.Track) { f.Invoke!(Hle); return; }
+        var outer = CurrentHle;
+        CurrentHle = f;
+        try { if (HleFunction.Profile) InvokeTimed(f, index); else f.Invoke!(Hle); }
+        finally { CurrentHle = outer; }
     }
 
     void DispatchHle(CpuState* s)
@@ -302,12 +313,11 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 try
                 {
                     if (PendingCallbacks > 0) CallbackProcessor?.Invoke(this);
-                    if (HleFunction.Profile) InvokeTimed(f); else f.Invoke(Hle);
+                    Invoke(f, s->SvcImm);
                 }
                 finally { CallbackWait = prev; }
             }
-            else if (HleFunction.Profile) InvokeTimed(f);
-            else f.Invoke(Hle);
+            else Invoke(f, s->SvcImm);
             f.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
             if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
