@@ -165,6 +165,7 @@ public sealed unsafe partial class VulkanRenderer
     CommandBuffer _msCmd;
     MsaaPass _msPass;
     readonly HashSet<(uint, SampleCountFlags)> _msLogged = new();
+    readonly HashSet<uint> _msDepthKeptLogged = new();
     long _statMsScenes, _statMsPasses, _statMsDiscards, _statMsFetchCopies;
 
     /// <summary>Rasterization samples of the current scene's pipelines.</summary>
@@ -243,7 +244,14 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
         var samples = GxmSamples(b.Multisample);
-        if (MsaaSetting == MsaaEmulation.Native && SupportsNativeMsaa(_rt.Format, samples))
+        // A scene that forces its depth/stencil store (or load) keeps the samples in memory, where later passes read
+        // them as a sample-sized texture (LittleBigPlanet's depth of field samples its 4X depth as a 1440x816 U16
+        // texture). Multisampled depth images cannot be read that way, so such scenes render supersampled: the 2x
+        // depth target holds one sample per texel, in the surface's sample layout.
+        bool depthKept = b.Depth is { ForceStore: true } or { ForceLoad: true };
+        if (depthKept && MsaaSetting == MsaaEmulation.Native && _msDepthKeptLogged.Add(_rt.Address))
+            Log.Info($"[gpu] render target 0x{_rt.Address:X8} {_rt.Width}x{_rt.Height}: MSAA scene with forced depth/stencil {(b.Depth!.ForceStore ? "store" : "load")} renders 2x supersampled (the depth samples stay readable)");
+        if (MsaaSetting == MsaaEmulation.Native && !depthKept && SupportsNativeMsaa(_rt.Format, samples))
         {
             _ms = true;
             _msSamples = samples;
@@ -642,15 +650,15 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
 
     /// <summary>
     /// A depth texture or a mapped (CDRAM mirror) read hits the depth/stencil surface of a multisampled scene. Its
-    /// samples are not stored to memory unless the scene forces the store (none of the tested games do: their MSAA
-    /// depth is transient, as Vita3K treats it too), so the read sees guest memory, like on hardware. A forced store
-    /// would need the samples unpacked into the surface's sample layout, which is not implemented yet: warned once.
+    /// samples are not stored to memory unless the scene forces the store, so the read sees guest memory, like on
+    /// hardware. Scenes that force the store render supersampled instead (<see cref="ChooseMsaaPath"/>), so the
+    /// multisampled depth seen here is transient: warned once.
     /// </summary>
     bool MultisampledDepthRead(DepthTarget dt, bool stencil)
     {
         if (dt.Samples == SampleCountFlags.Count1Bit) return false;
         Log.WarnOnce($"msdepth-read-{dt.Address:X8}-{stencil}", $"[gpu] {(stencil ? "stencil" : "depth")} surface 0x{(stencil ? dt.StencilAddress : dt.Address):X8} of a multisampled scene is read: " +
-            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene FORCES THE STORE, which is not implemented for real MSAA (VITASHARP_MSAA=ss renders it supersampled)" : ""));
+            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; a scene forced the store although it rendered with real MSAA" : ""));
         return true;
     }
 
@@ -659,7 +667,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         MsaaEmulation.Supersample => "supersampled (VITASHARP_MSAA=ss)",
         MsaaEmulation.Off => "off (VITASHARP_MSAA=off)",
         _ => $"native: {_statMsScenes} scenes, {_statMsPasses} renderings ({_statMsDiscards} discarding their samples at scene end), {_statMsResolves} resolves, {_statMsInputFetches} input-attachment fetches, {_statMsFetchCopies} multisampled framebuffer-fetch copies",
-    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels";
+    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split per triangle";
 
     void DestroyMsaa()
     {

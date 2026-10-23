@@ -713,31 +713,62 @@ public sealed unsafe partial class VulkanRenderer
         if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
         _renderRaw = raw;
         if (raw) _rawFormat = attachFormat;
-        BeginRendering();
-        var cmd = Cmd;
-        if (inputFetch) InputFetchBarrier(cmd);
-        if (_boundPipeline.Handle != pipeline.Handle)
-        {
-            _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
-            _boundPipeline = pipeline;
-        }
         var sets = stackalloc DescriptorSet[4] { uSet, vSet, fSet, fbSet };
-        _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
-        for (int s = 0; s < 16; s++)
-            if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
-        if (vs.Bindings.Any(b => b.Binding == 16))
+        // programmable blending reads the framebuffer as it was before the draw (a copy, or the attachment behind a
+        // barrier), but on hardware every fragment reads what earlier primitives of the same draw wrote. Small draws
+        // of overlapping primitives (glyph quads of a text string blending over each other) are therefore split into
+        // one draw per triangle, each reading the framebuffer again.
+        uint triangles = FetchSplitTriangles(d, fs, topology, inputFetch);
+        uint chunks = triangles > 1 ? triangles : 1;
+        for (uint c = 0; c < chunks; c++)
         {
-            var db = _dummyBuffer; ulong dz = 0;
-            _vk.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
+            if (c > 0 && !inputFetch) sets[3] = BuildFramebufferFetchSet(); // ends the rendering, copies again
+            BeginRendering();
+            var cmd = Cmd;
+            if (inputFetch) InputFetchBarrier(cmd);
+            if (_boundPipeline.Handle != pipeline.Handle || c > 0)
+            {
+                _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
+                _boundPipeline = pipeline;
+            }
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
+            for (int s = 0; s < 16; s++)
+                if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
+            if (vs.Bindings.Any(b => b.Binding == 16))
+            {
+                var db = _dummyBuffer; ulong dz = 0;
+                _vk.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
+            }
+            _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
+            SetDynamicState(cmd, st, topology);
+            if (triangles > 1) { _vk.CmdDrawIndexed(cmd, 3, 1, c * 3, 0, 0); continue; }
+            bool visQuery = BeginVisibilityQuery(d, out uint query);
+            _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
+            if (visQuery) EndVisibilityQuery(query);
         }
-        _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
-        SetDynamicState(cmd, st, topology);
-        bool visQuery = BeginVisibilityQuery(d, out uint query);
-        _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
-        if (visQuery) EndVisibilityQuery(query);
+        if (triangles > 1) _statFetchSplitDraws++;
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; }
+    }
+
+    /// <summary>VITASHARP_FETCH_SPLIT=0 disables the per-triangle split of programmable-blending draws.</summary>
+    static readonly bool FetchSplit = Environment.GetEnvironmentVariable("VITASHARP_FETCH_SPLIT")?.Trim() != "0";
+    /// <summary>Largest draw split per triangle: each piece re-copies the framebuffer region (copy path) or only
+    /// needs a barrier (input attachments in multisampled scenes).</summary>
+    const uint FetchSplitMaxCopy = 64, FetchSplitMaxInput = 256;
+    long _statFetchSplitDraws;
+
+    /// <summary>
+    /// Number of triangles to draw one by one for a programmable-blending draw (0 = draw it whole). Only plain
+    /// triangle lists without instancing or visibility queries, small enough that re-reading the framebuffer for
+    /// every triangle stays cheap.
+    /// </summary>
+    static uint FetchSplitTriangles(DrawCommand d, FsEntry fs, PrimitiveTopology topology, bool inputFetch)
+    {
+        if (!FetchSplit || !fs.Gen!.UsesFragColor || topology != PrimitiveTopology.TriangleList || d.InstanceCount != 1 || d.VisAddress != 0) return 0;
+        uint triangles = d.IndexCount / 3;
+        return triangles is > 1 && triangles <= (inputFetch ? FetchSplitMaxInput : FetchSplitMaxCopy) ? triangles : 0;
     }
 
     DescriptorBufferInfo UniformInfo(ReadOnlySpan<byte> data)

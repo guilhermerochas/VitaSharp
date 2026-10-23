@@ -896,12 +896,22 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
             _vk.BeginCommandBuffer(cmd, in bi);
             var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-            if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm)
+            // single-channel 16-bit targets (shadow maps, depth packed into U16 colour) are dumped as grey, 8 bits of 16
+            bool r16 = rt.Format == Format.R16Unorm;
+            if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm || r16)
                 _vk.CmdCopyImageToBuffer(cmd, rt.Image, ImageLayout.General, buf, 1, in region);
             _vk.EndCommandBuffer(cmd);
             var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cmd };
             _vk.QueueSubmit(_core.Queue, 1, in si, default);
             _vk.QueueWaitIdle(_core.Queue);
+            if (r16)
+            {
+                var grey = new ReadOnlySpan<ushort>((void*)ptr, (int)(rt.Width * rt.Height)).ToArray();
+                var dst = new Span<byte>((void*)ptr, grey.Length * 4);
+                for (int i = 0; i < grey.Length; i++) { byte g = (byte)(grey[i] >> 8); dst[i * 4] = dst[i * 4 + 1] = dst[i * 4 + 2] = g; dst[i * 4 + 3] = 255; }
+            }
+            else if (!(half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm))
+                new Span<byte>((void*)ptr, (int)(rt.Width * rt.Height * 4)).Clear(); // not read back: dumped black, not as stale memory
             stats.AppendLine(TargetStats(rt, ptr));
             byte[] px;
             if (half)
