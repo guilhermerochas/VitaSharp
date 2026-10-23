@@ -55,7 +55,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Gravity Rush: intro do sonho e tela de título muito lavadas/claras; a cena em si sai colorida, o clareamento vem da composição final (tone-map/bloom, fs 43E841F998350713). Pode ser o estilo do jogo; comparar com um print do Vita real ou do Vita3K
 - [ ] Gravity Rush: um toque em 0,46/0,48 no quadro 1000 da tela de título não registrou (o toque no centro funciona)
 - [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
