@@ -1,0 +1,7 @@
+# Persona 4 Golden (EU): logos, PSN prompt (No), offline notice, opening movie (the game's own AvPlayer on sceMp4 +
+# sceVideodec + sceAudiodec AAC), title screen, then Start. CRI Atom (ADX2) drives one MAIN port (256 samples, 48 kHz,
+# stereo) from NGS: expect 187.5 outputs/s and 0 underruns in the report's AUDIO summary lines. --audio opens OpenAL;
+# for a silent run that records a WAV instead, set ALSOFT_CONF to a file with [general] drivers=wave, sample-type=int16
+# and [wave] file=<path>.wav. Use a scratch data root (--data=): the game writes saves.
+title=PCSB00245
+args=--frames=4200 --seconds=300 --dump-every=100 --no-inspect --audio --input=cross@f400:f10,cross@f550:f10,start@f2400:f10,cross@f2700:f10,cross@f3000:f10

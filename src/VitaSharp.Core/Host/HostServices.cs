@@ -46,6 +46,8 @@ public interface IAudioStream : IDisposable
     float Volume { get; set; }
     /// <summary>Sample frames queued but not yet played (sceAudioOutGetRestSample); games use it for A/V sync.</summary>
     int PendingSamples { get; }
+    /// <summary>Times the host stream ran dry (the device played silence because no grain was queued in time).</summary>
+    int Underruns => 0;
 }
 
 public interface IAudioBackend : IDisposable

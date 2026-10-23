@@ -115,6 +115,7 @@ public sealed class Diagnostics
     {
         // emulator state: threads, held mutexes, recent HLE calls (debug mode), GPU queue
         File.WriteAllText(Path.Combine(dir, "state.txt"), Watchdog.DescribeState(_emu, renderer, 16));
+        File.WriteAllText(Path.Combine(dir, "audio.txt"), AudioDiagnostics.Describe());
         if (res == null && renderer != null) File.WriteAllText(Path.Combine(dir, "frames.txt"), renderer.RecentFrames());
         File.WriteAllText(Path.Combine(dir, "info.txt"), BuildInfo(reason, guestFrame, renderer, res, note));
         string zip = dir + ".zip";
@@ -176,6 +177,7 @@ public sealed class Diagnostics
         sb.AppendLine("  frames.txt          the last 120 frames: draws, scenes, new shaders/pipelines/targets, biggest hitch cause");
         sb.AppendLine("  renderer.txt        GPU/driver/settings, renderer state and statistics so far");
         sb.AppendLine("  state.txt           guest threads (wait state, backtrace, recent HLE calls in debug mode), mutexes, GPU queue");
+        sb.AppendLine("  audio.txt           audio device and buffering, open/released ports (outputs/s, gaps, underruns, silence), NGS and decoder streams");
         sb.AppendLine("  log.txt             the session log up to the capture");
         return sb.ToString();
     }

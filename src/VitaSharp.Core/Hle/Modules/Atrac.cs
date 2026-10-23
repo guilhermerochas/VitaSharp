@@ -156,6 +156,7 @@ public sealed class Atrac : HleModule
             var s = new AtracStream(info, cfg, DecoderFactory(info), pucBuffer, uiReadSize, uiBufferSize);
             _handles[slot] = s;
             _usedCh += (uint)info.Channels;
+            AudioDiagnostics.StreamOpened($"atrac:{slot}", $"Atrac handle {slot}: ATRAC9 {info.Channels} ch {info.SampleRate} Hz, {info.TotalSamples} samples, loop {info.LoopStart}..{info.LoopEnd}, {(allOnMemory ? "in memory" : "streaming")}");
             Log.Debug($"sceAtrac: handle {slot}: {info.Channels}ch {info.SampleRate} Hz, {info.TotalSamples} samples, loop {info.LoopStart}..{info.LoopEnd}, {(allOnMemory ? "in memory" : "streaming")}");
             return (int)(TYPE_AT9 << 16) | slot;
         }
@@ -175,6 +176,7 @@ public sealed class Atrac : HleModule
             var s = Find(atracHandle);
             if (s == null) return ERR_INVALID_HANDLE;
             _handles.Remove(atracHandle & 0xFFFF);
+            AudioDiagnostics.StreamClosed($"atrac:{atracHandle & 0xFFFF}");
             _usedCh -= (uint)s.Channels;
         }
         return 0;

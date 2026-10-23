@@ -23,6 +23,8 @@ public sealed class Watchdog : IDisposable
     int _reportsThisStall;
     // debug mode periodic lines
     DateTime _perfAt = DateTime.Now, _summaryAt = DateTime.Now;
+    DateTime _audioAt = DateTime.Now;
+    bool _debugWas;
     long _perfFrames;
     TimeSpan _perfCpu;
     long _perfAlloc;
@@ -56,6 +58,9 @@ public sealed class Watchdog : IDisposable
                 Log.Warn($"[watchdog] STALL: {what} (frame {frames})\n{DescribeState(_emu, _renderer())}");
                 Log.Flush();
             }
+            // F9 turned debug mode on: the periodic audio lines count from now (AudioDiagnostics logged a snapshot)
+            if (DebugMode.Enabled && !_debugWas) _audioAt = now;
+            _debugWas = DebugMode.Enabled;
             if (DebugMode.Enabled) Periodic(now, frames);
         }
         catch (Exception e) { Log.Warn($"[watchdog] check failed: {e.Message}"); }
@@ -74,6 +79,11 @@ public sealed class Watchdog : IDisposable
                      $"allocated {(alloc - _perfAlloc) / 1024.0 / df:F0} KB/frame, GC {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, " +
                      $"working set {Environment.WorkingSet / 1048576.0:F0} MB, GPU queue pending {_emu.Gpu.Pending}, threads {proc.Threads.Count}");
             _perfAt = now; _perfFrames = frames; _perfCpu = cpu; _perfAlloc = alloc;
+        }
+        if ((now - _audioAt).TotalSeconds >= AudioDiagnostics.PeriodSeconds)
+        {
+            _audioAt = now;
+            AudioDiagnostics.Periodic();
         }
         if ((now - _summaryAt).TotalMinutes >= 10)
         {

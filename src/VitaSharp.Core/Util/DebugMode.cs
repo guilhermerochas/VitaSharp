@@ -16,8 +16,10 @@ public static class DebugMode
 
     public static void Enable()
     {
+        bool was = Enabled;
         Enabled = true;
         Log.DedupeWarnings = true;
+        if (!was) AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before
     }
 
     public static void Disable()

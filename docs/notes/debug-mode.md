@@ -46,6 +46,7 @@ Folder contents:
 | `frames.txt` | the last 120 presented frames (rolling summary, below) |
 | `renderer.txt` | GPU/driver/settings, renderer state (frame slots, writebacks), texture cache and GPU time statistics so far |
 | `state.txt` | guest threads (status, wait object, pc/lr/backtrace; last 16 HLE calls each in debug mode), held mutexes with waiters, GPU queue (submitted/completed, command executing), last 30 frames |
+| `audio.txt` | audio device and buffering, open and released ports (outputs/s, gaps, underruns, silent grains, host queue), NGS systems and decoder streams (see Audio below) |
 | `log.txt` | the session log up to the capture |
 
 If no frame is presented within 15 s after the request (a hang), the GPU part is skipped and `info.txt` says
@@ -156,6 +157,49 @@ A confirmed anomaly with "auto capture" triggers the same capture as F10 (`[diag
 Test switch: `VITASHARP_DEBUG_INJECT=magenta@<present>` (or `green@<present>`) makes the check see that colour over
 half the image for 4 checks from that present on (`[anomaly] test injection ...`); the rendered frame is untouched.
 
+## Audio
+
+`src/VitaSharp.Core/Util/AudioDiagnostics.cs` counts, for every sceAudioOut port, the guest outputs, the gaps
+between them, silent (all-zero) grains and host underruns. Counting is always on (a few field writes per output); what
+gets logged depends on debug mode, which is checked on every call, so F9 takes effect immediately.
+
+**Host device line** (start of every session): `Audio: OpenAL Soft, OpenAL '<device>' mixer 48000 Hz, update 960
+samples (20,0 ms)`. OpenAL Soft mixes in updates of that size and only gives back a buffer once it is fully played,
+so each port's host queue holds `2 x update + 2 grains` (at least 4 grains) and playback starts or resumes once
+`update + 1 grain` is queued. The per-stream part (`stream 48000 Hz grain 256: up to 10 grains queued (53,3 ms), starts
+at 5, latency ~47 ms, underruns N`) appears in the summary, the snapshot and audio.txt.
+
+**Always logged:**
+
+| Line | When |
+|---|---|
+| `Audio: underrun burst #n on port 0 MAIN at f..: host queue ran dry, X ms since the previous output (grain Y ms), host queue N samples` | first underrun of a burst (underruns less than 1 s apart are one burst). With debug mode off: bursts 1-3, 10, 100, ... |
+| `AUDIO summary: device ...` and `AUDIO summary: port <id> <MAIN/BGM/VOICE> grain G F Hz stereo volume l/r: N outputs in T s (R/s while active, expected E), gap avg/max, underruns n (n/min) in b bursts, silent s` | end of the session (window and test runs; test reports include them). `while active` = outputs over the time spent between outputs, so a port that is idle for a while is not penalised |
+
+**Debug mode adds** (all `[dbg] f<frame> AUDIO ...`):
+
+| Line | When |
+|---|---|
+| `AUDIO open port 0 MAIN grain 256 48000 Hz stereo volume 1,00/1,00, expected 187,5 outputs/s` / `AUDIO release ...: <totals>` / `AUDIO config ...` | sceAudioOutOpenPort / OpenExtPort, ReleasePort, SetConfig |
+| `AUDIO open NGS system 0x..: granularity 256, 48000 Hz, 64 voices` | sceNgsSystemInit (and `release` at sceNgsSystemRelease) |
+| `AUDIO open Audiodec decoder N: AAC 2 ch` / `Atrac handle N: ATRAC9 2 ch 48000 Hz, ... samples, loop ..` / `AvPlayer <file>: audio 2 ch 48000 Hz, video WxH fps, duration` | decoder streams created / deleted (Audiodec, Atrac, HLE SceAvPlayer). Games that link their own AvPlayer show up through Audiodec and their audio port instead |
+| `AUDIO snapshot: device ...`, one line per open port (with host queue and totals so far), one per NGS system / decoder stream | debug mode switched on mid-game (F9, `--debug-mode-at`): the open events already happened, so their state is listed once |
+| `AUDIO port 0 MAIN: R outputs/s (expected E), gap avg A ms max M ms (grain G ms), host queue Q samples, underruns u, silent s/N over T s` | every 10 s per open port while debug mode is on (stops when it is turned off) |
+| `AUDIO underrun burst #n on <port> ended: k underruns over T ms` | a burst is over (no underrun for 1 s; checked with the periodic line) |
+
+Reading them: `outputs/s` below `expected` with underruns = the guest produces too slowly (emulated CPU, a starved
+audio thread, or host blocking); `expected` reached but underruns anyway = host buffering too small for the device
+update; large `gap max` with no underruns = the queue absorbed a stall; a high `silent` share is normal in menus and
+loading screens (CRI/NGS keep outputting zeros).
+
+**F10 capture:** `audio.txt` = device and buffering, every open port (host queue, time since the last output, totals),
+the ports released earlier in the session, NGS systems and decoder streams.
+
+**Tests:** `--audio` uses the OpenAL device in headless runs. For a silent run that records the mixed output, set
+`ALSOFT_CONF` to a file with `[general]` `drivers=wave`, `sample-type=int16` and `[wave]` `file=<path>.wav` (OpenAL
+Soft's wave writer runs in real time, like a device). `--debug-mode-at=FRAME[,FRAME...]` toggles debug mode like F9
+when the guest frame is reached (`[dbg] debug mode on (--debug-mode-at) at guest frame N`).
+
 ## Cost
 
 Measured on Killzone, the kz_skin route (4500 frames, paced, GTX 1650, 2026-10-22):
@@ -186,5 +230,6 @@ the zip was 68 MB), 0.3 s for a menu frame.
   checks; `--trace-draws=N` sets both frames to N (its old behaviour, including the cache bypass and the skipped present).
 - `src/VitaSharp.Desktop/Diagnostics.cs`: F10 / `--diag-at` / anomaly captures, info.txt, log copy, zip.
 - `src/VitaSharp.Desktop/Watchdog.cs`: watchdog, periodic PERF and summaries, session log rotation (`LogFiles`).
+- `src/VitaSharp.Core/Util/AudioDiagnostics.cs`: audio port/stream statistics, debug lines, summary, audio.txt; fed by `Hle/Modules/Audio.cs` (ports), Ngs, Audiodec, Atrac, AvPlayer (streams) and `Desktop/Host/OpenAlAudio.cs` (device description, underruns).
 - `src/VitaSharp.Core/Util/DebugMode.cs`, `Log.cs` (dedupe, size cap, FilePath), `GuestThread.cs` (HLE ring/errors),
   `GpuQueue.Executing`.

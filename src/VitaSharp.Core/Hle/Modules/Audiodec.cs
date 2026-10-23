@@ -140,11 +140,14 @@ public sealed unsafe class Audiodec : HleModule
             uint h = _nextHandle++;
             _decoders[h] = d;
             GuestMemory.W32(ctrl + 4, h);
+            AudioDiagnostics.StreamOpened($"audiodec:{h}", $"Audiodec decoder {h}: {CodecName(codecType)} {d.Channels} ch" + (d.At9 != null ? $" {d.At9.Config.SampleRate} Hz, superframe {d.At9.Config.SuperframeBytes} bytes" : ""));
         }
         GuestMemory.W32(ctrl + 16, esMax);
         GuestMemory.W32(ctrl + 28, pcmMax);
         return 0;
     }
+
+    static string CodecName(uint type) => type switch { TYPE_AT9 => "ATRAC9", TYPE_MP3 => "MP3", TYPE_AAC => "AAC", _ => $"codec 0x{type:X}" };
 
     Decoder? Find(uint ctrl, out int error)
     {
@@ -307,6 +310,7 @@ public sealed unsafe class Audiodec : HleModule
         lock (_decoders)
         {
             if (!_decoders.Remove(GuestMemory.R32(ctrl + 4), out d)) return ERR_NOT_HANDLE_IN_USE;
+            AudioDiagnostics.StreamClosed($"audiodec:{GuestMemory.R32(ctrl + 4)}");
         }
         d.Codec?.Dispose();
         return 0;
