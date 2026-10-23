@@ -309,7 +309,13 @@ public sealed unsafe partial class VulkanRenderer
                 return (mipped, ImageLayout.ShaderReadOnlyOptimal);
             if (addr != rt.Address || w != rt.Width || h != rt.Height)
             {
-                if (!linear || texRow != rowBytes || x0 + w > rt.Width || y0 + h > rt.Height) continue;
+                if (!linear || texRow != rowBytes || x0 >= rt.Width) continue;
+                // a power-of-two texture laid over a smaller surface with the same row pitch (Persona 4 Golden's
+                // 840x476 scene, stride 1024, sampled as a 1024x1024 texture): the surface fills its top-left corner.
+                // Only when no other colour target lies in the texture's memory (atlases of several targets keep
+                // reading the guest memory that the writeback fills).
+                bool overhang = x0 + w > rt.Width || y0 + h > rt.Height;
+                if (overhang && !OnlyTargetIn(rt, addr, texRow * h)) continue;
                 return (RenderTargetRegion(rt, x0, y0, w, h, d.Format, gamma), ImageLayout.ShaderReadOnlyOptimal);
             }
             SyncRenderTargetForRead(rt);
@@ -487,7 +493,21 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();
 
-    /// <summary>Copies a sub-rectangle of a render target into its own image (textures that point inside a surface).</summary>
+    /// <summary>True when <paramref name="rt"/> is the only colour target whose memory intersects [addr, addr + bytes).</summary>
+    bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
+    {
+        ulong end = (ulong)addr + bytes;
+        foreach (var other in _renderTargets.Values)
+        {
+            if (other == rt) continue;
+            ulong oStart = other.Address, oEnd = oStart + (ulong)other.Stride * (uint)Formats.ColorBytesPerPixel(other.ColorFormat) * other.Height;
+            if (oStart < end && addr < oEnd) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Copies a sub-rectangle of a render target into its own image (textures that point inside a surface).
+    /// The part of a texture that extends past the surface's right or bottom edge reads as transparent black.</summary>
     ImageView RenderTargetRegion(RenderTarget rt, uint x, uint y, uint w, uint h, uint texFormat, bool gamma)
     {
         var key = (rt, x, y, w, h, texFormat, gamma);
@@ -503,8 +523,13 @@ public sealed unsafe partial class VulkanRenderer
             _rtRegions[key] = r;
             BeginFrameIfNeeded();
             PauseRendering();
-            Barrier(r.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
-                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
+            Barrier(r.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            var clear = new ClearColorValue(0f, 0f, 0f, 0f);
+            var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
+            _vk.CmdClearColorImage(Cmd, r.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+            Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         }
         if (r.Version == rt.Version) return r.View;
         r.Version = rt.Version;
@@ -518,7 +543,7 @@ public sealed unsafe partial class VulkanRenderer
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             SrcOffset = new Offset3D((int)x, (int)y, 0),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            Extent = new Extent3D(w, h, 1),
+            Extent = new Extent3D(Math.Min(w, rt.Width - x), Math.Min(h, rt.Height - y), 1),
         };
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, r.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
