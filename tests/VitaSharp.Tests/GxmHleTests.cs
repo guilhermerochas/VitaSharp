@@ -119,6 +119,25 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(59.94005f, GuestMemory.Read<float>(info + 0x18));
     }
 
+    /// <summary>A fragment program with stripped symbols has no sampler parameter: its non-dependent texture reads are
+    /// only described by the fragment varying descriptors, and those units count as used (Vita3K get_textures_used),
+    /// so precomputed states get a slot for them.</summary>
+    [Fact]
+    public void TexturesUsedIncludesAnonymousVaryingTextures()
+    {
+        var gxp = new byte[0x200];
+        void W(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(gxp.AsSpan(o), v);
+        W(0x14, VitaSharp.Core.Gxm.Shader.GxpProgram.FlagFragment);
+        W(0x2C, 0x100 - 0x2C);          // varyings block at 0x100
+        gxp[0x100 + 12] = 2;            // two fragment varying descriptors
+        W(0x110, 0x20);                 // descriptors at 0x110 + 0x20
+        W(0x130, 0xF000); W(0x134, 3);  // texture read: texcoord 0 sampled through unit 3
+        W(0x140, 0xF00F); W(0x144, 5);  // plain varying, no texture (texcoord index 0xF)
+        var p = new VitaSharp.Core.Gxm.Shader.GxpProgram(gxp, 0);
+        Assert.Empty(p.Parameters);
+        Assert.Equal(1u << 3, p.TexturesUsed());
+    }
+
     /// <summary>Precomputed setters validate the index against the hardware limits (16 texture units, 14 uniform
     /// buffers, 16 streams), not against what the program uses: an unused slot is accepted and ignored (Vita3K).
     /// Persona 4 Golden's libgmq sets texture unit 4 on every material state and aborts on INVALID_VALUE.</summary>

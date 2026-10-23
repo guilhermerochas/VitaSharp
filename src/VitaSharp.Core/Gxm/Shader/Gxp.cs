@@ -148,6 +148,11 @@ public sealed class GxpProgram
         uint m = 0;
         foreach (var p in Parameters)
             if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16) m |= 1u << (int)p.ResourceIndex;
+        // symbols may be stripped: a non-dependent texture read is described only by its fragment varying
+        // descriptor (gxp::get_textures_used in Vita3K; ShaderGenerator samples these units too)
+        if (IsFragment)
+            foreach (var d in FragmentAttributeDescriptors())
+                if ((d.AttributeInfo & 0x40F) != 0xF && d.ResourceIndex < 16) m |= 1u << (int)d.ResourceIndex;
         foreach (var d in DependentSamplers) m |= 1u << (d.ResourceIndexLayoutOffset / 4);
         return m;
     }
