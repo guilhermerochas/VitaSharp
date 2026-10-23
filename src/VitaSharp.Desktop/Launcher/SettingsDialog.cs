@@ -42,10 +42,19 @@ public sealed class SettingsDialog : Window
             SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(settings.Camera, StringComparison.OrdinalIgnoreCase))),
         };
         // CPU backend: "" = best supported on this PC, else --cpu=native|il|interp
-        string[] cpuValues = ["", "native", "il", "interp"];
+        // backends this build/host cannot run (the IL JIT in Native AOT builds, the x64 JIT on ARM64) are not offered;
+        // a saved choice that became unavailable shows as Automatic
+        var cpuChoices = new (string Value, string Label)[]
+        {
+            ("", "Automático (o melhor para este PC)"),
+            ("native", "JIT nativo (código de máquina x64)"),
+            ("il", "JIT IL (.NET DynamicMethod)"),
+            ("interp", "Interpretador (mais lento, depuração)"),
+        }.Where(c => c.Value is "" or "interp" || VitaSharp.Core.Cpu.Jit.All.Any(b => b.Name == c.Value && b.IsSupported)).ToArray();
+        string[] cpuValues = cpuChoices.Select(c => c.Value).ToArray();
         var cpu = new ComboBox
         {
-            ItemsSource = new[] { "Automático (o melhor para este PC)", "JIT nativo (código de máquina x64)", "JIT IL (.NET DynamicMethod)", "Interpretador (mais lento, depuração)" },
+            ItemsSource = cpuChoices.Select(c => c.Label).ToArray(),
             Width = 320, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
         };
         // performance: shader compilation stutter (--shaderc-opt=, --async-shaders=)

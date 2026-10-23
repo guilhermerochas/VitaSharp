@@ -57,12 +57,35 @@
   <!-- self-contained single-file release (dotnet publish -r <rid> -p:VitaSharpRelease=true): the managed code is
        bundled into one ReadyToRun executable; native libraries (GLFW, OpenAL Soft, shaderc, Skia) stay next to it,
        with FFmpeg in ffmpeg/ -->
-  <PropertyGroup Condition="'$(VitaSharpRelease)' == 'true'">
+  <PropertyGroup Condition="'$(VitaSharpRelease)' == 'true' and '$(VitaSharpAot)' != 'true'">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
+
+  <!-- Native AOT release (dotnet publish -r <rid> -p:VitaSharpRelease=true -p:VitaSharpAot=true): the whole app is
+       compiled ahead of time into one native executable (no JIT at run time, faster start, less memory). It must be
+       built on the target OS (Windows needs the MSVC build tools, Linux clang + zlib, macOS the Xcode command-line
+       tools); native libraries stay next to it as above. The IL CPU backend is unavailable (no Reflection.Emit). -->
+  <PropertyGroup Condition="'$(VitaSharpRelease)' == 'true' and '$(VitaSharpAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <!-- pdb (Windows) / dbg (Unix) symbols beside the executable instead of inside it -->
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <!-- trim/AOT analyzers on every build, so new reflection or Reflection.Emit use shows up as a warning right away -->
+  <PropertyGroup>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <!-- DirectShow webcams need runtime-generated COM interop: off in trimmed/AOT builds (Media Foundation instead) -->
+  <ItemGroup Condition="'$(PublishAot)' == 'true' or '$(PublishTrimmed)' == 'true'">
+    <RuntimeHostConfigurationOption Include="VitaSharp.Camera.DirectShow" Value="false" Trim="true" />
+  </ItemGroup>
 
 </Project>

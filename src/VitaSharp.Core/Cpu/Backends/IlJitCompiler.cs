@@ -19,6 +19,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
 
     public string Name => "il";
     public bool IsSupported => RuntimeFeature.IsDynamicCodeSupported;
+    public string? UnsupportedReason => IsSupported ? null : "needs dynamic code (Reflection.Emit), which Native AOT builds do not have";
     public BackendStats Stats { get; } = new();
 
     /// <summary>

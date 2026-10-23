@@ -67,7 +67,11 @@ public sealed class Emulator : IDisposable
         Options = options;
         Jit.Enabled = options.EnableJit;
         string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable("VITASHARP_CPU");
-        if (!Jit.Select(backend)) { Log.Warn($"CPU backend '{backend}' is unknown or not supported on this host"); Jit.Select(null); }
+        if (!Jit.Select(backend))
+        {
+            Jit.Select(null);
+            Log.Warn($"--cpu={backend}: {Jit.WhyUnavailable(backend)}; falling back to {Jit.Mode}");
+        }
         Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
         Memory = new GuestMemory();
