@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using FlashCap;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Media;
@@ -32,7 +33,7 @@ public sealed class FlashCapCamera : ICameraSource
     {
         try
         {
-            var all = new CaptureDevices().EnumerateDescriptors()
+            var all = EnumerateAll()
                 .Where(d => d.Characteristics.Any(c => Map(c.PixelFormat) != null))
                 .ToList();
             static int Rank(DeviceTypes t) => t switch
@@ -56,6 +57,45 @@ public sealed class FlashCapCamera : ICameraSource
             return [];
         }
     }
+
+    /// <summary>
+    /// Every capture device of this OS's backends, through FlashCap's platform-specific device types. DirectShow is
+    /// built on runtime-generated COM interop, which trimmed and Native AOT builds do not have: there it is switched
+    /// off (<see cref="DirectShowEnabled"/>) and Windows lists Media Foundation and Video for Windows devices only.
+    /// </summary>
+    static IEnumerable<CaptureDeviceDescriptor> EnumerateAll()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var vfw = Enumerate(new FlashCap.Devices.VideoForWindowsDevices());
+            var mf = OperatingSystem.IsWindowsVersionAtLeast(6, 1)
+                ? new FlashCap.Devices.MediaFoundationDevices().EnumerateDescriptors() // AOT-safe overload
+                : [];
+            return DirectShowEnabled ? EnumerateDirectShow().Concat(mf).Concat(vfw) : mf.Concat(vfw);
+        }
+        if (OperatingSystem.IsLinux()) return Enumerate(new FlashCap.Devices.V4L2Devices());
+        if (OperatingSystem.IsMacOS()) return Enumerate(new FlashCap.Devices.AVFoundationDevices());
+        return [];
+    }
+
+    // FlashCap marks the general CaptureDevices.EnumerateDescriptors() as RequiresUnreferencedCode because the default
+    // CaptureDevices also enumerates DirectShow; it only has an unannotated overload for MediaFoundationDevices.
+    // The V4L2, AVFoundation and Video for Windows types override the enumeration without DirectShow or COM.
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Never called with DirectShowDevices or the default CaptureDevices: platform types without COM interop only.")]
+    static IEnumerable<CaptureDeviceDescriptor> Enumerate(CaptureDevices platformDevices) => platformDevices.EnumerateDescriptors();
+
+    /// <summary>
+    /// Feature switch "VitaSharp.Camera.DirectShow": on by default; the project sets it to false for trimmed and
+    /// Native AOT publishes (RuntimeHostConfigurationOption, Trim="true"), so the compiler removes the DirectShow path.
+    /// </summary>
+    [FeatureSwitchDefinition("VitaSharp.Camera.DirectShow")]
+    [FeatureGuard(typeof(RequiresUnreferencedCodeAttribute))]
+    [UnconditionalSuppressMessage("Trimming", "IL4000", Justification = "Feature switch: substituted with false by the trimmer/ILC in trimmed and AOT builds (see VitaSharp.Desktop.csproj).")]
+    static bool DirectShowEnabled => !AppContext.TryGetSwitch("VitaSharp.Camera.DirectShow", out bool on) || on;
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    [RequiresUnreferencedCode("DirectShow uses runtime-generated COM interop.")]
+    static IEnumerable<CaptureDeviceDescriptor> EnumerateDirectShow() => new FlashCap.Devices.DirectShowDevices().EnumerateDescriptors();
 
     List<CaptureDeviceDescriptor> Devices => _devices ??= ListDevices();
 

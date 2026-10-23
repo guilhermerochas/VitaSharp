@@ -24,6 +24,9 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
 
     public string Name => "native";
     public bool IsSupported => RuntimeInformation.ProcessArchitecture == Architecture.X64 && !WriteWatch.Enabled;
+    public string? UnsupportedReason =>
+        RuntimeInformation.ProcessArchitecture != Architecture.X64 ? $"emits x86-64 code and this host is {RuntimeInformation.ProcessArchitecture}"
+        : WriteWatch.Enabled ? "is off while write watchpoints are active" : null;
     public BackendStats Stats { get; } = new();
 
     /// <summary>A native block costs tens of microseconds to compile: worth it after a few thousand instructions.</summary>

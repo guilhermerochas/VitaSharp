@@ -77,7 +77,16 @@ public static unsafe class Jit
     public static void SelectFromEnvironment()
     {
         if (Environment.GetEnvironmentVariable("VITASHARP_CPU") is { Length: > 0 } env && !Select(env))
-            Console.Error.WriteLine($"VITASHARP_CPU={env}: unknown or unsupported CPU backend, using {Mode}");
+            Console.Error.WriteLine($"VITASHARP_CPU={env}: {WhyUnavailable(env)}, using {Mode}");
+    }
+
+    /// <summary>Why <see cref="Select"/> rejected <paramref name="name"/> (for the fallback log line).</summary>
+    public static string WhyUnavailable(string? name)
+    {
+        foreach (var b in All)
+            if (b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return $"the {b.Name} backend {b.UnsupportedReason ?? "is not supported on this host"}";
+        return $"unknown CPU backend '{name}' (native, il, interp or auto)";
     }
 
     /// <summary>Instructions the block must have executed before the next backend in the chain takes it.</summary>
