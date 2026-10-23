@@ -56,7 +56,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## CI (testes quebrando no GitHub: Windows, Linux e macOS)
 
-- [ ] Levantar as falhas dos runners de Windows e Linux (os itens abaixo vieram do log do macOS)
+- [ ] Windows: `NetHleTests.EpollWaitTimesOutAndAborts` estoura o tempo (5 s). Corrida no teste: o `sceNetEpollAbort` pode
+  ser chamado antes da thread de espera começar a esperar (só um `Thread.Sleep(50)` separa as duas); num runner lento o
+  abort se perde e a espera nunca termina. O teste precisa esperar a thread estar de fato bloqueada
+- [ ] Levantar as falhas do runner de Linux (os itens abaixo vieram do log do macOS)
 
 - [ ] `VfsTests.NewFilesKeepTheMatchedDirectoryCase`: o sistema de arquivos do macOS (APFS) não diferencia maiúsculas de
   minúsculas, então o caminho criado sai com a caixa do diretório existente (`DATA/sub` em vez de `Data/Sub`)
