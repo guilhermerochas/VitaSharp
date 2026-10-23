@@ -68,3 +68,4 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] PS TV: L2/R2 como botões separados
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
 - [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
+- [ ] Persona 4: digitar o nome no começo do jogo exige o teclado na tela (IME); os testes automáticos só conseguem digitar "A"
