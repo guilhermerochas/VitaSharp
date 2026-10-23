@@ -69,9 +69,3 @@ manter o histórico. Itens com "(em andamento)" têm um agente trabalhando numa 
 - [ ] PS TV: L2/R2 como botões separados
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
 - [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
-
-## Outros
-
-- [ ] Traduzir o resto do launcher para português
-- [ ] Build com NUKE: ícone, instalador e pacotes por plataforma
-- [ ] Testar mais jogos (câmera, rede local, vídeo, muito texto) para achar o próximo trabalho de HLE e gráficos
