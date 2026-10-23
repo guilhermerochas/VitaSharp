@@ -68,6 +68,7 @@ public sealed class DumpBuffer
     public byte[] Buffer => _buf;
     public ReadOnlySpan<byte> Span => _buf.AsSpan(0, Length);
     public void Clear() => Length = 0;
+    public void Truncate(int length) => Length = Math.Min(Length, length);
 
     Span<byte> Grow(int n)
     {
@@ -193,6 +194,147 @@ public sealed class GpuDumpCodec
     readonly List<GxmFragmentProgram> _fps = new();
 
     public int ProgramCount => _ids.Count + _infos.Count;
+
+    readonly UniformBlocks _uniforms = new();
+    /// <summary>Uniform block statistics (writer): blocks written inline, as references, as deltas; bytes before/after.</summary>
+    public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) UniformStats => _uniforms.Stats;
+
+    /// <summary>
+    /// Draw uniform blocks (often several KB, mostly repeated): each block is written as
+    /// <c>var length</c> then <c>u8 mode</c>: 0 = inline bytes, 1 = the same as block (current id - var distance),
+    /// 2 = like block (current id - var distance) with <c>var runs</c> x (var skip, var length, bytes) changed.
+    /// Every non-empty block that is not a reference gets the next id; both sides keep the last <see cref="Window"/>
+    /// blocks. The delta base is the previous block of the same program and stage.
+    /// </summary>
+    sealed class UniformBlocks
+    {
+        const int Window = 4096;
+        readonly byte[][] _ring = new byte[Window][];
+        readonly ulong[] _hash = new ulong[Window];
+        int _next;
+        readonly Dictionary<ulong, int> _byHash = new();
+        readonly Dictionary<int, int> _lastOfStream = new();
+        public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) Stats;
+
+        bool Live(int id) => id >= 0 && _next - id <= Window && _next - id > 0;
+
+        int Add(byte[] content, ulong hash)
+        {
+            int id = _next++;
+            int slot = id % Window;
+            if (_ring[slot] != null && _byHash.TryGetValue(_hash[slot], out int old) && old == id - Window) _byHash.Remove(_hash[slot]);
+            _ring[slot] = content;
+            _hash[slot] = hash;
+            _byHash[hash] = id;
+            return id;
+        }
+
+        public void Write(DumpBuffer w, ReadOnlySpan<byte> data, int stream)
+        {
+            w.Var((uint)data.Length);
+            if (data.Length == 0) return;
+            int start = w.Length;
+            ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(data);
+            if (_byHash.TryGetValue(hash, out int same) && Live(same) && _ring[same % Window].AsSpan().SequenceEqual(data))
+            {
+                w.U8(1);
+                w.Var((uint)(_next - same));
+                Stats.Refs++;
+            }
+            else
+            {
+                var content = data.ToArray();
+                if (_lastOfStream.TryGetValue(stream, out int baseId) && Live(baseId) && _ring[baseId % Window].Length == data.Length && TryDelta(w, _ring[baseId % Window], data, _next - baseId))
+                    Stats.Deltas++;
+                else
+                {
+                    w.U8(0);
+                    w.Bytes(data);
+                    Stats.Inline++;
+                }
+                _lastOfStream[stream] = Add(content, hash);
+            }
+            Stats.RawBytes += data.Length;
+            Stats.StoredBytes += w.Length - start;
+        }
+
+        /// <summary>Writes a delta when it is smaller than half the block.</summary>
+        static bool TryDelta(DumpBuffer w, byte[] baseBlock, ReadOnlySpan<byte> data, int distance)
+        {
+            var b = baseBlock.AsSpan();
+            int start = w.Length;
+            w.U8(2);
+            w.Var((uint)distance);
+            int countAt = w.Length;
+            // runs are counted afterwards: reserve a fixed 3-byte varint
+            w.U8(0x80); w.U8(0x80); w.U8(0);
+            int runs = 0, pos = 0, prevEnd = 0, budget = data.Length / 2;
+            while (pos < data.Length)
+            {
+                int same = data[pos..].CommonPrefixLength(b[pos..]);
+                pos += same;
+                if (pos >= data.Length) break;
+                int skip = pos - prevEnd;
+                // a run ends after 8 equal bytes in a row
+                int end = pos + 1;
+                while (end < data.Length)
+                {
+                    int eq = data[end..Math.Min(data.Length, end + 8)].CommonPrefixLength(b[end..Math.Min(data.Length, end + 8)]);
+                    if (eq >= 8 || end + eq >= data.Length) break;
+                    end += eq + 1;
+                }
+                w.Var((uint)skip);
+                w.Var((uint)(end - pos));
+                w.Bytes(data[pos..end]);
+                prevEnd = end;
+                pos = end;
+                runs++;
+                if (w.Length - start > budget || runs > 0x1FFFFF) { w.Truncate(start); return false; }
+            }
+            var span = w.Buffer.AsSpan(countAt, 3);
+            span[0] = (byte)(runs | 0x80); span[1] = (byte)((runs >> 7) | 0x80); span[2] = (byte)(runs >> 14);
+            return true;
+        }
+
+        public byte[] Read(DumpCursor r)
+        {
+            int len = r.VarInt();
+            if (len == 0) return [];
+            byte mode = r.U8();
+            switch (mode)
+            {
+                case 0:
+                {
+                    var content = r.BytesSpan(len).ToArray();
+                    Add(content, 0);
+                    return content;
+                }
+                case 1:
+                {
+                    int id = _next - r.VarInt();
+                    if (!Live(id)) throw new InvalidDataException("GPU dump: uniform reference outside the window");
+                    return _ring[id % Window];
+                }
+                case 2:
+                {
+                    int id = _next - r.VarInt();
+                    if (!Live(id) || _ring[id % Window].Length != len) throw new InvalidDataException("GPU dump: bad uniform delta base");
+                    var content = (byte[])_ring[id % Window].Clone();
+                    int runs = r.VarInt(), pos = 0;
+                    for (int i = 0; i < runs; i++)
+                    {
+                        pos += r.VarInt();
+                        int n = r.VarInt();
+                        r.BytesSpan(n).CopyTo(content.AsSpan(pos));
+                        pos += n;
+                    }
+                    Add(content, 0);
+                    return content;
+                }
+            }
+            throw new InvalidDataException($"GPU dump: unknown uniform block mode {mode}");
+        }
+    }
 
     // =========================================================== writing
 
@@ -354,10 +496,8 @@ public sealed class GpuDumpCodec
         w.F32(s.VpOffX); w.F32(s.VpOffY); w.F32(s.VpOffZ); w.F32(s.VpScaleX); w.F32(s.VpScaleY); w.F32(s.VpScaleZ);
         w.U8(s.RegionClipMode); w.I32(s.ClipMinX); w.I32(s.ClipMinY); w.I32(s.ClipMaxX); w.I32(s.ClipMaxY);
         w.Bool(s.WBuffer); w.Bool(s.WClampEnabled); w.F32(s.WClampValue);
-        w.Var((uint)d.VertexUniformsLength);
-        w.Bytes(d.VertexUniformSpan);
-        w.Var((uint)d.FragmentUniformsLength);
-        w.Bytes(d.FragmentUniformSpan);
+        _uniforms.Write(w, d.VertexUniformSpan, vp * 2);
+        _uniforms.Write(w, d.FragmentUniformSpan, fp * 2 + 1);
         WriteWords(w, d.VertexUniformAddrs);
         WriteWords(w, d.FragmentUniformAddrs);
         WriteTextures(w, d.VertexTextures);
@@ -468,12 +608,12 @@ public sealed class GpuDumpCodec
         s.RegionClipMode = r.U8(); s.ClipMinX = r.I32(); s.ClipMinY = r.I32(); s.ClipMaxX = r.I32(); s.ClipMaxY = r.I32();
         s.WBuffer = r.Bool(); s.WClampEnabled = r.Bool(); s.WClampValue = r.F32();
         d.State = s;
-        d.VertexUniformsLength = r.VarInt();
-        d.VertexUniforms = r.Data;
-        d.VertexUniformsOffset = r.Skip(d.VertexUniformsLength);
-        d.FragmentUniformsLength = r.VarInt();
-        d.FragmentUniforms = r.Data;
-        d.FragmentUniformsOffset = r.Skip(d.FragmentUniformsLength);
+        d.VertexUniforms = _uniforms.Read(r);
+        d.VertexUniformsOffset = 0;
+        d.VertexUniformsLength = d.VertexUniforms.Length;
+        d.FragmentUniforms = _uniforms.Read(r);
+        d.FragmentUniformsOffset = 0;
+        d.FragmentUniformsLength = d.FragmentUniforms.Length;
         ReadWords(r, d.VertexUniformAddrs);
         ReadWords(r, d.FragmentUniformAddrs);
         ReadTextures(r, d.VertexTextures);

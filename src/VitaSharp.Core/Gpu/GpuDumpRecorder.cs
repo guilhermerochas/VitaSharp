@@ -18,7 +18,7 @@ public sealed class GpuDumpOptions
     /// <summary>Safety limit on the uncompressed record bytes (stops at the next present once exceeded).</summary>
     public long MaxRawBytes = 8L << 30;
     /// <summary>Brotli quality of the chunks (0 = stored, 1-11).</summary>
-    public int Quality = 5;
+    public int Quality = 3; // q5 compressed at ~30 MB/s and stalled the GPU worker; q3 ~150 MB/s, +7% size (replay-gpu --recompress shrinks it later)
     /// <summary>Called once the file is complete (on the writer thread), also when recording failed.</summary>
     public Action<GpuDumpResult>? Finished;
     /// <summary>Called on the GPU worker when recording actually starts.</summary>
@@ -28,16 +28,20 @@ public sealed class GpuDumpOptions
 public sealed class GpuDumpResult
 {
     public string Path = "";
-    public long Frames, Commands, Draws, MemoryRecords, MemoryBytes, RawBytes, FileBytes, ShadowBytes;
+    public long Frames, Commands, Draws, MemoryRecords, MemoryBytes, RawBytes, FileBytes, ShadowBytes, TapBytes, ComparedBytes;
+    public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) Uniforms;
     public long FirstPresent, LastPresent;
-    public double Seconds, WorkerMs, WriterMs;
+    public double Seconds, WorkerMs, WriterMs, WriterWaitMs;
     public string? Error;
 
     public override string ToString() =>
         $"{Frames} frames (presents {FirstPresent + 1}-{LastPresent}) in {Seconds:F1} s: {FileBytes / 1048576.0:F1} MB on disk " +
         $"({RawBytes / 1048576.0:F1} MB raw, {MemoryBytes / 1048576.0:F1} MB of guest memory in {MemoryRecords} updates, {Draws} draws, {Commands} commands), " +
-        $"{(Seconds > 0 ? FileBytes / 1048576.0 / Seconds : 0):F1} MB/s; recorder cost {WorkerMs / Math.Max(1, Frames):F2} ms/frame on the GPU worker, " +
-        $"{WriterMs / Math.Max(1, Frames):F2} ms/frame compressing (writer thread), {ShadowBytes / 1048576.0:F0} MB shadow memory";
+        $"{(Seconds > 0 ? FileBytes / 1048576.0 / Seconds : 0):F1} MB/s; recorder cost {WorkerMs / Math.Max(1, Frames):F2} ms/frame on the GPU worker " +
+        $"(+{WriterWaitMs / Math.Max(1, Frames):F2} ms/frame waiting for the writer), " +
+        $"{WriterMs / Math.Max(1, Frames):F2} ms/frame compressing (writer thread), {ShadowBytes / 1048576.0:F0} MB shadow memory; " +
+        $"backend reads {TapBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame, compared {ComparedBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame; " +
+        $"uniform blocks {Uniforms.Inline} inline, {Uniforms.Refs} repeated, {Uniforms.Deltas} deltas ({Uniforms.RawBytes / 1048576.0:F0} MB -> {Uniforms.StoredBytes / 1048576.0:F0} MB)";
 }
 
 /// <summary>
@@ -72,11 +76,12 @@ public sealed unsafe class GpuDumpRecorder
     DumpBuffer _main = new(1 << 20);
     readonly DumpBuffer _cmd = new(1 << 12), _defs = new(1 << 12);
     byte[]?[]? _shadow;
+    uint[]? _verified;
     bool _cmdPending, _ranSinceIdle;
     volatile bool _stopRequested, _stopNow;
     int _state; // 0 armed, 1 recording, 2 finished
     readonly GpuDumpResult _result = new();
-    long _startTicks, _workerTicks;
+    long _startTicks, _workerTicks, _waitTicks;
     readonly BlockingCollection<(byte Type, byte[] Data, int Length)> _out = new(boundedCapacity: 16);
     readonly ConcurrentBag<byte[]> _spare = new();
     Thread? _writer;
@@ -218,6 +223,7 @@ public sealed unsafe class GpuDumpRecorder
         }
         catch (Exception e) { Log.Warn($"[gpudump] backend state export failed: {e.Message}"); }
         _shadow = new byte[]?[1 << (32 - PageShift)];
+        _verified = new uint[1 << (32 - PageShift)];
         // every page counts as written once: the renderer re-validates (re-reads) its cached textures next frame
         if (DirtyPages.Enabled && GuestMemory.Base != null) new Span<byte>(DirtyPages.Table, (int)DirtyPages.TableBytes).Fill(1);
         _writer = new Thread(WriterLoop) { Name = "GPU dump writer", IsBackground = true };
@@ -244,9 +250,17 @@ public sealed unsafe class GpuDumpRecorder
     {
         long t0 = Stopwatch.GetTimestamp();
         var shadow = _shadow!;
+        var verified = _verified!;
+        // a page whose dirty byte was clear when it was last compared, and is still clear in the same sweep epoch,
+        // has not been written since (producers mark after every store): no need to compare it again
+        byte* dirty = DirtyPages.Enabled ? DirtyPages.Table : null;
+        uint stamp = DirtyPages.Epoch + 1;
         ulong end = Math.Min((ulong)addr + (ulong)length, 1UL << 32);
+        _result.TapBytes += (long)(end - addr);
         for (ulong p = addr >> PageShift; p <= (end - 1) >> PageShift; p++)
         {
+            if (dirty != null && verified[p] == stamp && dirty[p] == 0) continue;
+            byte before = dirty != null ? dirty[p] : (byte)1;
             uint pa = (uint)(p << PageShift);
             int a = (int)(Math.Max(addr, pa) - pa), b = (int)(Math.Min(end, (ulong)pa + PageSize) - pa);
             var guest = new ReadOnlySpan<byte>(GuestMemory.Base + pa, PageSize);
@@ -258,10 +272,15 @@ public sealed unsafe class GpuDumpRecorder
                 guest.CopyTo(s);
                 _result.ShadowBytes += PageSize;
                 EmitMemory(pa, s);
+                verified[p] = before == 0 ? stamp : 0;
                 continue;
             }
+            // the whole page is compared (and so verified), not only the range read
+            a = 0; b = PageSize;
             var g = guest[a..b];
             var sh = s.AsSpan(a, b - a);
+            _result.ComparedBytes += b - a;
+            verified[p] = before == 0 ? stamp : 0;
             if (g.SequenceEqual(sh)) continue;
             int first = g.CommonPrefixLength(sh);
             int last = LastMismatchEnd(g, sh);
@@ -300,7 +319,11 @@ public sealed unsafe class GpuDumpRecorder
         int len = _main.Length;
         // hand the buffer over to the writer and continue in a spare one (the writer gives buffers back)
         _main = new DumpBuffer(_spare.TryTake(out var b) ? b : new byte[1 << 20]);
-        _out.Add((GpuDumpFormat.ChunkRecords, data, len));
+        long w0 = Stopwatch.GetTimestamp();
+        _out.Add((GpuDumpFormat.ChunkRecords, data, len)); // blocks when the writer is 16 chunks behind
+        long waited = Stopwatch.GetTimestamp() - w0;
+        _waitTicks += waited;
+        _workerTicks -= waited; // reported separately
     }
 
     void Finish()
@@ -312,6 +335,8 @@ public sealed unsafe class GpuDumpRecorder
         Flush();
         _result.Seconds = (Stopwatch.GetTimestamp() - _startTicks) / (double)Stopwatch.Frequency;
         _result.WorkerMs = _workerTicks * 1000.0 / Stopwatch.Frequency;
+        _result.Uniforms = _codec.UniformStats;
+        _result.WriterWaitMs = _waitTicks * 1000.0 / Stopwatch.Frequency;
         var summary = new GpuDumpHeader();
         summary["frames"] = _result.Frames.ToString();
         summary["first-present"] = _result.FirstPresent.ToString();
@@ -327,6 +352,7 @@ public sealed unsafe class GpuDumpRecorder
         _out.Add((GpuDumpFormat.ChunkEnd, text, text.Length));
         _out.CompleteAdding();
         _shadow = null;
+        _verified = null;
         Interlocked.CompareExchange(ref _current, null, this);
     }
 

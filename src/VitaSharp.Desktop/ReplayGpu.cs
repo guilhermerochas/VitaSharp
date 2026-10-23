@@ -30,7 +30,8 @@ static class ReplayGpu
         Console.WriteLine("    --env=KEY=VALUE        any renderer/shader environment switch (repeatable); --no-recorded-env ignores the recorded ones");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
-        Console.WriteLine("    --shader-cache=<dir> --async-shaders=on|off (default off) --no-idle --debug-mode --info (header and statistics only)");
+        Console.WriteLine("    --shader-cache=<dir> --async-shaders=on|off (default off) --no-idle --no-targets --debug-mode");
+        Console.WriteLine("    --info                 header and statistics only; --recompress=<out.vsgd> [--quality=0-11] rewrites it smaller (default 9)");
     }
 
     public static int Run(string path, string[] options)
@@ -39,6 +40,14 @@ static class ReplayGpu
         GpuDumpHeader header;
         using (var r = new GpuDumpReader(path)) header = r.Header;
         if (options.Contains("--info")) return Info(path);
+        if (Opt(options, "--recompress") is { } recompressed)
+        {
+            int q = int.TryParse(Opt(options, "--quality"), out var qq) ? Math.Clamp(qq, 0, 11) : 9;
+            var (chunks, raw, sec) = GpuDumpReader.Recompress(path, recompressed, q);
+            Console.WriteLine($"{chunks} chunks, {raw / 1048576.0:F1} MB raw -> {new FileInfo(recompressed).Length / 1048576.0:F1} MB at quality {q} " +
+                              $"({new FileInfo(path).Length / 1048576.0:F1} MB before), {sec:F1} s compressing ({raw / 1048576.0 / Math.Max(sec, 1e-3):F0} MB/s)");
+            return 0;
+        }
         // environment switches must be in place before the renderer and shader generator types initialise
         ApplyEnvironment(header, options);
         return RunCore(path, header, options);
@@ -73,6 +82,9 @@ static class ReplayGpu
         long mem = 0, memBytes = 0, draws = 0, cmds = 0, frames = 0, idles = 0;
         long firstMicros = -1, lastMicros = 0;
         var regions = new SortedDictionary<uint, (long Updates, long Bytes)>(); // per 1 MB of guest address space
+        long vub = 0, fub = 0, firstFrameBytes = 0;
+        var uniq = new HashSet<ulong>();
+        var uniqF = new HashSet<ulong>();
         while (r.Next())
         {
             switch (r.Kind)
@@ -86,13 +98,30 @@ static class ReplayGpu
                 case GpuDumpRecord.BackendState: Console.WriteLine($"backend state (render targets at the start): {r.Data.Length / 1048576.0:F1} MB"); break;
                 default:
                     cmds++;
-                    if (r.Kind == GpuDumpRecord.Draw) draws++;
-                    if (r.Kind == GpuDumpRecord.Present) { frames++; if (firstMicros < 0) firstMicros = r.PresentInfo.Micros; lastMicros = r.PresentInfo.Micros; }
+                    if (r.Command is DrawCommand d)
+                    {
+                        draws++;
+                        vub += d.VertexUniformsLength; fub += d.FragmentUniformsLength;
+                        uniq.Add(System.IO.Hashing.XxHash3.HashToUInt64(d.VertexUniformSpan));
+                        uniqF.Add(System.IO.Hashing.XxHash3.HashToUInt64(d.FragmentUniformSpan));
+                    }
+                    if (r.Kind == GpuDumpRecord.Present)
+                    {
+                        frames++;
+                        if (firstMicros < 0) firstMicros = r.PresentInfo.Micros;
+                        lastMicros = r.PresentInfo.Micros;
+                        // compressed bytes read so far (chunks end at presents): the first frame carries the initial state
+                        if (frames == 1) firstFrameBytes = r.CompressedBytesRead;
+                    }
                     break;
             }
         }
         Console.WriteLine($"records: {frames} frames, {cmds} commands ({draws} draws), {idles} idle points, {mem} memory updates ({memBytes / 1048576.0:F1} MB)");
         if (frames > 1) Console.WriteLine($"recorded time {lastMicros / 1e6:F2} s, {frames / Math.Max(lastMicros / 1e6, 1e-6):F1} fps; {new FileInfo(path).Length / 1048576.0 / Math.Max(lastMicros / 1e6, 1e-6):F1} MB per second of gameplay");
+        long fileBytes = new FileInfo(path).Length;
+        if (frames > 1) Console.WriteLine($"on disk: first frame (with the initial state) {firstFrameBytes / 1048576.0:F1} MB, then {(fileBytes - firstFrameBytes) / 1048576.0 / (frames - 1):F2} MB/frame " +
+                                          $"({(fileBytes - firstFrameBytes) / 1048576.0 / Math.Max((lastMicros - firstMicros) / 1e6, 1e-6):F1} MB per recorded second)");
+        Console.WriteLine($"draw uniforms: vertex {vub / 1048576.0:F1} MB ({uniq.Count} distinct blocks), fragment {fub / 1048576.0:F1} MB ({uniqF.Count} distinct)");
         Console.WriteLine("guest memory read by the GPU, per MB of address space (updates, KB):");
         foreach (var (mb, v) in regions) Console.WriteLine($"  0x{mb << 20:X8}  {v.Updates,7} {v.Bytes / 1024.0,10:F0}");
         if (r.Summary != null) Console.Write("summary:\n" + r.Summary.Text);

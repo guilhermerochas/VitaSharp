@@ -81,4 +81,27 @@ public sealed class GpuDumpReader : IDisposable
     }
 
     public void Dispose() => _input.Dispose();
+
+    /// <summary>Rewrites a dump with another Brotli quality (chunks are re-encoded, records are untouched).
+    /// Returns (chunks, raw bytes, seconds spent compressing).</summary>
+    public static (int Chunks, long RawBytes, double Seconds) Recompress(string input, string output, int quality)
+    {
+        using var inp = new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
+        var header = GpuDumpCodec.ReadFileHeader(inp, out _);
+        using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
+        GpuDumpCodec.WriteFileHeader(outp, header);
+        byte[] buf = new byte[1 << 20];
+        byte[]? scratch = null, scratch2 = null;
+        int chunks = 0;
+        long raw = 0, ticks = 0;
+        while (GpuDumpCodec.ReadChunk(inp, ref buf, ref scratch, out byte type, out int len))
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            GpuDumpCodec.WriteChunk(outp, type, buf.AsSpan(0, len), quality, ref scratch2);
+            ticks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            chunks++;
+            raw += len;
+        }
+        return (chunks, raw, ticks / (double)System.Diagnostics.Stopwatch.Frequency);
+    }
 }
