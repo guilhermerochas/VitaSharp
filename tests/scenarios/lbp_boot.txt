@@ -7,4 +7,4 @@
 # the 4X MSAA depth surface forced-stored by the main scene.
 # Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/lbp_boot.txt --data=<scratch root>
 title=PCSA00017
-args=--frames=2600 --seconds=1200 --dump-every=10 --shader-cache --debug-mode --input=cross@f700:f8,start@f760:f8,cross@f820:f8
+args=--frames=4000 --seconds=1800 --dump-every=10 --shader-cache --debug-mode --input=cross@f700:f8,start@f760:f8,cross@f820:f8,lstick@f2150:1:0:f400,cross@f2600:f8,lstick@f2620:1:0:f400,cross@f3050:f8,lstick@f3060:1:0:f500,cross@f3600:f8,lstick@f3610:1:0:f390

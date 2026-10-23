@@ -351,6 +351,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public SampleCountFlags Samples = SampleCountFlags.Count1Bit;
         /// <summary>A scene stored it with SCE_GXM_DEPTH_STENCIL_FORCE_STORE.</summary>
         public bool ForceStored;
+        /// <summary>Depth-aspect view of a multisampled depth image, for unpacking its samples.</summary>
+        public ImageView SampledView;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -457,7 +459,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         uint addr = d?.DepthData ?? 0;
         var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
         if (_depthTargets.TryGetValue(key, out var dt)) return dt;
-        var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
+        // multisampled depth is sampled when a forced-stored 4X depth surface is read as a texture (UnpackedDepthTexture)
+        var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
+            | (samples != SampleCountFlags.Count1Bit ? ImageUsageFlags.SampledBit : 0);
+        var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, usage,
             ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, samples: samples);
         dt = new DepthTarget
         {
@@ -1050,6 +1055,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var d in _depthTargets.Values)
         {
             _vk.DestroyImageView(_dev, d.View, null);
+            if (d.SampledView.Handle != 0) _vk.DestroyImageView(_dev, d.SampledView, null);
             _vk.DestroyImage(_dev, d.Image, null);
         }
         DestroySwapchain();
