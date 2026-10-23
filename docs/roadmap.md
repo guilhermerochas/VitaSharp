@@ -5,11 +5,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 ## Diagnóstico
 
 - [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
-- [ ] Detecção de NaN e infinito nas imagens intermediárias a cada quadro, e versão instrumentada que aponta o desenho
-  que gerou o valor inválido
-- [ ] Lista compacta de desenhos dos últimos ~60 quadros sempre em memória, incluída nas capturas
-- [ ] Gravação completa da GPU (comandos GXM + memória usada) para reproduzir um quadro fora do jogo, como os
-  "GS dumps" do PCSX2
 
 ## Save states
 
@@ -65,7 +60,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa)
-- [ ] PS TV: L2/R2 como botões separados
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
 - [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
 - [ ] Persona 4: digitar o nome no começo do jogo exige o teclado na tela (IME); os testes automáticos só conseguem digitar "A"
