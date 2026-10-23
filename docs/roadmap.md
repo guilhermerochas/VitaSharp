@@ -63,7 +63,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 - [ ] Killzone: blocos verdes e azuis passageiros na área subterrânea (esperando captura com replay)
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
-- [ ] sceAudiodec AAC: bytes consumidos reportados como `esMax` em vez do tamanho real do quadro
+- [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
+- [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa)
 - [ ] PS TV: L2/R2 como botões separados
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
 - [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
