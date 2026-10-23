@@ -570,6 +570,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ? GetDepthTarget(b.Depth, Math.Max(b.Width * 2, _rt!.Width), Math.Max(b.Height * 2, _rt.Height))
             : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
         _sceneSerial++;
+        _sceneRegions.Clear();
         if (_rt != null) _rt.LastScene = _sceneSerial;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = FrameCount;
@@ -582,6 +583,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         EndRendering(final: true);
         if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
+        _sceneRegions.Clear();
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
