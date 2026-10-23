@@ -45,6 +45,7 @@ Folder contents:
 | `info.txt` | reason, title, guest frame, build (version+commit), runtime/OS, command line, CPU backend, debug mode, window size, GPU/driver/Vulkan version, MSAA mode, shader settings, shader cache state, GPU queue counters, every `VITASHARP_*` environment variable |
 | `screenshot.png` | the presented frame at the end of the traced frame |
 | `replay/` | debug mode only: `frame_<present>.png` for each of the last ~128 presented frames (480x272), `sheet_<first>-<last>.png` contact sheets of 30 frames (6 per row, oldest top left; red border = the trigger frame, yellow = a frame over a per-frame threshold), `replay.txt` (below) |
+| `drawring/` | debug mode only: `frame_<present>.txt`, the draw list of each of the last 128 presented frames (one per `replay/` image, same format as draws.txt), `index.txt` and `diff.txt` (see "Draw ring" below) |
 | `draws.txt` | every `[scene] begin` (render target, GXM MSAA mode, downscale, depth surface) and `[draw]` of the frame, in order |
 | `shaders/` | GLSL of every program drawn, `<gxp hash>_<hint key>.vert/.frag` (shaders loaded from the shader pack are re-translated for this, nothing is recompiled) |
 | `targets/` | every render target as `rt_<addr>_<w>x<h>.png` (replaced targets with `_<fmt>`), plus `targets.txt` |
@@ -75,6 +76,82 @@ To find the draw that produced a glitch: look at `screenshot.png`, find the targ
 (the HDR scene, a quarter-res buffer, the post atlas...), then the draws whose `rt=` is that address; their `fs=` hash
 names the GLSL in `shaders/`, their `tN=` the textures in `textures/`. `targets.txt` has numeric per-channel
 min/max/mean and NaN/Inf counts, so NaN-propagation or a saturated channel shows up without looking at the PNGs.
+
+**Draw id.** `id=` is the renderer's `_drawSerial`: the 1-based number of the guest draw command within the frame
+(every `sceGxmDraw*` counts, also draws the renderer skips, e.g. outside a scene or with clip-all), reset at each
+present. `(present, id)` names a draw within a session; the same number is in the push constants (`DrawId`, used by
+`VITASHARP_DEBUG_TEX0=id`), in `drawring/` and in draws.txt. `f=` is the present counter while the draw was issued, so
+the draws with `f=N` are shown by present #N+1 (`replay/frame_<N+1>.png`).
+
+### Draw ring (debug mode): the draw list of the glitch frame
+
+draws.txt is the frame *after* the request; a transient glitch is gone by then. While debug mode is on the renderer
+also keeps a compact record of every draw and scene of the last 128 presented frames, and a capture writes it to
+`drawring/`, aligned with `replay/`:
+
+- `drawring/frame_<present>.txt`: the draws issued between presents #present-1 and #present, i.e. the draw list of
+  `replay/frame_<present>.png` (same 6-digit names). The ring ends at the present the capture was armed at, and
+  draws.txt continues with the next frame, so the draw lists are contiguous. The last ring frame has no replay image
+  (it was still on the GPU when the capture was armed; replay/ ends one present earlier).
+- Lines use the draws.txt format (`[scene] begin ...`, `[draw] id= f= rt= ds= vs= fs= prim= n= blend= ... tN= ... msaa=`)
+  without the vertex data and uniforms (`a[]`, `st[]`, `v0/v1`, `vu/fu`, `fub`, `vuf/fuh`, `fu0`), which are not
+  recorded. Added fields: `vh=`/`fh=` hint keys (the `shaders/<hash>_<hint>` names; GLSL exists only for programs of
+  the traced frame), `scene=` (index in the file), `rtsize=`, failed shaders as `FAILED=vs|fs`; on textures `:Z<swizzle>`
+  and `:K<source>`; vertex textures as `vtN=`; scenes add `fmt= rtsize= st= dsfmt= store= bgStencil= gamma= path=`.
+  Numbers are culture-invariant (draws.txt still uses the current culture for floats).
+- Texture sources (`K`): `mem` guest memory, `rt@A` colour target A used directly, `region@A` a region of A copied
+  out, `reinterp@A` A read with another format, `rtmip@A` A with generated mips, `depth@A` a depth/stencil target,
+  `memcube` a 2D texture read as a cube, `none` nothing bound; `+scenestart` = the target being rendered, read through
+  its scene-start copy, `+lodmin` = LOD min over a rendered surface, `+FAILED` = the dummy texture was bound.
+- `index.txt`, one line per frame:
+
+```
+p4297 f4297 draws=313/313 scenes=6 tex=1196 drop=0 new=fs:27B02A0B5D7F2A74,fs:3D4F971D6249FBD8,vs:0B2ED936DD0AC492 rts=0x66332000,0x65C78000,0x663D6000,0x654D0000,0x66272000,0x65000000 fb=0x65000000 replay=mean=0.369 hits=-
+p4300 f4300 draws=303/303 scenes=6 tex=1190 drop=0 new=- rts=0x66332000,0x65C78000,0x663D6000,0x654D0000,0x66272000,0x64E00000 fb=0x64E00000 replay=mean=0.551 hits=S
+p4301 f4301 draws=297/297 scenes=6 tex=1189 drop=0 new=- rts=0x66332000,0x65C78000,0x663D6000,0x654D0000,0x66272000,0x65000000 fb=0x65000000 replay=mean=0.551 hits=S  <== trigger
+```
+
+  (Killzone kz_skin gameplay with `VITASHARP_DEBUG_INJECT=green@4300:2`: the injection only paints the replay copies,
+  so the draw lists of p4300/p4301 are normal.) `draws` = recorded/issued (issued counts every guest draw), `tex` =
+  texture bindings, `drop` = over the per-frame caps (`<d>d/<t>t/<s>s`), `new` = programs not drawn in the previous
+  frame, `rts` = colour targets of the frame's scenes, `fb` = the presented framebuffer, `replay` = the replay ring's
+  mean brightness and hits (M/S/B/K) for the same present, `<== trigger` = the trigger present. `TRANSIENT` = the
+  frame's programs, targets or texture sources differ from both neighbours, the neighbours match each other, and it
+  also differs from the frames two away. The presented framebuffers are left out of the target comparison (Killzone
+  swaps 0x65000000/0x64E00000 in an irregular order), so a game's double/triple buffering never counts as a change.
+- `diff.txt`, each frame against the previous one (also at the top of every frame file):
+
+```
+p4297 f4297 vs p4296
+  draws 313 (+7), scenes 6 (=), textures 240 (+3 -6), framebuffer 0x65000000 (was 0x64E00000)
+  fs added: 27B02A0B5D7F2A74(1 draws), 3D4F971D6249FBD8(1 draws)
+  vs added: 0B2ED936DD0AC492(2 draws)
+  draw count by program: fs DF006A8AA781EE03/vs 584C9EF4A276D56C +6, fs DF006A8AA781EE03/vs 35B5D7F7A4DE9B62 +3, ...
+p4298 f4298 vs p4297  (same programs, targets and texture sources)
+  draws 313 (=), scenes 6 (=), textures 240 (+4 -4), framebuffer 0x64E00000 (was 0x65000000)
+```
+
+  `textures` = distinct (address, format) pairs sampled, with how many appeared/disappeared. When there are
+  structural changes, more lines follow: `fs/vs removed: ...`, `targets added/removed: 0x<addr>:<fmt> WxH` and
+  `textures switched source (n): 0x<addr>:<fmt> rt@0x66272000 -> mem (first draw id=204); ...` (the same texture
+  resolved differently than in the previous frame, e.g. a render target before and guest memory now).
+
+A draw line in a frame file, with a texture read from a region of the target being rendered:
+
+```
+[draw] id=2 f=4300 rt=0x66332000:00000000 ds=0x65480000/384x192 vs=445BFFFF6687EEB9 fs=BC785352377B2E9A prim=3 n=4x1 blend=none fragEn=True cull=0 twoSided=False depth=7/False bias=0/0 st=7/7 vp=True(192,160,192,-32,0.5,0.5) clip=2[0,128-383,191] t0=0x66362000:0C000000:384x64:T3:S15876:G1:F000:B31:L0:M1:A22:W0=0BE00090:Z0:Kregion@0x66332000+scenestart vh=29CF703CEE176868 fh=A5EE9DF6C1F7979F scene=0 rtsize=384x192 msaa=4x
+```
+
+Recording (GPU worker, per draw that reaches shader lookup, the same draws the trace lists): a ~190-byte struct
+(ids, GXP hashes and hint keys, colour/depth target, MSAA path, primitive and counts, the whole `DrawState`, blend)
+written into a preallocated pool, plus a 24-byte record per bound texture (the raw 16-byte `SceGxmTexture` words,
+the source kind and target, unit); a small record per scene. No strings, no allocation. Pools: 65536 draws, 262144
+texture bindings, 8192 scenes shared by the 128 frames (~19 MB of managed memory, allocated at the first present with
+debug mode on, dropped at the first present with it off): 512 draws per frame on average, Killzone gameplay needs
+300-420. Per frame at most 4096 draws, 16384 textures, 512 scenes and 16 textures per draw are kept, the rest is
+counted as dropped; frames whose records were overwritten by later ones are left out of the capture (logged as
+`overwritten`). The log says `[dbg] ... draw ring on: ...` and, per capture, `[diag] draw ring: N frames (presents
+#a-#b)` and `[diag] draw ring written: ...`; info.txt has a `Draw ring:` line, the report a `PERF drawring` line.
 
 ## Rolling frame summaries (always on)
 
@@ -299,12 +376,35 @@ debug mode is on, nothing while it is off. Debug off runs exactly the code of be
 background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
 the whole route (only the expected `black` on the loading screen).
 
+### Draw ring cost
+
+Same route and machine (2026-10-23), branch `feat/diag-drawring` against main 0836830; other agents' emulators were
+running, so the totals are noisy. One line per run.
+
+| Build / mode | fps | process cpu ms/frame | GPU worker ms/frame | main thread ms/frame | steady alloc KB/frame |
+|---|---|---|---|---|---|
+| main, debug off | 26.5 | 31.5 | 4.73 | 11.76 | 478 |
+| this branch, debug off | 28.3 | 31.6 | 4.84 | 11.94 | 495 |
+| main, debug on | 28.4 | 31.7 | 4.78 | 12.90 | 503 |
+| this branch, debug on | 27.3 / 28.8 | 29.4 / 31.5 | 4.48 / 4.91 | 10.55 / 12.45 | 462 / 493 |
+
+(A first main debug-on run was disturbed at the end, 126 ms/frame of process cpu at f4459, and is left out.) Measured
+directly (`PERF drawring`, every 8th draw timed with its textures): **34-36 us/frame** on the GPU worker for ~200
+recorded draws per frame on average over the route (870K-980K draws), under 1% of its ~4.8 ms per frame; allocation
+per frame unchanged. Debug off: one flag read and null check per present, a null check per draw and per bound
+texture, two field writes per texture resolution. Memory: ~19 MB of managed arrays while debug mode is on. A capture
+copies the ring (a few MB) when it is armed and writes drawring/ in the background in ~1.2 s; for a Killzone gameplay
+capture drawring/ is ~26 MB of text (128 files of ~300 draws), which compresses well in the zip.
+
 ## Implementation map
 
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Diagnostics.cs`: capture arming/completion, frame ring, describe/state,
   device lost, debug first-use lines.
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Replay.cs`: replay ring (per-present blit + copy, per-frame metrics at
   retire, snapshot + replay/ writer), `VITASHARP_DEBUG_INJECT`.
+- `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.DrawRing.cs`: draw ring (records from Draw/BeginScene/BuildTextureSet,
+  frame close at Present, snapshot at ArmCapture, drawring/ writer with index and diff); ResolveTexture sets
+  `_texSrc`/`_texSrcAddr` for it.
 - `src/VitaSharp.Core/Util/FrameAnomalyDetector.cs`: `FrameMetrics` (colour metrics) and the per-frame anomaly rules
   (pure logic, unit-tested in `tests/VitaSharp.Tests/FrameAnomalyDetectorTests.cs`).
 - `VulkanRenderer.cs` Present: `_traceFrame`/`_traceDumpFrame`/`_traceDir` replace the launch-time `TraceDrawsFrame`
