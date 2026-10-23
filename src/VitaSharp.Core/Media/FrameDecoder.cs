@@ -28,6 +28,11 @@ public sealed unsafe class FrameDecoder : IDisposable
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
         if (sampleRate > 0) ctx->sample_rate = sampleRate;
         if (channels > 0) ffmpeg.av_channel_layout_default(&ctx->ch_layout, channels);
+        // A hardware frame decoder turns every compressed frame into a full frame of PCM; trimming encoder delay is
+        // the caller's business. FFmpeg would otherwise trim it by itself (e.g. 1024 samples when the first AAC frame
+        // carries a "libfaac x.y" fill element) and return 0 samples for that frame, which
+        // games read as "0 bytes / 0 Hz" (Persona 4 Golden's movie player derives its output rate from it).
+        ctx->flags2 |= ffmpeg.AV_CODEC_FLAG2_SKIP_MANUAL;
         if (extradata != null)
         {
             ctx->extradata = (byte*)ffmpeg.av_mallocz((ulong)extradata.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
