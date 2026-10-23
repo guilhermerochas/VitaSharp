@@ -31,6 +31,7 @@ static class ReplayGpu
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
         Console.WriteLine("    --shader-cache=<dir> --async-shaders=on|off (default off) --no-idle --no-targets --debug-mode");
+        Console.WriteLine("  png-diff <dirA> <dirB> [pattern]     compare same-named PNGs of two folders (e.g. two traces' targets/): <dirA>/compare.txt, diff_*.png");
         Console.WriteLine("    --info                 header and statistics only; --recompress=<out.vsgd> [--quality=0-11] rewrites it smaller (default 9)");
     }
 
@@ -317,13 +318,13 @@ static class ReplayGpu
 
     /// <summary>Compares frame_N.png of the replay with the same frames of a reference run: compare.txt (one line per
     /// frame: identical pixels, pixels off by more than 8, mean and max channel difference) and diff_N.png (differences x8).</summary>
-    static void Compare(string outDir, string refDir)
+    internal static void Compare(string outDir, string refDir, string pattern = "frame_*.png")
     {
         var sb = new StringBuilder("# frame identical% off>8% meanAbs maxAbs\n");
         int n = 0, identical = 0;
         double worstMean = 0;
         string worst = "-";
-        foreach (var f in Directory.GetFiles(outDir, "frame_*.png").Order())
+        foreach (var f in Directory.GetFiles(outDir, pattern).Order())
         {
             string name = Path.GetFileName(f), other = Path.Combine(refDir, name);
             if (!File.Exists(other)) continue;
@@ -352,7 +353,7 @@ static class ReplayGpu
             long px = a.Length / 4;
             double mean = sum / (3.0 * px);
             if (same == px) identical++;
-            else Png.Write(Path.Combine(outDir, "diff_" + name[6..]), diff, aw, ah);
+            else Png.Write(Path.Combine(outDir, "diff_" + (name.StartsWith("frame_") ? name[6..] : name)), diff, aw, ah);
             if (mean > worstMean) { worstMean = mean; worst = name; }
             sb.AppendLine($"{name} {100.0 * same / px:F3} {100.0 * off / px:F3} {mean:F4} {max}");
         }

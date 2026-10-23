@@ -31,13 +31,13 @@ public sealed class GpuDumpResult
     public long Frames, Commands, Draws, MemoryRecords, MemoryBytes, RawBytes, FileBytes, ShadowBytes, TapBytes, ComparedBytes;
     public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) Uniforms;
     public long FirstPresent, LastPresent;
-    public double Seconds, WorkerMs, WriterMs, WriterWaitMs;
+    public double Seconds, WorkerMs, TapMs, WriterMs, WriterWaitMs;
     public string? Error;
 
     public override string ToString() =>
         $"{Frames} frames (presents {FirstPresent + 1}-{LastPresent}) in {Seconds:F1} s: {FileBytes / 1048576.0:F1} MB on disk " +
         $"({RawBytes / 1048576.0:F1} MB raw, {MemoryBytes / 1048576.0:F1} MB of guest memory in {MemoryRecords} updates, {Draws} draws, {Commands} commands), " +
-        $"{(Seconds > 0 ? FileBytes / 1048576.0 / Seconds : 0):F1} MB/s; recorder cost {WorkerMs / Math.Max(1, Frames):F2} ms/frame on the GPU worker " +
+        $"{(Seconds > 0 ? FileBytes / 1048576.0 / Seconds : 0):F1} MB/s; recorder cost {WorkerMs / Math.Max(1, Frames):F2} ms/frame on the GPU worker ({TapMs / Math.Max(1, Frames):F2} in memory reads) " +
         $"(+{WriterWaitMs / Math.Max(1, Frames):F2} ms/frame waiting for the writer), " +
         $"{WriterMs / Math.Max(1, Frames):F2} ms/frame compressing (writer thread), {ShadowBytes / 1048576.0:F0} MB shadow memory; " +
         $"backend reads {TapBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame, compared {ComparedBytes / 1048576.0 / Math.Max(1, Frames):F1} MB/frame; " +
@@ -81,8 +81,13 @@ public sealed unsafe class GpuDumpRecorder
     volatile bool _stopRequested, _stopNow;
     int _state; // 0 armed, 1 recording, 2 finished
     readonly GpuDumpResult _result = new();
-    long _startTicks, _workerTicks, _waitTicks;
-    readonly BlockingCollection<(byte Type, byte[] Data, int Length)> _out = new(boundedCapacity: 16);
+    long _startTicks, _workerTicks, _waitTicks, _tapTicks;
+    /// <summary>Chunks being compressed (in file order): up to <see cref="Compressors"/> at once on the thread pool,
+    /// the writer thread writes them in order.</summary>
+    readonly BlockingCollection<Task<byte[]>> _out = new(boundedCapacity: 16);
+    static readonly int Compressors = Math.Clamp(Environment.ProcessorCount / 4, 1, 4);
+    readonly SemaphoreSlim _compressSlots = new(Compressors);
+    long _compressTicks;
     readonly ConcurrentBag<byte[]> _spare = new();
     Thread? _writer;
     FileStream? _file;
@@ -288,7 +293,9 @@ public sealed unsafe class GpuDumpRecorder
             g[first..last].CopyTo(sh[first..]);
             EmitMemory(pa + (uint)(a + first), sh[first..last]);
         }
-        _workerTicks += Stopwatch.GetTimestamp() - t0;
+        long dt = Stopwatch.GetTimestamp() - t0;
+        _workerTicks += dt;
+        _tapTicks += dt;
     }
 
     static int LastMismatchEnd(ReadOnlySpan<byte> x, ReadOnlySpan<byte> y)
@@ -320,7 +327,7 @@ public sealed unsafe class GpuDumpRecorder
         // hand the buffer over to the writer and continue in a spare one (the writer gives buffers back)
         _main = new DumpBuffer(_spare.TryTake(out var b) ? b : new byte[1 << 20]);
         long w0 = Stopwatch.GetTimestamp();
-        _out.Add((GpuDumpFormat.ChunkRecords, data, len)); // blocks when the writer is 16 chunks behind
+        _out.Add(Compress(GpuDumpFormat.ChunkRecords, data, len, recycle: true)); // blocks when the writer is 16 chunks behind
         long waited = Stopwatch.GetTimestamp() - w0;
         _waitTicks += waited;
         _workerTicks -= waited; // reported separately
@@ -335,6 +342,7 @@ public sealed unsafe class GpuDumpRecorder
         Flush();
         _result.Seconds = (Stopwatch.GetTimestamp() - _startTicks) / (double)Stopwatch.Frequency;
         _result.WorkerMs = _workerTicks * 1000.0 / Stopwatch.Frequency;
+        _result.TapMs = _tapTicks * 1000.0 / Stopwatch.Frequency;
         _result.Uniforms = _codec.UniformStats;
         _result.WriterWaitMs = _waitTicks * 1000.0 / Stopwatch.Frequency;
         var summary = new GpuDumpHeader();
@@ -349,7 +357,7 @@ public sealed unsafe class GpuDumpRecorder
         summary["seconds"] = _result.Seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
         summary["recorder-worker-ms"] = _result.WorkerMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
         var text = System.Text.Encoding.UTF8.GetBytes(summary.Text);
-        _out.Add((GpuDumpFormat.ChunkEnd, text, text.Length));
+        _out.Add(Compress(GpuDumpFormat.ChunkEnd, text, text.Length, recycle: false));
         _out.CompleteAdding();
         _shadow = null;
         _verified = null;
@@ -363,19 +371,25 @@ public sealed unsafe class GpuDumpRecorder
         _stopNow = true;
     }
 
-    void WriterLoop()
+    Task<byte[]> Compress(byte type, byte[] data, int len, bool recycle) => Task.Run(() =>
     {
-        byte[]? scratch = null;
-        long ticks = 0;
+        _compressSlots.Wait(); // at most Compressors chunks at once (a blocked pool thread is fine: 16 chunks at most)
         try
         {
-            foreach (var (type, data, len) in _out.GetConsumingEnumerable())
-            {
-                long t0 = Stopwatch.GetTimestamp();
-                GpuDumpCodec.WriteChunk(_file!, type, data.AsSpan(0, len), _opt.Quality, ref scratch);
-                ticks += Stopwatch.GetTimestamp() - t0;
-                if (type == GpuDumpFormat.ChunkRecords && data.Length <= 64 << 20 && _spare.Count < 4) _spare.Add(data);
-            }
+            long t0 = Stopwatch.GetTimestamp();
+            var chunk = GpuDumpCodec.EncodeChunk(type, data.AsSpan(0, len), _opt.Quality);
+            Interlocked.Add(ref _compressTicks, Stopwatch.GetTimestamp() - t0);
+            if (recycle && data.Length <= 64 << 20 && _spare.Count < 4) _spare.Add(data);
+            return chunk;
+        }
+        finally { _compressSlots.Release(); }
+    });
+
+    void WriterLoop()
+    {
+        try
+        {
+            foreach (var chunk in _out.GetConsumingEnumerable()) _file!.Write(chunk.GetAwaiter().GetResult());
             _file!.Flush();
         }
         catch (Exception e)
@@ -390,7 +404,7 @@ public sealed unsafe class GpuDumpRecorder
             _result.FileBytes = _file?.Length ?? 0;
             _file?.Dispose();
         }
-        _result.WriterMs = ticks * 1000.0 / Stopwatch.Frequency;
+        _result.WriterMs = Interlocked.Read(ref _compressTicks) * 1000.0 / Stopwatch.Frequency;
         Log.Info($"[gpudump] {(_result.Error != null ? "FAILED (" + _result.Error + "): " : "saved")} {_opt.Path}: {_result}");
         _done.TrySetResult(_result);
         try { _opt.Finished?.Invoke(_result); } catch (Exception e) { Log.Warn($"[gpudump] finished callback failed: {e.Message}"); }

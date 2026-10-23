@@ -97,6 +97,9 @@ public static class Program
             }
             case "memdiff" when args.Length >= 3:
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
+            case "png-diff" when args.Length >= 3:
+                ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
+                return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
             case "test" when args.Length >= 2:

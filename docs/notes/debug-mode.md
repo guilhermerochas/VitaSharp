@@ -299,6 +299,11 @@ debug mode is on, nothing while it is off. Debug off runs exactly the code of be
 background PNG writing (127 frames + 5 sheets, ~40 MB; the kz_replay auto capture zip was 45 MB in all); kz_skin with debug on gave no false anomaly over
 the whole route (only the expected `black` on the loading screen).
 
+## F8: GPU dump
+
+F8 records the GPU work (commands plus the guest memory they read) until F8 is pressed again, into
+`<DataRoot>/gpudumps/*.vsgd`; `replay-gpu` replays it offline draw by draw. See `docs/notes/gpu-dump.md`.
+
 ## Implementation map
 
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Diagnostics.cs`: capture arming/completion, frame ring, describe/state,

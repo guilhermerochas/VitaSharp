@@ -120,7 +120,7 @@ public static class Runner
         {
             if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
-            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura)" : "Modo de depuração desligado");
+            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU)" : "Modo de depuração desligado");
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         StartScheduledCaptures(options, diag);

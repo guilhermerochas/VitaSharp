@@ -269,20 +269,28 @@ public sealed class GpuDumpCodec
             // runs are counted afterwards: reserve a fixed 3-byte varint
             w.U8(0x80); w.U8(0x80); w.U8(0);
             int runs = 0, pos = 0, prevEnd = 0, budget = data.Length / 2;
+            // compared in 8-byte words (uniform blocks are vectors of floats): a run is a stretch of differing words,
+            // ended by two equal words in a row
+            var dw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(data);
+            var bw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(b[..data.Length]);
+            int words = dw.Length;
             while (pos < data.Length)
             {
-                int same = data[pos..].CommonPrefixLength(b[pos..]);
-                pos += same;
-                if (pos >= data.Length) break;
-                int skip = pos - prevEnd;
-                // a run ends after 8 equal bytes in a row
-                int end = pos + 1;
-                while (end < data.Length)
+                int wi = pos >> 3;
+                int same = dw[wi..].CommonPrefixLength(bw[wi..]);
+                wi += same;
+                pos = wi << 3;
+                if (wi >= words)
                 {
-                    int eq = data[end..Math.Min(data.Length, end + 8)].CommonPrefixLength(b[end..Math.Min(data.Length, end + 8)]);
-                    if (eq >= 8 || end + eq >= data.Length) break;
-                    end += eq + 1;
+                    // tail bytes after the last whole word
+                    pos = Math.Max(pos, words << 3);
+                    if (pos >= data.Length || data[pos..].SequenceEqual(b[pos..data.Length])) break;
                 }
+                int endWord = wi + 1;
+                while (endWord < words && !(dw[endWord] == bw[endWord] && (endWord + 1 >= words || dw[endWord + 1] == bw[endWord + 1]))) endWord++;
+                int end = endWord >= words ? data.Length : endWord << 3;
+                if (end - pos > budget) { w.Truncate(start); return false; }
+                int skip = pos - prevEnd;
                 w.Var((uint)skip);
                 w.Var((uint)(end - pos));
                 w.Bytes(data[pos..end]);
@@ -631,6 +639,15 @@ public sealed class GpuDumpCodec
     }
 
     // =========================================================== chunks
+
+    /// <summary>A whole encoded chunk (header and payload) as a new array (compressing on any thread).</summary>
+    public static byte[] EncodeChunk(byte type, ReadOnlySpan<byte> raw, int quality)
+    {
+        using var ms = new MemoryStream(raw.Length / 3 + 64);
+        byte[]? scratch = null;
+        WriteChunk(ms, type, raw, quality, ref scratch);
+        return ms.ToArray();
+    }
 
     /// <summary>Compresses <paramref name="raw"/> into a chunk (Brotli at <paramref name="quality"/>, stored when that does not help).</summary>
     public static void WriteChunk(Stream output, byte type, ReadOnlySpan<byte> raw, int quality, ref byte[]? scratch)
