@@ -4,18 +4,40 @@ using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Host;
 
-/// <summary>OpenAL Soft output: one streaming source per guest port.</summary>
+/// <summary>
+/// OpenAL Soft output: one streaming source per guest port. OpenAL Soft mixes in fixed updates (ALC_FREQUENCY /
+/// ALC_REFRESH samples, typically 10-21 ms) and a source only gives back fully played buffers when an update runs,
+/// so each stream keeps at least two updates plus two grains queued and (re)starts playing only once one update plus
+/// a grain is buffered. A fixed depth of 4 grains (1024 samples for a 256-sample grain, about one update) let every
+/// update drain the whole queue: the source stopped and restarted ~25 times a second (crackling, stutter).
+/// </summary>
 public sealed unsafe class OpenAlAudio : IAudioBackend
 {
+    const int ALC_FREQUENCY = 0x1007, ALC_REFRESH = 0x1008;
     readonly AL _al;
     readonly ALContext _alc;
     readonly Device* _device;
     readonly Context* _context;
     readonly object _lock = new();
+    readonly string _deviceName;
+    /// <summary>Mixer rate and samples per mix update of the device.</summary>
+    readonly int _mixRate, _updateSamples;
+    readonly List<Stream> _streams = new();
 
     OpenAlAudio(AL al, ALContext alc, Device* device, Context* context)
     {
         _al = al; _alc = alc; _device = device; _context = context;
+        try { _deviceName = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "?"; } catch { _deviceName = "?"; }
+        int freq = 0, refresh = 0;
+        try
+        {
+            alc.GetContextProperty(device, (GetContextInteger)ALC_FREQUENCY, 1, &freq);
+            alc.GetContextProperty(device, (GetContextInteger)ALC_REFRESH, 1, &refresh);
+        }
+        catch (Exception) { }
+        _mixRate = freq > 0 ? freq : 48000;
+        // unknown refresh: assume OpenAL Soft's default period of 1024 frames
+        _updateSamples = refresh > 0 ? Math.Max(1, _mixRate / refresh) : 1024;
     }
 
     public static OpenAlAudio? TryCreate()
@@ -28,8 +50,10 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
             if (dev == null) { Log.Warn("OpenAL: no output device"); return null; }
             var ctx = alc.CreateContext(dev, null);
             alc.MakeContextCurrent(ctx);
-            Log.Info("Audio: OpenAL Soft");
-            return new OpenAlAudio(al, alc, dev, ctx);
+            var a = new OpenAlAudio(al, alc, dev, ctx);
+            Log.Info($"Audio: OpenAL Soft, {a.Describe()}");
+            AudioDiagnostics.DeviceInfo = a.Describe;
+            return a;
         }
         catch (Exception e)
         {
@@ -38,38 +62,63 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         }
     }
 
+    /// <summary>Device, mixer settings and per-stream buffering (debug lines, F10 audio.txt, session summary).</summary>
+    public string Describe()
+    {
+        var sb = new System.Text.StringBuilder($"OpenAL '{_deviceName}' mixer {_mixRate} Hz, update {_updateSamples} samples ({_updateSamples * 1000.0 / _mixRate:F1} ms)");
+        lock (_lock)
+            foreach (var s in _streams)
+                sb.Append($"; stream {s.Rate} Hz grain {s.Grain}: up to {s.Capacity} grains queued ({s.Capacity * s.Grain * 1000.0 / s.Rate:F1} ms), " +
+                          $"starts at {s.StartGrains}, latency ~{s.StartGrains * s.Grain * 1000.0 / s.Rate + _updateSamples * 1000.0 / _mixRate:F0} ms, underruns {s.Underruns}");
+        return sb.ToString();
+    }
+
     public IAudioStream OpenStream(int sampleRate, int channels, int grainSamples)
     {
         lock (_lock)
         {
             _alc.MakeContextCurrent(_context);
-            return new Stream(this, sampleRate, grainSamples);
+            var s = new Stream(this, sampleRate, grainSamples);
+            _streams.Add(s);
+            return s;
         }
     }
 
-    /// <summary>Times an output stream ran dry and was restarted (diagnostics for audio/video pacing).</summary>
-    public static int Underruns;
+    /// <summary>Times any output stream ran dry and was restarted (diagnostics for audio/video pacing).</summary>
+    public static int TotalUnderruns;
 
     sealed class Stream : IAudioStream
     {
-        // the Vita output is double-buffered: sceAudioOutOutput returns once the previous grain finished, so at most one
-        // grain is queued behind the one playing; games pace and A/V-sync against that latency
-        const int MaxQueued = 4; // host-side depth (jitter tolerance); the guest-visible depth is capped in sceAudioOutGetRestSample
         readonly OpenAlAudio _o;
         readonly uint _source;
-        readonly int _rate, _grain;
+        public readonly int Rate, Grain;
+        /// <summary>Grains the host queue holds before Submit blocks. The guest-visible depth is capped separately in
+        /// sceAudioOutGetRestSample (the Vita double-buffers).</summary>
+        public readonly int Capacity;
+        /// <summary>Grains buffered before playback (re)starts.</summary>
+        public readonly int StartGrains;
         readonly Queue<uint> _free = new();
-        int _queued;
+        int _queued, _underruns;
+        bool _starved;
         float _volume = 1;
 
         public Stream(OpenAlAudio o, int rate, int grain)
         {
             _o = o;
-            _rate = rate;
-            _grain = grain;
+            Rate = rate;
+            Grain = Math.Max(1, grain);
+            // one mix update of the device in this stream's samples (OpenAL resamples when the rates differ)
+            long update = (long)o._updateSamples * rate / o._mixRate;
+            int updateGrains = (int)((update + Grain - 1) / Grain);
+            // like Vita3K's cubeb backend (enough buffers for one device callback, plus one), with another update of
+            // headroom because OpenAL only reclaims buffers when an update runs; never fewer than 4 grains
+            Capacity = Math.Max(4, 2 * updateGrains + 2);
+            StartGrains = Math.Min(Capacity, updateGrains + 1);
             _source = o._al.GenSource();
-            for (int i = 0; i < MaxQueued + 2; i++) _free.Enqueue(o._al.GenBuffer());
+            for (int i = 0; i < Capacity; i++) _free.Enqueue(o._al.GenBuffer());
         }
+
+        public int Underruns => Volatile.Read(ref _underruns);
 
         public float Volume
         {
@@ -97,25 +146,41 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                 {
                     _o._alc.MakeContextCurrent(_o._context);
                     Reclaim();
-                    if (_queued < MaxQueued && _free.Count > 0)
+                    _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
+                    // Stopped (not Initial): the queue ran dry, the guest did not submit in time (audible gap). Counted
+                    // once; playback resumes after re-buffering StartGrains, so one late grain is not followed by a
+                    // cascade of one-grain restarts
+                    if (state == (int)SourceState.Stopped)
+                    {
+                        if (!_starved)
+                        {
+                            _starved = true;
+                            Interlocked.Increment(ref _underruns);
+                            Interlocked.Increment(ref TotalUnderruns);
+                        }
+                        // a stopped source reports every queued buffer as processed, so grains queued while
+                        // re-buffering would be reclaimed unplayed (and Submit would stop blocking): take back the
+                        // played buffers, then rewind to Initial, where newly queued buffers wait for SourcePlay
+                        Reclaim();
+                        _o._al.SourceRewind(_source);
+                        state = (int)SourceState.Initial;
+                    }
+                    if (_queued < Capacity && _free.Count > 0)
                     {
                         uint b = _free.Dequeue();
                         fixed (short* p = interleaved)
-                            _o._al.BufferData(b, BufferFormat.Stereo16, p, interleaved.Length * 2, _rate);
+                            _o._al.BufferData(b, BufferFormat.Stereo16, p, interleaved.Length * 2, Rate);
                         _o._al.SourceQueueBuffers(_source, 1, &b);
                         _queued++;
-                        _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
-                        if (state != (int)SourceState.Playing)
+                        if (state != (int)SourceState.Playing && _queued >= StartGrains)
                         {
-                            // Stopped (not Initial): the queue ran dry, the guest did not submit in time (audible gap)
-                            if (state == (int)SourceState.Stopped && Interlocked.Increment(ref Underruns) is var n && (n <= 10 || n % 100 == 0))
-                                Log.Warn($"Audio: host stream underrun #{n} (guest output late)");
                             _o._al.SourcePlay(_source);
+                            _starved = false;
                         }
                         return;
                     }
                 }
-                Thread.Sleep(1);
+                Thread.Sleep(1); // 1 ms system timer while a game runs (Runner: timeBeginPeriod)
             }
         }
 
@@ -128,7 +193,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                     _o._alc.MakeContextCurrent(_o._context);
                     Reclaim();
                     _o._al.GetSourceProperty(_source, GetSourceInteger.SampleOffset, out int played);
-                    return Math.Max(0, _queued * _grain - played);
+                    return Math.Max(0, _queued * Grain - played);
                 }
             }
         }
@@ -137,6 +202,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         {
             lock (_o._lock)
             {
+                _o._streams.Remove(this);
                 _o._alc.MakeContextCurrent(_o._context);
                 _o._al.SourceStop(_source);
                 Reclaim();
@@ -148,6 +214,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
 
     public void Dispose()
     {
+        if (AudioDiagnostics.DeviceInfo == Describe) AudioDiagnostics.DeviceInfo = null;
         _alc.MakeContextCurrent(null);
         _alc.DestroyContext(_context);
         _alc.CloseDevice(_device);

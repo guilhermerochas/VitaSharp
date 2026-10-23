@@ -111,6 +111,7 @@ public sealed class Emulator : IDisposable
         var (path, args) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
         if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn("LoadExec: some threads did not stop in time");
         Gpu.ReplaceBackend(backendFactory);
+        VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
         Code.Clear();
         Memory.FreeAll();
         VitaSharp.Core.Kernel.Scheduler.Reset();

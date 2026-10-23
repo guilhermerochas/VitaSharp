@@ -17,6 +17,7 @@ public sealed class Audio : HleModule
     {
         public int Type, Grain, Freq, Channels;
         public IAudioStream? Stream;
+        public AudioDiagnostics.PortStats? Stats;
         public float[] Volume = [1, 1];
         public double NextDeadline;
         public short[] Buffer = [];
@@ -31,7 +32,12 @@ public sealed class Audio : HleModule
     int sceAudioOutOpenPort(int type, int len, int freq, int mode)
     {
         if (type is < 0 or > 2) return ERR_INVALID_PORT_TYPE;
-        if (type == 0 && freq != 48000) return ERR_INVALID_SAMPLE_FREQ;
+        if (type == 0 && freq != 48000)
+        {
+            // the game gets no port: whatever it outputs next is lost (silent stream)
+            Log.WarnOnce($"aout-freq-{freq}", $"Audio: sceAudioOutOpenPort(MAIN, {len}, {freq} Hz) rejected: MAIN ports are 48000 Hz only (the stream that wanted it stays silent)");
+            return ERR_INVALID_SAMPLE_FREQ;
+        }
         return OpenPort(type, len, freq, mode, ext: false);
     }
 
@@ -55,6 +61,7 @@ public sealed class Audio : HleModule
             }
             var p = new Port { Type = type, Grain = len, Freq = freq <= 0 ? 48000 : freq, Channels = mode == 0 ? 1 : 2 };
             try { p.Stream = Emu.Host.Audio?.OpenStream(p.Freq, 2, len); } catch { p.Stream = null; }
+            p.Stats = AudioDiagnostics.OpenPort($"port {id} {TypeName(type)}{(ext ? " (ext)" : "")}", p.Grain, p.Freq, p.Channels, p.Stream);
             _ports[id] = p;
             return id;
         }
@@ -65,9 +72,12 @@ public sealed class Audio : HleModule
     {
         Port? p;
         lock (_ports) { if (!_ports.Remove(port, out p)) return ERR_INVALID_PORT; }
+        if (p.Stats != null) AudioDiagnostics.ClosePort(p.Stats);
         p.Stream?.Dispose();
         return 0;
     }
+
+    static string TypeName(int type) => type switch { 0 => "MAIN", 1 => "BGM", 2 => "VOICE", _ => $"type{type}" };
 
     Port? Get(int port) { lock (_ports) return _ports.GetValueOrDefault(port); }
 
@@ -82,6 +92,7 @@ public sealed class Audio : HleModule
             {
                 int n = p.Grain * 2;
                 if (p.Buffer.Length != n) p.Buffer = new short[n];
+                int any = 0; // OR of the guest samples: 0 = a silent (zero-filled) grain
                 if (buf == 0) Array.Clear(p.Buffer);
                 else if (p.Channels == 2)
                 {
@@ -89,6 +100,7 @@ public sealed class Audio : HleModule
                     float g = ProfileGain(p.Type), l = p.Volume[0] * g, r = p.Volume[1] * g;
                     for (int i = 0; i < n; i += 2)
                     {
+                        any |= (ushort)(src[i] | src[i + 1]);
                         p.Buffer[i] = (short)Math.Clamp(src[i] * l, short.MinValue, short.MaxValue);
                         p.Buffer[i + 1] = (short)Math.Clamp(src[i + 1] * r, short.MinValue, short.MaxValue);
                     }
@@ -97,14 +109,21 @@ public sealed class Audio : HleModule
                 {
                     var src = GuestMemory.Span<short>(buf, p.Grain);
                     float v = p.Volume[0] * ProfileGain(p.Type);
-                    for (int i = 0; i < p.Grain; i++) p.Buffer[2 * i] = p.Buffer[2 * i + 1] = (short)Math.Clamp(src[i] * v, short.MinValue, short.MaxValue);
+                    for (int i = 0; i < p.Grain; i++)
+                    {
+                        any |= (ushort)src[i];
+                        p.Buffer[2 * i] = p.Buffer[2 * i + 1] = (short)Math.Clamp(src[i] * v, short.MinValue, short.MaxValue);
+                    }
                 }
+                if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any == 0);
                 using (Scheduler.Block()) p.Stream.Submit(p.Buffer); // blocks while the host buffer is full: not CPU time
+                if (p.Stats != null) AudioDiagnostics.AfterSubmit(p.Stats);
             }
             else
             {
+                if (p.Stats != null) AudioDiagnostics.Output(p.Stats, buf == 0);
                 // no audio device: keep real-time pacing so games run at the right speed (none in turbo mode)
-                if (GuestClock.Turbo) return 0;
+                if (GuestClock.Turbo) return p.Grain;
                 double now = GuestClock.Seconds;
                 double period = (double)p.Grain / p.Freq;
                 if (p.NextDeadline < now - 0.1) p.NextDeadline = now;
@@ -113,7 +132,7 @@ public sealed class Audio : HleModule
                 if (wait > 0.001) { using var blocked = Scheduler.Block(); PreciseSleep.Microseconds((long)(wait * 1_000_000)); }
             }
         }
-        return 0;
+        return p.Grain; // samples registered with the driver (Vita3K returns the grain too)
     }
 
     [Hle]
@@ -124,6 +143,7 @@ public sealed class Audio : HleModule
         if (vols == 0) return ERR_INVALID_POINTER;
         if ((flag & 1) != 0) p.Volume[0] = Math.Clamp(GuestMemory.R32(vols) / 32768f, 0, 1);
         if ((flag & 2) != 0) p.Volume[1] = Math.Clamp(GuestMemory.R32(vols + 4) / 32768f, 0, 1);
+        if (p.Stats is { } st) { st.VolumeL = p.Volume[0]; st.VolumeR = p.Volume[1]; }
         return 0;
     }
 
@@ -142,6 +162,7 @@ public sealed class Audio : HleModule
                 p.Stream?.Dispose();
                 try { p.Stream = Emu.Host.Audio?.OpenStream(p.Freq, 2, p.Grain); } catch { p.Stream = null; }
             }
+            if (p.Stats != null) AudioDiagnostics.Reconfigure(p.Stats, p.Grain, p.Freq, p.Channels, p.Stream);
         }
         return 0;
     }

@@ -1,0 +1,5 @@
+# Persona 4 Golden: audio diagnostics with debug mode switched on mid-game. --debug-mode-at toggles it like F9 at frame
+# 700 (opening movie: expect the [dbg] AUDIO snapshot of the open port, NGS system and AAC decoder) and off at 1500;
+# periodic [dbg] AUDIO lines every 10 s in between, an F10 capture at 1000 (audio.txt). See p4g_boot for the WAV setup.
+title=PCSB00245
+args=--frames=1800 --seconds=200 --dump-every=100 --no-inspect --audio --input=cross@f400:f10,cross@f550:f10 --debug-mode-at=700,1500 --diag-at=1000

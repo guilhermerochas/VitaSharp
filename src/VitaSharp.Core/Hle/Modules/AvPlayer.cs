@@ -29,6 +29,7 @@ public sealed class AvPlayer : HleModule
 
         public readonly Queue<string> Sources = new();
         public MediaPlayer? Media;
+        public string SourcePath = "";
         public bool Started, Paused, Looping, StopSent;
         public readonly GuestStopwatch Clock = new();
         public long ClockOffsetUs;
@@ -159,11 +160,13 @@ public sealed class AvPlayer : HleModule
 
     void OpenNext(Player p)
     {
+        AudioDiagnostics.StreamClosed(DiagKey(p));
         p.Media?.Dispose();
         p.Media = null;
         while (p.Sources.Count > 0 && p.Media == null)
         {
             var src = p.Sources.Dequeue();
+            p.SourcePath = src;
             p.Media = MediaPlayer.Open(src);
             if (p.Media == null) Log.Warn($"AvPlayer: could not decode {src}");
         }
@@ -174,8 +177,13 @@ public sealed class AvPlayer : HleModule
             p.Clock.Reset();
             if (p.Started && !p.Paused) p.Clock.Start();
             p.StopSent = false;
+            var m = p.Media;
+            AudioDiagnostics.StreamOpened(DiagKey(p), $"AvPlayer {Path.GetFileName(p.SourcePath)}: " + (m.HasAudio ? $"audio {m.Channels} ch {m.SampleRate} Hz" : "no audio") +
+                (m.HasVideo ? $", video {m.Width}x{m.Height} {m.FrameRate:F2} fps" : "") + $", {m.DurationUs / 1e6:F1} s");
         }
     }
+
+    static string DiagKey(Player p) => $"avplayer:{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p):X8}";
 
     void StartPlayback(Player p)
     {
@@ -194,6 +202,7 @@ public sealed class AvPlayer : HleModule
     {
         var p = Get(handle);
         if (p == null) return ERR_INVALID_ARGUMENT;
+        AudioDiagnostics.StreamClosed(DiagKey(p));
         p.Media?.Dispose();
         p.Media = null;
         p.Sources.Clear();
@@ -268,6 +277,7 @@ public sealed class AvPlayer : HleModule
             if (p.Sources.Count > 0) OpenNext(p);
             else
             {
+                AudioDiagnostics.StreamClosed(DiagKey(p));
                 p.Media.Dispose();
                 p.Media = null;
             }
@@ -390,6 +400,7 @@ public sealed class AvPlayer : HleModule
         {
             if (!_players.Remove(handle, out p)) return ERR_INVALID_ARGUMENT;
         }
+        AudioDiagnostics.StreamClosed(DiagKey(p));
         p.Media?.Dispose();
         foreach (var b in p.VideoBuffers) FreeGuest(p, b, true);
         foreach (var b in p.AudioBuffers) FreeGuest(p, b, false);

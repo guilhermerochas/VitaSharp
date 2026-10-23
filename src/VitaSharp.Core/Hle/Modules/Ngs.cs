@@ -111,6 +111,7 @@ public sealed class Ngs : HleModule
         _systems[memspace] = s;
         outSystem.Value = memspace;
         Log.Info($"NGS system: granularity {s.Granularity}, {s.SampleRate} Hz, {s.MaxVoices} voices");
+        AudioDiagnostics.StreamOpened($"ngs:{memspace:X8}", $"NGS system 0x{memspace:X8}: granularity {s.Granularity}, {s.SampleRate} Hz, {s.MaxVoices} voices");
         return OK;
     }
 
@@ -118,6 +119,7 @@ public sealed class Ngs : HleModule
     int sceNgsSystemRelease(uint system)
     {
         if (!_systems.TryRemove(system, out var s)) return INVALID_HANDLE;
+        AudioDiagnostics.StreamClosed($"ngs:{system:X8}");
         lock (s.Lock)
         {
             foreach (var r in s.Racks) ReleaseRack(r);

@@ -122,6 +122,7 @@ public static class Runner
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         StartScheduledCaptures(options, diag);
+        StartDebugModeToggles(options);
 
         window.Loaded += () =>
         {
@@ -147,6 +148,26 @@ public static class Runner
         diag.WaitIdle(20000);
         PrintStats(emu);
         return 0;
+    }
+
+    /// <summary>--debug-mode-at=FRAME[,FRAME...]: toggles debug mode like F9 when the guest frame is reached (tests).</summary>
+    static void StartDebugModeToggles(string[] options)
+    {
+        if (Opt(options, "--debug-mode-at") is not { } spec) return;
+        var frames = new SortedSet<long>(spec.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))));
+        new Thread(() =>
+        {
+            while (frames.Count > 0)
+            {
+                if (VitaSharp.Core.Hle.Modules.Display.FramesPresented >= frames.Min)
+                {
+                    frames.Remove(frames.Min);
+                    if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
+                    Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (--debug-mode-at) at guest frame {DebugMode.Frame}");
+                }
+                Thread.Sleep(5);
+            }
+        }) { IsBackground = true, Name = "debug-mode-at" }.Start();
     }
 
     /// <summary>--diag-at=FRAME[,FRAME...]: the F10 capture, triggered when the guest frame is reached (tests).</summary>
@@ -242,6 +263,7 @@ public static class Runner
         if (Opt(options, "--peek") is { } pk) StartPeeks(pk);
         using var watchdog = new Watchdog(emu, () => emu.Gpu.Backend as VulkanRenderer);
         StartScheduledCaptures(options, diag);
+        StartDebugModeToggles(options);
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath);
         emu.Start();
@@ -612,6 +634,7 @@ public static class Runner
                 Log.Info($"PERF video decode: {hwPics} pictures in hardware, {swPics} in software, {VitaSharp.Core.Media.FFmpegVideoDecoder.Fallbacks} hardware fallbacks, {VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms decoding ({VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / (hwPics + swPics):F2} ms/picture)");
         }
         Log.Info($"  GPU commands: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}; frames presented {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
+        foreach (var l in AudioDiagnostics.SummaryLines()) Log.Info(l); // always: ports, outputs/s, underruns per minute
         Watchdog.LogSummaries();
         long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         var gcInfo = GC.GetGCMemoryInfo();
