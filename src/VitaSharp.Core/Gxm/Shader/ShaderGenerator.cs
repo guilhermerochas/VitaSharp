@@ -78,7 +78,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 8;
+    public const int GeneratorVersion = 9;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -469,9 +469,19 @@ float packC10(vec3 c) {
         Func<uint, bool, UsseTranslator.SamplerUse> samplerFor)
     {
         var declared = new HashSet<int>();
+        // Varyings are interpolated at the centroid of the covered samples. In a multisampled scene a fragment that
+        // covers only some samples of its pixel is otherwise shaded at the pixel centre, which can lie outside the
+        // primitive: the varyings are then extrapolated past the values the vertex shader produced. Killzone
+        // Mercenary's lit scene programs map a per-vertex gloss (TEXCOORD3.w) to a specular exponent; extrapolated, it
+        // turned negative, exp2(-|N.H| * exponent) overflowed F16 and an occasional edge fragment stored Inf/NaN into
+        // the HDR target, which the luminance downsample spread to auto exposure and the post effects. The GXP
+        // descriptors of those programs request centroid sampling (attribute_info bit 0x10, "_CENTROID" in Vita3K's
+        // translator; full-screen post programs leave it clear), but the bit only accompanies texture coordinate
+        // reads, so every varying is centroid: identical to centre sampling at 1x and in supersampled scenes, and
+        // ignored by programs that run per sample (gl_SampleID), which are interpolated at the sample position.
         string Varying(int loc, string name)
         {
-            if (declared.Add(loc)) decl.AppendLine($"layout(location = {loc}) in vec4 {name};");
+            if (declared.Add(loc)) decl.AppendLine($"layout(location = {loc}) centroid in vec4 {name};");
             return name;
         }
 
