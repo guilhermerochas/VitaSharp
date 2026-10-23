@@ -732,12 +732,46 @@ public sealed unsafe partial class VulkanRenderer
         }
         _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
         SetDynamicState(cmd, st, topology);
-        bool visQuery = BeginVisibilityQuery(d, out uint query);
-        _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
-        if (visQuery) EndVisibilityQuery(query);
+        // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
+        // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
+        // blending over each other) are drawn one triangle at a time with a barrier in between. Only with input
+        // attachments: on the copy path every piece would re-copy the framebuffer (Uncharted's thousands of small
+        // particle draws went from 6.7 to 32 ms of GPU time per frame).
+        if (inputFetch && FetchSplitTriangles(d, topology) is var triangles and > 1)
+        {
+            for (uint c = 0; c < triangles; c++)
+            {
+                if (c > 0) InputFetchBarrier(cmd);
+                _vk.CmdDrawIndexed(cmd, 3, 1, c * 3, 0, 0);
+            }
+            _statFetchSplitDraws++;
+        }
+        else
+        {
+            bool visQuery = BeginVisibilityQuery(d, out uint query);
+            _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
+            if (visQuery) EndVisibilityQuery(query);
+        }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); }
+    }
+
+    /// <summary>VITASHARP_FETCH_SPLIT=0 disables the per-triangle split of programmable-blending draws.</summary>
+    static readonly bool FetchSplit = Environment.GetEnvironmentVariable("VITASHARP_FETCH_SPLIT")?.Trim() != "0";
+    /// <summary>Largest programmable-blending draw drawn one triangle at a time (each piece costs a barrier).</summary>
+    const uint FetchSplitMax = 256;
+    long _statFetchSplitDraws;
+
+    /// <summary>
+    /// Number of triangles of a programmable-blending draw to draw one by one (0 = draw it whole): plain triangle
+    /// lists without instancing or visibility queries, up to <see cref="FetchSplitMax"/> triangles.
+    /// </summary>
+    static uint FetchSplitTriangles(DrawCommand d, PrimitiveTopology topology)
+    {
+        if (!FetchSplit || topology != PrimitiveTopology.TriangleList || d.InstanceCount != 1 || d.VisAddress != 0) return 0;
+        uint triangles = d.IndexCount / 3;
+        return triangles is > 1 and <= FetchSplitMax ? triangles : 0;
     }
 
     DescriptorBufferInfo UniformInfo(ReadOnlySpan<byte> data)
