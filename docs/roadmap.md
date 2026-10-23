@@ -54,7 +54,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
 
-## CI (testes quebrando no macOS)
+## CI (testes quebrando no GitHub: Windows, Linux e macOS)
+
+- [ ] Levantar as falhas dos runners de Windows e Linux (os itens abaixo vieram do log do macOS)
 
 - [ ] `VfsTests.NewFilesKeepTheMatchedDirectoryCase`: o sistema de arquivos do macOS (APFS) não diferencia maiúsculas de
   minúsculas, então o caminho criado sai com a caixa do diretório existente (`DATA/sub` em vez de `Data/Sub`)
