@@ -40,8 +40,9 @@ jobs:
 
       # Long CPU fuzz/differential runs (Category=Slow, 15-45 min) are skipped here; run them locally with
       # `dotnet test tests/VitaSharp.Tests --filter Category=Slow`.
+      # --blame names the test that was running if the test host crashes or hangs (the run is otherwise just "aborted").
       - name: Test
-        run: dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow" --logger "trx;LogFileName=results.trx" --results-directory test-results
+        run: dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow" --blame --blame-hang-timeout 20m --blame-hang-dump-type none --logger "trx;LogFileName=results.trx" --results-directory test-results
 
       - name: Upload test results
         if: always()
