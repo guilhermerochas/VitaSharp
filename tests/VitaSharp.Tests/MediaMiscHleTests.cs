@@ -741,4 +741,27 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(h, "sceHandwritingTerm"));
         Assert.False(h.Initialized);
     }
+
+    // ------------------------------------------------------------------ SceCodecEngine
+
+    /// <summary>Unmapped-memblock allocations honour the alignment when it fits and relax it when it cannot be met
+    /// inside the block (an AvPlayer opens 1 MiB, takes 256 KiB, then asks for 512 KiB aligned to 1 MiB).</summary>
+    [Fact]
+    public void CodecEngineAlignmentFallsBackInsideTheBlock()
+    {
+        var ce = new CodecEngine();
+        const uint Block = 0x90E00000;
+        int uid = Call(ce, "sceCodecEngineOpenUnmapMemBlock", Block, 0x100000u);
+        Assert.True(uid > 0);
+        uint a = (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x40000u, 0x40000u)!;
+        Assert.Equal(Block, a);
+        uint b = (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x80000u, 0x100000u)!;
+        Assert.Equal(Block + 0x80000, b); // best alignment that fits: 512 KiB
+        uint c = (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x40000u, 0x100u)!;
+        Assert.Equal(Block + 0x40000, c);
+        Assert.Equal(0x80600009u, (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x100u, 0x100u)!); // full
+        Assert.Equal(0, Call(ce, "sceCodecEngineFreeMemoryFromUnmapMemBlock", uid, b));
+        Assert.Equal(b, (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x80000u, 0x80000u)!);
+        Assert.Equal(0, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
+    }
 }
