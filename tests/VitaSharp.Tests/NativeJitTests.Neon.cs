@@ -128,7 +128,7 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>Quick per-class pass for the fast suite (the long version below runs under Category=Slow).</summary>
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, NeonClass.ThreeSame, 400, 1601)]
     [InlineData(true, NeonClass.ThreeSame, 300, 1602)]
     [InlineData(false, NeonClass.ThreeSameFloat, 400, 1603)]
@@ -145,7 +145,7 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(true, NeonClass.Any, 400, 1614)]
     public void NativeNeonQuick(bool thumb, NeonClass cls, int iterations, int seed) => NativeNeonMatchesInterpreter(thumb, cls, iterations, seed);
 
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [Trait("Category", "Slow")]
     [InlineData(false, NeonClass.ThreeSame, 6_000, 601)]
     [InlineData(true, NeonClass.ThreeSame, 3_000, 602)]
@@ -207,7 +207,7 @@ public sealed unsafe partial class NativeJitTests
     /// half denormals, rounding ties, f32 denormals, signalling/quiet NaNs, infinities; Vita FPSCR mode and others
     /// (handler fallback).
     /// </summary>
-    [Theory]
+    [NativeTheory]
     [InlineData(false, 3_000, 801)]
     [InlineData(true, 3_000, 802)]
     public void NativeHalfConversionsMatchInterpreter(bool thumb, int iterations, int seed)
@@ -267,7 +267,7 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>The same NEON blocks natively against Unicorn (QEMU): keeps the shared reference honest.</summary>
-    [UnicornTheory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 4_000, 701)]
     [InlineData(true, 4_000, 702)]
     [Trait("Category", "Slow")]

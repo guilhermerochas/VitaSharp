@@ -251,6 +251,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         return $"guest: {string.Join(" ", b.Insts.Select(i => $"{i.Address:X}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"))}\nIR:\n{ir}\nx64:\n{info.Disassemble(cb.NativeEntry)}";
     }
 
+    /// <summary>Lets the background workers compile what the last run queued (no guessed sleep: CI hosts are slow).</summary>
+    static void WaitForJit() => Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)), "the JIT queue did not drain");
+
     static string? Guard(Action a)
     {
         try { a(); return null; }
@@ -271,7 +274,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// chained through link slots). Registers, memory and the dispatcher's counters (blocks, instructions, cycles) must
     /// be identical; then the code is patched and invalidated and both runs must pick up the new code.
     /// </summary>
-    [Fact]
+    [NativeFact]
     public void DispatcherNativeMatchesInterpreter()
     {
         EnsureGuestPages();
@@ -339,7 +342,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     var exit = core.Run();
                     Assert.Equal(ExitReason.Svc, exit);
                     Assert.Equal(0x42u, s->SvcImm);
-                    Thread.Sleep(50);
+                    WaitForJit();
                 }
                 var regs = Enumerable.Range(0, 16).Select(i => s->R[i]).Append(s->Cpsr).ToArray();
                 return (regs, GuestMemory.Span(DataBase, 0xF000).ToArray(), core.BlocksExecuted, core.InstructionsExecuted, core.BlockCycles);
@@ -373,7 +376,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// exclusive store by another core happened), value changed by a plain store. Status, memory, registers and the
     /// monitor fields must match, and the generation must advance the same way.
     /// </summary>
-    [Theory]
+    [NativeTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void ExclusivesMatchInterpreter(bool thumb)
@@ -433,7 +436,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>Inline LDREXD/STREXD against the interpreter, same monitor scenarios as the word form.</summary>
-    [Theory]
+    [NativeTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void DoublewordExclusivesMatchInterpreter(bool thumb)
@@ -496,7 +499,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
-    [Fact]
+    [NativeFact]
     [Trait("Category", "Slow")]
     public void ExclusiveIncrementIsAtomicAcrossThreads()
     {
@@ -550,7 +553,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// Code rewritten under a running native cache (module unload/reload, guest JIT + sceKernelSyncVMDomain):
     /// after BlockCache.Invalidate the linked, compiled blocks of the range must never run again.
     /// </summary>
-    [Fact]
+    [NativeFact]
     public void InvalidationRetiresLinkedNativeCode()
     {
         EnsureGuestPages();
@@ -578,13 +581,13 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             void Load(uint imm) { var c = GuestMemory.Span(CodeBase, 0x1000); c.Clear(); var p = prog(imm); for (int i = 0; i < p.Length; i++) BitConverter.GetBytes(p[i]).CopyTo(c[(i * 4)..]); }
             uint RunOnce() { s->R[15] = CodeBase; s->Thumb = 0; Assert.Equal(ExitReason.Svc, core.Run()); return s->R[0]; }
             Load(3);
-            for (int i = 0; i < 5; i++) { Assert.Equal(3u * 0x1000, RunOnce()); Thread.Sleep(30); }
+            for (int i = 0; i < 5; i++) { Assert.Equal(3u * 0x1000, RunOnce()); WaitForJit(); }
             var loop = cache.Get(CodeBase + 8, false);
             Assert.True(loop.NativeEntry != 0, "loop block was not compiled natively");
             Load(5);
             cache.Invalidate(CodeBase, 0x1000);
             Assert.True(loop.Invalidated);
-            for (int i = 0; i < 5; i++) { Assert.Equal(5u * 0x1000, RunOnce()); Thread.Sleep(30); }
+            for (int i = 0; i < 5; i++) { Assert.Equal(5u * 0x1000, RunOnce()); WaitForJit(); }
         }
         finally
         {
@@ -598,7 +601,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// A NEON-heavy loop: its native block carries a tier-up budget, gets recompiled by the IL backend while running
     /// and its native code is retired (unlinked). State and dispatcher counters must still match the interpreter.
     /// </summary>
-    [Fact]
+    [NativeFact]
     public void TierUpToIlMatchesInterpreter()
     {
         EnsureGuestPages();
@@ -634,7 +637,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 {
                     s->R[15] = CodeBase; s->Thumb = 0;
                     Assert.Equal(ExitReason.Svc, core.Run());
-                    Thread.Sleep(40); // let the workers compile
+                    WaitForJit(); // let the workers compile
                 }
                 return (Enumerable.Range(0, 16).Select(i => s->R[i]).Append(s->Cpsr).ToArray(), Enumerable.Range(0, 32).Select(i => s->D[i]).ToArray(),
                     core.BlocksExecuted, core.InstructionsExecuted, core.BlockCycles);
@@ -721,7 +724,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>Hand-written blocks with known results (and a printed disassembly for debugging).</summary>
-    [Theory]
+    [NativeTheory]
     [InlineData(false, "E3A00001,E2811005,E0802001,E12FFF1E")] // mov r0,#1; add r1,r1,#5; add r2,r0,r1; bx lr
     [InlineData(false, "E3500000,03A03007,13A03009,E12FFF1E")] // cmp r0,#0; moveq r3,#7; movne r3,#9; bx lr
     [InlineData(false, "E5901004,E5812008,E8BD000F,E12FFF1E")] // ldr r1,[r0,#4]; str r2,[r1,#8]; pop {r0-r3}; bx lr
@@ -765,14 +768,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         finally { CpuState.Free(s); }
     }
 
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 60_000, 101)]
     [InlineData(true, 60_000, 102)]
     [Trait("Category", "Slow")]
     public void NativeMatchesInterpreter(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: false, spillStress: false);
 
     /// <summary>Same with only two registers for temps: exercises the spill paths of the register allocator.</summary>
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 15_000, 201)]
     [InlineData(true, 15_000, 202)]
     [Trait("Category", "Slow")]
@@ -783,7 +786,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// FP fast paths (FTZ/DAZ SSE + default NaN + handler fallback) must reproduce the interpreter bit for bit, in the
     /// Vita FPSCR mode and - through the fallback - in any other mode.
     /// </summary>
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 40_000, 501)]
     [InlineData(true, 40_000, 502)]
     [Trait("Category", "Slow")]
@@ -850,7 +853,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>All three backends on the same blocks (the IL backend is slow to compile: fewer iterations).</summary>
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 1_500, 301)]
     [InlineData(true, 1_500, 302)]
     [Trait("Category", "Slow")]
@@ -952,7 +955,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     ];
 
     /// <summary>Native blocks against Unicorn: multi-instruction sequences of non-UNPREDICTABLE integer encodings.</summary>
-    [Theory]
+    [NativeTheory(unicorn: true)]
     [InlineData(false, 8_000, 401)]
     [InlineData(true, 8_000, 402)]
     [Trait("Category", "Slow")]
