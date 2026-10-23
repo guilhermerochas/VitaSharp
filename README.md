@@ -199,12 +199,23 @@ print a warning and publish ReadyToRun instead. Prerequisites besides the .NET 1
 | Host | Needs |
 | --- | --- |
 | Windows | MSVC C++ build tools: Visual Studio 2022 (or its Build Tools) with *Desktop development with C++* |
-| Linux | `clang` (or `gcc`, picked automatically when clang is missing) and `zlib1g-dev` (`sudo apt install clang zlib1g-dev`); Linux AOT builds the host's own architecture |
+| Linux | `clang` (or `gcc`, picked automatically when clang is missing; tested on Debian 12 / WSL) and `zlib1g-dev` (`sudo apt install clang zlib1g-dev`); Linux AOT builds the host's own architecture |
 | macOS | Xcode command-line tools (`xcode-select --install`) |
 
 The output folder has the same layout as a ReadyToRun build (native libraries and `ffmpeg/` next to the executable);
 debug symbols (`.pdb`, `.dbg`, `.dSYM`) are moved to `artifacts/publish/<rid>-symbols/`. The underlying switch is
 `dotnet publish src/VitaSharp.Desktop -c Release -r <rid> -p:VitaSharpRelease=true -p:VitaSharpAot=true`.
+
+Measured on Windows x64 (October 2026, same machine and shader cache):
+
+| | ReadyToRun | Native AOT |
+| --- | --- | --- |
+| Executable | 139 MB | 38 MB (+131 MB symbols, kept apart) |
+| Folder (with FFmpeg and native libraries) | 288 MB | 187 MB |
+| Launcher window shown | ~640-735 ms | ~355 ms |
+| CLI start to exit (`imports`) | ~285-365 ms | ~165 ms |
+| Launcher working set | ~175 MB | ~135 MB |
+| Killzone `kz_skin` (4500 frames) | 28.8 fps, 153 s process CPU, 1162 MB working set | 28.9 fps, 147 s process CPU, 1092 MB working set |
 
 Known limitations of AOT builds:
 
