@@ -287,9 +287,10 @@ public sealed unsafe partial class VulkanRenderer
             $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}");
     }
 
-    void DbgPipeline(in PipelineKey k, PrimitiveTopology topology)
+    void DbgPipeline(in PipelineKey k, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
-        Dbg($"new pipeline vs {k.Vs:X16} fs {k.Fs:X16} {topology} colour {(k.HasColor ? k.ColorFormat.ToString() : "none")} samples {k.Samples} " +
+        // GXP program hashes (the key's Vs/Fs are shader module handles, meaningless in a log)
+        Dbg($"new pipeline vs {vs.ProgramHash:X16} fs {fs.ProgramHash:X16} {topology} colour {(k.HasColor ? k.ColorFormat.ToString() : "none")} samples {k.Samples} " +
             $"blend {(k.Blend ? $"{k.ColorFunc}/{k.ColorSrc}/{k.ColorDst} a {k.AlphaFunc}/{k.AlphaSrc}/{k.AlphaDst}" : "off")} mask 0x{k.Mask:X} polygon {k.Polygon} layout {k.VertexLayout:X16}");
     }
 
@@ -325,14 +326,12 @@ public sealed unsafe partial class VulkanRenderer
     void DbgTextureOverlap(GxmTextureDesc d)
     {
         uint addr = d.DataAddress;
-        int n = 0;
-        foreach (var rt in _renderTargets.Values)
-            if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height) n++;
+        var candidates = TargetsContaining(addr);
+        int n = candidates.Count;
         if (n < 2 || !_dbgOverlapSeen.Add((addr, d.Format, n))) return;
         var sb = new StringBuilder();
-        foreach (var rt in _renderTargets.Values)
-            if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
-                sb.Append($" [0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8} lastScene {rt.LastScene}]");
+        foreach (var rt in candidates)
+            sb.Append($" [0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8} lastScene {rt.LastScene}]");
         string set = sb.ToString();
         Dbg($"texture 0x{addr:X8} fmt 0x{d.Format:X8} {d.Width}x{d.Height} lies in {n} render targets, tried in this order:{set}");
     }

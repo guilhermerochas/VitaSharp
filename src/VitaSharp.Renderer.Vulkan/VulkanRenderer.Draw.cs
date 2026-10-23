@@ -388,7 +388,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_pipelines.TryGetValue(key, out var p)) return p;
         _fNewPipelines++;
-        if (DebugMode.Enabled) DbgPipeline(key, topology);
+        if (DebugMode.Enabled) DbgPipeline(key, vs, fs, topology);
         if (_sharedPipelines.TryGetValue(key, out p))
         {
             // compiled ahead of time by the prewarm thread

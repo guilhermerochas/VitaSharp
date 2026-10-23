@@ -290,7 +290,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         if (DebugMode.Enabled) DbgTextureOverlap(d);
         // rendered surfaces are used directly (or a region of them is copied out)
-        foreach (var target in _renderTargets.Values)
+        foreach (var target in TargetsContaining(addr))
         {
             var rt = target;
             int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
@@ -327,6 +327,24 @@ public sealed unsafe partial class VulkanRenderer
             return (rt.SampledView, ImageLayout.General);
         }
         return ResolveMemoryTexture(d, addr, w, h, gamma, false);
+    }
+
+    readonly List<RenderTarget> _rtCandidates = new();
+    static readonly Comparison<RenderTarget> NewestSceneFirst = (a, b) => b.LastScene.CompareTo(a.LastScene);
+
+    /// <summary>
+    /// Colour targets whose memory contains <paramref name="addr"/>, the most recently rendered first. Memory reused by
+    /// several surfaces (a 240x136 target inside a stale 960x544 one, Killzone's quarter-res passes) holds what was
+    /// rendered last; in dictionary order a long-unused surface could be picked and its stale content sampled.
+    /// </summary>
+    List<RenderTarget> TargetsContaining(uint addr)
+    {
+        _rtCandidates.Clear();
+        foreach (var rt in _renderTargets.Values)
+            if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
+                _rtCandidates.Add(rt);
+        if (_rtCandidates.Count > 1) _rtCandidates.Sort(NewestSceneFirst);
+        return _rtCandidates;
     }
 
     /// <summary>A texture read from guest memory (cached, re-uploaded when its memory changes). <paramref name="asCube"/>:
