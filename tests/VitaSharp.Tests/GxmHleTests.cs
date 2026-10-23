@@ -118,4 +118,59 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(544u, GuestMemory.R32(info + 12));
         Assert.Equal(59.94005f, GuestMemory.Read<float>(info + 0x18));
     }
+
+    /// <summary>Precomputed setters validate the index against the hardware limits (16 texture units, 14 uniform
+    /// buffers, 16 streams), not against what the program uses: an unused slot is accepted and ignored (Vita3K).
+    /// Persona 4 Golden's libgmq sets texture unit 4 on every material state and aborts on INVALID_VALUE.</summary>
+    [Fact]
+    public void PrecomputedSettersAcceptUnusedSlots()
+    {
+        const uint InvalidValue = 0x805B0003, InvalidPointer = 0x805B0004;
+        var gxm = new Gxm();
+        uint state = fx.Memory.Alloc(0x40, "pstate");
+        uint extra = fx.Memory.Alloc(0x100, "pextra");
+        uint tex = fx.Memory.Alloc(0x10, "ptex");
+        GuestMemory.Fill(extra, 0xEE, 0x100);
+        for (uint i = 0; i < 4; i++) GuestMemory.W32(tex + i * 4, 0x11111111u * (i + 1));
+        // 2 textures + 3 uniform buffers (state layout: textures@4 textureCount@8 bufferCount@10 uniformBuffers@12)
+        GuestMemory.W32(state + 4, extra);
+        GuestMemory.Write(state + 8, (ushort)2);
+        GuestMemory.Write(state + 10, (ushort)3);
+        GuestMemory.W32(state + 12, extra + 32);
+
+        foreach (var f in new[] { "sceGxmPrecomputedFragmentStateSetTexture", "sceGxmPrecomputedVertexStateSetTexture" })
+        {
+            Assert.Equal(0u, U(Call(gxm, f, state, 1u, tex)));
+            Assert.Equal(0x22222222u, GuestMemory.R32(extra + 16 + 4));
+            Assert.Equal(0u, U(Call(gxm, f, state, 4u, tex)));   // unused unit: ignored
+            Assert.Equal(0u, U(Call(gxm, f, state, 15u, tex)));
+            Assert.Equal(InvalidValue, U(Call(gxm, f, state, 16u, tex)));
+            Assert.Equal(InvalidPointer, U(Call(gxm, f, state, 0u, 0u)));
+            Assert.Equal(InvalidPointer, U(Call(gxm, f, 0u, 0u, tex)));
+        }
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(extra + 32)); // the uniform buffer slots were not overwritten
+
+        foreach (var f in new[] { "sceGxmPrecomputedFragmentStateSetUniformBuffer", "sceGxmPrecomputedVertexStateSetUniformBuffer" })
+        {
+            Assert.Equal(0u, U(Call(gxm, f, state, 2u, 0x81234560u)));
+            Assert.Equal(0x81234560u, GuestMemory.R32(extra + 32 + 8));
+            Assert.Equal(0u, U(Call(gxm, f, state, 13u, 0x81234560u))); // unused buffer: ignored
+            Assert.Equal(InvalidValue, U(Call(gxm, f, state, 14u, 0x81234560u)));
+            Assert.Equal(InvalidPointer, U(Call(gxm, f, state, 0u, 0u)));
+        }
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(extra + 32 + 12));
+
+        // precomputed draw with 2 streams (streams@8 streamCount@12)
+        uint draw = fx.Memory.Alloc(0x20, "pdraw");
+        uint streams = fx.Memory.Alloc(0x40, "pstreams");
+        GuestMemory.Fill(streams, 0xEE, 0x40);
+        GuestMemory.W32(draw + 8, streams);
+        GuestMemory.Write(draw + 12, (ushort)2);
+        Assert.Equal(0u, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 1u, 0x81000040u)));
+        Assert.Equal(0x81000040u, GuestMemory.R32(streams + 4));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 5u, 0x81000040u)));
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(streams + 20)); // no slot for stream 5: not written
+        Assert.Equal(InvalidValue, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 16u, 0x81000040u)));
+        Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 0u, 0u)));
+    }
 }

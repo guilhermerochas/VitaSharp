@@ -1272,9 +1272,12 @@ public sealed class Gxm : HleModule
     [Hle]
     int sceGxmPrecomputedDrawSetVertexStream(uint state, uint index, uint data)
     {
-        if (state == 0 || data == 0) return ERR_INVALID_POINTER;
+        // Same validation as Vita3K: the index is checked against the hardware limit, not the program's stream count.
+        if (state == 0) return ERR_INVALID_POINTER;
         if (index >= 16) return ERR_INVALID_VALUE;
-        GuestMemory.W32(GuestMemory.R32(state + 8) + index * 4, data);
+        if (data == 0) return ERR_INVALID_POINTER;
+        // Streams the vertex program does not read have no slot in the extra data (sized by sceGxmGetPrecomputedDrawSize).
+        if (index < GuestMemory.Read<ushort>(state + 12)) GuestMemory.W32(GuestMemory.R32(state + 8) + index * 4, data);
         return 0;
     }
 
@@ -1320,11 +1323,15 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmPrecomputedVertexStateInit(uint state, uint vp, uint extra) => PrecomputedStateInit(state, vp, extra, _vertexPrograms.GetValueOrDefault(vp)?.Info);
     [Hle] int sceGxmPrecomputedFragmentStateInit(uint state, uint fp, uint extra) => PrecomputedStateInit(state, fp, extra, _fragmentPrograms.GetValueOrDefault(fp)?.Info);
 
+    /// <summary>Only an index past the hardware limit (SCE_GXM_MAX_TEXTURE_UNITS) is INVALID_VALUE. An index the
+    /// program does not sample is accepted and ignored, as in Vita3K: the state has no slot for it. Persona 4 Golden's
+    /// libgmq sets texture unit 4 on every material state and asserts on any error.</summary>
     static int PrecomputedSetTexture(uint state, uint index, uint texture)
     {
-        if (state == 0 || texture == 0) return ERR_INVALID_POINTER;
-        if (index >= GuestMemory.Read<ushort>(state + 8)) return ERR_INVALID_VALUE;
-        GuestMemory.Copy(GuestMemory.R32(state + 4) + index * 16, texture, 16);
+        if (state == 0) return ERR_INVALID_POINTER;
+        if (index >= 16) return ERR_INVALID_VALUE;
+        if (texture == 0) return ERR_INVALID_POINTER;
+        if (index < GuestMemory.Read<ushort>(state + 8)) GuestMemory.Copy(GuestMemory.R32(state + 4) + index * 16, texture, 16);
         return 0;
     }
 
@@ -1335,11 +1342,14 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
+    /// <summary>Same rule as <see cref="PrecomputedSetTexture"/>: INVALID_VALUE only past SCE_GXM_MAX_UNIFORM_BUFFERS (14);
+    /// a buffer the program does not use is accepted and ignored.</summary>
     static int PrecomputedSetUniformBuffer(uint state, uint index, uint data)
     {
-        if (state == 0 || data == 0) return ERR_INVALID_POINTER;
-        if (index >= GuestMemory.Read<ushort>(state + 10)) return ERR_INVALID_VALUE;
-        GuestMemory.W32(GuestMemory.R32(state + 12) + index * 4, data);
+        if (state == 0) return ERR_INVALID_POINTER;
+        if (index >= 14) return ERR_INVALID_VALUE;
+        if (data == 0) return ERR_INVALID_POINTER;
+        if (index < GuestMemory.Read<ushort>(state + 10)) GuestMemory.W32(GuestMemory.R32(state + 12) + index * 4, data);
         return 0;
     }
 
