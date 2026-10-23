@@ -142,6 +142,12 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         ctx->thread_count = 1;
         if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
+            if (MissingDeviceLibrary(device) is { } missing)
+            {
+                ffmpeg.avcodec_free_context(&ctx);
+                ReportUnavailable(device, $"{missing} not found");
+                return false;
+            }
             AVBufferRef* hw = null;
             int r = ffmpeg.av_hwdevice_ctx_create(&hw, device, null, null, 0);
             if (r < 0)
@@ -165,6 +171,39 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         _hwFormat = hwFormat;
         lock (_reportedOpened) if (_reportedOpened.Add(device)) Log.Info($"Video decoder: H.264 via {Name}");
         return true;
+    }
+
+    /// <summary>
+    /// The Linux FFmpeg builds (BtbN's, see build/FFmpeg.targets) bind libva, libdrm and the Vulkan loader through
+    /// implib-gen stubs instead of dlopen: the first call into a library that is not installed aborts the whole process
+    /// ("implib-gen: libva-drm.so.2: failed to load library", then an assertion) instead of failing device creation.
+    /// So those device types are only tried when their libraries load.
+    /// </summary>
+    static readonly Dictionary<AVHWDeviceType, string[]> LinuxDeviceLibraries = new()
+    {
+        [AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI] = ["libva.so.2", "libva-drm.so.2", "libva-x11.so.2", "libdrm.so.2"],
+        [AVHWDeviceType.AV_HWDEVICE_TYPE_DRM] = ["libdrm.so.2"],
+        [AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN] = ["libvulkan.so.1"],
+    };
+
+    static readonly Dictionary<AVHWDeviceType, string?> _missingLibrary = new();
+
+    /// <summary>A shared library <paramref name="device"/> needs that cannot be loaded, or null.</summary>
+    static string? MissingDeviceLibrary(AVHWDeviceType device)
+    {
+        if (!OperatingSystem.IsLinux() || !LinuxDeviceLibraries.TryGetValue(device, out var libs)) return null;
+        lock (_missingLibrary)
+        {
+            if (_missingLibrary.TryGetValue(device, out var known)) return known;
+            string? missing = null;
+            foreach (var lib in libs)
+            {
+                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out var h)) { missing = lib; break; }
+                System.Runtime.InteropServices.NativeLibrary.Free(h);
+            }
+            _missingLibrary[device] = missing;
+            return missing;
+        }
     }
 
     static void ReportUnavailable(AVHWDeviceType device, string why)

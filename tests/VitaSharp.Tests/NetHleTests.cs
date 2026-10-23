@@ -25,6 +25,16 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
 
     static string L1(byte[] b) => Encoding.Latin1.GetString(b);
 
+    /// <summary>
+    /// Waits until <paramref name="blocked"/> counts the waiter as blocked: a non-preserving abort or cancel only
+    /// interrupts waits already in progress, so aborting after a fixed sleep races with a slow (loaded) host.
+    /// </summary>
+    static void WaitUntilBlocked(Func<int> blocked, Task<int> waiter)
+    {
+        Assert.True(SpinWait.SpinUntil(() => blocked() > 0 || waiter.IsCompleted, TimeSpan.FromSeconds(30)), "the wait never blocked");
+        Assert.False(waiter.IsCompleted, $"the wait returned {(waiter.IsCompletedSuccessfully ? $"0x{waiter.Result:X8}" : "with an exception")} instead of blocking");
+    }
+
     [Fact]
     public void EscapeUnescape()
     {
@@ -182,11 +192,16 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.True(sw.ElapsedMilliseconds >= 10, $"waited {sw.ElapsedMilliseconds} ms");
 
         var waiter = Task.Run(() => Call(net, "sceNetEpollWait", eid, ev, 1, -1));
-        Thread.Sleep(50);
-        Assert.False(waiter.IsCompleted);
+        WaitUntilBlocked(() => net.BlockedWaits, waiter); // a non-preserving abort only interrupts waits in progress
         Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 0));
-        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+        await waiter.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(Net.EINTR, await waiter);
+        // vita-headers SCE_NET_EPOLL_ABORT_FLAG_PRESERVATION: without it an abort with no wait in progress is lost,
+        // with it every later wait fails until the epoll is destroyed
+        Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 0));
+        Assert.Equal(0, Call(net, "sceNetEpollWait", eid, ev, 1, 1_000));
+        Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 1));
+        Assert.Equal(Net.EINTR, Call(net, "sceNetEpollWait", eid, ev, 1, -1));
         Assert.Equal(0, Call(net, "sceNetEpollDestroy", eid));
         Assert.Equal(Net.EBADF, Call(net, "sceNetEpollDestroy", eid));
     }
@@ -203,10 +218,9 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         GuestMemory.W32(opt, 0);
         Assert.Equal(0, Call(net, "sceNetSetsockopt", s, 0xFFFF, 0x1100, opt, 4u));
         var waiter = Task.Run(() => Call(net, "sceNetRecv", s, 0u, 0u, 0));
-        Thread.Sleep(50);
-        Assert.False(waiter.IsCompleted);
+        WaitUntilBlocked(() => net.BlockedWaits, waiter);
         Assert.Equal(0, Call(net, "sceNetSocketAbort", s, 0));
-        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+        await waiter.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(Net.EINTR, await waiter);
         Assert.Equal(0, Call(net, "sceNetSocketClose", s));
         Assert.Equal(Net.EBADF, Call(net, "sceNetSocketClose", s));
@@ -223,10 +237,9 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(rudp, "sceRudpPollWait", poll, evs, 4u, 20_000UL));
         Assert.True(sw.ElapsedMilliseconds >= 10);
         var waiter = Task.Run(() => Call(rudp, "sceRudpPollWait", poll, evs, 4u, ulong.MaxValue));
-        Thread.Sleep(50);
-        Assert.False(waiter.IsCompleted);
+        WaitUntilBlocked(() => rudp.BlockedPollWaits, waiter);
         Assert.Equal(0, Call(rudp, "sceRudpPollCancel", poll));
-        await waiter.WaitAsync(TimeSpan.FromSeconds(5));
+        await waiter.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(0, Call(rudp, "sceRudpSetMaxSegmentSize", (ushort)1000));
         var mss = fx.Memory.Alloc(16, "mss");
         Call(rudp, "sceRudpGetMaxSegmentSize", new Ptr<ushort>(mss));

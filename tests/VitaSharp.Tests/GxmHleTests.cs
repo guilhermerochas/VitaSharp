@@ -192,4 +192,60 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(InvalidValue, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 16u, 0x81000040u)));
         Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 0u, 0u)));
     }
+
+    /// <summary>GXP parameter semantics (SceGxmProgramParameter +6 semantic, +7 semantic index; vita-headers
+    /// SceGxmParameterSemantic, Vita3K sceGxmProgramFindParameterBySemantic/ParameterGetSemantic): only vertex
+    /// attributes have a semantic, the index is the low nibble, NONE never matches, and the old-SDK `_`-prefixed
+    /// NIDs (0xAAFD61D5, 0x7FFFDD7A) are bound to the same functions.</summary>
+    [Fact]
+    public void ProgramParameterSemantics()
+    {
+        const uint Position = 11, Color = 6, TexCoord = 14;
+        var gxm = new Gxm();
+        uint prog = fx.Memory.Alloc(0x200, "gxpsem");
+        GuestMemory.Fill(prog, 0, 0x200);
+        GuestMemory.W32(prog + 8, 0x200);            // size
+        GuestMemory.W32(prog + 0x24, 4);             // parameter count
+        GuestMemory.W32(prog + 0x28, 0x100 - 0x28);  // parameters at +0x100 (16 bytes each)
+        GuestMemory.W32(prog + 0x2C, 0x1C0 - 0x2C);  // empty varyings block
+        uint nameAt = 0x180;
+        void Param(int i, string name, uint category, uint components, uint semantic, uint semanticIndex, uint resource)
+        {
+            uint p = prog + 0x100 + (uint)i * 16;
+            GuestMemory.W32(p, prog + nameAt - p);
+            foreach (char ch in name) GuestMemory.Write(prog + nameAt++, (byte)ch);
+            nameAt++;
+            GuestMemory.Write(p + 4, (byte)category);            // type F32 (0) in the high nibble
+            GuestMemory.Write(p + 5, (byte)components);
+            GuestMemory.Write(p + 6, (byte)semantic);
+            GuestMemory.Write(p + 7, (byte)semanticIndex);
+            GuestMemory.W32(p + 8, 1);
+            GuestMemory.W32(p + 12, resource);
+        }
+        Param(0, "wvp", 1, 4, Position, 0, 0);       // a uniform with a stray semantic byte: never a match
+        Param(1, "aPos", 0, 3, Position, 0, 0);
+        Param(2, "aCol", 0, 4, Color, 0, 4);
+        Param(3, "aUv1", 0, 2, TexCoord, 0x21, 8);    // index 1 (high nibble ignored)
+        uint P(int i) => prog + 0x100 + (uint)i * 16;
+
+        Assert.Equal(0u, U(Call(gxm, "sceGxmProgramParameterGetSemantic", P(0))));
+        Assert.Equal(Position, U(Call(gxm, "sceGxmProgramParameterGetSemantic", P(1))));
+        Assert.Equal(Color, U(Call(gxm, "sceGxmProgramParameterGetSemantic", P(2))));
+        Assert.Equal(TexCoord, U(Call(gxm, "sceGxmProgramParameterGetSemantic", P(3))));
+        Assert.Equal(1u, U(Call(gxm, "sceGxmProgramParameterGetSemanticIndex", P(3))));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmProgramParameterGetSemanticIndex", P(2))));
+
+        Assert.Equal(P(1), U(Call(gxm, "sceGxmProgramFindParameterBySemantic", prog, Position, 0u)));
+        Assert.Equal(P(2), U(Call(gxm, "sceGxmProgramFindParameterBySemantic", prog, Color, 0u)));
+        Assert.Equal(P(3), U(Call(gxm, "sceGxmProgramFindParameterBySemantic", prog, TexCoord, 1u)));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmProgramFindParameterBySemantic", prog, TexCoord, 0u)));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmProgramFindParameterBySemantic", prog, 0u, 0u)));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmProgramFindParameterBySemantic", 0u, Position, 0u)));
+
+        uint[] Nids(string method) => typeof(Gxm).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!
+            .GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>().Select(a => a.Nid).ToArray();
+        Assert.Contains(0xAAFD61D5u, Nids("sceGxmProgramParameterGetSemantic"));
+        Assert.Contains(0x7FFFDD7Au, Nids("sceGxmProgramFindParameterBySemantic"));
+        Assert.Contains(0u, Nids("sceGxmProgramParameterGetSemantic"));     // and the current NID by name
+    }
 }

@@ -97,6 +97,11 @@ public static class Program
             }
             case "memdiff" when args.Length >= 3:
                 return MemDiff.Run(args[1], args[2], args.Length > 3 ? float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 10f);
+            case "png-diff" when args.Length >= 3:
+                ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
+                return 0;
+            case "replay-gpu" when args.Length >= 2:
+                return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
             case "test" when args.Length >= 2:
                 return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
@@ -245,7 +250,9 @@ public static class Program
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
-        Console.WriteLine("  imports <TITLEID|folder> [x.self]    list the system functions a title (or one of its executables) needs");
+        ReplayGpu.PrintUsage();
+        Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (F8 in the window starts/stops one)");
+        Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");

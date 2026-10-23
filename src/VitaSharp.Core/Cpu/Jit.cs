@@ -77,7 +77,16 @@ public static unsafe class Jit
     public static void SelectFromEnvironment()
     {
         if (Environment.GetEnvironmentVariable("VITASHARP_CPU") is { Length: > 0 } env && !Select(env))
-            Console.Error.WriteLine($"VITASHARP_CPU={env}: unknown or unsupported CPU backend, using {Mode}");
+            Console.Error.WriteLine($"VITASHARP_CPU={env}: {WhyUnavailable(env)}, using {Mode}");
+    }
+
+    /// <summary>Why <see cref="Select"/> rejected <paramref name="name"/> (for the fallback log line).</summary>
+    public static string WhyUnavailable(string? name)
+    {
+        foreach (var b in All)
+            if (b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return $"the {b.Name} backend {b.UnsupportedReason ?? "is not supported on this host"}";
+        return $"unknown CPU backend '{name}' (native, il, interp or auto)";
     }
 
     /// <summary>Instructions the block must have executed before the next backend in the chain takes it.</summary>
@@ -92,10 +101,19 @@ public static unsafe class Jit
 
     static readonly BlockingCollection<Block> Queue = new(new ConcurrentQueue<Block>());
     static int _workersStarted;
+    static int _inFlight; // queued or compiling
+
+    /// <summary>
+    /// Waits until every queued block has been compiled (or rejected); false on timeout. Compilation is asynchronous,
+    /// so callers that need a deterministic state - tests comparing backends, diagnostics - wait here instead of
+    /// sleeping for a guessed time.
+    /// </summary>
+    public static bool WaitIdle(TimeSpan timeout) => SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, timeout);
 
     public static void Enqueue(Block b)
     {
         if (!Enabled || Interlocked.CompareExchange(ref b.JitState, 1, 0) != 0) return;
+        Interlocked.Increment(ref _inFlight);
         EnsureWorkers();
         Queue.Add(b);
     }
@@ -113,6 +131,7 @@ public static unsafe class Jit
                 {
                     try { Compile(b); }
                     catch (Exception e) { Console.Error.WriteLine($"[JIT] {b}: {e.Message}"); b.JitState = 3; }
+                    finally { Interlocked.Decrement(ref _inFlight); }
                 }
             })
             { IsBackground = true, Name = $"JIT worker {i}", Priority = ThreadPriority.BelowNormal };

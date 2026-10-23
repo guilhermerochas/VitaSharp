@@ -15,6 +15,9 @@ public interface IBlockCompiler
     /// <summary>False when the backend cannot run on this host or configuration (CPU architecture, debug features).</summary>
     bool IsSupported { get; }
 
+    /// <summary>Why <see cref="IsSupported"/> is false (logs, launcher), or null when the backend is supported.</summary>
+    string? UnsupportedReason { get; }
+
     /// <summary>Executed guest instructions (executions x block length) before a block is worth compiling.</summary>
     long HotInstructions { get; }
 

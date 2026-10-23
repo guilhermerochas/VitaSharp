@@ -40,7 +40,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport();
 
     public string TextureCacheReport()
     {
@@ -147,6 +147,7 @@ public sealed unsafe partial class VulkanRenderer
                 var (v, l) = ResolveTexture(desc, asCube);
                 if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); }
                 else if (cubeType) view = _dummyCubeView;
+                if (_drawRing != null) DrawRingTexture(layout.Handle == _texLayoutV.Handle, i, desc, v.Handle == 0);
             }
             else if (cubeType) view = _dummyCubeView;
             infos[i] = new DescriptorImageInfo(sampler, view, layout2);
@@ -273,13 +274,19 @@ public sealed unsafe partial class VulkanRenderer
         uint w = d.Width, h = d.Height;
         bool gamma = d.GammaMode != 0;
         // a 2D texture sampled as a cube: only plain square textures (rendered surfaces keep the dummy cube)
-        if (asCube && (w != h || RenderTargetContaining(addr) != null)) return (default, default);
-        if (asCube) return ResolveMemoryTexture(d, addr, w, h, gamma, asCube);
+        // _texSrc/_texSrcAddr: which path was taken, for the debug-mode draw ring (VulkanRenderer.DrawRing.cs)
+        _texSrcAddr = 0;
+        if (asCube && (w != h || RenderTargetContaining(addr) != null)) { _texSrc = TexSource.None; return (default, default); }
+        if (asCube) { _texSrc = TexSource.MemoryCube; return ResolveMemoryTexture(d, addr, w, h, gamma, asCube); }
         // LOD min on a texture whose base level is a rendered surface: the sampler never reads level 0, it reads the
         // smaller levels that follow it in memory (which are usually not part of the surface)
         if (d.LodMin > 0 && d.MipCount > 1 && d.TextureType is not (GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
             && RenderTargetContaining(addr) != null && BaseLevelView(d) is { } lowered)
-            return ResolveTexture(lowered);
+        {
+            var res = ResolveTexture(lowered);
+            _texSrc |= TexSource.LodLowered;
+            return res;
+        }
         // depth surfaces sampled as textures (X8U24 / F32 / U16): read the GPU depth, unless a colour target
         // rendered later reuses the same memory
         if (DepthTextureSource(addr, d) is { } depthSrc)
@@ -287,7 +294,14 @@ public sealed unsafe partial class VulkanRenderer
             bool newerColor = false;
             foreach (var rt in _renderTargets.Values)
                 if (rt.LastScene > depthSrc.LastScene && addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height) { newerColor = true; break; }
-            if (!newerColor) return DepthTexture(depthSrc, w, h);
+            if (!newerColor) { _texSrc = TexSource.Depth; _texSrcAddr = depthSrc.Address; return DepthTexture(depthSrc, w, h); }
+        }
+        // a separate stencil plane sampled as U8: read the GPU stencil, unless a colour target rendered later reuses it
+        if (StencilTextureSource(addr, d) is { } stencilSrc
+            && (RenderTargetContaining(addr) is not { } laterRt || laterRt.LastScene < stencilSrc.LastScene))
+        {
+            _texSrc = TexSource.Depth; _texSrcAddr = stencilSrc.StencilAddress;
+            return StencilTexture(stencilSrc, d);
         }
         if (DebugMode.Enabled) DbgTextureOverlap(d);
         // rendered surfaces are used directly (or a region of them is copied out)
@@ -304,10 +318,15 @@ public sealed unsafe partial class VulkanRenderer
             // the surface being rendered, read where the draw itself renders: those tiles are still on chip, so the
             // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
             if (target == _rt && _inScene && SamplesOwnTiles(x0, y0, w, h)) rt = SceneStartSource(target);
-            if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias) return (alias, ImageLayout.ShaderReadOnlyOptimal);
+            _texSrcAddr = target.Address;
+            var sceneStart = rt != target ? TexSource.SceneStart : 0;
+            if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias) { _texSrc = TexSource.Reinterpret | sceneStart; return (alias, ImageLayout.ShaderReadOnlyOptimal); }
             if (d.TextureType == GxmTextureDesc.TypeLinear && texRow == rowBytes && x0 + w <= rt.Width && y0 + h <= rt.Height
                 && RenderTargetMipmapped(rt, d, x0, y0, gamma) is { } mipped)
+            {
+                _texSrc = TexSource.RtMipmapped | sceneStart;
                 return (mipped, ImageLayout.ShaderReadOnlyOptimal);
+            }
             if (addr != rt.Address || w != rt.Width || h != rt.Height)
             {
                 if (!linear || texRow != rowBytes || x0 >= rt.Width) continue;
@@ -317,6 +336,7 @@ public sealed unsafe partial class VulkanRenderer
                 // reading the guest memory that the writeback fills).
                 bool overhang = x0 + w > rt.Width || y0 + h > rt.Height;
                 if (overhang && !OnlyTargetIn(rt, addr, texRow * h)) continue;
+                _texSrc = TexSource.Region | sceneStart;
                 return (RenderTargetRegion(rt, x0, y0, w, h, d.Format, gamma), ImageLayout.ShaderReadOnlyOptimal);
             }
             SyncRenderTargetForRead(rt);
@@ -331,8 +351,11 @@ public sealed unsafe partial class VulkanRenderer
                 rt.SampledSwizzle = sw;
                 rt.SampledGamma = gamma;
             }
+            _texSrc = TexSource.RenderTarget | sceneStart;
             return (rt.SampledView, ImageLayout.General);
         }
+        _texSrc = TexSource.Memory;
+        _texSrcAddr = 0;
         return ResolveMemoryTexture(d, addr, w, h, gamma, false);
     }
 

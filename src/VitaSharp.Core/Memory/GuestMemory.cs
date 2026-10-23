@@ -111,9 +111,17 @@ public sealed unsafe class GuestMemory : IDisposable
     }
 
     /// <summary>Read-only view of guest memory (the pages are not marked written).</summary>
-    public static ReadOnlySpan<byte> ReadSpan(uint addr, int length) => new(Base + addr, length);
+    public static ReadOnlySpan<byte> ReadSpan(uint addr, int length)
+    {
+        if (Gpu.GpuDumpRecorder.TapEnabled) Gpu.GpuDumpRecorder.Tap(addr, length); // GPU dump recording (one flag check when off)
+        return new(Base + addr, length);
+    }
     /// <inheritdoc cref="ReadSpan(uint, int)"/>
-    public static ReadOnlySpan<T> ReadSpan<T>(uint addr, int count) where T : unmanaged => new(Base + addr, count);
+    public static ReadOnlySpan<T> ReadSpan<T>(uint addr, int count) where T : unmanaged
+    {
+        if (Gpu.GpuDumpRecorder.TapEnabled) Gpu.GpuDumpRecorder.Tap(addr, (long)count * sizeof(T));
+        return new(Base + addr, count);
+    }
 
     public static string ReadCString(uint addr, int max = 4096)
     {

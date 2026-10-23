@@ -23,7 +23,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)
 - [ ] JIT: compilação mais barata por bloco
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
-- [ ] Native AOT no Windows (falta instalar as ferramentas de C++ do Visual Studio)
 - [ ] Prioridade das threads da CPU emulada e da GPU (depois de medir)
 
 ## Android
@@ -56,8 +55,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Killzone: blocos verdes e azuis passageiros na área subterrânea (esperando captura com replay)
+- [ ] Gravity Rush: intro do sonho e tela de título muito lavadas/claras; a cena em si sai colorida, o clareamento vem da composição final (tone-map/bloom, fs 43E841F998350713). Pode ser o estilo do jogo; comparar com um print do Vita real ou do Vita3K
+- [ ] Gravity Rush: um toque em 0,46/0,48 no quadro 1000 da tela de título não registrou (o toque no centro funciona)
+- [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
+- [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa)
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)

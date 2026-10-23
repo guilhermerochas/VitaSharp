@@ -105,7 +105,10 @@ public sealed class Diagnostics
             if (_autoCount >= AutoMax) { Log.Info($"[diag] anomaly '{kind}': automatic capture limit ({AutoMax} per session) reached"); return; }
             if (DateTime.Now - _lastAuto < AutoInterval) { Log.Info($"[diag] anomaly '{kind}': last automatic capture less than {AutoInterval.TotalMinutes:F0} min ago, skipped"); return; }
             // keep the replay ring running ~1 s past the spike so both sides of it are saved
-            if (!Capture($"auto: {kind} at present #{present} - {detail}", VulkanRenderer.ReplayPostFrames, present)) return;
+            // NaN/Inf in a render target: trace the very next frame (the NaN may be gone a second later, and the
+            // visible frame may look fine); the presented-image anomalies keep ~1 s of replay after the spike
+            int post = kind == VulkanRenderer.NanAnomalyKind ? 0 : VulkanRenderer.ReplayPostFrames;
+            if (!Capture($"auto: {kind} at present #{present} - {detail}", post, present)) return;
             _lastAuto = DateTime.Now;
             _autoCount++;
         }
@@ -156,6 +159,8 @@ public sealed class Diagnostics
             sb.AppendLine($"Presented frame: {res.FrameWidth}x{res.FrameHeight}{(res.Screenshot ? "" : " (no screenshot)")}");
             sb.AppendLine(res.ReplayFrames > 0 ? $"Replay: {res.ReplayFrames} presented frames before the traced one in replay/ (see replay/replay.txt)"
                 : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only in debug mode, F9)");
+            sb.AppendLine(res.DrawRingFrames > 0 ? $"Draw ring: draw lists of {res.DrawRingFrames} presented frames before the traced one in drawring/ (see drawring/index.txt and diff.txt)"
+                : res.DrawRingFrames < 0 ? "Draw ring: writing drawring/ failed (see log.txt)" : "Draw ring: off (runs only in debug mode, F9)");
             if (res.Error != null) sb.AppendLine($"Renderer error: {res.Error}");
         }
         sb.AppendLine($"Build: {BuildVersion()}");
@@ -164,6 +169,9 @@ public sealed class Diagnostics
         sb.AppendLine($"Command line: {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}");
         sb.AppendLine(Core.Cpu.Jit.Describe());
         sb.AppendLine($"Debug mode: {(DebugMode.Enabled ? "on" : "off")}");
+        sb.AppendLine(Core.Gpu.GpuDumpRecorder.Current is { } dump
+            ? $"GPU dump: {(dump.Recording ? $"recording, {dump.FramesRecorded} frames so far" : "armed")} -> {dump.Options.Path}"
+            : $"GPU dump: not recording (F8 records one into {GpuDumpControl.Root}; see docs/notes/gpu-dump.md)");
         if (HostInfo?.Invoke() is { Length: > 0 } host) sb.AppendLine(host);
         if (renderer != null) sb.AppendLine(renderer.DescribeForDiagnostics());
         sb.AppendLine($"GPU queue: submitted {_emu.Gpu.Submitted}, completed {_emu.Gpu.Completed}");
@@ -176,11 +184,13 @@ public sealed class Diagnostics
         sb.AppendLine("Files:");
         sb.AppendLine("  screenshot.png      the presented frame at the end of the traced frame");
         sb.AppendLine("  replay/             debug mode: the last ~128 presented frames (480x272) before the traced frame, sheets of 30, replay.txt with per-frame metrics");
+        sb.AppendLine("  drawring/           debug mode: frame_<present>.txt draw list of every replay/ frame (same format as draws.txt), index.txt, diff.txt (vs previous frame)");
         sb.AppendLine("  draws.txt           every scene and draw of the traced frame (programs, targets, textures, MSAA, state)");
         sb.AppendLine("  shaders/            GLSL of every program drawn (<gxp hash>_<hint key>.vert/.frag)");
         sb.AppendLine("  targets/            every render target as PNG + targets.txt (per-channel min/max/mean, NaN/Inf, guest copy)");
         sb.AppendLine("  textures/           every texture sampled in the frame as PNG + textures.txt (noise/seam checks, mips)");
         sb.AppendLine("  frames.txt          the last 120 frames: draws, scenes, new shaders/pipelines/targets, biggest hitch cause");
+        sb.AppendLine("  nan.txt             debug mode: NaN/Inf history of every float render target (and, with VITASHARP_DEBUG_NAN=draws, the programs that produced it)");
         sb.AppendLine("  renderer.txt        GPU/driver/settings, renderer state and statistics so far");
         sb.AppendLine("  state.txt           guest threads (wait state, backtrace, recent HLE calls in debug mode), mutexes, GPU queue");
         sb.AppendLine("  audio.txt           audio device and buffering, open/released ports (outputs/s, gaps, underruns, silence), NGS and decoder streams");

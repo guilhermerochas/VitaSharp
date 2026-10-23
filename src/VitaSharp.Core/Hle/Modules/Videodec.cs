@@ -266,20 +266,31 @@ public sealed class CodecEngine : HleModule
         lock (_blocks)
         {
             if (!_blocks.TryGetValue(uid, out var b)) return unchecked((uint)ERR_INVALID_VALUE);
-            uint align = Math.Max(alignment, 256u);
             size = GuestMemory.AlignUp(Math.Max(size, 1), 256);
-            for (int i = 0; i < b.Free.Count; i++)
-            {
-                uint start = b.Free.Keys[i], len = b.Free.Values[i], p = GuestMemory.AlignUp(start, align);
-                if ((ulong)p - start + size > len) continue;
-                b.Free.RemoveAt(i);
-                if (p > start) b.Free.Add(start, p - start);
-                if (start + len > p + size) b.Free.Add(p + size, start + len - p - size);
-                b.Used[p] = size;
-                return p;
-            }
+            // The alignment is a request for the codec's physical pages, not a guarantee about the virtual address
+            // inside the game's block: Gravity Rush's AvPlayer opens a 1 MiB block, takes 256 KiB from it and then
+            // asks for 512 KiB aligned to 1 MiB, which only fits if the alignment is relaxed (the game treats the
+            // error code as an address; Vita3K returns fake addresses and never fails). Try the requested
+            // alignment first, then smaller powers of two.
+            for (uint align = Math.Max(alignment == 0 ? 256u : System.Numerics.BitOperations.RoundUpToPowerOf2(alignment), 256u); align >= 256; align >>= 1)
+                if (TryAlloc(b, size, align) is uint p) return p;
             return unchecked((uint)ERR_INVALID_VALUE);
         }
+    }
+
+    static uint? TryAlloc(Block b, uint size, uint align)
+    {
+        for (int i = 0; i < b.Free.Count; i++)
+        {
+            uint start = b.Free.Keys[i], len = b.Free.Values[i], p = GuestMemory.AlignUp(start, align);
+            if ((ulong)p - start + size > len) continue;
+            b.Free.RemoveAt(i);
+            if (p > start) b.Free.Add(start, p - start);
+            if (start + len > p + size) b.Free.Add(p + size, start + len - p - size);
+            b.Used[p] = size;
+            return p;
+        }
+        return null;
     }
 
     [Hle]

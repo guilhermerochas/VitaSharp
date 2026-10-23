@@ -78,7 +78,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 8;
+    public const int GeneratorVersion = 10;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -101,7 +101,7 @@ public static class ShaderGenerator
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
     /// output must not be read from or written to persistent shader caches.
     /// </summary>
-    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || ProgramInput.UnboundedUbsActive;
+    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive;
 
     const string PushConstants = """
 layout(push_constant) uniform RenderInfo {
@@ -469,9 +469,19 @@ float packC10(vec3 c) {
         Func<uint, bool, UsseTranslator.SamplerUse> samplerFor)
     {
         var declared = new HashSet<int>();
+        // Varyings are interpolated at the centroid of the covered samples. In a multisampled scene a fragment that
+        // covers only some samples of its pixel is otherwise shaded at the pixel centre, which can lie outside the
+        // primitive: the varyings are then extrapolated past the values the vertex shader produced. Killzone
+        // Mercenary's lit scene programs map a per-vertex gloss (TEXCOORD3.w) to a specular exponent; extrapolated, it
+        // turned negative, exp2(-|N.H| * exponent) overflowed F16 and an occasional edge fragment stored Inf/NaN into
+        // the HDR target, which the luminance downsample spread to auto exposure and the post effects. The GXP
+        // descriptors of those programs request centroid sampling (attribute_info bit 0x10, "_CENTROID" in Vita3K's
+        // translator; full-screen post programs leave it clear), but the bit only accompanies texture coordinate
+        // reads, so every varying is centroid: identical to centre sampling at 1x and in supersampled scenes, and
+        // ignored by programs that run per sample (gl_SampleID), which are interpolated at the sample position.
         string Varying(int loc, string name)
         {
-            if (declared.Add(loc)) decl.AppendLine($"layout(location = {loc}) in vec4 {name};");
+            if (declared.Add(loc)) decl.AppendLine($"layout(location = {loc}) centroid in vec4 {name};");
             return name;
         }
 
@@ -638,6 +648,11 @@ float packC10(vec3 c) {
             if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
             decl.AppendLine("layout(location = 0) out vec4 out_color;");
             t.Line($"out_color = {v.E};");
+            // U2F10F10F10 surfaces are rendered into a host F16x4 image, which also stores what the guest format
+            // cannot: unsigned 10-bit floats hold no negative values and the 2-bit alpha is normalised. Killzone's
+            // 240x136 luminance target (auto exposure) regularly received a few slightly negative pixels.
+            if ((hints.ColorFormat & 0xF1800000) == 0x41000000)
+                t.Line("out_color = vec4(max(out_color.rgb, vec3(0.0)), clamp(out_color.a, 0.0, 1.0));");
         }
         int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
@@ -657,7 +672,12 @@ float packC10(vec3 c) {
         if (DebugId)
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
         // a debug override replaced the colour of a raw-output program: store it as the surface's halves/bytes/floats
-        if (rawBits != 0 && t.Body.Length != bodyLength)
+        bool overridden = t.Body.Length != bodyLength;
+        // VITASHARP_DEBUG_NAN=draws: count the fragments whose colour output has a NaN/Inf component, per draw
+        // (rinfo.draw_id), in the renderer's per-frame buffer (VulkanRenderer.NanCheck.cs). Raw-bit outputs carry
+        // packed data, not colours, unless a debug override above replaced them.
+        if (NanDraws && (rawBits == 0 || overridden)) EmitNanDrawCheck(decl, t, hints.ColorFormat);
+        if (rawBits != 0 && overridden)
             t.Line(rawBits switch
             {
                 32 => "out_raw = floatBitsToUint(out_color);",
@@ -700,6 +720,43 @@ float packC10(vec3 c) {
     static readonly bool DebugAlpha = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "alpha";
     static readonly bool DebugUv = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "uv";
     static readonly bool DebugId = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "id";
+
+    /// <summary>
+    /// VITASHARP_DEBUG_NAN=draws (debug, chosen at launch): every generated fragment shader checks its colour output
+    /// and records NaN/Inf fragments per draw id in a storage buffer (set 0, <see cref="NanDrawBinding"/>). The output
+    /// itself is unchanged, but the GLSL differs, so it counts as a debug override (persistent caches bypassed).
+    /// </summary>
+    public static readonly bool NanDraws = string.Equals(Environment.GetEnvironmentVariable("VITASHARP_DEBUG_NAN"), "draws", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Set 0 binding of the NaN draw buffer, and its entries (4 uints per draw id: fragments, flags 1 = NaN
+    /// 2 = Inf, 0xFFFFFFFF - first pixel (y &lt;&lt; 16 | x), unused); draw ids at or above the last slot share it.</summary>
+    public const int NanDrawBinding = 4, NanDrawSlots = 4096;
+
+    static void EmitNanDrawCheck(StringBuilder decl, UsseTranslator t, uint colorFormat)
+    {
+        // only the components the colour surface stores (an F32F32 target ignores .zw, F11F11F10 has no alpha)
+        int stored = (colorFormat & 0xF1800000) switch
+        {
+            0x80800000 or 0x90800000 or 0x40800000 or 0x20800000 or 0xF0000000 or 0x10800000 => 1,
+            0xB0800000 or 0xC0800000 or 0x50800000 or 0x30800000 or 0x00800000 or 0x11000000 => 2,
+            0x30000000 or 0x21000000 or 0x31000000 => 3,
+            _ => 4,
+        };
+        string v = stored switch { 1 => "vec4(out_color.x)", 2 => "out_color.xyxy", 3 => "out_color.xyzx", _ => "out_color" };
+        decl.AppendLine($"layout(std430, set = 0, binding = {NanDrawBinding}) buffer NanDrawHits {{ uint nan_hits[]; }} nanh;");
+        // 16-bit and packed float surfaces also flag huge finite values (>= 65000, the scan's threshold): a value
+        // past the F16 range is stored as Inf or clamped to 65504 depending on the host GPU
+        bool f32 = (colorFormat & 0xF1800000) is 0x10800000 or 0x11000000;
+        string huge = f32 ? "false" : "any(greaterThanEqual(abs(nan_out), vec4(65000.0)))";
+        t.Line($"vec4 nan_out = {v};");
+        t.Line($"bool nan_huge = !any(isnan(nan_out)) && !any(isinf(nan_out)) && {huge};");
+        t.Open("if (any(isnan(nan_out)) || any(isinf(nan_out)) || nan_huge)");
+        t.Line($"uint nan_slot = min(uint(rinfo.draw_id), {NanDrawSlots - 1}u) * 4u;");
+        t.Line("uvec2 nan_px = uvec2(gl_FragCoord.xy / max(rinfo.res_multiplier, 1.0));");
+        t.Line("atomicAdd(nanh.nan_hits[nan_slot], 1u);");
+        t.Line("atomicOr(nanh.nan_hits[nan_slot + 1u], (any(isnan(nan_out)) ? 1u : 0u) | (any(isinf(nan_out)) ? 2u : 0u) | (nan_huge ? 4u : 0u));");
+        t.Line("atomicMax(nanh.nan_hits[nan_slot + 2u], 0xFFFFFFFFu - ((min(nan_px.y, 0xFFFFu) << 16) | min(nan_px.x, 0xFFFFu)));");
+        t.Close();
+    }
 
     // ------------------------------------------------------------------ vertex outputs
 

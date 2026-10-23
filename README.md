@@ -178,6 +178,61 @@ it, and FFmpeg in `ffmpeg/`. macOS builds made on another OS are not code-signed
 `codesign --force --sign - VitaSharp.Desktop` (and `xattr -dr com.apple.quarantine .` for downloaded copies) before
 starting them.
 
+#### Native AOT
+
+`--aot` / `-Aot` compiles the whole application ahead of time into a native executable instead of shipping IL plus
+ReadyToRun code: no JIT at run time, faster start, a smaller download and less memory.
+
+```sh
+build/publish.sh --aot linux-x64        # on Linux
+build/publish.sh --aot osx-arm64        # on macOS (osx-x64 too)
+```
+
+```powershell
+build\publish.ps1 -Aot -Rid win-x64     # on Windows
+```
+
+Native AOT cannot cross-compile between operating systems: each platform is built on its own OS (CI builds win-x64,
+linux-x64, linux-arm64, osx-x64 and osx-arm64 on matching runners). For a platform the host cannot build, the scripts
+print a warning and publish ReadyToRun instead. Prerequisites besides the .NET 10 SDK:
+
+| Host | Needs |
+| --- | --- |
+| Windows | MSVC C++ build tools: Visual Studio 2022 (or its Build Tools) with *Desktop development with C++* |
+| Linux | `clang` (or `gcc`, picked automatically when clang is missing; tested on Debian 12 / WSL) and `zlib1g-dev` (`sudo apt install clang zlib1g-dev`); Linux AOT builds the host's own architecture |
+| macOS | Xcode command-line tools (`xcode-select --install`) |
+
+The output folder has the same layout as a ReadyToRun build (native libraries and `ffmpeg/` next to the executable);
+debug symbols (`.pdb`, `.dbg`, `.dSYM`) are moved to `artifacts/publish/<rid>-symbols/`. The underlying switch is
+`dotnet publish src/VitaSharp.Desktop -c Release -r <rid> -p:VitaSharpRelease=true -p:VitaSharpAot=true`.
+
+Measured on Windows x64 (October 2026, same machine and shader cache):
+
+| | ReadyToRun | Native AOT |
+| --- | --- | --- |
+| Executable | 139 MB | 38 MB (+131 MB symbols, kept apart) |
+| Folder (with FFmpeg and native libraries) | 288 MB | 187 MB |
+| Launcher window shown | ~640-735 ms | ~355 ms |
+| CLI start to exit (`imports`) | ~285-365 ms | ~165 ms |
+| Launcher working set | ~175 MB | ~135 MB |
+| Killzone `kz_skin` (4500 frames) | 28.8 fps, 153 s process CPU, 1162 MB working set | 28.9 fps, 147 s process CPU, 1092 MB working set |
+
+Known limitations of AOT builds:
+
+- The `il` CPU backend (one .NET `DynamicMethod` per guest block) needs Reflection.Emit, which Native AOT does not
+  have. `--cpu=il` / `VITASHARP_CPU=il` logs why and falls back to the best available backend, and the launcher does
+  not offer it. The default `native` x64 backend and the interpreter are unaffected.
+- On ARM64 hosts the native x64 backend does not apply, so AOT and ReadyToRun builds both run the interpreter.
+- Webcams on Windows are opened through Media Foundation (or Video for Windows) only: DirectShow, which ReadyToRun
+  builds prefer, relies on runtime-generated COM interop.
+- Remaining third-party trim warnings during the AOT publish, all harmless for VitaSharp:
+  `Silk.NET.Windowing.Common` / `Silk.NET.Input.Common` (IL2104: the reflection-based platform auto-detection; VitaSharp
+  registers GLFW explicitly with `GlfwWindowing.RegisterPlatform()` / `GlfwInput.RegisterPlatform()`), and IL3000 /
+  IL3002 from `Silk.NET.Core.Loader.DefaultPathResolver` and `Microsoft.Extensions.DependencyModel` (`Assembly.Location`
+  and the `.deps.json` lookup are empty in a single-file app; Silk.NET then searches `AppContext.BaseDirectory`, where
+  the native libraries are). The analyzers run on every normal build, so new AOT problems in VitaSharp's own code show
+  up as build warnings right away.
+
 The game library opens. Use **Install PKG...** to install a game package together with its `work.bin` or `.rif`
 license, or **Add game folder...** for an already-extracted game, then press **Play**.
 

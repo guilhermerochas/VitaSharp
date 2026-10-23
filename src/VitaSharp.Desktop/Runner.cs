@@ -114,15 +114,18 @@ public static class Runner
             HostInfo = () => $"Window: framebuffer {window.FramebufferSize.Width}x{window.FramebufferSize.Height}, scale option {Opt(options, "--scale") ?? "1"}, fullscreen at start {options.Contains("--fullscreen")}",
         };
         window.DiagnosticRequested += () => diag.Capture("F10");
+        // F8: GPU dump recording (docs/notes/gpu-dump.md)
+        window.GpuDumpToggled += () => GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo);
         window.DebugModeToggled += () =>
         {
             if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
-            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura)" : "Modo de depuração desligado");
+            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU)" : "Modo de depuração desligado");
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
+        GpuDumpControl.StartScheduled(emu, () => renderer, options);
 
         window.Loaded += () =>
         {
@@ -143,6 +146,7 @@ public static class Runner
         window.Closing += () => emu.Stop();
         emu.Fatal += (t, e) => Log.Error($"Fatal error in thread {t.Name}: {e.Message}");
         window.Run();
+        GpuDumpControl.StopAtExit();
         titleTimer.Dispose();
         emu.Stop();
         diag.WaitIdle(20000);
@@ -265,6 +269,7 @@ public static class Runner
         using var watchdog = new Watchdog(emu, () => emu.Gpu.Backend as VulkanRenderer);
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
+        GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath);
         emu.Start();
@@ -291,6 +296,7 @@ public static class Runner
                 catch (Exception e) { Log.Error($"LoadExec failed: {e}"); break; }
             }
         }
+        GpuDumpControl.StopAtExit();
         diag.WaitIdle();
         sampler?.Report();
         PrintStats(emu);
@@ -329,7 +335,7 @@ public static class Runner
 
     /// <summary>Dumped frames as contact sheets (5 per row, 240x136 each, 30 per sheet: sheet.png, sheet_2.png, ...)
     /// with the frame number burnt in.</summary>
-    static void WriteContactSheet(string dir, List<(long Frame, byte[] Rgba)> thumbs)
+    internal static void WriteContactSheet(string dir, List<(long Frame, byte[] Rgba)> thumbs)
     {
         foreach (var old in Directory.GetFiles(dir, "sheet*.png")) File.Delete(old);
         var all = thumbs.OrderBy(t => t.Frame).ToList();

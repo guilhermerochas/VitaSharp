@@ -43,7 +43,11 @@ public sealed unsafe class ShaderCompiler : IDisposable
         if (cacheDir != null) Directory.CreateDirectory(cacheDir);
     }
 
-    public byte[]? Compile(string glsl, bool vertex, out string? error)
+    public byte[]? Compile(string glsl, bool vertex, out string? error) =>
+        Compile(glsl, vertex ? ShaderKind.VertexShader : ShaderKind.FragmentShader, out error);
+
+    /// <summary>Any stage (also the renderer's built-in compute shaders, e.g. the debug-mode NaN scan).</summary>
+    public byte[]? Compile(string glsl, ShaderKind kind, out string? error)
     {
         error = null;
         ulong hash = System.IO.Hashing.XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(glsl));
@@ -58,7 +62,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
         }
 
         byte[] src = Encoding.UTF8.GetBytes(glsl);
-        byte[] name = Encoding.ASCII.GetBytes((vertex ? "shader.vert" : "shader.frag") + "\0");
+        byte[] name = Encoding.ASCII.GetBytes(kind switch { ShaderKind.VertexShader => "shader.vert", ShaderKind.ComputeShader => "shader.comp", _ => "shader.frag" } + "\0");
         byte[] entry = "main\0"u8.ToArray();
         CompilationResult* res;
         Compiler* compiler = (Compiler*)_compilers.Value;
@@ -68,7 +72,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
             _sc.CompileOptionsSetOptimizationLevel(opts, OptLevel);
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             fixed (byte* s = src) fixed (byte* n = name) fixed (byte* e = entry)
-                res = _sc.CompileIntoSpv(compiler, s, (nuint)src.Length, vertex ? ShaderKind.VertexShader : ShaderKind.FragmentShader, n, e, opts);
+                res = _sc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
             Interlocked.Add(ref CompileTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             Interlocked.Increment(ref Compiled);
             _sc.CompileOptionsRelease(opts);

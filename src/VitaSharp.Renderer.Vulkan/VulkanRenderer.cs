@@ -36,6 +36,8 @@ public sealed class VulkanRendererOptions
     public bool AsyncPipelines = true;
     /// <summary>Shader worker threads, 0 = automatic (half the logical processors, 1-6). VITASHARP_SHADER_WORKERS overrides it.</summary>
     public int ShaderWorkers;
+    /// <summary>Presents counted before this renderer's first one (GPU dump replay: frames keep the recorded numbers).</summary>
+    public long FirstPresent;
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -77,6 +79,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool DumpPending;
         /// <summary>Debug mode: replay ring slot this frame copies the presented image into, -1 = none (VulkanRenderer.Replay.cs).</summary>
         public int ReplaySlot = -1;
+        /// <summary>Debug mode / VITASHARP_DEBUG_NAN: NaN/Inf scan results and draw hits of this frame (VulkanRenderer.NanCheck.cs).</summary>
+        public NanFrame? Nan;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
@@ -104,11 +108,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     public VulkanRenderer(VulkanRendererOptions options)
     {
         _opt = options;
+        _presentCount = Math.Max(0, options.FirstPresent);
         _core = new VkCore(options.Surface, options.Validation);
         _vk = _core.Vk;
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);
-        _compiler = new ShaderCompiler(options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
+        // VITASHARP_DEBUG_NAN=draws: the instrumented SPIR-V stays out of the on-disk cache
+        _compiler = new ShaderCompiler(Core.Gxm.Shader.ShaderGenerator.NanDraws ? null : options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
         ConfigureAsyncShaders(options);
         InitTrace();
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
@@ -172,6 +178,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var f = F;
         if (!f.Recording) return;
         EndRendering();
+        if (f.Nan is { Used: true }) NanBeforeSubmit(f);
         EndGpuTime(f);
         _vk.EndCommandBuffer(f.Cmd);
         var cmd = f.Cmd;
@@ -216,6 +223,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);
         if (f.ReplaySlot >= 0) CompleteReplayFrame(f);
+        if (f.Nan is { Used: true }) CompleteNanFrame(f);
         using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
         foreach (var s in f.Signals) s();
@@ -542,6 +550,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         ChooseMsaaPath(b);
         _fScenes++;
         if (DebugMode.Enabled) DbgScene(b);
+        if (_drawRing != null) DrawRingScene(b);
         if (_rt != null) CaptureSceneStart(_rt);
         if (_ss) LoadSupersample(_rt!);
         // surface gamma: shader output is linear and gets sRGB-encoded on write
@@ -571,6 +580,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void EndScene(EndSceneCommand e)
     {
         EndRendering(final: true);
+        if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
@@ -712,6 +722,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     RenderTarget? _cpuFramebuffer;
     long _presentCount;
+    public long PresentCount => _presentCount;
 
     void Present(DisplayFrame frame)
     {
@@ -739,6 +750,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         src.LastUsedFrame = FrameCount;
 
         RecordFrameSummary(frame);
+        DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;
         EndFrameStallStats();
@@ -998,6 +1010,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var fr in _frames) DestroyVisibility(fr);
         DestroyWritebacks();
         DestroyReplay();
+        DestroyNan();
         foreach (var f in _frames)
         {
             if (f.Submitted && f.Readback is { } rb) WriteDump(f, rb);
