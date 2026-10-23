@@ -75,10 +75,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public int DumpIndex;
         /// <summary>Readback holds a frame to dump (the buffer itself stays allocated and is reused by later dumps).</summary>
         public bool DumpPending;
-        /// <summary>Debug mode: copy of the presented image for the anomaly checks (VulkanRenderer.Diagnostics.cs).</summary>
-        public (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H)? Sample;
-        public bool SamplePending, SampleBgra;
-        public long SampleIndex;
+        /// <summary>Debug mode: replay ring slot this frame copies the presented image into, -1 = none (VulkanRenderer.Replay.cs).</summary>
+        public int ReplaySlot = -1;
         /// <summary>Render targets copied out this frame, written into guest memory once the frame completes.</summary>
         public readonly List<RtWriteback> Writebacks = new();
         /// <summary>Notifications and other sync points (in submission order) signalled once this frame completed and its results are published.</summary>
@@ -217,7 +215,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         CompleteGpuTime(f);
         if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);
-        if (f.SamplePending) AnalyzeSample(f);
+        if (f.ReplaySlot >= 0) CompleteReplayFrame(f);
         using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
         foreach (var s in f.Signals) s();
@@ -748,6 +746,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.DumpPending = false;
         if (DebugMode.Enabled) DebugPresent(src, frame);
+        else if (_replay != null) ReleaseReplay();
 
         // diagnostic capture (F10 / debug-mode anomaly): the frame that ends here is presented normally, then its
         // targets are dumped; a pending request arms the trace for the frame that starts now
@@ -757,7 +756,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             CompleteCapture(capture, src, frame);
             return;
         }
-        if (_diagRequest != null && _diagActive == null) ArmCapture();
+        if (_diagRequest is { } pending && _diagActive == null && pending.ReadyToArm(_presentCount)) ArmCapture(pending);
 
         if (_traceDumpFrame == _presentCount && _traceDir != null)
         {
@@ -998,11 +997,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var fr in _frames) RetireFrame(fr, RetireCause.Dispose);
         foreach (var fr in _frames) DestroyVisibility(fr);
         DestroyWritebacks();
+        DestroyReplay();
         foreach (var f in _frames)
         {
             if (f.Submitted && f.Readback is { } rb) WriteDump(f, rb);
             if (f.Readback is { } rbuf) _core.DestroyBuffer(rbuf.Buf, rbuf.Mem);
-            if (f.Sample is { } sbuf) _core.DestroyBuffer(sbuf.Buf, sbuf.Mem);
             _vk.DestroyCommandPool(_dev, f.Pool, null);
             _vk.DestroyFence(_dev, f.Fence, null);
             _vk.DestroySemaphore(_dev, f.Acquire, null);
