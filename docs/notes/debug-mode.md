@@ -396,6 +396,11 @@ texture, two field writes per texture resolution. Memory: ~19 MB of managed arra
 copies the ring (a few MB) when it is armed and writes drawring/ in the background in ~1.2 s; for a Killzone gameplay
 capture drawring/ is ~26 MB of text (128 files of ~300 draws), which compresses well in the zip.
 
+## F8: GPU dump
+
+F8 records the GPU work (commands plus the guest memory they read) until F8 is pressed again, into
+`<DataRoot>/gpudumps/*.vsgd`; `replay-gpu` replays it offline draw by draw. See `docs/notes/gpu-dump.md`.
+
 ## Implementation map
 
 - `src/VitaSharp.Renderer.Vulkan/VulkanRenderer.Diagnostics.cs`: capture arming/completion, frame ring, describe/state,

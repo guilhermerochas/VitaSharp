@@ -111,6 +111,7 @@ public sealed class GpuQueue : IDisposable
                 if (!_queue.TryDequeue(out cmd))
                 {
                     try { lock (_backendLock) Backend?.Idle(); } catch (Exception e) { Log.Error($"GPU backend idle failed: {e}"); }
+                    GpuDumpRecorder.Current?.AfterIdle();
                     long ti = FrameLedger.Now();
                     bool got = _available.Wait(50);
                     FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
@@ -126,6 +127,8 @@ public sealed class GpuQueue : IDisposable
                 try { pre.Action(); }
                 catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
             }
+            var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
+            dump?.BeforeExecute(cmd);
             try
             {
                 _executing = cmd;
@@ -135,6 +138,7 @@ public sealed class GpuQueue : IDisposable
             {
                 Log.WarnOnce("gpu-" + cmd.GetType().Name + e.GetType().Name, $"GPU backend failed on {cmd.GetType().Name}: {e}");
             }
+            if (dump != null) lock (_backendLock) dump.AfterExecute(cmd, Backend);
 
             switch (cmd)
             {

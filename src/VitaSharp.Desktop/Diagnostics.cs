@@ -166,6 +166,9 @@ public sealed class Diagnostics
         sb.AppendLine($"Command line: {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}");
         sb.AppendLine(Core.Cpu.Jit.Describe());
         sb.AppendLine($"Debug mode: {(DebugMode.Enabled ? "on" : "off")}");
+        sb.AppendLine(Core.Gpu.GpuDumpRecorder.Current is { } dump
+            ? $"GPU dump: {(dump.Recording ? $"recording, {dump.FramesRecorded} frames so far" : "armed")} -> {dump.Options.Path}"
+            : $"GPU dump: not recording (F8 records one into {GpuDumpControl.Root}; see docs/notes/gpu-dump.md)");
         if (HostInfo?.Invoke() is { Length: > 0 } host) sb.AppendLine(host);
         if (renderer != null) sb.AppendLine(renderer.DescribeForDiagnostics());
         sb.AppendLine($"GPU queue: submitted {_emu.Gpu.Submitted}, completed {_emu.Gpu.Completed}");
