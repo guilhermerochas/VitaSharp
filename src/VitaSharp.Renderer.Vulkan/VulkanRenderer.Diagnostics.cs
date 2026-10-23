@@ -21,6 +21,8 @@ public sealed class DiagnosticCaptureResult
     public double Milliseconds;
     /// <summary>Frames written to replay/ (0 = ring off: debug mode was off, -1 = failed).</summary>
     public int ReplayFrames;
+    /// <summary>Frames written to drawring/ (0 = ring off: debug mode was off, -1 = failed).</summary>
+    public int DrawRingFrames;
 }
 
 /// <summary>
@@ -48,6 +50,8 @@ public sealed unsafe partial class VulkanRenderer
         public long ArmAt = -1;
         /// <summary>The replay ring written in the background (VulkanRenderer.Replay.cs); awaited before completion.</summary>
         public Task<int>? Replay;
+        /// <summary>The draw ring written in the background (VulkanRenderer.DrawRing.cs); awaited before completion.</summary>
+        public Task<int>? DrawRing;
 
         public bool ReadyToArm(long present)
         {
@@ -104,6 +108,8 @@ public sealed unsafe partial class VulkanRenderer
         catch (Exception e) { req.Done(new DiagnosticCaptureResult { Dir = req.Dir, Error = e.Message }); return; }
         // the replay ring before the traced frame: snapshot now, PNGs written in the background
         req.Replay = SaveReplay(req.Dir, req.TriggerPresent);
+        try { req.DrawRing = SaveDrawRing(req.Dir, req.TriggerPresent); }
+        catch (Exception e) { Log.Warn($"[diag] draw ring snapshot failed: {e.Message}"); }
         _diagActive = req;
         req.Present = _presentCount;
         req.T0 = Stopwatch.GetTimestamp();
@@ -152,6 +158,11 @@ public sealed unsafe partial class VulkanRenderer
                     {
                         try { res.ReplayFrames = replay.Wait(TimeSpan.FromSeconds(60)) ? replay.Result : -1; }
                         catch (Exception e) { res.ReplayFrames = -1; Log.Warn($"[diag] replay write failed: {e.GetBaseException().Message}"); }
+                    }
+                    if (dc.DrawRing is { } ring)
+                    {
+                        try { res.DrawRingFrames = ring.Wait(TimeSpan.FromSeconds(60)) ? ring.Result : -1; }
+                        catch (Exception e) { res.DrawRingFrames = -1; Log.Warn($"[diag] draw ring write failed: {e.GetBaseException().Message}"); }
                     }
                     dc.Done(res);
                 }

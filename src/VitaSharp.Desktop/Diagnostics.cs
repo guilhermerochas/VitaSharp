@@ -156,6 +156,8 @@ public sealed class Diagnostics
             sb.AppendLine($"Presented frame: {res.FrameWidth}x{res.FrameHeight}{(res.Screenshot ? "" : " (no screenshot)")}");
             sb.AppendLine(res.ReplayFrames > 0 ? $"Replay: {res.ReplayFrames} presented frames before the traced one in replay/ (see replay/replay.txt)"
                 : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only in debug mode, F9)");
+            sb.AppendLine(res.DrawRingFrames > 0 ? $"Draw ring: draw lists of {res.DrawRingFrames} presented frames before the traced one in drawring/ (see drawring/index.txt and diff.txt)"
+                : res.DrawRingFrames < 0 ? "Draw ring: writing drawring/ failed (see log.txt)" : "Draw ring: off (runs only in debug mode, F9)");
             if (res.Error != null) sb.AppendLine($"Renderer error: {res.Error}");
         }
         sb.AppendLine($"Build: {BuildVersion()}");
@@ -176,6 +178,7 @@ public sealed class Diagnostics
         sb.AppendLine("Files:");
         sb.AppendLine("  screenshot.png      the presented frame at the end of the traced frame");
         sb.AppendLine("  replay/             debug mode: the last ~128 presented frames (480x272) before the traced frame, sheets of 30, replay.txt with per-frame metrics");
+        sb.AppendLine("  drawring/           debug mode: frame_<present>.txt draw list of every replay/ frame (same format as draws.txt), index.txt, diff.txt (vs previous frame)");
         sb.AppendLine("  draws.txt           every scene and draw of the traced frame (programs, targets, textures, MSAA, state)");
         sb.AppendLine("  shaders/            GLSL of every program drawn (<gxp hash>_<hint key>.vert/.frag)");
         sb.AppendLine("  targets/            every render target as PNG + targets.txt (per-channel min/max/mean, NaN/Inf, guest copy)");

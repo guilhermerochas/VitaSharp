@@ -542,6 +542,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         ChooseMsaaPath(b);
         _fScenes++;
         if (DebugMode.Enabled) DbgScene(b);
+        if (_drawRing != null) DrawRingScene(b);
         if (_rt != null) CaptureSceneStart(_rt);
         if (_ss) LoadSupersample(_rt!);
         // surface gamma: shader output is linear and gets sRGB-encoded on write
@@ -739,6 +740,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         src.LastUsedFrame = FrameCount;
 
         RecordFrameSummary(frame);
+        DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;
         EndFrameStallStats();
