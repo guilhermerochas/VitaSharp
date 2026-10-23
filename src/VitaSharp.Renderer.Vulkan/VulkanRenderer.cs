@@ -36,6 +36,8 @@ public sealed class VulkanRendererOptions
     public bool AsyncPipelines = true;
     /// <summary>Shader worker threads, 0 = automatic (half the logical processors, 1-6). VITASHARP_SHADER_WORKERS overrides it.</summary>
     public int ShaderWorkers;
+    /// <summary>Presents counted before this renderer's first one (GPU dump replay: frames keep the recorded numbers).</summary>
+    public long FirstPresent;
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -104,6 +106,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     public VulkanRenderer(VulkanRendererOptions options)
     {
         _opt = options;
+        _presentCount = Math.Max(0, options.FirstPresent);
         _core = new VkCore(options.Surface, options.Validation);
         _vk = _core.Vk;
         _dev = _core.Device;
@@ -712,6 +715,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     RenderTarget? _cpuFramebuffer;
     long _presentCount;
+    public long PresentCount => _presentCount;
 
     void Present(DisplayFrame frame)
     {
