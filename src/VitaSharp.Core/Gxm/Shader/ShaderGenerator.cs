@@ -101,7 +101,7 @@ public static class ShaderGenerator
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
     /// output must not be read from or written to persistent shader caches.
     /// </summary>
-    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || ProgramInput.UnboundedUbsActive;
+    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive;
 
     const string PushConstants = """
 layout(push_constant) uniform RenderInfo {
@@ -657,7 +657,12 @@ float packC10(vec3 c) {
         if (DebugId)
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
         // a debug override replaced the colour of a raw-output program: store it as the surface's halves/bytes/floats
-        if (rawBits != 0 && t.Body.Length != bodyLength)
+        bool overridden = t.Body.Length != bodyLength;
+        // VITASHARP_DEBUG_NAN=draws: count the fragments whose colour output has a NaN/Inf component, per draw
+        // (rinfo.draw_id), in the renderer's per-frame buffer (VulkanRenderer.NanCheck.cs). Raw-bit outputs carry
+        // packed data, not colours, unless a debug override above replaced them.
+        if (NanDraws && (rawBits == 0 || overridden)) EmitNanDrawCheck(decl, t);
+        if (rawBits != 0 && overridden)
             t.Line(rawBits switch
             {
                 32 => "out_raw = floatBitsToUint(out_color);",
@@ -700,6 +705,28 @@ float packC10(vec3 c) {
     static readonly bool DebugAlpha = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "alpha";
     static readonly bool DebugUv = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "uv";
     static readonly bool DebugId = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "id";
+
+    /// <summary>
+    /// VITASHARP_DEBUG_NAN=draws (debug, chosen at launch): every generated fragment shader checks its colour output
+    /// and records NaN/Inf fragments per draw id in a storage buffer (set 0, <see cref="NanDrawBinding"/>). The output
+    /// itself is unchanged, but the GLSL differs, so it counts as a debug override (persistent caches bypassed).
+    /// </summary>
+    public static readonly bool NanDraws = string.Equals(Environment.GetEnvironmentVariable("VITASHARP_DEBUG_NAN"), "draws", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Set 0 binding of the NaN draw buffer, and its entries (4 uints per draw id: fragments, flags 1 = NaN
+    /// 2 = Inf, 0xFFFFFFFF - first pixel (y &lt;&lt; 16 | x), unused); draw ids at or above the last slot share it.</summary>
+    public const int NanDrawBinding = 4, NanDrawSlots = 4096;
+
+    static void EmitNanDrawCheck(StringBuilder decl, UsseTranslator t)
+    {
+        decl.AppendLine($"layout(std430, set = 0, binding = {NanDrawBinding}) buffer NanDrawHits {{ uint nan_hits[]; }} nanh;");
+        t.Open("if (any(isnan(out_color)) || any(isinf(out_color)))");
+        t.Line($"uint nan_slot = min(uint(rinfo.draw_id), {NanDrawSlots - 1}u) * 4u;");
+        t.Line("uvec2 nan_px = uvec2(gl_FragCoord.xy / max(rinfo.res_multiplier, 1.0));");
+        t.Line("atomicAdd(nanh.nan_hits[nan_slot], 1u);");
+        t.Line("atomicOr(nanh.nan_hits[nan_slot + 1u], (any(isnan(out_color)) ? 1u : 0u) | (any(isinf(out_color)) ? 2u : 0u));");
+        t.Line("atomicMax(nanh.nan_hits[nan_slot + 2u], 0xFFFFFFFFu - ((min(nan_px.y, 0xFFFFu) << 16) | min(nan_px.x, 0xFFFFu)));");
+        t.Close();
+    }
 
     // ------------------------------------------------------------------ vertex outputs
 
