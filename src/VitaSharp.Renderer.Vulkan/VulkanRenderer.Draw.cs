@@ -737,7 +737,7 @@ public sealed unsafe partial class VulkanRenderer
         if (visQuery) EndVisibilityQuery(query);
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
-        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; }
+        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); }
     }
 
     DescriptorBufferInfo UniformInfo(ReadOnlySpan<byte> data)
