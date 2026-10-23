@@ -49,7 +49,8 @@ public sealed unsafe partial class VulkanRenderer
         return $"PERF texcache ({DirtyPages.Mode switch { "0" => "dirty tracking off", "verify" => "verify", _ => "dirty tracking" }}): " +
                $"{_texChecks / frames:F1} checks/frame, {_texSkipped / frames:F1} clean (skipped), {_texHashed / frames:F1} hashed " +
                $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame, " +
-               $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "");
+               $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "")
+               + (_opt.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget)" : "");
     }
 
     readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
@@ -436,7 +437,8 @@ public sealed unsafe partial class VulkanRenderer
         tex.DataStart = addr;
         tex.DataSize = total;
         UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
-        if (_opt.InspectTextures || (DebugMode.Enabled && _inspectBudget-- > 0)) InspectUploadedTexture(d, info, w, h);
+        if (_opt.InspectTextures) InspectUploadedTextureBudgeted(d, info, w, h, hash, addr + residentOffset, (int)(total - residentOffset), !paletted);
+        else if (DebugMode.Enabled && _inspectBudget-- > 0) InspectUploadedTexture(d, info, w, h);
         return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
     }
 

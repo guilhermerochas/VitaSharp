@@ -60,6 +60,56 @@ public sealed unsafe partial class VulkanRenderer
 
     int _suspectTextures;
 
+    // Test-run inspection cost control. Decoding and scanning every upload on the GPU thread took half of its time in
+    // Killzone's streaming-heavy stretches (BC/PVRTC decode of each new texture), which made test runs GPU-thread bound
+    // where the game itself is not. Each distinct content (hash, format, size) is inspected once, and at most
+    // InspectBudgetMs per frame; uploads over the budget wait in a queue and are inspected in a later frame if their
+    // memory still holds the same data (re-hashed), so coverage is kept for textures that stay resident.
+    const double InspectBudgetMs = 1.5;
+    readonly HashSet<ulong> _inspected = new();
+    readonly Queue<(GxmTextureDesc D, TexFormatInfo Info, uint W, uint H, ulong Hash, uint Addr, int Len)> _inspectQueue = new();
+    long _inspectTicks, _inspectFrameTicks, _inspectFrame = -1;
+    long _inspectDone, _inspectDuplicate, _inspectDeferred;
+
+    static ulong InspectKey(GxmTextureDesc d, uint w, uint h, ulong hash) => hash ^ ((ulong)d.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
+
+    void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
+    {
+        if (_inspectFrame != FrameCount)
+        {
+            _inspectFrame = FrameCount;
+            _inspectFrameTicks = 0;
+            // textures that did not fit an earlier frame's budget, while their memory still holds the uploaded data
+            while (_inspectQueue.Count > 0 && !InspectOverBudget())
+            {
+                var q = _inspectQueue.Dequeue();
+                if (System.IO.Hashing.XxHash3.HashToUInt64(VitaSharp.Core.Memory.GuestMemory.ReadSpan(q.Addr, q.Len)) != q.Hash) continue;
+                InspectTimed(q.D, q.Info, q.W, q.H, q.Hash);
+            }
+        }
+        if (_inspected.Contains(InspectKey(d, w, h, hash))) { _inspectDuplicate++; return; }
+        if (InspectOverBudget())
+        {
+            _inspectDeferred++;
+            if (_inspectQueue.Count < 4096 && requeue) _inspectQueue.Enqueue((d, info, w, h, hash, addr, len));
+            return;
+        }
+        InspectTimed(d, info, w, h, hash);
+    }
+
+    bool InspectOverBudget() => _inspectFrameTicks > InspectBudgetMs * System.Diagnostics.Stopwatch.Frequency / 1000;
+
+    void InspectTimed(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash)
+    {
+        if (!_inspected.Add(InspectKey(d, w, h, hash))) { _inspectDuplicate++; return; }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        InspectUploadedTexture(d, info, w, h);
+        long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        _inspectFrameTicks += dt;
+        _inspectTicks += dt;
+        _inspectDone++;
+    }
+
     /// <summary>
     /// Test-run inspection of a texture that was just uploaded: logs a warning (once per address/format) when its
     /// contents look like garbage, so broken decoders or unloaded memory show up in the report without screenshots.
