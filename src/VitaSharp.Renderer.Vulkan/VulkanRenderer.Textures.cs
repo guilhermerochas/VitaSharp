@@ -295,6 +295,13 @@ public sealed unsafe partial class VulkanRenderer
                 if (rt.LastScene > depthSrc.LastScene && addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height) { newerColor = true; break; }
             if (!newerColor) { _texSrc = TexSource.Depth; _texSrcAddr = depthSrc.Address; return DepthTexture(depthSrc, w, h); }
         }
+        // a separate stencil plane sampled as U8: read the GPU stencil, unless a colour target rendered later reuses it
+        if (StencilTextureSource(addr, d) is { } stencilSrc
+            && (RenderTargetContaining(addr) is not { } laterRt || laterRt.LastScene < stencilSrc.LastScene))
+        {
+            _texSrc = TexSource.Depth; _texSrcAddr = stencilSrc.StencilAddress;
+            return StencilTexture(stencilSrc, d);
+        }
         if (DebugMode.Enabled) DbgTextureOverlap(d);
         // rendered surfaces are used directly (or a region of them is copied out)
         foreach (var target in TargetsContaining(addr))
