@@ -19,6 +19,8 @@ public sealed class DiagnosticCaptureResult
     public uint FrameWidth, FrameHeight;
     public string? Error;
     public double Milliseconds;
+    /// <summary>Frames written to replay/ (0 = ring off: debug mode was off, -1 = failed).</summary>
+    public int ReplayFrames;
 }
 
 /// <summary>
@@ -39,6 +41,23 @@ public sealed unsafe partial class VulkanRenderer
         public int DrawCount;
         public long Present;
         public long T0;
+        /// <summary>Presents to keep collecting replay frames before the capture is armed (auto captures: about 1 s
+        /// after the spike, so both sides of it are saved), the present that triggered it (-1 = when it arrived).</summary>
+        public int PostFrames;
+        public long TriggerPresent = -1;
+        public long ArmAt = -1;
+        /// <summary>The replay ring written in the background (VulkanRenderer.Replay.cs); awaited before completion.</summary>
+        public Task<int>? Replay;
+
+        public bool ReadyToArm(long present)
+        {
+            if (ArmAt < 0)
+            {
+                if (TriggerPresent < 0) TriggerPresent = present;
+                ArmAt = present + PostFrames;
+            }
+            return present >= ArmAt;
+        }
     }
 
     DiagRequest? _diagRequest;
@@ -59,14 +78,17 @@ public sealed unsafe partial class VulkanRenderer
     /// Asks for a capture of the next full frame into <paramref name="dir"/> (any thread). <paramref name="done"/> runs on
     /// a thread-pool thread once the files are written. False when a capture is already pending.
     /// </summary>
-    public bool RequestDiagnosticCapture(string dir, Action<DiagnosticCaptureResult> done) =>
-        Interlocked.CompareExchange(ref _diagRequest, new DiagRequest { Dir = dir, Done = done }, null) == null;
+    /// <param name="postFrames">presents to wait (collecting replay frames) before the trace is armed</param>
+    /// <param name="triggerPresent">the present that caused the capture (an anomaly), marked in replay.txt</param>
+    public bool RequestDiagnosticCapture(string dir, Action<DiagnosticCaptureResult> done, int postFrames = 0, long triggerPresent = -1) =>
+        Interlocked.CompareExchange(ref _diagRequest, new DiagRequest { Dir = dir, Done = done, PostFrames = Math.Max(0, postFrames), TriggerPresent = triggerPresent }, null) == null;
 
     /// <summary>Withdraws a request the renderer has not started yet (no frame was presented since): true when withdrawn.</summary>
     public bool CancelDiagnosticCapture() => Interlocked.Exchange(ref _diagRequest, null) != null;
 
-    /// <summary>Debug mode: an anomaly was confirmed on the presented image (kind, details). Raised on a thread-pool thread.</summary>
-    public event Action<string, string>? AnomalyDetected;
+    /// <summary>Debug mode: an anomaly was confirmed on the presented frames (kind, details, present where it was
+    /// confirmed). Raised on a thread-pool thread.</summary>
+    public event Action<string, string, long>? AnomalyDetected;
 
     void TraceLine(string line)
     {
@@ -74,12 +96,14 @@ public sealed unsafe partial class VulkanRenderer
         else Log.Info(line);
     }
 
-    void ArmCapture()
+    void ArmCapture(DiagRequest req)
     {
-        var req = Interlocked.Exchange(ref _diagRequest, null);
-        if (req == null) return;
+        // a concurrent CancelDiagnosticCapture may have withdrawn it
+        if (Interlocked.CompareExchange(ref _diagRequest, null, req) != req) return;
         try { Directory.CreateDirectory(req.Dir); }
         catch (Exception e) { req.Done(new DiagnosticCaptureResult { Dir = req.Dir, Error = e.Message }); return; }
+        // the replay ring before the traced frame: snapshot now, PNGs written in the background
+        req.Replay = SaveReplay(req.Dir, req.TriggerPresent);
         _diagActive = req;
         req.Present = _presentCount;
         req.T0 = Stopwatch.GetTimestamp();
@@ -122,7 +146,15 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[diag] frame traced: {res.Draws} draws, {res.Targets} render targets, {res.Textures} textures ({res.Milliseconds:F0} ms)");
             ThreadPool.QueueUserWorkItem(_ =>
             {
-                try { dc.Done(res); }
+                try
+                {
+                    if (dc.Replay is { } replay)
+                    {
+                        try { res.ReplayFrames = replay.Wait(TimeSpan.FromSeconds(60)) ? replay.Result : -1; }
+                        catch (Exception e) { res.ReplayFrames = -1; Log.Warn($"[diag] replay write failed: {e.GetBaseException().Message}"); }
+                    }
+                    dc.Done(res);
+                }
                 catch (Exception e) { Log.Warn($"[diag] completion failed: {e}"); }
             });
         }
@@ -353,121 +385,6 @@ public sealed unsafe partial class VulkanRenderer
             // the list is only built for a combination not logged yet
             if (sb == null && (n < 2 || !_dbgOverlapSeen.Add((chosen.Address, stencil ? 1u : 0u, -n)))) return;
             if (sb != null) Dbg($"address 0x{addr:X8} lies in {n} depth/stencil targets:{sb}; picked 0x{chosen.Address:X8} ({(stencil ? "stencil" : "depth")}, most recently used)");
-        }
-    }
-
-    // ================================================================ debug mode: anomaly checks on the presented image
-
-    const int SampleEvery = 30;
-    int _inspectBudget;
-    float _prevMean = -1;
-    bool _prevBlack;
-    ulong _prevHash;
-    int _sameCount, _samples;
-    readonly Dictionary<string, int> _streak = new();
-    static readonly (string Kind, int From)? Inject = ParseInject(Environment.GetEnvironmentVariable("VITASHARP_DEBUG_INJECT"));
-    int _injected;
-
-    /// <summary>Test switch VITASHARP_DEBUG_INJECT=magenta|green@PRESENT: the anomaly check sees that colour over half of
-    /// the image for a few samples from that present on (the rendered frame itself is untouched).</summary>
-    static (string, int)? ParseInject(string? s)
-    {
-        if (string.IsNullOrWhiteSpace(s)) return null;
-        var p = s.Split('@');
-        return (p[0].Trim().ToLowerInvariant(), p.Length > 1 && int.TryParse(p[1].TrimStart('f', 'p'), out var f) ? f : 0);
-    }
-
-    void DebugPresent(RenderTarget src, DisplayFrame frame)
-    {
-        // texture inspection (TEXTURE SUSPECT): one upload every 8 presents
-        if (_presentCount % 8 == 0) _inspectBudget = 1;
-        var f = F;
-        if (_presentCount % SampleEvery != 0 || f.SamplePending) return;
-        if (src.Format is not (Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm))
-        {
-            if (_dbgSeen.Add($"nosample{src.Format}")) Dbg($"anomaly checks skipped: presented surface is {src.Format}");
-            return;
-        }
-        uint w = Math.Min(frame.Width, src.Width), h = Math.Min(frame.Height, src.Height);
-        if (f.Sample is not { } sb || sb.W != w || sb.H != h)
-        {
-            if (f.Sample is { } old) f.Deferred.Add(() => _core.DestroyBuffer(old.Buf, old.Mem));
-            var (b, m, p) = _core.CreateHostBuffer(w * h * 4, BufferUsageFlags.TransferDstBit);
-            f.Sample = (b, m, p, w, h);
-        }
-        var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(w, h, 1) };
-        _vk.CmdCopyImageToBuffer(Cmd, src.Image, ImageLayout.General, f.Sample!.Value.Buf, 1, in region);
-        f.SamplePending = true;
-        f.SampleBgra = src.Format == Format.B8G8R8A8Unorm;
-        f.SampleIndex = _presentCount;
-    }
-
-    /// <summary>
-    /// Cheap checks of the presented image (every 2nd pixel of every 2nd row), the same thresholds as the test
-    /// harness's frame metrics plus pure green/blue areas: magenta (missing textures), saturated green/blue blocks,
-    /// blown-out, flicker (mean brightness swing between samples), black and frozen output.
-    /// </summary>
-    void AnalyzeSample(Frame f)
-    {
-        f.SamplePending = false;
-        if (f.Sample is not { } s) return;
-        byte* px = (byte*)s.Ptr;
-        int ri = f.SampleBgra ? 2 : 0, bi = f.SampleBgra ? 0 : 2;
-        long sum = 0;
-        int n = 0, white = 0, dark = 0, pink = 0, green = 0, blue = 0;
-        ulong hash = 14695981039346656037;
-        for (uint y = 0; y < s.H; y += 2)
-            for (uint x = 0; x < s.W; x += 2)
-            {
-                byte* q = px + (y * s.W + x) * 4;
-                int r = q[ri], g = q[1], b = q[bi];
-                sum += (r * 54 + g * 183 + b * 19) >> 8;
-                if (r > 235 && g > 235 && b > 235) white++;
-                if (r < 10 && g < 10 && b < 10) dark++;
-                if (r > 200 && b > 200 && g < 80) pink++;
-                if (g > 180 && r < 60 && b < 60) green++;
-                if (b > 180 && r < 60 && g < 60) blue++;
-                hash = (hash ^ (ulong)((r >> 2) | (g >> 2) << 8 | (b >> 2) << 16)) * 1099511628211;
-                n++;
-            }
-        if (n == 0) return;
-        if (Inject is { } inj && f.SampleIndex >= inj.From && _injected < 4)
-        {
-            _injected++;
-            if (inj.Kind == "green") green = Math.Max(green, n / 2); else pink = Math.Max(pink, n / 2);
-            Log.Info($"[anomaly] test injection ({inj.Kind}) into the check of present #{f.SampleIndex}");
-        }
-        float mean = sum / (255f * n), fw = white / (float)n, fb = dark / (float)n, fm = pink / (float)n, fg = green / (float)n, fbl = blue / (float)n;
-        bool black = fb > 0.97f;
-        _samples++;
-        if (_samples % 10 == 0)
-            Log.Info($"[frame-metrics] p{f.SampleIndex} mean {mean:F3} white {fw:F3} black {fb:F3} magenta {fm:F3} green {fg:F3} blue {fbl:F3}");
-
-        Check("magenta", fm > 0.05f, 2, $"{fm:P0} of the image is magenta (missing/garbage textures)");
-        Check("saturated", fg + fbl > 0.08f, 2, $"{fg:P0} pure green and {fbl:P0} pure blue pixels (garbage render target / effect)");
-        Check("blown-out", fw > 0.35f || mean > 0.85f, 2, $"{fw:P0} saturated white, mean brightness {mean:F2}");
-        Check("flicker", _prevMean >= 0 && !black && !_prevBlack && MathF.Abs(mean - _prevMean) > 0.35f, 1, $"mean brightness {_prevMean:F2} -> {mean:F2} between checks {SampleEvery} frames apart");
-        Check("black", black, 1, "more than 97% black pixels", capture: false);
-        _prevMean = mean;
-        _prevBlack = black;
-        _sameCount = hash == _prevHash ? _sameCount + 1 : 0;
-        _prevHash = hash;
-        Check("frozen", _sameCount >= 20, 1, $"identical image for {_sameCount + 1} checks ({(_sameCount + 1) * SampleEvery} presents)", capture: false);
-
-        void Check(string kind, bool hit, int need, string detail, bool capture = true)
-        {
-            int streak = hit ? _streak.GetValueOrDefault(kind) + 1 : 0;
-            int before = _streak.GetValueOrDefault(kind);
-            _streak[kind] = streak;
-            if (!hit)
-            {
-                if (before >= need) Log.Info($"[anomaly] p{f.SampleIndex} f{DebugMode.Frame} {kind} cleared after {before} checks");
-                return;
-            }
-            if (streak != need) return;
-            Log.Info($"[anomaly] p{f.SampleIndex} f{DebugMode.Frame} {kind}: {detail}");
-            if (capture && AnomalyDetected is { } handler)
-                ThreadPool.QueueUserWorkItem(_ => { try { handler(kind, detail); } catch (Exception e) { Log.Warn($"[anomaly] handler failed: {e.Message}"); } });
         }
     }
 }
