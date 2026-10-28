@@ -64,3 +64,5 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
 - [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
 - [ ] Persona 4: digitar o nome no começo do jogo exige o teclado na tela (IME); os testes automáticos só conseguem digitar "A"
+- [ ] Ninja Gaiden Sigma Plus: travamento intermitente no "Now Loading" do boot (antes dos logos), visto 1 vez em 3 execuções do `ngs_boot.txt` com dados novos; não depende da conta PSN (as outras execuções, com `--psn=on` e `--psn=off`, chegaram ao jogo)
+- [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente)
