@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Text;
 using UcArm = UnicornEngine.Const.Arm;
 using Decoder = VitaSharp.Core.Cpu.Decoder;
@@ -165,7 +166,7 @@ public sealed unsafe partial class NativeJitTests
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
         var rng = new Random(seed);
@@ -275,7 +276,7 @@ public sealed unsafe partial class NativeJitTests
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();

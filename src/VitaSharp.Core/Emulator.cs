@@ -22,6 +22,8 @@ public sealed class EmulatorOptions
     public string Language { get; init; } = "en";
     /// <summary>Directory with per-title code patch files (TITLEID.txt); null = built-in patches only.</summary>
     public string? PatchDir { get; init; }
+    /// <summary>The emulated PSN account (signed in by default, see <see cref="PsnAccount"/>).</summary>
+    public PsnAccount Psn { get; init; } = PsnAccount.Default;
 }
 
 /// <summary>
@@ -66,7 +68,7 @@ public sealed class Emulator : IDisposable
     {
         Options = options;
         Jit.Enabled = options.EnableJit;
-        string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable("VITASHARP_CPU");
+        string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable(EnvVars.Cpu);
         if (!Jit.Select(backend))
         {
             Jit.Select(null);
@@ -74,6 +76,8 @@ public sealed class Emulator : IDisposable
         }
         Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
+        PsnAccount.Current = options.Psn;
+        Log.Info(options.Psn.SignedIn ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in (servers unreachable)" : "PSN: signed out, offline");
         Memory = new GuestMemory();
         Vfs = new Vfs(options.FsRoot);
         InitProcess();

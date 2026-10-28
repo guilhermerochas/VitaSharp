@@ -55,6 +55,8 @@ public sealed class CallbackCommand : GpuCommand
     public required Action Action;
     /// <summary>Guest memory range the action writes (backends must invalidate cached copies of it).</summary>
     public uint WriteAddress, WriteSize;
+    /// <summary>Guest memory range the action reads (backends write rendered surfaces in it back first).</summary>
+    public uint ReadAddress, ReadSize;
 }
 
 public struct StencilState

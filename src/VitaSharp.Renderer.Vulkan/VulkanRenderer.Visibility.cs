@@ -13,9 +13,9 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     const uint VisQueriesPerFrame = 8192;
-    static readonly bool TraceVis = Environment.GetEnvironmentVariable("VITASHARP_TRACE_VIS") == "1";
+    static readonly bool TraceVis = Environment.GetEnvironmentVariable(EnvVars.TraceVis) == "1";
     /// <summary>Debug: report every visibility test as passed (VITASHARP_VIS_FORCE=1) to tell culling problems apart.</summary>
-    static readonly bool ForceVisible = Environment.GetEnvironmentVariable("VITASHARP_VIS_FORCE") == "1";
+    static readonly bool ForceVisible = Environment.GetEnvironmentVariable(EnvVars.VisForce) == "1";
 
     sealed class VisibilityFrame
     {

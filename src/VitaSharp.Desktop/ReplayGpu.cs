@@ -54,7 +54,7 @@ static class ReplayGpu
         return RunCore(path, header, options);
     }
 
-    static readonly string[] NotReplayedEnv = ["VITASHARP_DATA", "VITASHARP_GPU_DUMP_AT", "VITASHARP_DEBUG_MODE", "VITASHARP_CPU", "VITASHARP_LOCKSTEP"];
+    static readonly string[] NotReplayedEnv = [EnvVars.Data, EnvVars.GpuDumpAt, EnvVars.DebugMode, EnvVars.Cpu, EnvVars.Lockstep];
 
     static void ApplyEnvironment(GpuDumpHeader header, string[] options)
     {
@@ -62,9 +62,9 @@ static class ReplayGpu
         if (!options.Contains("--no-recorded-env"))
             foreach (var (k, v) in header.Entries)
                 if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null) set[k[4..]] = v;
-        if (Opt(options, "--msaa") is { } msaa) set["VITASHARP_MSAA"] = msaa;
-        if (Opt(options, "--debug-fs") is { } dfs) set["VITASHARP_DEBUG_FS"] = dfs;
-        if (Opt(options, "--debug-tex0") is { } dt) set["VITASHARP_DEBUG_TEX0"] = dt;
+        if (Opt(options, "--msaa") is { } msaa) set[EnvVars.Msaa] = msaa;
+        if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
+        if (Opt(options, "--debug-tex0") is { } dt) set[EnvVars.DebugTex0] = dt;
         foreach (var e in options.Where(o => o.StartsWith("--env=")))
         {
             var kv = e["--env=".Length..];

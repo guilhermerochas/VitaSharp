@@ -87,7 +87,8 @@ public sealed class CommonDialogState
 
 /// <summary>
 /// SceCommonDialog: message, save data, IME, net check, NP and the other system dialogs over one shared state machine.
-/// The emulated console is offline and signed out of PSN, so online dialogs finish as "user canceled"; message and
+/// No PSN server is reachable, so online dialogs finish as "user canceled" (the NetCheckDialog PSN modes follow the
+/// emulated account, see <see cref="PsnAccount"/>); message and
 /// IME dialogs complete at once with the default choice (no host UI yet).
 /// </summary>
 public sealed class CommonDialog : HleModule
@@ -425,13 +426,19 @@ public sealed class CommonDialog : HleModule
     [Hle] int sceImeDialogTerm() => State.Term(DialogType.Ime);
     [Hle] int sceImeDialogAbort() => State.Abort(DialogType.Ime);
 
-    // ------------------------------------------------------------------ NetCheckDialog (offline: the user cancels)
+    // ------------------------------------------------------------------ NetCheckDialog
 
     const int NetCheckErrInvalidMode = unchecked((int)0x80100C02);
-    const int NetCheckModePs3Connect = 4;
+    // SceNetCheckDialogMode (psp2/netcheck_dialog.h): ADHOC_CONN 1, PSN 2, PSN_ONLINE 3, PS3_CONNECT 4, PSP_ADHOC_* 5..7
+    internal const int NetCheckModePsn = 2, NetCheckModePsnOnline = 3, NetCheckModePs3Connect = 4;
     int _netCheckMode;
+    bool _netCheckPsnSucceeded;
 
-    /// <summary>SceNetCheckDialogParam (0xE0): +0x50 mode (1..7), +0x54 npCommunicationId.</summary>
+    /// <summary>
+    /// SceNetCheckDialogParam (0xE0): +0x50 mode (1..7), +0x54 npCommunicationId. The PSN modes (sign in, and sign in +
+    /// connect) finish OK with psnModeSucceeded when the emulated PSN account is signed in (<see cref="PsnAccount"/>, as
+    /// Vita3K does); otherwise, and for the ad hoc / PS3 modes (no peers), the user cancels.
+    /// </summary>
     [Hle]
     int sceNetCheckDialogInit(uint param)
     {
@@ -441,8 +448,11 @@ public sealed class CommonDialog : HleModule
         int r = State.Begin(DialogType.NetCheck);
         if (r < 0) return r;
         _netCheckMode = mode;
-        State.Finish(ResultUserCanceled);
-        Log.Info($"NetCheckDialog mode {mode}: offline, canceled");
+        var acct = PsnAccount.Current;
+        _netCheckPsnSucceeded = acct.SignedIn && mode is NetCheckModePsn or NetCheckModePsnOnline;
+        State.Finish(_netCheckPsnSucceeded ? ResultOk : ResultUserCanceled);
+        Log.Info(_netCheckPsnSucceeded ? $"NetCheckDialog mode {mode}: signed in to PSN as {acct.OnlineId}"
+                                       : $"NetCheckDialog mode {mode}: {(acct.SignedIn ? "no peer" : "offline")}, canceled");
         return 0;
     }
 
@@ -460,6 +470,7 @@ public sealed class CommonDialog : HleModule
         }
         GuestMemory.Fill(result, 0, 0x84);
         GuestMemory.W32(result, (uint)State.Result);
+        GuestMemory.W32(result + 4, _netCheckPsnSucceeded && State.Result == ResultOk ? 1u : 0u);
         return 0;
     }
 
@@ -480,7 +491,7 @@ public sealed class CommonDialog : HleModule
         return CommonDialogError.NOT_AVAILABLE;
     }
 
-    // ------------------------------------------------------------------ NP dialogs (signed out: canceled)
+    // ------------------------------------------------------------------ NP dialogs (no PSN server: canceled)
 
     [Hle] int sceNpMessageDialogInit(uint param) => SimpleInit(DialogType.NpMessage, param, ResultUserCanceled);
     [Hle] int sceNpMessageDialogGetStatus() => State.StatusOf(DialogType.NpMessage);

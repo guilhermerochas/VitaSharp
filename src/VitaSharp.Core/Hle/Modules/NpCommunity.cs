@@ -5,7 +5,7 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// Shared state machine of the NP "community" libraries (Score, Tus/Tss, Lookup, WordFilter): title context ->
-/// request -> transaction (sync or async) -> poll/wait/abort -> delete. VitaSharp is signed out of PSN, so every
+/// request -> transaction (sync or async) -> poll/wait/abort -> delete. No PSN server is ever reachable, so every
 /// transaction completes immediately with <see cref="OfflineResult"/>: synchronous calls return it, asynchronous calls
 /// return 0 and report it through Poll/Wait (which never report RUNNING).
 /// </summary>
@@ -17,9 +17,10 @@ public sealed class NpCommunity(string name)
         INSUFFICIENT_ARGUMENT = unchecked((int)0x8055070C), INVALID_ID = unchecked((int)0x8055070E),
         TRANSACTION_ALREADY_END = unchecked((int)0x80550712), NO_RESOURCE = unchecked((int)0x80550716);
 
-    /// <summary>Result of every server transaction while signed out (the exact firmware code is unconfirmed; the
+    /// <summary>Result of every server transaction: signed in, the server is unreachable (SCE_HTTP_ERROR_NETWORK, see
+    /// PsnAccount); signed out, NO_LOGIN (the exact firmware code is unconfirmed; the
     /// community "no login" error is the family's equivalent of SCE_NP_ERROR_SIGNED_OUT).</summary>
-    public const int OfflineResult = NO_LOGIN;
+    public static int OfflineResult => PsnAccount.Current.SignedIn ? PsnAccount.ServerUnreachable : NO_LOGIN;
 
     public const int MaxObjects = 32;
 
@@ -313,7 +314,6 @@ public sealed class NpTus : HleModule
 /// <summary>SceNpUtility: Lookup and WordFilter (community model) and BandwidthTest.</summary>
 public sealed class NpUtility : HleModule
 {
-    const int ERR_SIGNED_OUT = unchecked((int)0x80550006);
     readonly NpCommunity _lookup = new("NpLookup"), _filter = new("NpWordFilter");
     internal NpCommunity Lookup => _lookup;
 
@@ -350,7 +350,7 @@ public sealed class NpUtility : HleModule
     [Hle] int sceNpWordFilterSanitizeCommentAsync(int id) => _filter.StartAsync(id);
 
     // BandwidthTest measures bandwidth to Sony's servers: never starts offline.
-    [Hle] int sceNpBandwidthTestInitStart() => ERR_SIGNED_OUT;
+    [Hle] int sceNpBandwidthTestInitStart() => PsnAccount.Current.ServerError;
     [Hle] int sceNpBandwidthTestGetStatus() => 0;
     [Hle] int sceNpBandwidthTestShutdown(uint result) => 0;
     [Hle] int sceNpBandwidthTestAbort() => 0;

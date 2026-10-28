@@ -92,15 +92,21 @@ public sealed unsafe class Fiber : HleModule
         return (int)ctx.R[0];
     }
 
-    /// <summary>Puts a fiber in its running context, starting it at its entry point if it never ran.</summary>
-    void Prepare(FiberObj f, CpuState* s, uint argOnRunTo)
+    /// <summary>
+    /// Puts a fiber in its running context, starting it at its entry point if it never ran. A fiber without its own
+    /// context area keeps no state between runs: every run or switch into it starts it again at its entry, on the
+    /// stack of the thread that ran the fibers (<paramref name="threadSp"/>). libult's per-worker scheduler fiber
+    /// relies on this (the ULT threads switch back to it to be rescheduled; resuming it asserts).
+    /// </summary>
+    void Prepare(FiberObj f, CpuState* s, uint argOnRunTo, uint threadSp)
     {
+        if (f.ContextAddr == 0) f.Status = Status.Init;
         if (f.Status == Status.Init)
         {
             CpuState c = *s;
             c.R[0] = f.ArgOnInitialize;
             c.R[1] = argOnRunTo;
-            c.R[13] = f.ContextAddr != 0 ? (f.ContextAddr + f.ContextSize) & ~7u : s->R[13];
+            c.R[13] = f.ContextAddr != 0 ? (f.ContextAddr + f.ContextSize) & ~7u : threadSp & ~7u;
             c.R[14] = Emu.Kernel.ThreadExitTrap; // fiber entry functions must never return
             c.R[15] = f.Entry & ~1u;
             c.Thumb = f.Entry & 1;
@@ -173,7 +179,7 @@ public sealed unsafe class Fiber : HleModule
             if (tf.Current != null) return ERR_PERMISSION;
             tf.ThreadContext = ResumeContext(s, OK);
             tf.ArgOnReturnPtr = argOnReturn;
-            Prepare(f, s, argOnRunTo);
+            Prepare(f, s, argOnRunTo, s->R[13]);
             tf.Current = f;
             return Load(t, s, f.Context);
         }
@@ -195,7 +201,7 @@ public sealed unsafe class Fiber : HleModule
             cur.Context = ResumeContext(s, OK);
             cur.ArgOnRunPtr = argOnRun;
             cur.Status = Status.Suspended;
-            Prepare(f, s, argOnRunTo);
+            Prepare(f, s, argOnRunTo, tf.ThreadContext.R[13]);
             tf.Current = f;
             return Load(t, s, f.Context);
         }

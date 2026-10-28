@@ -4,7 +4,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
-/// Network, PSN and web services. VitaSharp behaves like a console that is offline and signed out of PSN:
+/// Network, PSN and web services. VitaSharp behaves like a console on a LAN without internet access (PSN account: see PsnAccount):
 /// initialisation succeeds, connection attempts fail with the errors games handle gracefully.
 /// </summary>
 public sealed partial class Net : HleModule
@@ -54,30 +54,33 @@ public sealed partial class Net : HleModule
     }
     [Hle] int sceNetShowNetstat() => 0;
 
-    // NetCtl: initialised, never connected
-    // NetCtl: initialised, cable unplugged. Registered callbacks are told so once (DISCONNECTED event),
-    // which is what games wait for before leaving their "checking connection" states.
-    const int NETCTL_EVENT_DISCONNECTED = 1;
+    // NetCtl: initialised. Registered callbacks are told the connection state once, which is what games wait for
+    // before leaving their "checking connection" states: infrastructure callbacks get IPOBTAINED while the emulated
+    // PSN account is signed in (a LAN with an IP address, see PsnAccount) and DISCONNECTED otherwise (cable unplugged,
+    // the same event Vita3K sends); ad hoc callbacks always get DISCONNECTED (no ad hoc network).
+    internal const int NETCTL_EVENT_DISCONNECTED = 1, NETCTL_EVENT_IPOBTAINED = 3;
     sealed class NetCallback { public uint Func, Arg; public bool Notified; }
     readonly Dictionary<int, NetCallback> _inetCallbacks = new(), _adhocCallbacks = new();
     int _nextCid;
-
 
     [Hle]
     int sceNetCtlCheckCallback()
     {
         if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
-        var pending = new List<NetCallback>();
+        var pending = new List<(NetCallback Cb, int Event)>();
+        int inetEvent = PsnAccount.Current.SignedIn ? NETCTL_EVENT_IPOBTAINED : NETCTL_EVENT_DISCONNECTED;
         lock (_inetCallbacks)
         {
-            foreach (var c in _inetCallbacks.Values.Concat(_adhocCallbacks.Values))
-                if (!c.Notified) { c.Notified = true; pending.Add(c); }
+            foreach (var c in _inetCallbacks.Values)
+                if (!c.Notified) { c.Notified = true; pending.Add((c, inetEvent)); }
+            foreach (var c in _adhocCallbacks.Values)
+                if (!c.Notified) { c.Notified = true; pending.Add((c, NETCTL_EVENT_DISCONNECTED)); }
         }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NETCTL_EVENT_DISCONNECTED, c.Arg);
+        foreach (var (c, ev) in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)ev, c.Arg);
         return 0;
     }
 
-    // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers and is signed out of PSN,
+    // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers (PsnAccount decides the NP state),
     // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server.
     [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = 3; return 0; }
     [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return ERR_NETCTL_INVALID_ADDR; error.Value = 0; return 0; }
@@ -158,7 +161,6 @@ public sealed partial class Net : HleModule
 
 public sealed class Np : HleModule
 {
-    const int ERR_SIGNED_OUT = unchecked((int)0x80550006);
 
     // NP initialisation, service state and auth live in NpManager (Np.cs); Lookup in NpUtility (NpCommunity.cs).
     [Hle] int sceNpBasicInit(uint opt) => 0;
@@ -168,9 +170,9 @@ public sealed class Np : HleModule
     [Hle] int sceNpBasicUnregisterHandler() => 0;
     [Hle] int sceNpBasicRegisterJoinGameAckHandler(uint h, uint arg) => 0;
     [Hle] int sceNpBasicUnregisterJoinGameAckHandler() => 0;
-    [Hle] int sceNpBasicJoinGameAckResponseSend(uint p) => ERR_SIGNED_OUT;
-    [Hle] int sceNpBasicSendInGameDataMessage(uint to, uint data, uint size) => ERR_SIGNED_OUT;
-    [Hle] int sceNpBasicSetInGamePresence(uint p) => ERR_SIGNED_OUT;
+    [Hle] int sceNpBasicJoinGameAckResponseSend(uint p) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpBasicSendInGameDataMessage(uint to, uint data, uint size) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpBasicSetInGamePresence(uint p) => PsnAccount.Current.ServerError;
     [Hle] int sceNpBasicGetFriendListEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetFriendListEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
     [Hle] int sceNpBasicRecordPlaySessionLog(uint npId, uint type) => 0; // the "recently played with" list lives on PSN

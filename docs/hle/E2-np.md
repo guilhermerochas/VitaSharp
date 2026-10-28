@@ -47,7 +47,32 @@ valor de `SCE_NP_PARTY_STATE_NOT_IN_PARTY` (hoje 0) e a forma de `sceNpGetPlatfo
 
 ## 0. Decisão de design: PSN "offline / sem conta"
 
-### 0.1 Perfil emulado (já em vigor no `Online.cs`)
+### 0.0 Conta PSN emulada (2026-10-28, branch `fix/psn-signin`): padrão = conectada
+
+O perfil "sem conta" das seções 0.1 e 0.2 continua existindo, mas deixou de ser o padrão. A conta é escolhida por
+`PsnAccount` (`Hle/PsnAccount.cs`), vinda de `EmulatorOptions.Psn`, das opções `--psn=on|off` e `--psn-id=<online id>`
+e, no launcher, de Configurações > Geral > Rede e PSN ("Simular conta PSN conectada (offline)" e "ID online", padrão
+`VitaSharp`). Nada é enviado aos servidores da Sony.
+
+- **Conectada (padrão, como o "PSN status: signed in" do Vita3K):** `sceNpGetServiceState`/`sceNpCheckCallback` dizem
+  `SIGNED_IN` (2); `sceNpManagerGetNpId` devolve o ID online configurado (plataforma `psp2`, `isIdValid` = 1, como o
+  Vita3K); `sceNpManagerGetAccountRegion` devolve `us` e o idioma do sistema; os callbacks de NetCtl (infraestrutura)
+  recebem `IPOBTAINED` (3) em vez de `DISCONNECTED`; o NetCheckDialog nos modos `PSN` (2) e `PSN_ONLINE` (3) termina com
+  `SCE_COMMON_DIALOG_RESULT_OK` e `psnModeSucceeded` = 1 (o Vita3K também devolve OK). Tudo o que iria a um servidor
+  PSN (tickets de auth e OAuth, Score/Tus/Tss/Lookup/WordFilter, Matching2, Signaling, WebApi, Commerce2,
+  presença/mensagens/atividade) falha como servidor inacessível, com `SCE_HTTP_ERROR_NETWORK` (0x80431063,
+  `psp2/net/http.h`): o mesmo erro que o `sceHttpSendRequest` já devolve. Os modos ad hoc e PS3_CONNECT continuam
+  cancelados (não há outro console).
+- **Desconectada (`--psn=off`):** exatamente o comportamento anterior, descrito em 0.1 e 0.2.
+
+Por que conectada por padrão: vários jogos não passam da tela inicial sem conta. 99Vidas (PCSE00914, UnityNpToolkit)
+pergunta se o jogador quer ativar o Cross-Save, roda o NetCheckDialog em modo `PSN_ONLINE` e, se ele é cancelado, mostra
+"You must sign in to PlayStation Network ... Do you want to retry?" para sempre: o MsgDialog sem interface responde YES.
+Num Vita real o jogador poderia responder NO, mas o emulador não tem essa interface, e o Vita3K resolve com a conta
+emulada. Um console conectado mas sem acesso ao servidor também é um estado real (servidor fora do ar), que os jogos
+precisam tratar.
+
+### 0.1 Perfil emulado sem conta (`--psn=off`)
 
 - A rede local está ativa. `sceNetCtlInetGetState` retorna 3 (IP obtido), mas sockets, resolver e HTTP falham como
   se o servidor estivesse inacessível.

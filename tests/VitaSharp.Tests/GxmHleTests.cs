@@ -193,6 +193,50 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 0u, 0u)));
     }
 
+    /// <summary>sceGxmDraw with a precomputed vertex/fragment state set reads the uniform buffers (including the
+    /// default one, slot 14) and textures from the state, not from the context; with the state set back to NULL it
+    /// reads the context again. WRC 4 fills each object's default uniform buffer inside its precomputed state and draws
+    /// with sceGxmDraw.</summary>
+    [Fact]
+    public void ImmediateDrawUsesPrecomputedState()
+    {
+        var c = new VitaSharp.Core.Gxm.GxmContext { Handle = 1 };
+        c.VertexUniformBuffers[14] = 0x8100_0000;
+        c.VertexUniformBuffers[0] = 0x8100_0100;
+        c.FragmentUniformBuffers[14] = 0x8100_0200;
+        c.FragmentTextures[0] = new VitaSharp.Core.Gpu.GxmTextureDesc(1, 2, 3, 4);
+
+        // vertex state: 0 textures, 15 buffers (default buffer in slot 14); fragment state: 1 texture, 15 buffers
+        uint vState = fx.Memory.Alloc(0x20, "vstate"), vExtra = fx.Memory.Alloc(0x100, "vextra");
+        uint fState = fx.Memory.Alloc(0x20, "fstate"), fExtra = fx.Memory.Alloc(0x100, "fextra");
+        foreach (var (s, e, tc) in new[] { (vState, vExtra, 0), (fState, fExtra, 1) })
+        {
+            GuestMemory.Fill(e, 0, 0x100);
+            GuestMemory.W32(s + 4, e);
+            GuestMemory.Write(s + 8, (ushort)tc);
+            GuestMemory.Write(s + 10, (ushort)15);
+            GuestMemory.W32(s + 12, e + (uint)tc * 16);
+        }
+        GuestMemory.W32(vExtra + 14 * 4, 0x8EC0_0040);
+        GuestMemory.W32(fExtra + 16 + 14 * 4, 0x8EC0_0200);
+        for (uint i = 0; i < 4; i++) GuestMemory.W32(fExtra + i * 4, 0x10 + i);
+
+        c.PrecomputedVertexState = vState;
+        c.PrecomputedFragmentState = fState;
+        VitaSharp.Core.Hle.Modules.Gxm.ImmediateDrawState(c, out var vUbs, out var fUbs, out _, out var fTex);
+        Assert.Equal(0x8EC0_0040u, vUbs[14]);
+        Assert.Equal(0x8EC0_0200u, fUbs[14]);
+        Assert.Equal(new VitaSharp.Core.Gpu.GxmTextureDesc(0x10, 0x11, 0x12, 0x13), fTex[0]);
+        Assert.Equal(0x8100_0000u, c.VertexUniformBuffers[14]); // the context's own state is untouched
+
+        c.PrecomputedVertexState = c.PrecomputedFragmentState = 0;
+        VitaSharp.Core.Hle.Modules.Gxm.ImmediateDrawState(c, out vUbs, out fUbs, out _, out fTex);
+        Assert.Equal(0x8100_0000u, vUbs[14]);
+        Assert.Equal(0x8100_0100u, vUbs[0]);
+        Assert.Equal(0x8100_0200u, fUbs[14]);
+        Assert.Equal(new VitaSharp.Core.Gpu.GxmTextureDesc(1, 2, 3, 4), fTex[0]);
+    }
+
     /// <summary>GXP parameter semantics (SceGxmProgramParameter +6 semantic, +7 semantic index; vita-headers
     /// SceGxmParameterSemantic, Vita3K sceGxmProgramFindParameterBySemantic/ParameterGetSemantic): only vertex
     /// attributes have a semantic, the index is the low nibble, NONE never matches, and the old-SDK `_`-prefixed

@@ -123,6 +123,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         CreateLayouts();
         CreateDummies();
         if (options.Surface != null) CreateSwapchain();
+        InitMemory();
     }
 
     public string DeviceName => _core.DeviceName;
@@ -140,7 +141,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.CreateSemaphore(_dev, in sci, null, out f.Acquire);
         _vk.CreateSemaphore(_dev, in sci, null, out f.RenderDone);
         var (buf, mem, ptr) = _core.CreateHostBuffer(RingSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit
-            | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit);
+            | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.UploadRing);
         f.Ring = buf; f.RingMem = mem; f.RingPtr = (byte*)ptr;
         return f;
     }
@@ -219,6 +220,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (o != f && o.Submitted && !o.Retired && o.SubmitSeq < f.SubmitSeq) RetireFrame(o, RetireCause.Older);
         WaitFrameFence(f, cause);
         f.Retired = true;
+        RunAfterGpu(f.SubmitSeq);
         CompleteGpuTime(f);
         if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);
@@ -283,7 +285,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             return (f.Ring, off, (nint)(f.RingPtr + off));
         }
         var (b, m, p) = _core.CreateHostBuffer(Math.Max(size, 1), BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit
-            | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit);
+            | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
         f.Overflow.Add((b, m));
         return (b, 0, p);
     }
@@ -298,6 +300,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     // =================================================================== command dispatch
 
     public void Execute(GpuCommand command)
+    {
+        // out of GPU memory even after eviction (VulkanRenderer.Memory.cs): the command is skipped, not the renderer
+        try { ExecuteCommand(command); }
+        catch (VkOutOfMemoryException e) { OnOutOfMemory(command, e); }
+    }
+
+    void ExecuteCommand(GpuCommand command)
     {
         switch (command)
         {
@@ -334,6 +343,20 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public long Version;          // bumped whenever the contents change
         public long LastScene;        // serial of the last scene that rendered into it
         public long LastUsedFrame;
+        /// <summary>Dirty-page stamp from which on a write into the surface's memory is newer than its last scene
+        /// (see <see cref="OverwrittenSinceRendered"/>); 0 = never rendered.</summary>
+        public uint MemStamp;
+        /// <summary>The GPU has written (part of) the surface back into guest memory: its pages are dirtied by the
+        /// renderer itself, so they cannot tell CPU writes apart.</summary>
+        public bool WrittenBack;
+        /// <summary><see cref="Version"/> whose pixels are (or, once the frame retires, will be) in guest memory in any form the CPU reads
+        /// (converted writebacks too, unlike <see cref="InMemoryVersion"/>): transfers that read the surface need no writeback</summary>
+        public long MemVersion;
+        /// <summary>GPU frame that last recorded work using the image (eviction never takes it while recording).</summary>
+        public long LastTouchedFrame;
+        /// <summary>The <see cref="Version"/> whose content is also in guest memory (loaded from it, or written back
+        /// losslessly): such a target can be evicted and recreated from memory.</summary>
+        public long InMemoryVersion = -1;
     }
 
     sealed class DepthTarget
@@ -347,6 +370,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public ImageView View;
         public ImageMemoryPool.Allocation Mem;
         public long LastUsedFrame;
+        /// <summary>GPU frame that last recorded work using the image.</summary>
+        public long LastTouchedFrame;
         /// <summary>Multisampled depth of a scene rendered with real MSAA (one sample per GXM sample).</summary>
         public SampleCountFlags Samples = SampleCountFlags.Count1Bit;
         /// <summary>A scene stored it with SCE_GXM_DEPTH_STENCIL_FORCE_STORE.</summary>
@@ -359,7 +384,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     readonly List<RenderTarget> _traceReplaced = new();
     readonly Dictionary<(uint, uint, uint, SampleCountFlags), DepthTarget> _depthTargets = new();
 
-    (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
+    (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(MemCat cat, uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
         uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null, SampleCountFlags samples = SampleCountFlags.Count1Bit)
     {
         var ici = new ImageCreateInfo
@@ -379,7 +404,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         };
         _vk.CreateImage(_dev, in ici, null, out var image).Ok("vkCreateImage");
         _vk.GetImageMemoryRequirements(_dev, image, out var req);
-        var alloc = _imagePool.Allocate(req);
+        ImageMemoryPool.Allocation alloc;
+        try { alloc = _imagePool.Allocate(req, cat); }
+        catch
+        {
+            _vk.DestroyImage(_dev, image, null);
+            throw;
+        }
         _vk.BindImageMemory(_dev, image, alloc.Memory, alloc.Offset).Ok("vkBindImageMemory");
         var view = CreateView(image, format, aspect, mips, layers, cube, swizzle ?? default);
         return (image, view, alloc);
@@ -410,7 +441,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     RenderTarget GetRenderTarget(ColorSurfaceInfo c)
     {
         var key = (c.Data, c.Width, c.Height, c.ColorFormat);
-        if (_renderTargets.TryGetValue(key, out var rt)) return rt;
+        if (_renderTargets.TryGetValue(key, out var rt)) { rt.LastTouchedFrame = FrameCount; return rt; }
         // a different surface at the same address replaces the old one
         // (no lambda over c: its closure was allocated on every call, including cache hits)
         var replaced = new List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>>();
@@ -422,13 +453,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (_traceDumpFrame == _presentCount + 1 && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
             _mirroredRt.Remove(old);
-        }
-        var format = SurfaceFormat(c.ColorFormat);
+        }        var format = SurfaceFormat(c.ColorFormat);
         if (!_core.SupportsColorAttachment(format)) format = Format.R8G8B8A8Unorm;
-        var (img, view, mem) = CreateImage(c.Width, c.Height, format,
+        var (img, view, mem) = CreateImage(MemCat.RenderTarget, c.Width, c.Height, format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit,
             ImageAspectFlags.ColorBit, mutable: true);
-        rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem };
+        rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount };
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
@@ -437,39 +467,25 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         return rt;
     }
 
-    void DestroyLater(RenderTarget rt)
-    {
-        DestroySupersampleLater(rt);
-        DestroyMsaaLater(rt);
-        DestroySceneStartCopyLater(rt);
-        var f = F;
-        f.Deferred.Add(() =>
-        {
-            _vk.DestroyImageView(_dev, rt.View, null);
-            if (rt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, rt.SampledView, null);
-            if (rt.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, rt.SrgbView, null);
-            if (rt.RawView.Handle != 0) _vk.DestroyImageView(_dev, rt.RawView, null);
-            _vk.DestroyImage(_dev, rt.Image, null);
-            _imagePool.Free(rt.Mem);
-        });
-    }
+    /// <summary>Destroys a render target and what was derived from it once the GPU is done with them.</summary>
+    void DestroyLater(RenderTarget rt) => ReleaseRenderTarget(rt, now: false);
 
     DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h, SampleCountFlags samples = SampleCountFlags.Count1Bit)
     {
         uint addr = d?.DepthData ?? 0;
         var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
-        if (_depthTargets.TryGetValue(key, out var dt)) return dt;
+        if (_depthTargets.TryGetValue(key, out var dt)) { dt.LastTouchedFrame = FrameCount; return dt; }
         // multisampled depth is sampled when a forced-stored 4X depth surface is read as a texture (UnpackedDepthTexture)
         var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
             | (samples != SampleCountFlags.Count1Bit ? ImageUsageFlags.SampledBit : 0);
-        var (img, view, mem) = CreateImage(w, h, _core.DepthFormat, usage,
+        var (img, view, mem) = CreateImage(MemCat.Depth, w, h, _core.DepthFormat, usage,
             ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, samples: samples);
         dt = new DepthTarget
         {
             Samples = samples,
             Address = addr, Width = w, Height = h, StrideBytes = (d?.StrideInSamples ?? w) * 4,
             StencilAddress = d?.StencilData ?? 0, StencilStrideBytes = d?.StrideInSamples ?? w,
-            Image = img, View = view, Mem = mem,
+            Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount,
         };
         BeginFrameIfNeeded();
         Barrier(img, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
@@ -482,7 +498,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void UploadSurfaceFromGuest(RenderTarget rt)
     {
         rt.Version++;
+        // the content now is what guest memory holds (or a clear the same path would repeat): recreatable
+        rt.InMemoryVersion = rt.Version;
+        rt.MemVersion = rt.Version;
         BeginFrameIfNeeded();
+        rt.LastTouchedFrame = FrameCount;
         EndRendering();
         int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
         Barrier(rt.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -576,9 +596,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
         _sceneSerial++;
         _sceneRegions.Clear();
-        if (_rt != null) _rt.LastScene = _sceneSerial;
+        if (_rt != null)
+        {
+            _rt.LastScene = _sceneSerial;
+            // writes found by the sweeps after the next one: the sweep window this scene falls into may still hold
+            // stores made before it (a CPU fill of the surface before rendering into it)
+            _rt.MemStamp = DirtyPages.Epoch + 2;
+        }
         _depth.LastScene = _sceneSerial;
-        _depth.LastUsedFrame = FrameCount;
+        _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (b.Depth is { ForceStore: true }) _depth.ForceStored = true;
         _depthNeedsClear = b.Depth == null || !b.Depth.ForceLoad;
     }
@@ -671,7 +697,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         };
         _vk.CmdBeginRendering(Cmd, in ri);
         _rendering = true;
-        if (_rt != null) { _rt.Dirty = true; _rt.Version++; }
+        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastTouchedFrame = FrameCount; }
         if (_depth != null) _depth.Version++;
     }
 
@@ -708,6 +734,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void SyncRenderTargetForRead(RenderTarget rt)
     {
+        rt.LastTouchedFrame = FrameCount;
         if (!rt.Dirty) return;
         PauseRendering(rt);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -744,7 +771,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (_cpuFramebuffer == null || _cpuFramebuffer.Width != frame.Width || _cpuFramebuffer.Height != frame.Height)
             {
                 if (_cpuFramebuffer != null) DestroyLater(_cpuFramebuffer);
-                var (img, view, mem) = CreateImage(frame.Width, frame.Height, Format.R8G8B8A8Unorm,
+                var (img, view, mem) = CreateImage(MemCat.RenderTarget, frame.Width, frame.Height, Format.R8G8B8A8Unorm,
                     ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
                 _cpuFramebuffer = new RenderTarget { Address = frame.Address, Width = frame.Width, Height = frame.Height, Stride = frame.Pitch, Image = img, View = view, Mem = mem, Format = Format.R8G8B8A8Unorm };
             }
@@ -754,18 +781,23 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             src = _cpuFramebuffer;
         }
         SyncRenderTargetForRead(src);
-        src.LastUsedFrame = FrameCount;
+        src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
 
         RecordFrameSummary(frame);
         DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;
         EndFrameStallStats();
+        TrimAtFrameBoundary();
         bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
         if (dump) RecordReadback(src, frame.Width, frame.Height);
         else F.DumpPending = false;
         if (DebugMode.Enabled) DebugPresent(src, frame);
-        else if (_replay != null) ReleaseReplay();
+        else
+        {
+            if (_replay != null) ReleaseReplay();
+            _replayFailed = false; // a ring that could not be allocated (out of memory) is tried again when debug mode is turned on again
+        }
 
         // diagnostic capture (F10 / debug-mode anomaly): the frame that ends here is presented normally, then its
         // targets are dumped; a pending request arms the trace for the frame that starts now
@@ -818,7 +850,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (f.Readback is not { } rb || rb.W != w || rb.H != h)
         {
             if (f.Readback is { } old) f.Deferred.Add(() => _core.DestroyBuffer(old.Buf, old.Mem));
-            var (b, m, p) = _core.CreateHostBuffer(w * h * 4, BufferUsageFlags.TransferDstBit);
+            var (b, m, p) = _core.CreateHostBuffer(w * h * 4, BufferUsageFlags.TransferDstBit, MemCat.Readback);
             f.Readback = (b, m, p, w, h);
         }
         var r = f.Readback!.Value;
@@ -897,7 +929,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             bool half = rt.Format == Format.R16G16B16A16Sfloat;
             bool raw64 = rt.Format == Format.R32G32Sfloat; // dumped as its first 32-bit word per pixel (packed data)
-            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (half || raw64 ? 8u : 4u), BufferUsageFlags.TransferDstBit);
+            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (half || raw64 ? 8u : 4u), BufferUsageFlags.TransferDstBit, MemCat.Readback);
             var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
             _vk.AllocateCommandBuffers(_dev, in ai, out var cmd);
             var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
@@ -1041,6 +1073,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
             foreach (var a in f.Deferred) a();
         }
+        RunAfterGpu(long.MaxValue);
         DestroyPersistentSets();
         DestroyMsaa();
         DestroyGpuTime();

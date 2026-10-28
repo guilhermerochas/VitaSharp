@@ -123,7 +123,11 @@ public sealed class GpuQueue : IDisposable
 
             if (cmd is CallbackCommand pre)
             {
-                // CPU work (transfers) happens first so the backend sees the memory it produced
+                // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
+                // rendered surface needs its pixels in memory first
+                if (pre.ReadSize > 0)
+                    try { lock (_backendLock) Backend?.BeforeCallback(pre); }
+                    catch (Exception e) { Log.WarnOnce("gpu-beforecallback", $"GPU backend failed to prepare a transfer source: {e}"); }
                 try { pre.Action(); }
                 catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
             }

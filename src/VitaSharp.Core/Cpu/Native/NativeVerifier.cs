@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.InteropServices;
 using System.Text;
 using VitaSharp.Core.Cpu.Backends;
@@ -16,7 +17,7 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public static unsafe class NativeVerifier
 {
-    public static readonly bool Enabled = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_VERIFY") == "1";
+    public static readonly bool Enabled = Environment.GetEnvironmentVariable(EnvVars.NativeVerify) == "1";
     public static long Verified, Mismatches, SimdMismatches, Skipped;
     public static Action<string>? Log;
     const int MaxReports = 40;

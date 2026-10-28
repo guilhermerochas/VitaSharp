@@ -76,7 +76,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void CreateDummies()
     {
-        var (b, m, p) = _core.CreateHostBuffer(4096, BufferUsageFlags.StorageBufferBit | BufferUsageFlags.VertexBufferBit);
+        var (b, m, p) = _core.CreateHostBuffer(4096, BufferUsageFlags.StorageBufferBit | BufferUsageFlags.VertexBufferBit, MemCat.PipelineBuffer);
         new Span<byte>((void*)p, 4096).Clear();
         _dummyBuffer = b;
         _dummyBufferMem = m;
@@ -758,7 +758,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>VITASHARP_FETCH_SPLIT=0 disables the per-triangle split of programmable-blending draws.</summary>
-    static readonly bool FetchSplit = Environment.GetEnvironmentVariable("VITASHARP_FETCH_SPLIT")?.Trim() != "0";
+    static readonly bool FetchSplit = Environment.GetEnvironmentVariable(EnvVars.FetchSplit)?.Trim() != "0";
     /// <summary>Largest programmable-blending draw drawn one triangle at a time (each piece costs a barrier).</summary>
     const uint FetchSplitMax = 256;
     long _statFetchSplitDraws;

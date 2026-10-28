@@ -21,6 +21,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageMemoryPool.Allocation Mem;
         public uint W, H;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<DepthTarget, DepthTex> _depthTextures = new();
@@ -37,6 +38,7 @@ public sealed unsafe partial class VulkanRenderer
 
     (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
     {
+        dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
         if (dt.Samples != SampleCountFlags.Count1Bit) return UnpackedDepthTexture(dt, w, h);
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
@@ -45,10 +47,10 @@ public sealed unsafe partial class VulkanRenderer
             if (t != null)
             {
                 var old = t;
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); if (old.AttachView.Handle != 0) _vk.DestroyImageView(_dev, old.AttachView, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+                DestroyAfterGpu(() => DestroyDepthTex(old));
             }
             t = new DepthTex { W = w, H = h };
-            (t.Image, t.View, t.Mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
                 ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit);
             _vk.DestroyImageView(_dev, t.View, null);
             // depth-only view: sampling returns depth in .r (replicated to all channels like an X8U24 fetch)
@@ -60,6 +62,7 @@ public sealed unsafe partial class VulkanRenderer
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
+        t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
         t.Version = dt.Version;
 
@@ -97,6 +100,14 @@ public sealed unsafe partial class VulkanRenderer
     /// pixel (x/2, y/2) at texel (x, y) (Vulkan's standard 4x positions: 0 top left, 1 top right, 2 bottom left,
     /// 3 bottom right), which is then sampled like any depth texture.
     /// </summary>
+    void DestroyDepthTex(DepthTex t)
+    {
+        _vk.DestroyImageView(_dev, t.View, null);
+        if (t.AttachView.Handle != 0) _vk.DestroyImageView(_dev, t.AttachView, null);
+        _vk.DestroyImage(_dev, t.Image, null);
+        _imagePool.Free(t.Mem);
+    }
+
     (ImageView, ImageLayout) UnpackedDepthTexture(DepthTarget dt, uint w, uint h)
     {
         w = Math.Min(w, dt.Width * 2);
@@ -107,10 +118,10 @@ public sealed unsafe partial class VulkanRenderer
             if (t != null)
             {
                 var old = t;
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImageView(_dev, old.AttachView, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+                DestroyAfterGpu(() => DestroyDepthTex(old));
             }
             t = new DepthTex { W = w, H = h };
-            (t.Image, t.AttachView, t.Mem) = CreateImage(w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.DepthStencilAttachmentBit, ds);
+            (t.Image, t.AttachView, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.DepthStencilAttachmentBit, ds);
             t.View = CreateView(t.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false,
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
             _depthTextures[dt] = t;
@@ -120,6 +131,7 @@ public sealed unsafe partial class VulkanRenderer
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
             Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a 4X multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
         }
+        t.LastUsedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
         t.Version = dt.Version;
 
@@ -220,6 +232,7 @@ void main() {
         public ImageMemoryPool.Allocation Mem;
         public uint W, H, Swizzle;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<DepthTarget, StencilTex> _stencilTextures = new();
@@ -240,6 +253,7 @@ void main() {
 
     (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
     {
+        dt.LastTouchedFrame = FrameCount;
         uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
         uint swz = d.Format & GxmFormats.TextureSwizzleMask;
         if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)
@@ -247,10 +261,10 @@ void main() {
             if (t != null)
             {
                 var old = t;
-                F.Deferred.Add(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
+                DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
             }
             t = new StencilTex { W = w, H = h, Swizzle = swz };
-            (t.Image, t.View, t.Mem) = CreateImage(w, h, Format.R8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, Format.R8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
                 ImageAspectFlags.ColorBit, swizzle: Formats.TextureSwizzle(d.Format));
             _stencilTextures[dt] = t;
             BeginFrameIfNeeded();
@@ -258,6 +272,7 @@ void main() {
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
+        t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
         t.Version = dt.Version;
         // stencil aspect -> CDRAM mirror (guest layout, one byte per pixel) -> R8 image

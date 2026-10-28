@@ -1,0 +1,8 @@
+# WRC 4 FIA World Rally Championship (PCSE00411): boot, skip the movies and mash Cross through the menus into a quick
+# race (the rally is picked at random: loading-screen flyover ~f1700, start line + countdown ~f1900-2250), then
+# drive: R trigger held (accelerate) from f2300, Cross from f2900, with some steering.
+# Regression: before the precomputed-state fix the flyover and the race were flat full-screen colours (sky and
+# terrain read a stale uniform block); frames must show the scenery.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/wrc4_boot.txt --data=<scratch root>
+title=PCSE00411
+args=--frames=3600 --seconds=900 --dump-every=50 --shader-cache --input=cross@f300:f8,cross@f450:f8,cross@f600:f8,cross@f750:f8,cross@f900:f8,cross@f1050:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8,rtrigger@f2300:f600,lstick@f2500:0.4:0:f60,lstick@f2700:-0.4:0:f60,cross@f2900:f600,lstick@f3100:0.4:0:f60,lstick@f3300:-0.4:0:f60

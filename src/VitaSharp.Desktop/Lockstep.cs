@@ -39,7 +39,7 @@ static unsafe class Lockstep
 
     public static void Install()
     {
-        if (Environment.GetEnvironmentVariable("VITASHARP_LOCKSTEP") is not { } spec) return;
+        if (Environment.GetEnvironmentVariable(EnvVars.Lockstep) is not { } spec) return;
         var p = spec.Split(':');
         if (p[0] == "ALL") { InstallAll(long.Parse(p[1]), p.Length > 2 ? long.Parse(p[2]) : 0); return; }
         _start = Convert.ToUInt32(p[0], 16) & ~1u; _blocks = long.Parse(p[1]); _fromFrame = p.Length > 2 ? long.Parse(p[2]) : 0;

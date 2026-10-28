@@ -11,7 +11,7 @@ public static class Wait
     /// Cortex-A9): tens of microseconds. Host wake-ups take ~1 us, which makes job systems that measure their own
     /// synchronisation-heavy work (physics steps with per-step time budgets) behave differently; 0 disables.
     /// VITASHARP_SYSCALL_LATENCY_US overrides it (timing bisection).</summary>
-    public static int SyscallLatencyUs = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_SYSCALL_LATENCY_US"), out var lat) ? lat : 30;
+    public static int SyscallLatencyUs = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.SyscallLatencyUs), out var lat) ? lat : 30;
 
     static void Latency()
     {

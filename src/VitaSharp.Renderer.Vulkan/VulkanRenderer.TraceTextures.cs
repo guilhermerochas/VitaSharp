@@ -412,10 +412,10 @@ static class BcDecode
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_TRACE_RT=ADDR,ADDR: log every draw into these colour surfaces in any frame (draw trace format).</summary>
-    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_RT") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable(EnvVars.TraceRt) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
         .Select(s => Convert.ToUInt32(s, 16)).ToHashSet();
 
-    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_SNAP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable(EnvVars.TraceSnap) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
     static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
     /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>
     static readonly HashSet<uint> TraceSnapTargets = TraceSnapSpec.Where(s => s.StartsWith("rt:"))
@@ -433,7 +433,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!TracingThisFrame || !TraceSnapSampled.Contains(rt.Address)) return;
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8) return;
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         EndRendering();
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
@@ -442,7 +442,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Debug: VITASHARP_SNAP_FS=FSHASH:FROM:TO snapshots colour and depth before every draw of that fragment
     /// program in presented frames FROM..TO (files f{frame}_snap_*), e.g. to see what a mesh is drawn over.</summary>
-    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable("VITASHARP_SNAP_FS")?.Split(':') is { Length: 3 } sf
+    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable(EnvVars.SnapFs)?.Split(':') is { Length: 3 } sf
         ? (Convert.ToUInt64(sf[0], 16), long.Parse(sf[1]), long.Parse(sf[2])) : null;
 
     void TraceSnapshot(DrawCommand d)
@@ -459,7 +459,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8) return;
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
@@ -468,7 +468,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_depth != null && _core.DepthFormat == Format.D24UnormS8Uint)
         {
             var dt = _depth;
-            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit);
+            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit, MemCat.Readback);
             const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
             Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit, AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
             var dregion = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1), ImageExtent = new Extent3D(dt.Width, dt.Height, 1) };

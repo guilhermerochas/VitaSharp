@@ -1,0 +1,8 @@
+# FINAL FANTASY X HD Remaster (PCSE00293, PhyreEngine launcher): Square Enix logo, launcher menu (~f400: FFX / FFX
+# Eternal Calm / Credits), Cross on "FINAL FANTASY X" (~f1300) to exec the game, then Cross through its boot.
+# Regressions: launcher quit during init ("PApplication::onExit", sceSasExit 0x80420100, abort) because
+# sceSystemGestureCreateTouchRecognizer rejected the rotation type 0x10; host IOException on the FIOS probe
+# "app0:app0:/Version_config/mater_version_config.txt".
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/ffx_boot.txt --data=<scratch root>
+title=PCSE00293
+args=--frames=4500 --seconds=900 --dump-every=25 --debug-mode --input=cross@f1300:f8,cross@f2000:f8,cross@f2400:f8,cross@f2800:f8,cross@f3200:f8,cross@f3600:f8,cross@f4000:f8

@@ -39,6 +39,11 @@ public interface IGpuBackend : IDisposable
     /// contents), opaque to the core; the replaying backend gets it back before the first command. Null: none.</summary>
     byte[]? ExportDumpState() => null;
 
+    /// <summary>Called on the worker thread right before a <see cref="CallbackCommand"/>'s CPU action runs: content the
+    /// backend holds only on the GPU (rendered surfaces) inside the range the action reads
+    /// (<see cref="CallbackCommand.ReadAddress"/>) must be in guest memory when this returns.</summary>
+    void BeforeCallback(CallbackCommand command) { }
+
     /// <summary>Backend statistics for the end-of-run PERF report (null: nothing to report).</summary>
     string? Report() => null;
 }

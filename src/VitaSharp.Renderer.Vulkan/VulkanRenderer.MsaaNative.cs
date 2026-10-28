@@ -36,7 +36,7 @@ public sealed unsafe partial class VulkanRenderer
 {
     enum MsaaEmulation { Native, Supersample, Off }
 
-    static readonly MsaaEmulation MsaaSetting = (Environment.GetEnvironmentVariable("VITASHARP_MSAA") ?? "").Trim().ToLowerInvariant() switch
+    static readonly MsaaEmulation MsaaSetting = (Environment.GetEnvironmentVariable(EnvVars.Msaa) ?? "").Trim().ToLowerInvariant() switch
     {
         "ss" or "supersample" or "supersampling" => MsaaEmulation.Supersample,
         "off" or "none" or "1x" or "0" => MsaaEmulation.Off,
@@ -48,7 +48,7 @@ public sealed unsafe partial class VulkanRenderer
     /// with a subpass self-dependency, a by-region barrier before each such draw), unless VITASHARP_MSAA_FETCH=copy:
     /// then, like raw integer renderings always, the samples are copied for every such draw.
     /// </summary>
-    static readonly bool MsaaInputFetch = !string.Equals(Environment.GetEnvironmentVariable("VITASHARP_MSAA_FETCH")?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
+    static readonly bool MsaaInputFetch = !string.Equals(Environment.GetEnvironmentVariable(EnvVars.MsaaFetch)?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
 
     sealed class MsaaImage
     {
@@ -200,9 +200,10 @@ public sealed unsafe partial class VulkanRenderer
         }
         m = new MsaaImage { Samples = samples, Width = rt.Width, Height = rt.Height };
         ImageView view;
-        (m.Image, view, m.Mem) = CreateImage(rt.Width, rt.Height, rt.Format, MsaaImageUsage, ImageAspectFlags.ColorBit, mutable: true, samples: samples);
+        (m.Image, view, m.Mem) = CreateImage(MemCat.Msaa, rt.Width, rt.Height, rt.Format, MsaaImageUsage, ImageAspectFlags.ColorBit, mutable: true, samples: samples);
         m.Views[rt.Format] = view;
         _msImages[rt] = m;
+        if (samples == SampleCountFlags.Count2Bit) _ms2xImages++;
         Barrier(m.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit,
             PipelineStageFlags.ColorAttachmentOutputBit, 0, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
         return m;
@@ -214,10 +215,11 @@ public sealed unsafe partial class VulkanRenderer
         return m.Views[format] = CreateView(m.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
-    void DestroyMsaaLater(RenderTarget rt)
+    void DestroyMsaaLater(RenderTarget rt, bool now = false)
     {
         if (!_msImages.Remove(rt, out var m)) return;
-        F.Deferred.Add(() => DestroyMsaaImage(m));
+        if (m.Samples == SampleCountFlags.Count2Bit) _ms2xImages--;
+        Release(() => DestroyMsaaImage(m), now);
     }
 
     void DestroyMsaaImage(MsaaImage m)
@@ -537,7 +539,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     ImageView DummyMsView()
     {
         if (_dummyMsView.Handle != 0) return _dummyMsView;
-        (_dummyMsImage, _dummyMsView, _dummyMsMem) = CreateImage(1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.ColorAttachmentBit,
+        (_dummyMsImage, _dummyMsView, _dummyMsMem) = CreateImage(MemCat.Other, 1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.ColorAttachmentBit,
             ImageAspectFlags.ColorBit, samples: SampleCountFlags.Count4Bit);
         EndRendering();
         Barrier(_dummyMsImage, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
@@ -599,7 +601,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         var key = (rt.Width, rt.Height, _rtAttachFormat, _msSamples);
         if (!_msFetchCopies.TryGetValue(key, out var copy))
         {
-            copy = CreateImage(rt.Width, rt.Height, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, samples: _msSamples);
+            copy = CreateImage(MemCat.Region, rt.Width, rt.Height, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, samples: _msSamples);
             _msFetchCopies[key] = copy;
             Barrier(copy.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             Log.Info($"[gpu] programmable blending in multisampled scene 0x{rt.Address:X8}: shaders read the {_msSamples} samples{(_core.SampleRateShading ? " per sample" : " (sample 0: no sampleRateShading)")}");

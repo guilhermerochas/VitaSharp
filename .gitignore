@@ -508,3 +508,7 @@ third_party/ffmpeg/.download/
 /ux0/
 /video0/
 /vs0/
+
+# Vita firmware update packages (copyrighted, never commit)
+*.PUP
+*.pup
