@@ -9,7 +9,9 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed class SystemGesture : HleModule
 {
     const int ERR_INVALID_ARG = unchecked((int)0x80800001), ERR_NOT_INITIALIZED = unchecked((int)0x80800002);
-    const uint TYPE_TAP = 1, TYPE_DRAG = 2, TYPE_TAP_AND_HOLD = 4, TYPE_PINCH = 8;
+    // SceSystemGestureType: one bit per recognizer kind; 0x10 = rotation (two-finger twist). PhyreEngine games
+    // create one of each and abort their whole init if any create fails.
+    const uint TYPE_TAP = 1, TYPE_DRAG = 2, TYPE_TAP_AND_HOLD = 4, TYPE_PINCH = 8, TYPE_ROTATION = 0x10;
     const uint STATE_INACTIVE = 0, STATE_BEGIN = 1, STATE_ACTIVE = 2, STATE_END = 3;
 
     const int TapMaxMove = 40;                               // panel units
@@ -50,6 +52,7 @@ public sealed class SystemGesture : HleModule
         public uint PinchEventId;
         public float PinchStartDist;
         public bool PinchActive;
+        public float RotationStartAngle;
     }
 
     readonly Dictionary<uint, Recognizer> _recognizers = new();
@@ -187,7 +190,7 @@ public sealed class SystemGesture : HleModule
     [Hle]
     int sceSystemGestureCreateTouchRecognizer(uint rec, uint type, uint port, uint rect, uint param)
     {
-        if (rec == 0 || type is not (TYPE_TAP or TYPE_DRAG or TYPE_TAP_AND_HOLD or TYPE_PINCH)) return ERR_INVALID_ARG;
+        if (rec == 0 || type is not (TYPE_TAP or TYPE_DRAG or TYPE_TAP_AND_HOLD or TYPE_PINCH or TYPE_ROTATION)) return ERR_INVALID_ARG;
         var (x, y, w, h) = ReadRect(rect);
         var r = new Recognizer { Type = type, Port = (int)(port & 0xFF), RX = x, RY = y, RW = w, RH = h };
         if (type == TYPE_TAP && param != 0) r.MaxTapCount = Math.Max(1, (int)GuestMemory.Read<byte>(param));
@@ -258,7 +261,8 @@ public sealed class SystemGesture : HleModule
                 case TYPE_TAP: UpdateTap(r, mine); break;
                 case TYPE_DRAG: UpdateDrag(r, mine); break;
                 case TYPE_TAP_AND_HOLD: UpdateHold(r, mine); break;
-                case TYPE_PINCH: UpdatePinch(r, mine); break;
+                case TYPE_PINCH:
+                case TYPE_ROTATION: UpdatePinch(r, mine); break;
             }
         }
         return 0;
@@ -367,17 +371,21 @@ public sealed class SystemGesture : HleModule
             return;
         }
         float dist = MathF.Sqrt(MathF.Pow(live[0].CurX - live[1].CurX, 2) + MathF.Pow(live[0].CurY - live[1].CurY, 2));
+        float angle = MathF.Atan2(live[1].CurY - live[0].CurY, live[1].CurX - live[0].CurX);
         uint state;
         if (!r.PinchActive)
         {
             r.PinchActive = true;
             r.PinchEventId = r.NextEventId++;
             r.PinchStartDist = Math.Max(dist, 1);
+            r.RotationStartAngle = angle;
             state = STATE_BEGIN;
         }
         else state = live[0].State == STATE_END || live[1].State == STATE_END ? STATE_END : STATE_ACTIVE;
         var e = NewEvent(r, r.PinchEventId, state);
-        BitConverter.TryWriteBytes(e.AsSpan(24), dist / r.PinchStartDist);
+        // pinch: distance ratio since the begin; rotation: angle (radians, -pi..pi) since the begin
+        float value = r.Type == TYPE_ROTATION ? RotationSince(r.RotationStartAngle, angle) : dist / r.PinchStartDist;
+        BitConverter.TryWriteBytes(e.AsSpan(24), value);
         for (int i = 0; i < 2; i++)
         {
             int o = 28 + i * 10;
@@ -386,6 +394,12 @@ public sealed class SystemGesture : HleModule
             V2(e, o + 6, live[i].DX, live[i].DY);
         }
         if (state == STATE_END) r.PinchActive = false;
+    }
+
+    internal static float RotationSince(float start, float now)
+    {
+        float a = now - start;
+        return a > MathF.PI ? a - 2 * MathF.PI : a < -MathF.PI ? a + 2 * MathF.PI : a;
     }
 
     [Hle]

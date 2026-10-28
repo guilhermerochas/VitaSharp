@@ -75,8 +75,15 @@ public sealed partial class IoFileMgr : HleModule
         }
         catch (FileNotFoundException) { Log.Debug($"sceIoOpen({path}): not found"); return SceError.IO_ENOENT; }
         catch (DirectoryNotFoundException) { Log.Debug($"sceIoOpen({path}): not found"); return SceError.IO_ENOENT; }
-        catch (IOException) when (fm == FileMode.CreateNew) { return SceError.IO_EEXIST; }
+        catch (IOException) when (fm == FileMode.CreateNew && File.Exists(host)) { return SceError.IO_EEXIST; }
         catch (UnauthorizedAccessException) { return SceError.IO_EACCES; }
+        catch (IOException e)
+        {
+            // a guest path the host cannot represent (e.g. a second "dev:" inside the path, which Windows rejects as
+            // invalid syntax) names no file on the Vita either: fail the open instead of crashing the thread
+            Log.Debug($"sceIoOpen({path}): host error {e.Message}");
+            return SceError.IO_ENOENT;
+        }
     }
 
     [Hle]
