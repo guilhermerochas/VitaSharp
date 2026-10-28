@@ -68,7 +68,7 @@ public sealed class Emulator : IDisposable
     {
         Options = options;
         Jit.Enabled = options.EnableJit;
-        string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable("VITASHARP_CPU");
+        string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable(EnvVars.Cpu);
         if (!Jit.Select(backend))
         {
             Jit.Select(null);

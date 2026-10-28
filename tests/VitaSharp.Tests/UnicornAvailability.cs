@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.InteropServices;
 using UnicornEngine;
 
@@ -12,7 +13,7 @@ public static class UnicornAvailability
 {
     static readonly Lazy<string?> Reason = new(() =>
     {
-        if (Environment.GetEnvironmentVariable("VITASHARP_SKIP_UNICORN") == "1") return "VITASHARP_SKIP_UNICORN=1";
+        if (Environment.GetEnvironmentVariable(EnvVars.SkipUnicorn) == "1") return "VITASHARP_SKIP_UNICORN=1";
         // same resolution as Unicorn's own [DllImport("unicorn")] (deps.json runtimes/<rid>/native first)
         if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out var h)) { NativeLibrary.Free(h); return null; }
         return $"Unicorn native library not available for {RuntimeInformation.RuntimeIdentifier}";

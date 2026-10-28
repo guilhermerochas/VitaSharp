@@ -89,6 +89,6 @@ public sealed class GuestStopwatch
 /// <summary>Debug: per-source time multipliers (VITASHARP_TSCALE_PROC / _VBLANK / _WAIT) to bisect timing-dependent bugs.</summary>
 public static class TimeScale
 {
-    public static readonly double Proc = Read("VITASHARP_TSCALE_PROC"), VBlank = Read("VITASHARP_TSCALE_VBLANK"), Wait = Read("VITASHARP_TSCALE_WAIT");
+    public static readonly double Proc = Read(EnvVars.TscaleProc), VBlank = Read(EnvVars.TscaleVblank), Wait = Read(EnvVars.TscaleWait);
     static double Read(string name) => double.TryParse(Environment.GetEnvironmentVariable(name), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0 ? v : 1.0;
 }

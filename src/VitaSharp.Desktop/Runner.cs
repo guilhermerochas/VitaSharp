@@ -41,13 +41,13 @@ public static class Runner
     static int RunCore(string appPath, string[] options)
     {
         // watchpoints are compiled out unless enabled before the CPU helpers are first used
-        if (options.Any(o => o.StartsWith("--watch"))) Environment.SetEnvironmentVariable("VITASHARP_WATCH", "1");
+        if (options.Any(o => o.StartsWith("--watch"))) Environment.SetEnvironmentVariable(EnvVars.Watch, "1");
         bool trace = options.Contains("--trace-hle");
         bool noJit = options.Contains("--no-jit");
         bool headless = options.Contains("--headless") || Opt(options, "--seconds") != null;
         if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
         // debug mode (launcher "Modo de depuração"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
-        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable("VITASHARP_DEBUG_MODE") is "1" or "on" or "true") DebugMode.Enable();
+        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true") DebugMode.Enable();
         // logs/last.log for this session, the previous sessions kept as logs/<time>_<title>.log
         if (Opt(options, "--log") is { } logPath) Log.OpenFile(logPath);
         else LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
@@ -437,7 +437,7 @@ public static class Runner
     }
 
     /// <summary>Maximum number of watch hits logged (env VITASHARP_WATCH_MAX, default 4000).</summary>
-    static readonly int WatchMax = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WATCH_MAX"), out var wm) ? wm : 4000;
+    static readonly int WatchMax = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.WatchMax), out var wm) ? wm : 4000;
 
     /// <summary>--watch=ADDR:LEN[:FROM:TO] logs every CPU store into the range (optionally only in a frame window).</summary>
     static unsafe void InstallWatch(string spec)
@@ -628,7 +628,7 @@ public static class Runner
                 Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame");
         }
         // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
-        if (Environment.GetEnvironmentVariable("VITASHARP_PEEK_END") is { } peekEnd)
+        if (Environment.GetEnvironmentVariable(EnvVars.PeekEnd) is { } peekEnd)
             foreach (var spec in peekEnd.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 var pp = spec.Split(':');

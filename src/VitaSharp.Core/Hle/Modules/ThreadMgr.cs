@@ -422,8 +422,8 @@ public sealed class ThreadMgr : HleModule
 
     // debug bisect: VITASHARP_TSCALE_PROC applies only to calls from thread VITASHARP_TSCALE_PROC_THREAD and/or from LR in
     // VITASHARP_TSCALE_PROC_LR (comma separated hex) when those are set
-    static readonly string? ScaleThread = Environment.GetEnvironmentVariable("VITASHARP_TSCALE_PROC_THREAD");
-    static readonly HashSet<uint>? ScaleLr = Environment.GetEnvironmentVariable("VITASHARP_TSCALE_PROC_LR") is { Length: > 0 } s ? s.Split(',').Select(x => Convert.ToUInt32(x, 16)).ToHashSet() : null;
+    static readonly string? ScaleThread = Environment.GetEnvironmentVariable(EnvVars.TscaleProcThread);
+    static readonly HashSet<uint>? ScaleLr = Environment.GetEnvironmentVariable(EnvVars.TscaleProcLr) is { Length: > 0 } s ? s.Split(',').Select(x => Convert.ToUInt32(x, 16)).ToHashSet() : null;
     unsafe ulong ProcTime()
     {
         ulong t = K.ProcessTimeUs;

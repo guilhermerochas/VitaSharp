@@ -340,10 +340,10 @@ static class BcDecode
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_TRACE_RT=ADDR,ADDR: log every draw into these colour surfaces in any frame (draw trace format).</summary>
-    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_RT") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable(EnvVars.TraceRt) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
         .Select(s => Convert.ToUInt32(s, 16)).ToHashSet();
 
-    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_SNAP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable(EnvVars.TraceSnap) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
     static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
     /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>
     static readonly HashSet<uint> TraceSnapTargets = TraceSnapSpec.Where(s => s.StartsWith("rt:"))
@@ -370,7 +370,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Debug: VITASHARP_SNAP_FS=FSHASH:FROM:TO snapshots colour and depth before every draw of that fragment
     /// program in presented frames FROM..TO (files f{frame}_snap_*), e.g. to see what a mesh is drawn over.</summary>
-    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable("VITASHARP_SNAP_FS")?.Split(':') is { Length: 3 } sf
+    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable(EnvVars.SnapFs)?.Split(':') is { Length: 3 } sf
         ? (Convert.ToUInt64(sf[0], 16), long.Parse(sf[1]), long.Parse(sf[2])) : null;
 
     void TraceSnapshot(DrawCommand d)

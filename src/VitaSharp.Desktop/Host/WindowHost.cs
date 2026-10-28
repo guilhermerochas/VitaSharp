@@ -85,7 +85,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     static void SelectGlfwPlatform()
     {
         if (!OperatingSystem.IsLinux() && !OperatingSystem.IsFreeBSD()) return;
-        var want = Environment.GetEnvironmentVariable("VITASHARP_GLFW_PLATFORM")?.Trim().ToLowerInvariant();
+        var want = Environment.GetEnvironmentVariable(EnvVars.GlfwPlatform)?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(want))
         {
             bool wayland = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));

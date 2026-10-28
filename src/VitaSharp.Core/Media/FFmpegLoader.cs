@@ -29,7 +29,7 @@ public static class FFmpegLoader
     {
         string[] candidates =
         [
-            Environment.GetEnvironmentVariable("VITASHARP_FFMPEG") ?? "",
+            Environment.GetEnvironmentVariable(EnvVars.Ffmpeg) ?? "",
             Path.Combine(AppContext.BaseDirectory, "ffmpeg"),
             AppContext.BaseDirectory,
             .. OperatingSystem.IsMacOS() ? new[] { "/opt/homebrew/lib", "/usr/local/lib" } : [],
