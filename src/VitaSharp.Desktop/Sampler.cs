@@ -51,6 +51,7 @@ sealed class Sampler
     readonly long _from;
     readonly double _cyclesPerMs;
     readonly bool _hostHle;
+    readonly Dictionary<(string, HleFunction), string> _hleStates = new();
     Dictionary<string, double> _baseCpu = new();
 
     /// <summary>Host CPU ms per thread name (guest threads, GPU worker...; same-named threads summed).</summary>
@@ -107,7 +108,11 @@ sealed class Sampler
             foreach (var t in _emu.Kernel.Threads)
             {
                 string state = t.Status == ThreadStatus.Waiting ? "wait:" + t.WaitingOn : t.Core.InThrottle ? "throttle" : t.Status == ThreadStatus.Running && !t.HasCore && VitaSharp.Core.Kernel.Scheduler.Cores > 0 ? (t.BlockedInHost ? "host-block" : "core-wait") : t.Status.ToString();
-                if (t.CurrentHle is { } inHle && state is "host-block" or "Running") state += ":" + inHle.Name;
+                if (t.CurrentHle is { } inHle && state is "host-block" or "Running")
+                {
+                    if (!_hleStates.TryGetValue((state, inHle), out var named)) _hleStates[(state, inHle)] = named = state + ":" + inHle.Name; // no string per sample
+                    state = named;
+                }
                 if (!_wStates.TryGetValue(t.Name, out var wd)) _wStates[t.Name] = wd = new();
                 wd[state] = wd.GetValueOrDefault(state) + 1;
                 if (!_states.TryGetValue(t.Name, out var d)) _states[t.Name] = d = new();
