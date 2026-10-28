@@ -325,6 +325,7 @@ public sealed unsafe partial class VulkanRenderer
             uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(w, 8) * (uint)bpp;
             uint off = addr - rt.Address;
             uint x0 = off % rowBytes / (uint)bpp, y0 = off / rowBytes;
+            if (target != _rt && OverwrittenSinceRendered(target, addr, TextureBytes(d, w, h))) continue;
             // the surface being rendered, read where the draw itself renders: those tiles are still on chip, so the
             // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
             if (target == _rt && _inScene && SamplesOwnTiles(x0, y0, w, h)) rt = SceneStartSource(target);
@@ -367,6 +368,35 @@ public sealed unsafe partial class VulkanRenderer
         _texSrc = TexSource.Memory;
         _texSrcAddr = 0;
         return ResolveMemoryTexture(d, addr, w, h, gamma, false);
+    }
+
+    /// <summary>
+    /// The memory a texture reads inside a colour surface was written (by the CPU, a file read, a DMA copy...) after the
+    /// surface was last rendered: that memory holds the newer content, not the surface. Memory is reused: WRC 4 renders
+    /// its menus into a 960x544 surface and later loads the car's 1024x1024 livery texture into the same memory; sampling
+    /// the stale surface instead drew every car black. Only pages inside the surface count (a texture that overhangs
+    /// it may cover other data), and surfaces the renderer writes back are skipped (the writeback dirties their pages).
+    /// </summary>
+    bool OverwrittenSinceRendered(RenderTarget rt, uint addr, ulong bytes)
+    {
+        if (!DirtyPages.Enabled || rt.WrittenBack || rt.MemStamp == 0) return false;
+        ulong rtEnd = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
+        ulong start = Math.Max(addr, rt.Address), end = Math.Min(addr + bytes, rtEnd);
+        if (end <= start) return false;
+        SweepDirtyPages();
+        if (!DirtyPages.WrittenSince((uint)start, (uint)(end - start), rt.MemStamp)) return false;
+        if (DebugMode.Enabled && _dbgOverlapSeen.Add((addr, rt.Address, int.MinValue)))
+            Dbg($"memory at 0x{addr:X8} (texture or transfer source) lies in render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}, but was written after the target was last rendered: the memory is used");
+        return true;
+    }
+
+    /// <summary>Bytes of a texture's base level (enough to tell which surface memory it reads).</summary>
+    static ulong TextureBytes(GxmTextureDesc d, uint w, uint h)
+    {
+        if (d.TextureType == GxmTextureDesc.TypeLinearStrided) return (ulong)d.StrideBytes * h;
+        if (d.TextureType == GxmTextureDesc.TypeLinear) w = Align(w, 8);
+        int bits = Formats.Texture(GxmFormats.BaseOf(d.Format)).BitsPerPixel;
+        return Math.Max(1, (ulong)w * h * (uint)Math.Max(bits, 1) / 8);
     }
 
     readonly List<RenderTarget> _rtCandidates = new();
