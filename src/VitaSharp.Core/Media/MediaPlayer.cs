@@ -410,7 +410,12 @@ public sealed unsafe class MediaPlayer : IDisposable
     {
         _stop = true;
         lock (_lock) Monitor.PulseAll(_lock);
-        if (_thread.IsAlive && Thread.CurrentThread != _thread) _thread.Join(1000);
+        if (_thread.IsAlive && Thread.CurrentThread != _thread && !_thread.Join(10_000))
+        {
+            // freeing the codec contexts under a decoder still using them corrupts the native heap: leak them instead
+            Log.Warn("AvPlayer decoder thread did not stop within 10 s; leaking its FFmpeg contexts");
+            return;
+        }
         _videoDecoder?.Dispose();
         _videoDecoder = null;
         var v = _video; var a = _audio; var fmt = _fmt;

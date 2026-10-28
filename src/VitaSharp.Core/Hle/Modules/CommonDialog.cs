@@ -303,8 +303,8 @@ public sealed class CommonDialog : HleModule
 
     // ------------------------------------------------------------------ SaveDataDialog
     // The dialog "runs" (status RUNNING) and its work completes at once (substatus FINISHED: the user confirmed / the
-    // slot was shown); the application then calls Finish to close it (status FINISHED) and Term. Progress-bar dialogs
-    // stay running until the application finishes them itself.
+    // slot was shown); the application then calls Finish to close it (status FINISHED) and Term. Sub-dialogs without a
+    // button (progress bar, "Saving..." message) stay running until the application closes them (SaveSubStatusFor).
 
     const int SaveModeFixed = 1, SaveModeList = 2, SaveModeUserMsg = 3, SaveModeSystemMsg = 4, SaveModeErrorCode = 5, SaveModeProgressBar = 6;
     int _saveSub = StatusNone, _saveMode, _saveSlot = -1;
@@ -329,14 +329,43 @@ public sealed class CommonDialog : HleModule
             SaveModeUserMsg or SaveModeSystemMsg => (int)GuestMemory.R32(sub + 8),      // targetSlot.id after type/value
             _ => -1,
         };
-        _saveSub = _saveMode == SaveModeProgressBar ? StatusRunning : StatusFinished;
+        _saveSub = SaveSubStatusFor(param);
         Log.Info($"sceSaveDataDialogInit mode {_saveMode} dispType {GuestMemory.R32(param + 0x54)} slot {_saveSlot} sub {sub:X8} subType {(sub != 0 ? GuestMemory.R32(sub) : 0)} value {(sub != 0 ? GuestMemory.R32(sub + 4) : 0)} flag {GuestMemory.R32(param + 0x74)}");
         return 0;
     }
 
     bool SaveRunning => State.StatusOf(DialogType.SaveData) == StatusRunning;
 
-    [Hle] int sceSaveDataDialogContinue(uint param) { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; _saveSub = StatusFinished; return 0; }
+    const int SaveSysMsgProgress = 5, SaveButtonTypeNone = 2;
+
+    /// <summary>
+    /// Sub-dialogs without a button ("Saving..." system message, a user message with SCE_SAVEDATA_DIALOG_BUTTON_TYPE_NONE,
+    /// the progress bar) cannot be answered: they stay RUNNING until the application closes them with SubClose (or
+    /// Finish), as on the console and in Vita3K. Everything else completes at once (auto-confirmed).
+    /// </summary>
+    static int SaveSubStatusFor(uint param)
+    {
+        int mode = (int)GuestMemory.R32(param + 0x50);
+        uint user = GuestMemory.R32(param + 0x60), sys = GuestMemory.R32(param + 0x64);
+        bool waits = mode switch
+        {
+            SaveModeProgressBar => true,
+            SaveModeSystemMsg => sys != 0 && GuestMemory.R32(sys) == SaveSysMsgProgress,
+            SaveModeUserMsg => user != 0 && GuestMemory.R32(user) == SaveButtonTypeNone,
+            _ => false,
+        };
+        return waits ? StatusRunning : StatusFinished;
+    }
+
+    [Hle]
+    int sceSaveDataDialogContinue(uint param)
+    {
+        if (!SaveRunning) return CommonDialogError.NOT_RUNNING;
+        if (param == 0) return CommonDialogError.NULL;
+        _saveMode = (int)GuestMemory.R32(param + 0x50);
+        _saveSub = SaveSubStatusFor(param);
+        return 0;
+    }
     [Hle] int sceSaveDataDialogGetStatus() => State.StatusOf(DialogType.SaveData);
     [Hle] int sceSaveDataDialogGetSubStatus() => SaveRunning ? _saveSub : StatusNone;
     [Hle] int sceSaveDataDialogFinish(uint param) { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; State.Finish(ResultOk); return 0; }
