@@ -34,7 +34,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>VITASHARP_SHADER_WORKER_PRIO=normal|below: below-normal keeps a compile burst from taking cores from the guest
     /// threads (the GPU thread runs a job itself when no worker started it yet).</summary>
-    static readonly ThreadPriority WorkerPriority = Environment.GetEnvironmentVariable("VITASHARP_SHADER_WORKER_PRIO") == "below" ? ThreadPriority.BelowNormal : ThreadPriority.Normal;
+    static readonly ThreadPriority WorkerPriority = Environment.GetEnvironmentVariable(EnvVars.ShaderWorkerPrio) == "below" ? ThreadPriority.BelowNormal : ThreadPriority.Normal;
 
     /// <summary>Environment overrides win over the options (launcher / command line).</summary>
     void ConfigureAsyncShaders(VulkanRendererOptions o)
@@ -45,9 +45,9 @@ public sealed unsafe partial class VulkanRenderer
             "1" or "on" or "true" or "yes" => true,
             _ => null,
         };
-        _asyncShaders = Flag("VITASHARP_ASYNC_SHADERS") ?? o.AsyncShaders;
-        _asyncPipelines = _asyncShaders && (Flag("VITASHARP_ASYNC_PIPELINES") ?? o.AsyncPipelines);
-        int workers = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_SHADER_WORKERS"), out var n) && n > 0 ? n : o.ShaderWorkers;
+        _asyncShaders = Flag(EnvVars.AsyncShaders) ?? o.AsyncShaders;
+        _asyncPipelines = _asyncShaders && (Flag(EnvVars.AsyncPipelines) ?? o.AsyncPipelines);
+        int workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderWorkers), out var n) && n > 0 ? n : o.ShaderWorkers;
         _shaderWorkerCount = workers > 0 ? Math.Min(workers, 64) : Math.Clamp(Environment.ProcessorCount / 2, 1, 6);
         Log.Info($"[gpu] shaders: shaderc optimisation {_compiler.OptLevel}, background compilation "
             + (_asyncShaders ? $"on ({_shaderWorkerCount} workers, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));

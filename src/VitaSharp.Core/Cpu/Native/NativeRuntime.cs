@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
@@ -171,7 +172,7 @@ public sealed unsafe partial class NativeRuntime
 
     /// <summary>Points an exit slot at the target block's code (called by the dispatcher after a static exit).</summary>
     /// <summary>Debug bisection: VITASHARP_NATIVE_NOLINK=1 disables exit linking and the indirect-exit table.</summary>
-    public static readonly bool NoLink = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_NOLINK") == "1";
+    public static readonly bool NoLink = Environment.GetEnvironmentVariable(EnvVars.NativeNolink) == "1";
 
     public static void Link(nint slot, Block target)
     {

@@ -102,7 +102,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         {
             var alc = ALContext.GetApi(true);
             var al = AL.GetApi(true);
-            string name = PickDevice(alc, requestedDevice ?? Environment.GetEnvironmentVariable("VITASHARP_AUDIO_DEVICE"));
+            string name = PickDevice(alc, requestedDevice ?? Environment.GetEnvironmentVariable(EnvVars.AudioDevice));
             var dev = alc.OpenDevice(name);
             if (dev == null && name.Length > 0) dev = alc.OpenDevice("");
             if (dev == null) { Log.Warn("OpenAL: no output device"); return null; }

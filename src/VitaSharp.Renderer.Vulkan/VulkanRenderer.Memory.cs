@@ -232,7 +232,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Test switch VITASHARP_VRAM_EVICT=0: no expiry, overlap or pressure eviction (the cache behaves as
     /// before this existed, to measure its growth); out-of-memory reclaim still runs.</summary>
-    static readonly bool ProactiveEviction = Environment.GetEnvironmentVariable("VITASHARP_VRAM_EVICT")?.Trim() != "0";
+    static readonly bool ProactiveEviction = Environment.GetEnvironmentVariable(EnvVars.VramEvict)?.Trim() != "0";
 
     /// <summary>A new texture is created over [addr, addr + bytes): cached textures of that memory that were not used
     /// for <see cref="TrimMinAge"/> frames describe what it held before and are dropped.</summary>

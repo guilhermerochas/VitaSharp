@@ -112,7 +112,7 @@ public sealed unsafe partial class VulkanRenderer
             MaxLod = strided ? 0.25f : 1000f,
             BorderColor = BorderColor.FloatTransparentBlack,
         };
-        if (Environment.GetEnvironmentVariable("VITASHARP_SAMPLER_DEBUG") is { } sd)
+        if (Environment.GetEnvironmentVariable(EnvVars.SamplerDebug) is { } sd)
         {
             if (sd == "nobias") sci.MipLodBias = 0;
             Log.Info($"[gpu] sampler w0=0x{w0:X8} type=0x{type:X8} mag={sci.MagFilter} min={sci.MinFilter} mip={sci.MipmapMode} bias={sci.MipLodBias} maxLod={sci.MaxLod}");

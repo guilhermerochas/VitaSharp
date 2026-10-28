@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 ﻿using System.Text;
 using UcArm = UnicornEngine.Const.Arm;
 using Decoder = VitaSharp.Core.Cpu.Decoder;
@@ -70,7 +71,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     public void Replay(bool thumb, string encodings)
     {
         // VITASHARP_REPLAY=T:enc,enc or A:enc,... replays other encodings without editing the test
-        if (Environment.GetEnvironmentVariable("VITASHARP_REPLAY") is { Length: > 2 } env) { thumb = env[0] == 'T'; encodings = env[2..]; }
+        if (Environment.GetEnvironmentVariable(EnvVars.Replay) is { Length: > 2 } env) { thumb = env[0] == 'T'; encodings = env[2..]; }
         foreach (var enc in encodings.Split(','))
             Fuzz(thumb, 400, 7, Convert.ToUInt32(enc, 16), simd: true);
     }

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Collections.Concurrent;
 using VitaSharp.Core.Cpu.Backends;
 
@@ -76,7 +77,7 @@ public static unsafe class Jit
     /// <summary>Applies VITASHARP_CPU when set (called once at startup; the command line overrides it).</summary>
     public static void SelectFromEnvironment()
     {
-        if (Environment.GetEnvironmentVariable("VITASHARP_CPU") is { Length: > 0 } env && !Select(env))
+        if (Environment.GetEnvironmentVariable(EnvVars.Cpu) is { Length: > 0 } env && !Select(env))
             Console.Error.WriteLine($"VITASHARP_CPU={env}: {WhyUnavailable(env)}, using {Mode}");
     }
 

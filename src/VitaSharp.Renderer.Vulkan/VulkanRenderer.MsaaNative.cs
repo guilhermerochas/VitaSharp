@@ -36,7 +36,7 @@ public sealed unsafe partial class VulkanRenderer
 {
     enum MsaaEmulation { Native, Supersample, Off }
 
-    static readonly MsaaEmulation MsaaSetting = (Environment.GetEnvironmentVariable("VITASHARP_MSAA") ?? "").Trim().ToLowerInvariant() switch
+    static readonly MsaaEmulation MsaaSetting = (Environment.GetEnvironmentVariable(EnvVars.Msaa) ?? "").Trim().ToLowerInvariant() switch
     {
         "ss" or "supersample" or "supersampling" => MsaaEmulation.Supersample,
         "off" or "none" or "1x" or "0" => MsaaEmulation.Off,
@@ -48,7 +48,7 @@ public sealed unsafe partial class VulkanRenderer
     /// with a subpass self-dependency, a by-region barrier before each such draw), unless VITASHARP_MSAA_FETCH=copy:
     /// then, like raw integer renderings always, the samples are copied for every such draw.
     /// </summary>
-    static readonly bool MsaaInputFetch = !string.Equals(Environment.GetEnvironmentVariable("VITASHARP_MSAA_FETCH")?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
+    static readonly bool MsaaInputFetch = !string.Equals(Environment.GetEnvironmentVariable(EnvVars.MsaaFetch)?.Trim(), "copy", StringComparison.OrdinalIgnoreCase);
 
     sealed class MsaaImage
     {

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
 
@@ -33,7 +34,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     public long HotInstructions { get; set; } = 2_000;
 
     /// <summary>Debug: check IR structure rules on every block (tests turn it on).</summary>
-    public static bool ValidateIr = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_VALIDATE") == "1";
+    public static bool ValidateIr = Environment.GetEnvironmentVariable(EnvVars.NativeValidate) == "1";
 
     public CompiledBlock? Compile(Block b)
     {
@@ -71,7 +72,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     }
 
     /// <summary>Recompile NEON-callout-heavy blocks with the IL backend once hot (VITASHARP_NATIVE_TIERUP=0 disables).</summary>
-    public static bool TierUp = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_TIERUP") != "0";
+    public static bool TierUp = Environment.GetEnvironmentVariable(EnvVars.NativeTierup) != "0";
 
     /// <summary>Total generated machine code (diagnostics).</summary>
     public static long CodeBytes;
@@ -92,7 +93,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     }
 
     /// <summary>Debug: print IR and disassembly of every compiled block (VITASHARP_NATIVE_DUMP=1).</summary>
-    public static bool DumpCode = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_DUMP") == "1";
+    public static bool DumpCode = Environment.GetEnvironmentVariable(EnvVars.NativeDump) == "1";
 }
 
 /// <summary>Size of a native block's code and its number of linkable exits.</summary>

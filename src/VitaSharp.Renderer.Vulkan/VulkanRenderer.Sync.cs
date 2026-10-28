@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanRenderer
     long _idleWaitTicks, _idleYields;
     long _wbCount, _wbBytes, _wbTicks;
 
-    static readonly bool TraceSync = Environment.GetEnvironmentVariable("VITASHARP_TRACE_SYNC") == "1";
+    static readonly bool TraceSync = Environment.GetEnvironmentVariable(EnvVars.TraceSync) == "1";
     (RetireCause Cause, double Ms)? _longWait;
 
     /// <summary>Waits for the frame's fence, counting the time spent blocked.</summary>
