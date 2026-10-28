@@ -209,7 +209,7 @@ void main() {
     {
         if (f.Nan is { } n) return n;
         ulong size = NanScanBytes + (ShaderGenerator.NanDraws ? (ulong)NanDrawBytes : 0);
-        var (buf, mem, ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.StorageBufferBit);
+        var (buf, mem, ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.StorageBufferBit, MemCat.DebugRing);
         new Span<byte>((void*)ptr, (int)size).Clear();
         return f.Nan = new NanFrame { Buf = buf, Mem = mem, Ptr = (uint*)ptr };
     }

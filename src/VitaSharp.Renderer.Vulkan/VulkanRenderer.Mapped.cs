@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_mirror.Handle != 0) return;
         (_mirror, _mirrorMem) = _core.CreateDeviceBuffer((ulong)CdramBytes + ScratchBytes,
-            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit);
+            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.PipelineBuffer);
         // the last 256 bytes stay zero: slots bound to a null address read from there
         EndRendering();
         _vk.CmdFillBuffer(Cmd, _mirror, (ulong)CdramBytes + ScratchBytes - 256, 256, 0);
@@ -153,6 +153,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.WarnOnce($"mirror-fmt-{rt.ColorFormat:X8}", $"[gpu] render target 0x{rt.Address:X8} ({rt.Format}) cannot be read as memory: its layout differs from guest format 0x{rt.ColorFormat:X8}");
             return false;
         }
+        rt.LastTouchedFrame = FrameCount;
         if (_mirroredRt.TryGetValue(rt, out var v) && v == rt.Version) return true;
         _mirroredRt[rt] = rt.Version;
         rt.Dirty = true;
@@ -185,6 +186,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.WarnOnce("mirror-depth-fmt", "[gpu] depth surfaces cannot be read as memory with a D32 depth buffer");
             return false;
         }
+        dt.LastTouchedFrame = FrameCount;
         if (_mirroredDepth.TryGetValue((dt, stencil), out var v) && v == dt.Version) return true;
         _mirroredDepth[(dt, stencil)] = dt.Version;
         EndRendering();

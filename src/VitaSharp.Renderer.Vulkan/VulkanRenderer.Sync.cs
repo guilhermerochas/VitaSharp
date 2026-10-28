@@ -22,9 +22,9 @@ public sealed unsafe partial class VulkanRenderer
     public void Attach(GpuQueue queue) => _queue = queue;
 
     /// <summary>Why a frame is retired (fence wait + publication of its results).</summary>
-    enum RetireCause { Slot, Idle, Present, Finish, Older, Dispose, Poll }
+    enum RetireCause { Slot, Idle, Present, Finish, Older, Dispose, Poll, Memory }
 
-    const int RetireCauses = 7;
+    const int RetireCauses = 8;
     readonly long[] _retireCount = new long[RetireCauses];
     readonly long[] _retireBlocked = new long[RetireCauses];   // retirements whose fence had not signalled yet
     readonly long[] _retireWaitTicks = new long[RetireCauses];

@@ -40,7 +40,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport();
 
     public string TextureCacheReport()
     {
@@ -65,7 +65,7 @@ public sealed unsafe partial class VulkanRenderer
     void CreateDummyTexture()
     {
         BeginFrameIfNeeded();
-        (_dummyImage, _dummyView, _dummyMem) = CreateImage(1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+        (_dummyImage, _dummyView, _dummyMem) = CreateImage(MemCat.Other, 1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
             ImageAspectFlags.ColorBit, layers: 6, cube: false);
         _vk.DestroyImageView(_dev, _dummyView, null);
         _dummyView = CreateView(_dummyImage, Format.R8G8B8A8Unorm, ImageAspectFlags.ColorBit, 1, 1, false, default);
@@ -143,7 +143,16 @@ public sealed unsafe partial class VulkanRenderer
             if (asCube) cubeType = true;
             if ((used & (1u << i)) != 0 && !desc.IsNull)
             {
-                var (v, l) = ResolveTexture(desc, asCube);
+                ImageView v;
+                ImageLayout l;
+                try { (v, l) = ResolveTexture(desc, asCube); }
+                catch (VkOutOfMemoryException e)
+                {
+                    // no memory for this texture even after eviction: the draw samples the dummy texture instead
+                    (v, l) = (default, default);
+                    _oomTextures++;
+                    LogOom($"[vram] out of GPU memory, texture 0x{desc.DataAddress:X8} {desc.Width}x{desc.Height} fmt 0x{desc.Format:X8} skipped for this draw (present {_presentCount}, draw {_drawSerial}): {e.Message}", force: _oomTextures <= 3);
+                }
                 if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); }
                 else if (cubeType) view = _dummyCubeView;
                 if (_drawRing != null) DrawRingTexture(layout.Handle == _texLayoutV.Handle, i, desc, v.Handle == 0);
@@ -216,7 +225,7 @@ public sealed unsafe partial class VulkanRenderer
                 else
                 {
                     var (oi, ov, om) = old;
-                    F.Deferred.Add(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                    DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
                 }
             }
             if (_fbCopies.Remove((w, h, _rtAttachFormat), out var cached))
@@ -228,7 +237,7 @@ public sealed unsafe partial class VulkanRenderer
             else
             {
                 // with surface gamma the copy is sRGB too, so the shader reads linear values
-                (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
+                (_fbCopy, _fbCopyView, _fbCopyMem) = CreateImage(MemCat.Region, w, h, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
                 _fbCopyW = w; _fbCopyH = h; _fbCopyFormat = _rtAttachFormat;
                 Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             }
@@ -307,6 +316,8 @@ public sealed unsafe partial class VulkanRenderer
         foreach (var target in TargetsContaining(addr))
         {
             var rt = target;
+            // in use from here on: an allocation below (region, alias, mip chain, mirror) that runs out of memory must not evict it
+            target.LastTouchedFrame = FrameCount;
             int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
             uint rowBytes = rt.Stride * (uint)bpp;
             if (addr < rt.Address || addr >= rt.Address + rowBytes * rt.Height) continue;
@@ -343,7 +354,7 @@ public sealed unsafe partial class VulkanRenderer
             var sw = RtSwizzle(rt, d.Format);
             if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
-                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; F.Deferred.Add(() => _vk.DestroyImageView(_dev, old, null)); }
+                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
                 if (gamma) viewFormat = Formats.Srgb(viewFormat);
                 rt.SampledView = CreateView(rt.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, sw);
@@ -448,9 +459,12 @@ public sealed unsafe partial class VulkanRenderer
 
         if (tex == null)
         {
+            // textures of memory that now holds this one are stale: drop those unused for a while (streaming games
+            // reuse memory for textures of other sizes/formats, whose cache entries otherwise stayed forever)
+            EvictOverlappingTextures(addr, total);
             tex = new Texture();
             var swizzle = Formats.TextureSwizzle(d.Format);
-            (tex.Image, tex.View, tex.Mem) = CreateImage(baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            (tex.Image, tex.View, tex.Mem) = CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips - lodMin, faces, cube: cube, swizzle: swizzle);
             _textures[key] = tex;
             _fNewTextures++;
@@ -464,7 +478,15 @@ public sealed unsafe partial class VulkanRenderer
         tex.LastUsedFrame = FrameCount;
         tex.DataStart = addr;
         tex.DataSize = total;
-        UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
+        try { UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin); }
+        catch (VkOutOfMemoryException)
+        {
+            // no upload buffer: the image keeps its old content, so the texture must be checked again
+            tex.Hash = 0;
+            tex.ForceCheck = true;
+            tex.CheckedFrame = -1;
+            throw;
+        }
         if (_opt.InspectTextures || (DebugMode.Enabled && _inspectBudget-- > 0)) InspectUploadedTexture(d, info, w, h);
         return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
     }
@@ -512,6 +534,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageView View;
         public ImageMemoryPool.Allocation Mem;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();
@@ -539,7 +562,7 @@ public sealed unsafe partial class VulkanRenderer
             r = new RtRegion();
             var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
             if (gamma) viewFormat = Formats.Srgb(viewFormat);
-            (r.Image, r.View, r.Mem) = CreateImage(w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            (r.Image, r.View, r.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mutable: true);
             _vk.DestroyImageView(_dev, r.View, null);
             r.View = CreateView(r.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, RtSwizzle(rt, texFormat));
@@ -554,6 +577,7 @@ public sealed unsafe partial class VulkanRenderer
             Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         }
+        r.LastUsedFrame = FrameCount;
         if (r.Version == rt.Version) return r.View;
         r.Version = rt.Version;
         rt.Dirty = true;
@@ -581,6 +605,7 @@ public sealed unsafe partial class VulkanRenderer
         public ImageMemoryPool.Allocation Mem;
         public RenderTarget? Source;
         public long Version = -1;
+        public long LastUsedFrame;
     }
 
     readonly Dictionary<(uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma), RtAlias> _rtAliases = new();
@@ -613,7 +638,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!_rtAliases.TryGetValue(key, out var a))
         {
             a = new RtAlias();
-            (a.Image, a.View, a.Mem) = CreateImage(w, h, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            (a.Image, a.View, a.Mem) = CreateImage(MemCat.Region, w, h, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 swizzle: Formats.TextureSwizzle(d.Format));
             _rtAliases[key] = a;
             Log.WarnOnce($"rtalias-{addr:X8}-{d.Format:X8}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} reinterprets render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}");
@@ -622,6 +647,7 @@ public sealed unsafe partial class VulkanRenderer
             Barrier(a.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
+        a.LastUsedFrame = FrameCount;
         if (a.Source == rt && a.Version == rt.Version) return a.View;
         a.Source = rt;
         a.Version = rt.Version;

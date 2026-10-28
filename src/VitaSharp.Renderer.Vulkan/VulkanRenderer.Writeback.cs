@@ -99,7 +99,10 @@ public sealed unsafe partial class VulkanRenderer
         uint width = Math.Min(rt.Width, rt.Stride);
 
         rt.Dirty = true;
-        SyncRenderTargetForRead(rt);
+        SyncRenderTargetForRead(rt); // (also marks the target used by this frame: eviction keeps it)
+        // a whole lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
+        // (region writebacks leave the rest of the surface only on the GPU)
+        if (whole && conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
         if (whole) CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value);
         else
             foreach (var r in _sceneRegions)
@@ -118,11 +121,12 @@ public sealed unsafe partial class VulkanRenderer
     {
         ulong size = (ulong)w * (uint)hostBpp * h;
         if (!_writebackPool.TryGetValue(size, out var pool)) _writebackPool[size] = pool = new();
+        _writebackPoolUsed[size] = FrameCount;
         var wb = pool.Count > 0 ? pool.Pop() : null;
         if (wb == null)
         {
             wb = new RtWriteback { Size = size };
-            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
+            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         }
         wb.GuestStride = rt.Stride * (uint)guestBpp;
         wb.Address = rt.Address + y * wb.GuestStride + x * (uint)guestBpp;
@@ -230,6 +234,29 @@ public sealed unsafe partial class VulkanRenderer
         if ((man & 0x10) != 0 && (m5 != 0x1F || exp != 0x1E)) { m5++; if (m5 == 0x20) { m5 = 0; exp++; } }
         if (exp >= 0x1F) return 0x3FF;
         return (exp << 5) | m5;
+    }
+
+    /// <summary>GPU frame each writeback buffer size was last used in (region writebacks come in many sizes).</summary>
+    readonly Dictionary<ulong, long> _writebackPoolUsed = new();
+    readonly List<ulong> _writebackIdle = new();
+
+    /// <summary>
+    /// Destroys pooled (idle: their frames completed) writeback buffers of sizes unused for <paramref name="minAge"/>
+    /// GPU frames. Region writebacks of oversized targets use a buffer per rectangle size, so without this every size
+    /// ever seen kept its buffers. Returns the bytes freed.
+    /// </summary>
+    ulong TrimWritebackPool(long minAge)
+    {
+        ulong freed = 0;
+        _writebackIdle.Clear();
+        foreach (var (size, pool) in _writebackPool)
+            if (FrameCount - _writebackPoolUsed.GetValueOrDefault(size) >= minAge) _writebackIdle.Add(size);
+        foreach (var size in _writebackIdle)
+        {
+            var pool = _writebackPool[size];
+            while (pool.Count > 0) { var wb = pool.Pop(); _core.DestroyBuffer(wb.Buffer, wb.Memory); freed += wb.Size; }
+        }
+        return freed;
     }
 
     void DestroyWritebacks()
