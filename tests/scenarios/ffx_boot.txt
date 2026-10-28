@@ -1,0 +1,4 @@
+# FINAL FANTASY X HD Remaster (PCSE00293, PhyreEngine launcher): boot past engine init.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/ffx_boot.txt --data=<scratch root>
+title=PCSE00293
+args=--frames=1500 --seconds=300 --dump-every=10 --debug-mode

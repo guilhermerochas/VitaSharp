@@ -1,0 +1,8 @@
+# Blast 'Em Bunnies (PCSE00328, PhyreEngine): boot, loading screen (title art, ~f0-940), first level fly-in (~f950),
+# tutorial dialog "press R" (~f1140), then R/Cross presses through the tutorial into play.
+# Regressions: init aborted with "APP FINALISE" (sceSystemGestureCreateTouchRecognizer rejected the rotation type 0x10);
+# libult "Ulthread.h:402 Assertion Failed" when a ULT thread ends (switching into a fiber without its own context
+# must restart it at its entry).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/bunnies_boot.txt --data=<scratch root>
+title=PCSE00328
+args=--frames=5000 --seconds=900 --dump-every=25 --debug-mode --input=RTrigger@f1300:f8,RTrigger@f1500:f8,cross@f1700:f8,RTrigger@f1900:f8,cross@f2100:f8,RTrigger@f2300:f8,tap@f2500:0.5:0.5:f6,RTrigger@f2700:f8,lstick@f2900:1:0:f200,RTrigger@f3200:f30,tap@f3400:0.6:0.4:f6,RTrigger@f3600:f8,cross@f3800:f8,RTrigger@f4000:f60,tap@f4200:0.4:0.5:f30,RTrigger@f4400:f8,cross@f4600:f8

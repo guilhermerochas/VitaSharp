@@ -174,4 +174,31 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         Assert.Equal(0u, GuestMemory.R32(outBuf + 4));
         Assert.Equal(SceError.IO_EBADF, Call(io, "sceIoIoctl", 0x7FFF, 1, 0u, 0u, 0u, 0u));
     }
+
+    [Fact]
+    public void OpenOfAPathTheHostCannotRepresentFails()
+    {
+        // FFX HD's PhyreEngine FIOS layer probes "app0:app0:/Version_config/..." before "app0:/Version_config/...";
+        // the second "app0:" is invalid syntax on Windows hosts and used to crash the thread with an IOException
+        string root = Path.Combine(Path.GetTempPath(), "vitasharp-ioopen-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var emu = (VitaSharp.Core.Emulator)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(VitaSharp.Core.Emulator));
+            void Set(string prop, object v) => typeof(VitaSharp.Core.Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, v);
+            Set("Vfs", new VitaSharp.Core.Io.Vfs(root));
+            Set("Hle", new VitaSharp.Core.Hle.HleRegistry(emu));
+            emu.Vfs.Mount("app0", Path.Combine(root, "app"));
+            Directory.CreateDirectory(Path.Combine(root, "app", "Version_config"));
+            File.WriteAllText(Path.Combine(root, "app", "Version_config", "v.txt"), "1");
+            var io = new IoFileMgr { Emu = emu };
+            Assert.Equal(SceError.IO_ENOENT, Call(io, "sceIoOpen", "app0:app0:/Version_config/v.txt", 1, 0));
+            int fd = Call(io, "sceIoOpen", "app0:/Version_config/v.txt", 1, 0);
+            Assert.True(fd > 0);
+            Assert.Equal(0, Call(io, "sceIoClose", fd));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
+    }
 }
