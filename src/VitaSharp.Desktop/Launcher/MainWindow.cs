@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -58,11 +59,18 @@ public sealed class MainWindow : Window
         toolbar.Children.Add(brand);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(_search);
-        foreach (var b in new[] { MakeButton("Install VPK…", InstallVpk), MakeButton("Install PKG…", InstallPkg), MakeButton("Add game folder…", AddFolder) })
+        // one "Add game" button with a drop-down (VPK, PKG, folder) instead of three toolbar buttons
+        var addGame = new Button { Content = "Add game ▾", VerticalAlignment = VerticalAlignment.Center };
+        var addMenu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var (text, action) in new (string, Func<Task>)[] { ("Install VPK…", InstallVpk), ("Install PKG…", InstallPkg), ("Add game folder…", AddFolder) })
         {
-            _installButtons.Add(b);
-            actions.Children.Add(b);
+            var item = new MenuItem { Header = text };
+            item.Click += async (_, _) => await action();
+            addMenu.Items.Add(item);
         }
+        addGame.Flyout = addMenu;
+        _installButtons.Add(addGame);
+        actions.Children.Add(addGame);
         actions.Children.Add(MakeButton("Refresh", () => { Refresh(); return Task.CompletedTask; }));
         actions.Children.Add(MakeButton("Settings", OpenSettings));
         DockPanel.SetDock(actions, Dock.Right);
@@ -80,7 +88,7 @@ public sealed class MainWindow : Window
 
         _emptyHint = new TextBlock
         {
-            Text = "No games installed yet.\nUse \"Install VPK…\" (or drop a .vpk here), \"Install PKG…\" (package + work.bin/.rif license) or \"Add game folder…\" (a decrypted game folder).",
+            Text = "No games installed yet.\nUse \"Add game ▾\": Install VPK… (or drop a .vpk here), Install PKG… (package + work.bin/.rif license) or Add game folder… (a decrypted game folder).",
             Foreground = Muted, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24),
         };
