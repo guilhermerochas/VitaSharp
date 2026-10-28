@@ -17,6 +17,9 @@ namespace VitaSharp.Desktop.Host;
 public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDisposable
 {
     readonly IWindow _window;
+    // windowed size/position to restore when F11 leaves fullscreen (no position when the window started fullscreen)
+    Vector2D<int> _windowedSize;
+    Vector2D<int>? _windowedPosition;
     IInputContext? _input;
     volatile int _fbW, _fbH;
     readonly object _inputLock = new();
@@ -59,6 +62,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal,
         };
         _window = Window.Create(opts);
+        _windowedSize = opts.Size;
         _window.Load += OnLoad;
         _window.Closing += () => Closing?.Invoke();
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
@@ -164,7 +168,26 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _hostInput.KeyChanged(key.ToString(), down);
     }
 
-    void ToggleFullscreen() => _window.WindowState = _window.WindowState == WindowState.Fullscreen ? WindowState.Normal : WindowState.Fullscreen;
+    void ToggleFullscreen()
+    {
+        if (_window.WindowState != WindowState.Fullscreen)
+        {
+            _windowedSize = _window.Size;
+            _windowedPosition = _window.Position;
+            _window.WindowState = WindowState.Fullscreen;
+            return;
+        }
+        // leaving fullscreen keeps the monitor-sized window (GLFW reuses the current size), which still covers the
+        // screen: put back the size and position the window had, or the startup size when it started fullscreen
+        _window.WindowState = WindowState.Normal;
+        _window.Size = _windowedSize;
+        if (_windowedPosition is { } pos) _window.Position = pos;
+        else
+        {
+            var area = _window.Monitor?.Bounds.Size ?? _windowedSize;
+            _window.Position = new Vector2D<int>(Math.Max(0, (area.X - _windowedSize.X) / 2), Math.Max(0, (area.Y - _windowedSize.Y) / 2));
+        }
+    }
 
     void UpdateTouch(System.Numerics.Vector2 pos, bool down, bool back)
     {
