@@ -118,3 +118,16 @@ the heap budget moved between 2.0 and 3.4 GB.
   frame, the draw ring is managed memory released at the next present, and the NaN buffers (2 KB) are reused per
   frame slot.
 - **Async shader/pipeline prefetch.** Allocates no device memory.
+
+## After merging main (51895a1)
+
+- **Region writebacks (fix/gr-exposure).** Their staging buffers come from the writeback pool (`MemCat.Readback`).
+  The pool is keyed by size, and region rectangles come in many sizes, so the idle buffers of sizes unused for 600
+  GPU frames are now destroyed at the expiry sweep, and all idle ones at an out-of-memory reclaim
+  (`TrimWritebackPool`). Only whole, lossless writebacks mark a target as recreatable from memory.
+- **Unpacked 4X depth (fix/lbp-textures).** The image counts as `MemCat.Region`, is an eviction candidate with the
+  other depth textures, and is released together with its attachment view (`DestroyDepthTex`). The depth target's
+  new sampled view is destroyed with it.
+- **Per-triangle split of programmable-blending draws.** Only draw calls and barriers; it holds no memory.
+- **Validation.** kz_skin 544 MB flat; the 480 MB cap ran with 220 trims, 82 reclaims and 0 drops; lbp_boot unpacks
+  a 1440x816 depth texture (counted under depth/stencil views); gr_boot holds 416 MB with 3 MB of writeback staging.

@@ -210,7 +210,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     [Fact]
     public void GeneratedInvokersMarshalLikeTheReflectionBinder()
     {
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.TryAllocAt(DataBase, DataSize, "binder test data");
+        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "binder test data");
         var rng = new Random(1234);
         var text = new byte[DataSize];
         for (int i = 0; i < text.Length; i++) text[i] = rng.Next(8) == 0 ? (byte)0 : (byte)rng.Next(0x20, 0x7F);

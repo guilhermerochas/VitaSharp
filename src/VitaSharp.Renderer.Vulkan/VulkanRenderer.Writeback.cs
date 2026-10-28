@@ -46,9 +46,48 @@ public sealed unsafe partial class VulkanRenderer
         };
     }
 
+    /// <summary>
+    /// Targets above <see cref="WritebackMaxPixels"/> are not copied out whole, but the small rectangles their draws
+    /// rendered are (draws whose viewport within the region clip covers at most this many pixels). GPU reductions end
+    /// in such a draw: Gravity Rush renders its average-luminance block (32x16) into a corner of a 768x384
+    /// post-processing atlas and reads it with the CPU for auto exposure; without it the game read zeros and its tone
+    /// mapping washed every frame out to near white.
+    /// </summary>
+    static readonly uint WritebackRegionMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WRITEBACK_REGION_MAX"), out var wr) ? wr : 64 * 64;
+    const int MaxWritebackRegions = 16;
+
+    /// <summary>Small pixel rectangles drawn in the current scene of a target too large to write back whole.</summary>
+    readonly List<(uint X, uint Y, uint W, uint H)> _sceneRegions = new();
+
+    /// <summary>Records the rectangle a draw can write (viewport within the region clip) when it is small.</summary>
+    void NoteWritebackRegion(in Core.Gpu.DrawState st)
+    {
+        var rt = _rt;
+        // (a scene rendered without MSAA downscale has 2x2 surface pixels per scene pixel: not mapped here)
+        if (rt == null || _msaaNoDownscale || rt.Width * rt.Height <= WritebackMaxPixels || WritebackRegionMaxPixels == 0 || _sceneRegions.Count >= MaxWritebackRegions) return;
+        int w = (int)Math.Min(_sceneW, rt.Width), h = (int)Math.Min(_sceneH, rt.Height);
+        int x0 = 0, y0 = 0, x1 = w, y1 = h;
+        if (st.RegionClipMode == 2) { x0 = st.ClipMinX; y0 = st.ClipMinY; x1 = st.ClipMaxX + 1; y1 = st.ClipMaxY + 1; }
+        if (st.ViewportEnabled)
+        {
+            float hx = Math.Abs(st.VpScaleX), hy = Math.Abs(st.VpScaleY);
+            x0 = Math.Max(x0, (int)MathF.Floor(st.VpOffX - hx)); x1 = Math.Min(x1, (int)MathF.Ceiling(st.VpOffX + hx));
+            y0 = Math.Max(y0, (int)MathF.Floor(st.VpOffY - hy)); y1 = Math.Min(y1, (int)MathF.Ceiling(st.VpOffY + hy));
+        }
+        x0 = Math.Clamp(x0, 0, w); x1 = Math.Clamp(x1, x0, w);
+        y0 = Math.Clamp(y0, 0, h); y1 = Math.Clamp(y1, y0, h);
+        uint rw = (uint)(x1 - x0), rh = (uint)(y1 - y0);
+        if (rw == 0 || rh == 0 || rw * rh > WritebackRegionMaxPixels) return;
+        foreach (var r in _sceneRegions)
+            if (x0 >= r.X && y0 >= r.Y && x1 <= r.X + r.W && y1 <= r.Y + r.H) return;
+        _sceneRegions.Add(((uint)x0, (uint)y0, rw, rh));
+    }
+
     bool ScheduleWriteback(RenderTarget rt)
     {
-        if (rt.Width * rt.Height > WritebackMaxPixels || rt.Address == 0) return false;
+        if (rt.Address == 0) return false;
+        bool whole = rt.Width * rt.Height <= WritebackMaxPixels;
+        if (!whole && _sceneRegions.Count == 0) return false;
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
         int hostBpp = HostBytesPerPixel(rt.Format);
         var conv = WritebackConversion(rt.ColorFormat, rt.Format, hostBpp, guestBpp);
@@ -58,40 +97,55 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
         uint width = Math.Min(rt.Width, rt.Stride);
-        ulong size = (ulong)rt.Stride * (uint)hostBpp * rt.Height;
+
+        rt.Dirty = true;
+        SyncRenderTargetForRead(rt); // (also marks the target used by this frame: eviction keeps it)
+        // a whole lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
+        // (region writebacks leave the rest of the surface only on the GPU)
+        if (whole && conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
+        if (whole) CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value);
+        else
+            foreach (var r in _sceneRegions)
+            {
+                uint w = Math.Min(r.W, width - Math.Min(r.X, width)), h = Math.Min(r.H, rt.Height - Math.Min(r.Y, rt.Height));
+                if (w > 0 && h > 0) CopyOutRect(rt, r.X, r.Y, w, h, hostBpp, guestBpp, conv.Value);
+            }
+        if (TraceSync && _tracedWritebacks.Add((rt.Address, rt.Width, rt.Height)))
+            Log.Info($"[sync] writeback target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} ({rt.Format}, {conv}) present {_presentCount}" +
+                (whole ? "" : $", regions {string.Join(" ", _sceneRegions.Select(r => $"({r.X},{r.Y} {r.W}x{r.H})"))}"));
+        return true;
+    }
+
+    /// <summary>Copies one pixel rectangle of the target into a host buffer (into guest memory once the frame completed).</summary>
+    void CopyOutRect(RenderTarget rt, uint x, uint y, uint w, uint h, int hostBpp, int guestBpp, WritebackConvert conv)
+    {
+        ulong size = (ulong)w * (uint)hostBpp * h;
         if (!_writebackPool.TryGetValue(size, out var pool)) _writebackPool[size] = pool = new();
+        _writebackPoolUsed[size] = FrameCount;
         var wb = pool.Count > 0 ? pool.Pop() : null;
         if (wb == null)
         {
             wb = new RtWriteback { Size = size };
             (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         }
-        wb.Address = rt.Address;
-        wb.Width = width;
-        wb.Rows = rt.Height;
-        wb.HostStride = rt.Stride * (uint)hostBpp;
         wb.GuestStride = rt.Stride * (uint)guestBpp;
+        wb.Address = rt.Address + y * wb.GuestStride + x * (uint)guestBpp;
+        wb.Width = w;
+        wb.Rows = h;
+        wb.HostStride = w * (uint)hostBpp;
         wb.GuestBpp = (uint)guestBpp;
-        wb.Convert = conv.Value;
-        // a lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
-        if (conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
-        rt.LastTouchedFrame = FrameCount;
-
-        rt.Dirty = true;
-        SyncRenderTargetForRead(rt);
+        wb.Convert = conv;
         var region = new BufferImageCopy
         {
             BufferOffset = 0,
-            BufferRowLength = rt.Stride,
-            BufferImageHeight = rt.Height,
+            BufferRowLength = w,
+            BufferImageHeight = h,
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            ImageExtent = new Extent3D(width, rt.Height, 1),
+            ImageOffset = new Offset3D((int)x, (int)y, 0),
+            ImageExtent = new Extent3D(w, h, 1),
         };
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, wb.Buffer, 1, in region);
         F.Writebacks.Add(wb);
-        if (TraceSync && _tracedWritebacks.Add((rt.Address, rt.Width, rt.Height)))
-            Log.Info($"[sync] writeback target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} ({rt.Format}, {conv}) present {_presentCount}");
-        return true;
     }
 
     /// <summary>Runs after the frame's fence signalled: copies each target's rows into guest memory.</summary>
@@ -143,7 +197,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             _writebackPool[wb.Size].Push(wb);
             _wbCount++;
-            _wbBytes += wb.Rows * wb.GuestStride;
+            _wbBytes += wb.Rows * wb.Width * wb.GuestBpp;
         }
         // the rows just written mark their pages: sweep again before the next texture check, so a texture over that
         // memory is re-read in this frame already (as when every texture was hashed every frame)
@@ -180,6 +234,29 @@ public sealed unsafe partial class VulkanRenderer
         if ((man & 0x10) != 0 && (m5 != 0x1F || exp != 0x1E)) { m5++; if (m5 == 0x20) { m5 = 0; exp++; } }
         if (exp >= 0x1F) return 0x3FF;
         return (exp << 5) | m5;
+    }
+
+    /// <summary>GPU frame each writeback buffer size was last used in (region writebacks come in many sizes).</summary>
+    readonly Dictionary<ulong, long> _writebackPoolUsed = new();
+    readonly List<ulong> _writebackIdle = new();
+
+    /// <summary>
+    /// Destroys pooled (idle: their frames completed) writeback buffers of sizes unused for <paramref name="minAge"/>
+    /// GPU frames. Region writebacks of oversized targets use a buffer per rectangle size, so without this every size
+    /// ever seen kept its buffers. Returns the bytes freed.
+    /// </summary>
+    ulong TrimWritebackPool(long minAge)
+    {
+        ulong freed = 0;
+        _writebackIdle.Clear();
+        foreach (var (size, pool) in _writebackPool)
+            if (FrameCount - _writebackPoolUsed.GetValueOrDefault(size) >= minAge) _writebackIdle.Add(size);
+        foreach (var size in _writebackIdle)
+        {
+            var pool = _writebackPool[size];
+            while (pool.Count > 0) { var wb = pool.Pop(); _core.DestroyBuffer(wb.Buffer, wb.Memory); freed += wb.Size; }
+        }
+        return freed;
     }
 
     void DestroyWritebacks()

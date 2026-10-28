@@ -157,6 +157,14 @@ public sealed unsafe partial class VulkanRenderer
         Release(() => { _vk.DestroyImageView(_dev, view, null); _vk.DestroyImage(_dev, image, null); _imagePool.Free(mem); }, now);
     }
 
+    /// <summary>A depth texture (copied, or unpacked from multisampled depth with its attachment view).</summary>
+    void ReleaseDepthTex(DepthTex t, bool now)
+    {
+        _evViews++;
+        _evViewBytes += (long)t.Mem.Size;
+        Release(() => DestroyDepthTex(t), now);
+    }
+
     /// <summary>Destroys a render target and everything derived from it (also used when a surface is replaced).</summary>
     void ReleaseRenderTarget(RenderTarget rt, bool now)
     {
@@ -197,7 +205,7 @@ public sealed unsafe partial class VulkanRenderer
         _depthTargets.Remove(key);
         _evDepth++;
         _evDepthBytes += (long)dt.Mem.Size;
-        if (_depthTextures.Remove(dt, out var t)) ReleaseImage(t.Image, t.View, t.Mem, now);
+        if (_depthTextures.Remove(dt, out var t)) ReleaseDepthTex(t, now);
         if (_stencilTextures.Remove(dt, out var s)) ReleaseImage(s.Image, s.View, s.Mem, now);
         _mirroredDepth.Remove((dt, false));
         _mirroredDepth.Remove((dt, true));
@@ -214,7 +222,7 @@ public sealed unsafe partial class VulkanRenderer
                 Release(() => _vk.DestroyFramebuffer(_dev, fb, null), now);
             }
         }
-        Release(() => { _vk.DestroyImageView(_dev, dt.View, null); _vk.DestroyImage(_dev, dt.Image, null); _imagePool.Free(dt.Mem); }, now);
+        Release(() => { _vk.DestroyImageView(_dev, dt.View, null); if (dt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, dt.SampledView, null); _vk.DestroyImage(_dev, dt.Image, null); _imagePool.Free(dt.Mem); }, now);
     }
 
     // =================================================================== eviction
@@ -311,7 +319,7 @@ public sealed unsafe partial class VulkanRenderer
                     break;
                 case 4:
                     if (!_depthTextures.Remove((DepthTarget)e.Key)) continue;
-                    { var d = (DepthTex)e.Value; ReleaseImage(d.Image, d.View, d.Mem, now); }
+                    ReleaseDepthTex((DepthTex)e.Value, now);
                     break;
                 case 5:
                     if (!_stencilTextures.Remove((DepthTarget)e.Key)) continue;
@@ -380,6 +388,7 @@ public sealed unsafe partial class VulkanRenderer
             ulong freed = level == 0
                 ? Evict(need + (128ul << 20), minAge: 2, rtIdle: RtIdleFrames, lostIdle: long.MaxValue, now: true)
                 : Evict(ulong.MaxValue, minAge: 1, rtIdle: 1, lostIdle: RtLostIdleFrames, now: true);
+            freed += TrimWritebackPool(minAge: 0); // idle writeback staging (host memory)
             // 3. empty pages back to the driver (a buffer or a page of another size may fit where the page was)
             ulong trimmed = _imagePool.TrimEmptyPages(keepSpare: device ? 0 : 1);
             _reclaimTicks += Stopwatch.GetTimestamp() - t0;
@@ -408,6 +417,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             _expirySweeps++;
             Evict(ulong.MaxValue, minAge: ExpiryFrames, rtIdle: long.MaxValue, lostIdle: long.MaxValue, now: false);
+            TrimWritebackPool(minAge: 600);
             _imagePool.TrimEmptyPages(keepSpare: 1);
         }
         if (_presentCount % 4 == 0) TrimForPressure();

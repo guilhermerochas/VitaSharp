@@ -96,7 +96,8 @@ public sealed partial class UsseTranslator
 
     public static string F(float f)
     {
-        if (float.IsNaN(f)) return "uintBitsToFloat(0x7FC00000u)";
+        // NaN bit patterns are often packed integer data (a U16x2 clear colour 0xFFFFFFFF): keep the exact bits
+        if (float.IsNaN(f)) return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
         if (float.IsPositiveInfinity(f)) return "uintBitsToFloat(0x7F800000u)";
         if (float.IsNegativeInfinity(f)) return "uintBitsToFloat(0xFF800000u)";
         // denormals (often packed f16/u8 data reinterpreted as f32) would be flushed by the compiler: keep exact bits
