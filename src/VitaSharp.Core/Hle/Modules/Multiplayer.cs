@@ -9,9 +9,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed class NpMatching2 : HleModule
 {
-    // NP error family 0x8055xxxx; requests fail with the NP "signed out" error, as on a console without PSN.
+    // NP error family 0x8055xxxx; server requests fail with PsnAccount.ServerError (unreachable server, or signed out).
     const int ERR_NOT_INITIALIZED = unchecked((int)0x80550c01), ERR_INVALID_ARGUMENT = unchecked((int)0x80550c03),
-        ERR_CONTEXT_NOT_FOUND = unchecked((int)0x80550c0b), ERR_SIGNED_OUT = unchecked((int)0x80550006);
+        ERR_CONTEXT_NOT_FOUND = unchecked((int)0x80550c0b);
 
     bool _initialized;
     readonly HashSet<ushort> _contexts = new();
@@ -39,7 +39,7 @@ public sealed class NpMatching2 : HleModule
     bool Valid(ushort ctxId) { lock (_contexts) return _contexts.Contains(ctxId); }
 
     // Starting a context contacts the matching server: refused because the user is not signed in to PSN.
-    [Hle] int sceNpMatching2ContextStart(ushort ctxId, ulong timeout) => Valid(ctxId) ? ERR_SIGNED_OUT : ERR_CONTEXT_NOT_FOUND;
+    [Hle] int sceNpMatching2ContextStart(ushort ctxId, ulong timeout) => Valid(ctxId) ? PsnAccount.Current.ServerError : ERR_CONTEXT_NOT_FOUND;
     [Hle] int sceNpMatching2ContextStop(ushort ctxId) => Valid(ctxId) ? 0 : ERR_CONTEXT_NOT_FOUND;
     [Hle] int sceNpMatching2AbortContextStart(ushort ctxId) => Valid(ctxId) ? 0 : ERR_CONTEXT_NOT_FOUND;
     [Hle] int sceNpMatching2AbortRequest(ushort ctxId, uint reqId) => Valid(ctxId) ? 0 : ERR_CONTEXT_NOT_FOUND;
@@ -56,7 +56,7 @@ public sealed class NpMatching2 : HleModule
     [Hle] int sceNpMatching2GetMemoryInfo(uint info) { if (info != 0) GuestMemory.Fill(info, 0, 12); return 0; }
 
     // Requests that would go to the matching server.
-    int Request(ushort ctxId) => Valid(ctxId) ? ERR_SIGNED_OUT : ERR_CONTEXT_NOT_FOUND;
+    int Request(ushort ctxId) => Valid(ctxId) ? PsnAccount.Current.ServerError : ERR_CONTEXT_NOT_FOUND;
     [Hle] int sceNpMatching2GetServerLocal(ushort ctxId, uint server) => Request(ctxId);
     [Hle] int sceNpMatching2GetWorldInfoList(ushort ctxId, uint req, uint opt, uint reqId) => Request(ctxId);
     [Hle] int sceNpMatching2GetLobbyInfoList(ushort ctxId, uint req, uint opt, uint reqId) => Request(ctxId);
@@ -91,7 +91,7 @@ public sealed class NpMatching2 : HleModule
         return Request(ctxId);
     }
     [Hle] int sceNpMatching2SignalingGetConnectionInfo(ushort ctxId, ulong roomId, ushort memberId, int code, uint info) => Request(ctxId);
-    [Hle] int sceNpMatching2SignalingGetLocalNetInfo(uint info) => ERR_SIGNED_OUT;
+    [Hle] int sceNpMatching2SignalingGetLocalNetInfo(uint info) => PsnAccount.Current.ServerError;
     [Hle] int sceNpMatching2SignalingGetPeerNetInfo(ushort ctxId, ulong roomId, ushort memberId, uint reqId) => Request(ctxId);
     [Hle] int sceNpMatching2SignalingCancelPeerNetInfo(ushort ctxId, uint reqId) => Request(ctxId);
     [Hle] int sceNpMatching2SignalingGetPeerNetInfoResult(ushort ctxId, uint reqId, uint info) => Request(ctxId);

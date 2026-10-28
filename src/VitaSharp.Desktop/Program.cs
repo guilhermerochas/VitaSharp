@@ -262,5 +262,7 @@ public static class Program
         Console.WriteLine("               --shaderc-opt=zero|size|perf  shader optimisation (default zero: fast compiles, less stutter)");
         Console.WriteLine("               --async-shaders=on|off  compile new shaders and pipelines on worker threads (default on)");
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
+        Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass, PSN servers unreachable)");
+        Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
     }
 }

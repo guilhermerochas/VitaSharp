@@ -6,8 +6,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>SceNpSignaling (P2P NAT traversal): contexts and options work locally, no peer ever connects.</summary>
 public sealed class NpSignaling : HleModule
 {
-    const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT,
-        ERR_SIGNED_OUT = NpManager.ERR_SIGNED_OUT;
+    const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
     readonly object _lock = new();
     bool _inited;
@@ -56,17 +55,17 @@ public sealed class NpSignaling : HleModule
         }
     }
 
-    [Hle] int sceNpSignalingActivateConnection(int ctxId, uint npId, uint connId) => ERR_SIGNED_OUT;
+    [Hle] int sceNpSignalingActivateConnection(int ctxId, uint npId, uint connId) => PsnAccount.Current.ServerError;
     [Hle] int sceNpSignalingDeactivateConnection(int ctxId, int connId) => 0;
     [Hle] int sceNpSignalingTerminateConnection(int ctxId, int connId) => 0;
-    [Hle] int sceNpSignalingGetConnectionStatus(int ctxId, int connId, Ptr<int> status) { status.TrySet(0); return ERR_SIGNED_OUT; } // INACTIVE
-    [Hle] int sceNpSignalingGetConnectionInfo(int ctxId, int connId, int code, uint info) => ERR_SIGNED_OUT;
-    [Hle] int sceNpSignalingGetConnectionFromNpId(int ctxId, uint npId, uint connId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpSignalingGetConnectionFromPeerAddress(int ctxId, uint addr, uint port, uint connId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpSignalingGetLocalNetInfo(int ctxId, uint info) => ERR_SIGNED_OUT;
-    [Hle] int sceNpSignalingGetPeerNetInfo(int ctxId, uint npId, uint reqId) => ERR_SIGNED_OUT;
+    [Hle] int sceNpSignalingGetConnectionStatus(int ctxId, int connId, Ptr<int> status) { status.TrySet(0); return PsnAccount.Current.ServerError; } // INACTIVE
+    [Hle] int sceNpSignalingGetConnectionInfo(int ctxId, int connId, int code, uint info) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpSignalingGetConnectionFromNpId(int ctxId, uint npId, uint connId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpSignalingGetConnectionFromPeerAddress(int ctxId, uint addr, uint port, uint connId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpSignalingGetLocalNetInfo(int ctxId, uint info) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpSignalingGetPeerNetInfo(int ctxId, uint npId, uint reqId) => PsnAccount.Current.ServerError;
     [Hle] int sceNpSignalingCancelPeerNetInfo(int ctxId, int reqId) => 0;
-    [Hle] int sceNpSignalingGetPeerNetInfoResult(int ctxId, int reqId, uint info) => ERR_SIGNED_OUT;
+    [Hle] int sceNpSignalingGetPeerNetInfoResult(int ctxId, int reqId, uint info) => PsnAccount.Current.ServerError;
     [Hle] int sceNpSignalingGetMemoryInfo(uint info) { if (info != 0) GuestMemory.Fill(info, 0, 12); return 0; }
 }
 
@@ -74,7 +73,7 @@ public sealed class NpSignaling : HleModule
 /// callbacks never fire.</summary>
 public sealed class NpWebApi : HleModule
 {
-    const int ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT, ERR_SIGNED_OUT = NpManager.ERR_SIGNED_OUT;
+    const int ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
     int _nextId = 1;
     long _nextReq = 1;
@@ -131,15 +130,15 @@ public sealed class NpWebApi : HleModule
     }
 
     [Hle] int sceNpWebApiSetMultipartContentType(long requestId, uint type, uint boundary) => 0;
-    [Hle] int sceNpWebApiSendRequest(long requestId, uint data, uint size) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiSendRequest2(long requestId, uint data, uint size, uint respInfo) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiSendMultipartRequest(long requestId, int partIndex, uint data, uint size) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiSendMultipartRequest2(long requestId, int partIndex, uint data, uint size) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiReadData(long requestId, uint data, uint size) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiGetHttpStatusCode(long requestId, uint status) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiGetHttpResponseHeaderValueLength(long requestId, uint name, uint len) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiGetHttpResponseHeaderValue(long requestId, uint name, uint value, uint len) => ERR_SIGNED_OUT;
-    [Hle] int sceNpWebApiGetErrorCode(long requestId, uint err) => ERR_SIGNED_OUT;
+    [Hle] int sceNpWebApiSendRequest(long requestId, uint data, uint size) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiSendRequest2(long requestId, uint data, uint size, uint respInfo) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiSendMultipartRequest(long requestId, int partIndex, uint data, uint size) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiSendMultipartRequest2(long requestId, int partIndex, uint data, uint size) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiReadData(long requestId, uint data, uint size) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiGetHttpStatusCode(long requestId, uint status) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiGetHttpResponseHeaderValueLength(long requestId, uint name, uint len) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiGetHttpResponseHeaderValue(long requestId, uint name, uint value, uint len) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpWebApiGetErrorCode(long requestId, uint err) => PsnAccount.Current.ServerError;
     [Hle] int sceNpWebApiGetMemoryPoolStats(int libCtxId, uint stats) { if (stats != 0) GuestMemory.Fill(stats, 0, 16); return 0; }
     [Hle] int sceNpWebApiCheckCallback(int libCtxId) => 0;
 
@@ -215,8 +214,7 @@ public sealed class NpWebApiCommonDialog : HleModule
 /// so no result buffer ever exists and the parsers only reject their input.</summary>
 public sealed class NpCommerce2 : HleModule
 {
-    const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT,
-        ERR_SIGNED_OUT = NpManager.ERR_SIGNED_OUT;
+    const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
     readonly object _lock = new();
     bool _inited;
@@ -273,17 +271,17 @@ public sealed class NpCommerce2 : HleModule
     [Hle] int sceNpCommerce2AbortReq(uint reqId) => 0;
     [Hle] int sceNpCommerce2DestroyReq(uint reqId) { lock (_lock) _reqs.Remove(reqId); return 0; }
 
-    [Hle] int sceNpCommerce2CreateSessionStart(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2CreateSessionGetResult(uint reqId, uint info) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetSessionInfo(uint ctxId, uint info) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetCategoryContentsStart(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetCategoryContentsGetResult(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetProductInfoStart(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetProductInfoGetResult(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetProductInfoListStart(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetProductInfoListGetResult(uint reqId) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2GetPrice(uint ctxId, uint buf, uint len, uint price) => ERR_SIGNED_OUT;
-    [Hle] int sceNpCommerce2StartEmptyStoreCheck() => ERR_SIGNED_OUT;
+    [Hle] int sceNpCommerce2CreateSessionStart(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2CreateSessionGetResult(uint reqId, uint info) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetSessionInfo(uint ctxId, uint info) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetCategoryContentsStart(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetCategoryContentsGetResult(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetProductInfoStart(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetProductInfoGetResult(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetProductInfoListStart(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetProductInfoListGetResult(uint reqId) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2GetPrice(uint ctxId, uint buf, uint len, uint price) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpCommerce2StartEmptyStoreCheck() => PsnAccount.Current.ServerError;
     [Hle] int sceNpCommerce2StopEmptyStoreCheck() => 0;
 
     // parsers over server data: unreachable offline (no data), so they reject their input

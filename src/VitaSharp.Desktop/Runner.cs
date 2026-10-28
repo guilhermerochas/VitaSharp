@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using VitaSharp.Core;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Util;
 using VitaSharp.Desktop.Host;
@@ -56,8 +57,14 @@ public static class Runner
         // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
             ffv.Configure(vdec);
+        // --psn=on|off: emulated PSN account signed in (default) or signed out; --psn-id=<online id> names the account
+        // (launcher: Configurações > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
+        string? psnId = Opt(options, "--psn-id");
+        if (psnId != null && !PsnAccount.IsValidOnlineId(psnId))
+            Log.Warn($"--psn-id={psnId} is not a valid online ID (3-16 letters, digits, '-' or '_', starting with a letter): using {PsnAccount.DefaultOnlineId}");
+        var psn = PsnAccount.Create(OnOff(options, "--psn") ?? PsnAccount.Default.SignedIn, psnId);
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
-        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches") });
+        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn });
         var fatal = new ManualResetEventSlim();
         emu.Fatal += (t, e) => fatal.Set();
 

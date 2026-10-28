@@ -20,6 +20,11 @@ public sealed class LauncherSettings
     public bool BackgroundShaderCompile { get; set; } = true;
     /// <summary>"Modo de depuração": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
     public bool DebugMode { get; set; }
+    /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on, the default) or
+    /// signed out (--psn=off). Signed in, sign-in checks pass and PSN server requests fail as unreachable.</summary>
+    public bool PsnSignedIn { get; set; } = true;
+    /// <summary>Online ID of the emulated PSN account (--psn-id=).</summary>
+    public string PsnOnlineId { get; set; } = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -52,6 +57,8 @@ public sealed class LauncherSettings
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
         if (DebugMode) yield return "--debug-mode";
+        yield return PsnSignedIn ? "--psn=on" : "--psn=off";
+        if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";
     }
 }
 

@@ -6,7 +6,8 @@ using VitaSharp.Desktop.Input;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Settings window: "Geral" (window, graphics, camera, CPU, Desempenho = shader compilation) and "Controles" (keyboard / controller mapping).</summary>
+/// <summary>Settings window: "Geral" (window, graphics, camera, CPU, Desempenho = shader compilation, Rede e PSN = emulated
+/// PSN account) and "Controles" (keyboard / controller mapping).</summary>
 public sealed class SettingsDialog : Window
 {
     public const int GeneralTab = 0, ControlsTab = 1;
@@ -66,6 +67,21 @@ public sealed class SettingsDialog : Window
         var asyncShaders = new CheckBox { Content = "Compilar shaders e pipelines em segundo plano", IsChecked = settings.BackgroundShaderCompile };
         ToolTip.SetTip(asyncShaders, asyncShadersTip);
 
+        // network and PSN (--psn=, --psn-id=): an emulated signed-in account; nothing is ever sent to Sony's servers
+        const string psnTip = "Muitos jogos só passam da tela inicial com uma conta PSN conectada. O VitaSharp simula a conta " +
+                              "localmente: a verificação de login passa, e recursos online (placares, salvamento na nuvem, " +
+                              "multijogador) falham como se o servidor estivesse fora do ar. Desligado, o console fica sem rede e sem conta.";
+        var psnSignedIn = new CheckBox { Content = "Simular conta PSN conectada (offline)", IsChecked = settings.PsnSignedIn };
+        ToolTip.SetTip(psnSignedIn, psnTip);
+        var psnId = new TextBox { Text = settings.PsnOnlineId, Width = 200, MaxLength = 16, Watermark = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId };
+        var psnIdError = new TextBlock
+        {
+            Text = "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.",
+            Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false,
+        };
+        void SyncPsn() => psnId.IsEnabled = psnSignedIn.IsChecked == true;
+        psnSignedIn.IsCheckedChanged += (_, _) => SyncPsn();
+        SyncPsn();
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         general.Children.Add(fullscreen);
         general.Children.Add(Row("Tamanho", scale));
@@ -76,6 +92,10 @@ public sealed class SettingsDialog : Window
         general.Children.Add(new TextBlock { Text = "Desempenho", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         general.Children.Add(WithHint(fastShaders, fastShadersTip));
         general.Children.Add(WithHint(asyncShaders, asyncShadersTip));
+        general.Children.Add(new TextBlock { Text = "Rede e PSN", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        general.Children.Add(WithHint(psnSignedIn, psnTip));
+        general.Children.Add(Row("ID online", psnId));
+        general.Children.Add(psnIdError);
         general.Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
@@ -132,6 +152,12 @@ public sealed class SettingsDialog : Window
 
         ok.Click += (_, _) =>
         {
+            string id = (psnId.Text ?? "").Trim();
+            if (id.Length == 0) id = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
+            psnIdError.IsVisible = !VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(id);
+            if (psnIdError.IsVisible) { _tabs.SelectedIndex = GeneralTab; return; }
+            settings.PsnSignedIn = psnSignedIn.IsChecked == true;
+            settings.PsnOnlineId = id;
             settings.Fullscreen = fullscreen.IsChecked == true;
             settings.VSync = vsync.IsChecked == true;
             settings.Validation = validation.IsChecked == true;

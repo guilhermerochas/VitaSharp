@@ -4,9 +4,10 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
-/// SceNpManager and SceNpCommon: NP initialisation, service state, NpId helpers and auth tickets. VitaSharp is a
-/// console that is signed out of PSN: initialisation works, anything that needs the account fails with
-/// SCE_NP_ERROR_SIGNED_OUT, and callbacks are told SIGNED_OUT once (from sceNpCheckCallback).
+/// SceNpManager and SceNpCommon: NP initialisation, service state, NpId helpers and auth tickets, following the emulated
+/// PSN account (<see cref="PsnAccount"/>). Signed in (default): service state SIGNED_IN, the account's NpId and region,
+/// and auth tickets that fail like an unreachable server. Signed out: anything that needs the account fails with
+/// SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state once (from sceNpCheckCallback).
 /// </summary>
 public sealed class NpManager : HleModule
 {
@@ -17,8 +18,9 @@ public sealed class NpManager : HleModule
     internal const int UTIL_INVALID_ARGUMENT = unchecked((int)0x80550601), UTIL_INVALID_NP_ID = unchecked((int)0x80550605),
         UTIL_NOT_MATCH = unchecked((int)0x80550609);
 
-    // PSN: the console is signed out (SCE_NP_SERVICE_STATE_SIGNED_OUT = 1; 0 would mean "unknown yet").
-    const int NP_STATE_SIGNED_OUT = 1;
+    // SceNpServiceState: UNKNOWN 0, SIGNED_OUT 1, SIGNED_IN 2, ONLINE 3 (Vita3K reports SIGNED_IN for a signed-in account).
+    internal const int NP_STATE_SIGNED_OUT = 1, NP_STATE_SIGNED_IN = 2;
+    static int ServiceState => PsnAccount.Current.SignedIn ? NP_STATE_SIGNED_IN : NP_STATE_SIGNED_OUT;
     readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
 
     readonly object _lock = new();
@@ -45,7 +47,8 @@ public sealed class NpManager : HleModule
             uint id = config != 0 ? GuestMemory.R32(config) : 0;
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
         }
-        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} (signed out of PSN)");
+        var acct = PsnAccount.Current;
+        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, servers unreachable" : "signed out of PSN")})");
         return 0;
     }
 
@@ -73,7 +76,7 @@ public sealed class NpManager : HleModule
             pending = anyPending ? _npCallbacks.Where(c => !c.Notified).ToList() : NoPending;
             for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
         }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, NP_STATE_SIGNED_OUT, 0, c.Arg);
+        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)ServiceState, 0, c.Arg);
 
         // auth (ticket) requests complete here: the ticket callback is told the console is signed out
         List<(int Id, uint Cb, uint Arg)> done;
@@ -85,11 +88,11 @@ public sealed class NpManager : HleModule
                 .Select(kv => (kv.Key, kv.Value.Cb, kv.Value.Arg)).ToList();
             foreach (var d in done) _authReqs[d.Id].Done = true;
         }
-        foreach (var d in done) Kernel.GuestThread.Current?.CallGuest(d.Cb, (uint)d.Id, unchecked((uint)ERR_SIGNED_OUT), d.Arg);
+        foreach (var d in done) Kernel.GuestThread.Current?.CallGuest(d.Cb, (uint)d.Id, unchecked((uint)PsnAccount.Current.ServerError), d.Arg);
         return 0;
     }
 
-    [Hle] int sceNpGetServiceState(Ptr<int> state) { if (state.Address == 0) return ERR_INVALID_ARGUMENT; state.Value = NP_STATE_SIGNED_OUT; return 0; }
+    [Hle] int sceNpGetServiceState(Ptr<int> state) { if (state.Address == 0) return ERR_INVALID_ARGUMENT; state.Value = ServiceState; return 0; }
 
     [Hle]
     int sceNpRegisterServiceStateCallback(uint cb, uint arg)
@@ -99,23 +102,49 @@ public sealed class NpManager : HleModule
     }
 
     [Hle] int sceNpUnregisterServiceStateCallback() { lock (_npCallbacks) _npCallbacks.Clear(); return 0; }
-    [Hle] int sceNpManagerGetNpId(uint npId) => ERR_SIGNED_OUT;
+
+    /// <summary>The signed-in account's SceNpId (like Vita3K: online id, platform "psp2", isIdValid; the rest zero).</summary>
+    [Hle]
+    int sceNpManagerGetNpId(uint npId)
+    {
+        if (npId == 0) return MGR_INVALID_ARGUMENT;
+        var acct = PsnAccount.Current;
+        if (!acct.SignedIn) return ERR_SIGNED_OUT;
+        WriteNpId(npId, acct.OnlineId);
+        return 0;
+    }
+
+    /// <summary>SceNpId (0x24): onlineId.data[16] + term/dummy, opt[8] (platform "psp2" at +0x18), reserved[0] = 1 (valid).</summary>
+    internal static void WriteNpId(uint npId, string onlineId)
+    {
+        GuestMemory.Fill(npId, 0, 0x24);
+        var b = System.Text.Encoding.ASCII.GetBytes(onlineId);
+        b.AsSpan(0, Math.Min(b.Length, 16)).CopyTo(GuestMemory.Span(npId, 16));
+        NpIdUtil.SetPlatformType(npId, NpIdUtil.PlatformVita);
+        GuestMemory.Write(npId + 0x1C, (byte)1);
+    }
+
     [Hle] int sceNpManagerGetContentRatingFlag(Ptr<int> isRestricted, Ptr<int> age) { isRestricted.TrySet(0); age.TrySet(18); return 0; }
 
-    /// <summary>No account, so no account region (coherent with sceNpManagerGetNpId).</summary>
+    /// <summary>SceNpCountryCode (4: "us\0\0") and the account language (the system language, English US); signed out
+    /// there is no account and so no region (coherent with sceNpManagerGetNpId).</summary>
     [Hle]
     int sceNpManagerGetAccountRegion(uint countryCode, uint languageCode)
     {
         if (countryCode == 0 || languageCode == 0) return MGR_INVALID_ARGUMENT;
-        return ERR_SIGNED_OUT;
+        if (!PsnAccount.Current.SignedIn) return ERR_SIGNED_OUT;
+        GuestMemory.W32(countryCode, 0x00007375); // "us"
+        GuestMemory.W32(languageCode, (uint)AppUtil.SystemParamInt(1));
+        return 0;
     }
 
+    // the cached account parameters: layout unconfirmed (Vita3K unimplemented), so the cache is reported unavailable
     [Hle] int sceNpManagerGetCachedParam(uint param) => param == 0 ? MGR_INVALID_ARGUMENT : ERR_SIGNED_OUT;
 
     [Hle] int sceNpAuthCreateOAuthRequest() { lock (_oauthReqs) { int id = _nextReq++; _oauthReqs.Add(id); return id; } }
     [Hle] int sceNpAuthDeleteOAuthRequest(int reqId) { lock (_oauthReqs) return _oauthReqs.Remove(reqId) ? 0 : MGR_INVALID_ARGUMENT; }
     [Hle] int sceNpAuthAbortOAuthRequest(int reqId) => 0;
-    [Hle] int sceNpAuthGetAuthorizationCode(int reqId, uint param, uint code, uint issuerId) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetAuthorizationCode(int reqId, uint param, uint code, uint issuerId) => PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- auth tickets (SceNpCommon)
 
@@ -153,11 +182,11 @@ public sealed class NpManager : HleModule
         return 0;
     }
 
-    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetEntitlementByIdPrefix(uint ticket, uint size, uint prefix, uint ent) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetEntitlementIdList(uint ticket, uint size, uint list, uint num) => ERR_SIGNED_OUT;
-    [Hle] int sceNpAuthGetTicketParam(uint ticket, uint size, int paramId, uint param) => ERR_SIGNED_OUT;
+    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpAuthGetEntitlementByIdPrefix(uint ticket, uint size, uint prefix, uint ent) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpAuthGetEntitlementIdList(uint ticket, uint size, uint list, uint num) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpAuthGetTicketParam(uint ticket, uint size, int paramId, uint param) => PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- NpId helpers (SceNpCommon)
 
@@ -256,16 +285,16 @@ public static class NpIdUtil
 /// </summary>
 public sealed class NpSocial : HleModule
 {
-    const int ERR_SIGNED_OUT = NpManager.ERR_SIGNED_OUT, BASIC_INVALID_ARGUMENT = unchecked((int)0x80551D02),
+    const int BASIC_INVALID_ARGUMENT = unchecked((int)0x80551D02),
         ERR_NOT_IN_PARTY = unchecked((int)0x80553402);
 
     // ---------------------------------------------------------------- SceNpBasic: no friends, nothing blocked
 
-    int FriendQuery(uint friendId, uint outPtr) => friendId == 0 || outPtr == 0 ? BASIC_INVALID_ARGUMENT : ERR_SIGNED_OUT;
+    int FriendQuery(uint friendId, uint outPtr) => friendId == 0 || outPtr == 0 ? BASIC_INVALID_ARGUMENT : PsnAccount.Current.ServerError;
     [Hle] int sceNpBasicGetFriendOnlineStatus(uint friendId, uint status) => FriendQuery(friendId, status);
     [Hle] int sceNpBasicGetFriendContextState(uint friendId, uint state) => FriendQuery(friendId, state);
     [Hle] int sceNpBasicGetGamePresenceOfFriend(uint friendId, uint presence) => FriendQuery(friendId, presence);
-    [Hle] int sceNpBasicGetGameJoiningPresence(uint friendId, uint presence) => ERR_SIGNED_OUT;
+    [Hle] int sceNpBasicGetGameJoiningPresence(uint friendId, uint presence) => PsnAccount.Current.ServerError;
 
     [Hle]
     int sceNpBasicCheckIfPlayerIsBlocked(uint player, Ptr<int> blocked)
@@ -281,7 +310,7 @@ public sealed class NpSocial : HleModule
     [Hle] int sceNpBasicGetRequestedFriendRequestEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetPlaySessionLogSize(int type, Ptr<uint> size) { size.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetPlaySessionLog(int type, uint index, uint log) => BASIC_INVALID_ARGUMENT; // the log is empty
-    [Hle] int sceNpBasicUnsetInGamePresence() => ERR_SIGNED_OUT;
+    [Hle] int sceNpBasicUnsetInGamePresence() => PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- SceNpMessage: no messages without PSN
 
@@ -296,22 +325,22 @@ public sealed class NpSocial : HleModule
     [Hle]
     int sceNpMessageGetMessage(uint r0, uint r1, uint r2, uint r3)
     {
-        Log.WarnOnce("npmsg-get", $"sceNpMessageGetMessage(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}) while signed out");
-        return ERR_SIGNED_OUT;
+        Log.WarnOnce("npmsg-get", $"sceNpMessageGetMessage(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}): no PSN messages");
+        return PsnAccount.Current.ServerError;
     }
 
     [Hle]
     int sceNpMessageGetAttachedData(uint r0, uint r1, uint r2, uint r3)
     {
-        Log.WarnOnce("npmsg-att", $"sceNpMessageGetAttachedData(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}) while signed out");
-        return ERR_SIGNED_OUT;
+        Log.WarnOnce("npmsg-att", $"sceNpMessageGetAttachedData(0x{r0:X}, 0x{r1:X}, 0x{r2:X}, 0x{r3:X}): no PSN messages");
+        return PsnAccount.Current.ServerError;
     }
 
-    [Hle] int sceNpMessageGetMessageEntryCount() => ERR_SIGNED_OUT;
-    [Hle] int sceNpMessageGetMessageEntries() => ERR_SIGNED_OUT;
-    [Hle] int sceNpMessageGetMessageEntry() => ERR_SIGNED_OUT;
-    [Hle] int sceNpMessageSetAttachedDataUsedFlag() => ERR_SIGNED_OUT;
-    [Hle] int sceNpMessageSyncMessage() => ERR_SIGNED_OUT;
+    [Hle] int sceNpMessageGetMessageEntryCount() => PsnAccount.Current.ServerError;
+    [Hle] int sceNpMessageGetMessageEntries() => PsnAccount.Current.ServerError;
+    [Hle] int sceNpMessageGetMessageEntry() => PsnAccount.Current.ServerError;
+    [Hle] int sceNpMessageSetAttachedDataUsedFlag() => PsnAccount.Current.ServerError;
+    [Hle] int sceNpMessageSyncMessage() => PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- SceNpActivity: nowhere to post
 
@@ -319,8 +348,8 @@ public sealed class NpSocial : HleModule
     internal bool ActivityInited => _activityInited;
     [Hle] int sceNpActivityInit() { _activityInited = true; return 0; }
     [Hle] int sceNpActivityTerm() { _activityInited = false; return 0; }
-    [Hle] int sceNpActivityPostStatus(uint param) => ERR_SIGNED_OUT;
-    [Hle] int sceNpActivityPostAppStartupStatus(uint param) => ERR_SIGNED_OUT;
+    [Hle] int sceNpActivityPostStatus(uint param) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpActivityPostAppStartupStatus(uint param) => PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- SceNpPartyGameUtil: never in a party
 
