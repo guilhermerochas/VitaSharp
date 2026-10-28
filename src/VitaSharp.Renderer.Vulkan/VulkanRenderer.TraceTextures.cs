@@ -361,7 +361,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!TracingThisFrame || !TraceSnapSampled.Contains(rt.Address)) return;
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8) return;
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         EndRendering();
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
@@ -387,7 +387,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8) return;
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit);
+        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
@@ -396,7 +396,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_depth != null && _core.DepthFormat == Format.D24UnormS8Uint)
         {
             var dt = _depth;
-            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit);
+            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit, MemCat.Readback);
             const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
             Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit, AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
             var dregion = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1), ImageExtent = new Extent3D(dt.Width, dt.Height, 1) };

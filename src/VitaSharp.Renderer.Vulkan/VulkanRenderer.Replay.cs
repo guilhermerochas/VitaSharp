@@ -96,9 +96,9 @@ public sealed unsafe partial class VulkanRenderer
         var ring = new ReplayRing();
         try
         {
-            var (buf, mem, ptr) = _core.CreateHostBuffer((ulong)ReplaySlots * ReplaySlotBytes, BufferUsageFlags.TransferDstBit);
+            var (buf, mem, ptr) = _core.CreateHostBuffer((ulong)ReplaySlots * ReplaySlotBytes, BufferUsageFlags.TransferDstBit, MemCat.DebugRing);
             ring.Buf = buf; ring.Mem = mem; ring.Ptr = (byte*)ptr;
-            (ring.Image, ring.View, ring.ImageMem) = CreateImage(ReplayW, ReplayH, Format.R8G8B8A8Unorm,
+            (ring.Image, ring.View, ring.ImageMem) = CreateImage(MemCat.DebugRing, ReplayW, ReplayH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
         }
         catch (Exception e)

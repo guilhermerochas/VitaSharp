@@ -33,20 +33,28 @@ public sealed unsafe partial class VulkanRenderer
                 uint bpp = (uint)HostBytesPerPixel(rt.Format), bytes = rt.Width * rt.Height * bpp;
                 w.U32(rt.Address); w.U32(rt.Width); w.U32(rt.Height); w.U32(rt.ColorFormat); w.U32(rt.Stride);
                 w.I32((int)rt.Format); w.U32(bpp);
-                var (buf, mem, ptr) = _core.CreateHostBuffer(bytes, BufferUsageFlags.TransferDstBit);
+                var (buf, mem, ptr) = _core.CreateHostBuffer(bytes, BufferUsageFlags.TransferDstBit, MemCat.GpuDump);
                 var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
-                _vk.AllocateCommandBuffers(_dev, in ai, out var cmd);
-                var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
-                _vk.BeginCommandBuffer(cmd, in bi);
-                var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-                _vk.CmdCopyImageToBuffer(cmd, rt.Image, ImageLayout.General, buf, 1, in region);
-                _vk.EndCommandBuffer(cmd);
-                var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cmd };
-                _vk.QueueSubmit(_core.Queue, 1, in si, default);
-                _vk.QueueWaitIdle(_core.Queue);
-                w.Bytes(new ReadOnlySpan<byte>((void*)ptr, (int)bytes));
-                _core.DestroyBuffer(buf, mem);
-                _vk.FreeCommandBuffers(_dev, pool, 1, in cmd);
+                CommandBuffer cmd = default;
+                try
+                {
+                    _vk.AllocateCommandBuffers(_dev, in ai, out cmd).Ok("vkAllocateCommandBuffers");
+                    var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
+                    _vk.BeginCommandBuffer(cmd, in bi);
+                    var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
+                    _vk.CmdCopyImageToBuffer(cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+                    _vk.EndCommandBuffer(cmd);
+                    var si = new SubmitInfo { SType = StructureType.SubmitInfo, CommandBufferCount = 1, PCommandBuffers = &cmd };
+                    _vk.QueueSubmit(_core.Queue, 1, in si, default).Ok("vkQueueSubmit (dump export)");
+                    _vk.QueueWaitIdle(_core.Queue);
+                    w.Bytes(new ReadOnlySpan<byte>((void*)ptr, (int)bytes));
+                }
+                finally
+                {
+                    // one buffer per target, released before the next (a failure must not leak it)
+                    _core.DestroyBuffer(buf, mem);
+                    if (cmd.Handle != 0) _vk.FreeCommandBuffers(_dev, pool, 1, in cmd);
+                }
             }
         }
         finally { _vk.DestroyCommandPool(_dev, pool, null); }

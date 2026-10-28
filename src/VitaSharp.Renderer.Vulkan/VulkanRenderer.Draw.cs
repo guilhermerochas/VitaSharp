@@ -76,7 +76,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void CreateDummies()
     {
-        var (b, m, p) = _core.CreateHostBuffer(4096, BufferUsageFlags.StorageBufferBit | BufferUsageFlags.VertexBufferBit);
+        var (b, m, p) = _core.CreateHostBuffer(4096, BufferUsageFlags.StorageBufferBit | BufferUsageFlags.VertexBufferBit, MemCat.PipelineBuffer);
         new Span<byte>((void*)p, 4096).Clear();
         _dummyBuffer = b;
         _dummyBufferMem = m;

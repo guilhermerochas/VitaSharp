@@ -101,7 +101,10 @@ public sealed unsafe partial class VulkanRenderer
 
         rt.Dirty = true;
         rt.WrittenBack = true;
-        SyncRenderTargetForRead(rt);
+        SyncRenderTargetForRead(rt); // (also marks the target used by this frame: eviction keeps it)
+        // a whole lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
+        // (region writebacks leave the rest of the surface only on the GPU)
+        if (whole && conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
         if (whole) { CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value); rt.MemVersion = rt.Version; }
         else
             foreach (var r in _sceneRegions)
@@ -127,11 +130,16 @@ public sealed unsafe partial class VulkanRenderer
         if (cb.ReadSize == 0) return;
         ulong lo = cb.ReadAddress, hi = lo + cb.ReadSize;
         bool any = false, swept = false;
-        foreach (var rt in _renderTargets.Values)
+        // a snapshot: the writeback buffer allocation may reclaim memory, and eviction removes targets from the map
+        _xferTargets.Clear();
+        _xferTargets.AddRange(_renderTargets.Values);
+        foreach (var rt in _xferTargets)
         {
             if (rt.Address == 0 || rt.Version == rt.MemVersion) continue;
             ulong end = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
             if (lo >= end || hi <= rt.Address) continue;
+            // evicted by a reclaim during an earlier writeback of this loop (its image is gone)
+            if (!_renderTargets.TryGetValue((rt.Address, rt.Width, rt.Height, rt.ColorFormat), out var live) || live != rt) continue;
             // memory written after the surface was last rendered (an earlier transfer into a stale surface's memory,
             // data loaded there) is newer than the surface: the writeback would overwrite it
             if (!swept) { _sweptFrame = -1; swept = true; } // fold the stores made since this frame's sweep
@@ -148,14 +156,19 @@ public sealed unsafe partial class VulkanRenderer
             rt.Dirty = true;
             rt.WrittenBack = true;
             SyncRenderTargetForRead(rt);
-            CopyOutRect(rt, 0, 0, Math.Min(rt.Width, rt.Stride), rt.Height, hostBpp, guestBpp, conv);
+            uint width = Math.Min(rt.Width, rt.Stride);
+            if (conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version; // evictable, as in ScheduleWriteback
+            CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv);
             rt.MemVersion = rt.Version;
             if (_xferWritebacks++ < 20 || TraceSync)
                 Log.Info($"[gpu] transfer reads render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}: written back first (present {_presentCount})");
             any = true;
         }
+        _xferTargets.Clear();
         if (any) Finish(); // submits and retires every frame: the rows are in guest memory when it returns
     }
+
+    readonly List<RenderTarget> _xferTargets = new();
 
     int _xferWritebacks;
 
@@ -164,11 +177,12 @@ public sealed unsafe partial class VulkanRenderer
     {
         ulong size = (ulong)w * (uint)hostBpp * h;
         if (!_writebackPool.TryGetValue(size, out var pool)) _writebackPool[size] = pool = new();
+        _writebackPoolUsed[size] = FrameCount;
         var wb = pool.Count > 0 ? pool.Pop() : null;
         if (wb == null)
         {
             wb = new RtWriteback { Size = size };
-            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit);
+            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         }
         wb.GuestStride = rt.Stride * (uint)guestBpp;
         wb.Address = rt.Address + y * wb.GuestStride + x * (uint)guestBpp;
@@ -276,6 +290,29 @@ public sealed unsafe partial class VulkanRenderer
         if ((man & 0x10) != 0 && (m5 != 0x1F || exp != 0x1E)) { m5++; if (m5 == 0x20) { m5 = 0; exp++; } }
         if (exp >= 0x1F) return 0x3FF;
         return (exp << 5) | m5;
+    }
+
+    /// <summary>GPU frame each writeback buffer size was last used in (region writebacks come in many sizes).</summary>
+    readonly Dictionary<ulong, long> _writebackPoolUsed = new();
+    readonly List<ulong> _writebackIdle = new();
+
+    /// <summary>
+    /// Destroys pooled (idle: their frames completed) writeback buffers of sizes unused for <paramref name="minAge"/>
+    /// GPU frames. Region writebacks of oversized targets use a buffer per rectangle size, so without this every size
+    /// ever seen kept its buffers. Returns the bytes freed.
+    /// </summary>
+    ulong TrimWritebackPool(long minAge)
+    {
+        ulong freed = 0;
+        _writebackIdle.Clear();
+        foreach (var (size, pool) in _writebackPool)
+            if (FrameCount - _writebackPoolUsed.GetValueOrDefault(size) >= minAge) _writebackIdle.Add(size);
+        foreach (var size in _writebackIdle)
+        {
+            var pool = _writebackPool[size];
+            while (pool.Count > 0) { var wb = pool.Pop(); _core.DestroyBuffer(wb.Buffer, wb.Memory); freed += wb.Size; }
+        }
+        return freed;
     }
 
     void DestroyWritebacks()

@@ -78,6 +78,7 @@ public sealed class Watchdog : IDisposable
             Log.Info($"PERF periodic f{frames}: {(frames - _perfFrames) / secs:F1} fps, process cpu {(cpu - _perfCpu).TotalMilliseconds / df:F1} ms/frame, " +
                      $"allocated {(alloc - _perfAlloc) / 1024.0 / df:F0} KB/frame, GC {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, " +
                      $"working set {Environment.WorkingSet / 1048576.0:F0} MB, GPU queue pending {_emu.Gpu.Pending}, threads {proc.Threads.Count}");
+            if (_renderer() is { } r) Log.Info($"PERF periodic f{frames} {r.VramSummary()}");
             _perfAt = now; _perfFrames = frames; _perfCpu = cpu; _perfAlloc = alloc;
         }
         if ((now - _audioAt).TotalSeconds >= AudioDiagnostics.PeriodSeconds)

@@ -66,21 +66,21 @@ public sealed unsafe partial class VulkanRenderer
         return c.Views[format] = CreateView(c.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
-    void DestroySceneStartCopyLater(RenderTarget rt)
+    void DestroySceneStartCopyLater(RenderTarget rt, bool now = false)
     {
         if (!_sceneStartCopies.Remove(rt, out var c)) return;
-        F.Deferred.Add(() =>
+        Release(() =>
         {
             foreach (var v in c.Views.Values) _vk.DestroyImageView(_dev, v, null);
             _vk.DestroyImageView(_dev, c.Shadow.View, null);
             _vk.DestroyImage(_dev, c.Shadow.Image, null);
             _imagePool.Free(c.Mem);
-        });
+        }, now);
     }
 
     void CreateSceneStartCopy(RenderTarget rt)
     {
-        var (img, view, mem) = CreateImage(rt.Width, rt.Height, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
+        var (img, view, mem) = CreateImage(MemCat.Region, rt.Width, rt.Height, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
             ImageAspectFlags.ColorBit, mutable: true);
         var shadow = new RenderTarget
         {
