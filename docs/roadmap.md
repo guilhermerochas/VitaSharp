@@ -45,21 +45,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depender do `libSceJson.suprx` do firmware; exige reproduzir o layout de `Value`/`Array`/`Object`, os iteradores e
   o `MemAllocator` que o jogo herda (ver `docs/hle/G2-support-libs.md` §3.1)
 
-## Rede e PSN
-
-- [ ] Internet de verdade (opcional, desligada por padrão): sockets do `sceNet` ligados aos sockets do PC, resolução de nomes
-  (`sceNetResolver`) e `sceHttp`/`sceSsl` fazendo requisições reais, para jogos com conteúdo online que não depende da PSN
-- [ ] Multiplayer local (ad hoc): `sceNetAdhoc*`, `sceNetAdhocMatching` e `SceNetAdhocctl` sobre UDP na rede local, para
-  duas instâncias do emulador (ou dois PCs) jogarem juntas, como no modo ad hoc do Vita
-- [ ] Servidores da PSN emulados localmente:
-  - TUS / Cross-Save guardado em arquivo (salvar e carregar o "save na nuvem" entre sessões e jogos da mesma família)
-  - placares (`sceNpScore`) guardados localmente
-  - partidas online (`sceNpMatching2`) entre instâncias na rede local ou um servidor próprio simples
-  - tickets de autenticação (`sceNpAuth`), lista de amigos, mensagens e feed de atividades com dados simulados
-  - loja e conteúdo adicional (`sceNpCommerce2`, diálogo da loja) usando os DLCs instalados em `addcont`
-- [ ] Troféus no launcher: notificação na tela quando um troféu é desbloqueado e lista de troféus por jogo
-- [ ] Levantar, jogo por jogo, quais recursos online cada título instalado usa e o que falha sem eles
-
 ## Firmware e sistema
 
 - [ ] Usar automaticamente o firmware da instalação do Vita3K (vs0: Json, Xml, Sqlite; sa0: fontes)
