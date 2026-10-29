@@ -37,6 +37,8 @@ public sealed class GxpProgram
     public bool IsVertex => !IsFragment;
     public bool IsNativeColor => (Flags & FlagNativeColorUsed) != 0;
     public bool IsFragColorUsed => (Flags & FlagFragColorUsed) != 0;
+    /// <summary>The program writes no colour (SCE_GXM_PROGRAM_FLAG_OUTPUT_UNDEFINED): its output registers hold undefined values.</summary>
+    public bool IsOutputUndefined => (Flags & FlagOutputUndefined) != 0;
     public bool IsDiscardUsed => (Flags & FlagDiscardUsed) != 0;
     public bool IsDepthReplaceUsed => (Flags & FlagDepthUsed) != 0;
     public bool IsSpriteCoordUsed => (Flags & FlagSpriteCoordUsed) != 0;

@@ -1,0 +1,11 @@
+# Tearaway (Trial & Unlock, PCSF00476): boot, logos, the profile menu ("STORY PROGRESSION", "PLAY", "New",
+# "SETTINGS", ~f450), Continue (START, ~f750), loading screen, Media Molecule intro, the camera window (~f1400; grey
+# frames without a host camera, confirmed by touching the check button), "Do you have little hands or big hands?"
+# (~f1650, choose the left hand).
+# Regressions: the menu rendered almost black with dark green tones (native-colour fragment programs pack RGBA8 into
+# o0 and were read as F16x4); the hand screen was covered by random noise (an OUTPUT_UNDEFINED stencil program wrote
+# its uninitialised registers as colour).
+# Open: on the hand screen the game draws only one of the two panels per frame (alternating 160/140 draws).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/tearaway_boot.txt --data=<scratch root>
+title=PCSF00476
+args=--frames=2400 --seconds=1200 --dump-every=25 --shader-cache --debug-mode --input=start@f750:f8,tap@f1600:0.665:0.72:f8,tap@f1900:0.28:0.45:f8

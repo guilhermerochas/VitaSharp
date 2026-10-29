@@ -141,13 +141,14 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false)
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
         if (attrs != null)
             foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, a.Format); }
         h = ShaderHints.Fnv.Mix(h, colorFormat);
+        if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
         return fetchInput ? ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey) : h;
     }
 
@@ -238,10 +239,14 @@ public sealed unsafe partial class VulkanRenderer
         d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, a.Format)).ToArray(), 0);
 
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
-        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat);
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
 
     static ShaderHints FragmentHintsInputFetch(DrawCommand d, uint colorFormat) =>
-        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true);
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
+            OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
+
+    /// <summary>The <see cref="ShaderHints.OutputRegisterFormat"/> of a fragment program (part of its hint key).</summary>
+    static uint NativeOutputFormat(GxmFragmentProgram fp) => ShaderHints.NativeOutputFormat(fp.Info.Program, fp.OutputFormat);
 
     ShaderModule CreateShaderModule(ReadOnlySpan<byte> spv)
     {
@@ -294,7 +299,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp));
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
         var me = GetModule(fp.Info.Program, hk, fetchInput ? FragmentHintsInputFetch : FragmentHints, d, colorFormat);
         e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
@@ -631,7 +636,9 @@ public sealed unsafe partial class VulkanRenderer
         bool hasColor = _rt != null;
         var blend = d.FragmentProgram.Blend;
         bool fragEnabled = st.Front.FragmentEnabled;
-        byte mask = !fragEnabled ? (byte)0 : blend?.ColorMask ?? 0xF;
+        // a program flagged OUTPUT_UNDEFINED writes no colour: its (uninitialised) output must not reach the surface, as
+        // in Vita3K (Tearaway draws its stencil masks with such an empty program: the screen filled with random noise)
+        byte mask = !fragEnabled || d.FragmentProgram.Info.Program.IsOutputUndefined ? (byte)0 : blend?.ColorMask ?? 0xF;
         // a fragment program that reads the current framebuffer colour carries its blend in the shader itself (the
         // shader patcher compiles the blend info into USSE code): the fixed-function blend must not be applied on top
         bool blendOn = blend is { } bi && !fs.Gen!.UsesFragColor && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0) && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);

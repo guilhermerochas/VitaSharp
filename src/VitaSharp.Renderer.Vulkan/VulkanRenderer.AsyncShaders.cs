@@ -159,7 +159,7 @@ public sealed unsafe partial class VulkanRenderer
                     else PromoteRebuildJob(vp.Info.Program.Hash, vk);
                     var fp = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;
-                    ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, cf);
+                    ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, cf, outputFormat: NativeOutputFormat(fp));
                     if (NeedsJob(fp.Info.Program, fk)) Queue(fp.Info.Program, fk, FragmentHints(d, cf));
                     else PromoteRebuildJob(fp.Info.Program.Hash, fk);
                     if (_asyncPipelines) PrefetchPipeline(d, vk, fk, cf);
@@ -218,7 +218,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!_seenDrawSignatures.TryAdd(sig, 0)) return;
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
         var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
-            ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, colorFormat, true) : 0,
+            ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
             ms ? FragmentHintsInputFetch(d, colorFormat) : null,
             scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode);
         if (!EnsureShaderWorkers()) return;
@@ -262,7 +262,7 @@ public sealed unsafe partial class VulkanRenderer
         BuildVertexInput(j.Vp, vsM.Gen, vs);
         var fs = new FsEntry { Module = fsM.Module, Gen = fsM.Gen, ProgramHash = j.Fs.Hash, HintKey = fsKey };
         var topology = Formats.Topology(j.PrimitiveType);
-        byte mask = !j.FragEnabled ? (byte)0 : j.Blend?.ColorMask ?? 0xF;
+        byte mask = !j.FragEnabled || j.Fs.IsOutputUndefined ? (byte)0 : j.Blend?.ColorMask ?? 0xF; // see Draw
         bool blendOn = j.Blend is { } bi && !fsM.Gen.UsesFragColor && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0) && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, s.Attach, s.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
