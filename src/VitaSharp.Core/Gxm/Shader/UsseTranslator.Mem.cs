@@ -35,7 +35,12 @@ public sealed partial class UsseTranslator
         src0.Type = src0Type == 0 ? DataType.F32 : src0Type == 1 ? DataType.F16 : DataType.C10;
         var src1 = DecodeSrc12(1, i['u'], i['i'], i.Bit('c'), true, 8);
         src0.Swizzle = (Sw[])Default4.Clone();
-        if (!Samplers.TryGetValue(src1.Num, out var sampler))
+        // the texture state normally sits in the dependent sampler's SA words; a program can also copy those words into
+        // temporaries first and name the copy (Silent Hill: Book of Memories' blur passes); any other operand keeps its
+        // register number as the SA offset
+        int stateSa = src1.Bank is Bank.Indexed1 or Bank.Indexed2 ? -1 : SaWordOf(src1.Bank, src1.Num);
+        if (stateSa < 0 || !Samplers.ContainsKey(stateSa)) stateSa = src1.Num;
+        if (!Samplers.TryGetValue(stateSa, out var sampler))
         {
             Warnings.Add($"SMP: no sampler bound at SA {src1.Num} (texture buffer path not supported)");
             return;

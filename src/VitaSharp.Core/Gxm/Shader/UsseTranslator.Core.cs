@@ -80,6 +80,21 @@ public sealed partial class UsseTranslator
     /// <summary>Type of the last translated write to a register word (null: never written or not statically known).</summary>
     public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out var t) ? t : null;
 
+    // register words that hold an unmodified copy of a secondary-attribute word (program order, statically addressed
+    // words only; any later write to the word drops it). A program can copy a dependent sampler's texture state out of
+    // the SA bank into temporaries and name those in SMP instead of the SA words.
+    readonly Dictionary<(Bank, int), int> _saCopy = new();
+
+    /// <summary>The SA word a register word is an unmodified copy of (the word itself for the SA bank), or -1.</summary>
+    int SaWordOf(Bank bank, int word) => bank == Bank.SecAttr ? word : _saCopy.TryGetValue((bank, word), out var sa) ? sa : -1;
+
+    /// <summary>Records that a register word now holds an unmodified copy of SA word <paramref name="saWord"/>.</summary>
+    void SetSaCopy(Bank bank, int word, int saWord)
+    {
+        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal or Bank.SecAttr || saWord < 0) return;
+        _saCopy[(bank, word)] = saWord;
+    }
+
     /// <summary>Records the data a bit-copy move left in a register word (the source word's type).</summary>
     void SetWordType(Bank bank, int word, DataType type)
     {
@@ -183,6 +198,11 @@ public sealed partial class UsseTranslator
     /// <see cref="ShaderGenerator.LowerDynamicIndexing"/> a dynamically indexed word goes through its switch helper.</summary>
     void AssignWord(Bank b, string? dynBase, int baseWord, int rel, string value)
     {
+        if (_saCopy.Count > 0)
+        {
+            if (dynBase == null) _saCopy.Remove((b, baseWord + rel));
+            else foreach (var k in _saCopy.Keys.Where(k => k.Item1 == b).ToList()) _saCopy.Remove(k);
+        }
         if (dynBase != null && ShaderGenerator.LowerDynamicIndexing)
         {
             Track(b, 255);
@@ -635,7 +655,10 @@ public sealed partial class UsseTranslator
             if (op.Bank == Bank.FpInternal) return idx;
         if ((op.Flags & OpFlags.Gpi) != 0) return 0;
         if (mode == RepeatMode.Both) return op.Bank == Bank.FpInternal ? idx : idx * 4;
-        if (mode == RepeatMode.External && op.Bank != Bank.FpInternal) return idx * 4;
+        // an internal register named through the temporary bank (the top temp numbers, see CheckRegInternal) is an
+        // external operand: it advances one register per repeat. Silent Hill: Book of Memories' lighting vertex programs
+        // compute two light vectors with one repeated VMAD into fi1/fi2 (only fi1 written: the second light read garbage)
+        if (mode == RepeatMode.External) return op.Bank == Bank.FpInternal ? idx : idx * 4;
         if (mode == RepeatMode.Slmsi)
         {
             int inc = _repeatIncrease[op.Index, Math.Min(idx, 16)];

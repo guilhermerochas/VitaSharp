@@ -1,0 +1,9 @@
+# Silent Hill: Book of Memories (PCSE00011): boot, logos, title (bedroom, ~f600), New Game, save slot (charm cards:
+# Right then Cross), character creation (touch: Page 2 tab, FINISH), loading, intro cutscene (~f2600, bedroom/book).
+# Regressions: the title fade-in was covered by blocky garbage (blur passes sample through texture state copied into
+# temporaries, fragment program 503EEE62C759ECB8); the bed's border and the lamp showed red/blue noise (single-level
+# 32x32 cube map faces 4-5 read past the cube); the blanket and room were lit per triangle and flickered (repeated
+# VMAD into internal registers named through the temp bank wrote only the first light vector).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/shbom_boot.txt --data=<scratch root>
+title=PCSE00011
+args=--frames=3600 --seconds=1500 --dump-every=50 --shader-cache --debug-mode --input=cross@f900:f6,right@f1100:f6,cross@f1200:f6,start@f1600:f6,cross@f1700:f6,tap@f1850:0.79:0.04:f6,tap@f1950:0.79:0.89:f6,cross@f2100:f6,cross@f2300:f6,cross@f2500:f6,cross@f2700:f6,cross@f2900:f6,cross@f3100:f6,cross@f3300:f6
