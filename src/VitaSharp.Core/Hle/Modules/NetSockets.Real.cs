@@ -177,6 +177,9 @@ public sealed partial class Net
             read.Clear(); write.Clear(); err.Clear();
             lock (_netLock)
             {
+                // no host socket left (all closed, sceNetTerm, or a process replaced by LoadExec): stop; the next real
+                // socket starts a new poller (sceNetSocket holds the lock until the socket is in the table)
+                if (!_sockets.Values.Any(s => s.Host != null && !s.Closed)) { _poller = null; return; }
                 foreach (var s in _sockets.Values)
                 {
                     if (s.Host == null || s.Closed) continue;

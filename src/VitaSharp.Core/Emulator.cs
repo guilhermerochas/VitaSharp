@@ -99,7 +99,10 @@ public sealed class Emulator : IDisposable
         PsnAccount.Current = options.Psn;
         NetConfig.Current = options.Net;
         LocalPsn = new global::VitaSharp.Core.Hle.Np.LocalPsn(options.NpRoot ?? global::VitaSharp.Core.Hle.Np.LocalPsn.DefaultRoot(options.FsRoot));
-        if (options.Net.Real) Log.Warn($"Network: {options.Net} (--net=real): game traffic leaves this PC; Sony's servers stay blocked");
+        if (options.Net.Real)
+            Log.Warn(options.Net.Allow == null
+                ? "Network: real internet (--net=real): game traffic leaves this PC; Sony's servers stay blocked"
+                : $"Network: real internet limited to {string.Join(", ", options.Net.Allow)} (--net-allow); everything else is blocked and logged");
         if (options.Rpcn is { } rpcn)
         {
             if (!options.Net.Real) Log.Warn($"RPCN server {rpcn.Host} ignored: real internet is off (--net=real)");
