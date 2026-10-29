@@ -40,8 +40,11 @@ public sealed partial class UsseTranslator
         }
     }
 
-    /// <summary>Returns a bool/bvec expression for a test (port of vtst_impl).</summary>
-    Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask)
+    /// <summary>Returns a bool/bvec expression for a test (port of vtst_impl); <paramref name="alu"/> is the ALU result the test
+    /// compares with zero (the difference for the subtract forms).</summary>
+    Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask) => TestImpl(op, isSub, src1, src2, zeroTest, signTest, loadMask, out _);
+
+    Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask, out Val alu)
     {
         bool has4 = BitOperations.PopCount((uint)loadMask) == 4;
         Val lhs, rhs;
@@ -75,6 +78,7 @@ public sealed partial class UsseTranslator
             // align kinds (integer tests on float-loaded data)
             rhs = lhs.K switch { 'i' => new Val($"ivec{rhs.N}({rhs})".Replace("ivec1", "int"), 'i', rhs.N), 'u' => new Val($"uvec{rhs.N}({rhs})".Replace("uvec1", "uint"), 'u', rhs.N), _ => rhs };
         }
+        alu = isSub ? new Val($"({lhs} - {rhs})", lhs.K, lhs.N) : lhs;
         bool eq = zeroTest == 1;
         if (signTest == 3) return new Val("true", 'b', 1);
         if (lhs.N == 1)
@@ -102,8 +106,18 @@ public sealed partial class UsseTranslator
         src2.Swizzle = i.Bit('v') && i['l'] == 0 ? S4("XXXX") : (Sw[])Default4.Clone();
         if (i.Bit('r')) src1.Flags |= OpFlags.Neg;
         var pred = Operand.Make(3); pred.Bank = Bank.Predicate; pred.Num = (int)i['n'];
-        var res = TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], loadMask);
+        var res = TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], loadMask, out var alu);
         Store(pred, res.N == 1 ? res : new Val($"any({res})", 'b', 1), 1);
+        // test_wben: the ALU result the test was made on is also written to the destination register (channel chan_cc),
+        // in the test's data type. Vita3K ignores this; Skullgirls' sprite programs depend on it: VTST.F16
+        // "i0.x * 8.0 < 0" with writeback to r0.x, then FRC/floor of r0.x (as F16) pick the palette ramp column. Without
+        // the writeback r0 still held the F32 texel and its low half was read as an F16 (a near constant column).
+        if (i.Bit('w'))
+        {
+            var dest = DecodeDest(3, i['g'], i['b'], i.Bit('d'), dbl, bits);
+            dest.Type = dt;
+            Store(dest, alu, loadMask);
+        }
     }
 
     void Vtstmsk(UsseInst i)
