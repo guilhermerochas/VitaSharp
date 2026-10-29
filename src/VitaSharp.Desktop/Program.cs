@@ -47,6 +47,12 @@ public static class Program
                 if (app == null) return 1;
                 return Runner.Run(app, args.Skip(2).Where(a => a != "--reinstall" && !a.StartsWith("--license=")).ToArray());
             }
+            case "install-firmware" when args.Length >= 2:
+                return FirmwareCli.Install(args[1], args.Skip(2).ToArray());
+            case "firmware-info":
+                return FirmwareCli.Info();
+            case "firmware-verify":
+                return FirmwareCli.Verify(args.Skip(1).ToArray());
             case "self2elf" when args.Length >= 3:
             {
                 byte[]? klic = args.Length >= 4 ? PkgInstaller.ReadKlicensee(args[3]) : null;
@@ -274,6 +280,10 @@ public static class Program
         Console.WriteLine("  install <game.pkg> <work.bin|.rif>   install a package into the virtual ux0");
         Console.WriteLine("  install <game.vpk|.zip> [--license=<work.bin|.rif>] [--force]");
         Console.WriteLine("                                       install a VPK/content zip (app, patch or add-on, by param.sfo category)");
+        Console.WriteLine("  install-firmware <PSVUPDAT.PUP>       install the official system software (os0/vs0/sa0/pd0) into the data folder");
+        Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
+        Console.WriteLine("  firmware-info                        show the installed firmware version");
+        Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
         Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
@@ -295,5 +305,7 @@ public static class Program
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");
         Console.WriteLine("                             (default on; off = every PSN server request fails as unreachable)");
+        Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
+        Console.WriteLine("               --hle-modules=libult,...  keep these on HLE even when the game or the firmware has the module");
     }
 }

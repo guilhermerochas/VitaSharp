@@ -201,6 +201,8 @@ static class UiSnapshot
         if (!roundTrip) failures++;
         dlg.ShowTab(SettingsDialog.GeneralTab);
         await Snap("general_tab");
+        dlg.Firmware.BringIntoView();
+        await Snap("general_firmware");
         dlg.Close();
         Console.WriteLine(failures == 0 ? "PASS" : $"{failures} problem(s)");
         return failures == 0 ? 0 : 1;

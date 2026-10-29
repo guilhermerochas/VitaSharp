@@ -27,6 +27,12 @@ public sealed class EmulatorOptions
     /// <summary>Folder of the local PSN service data (TUS / Cross-Save, rankings: <see cref="Hle.Np.LocalPsn"/>); null =
     /// &lt;DataRoot&gt;/np, next to <see cref="FsRoot"/>.</summary>
     public string? NpRoot { get; init; }
+    /// <summary>Sysmodule libraries ("libsas", "libatrac", ...) to load LLE from the installed firmware
+    /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
+    public IReadOnlyCollection<string>? LleModules { get; init; }
+    /// <summary>Sysmodule libraries to keep on HLE even when the game or the firmware provides the module
+    /// ("libult", "libSceJson", ...). Null: VITASHARP_HLE_MODULES.</summary>
+    public IReadOnlyCollection<string>? HleModules { get; init; }
 }
 
 /// <summary>

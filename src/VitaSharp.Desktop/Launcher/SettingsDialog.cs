@@ -7,12 +7,15 @@ using VitaSharp.Desktop.Input;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>Settings window: "Geral" (window, graphics, camera, CPU, Desempenho = shader compilation, Rede e PSN = emulated
-/// PSN account) and "Controles" (keyboard / controller mapping).</summary>
+/// PSN account, Firmware = installed system software) and "Controles" (keyboard / controller mapping).</summary>
 public sealed class SettingsDialog : Window
 {
     public const int GeneralTab = 0, ControlsTab = 1;
 
     readonly TabControl _tabs;
+
+    /// <summary>Geral > Firmware (installed version, install from a .PUP or from Vita3K).</summary>
+    public FirmwarePanel Firmware { get; }
 
     /// <summary>The controller page (created when the tab is first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
@@ -103,6 +106,26 @@ public sealed class SettingsDialog : Window
         general.Children.Add(Row("ID online", psnId));
         general.Children.Add(psnIdError);
         general.Children.Add(WithHint(psnLocal, psnLocalTip));
+        // firmware: install the official PUP (or copy Vita3K's), and the libraries to keep on HLE (--hle-modules=)
+        general.Children.Add(new TextBlock { Text = "Firmware", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        var firmware = Firmware = new FirmwarePanel();
+        general.Children.Add(firmware);
+        var hleModules = new TextBox { Text = settings.HleModules, Width = 320, Watermark = "ex.: libSceJson, libult" };
+        general.Children.Add(Row("Manter em HLE", hleModules));
+        general.Children.Add(new TextBlock
+        {
+            Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(100, 0, 0, 0),
+            Text = "Bibliotecas que continuam na implementação do VitaSharp mesmo quando o jogo ou o firmware traz o módulo " +
+                   "(para contornar um problema com a versão original). Vazio: usa os módulos disponíveis.",
+        });
+        Closing += (_, e) =>
+        {
+            if (!firmware.Busy) return;
+            // cancel the installation and close once it has cleaned up its staging folder
+            e.Cancel = true;
+            firmware.Finished += Close;
+            firmware.CancelRunning();
+        };
         general.Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
@@ -175,6 +198,7 @@ public sealed class SettingsDialog : Window
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;
+            settings.HleModules = (hleModules.Text ?? "").Trim();
             settings.Save();
             Controls?.Save();
             Close();
