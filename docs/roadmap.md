@@ -36,9 +36,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
 - [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
 
-## HLE
-
-
 ## Firmware e sistema
 
 - [ ] Tela inicial e LiveArea no launcher
