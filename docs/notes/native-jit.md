@@ -1,4 +1,4 @@
-# feat/native-jit — native x86-64 CPU backend
+# Native CPU backends (x86-64 and ARM64)
 
 Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 
@@ -14,7 +14,7 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | 2c. LDREX/STREX (word) inline | done, commit 56e752a |
 | 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
 | 2e. NEON broad inline, LDREXD/STREXD, VCVTB/VCVTT (branch perf/neon-jit) | done, commits c36e70c, f587c79, a3740e2 (+ docs) |
-| ARM64 emitter | not started (design below) |
+| ARM64 backend (branch feat/arm64-jit): emitter, runtime, W^X + icache on ARM64 hosts, Unicorn/qemu tests | done, see "feat/arm64-jit" below |
 
 ## perf/neon-jit (2026-10-22)
 
@@ -289,16 +289,120 @@ callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the
 4. Reduce compile allocations (IR lists, closures) — native compile is ~80-110 us/block today.
 5. Windows unwind info for the arena (RtlAddGrowableFunctionTable) so profilers/debuggers walk through JIT frames.
 
-## ARM64 emitter plan
-The IR and runtime are host-neutral except `X64Emitter` and the trampoline:
-- New `Arm64Emitter` lowering the same IR (an assembler: hand-written encoder for the ~60 instructions needed, or
-  a library), with x19 = state, x20 = memory base, temps in x21-x28 (callee-saved) and x9-x15 (caller-saved).
-- Flags map 1:1 (ARM64 C after subtraction is NOT-borrow, like ARM32): `adds/subs/adcs/sbcs` + `cset`, and
-  conditional regions can often become `csel` instead of branches. Register shifts need explicit range handling
-  (lslv masks to 6 bits).
-- FpOp: ARM64 FPCR has FZ/DN with ARM semantics (tininess before rounding), so the min-normal fallback disappears;
-  set FPCR around fast paths exactly like MXCSR today.
-- ExecutableMemory already has the Apple MAP_JIT path; Linux/Android ARM64 needs an instruction-cache flush helper
-  (`dc cvau`/`ic ivau`, emitted as a tiny generated function) in `ExecutableMemory.FlushInstructionCache`.
-- Callouts: AAPCS64 (x0-x3), no shadow space; the `[UnmanagedCallersOnly]` bridge is unchanged.
-- `NativeX64Compiler` becomes a factory choosing the emitter by `RuntimeInformation.ProcessArchitecture`.
+## feat/arm64-jit (2026-10-29) — native ARM64 backend
+
+Branch `feat/arm64-jit` (worktree `.claude/worktrees/arm64-jit`, from main 7610224, main 7f26c85 merged). Not merged
+into main, not pushed. The foundation for the Android port; also Apple silicon macOS, Linux ARM64, Windows on ARM.
+
+### Structure
+- `Native/Arm64Assembler.cs`: hand-written AArch64 encoder (integer, load/store incl. `[x, w, uxtw]`, exclusives and
+  acquire/release, branches with labels, system registers, scalar FP, Advanced SIMD three-same / two-reg misc /
+  permute / shift by immediate / EXT / TBL / DUP / INS / MOVI), literal pool after the code (64- and 128-bit),
+  position independent. No new dependency (Iced stays x64 only).
+- `Native/Arm64Emitter.cs` + `Arm64Emitter.Neon.cs` lower the same IR as `X64Emitter`. `Backends/NativeArm64Compiler.cs`
+  is the same pipeline as `NativeX64Compiler` (frontend with the ARM64 SIMD coverage, dead code, tier-up budget,
+  arena, crash-report registration). Both backends are named `native`; `Jit.Select` takes the first one the host
+  supports, so `--cpu=native`, `VITASHARP_CPU=native`, the launcher setting and the automatic default pick ARM64 when
+  `RuntimeInformation.ProcessArchitecture == Arm64`.
+- Shared changes (x64 behaviour unchanged): the linear-scan allocator moved verbatim to `Native/LinearScan.cs`;
+  `ArmFrontend` takes the target's `SupportsVec` and whether it needs the FZ tininess slow paths (x64 yes, ARM64 no);
+  `NativeRuntime` builds the ARM64 trampoline and `Arm64Stubs` on ARM64 hosts (the x64 fault filter stays x64 only).
+
+### Emitter
+- x19 = `CpuState*`, x20 = guest base; fastmem is `ldr/str w, [x20, wN, uxtw]` (every W write zero-extends, so any temp
+  indexes guest memory directly and address arithmetic wraps mod 2^32). Temps: x9-x15 (caller-saved), x21-x28
+  (callee-saved, survive callouts); scratch x0-x8, x16, x17; x18 is never touched (Apple/Windows platform register).
+  Frame: host FPCR, guest FPCR, 64 spill slots.
+- Flags: ADDS/SUBS/ADCS/SBCS on W registers give exactly ARM32 AddWithCarry NZCV (C after subtraction is NOT borrow on
+  both); a carry-in temp becomes `cmp wC, #1`; flag temps are CSETs. Register-controlled shifts use 64-bit
+  LSLV/LSRV/ASRV with CSEL clamps for amounts 32-255. Compound conditions (HI/LS/GE/LT/GT/LE) compare the full flag
+  values like `Arm.CondPassed` (found by the fuzz: an UNPREDICTABLE LDRD writing R[16], which is N, leaves N outside
+  0/1). UDIV/SDIV already have ARM's semantics (x/0 = 0, INT_MIN/-1 = INT_MIN).
+- Exits: static exits through the 8-byte link slots, indirect exits through the dispatch table with
+  `ldar key; ldar code; ldr key` (ARM64 reorders loads; the publisher's Volatile.Write is a release). The epilogue,
+  link slots, tables and the callout bridge are literal-pool addresses (`ldr x16, =addr; br/blr x16`), so nothing
+  depends on branch range inside the 256 MiB arena.
+- Callouts: AAPCS64 (x0 = state, w1 = op, w2 = word, w3 = pc), FPCR set to the host value around the call.
+- FPCR: the trampoline saves the host FPCR and sets the guest mode (FZ, DN, round to nearest: the Vita's FPSCR and the
+  Advanced SIMD standard mode) for all generated code; the epilogue restores it. AArch64 flushes with tininess
+  detected before rounding like ARMv7, so there are no min-normal slow paths, no explicit result flushing and no
+  default-NaN fix-ups (x64 needs all three).
+- VFP (`FpOp`): fast path when FPSCR is in the Vita mode (same check as x64), else the handler. Add/Sub/Mul/NMul/Div,
+  VMLA/VMLS/VNMLA/VNMLS (product rounded first: FMUL then FADD/FSUB), VSQRT, VCMP(E) (FCMP's NZCV are VCMP's, copied
+  into FPSCR[31:28]), f32<->f64, int<->float (FCVTZS/FCVTZU saturate and map NaN to 0 like ARMv7; the R forms use
+  FCVTNS/FCVTNU), VCVTB/VCVTT (FCVT h<->s, AHP=0, FZ16=0).
+- LDREX/STREX(D): the interpreter's generation-counter protocol, as on x64: LDAR of the granule counter (YIELD spin
+  while odd), then the read; STREX = LDAXR/STLXR CAS of the counter snap -> snap+1, LDAXR/STLXR CAS of the value
+  against the LDREX value, STLR release of snap+2 / snap. ARMv8.0 only (no LSE). An unaligned address (an alignment
+  fault on hardware) takes a plain compare and store instead of faulting the host.
+- NEON: one ASIMD instruction per IR kind for nearly everything (AArch32 and AArch64 share the lane pseudocode);
+  64-bit lanes of D registers use the scalar encodings; QC comes from FPSR.QC (cleared before, ORed into FPSCR
+  after). Explicit exceptions: VMLA/VMLS.F32 and the by-scalar float MLA/MLS are not fused (FMUL then FADD/FSUB);
+  VRECPS/VRSQRTS are AArch32's non-fused step functions (FMUL, FSUB from 2 or 3, x0.5, infinity x zero lanes forced
+  to 2.0 / 1.5 with a mask); VTBL/VTBX force indices >= 8 * len to 0xFF so the 16-byte table registers cannot read
+  past the guest table (table D registers wrap mod 32 like the handlers); VSHL (register) shifts m by n.
+- Dirty-page marks, the verify-mode store log and tier-up counters use the x64 layouts.
+
+### Executable memory and faults on ARM64 hosts
+- Windows on ARM: the dual-mapped section, `FlushInstructionCache` after every write. Guest-memory lazy commit: the
+  vectored exception handler was hand-assembled x64; it now has a generated AArch64 twin
+  (`Arm64Emitter.EmitLazyCommitHandler`, installed by `HostVirtualMemory` on Windows ARM64).
+- Linux ARM64: memfd dual mapping; `__clear_cache` has no libc export, so `ExecutableMemory` generates the
+  DC CVAU / DSB / IC IVAU / DSB / ISB loop (line sizes from CTR_EL0) into a page of its own, made executable with
+  mprotect.
+- Android: memfd (API 30+) or ASharedMemory (libandroid, API 26+) dual mapping, the same flush helper; RWX only as the
+  last resort.
+- macOS ARM64: MAP_JIT + `pthread_jit_write_protect_np` around writes + `sys_icache_invalidate` (unchanged).
+
+### Coverage versus x64
+Everything the x64 backend inlines is inline on ARM64 too (the frontend and IR are shared): the integer core, flags,
+fastmem loads/stores, LDM/STM, linking, the indirect-exit table, SVC/exits, CLREX/barriers, MRC/MCR, LDREX/STREX and
+LDREXD/STREXD, VFP transfers and scalar fast paths, VCVTB/VCVTT, and every `VecKind` (ARM64's `SupportsVec` is true for
+all kinds; on x64 the FMA/F16C/AVX2 kinds depend on the host). The callouts are the same on both (see "Still
+callouts" above: T32 halfword/dual multiplies, parallel add/sub, VLD2-4/VST2-4, VMULL, VCLS, VQSHL/VRSHL register,
+VQMOVN, VCVT fixed point, byte/halfword exclusives, SWP, MRS/MSR, ...).
+
+### Verification (this machine is x64 Windows; no ARM64 hardware)
+- Encodings: `Arm64AssemblerTests`, 302 instructions against GNU as (aarch64-linux-gnu-as 2.40 from Debian's
+  binutils-aarch64-linux-gnu, installed in WSL without root via `apt-get download` + `dpkg -x`), plus a DecodeBitMasks
+  round trip of every 32-bit logical immediate.
+- Unicorn (`Arm64Sandbox`, fast suite): the generated code, trampoline, epilogue, links and dispatch table included,
+  runs in Unicorn's AArch64 model against the real process memory: guest space and code arena mapped with
+  `uc_mem_map_ptr` at their host addresses, other host pages (CpuState, link slots, generation table) mapped on
+  demand after VirtualQuery; callouts reach a stub whose hook calls the real callout bridge, so the handlers run
+  natively on the same state. `NativeJitTests.Arm64.cs`: smoke blocks; random blocks vs the interpreter (ARM and
+  Thumb, incl. 2-register spill stress); VFP with special operands in and out of the Vita FPSCR mode; every NEON
+  class with special values (QC included); the exclusive-monitor scenarios (word and doubleword, incl. the
+  unaligned path); chaining through link slots and the dispatch table with dispatcher-identical counters; the cache
+  flush helper; the Windows-on-ARM lazy-commit handler (VirtualAlloc stubbed). Slow variants run 30,000 blocks per
+  mode. Result: no differences (the only failure found, the full-value condition compare, is fixed).
+- A real AArch64 process: the same test methods plus the dispatcher tests (`CpuCore.Run` selecting the ARM64
+  backend, background compilation, linking, invalidation, IL tier-up, a 4-thread LDREX/STREX increment) in a
+  linux-arm64 self-contained build run under qemu-aarch64 7.2 user mode in WSL (Debian arm64 libc/libstdc++/ICU
+  unpacked into a sysroot): code arena "dual-mapped W^X" (memfd), generated cache flush, real AAPCS64 callouts into
+  managed handlers. Largest run: 15,000 random integer blocks (ARM, Thumb, spill stress), 9,836 VFP blocks, 5,400
+  NEON blocks (600 per class), the smoke/exclusive/linking tests and the four dispatcher tests: all identical to the
+  interpreter (2 min under qemu). Recipe: publish a scratch console that compiles the test sources (assembly name
+  VitaSharp.Tests for internals access) with `-r linux-arm64 --self-contained`, run it with `qemu-aarch64-static -L
+  <sysroot>` and `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`.
+- On ARM64 hosts the ARM64 tests run natively instead of in the sandbox (`IArm64Runner`). Caveat found there:
+  Unicorn 2.1's AArch64 TCG backend emits an UNDEFINED `neg v.1d` for a 64-bit-lane VNEG, which kills the process, so
+  the tests' NEON encoding vetting (`SimdDefined`, Unicorn ARM32) only uses preloaded verdicts on ARM64 hosts (none by
+  default: random blocks get no NEON slots there; the qemu run preloaded verdicts computed on x64).
+- x64 unchanged: fast suite (`Category!=Slow`) 843/843 after merging main 7f26c85, 0 build warnings; kz_skin on the
+  branch build: all 4500 frames, gameplay reached, native x64 backend 100.0% inline (static), 0 native faults.
+
+### Still missing before a real Android device
+1. Real hardware (an Android phone, a Raspberry Pi 4/5, Apple silicon): everything so far ran in Unicorn or qemu-user.
+   Only hardware shows cross-core ordering under real contention in the link/dispatch/exclusive paths (qemu-user is
+   not a weak-memory model), I/D cache behaviour of the dual mapping, and performance.
+2. The Android host: an Android front end (none yet) and the .NET for Android runtime choice (Native AOT has no IL
+   backend, so this backend plus the interpreter are the CPU paths there); confirm on a device that SELinux allows
+   executing the memfd/ashmem RX view (what ART does); 16 KiB-page devices (the arena is page-agnostic on POSIX,
+   GuestMemory protections assume 4 KiB).
+3. macOS ARM64: untested; hardened builds need `com.apple.security.cs.allow-jit`.
+4. Fault reporting inside generated code (the x64 vectored filter with disassembly) has no ARM64 equivalent, and
+   `VITASHARP_NATIVE_DUMP` prints ARM64 code as hex words (no bundled disassembler).
+5. Performance work not started: no CMP+B.cond fusion (flags are materialised temps), every SIMD op loads/stores the
+   register file, FPCR is written twice per callout.
+

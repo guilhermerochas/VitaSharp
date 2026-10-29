@@ -42,6 +42,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     static bool SimdDefined(uint ins, bool thumb)
     {
         if (SimdOk.TryGetValue((ins, thumb), out bool ok)) return ok;
+        // ARM64 hosts: Unicorn 2.1's AArch64 TCG backend emits an UNDEFINED NEG .1D for 64-bit-lane VNEG, killing the
+        // test host, so only verdicts preloaded into SimdOk are used there (none by default: no random SIMD slots)
+        if (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64) return false;
         int k = thumb ? 1 : 0;
         const uint Region = 0x0030_0000, RegionSize = 0x10_0000;
         if (SimdUc[k] == null || SimdNext[k] >= RegionSize - 8)

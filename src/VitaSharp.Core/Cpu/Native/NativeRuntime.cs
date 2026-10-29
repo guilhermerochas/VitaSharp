@@ -32,7 +32,10 @@ public sealed unsafe partial class NativeRuntime
 
     public readonly ExecutableMemory Code = new();
     readonly delegate* unmanaged<CpuState*, nint, void> _enter;
+    /// <summary>Runtime entry points for x64 code (x64 hosts only).</summary>
     public readonly X64Emitter.Runtime Stubs;
+    /// <summary>Runtime entry points for ARM64 code (ARM64 hosts only).</summary>
+    public readonly Arm64Emitter.Runtime Arm64Stubs;
 
     NativeRuntime()
     {
@@ -45,6 +48,20 @@ public sealed unsafe partial class NativeRuntime
         CpuState.Free(probe);
         if (!layoutOk) throw new InvalidOperationException("CpuState layout mismatch");
         InitDispatch();
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+        {
+            int epi = 0;
+            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline((ulong)GuestMemory.Base, out epi));
+            _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
+            Arm64Stubs = new Arm64Emitter.Runtime
+            {
+                Epilogue = (ulong)(entry64 + epi),
+                Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
+                DispatchTable = (ulong)Dispatch,
+                MemoryBase = (ulong)GuestMemory.Base,
+            };
+            return;
+        }
         if (OperatingSystem.IsWindows())
         {
             // native pre-filter: only faults with RIP inside the arena reach the managed reporter (managed code faulting
@@ -68,6 +85,9 @@ public sealed unsafe partial class NativeRuntime
     public void Run(CpuState* s, nint entry) => _enter(s, entry);
 
     // ------------------------------------------------------------------ callouts
+
+    /// <summary>Address of the callout bridge (tests that run generated code under an emulator call it themselves).</summary>
+    public static nint CalloutAddress => (nint)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout;
 
     [ThreadStatic] static ExceptionDispatchInfo? _fault;
 

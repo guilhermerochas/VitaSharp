@@ -1,3 +1,4 @@
+using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -5,9 +6,11 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// SceNpManager and SceNpCommon: NP initialisation, service state, NpId helpers and auth tickets, following the emulated
-/// PSN account (<see cref="PsnAccount"/>). Signed in (default): service state SIGNED_IN, the account's NpId and region,
-/// and auth tickets that fail like an unreachable server. Signed out: anything that needs the account fails with
-/// SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state once (from sceNpCheckCallback).
+/// PSN account (<see cref="PsnAccount"/>). Signed in (default): the account's NpId and region; service state ONLINE with
+/// the local PSN services (auth tickets issued locally), else SIGNED_IN until a NetCheckDialog in PSN_ONLINE mode connects
+/// the console (then ONLINE, while server requests still fail like an unreachable server). Signed out: anything that
+/// needs the account fails with SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state from
+/// sceNpCheckCallback, and again whenever it changes.
 /// </summary>
 public sealed class NpManager : HleModule
 {
@@ -18,10 +21,31 @@ public sealed class NpManager : HleModule
     internal const int UTIL_INVALID_ARGUMENT = unchecked((int)0x80550601), UTIL_INVALID_NP_ID = unchecked((int)0x80550605),
         UTIL_NOT_MATCH = unchecked((int)0x80550609);
 
-    // SceNpServiceState: UNKNOWN 0, SIGNED_OUT 1, SIGNED_IN 2, ONLINE 3 (Vita3K reports SIGNED_IN for a signed-in account).
-    internal const int NP_STATE_SIGNED_OUT = 1, NP_STATE_SIGNED_IN = 2;
-    static int ServiceState => PsnAccount.Current.SignedIn ? NP_STATE_SIGNED_IN : NP_STATE_SIGNED_OUT;
-    readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
+    // SceNpServiceState: UNKNOWN 0, SIGNED_OUT 1, SIGNED_IN 2 (signed in, not connected to PSN), ONLINE 3.
+    internal const int NP_STATE_SIGNED_OUT = 1, NP_STATE_SIGNED_IN = 2, NP_STATE_ONLINE = 3;
+
+    /// <summary>
+    /// The NP service state. A signed-in console whose PSN services answer (the local ones) is ONLINE, like a real Vita
+    /// that signed in over a working network. Without them it is SIGNED_IN until the PSN_ONLINE NetCheckDialog (which
+    /// finishes OK when signed in) connects it. Games that run that dialog wait for ONLINE afterwards: WRC 4 otherwise
+    /// sits on "PLEASE WAIT..." after its title screen forever (Vita3K, which always reports SIGNED_IN, has the same gap).
+    /// </summary>
+    internal int ServiceState
+    {
+        get
+        {
+            var acct = PsnAccount.Current;
+            if (!acct.SignedIn) return NP_STATE_SIGNED_OUT;
+            return acct.LocalServices || _psnConnected ? NP_STATE_ONLINE : NP_STATE_SIGNED_IN;
+        }
+    }
+    volatile bool _psnConnected;
+
+    /// <summary>A NetCheckDialog in PSN_ONLINE mode finished OK: the console stays connected to PSN from now on.</summary>
+    internal void OnPsnOnlineCheckSucceeded() => _psnConnected = true;
+
+    // the registered service state callbacks and the state each was last told (0: not yet)
+    readonly List<(uint Func, uint Arg, int Notified)> _npCallbacks = new();
 
     readonly object _lock = new();
     bool _npInited;
@@ -30,7 +54,7 @@ public sealed class NpManager : HleModule
     internal bool NpInited { get { lock (_lock) return _npInited; } }
     internal string? CommunicationId { get { lock (_lock) return _commId; } }
 
-    sealed class AuthReq { public uint Cb, Arg; public bool Done, Aborted; }
+    sealed class AuthReq { public uint Cb, Arg; public bool Done, Aborted; public byte[]? Ticket; }
     readonly Dictionary<int, AuthReq> _authReqs = new();
     readonly HashSet<int> _oauthReqs = new();
     int _nextReq = 1;
@@ -48,7 +72,7 @@ public sealed class NpManager : HleModule
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
         }
         var acct = PsnAccount.Current;
-        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, servers unreachable" : "signed out of PSN")})");
+        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, {(acct.LocalServices ? "local PSN services" : "servers unreachable")}" : "signed out of PSN")})");
         return 0;
     }
 
@@ -61,24 +85,27 @@ public sealed class NpManager : HleModule
     }
 
     // shared empty results of the per-frame poll (never modified)
-    static readonly List<(uint Func, uint Arg, bool Notified)> NoPending = [];
+    static readonly List<(uint Func, uint Arg, int Notified)> NoPending = [];
     static readonly List<(int Id, uint Cb, uint Arg)> NoDone = [];
 
     [Hle]
     int sceNpCheckCallback()
     {
-        List<(uint Func, uint Arg, bool Notified)> pending;
+        List<(uint Func, uint Arg, int Notified)> pending;
+        int state = ServiceState;
         lock (_npCallbacks)
         {
-            // polled every frame: only build the lists when something is pending
+            // polled every frame: only build the lists when a callback has not been told the current state
             bool anyPending = false;
-            foreach (var c in _npCallbacks) if (!c.Notified) { anyPending = true; break; }
-            pending = anyPending ? _npCallbacks.Where(c => !c.Notified).ToList() : NoPending;
-            for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
+            foreach (var c in _npCallbacks) if (c.Notified != state) { anyPending = true; break; }
+            pending = anyPending ? _npCallbacks.Where(c => c.Notified != state).ToList() : NoPending;
+            if (anyPending)
+                for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, state);
         }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)ServiceState, 0, c.Arg);
+        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)state, 0, c.Arg);
 
-        // auth (ticket) requests complete here: the ticket callback is told the console is signed out
+        // auth (ticket) requests complete here: with the local services the callback gets the ticket size (the ticket is
+        // then read with sceNpAuthGetTicket), otherwise the server error
         List<(int Id, uint Cb, uint Arg)> done;
         lock (_authReqs)
         {
@@ -88,7 +115,12 @@ public sealed class NpManager : HleModule
                 .Select(kv => (kv.Key, kv.Value.Cb, kv.Value.Arg)).ToList();
             foreach (var d in done) _authReqs[d.Id].Done = true;
         }
-        foreach (var d in done) Kernel.GuestThread.Current?.CallGuest(d.Cb, (uint)d.Id, unchecked((uint)PsnAccount.Current.ServerError), d.Arg);
+        foreach (var d in done)
+        {
+            int result;
+            lock (_authReqs) result = _authReqs.TryGetValue(d.Id, out var r) && r.Ticket != null ? r.Ticket.Length : PsnAccount.Current.ServerError;
+            Kernel.GuestThread.Current?.CallGuest(d.Cb, (uint)d.Id, unchecked((uint)result), d.Arg);
+        }
         return 0;
     }
 
@@ -97,7 +129,7 @@ public sealed class NpManager : HleModule
     [Hle]
     int sceNpRegisterServiceStateCallback(uint cb, uint arg)
     {
-        lock (_npCallbacks) _npCallbacks.Add((cb, arg, false));
+        lock (_npCallbacks) _npCallbacks.Add((cb, arg, 0));
         return 0;
     }
 
@@ -153,20 +185,54 @@ public sealed class NpManager : HleModule
 
     /// <summary>SceNpAuthRequestParameter: +0 size, +4 version, +8 serviceId*, +0xC cookie*, +0x10 cookieSize,
     /// +0x14 entitlementId*, +0x18 consumedCount, +0x1C ticketCb, +0x20 cbArg. The request is created; its callback
-    /// receives SCE_NP_ERROR_SIGNED_OUT on the next sceNpCheckCallback.</summary>
+    /// runs on the next sceNpCheckCallback with the size of a locally issued ticket (<see cref="NpTicket"/>, local PSN
+    /// services) or the server error.</summary>
     [Hle]
     int sceNpAuthCreateStartRequest(uint param)
     {
         if (param == 0) return ERR_INVALID_ARGUMENT;
         uint size = GuestMemory.R32(param);
         if (size < 0x24) return ERR_INVALID_ARGUMENT;
+        byte[]? ticket = null;
+        var acct = PsnAccount.Current;
+        if (acct.UsesLocalServices)
+        {
+            uint sid = GuestMemory.R32(param + 8);
+            string service = sid != 0 ? GuestMemory.ReadCString(sid, 0x18) : "";
+            ticket = NpTicket.Build(acct.OnlineId, service, InstalledEntitlements());
+        }
         lock (_authReqs)
         {
             int id = _nextReq++;
-            _authReqs[id] = new AuthReq { Cb = GuestMemory.R32(param + 0x1C), Arg = GuestMemory.R32(param + 0x20) };
-            Log.Debug($"sceNpAuthCreateStartRequest = {id} (ticket callback 0x{_authReqs[id].Cb:X8})");
+            _authReqs[id] = new AuthReq { Cb = GuestMemory.R32(param + 0x1C), Arg = GuestMemory.R32(param + 0x20), Ticket = ticket };
+            Log.Debug($"sceNpAuthCreateStartRequest = {id} (ticket callback 0x{_authReqs[id].Cb:X8}, {(ticket != null ? $"local ticket {ticket.Length} bytes" : "no ticket")})");
             return id;
         }
+    }
+
+    /// <summary>The DLC installed for the running title (ux0:addcont/&lt;TITLEID&gt;/*): every one counts as owned.</summary>
+    List<NpTicket.Entitlement> InstalledEntitlements()
+    {
+        var list = new List<NpTicket.Entitlement>();
+        if (Emu == null || string.IsNullOrEmpty(Emu.TitleId)) return list;
+        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "addcont", Emu.TitleId);
+        if (!Directory.Exists(dir)) return list;
+        foreach (var sub in Directory.GetDirectories(dir).Order())
+        {
+            string? contentId = null;
+            var sfo = Io.Vfs.ResolveCaseInsensitive(sub, "sce_sys/param.sfo");
+            try { if (File.Exists(sfo)) contentId = Package.Sfo.Load(sfo).ContentId; }
+            catch (InvalidDataException) { }
+            list.Add(NpTicket.Entitlement.FromContent(contentId, Emu.TitleId, Path.GetFileName(sub)));
+        }
+        if (list.Count > 0) Log.Info($"NP auth: {list.Count} installed add-on(s) reported as owned: {string.Join(", ", list.Select(e => e.Id))}");
+        return list;
+    }
+
+    NpTicket? TicketAt(uint ticket, uint size)
+    {
+        if (ticket == 0 || size < 8 || size > 0x10000) return null;
+        return NpTicket.Parse(GuestMemory.Span(ticket, (int)size).ToArray());
     }
 
     [Hle] int sceNpAuthDestroyRequest(int id) { lock (_authReqs) _authReqs.Remove(id); return 0; }
@@ -182,11 +248,68 @@ public sealed class NpManager : HleModule
         return 0;
     }
 
-    [Hle] int sceNpAuthGetTicket(int id, uint buf, uint len) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpAuthGetEntitlementByIdPrefix(uint ticket, uint size, uint prefix, uint ent) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpAuthGetEntitlementIdList(uint ticket, uint size, uint list, uint num) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpAuthGetTicketParam(uint ticket, uint size, int paramId, uint param) => PsnAccount.Current.ServerError;
+    /// <summary>int (SceNpAuthRequestId id, void *buf, SceSize len): copies the ticket (a NULL buffer only checks it).</summary>
+    [Hle]
+    int sceNpAuthGetTicket(int id, uint buf, uint len)
+    {
+        byte[]? t;
+        lock (_authReqs) t = _authReqs.TryGetValue(id, out var r) ? r.Ticket : null;
+        if (t == null) return PsnAccount.Current.ServerError;
+        if (buf != 0) t.AsSpan(0, (int)Math.Min(len, (uint)t.Length)).CopyTo(GuestMemory.Span(buf, (int)Math.Min(len, (uint)t.Length)));
+        return 0;
+    }
+
+    /// <summary>The entitlement id is the add-on's content id ("UP0001-PCSE00914_00-LABEL"), without the service prefix
+    /// ("PCSE00914_00-LABEL", what fits SceNpEntitlementId's 32 bytes) or just the label: all three match.</summary>
+    [Hle]
+    int sceNpAuthGetEntitlementById(uint ticket, uint size, string id, uint ent)
+    {
+        var t = TicketAt(ticket, size);
+        if (t == null) return PsnAccount.Current.ServerError;
+        if (ent == 0) return ERR_INVALID_ARGUMENT;
+        var e = t.Entitlements.FirstOrDefault(x => x.Matches(id));
+        if (e == null) return ERR_ENTITLEMENT_NOT_FOUND;
+        e.Write(ent);
+        return 0;
+    }
+
+    [Hle]
+    int sceNpAuthGetEntitlementByIdPrefix(uint ticket, uint size, string prefix, uint ent)
+    {
+        var t = TicketAt(ticket, size);
+        if (t == null) return PsnAccount.Current.ServerError;
+        if (ent == 0) return ERR_INVALID_ARGUMENT;
+        var e = t.Entitlements.FirstOrDefault(x => x.Id.StartsWith(prefix, StringComparison.Ordinal) || x.ContentId.StartsWith(prefix, StringComparison.Ordinal));
+        if (e == null) return ERR_ENTITLEMENT_NOT_FOUND;
+        e.Write(ent);
+        return 0;
+    }
+
+    /// <summary>int (ticket, size, SceNpEntitlementId *list (32 each), SceSize num): returns the number of entitlements
+    /// (all of them; at most num are written).</summary>
+    [Hle]
+    int sceNpAuthGetEntitlementIdList(uint ticket, uint size, uint list, uint num)
+    {
+        var t = TicketAt(ticket, size);
+        if (t == null) return PsnAccount.Current.ServerError;
+        for (int i = 0; i < Math.Min(num, (uint)t.Entitlements.Count) && list != 0; i++)
+            NpTicket.WriteId(list + (uint)i * 32, t.Entitlements[i].Id);
+        return t.Entitlements.Count;
+    }
+
+    /// <summary>int (ticket, size, int paramId, SceNpTicketParam *param (256-byte union)).</summary>
+    [Hle]
+    int sceNpAuthGetTicketParam(uint ticket, uint size, int paramId, uint param)
+    {
+        var t = TicketAt(ticket, size);
+        if (t == null) return PsnAccount.Current.ServerError;
+        if (param == 0) return ERR_INVALID_ARGUMENT;
+        GuestMemory.Fill(param, 0, 256);
+        return t.WriteParam(paramId, param) ? 0 : ERR_INVALID_ARGUMENT;
+    }
+
+    /// <summary>"Entitlement not found" (exact Vita code unconfirmed: SCE_NP_MANAGER_ERROR_ID_NOT_AVAIL, Vita3K).</summary>
+    const int ERR_ENTITLEMENT_NOT_FOUND = unchecked((int)0x80550509);
 
     // ---------------------------------------------------------------- NpId helpers (SceNpCommon)
 
@@ -310,7 +433,7 @@ public sealed class NpSocial : HleModule
     [Hle] int sceNpBasicGetRequestedFriendRequestEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetPlaySessionLogSize(int type, Ptr<uint> size) { size.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetPlaySessionLog(int type, uint index, uint log) => BASIC_INVALID_ARGUMENT; // the log is empty
-    [Hle] int sceNpBasicUnsetInGamePresence() => PsnAccount.Current.ServerError;
+    [Hle] int sceNpBasicUnsetInGamePresence() => PsnAccount.Current.UsesLocalServices ? 0 : PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- SceNpMessage: no messages without PSN
 
@@ -348,8 +471,8 @@ public sealed class NpSocial : HleModule
     internal bool ActivityInited => _activityInited;
     [Hle] int sceNpActivityInit() { _activityInited = true; return 0; }
     [Hle] int sceNpActivityTerm() { _activityInited = false; return 0; }
-    [Hle] int sceNpActivityPostStatus(uint param) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpActivityPostAppStartupStatus(uint param) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpActivityPostStatus(uint param) => PsnAccount.Current.UsesLocalServices ? 0 : PsnAccount.Current.ServerError; // posted to nobody
+    [Hle] int sceNpActivityPostAppStartupStatus(uint param) => PsnAccount.Current.UsesLocalServices ? 0 : PsnAccount.Current.ServerError;
 
     // ---------------------------------------------------------------- SceNpPartyGameUtil: never in a party
 

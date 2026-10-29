@@ -63,12 +63,37 @@ public static class Program
             }
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
+            case "toast-preview" when args.Length >= 2:
+            {
+                // toast-preview <out.png> [TITLEID]: draws the in-game trophy notification (first trophy of the title's set)
+                VitaSharp.Core.Hle.Np.TrophyInfo t = new(1, VitaSharp.Core.Hle.Np.TrophyGrade.Gold, false, 0, -1, "A trophy with quite a long name to shorten", "");
+                byte[]? icon = null;
+                if (args.Length >= 3 && VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(ResolveApp(args[2])).FirstOrDefault() is { TrpPath: not null } set
+                    && VitaSharp.Core.Hle.Np.TrophyPackage.Load(set.TrpPath, set.CommId) is { } pkg && pkg.Trophies.Count > 1)
+                {
+                    t = pkg.Trophies[1];
+                    icon = pkg.TrophyIcon(t.Id);
+                }
+                var (bgra, w, h) = Host.TrophyToast.Render(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent("", "", t, icon), 2f);
+                using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul));
+                System.Runtime.InteropServices.Marshal.Copy(bgra, 0, bmp.GetPixels(), bgra.Length);
+                using var f = File.Create(args[1]);
+                bmp.Encode(f, SkiaSharp.SKEncodedImageFormat.Png, 100);
+                return 0;
+            }
             case "pad-test":
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
             case "imports" when args.Length >= 2:
-                return ListImports(args[1], args.Length > 2 ? args[2] : "eboot.bin");
+            {
+                // imports <title> [exe] [--names=SceNp,SceNet]: also list every imported function name of the
+                // libraries whose name starts with one of the prefixes (online-feature survey).
+                var names = args.Skip(2).FirstOrDefault(a => a.StartsWith("--names="))?["--names=".Length..]
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                var exeArg = args.Skip(2).FirstOrDefault(a => !a.StartsWith("--")) ?? "eboot.bin";
+                return ListImports(args[1], exeArg, names);
+            }
             case "shadertest" when args.Length >= 2:
                 return ShaderTest.Run(ResolveApp(args[1]), args.Skip(2).ToArray());
             case "disasm" when args.Length >= 3:
@@ -207,7 +232,7 @@ public static class Program
         return answer != null && (answer.Equals("y", StringComparison.OrdinalIgnoreCase) || answer.Equals("yes", StringComparison.OrdinalIgnoreCase));
     }
 
-    static int ListImports(string titleArg, string exe)
+    static int ListImports(string titleArg, string exe, string[] namePrefixes)
     {
         Log.Level = LogLevel.Warn;
         using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
@@ -239,6 +264,9 @@ public static class Program
                 }
                 Console.WriteLine($"  {lib,-28} {nids.Length,4} imports, {missing.Count,4} missing");
                 foreach (var n in missing) Console.WriteLine($"      - {n}");
+                if (namePrefixes.Any(p => lib.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                    foreach (var nid in nids)
+                        if (!missing.Contains(NidDatabase.NameOf(nid))) Console.WriteLine($"      . {NidDatabase.NameOf(nid)}");
             }
         }
         Console.WriteLine($"Total {total}: LLE {lle}, HLE {hle}, missing {total - lle - hle}");
@@ -263,6 +291,7 @@ public static class Program
         ReplayGpu.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (F8 in the window starts/stops one)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
+        Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
@@ -273,8 +302,10 @@ public static class Program
         Console.WriteLine("               --async-shaders=on|off  compile new shaders and pipelines on worker threads (default on)");
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
-        Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass, PSN servers unreachable)");
+        Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
+        Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");
+        Console.WriteLine("                             (default on; off = every PSN server request fails as unreachable)");
         Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
         Console.WriteLine("               --hle-modules=libult,...  keep these on HLE even when the game or the firmware has the module");
     }

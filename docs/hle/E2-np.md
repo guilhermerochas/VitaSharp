@@ -47,6 +47,41 @@ valor de `SCE_NP_PARTY_STATE_NOT_IN_PARTY` (hoje 0) e a forma de `sceNpGetPlatfo
 
 ## 0. Decisão de design: PSN "offline / sem conta"
 
+### 0.00 Serviços PSN locais (2026-10-29, branch `feat/psn-local`): padrão = ligados
+
+Com a conta conectada, os serviços que funcionam para um jogador só são atendidos por um "servidor" local
+(`Hle/Np/LocalPsn.cs`, dados em `<DataRoot>/np`, por título e por ID online). `--psn-local=off` (launcher: "Serviços PSN
+locais") volta ao comportamento da seção 0.0, em que tudo falha como servidor inacessível. Nada sai do PC.
+
+- **TUS / Cross-Save** (`NpTus`, `TusStore`): variáveis e dados por slot em `np/tus/<npCommId>/<dono>/`
+  (`variables.json`, `data_<slot>.bin` + `.json`). Set/Get/Delete MultiSlot, MultiUser, Friends (só o próprio usuário),
+  AddAndGet, TryAndSet (condição `compareValue ?? valor <op> atual`), SetData/GetData em partes na mesma requisição
+  (o resultado do GetData é o número de bytes copiados), DataStatus. Slot vazio: `hasData` 0, e GetData responde
+  `USER_STORAGE_DATA_NOT_FOUND` (0x8055084A). TSS não tem dados publicados: `USER_STORAGE_TITLE_MASTER_NOT_FOUND`.
+- **Score** (`NpScore`, `ScoreStore`): `np/score/<npCommId>/board_<id>.json`, melhor pontuação por ID online e
+  personagem, ordem decrescente (o `SortMode` do arquivo pode ser trocado para 1, crescente, em placares de tempo),
+  empates dividem a posição. RecordScore (tmpRank, `NOT_BEST_SCORE`), GetRankingByRange/NpId/NpIdPcId/Friends,
+  BoardInfo, game data, comentários. Sem entradas: `GAME_RANKING_NOT_FOUND`.
+- Estruturas no layout do PS3 (RPCS3 `sceNpTus.h`/`sceNp.h`): SceNpTusVariable 120, SceNpTusDataStatus 488,
+  SceNpScoreRankData 128, SceNpScorePlayerRankData 136; o tamanho de cada elemento vem do tamanho do vetor passado pelo
+  jogo (o layout do Vita não está confirmado em header público). Requisições assíncronas terminam na hora: Poll/Wait
+  devolvem 0 com o resultado (nunca "rodando").
+- **Matching2** (`Multiplayer.cs`): ContextStart chama o callback de contexto com START (0x6F02, causa
+  CONTEXT_ACTION) a partir de uma thread da biblioteca (`HleCallbackThread`); ContextStop manda STOP. Um servidor
+  (id 1, AVAILABLE) e um mundo; SearchRoom e GetLobbyInfoList respondem 0 salas; CreateJoinRoom falha no callback com
+  `SERVICE_UNAVAILABLE`, JoinRoom e o resto de sala com `NO_SUCH_ROOM`. Toda requisição recebe resposta pelo callback
+  (`void (ctxId, reqId, event, errorCode, const void *data, arg)`: o Vita não tem sceNpMatching2GetEventData).
+  Códigos 0x80550Cxx/0x80550Dxx com o byte baixo do PS3 (inferidos). Sem os serviços locais (`--psn-local=off`) o
+  ContextStart é aceito (retorna 0) e o callback recebe START_OVER (0x6F01, causa CONTEXT_ERROR) com
+  `SCE_HTTP_ERROR_NETWORK`, como num console que não alcança o servidor; o WRC 4 só espera esse callback.
+- **Auth** (`NpTicket.cs`): ticket local no formato 2.1 do PS3 (o que o RPCN emite), entregue no callback com o
+  tamanho; GetTicketParam, GetEntitlementById/ByIdPrefix/IdList. O DLC instalado em `ux0:addcont/<TITLEID>` aparece
+  como direito comprado (id = CONTENT_ID sem o prefixo do serviço).
+- **Social**: lista de amigos vazia; presença e atividade aceitas (ninguém vê). Lookup: nenhum outro usuário.
+- **Commerce2 continua falhando como servidor inacessível**: o Vita usa CreateSessionStart/GetResult com requisições,
+  mas o protótipo e se há eventos no handler não estão confirmados; uma sessão "aceita" sem o evento esperado pode
+  travar o jogo. A loja aparece como indisponível (para o jogador, vazia); o DLC instalado vale pelo ticket.
+
 ### 0.0 Conta PSN emulada (2026-10-28, branch `fix/psn-signin`): padrão = conectada
 
 O perfil "sem conta" das seções 0.1 e 0.2 continua existindo, mas deixou de ser o padrão. A conta é escolhida por
@@ -55,7 +90,11 @@ e, no launcher, de Configurações > Geral > Rede e PSN ("Simular conta PSN cone
 `VitaSharp`). Nada é enviado aos servidores da Sony.
 
 - **Conectada (padrão, como o "PSN status: signed in" do Vita3K):** `sceNpGetServiceState`/`sceNpCheckCallback` dizem
-  `SIGNED_IN` (2); `sceNpManagerGetNpId` devolve o ID online configurado (plataforma `psp2`, `isIdValid` = 1, como o
+  `ONLINE` (3) com os serviços PSN locais (padrão) e `SIGNED_IN` (2) com `--psn-local=off` até um NetCheckDialog
+  `PSN_ONLINE` terminar OK (aí o console fica conectado e o estado passa a `ONLINE`; os callbacks de estado são chamados
+  de novo quando o estado muda). O Vita3K sempre diz `SIGNED_IN`, mas o WRC 4 (PCSE00411) roda o NetCheckDialog
+  `PSN_ONLINE` depois da tela de título e espera `ONLINE`: com `SIGNED_IN` ficava em "PLEASE WAIT..." para sempre.
+  `sceNpManagerGetNpId` devolve o ID online configurado (plataforma `psp2`, `isIdValid` = 1, como o
   Vita3K); `sceNpManagerGetAccountRegion` devolve `us` e o idioma do sistema; os callbacks de NetCtl (infraestrutura)
   recebem `IPOBTAINED` (3) em vez de `DISCONNECTED`; o NetCheckDialog nos modos `PSN` (2) e `PSN_ONLINE` (3) termina com
   `SCE_COMMON_DIALOG_RESULT_OK` e `psnModeSucceeded` = 1 (o Vita3K também devolve OK). Tudo o que iria a um servidor

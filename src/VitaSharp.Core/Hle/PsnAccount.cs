@@ -5,16 +5,20 @@ namespace VitaSharp.Core.Hle;
 /// system reports locally:
 /// <list type="bullet">
 /// <item><b>Signed in</b> (default, like Vita3K's "PSN status: signed in"): NetCtl reports a connected access point with an
-/// IP address, NP reports SIGNED_IN with <see cref="OnlineId"/> as the account, the NetCheckDialog PSN modes finish OK, and
-/// every request that would reach a PSN server (auth tickets, TUS/TSS, ranking, matching, WebAPI, store) fails like an
-/// unreachable server with <see cref="ServerUnreachable"/>. Many titles refuse to leave their start screen without a
-/// signed-in account (e.g. a Cross-Save sign-in prompt that only offers "retry").</item>
+/// IP address, NP reports <see cref="OnlineId"/> as the account (service state ONLINE with the local services, else
+/// SIGNED_IN until a PSN_ONLINE NetCheckDialog connects) and the NetCheckDialog PSN modes finish OK.
+/// With <see cref="LocalServices"/> (default) the PSN services that can work for a single player are served locally
+/// (<see cref="Np.LocalPsn"/>: TUS / Cross-Save storage, rankings with the user's own scores, auth tickets, matching
+/// contexts with no other players, an empty store); the rest (WebAPI, messages, signaling to peers) fails like an
+/// unreachable server with <see cref="ServerUnreachable"/>. Without local services every server request fails that way.
+/// Many titles refuse to leave their start screen without a signed-in account (e.g. a Cross-Save sign-in prompt that only
+/// offers "retry").</item>
 /// <item><b>Signed out</b>: no account and no network; NP reports SIGNED_OUT, account queries fail with
 /// SCE_NP_ERROR_SIGNED_OUT, NetCtl callbacks are told DISCONNECTED and the NetCheckDialog is canceled.</item>
 /// </list>
 /// Process-wide (one emulated console per process); set from <see cref="EmulatorOptions.Psn"/> when the emulator starts.
 /// </summary>
-public sealed record PsnAccount(bool SignedIn, string OnlineId)
+public sealed record PsnAccount(bool SignedIn, string OnlineId, bool LocalServices = true)
 {
     public const string DefaultOnlineId = "VitaSharp";
 
@@ -36,6 +40,9 @@ public sealed record PsnAccount(bool SignedIn, string OnlineId)
     /// <summary>The error of a request that needs a PSN server: unreachable when signed in, SIGNED_OUT otherwise.</summary>
     public int ServerError => SignedIn ? ServerUnreachable : SignedOutError;
 
+    /// <summary>Signed in with the local PSN services: TUS, rankings, tickets and matching work offline.</summary>
+    public bool UsesLocalServices => SignedIn && LocalServices;
+
     /// <summary>
     /// PSN online IDs: 3 to 16 characters, ASCII letters, digits, '-' and '_', starting with a letter.
     /// </summary>
@@ -48,6 +55,6 @@ public sealed record PsnAccount(bool SignedIn, string OnlineId)
     }
 
     /// <summary>A signed-in or signed-out account; an invalid online id falls back to <see cref="DefaultOnlineId"/>.</summary>
-    public static PsnAccount Create(bool signedIn, string? onlineId) =>
-        new(signedIn, IsValidOnlineId(onlineId) ? onlineId! : DefaultOnlineId);
+    public static PsnAccount Create(bool signedIn, string? onlineId, bool localServices = true) =>
+        new(signedIn, IsValidOnlineId(onlineId) ? onlineId! : DefaultOnlineId, localServices);
 }

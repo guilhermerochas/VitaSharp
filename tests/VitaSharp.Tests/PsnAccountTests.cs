@@ -106,13 +106,37 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(d, "sceNetCheckDialogTerm"));
     });
 
+    /// <summary>Servers unreachable (--psn-local=off): SIGNED_IN until the PSN_ONLINE NetCheckDialog connects the console,
+    /// then ONLINE (WRC 4 runs that dialog after its title screen and waits for ONLINE).</summary>
+    [Fact]
+    public void NpServiceStateGoesOnlineAfterThePsnOnlineCheck() => With(PsnAccount.Create(true, "Tester_01", localServices: false), () =>
+    {
+        var np = new NpManager();
+        uint state = Alloc(4, 0xFF);
+        Assert.Equal(0, Call(np, "sceNpGetServiceState", new Ptr<int>(state)));
+        Assert.Equal(2u, GuestMemory.R32(state)); // SIGNED_IN
+        np.OnPsnOnlineCheckSucceeded();
+        Assert.Equal(0, Call(np, "sceNpGetServiceState", new Ptr<int>(state)));
+        Assert.Equal(3u, GuestMemory.R32(state)); // ONLINE
+    });
+
+    [Fact]
+    public void NpServiceStateSignedOutIgnoresTheConnection() => With(PsnAccount.Offline, () =>
+    {
+        var np = new NpManager();
+        np.OnPsnOnlineCheckSucceeded();
+        uint state = Alloc(4, 0xFF);
+        Assert.Equal(0, Call(np, "sceNpGetServiceState", new Ptr<int>(state)));
+        Assert.Equal(1u, GuestMemory.R32(state)); // SIGNED_OUT
+    });
+
     [Fact]
     public void NpManagerReportsTheSignedInAccount() => With(PsnAccount.Create(true, "Tester_01"), () =>
     {
         var np = new NpManager();
         uint state = Alloc(4, 0xFF);
         Assert.Equal(0, Call(np, "sceNpGetServiceState", new Ptr<int>(state)));
-        Assert.Equal(2u, GuestMemory.R32(state)); // SCE_NP_SERVICE_STATE_SIGNED_IN
+        Assert.Equal(3u, GuestMemory.R32(state)); // SCE_NP_SERVICE_STATE_ONLINE (the local PSN services answer)
 
         uint id = Alloc(0x28, 0xCC);
         Assert.Equal(0, Call(np, "sceNpManagerGetNpId", id));

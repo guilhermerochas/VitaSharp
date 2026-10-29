@@ -151,6 +151,7 @@ public sealed class MainWindow : Window
     {
         string? selected = (_list.SelectedItem as GameEntry)?.TitleId;
         _all = GameLibrary.Scan(Program.Ux0);
+        _trophies.Clear();
         ApplyFilter();
         if (selected != null) _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == selected);
         if (_list.SelectedItem == null && _visible.Count > 0) _list.SelectedIndex = 0;
@@ -196,8 +197,44 @@ public sealed class MainWindow : Window
         var row = new DockPanel { Margin = new Thickness(8, 6) };
         DockPanel.SetDock(icon, Dock.Left);
         row.Children.Add(icon);
+        if (TrophyBadge(g) is { } badge)
+        {
+            DockPanel.SetDock(badge, Dock.Right);
+            row.Children.Add(badge);
+        }
         row.Children.Add(text);
         return row;
+    }
+
+    // ------------------------------------------------------------------ trophies
+
+    /// <summary>Trophy sets per game folder (TROPHY.TRP + recorded unlocks), read once per refresh.</summary>
+    readonly Dictionary<string, List<TrophySetView>> _trophies = new();
+
+    List<TrophySetView> TrophiesOf(GameEntry g)
+    {
+        if (!_trophies.TryGetValue(g.Path, out var sets))
+            _trophies[g.Path] = sets = TrophySetView.ForGame(g.Path, Program.FsRoot, TrophyWindow.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
+        return sets;
+    }
+
+    /// <summary>"Trophies earned/total" with a progress bar beside a game in the list; clicking it opens the trophy list.</summary>
+    Control? TrophyBadge(GameEntry g)
+    {
+        var sets = TrophiesOf(g);
+        int total = sets.Sum(s => s.Package.Trophies.Count), got = sets.Sum(s => s.UnlockedCount);
+        if (total == 0) return null;
+        var panel = new StackPanel { Spacing = 4, Width = 110 };
+        panel.Children.Add(new TextBlock { Text = $"Trophies {got}/{total}", FontSize = 12, Foreground = got > 0 ? Brushes.White : Muted, HorizontalAlignment = HorizontalAlignment.Right });
+        panel.Children.Add(new ProgressBar { Value = got * 100.0 / total, Maximum = 100, Height = 4, MinWidth = 0 });
+        var button = new Button
+        {
+            Content = panel, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(6, 4),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
+        };
+        ToolTip.SetTip(button, "Show the trophy list");
+        button.Click += async (_, e) => { e.Handled = true; await new TrophyWindow(g, sets).ShowDialog(this); };
+        return button;
     }
 
     void ShowDetails(GameEntry? g)
@@ -234,6 +271,16 @@ public sealed class MainWindow : Window
         var folder = new Button { Content = "Open game folder", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         folder.Click += (_, _) => OpenPath(g.Path);
         _details.Children.Add(folder);
+        // trophies: the sets the game ships and what the emulator recorded as unlocked
+        var trophySets = TrophiesOf(g);
+        int trophyCount = trophySets.Sum(s => s.Package.Trophies.Count), trophyUnlocked = trophySets.Sum(s => s.UnlockedCount);
+        var trophies = new Button
+        {
+            Content = trophyCount > 0 ? $"Trophies ({trophyUnlocked}/{trophyCount})" : "No trophies", IsEnabled = trophyCount > 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+        };
+        trophies.Click += async (_, _) => await new TrophyWindow(g, trophySets).ShowDialog(this);
+        _details.Children.Add(trophies);
         var saves = Path.Combine(Program.Ux0, "user", "00", "savedata", g.TitleId);
         var saveBtn = new Button { Content = "Open save data", IsEnabled = Directory.Exists(saves), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         saveBtn.Click += (_, _) => OpenPath(saves);
@@ -298,6 +345,7 @@ public sealed class MainWindow : Window
         _running = null;
         _runningGame = null;
         p.Dispose();
+        Refresh(); // trophies earned while playing
         SetStatus(code == 0 ? $"{title} closed." : $"{title} stopped with exit code {code}. See the log for details.");
         if (code != 0 && !_logPanel.IsVisible) _logPanel.IsVisible = true;
         ShowDetails(_list.SelectedItem as GameEntry);
