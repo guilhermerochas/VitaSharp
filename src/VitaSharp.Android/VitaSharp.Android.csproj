@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
+    <!-- the Vulkan renderer, for the custom GPU driver hook (Gpu/AdrenoToolsDriverLoader.cs) -->
+    <ProjectReference Include="..\VitaSharp.Renderer.Vulkan\VitaSharp.Renderer.Vulkan.csproj" />
   </ItemGroup>
 
 </Project>
