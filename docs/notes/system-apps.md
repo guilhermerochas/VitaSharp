@@ -77,8 +77,11 @@ space, and a compositor for the shared framebuffer plus the game's own framebuff
   memory-card mount handling (`vshIoCreateMountEvent`, `ux0:id.dat`), neither emulated. Launching a game
   through `sceAppMgrLaunchAppByPath4("ux0:app/<id>/eboot.bin")` already works once it is listed.
 - **First boot**: with the factory registry (`/CONFIG/SYSTEM/initialize` = 0) the shell launches
-  `vs0:vsh/initialsetup/initialsetup.self` (NPXS10062), which now starts as the next process but needs the
-  shell's IPC server; for the runs above the key was set to 1 (`registry /CONFIG/SYSTEM/initialize=1`).
+  `vs0:vsh/initialsetup/initialsetup.self` (NPXS10062). It starts as the next process, loads libpaf and
+  crashes about a second later inside libshellsvc's IPC client (`SceShellSvc+E166` calls a null method
+  of a client whose server, the suspended shell, is not running). That is the multi-process wall. For the runs
+  above the key was set to 1 (`registry /CONFIG/SYSTEM/initialize=1`). The switch away from the shell also
+  waits 10 s because one shell thread does not stop ("LoadExec: some threads did not stop in time").
 - A notification "!" stays in the corner and a "Could not install" dialog appears after unlocking
   (the NPXS10079 background download that cannot start).
 - Unimplemented calls still logged by the shell (stubs answering 0): SceVshBridge (~25 used: power, rtc,
