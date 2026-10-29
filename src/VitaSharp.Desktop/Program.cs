@@ -61,6 +61,8 @@ public static class Program
                 Console.WriteLine($"Wrote {elf.Length} bytes");
                 return 0;
             }
+            case "rco-dump" when args.Length >= 2:
+                return RcoDump(args[1], args.Skip(2).FirstOrDefault(a => a.StartsWith("--extract="))?["--extract=".Length..]);
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "toast-preview" when args.Length >= 2:
@@ -273,6 +275,34 @@ public static class Program
         return 0;
     }
 
+    /// <summary>rco-dump &lt;file.rco&gt; [--extract=&lt;dir&gt;]: the element tree of a system RCO and, optionally, its files.</summary>
+    static int RcoDump(string path, string? extractDir)
+    {
+        var rco = VitaSharp.Core.Shell.Rco.Load(path);
+        Console.Write(rco.Dump());
+        if (extractDir == null) return 0;
+        Directory.CreateDirectory(extractDir);
+        int n = 0;
+        foreach (var f in rco.Files())
+        {
+            string name = string.Concat((f.Id.Length > 0 ? f.Id : $"{f.Table}_{n}").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+            File.WriteAllBytes(Path.Combine(extractDir, name + VitaSharp.Core.Shell.RcoResources.Extension(f)), f.Data);
+            n++;
+            if (!VitaSharp.Core.Shell.Gim.IsGim(f.Data)) continue;
+            try
+            {
+                var img = VitaSharp.Core.Shell.Gim.Decode(f.Data);
+                using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(img.Width, img.Height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Unpremul));
+                System.Runtime.InteropServices.Marshal.Copy(img.Pixels, 0, bmp.GetPixels(), img.Pixels.Length);
+                using var png = File.Create(Path.Combine(extractDir, name + ".png"));
+                bmp.Encode(png, SkiaSharp.SKEncodedImageFormat.Png, 100);
+            }
+            catch (InvalidDataException e) { Console.WriteLine($"  {name}: {e.Message}"); }
+        }
+        Console.WriteLine($"extracted {n} file(s) to {extractDir}");
+        return 0;
+    }
+
     static void PrintUsage()
     {
         Console.WriteLine("VitaSharp - PS Vita emulator");
@@ -293,6 +323,7 @@ public static class Program
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
+        Console.WriteLine("  rco-dump <file.rco> [--extract=<dir>]  print a system RCO resource tree; write out its textures, sounds and other files");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
         Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");

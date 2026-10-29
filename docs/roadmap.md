@@ -45,7 +45,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Tela inicial e LiveArea no launcher
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
 

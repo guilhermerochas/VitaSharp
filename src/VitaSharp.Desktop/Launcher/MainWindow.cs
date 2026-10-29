@@ -23,7 +23,7 @@ public sealed class MainWindow : Window
     static readonly IBrush Panel = LauncherTheme.Panel;
     static readonly IBrush WindowBackground = LauncherTheme.WindowBackground;
 
-    readonly LauncherSettings _settings = LauncherSettings.Load();
+    readonly LauncherSettings _settings;
     readonly ObservableCollection<GameEntry> _visible = new();
     readonly Dictionary<string, Bitmap?> _icons = new();
     List<GameEntry> _all = new();
@@ -42,8 +42,19 @@ public sealed class MainWindow : Window
     Process? _running;
     GameEntry? _runningGame;
 
-    public MainWindow()
+    /// <summary>"Tela inicial": the Vita-style home screen and LiveArea (created when first shown).</summary>
+    Shell.ShellView? _shell;
+    readonly DockPanel _listBody;
+    readonly Panel _bodyHost;
+    readonly ToggleButton _viewList, _viewHome;
+
+    public Shell.ShellView? ShellView => _shell;
+
+    /// <param name="settings">Preferences to use instead of the saved ones (ui-snapshot); changes to them are not saved.</param>
+    public MainWindow(LauncherSettings? settings = null)
     {
+        _settings = settings ?? LauncherSettings.Load();
+        _saveSettings = settings == null;
         Title = "VitaSharp";
         Width = 1100;
         Height = 700;
@@ -58,6 +69,17 @@ public sealed class MainWindow : Window
         var brand = new TextBlock { Text = "VitaSharp", FontSize = 22, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         DockPanel.SetDock(brand, Dock.Left);
         toolbar.Children.Add(brand);
+        // view switch: the game list or the Vita home screen
+        _viewList = new ToggleButton { Content = "Lista", CornerRadius = new CornerRadius(4, 0, 0, 4) };
+        _viewHome = new ToggleButton { Content = "Tela inicial", CornerRadius = new CornerRadius(0, 4, 4, 0) };
+        ToolTip.SetTip(_viewHome, "Tela inicial do Vita: bolhas, LiveArea e o tema do firmware instalado");
+        _viewList.Click += (_, _) => SetView(LauncherSettings.ViewList, save: true);
+        _viewHome.Click += (_, _) => SetView(LauncherSettings.ViewHome, save: true);
+        var viewSwitch = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        viewSwitch.Children.Add(_viewList);
+        viewSwitch.Children.Add(_viewHome);
+        DockPanel.SetDock(viewSwitch, Dock.Left);
+        toolbar.Children.Add(viewSwitch);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(_search);
         // one "Add game" button with a drop-down (VPK, PKG, folder) instead of three toolbar buttons
@@ -109,7 +131,7 @@ public sealed class MainWindow : Window
         {
             _settings.ShowLog = logToggle.IsChecked == true;
             _logPanel.IsVisible = _settings.ShowLog;
-            _settings.Save();
+            SaveSettings();
         };
         _progress = new ProgressBar { Width = 220, Minimum = 0, Maximum = 1, IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         _cancelInstall = new Button { Content = "Cancel", IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
@@ -123,10 +145,12 @@ public sealed class MainWindow : Window
         statusBar.Children.Add(_progress);
         statusBar.Children.Add(_status);
 
-        var body = new DockPanel();
+        var body = _listBody = new DockPanel();
         DockPanel.SetDock(detailsPanel, Dock.Right);
         body.Children.Add(detailsPanel);
         body.Children.Add(listHost);
+        _bodyHost = new Panel();
+        _bodyHost.Children.Add(body);
 
         var root = new DockPanel();
         DockPanel.SetDock(toolbar, Dock.Top);
@@ -135,7 +159,7 @@ public sealed class MainWindow : Window
         root.Children.Add(toolbar);
         root.Children.Add(statusBar);
         root.Children.Add(_logPanel);
-        root.Children.Add(body);
+        root.Children.Add(_bodyHost);
         Content = root;
 
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -143,7 +167,40 @@ public sealed class MainWindow : Window
 
         Refresh();
         ShowDetails(_list.SelectedItem as GameEntry);
+        SetView(_settings.View, save: false);
     }
+
+    readonly bool _saveSettings;
+
+    void SaveSettings()
+    {
+        if (_saveSettings) _settings.Save();
+    }
+
+    // ------------------------------------------------------------------ views
+
+    /// <summary>Shows the game list or the home screen ("Tela inicial"), and remembers the choice.</summary>
+    public void SetView(string view, bool save)
+    {
+        bool home = view == LauncherSettings.ViewHome;
+        _settings.View = home ? LauncherSettings.ViewHome : LauncherSettings.ViewList;
+        if (save) SaveSettings();
+        _viewList.IsChecked = !home;
+        _viewHome.IsChecked = home;
+        if (home && _shell == null)
+        {
+            _shell = new Shell.ShellView(_settings, Program.FsRoot);
+            _shell.LaunchRequested += a => { if (a.Game != null) Launch(a.Game); };
+            _shell.SetApps(_visible);
+            if (_runningGame != null) _shell.SetRunning(ShellAppOf(_runningGame));
+            _bodyHost.Children.Add(_shell);
+        }
+        _listBody.IsVisible = !home;
+        if (_shell != null) _shell.IsVisible = home;
+        if (home) _shell!.Home.Focus();
+    }
+
+    static Shell.ShellApp ShellAppOf(GameEntry g) => new(g.TitleId, g.Title, g.Version, g.Path, g.IconPath, false, g);
 
     // ------------------------------------------------------------------ library
 
@@ -168,6 +225,7 @@ public sealed class MainWindow : Window
             _visible.Add(g);
         _emptyHint.IsVisible = _visible.Count == 0;
         if (_all.Count > 0 && _visible.Count == 0) _emptyHint.Text = "No game matches the search.";
+        _shell?.SetApps(_visible);
     }
 
     Bitmap? GameIcon(GameEntry g)
@@ -329,6 +387,7 @@ public sealed class MainWindow : Window
             p.BeginErrorReadLine();
             _running = p;
             _runningGame = g;
+            _shell?.SetRunning(ShellAppOf(g));
             SetStatus($"Running {g.Title}");
             ShowDetails(_list.SelectedItem as GameEntry);
         }
@@ -344,6 +403,7 @@ public sealed class MainWindow : Window
         var title = _runningGame?.Title;
         _running = null;
         _runningGame = null;
+        _shell?.SetRunning(null);
         p.Dispose();
         Refresh(); // trophies earned while playing
         SetStatus(code == 0 ? $"{title} closed." : $"{title} stopped with exit code {code}. See the log for details.");
@@ -384,6 +444,7 @@ public sealed class MainWindow : Window
     {
         try { _running?.Kill(true); } catch (InvalidOperationException) { }
         _installCts?.Cancel();
+        _shell?.Dispose();
         base.OnClosing(e);
     }
 
@@ -604,7 +665,13 @@ public sealed class MainWindow : Window
 
     // ------------------------------------------------------------------ dialogs
 
-    async Task OpenSettings() => await new SettingsDialog(_settings).ShowDialog(this);
+    async Task OpenSettings()
+    {
+        _shell?.ReleaseController();
+        await new SettingsDialog(_settings).ShowDialog(this);
+        SetView(_settings.View, save: false);
+        _shell?.ApplySettings();
+    }
 
     async Task ShowMessage(string title, string message)
     {
