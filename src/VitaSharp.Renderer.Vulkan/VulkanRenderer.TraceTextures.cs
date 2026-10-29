@@ -60,23 +60,95 @@ public sealed unsafe partial class VulkanRenderer
 
     int _suspectTextures;
 
+    // Test-run inspection cost control. Decoding and scanning every upload on the GPU thread took half of its time in
+    // Killzone's streaming-heavy stretches (BC/PVRTC decode of each new texture), which made test runs GPU-thread bound
+    // where the game itself is not. Each distinct content (hash, format, size) is inspected once; at most
+    // InspectBudgetMs per frame inline, the rest on a background thread. Deferring them to the GPU thread's idle time
+    // instead still cost hitches: one large decode there delays the next frame's commands.
+    const double InspectBudgetMs = 1.5;
+    readonly HashSet<ulong> _inspected = new();
+    readonly System.Collections.Concurrent.ConcurrentQueue<(GxmTextureDesc D, TexFormatInfo Info, uint W, uint H, ulong Hash, uint Addr, int Len)> _inspectQueue = new();
+    readonly SemaphoreSlim _inspectSignal = new(0);
+    Thread? _inspectWorker;
+    long _inspectTicks, _inspectFrameTicks, _inspectFrame = -1;
+    long _inspectDone, _inspectDuplicate, _inspectDeferred, _inspectStale, _inspectBackground;
+
+    static ulong InspectKey(GxmTextureDesc d, uint w, uint h, ulong hash) => hash ^ ((ulong)d.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
+
+    void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
+    {
+        if (_inspectFrame != FrameCount) { _inspectFrame = FrameCount; _inspectFrameTicks = 0; }
+        if (!_inspected.Add(InspectKey(d, w, h, hash))) { _inspectDuplicate++; return; }
+        if (_inspectFrameTicks > InspectBudgetMs * System.Diagnostics.Stopwatch.Frequency / 1000)
+        {
+            _inspectDeferred++;
+            // palette textures hash their palette too; only the texel data can be re-checked on the worker
+            if (requeue && _inspectQueue.Count < 4096)
+            {
+                _inspectQueue.Enqueue((d, info, w, h, hash, addr, len));
+                _inspectWorker ??= StartInspectWorker();
+                _inspectSignal.Release();
+            }
+            return;
+        }
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        ReportInspection(d, w, h, InspectStats(d, info, w, h));
+        long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        _inspectFrameTicks += dt;
+        _inspectTicks += dt;
+        _inspectDone++;
+    }
+
+    /// <summary>Inspects deferred uploads off the GPU thread. The guest may rewrite a texture meanwhile, so its data is
+    /// hashed before and after the decode and the result is dropped if it changed.</summary>
+    Thread StartInspectWorker()
+    {
+        var t = new Thread(() =>
+        {
+            while (true)
+            {
+                _inspectSignal.Wait();
+                if (!_inspectQueue.TryDequeue(out var q)) continue;
+                try
+                {
+                    if (HashOf(q.Addr, q.Len) != q.Hash) { Interlocked.Increment(ref _inspectStale); continue; }
+                    string? stats = InspectStats(q.D, q.Info, q.W, q.H);
+                    if (HashOf(q.Addr, q.Len) != q.Hash) { Interlocked.Increment(ref _inspectStale); continue; }
+                    ReportInspection(q.D, q.W, q.H, stats);
+                    Interlocked.Increment(ref _inspectBackground);
+                }
+                catch (Exception e) { Log.WarnOnce("texinspectbg", $"[gpu] background texture inspection failed: {e.Message}"); }
+            }
+        }) { IsBackground = true, Name = "Texture inspection", Priority = ThreadPriority.BelowNormal };
+        t.Start();
+        return t;
+        static ulong HashOf(uint addr, int len) => System.IO.Hashing.XxHash3.HashToUInt64(VitaSharp.Core.Memory.GuestMemory.ReadSpan(addr, len));
+    }
+
     /// <summary>
     /// Test-run inspection of a texture that was just uploaded: logs a warning (once per address/format) when its
     /// contents look like garbage, so broken decoders or unloaded memory show up in the report without screenshots.
     /// </summary>
-    void InspectUploadedTexture(GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
+    void InspectUploadedTexture(GxmTextureDesc d, TexFormatInfo info, uint w, uint h) => ReportInspection(d, w, h, InspectStats(d, info, w, h));
+
+    void ReportInspection(GxmTextureDesc d, uint w, uint h, string? stats)
+    {
+        if (stats == null || !stats.Contains("SUSPECT")) return;
+        Interlocked.Increment(ref _suspectTextures);
+        Log.WarnOnce($"texsuspect{d.DataAddress:X}{d.Format:X}", $"[gpu] TEXTURE SUSPECT 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} lodMin {d.LodMin}: {stats}");
+    }
+
+    /// <summary>Noise/seam statistics of the texture's first sampled level, or null when it is not inspected.</summary>
+    static string? InspectStats(GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
     {
         try
         {
             // pooled decode: every upload of a test run is inspected (video textures every frame)
             using var rgba = DecodeForInspectionPooled(d, info, w, h, out uint iw, out uint ih);
-            if (rgba.Array == null || iw * ih < 256) return;
-            string stats = Inspect(rgba.Span, (int)iw, (int)ih);
-            if (!stats.Contains("SUSPECT")) return;
-            _suspectTextures++;
-            Log.WarnOnce($"texsuspect{d.DataAddress:X}{d.Format:X}", $"[gpu] TEXTURE SUSPECT 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} lodMin {d.LodMin}: {stats}");
+            if (rgba.Array == null || iw * ih < 256) return null;
+            return Inspect(rgba.Span, (int)iw, (int)ih);
         }
-        catch (Exception e) { Log.WarnOnce($"texinspect{d.Format:X}", $"[gpu] texture inspection failed for fmt 0x{d.Format:X8}: {e.Message}"); }
+        catch (Exception e) { Log.WarnOnce($"texinspect{d.Format:X}", $"[gpu] texture inspection failed for fmt 0x{d.Format:X8}: {e.Message}"); return null; }
     }
 
     /// <summary>Mip 0 of face 0 as RGBA8 for formats the CPU decodes; BC formats are expanded here too.</summary>
@@ -340,10 +412,10 @@ static class BcDecode
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_TRACE_RT=ADDR,ADDR: log every draw into these colour surfaces in any frame (draw trace format).</summary>
-    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_RT") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable(EnvVars.TraceRt) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
         .Select(s => Convert.ToUInt32(s, 16)).ToHashSet();
 
-    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable("VITASHARP_TRACE_SNAP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable(EnvVars.TraceSnap) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
     static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
     /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>
     static readonly HashSet<uint> TraceSnapTargets = TraceSnapSpec.Where(s => s.StartsWith("rt:"))
@@ -370,7 +442,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Debug: VITASHARP_SNAP_FS=FSHASH:FROM:TO snapshots colour and depth before every draw of that fragment
     /// program in presented frames FROM..TO (files f{frame}_snap_*), e.g. to see what a mesh is drawn over.</summary>
-    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable("VITASHARP_SNAP_FS")?.Split(':') is { Length: 3 } sf
+    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable(EnvVars.SnapFs)?.Split(':') is { Length: 3 } sf
         ? (Convert.ToUInt64(sf[0], 16), long.Parse(sf[1]), long.Parse(sf[2])) : null;
 
     void TraceSnapshot(DrawCommand d)

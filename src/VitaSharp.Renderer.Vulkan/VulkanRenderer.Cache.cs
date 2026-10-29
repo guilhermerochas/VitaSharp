@@ -370,7 +370,7 @@ public sealed unsafe partial class VulkanRenderer
     // =================================================================== rebuild (shader pack stale or partial)
 
     /// <summary>VITASHARP_SHADER_REBUILD=0 disables the boot rebuild (a stale shader pack then fills up during gameplay, as before).</summary>
-    static readonly bool RebuildEnabled = Environment.GetEnvironmentVariable("VITASHARP_SHADER_REBUILD") is not ("0" or "off" or "false");
+    static readonly bool RebuildEnabled = Environment.GetEnvironmentVariable(EnvVars.ShaderRebuild) is not ("0" or "off" or "false");
     volatile bool _rebuildActive;
     /// <summary>Rebuild work for the shader workers (<see cref="ShaderJob"/> or <see cref="PipelineRecipe"/>), in
     /// recorded first-use order; served after the draw-driven queues.</summary>

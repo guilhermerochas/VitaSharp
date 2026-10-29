@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Cpu;
 
 /// <summary>
@@ -7,7 +8,7 @@ namespace VitaSharp.Core.Cpu;
 /// </summary>
 public static unsafe class WriteWatch
 {
-    public static readonly bool Enabled = Environment.GetEnvironmentVariable("VITASHARP_WATCH") == "1";
+    public static readonly bool Enabled = Environment.GetEnvironmentVariable(EnvVars.Watch) == "1";
 
     public static uint Lo, Span, ReadLo, ReadSpan;
     /// <summary>Called on the storing thread with (address, size, value) before the store.</summary>

@@ -66,7 +66,7 @@ public sealed unsafe partial class VulkanRenderer
     Format _replayFormatChecked = Format.Undefined;
     bool _replayFormatOk;
 
-    static readonly (string Kind, long From, int Count)? Inject = ParseInject(Environment.GetEnvironmentVariable("VITASHARP_DEBUG_INJECT"));
+    static readonly (string Kind, long From, int Count)? Inject = ParseInject(Environment.GetEnvironmentVariable(EnvVars.DebugInject));
 
     /// <summary>
     /// Test switch VITASHARP_DEBUG_INJECT=KIND@PRESENT[:COUNT] (KIND = green, blue, magenta, black, white; COUNT frames,

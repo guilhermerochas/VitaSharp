@@ -48,7 +48,7 @@ static class GpuDumpControl
             int i = 0;
             foreach (var line in renderer.DescribeForDiagnostics().Split('\n')) h[$"renderer.{i++}"] = line.TrimEnd('\r');
         }
-        h["msaa"] = Environment.GetEnvironmentVariable("VITASHARP_MSAA") ?? "native (default)";
+        h["msaa"] = Environment.GetEnvironmentVariable(EnvVars.Msaa) ?? "native (default)";
         h["debug-mode"] = DebugMode.Enabled ? "on" : "off";
         if (hostInfo != null) h["host"] = hostInfo;
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())
@@ -93,7 +93,7 @@ static class GpuDumpControl
     public static void StartScheduled(Emulator emu, Func<VulkanRenderer?> renderer, string[] options)
     {
         string? spec = options.FirstOrDefault(o => o.StartsWith("--gpu-dump-at="))?["--gpu-dump-at=".Length..]
-                       ?? Environment.GetEnvironmentVariable("VITASHARP_GPU_DUMP_AT");
+                       ?? Environment.GetEnvironmentVariable(EnvVars.GpuDumpAt);
         if (string.IsNullOrWhiteSpace(spec)) return;
         var parts = spec.Split(':', 3);
         if (parts.Length < 2 || !long.TryParse(parts[0].TrimStart('f'), out long f1) || !long.TryParse(parts[1].TrimStart('f'), out long f2) || f1 < 1 || f2 < f1)

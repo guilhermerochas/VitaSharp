@@ -855,7 +855,7 @@ public sealed class Gxm : HleModule
 
     /// <summary>Debug (env VITASHARP_BT_DRAW=indexCount): logs a guest backtrace for every draw with that index count,
     /// to find the game code that issues a given mesh.</summary>
-    static readonly uint BtDrawIndexCount = uint.TryParse(Environment.GetEnvironmentVariable("VITASHARP_BT_DRAW"), out var btd) ? btd : 0;
+    static readonly uint BtDrawIndexCount = uint.TryParse(Environment.GetEnvironmentVariable(EnvVars.BtDraw), out var btd) ? btd : 0;
 
     static unsafe void LogDrawBacktrace(GxmVertexProgram vp, GxmFragmentProgram fp, uint indexData, uint indexCount)
     {

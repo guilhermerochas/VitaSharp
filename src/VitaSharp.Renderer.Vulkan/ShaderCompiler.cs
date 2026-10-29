@@ -30,7 +30,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
 
     /// <summary>The level to use: VITASHARP_SHADERC_OPT, else <paramref name="configured"/>, else Zero.</summary>
     public static OptimizationLevel ResolveOptLevel(string? configured) =>
-        ParseOptLevel(Environment.GetEnvironmentVariable("VITASHARP_SHADERC_OPT")) ?? ParseOptLevel(configured) ?? OptimizationLevel.Zero;
+        ParseOptLevel(Environment.GetEnvironmentVariable(EnvVars.ShadercOpt)) ?? ParseOptLevel(configured) ?? OptimizationLevel.Zero;
 
     /// <summary>Shaders really compiled by shaderc, their total time (stopwatch ticks), and disk cache hits.</summary>
     public static long Compiled, CompileTicks, DiskHits;

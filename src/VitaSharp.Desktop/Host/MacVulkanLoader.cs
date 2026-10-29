@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -13,7 +14,7 @@ namespace VitaSharp.Desktop;
 /// </summary>
 static class MacVulkanLoader
 {
-    const string Marker = "VITASHARP_DYLD_RELAUNCHED";
+    const string Marker = EnvVars.DyldRelaunched;
 
     /// <summary>Returns the child's exit code after a relaunch, or null to continue in this process.</summary>
     public static int? RelaunchIfNeeded(string[] args)

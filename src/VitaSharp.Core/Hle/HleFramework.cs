@@ -107,6 +107,11 @@ public sealed class HleFunction
     public bool WarnedUnimplemented;
     /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
     public long ChargedCycles;
+    /// <summary>--profile: guest threads record the HLE function they are in (GuestThread.CurrentHle).</summary>
+    public static bool Track;
+    /// <summary>--profile-hle: also times every HLE call per thread (GuestThread.HleProfile): two timestamps and two
+    /// thread cycle-counter reads per call, which slows HLE-heavy games noticeably.</summary>
+    public static bool Profile;
 
     long _cost = -1;
     /// <summary>Emulated CPU cost (guest instructions) charged per call: real syscalls (waits, signals, I/O, display)
@@ -129,6 +134,10 @@ public sealed class HleFunction
             || n.StartsWith("sceNgs") || n.StartsWith("sceKernelGetProcessTime") || n.StartsWith("sceRtc") || n.StartsWith("sceFiber")
             || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")
             return 200;
+        // Delays are in this class too, so a DelayThread(1) polling loop costs 27 us of charge + the 30 us latency floor of
+        // Wait.Sleep per iteration (57 us; Killzone's job waits make ~500 per frame). Charging delays as a kernel entry
+        // only (2_000) looked more realistic but changed Killzone's scripted walk (another route, where the renderer ran
+        // out of VRAM), so it stays until it can be checked against hardware: docs/notes/kz-mainthread.md.
         if (n.StartsWith("sceKernelWait") || n.StartsWith("sceKernelSignal") || n.StartsWith("sceKernelDelay") || n.StartsWith("sceKernelSetEventFlag")
             || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag") || n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex")
             || n.StartsWith("sceKernelPollSema") || n.StartsWith("sceKernelStartThread") || n.StartsWith("sceKernelChangeThread") || n.StartsWith("sceKernelExitThread")

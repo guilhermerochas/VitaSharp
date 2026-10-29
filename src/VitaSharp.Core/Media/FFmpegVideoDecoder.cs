@@ -23,7 +23,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 
     static HardwareDecode ParseEnvironment(out string? value)
     {
-        value = Environment.GetEnvironmentVariable("VITASHARP_VIDEO_HW")?.Trim().ToLowerInvariant();
+        value = Environment.GetEnvironmentVariable(EnvVars.VideoHw)?.Trim().ToLowerInvariant();
         return IsOff(value) ? HardwareDecode.Off : HardwareDecode.Auto;
     }
 
@@ -32,7 +32,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
     static AVHWDeviceType ParseEnvironmentDevice()
     {
         ParseEnvironment(out var v);
-        return ParseDevice(v, "VITASHARP_VIDEO_HW");
+        return ParseDevice(v, EnvVars.VideoHw);
     }
 
     static AVHWDeviceType ParseDevice(string? v, string source)

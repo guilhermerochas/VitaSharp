@@ -7,7 +7,7 @@ namespace VitaSharp.Desktop;
 
 public static class Program
 {
-    public static string DataRoot => Environment.GetEnvironmentVariable("VITASHARP_DATA")
+    public static string DataRoot => Environment.GetEnvironmentVariable(EnvVars.Data)
         ?? DataPaths.DefaultRoot();
 
     public static string FsRoot => Path.Combine(DataRoot, "fs");
@@ -23,7 +23,7 @@ public static class Program
         var data = args.FirstOrDefault(a => a.StartsWith("--data="));
         if (data != null)
         {
-            Environment.SetEnvironmentVariable("VITASHARP_DATA", Path.GetFullPath(data["--data=".Length..]));
+            Environment.SetEnvironmentVariable(EnvVars.Data, Path.GetFullPath(data["--data=".Length..]));
             args = args.Where(a => a != data).ToArray();
             DataFromCommandLine = true;
         }
