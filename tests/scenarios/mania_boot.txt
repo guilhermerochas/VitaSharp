@@ -1,4 +1,6 @@
 # Sonic Mania (homebrew RSDKv5 port, Game.suprx via libdl): SEGA logo, title, autosave notice, menus, gameplay
+# The game data lives in ux0:data/Mania (Data.rsdk, Settings.ini, SaveData.bin): a scratch --data root needs a copy of
+# that folder too, or every frame is black and the music silent.
 title=MANIA0001
 data=C:\Users\guisa\AppData\Roaming\VitaSharp
 args=--frames=3000 --seconds=240 --dump-every=100 --no-inspect --input=cross@f900:f10,start@f1000:f10,cross@f1350:f10,cross@f1550:f10,cross@f1750:f10,cross@f1950:f10,cross@f2150:f10,cross@f2350:f10
