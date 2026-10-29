@@ -126,7 +126,13 @@ public static class Program
             {
                 Log.Level = LogLevel.Warn;
                 using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
-                emu.LoadTitle(ResolveApp(args[1]));
+                var selfArg = args.FirstOrDefault(a => a.StartsWith("--self="))?["--self=".Length..];
+                if (selfArg != null) emu.LoadTitle(ResolveApp(args[1]), selfArg); else emu.LoadTitle(ResolveApp(args[1]));
+                // --load=vs0:sys/external/libpaf.suprx,...: also load these modules (firmware code a system program
+                // loads at run time), each printed with its base so addresses like ScePaf+1E011E can be found
+                foreach (var mod in args.FirstOrDefault(a => a.StartsWith("--load="))?["--load=".Length..].Split(',') ?? [])
+                    Console.WriteLine($"{mod}: base 0x{emu.LoadModule(mod).Segments.Values.Min(s => s.Address):X8}");
+                args = args.Where(a => !a.StartsWith("--")).ToArray();
                 uint addr = Convert.ToUInt32(args[2], 16) & ~1u;
                 int count = args.Length > 3 ? int.Parse(args[3]) : 40;
                 for (int i = 0; i < count; i++)
