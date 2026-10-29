@@ -1,0 +1,7 @@
+# Knightin'+ (PCSE01444, Construct 2 "ratamedia" engine): Ratalaika logo + "Loading..." (~25 s of C2 boot), Muzt Die
+# Studios logo, title menu, save select, world map.
+# Regression: the game renders each frame into a 960x540 colour surface two rows into its 960x544 display buffer
+# (surface data = buffer + 2 * pitch); presenting the buffer must show that surface, not black guest memory.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/knightin_boot.txt --data=<scratch root>
+title=PCSE01444
+args=--frames=1500 --seconds=240 --dump-every=50 --no-inspect --input=cross@f1100:f6,cross@f1300:f6

@@ -754,6 +754,64 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         return best;
     }
 
+    /// <summary>
+    /// Copies the rendered rows of colour surfaces that lie inside the presented framebuffer's memory but do not start
+    /// at its address into <paramref name="fb"/> (just loaded from guest memory). The GPU renders them without writing
+    /// guest memory, so the memory read alone shows black there. Knightin'+ renders a 960x540 surface two rows into
+    /// each 960x544 display buffer (data = buffer + 2 * pitch); Vita3K's presentation lookup likewise sources a surface
+    /// at a whole-row offset, here it also covers a surface that starts after the buffer. Same pitch and 32-bit pixels
+    /// only; surfaces whose memory the CPU wrote after their last scene are left to the memory content; where several
+    /// overlap, the most recently rendered one wins.
+    /// </summary>
+    void CompositeRenderTargetsInFramebuffer(RenderTarget fb, DisplayFrame frame)
+    {
+        long rowBytes = (long)frame.Pitch * 4;
+        long fbStart = frame.Address, fbEnd = fbStart + rowBytes * frame.Height;
+        List<(RenderTarget Rt, long Row)>? hits = null;
+        foreach (var rt in _renderTargets.Values)
+        {
+            if (rt == fb || rt.LastScene == 0 || rt.Stride != frame.Pitch || rt.Format != fb.Format) continue;
+            if (Formats.ColorBytesPerPixel(rt.ColorFormat) != 4) continue;
+            long delta = (long)rt.Address - fbStart;
+            if (delta == 0 || delta % rowBytes != 0) continue;
+            long rtEnd = rt.Address + rowBytes * rt.Height;
+            if (rt.Address >= fbEnd || rtEnd <= fbStart) continue;
+            long start = Math.Max(fbStart, rt.Address), end = Math.Min(fbEnd, rtEnd);
+            if (OverwrittenSinceRendered(rt, (uint)start, (ulong)(end - start))) continue;
+            (hits ??= []).Add((rt, delta / rowBytes));
+        }
+        if (hits == null) return;
+        foreach (var (rt, row) in hits.OrderBy(h => h.Rt.LastScene))
+        {
+            uint srcY = (uint)Math.Max(0, -row), dstY = (uint)Math.Max(0, row);
+            uint rows = Math.Min(rt.Height - srcY, frame.Height - dstY), width = Math.Min(rt.Width, frame.Width);
+            if (rows == 0 || width == 0) continue;
+            Log.WarnOnce($"presentpart{frame.Address:X}:{rt.Address:X}", $"[gpu] present 0x{frame.Address:X8} {frame.Width}x{frame.Height}: rendered surface 0x{rt.Address:X8} {rt.Width}x{rt.Height} composited at row {row}");
+            rt.Dirty = true; // make its colour writes visible to the transfer even when no barrier is pending
+            SyncRenderTargetForRead(rt);
+            rt.LastUsedFrame = FrameCount;
+            Barrier(fb.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferWriteBit);
+            var copy = new ImageCopy
+            {
+                SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+                DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+                SrcOffset = new Offset3D(0, (int)srcY, 0), DstOffset = new Offset3D(0, (int)dstY, 0),
+                Extent = new Extent3D(width, rows, 1),
+            };
+            _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, fb.Image, ImageLayout.General, 1, in copy);
+            // the copy must finish before the target is rendered again
+            Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
+                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
+        }
+        fb.Version++;
+        fb.InMemoryVersion = -1; // holds rendered pixels guest memory does not
+        Barrier(fb.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
+            AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
+    }
+
     RenderTarget? _cpuFramebuffer;
     long _presentCount;
     public long PresentCount => _presentCount;
@@ -778,6 +836,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _cpuFramebuffer.Address = frame.Address;
             _cpuFramebuffer.Stride = frame.Pitch;
             UploadSurfaceFromGuest(_cpuFramebuffer);
+            CompositeRenderTargetsInFramebuffer(_cpuFramebuffer, frame);
             src = _cpuFramebuffer;
         }
         SyncRenderTargetForRead(src);
