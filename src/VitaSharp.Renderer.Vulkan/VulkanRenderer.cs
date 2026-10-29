@@ -1152,6 +1152,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (d.SampledView.Handle != 0) _vk.DestroyImageView(_dev, d.SampledView, null);
             _vk.DestroyImage(_dev, d.Image, null);
         }
+        DestroyOverlay();
         DestroySwapchain();
         _imagePool.Dispose();
         _compiler.Dispose();

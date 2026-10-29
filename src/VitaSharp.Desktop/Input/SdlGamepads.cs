@@ -93,6 +93,12 @@ public sealed unsafe class SdlGamepads : IDisposable
             _sdl.SetHint("SDL_JOYSTICK_HIDAPI_PS5_RUMBLE", "1");
             // no SDL window exists: the player LEDs / home LED stay as the controller sets them
             _sdl.SetHint("SDL_JOYSTICK_HIDAPI_PS5_PLAYER_LED", "0");
+            // Windows: device detection and the RAWINPUT driver post to a hidden helper window. Without SDL video nothing
+            // on this thread pumps its messages, so every unprocessed WM_INPUT kept its HRAWINPUT (a USER object):
+            // ~250 per second with a controller connected, until the process hit the 10000 USER object quota after
+            // ~40 s and anything needing a window failed (DirectShow camera starts: ERROR_NO_MORE_USER_HANDLES).
+            // SDL's own joystick thread owns that window and runs a message loop for it.
+            _sdl.SetHint("SDL_JOYSTICK_THREAD", "1");
             if (_mappingFile != null) _sdl.SetHint("SDL_GAMECONTROLLERCONFIG_FILE", _mappingFile);
             if (_sdl.Init(InitJoystick | InitGameController) != 0)
                 throw new InvalidOperationException(_sdl.GetErrorS());

@@ -7,12 +7,15 @@ using VitaSharp.Desktop.Input;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>Settings window: "Geral" (window, graphics, camera, CPU, Desempenho = shader compilation, Rede e PSN = emulated
-/// PSN account) and "Controles" (keyboard / controller mapping).</summary>
+/// PSN account, Firmware = installed system software) and "Controles" (keyboard / controller mapping).</summary>
 public sealed class SettingsDialog : Window
 {
     public const int GeneralTab = 0, ControlsTab = 1;
 
     readonly TabControl _tabs;
+
+    /// <summary>Geral > Firmware (installed version, install from a .PUP or from Vita3K).</summary>
+    public FirmwarePanel Firmware { get; }
 
     /// <summary>The controller page (created when the tab is first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
@@ -69,8 +72,14 @@ public sealed class SettingsDialog : Window
 
         // network and PSN (--psn=, --psn-id=): an emulated signed-in account; nothing is ever sent to Sony's servers
         const string psnTip = "Muitos jogos só passam da tela inicial com uma conta PSN conectada. O VitaSharp simula a conta " +
-                              "localmente: a verificação de login passa, e recursos online (placares, salvamento na nuvem, " +
-                              "multijogador) falham como se o servidor estivesse fora do ar. Desligado, o console fica sem rede e sem conta.";
+                              "localmente: a verificação de login passa e nada é enviado aos servidores da Sony. " +
+                              "Desligado, o console fica sem rede e sem conta.";
+        const string psnLocalTip = "Serviços da PSN que funcionam para um jogador só, guardados neste PC (pasta de dados\\np): " +
+                                   "salvamento na nuvem (TUS / Cross-Save), placares com as suas pontuações, tickets de login " +
+                                   "e DLC instalado como comprado. O multijogador abre o serviço mas não encontra salas. " +
+                                   "Desligado, todo pedido a um servidor da PSN falha como se ele estivesse fora do ar.";
+        var psnLocal = new CheckBox { Content = "Serviços PSN locais (nuvem, placares, DLC)", IsChecked = settings.PsnLocalServices };
+        ToolTip.SetTip(psnLocal, psnLocalTip);
         var psnSignedIn = new CheckBox { Content = "Simular conta PSN conectada (offline)", IsChecked = settings.PsnSignedIn };
         ToolTip.SetTip(psnSignedIn, psnTip);
         var psnId = new TextBox { Text = settings.PsnOnlineId, Width = 200, MaxLength = 16, Watermark = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId };
@@ -79,7 +88,7 @@ public sealed class SettingsDialog : Window
             Text = "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.",
             Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false,
         };
-        void SyncPsn() => psnId.IsEnabled = psnSignedIn.IsChecked == true;
+        void SyncPsn() => psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
         psnSignedIn.IsCheckedChanged += (_, _) => SyncPsn();
         SyncPsn();
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
@@ -96,6 +105,27 @@ public sealed class SettingsDialog : Window
         general.Children.Add(WithHint(psnSignedIn, psnTip));
         general.Children.Add(Row("ID online", psnId));
         general.Children.Add(psnIdError);
+        general.Children.Add(WithHint(psnLocal, psnLocalTip));
+        // firmware: install the official PUP (or copy Vita3K's), and the libraries to keep on HLE (--hle-modules=)
+        general.Children.Add(new TextBlock { Text = "Firmware", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        var firmware = Firmware = new FirmwarePanel();
+        general.Children.Add(firmware);
+        var hleModules = new TextBox { Text = settings.HleModules, Width = 320, Watermark = "ex.: libSceJson, libult" };
+        general.Children.Add(Row("Manter em HLE", hleModules));
+        general.Children.Add(new TextBlock
+        {
+            Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(100, 0, 0, 0),
+            Text = "Bibliotecas que continuam na implementação do VitaSharp mesmo quando o jogo ou o firmware traz o módulo " +
+                   "(para contornar um problema com a versão original). Vazio: usa os módulos disponíveis.",
+        });
+        Closing += (_, e) =>
+        {
+            if (!firmware.Busy) return;
+            // cancel the installation and close once it has cleaned up its staging folder
+            e.Cancel = true;
+            firmware.Finished += Close;
+            firmware.CancelRunning();
+        };
         general.Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
@@ -158,6 +188,7 @@ public sealed class SettingsDialog : Window
             if (psnIdError.IsVisible) { _tabs.SelectedIndex = GeneralTab; return; }
             settings.PsnSignedIn = psnSignedIn.IsChecked == true;
             settings.PsnOnlineId = id;
+            settings.PsnLocalServices = psnLocal.IsChecked == true;
             settings.Fullscreen = fullscreen.IsChecked == true;
             settings.VSync = vsync.IsChecked == true;
             settings.Validation = validation.IsChecked == true;
@@ -167,6 +198,7 @@ public sealed class SettingsDialog : Window
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;
+            settings.HleModules = (hleModules.Text ?? "").Trim();
             settings.Save();
             Controls?.Save();
             Close();

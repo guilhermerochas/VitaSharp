@@ -42,17 +42,17 @@ public sealed class SystemMisc : HleModule
     }
 
     /// <summary>
-    /// Sysmodules whose implementation is the firmware/game module itself (no HLE, or LLE preferred): the game may ship
-    /// them in app0:sce_module (early-SDK titles bundle libult/libfiber/libface/libsmart) or the user may provide the
-    /// firmware's vs0:sys/external. When present they are loaded and started LLE, which rebinds the game's
-    /// already-linked HLE import stubs. File names follow Vita3K's load_module table.
+    /// Sysmodules whose implementation can be the firmware/game module itself: the game may ship them in
+    /// app0:sce_module (early-SDK titles bundle libult/libfiber/libface/libsmart) or the installed firmware has them in
+    /// vs0:sys/external. When present they are loaded and started LLE, which rebinds the game's already-linked HLE
+    /// import stubs. File names follow Vita3K's load_module table.
     /// </summary>
     static readonly Dictionary<uint, string> LleSysmodules = new()
     {
-        [0x0006] = "libfiber",     // FIBER (app0 only: Fiber.cs is the fallback)
+        [0x0006] = "libfiber",     // FIBER
         [0x0007] = "libult",       // ULT
-        [0x000D] = "libsas",       // SAS (Sas.cs is the fallback)
-        [0x0030] = "libatrac",     // ATRAC (Atrac.cs is the fallback; uses sceAudiodecPartlyDecode)
+        [0x000D] = "libsas",       // SAS
+        [0x0030] = "libatrac",     // ATRAC (LLE uses sceAudiodecPartlyDecode)
         [0x0017] = "libSceXml",    // XML
         [0x001F] = "libSceSqlite", // SQLITE
         [0x0038] = "libface",      // FACE
@@ -60,12 +60,43 @@ public sealed class SystemMisc : HleModule
         [0x0055] = "libSceJson",   // JSON
     };
 
-    /// <summary>Loads app0:sce_module/&lt;lib&gt;.suprx, else vs0:sys/external/&lt;lib&gt;.suprx, and runs module_start.
+    /// <summary>
+    /// Libraries VitaSharp implements in HLE (Fiber.cs, Ult.cs, Sas.cs, Atrac.cs). A copy the game ships is still
+    /// preferred (the title was tested with it), but the firmware's copy is only used when asked for
+    /// (EmulatorOptions.LleModules / VITASHARP_LLE_MODULES), so installing the firmware does not move titles that
+    /// work on these HLE modules onto different code. Json, Xml, Sqlite, face and smart have no HLE: the firmware's
+    /// copy is the only implementation and is always used when present.
+    /// </summary>
+    static readonly HashSet<string> HleImplemented = new(StringComparer.OrdinalIgnoreCase) { "libfiber", "libult", "libsas", "libatrac" };
+
+    HashSet<string>? _lleModules, _hleModules;
+
+    static HashSet<string> ModuleList(IReadOnlyCollection<string>? option, string envVar) =>
+        new(option ?? (Environment.GetEnvironmentVariable(envVar) ?? "").Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Where <paramref name="lib"/> may be loaded from, in order (empty: stay on HLE).</summary>
+    internal string[] SysmoduleCandidates(string lib)
+    {
+        _lleModules ??= ModuleList(Emu.Options.LleModules, EnvVars.LleModules);
+        _hleModules ??= ModuleList(Emu.Options.HleModules, EnvVars.HleModules);
+        if (_hleModules.Contains(lib)) return [];
+        string app = $"app0:sce_module/{lib}.suprx", fw = $"vs0:sys/external/{lib}.suprx";
+        return !HleImplemented.Contains(lib) || _lleModules.Contains(lib) ? [app, fw] : [app];
+    }
+
+    /// <summary>Loads app0:sce_module/&lt;lib&gt;.suprx, else (see <see cref="SysmoduleCandidates"/>)
+    /// vs0:sys/external/&lt;lib&gt;.suprx, and runs module_start.
     /// Returns 0 (also when no file exists: the HLE fallback stays in place) or a negative error.</summary>
     int TryLoadModuleLle(string lib, uint args, uint argp, out int startResult)
     {
         startResult = 0;
-        string[] candidates = lib == "libfiber" ? [$"app0:sce_module/{lib}.suprx"] : [$"app0:sce_module/{lib}.suprx", $"vs0:sys/external/{lib}.suprx"];
+        string[] candidates = SysmoduleCandidates(lib);
+        if (candidates.Length == 0)
+        {
+            Log.Info($"sceSysmoduleLoadModule: {lib} kept on HLE (HLE modules option)");
+            return 0;
+        }
         foreach (var path in candidates)
         {
             var host = Emu.Vfs.Resolve(path);
@@ -85,7 +116,9 @@ public sealed class SystemMisc : HleModule
             Log.Info($"sceSysmoduleLoadModule: {lib} loaded from {path} (LLE)");
             return 0;
         }
-        Log.WarnOnce("sysmodule-" + lib, $"sceSysmoduleLoadModule: {lib}.suprx not found in app0:sce_module or vs0:sys/external; using HLE");
+        if (HleImplemented.Contains(lib)) Log.Info($"sceSysmoduleLoadModule: {lib} -> HLE");
+        else Log.WarnOnce("sysmodule-" + lib, $"sceSysmoduleLoadModule: {lib}.suprx not found in app0:sce_module or vs0:sys/external " +
+                                              "(install the firmware to provide it); its functions stay unimplemented");
         return 0;
     }
 

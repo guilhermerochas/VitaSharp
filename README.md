@@ -250,6 +250,7 @@ The same executable has a command-line mode, handy for testing and debugging:
 | `test <scenario.txt> [options]` | Run an automated scenario: frames, contact sheet and report (`run` options given here override the scenario's `args=`) |
 | `imports <TITLEID\|folder>` | List the system functions a title imports and which ones are still missing |
 | `self2elf <in> <out> [license]` | Decrypt a SELF executable to ELF |
+| `install-firmware <PSVUPDAT.PUP\|folder\|--vita3k>` | Install the official firmware into `fs/` (see [Firmware](#firmware-optional)) |
 
 Common `run` options:
 
@@ -268,7 +269,31 @@ Common `run` options:
 | `--audio-dump <dir>` | Write what the game sends to each audio port (after port volume) as one WAV per port, independent of the audio device |
 | `--trace-hle`, `--trace-hle-only <a+b>` | Log system calls |
 | `--validation` | Enable the Vulkan validation layers |
+| `--lle-modules=<libs>`, `--hle-modules=<libs>` | Firmware libraries to load LLE instead of HLE, or to keep on HLE (see [Firmware](#firmware-optional)) |
 | `--log <file>`, `--debug` | Log destination and verbosity |
+
+### Firmware (optional)
+
+Games run without any Sony firmware: VitaSharp implements the system libraries itself. A few libraries are not
+reimplemented (`sce::Json`, `SceLibXml`, `SceSqlite`), and the system fonts are Sony files. For those, install the
+official system update you downloaded from PlayStation's site (`PSVUPDAT.PUP`):
+
+- launcher: **Configurações > Geral > Firmware > Instalar firmware (.PUP)…** (progress bar, can be cancelled), or
+  **Usar firmware do Vita3K** when a Vita3K installation with firmware is found (its `os0`/`vs0`/`sa0`/`pd0` are
+  copied, never linked);
+- command line: `install-firmware <PSVUPDAT.PUP>` (or `install-firmware --vita3k`, or a folder that holds an installed
+  firmware), `firmware-info`, `firmware-verify [other fs root]`.
+
+The partitions are extracted into `fs/os0`, `fs/vs0`, `fs/sa0` and `fs/pd0` (the same layout Vita3K uses) and the
+version goes to `fs/firmware.json`. The system update holds `os0` and `vs0`; the fonts (`sa0:data/font`) come in the
+separate font package, another `.PUP` installed the same way (it is merged into `sa0` and keeps the installed version).
+
+With the firmware installed, `sceSysmoduleLoadModule` loads `libSceJson`, `libSceXml` and `libSceSqlite` from
+`vs0:sys/external` (the log shows `Loaded module SceLibJson (vs0:sys/external/libSceJson.suprx)`), and ScePgf/ScePvf
+find the system fonts. Libraries VitaSharp implements (`libfiber`, `libult`, `libsas`, `libatrac`) stay on HLE unless
+the game ships its own copy; `--lle-modules=libsas,...` (`VITASHARP_LLE_MODULES`) loads the firmware's copy instead, and
+`--hle-modules=libSceJson,...` (`VITASHARP_HLE_MODULES`, launcher *Manter em HLE*) keeps a library on HLE even when a
+module is available.
 
 ### Controls
 
@@ -313,6 +338,7 @@ that open `Media/Data.bin` as `media/DATA.BIN` find it.
 ```text
 VitaSharp/
 ├── fs/            virtual Vita file system (ux0:, vs0:, ...), installed games in fs/ux0/app/<TITLEID>
+│                  and the installed firmware in fs/os0, vs0, sa0, pd0 (version in fs/firmware.json)
 ├── shadercache/   translated shaders
 ├── logs/          last.log of the most recent run
 └── tests/         output of automated scenarios

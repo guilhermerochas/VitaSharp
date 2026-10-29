@@ -131,11 +131,14 @@ O que muda:
      da tabela acima (a confirmar no primeiro jogo; se não bater, o fallback por NID puro `_funcExports` cobre).
 3. **Onde o usuário coloca o vs0**: `<FsRoot>/vs0/sys/external/*.suprx` (Desktop:
    `.vitadata\fs\vs0\sys\external\`). Aceitar o SELF original da firmware (decriptado por `SelfDecryptor` com
-   chaves de sistema) ou ELF já decriptado (`VitaSharp.Desktop self2elf in out`). O VitaSharp não instala PUP; o
-   usuário copia o `vs0:` do próprio console (ex.: VitaShell) ou reaproveita o `vs0/` instalado por outro emulador.
-   Documentar isso no README do projeto quando implementar.
-4. **Opção de configuração**: `EmulatorOptions.LleSysmodules` (padrão `{ULT, XML, SQLITE, JSON}`) para poder
-   desligar por módulo durante debug.
+   chaves de sistema) ou ELF já decriptado (`VitaSharp.Desktop self2elf in out`). **Implementado (feat/firmware):**
+   o VitaSharp instala o PUP oficial (`install-firmware PSVUPDAT.PUP`, ou no launcher Configurações > Geral >
+   Firmware; `src/VitaSharp.Core/Firmware/`) ou copia o firmware instalado do Vita3K (ver README, "Firmware").
+4. **Opção de configuração** (implementada): o firmware é usado sempre para as bibliotecas sem HLE (Json, Xml,
+   Sqlite, face, smart). As que têm HLE (`libfiber`, `libult`, `libsas`, `libatrac`) continuam vindo de
+   `app0:sce_module` quando o jogo as traz, mas a cópia do `vs0` só entra com `EmulatorOptions.LleModules`
+   (`--lle-modules=`, `VITASHARP_LLE_MODULES`). `EmulatorOptions.HleModules` (`--hle-modules=`,
+   `VITASHARP_HLE_MODULES`, launcher "Manter em HLE") força HLE para qualquer uma, mesmo vinda do `app0`.
 
 Prós: comportamento exato (parser, serialização, SQL, escalonador de ulthreads), custo de implementação pequeno
 (~100 linhas), reaproveita o late binding que já existe. Contras: depende de o usuário ter firmware; módulos de

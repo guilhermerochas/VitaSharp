@@ -11,11 +11,14 @@ namespace VitaSharp.Desktop.Host;
 /// Host webcam for SceCamera through FlashCap (DirectShow / Media Foundation on Windows, V4L2 on Linux,
 /// AVFoundation on macOS). Both Vita cameras map to the selected host device. Capture runs on FlashCap's thread;
 /// each frame is converted to RGBA into a <see cref="CameraFrameBuffer"/> that keeps only the latest one.
+/// One device capture serves both Vita cameras and survives a sensor switch (<see cref="SharedCapture"/>).
 /// </summary>
 public sealed class FlashCapCamera : ICameraSource
 {
     readonly string? _selection;
     List<CaptureDeviceDescriptor>? _devices;
+    // a stopped Vita camera keeps the webcam open this long, so stop + start of the other sensor reuses it
+    readonly SharedCapture _shared = new(TimeSpan.FromSeconds(2));
 
     FlashCapCamera(string? selection) => _selection = selection;
 
@@ -121,11 +124,14 @@ public sealed class FlashCapCamera : ICameraSource
         }
         var ch = Choose(desc, width, height, fps);
         if (ch == null) { Log.Warn($"Camera: '{desc.Name}' has no supported uncompressed format"); return null; }
-        Log.Info($"Camera: {facing} camera -> '{desc.Name}' ({desc.DeviceType}) {ch}");
-        return new Stream(desc, ch);
+        var mode = (desc.Name, desc.DeviceType, ch.Width, ch.Height, ch.PixelFormat, (double)ch.FramesPerSecond);
+        var stream = _shared.Acquire(mode, after => new Capture(desc, ch, after), out bool reused);
+        Log.Info($"Camera: {facing} camera -> '{desc.Name}' ({desc.DeviceType}) {ch}{(reused ? " (capture already running, reused)" : "")}");
+        return stream;
     }
 
-    public void Dispose() { }
+    /// <summary>Stops the capture and releases the device (bounded wait).</summary>
+    public void Dispose() => _shared.Dispose();
 
     static CameraHostFormat? Map(PixelFormats f) => f switch
     {
@@ -169,38 +175,76 @@ public sealed class FlashCapCamera : ICameraSource
         return (Math.Max(0, data.Length - expected), false);
     }
 
-    sealed class Stream : ICameraStream
+    /// <summary>
+    /// One opened capture device. Opening runs in the background (a DirectShow graph can take a second: the guest
+    /// thread that called sceCameraStart never waits for it). A start that fails (device busy, driver error, the
+    /// process out of window handles...) is retried with a growing delay, and at once when a guest starts a camera
+    /// again, until it succeeds or the capture is stopped; until then the Vita cameras deliver grey frames.
+    /// </summary>
+    sealed class Capture : IHostCapture
     {
         readonly CameraFrameBuffer _frames = new();
         readonly CancellationTokenSource _cts = new();
-        readonly Task _run;
+        readonly SemaphoreSlim _retry = new(0, 1);
+        readonly object _lock = new();
+        readonly CaptureDeviceDescriptor _desc;
+        readonly VideoCharacteristics _ch;
         readonly CameraHostFormat _format;
         readonly int _w, _h, _expected;
         readonly bool _rgb;
+        readonly Task _run;
         CaptureDevice? _device;
+        volatile bool _waitingRetry;
         bool _loggedError;
 
         public CameraFrameBuffer Frames => _frames;
 
-        public Stream(CaptureDeviceDescriptor desc, VideoCharacteristics ch)
+        public Capture(CaptureDeviceDescriptor desc, VideoCharacteristics ch, Task after)
         {
+            _desc = desc;
+            _ch = ch;
             _format = Map(ch.PixelFormat)!.Value;
             _w = ch.Width; _h = ch.Height;
             _expected = CameraImage.HostSize(_format, _w, _h);
             _rgb = _format is CameraHostFormat.Bgr24 or CameraHostFormat.Bgra32;
-            // opening a DirectShow graph can take a second: never block the guest thread that called sceCameraStart
-            _run = Task.Run(async () =>
+            _run = Task.Run(() => RunAsync(after));
+        }
+
+        async Task RunAsync(Task after)
+        {
+            var ct = _cts.Token;
+            try { await after.WaitAsync(TimeSpan.FromSeconds(5), ct); } // the previous capture of this device closes first
+            catch (OperationCanceledException) { return; }
+            catch { }
+            for (int attempt = 1; ; attempt++)
             {
                 try
                 {
-                    var dev = await desc.OpenAsync(ch, TranscodeFormats.DoNotTranscode, false, 1, OnFrame, _cts.Token);
-                    lock (_frames) _device = dev;
-                    if (_cts.IsCancellationRequested) return;
-                    await dev.StartAsync(_cts.Token);
+                    var dev = await _desc.OpenAsync(_ch, TranscodeFormats.DoNotTranscode, false, 1, OnFrame, ct);
+                    lock (_lock) _device = dev;
+                    ct.ThrowIfCancellationRequested();
+                    await dev.StartAsync(ct);
+                    if (attempt > 1) Log.Info($"Camera: '{_desc.Name}' started on attempt {attempt}");
+                    return;
                 }
-                catch (OperationCanceledException) { }
-                catch (Exception e) { Log.Warn($"Camera: could not start '{desc.Name}': {e.Message} (grey frames)"); }
-            });
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (Exception e)
+                {
+                    if (attempt == 1) Log.Warn($"Camera: could not start '{_desc.Name}': {e.Message} (grey frames, retrying)");
+                    else if (attempt % 10 == 0) Log.Warn($"Camera: '{_desc.Name}' still failing after {attempt} attempts: {e.Message}");
+                    await CloseDeviceAsync(); // release whatever the failed start opened before trying again
+                }
+                _waitingRetry = true;
+                try { await _retry.WaitAsync(TimeSpan.FromSeconds(Math.Min(10, 2 * attempt)), ct); }
+                catch (OperationCanceledException) { return; }
+                finally { _waitingRetry = false; }
+            }
+        }
+
+        public void RetryNow()
+        {
+            if (!_waitingRetry) return;
+            try { _retry.Release(); } catch (SemaphoreFullException) { }
         }
 
         void OnFrame(PixelBufferScope scope)
@@ -220,20 +264,21 @@ public sealed class FlashCapCamera : ICameraSource
             }
         }
 
-        public void Dispose()
+        async Task CloseDeviceAsync()
+        {
+            CaptureDevice? dev;
+            lock (_lock) { dev = _device; _device = null; }
+            if (dev == null) return;
+            try { await dev.StopAsync(); } catch { }
+            try { await dev.DisposeAsync(); } catch { }
+        }
+
+        public async Task StopAsync()
         {
             _cts.Cancel();
-            // stop on a worker: DirectShow teardown may block a little; wait a bounded time
-            var stop = Task.Run(async () =>
-            {
-                try { await _run; } catch { }
-                CaptureDevice? dev;
-                lock (_frames) { dev = _device; _device = null; }
-                if (dev == null) return;
-                try { await dev.StopAsync(); } catch { }
-                try { await dev.DisposeAsync(); } catch { }
-            });
-            stop.Wait(TimeSpan.FromSeconds(3));
+            try { await _run; } catch { }
+            await CloseDeviceAsync();
+            _cts.Dispose();
         }
     }
 }
