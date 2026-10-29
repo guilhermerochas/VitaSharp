@@ -59,6 +59,17 @@ public sealed class Kernel
         Objects.Remove(t.Uid);
     }
 
+    /// <summary>"Module+0xOFFSET" (offset from the module's first segment) for a code address, for crash reports.</summary>
+    public string Symbolize(uint addr)
+    {
+        uint a = addr & ~1u;
+        foreach (var m in Modules.Values)
+            foreach (var (idx, s) in m.Segments)
+                if (a >= s.Address && a - s.Address < s.Size)
+                    return $"{a:X8}({m.Name}+{(idx == 0 ? "" : $"s{idx}:")}{a - s.Address:X})";
+        return $"{a:X8}";
+    }
+
     public GuestThread? GetThread(int uid) => uid == 0 ? GuestThread.Current : Objects.Get<GuestThread>(uid);
 
     public IEnumerable<GuestThread> Threads => Objects.All<GuestThread>();

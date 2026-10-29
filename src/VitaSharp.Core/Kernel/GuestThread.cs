@@ -263,7 +263,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 foreach (var p in _emu.TraceHleExclude) if (f.Name.StartsWith(p, StringComparison.Ordinal)) { trace = false; break; }
             }
         }
-        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}");
+        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}{TraceStrings(s)}");
         return trace;
     }
 
@@ -415,6 +415,22 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             while (SuspendCount > 0 && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
     }
 
+    /// <summary>--trace-hle: the arguments that point at a printable C string (paths, object names), quoted.</summary>
+    static string TraceStrings(CpuState* s)
+    {
+        System.Text.StringBuilder? sb = null;
+        for (int r = 0; r < 4; r++)
+        {
+            uint p = s->R[r];
+            if (p < 0x10000 || !GuestMemory.IsMapped(p) || !GuestMemory.IsMapped(p + 63)) continue;
+            int n = 0;
+            while (n < 64 && GuestMemory.Read<byte>(p + (uint)n) is >= 0x20 and < 0x7F) n++;
+            if (n < 3 || (n < 64 && GuestMemory.Read<byte>(p + (uint)n) != 0)) continue;
+            (sb ??= new()).Append($" a{r}=\"{GuestMemory.ReadCString(p)}\"");
+        }
+        return sb?.ToString() ?? "";
+    }
+
     /// <summary>Heuristic backtrace: stack words that point just after a BL/BLX in loaded code.</summary>
     /// <summary>Frames shown by Backtrace (--bt-depth).</summary>
     public static int BacktraceDepth = 10;
@@ -496,6 +512,10 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         sb.AppendLine($"Thread '{Name}' state:");
         for (int i = 0; i < 16; i++) sb.Append($" R{i}={s->R[i]:X8}{(i % 4 == 3 ? "\n" : "")}");
         sb.AppendLine($" CPSR={s->Cpsr:X8} FPSCR={s->Fpscr:X8} T={s->Thumb}");
+        sb.AppendLine($" pc {_emu.Kernel.Symbolize(s->R[15])}, lr {_emu.Kernel.Symbolize(s->R[14])}");
+        sb.Append(" backtrace:");
+        foreach (var a in Backtrace(s).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            sb.Append(' ').Append(_emu.Kernel.Symbolize(Convert.ToUInt32(a, 16)));
         Log.Error(sb.ToString());
     }
 

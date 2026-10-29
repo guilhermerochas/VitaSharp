@@ -39,7 +39,7 @@ public sealed class Display : HleModule
     long _lastSetVcount;
 
     [Hle("sceDisplaySetFrameBuf")]
-    int SetFrameBuf(uint pParam, uint sync)
+    internal int SetFrameBuf(uint pParam, uint sync)
     {
         if (pParam == 0) { _base = 0; return 0; }
         uint size = GuestMemory.R32(pParam);

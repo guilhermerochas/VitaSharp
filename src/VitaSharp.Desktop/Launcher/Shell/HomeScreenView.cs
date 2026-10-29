@@ -139,7 +139,7 @@ public sealed class HomeScreenView : ShellCanvas
             ctx.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(230, 120, 200, 255)), 4), c, r + 4, r + 4);
         if (app.IsSystem)
         {
-            // system apps run from vs0 once the shell can run them (stage 4): marked with a small badge
+            // system apps (run from vs0:app on the firmware's libraries) are marked with a small badge
             ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(200, 20, 30, 45)), new Pen(Brushes.White, 1.2), c + new Point(r * 0.7, r * 0.7), 9, 9);
             var g = Text("⚙", 11, Brushes.White);
             ctx.DrawText(g, c + new Point(r * 0.7 - g.Width / 2, r * 0.7 - g.Height / 2));
