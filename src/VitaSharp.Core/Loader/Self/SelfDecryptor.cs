@@ -185,10 +185,37 @@ public static class SelfDecryptor
     static Dictionary<int, (byte[] key, byte[] iv)> DecryptMetadata(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
         uint metadataOffset, ulong headerLength, ulong sysver, SelfType selfType, int npdrmType, byte[]? klic)
     {
+        var result = new Dictionary<int, (byte[], byte[])>();
+        foreach (var s in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
+            if (s.Encryption == 3) result[s.SegmentIndex] = (s.Key, s.Iv);
+        return result;
+    }
+
+    /// <summary>One entry of a SCE container's decrypted metadata: where a section lives in the file and how to decode
+    /// it (encryption 3 = AES-128-CTR with <see cref="Key"/>/<see cref="Iv"/>, compression 2 = zlib).</summary>
+    internal readonly record struct MetadataSection(ulong Offset, ulong Size, int SegmentIndex, uint Encryption, uint Compression, byte[] Key, byte[] Iv);
+
+    /// <summary>Decrypts the metadata of any SCE container (SELF, SPKG, SRVK) with the first key set that fits.</summary>
+    internal static List<MetadataSection> DecryptSections(ReadOnlySpan<byte> f, SceType sceType, int keyRev, uint metadataOffset,
+        ulong headerLength, ulong sysver, SelfType selfType, byte[]? klic)
+    {
+        Exception? last = null;
+        foreach (var set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
+        {
+            try { return DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic); }
+            catch (Exception e) when (e is KeyNotFoundException or InvalidDataException or System.Security.Cryptography.CryptographicException) { last = e; }
+        }
+        throw new InvalidDataException("Unable to decrypt SCE metadata", last);
+    }
+
+    static List<MetadataSection> DecryptSections(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
+        uint metadataOffset, ulong headerLength, ulong sysver, SelfType selfType, byte[]? klic)
+    {
         var meta = SelfKeys.Find(set, KeyType.METADATA, sceType, sysver, keyRev, selfType)
                    ?? throw new KeyNotFoundException($"No metadata key for {sceType}/{selfType} rev {keyRev} sysver 0x{sysver:X}");
 
         int datOff = (int)metadataOffset + 48;
+        if ((long)headerLength > f.Length || datOff + 64 > (long)headerLength) throw new InvalidDataException("SCE metadata out of range");
         var dat = f.Slice(datOff, (int)headerLength - datOff).ToArray();
         var info = new byte[64];
 
@@ -218,18 +245,26 @@ public static class SelfDecryptor
 
         uint sectionCount = U32LE(rest, 12);
         uint keyCount = U32LE(rest, 16);
+        if (sectionCount > 4096 || keyCount > 4096 || 32L + sectionCount * 48 + 16L * keyCount > rest.Length)
+            throw new InvalidDataException("SCE metadata header out of range (wrong key)");
         int start = 32 + (int)sectionCount * 48;
         var vault = new byte[keyCount][];
         for (int i = 0; i < keyCount; i++) vault[i] = rest.AsSpan(start + 16 * i, 16).ToArray();
 
-        var result = new Dictionary<int, (byte[], byte[])>();
+        var result = new List<MetadataSection>((int)sectionCount);
         for (int i = 0; i < sectionCount; i++)
         {
             var s = rest.AsSpan(32 + i * 48, 48);
-            int segIdx = (int)U32LE(s, 20);
             uint enc = U32LE(s, 32);
             int keyIdx = (int)U32LE(s, 36), ivIdx = (int)U32LE(s, 40);
-            if (enc == 3) result[segIdx] = (vault[keyIdx], vault[ivIdx]);
+            byte[] key = [], iv = [];
+            if (enc == 3)
+            {
+                if ((uint)keyIdx >= keyCount || (uint)ivIdx >= keyCount) throw new InvalidDataException("SCE metadata key index out of range");
+                key = vault[keyIdx];
+                iv = vault[ivIdx];
+            }
+            result.Add(new MetadataSection(U64LE(s, 0), U64LE(s, 8), (int)U32LE(s, 20), enc, U32LE(s, 44), key, iv));
         }
         return result;
     }
