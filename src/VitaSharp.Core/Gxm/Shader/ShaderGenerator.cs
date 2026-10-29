@@ -90,7 +90,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 14;
+    public const int GeneratorVersion = 15;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -356,6 +356,12 @@ float packC10(vec3 c) {
 
         // ---- the programs: secondary (sample-rate) phase first, then primary
         if (vertex) t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
+        // Temporaries start at zero: programs write parts of a register (a 16-bit VBW into the low half) and read the
+        // whole word back; an uninitialised GLSL local made those upper bits undefined (driver-dependent garbage that
+        // changed every frame: Tearaway's skinned meshes indexed bone matrices far out of range).
+        t.Line("for (int k = 0; k < r.length(); k++) r[k] = vec4(0.0);");
+        t.Line("for (int k = 0; k < fi.length(); k++) fi[k] = vec4(0.0);");
+        t.Line("idx[0] = 0; idx[1] = 0;");
         if (program.SecondaryInstrCount > 0)
             t.TranslateProgram(ReadCode(program, program.SecondaryProgramStart, program.SecondaryInstrCount), true);
         if (program.PrimaryInstrCount > 0)

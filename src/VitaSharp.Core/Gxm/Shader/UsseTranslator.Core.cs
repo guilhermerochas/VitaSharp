@@ -374,8 +374,11 @@ public sealed partial class UsseTranslator
         if (dest.Bank == Bank.Index)
         {
             string e = v.K switch { 'f' => $"floatBitsToInt({Comp(v, 0)})", 'u' => $"int({Comp(v, 0)})", _ => Comp(v, 0) };
+            // the index registers are 16 bits wide: a 32-bit write keeps only the low half. Compiled programs rely on
+            // it (Tearaway's skinning builds the bone offset with a 16-bit VBW into the low half of a temporary and
+            // moves the whole word to idx, the upper half being whatever the register held before).
             int sz = GxpProgram.TypeSize(dest.Type);
-            if (!GxpProgram.IsFloat(dest.Type) && sz < 4) e = $"({e} & {(sz == 1 ? 0xFF : 0xFFFF)})";
+            e = $"({e} & {(!GxpProgram.IsFloat(dest.Type) && sz == 1 ? 0xFF : 0xFFFF)})";
             Line($"idx[{dest.Num - 1}] = {e};");
             return;
         }
