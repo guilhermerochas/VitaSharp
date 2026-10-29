@@ -63,6 +63,7 @@ static class ReplayGpu
             foreach (var (k, v) in header.Entries)
                 if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null) set[k[4..]] = v;
         if (Opt(options, "--msaa") is { } msaa) set[EnvVars.Msaa] = msaa;
+        if (Opt(options, "--gpu-profile") is { } gp) set[EnvVars.GpuProfile] = gp;
         if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
         if (Opt(options, "--debug-tex0") is { } dt) set[EnvVars.DebugTex0] = dt;
         foreach (var e in options.Where(o => o.StartsWith("--env=")))

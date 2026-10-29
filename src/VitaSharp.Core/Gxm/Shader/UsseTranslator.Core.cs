@@ -64,6 +64,8 @@ public sealed partial class UsseTranslator
     public bool UsesThreadBuffer { get; private set; }
     public readonly Dictionary<int, SamplerUse> Samplers = new(); // keyed by SA offset (dependent) or REG_SA_COUNT+index
     public readonly HashSet<string> Warnings = new();
+    /// <summary>Banks accessed at a dynamic word index through the switch helpers (<see cref="ShaderGenerator.LowerDynamicIndexing"/>).</summary>
+    public readonly SortedSet<string> DynBanks = new(StringComparer.Ordinal);
 
     // repeat state (SMLSI / SMBO can modify the increment tables)
     readonly int[,] _repeatIncrease = new int[4, 17];
@@ -168,7 +170,27 @@ public sealed partial class UsseTranslator
     string WordDyn(Bank b, string idx)
     {
         Track(b, 255);
+        if (ShaderGenerator.LowerDynamicIndexing)
+        {
+            // Adreno quirk: no dynamic vector component index, a switch helper instead (ShaderGenerator.DynHelpers)
+            DynBanks.Add(BankName(b));
+            return $"dynR_{BankName(b)}({idx})";
+        }
         return $"{BankName(b)}[({idx}) >> 2][({idx}) & 3]";
+    }
+
+    /// <summary>Statement writing <paramref name="value"/> to a word: an assignment, or with
+    /// <see cref="ShaderGenerator.LowerDynamicIndexing"/> a dynamically indexed word goes through its switch helper.</summary>
+    void AssignWord(Bank b, string? dynBase, int baseWord, int rel, string value)
+    {
+        if (dynBase != null && ShaderGenerator.LowerDynamicIndexing)
+        {
+            Track(b, 255);
+            DynBanks.Add(BankName(b));
+            Line($"dynW_{BankName(b)}({dynBase} + {rel}, {value});");
+            return;
+        }
+        Line($"{(dynBase == null ? Word(b, baseWord + rel) : WordDyn(b, $"{dynBase} + {rel}"))} = {value};");
     }
 
     static int PackedCount(DataType t) => t == DataType.C10 ? 3 : 4 / GxpProgram.TypeSize(t);
@@ -385,7 +407,7 @@ public sealed partial class UsseTranslator
                 for (int i = 0; i < 4; i++)
                 {
                     if ((destMask & (1 << i)) == 0) continue;
-                    Line($"{W(i)} = {AsF32Bits(NextSrc())};");
+                    AssignWord(bank, dynBase, baseWord, i, AsF32Bits(NextSrc()));
                     if (dynBase == null) _wordType[(bank, baseWord + i)] = dest.Type;
                 }
                 return;
@@ -406,7 +428,7 @@ public sealed partial class UsseTranslator
                         Line($"vec2 {t} = unpackHalf2x16(floatBitsToUint({w}));");
                         for (int j = 0; j < 2; j++)
                             if ((destMask & (1 << (word * 2 + j))) != 0) Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
-                        Line($"{w} = uintBitsToFloat(packHalf2x16({t}));");
+                        AssignWord(bank, dynBase, baseWord, word, $"uintBitsToFloat(packHalf2x16({t}))");
                     }
                     else if (dest.Type == DataType.C10)
                     {
@@ -414,7 +436,7 @@ public sealed partial class UsseTranslator
                         Line($"vec3 {t} = unpackC10({w});");
                         for (int j = 0; j < 3; j++)
                             if ((destMask & (1 << (word * 3 + j))) != 0) Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
-                        Line($"{w} = packC10({t});");
+                        AssignWord(bank, dynBase, baseWord, word, $"packC10({t})");
                     }
                     else
                     {
@@ -426,7 +448,7 @@ public sealed partial class UsseTranslator
                             string src = GxpProgram.IsSigned(dest.Type) ? $"uint({AsI(NextSrc())})" : AsU(NextSrc());
                             Line($"{t} = bitfieldInsert({t}, {src}, {j * bits}, {bits});");
                         }
-                        Line($"{w} = uintBitsToFloat({t});");
+                        AssignWord(bank, dynBase, baseWord, word, $"uintBitsToFloat({t})");
                     }
                 }
                 return;

@@ -256,6 +256,9 @@ public sealed unsafe partial class VulkanRenderer
         sb.AppendLine($"Shader cache: {_opt.ShaderCacheDir ?? "(none)"}, title {_titleId ?? "-"}, pack {(_shaderPack != null ? "in use" : "not used")}");
         sb.AppendLine($"VSync {_opt.VSync}, validation {_opt.Validation}, presented frame {_lastFrameW}x{_lastFrameH}, swapchain {(_swapchain.Handle != 0 ? "yes" : "no (headless)")}");
         sb.AppendLine($"VRAM: {VramSummary()}");
+        sb.AppendLine(_core.Caps.Describe());
+        sb.AppendLine($"Mobile paths: {MobilePathsSummary()}");
+        sb.AppendLine(LoadStoreReport());
         return sb.ToString().TrimEnd();
     }
 

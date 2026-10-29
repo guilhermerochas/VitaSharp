@@ -38,6 +38,9 @@ public sealed class VulkanRendererOptions
     public int ShaderWorkers;
     /// <summary>Presents counted before this renderer's first one (GPU dump replay: frames keep the recorded numbers).</summary>
     public long FirstPresent;
+    /// <summary>adreno|mali|desktop: behave as that device class (missing features, limits, driver quirks) to test
+    /// the mobile paths on a desktop GPU (--gpu-profile; null = VITASHARP_GPU_PROFILE, else the real device).</summary>
+    public string? GpuProfile;
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -101,15 +104,16 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     readonly Frame[] _frames = new Frame[FramesInFlight];
     int _frameIndex;
     Frame F => _frames[_frameIndex];
-    /// <summary>Where commands go: the open multisampled rendering's secondary command buffer, else the frame's.</summary>
-    CommandBuffer Cmd => _msCmd.Handle != 0 ? _msCmd : F.Cmd;
+    /// <summary>Where commands go: the open multisampled rendering's secondary command buffer, else the frame's.
+    /// Tile-based GPUs also record single-sampled renderings into a secondary (VulkanRenderer.Tiler.cs).</summary>
+    CommandBuffer Cmd => _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : F.Cmd;
     public long FrameCount { get; private set; }
 
     public VulkanRenderer(VulkanRendererOptions options)
     {
         _opt = options;
         _presentCount = Math.Max(0, options.FirstPresent);
-        _core = new VkCore(options.Surface, options.Validation);
+        _core = new VkCore(options.Surface, options.Validation, options.GpuProfile);
         _vk = _core.Vk;
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);
@@ -119,6 +123,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         InitTrace();
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
+        // Qualcomm proprietary driver: dynamically indexed register words through switch helpers (GLSL changes only then)
+        Core.Gxm.Shader.ShaderGenerator.LowerDynamicIndexing = _core.Caps.Has(GpuQuirk.DynamicIndexLowering);
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
@@ -376,6 +382,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public SampleCountFlags Samples = SampleCountFlags.Count1Bit;
         /// <summary>A scene stored it with SCE_GXM_DEPTH_STENCIL_FORCE_STORE.</summary>
         public bool ForceStored;
+        /// <summary>Read after rendering (depth/stencil texture or mapped read): tile-based scenes keep storing it even
+        /// without SCE_GXM_DEPTH_STENCIL_FORCE_STORE (VulkanRenderer.Tiler.cs).</summary>
+        public bool EverRead;
+        /// <summary>A GXM 2X scene rendered it with 4 samples (<see cref="GpuQuirk.Msaa2xAs4x"/>): not unpackable as 4X depth.</summary>
+        public bool TwoXAsFour;
         /// <summary>Depth-aspect view of a multisampled depth image, for unpacking its samples.</summary>
         public ImageView SampledView;
     }
@@ -606,6 +617,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (b.Depth is { ForceStore: true }) _depth.ForceStored = true;
+        // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
+        if (_ms && b.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit) _depth.TwoXAsFour = true;
         _depthNeedsClear = b.Depth == null || !b.Depth.ForceLoad;
     }
 
@@ -685,17 +698,26 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ClearValue = new ClearValue(depthStencil: new ClearDepthStencilValue(Math.Clamp(bg?.BackgroundDepth ?? 1f, 0f, 1f), bg?.BackgroundStencil ?? 0)),
         };
         _depthNeedsClear = false;
-        var ri = new RenderingInfo
+        if (TiledRenderings)
         {
-            SType = StructureType.RenderingInfo,
-            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale)),
-            LayerCount = 1,
-            ColorAttachmentCount = _rt != null ? 1u : 0u,
-            PColorAttachments = &color,
-            PDepthAttachment = &depth,
-            PStencilAttachment = &depth,
-        };
-        _vk.CmdBeginRendering(Cmd, in ri);
+            // tile-based GPU: the store ops are chosen when the rendering ends (VulkanRenderer.Tiler.cs)
+            BeginTiledRendering(color.ImageView, _renderRaw ? _rawFormat : _rtAttachFormat, depth.LoadOp, depth.ClearValue);
+        }
+        else
+        {
+            var ri = new RenderingInfo
+            {
+                SType = StructureType.RenderingInfo,
+                RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale)),
+                LayerCount = 1,
+                ColorAttachmentCount = _rt != null ? 1u : 0u,
+                PColorAttachments = &color,
+                PDepthAttachment = &depth,
+                PStencilAttachment = &depth,
+            };
+            CountOps(_rt != null, color.LoadOp, color.StoreOp, true, depth.LoadOp, depth.StoreOp);
+            _vk.CmdBeginRendering(Cmd, in ri);
+        }
         _rendering = true;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastTouchedFrame = FrameCount; }
         if (_depth != null) _depth.Version++;
@@ -711,6 +733,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             EndMsaaRendering(final, resolve);
         }
         else if (_ms && _msUnresolved && (resolve || final)) ResolveMsaa(final);
+        if (_rendering && _tileCmd.Handle != 0)
+        {
+            _rendering = false;
+            EndTiledRendering(final);
+            if (_ss && _rt != null) _ssUnresolved = true;
+        }
         if (_rendering)
         {
             _vk.CmdEndRendering(Cmd);

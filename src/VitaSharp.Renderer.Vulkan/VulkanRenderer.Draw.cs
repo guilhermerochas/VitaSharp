@@ -38,8 +38,9 @@ public sealed unsafe partial class VulkanRenderer
         var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = ShaderGenerator.NanDraws ? 5u : 4u, PBindings = ssbo };
         _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _uboLayout).Ok("set layout");
 
-        _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, 16);
-        _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, 16);
+        ChooseTextureUnits();
+        _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, _texUnitsV);
+        _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, _texUnitsF);
         // binding 0: single-sampled framebuffer copy, binding 1: multisampled copy (real MSAA scenes), binding 2: the
         // multisampled colour attachment as input attachment (real MSAA scenes rendered in render passes)
         var fb = stackalloc DescriptorSetLayoutBinding[3];
@@ -383,7 +384,7 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -498,6 +499,10 @@ public sealed unsafe partial class VulkanRenderer
             };
             var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = key.Samples };
             var ds = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.LessOrEqual };
+            // drivers with broken extended dynamic state: the draw's state is baked in (VulkanRenderer.StaticState.cs)
+            ApplyStaticState(key.Static, ref ia, ref rs, ref ds);
+            if (key.Static != 0) Interlocked.Increment(ref _statPipelinesStatic);
+            if (StaticBias) rs.DepthBiasEnable = true;
             var att = new PipelineColorBlendAttachmentState
             {
                 BlendEnable = key.Blend,
@@ -509,16 +514,14 @@ public sealed unsafe partial class VulkanRenderer
                 AlphaBlendOp = Formats.Op(key.AlphaFunc),
                 ColorWriteMask = Formats.Mask(key.Mask),
             };
-            var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = key.HasColor ? 1u : 0u, PAttachments = &att };
-            var dyn = stackalloc DynamicState[]
-            {
-                DynamicState.Viewport, DynamicState.Scissor, DynamicState.LineWidth, DynamicState.DepthBias,
-                DynamicState.StencilCompareMask, DynamicState.StencilWriteMask, DynamicState.StencilReference,
-                DynamicState.CullMode, DynamicState.FrontFace, DynamicState.PrimitiveTopology,
-                DynamicState.DepthTestEnable, DynamicState.DepthWriteEnable, DynamicState.DepthCompareOp,
-                DynamicState.StencilTestEnable, DynamicState.StencilOp, DynamicState.DepthBiasEnable,
-            };
-            var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 16, PDynamicStates = dyn };
+            var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = key.HasColor ? 1u : 0u, PAttachments = &att,
+                // multisampled render passes declare rasterization-order colour access when the device has it
+                Flags = key.Samples != SampleCountFlags.Count1Bit && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0 };
+            // viewport, scissor, line width, depth bias, stencil masks/reference and (unless a driver quirk bakes them
+            // into the pipeline) cull mode, front face, topology, depth/stencil test state and depth bias enable
+            var dyn = stackalloc DynamicState[16];
+            int dynCount = DrawDynamicStates(dyn, key.Static != 0);
+            var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = (uint)dynCount, PDynamicStates = dyn };
             var colorFormat = key.ColorFormat;
             var rendering = new PipelineRenderingCreateInfo
             {
@@ -619,6 +622,7 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- textures (may need to leave the render pass)
         SetDrawArea(in st);
+        if (UsesMissingTextureUnit(d.VertexProgram.Info.TexturesUsed, _texUnitsV, d.VertexProgram.Info.Program.Hash) || UsesMissingTextureUnit(d.FragmentProgram.Info.TexturesUsed, _texUnitsF, d.FragmentProgram.Info.Program.Hash)) return;
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
@@ -670,7 +674,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples);
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology));
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (pipeline.Handle == 0) return;
 
@@ -722,7 +726,8 @@ public sealed unsafe partial class VulkanRenderer
         if (raw) _rawFormat = attachFormat;
         BeginRendering();
         var cmd = Cmd;
-        if (inputFetch) InputFetchBarrier(cmd);
+        // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
+        if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
         if (_boundPipeline.Handle != pipeline.Handle)
         {
             _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -744,7 +749,7 @@ public sealed unsafe partial class VulkanRenderer
         // blending over each other) are drawn one triangle at a time with a barrier in between. Only with input
         // attachments: on the copy path every piece would re-copy the framebuffer (Uncharted's thousands of small
         // particle draws went from 6.7 to 32 ms of GPU time per frame).
-        if (inputFetch && FetchSplitTriangles(d, topology) is var triangles and > 1)
+        if (inputFetch && !_core.RasterizationOrderColor && FetchSplitTriangles(d, topology) is var triangles and > 1)
         {
             for (uint c = 0; c < triangles; c++)
             {
@@ -822,26 +827,41 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdSetScissor(cmd, 0, 1, in scissor);
         _vk.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
-        _vk.CmdSetPrimitiveTopology(cmd, topology);
-        _vk.CmdSetCullMode(cmd, st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None });
-        _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
+        // extended dynamic state, unless a driver quirk baked it into the pipeline (VulkanRenderer.StaticState.cs)
+        bool staticEds = StaticEds;
+        if (!staticEds)
+        {
+            _vk.CmdSetPrimitiveTopology(cmd, topology);
+            _vk.CmdSetCullMode(cmd, st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None });
+            _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
+        }
         _vk.CmdSetLineWidth(cmd, _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1);
 
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
-        _vk.CmdSetDepthTestEnable(cmd, depthTest);
-        _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite);
-        _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc);
+        if (!staticEds)
+        {
+            _vk.CmdSetDepthTestEnable(cmd, depthTest);
+            _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite);
+            _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc);
+        }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
-        _vk.CmdSetStencilTestEnable(cmd, stencil);
+        if (!staticEds) _vk.CmdSetStencilTestEnable(cmd, stencil);
         if (stencil)
         {
-            SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil);
-            SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil);
+            SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds);
+            SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil, !staticEds);
         }
         bool bias = front.DepthBiasFactor != 0 || front.DepthBiasUnits != 0;
+        if (StaticBias)
+        {
+            // depth bias is enabled in every pipeline: no bias = zero constant and slope (exact)
+            if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+            else _vk.CmdSetDepthBias(cmd, 0, 0, 0);
+            return;
+        }
         _vk.CmdSetDepthBiasEnable(cmd, bias);
         if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
     }
@@ -909,9 +929,9 @@ public sealed unsafe partial class VulkanRenderer
 
     static bool IsTrivial(in StencilState s) => s.Func == 7 && s.StencilFail == 0 && s.DepthFail == 0 && s.DepthPass == 0;
 
-    void SetStencil(CommandBuffer cmd, StencilFaceFlags face, in StencilState s)
+    void SetStencil(CommandBuffer cmd, StencilFaceFlags face, in StencilState s, bool ops = true)
     {
-        _vk.CmdSetStencilOp(cmd, face, (StencilOp)s.StencilFail, (StencilOp)s.DepthPass, (StencilOp)s.DepthFail, (CompareOp)s.Func);
+        if (ops) _vk.CmdSetStencilOp(cmd, face, (StencilOp)s.StencilFail, (StencilOp)s.DepthPass, (StencilOp)s.DepthFail, (CompareOp)s.Func);
         _vk.CmdSetStencilCompareMask(cmd, face, s.CompareMask);
         _vk.CmdSetStencilWriteMask(cmd, face, s.WriteMask);
         _vk.CmdSetStencilReference(cmd, face, s.Ref);

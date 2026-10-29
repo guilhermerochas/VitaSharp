@@ -40,7 +40,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport() + MobileReport();
 
     public string TextureCacheReport()
     {
@@ -128,9 +128,10 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         var set = AllocSet(layout);
+        int units = layout.Handle == _texLayoutV.Handle ? _texUnitsV : _texUnitsF;
         var infos = stackalloc DescriptorImageInfo[16];
         var writes = stackalloc WriteDescriptorSet[16];
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < units; i++)
         {
             var desc = textures[i];
             ImageView view = _dummyView;
@@ -166,7 +167,7 @@ public sealed unsafe partial class VulkanRenderer
                 DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[i],
             };
         }
-        _vk.UpdateDescriptorSets(_dev, 16, writes, 0, null);
+        _vk.UpdateDescriptorSets(_dev, (uint)units, writes, 0, null);
         return set;
     }
 
@@ -481,7 +482,7 @@ public sealed unsafe partial class VulkanRenderer
 
         // GPUs without BC support (most Android devices): decode the blocks on the CPU into RGBA8
         if (info.Compressed && info.Convert == TexConvert.None && !_core.TextureCompressionBC)
-            info = info with { Format = Format.R8G8B8A8Unorm, Convert = TexConvert.BcSoftware };
+            info = info with { Format = BcSoftware.FormatFor(GxmFormats.BaseOf(d.Format)), Convert = TexConvert.BcSoftware };
         var format = info.Format;
         // texture gamma: the colour channels are sRGB-encoded and must be linearised when sampled
         if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb)) format = srgb;

@@ -114,6 +114,9 @@ public sealed unsafe partial class VulkanRenderer
                 ColorAttachmentCount = 1, PColorAttachments = &color,
                 PResolveAttachments = k.Resolve ? &resolve : null,
                 PDepthStencilAttachment = &depth,
+                // rasterization-order attachment access (Adreno/Mali): input attachment reads of the colour are
+                // ordered against earlier fragments' writes, no per-draw barrier needed
+                Flags = _core.RasterizationOrderColor ? SubpassDescriptionFlags.RasterizationOrderAttachmentColorAccessBitExt : 0,
             };
             // programmable blending: earlier fragments' colour writes become visible to input attachment reads of
             // later draws (by region: each fragment reads only its own pixel)
@@ -170,8 +173,15 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Rasterization samples of the current scene's pipelines.</summary>
     SampleCountFlags SceneSamples => _ms ? _msSamples : SampleCountFlags.Count1Bit;
 
-    /// <summary>SceGxmMultisampleMode (1 = 2X, 2 = 4X) to a sample count.</summary>
-    static SampleCountFlags GxmSamples(uint mode) => mode == 1 ? SampleCountFlags.Count2Bit : SampleCountFlags.Count4Bit;
+    /// <summary>SceGxmMultisampleMode (1 = 2X, 2 = 4X) to a sample count.
+    /// Devices without 2-sample framebuffers but with 4 (Mali) render 2X scenes with 4 samples (<see cref="Core.Gpu.GpuQuirk.Msaa2xAs4x"/>);
+    /// when the count is not supported at all the scene falls back to supersampling (<see cref="SupportsNativeMsaa"/>).</summary>
+    SampleCountFlags GxmSamples(uint mode)
+    {
+        int gxm = mode == 1 ? 2 : 4;
+        int s = _core.Caps.MsaaSamples(gxm);
+        return (SampleCountFlags)(s == 0 ? gxm : s);
+    }
 
     readonly Dictionary<(Format, SampleCountFlags), bool> _msFormatOk = new();
 
@@ -352,9 +362,12 @@ public sealed unsafe partial class VulkanRenderer
             resolveView = _rtGamma ? _rt!.SrgbView : _rt!.View;
             _statMsResolves++;
         }
+        var colorStore = final && !after ? AttachmentStoreOp.DontCare : AttachmentStoreOp.Store;
+        var depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
+        CountOps(true, p.ColorLoad, colorStore, true, p.DepthLoad, depthStore);
         var pass = MsaaRenderPass(new MsaaPassKey(p.Format, _msSamples, p.ColorLoad,
-            final && !after ? AttachmentStoreOp.DontCare : AttachmentStoreOp.Store,
-            p.DepthLoad, keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare, inline));
+            colorStore,
+            p.DepthLoad, depthStore, inline));
         var fb = MsaaFramebuffer(p.Image, pass, p.Color, p.Depth, resolveView);
         var clears = stackalloc ClearValue[3] { default, p.DepthClear, default };
         var rbi = new RenderPassBeginInfo
@@ -420,6 +433,7 @@ public sealed unsafe partial class VulkanRenderer
             ColorAttachmentCount = 1,
             PColorAttachments = &color,
         };
+        CountOps(true, color.LoadOp, color.StoreOp, false, default, default);
         _vk.CmdBeginRendering(F.Cmd, in ri);
         _vk.CmdEndRendering(F.Cmd);
     }
@@ -655,8 +669,9 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// </summary>
     bool MultisampledDepthRead(DepthTarget dt, bool stencil, bool unpack = false)
     {
+        dt.EverRead = true;
         if (dt.Samples == SampleCountFlags.Count1Bit) return false;
-        if (unpack && !stencil && dt.ForceStored && dt.Samples == SampleCountFlags.Count4Bit) return false;
+        if (unpack && !stencil && dt.ForceStored && dt.Samples == SampleCountFlags.Count4Bit && !dt.TwoXAsFour) return false;
         Log.WarnOnce($"msdepth-read-{dt.Address:X8}-{stencil}", $"[gpu] {(stencil ? "stencil" : "depth")} surface 0x{(stencil ? dt.StencilAddress : dt.Address):X8} of a multisampled scene is read: " +
             "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene forces the store, but only 4X depth read as a texture is unpacked" : ""));
         return true;
