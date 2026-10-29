@@ -440,14 +440,19 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     }
 
     [Fact]
-    public void Matching2WithoutLocalServicesRefusesToStart()
+    public void Matching2WithoutLocalServicesFailsToStartThroughTheCallback()
     {
         PsnAccount.Current = PsnAccount.Create(true, null, localServices: false);
         var (m, calls) = NewMatching2();
         ushort ctx = Context(m);
-        Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", (uint)ctx, 0x81000001u, 0u));
-        Assert.Equal(PsnAccount.ServerUnreachable, Call(m, "sceNpMatching2ContextStart", ctx, 0UL));
-        Assert.Empty(calls);
+        Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", (uint)ctx, 0x81000001u, 0x42u));
+        // accepted, then the context callback reports START_OVER (context error) with the network error
+        Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL));
+        var over = Assert.Single(calls);
+        Assert.Equal([ctx, (uint)NpMatching2.CONTEXT_EVENT_START_OVER, (uint)NpMatching2.EVENT_CAUSE_CONTEXT_ERROR,
+            unchecked((uint)PsnAccount.ServerUnreachable), 0x42u], over.Args);
+        Assert.NotEqual(0, Call(m, "sceNpMatching2SearchRoom", ctx, Alloc(16), 0u, Alloc(4))); // still not started
+        PsnAccount.Current = PsnAccount.Default;
     }
 
     [Fact]

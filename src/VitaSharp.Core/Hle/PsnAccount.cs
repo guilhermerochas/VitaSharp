@@ -5,7 +5,8 @@ namespace VitaSharp.Core.Hle;
 /// system reports locally:
 /// <list type="bullet">
 /// <item><b>Signed in</b> (default, like Vita3K's "PSN status: signed in"): NetCtl reports a connected access point with an
-/// IP address, NP reports SIGNED_IN with <see cref="OnlineId"/> as the account and the NetCheckDialog PSN modes finish OK.
+/// IP address, NP reports <see cref="OnlineId"/> as the account (service state ONLINE with the local services, else
+/// SIGNED_IN until a PSN_ONLINE NetCheckDialog connects) and the NetCheckDialog PSN modes finish OK.
 /// With <see cref="LocalServices"/> (default) the PSN services that can work for a single player are served locally
 /// (<see cref="Np.LocalPsn"/>: TUS / Cross-Save storage, rankings with the user's own scores, auth tickets, matching
 /// contexts with no other players, an empty store); the rest (WebAPI, messages, signaling to peers) fails like an
