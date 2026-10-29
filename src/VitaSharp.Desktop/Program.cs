@@ -307,6 +307,6 @@ public static class Program
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");
         Console.WriteLine("                             (default on; off = every PSN server request fails as unreachable)");
         Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
-        Console.WriteLine("               --hle-modules=libult,...  keep these on HLE even when the game or the firmware has the module");
+        Console.WriteLine("               --hle-modules=json,...    keep these on HLE even when the game or the firmware has the module");
     }
 }

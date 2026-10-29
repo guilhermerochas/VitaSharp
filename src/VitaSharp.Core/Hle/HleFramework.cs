@@ -209,6 +209,17 @@ public sealed class HleRegistry : IImportResolver
 
     public bool IsImplemented(uint nid) => _impls.ContainsKey(nid);
 
+    /// <summary>Registers host code as a callable HLE function without a NID (test harnesses: guest vtables and
+    /// callbacks that land in C#). Returns the SVC number for <see cref="Loader.Linker.WriteHleStub"/>.</summary>
+    public uint RegisterHostFunction(string name, Action<HleContext> body)
+    {
+        lock (_functions)
+        {
+            _functions.Add(new HleFunction { Nid = 0, Name = name, Library = "host", Invoke = body });
+            return (uint)(_functions.Count - 1);
+        }
+    }
+
     public uint GetHleFunctionIndex(uint nid, uint libNid, string libName)
     {
         lock (_functions)

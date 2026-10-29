@@ -290,10 +290,11 @@ separate font package, another `.PUP` installed the same way (it is merged into 
 
 With the firmware installed, `sceSysmoduleLoadModule` loads `libSceJson`, `libSceXml` and `libSceSqlite` from
 `vs0:sys/external` (the log shows `Loaded module SceLibJson (vs0:sys/external/libSceJson.suprx)`), and ScePgf/ScePvf
-find the system fonts. Libraries VitaSharp implements (`libfiber`, `libult`, `libsas`, `libatrac`) stay on HLE unless
-the game ships its own copy; `--lle-modules=libsas,...` (`VITASHARP_LLE_MODULES`) loads the firmware's copy instead, and
-`--hle-modules=libSceJson,...` (`VITASHARP_HLE_MODULES`, launcher *Manter em HLE*) keeps a library on HLE even when a
-module is available.
+find the system fonts. Without the firmware, `libSceJson` runs on its HLE replacement (checked against the firmware
+module); Xml and Sqlite have none. Libraries VitaSharp implements (`libfiber`, `libult`, `libsas`, `libatrac`) stay on
+HLE unless the game ships its own copy; `--lle-modules=libsas,...` (`VITASHARP_LLE_MODULES`) loads the firmware's copy
+instead, and `--hle-modules=json,...` (file or short names, `VITASHARP_HLE_MODULES`, launcher *Manter em HLE*) keeps a
+library on HLE even when a module is available.
 
 ### Controls
 

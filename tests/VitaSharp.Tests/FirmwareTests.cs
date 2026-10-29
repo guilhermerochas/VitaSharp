@@ -636,6 +636,13 @@ public class FirmwareTests
         Assert.Empty(opted.SysmoduleCandidates("libSceJson")); // forced HLE, even over a firmware module
         Assert.Empty(opted.SysmoduleCandidates("libult"));     // ... and over the game's own copy
         Assert.Equal(["app0:sce_module/libatrac.suprx"], opted.SysmoduleCandidates("libatrac"));
+
+        // short names: --hle-modules=json forces the Json HLE over the firmware module, --lle-modules=sas the reverse
+        var shortNames = Sysmodules(["sas"], ["json", "ULT"]);
+        Assert.Empty(shortNames.SysmoduleCandidates("libSceJson"));
+        Assert.Empty(shortNames.SysmoduleCandidates("libult"));
+        Assert.Equal(["app0:sce_module/libsas.suprx", "vs0:sys/external/libsas.suprx"], shortNames.SysmoduleCandidates("libsas"));
+        Assert.Equal(["app0:sce_module/libSceXml.suprx", "vs0:sys/external/libSceXml.suprx"], shortNames.SysmoduleCandidates("libSceXml"));
     }
     sealed class SyncProgress(Action<FirmwareProgress> report) : IProgress<FirmwareProgress>
     {

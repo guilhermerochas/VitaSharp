@@ -75,7 +75,7 @@ public static class Runner
         // (defaults: VITASHARP_LLE_MODULES / VITASHARP_HLE_MODULES)
         static string[]? ModuleListOpt(string[] o, string name) => Opt(o, name)?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (FirmwareInfo.Read(Program.FsRoot) is { } fw) Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
-        else Log.Info("No firmware installed: system libraries without HLE (Json, Xml, Sqlite...) are unavailable");
+        else Log.Info("No firmware installed: Json runs on HLE; system libraries without HLE (Xml, Sqlite...) are unavailable");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
         using var emu = new Emulator(new EmulatorOptions
         {

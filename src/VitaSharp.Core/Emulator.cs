@@ -31,8 +31,11 @@ public sealed class EmulatorOptions
     /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
     public IReadOnlyCollection<string>? LleModules { get; init; }
     /// <summary>Sysmodule libraries to keep on HLE even when the game or the firmware provides the module
-    /// ("libult", "libSceJson", ...). Null: VITASHARP_HLE_MODULES.</summary>
+    /// ("libult", "libSceJson", or the short names "ult", "json", ...). Null: VITASHARP_HLE_MODULES.</summary>
     public IReadOnlyCollection<string>? HleModules { get; init; }
+    /// <summary>An existing guest address space to run in (there is one per process: unit tests that boot an
+    /// emulator share the test fixture's). Null: the emulator creates it.</summary>
+    public GuestMemory? Memory { get; init; }
 }
 
 /// <summary>
@@ -93,7 +96,7 @@ public sealed class Emulator : IDisposable
         Log.Info(options.Psn.SignedIn
             ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
             : "PSN: signed out, offline");
-        Memory = new GuestMemory();
+        Memory = options.Memory ?? new GuestMemory();
         Vfs = new Vfs(options.FsRoot);
         InitProcess();
     }
