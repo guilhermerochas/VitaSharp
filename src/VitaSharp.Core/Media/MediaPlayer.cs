@@ -406,8 +406,17 @@ public sealed unsafe class MediaPlayer : IDisposable
         }
     }
 
+    int _disposed;
+
+    /// <summary>
+    /// Stops the decoder thread and frees the FFmpeg contexts. Idempotent and safe to race: guest threads close the
+    /// same player concurrently (SM2E polls sceAvPlayerIsActive from its game and movie-audio threads; both saw the
+    /// movie finished and disposed it), and the second free of the codec contexts corrupted the native heap
+    /// (0xC0000374).
+    /// </summary>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _stop = true;
         lock (_lock) Monitor.PulseAll(_lock);
         if (_thread.IsAlive && Thread.CurrentThread != _thread && !_thread.Join(10_000))
