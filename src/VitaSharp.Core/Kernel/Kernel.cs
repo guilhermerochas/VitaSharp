@@ -12,7 +12,9 @@ public sealed class Kernel
 
     readonly Emulator _emu;
     /// <summary>The system-wide object table (one UID space and namespace for every process).</summary>
-    public ObjectTable Objects => _emu.Vita.Objects;
+    public ObjectTable Objects => _emu.Vita?.Objects ?? (_standalone ??= new ObjectTable());
+    /// <summary>A kernel built without a system (unit tests construct emulators field by field) keeps its own table.</summary>
+    ObjectTable? _standalone;
     public ConcurrentDictionary<int, LoadedModule> Modules { get; } = new();
 
     public uint ThreadExitTrap { get; private set; }
