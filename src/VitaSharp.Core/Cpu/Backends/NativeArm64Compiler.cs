@@ -19,9 +19,10 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     static readonly bool[] NeonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
 
     public string Name => "native";
-    public bool IsSupported => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 && !WriteWatch.Enabled;
+    public bool IsSupported => UnsupportedReason == null;
     public string? UnsupportedReason =>
         RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ? $"emits ARM64 code and this host is {RuntimeInformation.ProcessArchitecture}"
+        : ExecutableMemory.UnsupportedReason is { } r ? r
         : WriteWatch.Enabled ? "is off while write watchpoints are active" : null;
     public BackendStats Stats { get; } = new();
 
