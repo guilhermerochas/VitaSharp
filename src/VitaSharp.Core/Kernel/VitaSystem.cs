@@ -146,9 +146,11 @@ public sealed class VitaSystem
     /// <summary>
     /// The PS button was pressed (seen by the shell's controller reads). With an application in front, SceAppMgr asks
     /// the shell to bring up that application's LiveArea: shell event 0x10 {application id}; the shell answers with
-    /// sceAppMgrDeactivateApp, which suspends the application and gives the shell the screen. (Event 0x10's meaning is
-    /// inferred: of the shell's event handlers, it is the one that takes an application id and opens the LiveArea of
-    /// the running application; the firmware's kernel posts it from one of its application-state syscalls.)
+    /// sceAppMgrDeactivateApp, which suspends the application and gives the shell the screen. In the FW 3.74 kernel
+    /// appmgr (bootimage), event 0x10 is posted only by the function behind SceAppMgrForDriver 0x29421DCD / 0xF3B1D42E,
+    /// which other kernel code calls for the application in front: it marks the application as being suspended
+    /// (state 3) and queues the event with the application id; the shell's handler for 0x10 opens that application's
+    /// LiveArea.
     /// </summary>
     public void OnPsButton()
     {

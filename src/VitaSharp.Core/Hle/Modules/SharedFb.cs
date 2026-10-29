@@ -21,8 +21,6 @@ public sealed class SharedFb : HleModule
     {
         public required int Uid;
         public required uint Base1, Base2;
-        /// <summary>The buffer being drawn (0 = base1, 1 = base2); the other one is on screen.</summary>
-        public int Back;
         public int Opens;
     }
 
@@ -59,7 +57,7 @@ public sealed class SharedFb : HleModule
         GuestMemory.W32(info + 0x28, Width);
         GuestMemory.W32(info + 0x2C, Height);
         GuestMemory.W32(info + 0x30, ColorFormatAbgr8888);
-        GuestMemory.W32(info + 0x34, (uint)fb.Back);
+        GuestMemory.W32(info + 0x34, 0); // curbuf: base1 is on screen, libpaf draws into base2
         GuestMemory.W32(info + 0x48, 1); // vsync
     }
 
@@ -92,7 +90,7 @@ public sealed class SharedFb : HleModule
         return 0;
     }
 
-    /// <summary>Takes the back buffer for drawing: info.curbuf (+0x34) says which one.</summary>
+    /// <summary>Takes the buffer for drawing: libpaf draws into the one info.curbuf (+0x34) does not name.</summary>
     [Hle]
     int sceSharedFbBegin(int uid, uint info)
     {
@@ -101,13 +99,15 @@ public sealed class SharedFb : HleModule
         return 0;
     }
 
-    /// <summary>The frame in the back buffer is complete: it goes on screen (after the GPU work queued before it) and
-    /// the buffers swap.</summary>
+    /// <summary>The frame is complete: it goes on screen (after the GPU work queued before it). info.curbuf names the
+    /// buffer on screen and libpaf draws into the other one: Trophy Collection (FW 3.74) renders every frame into base2
+    /// with curbuf 0. Showing base1/base2 alternately (a swap per End) put its undrawn buffer on screen every other
+    /// frame (black flicker), so curbuf stays and End shows the buffer libpaf draws.</summary>
     [Hle]
     int sceSharedFbEnd(int uid)
     {
         if (ById(uid) is not { } fb) return ERR_INVALID;
-        uint shown = fb.Back == 0 ? fb.Base1 : fb.Base2;
+        uint shown = fb.Base2;
         if (_frameBufDesc == 0) _frameBufDesc = Emu.Memory.Alloc(0x20, "SceSharedFb display desc");
         GuestMemory.W32(_frameBufDesc + 0x00, 0x18);
         GuestMemory.W32(_frameBufDesc + 0x04, shown);
@@ -116,7 +116,6 @@ public sealed class SharedFb : HleModule
         GuestMemory.W32(_frameBufDesc + 0x10, Width);
         GuestMemory.W32(_frameBufDesc + 0x14, Height);
         Emu.Hle.Modules.OfType<Display>().First().SetFrameBuf(_frameBufDesc, 1);
-        fb.Back ^= 1;
         return 0;
     }
 

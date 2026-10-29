@@ -109,13 +109,28 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 
 ## Remaining
 
-- Resuming the game from its LiveArea gate ("Continue") was not exercised in a test yet (ActivateApp resumes).
+- PS button: default host bindings are the controller's PS / Xbox guide / Home button (SDL "guide"; raw DirectInput
+  button 12 on PlayStation pads) and the Home key; it is the "PS button" row of the controller settings. The press is
+  taken by the system (applications never see the bit) and the shell gets event 0x10 {application id}: in the FW 3.74
+  kernel appmgr that event is posted only by the function behind SceAppMgrForDriver 0x29421DCD / 0xF3B1D42E, which marks
+  the application in front as suspending (state 3). Checked: in Devious Dungeon, PS brings the shell back (the game is
+  suspended; first time with the home-screen hint), its LiveArea shows "Continue", and Continue resumes the game.
+  The gate's thumbnail of the suspended game stays black.
 - The "Could not install" dialog and the "!" notification after unlocking remain: not the background download
   launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
   `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the
   background download queue the shell writes in `ux0:bgdl/w/patch_bg.bin` (`_vshAppMgrBgdlSetQueueStatus` takes it).
-- Settings and Trophy Collection draw nothing: system apps render into the shell's shared framebuffer and the
-  shell composites them (`sceSharedFbUpdateProcess*`); here each process has its own SceSharedFb buffers.
+- Trophy Collection (NPXS10008): its libpaf draws every frame into SharedFb base2 with curbuf 0; sceSharedFbEnd used to
+  show base1/base2 alternately (black every other frame, the flicker). End now shows base2, the background is stable.
+  `sceAppMgrAppParamGetString(pid, ...)` now answers for the process given (the shell asks the launched app's CATEGORY).
+  Still missing for the trophy list: (1) the IPC server `SceNpTrophy` (libipmi, `SceNpTrophyServerMP`): the app's
+  job thread opens it and gets 0x8002450A; no process creates it in VitaSharp (games use the HLE trophy module); it
+  has to be provided (an HLE server speaking libipmi on VitaSharp's trophy store, or the firmware process that hosts
+  it, not identified yet); (2) SceNpUtility NIDs 16954FFF, 4A3FDD3B, E38548AB, 9F142A92, 17385829, 5D6FC99E (HLE module,
+  unimplemented); (3) each process still has its own SceSharedFb buffers and the display shows the foreground
+  process: the shell's compositing (`sceSharedFbUpdateProcess*`, `GetShellRenderPort`, head 1 of
+  `sceDisplaySetFrameBufInternal`, which fails with 0x80290000) is not modelled, so the shell's overlay (status bar)
+  is not drawn over a system app. Settings (NPXS10015) is affected the same way.
 - Still stubs: SceMotionDev (calibration data and device info of the sensor chip), SceNetPs syscalls, the unnamed
   SceNetCtl / SceNpCommon / SceNpManager / SceLibMtp / SceHttp NIDs, `_sceNpDrmGetFixedRifName`, registry change
   callbacks (recorded, never notified). Implemented from the FW 3.74 kernel (bootimage appmgr, vshbridge, SceError,
@@ -123,18 +138,18 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   `sceAppMgrGetCurrentBgmState2`, `sceAppMgrGetAppIdByAppId` (pseudo ids -2 self, -4 foreground),
   `sceAppMgrDestroyAppByName`, `vshKernelCheckModelCapability` (capabilities 2, 7, 10), `vshIdStorageLookup`,
   `sceErrorGetExternalString` (os0:kd/error_table.bin), `sceRegMgrSrvGetRegionStr` ("UC2").
-- The IME plugin's job threads (SceImeSetupJobQueue, SceImePredictionJobQueue) sometimes crash (jump to 0, or a BKPT
-  after unlocking a lightweight mutex it does not own) inside libpaf's resource loader: both load from
-  vs0:vsh/shell/ime_plugin.rco through the same paf Resource and each reopens the RCO; the file object one thread
-  holds is freed under the other (shared_ptr refcount reaching 0 in ScePaf+0x6D3B4). It is intermittent (2 of 4 user
-  sessions, 1 of ~10 test runs), only the IME (on-screen keyboard) is lost, and the shell keeps running.
-- Shell text is placed too high in its line textures: the tops of glyphs are cut (lock screen clock, date, status
-  bar) and the health warning's lines overlap. Same with libpvf on LLE or HLE (`--hle-modules=libpvf`), with or
-  without pd0, and no texture write is missed (VITASHARP_TEXDIRTY=verify), so it is in libpaf's text layout inputs;
-  libpaf takes the line height from scePvfGetFontInfo's ascender/descender (FontInfo +8/+0xC, 26.6) before it sets the
-  character size of the text it lays out (ScePaf+0x19B64C). It depends on how the shell started: on a direct boot the
-  text is cut; when the shell first ran the first-boot setup (same registry afterwards), its health warning and home
-  screen text come out right. Not the registry, not the model capabilities.
+- (Fixed) The IME plugin's job threads (SceImeSetupJobQueue, SceImePredictionJobQueue) crashed inside libpaf's resource
+  loader (ScePaf+0x6CCF4 calling through a freed file object, or executing paf's 0xAF free fill): both reopen
+  ime_plugin.rco through the same paf Resource and swap its file shared_ptr without a lock. On the Vita the shell runs
+  on the 4th core, the one the system keeps, so its threads never run in parallel; VitaSharp ran them on the three
+  application cores. `Scheduler` now gives the shell process its own single core (3 of 4 traced runs crashed before,
+  0 of 4 after; `--cores=1` showed the same).
+- (Fixed) Shell text cut at the top and overlapping lines: libpaf sizes its line textures from scePvfGetFontInfo
+  (ScePaf+0x19B64C) after `scePvfSetEM(lib, 1 / textSize)`. The real libpvf's GetFontInfo ignores the character size and
+  scales the face's design metrics by 64 / (unitsPerEm x EM); the HLE used the current character size instead (the
+  10.125 pt default = 18 px before any layout, hence the 18-px line textures; whatever size was set last afterwards,
+  which is why some runs looked right). libpvf is HLE for system programs too (it has an HLE), so this was not an LLE
+  difference.
 - pd0 is not needed: it is factory data (Welcome Park, pd0:data/systembgm) that no system update carries. With
   `install-firmware PSVUPDAT.PUP` (os0 + vs0) plus sa0 fonts the shell boots to the home screen; install-firmware says
   when sa0 or pd0 are missing.

@@ -7,7 +7,7 @@ namespace VitaSharp.Core.Input;
 public static class DefaultMappings
 {
     /// <summary>Keyboard: arrows = D-pad, X/Space = Cross, C = Circle, Z = Square, V = Triangle, Q/E = L/R,
-    /// Enter = Start, Backspace/right Shift = Select, WASD = left stick, IJKL = right stick.</summary>
+    /// Enter = Start, Backspace/right Shift = Select, Home = PS button, WASD = left stick, IJKL = right stick.</summary>
     public static ControllerProfile Keyboard()
     {
         var p = new ControllerProfile { Id = ControllerProfile.KeyboardId, Name = "Keyboard", Kind = ControllerKind.Keyboard };
@@ -15,6 +15,7 @@ public static class DefaultMappings
         K(VitaControl.Up, "Up"); K(VitaControl.Down, "Down"); K(VitaControl.Left, "Left"); K(VitaControl.Right, "Right");
         K(VitaControl.Cross, "X", "Space"); K(VitaControl.Circle, "C"); K(VitaControl.Square, "Z"); K(VitaControl.Triangle, "V");
         K(VitaControl.L, "Q"); K(VitaControl.R, "E"); K(VitaControl.Start, "Enter"); K(VitaControl.Select, "Backspace", "ShiftRight");
+        K(VitaControl.PS, "Home");
         K(VitaControl.LStickUp, "W"); K(VitaControl.LStickDown, "S"); K(VitaControl.LStickLeft, "A"); K(VitaControl.LStickRight, "D");
         K(VitaControl.RStickUp, "I"); K(VitaControl.RStickDown, "K"); K(VitaControl.RStickLeft, "J"); K(VitaControl.RStickRight, "L");
         // keys are digital: no deadzone needed
@@ -39,6 +40,7 @@ public static class DefaultMappings
         SetTriggersAsShoulders(p, true);
         p.Add(VitaControl.Start, InputBinding.Of(PadButton.Start));
         p.Add(VitaControl.Select, InputBinding.Of(PadButton.Back));
+        p.Add(VitaControl.PS, InputBinding.Of(PadButton.Guide)); // PS (DualShock/DualSense), Xbox guide, Home
         p.Add(VitaControl.Up, InputBinding.Of(PadButton.DpadUp));
         p.Add(VitaControl.Down, InputBinding.Of(PadButton.DpadDown));
         p.Add(VitaControl.Left, InputBinding.Of(PadButton.DpadLeft));
@@ -69,6 +71,7 @@ public static class DefaultMappings
             B(VitaControl.Square, 0); B(VitaControl.Cross, 1); B(VitaControl.Circle, 2); B(VitaControl.Triangle, 3);
             B(VitaControl.L, 4); B(VitaControl.R, 5); B(VitaControl.L, 6); B(VitaControl.R, 7);
             B(VitaControl.Select, 8); B(VitaControl.Start, 9); B(VitaControl.L3, 10); B(VitaControl.R3, 11);
+            B(VitaControl.PS, 12);
             Stick(p, 0, 1, VitaControl.LStickLeft); Stick(p, 2, 5, VitaControl.RStickLeft);
         }
         else

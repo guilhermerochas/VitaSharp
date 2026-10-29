@@ -414,10 +414,11 @@ public sealed class Emulator : IDisposable
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
         IsSystemProgram = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase);
         _startFirst.Clear();
+        RunsOnSystemCore = IsSystemProgram && string.Equals(self, ShellSelf, StringComparison.OrdinalIgnoreCase)
+            && Path.GetFileName(Path.TrimEndingDirectorySeparator(AppPath)).Equals("shell", StringComparison.OrdinalIgnoreCase);
         // the shell starting = the system software coming up with the memory card inserted: titles VitaSharp installed
         // (or that were copied into ux0:app) get the appmeta the Vita's installer leaves, for the shell's database
-        if (IsSystemProgram && string.Equals(self, ShellSelf, StringComparison.OrdinalIgnoreCase)
-            && Path.GetFileName(Path.TrimEndingDirectorySeparator(AppPath)).Equals("shell", StringComparison.OrdinalIgnoreCase))
+        if (RunsOnSystemCore)
             Package.AppMeta.Sync(Path.Combine(Options.FsRoot, "ux0"), Log.Info);
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
         // per-title shader/pipeline caches start warming up while the executable loads
@@ -467,6 +468,10 @@ public sealed class Emulator : IDisposable
     /// it runs with system privileges and uses the firmware's own user-mode libraries (LLE) where VitaSharp's HLE
     /// stops: the process preloads, the sysmodules it loads and the libraries those import.</summary>
     public bool IsSystemProgram { get; private set; }
+
+    /// <summary>The process is the shell (vs0:vsh/shell/shell.self): its threads run on the Vita's 4th core, the one
+    /// the system keeps for itself, instead of the three application cores (<see cref="Kernel.Scheduler"/>).</summary>
+    public bool RunsOnSystemCore { get; private set; }
 
     /// <summary>Program authority ID of the main executable's SELF (0 for a plain ELF).</summary>
     public ulong ProgramAuthorityId { get; private set; }
