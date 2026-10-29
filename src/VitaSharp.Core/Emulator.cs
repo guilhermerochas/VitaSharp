@@ -171,11 +171,22 @@ public sealed class Emulator : IDisposable
         Vfs.Mount("addcont0", Path.Combine(Options.FsRoot, "ux0", "addcont", TitleId));
 
         Klicensee = FindKlicensee();
+        string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
+        IsSystemProgram = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase);
+        _startFirst.Clear();
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
         // per-title shader/pipeline caches start warming up while the executable loads
         try { Gpu.Backend?.BeginTitle(TitleId); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
 
+        if (Vfs.Resolve("app0:" + self) is { } selfHost && File.Exists(selfHost))
+        {
+            using var fs = File.OpenRead(selfHost);
+            var head = new byte[Math.Min(fs.Length, 0x1000)];
+            fs.ReadExactly(head);
+            ProgramAuthorityId = SelfDecryptor.ProgramAuthorityId(head);
+        }
         MainModule = LoadModule("app0:" + self);
+        if (IsSystemProgram) Log.Info($"System program {MainModule.Name}, authority ID 0x{ProgramAuthorityId:X16}");
         Loader.TitlePatches.Apply(TitleId, MainModule.Name, Options.PatchDir);
         if (MainModule.TlsInit != 0 || MainModule.TlsAreaSize != 0)
         {
@@ -193,8 +204,103 @@ public sealed class Emulator : IDisposable
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
+        if (IsSystemProgram) PreloadFirmwareModules(preloadDisabled);
         foreach (uint nid in Linker.UnresolvedVariables())
             Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"})");
+    }
+
+    /// <summary>The running executable is part of the system software (vs0:app/NPXS*, vs0:vsh/shell/shell.self...):
+    /// it runs with system privileges and uses the firmware's own user-mode libraries (LLE) where VitaSharp's HLE
+    /// stops: the process preloads, the sysmodules it loads and the libraries those import.</summary>
+    public bool IsSystemProgram { get; private set; }
+
+    /// <summary>Program authority ID of the main executable's SELF (0 for a plain ELF).</summary>
+    public ulong ProgramAuthorityId { get; private set; }
+
+    /// <summary>SceSblACMgr's "game program" class: games (authority 0x2F...) and plain/homebrew executables; the
+    /// system software (shell, NPXS apps) is not.</summary>
+    public bool IsGameProgram => !IsSystemProgram || ProgramAuthorityId >> 56 == 0x2F;
+
+    /// <summary>Modules loaded with the process, started before the others (each after the modules it imports from).</summary>
+    readonly List<LoadedModule> _startFirst = new();
+
+    /// <summary>
+    /// The modules the Vita's module manager loads into every process before its main thread, unless the process
+    /// parameters' preload-disabled bits exclude them (bit, file in vs0:sys/external; same list as Vita3K). Games keep
+    /// VitaSharp's HLE for these (only copies shipped in app0:sce_module are loaded); system programs get the firmware's.
+    /// </summary>
+    static readonly (uint Bit, string Name)[] ProcessPreloads =
+    [
+        (0x00010000, "libc"), (0x00080000, "libshellsvc"), (0x00100000, "libcdlg"), (0x00200000, "libfios2"),
+        (0x00400000, "apputil"), (0x00800000, "libSceFt2"), (0x01000000, "libpvf"),
+    ];
+
+    void PreloadFirmwareModules(uint preloadDisabled)
+    {
+        foreach (var (bit, name) in ProcessPreloads)
+        {
+            if ((preloadDisabled & bit) != 0 || KeepOnHle(name)) continue;
+            string path = $"vs0:sys/external/{name}.suprx";
+            if (Vfs.Resolve(path) is not { } host || !File.Exists(host)) continue;
+            if (Kernel.Modules.Values.Any(m => string.Equals(m.Path, $"app0:sce_module/{name}.suprx", StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
+            var m = LoadModule(path);
+            _startFirst.AddRange(LoadFirmwareDependencies(m));
+            _startFirst.Add(m);
+        }
+    }
+
+    HashSet<string>? _keepHle;
+
+    /// <summary>A library (or module file name) the HLE-modules option keeps on HLE.</summary>
+    internal bool KeepOnHle(string name)
+    {
+        _keepHle ??= new HashSet<string>(Options.HleModules ?? (Environment.GetEnvironmentVariable(EnvVars.HleModules) ?? "")
+            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+        return _keepHle.Contains(name);
+    }
+
+    /// <summary>Firmware modules a process loads only on request (sceSysmoduleLoadModuleInternal*: libpaf takes its
+    /// heap sizes as module_start arguments), so they are never pulled in as another module's dependency.</summary>
+    public static readonly HashSet<string> OnRequestModules = new(StringComparer.OrdinalIgnoreCase) { "libpaf" };
+
+    /// <summary>
+    /// Loads (without starting them) the firmware modules that provide the libraries <paramref name="root"/> imports,
+    /// and theirs in turn, the way sysmodule loads a module's dependencies. Returns them in start order (each after
+    /// its own dependencies). A library is taken from the firmware when the HLE does not implement every function
+    /// imported from it and no loaded module exports it; libraries named in the HLE-modules option stay on HLE, and
+    /// <see cref="OnRequestModules"/> wait for the program to load them.
+    /// </summary>
+    public List<LoadedModule> LoadFirmwareDependencies(LoadedModule root)
+    {
+        var index = Firmware.FirmwareLibraries.For(Options.FsRoot);
+        var order = new List<LoadedModule>();
+        var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Visit(LoadedModule m)
+        {
+            foreach (var (lib, _, nids) in m.Imports)
+            {
+                if (index.Provider(lib) is not { } provider) continue;
+                string file = Path.GetFileNameWithoutExtension(provider.VitaPath);
+                if (OnRequestModules.Contains(file) || KeepOnHle(lib) || KeepOnHle(file)) continue;
+                if (Kernel.Modules.Values.Any(x => string.Equals(x.Path, provider.VitaPath, StringComparison.OrdinalIgnoreCase))) continue;
+                if (nids.All(n => Linker.TryGetFunctionExport(n, out _) || Hle.IsImplemented(n))) continue;
+                if (!visiting.Add(provider.VitaPath)) continue;
+                LoadedModule dep;
+                try { dep = LoadModule(provider.VitaPath); }
+                catch (Exception e) when (e is not OutOfMemoryException)
+                {
+                    Log.Warn($"Firmware dependency {provider.VitaPath} (for {lib}) failed to load: {e.Message}");
+                    continue;
+                }
+                Log.Info($"  {provider.VitaPath} provides {lib} for {m.Name} (LLE)");
+                Visit(dep);
+                order.Add(dep);
+            }
+        }
+        Visit(root);
+        return order;
     }
 
     uint ProcessParamField(int offset)
@@ -261,7 +367,9 @@ public sealed class Emulator : IDisposable
         Kernel.MainThread = main;
 
         // Library module_start functions run (in load order) before the main thread.
-        foreach (var m in Kernel.Modules.Values.Where(m => m != MainModule && m.StartEntry != 0).OrderBy(m => m.Uid))
+        // (firmware dependencies of a system program first, each after the modules it imports from)
+        foreach (var m in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
+                     .Where(m => m != MainModule && m.StartEntry != 0).ToList())
             RunOnNewThread($"start:{m.Name}", m.StartEntry);
         if (args is { Length: > 0 })
         {

@@ -13,9 +13,23 @@ public static unsafe class Relocation
     const uint None = 0, Abs32 = 2, Rel32 = 3, Abs8 = 8, ThumbCall = 10, Call = 28, Jump24 = 29, Target1 = 38,
         V4BX = 40, Target2 = 41, Prel31 = 42, MovwAbsNc = 43, MovtAbs = 44, ThumbMovwAbsNc = 47, ThumbMovtAbs = 48, RBase = 255;
 
+    /// <summary>When set (<see cref="RelocateImage"/>), relocations patch this host buffer instead of guest memory.</summary>
+    [ThreadStatic] static byte* _imageBase;
+
+    static byte* At(uint p) => _imageBase != null ? _imageBase + p : GuestMemory.Ptr(p);
+
+    /// <summary>Applies a relocation stream to a module image in a host buffer (segments laid out at the offsets in
+    /// <paramref name="segs"/>), for reading a module's tables without loading it.</summary>
+    public static void RelocateImage(ReadOnlySpan<byte> data, IReadOnlyDictionary<int, SegmentInfo> segs, byte* image)
+    {
+        _imageBase = image;
+        try { Relocate(data, segs); }
+        finally { _imageBase = null; }
+    }
+
     static void Apply(uint p, uint code, uint s, uint a)
     {
-        byte* ptr = GuestMemory.Ptr(p);
+        byte* ptr = At(p);
         switch (code)
         {
             case None: case V4BX: case RBase: return;
@@ -217,7 +231,7 @@ public static unsafe class Relocation
     static void RelocateAbsFromOriginal(IReadOnlyDictionary<int, SegmentInfo> segs, uint patchSeg, uint gAddr, uint gOffset, ref uint gSaddr)
     {
         uint patchStart = segs.TryGetValue((int)patchSeg, out var ps) ? ps.Address : 0;
-        uint orig = GuestMemory.Read<uint>(patchStart + gOffset);
+        uint orig = *(uint*)At(patchStart + gOffset);
         uint segbase = 0;
         foreach (var seg in segs.Values)
         {

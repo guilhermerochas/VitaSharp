@@ -148,9 +148,15 @@ public static class Program
     public static string ResolveApp(string arg)
     {
         if (Directory.Exists(arg)) return arg;
+        // a folder of the virtual file system: vs0:vsh/shell (the shell, with --self=shell.self)
+        if (arg.Length > 4 && arg.IndexOf(':') is > 1 and var colon && Path.Combine(FsRoot, arg[..colon], arg[(colon + 1)..].TrimStart('/')) is var dev && Directory.Exists(dev))
+            return dev;
         var p = Path.Combine(Ux0, "app", arg);
         if (Directory.Exists(p)) return p;
-        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p})");
+        // system applications of the installed firmware (vs0:app/NPXS*)
+        var sys = Path.Combine(FsRoot, "vs0", "app", arg);
+        if (Directory.Exists(sys)) return sys;
+        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
     }
 
     static bool IsArchive(string path) =>

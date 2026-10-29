@@ -51,6 +51,15 @@ public static class SelfDecryptor
         return false;
     }
 
+    /// <summary>The program authority ID of a SELF (app info +0), which SceSblACMgr checks for privileges: 0x2F00...
+    /// for games, 0x2800... / 0x2100... for the system software. 0 for a plain ELF.</summary>
+    public static ulong ProgramAuthorityId(ReadOnlySpan<byte> file)
+    {
+        if (!IsSelf(file) || file.Length < 32 + 80) return 0;
+        long appinfoOff = (long)U64LE(file, 32 + 24);
+        return appinfoOff + 8 <= file.Length ? U64LE(file, (int)appinfoOff) : 0;
+    }
+
     /// <summary>Returns a plain ELF. Input may already be an ELF.</summary>
     public static byte[] ToElf(byte[] file, byte[]? klicensee)
     {

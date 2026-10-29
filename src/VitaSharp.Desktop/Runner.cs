@@ -173,7 +173,7 @@ public static class Runner
             renderer = new VulkanRenderer(rendererOptions);
             renderer.AnomalyDetected += diag.OnAnomaly;
             emu.Gpu.Backend = renderer;
-            emu.LoadTitle(appPath);
+            emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
             emu.Start();
         };
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
@@ -311,7 +311,7 @@ public static class Runner
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
         var wall = Stopwatch.StartNew();
-        emu.LoadTitle(appPath);
+        emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
