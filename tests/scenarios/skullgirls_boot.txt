@@ -1,0 +1,6 @@
+# Skullgirls 2nd Encore (PCSE00606): boot, title, menus into a fight.
+# Regression: character sprites (palette-indexed atlas, fragment program C8CBA20CD85323A8) must show dark line art
+# and shading, not flat bright colours.
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/skullgirls_boot.txt --data=<scratch root>
+title=PCSE00606
+args=--frames=1800 --seconds=600 --dump-every=25 --shader-cache --debug-mode --input=start@f300:f6,cross@f350:f6,start@f400:f6,cross@f450:f6,start@f500:f6,cross@f550:f6,start@f600:f6,cross@f650:f6,start@f700:f6,cross@f750:f6,start@f800:f6,cross@f850:f6,start@f900:f6,cross@f950:f6,start@f1000:f6,cross@f1050:f6,start@f1100:f6,cross@f1150:f6,start@f1200:f6,cross@f1250:f6,start@f1300:f6,cross@f1350:f6,start@f1400:f6,cross@f1450:f6,start@f1500:f6,cross@f1550:f6

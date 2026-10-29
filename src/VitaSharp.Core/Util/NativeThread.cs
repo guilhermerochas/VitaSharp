@@ -37,6 +37,18 @@ public static class NativeThread
 
     public static void Register(string name) { try { Names[CurrentId()] = name; } catch { } }
 
+    static bool _noCycleTime = !OperatingSystem.IsWindows();
+    /// <summary>CPU cycles the calling thread has consumed (Windows QueryThreadCycleTime; 0 elsewhere): the host CPU
+    /// cost of a region without the time the thread was blocked (profiling).</summary>
+    public static ulong CycleTime()
+    {
+        if (_noCycleTime) return 0;
+        try { return QueryThreadCycleTime(-2, out ulong c) ? c : 0; } // -2: GetCurrentThread() pseudo-handle
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { _noCycleTime = true; return 0; }
+    }
+
+    [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] static extern bool QueryThreadCycleTime(nint thread, out ulong cycles);
+
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("libc", SetLastError = true)] static extern long syscall(long number);
     [DllImport("libc")] static extern int pthread_threadid_np(nint thread, out ulong id);
