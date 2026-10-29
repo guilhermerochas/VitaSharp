@@ -295,6 +295,8 @@ public sealed class Emulator : IDisposable
         if (Interlocked.Exchange(ref _terminated, 1) != 0) return;
         Log.Info($"Process {Describe()} {why}");
         Running = false;
+        // the screen goes back to the parent (the shell) at once, not after the threads are gone (that can take seconds)
+        if (Parent is { } parent && ReferenceEquals(Vita.Foreground, this)) Vita.SetForeground(parent);
         Kernel.StopAllThreads();
         foreach (var c in _children.ToArray()) c.Terminate("ended with its parent");
         Task.Run(() =>
@@ -448,8 +450,17 @@ public sealed class Emulator : IDisposable
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
         if (IsSystemProgram) PreloadFirmwareModules(preloadDisabled);
+        // a system program's variable imports from firmware modules it loads itself later through sysmodule (ScePaf*
+        // from libpaf, SceCommonGuiDialog's class tables...) are bound when that module loads; only the others are missing
+        var firmware = IsSystemProgram ? Firmware.FirmwareLibraries.For(Options.FsRoot) : null;
+        int later = 0;
         foreach (uint nid in Linker.UnresolvedVariables())
-            Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"})");
+        {
+            string source = Linker.VariableImportSource(nid), lib = source.Split(' ')[0];
+            if (firmware?.Provider(lib) != null) { later++; continue; }
+            Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"}) from {source}");
+        }
+        if (later > 0) Log.Info($"{later} variable imports wait for firmware modules the program loads itself (libpaf, common_gui_dialog...)");
     }
 
     /// <summary>The running executable is part of the system software (vs0:app/NPXS*, vs0:vsh/shell/shell.self...):

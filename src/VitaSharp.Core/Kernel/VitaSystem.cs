@@ -109,6 +109,21 @@ public sealed class VitaSystem
     /// <summary>The process that declared itself the shell (sceAppMgrDeclareShellProcess2).</summary>
     public Emulator? Shell => Processes.FirstOrDefault(p => p.IsShell);
 
+    /// <summary>SceAppMgr's global state block (0x80 bytes, _sceAppMgrGetAppMgrState copies it whole): +0 prioritize
+    /// system chat, +4 system impose state, +8 initialised to -1, +0xC audio routing, +0x10 recommended screen
+    /// orientation, +0x14 system impose state 2.</summary>
+    public readonly byte[] AppMgrState = InitialAppMgrState();
+
+    static byte[] InitialAppMgrState()
+    {
+        var s = new byte[0x80];
+        BitConverter.TryWriteBytes(s.AsSpan(8), -1);
+        return s;
+    }
+
+    /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
+    public int BgmPortOwner = -1;
+
     // ---- SceAppMgr's events for the shell (sceAppMgrReceiveShellEvent): 0x40-byte records, first word the event type
 
     public const int ShellEventSize = 0x40;

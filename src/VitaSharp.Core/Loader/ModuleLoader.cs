@@ -48,6 +48,7 @@ public sealed class Linker(IImportResolver hle)
     readonly Dictionary<uint, uint> _varExports = new();
     readonly List<(uint nid, uint libNid, string libName, uint stub)> _funcBindings = new();
     readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
+    readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
     public uint ProcessParam { get; private set; }
     public Action<uint, uint>? InvalidateCode { get; set; }
@@ -92,7 +93,7 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
-    internal void BindVariableImport(uint nid, uint entry, Dictionary<int, SegmentInfo> segs)
+    internal void BindVariableImport(uint nid, uint entry, Dictionary<int, SegmentInfo> segs, string source = "")
     {
         uint hdr = GuestMemory.R32(entry);
         uint size = (hdr >> 4) & 0xFFFFFF;
@@ -107,8 +108,15 @@ public sealed class Linker(IImportResolver hle)
                 addr = hle.GetHleVariable(nid);
             }
             _varBindings.Add((nid, relocs, segs));
+            _varSources.TryAdd(nid, source);
         }
         if (relocs.Length > 0 && addr != 0) Relocation.Relocate(relocs, segs, true, addr);
+    }
+
+    /// <summary>The library a variable import NID is imported from and the module that imports it.</summary>
+    public string VariableImportSource(uint nid)
+    {
+        lock (_lock) return _varSources.GetValueOrDefault(nid, "");
     }
 
     /// <summary>NIDs of variable imports that neither a loaded module nor HLE provides (their relocations were never
@@ -328,7 +336,7 @@ public static class ModuleLoader
             {
                 var vn = GuestMemory.Span<uint>(varNids, nvar).ToArray();
                 var ve = GuestMemory.Span<uint>(varEntries, nvar).ToArray();
-                for (int i = 0; i < nvar; i++) linker.BindVariableImport(vn[i], ve[i], m.Segments);
+                for (int i = 0; i < nvar; i++) linker.BindVariableImport(vn[i], ve[i], m.Segments, $"{lib} (imported by {m.Name})");
             }
             m.Imports.Add((lib, libNid, fn));
             if (size == 0) break;
