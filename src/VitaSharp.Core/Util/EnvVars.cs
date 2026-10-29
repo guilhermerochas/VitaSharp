@@ -28,6 +28,8 @@ public static class EnvVars
     public const string GeneratorVersionSalt = "VITASHARP_GENERATOR_VERSION_SALT";
     public const string GlfwPlatform = "VITASHARP_GLFW_PLATFORM";
     public const string GpuDumpAt = "VITASHARP_GPU_DUMP_AT";
+    public const string GpuProfile = "VITASHARP_GPU_PROFILE";
+    public const string GpuQuirks = "VITASHARP_GPU_QUIRKS";
     public const string HleModules = "VITASHARP_HLE_MODULES";
     public const string Hunt = "VITASHARP_HUNT";
     public const string HuntNative = "VITASHARP_HUNT_NATIVE";
