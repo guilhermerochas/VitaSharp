@@ -159,6 +159,9 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "boot-shell":
+                // the PS Vita system software itself: vs0:vsh/shell/shell.self (home screen, LiveArea, system apps)
+                return Runner.Run(ResolveApp("vs0:vsh/shell"), args.Skip(1).Append("--self=shell.self").ToArray());
             case "test" when args.Length >= 2:
                 return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
@@ -344,7 +347,9 @@ public static class Program
         Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
-        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
+        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (also a system app: NPXS10008; a vs0: folder with --self=x.self)");
+        Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
+        Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");

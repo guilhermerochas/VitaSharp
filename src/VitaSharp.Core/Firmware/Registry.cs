@@ -29,6 +29,9 @@ public sealed class Registry
 
     public static Registry For(string fsRoot) => Instances.GetOrAdd(System.IO.Path.GetFullPath(fsRoot), r => new Registry(r));
 
+    /// <summary>A fresh, uncached instance (tests: reading back what an earlier instance saved).</summary>
+    internal static Registry Open(string fsRoot) => new(System.IO.Path.GetFullPath(fsRoot));
+
     readonly object _lock = new();
     readonly Dictionary<string, Key> _keys = new(StringComparer.Ordinal);
     readonly Dictionary<string, byte[]> _written = new(StringComparer.Ordinal);

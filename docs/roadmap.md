@@ -45,8 +45,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
-  vários processos
+- [ ] Sistema do Vita de verdade (shell.self e apps de vs0:app, ver docs/notes/system-apps.md): o shell já chega
+  à tela inicial e abre a LiveArea e os apps do sistema (um processo por vez); faltam os jogos instalados no
+  app.db, vários processos ao mesmo tempo (IPC do SceShellSvc), a configuração inicial e as páginas das
+  Configurações/Troféus
 
 ## Bugs em aberto
 

@@ -243,11 +243,7 @@ public sealed class LiveAreaView : ShellCanvas
     public void Start()
     {
         if (_launch >= 0 || Running) return;
-        if (_app.IsSystem)
-        {
-            ShowStatus("Apps do sistema ainda não rodam no VitaSharp (a próxima etapa é o shell do Vita).");
-            return;
-        }
+        // system apps (vs0:app) run like games, on the firmware's own libraries (see docs/notes/system-apps.md)
         _launch = 0;
         Animate(() =>
         {
