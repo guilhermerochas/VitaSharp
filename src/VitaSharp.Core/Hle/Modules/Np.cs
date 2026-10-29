@@ -49,7 +49,7 @@ public sealed class NpManager : HleModule
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
         }
         var acct = PsnAccount.Current;
-        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, servers unreachable" : "signed out of PSN")})");
+        Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, {(acct.LocalServices ? "local PSN services" : "servers unreachable")}" : "signed out of PSN")})");
         return 0;
     }
 

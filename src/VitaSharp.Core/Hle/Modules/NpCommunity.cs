@@ -85,15 +85,17 @@ public sealed class NpCommunity(string name)
     /// <summary>SceNpCommunicationId at <paramref name="commId"/> as "NPWR12345_00".</summary>
     public static string ReadCommId(uint commId) => $"{GuestMemory.ReadCString(commId, 9)}_{GuestMemory.Read<byte>(commId + 10):D2}";
 
-    public int CreateTitleCtx(uint commId)
+    /// <summary>A NULL communication id means the application's own (the one given to sceNpInit; Vita3K accepts NULL
+    /// too): <paramref name="defaultCommId"/> supplies it.</summary>
+    public int CreateTitleCtx(uint commId, Func<string?>? defaultCommId = null)
     {
         lock (_lock)
         {
             if (!_inited) return NOT_INITIALIZED;
-            if (commId == 0) return INSUFFICIENT_ARGUMENT;
+            string? comm = commId != 0 ? ReadCommId(commId) : defaultCommId?.Invoke();
+            if (comm == null) return INSUFFICIENT_ARGUMENT;
             if (_ctx.Count >= MaxObjects) return TOO_MANY_OBJECTS;
             int id = _nextId++;
-            string comm = ReadCommId(commId);
             _ctx[id] = comm;
             Log.Info($"{name}: title context {id} for {comm} ({(Local ? "local PSN services" : "offline")})");
             return id;
@@ -233,6 +235,16 @@ public sealed class NpCommunity(string name)
     }
 
     public static string Me => PsnAccount.Current.OnlineId;
+
+    /// <summary>The running application's communication id: sceNpInit's, else its trophy set's folder name.</summary>
+    public static string? DefaultCommId(Emulator? emu)
+    {
+        if (emu == null) return null;
+        var np = emu.Hle.Modules.OfType<NpManager>().FirstOrDefault();
+        if (np?.CommunicationId is { } c) return c;
+        var dir = emu.Vfs.Resolve("app0:sce_sys/trophy");
+        return dir != null && Directory.Exists(dir) ? Directory.GetDirectories(dir).Select(Path.GetFileName).Order().FirstOrDefault() : null;
+    }
 }
 
 /// <summary>
@@ -254,7 +266,7 @@ public sealed class NpScore : HleModule
 
     [Hle] int sceNpScoreInit(int prio, int affinity, uint opt) => _lib.Init();
     [Hle] int sceNpScoreTerm() => _lib.Term();
-    [Hle] int sceNpScoreCreateTitleCtx(uint commId, uint passphrase, uint selfNpId) => _lib.CreateTitleCtx(commId);
+    [Hle] int sceNpScoreCreateTitleCtx(uint commId, uint passphrase, uint selfNpId) => _lib.CreateTitleCtx(commId, () => NpCommunity.DefaultCommId(Emu));
     [Hle] int sceNpScoreDeleteTitleCtx(int id) => _lib.DeleteTitleCtx(id);
     [Hle] int sceNpScoreCreateRequest(int ctxId) => _lib.CreateRequest(ctxId);
     [Hle] int sceNpScoreDeleteRequest(int reqId) => _lib.DeleteRequest(reqId);
@@ -565,7 +577,7 @@ public sealed class NpTus : HleModule
 
     [Hle] int sceNpTusInit(int prio, int affinity, uint opt) => _lib.Init();
     [Hle] int sceNpTusTerm() => _lib.Term();
-    [Hle] int sceNpTusCreateTitleCtx(uint commId, uint passphrase, uint selfNpId) => _lib.CreateTitleCtx(commId);
+    [Hle] int sceNpTusCreateTitleCtx(uint commId, uint passphrase, uint selfNpId) => _lib.CreateTitleCtx(commId, () => NpCommunity.DefaultCommId(Emu));
     [Hle] int sceNpTusDeleteTitleCtx(int id) => _lib.DeleteTitleCtx(id);
     [Hle] int sceNpTusCreateRequest(int ctxId) => _lib.CreateRequest(ctxId);
     [Hle] int sceNpTusDeleteRequest(int reqId) => _lib.DeleteRequest(reqId);

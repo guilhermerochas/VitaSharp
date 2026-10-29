@@ -134,6 +134,15 @@ public static class Runner
         // like the console's pop-up
         using var trophyToast = new TrophyToast((bgra, w, h) => renderer?.SetOverlay(bgra, w, h), () => window.FramebufferSize.Height);
         VitaSharp.Core.Hle.Np.TrophyNotifications.Unlocked += e => { trophyToast.Enqueue(e); diag.Status?.Invoke(TrophyNotice(e)); };
+        // --trophy-toast-test=<seconds>: shows the notification of the title's trophy 1 (nothing is unlocked), to check it
+        if (int.TryParse(Opt(options, "--trophy-toast-test"), out int toastAt))
+            _ = Task.Delay(TimeSpan.FromSeconds(toastAt)).ContinueWith(_ =>
+            {
+                var set = VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(appPath).FirstOrDefault();
+                var pkg = set.TrpPath != null ? VitaSharp.Core.Hle.Np.TrophyPackage.Load(set.TrpPath, set.CommId) : null;
+                if (pkg?.Trophies.Count > 1)
+                    trophyToast.Enqueue(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent(set.CommId, pkg.Title, pkg.Trophies[1], pkg.TrophyIcon(pkg.Trophies[1].Id)));
+            });
         window.DiagnosticRequested += () => diag.Capture("F10");
         // F8: GPU dump recording (docs/notes/gpu-dump.md)
         window.GpuDumpToggled += () => GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo);
