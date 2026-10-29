@@ -56,6 +56,7 @@ public static class PkgInstaller
         File.Copy(licensePath, Path.Combine(licDir, pkg.ContentId + ".rif"), true);
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));
         File.Copy(licensePath, Path.Combine(dest, "sce_sys", "package", "work.bin"), true);
+        if (type is PkgContentType.App or PkgContentType.Patch) AppMeta.Installed(ux0Root, titleId, log);
         progress?.Invoke(1.0);
         return new InstalledTitle(titleId, sfo.Title, dest, type);
     }

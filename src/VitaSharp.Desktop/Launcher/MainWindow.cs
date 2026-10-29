@@ -1,4 +1,4 @@
-using VitaSharp.Core.Util;
+﻿using VitaSharp.Core.Util;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia;
@@ -97,6 +97,11 @@ public sealed class MainWindow : Window
         }
         addGame.Flyout = addMenu;
         _installButtons.Add(addGame);
+        // the PS Vita system software itself (the firmware's shell): available once the firmware is installed
+        var system = new Button { Content = "Sistema do Vita", VerticalAlignment = VerticalAlignment.Center, IsEnabled = ShellInstalled };
+        ToolTip.SetTip(system, "Inicia o sistema do Vita do firmware instalado (tela inicial, LiveArea); os jogos abertos por ele rodam na mesma sessão");
+        system.Click += (_, _) => LaunchSystem();
+        actions.Children.Add(system);
         actions.Children.Add(addGame);
         actions.Children.Add(MakeButton("Refresh", () => { Refresh(); return Task.CompletedTask; }));
         actions.Children.Add(MakeButton("Settings", OpenSettings));
@@ -364,7 +369,16 @@ public sealed class MainWindow : Window
 
     // ------------------------------------------------------------------ launching
 
-    void Launch(GameEntry g)
+    void Launch(GameEntry g) => StartEmulator(g.Title, g.TitleId, ["run", g.Path], g);
+
+    /// <summary>"Sistema do Vita": boots the firmware's own shell (vs0:vsh/shell/shell.self) in the emulator window: its
+    /// home screen and LiveArea; the games it starts run as processes of the same emulator session.</summary>
+    void LaunchSystem() => StartEmulator("Sistema do Vita", "shell", ["boot-shell"], null);
+
+    /// <summary>The firmware is installed with its shell (needed for <see cref="LaunchSystem"/>).</summary>
+    static bool ShellInstalled => File.Exists(Path.Combine(Program.FsRoot, "vs0", "vsh", "shell", "shell.self"));
+
+    void StartEmulator(string title, string titleId, string[] command, GameEntry? g)
     {
         if (_running != null) return;
         var exe = Environment.ProcessPath!;
@@ -375,15 +389,14 @@ public sealed class MainWindow : Window
         // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
         if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
-        psi.ArgumentList.Add("run");
-        psi.ArgumentList.Add(g.Path);
+        foreach (var c in command) psi.ArgumentList.Add(c);
         foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
         psi.Environment[EnvVars.Data] = Program.DataRoot;
         // the RPCN password goes in the environment of the game process, not on its command line
         if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
 
         _logLines.Clear(); _logChars = 0; _log.Text = "";
-        AppendLog($"> {g.Title} ({g.TitleId})");
+        AppendLog($"> {title} ({titleId})");
         try
         {
             var p = Process.Start(psi)!;
@@ -395,8 +408,8 @@ public sealed class MainWindow : Window
             p.BeginErrorReadLine();
             _running = p;
             _runningGame = g;
-            _shell?.SetRunning(ShellAppOf(g));
-            SetStatus($"Running {g.Title}");
+            if (g != null) _shell?.SetRunning(ShellAppOf(g));
+            SetStatus($"Running {title}");
             ShowDetails(_list.SelectedItem as GameEntry);
         }
         catch (Exception e)

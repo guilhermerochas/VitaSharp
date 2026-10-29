@@ -156,7 +156,7 @@ public sealed class ThreadMgr : HleModule
 
     [Hle] int sceKernelGetCurrentThreadVfpException() => VfpExceptionWord(Self);
 
-    [Hle] int sceKernelGetProcessId() => 0x40010003;
+    [Hle] int sceKernelGetProcessId() => Emu.Pid;
 
     /// <summary>Class of the threadmgr object behind a UID (thread 1 ... simple event 13; see KernelObject.UidClass).</summary>
     [Hle]
@@ -195,7 +195,7 @@ public sealed class ThreadMgr : HleModule
         {
             if (i >= 3) break;
             if (!t.HasCore) continue;
-            KernelInfo.Put(full, 4 + i * 12, 0x40010003);
+            KernelInfo.Put(full, 4 + i * 12, Emu.Pid);
             KernelInfo.Put(full, 8 + i * 12, t.Uid);
             KernelInfo.Put(full, 12 + i * 12, t.Priority);
             i++;
@@ -291,7 +291,7 @@ public sealed class ThreadMgr : HleModule
         int o = 0;
         void U32(Span<byte> b, uint v) { System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(b[o..], v); o += 4; }
         U32(buf, size);
-        U32(buf, 0x40010003);                              // processId
+        U32(buf, (uint)Emu.Pid);                           // processId
         var nameField = buf.Slice(o, 32);
         int nameLen = Math.Min(31, System.Text.Encoding.UTF8.GetByteCount(t.Name));
         Span<byte> nameBytes = stackalloc byte[System.Text.Encoding.UTF8.GetMaxByteCount(31)];

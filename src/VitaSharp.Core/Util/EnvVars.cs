@@ -60,6 +60,8 @@ public static class EnvVars
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";
     public const string ShaderWorkerPrio = "VITASHARP_SHADER_WORKER_PRIO";
+    /// <summary>1 = an application the shell launches replaces the shell instead of running as a second process.</summary>
+    public const string SingleProcess = "VITASHARP_SINGLE_PROCESS";
     public const string SkipUnicorn = "VITASHARP_SKIP_UNICORN";
     public const string SnapFs = "VITASHARP_SNAP_FS";
     public const string Swz1 = "VITASHARP_SWZ1";

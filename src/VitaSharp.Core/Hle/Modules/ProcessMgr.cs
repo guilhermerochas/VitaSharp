@@ -137,7 +137,7 @@ public sealed class ProcessMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelGetCurrentProcess() => 0x40010003;
+    [Hle] int sceKernelGetCurrentProcess() => Emu.Pid;
     [Hle] int sceKernelIsCDialogAvailable() => 1;
     [Hle] int sceKernelIsGameBudget() => 1;
     [Hle] int sceKernelGetProcessTitleId(uint buf, uint size) { GuestMemory.WriteCString(buf, Emu.TitleId, (int)size); return 0; }
