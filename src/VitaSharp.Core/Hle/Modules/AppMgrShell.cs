@@ -134,6 +134,27 @@ public sealed class AppMgrShell : HleModule
         return parts.Length == 0 ? "" : parts[0] + ":" + string.Join('/', parts.Skip(1));
     }
 
+    /// <summary>(int flags, const char *name, const char *param): starts an application by title id in the background
+    /// (the shell starts NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload"). It runs
+    /// as its own process without taking the screen. Returns its application id.</summary>
+    [Hle]
+    int sceAppMgrLaunchAppByName(int flags, uint name, uint param)
+    {
+        if (name == 0) return ERR_NULL;
+        string tid = GuestMemory.ReadCString(name, 0x20);
+        var running = Emu.Vita.Processes.FirstOrDefault(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        if (running != null) return running.AppId;
+        string? dir = null;
+        foreach (var root in new[] { "vs0:app/", "ux0:app/" })
+            if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
+        if (dir == null) return unchecked((int)0x80800006);
+        var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
+        // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
+        if (param != 0) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = GuestMemory.ReadCString(param, 0x400);
+        Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
+        return app.AppId;
+    }
+
     /// <summary>(void *request): requests from applications for the shell to show a notification. The shell polls it
     /// every frame and handles a request whenever the call succeeds, so with none queued it must fail.</summary>
     [Hle] int sceAppMgrReceiveNotificationRequestForShell(uint request) => ERR_NO_EVENT;

@@ -45,6 +45,8 @@ public static class ShellEvents
     /// <summary>A launch requested by the shell finished: +4 the application id, -1 when it failed (the shell then
     /// reads the application's status and app0 path and activates it).</summary>
     public const int AppLaunched = 0xA;
+    /// <summary>An application process ended: +4 pid, +0x14 application id (the shell's handler reads the id there).</summary>
+    public const int AppEnded = 4;
     /// <summary>Bring up the LiveArea of the running application +4 (the PS button while it is in front).</summary>
     public const int ShowLiveArea = 0x10;
 }

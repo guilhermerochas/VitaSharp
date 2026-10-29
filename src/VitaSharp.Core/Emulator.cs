@@ -186,6 +186,7 @@ public sealed class Emulator : IDisposable
     {
         if (Parent != null)
         {
+            _exitStatus = status;
             Terminate($"exited (0x{status:X})");
             return true;
         }
@@ -225,10 +226,10 @@ public sealed class Emulator : IDisposable
     /// <paramref name="activate"/>. It is placed in free ranges of the shared address space; when it cannot be (an
     /// executable linked at fixed addresses that are in use) it ends and <paramref name="cannotPlace"/> runs instead.
     /// </summary>
-    public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null)
+    public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
-        var child = new Emulator(this);
+        var child = new Emulator(this) { _background = background };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
         child.Running = true;
@@ -242,7 +243,7 @@ public sealed class Emulator : IDisposable
                 Log.Info($"Process {child.Describe()} started by {Describe()}");
                 child.Start(args);
                 // the launch finished: event 0xA {application id}; the shell then activates it
-                if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
+                if (Vita.Shell != null && !background) Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
                 if (activate) Vita.SetForeground(child);
             }
             catch (InvalidOperationException e) when (e.Message.Contains("cannot map fixed segment"))
@@ -263,7 +264,8 @@ public sealed class Emulator : IDisposable
     }
 
     readonly List<Emulator> _children = new();
-    int _terminated;
+    int _terminated, _exitStatus;
+    bool _background;
 
     /// <summary>Ends this process (exit, crash, or killed by the shell): stops its threads, then frees its memory and kernel
     /// objects and gives the display back. The threads are joined on a host thread, so this can be called from one of them.</summary>
@@ -285,6 +287,10 @@ public sealed class Emulator : IDisposable
     /// <summary>Gives everything the process holds back to the system.</summary>
     void Release()
     {
+        // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
+        // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
+        // start it again on every end
+        if (Vita.Shell is { } shell && shell != this && !_background) Vita.PostShellEvent(ShellEvents.AppEnded, Pid, 0, 0, 0, AppId);
         Vita.Unregister(this);
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
@@ -627,6 +633,9 @@ public sealed class Emulator : IDisposable
     {
         if (Parent != null && Fatal == null)
         {
+            var root = Parent;
+            while (root.Parent != null) root = root.Parent;
+            if (!root.Running || !Running) return; // the emulator is shutting down
             Log.Error($"Process {Describe()} crashed in thread '{t.Name}': {e.Message}");
             Terminate("crashed");
             return;
