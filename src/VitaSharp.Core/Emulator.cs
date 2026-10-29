@@ -24,6 +24,12 @@ public sealed class EmulatorOptions
     public string? PatchDir { get; init; }
     /// <summary>The emulated PSN account (signed in by default, see <see cref="PsnAccount"/>).</summary>
     public PsnAccount Psn { get; init; } = PsnAccount.Default;
+    /// <summary>Sysmodule libraries ("libsas", "libatrac", ...) to load LLE from the installed firmware
+    /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
+    public IReadOnlyCollection<string>? LleModules { get; init; }
+    /// <summary>Sysmodule libraries to keep on HLE even when the game or the firmware provides the module
+    /// ("libult", "libSceJson", ...). Null: VITASHARP_HLE_MODULES.</summary>
+    public IReadOnlyCollection<string>? HleModules { get; init; }
 }
 
 /// <summary>

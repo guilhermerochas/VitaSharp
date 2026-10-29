@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using VitaSharp.Core;
+using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Util;
@@ -63,8 +64,15 @@ public static class Runner
         if (psnId != null && !PsnAccount.IsValidOnlineId(psnId))
             Log.Warn($"--psn-id={psnId} is not a valid online ID (3-16 letters, digits, '-' or '_', starting with a letter): using {PsnAccount.DefaultOnlineId}");
         var psn = PsnAccount.Create(OnOff(options, "--psn") ?? PsnAccount.Default.SignedIn, psnId);
+        // --lle-modules=libsas,libatrac: also load these from the installed firmware although VitaSharp has HLE for
+        // them; --hle-modules=libult,...: keep these on HLE even when the game or the firmware has the module
+        // (defaults: VITASHARP_LLE_MODULES / VITASHARP_HLE_MODULES)
+        static string[]? ModuleListOpt(string[] o, string name) => Opt(o, name)?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (FirmwareInfo.Read(Program.FsRoot) is { } fw) Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
+        else Log.Info("No firmware installed: system libraries without HLE (Json, Xml, Sqlite...) are unavailable");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
-        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn });
+        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn,
+            LleModules = ModuleListOpt(options, "--lle-modules"), HleModules = ModuleListOpt(options, "--hle-modules") });
         var fatal = new ManualResetEventSlim();
         emu.Fatal += (t, e) => fatal.Set();
 
