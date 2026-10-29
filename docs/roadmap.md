@@ -47,8 +47,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Usar automaticamente o firmware da instalação do Vita3K (vs0: Json, Xml, Sqlite; sa0: fontes)
-- [ ] Instalador de firmware próprio (`PSP2UPDAT.PUP`)
 - [ ] Tela inicial e LiveArea no launcher
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
