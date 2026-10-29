@@ -111,6 +111,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             GuestMemory.Copy(UserTls, k.TlsInit, k.TlsInitSize);
     }
 
+    /// <summary>Value of r2-r12 when a thread starts (Vita3K's initial_context uses the same marker).</summary>
+    public const uint InitialRegisterFill = 0xDEADBEEF;
+
     public int Start(uint argSize, uint argp)
     {
         lock (WaitLock)
@@ -119,6 +122,11 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
             var s = Core.State;
             new Span<byte>(s, sizeof(CpuState)).Clear();
             s->Fpscr = 0x0300_0000;
+            // r2-r12 are not zero at thread entry: like Vita3K (initial_context) fill them with a marker, so code
+            // that reads a callee-saved register before writing it does not see a convenient 0. Silverio Vendetta's
+            // 'umdReadAhead' threads compare an uninitialised r9 with the file index (0 for the first archive) and
+            // skipped the open, reading fd -1 forever.
+            for (int r = 2; r <= 12; r++) s->R[r] = InitialRegisterFill;
             var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
             tls[TlsCurrentPriority] = Priority;
             tls[TlsAffinity] = Affinity;
