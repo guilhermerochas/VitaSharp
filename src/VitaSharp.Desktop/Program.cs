@@ -63,6 +63,30 @@ public static class Program
             }
             case "rco-dump" when args.Length >= 2:
                 return RcoDump(args[1], args.Skip(2).FirstOrDefault(a => a.StartsWith("--extract="))?["--extract=".Length..]);
+            case "registry":
+            {
+                // registry [prefix] [path=value ...]: list the system registry (firmware template + written values);
+                // path=value writes an int key (or a string key, quoted value) first
+                var reg = VitaSharp.Core.Firmware.Registry.For(FsRoot);
+                string prefix = args.Skip(1).FirstOrDefault(a => !a.Contains('=')) ?? "/";
+                foreach (var set in args.Skip(1).Where(a => a.Contains('=')))
+                {
+                    int eq = set.IndexOf('='), slash = set.LastIndexOf('/', eq) + 1;
+                    string val = set[(eq + 1)..];
+                    bool ok = int.TryParse(val, out int iv)
+                        ? reg.SetInt(set[..slash], set[slash..eq], iv)
+                        : reg.Set(set[..slash], set[slash..eq], System.Text.Encoding.UTF8.GetBytes(val.Trim('"') + "\0"));
+                    Console.WriteLine(ok ? $"set {set[..eq]}" : $"no such key {set[..eq]}");
+                }
+                foreach (var k in reg.Keys.Where(k => k.Path.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(k => k.Path, StringComparer.Ordinal))
+                {
+                    var v = reg.Get(k.Path) ?? [];
+                    string shown = k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Int ? BitConverter.ToInt32(v.Concat(new byte[4]).Take(4).ToArray()).ToString()
+                        : k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Str ? "\"" + System.Text.Encoding.UTF8.GetString(v).TrimEnd('\0') + "\"" : Convert.ToHexString(v);
+                    Console.WriteLine($"{k.Path} ({k.Type}, {k.Size}) = {shown}");
+                }
+                return 0;
+            }
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "toast-preview" when args.Length >= 2:

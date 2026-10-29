@@ -26,4 +26,23 @@ public sealed class SystemSoftware : HleModule
 
     /// <summary>How many common dialogs the process may hold open at once; accepted.</summary>
     [Hle] int sceKernelCDialogSetLeaseLimit(int limit) => 0;
+
+    // ------------------------------------------------------------------ SceSblSsUpdateMgr
+
+    /// <summary>
+    /// Versions of the firmware packages (spkg) installed in the unit's other processors, by package type. The shell
+    /// checks at boot that they match what its system software expects and otherwise shows "A serious error has
+    /// occurred" (0x80AF0002); the values are the ones the 3.74 shell compares against (read from its code).
+    /// Unknown types report the system software version.
+    /// </summary>
+    static readonly Dictionary<int, uint> SpkgVersions = new() { [0x17] = 0x01000010 };
+
+    /// <summary>(int type, SceSblUsSpkgInfo *info): info +0 size, +4 version.</summary>
+    [Hle]
+    int sceSblUsGetSpkgInfo(int type, uint info)
+    {
+        if (info == 0) return unchecked((int)0x80182005); // the shell's own "invalid argument" for this call
+        GuestMemory.W32(info + 4, SpkgVersions.GetValueOrDefault(type, SystemMisc.SystemSwVersion));
+        return 0;
+    }
 }

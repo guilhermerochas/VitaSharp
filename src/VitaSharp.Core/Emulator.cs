@@ -285,7 +285,9 @@ public sealed class Emulator : IDisposable
                 string file = Path.GetFileNameWithoutExtension(provider.VitaPath);
                 if (OnRequestModules.Contains(file) || KeepOnHle(lib) || KeepOnHle(file)) continue;
                 if (Kernel.Modules.Values.Any(x => string.Equals(x.Path, provider.VitaPath, StringComparison.OrdinalIgnoreCase))) continue;
-                if (nids.All(n => Linker.TryGetFunctionExport(n, out _) || Hle.IsImplemented(n))) continue;
+                // a library VitaSharp emulates in HLE (even partly: NP, AppUtil, Http...) stays on HLE, so every
+                // process sees the same emulated services; only libraries the HLE knows nothing of come from the firmware
+                if (Hle.ImplementsLibrary(lib) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;
                 try { dep = LoadModule(provider.VitaPath); }
