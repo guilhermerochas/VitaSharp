@@ -649,7 +649,7 @@ public static class Runner
         Log.Info($"Stopping. {VitaSharp.Core.Cpu.Jit.Describe()}");
         if (VitaSharp.Core.Cpu.Native.NativeVerifier.Enabled)
             Log.Info($"CPU backend report: native verify: {VitaSharp.Core.Cpu.Native.NativeVerifier.Verified} block runs verified, {VitaSharp.Core.Cpu.Native.NativeVerifier.Mismatches} mismatches ({VitaSharp.Core.Cpu.Native.NativeVerifier.SimdMismatches} in blocks with NEON/VFP ops), {VitaSharp.Core.Cpu.Native.NativeVerifier.Skipped} interpreted (unloggable stores)");
-        if (VitaSharp.Core.Cpu.Jit.Chain.Contains(VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance))
+        if (VitaSharp.Core.Cpu.Jit.Chain.Any(c => c is VitaSharp.Core.Cpu.Backends.NativeX64Compiler or VitaSharp.Core.Cpu.Backends.NativeArm64Compiler))
             Log.Info($"CPU backend report: {VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Report()}");
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");

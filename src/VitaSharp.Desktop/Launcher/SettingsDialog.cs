@@ -46,12 +46,12 @@ public sealed class SettingsDialog : Window
             SelectedIndex = Math.Max(0, cameraValues.FindIndex(v => v.Equals(settings.Camera, StringComparison.OrdinalIgnoreCase))),
         };
         // CPU backend: "" = best supported on this PC, else --cpu=native|il|interp
-        // backends this build/host cannot run (the IL JIT in Native AOT builds, the x64 JIT on ARM64) are not offered;
+        // backends this build/host cannot run (the IL JIT in Native AOT builds, the native JIT on hosts that are neither x64 nor ARM64) are not offered;
         // a saved choice that became unavailable shows as Automatic
         var cpuChoices = new (string Value, string Label)[]
         {
             ("", "Automático (o melhor para este PC)"),
-            ("native", "JIT nativo (código de máquina x64)"),
+            ("native", System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "JIT nativo (código de máquina ARM64)" : "JIT nativo (código de máquina x64)"),
             ("il", "JIT IL (.NET DynamicMethod)"),
             ("interp", "Interpretador (mais lento, depuração)"),
         }.Where(c => c.Value is "" or "interp" || VitaSharp.Core.Cpu.Jit.All.Any(b => b.Name == c.Value && b.IsSupported)).ToArray();

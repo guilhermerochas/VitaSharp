@@ -27,8 +27,8 @@ public sealed unsafe partial class ArmFrontend
 
     bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags f = 0, uint aux = 0)
     {
-        if (!X64Emitter.SupportsVec(k, size)) return null;
-        if (NeedsTinyCheck(k)) { f |= VecFlags.SlowPath; aux |= (uint)_op << 16; }
+        if (!_supportsVec(k, size)) return null;
+        if (_tinyCheck && NeedsTinyCheck(k)) { f |= VecFlags.SlowPath; aux |= (uint)_op << 16; }
         B.VecOp(k, q, size, vd * 8, vn * 8, vm * 8, f, aux, _ins);
         return false;
     }

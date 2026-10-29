@@ -15,6 +15,20 @@ public sealed unsafe partial class ArmFrontend
 {
     IrBuilder _b = null!;
     bool _thumb;
+    readonly Func<VecKind, uint, bool> _supportsVec;
+    readonly bool _tinyCheck;
+
+    /// <summary>Frontend for the x64 emitter (its SIMD coverage and FZ tininess slow paths).</summary>
+    public ArmFrontend() : this(X64Emitter.SupportsVec, tinyCheck: true) { }
+
+    /// <param name="supportsVec">Which <see cref="VecKind"/>s (at a lane size) the target emitter lowers inline.</param>
+    /// <param name="tinyCheck">The target flushes tiny float results after rounding (x86): mark the affected kinds
+    /// <see cref="VecFlags.SlowPath"/>. ARM64 hosts detect tininess before rounding like the guest and need no check.</param>
+    public ArmFrontend(Func<VecKind, uint, bool> supportsVec, bool tinyCheck)
+    {
+        _supportsVec = supportsVec;
+        _tinyCheck = tinyCheck;
+    }
 
     static readonly uint ExitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     static readonly uint SvcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
@@ -1244,7 +1258,7 @@ public sealed unsafe partial class ArmFrontend
             case 2: case 3:
             {
                 // VCVTB/VCVTT: the half lives in bits 15:0 (B) or 31:16 (T) of the single register
-                if (dbl || !X64Emitter.SupportsVec(VecKind.CvtF2H)) return null;
+                if (dbl || !_supportsVec(VecKind.CvtF2H, 2)) return null;
                 uint half = b7 ? 2u : 0u;
                 if (opc2 == 3) B.FpOp(FpKind.CvtToHalf, O, sd + half, 0, sm, ins, d.Address);
                 else B.FpOp(FpKind.CvtFromHalf, O, sd, 0, sm + half, ins, d.Address);
