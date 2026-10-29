@@ -47,6 +47,7 @@ public sealed class MainWindow : Window
     readonly DockPanel _listBody;
     readonly Panel _bodyHost;
     readonly ToggleButton _viewList, _viewHome;
+    readonly StackPanel _viewSwitch;
 
     public Shell.ShellView? ShellView => _shell;
 
@@ -75,7 +76,10 @@ public sealed class MainWindow : Window
         ToolTip.SetTip(_viewHome, "Tela inicial do Vita: bolhas, LiveArea e o tema do firmware instalado");
         _viewList.Click += (_, _) => SetView(LauncherSettings.ViewList, save: true);
         _viewHome.Click += (_, _) => SetView(LauncherSettings.ViewHome, save: true);
-        var viewSwitch = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        // the recreated home screen is provisional until the firmware's own shell.self runs: off by default, the
+        // toolbar switch only shows once it was turned on in Configurações
+        _viewSwitch = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var viewSwitch = _viewSwitch;
         viewSwitch.Children.Add(_viewList);
         viewSwitch.Children.Add(_viewHome);
         DockPanel.SetDock(viewSwitch, Dock.Left);
@@ -187,6 +191,7 @@ public sealed class MainWindow : Window
         if (save) SaveSettings();
         _viewList.IsChecked = !home;
         _viewHome.IsChecked = home;
+        _viewSwitch.IsVisible = home;
         if (home && _shell == null)
         {
             _shell = new Shell.ShellView(_settings, Program.FsRoot);
