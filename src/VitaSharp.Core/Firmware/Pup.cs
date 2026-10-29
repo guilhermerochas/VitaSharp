@@ -156,7 +156,9 @@ public static class Spkg
 {
     const uint SceMagic = 0x00454353;
 
-    public readonly record struct Header(SpkgType Type, ulong UpdateVersion, ulong PartIndex, ulong TotalParts);
+    /// <param name="Target">Console model the part is for, the byte at +0x2C (seen in 3.74: 0 = every model, 1 = the
+    /// handheld PS Vita, 2 = PS TV ("dolce"), on the per-model vs0 tar patches).</param>
+    public readonly record struct Header(SpkgType Type, ulong UpdateVersion, ulong PartIndex, ulong TotalParts, byte Target = 0);
 
     /// <summary>Recognises an SPKG and returns its header without decrypting anything.</summary>
     public static bool TryReadHeader(ReadOnlySpan<byte> file, out Header header)
@@ -168,7 +170,7 @@ public static class Spkg
         if (hl <= 0 || hl + 0x80 > file.Length) return false;
         var s = file.Slice((int)hl, 0x80);
         header = new Header((SpkgType)BinaryPrimitives.ReadUInt32LittleEndian(s[4..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x10..]),
-            BinaryPrimitives.ReadUInt64LittleEndian(s[0x60..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x68..]));
+            BinaryPrimitives.ReadUInt64LittleEndian(s[0x60..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x68..]), s[0x2C]);
         return true;
     }
 

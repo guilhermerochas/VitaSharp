@@ -97,7 +97,8 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
 /// <summary>
 /// Installs the official firmware into a file-system root, the way Vita3K does (packages/src/pup.cpp): every SPKG of a
 /// PUP that belongs to os0, vs0, sa0 or pd0 is decrypted, the parts of each partition are joined into an image, and
-/// the image (FAT for os0/vs0/sa0, exFAT for pd0) is extracted into &lt;fsRoot&gt;/&lt;partition&gt;.
+/// the image (FAT for os0/vs0/sa0, exFAT for pd0) is extracted into &lt;fsRoot&gt;/&lt;partition&gt;. The vs0 tar
+/// patches the updater applies per console model are applied for the handheld PS Vita (Vita3K skips them).
 /// <para>
 /// The work happens in a staging folder inside <c>fsRoot</c>; only when everything was extracted are the installed
 /// partitions swapped in (a cancelled or failed install leaves the previous firmware untouched). A full firmware
@@ -133,6 +134,7 @@ public static class FirmwareInstaller
 
             // 1. decrypt the partition parts, joined in package order (Vita3K numbers them in PUP order and joins sorted)
             var parts = new List<(PupEntry Entry, string Partition)>();
+            var tarPatches = new List<PupEntry>();
             foreach (var e in pup.Entries)
             {
                 if (e.KnownName != null || e.Length < 0x500) continue;
@@ -140,6 +142,9 @@ public static class FirmwareInstaller
                 if (!Spkg.TryReadHeader(head, out var h)) continue;
                 var part = PartitionOf(h.Type);
                 if (part != null) parts.Add((e, part));
+                // files the updater adds to vs0 per console model: take the ones for every model and for the handheld
+                // (target 2 = PS TV: its own system apps and location provider)
+                else if (h.Type == SpkgType.Vs0TarPatch && h.Target is 0 or 1) tarPatches.Add(e);
             }
             if (parts.Count == 0) throw new InvalidDataException("The PUP holds no os0/vs0/sa0/pd0 partition (is it a Vita system update?)");
 
@@ -189,6 +194,15 @@ public static class FirmwareInstaller
                             progress?.Report(new FirmwareProgress("Extraindo", 0.5 + 0.45 * doneBytes / Math.Max(1, totalBytes), part + ":" + e.Path));
                     }
                     Log.Info($"firmware: {part}: {l.Entries.Count(x => !x.IsDirectory)} files, {l.Entries.Where(x => !x.IsDirectory).Sum(x => x.Size) / 1024} KiB");
+                }
+                if (listings.ContainsKey("vs0"))
+                {
+                    foreach (var tp in tarPatches)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        int n = ApplyTar(Spkg.Decrypt(pup.Read(tp)), Path.Combine(staging, "vs0"));
+                        Log.Info($"firmware: vs0 tar patch 0x{tp.Type:X}: {n} files");
+                    }
                 }
             }
             finally
@@ -326,6 +340,41 @@ public static class FirmwareInstaller
         }
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         Directory.Move(staged, target);
+    }
+
+    /// <summary>Extracts the regular files of a ustar/v7 tar archive under <paramref name="dest"/> (overwriting);
+    /// returns how many were written. Names that would leave <paramref name="dest"/> are skipped.</summary>
+    internal static int ApplyTar(byte[] tar, string dest)
+    {
+        int count = 0;
+        string root = Path.GetFullPath(dest) + Path.DirectorySeparatorChar;
+        for (long o = 0; o + 512 <= tar.Length;)
+        {
+            var h = tar.AsSpan((int)o, 512);
+            if (h[0] == 0) break; // end-of-archive blocks
+            string name = System.Text.Encoding.UTF8.GetString(h[..100]).TrimEnd('\0');
+            if (h.Slice(257, 5).SequenceEqual("ustar"u8))
+            {
+                string prefix = System.Text.Encoding.UTF8.GetString(h.Slice(345, 155)).TrimEnd('\0');
+                if (prefix.Length > 0) name = prefix + "/" + name;
+            }
+            string sizeText = System.Text.Encoding.ASCII.GetString(h.Slice(124, 12)).Trim('\0', ' ');
+            long size = sizeText.Length == 0 ? 0 : Convert.ToInt64(sizeText, 8);
+            byte type = h[156];
+            long data = o + 512;
+            if (size < 0 || data + size > tar.Length) throw new InvalidDataException($"tar entry {name} is truncated");
+            string host = Path.GetFullPath(Path.Combine(dest, name.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+            bool inside = host.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+            if (inside && type == (byte)'5') Directory.CreateDirectory(host);
+            else if (inside && type is (byte)'0' or 0 && !name.EndsWith('/'))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(host)!);
+                File.WriteAllBytes(host, tar.AsSpan((int)data, (int)size).ToArray());
+                count++;
+            }
+            o = data + ((size + 511) & ~511L);
+        }
+        return count;
     }
 
     static IEnumerable<string> EnumerateFilesNoLinks(string dir)

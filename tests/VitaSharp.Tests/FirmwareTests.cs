@@ -16,7 +16,7 @@ public class FirmwareTests
 
     /// <summary>An SPKG the way Sony builds them: SCE header + metadata encrypted with the SPKG metadata key, the plain
     /// SPKG header at the header length, then one AES-128-CTR section (zlib-compressed when asked).</summary>
-    internal static byte[] BuildSpkg(SpkgType type, byte[] payload, bool compress = false, ulong partIndex = 1, ulong parts = 1)
+    internal static byte[] BuildSpkg(SpkgType type, byte[] payload, bool compress = false, ulong partIndex = 1, ulong parts = 1, byte target = 0)
     {
         const int headerLength = 0x400, spkgHeader = 0x80;
         byte[] body = payload;
@@ -72,6 +72,7 @@ public class FirmwareTests
         BinaryPrimitives.WriteUInt64LittleEndian(h[0x10..], 0x03740000);
         BinaryPrimitives.WriteUInt64LittleEndian(h[0x60..], partIndex);
         BinaryPrimitives.WriteUInt64LittleEndian(h[0x68..], parts);
+        h[0x2C] = target;
         enc.CopyTo(f, headerLength + spkgHeader);
         return f;
     }
@@ -249,6 +250,30 @@ public class FirmwareTests
         return img;
     }
 
+
+    /// <summary>A ustar archive with the given regular files ('/' paths) and an explicit directory entry.</summary>
+    internal static byte[] BuildTar(params (string Name, byte[] Data)[] files)
+    {
+        using var ms = new MemoryStream();
+        void Header(string name, long size, byte type)
+        {
+            var h = new byte[512];
+            Encoding.ASCII.GetBytes(name).CopyTo(h, 0);
+            Encoding.ASCII.GetBytes(Convert.ToString(size, 8).PadLeft(11, '0') + "\0").CopyTo(h, 124);
+            h[156] = type;
+            "ustar\0"u8.CopyTo(h.AsSpan(257));
+            ms.Write(h);
+        }
+        Header("app/", 0, (byte)'5');
+        foreach (var (name, data) in files)
+        {
+            Header(name, data.Length, (byte)'0');
+            ms.Write(data);
+            ms.Write(new byte[(512 - data.Length % 512) % 512]);
+        }
+        ms.Write(new byte[1024]);
+        return ms.ToArray();
+    }
     static byte[] Bytes(int n, int seed) => Enumerable.Range(0, n).Select(i => (byte)(i * 31 + seed)).ToArray();
 
     // ------------------------------------------------------------------ PUP / SPKG
@@ -460,7 +485,10 @@ public class FirmwareTests
             (0x303, BuildSpkg(SpkgType.Os0, os0, compress: true)),
             (0x304, BuildSpkg(SpkgType.Vs0, vs0[..half], compress: true, 1, 2)),
             (0x305, BuildSpkg(SpkgType.Vs0, vs0[half..], compress: true, 2, 2)),
-            (0x306, BuildSpkg(SpkgType.Sa0, sa0)));
+            (0x306, BuildSpkg(SpkgType.Sa0, sa0)),
+            // per-model vs0 additions: the handheld one is applied, the PS TV one is not
+            (0x313, BuildSpkg(SpkgType.Vs0TarPatch, BuildTar(("app/NPXS10095/stitch_prx.suprx", Bytes(700, 9)), ("../escape.txt", Bytes(3, 1))), target: 1)),
+            (0x314, BuildSpkg(SpkgType.Vs0TarPatch, BuildTar(("vsh/shell/liblocation_dolce_provider.suprx", Bytes(10, 2))), target: 2)));
     }
 
     [Fact]
@@ -481,6 +509,10 @@ public class FirmwareTests
             Assert.Equal(Bytes(3000, 3), File.ReadAllBytes(Path.Combine(fsRoot, "vs0", "sys", "external", "libSceJson.suprx")));
             Assert.Equal(Bytes(1000, 4), File.ReadAllBytes(Path.Combine(fsRoot, "vs0", "sys", "external", "libult.suprx")));
             Assert.Equal(Bytes(900, 6), File.ReadAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "ltn0.pgf")));
+            Assert.Equal(Bytes(700, 9), File.ReadAllBytes(Path.Combine(fsRoot, "vs0", "app", "NPXS10095", "stitch_prx.suprx")));
+            Assert.False(File.Exists(Path.Combine(fsRoot, "vs0", "vsh", "shell", "liblocation_dolce_provider.suprx")));
+            Assert.False(File.Exists(Path.Combine(fsRoot, "escape.txt")));
+            Assert.False(File.Exists(Path.Combine(tmp, "escape.txt")));
             Assert.False(Directory.Exists(Path.Combine(fsRoot, ".firmware-install")));
             Assert.Equal(1.0, reports[^1].Fraction);
             Assert.True(reports.Select(r => r.Fraction).SequenceEqual(reports.Select(r => r.Fraction).Order()));
@@ -622,6 +654,9 @@ public class FirmwareTests
                 Assert.True(SelfDecryptor.IsElf(elf), lib);
             }
             Assert.Equal(info.Version, FirmwareInfo.DetectVersion(fsRoot));
+            // the handheld vs0 tar patch (system apps the PS TV does not have) is applied
+            Assert.True(File.Exists(Path.Combine(fsRoot, "vs0", "vsh", "shell", "liblocation_provider.suprx")));
+            Assert.False(File.Exists(Path.Combine(fsRoot, "vs0", "vsh", "shell", "liblocation_dolce_provider.suprx")));
         }
         finally { FirmwareInstaller.DeleteTree(tmp); }
     }

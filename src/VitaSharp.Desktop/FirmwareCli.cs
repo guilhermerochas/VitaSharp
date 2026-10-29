@@ -16,6 +16,7 @@ public static class FirmwareCli
 {
     public static int Install(string source, string[] options)
     {
+        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { } // stage names are Portuguese (launcher)
         using var cts = new CancellationTokenSource();
         ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; cts.Cancel(); Console.WriteLine("\nCancelling…"); };
         Console.CancelKeyPress += onCancel;
