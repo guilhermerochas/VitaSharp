@@ -23,11 +23,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)
 - [ ] JIT: compilação mais barata por bloco
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
-- [ ] Prioridade das threads da CPU emulada e da GPU (depois de medir)
 
 ## Android
 
-- [ ] JIT nativo ARM64 (plano em `docs/notes/native-jit.md`) — base de todo o resto
 - [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/`
 - [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
@@ -37,19 +35,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
 - [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
-- [ ] Compatibilidade com drivers Vulkan de celular (Adreno, Mali, PowerVR) e testes em aparelhos reais
-
-## HLE
-
-- [ ] `sce::Json` (SceLibJson, 179 métodos C++, importado pelo Devious Dungeon): implementar em HLE para não
-  depender do `libSceJson.suprx` do firmware; exige reproduzir o layout de `Value`/`Array`/`Object`, os iteradores e
-  o `MemAllocator` que o jogo herda (ver `docs/hle/G2-support-libs.md` §3.1)
 
 ## Firmware e sistema
 
 - [ ] Tela inicial e LiveArea no launcher
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
+
+## Troféus
+
+- [ ] Notificação no jogo quando um troféu é obtido (ícone, nome e grau, no canto da tela)
+- [ ] Troféus obtidos mostrados ao lado de cada jogo no menu do launcher (contagem obtidos/total, progresso e acesso à lista)
 
 ## Bugs em aberto
 
@@ -60,7 +56,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Skullgirls: elementos do HUD (contador de combo, barra de cima) aparecem como caixas brancas por 1 quadro durante as lutas
 - [ ] Tearaway: na tela "mãos pequenas ou grandes" o jogo desenha só um dos dois painéis por quadro, alternando (a própria lista de draws do jogo; suspeita de feedback de visibility query/tempo)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7`
-- [ ] WRC 4: com o save copiado, o jogo fica parado em "Please wait" (já acontecia antes das correções)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa)
