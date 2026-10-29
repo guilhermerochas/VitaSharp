@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=VitaSharp
+GenericName=PlayStation Vita Emulator
+Comment=Experimental PlayStation Vita emulator
+Exec=VitaSharp.Desktop %f
+Icon=vitasharp
+Terminal=false
+Categories=Game;Emulator;
+Keywords=emulator;vita;psvita;
+StartupWMClass=VitaSharp.Desktop

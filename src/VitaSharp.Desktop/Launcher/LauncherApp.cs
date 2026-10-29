@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
@@ -14,6 +15,9 @@ public sealed class LauncherApp : Application
         // the launcher's blue accent everywhere (check boxes, sliders, tabs), not the OS accent colour
         Styles.Add(new FluentTheme { Palettes = { [ThemeVariant.Dark] = new ColorPaletteResources { Accent = LauncherTheme.AccentColor } } });
         RequestedThemeVariant = ThemeVariant.Dark;
+        // the VitaSharp logo on every launcher window (library, settings, trophies, dialogs)
+        if (VitaSharp.Desktop.Host.AppIcon.ForAvalonia() is { } icon)
+            Styles.Add(new Style(x => x.Is<Window>()) { Setters = { new Setter(Window.IconProperty, icon) } });
     }
 
     /// <summary>Replaces the library window (ui-snapshot renders the settings screens instead).</summary>

@@ -1,0 +1,4 @@
+#!/bin/sh
+# AppImage entry point: the self-contained / Native AOT VitaSharp build lives in usr/lib/vitasharp
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/vitasharp/VitaSharp.Desktop" "$@"

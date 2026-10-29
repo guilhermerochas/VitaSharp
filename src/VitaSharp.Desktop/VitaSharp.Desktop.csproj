@@ -52,7 +52,15 @@
     <TieredPGO>true</TieredPGO>
     <!-- platforms VitaSharp is published for (build/publish.sh, build/publish.ps1); plain builds stay portable -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- icons rendered from docs/assets/logo.svg by build/make-icons.ps1 / build/make-icons.sh (committed) -->
+    <ApplicationIcon>Assets\VitaSharp.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- window and taskbar icons of the launcher (Avalonia) and the game window (GLFW), see Host/AppIcon.cs -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\VitaSharp.ico" LogicalName="VitaSharp.ico" />
+    <EmbeddedResource Include="Assets\icon-16.png;Assets\icon-24.png;Assets\icon-32.png;Assets\icon-48.png;Assets\icon-64.png;Assets\icon-128.png;Assets\icon-256.png" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <!-- self-contained single-file release (dotnet publish -r <rid> -p:VitaSharpRelease=true): the managed code is
        bundled into one ReadyToRun executable; native libraries (GLFW, OpenAL Soft, shaderc, Skia) stay next to it,
