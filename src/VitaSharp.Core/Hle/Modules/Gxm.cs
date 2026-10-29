@@ -963,6 +963,9 @@ public sealed class Gxm : HleModule
     const int MaxCommandLists = 8192;
     readonly Dictionary<uint, RecordedCommandList> _commandLists = new();
     uint _nextCommandListId = 1;
+    long _commandListClock;
+    /// <summary>Id written for a list without draws: executing it does nothing, and it takes no table entry.</summary>
+    const uint EmptyCommandListId = 0;
 
     /// <summary>Calls a deferred-context memory callback: void *cb(void *data, SceSize requested, SceSize *size).</summary>
     static uint CallMemoryCallback(GxmContext c, uint cb, uint requested, out uint size)
@@ -1057,7 +1060,11 @@ public sealed class Gxm : HleModule
     {
         if (DeferredCtx(ctx, out int err) is not { } c) return err;
         if (c.InCommandList) return ERR_WITHIN_COMMAND_LIST;
-        c.VertexRingUsed = c.FragmentRingUsed = 0;
+        // The vertex/fragment rings are NOT rewound here: the default uniform buffers a list reserves are read when the
+        // list executes, so lists recorded back to back on one context (and executed later) need their own memory.
+        // Rewinding at every begin made each list overwrite the uniforms of the lists before it: Tearaway records
+        // several per context per frame and drew them with each other's matrices (objects and panels flickering).
+        // The rings start over only when the game sets new buffers or the memory callback hands out a new block.
         if (c.VertexRing == 0 && c.VertexCallback != 0)
         {
             uint mem = CallMemoryCallback(c, c.VertexCallback, RingCallbackRequest, out uint size);
@@ -1091,20 +1098,33 @@ public sealed class Gxm : HleModule
         if (!c.InCommandList) return ERR_NOT_WITHIN_COMMAND_LIST;
         uint start = c.VdmListStart, end = c.VdmBuffer + c.VdmUsed;
         if (end < start || end - start > c.VdmBufferSize) start = c.VdmBuffer; // the list moved to a new VDM block
-        uint id;
+        uint id = EmptyCommandListId;
         lock (_commandLists)
         {
             // the VDM memory of older lists of this context that this one overwrote was reused: they are gone
             if (end > start)
                 foreach (var old in _commandLists.Values.Where(l => l.Owner == ctx && l.VdmStart < end && start < l.VdmEnd).Select(l => l.Id).ToList())
                     _commandLists.Remove(old);
-            if (_commandLists.Count >= MaxCommandLists)
+            // lists without draws (common: Tearaway ends several per frame) need no record and never fill the table
+            if (c.Recording!.Count > 0)
             {
-                Log.WarnOnce("gxm-cmdlists", "sceGxmEndCommandList: too many live command lists, dropping the oldest");
-                _commandLists.Remove(_commandLists.Keys.Min());
+                if (_commandLists.Count >= MaxCommandLists)
+                {
+                    // least recently used, not oldest: a precomputed list recorded once and executed every frame stays
+                    Log.WarnOnce("gxm-cmdlists", "sceGxmEndCommandList: too many live command lists, dropping the least recently used");
+                    uint victim = 0;
+                    long best = long.MaxValue;
+                    foreach (var l in _commandLists.Values)
+                        if (l.LastUse < best) { best = l.LastUse; victim = l.Id; }
+                    _commandLists.Remove(victim);
+                }
+                id = _nextCommandListId++;
+                if (id == EmptyCommandListId) id = _nextCommandListId++;
+                _commandLists[id] = new RecordedCommandList
+                {
+                    Id = id, Owner = ctx, Draws = c.Recording.ToArray(), VdmStart = start, VdmEnd = end, LastUse = ++_commandListClock,
+                };
             }
-            id = _nextCommandListId++;
-            _commandLists[id] = new RecordedCommandList { Id = id, Owner = ctx, Draws = c.Recording!.ToArray(), VdmStart = start, VdmEnd = end };
         }
         GuestMemory.Fill(list, 0, 32);
         GuestMemory.W32(list, CommandListMagic);
@@ -1123,8 +1143,13 @@ public sealed class Gxm : HleModule
         if (c.Deferred) return ERR_INVALID_VALUE;
         if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         if (GuestMemory.R32(list) != CommandListMagic) return ERR_INVALID_POINTER;
+        uint listId = GuestMemory.R32(list + 4);
+        if (listId == EmptyCommandListId) return 0;
         RecordedCommandList? rec;
-        lock (_commandLists) _commandLists.TryGetValue(GuestMemory.R32(list + 4), out rec);
+        lock (_commandLists)
+        {
+            if (_commandLists.TryGetValue(listId, out rec)) rec.LastUse = ++_commandListClock;
+        }
         if (rec == null) return ERR_INVALID_POINTER;
         foreach (var d in rec.Draws)
         {

@@ -167,4 +167,6 @@ public sealed class RecordedCommandList
     public required uint Id, Owner;
     public required DrawRecipe[] Draws;
     public uint VdmStart, VdmEnd;
+    /// <summary>Recency stamp (creation or last execution): the table evicts the least recently used list.</summary>
+    public long LastUse;
 }
