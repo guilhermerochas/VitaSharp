@@ -100,7 +100,7 @@ public sealed class SettingsDialog : Window
         general.Children.Add(Row("CPU", cpu));
         // library view and the home screen ("Tela inicial": bubbles, LiveArea, theme, BGM and sounds of the firmware)
         general.Children.Add(new TextBlock { Text = "Tela inicial", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
-        var view = new ComboBox { ItemsSource = new[] { "Lista", "Tela inicial (estilo Vita)" }, Width = 320, SelectedIndex = settings.View == LauncherSettings.ViewHome ? 1 : 0 };
+        var view = new ComboBox { ItemsSource = new[] { "Lista", "Tela inicial recriada (provisória)" }, Width = 320, SelectedIndex = settings.View == LauncherSettings.ViewHome ? 1 : 0 };
         general.Children.Add(Row("Exibição", view));
         var shellAssets = new VitaSharp.Core.Shell.ShellAssets(Program.FsRoot);
         var themes = shellAssets.Themes(VitaSharp.Core.Shell.LiveAreaTemplate.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
