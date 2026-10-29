@@ -29,6 +29,11 @@ public sealed partial class Net
         public int AbortGen;
         public bool AbortRecvSticky, AbortSendSticky;
         public readonly Dictionary<(int Level, int Opt), byte[]> Options = new();
+        /// <summary>Real internet only (NetSockets.Real.cs): the host socket, always host non-blocking.</summary>
+        public System.Net.Sockets.Socket? Host;
+        public bool Connecting, StreamConnected;
+        /// <summary>Guest threads waiting for this socket to become readable / writable (the poller selects on them).</summary>
+        public int ReadWaiters, WriteWaiters;
     }
 
     sealed class NetEpoll
@@ -52,7 +57,7 @@ public sealed partial class Net
     int _nextSock = 1, _nextEpoll = 1, _nextResolver = 1, _nextDump = 1;
     readonly Dictionary<int, NetSocket> _sockets = new();
     readonly Dictionary<int, NetEpoll> _epolls = new();
-    readonly HashSet<int> _resolvers = new();
+    readonly Dictionary<int, Resolver> _resolvers = new();
     readonly Dictionary<int, NetDump> _dumps = new();
     readonly byte[][] _emulation = [new byte[0x200], new byte[0x200]];
     uint _dns0, _dns1;
@@ -102,7 +107,7 @@ public sealed partial class Net
         {
             if (!_netInited) return NetErr(ENOTINIT);
             _netInited = false;
-            foreach (var s in _sockets.Values) s.Closed = true;
+            foreach (var s in _sockets.Values) { s.Closed = true; CloseHost(s); }
             foreach (var e in _epolls.Values) e.Destroyed = true;
             foreach (var d in _dumps.Values) d.Destroyed = true;
             _sockets.Clear(); _epolls.Clear(); _dumps.Clear(); _resolvers.Clear();
@@ -120,7 +125,13 @@ public sealed partial class Net
     {
         lock (_netLock)
         {
-            var s = new NetSocket { Id = _nextSock++, Name = name, Domain = domain, Type = type, Protocol = protocol };
+            var s = new NetSocket { Id = _nextSock, Name = name, Domain = domain, Type = type, Protocol = protocol };
+            if (Cfg.Real)
+            {
+                int r = RealCreate(s);
+                if (r < 0) return r;
+            }
+            _nextSock++;
             _sockets[s.Id] = s;
             return s.Id;
         }
@@ -133,6 +144,7 @@ public sealed partial class Net
         {
             if (!_sockets.Remove(s, out var so)) return NetErr(EBADF);
             so.Closed = true;
+            CloseHost(so);
             foreach (var e in _epolls.Values) e.Entries.Remove(s);
             Monitor.PulseAll(_netLock);
             return 0;
@@ -157,8 +169,27 @@ public sealed partial class Net
 
     int CheckSock(int s) { lock (_netLock) return Sock(s) == null ? NetErr(EBADF) : 0; }
 
-    [Hle] int sceNetShutdown(int s, int how) => CheckSock(s);
-    [Hle] int sceNetListen(int s, int backlog) => CheckSock(s);
+    /// <summary>Runs <paramref name="real"/> under the net lock for a socket with a host socket (real internet), else
+    /// <paramref name="offline"/>; EBADF for an unknown socket.</summary>
+    int OnSock(int s, Func<NetSocket, int> real, Func<NetSocket, int> offline)
+    {
+        lock (_netLock)
+        {
+            var so = Sock(s);
+            if (so == null) return NetErr(EBADF);
+            return so.Host != null ? real(so) : offline(so);
+        }
+    }
+
+    [Hle]
+    int sceNetShutdown(int s, int how) => OnSock(s, so =>
+    {
+        if (how is < 0 or > 2) return NetErr(EINVAL);
+        try { so.Host!.Shutdown((System.Net.Sockets.SocketShutdown)how); return 0; }
+        catch (System.Net.Sockets.SocketException e) { return SockErr(e.SocketErrorCode); }
+    }, _ => 0);
+
+    [Hle] int sceNetListen(int s, int backlog) => OnSock(s, so => RealListen(so, backlog), _ => 0);
 
     [Hle]
     int sceNetBind(int s, uint addr, uint len)
@@ -168,53 +199,66 @@ public sealed partial class Net
             var so = Sock(s);
             if (so == null) return NetErr(EBADF);
             if (addr == 0) return NetErr(EINVAL);
+            if (so.Host != null) return RealBind(so, addr, len);
             so.Local = GuestMemory.Span(addr, (int)Math.Min(Math.Max(len, 16u), 16u)).ToArray();
             return 0;
         }
     }
 
-    [Hle] int sceNetAccept(int s, uint addr, uint len) { int r = CheckSock(s); return r < 0 ? r : NetErr(ERR_NET_ENOTCONN); }
-    [Hle] int sceNetConnect(int s, uint addr, uint len) { int r = CheckSock(s); return r < 0 ? r : NetErr(ERR_NET_ENETUNREACH); }
-    [Hle] int sceNetSend(int s, uint buf, uint len, int flags) { int r = CheckSock(s); return r < 0 ? r : NetErr(ERR_NET_ENOTCONN); }
-    [Hle] int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) { int r = CheckSock(s); return r < 0 ? r : NetErr(ERR_NET_ENETUNREACH); }
+    [Hle] int sceNetAccept(int s, uint addr, uint len) => OnSock(s, so => RealAccept(so, addr, len), _ => NetErr(ERR_NET_ENOTCONN));
+    [Hle] int sceNetConnect(int s, uint addr, uint len) => OnSock(s, so => addr == 0 ? NetErr(EINVAL) : RealConnect(so, addr, len), _ => NetErr(ERR_NET_ENETUNREACH));
+
+    [Hle]
+    int sceNetSend(int s, uint buf, uint len, int flags) => OnSock(s,
+        so => buf == 0 && len != 0 ? NetErr(EINVAL) : RealSend(so, GuestMemory.Span(buf, (int)Math.Min(len, 1u << 24)), flags, null),
+        _ => NetErr(ERR_NET_ENOTCONN));
+
+    [Hle]
+    int sceNetSendto(int s, uint buf, uint len, int flags, uint to, uint tolen) => OnSock(s,
+        so => buf == 0 && len != 0 ? NetErr(EINVAL) : RealSend(so, GuestMemory.Span(buf, (int)Math.Min(len, 1u << 24)), flags, ReadSockaddr(to, tolen)),
+        _ => NetErr(ERR_NET_ENETUNREACH));
 
     /// <summary>SceNetMsghdr (0x1C): +0 name, +4 namelen, +8 iov, +C iovlen, +10 control, +14 controllen, +18 flags.</summary>
     [Hle]
     int sceNetSendmsg(int s, uint msg, int flags)
     {
         if (msg == 0 || (int)GuestMemory.R32(msg + 0xC) < 0) return NetErr(EINVAL);
-        return sceNetSendto(s, 0, 0, flags, GuestMemory.R32(msg), GuestMemory.R32(msg + 4));
+        return OnSock(s, so => RealSendmsg(so, msg, flags), _ => NetErr(ERR_NET_ENETUNREACH));
     }
 
     /// <summary>Offline nothing ever arrives: non-blocking → EAGAIN; blocking → waits for SO_RCVTIMEO (EAGAIN), an abort
     /// (EINTR) or close (EBADF); a stream socket is never connected (ENOTCONN).</summary>
-    int Receive(int s, int flags)
+    /// <summary>The offline receive (caller holds the net lock).</summary>
+    int ReceiveOffline(NetSocket so, int flags)
     {
-        lock (_netLock)
-        {
-            var so = Sock(s);
-            if (so == null) return NetErr(EBADF);
-            if (so.Type is SOCK_STREAM or SOCK_STREAM_P2P) return NetErr(ERR_NET_ENOTCONN);
-            if (so.AbortRecvSticky) return NetErr(EINTR);
-            if (so.Nbio || (flags & MSG_DONTWAIT) != 0) return NetErr(EAGAIN);
-            int gen = so.AbortGen;
-            int w = Block(() => so.Closed || so.AbortGen != gen, so.RcvTimeoUs == 0 ? null : so.RcvTimeoUs, "net recv");
-            if (so.Closed) return NetErr(EBADF);
-            if (so.AbortGen != gen) return NetErr(EINTR);
-            return NetErr(w == SceError.WAIT_TIMEOUT ? EAGAIN : EINTR);
-        }
+        if (so.Type is SOCK_STREAM or SOCK_STREAM_P2P) return NetErr(ERR_NET_ENOTCONN);
+        if (so.AbortRecvSticky) return NetErr(EINTR);
+        if (so.Nbio || (flags & MSG_DONTWAIT) != 0) return NetErr(EAGAIN);
+        int gen = so.AbortGen;
+        int w = Block(() => so.Closed || so.AbortGen != gen, so.RcvTimeoUs == 0 ? null : so.RcvTimeoUs, "net recv");
+        if (so.Closed) return NetErr(EBADF);
+        if (so.AbortGen != gen) return NetErr(EINTR);
+        return NetErr(w == SceError.WAIT_TIMEOUT ? EAGAIN : EINTR);
     }
 
-    [Hle] int sceNetRecv(int s, uint buf, uint len, int flags) => Receive(s, flags);
-    [Hle] int sceNetRecvfrom(int s, uint buf, uint len, int flags, uint from, uint fromlen) => Receive(s, flags);
+    [Hle]
+    int sceNetRecv(int s, uint buf, uint len, int flags) => OnSock(s,
+        so => buf == 0 && len != 0 ? NetErr(EINVAL) : RealReceive(so, buf, len, flags, 0, 0), so => ReceiveOffline(so, flags));
+
+    [Hle]
+    int sceNetRecvfrom(int s, uint buf, uint len, int flags, uint from, uint fromlen) => OnSock(s,
+        so => buf == 0 && len != 0 ? NetErr(EINVAL) : RealReceive(so, buf, len, flags, from, fromlen), so => ReceiveOffline(so, flags));
 
     [Hle]
     int sceNetRecvmsg(int s, uint msg, int flags)
     {
         if (msg == 0) return NetErr(EINVAL);
-        int r = Receive(s, flags);
-        GuestMemory.W32(msg + 0x18, 0);
-        return r;
+        return OnSock(s, so => RealRecvmsg(so, msg, flags), so =>
+        {
+            int r = ReceiveOffline(so, flags);
+            GuestMemory.W32(msg + 0x18, 0);
+            return r;
+        });
     }
 
     [Hle]
@@ -236,6 +280,7 @@ public sealed partial class Net
                     case SO_SNDTIMEO: so.SndTimeoUs = v; break;
                 }
             }
+            if (so.Host != null) RealSetsockopt(so, level, optname, bytes);
             so.Options[(level, optname)] = bytes;
             return 0;
         }
@@ -253,6 +298,7 @@ public sealed partial class Net
             byte[] v;
             if (level == SOL_SOCKET && optname == SO_TYPE) v = BitConverter.GetBytes(so.Type);
             else if (level == SOL_SOCKET && optname == SO_NBIO) v = BitConverter.GetBytes(so.Nbio ? 1 : 0);
+            else if (so.Host != null && RealGetsockopt(so, level, optname) is { } live) v = live;
             else if (!so.Options.TryGetValue((level, optname), out v!)) v = new byte[4];
             int n = (int)Math.Min(cap, (uint)v.Length);
             v.AsSpan(0, n).CopyTo(GuestMemory.Span(optval, n));
@@ -269,6 +315,7 @@ public sealed partial class Net
             var so = Sock(s);
             if (so == null) return NetErr(EBADF);
             if (addr == 0) return NetErr(EINVAL);
+            if (so.Host != null) { WriteSockaddr(addr, len, LocalOf(so.Host)); return 0; }
             GuestMemory.Fill(addr, 0, 16);
             if (so.Local != null) so.Local.CopyTo(GuestMemory.Span(addr, so.Local.Length));
             else { GuestMemory.Write<byte>(addr, 16); GuestMemory.Write<byte>(addr + 1, 2); } // AF_INET, any address
@@ -282,8 +329,14 @@ public sealed partial class Net
     {
         lock (_netLock)
         {
-            if (Sock(s) == null) return NetErr(EBADF);
+            var so = Sock(s);
+            if (so == null) return NetErr(EBADF);
             if (name == 0 || namelen == 0) return NetErr(EINVAL);
+            if (so.Host != null && (so.StreamConnected || so.Host.SocketType != System.Net.Sockets.SocketType.Stream) && RemoteOf(so.Host) is { } peer)
+            {
+                WriteSockaddr(name, namelen, peer);
+                return 0;
+            }
             return NetErr(ERR_NET_ENOTCONN);
         }
     }
@@ -346,7 +399,7 @@ public sealed partial class Net
             {
                 case 1: // ADD
                     if (ev == 0) return NetErr(EINVAL);
-                    if (!_sockets.ContainsKey(id) && !_resolvers.Contains(id)) return NetErr(EBADF);
+                    if (!_sockets.ContainsKey(id) && !_resolvers.ContainsKey(id)) return NetErr(EBADF);
                     if (e.Entries.ContainsKey(id)) return NetErr(EEXIST);
                     e.Entries[id] = (GuestMemory.R32(ev), GuestMemory.Read<ulong>(ev + 0x18));
                     return 0;
@@ -374,6 +427,7 @@ public sealed partial class Net
             if (!_epolls.TryGetValue(eid, out var e)) return NetErr(EBADF);
             if (maxevents <= 0 || events == 0) return NetErr(EINVAL);
             if (e.AbortSticky) return NetErr(EINTR);
+            if (e.Entries.Keys.Any(id => _sockets.TryGetValue(id, out var s) && s.Host != null)) return RealEpollWait(e, events, maxevents, timeout);
             if (timeout == 0) return 0;
             int gen = e.AbortGen;
             int w = Block(() => e.Destroyed || e.AbortGen != gen, timeout < 0 ? null : timeout, "net epoll");
@@ -396,33 +450,77 @@ public sealed partial class Net
         }
     }
 
-    // ------------------------------------------------------------------ resolver (no DNS offline)
+    // ------------------------------------------------------------------ resolver (no DNS offline; the host's with real internet)
 
-    [Hle] int sceNetResolverCreate(string name, uint param, int flags) { lock (_netLock) { int id = _nextResolver++ | 0x10000; _resolvers.Add(id); return id; } }
-    [Hle] int sceNetResolverDestroy(int rid) { lock (_netLock) return _resolvers.Remove(rid) ? 0 : NetErr(EBADF); }
-    int CheckResolver(int rid) { lock (_netLock) return _resolvers.Contains(rid) ? 0 : NetErr(EBADF); }
+    [Hle]
+    int sceNetResolverCreate(string name, uint param, int flags)
+    {
+        lock (_netLock)
+        {
+            int id = _nextResolver++ | 0x10000;
+            _resolvers[id] = new Resolver { Id = id };
+            return id;
+        }
+    }
 
+    [Hle]
+    int sceNetResolverDestroy(int rid)
+    {
+        lock (_netLock)
+        {
+            if (!_resolvers.Remove(rid)) return NetErr(EBADF);
+            Monitor.PulseAll(_netLock); // a lookup in progress ends with EBADF
+            return 0;
+        }
+    }
+
+    /// <summary>int sceNetResolverStartNtoa(int rid, const char *hostname, SceNetInAddr *addr, int timeout, int retry,
+    /// int flags). Offline: RESOLVER_ENODNS. Real internet: the host's DNS (IPv4), blocked hosts fail with
+    /// RESOLVER_ENOHOST; the timeout is taken as microseconds per try (clamped to 1-30 s, 10 s when 0).</summary>
     [Hle]
     int sceNetResolverStartNtoa(int rid, string host, uint addr, int timeout, int retry, int flags)
     {
-        int r = CheckResolver(rid);
-        return r < 0 ? r : NetErr(RESOLVER_ENODNS);
+        lock (_netLock)
+        {
+            if (!_resolvers.TryGetValue(rid, out var r)) return NetErr(EBADF);
+            if (!Cfg.Real) { r.LastError = RESOLVER_ENODNS; return NetErr(RESOLVER_ENODNS); }
+            return RealResolveName(r, host, addr, timeout, retry);
+        }
     }
 
     [Hle]
     int sceNetResolverStartAton(int rid, uint addr, uint host, int len, int timeout, int retry, int flags)
     {
-        int r = CheckResolver(rid);
-        return r < 0 ? r : NetErr(RESOLVER_ENODNS);
+        lock (_netLock)
+        {
+            if (!_resolvers.TryGetValue(rid, out var r)) return NetErr(EBADF);
+            if (!Cfg.Real) { r.LastError = RESOLVER_ENODNS; return NetErr(RESOLVER_ENODNS); }
+            return RealResolveAddr(r, addr, host, len, timeout, retry);
+        }
     }
 
-    [Hle] int sceNetResolverGetError(int rid, Ptr<int> err) { err.TrySet(RESOLVER_ENODNS); return 0; }
+    [Hle]
+    int sceNetResolverGetError(int rid, Ptr<int> err)
+    {
+        lock (_netLock)
+        {
+            if (!_resolvers.TryGetValue(rid, out var r)) return NetErr(EBADF);
+            err.TrySet(Cfg.Real ? r.LastError : RESOLVER_ENODNS);
+            return 0;
+        }
+    }
 
     [Hle]
     int sceNetResolverAbort(int rid, int flags)
     {
         if (flags is < 0 or > 3) return NetErr(EINVAL);
-        return CheckResolver(rid); // resolutions fail at once offline: nothing in flight to abort
+        lock (_netLock)
+        {
+            if (!_resolvers.TryGetValue(rid, out var r)) return NetErr(EBADF);
+            r.AbortGen++;
+            Monitor.PulseAll(_netLock);
+            return 0;
+        }
     }
 
     // ------------------------------------------------------------------ DNS / misc

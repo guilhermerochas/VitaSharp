@@ -164,23 +164,38 @@ public sealed class NpCommunity(string name)
     /// </summary>
     public int Run(int reqId, bool async, Func<Transaction, int> work)
     {
+        Transaction? t;
         lock (_lock)
         {
             if (!_inited) return NOT_INITIALIZED;
-            if (!_reqs.TryGetValue(reqId, out var t)) return INVALID_ID;
+            if (!_reqs.TryGetValue(reqId, out t)) return INVALID_ID;
             if (t.Result != null && !t.Open) return TRANSACTION_ALREADY_END;
-            int result;
-            if (!Local) result = OfflineResult;
-            else
+            if (!Local)
             {
+                t.Result = OfflineResult;
                 t.Open = false;
-                try { result = work(t); }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                    Log.Warn($"{name}: local server error: {e.Message}");
-                    result = PsnAccount.ServerUnreachable;
-                }
+                t.State = null;
+                return async ? 0 : t.Result.Value;
             }
+            t.Open = false;
+        }
+        // the work runs outside the library lock: with an RPCN server it is a network round trip (the guest thread
+        // releases its emulated core meanwhile), and other requests must not wait for it
+        int result;
+        try { result = work(t); }
+        catch (NpServerException e)
+        {
+            Log.Info($"{name}: server answered 0x{e.Code:X8} ({e.Message})");
+            result = e.Code;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"{name}: server error: {e.Message}");
+            result = PsnAccount.ServerUnreachable;
+        }
+        lock (_lock)
+        {
+            if (t.Result == ABORTED && !t.Open) return async ? 0 : ABORTED; // aborted while the server was answering
             t.Result = result;
             if (result < 0) { t.Open = false; t.State = null; }
             return async ? 0 : result;
@@ -258,8 +273,8 @@ public sealed class NpScore : HleModule
 {
     readonly NpCommunity _lib = new("NpScore");
     internal NpCommunity Lib => _lib;
-    internal ScoreStore? StoreOverride;
-    ScoreStore Store => StoreOverride ?? Emu.LocalPsn.Score;
+    internal IScoreService? StoreOverride;
+    IScoreService Store => StoreOverride ?? Emu.LocalPsn.Score;
 
     const uint RankDataSize = 128, PlayerRankDataSize = 136, CommentSize = 64, GameInfoSize = 64, VarGameInfoSize = 196;
     const int MaxRange = 100, MaxNpIds = 101;
@@ -569,8 +584,8 @@ public sealed class NpTus : HleModule
 {
     readonly NpCommunity _lib = new("NpTus");
     internal NpCommunity Lib => _lib;
-    internal TusStore? StoreOverride;
-    TusStore Store => StoreOverride ?? Emu.LocalPsn.Tus;
+    internal ITusService? StoreOverride;
+    ITusService Store => StoreOverride ?? Emu.LocalPsn.Tus;
 
     public const uint VariableSize = 120, DataStatusSize = 488, DataInfoSize = 392;
     const int MaxSlots = 64, MaxUsers = 101, VUserIdSize = 20, NpIdSize = 36;

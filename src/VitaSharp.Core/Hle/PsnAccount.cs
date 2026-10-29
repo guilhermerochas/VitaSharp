@@ -20,6 +20,10 @@ namespace VitaSharp.Core.Hle;
 /// </summary>
 public sealed record PsnAccount(bool SignedIn, string OnlineId, bool LocalServices = true)
 {
+    /// <summary>"host:port" of the RPCN server Score and TUS go to (real internet, see <see cref="Np.Rpcn.RpcnClient"/>);
+    /// null = the local services. With a server the other services stay local.</summary>
+    public string? Server { get; init; }
+
     public const string DefaultOnlineId = "VitaSharp";
 
     /// <summary>SCE_HTTP_ERROR_NETWORK (psp2/net/http.h): what a signed-in console gets for a PSN server request that
@@ -41,7 +45,7 @@ public sealed record PsnAccount(bool SignedIn, string OnlineId, bool LocalServic
     public int ServerError => SignedIn ? ServerUnreachable : SignedOutError;
 
     /// <summary>Signed in with the local PSN services: TUS, rankings, tickets and matching work offline.</summary>
-    public bool UsesLocalServices => SignedIn && LocalServices;
+    public bool UsesLocalServices => SignedIn && (LocalServices || Server != null);
 
     /// <summary>
     /// PSN online IDs: 3 to 16 characters, ASCII letters, digits, '-' and '_', starting with a letter.

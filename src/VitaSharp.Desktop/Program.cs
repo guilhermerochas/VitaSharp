@@ -372,6 +372,10 @@ public static class Program
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");
         Console.WriteLine("                             (default on; off = every PSN server request fails as unreachable)");
+        Console.WriteLine("               --net=off|real  real internet for game sockets, DNS and HTTP (default off; Sony's servers stay blocked)");
+        Console.WriteLine("               --net-allow=host,...  with --net=real, only these hosts/addresses are reachable (localhost = loopback)");
+        Console.WriteLine("               --rpcn=host[:port] --rpcn-user=<name> [--rpcn-token=]  Score/TUS on an RPCN server (needs --net=real;");
+        Console.WriteLine("                             password in " + EnvVars.RpcnPassword + ")");
         Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
         Console.WriteLine("               --hle-modules=json,...    keep these on HLE even when the game or the firmware has the module");
     }
