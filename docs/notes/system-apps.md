@@ -109,7 +109,13 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 
 ## Remaining
 
-- Resuming the game from its LiveArea gate ("Continue") was not exercised in a test yet (ActivateApp resumes).
+- PS button: default host bindings are the controller's PS / Xbox guide / Home button (SDL "guide"; raw DirectInput
+  button 12 on PlayStation pads) and the Home key; it is the "PS button" row of the controller settings. The press is
+  taken by the system (applications never see the bit) and the shell gets event 0x10 {application id}: in the FW 3.74
+  kernel appmgr that event is posted only by the function behind SceAppMgrForDriver 0x29421DCD / 0xF3B1D42E, which marks
+  the application in front as suspending (state 3). Checked: in Devious Dungeon, PS brings the shell back (the game is
+  suspended; first time with the home-screen hint), its LiveArea shows "Continue", and Continue resumes the game.
+  The gate's thumbnail of the suspended game stays black.
 - The "Could not install" dialog and the "!" notification after unlocking remain: not the background download
   launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
   `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the

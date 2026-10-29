@@ -228,16 +228,23 @@ public sealed class Ctrl : HleModule
     bool _psDown;
 
     /// <summary>The buttons and sticks this process sees: the host's for the foreground process, nothing for a process in
-    /// the background. A PS button press reaching the shell's reads is handed to the system (<see cref="Kernel.VitaSystem.OnPsButton"/>),
-    /// whatever process is in front.</summary>
+    /// the background. The PS button is a system button: a press seen by the shell's reads (whatever process is in
+    /// front) is handed to the system (<see cref="Kernel.VitaSystem.OnPsButton"/>); applications never see it.</summary>
     ControllerState State(int port)
     {
         var s = Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
         bool ps = (s.Buttons & VitaButtons.PsButton) != 0;
-        if (ps && !_psDown && Emu.IsShell) Emu.Vita.OnPsButton(); // the kernel sees the press; SceAppMgr tells the shell
-        _psDown = ps;
-        if (Emu.IsForeground) return s;
-        return ControllerState.Neutral;
+        if (Emu.IsShell)
+        {
+            // the kernel takes the press (SceAppMgrForDriver 0x29421DCD/0xF3B1D42E in FW 3.74: the application in front
+            // goes to its suspend state and the shell gets event 0x10 {application id})
+            if (ps && !_psDown) Emu.Vita.OnPsButton();
+            _psDown = ps;
+            return Emu.IsForeground ? s : ControllerState.Neutral;
+        }
+        if (!Emu.IsForeground) return ControllerState.Neutral;
+        s.Buttons &= ~VitaButtons.PsButton; // a system button: applications never see it
+        return s;
     }
 
     /// <summary>Which sceCtrl buffer API family is reading: <c>Ext</c> = the *Ext / *2 functions (report the system
