@@ -48,6 +48,7 @@ public static class EnvVars
     public const string SkipUnicorn = "VITASHARP_SKIP_UNICORN";
     public const string SnapFs = "VITASHARP_SNAP_FS";
     public const string Swz1 = "VITASHARP_SWZ1";
+    public const string SyscallLatencyUs = "VITASHARP_SYSCALL_LATENCY_US";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
     public const string Texdirty = "VITASHARP_TEXDIRTY";
     public const string TraceRt = "VITASHARP_TRACE_RT";
