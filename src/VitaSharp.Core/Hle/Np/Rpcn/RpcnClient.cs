@@ -157,10 +157,19 @@ public sealed class RpcnClient : IDisposable
             throw new IOException($"server not allowed: {why}");
         }
         _net.LogContact($"RPCN server {Config.Host}:{Config.Port} as {Config.User}");
-        var tcp = new TcpClient { NoDelay = true, ReceiveTimeout = (int)Timeout.TotalMilliseconds, SendTimeout = (int)Timeout.TotalMilliseconds };
+        // IPv4 like RPCS3's client (and Windows retries a refused ::1 for seconds before trying 127.0.0.1)
+        var tcp = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true, ReceiveTimeout = (int)Timeout.TotalMilliseconds, SendTimeout = (int)Timeout.TotalMilliseconds };
         var connect = tcp.ConnectAsync(Config.Host, Config.Port);
-        if (!connect.Wait(Timeout)) { tcp.Dispose(); throw new IOException("connection timed out"); }
-        if (connect.IsFaulted) { tcp.Dispose(); throw new IOException(connect.Exception!.InnerException?.Message ?? "connection failed"); }
+        try
+        {
+            if (!connect.Wait(Timeout)) throw new IOException("connection timed out");
+        }
+        catch (AggregateException e)
+        {
+            tcp.Dispose();
+            throw new IOException($"connection failed: {e.InnerException?.Message}", e.InnerException);
+        }
+        catch (IOException) { tcp.Dispose(); throw; }
         Stream stream = tcp.GetStream();
         if (UseTls)
         {
