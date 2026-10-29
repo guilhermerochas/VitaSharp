@@ -389,7 +389,8 @@ VQMOVN, VCVT fixed point, byte/halfword exclusives, SWP, MRS/MSR, ...).
   Unicorn 2.1's AArch64 TCG backend emits an UNDEFINED `neg v.1d` for a 64-bit-lane VNEG, which kills the process, so
   the tests' NEON encoding vetting (`SimdDefined`, Unicorn ARM32) only uses preloaded verdicts on ARM64 hosts (none by
   default: random blocks get no NEON slots there; the qemu run preloaded verdicts computed on x64).
-- x64 unchanged: fast suite and kz_skin, see the end of this section.
+- x64 unchanged: fast suite (`Category!=Slow`) 843/843 after merging main 7f26c85, 0 build warnings; kz_skin on the
+  branch build: all 4500 frames, gameplay reached, native x64 backend 100.0% inline (static), 0 native faults.
 
 ### Still missing before a real Android device
 1. Real hardware (an Android phone, a Raspberry Pi 4/5, Apple silicon): everything so far ran in Unicorn or qemu-user.
