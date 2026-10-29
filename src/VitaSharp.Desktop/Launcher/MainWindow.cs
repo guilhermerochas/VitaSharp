@@ -392,6 +392,8 @@ public sealed class MainWindow : Window
         foreach (var c in command) psi.ArgumentList.Add(c);
         foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
         psi.Environment[EnvVars.Data] = Program.DataRoot;
+        // the RPCN password goes in the environment of the game process, not on its command line
+        if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
 
         _logLines.Clear(); _logChars = 0; _log.Text = "";
         AppendLog($"> {title} ({titleId})");

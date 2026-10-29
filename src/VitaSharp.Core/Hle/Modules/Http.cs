@@ -7,11 +7,12 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
-/// SceHttp in the offline profile: templates, connections and requests are real objects (settings, headers, cookies,
+/// SceHttp. Offline (the default): templates, connections and requests are real objects (settings, headers, cookies,
 /// abort state), every send fails like an unresolvable server (SCE_HTTP_ERROR_NETWORK), and the pure URI/header
-/// utilities work as on hardware.
+/// utilities work as on hardware. With real internet (<c>--net=real</c>) requests go through .NET's HttpClient
+/// (Http.Real.cs).
 /// </summary>
-public sealed class Http : HleModule
+public sealed partial class Http : HleModule
 {
     const int ERR_BEFORE_INIT = unchecked((int)0x80431001), ERR_ALREADY_INITED = unchecked((int)0x80431020),
         ERR_BUSY = unchecked((int)0x80431021), ERR_OUT_OF_MEMORY = unchecked((int)0x80431022), ERR_NOT_FOUND = unchecked((int)0x80431025),
@@ -52,6 +53,9 @@ public sealed class Http : HleModule
         public uint HeadersBuf, HeadersBufSize;
         public HttpEpoll? Epoll;
         public uint EpollArg;
+        /// <summary>Real internet: the exchange in flight or done (Http.Real.cs).</summary>
+        public Exchange? Ex;
+        public uint RespHeadersBuf, RespHeadersBufSize;
     }
 
     sealed class HttpEpoll
@@ -67,7 +71,9 @@ public sealed class Http : HleModule
     readonly Dictionary<int, Obj> _objs = new();
     readonly Dictionary<int, HttpEpoll> _epolls = new();
     int _nextId = 1, _nextEpoll = 1;
-    uint _sslFlags;
+    /// <summary>SCE_HTTPS_FLAG_*: SERVER_VERIFY 0x01, CLIENT_VERIFY 0x02, CN_CHECK 0x04, NOT_AFTER_CHECK 0x08,
+    /// NOT_BEFORE_CHECK 0x10, KNOWN_CA_CHECK 0x20; the library starts with the server checks on.</summary>
+    uint _sslFlags = SslDefaultFlags;
     int _defaultGzip;
     readonly CookieJar _cookies = new();
     readonly List<byte[]> _certs = new();
@@ -138,6 +144,8 @@ public sealed class Http : HleModule
     void FreeObj(Obj o)
     {
         if (o.HeadersBuf != 0) { try { Emu.Memory.Free(o.HeadersBuf); } catch { } o.HeadersBuf = 0; }
+        if (o.RespHeadersBuf != 0) { try { Emu.Memory.Free(o.RespHeadersBuf); } catch { } o.RespHeadersBuf = 0; }
+        o.Ex?.Cancel();
         o.Epoll = null;
         o.Aborted = true;
     }
@@ -324,6 +332,7 @@ public sealed class Http : HleModule
             int r = Find(reqId, out var o, Kind.Request);
             if (r < 0) return r;
             o.Aborted = true;
+            o.Ex?.Cancel();
             Monitor.PulseAll(_lock);
             return 0;
         }
@@ -337,6 +346,7 @@ public sealed class Http : HleModule
             int r = Find(reqId, out var o, Kind.Request);
             if (r < 0) return r;
             if (o.Aborted) return ERR_ABORTED;
+            if (Cfg.Real) return RealSendRequest(o, postData, size);
             // non-blocking request bound to an HTTP epoll: report "in progress" once, then the resolver failure as an event
             if (o.S.Nonblock != 0 && o.Epoll != null && !o.Sent)
             {
@@ -361,10 +371,23 @@ public sealed class Http : HleModule
         return o.Sent ? ERR_NETWORK : ERR_BEFORE_SEND;
     }
 
-    [Hle] int sceHttpGetStatusCode(int reqId, uint statusCode) { lock (_lock) return ResponseState(reqId); }
-    [Hle] int sceHttpGetResponseContentLength(int reqId, uint contentLength) { lock (_lock) return ResponseState(reqId); }
-    [Hle] int sceHttpReadData(int reqId, uint data, uint size) { lock (_lock) return ResponseState(reqId); }
-    [Hle] int sceHttpGetAllResponseHeaders(int reqId, uint header, uint headerSize) { lock (_lock) return ResponseState(reqId); }
+    /// <summary>Runs <paramref name="real"/> for a request sent over real internet, else the offline answer.</summary>
+    int OnResponse(int reqId, Func<Obj, int> real)
+    {
+        lock (_lock)
+        {
+            int r = Find(reqId, out var o, Kind.Request);
+            if (r < 0) return r;
+            if (o.Ex != null && !o.Aborted) return real(o);
+            return ResponseState(reqId);
+        }
+    }
+
+    [Hle] int sceHttpGetStatusCode(int reqId, uint statusCode) => OnResponse(reqId, o => RealStatusCode(o, statusCode));
+    /// <summary>int (int reqId, SceULong64 *contentLength).</summary>
+    [Hle] int sceHttpGetResponseContentLength(int reqId, uint contentLength) => OnResponse(reqId, o => RealContentLength(o, contentLength));
+    [Hle] int sceHttpReadData(int reqId, uint data, uint size) => OnResponse(reqId, o => RealReadData(o, data, size));
+    [Hle] int sceHttpGetAllResponseHeaders(int reqId, uint header, uint headerSize) => OnResponse(reqId, o => RealResponseHeaders(o, header, headerSize));
 
     [Hle]
     int sceHttpGetLastErrno(int reqId, uint errNum)
@@ -890,7 +913,20 @@ public sealed class Http : HleModule
         return SetSetting(id, s => s.SslCb = (cbfunc, userArg));
     }
 
-    [Hle] int sceHttpsGetSslError(int id, Ptr<int> err, Ptr<uint> detail) { err.TrySet(0); detail.TrySet(0); return 0; }
+    /// <summary>int (int id, int *errNum, unsigned int *detail): the TLS failure of the last exchange (real internet),
+    /// SCE_HTTPS_ERROR_CERT with the failed SCE_HTTPS_ERROR_SSL_* checks in detail; 0 when none.</summary>
+    [Hle]
+    int sceHttpsGetSslError(int id, Ptr<int> err, Ptr<uint> detail)
+    {
+        lock (_lock)
+        {
+            int r = Find(id, out var o);
+            if (r < 0) return r;
+            err.TrySet(o.Ex?.SslError ?? 0);
+            detail.TrySet(o.Ex?.SslDetail ?? 0);
+            return 0;
+        }
+    }
 
     /// <summary>SceHttpsCaList (8): +0 caCerts, +4 caNum. The emulated system has no CA list offline.</summary>
     [Hle]
@@ -904,7 +940,12 @@ public sealed class Http : HleModule
     }
 
     [Hle] int sceHttpsFreeCaList(uint caList) => !_inited ? ERR_BEFORE_INIT : caList == 0 ? ERR_INVALID_VALUE : 0;
-    [Hle] int sceHttpSslIsCtxCreated(int id) => 0; // no TLS context ever exists offline
+    /// <summary>1 when the request (real internet) talks TLS, 0 otherwise (offline no TLS context ever exists).</summary>
+    [Hle]
+    int sceHttpSslIsCtxCreated(int id)
+    {
+        lock (_lock) return _objs.TryGetValue(id, out var o) && o.Ex != null && o.Url.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+    }
     [Hle] int sceHttpAuthCacheFlush() => _inited ? 0 : ERR_BEFORE_INIT;
     [Hle] int sceHttpRedirectCacheFlush() => _inited ? 0 : ERR_BEFORE_INIT;
 

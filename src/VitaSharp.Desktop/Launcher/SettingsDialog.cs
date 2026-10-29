@@ -88,8 +88,33 @@ public sealed class SettingsDialog : Window
             Text = "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.",
             Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false,
         };
-        void SyncPsn() => psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
+        // real internet (--net=real) and an optional RPCN server for Score/TUS (--rpcn=, --rpcn-user=, password in the
+        // game process environment): off by default, with the privacy note always visible
+        const string realNetTip = "Os sockets, o DNS e o HTTP dos jogos passam a usar a rede deste PC. Os servidores da Sony " +
+                                  "continuam bloqueados (a maioria já foi desligada); o resto do tráfego do jogo vai para os " +
+                                  "servidores que o próprio jogo escolher.";
+        var realNet = new CheckBox { Content = "Internet real", IsChecked = settings.RealInternet };
+        ToolTip.SetTip(realNet, realNetTip);
+        var realNetNote = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brushes.Goldenrod,
+            Text = "Privacidade: com a internet real ligada, o jogo envia dados (seu IP, o ID online, pontuações e salvamentos " +
+                   "na nuvem) para os servidores dele e para o servidor RPCN configurado abaixo. Desligada (padrão), nada sai do PC.",
+        };
+        var rpcnServer = new TextBox { Text = settings.RpcnServer, Width = 260, Watermark = "ex.: np.rpcs3.net" };
+        var rpcnUser = new TextBox { Text = settings.RpcnUser, Width = 200, MaxLength = 16 };
+        var rpcnPass = new TextBox { Text = settings.RpcnPassword, Width = 200, PasswordChar = '•' };
+        var rpcnToken = new TextBox { Text = settings.RpcnToken, Width = 200, Watermark = "só no primeiro login" };
+        const string rpcnTip = "Servidor RPCN (o servidor aberto do RPCS3) para placares e salvamento na nuvem (TUS) com " +
+                               "outros jogadores. Vazio: os serviços PSN locais. A senha fica gravada neste PC (launcher.json).";
+        ToolTip.SetTip(rpcnServer, rpcnTip);
+        void SyncPsn()
+        {
+            psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
+            rpcnServer.IsEnabled = rpcnUser.IsEnabled = rpcnPass.IsEnabled = rpcnToken.IsEnabled = realNet.IsChecked == true && psnSignedIn.IsChecked == true;
+        }
         psnSignedIn.IsCheckedChanged += (_, _) => SyncPsn();
+        realNet.IsCheckedChanged += (_, _) => SyncPsn();
         SyncPsn();
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         general.Children.Add(fullscreen);
@@ -130,6 +155,12 @@ public sealed class SettingsDialog : Window
         general.Children.Add(Row("ID online", psnId));
         general.Children.Add(psnIdError);
         general.Children.Add(WithHint(psnLocal, psnLocalTip));
+        general.Children.Add(WithHint(realNet, realNetTip));
+        general.Children.Add(realNetNote);
+        general.Children.Add(Row("Servidor RPCN", rpcnServer));
+        general.Children.Add(Row("Usuário RPCN", rpcnUser));
+        general.Children.Add(Row("Senha RPCN", rpcnPass));
+        general.Children.Add(Row("Token RPCN", rpcnToken));
         // firmware: install the official PUP (or copy Vita3K's), and the libraries to keep on HLE (--hle-modules=)
         general.Children.Add(new TextBlock { Text = "Firmware", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         var firmware = Firmware = new FirmwarePanel();
@@ -213,6 +244,11 @@ public sealed class SettingsDialog : Window
             settings.PsnSignedIn = psnSignedIn.IsChecked == true;
             settings.PsnOnlineId = id;
             settings.PsnLocalServices = psnLocal.IsChecked == true;
+            settings.RealInternet = realNet.IsChecked == true;
+            settings.RpcnServer = (rpcnServer.Text ?? "").Trim();
+            settings.RpcnUser = (rpcnUser.Text ?? "").Trim();
+            settings.RpcnPassword = rpcnPass.Text ?? "";
+            settings.RpcnToken = (rpcnToken.Text ?? "").Trim();
             settings.Fullscreen = fullscreen.IsChecked == true;
             settings.VSync = vsync.IsChecked == true;
             settings.Validation = validation.IsChecked == true;

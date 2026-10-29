@@ -68,7 +68,7 @@ public sealed partial class Net : HleModule
     {
         if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
         var pending = new List<(NetCallback Cb, int Event)>();
-        int inetEvent = PsnAccount.Current.SignedIn ? NETCTL_EVENT_IPOBTAINED : NETCTL_EVENT_DISCONNECTED;
+        int inetEvent = PsnAccount.Current.SignedIn || Cfg.Real ? NETCTL_EVENT_IPOBTAINED : NETCTL_EVENT_DISCONNECTED;
         lock (_inetCallbacks)
         {
             foreach (var c in _inetCallbacks.Values)
@@ -81,20 +81,58 @@ public sealed partial class Net : HleModule
     }
 
     // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers (PsnAccount decides the NP state),
-    // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server.
+    // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server. With real internet
+    // (--net=real) it is a Wi-Fi connection with the host's IPv4 address, netmask, gateway and DNS servers.
     [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = 3; return 0; }
     [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return ERR_NETCTL_INVALID_ADDR; error.Value = 0; return 0; }
+
+    /// <summary>The host's primary IPv4 configuration (an up interface with a gateway, else any up non-loopback one).</summary>
+    internal sealed record HostIpInfo(string Ip, string Netmask, string Gateway, string Dns1, string Dns2, int Mtu);
+
+    static HostIpInfo? _hostIp;
+    static long _hostIpAt;
+
+    internal static HostIpInfo HostIp()
+    {
+        if (_hostIp is { } cached && Environment.TickCount64 - Interlocked.Read(ref _hostIpAt) < 10_000) return cached;
+        var info = new HostIpInfo("192.168.0.10", "255.255.255.0", "192.168.0.1", "192.168.0.1", "0.0.0.0", 1500);
+        try
+        {
+            var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                            n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                .Select(n => (Nic: n, Props: n.GetIPProperties()))
+                .OrderByDescending(n => n.Props.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !g.Address.Equals(System.Net.IPAddress.Any)));
+            foreach (var (nic, p) in nics)
+            {
+                var ua = p.UnicastAddresses.FirstOrDefault(u => u.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                if (ua == null) continue;
+                var gw = p.GatewayAddresses.Select(g => g.Address).FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                var dns = p.DnsAddresses.Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Select(a => a.ToString()).ToList();
+                int mtu = 1500;
+                try { mtu = p.GetIPv4Properties()?.Mtu ?? 1500; } catch (System.Net.NetworkInformation.NetworkInformationException) { } catch (PlatformNotSupportedException) { }
+                info = new HostIpInfo(ua.Address.ToString(), ua.IPv4Mask?.ToString() ?? "255.255.255.0", gw?.ToString() ?? "0.0.0.0",
+                    dns.ElementAtOrDefault(0) ?? gw?.ToString() ?? "0.0.0.0", dns.ElementAtOrDefault(1) ?? "0.0.0.0", mtu is > 0 and < 65536 ? mtu : 1500);
+                break;
+            }
+        }
+        catch (System.Net.NetworkInformation.NetworkInformationException) { }
+        _hostIp = info;
+        Interlocked.Exchange(ref _hostIpAt, Environment.TickCount64);
+        return info;
+    }
 
     [Hle]
     int sceNetCtlInetGetInfo(int code, uint info)
     {
         if (info == 0) return ERR_NETCTL_INVALID_ADDR;
+        var host = Cfg.Real ? HostIp() : null;
         switch (code)
         {
             case 1: GuestMemory.WriteCString(info, "VitaSharp", 65); break;           // configuration name
             case 2: GuestMemory.W32(info, 0); break;                                // device: wireless
-            case 3: sceNetGetMacAddress(info, 0); break;                           // ether address
-            case 4: GuestMemory.W32(info, 1500); break;                             // MTU
+            case 3: sceNetGetMacAddress(info, 0); break;                           // ether address (emulated: the host's is not exposed)
+            case 4: GuestMemory.W32(info, (uint)(host?.Mtu ?? 1500)); break;        // MTU
             case 5: GuestMemory.W32(info, 1); break;                                // link up
             case 6: new byte[] { 0x00, 0x1F, 0xA7, 0x00, 0x00, 0x01 }.CopyTo(GuestMemory.Span(info, 6)); break;
             case 7: GuestMemory.WriteCString(info, "VitaSharpNet", 33); break;     // SSID
@@ -105,11 +143,11 @@ public sealed partial class Net : HleModule
             case 12: GuestMemory.W32(info, 0); break;                               // DHCP
             case 13: GuestMemory.WriteCString(info, "", 256); break;
             case 14: GuestMemory.WriteCString(info, "", 128); break;
-            case 15: GuestMemory.WriteCString(info, "192.168.0.10", 16); break;
-            case 16: GuestMemory.WriteCString(info, "255.255.255.0", 16); break;
-            case 17: GuestMemory.WriteCString(info, "192.168.0.1", 16); break;
-            case 18: GuestMemory.WriteCString(info, "192.168.0.1", 16); break;
-            case 19: GuestMemory.WriteCString(info, "0.0.0.0", 16); break;
+            case 15: GuestMemory.WriteCString(info, host?.Ip ?? "192.168.0.10", 16); break;
+            case 16: GuestMemory.WriteCString(info, host?.Netmask ?? "255.255.255.0", 16); break;
+            case 17: GuestMemory.WriteCString(info, host?.Gateway ?? "192.168.0.1", 16); break;
+            case 18: GuestMemory.WriteCString(info, host?.Dns1 ?? "192.168.0.1", 16); break;
+            case 19: GuestMemory.WriteCString(info, host?.Dns2 ?? "0.0.0.0", 16); break;
             case 20: GuestMemory.W32(info, 0); break;                               // no proxy
             case 21: GuestMemory.WriteCString(info, "", 256); break;
             case 22: GuestMemory.W32(info, 0); break;

@@ -24,6 +24,11 @@ public sealed class EmulatorOptions
     public string? PatchDir { get; init; }
     /// <summary>The emulated PSN account (signed in by default, see <see cref="PsnAccount"/>).</summary>
     public PsnAccount Psn { get; init; } = PsnAccount.Default;
+    /// <summary>Real internet for SceNet/SceHttp (off by default, see <see cref="NetConfig"/>).</summary>
+    public NetConfig Net { get; init; } = NetConfig.Off;
+    /// <summary>An RPCN server for Score/TUS (used only with real internet and a signed-in account); null = the local
+    /// PSN services.</summary>
+    public Hle.Np.Rpcn.RpcnConfig? Rpcn { get; init; }
     /// <summary>Folder of the local PSN service data (TUS / Cross-Save, rankings: <see cref="Hle.Np.LocalPsn"/>); null =
     /// &lt;DataRoot&gt;/np, next to <see cref="FsRoot"/>.</summary>
     public string? NpRoot { get; init; }
@@ -102,9 +107,24 @@ public sealed class Emulator : IDisposable
         Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
         PsnAccount.Current = options.Psn;
+        NetConfig.Current = options.Net;
         LocalPsn = new global::VitaSharp.Core.Hle.Np.LocalPsn(options.NpRoot ?? global::VitaSharp.Core.Hle.Np.LocalPsn.DefaultRoot(options.FsRoot));
+        if (options.Net.Real)
+            Log.Warn(options.Net.Allow == null
+                ? "Network: real internet (--net=real): game traffic leaves this PC; Sony's servers stay blocked"
+                : $"Network: real internet limited to {string.Join(", ", options.Net.Allow)} (--net-allow); everything else is blocked and logged");
+        if (options.Rpcn is { } rpcn)
+        {
+            if (!options.Net.Real) Log.Warn($"RPCN server {rpcn.Host} ignored: real internet is off (--net=real)");
+            else if (!options.Psn.SignedIn) Log.Warn($"RPCN server {rpcn.Host} ignored: the PSN account is signed out (--psn=on)");
+            else
+            {
+                LocalPsn.UseRpcn(new global::VitaSharp.Core.Hle.Np.Rpcn.RpcnClient(rpcn, options.Net));
+                PsnAccount.Current = options.Psn with { Server = $"{rpcn.Host}:{rpcn.Port}" };
+            }
+        }
         Log.Info(options.Psn.SignedIn
-            ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
+            ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(LocalPsn.Rpcn is { } rc ? $"Score/TUS on RPCN server {rc.Config.Host}:{rc.Config.Port}" : options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
             : "PSN: signed out, offline");
         Memory = options.Memory ?? new GuestMemory();
         Host = new Host.HostServices();

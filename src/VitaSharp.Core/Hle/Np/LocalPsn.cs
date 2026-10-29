@@ -21,8 +21,27 @@ namespace VitaSharp.Core.Hle.Np;
 public sealed class LocalPsn(string root)
 {
     public string Root { get; } = root;
-    public TusStore Tus { get; } = new(Path.Combine(root, "tus"));
-    public ScoreStore Score { get; } = new(Path.Combine(root, "score"));
+    public TusStore LocalTus { get; } = new(Path.Combine(root, "tus"));
+    public ScoreStore LocalScore { get; } = new(Path.Combine(root, "score"));
+
+    ITusService? _remoteTus;
+    IScoreService? _remoteScore;
+
+    /// <summary>The RPCN server Score and TUS go to (real internet, <see cref="UseRpcn"/>), or null for the local stores.</summary>
+    public Rpcn.RpcnClient? Rpcn { get; private set; }
+
+    /// <summary>TUS: the RPCN server when one is configured, else the local store.</summary>
+    public ITusService Tus => _remoteTus ?? LocalTus;
+    /// <summary>Score rankings: the RPCN server when one is configured, else the local store.</summary>
+    public IScoreService Score => _remoteScore ?? LocalScore;
+
+    /// <summary>Sends Score and TUS to an RPCN server instead of the local files.</summary>
+    public void UseRpcn(Rpcn.RpcnClient client)
+    {
+        Rpcn = client;
+        _remoteTus = new Rpcn.RpcnTusService(client);
+        _remoteScore = new Rpcn.RpcnScoreService(client);
+    }
 
     /// <summary><c>&lt;DataRoot&gt;/np</c>, where DataRoot is the folder that holds the virtual filesystem root.</summary>
     public static string DefaultRoot(string fsRoot) =>
@@ -89,9 +108,41 @@ public sealed class TusDataStatus
 /// <summary>TUS comparison operators of sceNpTusTryAndSetVariable (SCE_NP_TUS_OPETYPE_*).</summary>
 public enum TusOpeType { Equal = 1, NotEqual = 2, GreaterThan = 3, GreaterOrEqual = 4, LessThan = 5, LessOrEqual = 6 }
 
+/// <summary>A PSN server error answered by a remote service (an SCE_NP_COMMUNITY_SERVER_ERROR_* code).</summary>
+public sealed class NpServerException(int code, string message) : Exception(message)
+{
+    public int Code { get; } = code;
+}
+
+/// <summary>The Title User Storage operations SceNpTus needs: the local store or an RPCN server. Server errors are thrown
+/// as <see cref="NpServerException"/>, an unreachable server as <see cref="IOException"/>.</summary>
+public interface ITusService
+{
+    TusVariable? GetVariable(string commId, string owner, int slot);
+    void SetVariables(string commId, string owner, IReadOnlyList<(int Slot, long Value)> values, string author);
+    TusVariable AddAndGet(string commId, string owner, int slot, long add, string author);
+    (TusVariable Variable, bool Written) TryAndSet(string commId, string owner, int slot, TusOpeType op, long value, long? compareValue, string author);
+    void DeleteVariables(string commId, string owner, IEnumerable<int> slots);
+    TusDataStatus? GetDataStatus(string commId, string owner, int slot);
+    (TusDataStatus Status, byte[] Data)? GetData(string commId, string owner, int slot);
+    void SetData(string commId, string owner, int slot, byte[] data, byte[] info, string author);
+    void DeleteData(string commId, string owner, IEnumerable<int> slots);
+}
+
+/// <summary>The ranking operations SceNpScore needs: the local store or an RPCN server (errors as in <see cref="ITusService"/>).</summary>
+public interface IScoreService
+{
+    ScoreBoard GetBoard(string commId, uint board);
+    bool Record(string commId, uint board, string onlineId, int pcId, long score, string comment, byte[] gameInfo, out uint tmpRank);
+    (List<RankedScore> Entries, uint Total, ulong LastSortDate) GetRange(string commId, uint board, uint startSerialRank, int count);
+    (List<RankedScore?> Entries, uint Total, ulong LastSortDate) GetByIds(string commId, uint board, IReadOnlyList<(string OnlineId, int PcId)> ids);
+    bool RecordGameData(string commId, uint board, string onlineId, int pcId, long score, byte[] data);
+    byte[]? GetGameData(string commId, uint board, string onlineId, int pcId);
+}
+
 /// <summary>Title User Storage: per title (communication id) and owner, numbered slots of 64-bit variables and of data
 /// blobs. Thread-safe; every change is written to disk at once.</summary>
-public sealed class TusStore(string root)
+public sealed class TusStore(string root) : ITusService
 {
     public const int MaxDataInfoSize = 384;
     readonly object _lock = new();
@@ -265,7 +316,7 @@ public sealed class ScoreBoard
 public readonly record struct RankedScore(ScoreEntry Entry, uint SerialRank, uint Rank);
 
 /// <summary>Score rankings: one board file per title and board id; entries ranked by score (ties: earlier first).</summary>
-public sealed class ScoreStore(string root)
+public sealed class ScoreStore(string root) : IScoreService
 {
     readonly object _lock = new();
 
