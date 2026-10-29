@@ -63,6 +63,30 @@ public static class Program
             }
             case "rco-dump" when args.Length >= 2:
                 return RcoDump(args[1], args.Skip(2).FirstOrDefault(a => a.StartsWith("--extract="))?["--extract=".Length..]);
+            case "registry":
+            {
+                // registry [prefix] [path=value ...]: list the system registry (firmware template + written values);
+                // path=value writes an int key (or a string key, quoted value) first
+                var reg = VitaSharp.Core.Firmware.Registry.For(FsRoot);
+                string prefix = args.Skip(1).FirstOrDefault(a => !a.Contains('=')) ?? "/";
+                foreach (var set in args.Skip(1).Where(a => a.Contains('=')))
+                {
+                    int eq = set.IndexOf('='), slash = set.LastIndexOf('/', eq) + 1;
+                    string val = set[(eq + 1)..];
+                    bool ok = int.TryParse(val, out int iv)
+                        ? reg.SetInt(set[..slash], set[slash..eq], iv)
+                        : reg.Set(set[..slash], set[slash..eq], System.Text.Encoding.UTF8.GetBytes(val.Trim('"') + "\0"));
+                    Console.WriteLine(ok ? $"set {set[..eq]}" : $"no such key {set[..eq]}");
+                }
+                foreach (var k in reg.Keys.Where(k => k.Path.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(k => k.Path, StringComparer.Ordinal))
+                {
+                    var v = reg.Get(k.Path) ?? [];
+                    string shown = k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Int ? BitConverter.ToInt32(v.Concat(new byte[4]).Take(4).ToArray()).ToString()
+                        : k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Str ? "\"" + System.Text.Encoding.UTF8.GetString(v).TrimEnd('\0') + "\"" : Convert.ToHexString(v);
+                    Console.WriteLine($"{k.Path} ({k.Type}, {k.Size}) = {shown}");
+                }
+                return 0;
+            }
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "toast-preview" when args.Length >= 2:
@@ -135,6 +159,9 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "boot-shell":
+                // the PS Vita system software itself: vs0:vsh/shell/shell.self (home screen, LiveArea, system apps)
+                return Runner.Run(ResolveApp("vs0:vsh/shell"), args.Skip(1).Append("--self=shell.self").ToArray());
             case "test" when args.Length >= 2:
                 return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
@@ -148,9 +175,15 @@ public static class Program
     public static string ResolveApp(string arg)
     {
         if (Directory.Exists(arg)) return arg;
+        // a folder of the virtual file system: vs0:vsh/shell (the shell, with --self=shell.self)
+        if (arg.Length > 4 && arg.IndexOf(':') is > 1 and var colon && Path.Combine(FsRoot, arg[..colon], arg[(colon + 1)..].TrimStart('/')) is var dev && Directory.Exists(dev))
+            return dev;
         var p = Path.Combine(Ux0, "app", arg);
         if (Directory.Exists(p)) return p;
-        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p})");
+        // system applications of the installed firmware (vs0:app/NPXS*)
+        var sys = Path.Combine(FsRoot, "vs0", "app", arg);
+        if (Directory.Exists(sys)) return sys;
+        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
     }
 
     static bool IsArchive(string path) =>
@@ -314,7 +347,9 @@ public static class Program
         Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
-        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
+        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (also a system app: NPXS10008; a vs0: folder with --self=x.self)");
+        Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
+        Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");

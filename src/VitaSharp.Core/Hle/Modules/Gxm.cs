@@ -50,7 +50,10 @@ public sealed class Gxm : HleModule
 
     // =========================================================== init / memory mapping
 
+    /// <summary>sceGxmVshInitialize (SceGxmInternalForVsh, libpaf and the shell): the same parameters; its flags word
+    /// (+0) differs from the public one, and neither is used here.</summary>
     [Hle]
+    [Hle("sceGxmVshInitialize")]
     int sceGxmInitialize(uint pParams)
     {
         if (pParams == 0) return ERR_INVALID_POINTER;
@@ -125,6 +128,7 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmUnmapMemory(uint baseAddr) => _mapped.TryRemove(baseAddr, out _) ? 0 : ERR_INVALID_VALUE;
 
     [Hle]
+    [Hle("sceGxmMapVertexUsseMemoryInternal")]
     int sceGxmMapVertexUsseMemory(uint baseAddr, uint size, Ptr<uint> offset)
     {
         if (baseAddr == 0 || offset.Address == 0) return ERR_INVALID_POINTER;
@@ -133,6 +137,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmMapFragmentUsseMemoryInternal")]
     int sceGxmMapFragmentUsseMemory(uint baseAddr, uint size, Ptr<uint> offset)
     {
         if (baseAddr == 0 || offset.Address == 0) return ERR_INVALID_POINTER;
@@ -140,8 +145,10 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
-    [Hle] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
-    [Hle] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
+    [Hle][Hle("sceGxmUnmapVertexUsseMemoryInternal")] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
+    [Hle][Hle("sceGxmUnmapFragmentUsseMemoryInternal")] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
+    /// <summary>No prototype; Vita3K answers 0 (libpaf then initializes GXM itself).</summary>
+    [Hle] int sceGxmIsInitializationInternal() => 0;
     [Hle] int sceGxmPadHeartbeat(uint displaySurface, uint displaySync) => 0;
     /// <summary>SCE_GXM_WCLAMP_MODE_ENABLED = 0x8000. Stored in the draw state; the clamp itself is not applied by the
     /// renderer yet (Vulkan clipping already handles W &lt;= 0).</summary>
@@ -230,6 +237,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmGetRenderTargetMemSizeInternal")]
     int sceGxmGetRenderTargetMemSize(uint p, Ptr<uint> size)
     {
         if (p == 0 || size.Address == 0) return ERR_INVALID_POINTER;
@@ -238,6 +246,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmCreateRenderTargetInternal")]
     int sceGxmCreateRenderTarget(uint p, Ptr<uint> outRt)
     {
         if (p == 0 || outRt.Address == 0) return ERR_INVALID_POINTER;
@@ -275,6 +284,38 @@ public sealed class Gxm : HleModule
     }
 
     [Hle] int sceGxmSyncObjectDestroy(uint sync) { _syncObjects.TryRemove(sync, out _); return 0; }
+
+    /// <summary>Display sync objects the shell shares with the system programs by key (the shared framebuffer's
+    /// buffer number, 1-based), as libpaf uses them: the owner registers its own with sceGxmVshSyncObjectCreate,
+    /// the others look them up with sceGxmVshSyncObjectOpen.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _vshSyncObjects = new();
+
+    /// <summary>(key, SceGxmSyncObject *sync): registers an existing sync object under <paramref name="key"/>.</summary>
+    [Hle]
+    int sceGxmVshSyncObjectCreate(uint key, uint sync)
+    {
+        if (sync == 0) return ERR_INVALID_POINTER;
+        _vshSyncObjects[key] = sync;
+        return 0;
+    }
+
+    /// <summary>(key, SceGxmSyncObject **sync): the sync object registered under <paramref name="key"/>; without an
+    /// owner process (no shell running) one is created for it.</summary>
+    [Hle]
+    int sceGxmVshSyncObjectOpen(uint key, Ptr<uint> outSync)
+    {
+        if (outSync.IsNull) return ERR_INVALID_POINTER;
+        outSync.Value = _vshSyncObjects.GetOrAdd(key, _ =>
+        {
+            uint h = AllocObj(16, "SceGxmSyncObject (vsh)");
+            _syncObjects[h] = new GxmSyncObject { Handle = h };
+            return h;
+        });
+        return 0;
+    }
+
+    [Hle] int sceGxmVshSyncObjectClose(uint key, uint sync) => 0;
+    [Hle] int sceGxmVshSyncObjectDestroy(uint key) { _vshSyncObjects.TryRemove(key, out _); return 0; }
 
     GxmContext? Ctx(uint h) => _contexts.TryGetValue(h, out var c) ? c : null;
 

@@ -195,7 +195,8 @@ public sealed class MainWindow : Window
         if (home && _shell == null)
         {
             _shell = new Shell.ShellView(_settings, Program.FsRoot);
-            _shell.LaunchRequested += a => { if (a.Game != null) Launch(a.Game); };
+            // a system app runs from its vs0:app folder through the same "run" path as a game
+            _shell.LaunchRequested += a => Launch(a.Game ?? new GameEntry(a.TitleId, a.Title, a.Version, "gd", a.Path, a.IconPath, 0));
             _shell.SetApps(_visible);
             if (_runningGame != null) _shell.SetRunning(ShellAppOf(_runningGame));
             _bodyHost.Children.Add(_shell);

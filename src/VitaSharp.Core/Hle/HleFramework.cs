@@ -209,6 +209,16 @@ public sealed class HleRegistry : IImportResolver
 
     public bool IsImplemented(uint nid) => _impls.ContainsKey(nid);
 
+    HashSet<string>? _implementedLibraries;
+
+    /// <summary>True when VitaSharp's HLE implements at least one function of <paramref name="library"/> (by the
+    /// NID database's library of each implemented NID).</summary>
+    public bool ImplementsLibrary(string library)
+    {
+        _implementedLibraries ??= _impls.Keys.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);
+        return _implementedLibraries.Contains(library);
+    }
+
     /// <summary>Registers host code as a callable HLE function without a NID (test harnesses: guest vtables and
     /// callbacks that land in C#). Returns the SVC number for <see cref="Loader.Linker.WriteHleStub"/>.</summary>
     public uint RegisterHostFunction(string name, Action<HleContext> body)
