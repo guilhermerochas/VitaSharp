@@ -274,5 +274,7 @@ public static class Program
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
         Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass, PSN servers unreachable)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
+        Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
+        Console.WriteLine("               --hle-modules=libult,...  keep these on HLE even when the game or the firmware has the module");
     }
 }

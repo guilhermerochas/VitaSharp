@@ -567,6 +567,35 @@ public class FirmwareTests
         finally { FirmwareInstaller.DeleteTree(tmp); }
     }
 
+
+    // ------------------------------------------------------------------ sysmodule sources
+
+    static VitaSharp.Core.Hle.Modules.SystemMisc Sysmodules(IReadOnlyCollection<string>? lle, IReadOnlyCollection<string>? hle)
+    {
+        var emu = (VitaSharp.Core.Emulator)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(VitaSharp.Core.Emulator));
+        typeof(VitaSharp.Core.Emulator).GetField("<Options>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(emu, new VitaSharp.Core.EmulatorOptions { FsRoot = Path.GetTempPath(), LleModules = lle ?? [], HleModules = hle ?? [] });
+        return new VitaSharp.Core.Hle.Modules.SystemMisc { Emu = emu };
+    }
+
+    [Fact]
+    public void Sysmodules_FirmwareCopyOnlyForLibrariesWithoutHle()
+    {
+        var m = Sysmodules(null, null);
+        // no HLE: the game's copy, else the firmware's
+        Assert.Equal(["app0:sce_module/libSceJson.suprx", "vs0:sys/external/libSceJson.suprx"], m.SysmoduleCandidates("libSceJson"));
+        Assert.Equal(["app0:sce_module/libSceSqlite.suprx", "vs0:sys/external/libSceSqlite.suprx"], m.SysmoduleCandidates("libSceSqlite"));
+        // HLE implemented: the game's copy only (installing the firmware does not move titles off the HLE)
+        Assert.Equal(["app0:sce_module/libsas.suprx"], m.SysmoduleCandidates("libsas"));
+        Assert.Equal(["app0:sce_module/libult.suprx"], m.SysmoduleCandidates("libult"));
+        Assert.Equal(["app0:sce_module/libfiber.suprx"], m.SysmoduleCandidates("libfiber"));
+
+        var opted = Sysmodules(["libsas"], ["libSceJson", "LIBULT"]);
+        Assert.Equal(["app0:sce_module/libsas.suprx", "vs0:sys/external/libsas.suprx"], opted.SysmoduleCandidates("libsas"));
+        Assert.Empty(opted.SysmoduleCandidates("libSceJson")); // forced HLE, even over a firmware module
+        Assert.Empty(opted.SysmoduleCandidates("libult"));     // ... and over the game's own copy
+        Assert.Equal(["app0:sce_module/libatrac.suprx"], opted.SysmoduleCandidates("libatrac"));
+    }
     sealed class SyncProgress(Action<FirmwareProgress> report) : IProgress<FirmwareProgress>
     {
         public void Report(FirmwareProgress value) => report(value);
