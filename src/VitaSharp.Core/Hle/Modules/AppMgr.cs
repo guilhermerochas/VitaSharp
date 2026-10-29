@@ -15,8 +15,6 @@ public sealed class AppMgr : HleModule
         ERR_NULL = unchecked((int)0x80800001), ERR_INVALID_VALUE = unchecked((int)0x80801000);
     const int ERRNO_ENOENT = unchecked((int)0x80010002), ERRNO_EINVAL = unchecked((int)0x80010016);
 
-    /// <summary>The process id returned by sceKernelGetProcessId.</summary>
-    const int ProcessId = 0x40010003;
 
     readonly HashSet<string> _mounts = new(StringComparer.OrdinalIgnoreCase);
 
@@ -130,7 +128,8 @@ public sealed class AppMgr : HleModule
 
     /// <summary>psp2/appmgr.h: <c>int (int id, const char *titleid, char *mount_point)</c>; the syscall adds an ignored
     /// opt. FW 3.60 accepts 104 (exact <c>ABCD12345_67</c> id), 106/107 (<c>ux0:psm/&lt;id&gt;/RO</c>, <c>/RW</c>) and
-    /// 110; the targets of 104 and 110 are not documented, so they are rejected like an unknown id.</summary>
+    /// 110 (<c>ux0:appmeta/&lt;id&gt;</c>, mounted by the shell's database rebuild for each folder it lists there); the
+    /// target of 104 is not documented, so it is rejected like an unknown id.</summary>
     [Hle]
     [Hle("_sceAppMgrAppDataMountById")]
     int sceAppMgrAppDataMountById(int id, uint titleId, uint mountPoint)
@@ -141,6 +140,9 @@ public sealed class AppMgr : HleModule
         {
             106 when tid.Length > 0 => $"ux0/psm/{tid}/RO",
             107 when tid.Length > 0 => $"ux0/psm/{tid}/RW",
+            // an installed application's metadata copy (param.sfo, icon, LiveArea) that the shell's database rebuild
+            // (dbrecovery_plugin) reads for every entry of ux0:appmeta
+            110 when tid.Length == 9 => $"ux0/appmeta/{tid}",
             _ => null,
         };
         if (rel == null)
@@ -462,13 +464,15 @@ public sealed class AppMgr : HleModule
         return 0;
     }
 
-    /// <summary>Only the running application exists.</summary>
+    /// <summary>The process running the application <paramref name="name"/> (title id), among the system's processes.</summary>
     [Hle]
     int sceAppMgrGetIdByName(Ptr<int> pid, uint name)
     {
         if (pid.IsNull || name == 0) return ERR_NULL_POINTER;
-        if (!string.Equals(GuestMemory.ReadCString(name, 32), Emu.TitleId, StringComparison.OrdinalIgnoreCase)) return ERR_NOT_FOUND;
-        pid.Value = ProcessId;
+        string tid = GuestMemory.ReadCString(name, 32);
+        var p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        if (p == null) return ERR_NOT_FOUND;
+        pid.Value = p.Pid;
         return 0;
     }
 
@@ -476,8 +480,8 @@ public sealed class AppMgr : HleModule
     int sceAppMgrGetNameById(int pid, uint name)
     {
         if (name == 0) return ERR_NULL_POINTER;
-        if (pid != ProcessId) return ERR_NOT_FOUND;
-        GuestMemory.WriteCString(name, Emu.TitleId, 32);
+        if (Emu.Vita.ByPid(pid) is not { } p) return ERR_NOT_FOUND;
+        GuestMemory.WriteCString(name, p.TitleId, 32);
         return 0;
     }
 

@@ -120,8 +120,21 @@ public sealed class SharedFb : HleModule
         return 0;
     }
 
-    /// <summary>The shell's compositor side: not run yet (no shell process). Logged once.</summary>
-    [Hle] int sceSharedFbUpdateProcessBegin(int uid) { Log.WarnOnce("sharedfb-update", "SceSharedFb: shell compositing (UpdateProcess*) not implemented"); return 0; }
+    /// <summary>The shell's compositor side: it brackets its frame with these. VitaSharp composites by process (the
+    /// display shows the foreground process: <see cref="Display.SetFrameBuf"/>), so there is nothing to merge here.</summary>
+    [Hle] int sceSharedFbUpdateProcessBegin(int uid) => 0;
     [Hle] int sceSharedFbUpdateProcessEnd(int uid) => 0;
     [Hle] int sceSharedFbUpdateProcess(int uid) => 0;
+
+    /// <summary>The render port the shell draws its overlay into while an application is on screen: port 0.</summary>
+    [Hle] int sceSharedFbGetShellRenderPort() => 0;
+
+    /// <summary>(SceUID pid): whether the process has started showing frames. The shell polls it after launching an
+    /// application and keeps its launch screen until the application's first frame (0 = it renders).</summary>
+    [Hle]
+    int sceSharedFbGetRenderingInfo(int pid)
+    {
+        if (Emu.Vita.ByPid(pid) is not { } p) return ERR_INVALID;
+        return p.Hle.Modules.OfType<Display>().Any(d => d.HasFrame) ? 0 : unchecked((int)0x80010016);
+    }
 }
