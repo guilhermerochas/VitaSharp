@@ -840,7 +840,7 @@ lista:
   largura/altura 0, `x+w == 0`, `y+h == 0` ou início fora do buffer ⇒ retorna 0 sem desenhar.
 - PVF `GetCharInfo` só carrega métricas (campos de bitmap ficam 0); código ausente ou 0xFFFF usa o alt char; alt char
   0 ⇒ 0x8046000D (sem nome no header). `SetCharSize` > 0, `SetEmboldenRate` −20..40, `SetSkewValue` ±30 (fora ⇒
-  0x80460003). `scePvfSetEM` aceita 0 e só é guardado. Conversões ponto↔pixel: `px·72/res` e `pt·res/72`; resultado
+  0x80460003). `scePvfSetEM` aceita 0 (default 1000.0, em lib+4) e só entra no `GetFontInfo`. Conversões ponto↔pixel: `px·72/res` e `pt·res/72`; resultado
   inf/NaN ⇒ 0x8046000E.
 - `scePvfGetCharGlyphOutline(font, code, outline)`: o terceiro argumento é uma struct do chamador no formato
   `FT_Outline` (0x14: s16 n_contours, s16 n_points, points*, tags*, contours*, s32 flags) cujos arrays a lib aloca
@@ -855,8 +855,11 @@ lista:
 - Embolden: força = taxa × tamanho(pt) × 64 / 100 em 26.6 (o valor que a libpvf passa ao libSceFt2; a unidade final
   não foi confirmada). Skew: cisalhamento `x += y·tan(ângulo)`. Kerning só da tabela `kern`, arredondado ao pixel
   (como `FT_Get_Kerning`); as PVF do firmware não têm `kern`, então dá 0.
-- `scePvfGetFontInfo`: máximos tirados de head/hhea/vhea no tamanho atual (a fórmula real usa o EM e não foi
-  reproduzida). `scePvfIsVertElement` = existe forma vertical via GSUB `vert`/`vrt2`. Imagens verticais posicionadas
+- `scePvfGetFontInfo` (lido da libpvf 3.74): **não depende do tamanho do caractere**. Ao abrir, a lib guarda
+  unitsPerEm, ascender, descender, height (asc − desc + lineGap), max advance width/height do face em unidades × 64;
+  o GetFontInfo multiplica por 1 / (unitsPerEm × EM) (ou seja, 1/EM pixels por em) e arredonda para longe de zero;
+  maxGlyphWidth e os bearings ficam 0. A libpaf chama `scePvfSetEM(lib, 1 / tamanho)` antes e mede a altura das
+  linhas com isso. `scePvfIsVertElement` = existe forma vertical via GSUB `vert`/`vrt2`. Imagens verticais posicionadas
   pela origem vertical (pena + vertBearingX/Y).
 - `scePvfOpenDefault*FontOnSharedMemory` abrem `jpn0.pvf`/`ltn0.pvf` dos arquivos (a lib real usa blocos de memória
   compartilhada "SceSysDefaultJpnFont"/"SceSysDefaultLtnFont").
@@ -1489,11 +1492,10 @@ horizontalBearingY64, verticalBearingX64, verticalBearingY64, horizontalAdvance6
 ### scePvfSetEM
 - [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xDFB677C5
 - **Protótipo:** `ScePvfError scePvfSetEM(ScePvfLibId libID, ScePvfFloat32 emValue);` (`psp2/pvf.h`)
-- **Comportamento:** define o tamanho do EM (unidade de referência para converter tamanhos em pontos) da instância.
-  Semântica exata (valor em pontos por EM? fator global de escala?) **a confirmar** via LLE: renderizar o mesmo
-  glifo com EM default e EM×2 e comparar `bitmapWidth`.
-- **Retorno/erros:** 0; lib inválida 0x80460002; `emValue <= 0` ⇒ 0x80460003 (a confirmar).
-- **Implementação no VitaSharp:** `lib.Em = emValue`; entra no cálculo do `FT_Set_Char_Size`.
+- **Comportamento:** guarda o EM da instância (float em lib+4, default 1000.0). Só o `scePvfGetFontInfo` o usa: as
+  métricas saem a 1/EM pixels por em (a libpaf passa 1 / tamanho do texto). Não afeta glifos nem `GetCharInfo`.
+- **Retorno/erros:** 0; lib inválida 0x80460002; `emValue < 0` ⇒ 0x80460003 (0 é aceito).
+- **Implementação no VitaSharp:** `lib.Em = emValue`; usado pelo `scePvfGetFontInfo`.
 - **Validação:** como descrito.
 
 ### scePvfSetResolution
@@ -1677,13 +1679,14 @@ Validação: abrir cada fonte do sistema e conferir `GetFontInfo`; caminho invá
 ### scePvfGetFontInfo
 - [x] **Prioridade:** P2 · **Biblioteca:** ScePvf · **NID:** 0xAB0C7CF2
 - **Protótipo:** `ScePvfError scePvfGetFontInfo(ScePvfFontId fontID, ScePvfFontInfo *fontInfo);` (`psp2/pvf.h`)
-- **Comportamento:** métricas máximas no tamanho atual (I em 26.6 e F em float), `numChars` (glifos mapeados) e o
-  estilo da fonte.
+- **Comportamento (libpvf 3.74, ScePvf+0x2F74):** métricas máximas (I em 26.6 e F = I/64), independentes do tamanho
+  do caractere: `units × 64 / (unitsPerEm × EM)` arredondado para longe de zero, com width 0, height = asc − desc +
+  lineGap, ascender, descender, bearings 0, hAdvance = advanceWidthMax, vAdvance = advanceHeightMax (ou height);
+  `numChars` e o estilo da fonte.
 - **Retorno/erros:** 0; handle/ponteiro inválido 0x80460003.
 - **Estruturas:** `ScePvfFontInfo`.
-- **Implementação no VitaSharp:** `face->size->metrics` (`ascender`, `descender`, `max_advance`) + `face->bbox`
-  escalado; `numChars` = contagem do cmap (`FT_Get_First_Char/Next_Char`). Se cada campo `max*` é calculado do bbox
-  ou percorrendo glifos: a confirmar no LLE.
+- **Implementação no VitaSharp:** a mesma fórmula sobre hhea/vhea do face; `numChars` = contagem do cmap (o campo da
+  lib vem do libSceFt2 ao abrir: talvez num_glyphs, a confirmar).
 - **Validação:** diff LLE × HLE para ltn0 a 12 pt e jpn0 a 16 pt.
 
 ### scePvfGetCharInfo

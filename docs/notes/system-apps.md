@@ -128,13 +128,12 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   vs0:vsh/shell/ime_plugin.rco through the same paf Resource and each reopens the RCO; the file object one thread
   holds is freed under the other (shared_ptr refcount reaching 0 in ScePaf+0x6D3B4). It is intermittent (2 of 4 user
   sessions, 1 of ~10 test runs), only the IME (on-screen keyboard) is lost, and the shell keeps running.
-- Shell text is placed too high in its line textures: the tops of glyphs are cut (lock screen clock, date, status
-  bar) and the health warning's lines overlap. Same with libpvf on LLE or HLE (`--hle-modules=libpvf`), with or
-  without pd0, and no texture write is missed (VITASHARP_TEXDIRTY=verify), so it is in libpaf's text layout inputs;
-  libpaf takes the line height from scePvfGetFontInfo's ascender/descender (FontInfo +8/+0xC, 26.6) before it sets the
-  character size of the text it lays out (ScePaf+0x19B64C). It depends on how the shell started: on a direct boot the
-  text is cut; when the shell first ran the first-boot setup (same registry afterwards), its health warning and home
-  screen text come out right. Not the registry, not the model capabilities.
+- (Fixed) Shell text cut at the top and overlapping lines: libpaf sizes its line textures from scePvfGetFontInfo
+  (ScePaf+0x19B64C) after `scePvfSetEM(lib, 1 / textSize)`. The real libpvf's GetFontInfo ignores the character size and
+  scales the face's design metrics by 64 / (unitsPerEm x EM); the HLE used the current character size instead (the
+  10.125 pt default = 18 px before any layout, hence the 18-px line textures; whatever size was set last afterwards,
+  which is why some runs looked right). libpvf is HLE for system programs too (it has an HLE), so this was not an LLE
+  difference.
 - pd0 is not needed: it is factory data (Welcome Park, pd0:data/systembgm) that no system update carries. With
   `install-firmware PSVUPDAT.PUP` (os0 + vs0) plus sa0 fonts the shell boots to the home screen; install-firmware says
   when sa0 or pd0 are missing.

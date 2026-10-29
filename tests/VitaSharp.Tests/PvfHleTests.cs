@@ -159,10 +159,18 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(m, "scePvfFlush", latin));
 
         uint info = Buf(0x130);
+        // the metrics follow the library's EM (pixels per em = 1 / EM), not the character size; rounded away from 0
+        Assert.Equal(0, Call(m, "scePvfSetCharSize", latin, 36f, 36f));
+        Assert.Equal(0, Call(m, "scePvfSetEM", lib, 1f / 18f));
         Assert.Equal(0, Call(m, "scePvfGetFontInfo", latin, info));
         Assert.Equal(3u, GuestMemory.R32(info + 0x50));                            // numChars
         Assert.Equal(922, GuestMemory.Read<int>(info + 8));                         // ascender 800 units at 1.152
-        Assert.Equal(-230, GuestMemory.Read<int>(info + 0xC));
+        Assert.Equal(-231, GuestMemory.Read<int>(info + 0xC));
+        Assert.Equal(922 / 64f, GuestMemory.Read<float>(info + 0x30));
+        Assert.Equal(0, GuestMemory.Read<int>(info));                               // max width: not filled by libpvf
+        Assert.Equal(0, Call(m, "scePvfSetEM", lib, 1f / 36f));
+        Assert.Equal(0, Call(m, "scePvfGetFontInfo", latin, info));
+        Assert.Equal(1844, GuestMemory.Read<int>(info + 8));
         Assert.Equal("ltn0.pvf", GuestMemory.ReadCString(info + 0x54 + 0x90));
     }
 

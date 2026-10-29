@@ -608,26 +608,32 @@ public sealed class Pvf : HleModule
     }
 
     /// <summary>ScePvfFontInfo (0x130): max metrics (26.6, then float), numChars, the style (system fonts only).
-    /// The maxima are taken from the font header (head bbox, hhea/vhea) at the current size, not from libpvf's own
-    /// (unknown) computation.</summary>
+    /// As in FW 3.74 libpvf, the metrics do not depend on the character size: they are the face's design values
+    /// (FreeType's ascender, descender, height = ascender - descender + line gap, max advance width / height; width
+    /// and the bearings are left 0) scaled by 64 / (unitsPerEm x EM), i.e. at 1/EM pixels per em (libpaf sets
+    /// EM = 1 / its text size before asking), rounded away from zero. The library's default EM is 1000.</summary>
     [Hle]
     int scePvfGetFontInfo(uint fontId, uint fontInfo)
     {
         var f = Font(fontId);
         if (f == null || fontInfo == 0) return ERR_ARG;
         var face = f.Face;
-        var st = Style(f);
-        float sx = st.PpemX * 64f / face.UnitsPerEm, sy = st.PpemY * 64f / face.UnitsPerEm;
-        float width = (face.XMax - face.XMin) * sx, height = (face.YMax - face.YMin) * sy;
-        float vAdv = face.MaxVerticalAdvanceUnits * sy;
-        float[] m = [width, height, face.Ascender * sy, face.Descender * sy, face.XMin * sx, face.YMax * sy,
-            -width / 2, (vAdv - height) / 2, face.AdvanceWidthMax * sx, vAdv];
+        float scale = 1f / (face.UnitsPerEm * f.Lib.Em);
+        int Metric(int units)
+        {
+            float v = (units << 6) * scale;
+            if (float.IsNaN(v)) return 0;
+            if (v >= 0) return v >= 2147483648f ? int.MaxValue : (int)MathF.Ceiling(v);
+            return v <= -2147483648f ? int.MinValue : (int)MathF.Floor(v);
+        }
+        int height = face.Ascender - face.Descender + face.LineGap;
+        int[] m = [0, Metric(height), Metric(face.Ascender), Metric(face.Descender), 0, 0, 0, 0,
+            Metric(face.AdvanceWidthMax), Metric(face.MaxVerticalAdvanceUnits)];
         GuestMemory.Fill(fontInfo, 0, 0x130);
         for (int i = 0; i < m.Length; i++)
         {
-            int v = (int)MathF.Round(m[i]);
-            GuestMemory.Write(fontInfo + (uint)i * 4, v);
-            GuestMemory.Write(fontInfo + 0x28 + (uint)i * 4, v / 64f);
+            GuestMemory.Write(fontInfo + (uint)i * 4, m[i]);
+            GuestMemory.Write(fontInfo + 0x28 + (uint)i * 4, m[i] / 64f);
         }
         GuestMemory.W32(fontInfo + 0x50, (uint)face.CharCount);
         if (f.SystemIndex >= 0) WriteSystemStyle(fontInfo + 0x54, f.SystemIndex);
