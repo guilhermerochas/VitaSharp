@@ -97,6 +97,8 @@ public static class Runner
             AsyncShaders = OnOff(options, "--async-shaders") ?? true,
             AsyncPipelines = OnOff(options, "--async-pipelines") ?? true,
             ShaderWorkers = int.TryParse(Opt(options, "--shader-workers"), out var shaderWorkers) && shaderWorkers > 0 ? shaderWorkers : 0,
+            // --gpu-profile=adreno|mali|desktop: behave as that GPU class (test the mobile paths on a desktop GPU)
+            GpuProfile = Opt(options, "--gpu-profile"),
         };
         if (rendererOptions.ShaderOptimization is { } so && ShaderCompiler.ParseOptLevel(so) == null)
             Log.Warn($"--shaderc-opt={so} not recognised (use zero, size or perf): using the default");

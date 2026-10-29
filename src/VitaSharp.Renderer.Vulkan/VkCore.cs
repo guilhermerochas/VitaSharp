@@ -4,6 +4,7 @@ using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
+using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
@@ -89,7 +90,11 @@ public sealed unsafe class VkCore : IDisposable
     ExtDebugUtils? _debugUtils;
     DebugUtilsMessengerEXT _messenger;
 
-    public VkCore(IPresentationSurface? surface, bool validation)
+    /// <summary>Effective capabilities and driver quirks (built in <see cref="CreateDevice"/>; see Core/Gpu/GpuQuirks.cs).</summary>
+    public GpuCapabilities Caps = null!;
+
+    /// <param name="gpuProfile">adreno|mali|desktop: behave as that device class (--gpu-profile); null = VITASHARP_GPU_PROFILE</param>
+    public VkCore(IPresentationSurface? surface, bool validation, string? gpuProfile = null)
     {
         CreateInstance(surface, validation);
         if (surface != null)
@@ -99,7 +104,7 @@ public sealed unsafe class VkCore : IDisposable
             Surface = surface.CreateSurface(Instance);
         }
         PickDevice();
-        CreateDevice(surface != null);
+        CreateDevice(surface != null, GpuQuirkTable.ParseProfile(gpuProfile ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile)));
         DepthFormat = PickDepthFormat();
     }
 
@@ -237,7 +242,80 @@ public sealed unsafe class VkCore : IDisposable
         Log.Info($"Vulkan device: {DeviceName} (API {Properties.ApiVersion >> 22}.{(Properties.ApiVersion >> 12) & 0x3FF})");
     }
 
-    void CreateDevice(bool present)
+    const string RoaaExt = "VK_EXT_rasterization_order_attachment_access", RoaaArm = "VK_ARM_rasterization_order_attachment_access";
+    const string PushDescriptorExt = "VK_KHR_push_descriptor", CustomBorderColorExt = "VK_EXT_custom_border_color";
+
+    /// <summary>VK_EXT/ARM_rasterization_order_attachment_access is enabled: framebuffer-fetch reads of the colour
+    /// attachment are ordered against earlier fragments without per-draw barriers (Adreno, Mali).</summary>
+    public bool RasterizationOrderColor;
+
+    /// <summary>The driver's identity and what it supports, for <see cref="GpuQuirkTable.Select"/>.</summary>
+    GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures f, in PhysicalDeviceVulkan11Features f11, in PhysicalDeviceVulkan12Features f12,
+        HashSet<string> exts, bool roaa, uint timestampBits, bool bcPatched)
+    {
+        uint driverId = 0;
+        string driverName = "", driverInfo = "";
+        if (Properties.ApiVersion >= Vk.Version12)
+        {
+            var drv = new PhysicalDeviceDriverProperties { SType = StructureType.PhysicalDeviceDriverProperties };
+            var p2 = new PhysicalDeviceProperties2 { SType = StructureType.PhysicalDeviceProperties2, PNext = &drv };
+            Vk.GetPhysicalDeviceProperties2(Physical, &p2);
+            driverId = (uint)drv.DriverID;
+            driverName = Marshal.PtrToStringAnsi((nint)drv.DriverName) ?? "";
+            driverInfo = Marshal.PtrToStringAnsi((nint)drv.DriverInfo) ?? "";
+        }
+        var feats = GpuFeature.None;
+        void Set(bool on, GpuFeature g) { if (on) feats |= g; }
+        Set(f.TextureCompressionBC || bcPatched, GpuFeature.TextureCompressionBC);
+        Set(f.TextureCompressionAstcLdr, GpuFeature.TextureCompressionAstc);
+        Set(f.TextureCompressionEtc2, GpuFeature.TextureCompressionEtc2);
+        Set(f.ShaderStorageImageWriteWithoutFormat, GpuFeature.ShaderStorageImageWriteWithoutFormat);
+        Set(f.SampleRateShading, GpuFeature.SampleRateShading);
+        Set(f.DepthClamp, GpuFeature.DepthClamp);
+        Set(f.FillModeNonSolid, GpuFeature.FillModeNonSolid);
+        Set(f.GeometryShader, GpuFeature.GeometryShader);
+        Set(f.LogicOp, GpuFeature.LogicOp);
+        Set(f11.StorageBuffer16BitAccess, GpuFeature.Storage16Bit);
+        Set(f.ShaderInt16, GpuFeature.ShaderInt16);
+        Set(f.WideLines, GpuFeature.WideLines);
+        Set(f.OcclusionQueryPrecise, GpuFeature.OcclusionQueryPrecise);
+        Set(f.IndependentBlend, GpuFeature.IndependentBlend);
+        Set(f.DepthBiasClamp, GpuFeature.DepthBiasClamp);
+        Set(f.SamplerAnisotropy, GpuFeature.SamplerAnisotropy);
+        Set(f12.SamplerMirrorClampToEdge, GpuFeature.SamplerMirrorClampToEdge);
+        Set(exts.Contains(MemoryBudgetExtension), GpuFeature.MemoryBudget);
+        Set(exts.Contains(PushDescriptorExt), GpuFeature.PushDescriptor);
+        Set(exts.Contains(CustomBorderColorExt), GpuFeature.CustomBorderColor);
+        Set(roaa, GpuFeature.RasterizationOrderColor);
+        Set(timestampBits > 0 && Properties.Limits.TimestampPeriod > 0, GpuFeature.Timestamps);
+        var l = Properties.Limits;
+        bool unified = true;
+        for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
+        {
+            var t = MemoryProperties.MemoryTypes[i].PropertyFlags;
+            if ((t & MemoryPropertyFlags.DeviceLocalBit) != 0 && (t & MemoryPropertyFlags.HostVisibleBit) == 0) unified = false;
+        }
+        return new GpuDeviceInfo
+        {
+            VendorId = Properties.VendorID, DeviceId = Properties.DeviceID, DriverId = driverId, DriverVersion = Properties.DriverVersion,
+            ApiVersion = Properties.ApiVersion, DeviceName = DeviceName, DriverName = driverName, DriverInfo = driverInfo, Features = feats,
+            UnifiedMemory = unified || MemoryProperties.MemoryHeapCount == 1,
+            Limits = new GpuLimits
+            {
+                MaxPushConstantsSize = l.MaxPushConstantsSize, MaxBoundDescriptorSets = l.MaxBoundDescriptorSets,
+                MaxPerStageDescriptorSamplers = l.MaxPerStageDescriptorSamplers, MaxPerStageDescriptorSampledImages = l.MaxPerStageDescriptorSampledImages,
+                MaxPerStageDescriptorStorageBuffers = l.MaxPerStageDescriptorStorageBuffers, MaxPerStageDescriptorInputAttachments = l.MaxPerStageDescriptorInputAttachments,
+                MaxPerStageResources = l.MaxPerStageResources, MaxDescriptorSetSamplers = l.MaxDescriptorSetSamplers,
+                FramebufferSampleCounts = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts & l.FramebufferStencilSampleCounts),
+                MaxImageDimension2D = l.MaxImageDimension2D,
+            },
+        };
+    }
+
+    /// <summary>Driver identity strings (name, info, version) for <see cref="GpuQuirk.PipelineCachePerDriverBuild"/>.</summary>
+    public string DriverBuildId => $"{Caps.Device.DriverId}:{Caps.Device.DriverName}:{Caps.Device.DriverInfo}:{Caps.Device.DriverVersion:X8}";
+
+    void CreateDevice(bool present, GpuProfile profile)
     {
         uint qc = 0;
         Vk.GetPhysicalDeviceQueueFamilyProperties(Physical, ref qc, null);
@@ -263,53 +341,87 @@ public sealed unsafe class VkCore : IDisposable
         var devExts = DeviceExtensions(Physical);
         bool portability = devExts.Contains(PortabilitySubset);
 
-        // what the device supports (1.2/1.3 feature structs, plus the portability subset on MoltenVK)
-        var has13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features };
+        // what the device supports (1.1/1.2/1.3 feature structs, rasterization-order attachment access, plus the
+        // portability subset on MoltenVK)
+        string? roaaName = devExts.Contains(RoaaExt) ? RoaaExt : devExts.Contains(RoaaArm) ? RoaaArm : null;
+        var hasRoaa = new PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT { SType = StructureType.PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesExt };
+        var has13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = roaaName != null ? &hasRoaa : null };
         var has12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &has13 };
-        var hasPortability = new PhysicalDevicePortabilitySubsetFeaturesKHR { SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, PNext = &has12 };
-        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = portability ? &hasPortability : &has12 };
+        var has11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &has12 };
+        var hasPortability = new PhysicalDevicePortabilitySubsetFeaturesKHR { SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, PNext = &has11 };
+        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = portability ? &hasPortability : &has11 };
         Vk.GetPhysicalDeviceFeatures2(Physical, &supported2);
         if (!has13.DynamicRendering || !has13.Synchronization2)
             throw new InvalidOperationException($"{DeviceName} lacks dynamicRendering/synchronization2 (Vulkan 1.3 features). {VulkanLoader.InstallHint()}");
-        SamplerMirrorClampToEdge = has12.SamplerMirrorClampToEdge;
+        if (!supported2.Features.ShaderClipDistance)
+            throw new InvalidOperationException($"{DeviceName} lacks shaderClipDistance (needed for the GXM far plane). {VulkanLoader.InstallHint()}");
+
+        // capabilities and quirks: the real features, minus what a test profile (--gpu-profile) removes
+        // Android: a Qualcomm driver that hides BCn may be patched to sample it (libadrenotools BCeNabler)
+        bool bcPatched = false;
+        if (!supported2.Features.TextureCompressionBC && VulkanLoader.DriverProvider is { } provider)
+        {
+            var fn = Vk.GetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFormatProperties");
+            try { bcPatched = fn != 0 && provider.TryEnableBcn(Properties.VendorID, Properties.DriverVersion, fn); }
+            catch (Exception e) { Log.Warn($"BCn patch failed: {e.Message}"); }
+            if (bcPatched) Log.Info("BCn textures enabled by the driver patch (BCeNabler)");
+        }
+        Caps = GpuQuirkTable.Select(DescribeDevice(supported2.Features, has11, has12, devExts, roaaName != null && hasRoaa.RasterizationOrderColorAttachmentAccess,
+            families[QueueFamily].TimestampValidBits, bcPatched), profile, Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
+        bool Has(GpuFeature f) => Caps.Has(f);
+        // the sample counts every multisampling check reads: the profile's (e.g. Mali: no 2x)
+        var counts = (SampleCountFlags)Caps.Limits.FramebufferSampleCounts;
+        Properties.Limits.FramebufferColorSampleCounts &= counts | SampleCountFlags.Count1Bit;
+        Properties.Limits.FramebufferDepthSampleCounts &= counts | SampleCountFlags.Count1Bit;
+        Properties.Limits.FramebufferStencilSampleCounts &= counts | SampleCountFlags.Count1Bit;
+        _sampleCountMask = counts | SampleCountFlags.Count1Bit;
+
+        SamplerMirrorClampToEdge = Has(GpuFeature.SamplerMirrorClampToEdge);
         Formats.MirrorClampToEdgeSupported = SamplerMirrorClampToEdge;
 
-        var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true };
-        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &f13, SamplerMirrorClampToEdge = has12.SamplerMirrorClampToEdge };
+        RasterizationOrderColor = Has(GpuFeature.RasterizationOrderColor);
+        var fRoaa = new PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT
+        {
+            SType = StructureType.PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesExt, RasterizationOrderColorAttachmentAccess = true,
+        };
+        var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true,
+            PNext = RasterizationOrderColor ? &fRoaa : null };
+        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &f13, SamplerMirrorClampToEdge = SamplerMirrorClampToEdge };
         // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
         // enable whatever the device has, then degrade where the renderer depends on a missing one
         var fPortability = hasPortability with { PNext = &f12 };
         var feats = new PhysicalDeviceFeatures
         {
-            SamplerAnisotropy = supported2.Features.SamplerAnisotropy,
-            FillModeNonSolid = supported2.Features.FillModeNonSolid,
-            WideLines = supported2.Features.WideLines,
-            TextureCompressionBC = supported2.Features.TextureCompressionBC,
-            ShaderStorageImageWriteWithoutFormat = supported2.Features.ShaderStorageImageWriteWithoutFormat,
-            IndependentBlend = supported2.Features.IndependentBlend,
-            DepthBiasClamp = supported2.Features.DepthBiasClamp,
+            SamplerAnisotropy = Has(GpuFeature.SamplerAnisotropy),
+            FillModeNonSolid = Has(GpuFeature.FillModeNonSolid),
+            WideLines = Has(GpuFeature.WideLines),
+            // a patched driver samples BCn without the feature (it still reports none, so it is not enabled)
+            TextureCompressionBC = supported2.Features.TextureCompressionBC && Has(GpuFeature.TextureCompressionBC),
+            ShaderStorageImageWriteWithoutFormat = Has(GpuFeature.ShaderStorageImageWriteWithoutFormat),
+            IndependentBlend = Has(GpuFeature.IndependentBlend),
+            DepthBiasClamp = Has(GpuFeature.DepthBiasClamp),
             FragmentStoresAndAtomics = supported2.Features.FragmentStoresAndAtomics,
-            OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise,
-            DepthClamp = supported2.Features.DepthClamp,
-            ShaderClipDistance = supported2.Features.ShaderClipDistance,
-            SampleRateShading = supported2.Features.SampleRateShading,
+            OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise),
+            DepthClamp = Has(GpuFeature.DepthClamp),
+            ShaderClipDistance = true,
+            SampleRateShading = Has(GpuFeature.SampleRateShading),
         };
-        OcclusionQueryPrecise = supported2.Features.OcclusionQueryPrecise;
-        DepthClamp = supported2.Features.DepthClamp;
-        if (!supported2.Features.ShaderClipDistance)
-            throw new InvalidOperationException($"{DeviceName} lacks shaderClipDistance (needed for the GXM far plane). {VulkanLoader.InstallHint()}");
-        TextureCompressionBC = supported2.Features.TextureCompressionBC;
-        FillModeNonSolid = supported2.Features.FillModeNonSolid;
-        WideLines = supported2.Features.WideLines;
-        SampleRateShading = supported2.Features.SampleRateShading;
+        OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise);
+        DepthClamp = Has(GpuFeature.DepthClamp);
+        TextureCompressionBC = Has(GpuFeature.TextureCompressionBC);
+        FillModeNonSolid = Has(GpuFeature.FillModeNonSolid);
+        WideLines = Has(GpuFeature.WideLines);
+        SampleRateShading = Has(GpuFeature.SampleRateShading);
+        Timestamps = Has(GpuFeature.Timestamps);
         if (portability) ApplyPortabilityLimits(hasPortability, ref feats);
 
         var exts = new List<string>();
         if (present) exts.Add(KhrSwapchain.ExtensionName);
         if (portability) exts.Add(PortabilitySubset);
         // per-heap budget and this process's usage (VRAM logs, eviction under memory pressure)
-        MemoryBudgetSupported = devExts.Contains(MemoryBudgetExtension);
+        MemoryBudgetSupported = Has(GpuFeature.MemoryBudget);
         if (MemoryBudgetSupported) exts.Add(MemoryBudgetExtension);
+        if (RasterizationOrderColor) exts.Add(roaaName!);
         var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
@@ -329,19 +441,24 @@ public sealed unsafe class VkCore : IDisposable
             Vk.TryGetDeviceExtension(Instance, Device, out KhrSwapchain sw);
             SwapchainExt = sw;
         }
+        // capabilities and active quirks, once at startup (also in the F10 capture's info.txt)
+        foreach (var line in Caps.Describe().Split('\n')) Log.Info(line);
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
     /// <summary>sampleRateShading: fragment shaders that read the framebuffer in a multisampled scene run per sample
     /// (as GXM's NATIVECOLOR_MSAA programs do). Without it they read sample 0 and their output covers the pixel.</summary>
     public bool SampleRateShading;
+    /// <summary>Timestamp queries on the graphics queue (PERF gpu line).</summary>
+    public bool Timestamps;
+    SampleCountFlags _sampleCountMask = (SampleCountFlags)0x7F;
 
     /// <summary>Sample counts usable for an attachment of <paramref name="format"/> with <paramref name="usage"/>
     /// (image format properties, mutable views allowed).</summary>
     public SampleCountFlags ImageSampleCounts(Format format, ImageUsageFlags usage, ImageCreateFlags flags = ImageCreateFlags.CreateMutableFormatBit)
     {
         var r = Vk.GetPhysicalDeviceImageFormatProperties(Physical, format, ImageType.Type2D, ImageTiling.Optimal, usage, flags, out var props);
-        return r == Result.Success ? props.SampleCounts : SampleCountFlags.Count1Bit;
+        return r == Result.Success ? props.SampleCounts & _sampleCountMask : SampleCountFlags.Count1Bit;
     }
     /// <summary>depthClamp: GXM does not clip at the near plane, fragments in front of it get depth 0 (clamped per
     /// fragment). Without the feature the near plane clips instead.</summary>
@@ -636,7 +753,8 @@ public sealed unsafe class VkCore : IDisposable
     /// <summary>
     /// How full device-local memory is, 0..1+: with the budget cap, the renderer's device-local bytes over the cap;
     /// with VK_EXT_memory_budget, the fullest device-local heap's usage over its budget (the budget shrinks when other
-    /// processes use the GPU); otherwise the renderer's bytes over 80% of the largest device-local heap.
+    /// processes use the GPU); otherwise the renderer's bytes over 80% of the largest device-local heap (50% on
+    /// mobile/unified-memory devices, <see cref="GpuQuirk.ConservativeMemoryBudget"/>).
     /// </summary>
     public double DevicePressure()
     {
@@ -650,7 +768,7 @@ public sealed unsafe class VkCore : IDisposable
             if (h.Budget > 0) worst = Math.Max(worst, h.Usage / (double)h.Budget);
         }
         if (MemoryBudgetSupported) return worst;
-        return largest == 0 ? 0 : DeviceBytes / (largest * 0.8);
+        return largest == 0 ? 0 : DeviceBytes / (largest * Caps.FallbackBudgetFraction);
     }
 
     static string Mb(double bytes) => $"{bytes / 1048576.0:F0} MB";

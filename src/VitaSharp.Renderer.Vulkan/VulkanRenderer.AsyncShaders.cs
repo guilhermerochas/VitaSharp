@@ -215,12 +215,15 @@ public sealed unsafe partial class VulkanRenderer
         sig = ShaderHints.Fnv.Mix(sig, blend is { } bl ? (uint)(bl.ColorMask | bl.ColorFunc << 4 | bl.AlphaFunc << 8 | bl.ColorSrc << 12 | bl.ColorDst << 16 | bl.AlphaSrc << 20 | bl.AlphaDst << 24) | 1u << 31 : 0);
         sig = ShaderHints.Fnv.Mix(sig, (uint)(d.PrimitiveType | st.Front.PolygonMode << 8 | (st.Front.FragmentEnabled ? 1 << 16 : 0)));
         sig = ShaderHints.Fnv.Mix(sig, (uint)(vp.Info.Program.Hash ^ d.FragmentProgram.Info.Program.Hash));
+        // static-state pipelines (driver quirk) also depend on the draw's depth/stencil/cull state
+        ulong staticKey = StaticStateKey(in st, Formats.Topology(d.PrimitiveType));
+        if (staticKey != 0) sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(sig, (uint)staticKey), (uint)(staticKey >> 32));
         if (!_seenDrawSignatures.TryAdd(sig, 0)) return;
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
         var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
             ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
             ms ? FragmentHintsInputFetch(d, colorFormat) : null,
-            scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode);
+            scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode, staticKey);
         if (!EnsureShaderWorkers()) return;
         _pipelineJobs.Enqueue(job);
         _workAvailable.Release();
@@ -229,7 +232,7 @@ public sealed unsafe partial class VulkanRenderer
     readonly ConcurrentQueue<PipelineJob> _pipelineJobs = new();
 
     sealed record PipelineJob(GxmVertexProgram Vp, ulong Vk, GxpProgram Fs, ulong Fk, ulong FetchKey, ShaderHints? FetchHints,
-        PredictedScene Scene, GxmBlendInfo? Blend, bool FragEnabled, byte PrimitiveType, byte PolygonMode);
+        PredictedScene Scene, GxmBlendInfo? Blend, bool FragEnabled, byte PrimitiveType, byte PolygonMode, ulong Static);
 
     /// <summary>Module of a prefetched key: ready, in flight (wait / run it), or null when the shader job is gone.</summary>
     ModuleEntry? ModuleFor(GxpProgram p, ulong hk, ShaderHints? hints)
@@ -266,7 +269,7 @@ public sealed unsafe partial class VulkanRenderer
         bool blendOn = j.Blend is { } bi && !fsM.Gen.UsesFragColor && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0) && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, s.Attach, s.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), s.Samples);
+            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), s.Samples, j.Static);
         // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
         if (BuildSharedPipeline(key, vs, fs.Module, topology) == SharedBuild.Built) Interlocked.Increment(ref _statPipelinesPrefetched);
     }

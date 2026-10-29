@@ -81,7 +81,7 @@ public static class TextureDecoder
             }
             if (info.Convert == TexConvert.BcSoftware)
             {
-                using (outBuf) return BcDecode.Decode(GxmFormats.BaseOf(d.Format), outBuf.ToArray(), w, h);
+                using (outBuf) return BcSoftware.Decode(GxmFormats.BaseOf(d.Format), outBuf.Span, w, h);
             }
             return outBuf;
         }

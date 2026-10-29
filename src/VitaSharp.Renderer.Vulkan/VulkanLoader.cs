@@ -17,8 +17,29 @@ public static class VulkanLoader
     /// <summary>Library that the last <see cref="Load"/> used ("" = Silk.NET's default search).</summary>
     public static string LoadedFrom { get; private set; } = "";
 
+    /// <summary>Custom driver (Android: libadrenotools), tried before everything else; null = system loader.</summary>
+    public static IVulkanDriverProvider? DriverProvider;
+
+    /// <summary>True when <see cref="DriverProvider"/> supplied the driver of the last <see cref="Load"/>.</summary>
+    public static bool CustomDriverLoaded { get; private set; }
+
     public static Vk Load()
     {
+        CustomDriverLoaded = false;
+        if (DriverProvider is { } provider)
+        {
+            nint handle = 0;
+            try { handle = provider.Open(); }
+            catch (Exception e) { Log.Warn($"Custom GPU driver {provider.Description} failed to open: {e.Message}"); }
+            if (handle != 0)
+            {
+                LoadedFrom = provider.Description;
+                CustomDriverLoaded = true;
+                Log.Info($"Vulkan driver: {provider.Description} (custom)");
+                return new Vk(new LamdaNativeContext(name => NativeLibrary.TryGetExport(handle, name, out var p) ? p : 0));
+            }
+            Log.Warn($"Custom GPU driver {provider.Description} unavailable: using the system Vulkan driver");
+        }
         var forced = Environment.GetEnvironmentVariable(EnvVars.VulkanLib);
         if (!string.IsNullOrEmpty(forced))
         {

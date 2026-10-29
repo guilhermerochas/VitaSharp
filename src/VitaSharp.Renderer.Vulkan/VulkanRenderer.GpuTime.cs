@@ -24,7 +24,7 @@ public sealed unsafe partial class VulkanRenderer
         _vk.GetPhysicalDeviceQueueFamilyProperties(_core.Physical, ref n, null);
         var fam = new QueueFamilyProperties[n];
         fixed (QueueFamilyProperties* p = fam) _vk.GetPhysicalDeviceQueueFamilyProperties(_core.Physical, ref n, p);
-        if (_core.QueueFamily >= n || fam[_core.QueueFamily].TimestampValidBits == 0 || _core.Properties.Limits.TimestampPeriod <= 0) return false;
+        if (!_core.Timestamps || _core.QueueFamily >= n || fam[_core.QueueFamily].TimestampValidBits == 0 || _core.Properties.Limits.TimestampPeriod <= 0) return false;
         _timePeriodNs = _core.Properties.Limits.TimestampPeriod;
         var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = FramesInFlight * 2 };
         _timeOk = _vk.CreateQueryPool(_dev, in ci, null, out _timePool) == Result.Success;
@@ -66,8 +66,8 @@ public sealed unsafe partial class VulkanRenderer
 
     string GpuTimeReport()
     {
-        if (!_timeOk || _presentCount == 0) return "PERF gpu: no timestamps";
-        return $"PERF gpu: {_gpuNs / 1e6 / _presentCount:F3} ms GPU time per presented frame ({_gpuSubmits} submits, {_gpuNs / 1e6 / Math.Max(1, _gpuSubmits):F3} ms each), MSAA {MsaaReport()}";
+        if (!_timeOk || _presentCount == 0) return $"PERF gpu: no timestamps; {LoadStoreReport()}";
+        return $"PERF gpu: {_gpuNs / 1e6 / _presentCount:F3} ms GPU time per presented frame ({_gpuSubmits} submits, {_gpuNs / 1e6 / Math.Max(1, _gpuSubmits):F3} ms each), MSAA {MsaaReport()}; {LoadStoreReport()}";
     }
 
     void DestroyGpuTime()

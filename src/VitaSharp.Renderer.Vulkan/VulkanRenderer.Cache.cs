@@ -102,7 +102,10 @@ public sealed unsafe partial class VulkanRenderer
             catch (Exception e) { Log.Warn($"[shadercache] cannot create {dir}: {e.Message}"); return; }
 
             var props = _core.Properties;
-            _vkCachePath = Path.Combine(dir, $"vk_{props.VendorID:x4}_{props.DeviceID:x4}.cache");
+            // drivers whose cache UUID does not identify the build (custom Adreno/Turnip drivers): one file per build
+            string build = _core.Caps.Has(Core.Gpu.GpuQuirk.PipelineCachePerDriverBuild)
+                ? $"_{System.IO.Hashing.XxHash32.HashToUInt32(System.Text.Encoding.UTF8.GetBytes(_core.DriverBuildId)):x8}" : "";
+            _vkCachePath = Path.Combine(dir, $"vk_{props.VendorID:x4}_{props.DeviceID:x4}{build}.cache");
             string vkStatus = LoadVkPipelineCache(_vkCachePath, out long vkBytes);
 
             // debug shader overrides and draw traces need freshly generated GLSL: only the driver cache is used then
@@ -185,7 +188,8 @@ public sealed unsafe partial class VulkanRenderer
     static ulong ShaderPackKey(ulong programHash, ulong hintKey)
     {
         // the per-sample framebuffer fetch choice changes the GLSL of programmable-blending shaders
-        ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32);
+        // and so does the Adreno dynamic-indexing lowering (driver quirk)
+        ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32) | (ShaderGenerator.LowerDynamicIndexing ? 1ul << 33 : 0);
         Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, gen };
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }
@@ -260,7 +264,7 @@ public sealed unsafe partial class VulkanRenderer
     void RecordPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         var list = _pipelineList;
-        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null) return;
+        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds) return;
         var rec = new PipelineRecipe(vs.ProgramHash, vs.HintKey, fs.ProgramHash, fs.HintKey, (int)key.ColorFormat, key.HasColor, key.Blend,
             key.ColorFunc, key.AlphaFunc, key.ColorSrc, key.ColorDst, key.AlphaSrc, key.AlphaDst, key.Mask,
             (byte)topology, (byte)key.Polygon, (byte)key.Samples, fs.Gen.UsesFragColor, (byte)fs.Gen.RawColorBits, vp.Attributes, vp.Streams).Encode();
@@ -286,6 +290,7 @@ public sealed unsafe partial class VulkanRenderer
     SharedBuild BuildRecordedPipeline(PipelineRecipe r, out bool stale)
     {
         stale = false;
+        if (StaticEds) return SharedBuild.Failed; // recipes carry no depth/stencil state (VulkanRenderer.StaticState.cs)
         var vsM = RecordedModule(r.VsHash, r.VsHint, true);
         var fsM = RecordedModule(r.FsHash, r.FsHint, false);
         if (vsM?.Gen == null || fsM?.Gen == null || vsM.Module.Handle == 0 || fsM.Module.Handle == 0 || !vsM.Gen.IsVertex || fsM.Gen.IsVertex)
@@ -348,7 +353,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>One version 3 record (resolved Vulkan vertex layout): true when built or already there.</summary>
     bool PrewarmLegacy(byte[] rec)
     {
-        if (rec.Length < LegacyRecordHead) return false;
+        if (rec.Length < LegacyRecordHead || StaticEds) return false;
         var r = rec.AsSpan();
         int nb = BinaryPrimitives.ReadUInt16LittleEndian(r[47..]), na = BinaryPrimitives.ReadUInt16LittleEndian(r[49..]);
         if (rec.Length != LegacyRecordHead + nb * 12 + na * 16) return false;

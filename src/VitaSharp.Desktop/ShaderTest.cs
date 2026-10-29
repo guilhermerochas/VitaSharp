@@ -14,6 +14,8 @@ static class ShaderTest
         string outDir = Path.Combine(Program.DataRoot, "shadertest");
         Directory.CreateDirectory(outDir);
         bool dumpAll = args.Contains("--dump");
+        // --lower-dynamic-indexing: translate as for Qualcomm's proprietary driver (GpuQuirk.DynamicIndexLowering)
+        ShaderGenerator.LowerDynamicIndexing = args.Contains("--lower-dynamic-indexing");
         byte[]? klic = null;
         var work = Path.Combine(appDir, "sce_sys", "package", "work.bin");
         if (File.Exists(work)) klic = PkgInstaller.ReadKlicensee(work);
