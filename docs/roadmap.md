@@ -30,8 +30,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
-- [ ] Renderização ajustada para GPU de celular (tile-based): load/store corretos em cada cena, MSAA resolvido no tile
-- [ ] Texturas BC/PVRTC convertidas para ASTC ou RGBA8, com cache em disco
+- [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
+  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado) e o ganho real dos
+  load/store por cena no perfilador do aparelho
+- [ ] Menos interrupções de cena no renderizador (no Killzone cada cena vira ~13 renderizações por uploads de
+  textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
+- [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
+- [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
+- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, tela "Driver da GPU" e teste num aparelho
+  (a interface e as configurações já existem em `src/VitaSharp.Android/Gpu`)
 - [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
 - [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
