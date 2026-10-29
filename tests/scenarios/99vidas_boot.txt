@@ -2,8 +2,11 @@
 # New Game > Normal, the tutorial stage with the first fights (~f2050 on).
 # Regression: the game asks to enable Cross-Save (needs a PSN account), runs the NetCheckDialog in PSN_ONLINE mode and,
 # when that is canceled (signed out), asks "retry?" forever (the message dialog answers YES). With the emulated
-# signed-in PSN account (default, --psn=on) the check succeeds, the TUS download fails as an unreachable server
-# (error dialog 0x80431063) and the game shows its own "Load/Save error ... local save data will be used" (OK at f300).
+# signed-in PSN account (default, --psn=on) the check succeeds; with the local PSN services (default, --psn-local=on) the
+# Cross-Save TUS download finds no data on the first boot (USER_STORAGE_DATA_NOT_FOUND), the game uploads its save to
+# <data>/np/tus/NPWR11170_00/<online id>/data_1.bin and later boots read it back (no error dialog). With
+# --psn-local=off the TUS download fails as an unreachable server and the game shows "Load/Save error ... local save
+# data will be used" (OK at f300).
 # Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/99vidas_boot.txt --data=<scratch root>
 title=PCSE00914
 args=--frames=4000 --seconds=900 --dump-every=50 --shader-cache --debug-mode --input=cross@f300:f8,cross@f450:f8,cross@f600:f8,cross@f750:f8,cross@f900:f8,cross@f1050:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8,cross@f1950:f8,cross@f2100:f8,cross@f2250:f8,cross@f2400:f8,cross@f2550:f8,cross@f2700:f8,cross@f2850:f8,cross@f3000:f8,cross@f3150:f8,cross@f3300:f8,cross@f3450:f8,cross@f3600:f8

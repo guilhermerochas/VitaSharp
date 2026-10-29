@@ -28,6 +28,10 @@ public static class Runner
         }
     }
 
+    /// <summary>The title-bar notice of a trophy unlock ("Troféu desbloqueado: <name> (Ouro)").</summary>
+    internal static string TrophyNotice(VitaSharp.Core.Hle.Np.TrophyUnlockedEvent e) =>
+        $"Troféu desbloqueado: {e.Trophy.Name} ({TrophyToast.GradeName(e.Trophy.Grade)})";
+
     public static int Run(string appPath, string[] options)
     {
         // 1 ms system timer resolution while a game runs (guest wait timeouts and audio/vsync pacing rely on it)
@@ -63,7 +67,9 @@ public static class Runner
         string? psnId = Opt(options, "--psn-id");
         if (psnId != null && !PsnAccount.IsValidOnlineId(psnId))
             Log.Warn($"--psn-id={psnId} is not a valid online ID (3-16 letters, digits, '-' or '_', starting with a letter): using {PsnAccount.DefaultOnlineId}");
-        var psn = PsnAccount.Create(OnOff(options, "--psn") ?? PsnAccount.Default.SignedIn, psnId);
+        // --psn-local=on|off: local PSN services (TUS / Cross-Save, rankings, tickets, matching, in <data>/np; default on)
+        // or every PSN server request failing as unreachable
+        var psn = PsnAccount.Create(OnOff(options, "--psn") ?? PsnAccount.Default.SignedIn, psnId, OnOff(options, "--psn-local") ?? true);
         // --lle-modules=libsas,libatrac: also load these from the installed firmware although VitaSharp has HLE for
         // them; --hle-modules=libult,...: keep these on HLE even when the game or the firmware has the module
         // (defaults: VITASHARP_LLE_MODULES / VITASHARP_HLE_MODULES)
@@ -71,8 +77,12 @@ public static class Runner
         if (FirmwareInfo.Read(Program.FsRoot) is { } fw) Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
         else Log.Info("No firmware installed: system libraries without HLE (Json, Xml, Sqlite...) are unavailable");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
-        using var emu = new Emulator(new EmulatorOptions { FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace, PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn,
-            LleModules = ModuleListOpt(options, "--lle-modules"), HleModules = ModuleListOpt(options, "--hle-modules") });
+        using var emu = new Emulator(new EmulatorOptions
+        {
+            FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace,
+            PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn, NpRoot = Path.Combine(Program.DataRoot, "np"),
+            LleModules = ModuleListOpt(options, "--lle-modules"), HleModules = ModuleListOpt(options, "--hle-modules"),
+        });
         var fatal = new ManualResetEventSlim();
         emu.Fatal += (t, e) => fatal.Set();
 
@@ -128,6 +138,19 @@ public static class Runner
             Status = s => { Volatile.Write(ref status, s); Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + 6000); ShowTitle(); },
             HostInfo = () => $"Window: framebuffer {window.FramebufferSize.Width}x{window.FramebufferSize.Height}, scale option {Opt(options, "--scale") ?? "1"}, fullscreen at start {options.Contains("--fullscreen")}",
         };
+        // trophy unlocks: a card in the top-right corner of the window (renderer overlay) and a notice in the title bar,
+        // like the console's pop-up
+        using var trophyToast = new TrophyToast((bgra, w, h) => renderer?.SetOverlay(bgra, w, h), () => window.FramebufferSize.Height);
+        VitaSharp.Core.Hle.Np.TrophyNotifications.Unlocked += e => { trophyToast.Enqueue(e); diag.Status?.Invoke(TrophyNotice(e)); };
+        // --trophy-toast-test=<seconds>: shows the notification of the title's trophy 1 (nothing is unlocked), to check it
+        if (int.TryParse(Opt(options, "--trophy-toast-test"), out int toastAt))
+            _ = Task.Delay(TimeSpan.FromSeconds(toastAt)).ContinueWith(_ =>
+            {
+                var set = VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(appPath).FirstOrDefault();
+                var pkg = set.TrpPath != null ? VitaSharp.Core.Hle.Np.TrophyPackage.Load(set.TrpPath, set.CommId) : null;
+                if (pkg?.Trophies.Count > 1)
+                    trophyToast.Enqueue(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent(set.CommId, pkg.Title, pkg.Trophies[1], pkg.TrophyIcon(pkg.Trophies[1].Id)));
+            });
         window.DiagnosticRequested += () => diag.Capture("F10");
         // F8: GPU dump recording (docs/notes/gpu-dump.md)
         window.GpuDumpToggled += () => GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo);

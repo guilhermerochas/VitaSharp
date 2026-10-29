@@ -27,7 +27,7 @@ static class UiSnapshot
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Dispatcher.UIThread.Post(async () =>
             {
-                try { rc = await Script(outDir); }
+                try { rc = args.Contains("--trophies") ? await TrophyScript(outDir) : await Script(outDir); }
                 catch (Exception e) { Console.WriteLine("ui-snapshot failed: " + e); rc = 1; }
                 desktop.Shutdown(rc);
             });
@@ -54,6 +54,33 @@ static class UiSnapshot
                 if (!Enum.TryParse<Silk.NET.Input.Key>(b.Key, out _)) { Console.WriteLine($"  default key {b.Key} is not a Silk.NET key"); bad++; }
         Console.WriteLine(bad == 0 ? "key names: ok" : $"key names: {bad} problem(s)");
         return bad;
+    }
+
+    /// <summary><c>ui-snapshot &lt;out-dir&gt; --trophies</c>: the game list (trophy badges) and the trophy list of the
+    /// first game with trophies.</summary>
+    static async Task<int> TrophyScript(string outDir)
+    {
+        async Task Shot(Window w, string name)
+        {
+            await Task.Delay(500);
+            var size = new PixelSize((int)w.Bounds.Width, (int)w.Bounds.Height);
+            using var rtb = new RenderTargetBitmap(size, new Vector(96, 96));
+            rtb.Render(w);
+            var path = Path.Combine(outDir, name + ".png");
+            rtb.Save(path);
+            Console.WriteLine($"  wrote {path}");
+        }
+        var main = new MainWindow();
+        main.Show();
+        await Shot(main, "library");
+        var game = GameLibrary.Scan(Program.Ux0).FirstOrDefault(g => TrophySetView.ForGame(g.Path, Program.FsRoot, 1).Count > 0);
+        if (game == null) { Console.WriteLine("no game with trophies"); return 1; }
+        var tw = new TrophyWindow(game, TrophySetView.ForGame(game.Path, Program.FsRoot, 1));
+        tw.Show();
+        await Shot(tw, "trophies");
+        tw.Close();
+        main.Close();
+        return 0;
     }
 
     static async Task<int> Script(string outDir)

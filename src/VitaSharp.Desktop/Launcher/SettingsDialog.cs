@@ -72,8 +72,14 @@ public sealed class SettingsDialog : Window
 
         // network and PSN (--psn=, --psn-id=): an emulated signed-in account; nothing is ever sent to Sony's servers
         const string psnTip = "Muitos jogos só passam da tela inicial com uma conta PSN conectada. O VitaSharp simula a conta " +
-                              "localmente: a verificação de login passa, e recursos online (placares, salvamento na nuvem, " +
-                              "multijogador) falham como se o servidor estivesse fora do ar. Desligado, o console fica sem rede e sem conta.";
+                              "localmente: a verificação de login passa e nada é enviado aos servidores da Sony. " +
+                              "Desligado, o console fica sem rede e sem conta.";
+        const string psnLocalTip = "Serviços da PSN que funcionam para um jogador só, guardados neste PC (pasta de dados\\np): " +
+                                   "salvamento na nuvem (TUS / Cross-Save), placares com as suas pontuações, tickets de login " +
+                                   "e DLC instalado como comprado. O multijogador abre o serviço mas não encontra salas. " +
+                                   "Desligado, todo pedido a um servidor da PSN falha como se ele estivesse fora do ar.";
+        var psnLocal = new CheckBox { Content = "Serviços PSN locais (nuvem, placares, DLC)", IsChecked = settings.PsnLocalServices };
+        ToolTip.SetTip(psnLocal, psnLocalTip);
         var psnSignedIn = new CheckBox { Content = "Simular conta PSN conectada (offline)", IsChecked = settings.PsnSignedIn };
         ToolTip.SetTip(psnSignedIn, psnTip);
         var psnId = new TextBox { Text = settings.PsnOnlineId, Width = 200, MaxLength = 16, Watermark = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId };
@@ -82,7 +88,7 @@ public sealed class SettingsDialog : Window
             Text = "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.",
             Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false,
         };
-        void SyncPsn() => psnId.IsEnabled = psnSignedIn.IsChecked == true;
+        void SyncPsn() => psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
         psnSignedIn.IsCheckedChanged += (_, _) => SyncPsn();
         SyncPsn();
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
@@ -99,6 +105,7 @@ public sealed class SettingsDialog : Window
         general.Children.Add(WithHint(psnSignedIn, psnTip));
         general.Children.Add(Row("ID online", psnId));
         general.Children.Add(psnIdError);
+        general.Children.Add(WithHint(psnLocal, psnLocalTip));
         // firmware: install the official PUP (or copy Vita3K's), and the libraries to keep on HLE (--hle-modules=)
         general.Children.Add(new TextBlock { Text = "Firmware", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         var firmware = Firmware = new FirmwarePanel();
@@ -181,6 +188,7 @@ public sealed class SettingsDialog : Window
             if (psnIdError.IsVisible) { _tabs.SelectedIndex = GeneralTab; return; }
             settings.PsnSignedIn = psnSignedIn.IsChecked == true;
             settings.PsnOnlineId = id;
+            settings.PsnLocalServices = psnLocal.IsChecked == true;
             settings.Fullscreen = fullscreen.IsChecked == true;
             settings.VSync = vsync.IsChecked == true;
             settings.Validation = validation.IsChecked == true;

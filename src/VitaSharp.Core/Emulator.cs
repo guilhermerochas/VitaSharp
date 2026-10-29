@@ -24,6 +24,9 @@ public sealed class EmulatorOptions
     public string? PatchDir { get; init; }
     /// <summary>The emulated PSN account (signed in by default, see <see cref="PsnAccount"/>).</summary>
     public PsnAccount Psn { get; init; } = PsnAccount.Default;
+    /// <summary>Folder of the local PSN service data (TUS / Cross-Save, rankings: <see cref="Hle.Np.LocalPsn"/>); null =
+    /// &lt;DataRoot&gt;/np, next to <see cref="FsRoot"/>.</summary>
+    public string? NpRoot { get; init; }
     /// <summary>Sysmodule libraries ("libsas", "libatrac", ...) to load LLE from the installed firmware
     /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
     public IReadOnlyCollection<string>? LleModules { get; init; }
@@ -66,6 +69,9 @@ public sealed class Emulator : IDisposable
     public byte[]? Klicensee { get; private set; }
     public string AppPath { get; private set; } = "";
     public LoadedModule? MainModule { get; private set; }
+    /// <summary>Local PSN services (TUS, rankings) of the emulated account, stored under <see cref="EmulatorOptions.NpRoot"/>.</summary>
+    public global::VitaSharp.Core.Hle.Np.LocalPsn LocalPsn { get; }
+    string NpRoot => LocalPsn.Root;
 
     public event Action<GuestThread, Exception>? Fatal;
     public volatile bool Running;
@@ -83,7 +89,10 @@ public sealed class Emulator : IDisposable
         Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
         PsnAccount.Current = options.Psn;
-        Log.Info(options.Psn.SignedIn ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in (servers unreachable)" : "PSN: signed out, offline");
+        LocalPsn = new global::VitaSharp.Core.Hle.Np.LocalPsn(options.NpRoot ?? global::VitaSharp.Core.Hle.Np.LocalPsn.DefaultRoot(options.FsRoot));
+        Log.Info(options.Psn.SignedIn
+            ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
+            : "PSN: signed out, offline");
         Memory = new GuestMemory();
         Vfs = new Vfs(options.FsRoot);
         InitProcess();

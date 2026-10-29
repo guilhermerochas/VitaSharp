@@ -42,11 +42,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
   vários processos
 
-## Troféus
-
-- [ ] Notificação no jogo quando um troféu é obtido (ícone, nome e grau, no canto da tela)
-- [ ] Troféus obtidos mostrados ao lado de cada jogo no menu do launcher (contagem obtidos/total, progresso e acesso à lista)
-
 ## Bugs em aberto
 
 - [ ] Gravity Rush: um toque em 0,46/0,48 no quadro 1000 da tela de título não registrou (o toque no centro funciona)
