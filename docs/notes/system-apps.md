@@ -120,8 +120,17 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
   `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the
   background download queue the shell writes in `ux0:bgdl/w/patch_bg.bin` (`_vshAppMgrBgdlSetQueueStatus` takes it).
-- Settings and Trophy Collection draw nothing: system apps render into the shell's shared framebuffer and the
-  shell composites them (`sceSharedFbUpdateProcess*`); here each process has its own SceSharedFb buffers.
+- Trophy Collection (NPXS10008): its libpaf draws every frame into SharedFb base2 with curbuf 0; sceSharedFbEnd used to
+  show base1/base2 alternately (black every other frame, the flicker). End now shows base2, the background is stable.
+  `sceAppMgrAppParamGetString(pid, ...)` now answers for the process given (the shell asks the launched app's CATEGORY).
+  Still missing for the trophy list: (1) the IPC server `SceNpTrophy` (libipmi, `SceNpTrophyServerMP`): the app's
+  job thread opens it and gets 0x8002450A; no process creates it in VitaSharp (games use the HLE trophy module); it
+  has to be provided (an HLE server speaking libipmi on VitaSharp's trophy store, or the firmware process that hosts
+  it, not identified yet); (2) SceNpUtility NIDs 16954FFF, 4A3FDD3B, E38548AB, 9F142A92, 17385829, 5D6FC99E (HLE module,
+  unimplemented); (3) each process still has its own SceSharedFb buffers and the display shows the foreground
+  process: the shell's compositing (`sceSharedFbUpdateProcess*`, `GetShellRenderPort`, head 1 of
+  `sceDisplaySetFrameBufInternal`, which fails with 0x80290000) is not modelled, so the shell's overlay (status bar)
+  is not drawn over a system app. Settings (NPXS10015) is affected the same way.
 - Still stubs: SceMotionDev (calibration data and device info of the sensor chip), SceNetPs syscalls, the unnamed
   SceNetCtl / SceNpCommon / SceNpManager / SceLibMtp / SceHttp NIDs, `_sceNpDrmGetFixedRifName`, registry change
   callbacks (recorded, never notified). Implemented from the FW 3.74 kernel (bootimage appmgr, vshbridge, SceError,

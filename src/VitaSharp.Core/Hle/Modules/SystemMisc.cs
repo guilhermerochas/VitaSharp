@@ -467,6 +467,11 @@ public sealed class SystemMisc : HleModule
     {
         const int ERR_NULL = unchecked((int)0x80800001), ERR_VALUE = unchecked((int)0x80801000), ERR_INVALID = unchecked((int)0x8080201A);
         if (buf == 0) return ERR_NULL;
+        // pid 0 = the caller; the shell asks about the processes it launched (CATEGORY of a system app it starts)
+        var proc = pid == 0 || pid == Emu.Pid ? Emu : Emu.Vita.ByPid(pid);
+        if (proc == null) return ERR_INVALID;
+        if (!ReferenceEquals(proc, Emu))
+            return proc.Hle.Modules.OfType<SystemMisc>().FirstOrDefault() is { } other ? other.sceAppMgrAppParamGetString(0, param, buf, size) : ERR_INVALID;
         // 100/101: CONTENT_ID/TITLE overrides set by sceAppMgrAppParamSetString, falling back to param.sfo
         if (param is 100 or 101)
         {
