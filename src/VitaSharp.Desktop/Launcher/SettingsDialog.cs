@@ -98,6 +98,30 @@ public sealed class SettingsDialog : Window
         general.Children.Add(validation);
         general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
+        // library view and the home screen ("Tela inicial": bubbles, LiveArea, theme, BGM and sounds of the firmware)
+        general.Children.Add(new TextBlock { Text = "Tela inicial", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        var view = new ComboBox { ItemsSource = new[] { "Lista", "Tela inicial (estilo Vita)" }, Width = 320, SelectedIndex = settings.View == LauncherSettings.ViewHome ? 1 : 0 };
+        general.Children.Add(Row("Exibição", view));
+        var shellAssets = new VitaSharp.Core.Shell.ShellAssets(Program.FsRoot);
+        var themes = shellAssets.Themes(VitaSharp.Core.Shell.LiveAreaTemplate.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
+        var theme = new ComboBox
+        {
+            ItemsSource = themes.Select(t => t.Title).ToArray(), Width = 320,
+            SelectedIndex = Math.Max(0, themes.FindIndex(t => t.Id == settings.Theme)),
+        };
+        // a choice only when there is more than one theme (the firmware's default plus themes installed in ux0:theme)
+        if (themes.Count > 1) general.Children.Add(Row("Tema", theme));
+        var homeBgm = new CheckBox { Content = "Música do sistema na tela inicial", IsChecked = settings.HomeBgm, IsEnabled = themes.Any(t => t.BgmPath != null) || shellAssets.SystemBgm != null };
+        general.Children.Add(WithHint(homeBgm, homeBgm.IsEnabled ? "Toca a música do tema (pd0:data/systembgm/home.at9 no tema padrão)."
+                                                                   : "Requer um firmware com a partição pd0 (por exemplo, importado do Vita3K) ou um tema com música."));
+        var systemSounds = new CheckBox { Content = "Efeitos sonoros do sistema", IsChecked = settings.SystemSounds, IsEnabled = shellAssets.HasFirmware };
+        general.Children.Add(WithHint(systemSounds, "Sons de confirmar e voltar do Vita (common_resource.rco do firmware)."));
+        if (!shellAssets.HasFirmware)
+            general.Children.Add(new TextBlock
+            {
+                Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
+                Text = "Sem firmware instalado a tela inicial usa um visual padrão. Instale o firmware (abaixo) para o papel de parede, ícones e sons do Vita.",
+            });
         general.Children.Add(new TextBlock { Text = "Desempenho", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         general.Children.Add(WithHint(fastShaders, fastShadersTip));
         general.Children.Add(WithHint(asyncShaders, asyncShadersTip));
@@ -199,6 +223,10 @@ public sealed class SettingsDialog : Window
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;
             settings.HleModules = (hleModules.Text ?? "").Trim();
+            settings.View = view.SelectedIndex == 1 ? LauncherSettings.ViewHome : LauncherSettings.ViewList;
+            if (themes.Count > 0 && theme.SelectedIndex >= 0) settings.Theme = themes[theme.SelectedIndex].Id == VitaSharp.Core.Shell.ShellTheme.DefaultId ? "" : themes[theme.SelectedIndex].Id;
+            settings.HomeBgm = homeBgm.IsChecked == true;
+            settings.SystemSounds = systemSounds.IsChecked == true;
             settings.Save();
             Controls?.Save();
             Close();

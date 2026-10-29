@@ -27,7 +27,12 @@ static class UiSnapshot
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Dispatcher.UIThread.Post(async () =>
             {
-                try { rc = args.Contains("--trophies") ? await TrophyScript(outDir) : await Script(outDir); }
+                try
+                {
+                    rc = args.Contains("--trophies") ? await TrophyScript(outDir)
+                        : args.Any(a => a == "--home" || a.StartsWith("--livearea")) ? await HomeScript(outDir, args)
+                        : await Script(outDir);
+                }
                 catch (Exception e) { Console.WriteLine("ui-snapshot failed: " + e); rc = 1; }
                 desktop.Shutdown(rc);
             });
@@ -81,6 +86,96 @@ static class UiSnapshot
         tw.Close();
         main.Close();
         return 0;
+    }
+
+    /// <summary>
+    /// <c>ui-snapshot &lt;out-dir&gt; --home [--livearea[=ID1,ID2]]</c>: the launcher in "Tela inicial" view — the first
+    /// home page, the next page and the selection ring — and the LiveArea of each listed title (default: every installed
+    /// game). Settings are not saved; the clock shows 12:34.
+    /// </summary>
+    static async Task<int> HomeScript(string outDir, string[] args)
+    {
+        Shell.ShellCanvas.ClockOverride = new DateTime(2026, 10, 29, 12, 34, 0);
+        var main = new MainWindow(new LauncherSettings { View = LauncherSettings.ViewHome }) { Width = 1200, Height = 780 };
+        main.Show();
+        int failures = 0;
+        async Task Shot(string name, int delay = 600)
+        {
+            await Task.Delay(delay);
+            var size = new PixelSize((int)main.Bounds.Width, (int)main.Bounds.Height);
+            using var rtb = new RenderTargetBitmap(size, new Vector(96, 96));
+            rtb.Render(main);
+            var path = Path.Combine(outDir, name + ".png");
+            rtb.Save(path);
+            Console.WriteLine($"  wrote {path}");
+        }
+        var shell = main.ShellView;
+        if (shell == null) { Console.WriteLine("home view missing"); return 1; }
+        var assets = shell.Visuals.Assets;
+        Console.WriteLine($"firmware: {(assets.HasFirmware ? "yes" : "no")}, theme: {shell.Visuals.Theme?.Title ?? "(default look)"}, " +
+                          $"wallpaper: {(shell.Visuals.Wallpaper != null ? "yes" : "no")}, apps: {shell.Home.Apps.Count}, pages: {shell.Home.Pages}");
+        if (assets.HasFirmware)
+        {
+            foreach (var (rco, id) in new[] { (Core.Shell.ShellAssets.TopMenuRco, Core.Shell.ShellAssets.Textures.PageDot), (Core.Shell.ShellAssets.IndicatorRco, Core.Shell.ShellAssets.Textures.Battery),
+                         (Core.Shell.ShellAssets.IndicatorRco, Core.Shell.ShellAssets.Textures.Wifi) })
+                if (assets.Texture(rco, id) == null) { Console.WriteLine($"  texture {id} of {rco}: MISSING"); failures++; }
+            foreach (var e in Enum.GetValues<Core.Shell.ShellSoundEffect>())
+            {
+                var s = assets.Sound(e);
+                Console.WriteLine($"  sound {e}: {(s == null ? "missing" : $"{s.Seconds:F2} s, {s.SampleRate} Hz, {s.Channels} ch")}");
+            }
+            Console.WriteLine($"  system BGM: {assets.SystemBgm ?? "none"}");
+            if (assets.SystemBgm is { } bgm)
+            {
+                // decode the first seconds (not played) to check the ATRAC9 path
+                var reader = Core.Shell.At9Reader.Open(bgm);
+                var pcm = new List<short>();
+                while (pcm.Count < reader.SampleRate * reader.Channels * 3 && reader.Read(pcm, out _)) { }
+                int peak = pcm.Count == 0 ? 0 : pcm.Max(s => Math.Abs((int)s));
+                Console.WriteLine($"  BGM decode: {reader.SampleRate} Hz, {reader.Channels} ch, {reader.TotalSamples / (double)reader.SampleRate:F1} s, first 3 s peak {peak}");
+                if (peak == 0) failures++;
+            }
+        }
+        await Shot("home_page1", 900);
+        if (shell.Home.Pages > 1)
+        {
+            shell.Home.PageBy(1);
+            await Shot("home_page2", 900);
+            shell.Home.PageBy(-1);
+        }
+        if (shell.Home.Pages > 2)
+        {
+            shell.Home.GoToPage(shell.Home.Pages - 1, animate: false);
+            await Shot("home_last_page");
+            shell.Home.GoToPage(0, animate: false);
+        }
+        shell.Home.Move(1, 0);
+        shell.Home.Move(0, 1);
+        await Shot("home_selection");
+        // a system app's LiveArea (vs0:app), whose Start explains that system apps do not run yet
+        if (shell.Home.Apps.FirstOrDefault(a => a.IsSystem) is { } sys)
+        {
+            shell.OpenLiveArea(sys);
+            shell.LiveArea!.Start();
+            await Shot("livearea_system_" + sys.TitleId, 500);
+            shell.CloseLiveArea(sound: false);
+        }
+
+        var wanted = args.FirstOrDefault(a => a.StartsWith("--livearea="))?["--livearea=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+        bool all = wanted == null && args.Contains("--livearea");
+        foreach (var app in shell.Home.Apps.Where(a => all ? !a.IsSystem : wanted?.Contains(a.TitleId, StringComparer.OrdinalIgnoreCase) == true))
+        {
+            shell.OpenLiveArea(app);
+            var la = shell.LiveArea!;
+            Console.WriteLine($"  {app.TitleId}: style {la.Template?.Style ?? "(none)"}{(la.Template?.IsDefault == true ? " (firmware default)" : "")}, " +
+                              $"frames {la.Template?.Frames.Count ?? 0}, items {la.Template?.Frames.Sum(f => f.Items.Count) ?? 0}");
+            await Shot("livearea_" + app.TitleId, 500);
+            shell.CloseLiveArea(sound: false);
+        }
+        main.Close();
+        Shell.ShellCanvas.ClockOverride = null;
+        Console.WriteLine(failures == 0 ? "PASS" : $"{failures} problem(s)");
+        return failures == 0 ? 0 : 1;
     }
 
     static async Task<int> Script(string outDir)

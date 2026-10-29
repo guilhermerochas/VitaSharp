@@ -31,6 +31,16 @@ public sealed class LauncherSettings
     /// <summary>"Manter em HLE": firmware/game libraries kept on HLE even when the module is available, comma separated
     /// (--hle-modules=, e.g. "libSceJson"). Empty: use every module the game or the installed firmware provides.</summary>
     public string HleModules { get; set; } = "";
+    /// <summary>Library view: "list" (game list with details) or "home" ("Tela inicial": Vita-style bubbles and LiveArea).</summary>
+    public string View { get; set; } = ViewList;
+    /// <summary>Home screen theme id (<see cref="VitaSharp.Core.Shell.ShellTheme.Id"/>); "" = the firmware's default.</summary>
+    public string Theme { get; set; } = "";
+    /// <summary>Play the system BGM (pd0:data/systembgm/home.at9 or the theme's) on the home screen.</summary>
+    public bool HomeBgm { get; set; }
+    /// <summary>Play the system sound effects (common_resource.rco) on the home screen and LiveArea.</summary>
+    public bool SystemSounds { get; set; }
+
+    public const string ViewList = "list", ViewHome = "home";
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
