@@ -9,14 +9,20 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// <param name="OutputRegisterFormat">the SceGxmOutputRegisterFormat the fragment program was created with
 /// (sceGxmShaderPatcherCreateFragmentProgram), set for native-colour programs only (0 = DECLARED or not native
 /// colour): the layout of the colour the program leaves in its output registers (see ShaderGenerator.OutputType)</param>
+/// <param name="TileWord1">the scene keeps the second output register word of its pixels in an auxiliary R32_UINT
+/// attachment (see <see cref="TileWord1Use"/>): the shader starts with o[0].y = that word (set 3 binding 3 input
+/// attachment with <see cref="FetchInputAttachment"/>, else binding 4, a copy) and, when it writes the word, outputs
+/// it at location 1</param>
 public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
-    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0)
+    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false)
 {
     /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
     public const uint FetchInputKey = 0x46494E50;
     /// <summary>Mixed (xor the format) into the key when <see cref="OutputRegisterFormat"/> is set; the keys of all
     /// other shaders are unchanged.</summary>
     public const uint OutputFormatKey = 0x4F524600;
+    /// <summary>Mixed into the key of <see cref="TileWord1"/> variants (other keys are unchanged).</summary>
+    public const uint TileWord1Key = 0x54573100;
 
     /// <summary>The <see cref="OutputRegisterFormat"/> hint of a fragment program created with this output register
     /// format: the format for a native-colour program, else 0.</summary>
@@ -30,7 +36,8 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
         foreach (var a in Attributes) { h = Fnv.Mix(h, a.RegIndex); h = Fnv.Mix(h, (uint)a.ComponentCount); h = Fnv.Mix(h, a.Format); }
         h = Fnv.Mix(h, ColorFormat);
         if (OutputRegisterFormat != 0) h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
-        return FetchInputAttachment ? Fnv.Mix(h, FetchInputKey) : h;
+        if (FetchInputAttachment) h = Fnv.Mix(h, FetchInputKey);
+        return TileWord1 ? Fnv.Mix(h, TileWord1Key) : h;
     }
 
     public static class Fnv
@@ -72,7 +79,29 @@ public sealed class GeneratedShader
     /// components, and must be rendered through an integer view of the surface so no float conversion touches it.
     /// </summary>
     public int RawColorBits { get; set; }
+    /// <summary>How the program uses the second word of its 64-bit output register beyond a one-word colour (see
+    /// <see cref="TileWord1Use"/>). In a <see cref="ShaderHints.TileWord1"/> variant, <see cref="TileWord1Use.Writes"/>
+    /// also means the shader outputs the word at location 1.</summary>
+    public TileWord1Use TileWord1 { get; set; }
     public HashSet<string> Warnings { get; set; } = new();
+}
+
+/// <summary>
+/// The PS Vita's tile buffer keeps each pixel's output registers for the whole scene: sceGxmColorSurfaceInit takes the
+/// output register size (SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT/64BIT) independently of the colour format, and with 64-bit
+/// registers on a 32-bit surface only the first word is stored to memory at the end of the tile. A native-colour
+/// program whose colour is one packed word (UCHAR4/CHAR4 output register format) can keep data in the second word,
+/// which later programs of the scene find again in o0.y (the register is read and written in place). Tearaway keeps a
+/// half there in its papercraft programs and multiplies its shadow volumes by it.
+/// </summary>
+[Flags]
+public enum TileWord1Use : byte
+{
+    None = 0,
+    /// <summary>The colour is one word and the program writes the second one (scratch kept in the tile).</summary>
+    Writes = 1,
+    /// <summary>The program reads the current pixel's registers (fragment colour fetch) with a one-word colour.</summary>
+    Reads = 2,
 }
 
 /// <summary>
@@ -90,7 +119,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 15;
+    public const int GeneratorVersion = 16;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -406,6 +435,7 @@ float packC10(vec3 c) {
             UsesFragColor = result.UsesFragColor,
             WritesDepth = result.WritesDepth,
             RawColorBits = result.RawColorBits,
+            TileWord1 = result.TileWord1,
             Warnings = result.Warnings,
         }.CopyLists(result);
     }
@@ -625,6 +655,25 @@ float packC10(vec3 c) {
             }
             if (!GxpProgram.IsFloat(target.Type)) src = t.ToInt(src, target.Type, true);
             t.Store(target, src, 0b1111);
+            if (program.IsNativeColor && target.Type is DataType.UInt8 or DataType.Int8) result.TileWord1 |= TileWord1Use.Reads;
+        }
+
+        if (hints.TileWord1)
+        {
+            // the second word of the pixel's output register, kept by the scene's auxiliary attachment (TileWord1Use)
+            string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
+            string word;
+            if (hints.FetchInputAttachment)
+            {
+                decl.AppendLine("layout(input_attachment_index = 1, set = 3, binding = 3) uniform usubpassInputMS tile_word1_in;");
+                word = $"subpassLoad(tile_word1_in, {sample}).x";
+            }
+            else
+            {
+                decl.AppendLine("layout(set = 3, binding = 4) uniform usampler2D tile_word1_tex;");
+                word = "texelFetch(tile_word1_tex, ivec2(gl_FragCoord.xy), 0).x";
+            }
+            t.Line($"o[0].y = uintBitsToFloat({word});");
         }
     }
 
@@ -735,6 +784,16 @@ float packC10(vec3 c) {
             if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
             decl.AppendLine("layout(location = 0) out vec4 out_color;");
             t.Line($"out_color = {v.E};");
+            // a one-word colour with the second output register word written: scratch the tile keeps (TileWord1Use)
+            if (program.IsNativeColor && hints.OutputRegisterFormat != 0 && color.Type is DataType.UInt8 or DataType.Int8 && t.WordType(Bank.Output, 1) != null)
+            {
+                result.TileWord1 |= TileWord1Use.Writes;
+                if (hints.TileWord1)
+                {
+                    decl.AppendLine("layout(location = 1) out uint out_tile_word1;");
+                    t.Line("out_tile_word1 = floatBitsToUint(o[0].y);");
+                }
+            }
             // U2F10F10F10 surfaces are rendered into a host F16x4 image, which also stores what the guest format
             // cannot: unsigned 10-bit floats hold no negative values and the 2-bit alpha is normalised. Killzone's
             // 240x136 luminance target (auto exposure) regularly received a few slightly negative pixels.

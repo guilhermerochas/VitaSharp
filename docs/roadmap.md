@@ -56,6 +56,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
 - [ ] Killzone: em algumas áreas do kzl_walk3 o jogo cai para 5–10 fps por 20–40 s; a thread principal fica em polling com `sceKernelDelayThread` (loop em 8100D692) esperando algo que ninguém produz (jobs e GPU ociosos); ver docs/notes/kz-mainthread.md
+- [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log)
 - [ ] Skullgirls: elementos do HUD (contador de combo, barra de cima) aparecem como caixas brancas por 1 quadro durante as lutas
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7`
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções

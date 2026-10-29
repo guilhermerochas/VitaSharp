@@ -195,7 +195,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // record: flags u8 (vertex, uses frag colour, writes depth, attribute fallback, bits 4-5 raw colour output size:
-    // 0 none, 1 = 8, 2 = 16, 3 = 32 bits), input count u16,
+    // 0 none, 1 = 8, 2 = 16, 3 = 32 bits, bits 6-7 TileWord1Use), input count u16,
     // inputs (reg u32, location i32, kind u16, components i32, location count i32, raw size i32, raw components i32),
     // then the SPIR-V. Every VertexInputInfo field must round-trip: BuildVertexInput derives the Vulkan vertex formats
     // from them, and a lost raw size turns a raw U8/U16 register-format fetch into a normalised/float one (garbage
@@ -209,7 +209,7 @@ public sealed unsafe partial class VulkanRenderer
         int n = gen.VertexInputs.Count;
         var buf = new byte[3 + n * InputRecordSize + spv.Length];
         buf[0] = (byte)((gen.IsVertex ? 1 : 0) | (gen.UsesFragColor ? 2 : 0) | (gen.WritesDepth ? 4 : 0) | (gen.AttributeFallback ? 8 : 0)
-            | (gen.RawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 4);
+            | (gen.RawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 4 | ((int)gen.TileWord1 & 3) << 6);
         BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)n);
         int o = 3;
         foreach (var vi in gen.VertexInputs)
@@ -247,6 +247,7 @@ public sealed unsafe partial class VulkanRenderer
             WritesDepth = (flags & 4) != 0,
             AttributeFallback = (flags & 8) != 0,
             RawColorBits = ((flags >> 4) & 3) switch { 1 => 8, 2 => 16, 3 => 32, _ => 0 },
+            TileWord1 = (TileWord1Use)((flags >> 6) & 3),
         };
         for (int i = 0; i < n; i++)
         {
@@ -264,7 +265,8 @@ public sealed unsafe partial class VulkanRenderer
     void RecordPipeline(in PipelineKey key, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         var list = _pipelineList;
-        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds) return;
+        // pipelines with the tile-word attachment are not recorded (the recipe has no field for it; rare, built on use)
+        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds || key.TileWord1 != 0) return;
         var rec = new PipelineRecipe(vs.ProgramHash, vs.HintKey, fs.ProgramHash, fs.HintKey, (int)key.ColorFormat, key.HasColor, key.Blend,
             key.ColorFunc, key.AlphaFunc, key.ColorSrc, key.ColorDst, key.AlphaSrc, key.AlphaDst, key.Mask,
             (byte)topology, (byte)key.Polygon, (byte)key.Samples, fs.Gen.UsesFragColor, (byte)fs.Gen.RawColorBits, vp.Attributes, vp.Streams).Encode();
