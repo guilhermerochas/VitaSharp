@@ -45,10 +45,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Sistema do Vita de verdade (shell.self e apps de vs0:app, ver docs/notes/system-apps.md): o shell já chega
-  à tela inicial e abre a LiveArea e os apps do sistema (um processo por vez); faltam os jogos instalados no
-  app.db, vários processos ao mesmo tempo (IPC do SceShellSvc), a configuração inicial e as páginas das
-  Configurações/Troféus
+- [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
+  configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
+  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME), o aviso "Could not install" e as
+  funções restantes (sensor de movimento, sockets do sistema)
 
 ## Bugs em aberto
 
@@ -56,7 +56,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
 - [ ] Killzone: em algumas áreas do kzl_walk3 o jogo cai para 5–10 fps por 20–40 s; a thread principal fica em polling com `sceKernelDelayThread` (loop em 8100D692) esperando algo que ninguém produz (jobs e GPU ociosos); ver docs/notes/kz-mainthread.md
-- [ ] Tearaway: as sombras (volumes do vs F7B466C07DB1DB97/E4A5458A1E5E81D8 + fs 39A8226D3AB5DC76) saem pretas e duras na arena do tutorial "Tap & hold the rear touch pad". Os programas de cor nativa declaram saída F16x4 e guardam um half em o0.y que fica no tile buffer entre desenhos da cena (a superfície é U8x4, só o0.x vai para a memória); o 39A8 multiplica a sombra por esse o0.y, que nós não preservamos (fica indefinido). Precisa de um anexo auxiliar de 32 bits por cena para o0.y
 - [ ] Skullgirls: elementos do HUD (contador de combo, barra de cima) aparecem como caixas brancas por 1 quadro durante as lutas
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7`
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
