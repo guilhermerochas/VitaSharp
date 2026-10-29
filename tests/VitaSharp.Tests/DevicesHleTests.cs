@@ -216,4 +216,31 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         Assert.Equal(20496u, GuestMemory.R32(cfg + 8));
         Assert.NotEqual(0, Call(n, "sceSulphaNgsSetSampleName", 0u, 4u, 0u));
     }
+
+    [Fact]
+    public void NgsSystemLockHasNoOwner()
+    {
+        // Sengoku Musou 2 Empires: the first of its lock users calls sceNgsSystemLock and the last one out calls
+        // sceNgsSystemUnlock, from whichever thread. An owned lock (host Monitor) ignored that unlock and deadlocked.
+        var n = new Ngs();
+        var sys = new VitaSharp.Core.Hle.Audio.NgsSystem { Handle = 0x1234 };
+        var systems = (System.Collections.Concurrent.ConcurrentDictionary<uint, VitaSharp.Core.Hle.Audio.NgsSystem>)
+            typeof(Ngs).GetField("_systems", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(n)!;
+        systems[sys.Handle] = sys;
+
+        var t = new Thread(() => Call(n, "sceNgsSystemLock", sys.Handle));
+        t.Start(); t.Join();
+        Assert.Equal(1, sys.GuestLockCount);
+
+        var waiter = new Thread(() => Call(n, "sceNgsSystemLock", sys.Handle)); // held by the first thread: blocks
+        waiter.Start();
+        Assert.False(waiter.Join(200));
+        Assert.Equal(0, Call(n, "sceNgsSystemUnlock", sys.Handle));                // released by another thread
+        Assert.True(waiter.Join(5000));
+        Assert.Equal(1, sys.GuestLockCount);
+        Assert.Equal(0, Call(n, "sceNgsSystemUnlock", sys.Handle));
+        Assert.Equal(0, sys.GuestLockCount);
+        Assert.Equal(0, Call(n, "sceNgsSystemUnlock", sys.Handle));                // unbalanced unlock is harmless
+        Assert.Equal(0, sys.GuestLockCount);
+    }
 }

@@ -71,6 +71,20 @@ public sealed partial class UsseTranslator
 
     public int MaxTemp, MaxPa, MaxSa, MaxOut;
 
+    // data type of the last write to each register word (program order, statically addressed words only). Bit-copy
+    // moves carry the source word's type, so a word VPCK'd to U8 stays U8 when moved to the output registers.
+    readonly Dictionary<(Bank, int), DataType> _wordType = new();
+
+    /// <summary>Type of the last translated write to a register word (null: never written or not statically known).</summary>
+    public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out var t) ? t : null;
+
+    /// <summary>Records the data a bit-copy move left in a register word (the source word's type).</summary>
+    void SetWordType(Bank bank, int word, DataType type)
+    {
+        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal) return;
+        _wordType[(bank, word)] = type;
+    }
+
     public sealed record SamplerUse(string GlslName, uint Index, bool IsCube, DataType ComponentType, int ComponentCount);
 
     public UsseTranslator(GxpProgram program)
@@ -369,7 +383,11 @@ public sealed partial class UsseTranslator
             case DataType.UInt32:
             case DataType.Int32:
                 for (int i = 0; i < 4; i++)
-                    if ((destMask & (1 << i)) != 0) Line($"{W(i)} = {AsF32Bits(NextSrc())};");
+                {
+                    if ((destMask & (1 << i)) == 0) continue;
+                    Line($"{W(i)} = {AsF32Bits(NextSrc())};");
+                    if (dynBase == null) _wordType[(bank, baseWord + i)] = dest.Type;
+                }
                 return;
             default:
             {
@@ -381,6 +399,7 @@ public sealed partial class UsseTranslator
                     for (int j = 0; j < n && word * n + j < 4; j++) if ((destMask & (1 << (word * n + j))) != 0) any = 1;
                     if (any == 0) continue;
                     string w = W(word);
+                    if (dynBase == null) _wordType[(bank, baseWord + word)] = dest.Type;
                     if (dest.Type == DataType.F16)
                     {
                         string t = Tmp();

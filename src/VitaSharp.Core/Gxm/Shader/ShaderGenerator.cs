@@ -6,11 +6,21 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// <summary>Information the shader translation depends on besides the program itself (part of the cache key).</summary>
 /// <param name="FetchInputAttachment">programmable blending reads the colour attachment as a multisampled input
 /// attachment (set 3 binding 2) instead of a copy of the target</param>
+/// <param name="OutputRegisterFormat">the SceGxmOutputRegisterFormat the fragment program was created with
+/// (sceGxmShaderPatcherCreateFragmentProgram), set for native-colour programs only (0 = DECLARED or not native
+/// colour): the layout of the colour the program leaves in its output registers (see ShaderGenerator.OutputType)</param>
 public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
-    bool FetchInputAttachment = false)
+    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0)
 {
     /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
     public const uint FetchInputKey = 0x46494E50;
+    /// <summary>Mixed (xor the format) into the key when <see cref="OutputRegisterFormat"/> is set; the keys of all
+    /// other shaders are unchanged.</summary>
+    public const uint OutputFormatKey = 0x4F524600;
+
+    /// <summary>The <see cref="OutputRegisterFormat"/> hint of a fragment program created with this output register
+    /// format: the format for a native-colour program, else 0.</summary>
+    public static uint NativeOutputFormat(GxpProgram program, uint outputFormat) => program.IsNativeColor ? outputFormat : 0;
 
     /// <summary>Allocation-free FNV-1a key; <see cref="KeyOf"/> computes the same value straight from draw state.</summary>
     public ulong Key()
@@ -19,6 +29,7 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
         foreach (var t in TextureFormats) h = Fnv.Mix(h, t);
         foreach (var a in Attributes) { h = Fnv.Mix(h, a.RegIndex); h = Fnv.Mix(h, (uint)a.ComponentCount); h = Fnv.Mix(h, a.Format); }
         h = Fnv.Mix(h, ColorFormat);
+        if (OutputRegisterFormat != 0) h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
         return FetchInputAttachment ? Fnv.Mix(h, FetchInputKey) : h;
     }
 
@@ -79,7 +90,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 12;
+    public const int GeneratorVersion = 13;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -338,7 +349,8 @@ float packC10(vec3 c) {
         var sb = new StringBuilder();
         sb.AppendLine("#version 450");
         sb.AppendLine($"// gxp {program.Hash:X16} ({(vertex ? "vertex" : "fragment")}) vo1 0x{program.VertexOutputs1:X8} vo2 0x{program.VertexOutputs2:X8}" +
-                      (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} start {program.FragmentOutputStart} surface 0x{hints.ColorFormat:X8}"));
+                      (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} start {program.FragmentOutputStart} surface 0x{hints.ColorFormat:X8} flags 0x{program.Flags:X8}" +
+                                (hints.OutputRegisterFormat != 0 ? $" outreg {hints.OutputRegisterFormat}" : "")));
         if (result.UniformBuffers.Count > 0)
             sb.AppendLine("// ub " + string.Join(" ", result.UniformBuffers.Select(s => $"[{s.GuestIndex}]@{s.ByteOffset}+{s.ByteSize}{(s.Mapped ? "M" : "")}")));
         sb.AppendLine(PushConstants);
@@ -590,8 +602,29 @@ float packC10(vec3 c) {
 
     static string Paren(string e) => e.StartsWith('(') || e.All(c => char.IsLetterOrDigit(c) || c == '_') ? e : $"({e})";
 
-    static DataType OutputType(GxpProgram program, ShaderHints hints)
+    /// <summary>
+    /// Type of the colour in the fragment program's output registers: the framebuffer-fetch preload of o0, and the
+    /// colour read at the end of the program unless <see cref="FinalOutputType"/> knows better. For a native-colour
+    /// program created with an explicit output register format (SceGxmOutputRegisterFormat of
+    /// sceGxmShaderPatcherCreateFragmentProgram) the registers are in that layout, whatever the declared type: Tearaway
+    /// declares half4 outputs, creates its programs with UCHAR4, reads the framebuffer colour as packed bytes and
+    /// packs its colour itself (VPCK F16 -> U8 into o0). Read as F16x4, the packed bytes became garbage halves (an
+    /// almost black menu with dark green tones; Vita3K shows the same).
+    /// </summary>
+    internal static DataType OutputType(GxpProgram program, ShaderHints hints)
     {
+        if (program.IsNativeColor)
+        {
+            switch (hints.OutputRegisterFormat)
+            {
+                case 1: return DataType.UInt8;        // UCHAR4
+                case 2: return DataType.Int8;         // CHAR4
+                case 3: return DataType.UInt16;       // USHORT2
+                case 4: return DataType.Int16;        // SHORT2
+                case 5: case 6: return DataType.F16;  // HALF4, HALF2
+                case 7: case 8: return DataType.F32;  // FLOAT2, FLOAT
+            }
+        }
         var type = GxpProgram.StoreType(program.OutputParamType);
         // U32/S32 outputs are raw bits: the surface stores the output registers unconverted, so read them in the
         // surface's own component layout. Resistance: Burning Skies packs two RGBA8 G-buffer words (VPCK) into a
@@ -608,12 +641,37 @@ float packC10(vec3 c) {
         return type;
     }
 
+    /// <summary>
+    /// Type the colour is read from the output registers with at the end of the program. On the hardware a scene's
+    /// tile buffer keeps the raw output registers of every pixel (two 32-bit words: an F16x4 colour, or whatever a
+    /// native-colour program left there) and converts them to the surface format only when the tile is stored, so
+    /// programmable blending can keep intermediate data in it. The host renders straight into the surface, so the
+    /// colour of a native-colour program created with an explicit output register format is read with the type of
+    /// the program's last write to o0 (followed through bit-copy moves): packed bytes (VPCK to U8) are stored as the
+    /// surface's bytes and read back exactly by the next fragment-colour fetch; real F16/F32 colour is converted.
+    /// Tearaway packs RGBA8 into o0 in its blend passes and converts it back to half4 (VPCK U8 -> F16) in the final
+    /// full-screen pass. Without a known U8/F16/F32 write the output register format decides (<see cref="OutputType"/>).
+    /// </summary>
+    static DataType FinalOutputType(GxpProgram program, ShaderHints hints, UsseTranslator t)
+    {
+        var fallback = OutputType(program, hints);
+        if (!program.IsNativeColor || hints.OutputRegisterFormat == 0) return fallback;
+        return t.WordType(Bank.Output, 0) switch
+        {
+            DataType.UInt8 or DataType.O8 => DataType.UInt8,
+            DataType.Int8 => DataType.Int8,
+            DataType.F16 => DataType.F16,
+            DataType.F32 => DataType.F32,
+            _ => fallback,
+        };
+    }
+
     static void EmitFragmentFinalize(GxpProgram program, ShaderHints hints, UsseTranslator t, StringBuilder decl, GeneratedShader result)
     {
         var color = Operand.Make(0);
         color.Bank = program.IsNativeColor ? Bank.Output : Bank.PrimAttr;
         color.Num = 0;
-        color.Type = OutputType(program, hints);
+        color.Type = FinalOutputType(program, hints, t);
         int regOff = 0;
         // the colour is read from the primary attributes starting at the program's fragment output register. Vita3K
         // applies the offset to F16 outputs only; Resistance's window/lamp G-buffer programs write their two packed

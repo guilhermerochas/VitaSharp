@@ -144,7 +144,15 @@ public sealed class NgsSystem
     /// <summary>Reused snapshot of <see cref="Queue"/> for sceNgsSystemUpdate (voices may leave the queue while it runs).</summary>
     public NgsVoice[] UpdateSnapshot = [];
     public int UpdateDepth;
+    /// <summary>Host lock over the system's data (short critical sections only, never held across guest code).</summary>
     public readonly object Lock = new();
+    /// <summary>
+    /// The guest-visible sceNgsSystemLock: no owner, so any thread may unlock it (games count lock users and let the
+    /// last one out call sceNgsSystemUnlock). Guarded by <see cref="GuestLockGate"/>.
+    /// </summary>
+    public readonly object GuestLockGate = new();
+    public int GuestLockCount;
+    public object? GuestLocker;
     public uint CallbackInfo;   // guest scratch for SceNgsCallbackInfo
 }
 

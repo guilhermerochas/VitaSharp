@@ -177,4 +177,37 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(d, "scePhotoImportDialogTerm"));
         Assert.False((bool)typeof(CommonDialog).GetMethod("sceCommonDialogIsRunning", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(d, [])!);
     }
+
+    /// <summary>SceSaveDataDialogParam with a system message (mode 4) or a user message (mode 3) sub-parameter.</summary>
+    uint SaveParam(int mode, uint subWord0)
+    {
+        uint param = Alloc(0x88), sub = Alloc(0x40);
+        GuestMemory.W32(sub, subWord0); // sysMsgType / buttonType
+        GuestMemory.W32(param + 0x50, (uint)mode);
+        GuestMemory.W32(param + 0x54, 1); // SCE_SAVEDATA_DIALOG_TYPE_SAVE
+        GuestMemory.W32(param + (mode == 3 ? 0x60u : 0x64u), sub);
+        return param;
+    }
+
+    [Fact]
+    public void SaveDataDialogProgressMessageRunsUntilSubClose()
+    {
+        // Sengoku Musou 2 Empires: Continue to the "Saving..." system message (SYSMSG_TYPE_PROGRESS), save, wait for the
+        // sub-dialog to be RUNNING, then SubClose. A sub-dialog without buttons cannot finish on its own.
+        var d = new CommonDialog();
+        Assert.Equal(0, Call(d, "sceSaveDataDialogInit", SaveParam(4, 2)));         // SYSTEM_MSG CONFIRM (yes/no)
+        Assert.Equal(2, Call(d, "sceSaveDataDialogGetSubStatus"));                 // answered at once
+        Assert.Equal(0, Call(d, "sceSaveDataDialogContinue", SaveParam(4, 5)));    // SYSTEM_MSG PROGRESS
+        Assert.Equal(1, Call(d, "sceSaveDataDialogGetSubStatus"));
+        Assert.Equal(1, Call(d, "sceSaveDataDialogGetStatus"));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogSubClose"));
+        Assert.Equal(2, Call(d, "sceSaveDataDialogGetSubStatus"));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogContinue", SaveParam(3, 2)));    // USER_MSG, BUTTON_TYPE_NONE
+        Assert.Equal(1, Call(d, "sceSaveDataDialogGetSubStatus"));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogContinue", SaveParam(3, 0)));    // USER_MSG, OK button
+        Assert.Equal(2, Call(d, "sceSaveDataDialogGetSubStatus"));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogFinish", 0u));
+        Assert.Equal(2, Call(d, "sceSaveDataDialogGetStatus"));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogTerm"));
+    }
 }

@@ -407,9 +407,33 @@ public sealed partial class UsseTranslator
             return;
         }
         if (dt is DataType.F16 or DataType.F32) SetRepeatMultiplier(2, 2, 2, 2); else SetRepeatMultiplier(1, 1, 1, 1);
+        // an unconditional F16 move copies register bits: move the halves as U16 so that packed integer data (VPCK'd
+        // RGBA8 words, the framebuffer colour of native-colour programs) survives. Through unpackHalf2x16/packHalf2x16
+        // the words whose halves are NaN/Inf/denormal patterns were canonicalised or flushed (Tearaway's programmable
+        // blending moves its packed U8x4 result to o0 this way: noisy, wrongly coloured menu). Not for the internal
+        // registers (F16 held as F32 per component) or constants/swizzle constants (values, not bits).
+        if (!conditional && dt == DataType.F16 && IsBitRegister(dest.Bank) && IsBitRegister(src1.Bank))
+        {
+            bool constSwizzle = false;
+            for (int k = 0; k < 4; k++) if ((mask & (1 << k)) != 0 && src1.Swizzle[k] >= Sw.Zero) constSwizzle = true;
+            if (!constSwizzle) src1.Type = dest.Type = DataType.UInt16;
+        }
+        // bit copies (raw F16 moves above, unconditional F32 moves) carry the source words' data types
+        bool bitCopy = !conditional && dest.Type is DataType.UInt16 or DataType.F32 && IsBitRegister(dest.Bank) && IsBitRegister(src1.Bank);
         int repeats = (int)i['a'] + 1;
         for (int r = 0; r < repeats; r++)
         {
+            // source word types, read before the store (source and destination may overlap)
+            List<(int Dest, DataType? Type)>? copied = null;
+            if (bitCopy)
+            {
+                copied = new();
+                int dOff = RepeatOffset(dest, r, RepeatMode.Slmsi), sOff = RepeatOffset(src1, r, RepeatMode.Slmsi);
+                int per = dest.Type == DataType.UInt16 ? 2 : 1;
+                for (int k = 0; k < 4; k++)
+                    if ((mask & (1 << k)) != 0)
+                        copied.Add((dest.Num + dOff + k / per, src1.Bank is Bank.Indexed1 or Bank.Indexed2 || src1.Swizzle[k] >= Sw.Zero ? null : WordType(src1.Bank, src1.Num + sOff + (int)src1.Swizzle[k] / per)));
+            }
             var s1 = Load(src1, mask, RepeatOffset(src1, r, RepeatMode.Slmsi));
             Val result;
             if (conditional)
@@ -422,12 +446,13 @@ public sealed partial class UsseTranslator
                     cond = cmp switch { 0 => $"({c} == {zero})", 1 => $"({c} != {zero})", 2 => $"({c} < {zero})", _ => $"({c} <= {zero})" };
                 else
                     cond = cmp switch { 0 => $"equal({c}, {zero})", 1 => $"notEqual({c}, {zero})", 2 => $"lessThan({c}, {zero})", _ => $"lessThanEqual({c}, {zero})" };
-                // select(cond ? src1 : src2) â€” component-wise via mix for vectors
+                // select(cond ? src1 : src2) — component-wise via mix for vectors
                 if (s1.N == 1) result = new Val($"({cond} ? {s1} : {s2})", s1.K, 1);
                 else result = new Val($"mix({s2}, {s1}, {(c.N == s1.N ? cond : $"bvec{s1.N}({cond})")})", s1.K, s1.N);
             }
             else result = s1;
             Store(dest, result, mask, RepeatOffset(dest, r, RepeatMode.Slmsi));
+            if (copied != null) foreach (var (w, t) in copied) SetWordType(dest.Bank, w, t ?? dt);
         }
         ResetRepeatMultiplier();
     }
@@ -500,6 +525,9 @@ public sealed partial class UsseTranslator
         }
         ResetRepeatMultiplier();
     }
+
+    /// <summary>Banks whose registers hold raw 32-bit words (a typed move between them is a bit copy).</summary>
+    static bool IsBitRegister(Bank b) => b is Bank.Temp or Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.Indexed1 or Bank.Indexed2;
 
     void Limm(UsseInst i)
     {

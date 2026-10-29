@@ -1,0 +1,9 @@
+# Silverio Vendetta -Verse of Orpheus- (PCSG00845, "malie" engine): boot past the data archive read-ahead, title menu
+# (~f600), tap Start, prologue text (~f2400), first story CG with text (~f3400).
+# Regression: the 'umdReadAhead' threads compare an uninitialised r9 with the archive index (0 for data1.dat) and only
+# open the archive when they differ; with r9 = 0 at thread entry they read fd -1 forever (EBADF) and the game stalled
+# at frame 1. Threads now start with r2-r12 = 0xDEADBEEF like Vita3K.
+# Text needs the firmware PVF fonts in sa0:data/font/pvf (without them the story screens have no text).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/verse_orpheus_boot.txt --data=<scratch root>
+title=PCSG00845
+args=--frames=4000 --seconds=400 --dump-every=100 --no-inspect --input=tap@f1000:0.72:0.51:f10,circle@f2400:f6,circle@f2700:f6,circle@f3000:f6,circle@f3300:f6,circle@f3600:f6
