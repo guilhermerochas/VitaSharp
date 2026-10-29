@@ -9,6 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceNet socket, epoll, resolver, dump and emulation objects in the offline profile: objects are real (ids, options,
 /// registrations), nothing ever arrives from the network, and blocking calls wait for their timeout or until they are
 /// aborted/closed instead of spinning. Every failure also writes errno (code &amp; 0xFF) to the sceNetErrnoLoc slot.
+/// With real internet (<c>--net=real</c>) sockets and the resolver use the host's network: NetSockets.Real.cs.
 /// </summary>
 public sealed partial class Net
 {

@@ -53,8 +53,8 @@ Legenda das funções que importam: **TUS** = `sceNpTus*` (Cross-Save, dados por
 
 ## O que falta
 
-- Internet de verdade (opcional, opt-in): falar com um servidor compatível (ex.: RPCN) para placares, TUS e
-  Matching2 com outros jogadores; hoje tudo fica no PC.
+- RPCN além de Score/TUS: Matching2 (salas e signaling), amigos no `sceNpBasic*`, placar de amigos, tickets e
+  presença (a internet real e o Score/TUS no RPCN já existem: `--net=real`, `--rpcn=`, ver `docs/hle/E2-np.md` §0.000).
 - Ad hoc na LAN (`sceNetAdhoc*`, `sceNetAdhocMatching*`) entre duas instâncias do emulador.
 - Commerce2 com loja vazia "de verdade": falta confirmar o protótipo/eventos do Vita; hoje a loja falha como
   servidor fora do ar.
