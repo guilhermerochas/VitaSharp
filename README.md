@@ -353,6 +353,9 @@ Common `run` options:
 | `--trace-hle`, `--trace-hle-only <a+b>` | Log system calls |
 | `--validation` | Enable the Vulkan validation layers |
 | `--lle-modules=<libs>`, `--hle-modules=<libs>` | Firmware libraries to load LLE instead of HLE, or to keep on HLE (see [Firmware](#firmware-optional)) |
+| `--psn=on\|off`, `--psn-id=<id>`, `--psn-local=on\|off` | Emulated PSN account (signed in by default) and the local PSN services (TUS / Cross-Save, rankings, tickets) |
+| `--net=off\|real` | Real internet for game sockets, DNS and HTTP(S). **Off by default**: nothing leaves the PC. With `real`, Sony's PSN servers stay blocked (and logged); `--net-allow=<hosts>` limits traffic to the listed hosts (launcher: *Internet real*) |
+| `--rpcn=<host[:port]>`, `--rpcn-user=<name>` | With `--net=real`, send Score and TUS to an [RPCN](https://github.com/RipleyTom/rpcn) server (RPCS3's open PSN replacement); the password is read from `VITASHARP_RPCN_PASSWORD` |
 | `--log <file>`, `--debug` | Log destination and verbosity |
 
 ### Firmware (optional)

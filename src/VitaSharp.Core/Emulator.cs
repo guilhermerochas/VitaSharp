@@ -24,6 +24,11 @@ public sealed class EmulatorOptions
     public string? PatchDir { get; init; }
     /// <summary>The emulated PSN account (signed in by default, see <see cref="PsnAccount"/>).</summary>
     public PsnAccount Psn { get; init; } = PsnAccount.Default;
+    /// <summary>Real internet for SceNet/SceHttp (off by default, see <see cref="NetConfig"/>).</summary>
+    public NetConfig Net { get; init; } = NetConfig.Off;
+    /// <summary>An RPCN server for Score/TUS (used only with real internet and a signed-in account); null = the local
+    /// PSN services.</summary>
+    public Hle.Np.Rpcn.RpcnConfig? Rpcn { get; init; }
     /// <summary>Folder of the local PSN service data (TUS / Cross-Save, rankings: <see cref="Hle.Np.LocalPsn"/>); null =
     /// &lt;DataRoot&gt;/np, next to <see cref="FsRoot"/>.</summary>
     public string? NpRoot { get; init; }
@@ -45,14 +50,24 @@ public sealed class EmulatorOptions
 public sealed class Emulator : IDisposable
 {
     public EmulatorOptions Options { get; }
+    /// <summary>What this process shares with the other processes of the emulated system (object table, display).</summary>
+    public VitaSystem Vita { get; }
+    /// <summary>The process that started this one (the shell, for an application it launched); null for the first.</summary>
+    public Emulator? Parent { get; }
+    /// <summary>Process id (the UID of its kernel process object; 0x40010003 for the first process).</summary>
+    public int Pid { get; }
+    /// <summary>SceAppMgr application id of the process (what the shell's launch call returns and its later calls name).</summary>
+    public int AppId { get; }
+    /// <summary>The process declared itself the shell (sceAppMgrDeclareShellProcess2): SceAppMgr's shell events go to it.</summary>
+    public bool IsShell { get; set; }
     public GuestMemory Memory { get; }
     public BlockCache Code { get; } = new();
     public Kernel.Kernel Kernel { get; private set; }
     public HleRegistry Hle { get; private set; }
     public Linker Linker { get; private set; }
     public Vfs Vfs { get; }
-    public Host.HostServices Host { get; } = new();
-    public Gpu.GpuQueue Gpu { get; } = new();
+    public Host.HostServices Host { get; }
+    public Gpu.GpuQueue Gpu { get; }
     public bool TraceHle { get; set; }
     /// <summary>Debug: trace HLE calls only while the presented frame count is in [From, To), skipping noisy functions
     /// whose names start with one of <see cref="TraceHleExclude"/>.</summary>
@@ -92,12 +107,55 @@ public sealed class Emulator : IDisposable
         Log.Info(Jit.Enabled ? Jit.Describe() : "CPU backend: interpreter only (JIT disabled)");
         TraceHle = options.TraceHle;
         PsnAccount.Current = options.Psn;
+        NetConfig.Current = options.Net;
         LocalPsn = new global::VitaSharp.Core.Hle.Np.LocalPsn(options.NpRoot ?? global::VitaSharp.Core.Hle.Np.LocalPsn.DefaultRoot(options.FsRoot));
+        if (options.Net.Real)
+            Log.Warn(options.Net.Allow == null
+                ? "Network: real internet (--net=real): game traffic leaves this PC; Sony's servers stay blocked"
+                : $"Network: real internet limited to {string.Join(", ", options.Net.Allow)} (--net-allow); everything else is blocked and logged");
+        if (options.Rpcn is { } rpcn)
+        {
+            if (!options.Net.Real) Log.Warn($"RPCN server {rpcn.Host} ignored: real internet is off (--net=real)");
+            else if (!options.Psn.SignedIn) Log.Warn($"RPCN server {rpcn.Host} ignored: the PSN account is signed out (--psn=on)");
+            else
+            {
+                LocalPsn.UseRpcn(new global::VitaSharp.Core.Hle.Np.Rpcn.RpcnClient(rpcn, options.Net));
+                PsnAccount.Current = options.Psn with { Server = $"{rpcn.Host}:{rpcn.Port}" };
+            }
+        }
         Log.Info(options.Psn.SignedIn
-            ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
+            ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(LocalPsn.Rpcn is { } rc ? $"Score/TUS on RPCN server {rc.Config.Host}:{rc.Config.Port}" : options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
             : "PSN: signed out, offline");
         Memory = options.Memory ?? new GuestMemory();
+        Host = new Host.HostServices();
+        Gpu = new Gpu.GpuQueue();
+        Vita = new VitaSystem();
+        Pid = Vita.Register(this);
+        AppId = Vita.RegisterApp(this);
         Vfs = new Vfs(options.FsRoot);
+        InitProcess();
+    }
+
+    /// <summary>A further process of the same system (<see cref="SpawnProcess"/>): shares the address space, GPU, host
+    /// devices and kernel object table of <paramref name="parent"/>, with its own kernel state, HLE modules and mounts.</summary>
+    Emulator(Emulator parent)
+    {
+        Parent = parent;
+        Options = parent.Options;
+        Vita = parent.Vita;
+        Memory = parent.Memory;
+        Host = parent.Host;
+        Gpu = parent.Gpu;
+        LocalPsn = parent.LocalPsn;
+        TraceHle = parent.TraceHle;
+        TraceHleFrames = parent.TraceHleFrames;
+        TraceHleOnly = parent.TraceHleOnly;
+        TraceHleThreads = parent.TraceHleThreads;
+        TraceHleExclude = parent.TraceHleExclude;
+        BacktraceHle = parent.BacktraceHle;
+        Pid = Vita.Register(this);
+        AppId = Vita.RegisterApp(this);
+        Vfs = new Vfs(Options.FsRoot);
         InitProcess();
     }
 
@@ -105,6 +163,7 @@ public sealed class Emulator : IDisposable
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(Kernel), nameof(Hle), nameof(Linker))]
     void InitProcess()
     {
+        using var scope = ProcessScope.Enter(Pid);
         Kernel = new Kernel.Kernel(this);
         Hle = new HleRegistry(this);
         Linker = new Linker(Hle) { InvalidateCode = Code.Invalidate, Log = Log.Warn };
@@ -140,10 +199,17 @@ public sealed class Emulator : IDisposable
         QueueExec("app0:" + self, args, appDir);
     }
 
-    /// <summary>The process ends (sceKernelExitProcess, the main thread returning): back to the program that launched
-    /// it when one is suspended (true), else the emulator stops (false).</summary>
+    /// <summary>The process ends (sceKernelExitProcess, the main thread returning): true when the system keeps running
+    /// (a process the shell started ends and the shell takes the display back, or a suspended program is resumed),
+    /// false when this was the last process (the emulator stops).</summary>
     public bool EndProcess(int status)
     {
+        if (Parent != null)
+        {
+            _exitStatus = status;
+            Terminate($"exited (0x{status:X})");
+            return true;
+        }
         if (SuspendedPrograms.Count == 0) return false;
         var (dir, self) = SuspendedPrograms.Pop();
         Log.Info($"Process exited (0x{status:X}): resuming {dir} ({self})");
@@ -157,8 +223,137 @@ public sealed class Emulator : IDisposable
         ExecRequest = (path, args, appDir);
         Running = false;
         Kernel.StopAllThreads();
+        if (Parent != null)
+        {
+            // a process of a multi-process system re-executes on its own: the host front-end only drives the first
+            Task.Run(() =>
+            {
+                try { PerformExec(null); }
+                catch (Exception e) when (e is not OutOfMemoryException) { Log.Error($"{Describe()}: LoadExec failed: {e}"); Terminate("LoadExec failed"); }
+            });
+            return;
+        }
         ExecRequested?.Invoke();
     }
+
+    // ------------------------------------------------------------------ several processes (the shell and an application)
+
+    /// <summary>
+    /// Creates a new process next to this one for the executable <paramref name="self"/> of the application in
+    /// <paramref name="appDir"/> (the shell launching a game from its LiveArea) and boots it on a host thread: loading
+    /// the executable and running its module_start functions takes a while. The process (with its application id) exists
+    /// at once; it takes the display when the shell activates it (sceAppMgrActivateApp), or with
+    /// <paramref name="activate"/>. It is placed in free ranges of the shared address space; when it cannot be (an
+    /// executable linked at fixed addresses that are in use) it ends and <paramref name="cannotPlace"/> runs instead.
+    /// </summary>
+    public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false)
+    {
+        Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
+        var child = new Emulator(this) { _background = background };
+        _children.Add(child);
+        child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
+        child.Running = true;
+        // SceAppMgr tells the shell about the new application process: event 2 {pid, application id}
+        if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
+        Task.Run(() =>
+        {
+            try
+            {
+                child.LoadTitle(appDir, self);
+                Log.Info($"Process {child.Describe()} started by {Describe()}");
+                child.Start(args);
+                // the launch finished: event 0xA {application id}; the shell then activates it
+                if (Vita.Shell != null && !background) Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
+                if (activate) Vita.SetForeground(child);
+            }
+            catch (InvalidOperationException e) when (e.Message.Contains("cannot map fixed segment"))
+            {
+                Log.Warn($"{child.Describe()}: {e.Message}; it cannot run next to {Describe()}");
+                child.Terminate("could not be placed");
+                cannotPlace?.Invoke();
+                if (cannotPlace == null && Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                Log.Error($"Process {child.Describe()} could not start: {e}");
+                child.Terminate("failed to start");
+                if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+            }
+        });
+        return child;
+    }
+
+    readonly List<Emulator> _children = new();
+    int _terminated, _exitStatus;
+    bool _background;
+
+    /// <summary>Ends this process (exit, crash, or killed by the shell): stops its threads, then frees its memory and kernel
+    /// objects and gives the display back. The threads are joined on a host thread, so this can be called from one of them.</summary>
+    public void Terminate(string why)
+    {
+        if (Parent == null) { Stop(); return; }
+        if (Interlocked.Exchange(ref _terminated, 1) != 0) return;
+        Log.Info($"Process {Describe()} {why}");
+        Running = false;
+        Kernel.StopAllThreads();
+        foreach (var c in _children.ToArray()) c.Terminate("ended with its parent");
+        Task.Run(() =>
+        {
+            if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn($"{Describe()}: some threads did not stop in time");
+            Release();
+        });
+    }
+
+    /// <summary>Gives everything the process holds back to the system.</summary>
+    void Release()
+    {
+        // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
+        // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
+        // start it again on every end
+        if (Vita.Shell is { } shell && shell != this && !_background) Vita.PostShellEvent(ShellEvents.AppEnded, Pid, 0, 0, 0, AppId);
+        Vita.Unregister(this);
+        Parent?._children.Remove(this);
+        Gpu.ReleaseScene(Pid);
+        int objects = Vita.Objects.RemoveOwnedBy(Pid);
+        long bytes = Memory.FreeOwnedBy(Pid);
+        Code.Clear();
+        Log.Info($"Process {Describe()} released: {objects} kernel objects, {bytes / 1024} KB of memory");
+    }
+
+    /// <summary>The process is suspended: its threads stop at their next safe point (see <see cref="GuestThread"/>).</summary>
+    public volatile bool Suspended;
+
+    /// <summary>Suspends the process (the shell took the screen back: the application waits in the background).</summary>
+    public void Suspend()
+    {
+        if (Suspended) return;
+        Suspended = true;
+        foreach (var t in Kernel.Threads) t.Core.InterruptRequested = true;
+        Log.Info($"Process {Describe()} suspended");
+    }
+
+    public void Resume()
+    {
+        if (!Suspended) return;
+        Suspended = false;
+        foreach (var t in Kernel.Threads) t.WakeFromSuspend();
+        Log.Info($"Process {Describe()} resumed");
+    }
+
+    /// <summary>"TITLEID (pid 0x...)" for logs.</summary>
+    public string Describe() => $"{(TitleId.Length > 0 ? TitleId : "process")} (pid 0x{Pid:X})";
+
+    /// <summary>The system made this process the foreground one: what it last displayed goes back on screen.</summary>
+    internal void OnForeground()
+    {
+        foreach (var d in Hle.Modules.OfType<Hle.Modules.Display>()) d.Represent();
+    }
+
+    /// <summary>This process is the one on screen (or the only one): its frames are shown and it gets the input.</summary>
+    public bool IsForeground => Vita.IsForeground(this);
+
+    /// <summary>The shell's executable in vs0:vsh/shell.</summary>
+    public const string ShellSelf = "shell.self";
 
     /// <summary>The main executable of the running program, relative to its folder.</summary>
     public string CurrentSelf { get; private set; } = "eboot.bin";
@@ -169,11 +364,18 @@ public sealed class Emulator : IDisposable
     {
         var (path, args, appDir) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
         if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn("LoadExec: some threads did not stop in time");
-        Gpu.ReplaceBackend(backendFactory);
-        VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
+        bool alone = Vita.Processes.Count == 1;
+        if (Parent == null) Gpu.ReplaceBackend(backendFactory); // the GPU is the system's: only the front-end's process replaces it
+        if (alone) VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
         Code.Clear();
-        Memory.FreeAll();
-        VitaSharp.Core.Kernel.Scheduler.Reset();
+        if (alone)
+        {
+            Memory.FreeAll();
+            Vita.Objects.RemoveOwnedBy(0);
+            VitaSharp.Core.Kernel.Scheduler.Reset();
+        }
+        else Memory.FreeOwnedBy(Pid);
+        Vita.Objects.RemoveOwnedBy(Pid);
         InitProcess();
         MainModule = null;
         ExecRequest = null;
@@ -186,6 +388,7 @@ public sealed class Emulator : IDisposable
     /// <summary>Loads an installed title (folder ux0:app/TITLEID) or a loose folder containing eboot.bin.</summary>
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
+        using var scope = ProcessScope.Enter(Pid);
         AppPath = Path.GetFullPath(appPath);
         CurrentSelf = self;
         Vfs.ClearApp0Overlays(); // a process switch brings another application's patch folder
@@ -209,6 +412,11 @@ public sealed class Emulator : IDisposable
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
         IsSystemProgram = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase);
         _startFirst.Clear();
+        // the shell starting = the system software coming up with the memory card inserted: titles VitaSharp installed
+        // (or that were copied into ux0:app) get the appmeta the Vita's installer leaves, for the shell's database
+        if (IsSystemProgram && string.Equals(self, ShellSelf, StringComparison.OrdinalIgnoreCase)
+            && Path.GetFileName(Path.TrimEndingDirectorySeparator(AppPath)).Equals("shell", StringComparison.OrdinalIgnoreCase))
+            Package.AppMeta.Sync(Path.Combine(Options.FsRoot, "ux0"), Log.Info);
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
         // per-title shader/pipeline caches start warming up while the executable loads
         try { Gpu.Backend?.BeginTitle(TitleId); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
@@ -393,6 +601,7 @@ public sealed class Emulator : IDisposable
     public void Start(string[]? args = null)
     {
         if (MainModule == null) throw new InvalidOperationException("No title loaded");
+        using var scope = ProcessScope.Enter(Pid);
         Running = true;
         int priority = (int)(ProcessParamPtrValue(0x14) ?? 0x10000100);
         uint stackSize = ProcessParamPtrValue(0x18) ?? 256 * 1024;
@@ -438,17 +647,34 @@ public sealed class Emulator : IDisposable
         return ptr == 0 ? null : GuestMemory.ReadCString(ptr);
     }
 
-    public void ReportFatal(GuestThread t, Exception e) => Fatal?.Invoke(t, e);
+    /// <summary>A guest thread crashed. In a process the shell started, the process ends (the shell carries on, as on
+    /// the Vita); in the first process it is the front-end's fatal error.</summary>
+    public void ReportFatal(GuestThread t, Exception e)
+    {
+        if (Parent != null && Fatal == null)
+        {
+            var root = Parent;
+            while (root.Parent != null) root = root.Parent;
+            if (!root.Running || !Running) return; // the emulator is shutting down
+            Log.Error($"Process {Describe()} crashed in thread '{t.Name}': {e.Message}");
+            Terminate("crashed");
+            return;
+        }
+        Fatal?.Invoke(t, e);
+    }
 
+    /// <summary>Stops this process's threads, and those of the processes it started.</summary>
     public void Stop()
     {
         Running = false;
+        foreach (var c in _children.ToArray()) c.Stop();
         Kernel.StopAllThreads();
     }
 
     public void Dispose()
     {
         Stop();
+        if (Parent != null) return; // the GPU and host devices are the first process's
         Gpu.Dispose();
         Gpu.Backend?.Dispose();
         Host.Dispose();

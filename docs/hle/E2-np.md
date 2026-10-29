@@ -47,6 +47,81 @@ valor de `SCE_NP_PARTY_STATE_NOT_IN_PARTY` (hoje 0) e a forma de `sceNpGetPlatfo
 
 ## 0. Decisão de design: PSN "offline / sem conta"
 
+### 0.000 Internet real opcional (2026-10-29, branch `feat/real-net`): padrão = desligada
+
+`--net=real` (launcher: Configurações > Geral > Rede e PSN > "Internet real", com o aviso de privacidade sempre
+visível) liga a rede de verdade; `--net=off` (padrão, ou `VITASHARP_NET`) mantém tudo das seções abaixo. A política
+fica em `Hle/NetConfig.cs`:
+
+- Os domínios da Sony (`playstation.net`, `playstation.com`, `sonyentertainmentnetwork.com`, `sony.com`, `scea.com`,
+  ... e subdomínios) são **sempre bloqueados**: a busca DNS, o connect, o datagrama ou o pedido HTTP falham como no
+  perfil offline e a tentativa aparece uma vez no log (`net: blocked ...`).
+- `--net-allow=host1,host2` (ou `VITASHARP_NET_ALLOW`) restringe o tráfego aos hosts/endereços listados (`localhost`
+  libera o loopback). Endereços vindos do resolver herdam o nome que os gerou (um IP resolvido de um nome bloqueado
+  continua bloqueado). O primeiro contato com cada destino é registrado no log (`net: HTTP GET ...`, `net: TCP connect
+  to ...`), sem a query string.
+
+O que muda com `--net=real` (NP continua decidido por `PsnAccount`; nada da PSN da Sony é contatado):
+
+- **SceNet** (`NetSockets.Real.cs`): cada socket do jogo tem um socket do host, sempre não bloqueante no host. TCP e UDP
+  (os tipos P2P viram TCP/UDP como no Vita3K; a porta virtual é ignorada), bind/listen/accept/connect (EINPROGRESS,
+  EALREADY, EISCONN), send/sendto/sendmsg, recv/recvfrom/recvmsg (MSG_PEEK, MSG_WAITALL, MSG_DONTWAIT, SO_NBIO),
+  shutdown, getsockname/getpeername, setsockopt para SO_REUSEADDR/KEEPALIVE/BROADCAST/LINGER/SNDBUF/RCVBUF, TCP_NODELAY,
+  IP_TTL/TOS e multicast, getsockopt SO_ERROR com o errno BSD. `SceNetSockaddrIn` de 16 bytes, erros
+  `0x80410100 | errno`. As esperas (recv, accept, connect bloqueante, `sceNetEpollWait`) usam `Wait.Until` no lock da
+  rede, então a thread do jogo solta o núcleo emulado; uma thread do host ("SceNet poller") faz `Socket.Select` nos
+  sockets com alguém esperando e acorda as esperas. Abort, close e term continuam acordando quem espera (EINTR/EBADF);
+  SO_RCVTIMEO dá EAGAIN. Epoll reporta IN/OUT/ERR/HUP (connect com falha: OUT|ERR, como no BSD).
+- **Resolver**: `sceNetResolverStartNtoa/Aton` usam o DNS do host (IPv4), com o timeout em microssegundos por tentativa
+  (limitado a 1-30 s; 10 s quando 0). Host bloqueado ou inexistente: `RESOLVER_ENOHOST` (0x804101E6).
+- **SceNetCtl**: Wi-Fi conectado com IP, máscara, gateway, DNS e MTU do host (códigos 15-19 e 4); o MAC continua o
+  emulado. Os callbacks de infraestrutura recebem `IPOBTAINED` mesmo com `--psn=off`.
+- **SceHttp/SceHttps** (`Http.Real.cs`): `HttpClient` do .NET em uma tarefa do host. Cabeçalhos do template, conexão e
+  requisição, user agent, cookies do jar do SceHttp (envio e `Set-Cookie`), HTTP/1.0 ou 1.1, `Accept-Encoding: gzip`
+  e descompressão (gzip/deflate, padrão ligado), redirecionamentos seguidos pela própria biblioteca (cada salto passa
+  pela política; `sceHttpSetAutoRedirect(0)` devolve o 3xx), corpo em streaming (chunked decodificado; sem tamanho,
+  `GetResponseContentLength` dá `NO_CONTENT_LENGTH` 0x80431071), `GetAllResponseHeaders` com a linha de status. Modo
+  não bloqueante: `SendRequest`/`ReadData`/`GetStatusCode` devolvem `SCE_HTTP_ERROR_EAGAIN` (0x80431082, valor do PS4)
+  até o passo terminar, e o epoll do HTTP recebe `NB_EVENT_IN` (1), `SOCK_ERR` (8) ou `RESOLVER_ERR` (0x20000).
+  Falhas: `ERR_NETWORK` com o errno em `sceHttpGetLastErrno` (ECONNREFUSED 61, ETIMEDOUT 60, ENOHOST 0xE6),
+  `ERR_TIMEOUT`, `ERR_SSL`. HTTPS: as flags `SCE_HTTPS_FLAG_*` começam com as verificações do servidor ligadas; sem
+  `SERVER_VERIFY` aceita qualquer certificado, senão vale o repositório do host ou os CAs carregados por
+  `sceHttpsLoadCert` (CN e validade conforme as flags); a recusa aparece em `sceHttpsGetSslError`. O callback de
+  redirecionamento e o de autenticação continuam guardados e nunca chamados (pendência).
+- O perfil offline (padrão) não mudou: `ERR_BUSY` + `RESOLVER_ERR` no epoll do HTTP, `RESOLVER_ENODNS`, ENETUNREACH.
+
+**RPCN** (`Hle/Np/Rpcn/`): com `--net=real`, a conta conectada e `--rpcn=host[:porta] --rpcn-user=<nome>` (senha em
+`VITASHARP_RPCN_PASSWORD`; o launcher passa pelo ambiente do processo do jogo, nunca na linha de comando; token de
+validação em `--rpcn-token=`), Score e TUS vão para um servidor RPCN (o servidor aberto do RPCS3) em vez de `np/`.
+O ID online passa a ser o usuário RPCN. Protocolo 34 do RPCS3 (`rpcn_client.cpp`): TLS sem verificação de certificado
+(os servidores usam autoassinados, o RPCS3 também não verifica), cabeçalho de 15 bytes (tipo, comando u16, tamanho
+u32, id u64), ServerInfo com a versão, Login `usuário\0senha\0token\0` (a resposta traz nome, avatar, id e as listas
+de amigos), pedidos Score/TUS com o communication id de 12 bytes + mensagem protobuf de `np2_structs.proto`
+(codificador próprio em `Protobuf.cs`). Erros RPCN viram os códigos do servidor PSN como no RPCS3 (NotFound →
+`USER_NOT_ASSIGNED`/`BOARD_MASTER_NOT_FOUND`, CondFail → `CONDITIONS_NOT_SATISFIED`, ScoreNotBest → `NOT_BEST_SCORE`,
+ScoreHasData → `GAME_DATA_ALREADY_EXISTS`); servidor fora do ar, senha errada ou versão diferente →
+`SCE_HTTP_ERROR_NETWORK` (nova tentativa só depois de 15 s). Cada transação é uma ida e volta síncrona, fora do lock
+da biblioteca e com o núcleo emulado liberado (`Scheduler.Block`); as variantes Async terminam antes de retornar.
+
+Cobertura RPCN e pendências:
+
+| Serviço | Estado |
+| --- | --- |
+| TUS: Set/Get/Delete MultiSlot variable, AddAndGet, TryAndSet, SetData/GetData, DataStatus, DeleteData | RPCN |
+| TUS MultiUser/Friends | pedido por slot/usuário de MultiSlot; `vuser` sempre falso (VUser vai como ID online) |
+| Score: BoardInfo, RecordScore, ByRange, ByNpId, RecordGameData, GetGameData | RPCN |
+| Score de amigos (`GetFriendsRanking`) | no RPCN, mas só com o próprio usuário (`GetScoreNpid`); falta `GetScoreFriends` |
+| Amigos | lidos no login (`RpcnClient.Friends`), ainda não expostos ao `sceNpBasic*` |
+| Tickets (`RequestTicket`), Matching2 (salas, signaling), presença, mensagens, TSS | locais como antes (sem RPCN) |
+| Notificações (amigos, salas) | lidas e descartadas |
+| Ad hoc (`sceNetAdhoc*`) entre consoles | não implementado |
+
+Testes (`tests/VitaSharp.Tests/NetRealTests.cs`, só 127.0.0.1, com `--net-allow=localhost`): TCP bloqueante e não
+bloqueante com epoll, abort/close/SO_RCVTIMEO durante recv, UDP, listen/accept com MSG_WAITALL, política (Sony,
+lista, IP resolvido), resolver, NetCtl, HTTP (GET, chunked, redirect, POST com cabeçalho e cookie, gzip,
+não bloqueante com epoll, host bloqueado, porta fechada) e um servidor RPCN falso (`LocalServers.cs`, TLS
+autoassinado ou TCP) para login, TUS, Score, falhas e TUS pela biblioteca `NpTus`.
+
 ### 0.00 Serviços PSN locais (2026-10-29, branch `feat/psn-local`): padrão = ligados
 
 Com a conta conectada, os serviços que funcionam para um jogador só são atendidos por um "servidor" local

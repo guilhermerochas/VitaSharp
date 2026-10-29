@@ -202,6 +202,7 @@ public static class VpkInstaller
                 PrepareLicense(info, tmp, ux0Root, options);
                 cancellationToken.ThrowIfCancellationRequested();
                 MoveIntoPlace(tmp, info.DestinationPath, tmpRoot, options.Log);
+                if (info.Kind != VpkContentKind.AddCont) AppMeta.Installed(ux0Root, info.TitleId, options.Log);
                 results.Add(new VpkInstallResult(info, true, replace));
             }
             finally

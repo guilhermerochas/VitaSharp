@@ -28,6 +28,19 @@ public sealed class LauncherSettings
     /// <summary>"Serviços PSN locais": TUS / Cross-Save, rankings, tickets and matching served from &lt;data&gt;/np
     /// (--psn-local=on, the default) or every PSN server request failing as unreachable (--psn-local=off).</summary>
     public bool PsnLocalServices { get; set; } = true;
+    /// <summary>"Internet real": game sockets, DNS and HTTP go through this PC's network (--net=real). Off by default:
+    /// game traffic would leave the PC (Sony's servers stay blocked).</summary>
+    public bool RealInternet { get; set; }
+    /// <summary>RPCN server for Score/TUS ("host" or "host:port", --rpcn=); empty = the local PSN services. Used only
+    /// with <see cref="RealInternet"/>.</summary>
+    public string RpcnServer { get; set; } = "";
+    /// <summary>RPCN account name (--rpcn-user=).</summary>
+    public string RpcnUser { get; set; } = "";
+    /// <summary>RPCN password: stored in launcher.json in plain text (like RPCS3's rpcn.yml) and handed to the game
+    /// process in VITASHARP_RPCN_PASSWORD, never on its command line.</summary>
+    public string RpcnPassword { get; set; } = "";
+    /// <summary>RPCN e-mail validation token (--rpcn-token=), needed only for the first login of a new account.</summary>
+    public string RpcnToken { get; set; } = "";
     /// <summary>"Manter em HLE": firmware/game libraries kept on HLE even when the module is available, comma separated
     /// (--hle-modules=, e.g. "libSceJson"). Empty: use every module the game or the installed firmware provides.</summary>
     public string HleModules { get; set; } = "";
@@ -41,6 +54,10 @@ public sealed class LauncherSettings
     public bool SystemSounds { get; set; }
 
     public const string ViewList = "list", ViewHome = "home";
+
+    /// <summary>An RPCN server and account are configured.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool UsesRpcn => !string.IsNullOrWhiteSpace(RpcnServer) && !string.IsNullOrWhiteSpace(RpcnUser) && RpcnPassword.Length > 0;
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -76,6 +93,13 @@ public sealed class LauncherSettings
         yield return PsnSignedIn ? "--psn=on" : "--psn=off";
         if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";
         yield return PsnLocalServices ? "--psn-local=on" : "--psn-local=off";
+        yield return RealInternet ? "--net=real" : "--net=off";
+        if (RealInternet && UsesRpcn)
+        {
+            yield return $"--rpcn={RpcnServer.Trim()}";
+            yield return $"--rpcn-user={RpcnUser.Trim()}";
+            if (!string.IsNullOrWhiteSpace(RpcnToken)) yield return $"--rpcn-token={RpcnToken.Trim()}";
+        }
         var hle = string.Join(",", HleModules.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         if (hle.Length > 0) yield return $"--hle-modules={hle}";
     }

@@ -27,6 +27,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         TlsStackCheckGuard = 7, TlsCurrentPriority = 8, TlsAffinity = 9;
 
     readonly Emulator _emu;
+    /// <summary>The process the thread belongs to.</summary>
+    public Emulator Process => _emu;
+    public int Pid => _emu.Pid;
     public CpuCore Core { get; }
     public HleContext Hle { get; }
     public uint Entry { get; }
@@ -83,6 +86,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 
         StackSize = GuestMemory.AlignUp(Math.Max(stackSize, 0x4000u), 0x1000);
+        using var scope = ProcessScope.Enter(emu.Pid); // the stack and TLS belong to the thread's process
         StackAddr = emu.Memory.Alloc(StackSize, $"stack:{name}");
         GuestMemory.Fill(StackAddr, 0xCC, StackSize);
 
@@ -202,7 +206,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         int depth = _callDepth;
         while (true)
         {
-            if (SuspendCount > 0) ParkWhileSuspended();
+            if (SuspendCount > 0 || ProcessSuspended) ParkWhileSuspended();
             _inGuest = true;
             ExitReason exit;
             try { exit = Core.Run(); }
@@ -408,11 +412,21 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         }
     }
 
+    /// <summary>The thread's process is suspended (an application sent to the background by the shell), and the thread
+    /// may stop here: not while its process has a GPU scene open, which the other processes would wait for.</summary>
+    bool ProcessSuspended => _emu.Suspended && !_emu.Gpu.HasOpenScene(_emu.Pid);
+
     void ParkWhileSuspended()
     {
         using var blocked = Scheduler.Block();
         lock (_suspendLock)
-            while (SuspendCount > 0 && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+            while ((SuspendCount > 0 || ProcessSuspended) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+    }
+
+    /// <summary>Wakes the thread if it is parked by a process suspension (the process resumed).</summary>
+    public void WakeFromSuspend()
+    {
+        lock (_suspendLock) Monitor.PulseAll(_suspendLock);
     }
 
     /// <summary>--trace-hle: the arguments that point at a printable C string (paths, object names), quoted.</summary>

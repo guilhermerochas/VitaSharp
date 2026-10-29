@@ -49,13 +49,14 @@ public sealed class SystemSoftware : HleModule
     // ------------------------------------------------------------------ SceAppMgr: the shell's application launches
 
     /// <summary>
-    /// (const char *path, const char *titleId, flags, void *param): the shell starting an application from its LiveArea
-    /// gate (flags 0x2000000) or the initial setup at first boot. VitaSharp runs one guest process at a time: the
-    /// calling program is suspended (<see cref="Emulator.SuspendedPrograms"/>) and the application replaces it; when
-    /// the application exits, the caller is started again.
+    /// (const char *path, const char *titleId, flags, void *param, ?, launch parameters): the shell starting an application from its LiveArea
+    /// gate (flags 0x2000000) or the initial setup at first boot. The application starts as a new process next to the
+    /// caller (<see cref="Emulator.SpawnProcess"/>) and takes the display; the shell keeps running behind it. Only an
+    /// executable that cannot be placed next to the caller (fixed addresses in use) falls back to replacing the caller
+    /// (<see cref="Emulator.RequestLaunch"/>), which is started again when the application exits.
     /// </summary>
     [Hle]
-    int sceAppMgrLaunchAppByPath4(string path, uint titleId, uint flags, uint param)
+    int sceAppMgrLaunchAppByPath4(string path, uint titleId, uint flags, uint param, uint arg4, uint launchParam)
     {
         string? host = Emu.Vfs.Resolve(path);
         if (host == null || !File.Exists(host))
@@ -64,8 +65,24 @@ public sealed class SystemSoftware : HleModule
             return unchecked((int)0x80800006); // SCE_APPMGR_ERROR_NOENT (inferred)
         }
         string tid = titleId != 0 ? GuestMemory.ReadCString(titleId, 16) : "";
-        Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}): switching process");
-        Emu.RequestLaunch(Path.GetDirectoryName(host)!, Path.GetFileName(host), [], suspendCurrent: true);
-        throw new Kernel.GuestThreadExitException(0, false);
+        string dir = Path.GetDirectoryName(host)!, self = Path.GetFileName(host);
+        if (!MultiProcess)
+        {
+            Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}): switching process");
+            Emu.RequestLaunch(dir, self, [], suspendCurrent: true);
+            throw new Kernel.GuestThreadExitException(0, false);
+        }
+        var launcher = Emu;
+        var app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
+        Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}): new process {app.Describe()}, application id 0x{app.AppId:X}");
+        // the sixth argument (the shell's launch parameters, 0x80 bytes, size first) points at +0x28 to where the
+        // new application's SceAppMgrAppStatus goes: the shell takes the application id from it (+0x30)
+        if (launchParam != 0 && GuestMemory.R32(launchParam) >= 0x2C && GuestMemory.R32(launchParam + 0x28) is var status and not 0)
+            AppMgrShell.WriteStatus(app, status);
+        return 0;
     }
+
+    /// <summary>Launched applications run as their own process next to the shell (default), or replace it
+    /// (<see cref="EnvVars.SingleProcess"/>=1: the earlier one-process-at-a-time model).</summary>
+    static bool MultiProcess => Environment.GetEnvironmentVariable(EnvVars.SingleProcess) != "1";
 }

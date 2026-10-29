@@ -11,7 +11,10 @@ public sealed class Kernel
     public const uint TrapSvc = 0xFFFFFF;
 
     readonly Emulator _emu;
-    public ObjectTable Objects { get; } = new();
+    /// <summary>The system-wide object table (one UID space and namespace for every process).</summary>
+    public ObjectTable Objects => _emu.Vita?.Objects ?? (_standalone ??= new ObjectTable());
+    /// <summary>A kernel built without a system (unit tests construct emulators field by field) keeps its own table.</summary>
+    ObjectTable? _standalone;
     public ConcurrentDictionary<int, LoadedModule> Modules { get; } = new();
 
     public uint ThreadExitTrap { get; private set; }
@@ -72,7 +75,8 @@ public sealed class Kernel
 
     public GuestThread? GetThread(int uid) => uid == 0 ? GuestThread.Current : Objects.Get<GuestThread>(uid);
 
-    public IEnumerable<GuestThread> Threads => Objects.All<GuestThread>();
+    /// <summary>This process's threads.</summary>
+    public IEnumerable<GuestThread> Threads => Objects.All<GuestThread>().Where(t => t.Process == _emu);
 
     public void StopAllThreads()
     {

@@ -74,9 +74,61 @@ public sealed class GpuQueue : IDisposable
     public long Completed => Interlocked.Read(ref _completed);
     public long Submitted => Interlocked.Read(ref _submitted);
 
+    // ---- several processes on one GPU: a scene (BeginScene .. EndScene) is one process's at a time. The backend records
+    // a scene's draws into the render pass BeginScene opened, so another process's commands must not land in between:
+    // while a process has a scene open, the other processes' submissions wait (the GPU is busy with that scene).
+    readonly object _sceneLock = new();
+    int _sceneOwner;
+
+    /// <summary>Set once a second process shares this GPU; until then submissions skip the scene arbitration.</summary>
+    public volatile bool SharedByProcesses;
+
+    /// <summary>True while process <paramref name="pid"/> has a scene open (its threads are not parked then: see
+    /// <see cref="Kernel.GuestThread"/> suspension).</summary>
+    public bool HasOpenScene(int pid) => pid != 0 && Volatile.Read(ref _sceneOwner) == pid;
+
+    /// <summary>A process that ends with a scene open gives the GPU back.</summary>
+    public void ReleaseScene(int pid)
+    {
+        lock (_sceneLock)
+        {
+            if (_sceneOwner != pid) return;
+            _sceneOwner = 0;
+            Monitor.PulseAll(_sceneLock);
+        }
+    }
+
+    /// <summary>Queues <paramref name="cmd"/> once no other process has a scene open (the caller is the current
+    /// process; host-side work, pid 0, is never held back) and tracks the scene it opens or closes.</summary>
+    long SubmitArbitrated(GpuCommand cmd)
+    {
+        int pid = Kernel.ProcessScope.CurrentPid;
+        lock (_sceneLock)
+        {
+            if (pid != 0 && _sceneOwner != 0 && _sceneOwner != pid)
+            {
+                using var blocked = Kernel.Scheduler.Block();
+                while (_sceneOwner != 0 && _sceneOwner != pid && !_stopping) Monitor.Wait(_sceneLock, 50);
+            }
+            long seq = Enqueue(cmd);
+            if (pid != 0 && cmd is BeginSceneCommand) _sceneOwner = pid;
+            else if (cmd is EndSceneCommand && _sceneOwner == pid && pid != 0)
+            {
+                _sceneOwner = 0;
+                Monitor.PulseAll(_sceneLock);
+            }
+            return seq;
+        }
+    }
+
     public long Submit(GpuCommand cmd)
     {
         try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
+        return SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
+    }
+
+    long Enqueue(GpuCommand cmd)
+    {
         cmd.Sequence = Interlocked.Increment(ref _submitted);
         _queue.Enqueue(cmd);
         _available.Release();
