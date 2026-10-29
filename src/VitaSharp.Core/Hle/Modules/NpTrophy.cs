@@ -1,6 +1,5 @@
 using System.Text;
-using System.Text.Json;
-using System.Xml.Linq;
+using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -8,7 +7,9 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// SceNpTrophy: trophy information comes from the game's own app0:sce_sys/trophy/&lt;NPCOMMID&gt;/TROPHY.TRP
-/// (TROPCONF/TROP*.SFM XML plus PNG icons). Unlocks are recorded locally in ux0:user/00/trophy/&lt;NPCOMMID&gt;.json.
+/// (<see cref="TrophyPackage"/>: TROPCONF/TROP*.SFM XML plus PNG icons). Unlocks are recorded locally in
+/// ux0:user/00/trophy/&lt;NPCOMMID&gt;.json (<see cref="TrophyUnlocks"/>, read by the launcher's trophy list) and announced
+/// through <see cref="TrophyNotifications"/> (the emulator window shows them).
 /// </summary>
 public sealed class NpTrophy : HleModule
 {
@@ -23,16 +24,15 @@ public sealed class NpTrophy : HleModule
     const uint GroupDetailsSize = 4 * 7 + 128 + 1024, GroupDataSize = 4 * 8;
     const uint TrophyDetailsSize = 4 * 5 + 128 + 1024, TrophyDataSize = 4 * 3 + 4 + 8;
 
-    sealed record TrophyInfo(int Id, int Grade, bool Hidden, int PlatinumLink, int Group, string Name, string Detail);
-    sealed record GroupInfo(int Id, string Name, string Detail);
-
-    sealed class TrophySet
+    sealed class TrophySet(TrophyPackage pkg)
     {
-        public string CommId = "";
-        public string Title = "", Detail = "";
-        public readonly List<TrophyInfo> Trophies = new();
-        public readonly List<GroupInfo> Groups = new();
-        public readonly Dictionary<string, byte[]> Files = new(StringComparer.OrdinalIgnoreCase);
+        public readonly TrophyPackage Pkg = pkg;
+        public string CommId => Pkg.CommId;
+        public string Title => Pkg.Title;
+        public string Detail => Pkg.Detail;
+        public List<TrophyInfo> Trophies => Pkg.Trophies;
+        public List<TrophyGroupInfo> Groups => Pkg.Groups;
+        public Dictionary<string, byte[]> Files => Pkg.Files;
         public Dictionary<int, ulong> Unlocked = new(); // trophy id -> SceRtcTick (µs since 0001-01-01)
         public string SavePath = "";
     }
@@ -91,70 +91,16 @@ public sealed class NpTrophy : HleModule
             Log.Warn($"Trophy: {commId}/TROPHY.TRP not found");
             return null;
         }
-        var set = new TrophySet { CommId = commId };
-        try
-        {
-            var data = File.ReadAllBytes(trp);
-            if (BitConverter.ToUInt32(data, 0) != 0x004DA2DC) throw new InvalidDataException("bad TRP magic");
-            int count = (int)BinaryHelpers.U32BE(data, 0x10), entrySize = (int)BinaryHelpers.U32BE(data, 0x14);
-            for (int i = 0; i < count; i++)
-            {
-                int e = 0x40 + i * entrySize;
-                string name = Encoding.ASCII.GetString(data, e, 32).TrimEnd('\0');
-                long off = (long)BinaryHelpers.U64BE(data, e + 0x20), len = (long)BinaryHelpers.U64BE(data, e + 0x28);
-                if (off + len <= data.Length) set.Files[name] = data.AsSpan((int)off, (int)len).ToArray();
-            }
-            ParseConf(set);
-        }
-        catch (Exception e) when (e is InvalidDataException or System.Xml.XmlException or ArgumentException)
-        {
-            Log.Warn($"Trophy: {commId}: {e.Message}");
-            return null;
-        }
-        set.SavePath = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "trophy", commId + ".json");
-        try
-        {
-            if (File.Exists(set.SavePath))
-                set.Unlocked = JsonSerializer.Deserialize(File.ReadAllText(set.SavePath), CoreJson.Default.DictionaryInt32UInt64) ?? new();
-        }
-        catch (JsonException) { }
+        // texts in the system language when the set has that translation (TROP_<lang>.SFM)
+        var pkg = TrophyPackage.Load(trp, commId, AppUtil.SystemParamInt(1));
+        if (pkg == null) return null;
+        var set = new TrophySet(pkg) { SavePath = TrophyUnlocks.PathFor(Emu.Options.FsRoot, commId) };
+        set.Unlocked = TrophyUnlocks.Load(set.SavePath);
         Log.Info($"Trophy set {commId} \"{set.Title}\": {set.Trophies.Count} trophies, {set.Unlocked.Count} unlocked");
         return set;
     }
 
-    static void ParseConf(TrophySet set)
-    {
-        // TROP.SFM carries the default-language names; TROPCONF.SFM the structure (names may be missing there)
-        var bytes = set.Files.GetValueOrDefault("TROP.SFM") ?? set.Files.GetValueOrDefault("TROPCONF.SFM")
-                    ?? throw new InvalidDataException("no trophy configuration");
-        string xml = Encoding.UTF8.GetString(bytes).TrimEnd('\0');
-        int end = xml.LastIndexOf('>');
-        if (end >= 0) xml = xml[..(end + 1)];
-        var root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("empty trophy configuration");
-        set.Title = root.Element("title-name")?.Value ?? "";
-        set.Detail = root.Element("title-detail")?.Value ?? "";
-        foreach (var g in root.Elements("group"))
-            set.Groups.Add(new GroupInfo(int.Parse(g.Attribute("id")!.Value), g.Element("name")?.Value ?? "", g.Element("detail")?.Value ?? ""));
-        foreach (var t in root.Elements("trophy"))
-        {
-            int grade = (t.Attribute("ttype")?.Value ?? "B") switch { "P" => 1, "G" => 2, "S" => 3, _ => 4 };
-            set.Trophies.Add(new TrophyInfo(
-                int.Parse(t.Attribute("id")!.Value), grade, t.Attribute("hidden")?.Value == "yes",
-                int.TryParse(t.Attribute("pid")?.Value, out var pid) ? pid : -1,
-                int.TryParse(t.Attribute("gid")?.Value, out var gid) ? gid : -1,
-                t.Element("name")?.Value ?? "", t.Element("detail")?.Value ?? ""));
-        }
-    }
-
-    void Save(TrophySet set)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(set.SavePath)!);
-            File.WriteAllText(set.SavePath, JsonSerializer.Serialize(set.Unlocked, CoreJson.Default.DictionaryInt32UInt64));
-        }
-        catch (IOException e) { Log.Warn($"Trophy: could not save {set.SavePath}: {e.Message}"); }
-    }
+    static void Save(TrophySet set) => TrophyUnlocks.Save(set.SavePath, set.Unlocked);
 
     int Lookup(int ctx, int handle, out TrophySet set)
     {
@@ -165,7 +111,7 @@ public sealed class NpTrophy : HleModule
         return 0;
     }
 
-    static ulong NowTick() => (ulong)(DateTime.UtcNow.Ticks / 10);
+    static ulong NowTick() => LocalPsn.NowTick();
 
     [Hle]
     int sceNpTrophyUnlockTrophy(int ctx, int handle, int trophyId, Ptr<int> platinumId)
@@ -174,24 +120,28 @@ public sealed class NpTrophy : HleModule
         if (r != 0) return r;
         var t = set.Trophies.FirstOrDefault(x => x.Id == trophyId);
         if (t == null) return ERR_INVALID_TROPHY_ID;
-        if (t.Grade == 1) return ERR_PLATINUM_CANNOT_UNLOCK;
+        if (t.Grade == TrophyGrade.Platinum) return ERR_PLATINUM_CANNOT_UNLOCK;
         platinumId.TrySet(-1);
+        var unlocked = new List<TrophyInfo>(2);
         lock (set)
         {
             if (set.Unlocked.ContainsKey(trophyId)) return ERR_ALREADY_UNLOCKED;
             set.Unlocked[trophyId] = NowTick();
-            Log.Info($"Trophy unlocked: \"{t.Name}\" ({trophyId})");
+            unlocked.Add(t);
+            Log.Info($"Trophy unlocked: \"{t.Name}\" ({trophyId}, {t.Grade})");
             // the platinum unlocks itself once every trophy linked to it is unlocked
-            var plat = set.Trophies.FirstOrDefault(x => x.Grade == 1);
+            var plat = set.Trophies.FirstOrDefault(x => x.Grade == TrophyGrade.Platinum);
             if (plat != null && !set.Unlocked.ContainsKey(plat.Id)
                 && set.Trophies.Where(x => x.PlatinumLink == plat.Id).All(x => set.Unlocked.ContainsKey(x.Id)))
             {
                 set.Unlocked[plat.Id] = NowTick();
                 platinumId.TrySet(plat.Id);
+                unlocked.Add(plat);
                 Log.Info($"Trophy unlocked: \"{plat.Name}\" (platinum)");
             }
             Save(set);
         }
+        foreach (var u in unlocked) TrophyNotifications.Raise(new TrophyUnlockedEvent(set.CommId, set.Title, u, set.Pkg.TrophyIcon(u.Id)));
         return 0;
     }
 
@@ -210,7 +160,7 @@ public sealed class NpTrophy : HleModule
     }
 
     (uint Plat, uint Gold, uint Silver, uint Bronze) Grades(IEnumerable<TrophyInfo> ts) =>
-        ((uint)ts.Count(t => t.Grade == 1), (uint)ts.Count(t => t.Grade == 2), (uint)ts.Count(t => t.Grade == 3), (uint)ts.Count(t => t.Grade == 4));
+        ((uint)ts.Count(t => t.Grade == TrophyGrade.Platinum), (uint)ts.Count(t => t.Grade == TrophyGrade.Gold), (uint)ts.Count(t => t.Grade == TrophyGrade.Silver), (uint)ts.Count(t => t.Grade == TrophyGrade.Bronze));
 
     uint Progress(TrophySet set, IEnumerable<TrophyInfo> ts)
     {

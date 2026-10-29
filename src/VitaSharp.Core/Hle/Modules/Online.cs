@@ -172,7 +172,7 @@ public sealed class Np : HleModule
     [Hle] int sceNpBasicUnregisterJoinGameAckHandler() => 0;
     [Hle] int sceNpBasicJoinGameAckResponseSend(uint p) => PsnAccount.Current.ServerError;
     [Hle] int sceNpBasicSendInGameDataMessage(uint to, uint data, uint size) => PsnAccount.Current.ServerError;
-    [Hle] int sceNpBasicSetInGamePresence(uint p) => PsnAccount.Current.ServerError;
+    [Hle] int sceNpBasicSetInGamePresence(uint p) => PsnAccount.Current.UsesLocalServices ? 0 : PsnAccount.Current.ServerError; // no friends to see it
     [Hle] int sceNpBasicGetFriendListEntryCount(Ptr<uint> count) { count.TrySet(0); return 0; }
     [Hle] int sceNpBasicGetFriendListEntries(uint start, uint entries, uint num, Ptr<uint> retrieved) { retrieved.TrySet(0); return 0; }
     [Hle] int sceNpBasicRecordPlaySessionLog(uint npId, uint type) => 0; // the "recently played with" list lives on PSN

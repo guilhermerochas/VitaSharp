@@ -116,6 +116,7 @@ public sealed unsafe partial class VulkanRenderer
         blit.DstOffsets[0] = new Offset3D(dx, dy, 0);
         blit.DstOffsets[1] = new Offset3D(dx + dw, dy + dh, 1);
         _vk.CmdBlitImage(Cmd, src.Image, ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, in blit, Filter.Linear);
+        DrawOverlay(dst);
         Barrier(dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0);
     }

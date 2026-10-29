@@ -19,8 +19,17 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         return p;
     }
 
+    /// <summary>The offline model (no local PSN services): every transaction ends with the server error.</summary>
+    static void Offline(Action body)
+    {
+        var saved = VitaSharp.Core.Hle.PsnAccount.Current;
+        VitaSharp.Core.Hle.PsnAccount.Current = VitaSharp.Core.Hle.PsnAccount.Create(true, null, localServices: false);
+        try { body(); }
+        finally { VitaSharp.Core.Hle.PsnAccount.Current = saved; }
+    }
+
     [Fact]
-    public void CommunityAsyncFlow()
+    public void CommunityAsyncFlow() => Offline(() =>
     {
         var lib = new NpCommunity("test");
         uint result = fx.Memory.Alloc(4, "res");
@@ -44,10 +53,10 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         Assert.Equal(NpCommunity.INVALID_ID, lib.DeleteRequest(req));
         Assert.Equal(0, lib.Term());
         Assert.Equal(NpCommunity.NOT_INITIALIZED, lib.Term());
-    }
+    });
 
     [Fact]
-    public void CommunitySyncAndAbort()
+    public void CommunitySyncAndAbort() => Offline(() =>
     {
         var lib = new NpCommunity("test");
         uint result = fx.Memory.Alloc(4, "res");
@@ -59,7 +68,7 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, lib.Poll(b, result));
         Assert.Equal(unchecked((uint)NpCommunity.ABORTED), GuestMemory.R32(result));
         Assert.Equal(NpCommunity.TRANSACTION_ALREADY_END, lib.StartAsync(b));
-    }
+    });
 
     [Fact]
     public void CommunityObjectLimit()

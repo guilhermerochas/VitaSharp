@@ -25,6 +25,9 @@ public sealed class LauncherSettings
     public bool PsnSignedIn { get; set; } = true;
     /// <summary>Online ID of the emulated PSN account (--psn-id=).</summary>
     public string PsnOnlineId { get; set; } = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
+    /// <summary>"Serviços PSN locais": TUS / Cross-Save, rankings, tickets and matching served from &lt;data&gt;/np
+    /// (--psn-local=on, the default) or every PSN server request failing as unreachable (--psn-local=off).</summary>
+    public bool PsnLocalServices { get; set; } = true;
 
     static string FilePath => Path.Combine(Program.DataRoot, "launcher.json");
 
@@ -59,6 +62,7 @@ public sealed class LauncherSettings
         if (DebugMode) yield return "--debug-mode";
         yield return PsnSignedIn ? "--psn=on" : "--psn=off";
         if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";
+        yield return PsnLocalServices ? "--psn-local=on" : "--psn-local=off";
     }
 }
 
