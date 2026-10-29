@@ -130,8 +130,61 @@ public sealed class Ngs : HleModule
     }
 
     [Hle] int sceNgsSystemSetFlags(uint system, uint flags) => OK;
-    [Hle] int sceNgsSystemLock(uint system) { if (_systems.TryGetValue(system, out var s)) Monitor.Enter(s.Lock); return OK; }
-    [Hle] int sceNgsSystemUnlock(uint system) { if (_systems.TryGetValue(system, out var s) && Monitor.IsEntered(s.Lock)) Monitor.Exit(s.Lock); return OK; }
+    // sceNgsSystemLock keeps sceNgsSystemUpdate (on other threads) from running while the game changes several voices.
+    // It is not owned: Sengoku Musou 2 Empires counts its lock users and the last one out unlocks, whichever thread
+    // locked first. A host Monitor (owned, and blocking while holding an emulated core) deadlocked it.
+    [Hle]
+    int sceNgsSystemLock(uint system)
+    {
+        if (!_systems.TryGetValue(system, out var s)) return OK;
+        object self = Self;
+        if (!WaitGuestUnlocked(s, self, acquire: true))
+            using (Scheduler.Block()) WaitGuestUnlocked(s, self, acquire: true, block: true);
+        return OK;
+    }
+
+    static object Self => (object?)GuestThread.Current ?? Thread.CurrentThread;
+    bool Live => Emu is null || Emu.Running;
+
+    [Hle]
+    int sceNgsSystemUnlock(uint system)
+    {
+        if (!_systems.TryGetValue(system, out var s)) return OK;
+        lock (s.GuestLockGate)
+        {
+            if (s.GuestLockCount > 0 && --s.GuestLockCount == 0)
+            {
+                s.GuestLocker = null;
+                Monitor.PulseAll(s.GuestLockGate);
+            }
+        }
+        return OK;
+    }
+
+    /// <summary>
+    /// True when the guest lock is free or last taken by <paramref name="self"/> (then taken again when
+    /// <paramref name="acquire"/>). With <paramref name="block"/> it first waits for that, so call it inside
+    /// Scheduler.Block() to not hold an emulated core meanwhile.
+    /// </summary>
+    bool WaitGuestUnlocked(NgsSystem s, object self, bool acquire, bool block = false)
+    {
+        lock (s.GuestLockGate)
+        {
+            while (block && s.GuestLockCount != 0 && s.GuestLocker != self && Live)
+                Monitor.Wait(s.GuestLockGate, 50);
+            if (s.GuestLockCount != 0 && s.GuestLocker != self && !(block && !Live)) return false;
+            if (acquire) { s.GuestLockCount++; s.GuestLocker = self; }
+            return true;
+        }
+    }
+
+    /// <summary>sceNgsSystemUpdate does not run while another thread holds the guest lock.</summary>
+    void WaitForGuestLock(NgsSystem s)
+    {
+        object self = Self;
+        if (!WaitGuestUnlocked(s, self, acquire: false))
+            using (Scheduler.Block()) WaitGuestUnlocked(s, self, acquire: false, block: true);
+    }
     [Hle] int sceNgsSystemSetParamErrorCallback(uint system, uint cb) => OK;
     [Hle] int sceNgsRackSetParamErrorCallback(uint rack, uint cb) => OK;
 
@@ -717,6 +770,7 @@ public sealed class Ngs : HleModule
     int sceNgsSystemUpdate(uint system)
     {
         if (!_systems.TryGetValue(system, out var s)) return INVALID_HANDLE;
+        WaitForGuestLock(s);
         lock (s.Lock)
         {
             // snapshot (voices may leave the queue while it runs) into a reused buffer; a nested update gets its own

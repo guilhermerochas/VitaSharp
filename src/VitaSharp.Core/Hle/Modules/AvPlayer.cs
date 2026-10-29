@@ -117,8 +117,11 @@ public sealed class AvPlayer : HleModule
             return ERR_INVALID_ARGUMENT;
         }
         Log.Info($"AvPlayer: queued {path}");
-        p.Sources.Enqueue(host);
-        if (p.Media == null) OpenNext(p);
+        lock (p)
+        {
+            p.Sources.Enqueue(host);
+            if (p.Media == null) OpenNext(p);
+        }
         Event(p, STATE_BUFFERING);
         Event(p, STATE_READY);
         if (p.AutoStart) StartPlayback(p);
@@ -202,10 +205,13 @@ public sealed class AvPlayer : HleModule
     {
         var p = Get(handle);
         if (p == null) return ERR_INVALID_ARGUMENT;
-        AudioDiagnostics.StreamClosed(DiagKey(p));
-        p.Media?.Dispose();
-        p.Media = null;
-        p.Sources.Clear();
+        lock (p)
+        {
+            AudioDiagnostics.StreamClosed(DiagKey(p));
+            p.Media?.Dispose();
+            p.Media = null;
+            p.Sources.Clear();
+        }
         p.Started = false;
         p.Clock.Reset();
         Event(p, STATE_STOP);
@@ -272,6 +278,7 @@ public sealed class AvPlayer : HleModule
     {
         var p = Get(handle);
         if (p == null) return 0;
+        lock (p) // the media is closed by whichever guest thread gets there first (IsActive, Stop, Close)
         if (p.Media != null && p.Media.Finished && !p.Looping)
         {
             if (p.Sources.Count > 0) OpenNext(p);
@@ -401,7 +408,7 @@ public sealed class AvPlayer : HleModule
             if (!_players.Remove(handle, out p)) return ERR_INVALID_ARGUMENT;
         }
         AudioDiagnostics.StreamClosed(DiagKey(p));
-        p.Media?.Dispose();
+        lock (p) { p.Media?.Dispose(); p.Media = null; }
         foreach (var b in p.VideoBuffers) FreeGuest(p, b, true);
         foreach (var b in p.AudioBuffers) FreeGuest(p, b, false);
         foreach (var f in p.TempFiles)
