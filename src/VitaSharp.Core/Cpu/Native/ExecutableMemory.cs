@@ -10,7 +10,8 @@ namespace VitaSharp.Core.Cpu.Native;
 /// protection is flipped on pages other threads may be executing (flipping a shared page to RW in place would fault
 /// a thread running an older block on that page).</item>
 /// <item>macOS: one MAP_JIT mapping; writes are enabled per thread with pthread_jit_write_protect_np (Apple silicon),
-/// so other threads keep executing while the compiling thread writes.</item>
+/// so other threads keep executing while the compiling thread writes. On Apple silicon this needs a Native AOT build
+/// (see <see cref="UnsupportedReason"/>).</item>
 /// <item>Android: memfd (API 30+) or an ashmem region (ASharedMemory, API 26+) mapped twice, like Linux.</item>
 /// </list>
 /// After every write the instruction cache is synchronized: FlushInstructionCache (Windows, also on ARM64),
@@ -42,8 +43,25 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         _ => "RWX (no W^X: dual mapping unavailable)",
     };
 
+    /// <summary>
+    /// Why generated code cannot be written on this host, or null when it can.
+    /// <para>
+    /// macOS on Apple silicon with a JIT-compiled .NET runtime (dotnet run, dotnet test, framework-dependent and
+    /// non-AOT self-contained builds): CoreCLR puts the managed code it compiles in MAP_JIT memory too (it never dual
+    /// maps on Apple ARM64), and pthread_jit_write_protect_np switches every MAP_JIT region of the thread at once. Once
+    /// the write window is open, returning from the P/Invoke into the JIT-compiled caller faults (SIGBUS), so the window
+    /// can only be driven from ahead-of-time compiled code: Native AOT builds, where no managed code lives in MAP_JIT
+    /// memory. Without Native AOT the native backend is unavailable there and the IL backend runs instead.
+    /// </para>
+    /// </summary>
+    public static string? UnsupportedReason { get; } =
+        OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64 && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled
+            ? "macOS on Apple silicon needs a Native AOT build for native code (the .NET JIT's own code is MAP_JIT memory, which faults while a thread's JIT write protection is off)"
+            : null;
+
     public ExecutableMemory()
     {
+        if (UnsupportedReason != null) throw new PlatformNotSupportedException(UnsupportedReason);
         if (OperatingSystem.IsWindows()) { CreateWindows(); _mode = Mode.DualMapped; }
         else if (OperatingSystem.IsMacOS()) { CreateApple(); _mode = Mode.AppleJit; }
         else if (TryCreateLinux()) _mode = Mode.DualMapped;

@@ -22,7 +22,8 @@ public unsafe interface IArm64Runner : IDisposable
 public static class Arm64Runner
 {
     public static bool Native => RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
-    public static string? SkipReason => Native ? null : Arm64Sandbox.SkipReason;
+    /// <summary>A native host can still be unable to write generated code (macOS on Apple silicon without Native AOT).</summary>
+    public static string? SkipReason => Native ? ExecutableMemory.UnsupportedReason : Arm64Sandbox.SkipReason;
     public static IArm64Runner Create() => Native ? new Arm64HostRunner() : new Arm64Sandbox();
 }
 

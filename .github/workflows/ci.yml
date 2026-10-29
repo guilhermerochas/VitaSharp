@@ -40,9 +40,18 @@ jobs:
 
       # Long CPU fuzz/differential runs (Category=Slow, 15-45 min) are skipped here; run them locally with
       # `dotnet test tests/VitaSharp.Tests --filter Category=Slow`.
-      # --blame names the test that was running if the test host crashes or hangs (the run is otherwise just "aborted").
+      # When the test host crashes the run is otherwise just "aborted", so every run leaves enough to find out where:
+      # - --blame-crash: the Sequence_*.xml of started tests and a minidump of the crashed host (createdump);
+      # - --diag: the vstest/testhost logs, including the host's stderr (the runtime's fatal-error stack trace);
+      # - console verbosity=normal: every finished test in the log, so the last ones before the abort are visible.
+      # All of it lands in test-results, uploaded below.
       - name: Test
-        run: dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow" --blame --blame-hang-timeout 20m --blame-hang-dump-type none --logger "trx;LogFileName=results.trx" --results-directory test-results
+        shell: bash
+        run: >
+          dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow"
+          --blame-crash --blame-crash-dump-type mini --blame-hang --blame-hang-timeout 20m --blame-hang-dump-type none
+          --diag test-results/diag/vstest.log
+          --logger "console;verbosity=normal" --logger "trx;LogFileName=results.trx" --results-directory test-results
 
       - name: Upload test results
         if: always()
