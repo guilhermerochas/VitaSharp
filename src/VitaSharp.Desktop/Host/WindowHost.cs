@@ -115,6 +115,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     {
         _fbW = _window.FramebufferSize.X;
         _fbH = _window.FramebufferSize.Y;
+        SetIcon();
         _input = _window.CreateInput();
         foreach (var k in _input.Keyboards)
         {
@@ -133,6 +134,18 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             };
         }
         Loaded?.Invoke();
+    }
+
+    /// <summary>Title bar / taskbar icon. macOS (bundle icon) and Wayland (desktop file) have no per-window icon.</summary>
+    void SetIcon()
+    {
+        if (OperatingSystem.IsMacOS()) return;
+        try
+        {
+            var icons = AppIcon.ForGlfw();
+            if (icons.Length > 0) _window.SetWindowIcon(icons);
+        }
+        catch (Exception e) { Log.Warn($"Window: could not set the window icon: {e.Message}"); }
     }
 
     public void Run() => _window.Run();

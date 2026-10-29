@@ -176,7 +176,8 @@ build\publish.ps1 -Rid win-x64,linux-x64
 Each platform lands in `artifacts/publish/<rid>/`: the `VitaSharp.Desktop` executable, the native libraries next to
 it, and FFmpeg in `ffmpeg/`. macOS builds made on another OS are not code-signed; on the Mac, run
 `codesign --force --sign - VitaSharp.Desktop` (and `xattr -dr com.apple.quarantine .` for downloaded copies) before
-starting them.
+starting them. To get ready-to-ship archives, installers and app bundles instead of a folder, see
+[Packages](#packages).
 
 #### Native AOT
 
@@ -232,6 +233,88 @@ Known limitations of AOT builds:
   and the `.deps.json` lookup are empty in a single-file app; Silk.NET then searches `AppContext.BaseDirectory`, where
   the native libraries are). The analyzers run on every normal build, so new AOT problems in VitaSharp's own code show
   up as build warnings right away.
+
+#### Packages
+
+`--package` / `-Package` also packs the published folder for distribution, one command per platform. Both build
+types (ReadyToRun and `--aot`) are self-contained: the .NET runtime is inside the executable, and the target machine
+needs no .NET install.
+
+```sh
+build/publish.sh --package linux-x64                 # tar.gz + AppImage
+build/publish.sh --aot --package osx-arm64           # on a Mac: VitaSharp.app (zip + dmg)
+VERSION=0.2.0 build/publish.sh --package win-x64     # file names carry the version (default: dev)
+```
+
+```powershell
+build\publish.ps1 -Aot -Package -Rid win-x64 -Version 0.2.0   # zip + installer
+```
+
+They land in `artifacts/publish/packages/` (`-SkipPublish` / `--skip-publish` repacks an existing publish folder):
+
+| Platform | Package | Contents |
+| --- | --- | --- |
+| Windows | `VitaSharp-<v>-win-x64.zip` | `VitaSharp\`: `VitaSharp.Desktop.exe` (with the VitaSharp icon), the native DLLs, `ffmpeg\`, `LICENSE`, `README.md` |
+| Windows | `VitaSharp-<v>-win-x64-setup.exe` | [Inno Setup](https://jrsoftware.org/isinfo.php) installer (per user or per machine, Start menu and optional desktop shortcut, uninstaller; data in `%APPDATA%\VitaSharp` is kept). Built only when Inno Setup 6 or 7 is found: on PATH, in its default folder, or through `ISCC=<path to ISCC.exe>` (`winget install JRSoftware.InnoSetup`). Script: `build/package/VitaSharp.iss` |
+| Linux | `VitaSharp-<v>-linux-<arch>.tar.gz` | `VitaSharp/` with the executable, `.so` libraries, `ffmpeg/`, `vitasharp.desktop`, `icons/` and `install-desktop-entry.sh` (adds VitaSharp to the application menu of the current user) |
+| Linux | `VitaSharp-<v>-linux-<arch>.AppImage` | one runnable file (`chmod +x`, then start it; without FUSE: `--appimage-extract-and-run`). Built when [appimagetool](https://github.com/AppImage/appimagetool/releases) is on PATH or named by `APPIMAGETOOL`; it needs the `file` command |
+| macOS | `VitaSharp-<v>-osx-<arch>.app.zip` | `VitaSharp.app`: `Info.plist`, `Resources/VitaSharp.icns`, the executable and its dylibs in `Contents/MacOS` (where .NET, Silk.NET and SkiaSharp look for native libraries; the bundled dylibs do not link against each other, so no rpath changes are needed). FFmpeg comes from Homebrew as before |
+| macOS | `VitaSharp-<v>-osx-<arch>.dmg` | the same app with an Applications link, made only on macOS (`hdiutil`) |
+
+Linux and macOS packages need Unix file permissions, so `build/publish.ps1` makes only the Windows ones; run
+`build/publish.sh --package` on Linux, macOS or WSL for the rest (the `.app` can be assembled on Linux, the `.dmg`
+only on a Mac). CI builds every package on each push to `main` (ReadyToRun cross-published from Linux, Native AOT on
+each OS's own runner) and keeps them as workflow artifacts named `VitaSharp-*-packages`.
+
+Sizes measured in October 2026:
+
+| Package | ReadyToRun | Native AOT |
+| --- | --- | --- |
+| Windows x64 folder | 292 MB | 190 MB (+140 MB symbols, not packaged) |
+| Windows x64 zip | 118 MB | 77 MB |
+| Windows x64 installer | | 57 MB |
+| Linux x64 tar.gz / AppImage | 122 MB / 112 MB | built by CI |
+| macOS arm64 `.app.zip` (no FFmpeg) | 67 MB | built by CI |
+
+Which one to ship: Native AOT starts faster, uses less memory and is about a third smaller, but it must be built on
+each target OS and has no `il` CPU backend (see the limitations above; the default `native` backend and the
+interpreter work the same). ReadyToRun builds keep every backend and can be produced for all platforms from one
+machine.
+
+The icons come from [`docs/assets/logo.svg`](docs/assets/logo.svg): `build/make-icons.ps1` (or `.sh`) renders it with
+Svg.Skia into `src/VitaSharp.Desktop/Assets` (`icon-16.png` to `icon-1024.png`, a multi-size `VitaSharp.ico`,
+`VitaSharp.icns`). The output is deterministic and committed, so builds need neither the tool nor its packages; run it
+again after changing the logo. The `.ico` is the executable's icon, the PNGs are embedded for the launcher and game
+window title bar and taskbar icons, and the `.icns` is the macOS bundle icon.
+
+#### Signing
+
+The packages are not signed.
+
+- **Windows**: SmartScreen warns about an unsigned download ("More info", "Run anyway"). To sign, run
+  `signtool sign /fd SHA256 /tr <timestamp-url> /td SHA256 /f <cert.pfx> VitaSharp.Desktop.exe` on the published
+  executable before packaging, and the same on the installer. Inno Setup can also do it itself through its `SignTool`
+  setting.
+- **macOS**: Gatekeeper blocks unsigned downloaded apps. For local use, run `xattr -dr com.apple.quarantine VitaSharp.app`
+  (or right-click, Open); on Apple Silicon, code that is not signed at all does not run, so ad-hoc sign it:
+  `codesign --force --deep --sign - VitaSharp.app`. To distribute, sign with a Developer ID certificate and the
+  hardened runtime, then notarize. Sign the dylibs first and the app last:
+
+  ```sh
+  codesign --force --options runtime --timestamp --sign "Developer ID Application: ..." VitaSharp.app/Contents/MacOS/*.dylib
+  codesign --force --options runtime --timestamp --entitlements build/package/VitaSharp.entitlements \
+           --sign "Developer ID Application: ..." VitaSharp.app
+  xcrun notarytool submit VitaSharp.zip --keychain-profile <profile> --wait && xcrun stapler staple VitaSharp.app
+  ```
+
+  [`build/package/VitaSharp.entitlements`](build/package/VitaSharp.entitlements) is required with the hardened runtime:
+  `com.apple.security.cs.allow-jit` lets the .NET JIT (ReadyToRun builds, and the `il` backend's `DynamicMethod`s) and
+  VitaSharp's guest JIT map `MAP_JIT` memory (without it they cannot get executable memory and the app fails),
+  `allow-unsigned-executable-memory` covers the x64 backend on Intel Macs,
+  `disable-library-validation` lets the app load the bundled third-party dylibs and Homebrew's FFmpeg / MoltenVK,
+  `allow-dyld-environment-variables` keeps the `DYLD_FALLBACK_LIBRARY_PATH` restart that finds a Homebrew Vulkan
+  loader, and `device.camera` allows SceCamera.
+- **Linux**: no signing step; AppImages can carry a GPG signature (`appimagetool --sign`).
 
 The game library opens. Use **Install PKG...** to install a game package together with its `work.bin` or `.rif`
 license, or **Add game folder...** for an already-extracted game, then press **Play**.
