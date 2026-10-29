@@ -32,6 +32,8 @@ public sealed class Vfs
     /// <summary>Additional read-only layers searched before app0 (e.g. installed patches).</summary>
     public void AddApp0Overlay(string hostPath) => _app0Overlays.Insert(0, hostPath);
 
+    public void ClearApp0Overlays() => _app0Overlays.Clear();
+
     public static (string device, string rel) Split(string vitaPath)
     {
         int c = vitaPath.IndexOf(':');

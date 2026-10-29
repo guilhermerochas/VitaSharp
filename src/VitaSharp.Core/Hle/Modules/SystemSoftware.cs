@@ -45,4 +45,27 @@ public sealed class SystemSoftware : HleModule
         GuestMemory.W32(info + 4, SpkgVersions.GetValueOrDefault(type, SystemMisc.SystemSwVersion));
         return 0;
     }
+
+    // ------------------------------------------------------------------ SceAppMgr: the shell's application launches
+
+    /// <summary>
+    /// (const char *path, const char *titleId, flags, void *param): the shell starting an application from its LiveArea
+    /// gate (flags 0x2000000) or the initial setup at first boot. VitaSharp runs one guest process at a time: the
+    /// calling program is suspended (<see cref="Emulator.SuspendedPrograms"/>) and the application replaces it; when
+    /// the application exits, the caller is started again.
+    /// </summary>
+    [Hle]
+    int sceAppMgrLaunchAppByPath4(string path, uint titleId, uint flags, uint param)
+    {
+        string? host = Emu.Vfs.Resolve(path);
+        if (host == null || !File.Exists(host))
+        {
+            Log.Warn($"sceAppMgrLaunchAppByPath4({path}): not found");
+            return unchecked((int)0x80800006); // SCE_APPMGR_ERROR_NOENT (inferred)
+        }
+        string tid = titleId != 0 ? GuestMemory.ReadCString(titleId, 16) : "";
+        Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}): switching process");
+        Emu.RequestLaunch(Path.GetDirectoryName(host)!, Path.GetFileName(host), [], suspendCurrent: true);
+        throw new Kernel.GuestThreadExitException(0, false);
+    }
 }

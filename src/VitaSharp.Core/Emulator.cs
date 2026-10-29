@@ -116,25 +116,58 @@ public sealed class Emulator : IDisposable
 
     // ------------------------------------------------------------------ process exec (sceAppMgrLoadExec)
 
-    /// <summary>Set by sceAppMgrLoadExec: the executable (app0: path) and arguments to replace the process with.</summary>
-    public (string Path, string[] Args)? ExecRequest { get; private set; }
+    /// <summary>Set by sceAppMgrLoadExec (same application, <c>AppDir</c> null) or by a process switch
+    /// (<see cref="RequestLaunch"/>): the executable (app0: path), its arguments and the application folder.</summary>
+    public (string Path, string[] Args, string? AppDir)? ExecRequest { get; private set; }
     public event Action? ExecRequested;
 
+    /// <summary>
+    /// The programs waiting to come back when the running one exits, most recent last: the shell launching an
+    /// application suspends itself here. VitaSharp runs one guest process at a time (they share one address
+    /// space), so a launch replaces the shell's process and the shell is started again when the application ends.
+    /// </summary>
+    public Stack<(string AppDir, string Self)> SuspendedPrograms { get; } = new();
+
     /// <summary>Called from the guest: stops the process; the host then completes the exec with <see cref="PerformExec"/>.</summary>
-    public void RequestExec(string path, string[] args)
+    public void RequestExec(string path, string[] args) => QueueExec(path, args, null);
+
+    /// <summary>Replaces the running program with another application (host folder <paramref name="appDir"/>,
+    /// executable <paramref name="self"/> relative to it). With <paramref name="suspendCurrent"/> the current program
+    /// is restarted when that application exits (<see cref="SuspendedPrograms"/>).</summary>
+    public void RequestLaunch(string appDir, string self, string[] args, bool suspendCurrent)
     {
-        Log.Info($"LoadExec {path} [{string.Join(" ", args)}]");
-        ExecRequest = (path, args);
+        if (suspendCurrent && MainModule != null) SuspendedPrograms.Push((AppPath, CurrentSelf));
+        QueueExec("app0:" + self, args, appDir);
+    }
+
+    /// <summary>The process ends (sceKernelExitProcess, the main thread returning): back to the program that launched
+    /// it when one is suspended (true), else the emulator stops (false).</summary>
+    public bool EndProcess(int status)
+    {
+        if (SuspendedPrograms.Count == 0) return false;
+        var (dir, self) = SuspendedPrograms.Pop();
+        Log.Info($"Process exited (0x{status:X}): resuming {dir} ({self})");
+        QueueExec("app0:" + self, [], dir);
+        return true;
+    }
+
+    void QueueExec(string path, string[] args, string? appDir)
+    {
+        Log.Info($"{(appDir == null ? "LoadExec" : "Launch " + appDir)} {path} [{string.Join(" ", args)}]");
+        ExecRequest = (path, args, appDir);
         Running = false;
         Kernel.StopAllThreads();
         ExecRequested?.Invoke();
     }
 
+    /// <summary>The main executable of the running program, relative to its folder.</summary>
+    public string CurrentSelf { get; private set; } = "eboot.bin";
+
     /// <summary>Replaces the process image: waits for the old threads, resets kernel, memory and GPU state and starts
     /// the requested executable in the same address space (like the Vita kernel does for the same application).</summary>
     public void PerformExec(Func<Gpu.IGpuBackend?>? backendFactory)
     {
-        var (path, args) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
+        var (path, args, appDir) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
         if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn("LoadExec: some threads did not stop in time");
         Gpu.ReplaceBackend(backendFactory);
         VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
@@ -145,7 +178,7 @@ public sealed class Emulator : IDisposable
         MainModule = null;
         ExecRequest = null;
         string self = path.StartsWith("app0:", StringComparison.OrdinalIgnoreCase) ? path[5..].TrimStart('/') : path;
-        LoadTitle(AppPath, self);
+        LoadTitle(appDir ?? AppPath, self);
         Start(args);
         Running = true;
     }
@@ -154,6 +187,8 @@ public sealed class Emulator : IDisposable
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
         AppPath = Path.GetFullPath(appPath);
+        CurrentSelf = self;
+        Vfs.ClearApp0Overlays(); // a process switch brings another application's patch folder
         Vfs.Mount("app0", AppPath);
         var sfoPath = Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/param.sfo");
         if (File.Exists(sfoPath))
