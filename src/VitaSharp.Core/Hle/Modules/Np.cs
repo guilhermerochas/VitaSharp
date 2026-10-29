@@ -6,9 +6,11 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// SceNpManager and SceNpCommon: NP initialisation, service state, NpId helpers and auth tickets, following the emulated
-/// PSN account (<see cref="PsnAccount"/>). Signed in (default): service state SIGNED_IN, the account's NpId and region,
-/// and auth tickets that fail like an unreachable server. Signed out: anything that needs the account fails with
-/// SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state once (from sceNpCheckCallback).
+/// PSN account (<see cref="PsnAccount"/>). Signed in (default): the account's NpId and region; service state ONLINE with
+/// the local PSN services (auth tickets issued locally), else SIGNED_IN until a NetCheckDialog in PSN_ONLINE mode connects
+/// the console (then ONLINE, while server requests still fail like an unreachable server). Signed out: anything that
+/// needs the account fails with SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state from
+/// sceNpCheckCallback, and again whenever it changes.
 /// </summary>
 public sealed class NpManager : HleModule
 {
@@ -19,10 +21,31 @@ public sealed class NpManager : HleModule
     internal const int UTIL_INVALID_ARGUMENT = unchecked((int)0x80550601), UTIL_INVALID_NP_ID = unchecked((int)0x80550605),
         UTIL_NOT_MATCH = unchecked((int)0x80550609);
 
-    // SceNpServiceState: UNKNOWN 0, SIGNED_OUT 1, SIGNED_IN 2, ONLINE 3 (Vita3K reports SIGNED_IN for a signed-in account).
-    internal const int NP_STATE_SIGNED_OUT = 1, NP_STATE_SIGNED_IN = 2;
-    static int ServiceState => PsnAccount.Current.SignedIn ? NP_STATE_SIGNED_IN : NP_STATE_SIGNED_OUT;
-    readonly List<(uint Func, uint Arg, bool Notified)> _npCallbacks = new();
+    // SceNpServiceState: UNKNOWN 0, SIGNED_OUT 1, SIGNED_IN 2 (signed in, not connected to PSN), ONLINE 3.
+    internal const int NP_STATE_SIGNED_OUT = 1, NP_STATE_SIGNED_IN = 2, NP_STATE_ONLINE = 3;
+
+    /// <summary>
+    /// The NP service state. A signed-in console whose PSN services answer (the local ones) is ONLINE, like a real Vita
+    /// that signed in over a working network. Without them it is SIGNED_IN until the PSN_ONLINE NetCheckDialog (which
+    /// finishes OK when signed in) connects it. Games that run that dialog wait for ONLINE afterwards: WRC 4 otherwise
+    /// sits on "PLEASE WAIT..." after its title screen forever (Vita3K, which always reports SIGNED_IN, has the same gap).
+    /// </summary>
+    internal int ServiceState
+    {
+        get
+        {
+            var acct = PsnAccount.Current;
+            if (!acct.SignedIn) return NP_STATE_SIGNED_OUT;
+            return acct.LocalServices || _psnConnected ? NP_STATE_ONLINE : NP_STATE_SIGNED_IN;
+        }
+    }
+    volatile bool _psnConnected;
+
+    /// <summary>A NetCheckDialog in PSN_ONLINE mode finished OK: the console stays connected to PSN from now on.</summary>
+    internal void OnPsnOnlineCheckSucceeded() => _psnConnected = true;
+
+    // the registered service state callbacks and the state each was last told (0: not yet)
+    readonly List<(uint Func, uint Arg, int Notified)> _npCallbacks = new();
 
     readonly object _lock = new();
     bool _npInited;
@@ -62,22 +85,24 @@ public sealed class NpManager : HleModule
     }
 
     // shared empty results of the per-frame poll (never modified)
-    static readonly List<(uint Func, uint Arg, bool Notified)> NoPending = [];
+    static readonly List<(uint Func, uint Arg, int Notified)> NoPending = [];
     static readonly List<(int Id, uint Cb, uint Arg)> NoDone = [];
 
     [Hle]
     int sceNpCheckCallback()
     {
-        List<(uint Func, uint Arg, bool Notified)> pending;
+        List<(uint Func, uint Arg, int Notified)> pending;
+        int state = ServiceState;
         lock (_npCallbacks)
         {
-            // polled every frame: only build the lists when something is pending
+            // polled every frame: only build the lists when a callback has not been told the current state
             bool anyPending = false;
-            foreach (var c in _npCallbacks) if (!c.Notified) { anyPending = true; break; }
-            pending = anyPending ? _npCallbacks.Where(c => !c.Notified).ToList() : NoPending;
-            for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, true);
+            foreach (var c in _npCallbacks) if (c.Notified != state) { anyPending = true; break; }
+            pending = anyPending ? _npCallbacks.Where(c => c.Notified != state).ToList() : NoPending;
+            if (anyPending)
+                for (int i = 0; i < _npCallbacks.Count; i++) _npCallbacks[i] = (_npCallbacks[i].Func, _npCallbacks[i].Arg, state);
         }
-        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)ServiceState, 0, c.Arg);
+        foreach (var c in pending) Kernel.GuestThread.Current?.CallGuest(c.Func, (uint)state, 0, c.Arg);
 
         // auth (ticket) requests complete here: with the local services the callback gets the ticket size (the ticket is
         // then read with sceNpAuthGetTicket), otherwise the server error
@@ -104,7 +129,7 @@ public sealed class NpManager : HleModule
     [Hle]
     int sceNpRegisterServiceStateCallback(uint cb, uint arg)
     {
-        lock (_npCallbacks) _npCallbacks.Add((cb, arg, false));
+        lock (_npCallbacks) _npCallbacks.Add((cb, arg, 0));
         return 0;
     }
 

@@ -466,7 +466,8 @@ public sealed class CommonDialog : HleModule
     /// <summary>
     /// SceNetCheckDialogParam (0xE0): +0x50 mode (1..7), +0x54 npCommunicationId. The PSN modes (sign in, and sign in +
     /// connect) finish OK with psnModeSucceeded when the emulated PSN account is signed in (<see cref="PsnAccount"/>, as
-    /// Vita3K does); otherwise, and for the ad hoc / PS3 modes (no peers), the user cancels.
+    /// Vita3K does); otherwise, and for the ad hoc / PS3 modes (no peers), the user cancels. A successful PSN_ONLINE check
+    /// leaves the console connected, so the NP service state is ONLINE afterwards (<see cref="NpManager.ServiceState"/>).
     /// </summary>
     [Hle]
     int sceNetCheckDialogInit(uint param)
@@ -480,6 +481,9 @@ public sealed class CommonDialog : HleModule
         var acct = PsnAccount.Current;
         _netCheckPsnSucceeded = acct.SignedIn && mode is NetCheckModePsn or NetCheckModePsnOnline;
         State.Finish(_netCheckPsnSucceeded ? ResultOk : ResultUserCanceled);
+        // the PSN_ONLINE check connects the console: NP reports ONLINE from now on
+        if (_netCheckPsnSucceeded && mode == NetCheckModePsnOnline)
+            Emu?.Hle.Modules.OfType<NpManager>().FirstOrDefault()?.OnPsnOnlineCheckSucceeded();
         Log.Info(_netCheckPsnSucceeded ? $"NetCheckDialog mode {mode}: signed in to PSN as {acct.OnlineId}"
                                        : $"NetCheckDialog mode {mode}: {(acct.SignedIn ? "no peer" : "offline")}, canceled");
         return 0;

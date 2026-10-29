@@ -10,7 +10,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// world are available, room and lobby searches find nothing, and creating or joining a room fails cleanly with
 /// SERVICE_UNAVAILABLE in the request callback (no other player could ever join). Every request is answered through
 /// its callback, from the library's own thread (<see cref="HleCallbackThread"/>), so a game never waits forever.
-/// Without local services (or signed out) starting a context fails at once like an unreachable server, as before.
+/// Without local services the start is accepted and the context callback reports START_OVER with the unreachable-server
+/// error; signed out, starting a context fails at once.
 /// <para>Callbacks (no sceNpMatching2GetEventData on the Vita: the response comes as a pointer):
 /// context <c>void (ctxId, event, eventCause, errorCode, arg)</c>, request
 /// <c>void (ctxId, reqId, event, errorCode, const void *data, arg)</c>. Event, cause and error values: the PS3 library
@@ -115,9 +116,22 @@ public sealed class NpMatching2 : HleModule
         {
             if (!_initialized) return ERR_NOT_INITIALIZED;
             if (!_contexts.TryGetValue(ctxId, out c)) return ERR_CONTEXT_NOT_FOUND;
-            if (!Local) return PsnAccount.Current.ServerError;
-            if (c.Started) return ERR_CONTEXT_ALREADY_STARTED;
-            c.Started = true;
+            if (!PsnAccount.Current.SignedIn) return PsnAccount.Current.ServerError;
+            if (Local)
+            {
+                if (c.Started) return ERR_CONTEXT_ALREADY_STARTED;
+                c.Started = true;
+            }
+        }
+        if (!Local)
+        {
+            // signed in but the server cannot be reached: starting is asynchronous, so the request is accepted and the
+            // context callback reports START_OVER (context error) with the network error, as a real console does when
+            // the connection to the matching server fails. A game that only waits for that callback (WRC 4 after its
+            // PSN_ONLINE NetCheckDialog) would otherwise wait forever.
+            Log.Info($"NpMatching2: context {ctxId} start failed: server unreachable (callback 0x{c.CtxCb:X8})");
+            PostContextEvent(ctxId, c, CONTEXT_EVENT_START_OVER, EVENT_CAUSE_CONTEXT_ERROR, PsnAccount.Current.ServerError);
+            return 0;
         }
         Log.Info($"NpMatching2: context {ctxId} started (callback 0x{c.CtxCb:X8})");
         PostContextEvent(ctxId, c, CONTEXT_EVENT_START, EVENT_CAUSE_CONTEXT_ACTION, 0);
