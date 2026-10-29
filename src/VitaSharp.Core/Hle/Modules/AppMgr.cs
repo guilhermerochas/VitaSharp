@@ -95,7 +95,9 @@ public sealed class AppMgr : HleModule
     {
         300 => Emu.Vfs.Resolve("app0:sce_sys/trophy") is { } conf && Directory.Exists(conf)
             ? TrophyMount("trophy_sys0", conf, mountPoint) : mountPoint == 0 ? ERR_NULL_POINTER : ERR_NOT_FOUND,
-        302 => TrophyMount("trophy_dat0", TrophyData(""), mountPoint),
+        // the user's trophy file: the shell's trophy server (FW 3.74) mounts 302 and opens trophy_dat0:TRPUSER.DAT, and
+        // checks ur0:user/00/trophy/data/sce_trop by path when it is missing
+        302 => TrophyMount("trophy_dat0", TrophyData("sce_trop"), mountPoint),
         _ => ERR_PARAM,
     };
 

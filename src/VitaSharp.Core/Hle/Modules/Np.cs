@@ -334,6 +334,37 @@ public sealed class NpManager : HleModule
 
     [Hle] int sceNpGetPlatformType(uint npId) => NpIdUtil.GetPlatformType(npId);
     [Hle] int sceNpSetPlatformType(uint npId, int type) => NpIdUtil.SetPlatformType(npId, type);
+
+    // ---------------------------------------------------------------- the library heap (SceNpCommon)
+    // vs0:sys/external/np_common.suprx (FW 3.74): the system software gives the library a memory block at start (the
+    // shell's main initialisation: 0x14E000 bytes; a failure there ends that initialisation, and with it the services it
+    // starts after, the trophy server among them). A385C8CD(a, b, size, mem) makes a mspace on it, BA6310A1 removes it,
+    // and the allocator exports (named MallocNpServerName / FreeNpServerName in the NID database) allocate from it.
+
+    uint _commonHeap;
+    Clib ClibModule => Emu.Hle.Modules.OfType<Clib>().First();
+
+    [Hle("sceNpCommon_A385C8CD", Nid = 0xA385C8CD, Library = "SceNpCommon")]
+    int NpCommonHeapInit(uint a, uint b, uint size, uint mem)
+    {
+        if (size == 0 || mem == 0) return 0;
+        _commonHeap = ClibModule.sceClibMspaceCreate(mem, size);
+        return 0;
+    }
+
+    [Hle("sceNpCommon_BA6310A1", Nid = 0xBA6310A1, Library = "SceNpCommon")]
+    void NpCommonHeapTerm()
+    {
+        if (_commonHeap != 0) ClibModule.sceClibMspaceDestroy(_commonHeap);
+        _commonHeap = 0;
+    }
+
+    [Hle] uint sceNpCommonMallocNpServerName(uint size) => _commonHeap == 0 ? 0 : ClibModule.sceClibMspaceMalloc(_commonHeap, size);
+
+    [Hle("sceNpCommon_50D71BB5", Nid = 0x50D71BB5, Library = "SceNpCommon")]
+    uint NpCommonRealloc(uint ptr, uint size) => _commonHeap == 0 ? 0 : ClibModule.sceClibMspaceRealloc(_commonHeap, ptr, size);
+
+    [Hle] void sceNpCommonFreeNpServerName(uint ptr) { if (_commonHeap != 0) ClibModule.sceClibMspaceFree(_commonHeap, ptr); }
 }
 
 /// <summary>

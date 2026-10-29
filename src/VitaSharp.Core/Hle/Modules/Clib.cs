@@ -30,7 +30,7 @@ public sealed class Clib : HleModule
     readonly Dictionary<uint, Heap> _owner = new(); // allocation -> heap (for MallocUsableSize)
 
     [Hle]
-    uint sceClibMspaceCreate(uint block, uint size)
+    internal uint sceClibMspaceCreate(uint block, uint size)
     {
         if (block == 0 || size <= HeaderBytes + MinAlign) return 0;
         var h = new Heap { Base = block, Size = size };
@@ -42,7 +42,7 @@ public sealed class Clib : HleModule
     }
 
     [Hle]
-    void sceClibMspaceDestroy(uint mspace)
+    internal void sceClibMspaceDestroy(uint mspace)
     {
         lock (_heaps)
         {
@@ -98,7 +98,7 @@ public sealed class Clib : HleModule
         lock (_heaps) return _heaps.TryGetValue(mspace, out var h) ? Alloc(h, size, align) : 0;
     }
 
-    [Hle] uint sceClibMspaceMalloc(uint mspace, uint size) => Malloc(mspace, size, MinAlign);
+    [Hle] internal uint sceClibMspaceMalloc(uint mspace, uint size) => Malloc(mspace, size, MinAlign);
     [Hle] uint sceClibMspaceMemalign(uint mspace, uint alignment, uint size) => Malloc(mspace, size, alignment);
 
     [Hle]
@@ -111,7 +111,7 @@ public sealed class Clib : HleModule
         return p;
     }
 
-    [Hle] uint sceClibMspaceRealloc(uint mspace, uint ptr, uint size) => Realloc(mspace, ptr, size, MinAlign);
+    [Hle] internal uint sceClibMspaceRealloc(uint mspace, uint ptr, uint size) => Realloc(mspace, ptr, size, MinAlign);
     [Hle] uint sceClibMspaceReallocalign(uint mspace, uint ptr, uint size, uint alignment) => Realloc(mspace, ptr, size, alignment);
 
     uint Realloc(uint mspace, uint ptr, uint size, uint align)
@@ -130,7 +130,7 @@ public sealed class Clib : HleModule
     }
 
     [Hle]
-    void sceClibMspaceFree(uint mspace, uint ptr)
+    internal void sceClibMspaceFree(uint mspace, uint ptr)
     {
         if (ptr == 0) return;
         lock (_heaps)

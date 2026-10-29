@@ -450,7 +450,14 @@ public sealed class Emulator : IDisposable
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
-        if (IsSystemProgram) PreloadFirmwareModules(preloadDisabled);
+        if (IsSystemProgram)
+        {
+            PreloadFirmwareModules(preloadDisabled);
+            // the executable's own imports from firmware libraries nothing loaded provides (the shell calls
+            // SceNpCommonPs4 in its first initialisation, before it loads any module that would bring it). Modules
+            // that need an on-request module (libpaf) wait for the program's own sysmodule load, as before.
+            _startFirst.AddRange(LoadFirmwareDependencies(MainModule, withoutOnRequest: true));
+        }
         // a system program's variable imports from firmware modules it loads itself later through sysmodule (ScePaf*
         // from libpaf, SceCommonGuiDialog's class tables...) are bound when that module loads; only the others are missing
         var firmware = IsSystemProgram ? Firmware.FirmwareLibraries.For(Options.FsRoot) : null;
@@ -530,11 +537,37 @@ public sealed class Emulator : IDisposable
     /// imported from it and no loaded module exports it; libraries named in the HLE-modules option stay on HLE, and
     /// <see cref="OnRequestModules"/> wait for the program to load them.
     /// </summary>
-    public List<LoadedModule> LoadFirmwareDependencies(LoadedModule root)
+    public List<LoadedModule> LoadFirmwareDependencies(LoadedModule root, bool withoutOnRequest = false)
     {
         var index = Firmware.FirmwareLibraries.For(Options.FsRoot);
         var order = new List<LoadedModule>();
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var needsOnRequest = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        // whether a firmware module imports (itself or through the firmware modules it would bring) a library of an
+        // on-request module, read from its image without loading it
+        bool NeedsOnRequest(string vitaPath)
+        {
+            if (needsOnRequest.TryGetValue(vitaPath, out bool known)) return known;
+            needsOnRequest[vitaPath] = false; // cycles
+            bool result = false;
+            try
+            {
+                if (Vfs.Resolve(vitaPath) is { } host && File.Exists(host))
+                {
+                    var img = ModuleImage.Read(Loader.Self.SelfDecryptor.ToElf(File.ReadAllBytes(host), null));
+                    foreach (var (lib, _, _) in img.Imports)
+                    {
+                        if (index.Provider(lib) is not { } p || Hle.ImplementsLibrary(lib)) continue;
+                        if (OnRequestModules.Contains(Path.GetFileNameWithoutExtension(p.VitaPath))
+                            || (!string.Equals(p.VitaPath, vitaPath, StringComparison.OrdinalIgnoreCase) && NeedsOnRequest(p.VitaPath)))
+                        { result = true; break; }
+                    }
+                }
+            }
+            catch (Exception e) when (e is not OutOfMemoryException) { result = true; }
+            return needsOnRequest[vitaPath] = result;
+        }
 
         void Visit(LoadedModule m)
         {
@@ -547,6 +580,7 @@ public sealed class Emulator : IDisposable
                 // a library VitaSharp emulates in HLE (even partly: NP, AppUtil, Http...) stays on HLE, so every
                 // process sees the same emulated services; only libraries the HLE knows nothing of come from the firmware
                 if (Hle.ImplementsLibrary(lib) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;
                 try { dep = LoadModule(provider.VitaPath); }
