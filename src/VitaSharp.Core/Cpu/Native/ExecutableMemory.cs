@@ -11,7 +11,10 @@ namespace VitaSharp.Core.Cpu.Native;
 /// a thread running an older block on that page).</item>
 /// <item>macOS: one MAP_JIT mapping; writes are enabled per thread with pthread_jit_write_protect_np (Apple silicon),
 /// so other threads keep executing while the compiling thread writes.</item>
+/// <item>Android: memfd (API 30+) or an ashmem region (ASharedMemory, API 26+) mapped twice, like Linux.</item>
 /// </list>
+/// After every write the instruction cache is synchronized: FlushInstructionCache (Windows, also on ARM64),
+/// sys_icache_invalidate (macOS), a generated DC CVAU / IC IVAU helper (Linux and Android ARM64); x64 needs nothing.
 /// Code is placed with a bump allocator in a single reservation, so every block is within a rel32 jump of the others
 /// and of the entry trampoline. Blocks are never freed individually (invalidated code stays mapped until
 /// <see cref="Reset"/>, which the owner only calls when no guest thread runs).
@@ -115,8 +118,39 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     {
         if (OperatingSystem.IsWindows()) FlushInstructionCache(GetCurrentProcess(), addr, (nuint)len);
         else if (OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64) sys_icache_invalidate(addr, (nuint)len);
-        // x64 keeps instruction fetch coherent with stores. A Linux ARM64 emitter would need __clear_cache here
-        // (dc cvau + ic ivau per cache line), which has no libc export: emit it as a small generated helper.
+        else if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64) ClearCache(addr, len);
+        // x64 keeps instruction fetch coherent with stores
+    }
+
+    static delegate* unmanaged<void*, nuint, void> _clearCache;
+    static readonly object ClearCacheLock = new();
+
+    /// <summary>
+    /// Linux/Android ARM64: __clear_cache has no libc export, so the backend generates it
+    /// (<see cref="Arm64Emitter.EmitCacheFlush"/>) into a page of its own, made executable with mprotect before its
+    /// first use (the kernel synchronizes the caches when a page becomes executable).
+    /// </summary>
+    static void ClearCache(byte* addr, int len)
+    {
+        var f = _clearCache;
+        if (f == null)
+        {
+            lock (ClearCacheLock)
+            {
+                if (_clearCache == null)
+                {
+                    var code = Arm64Emitter.EmitCacheFlush();
+                    nuint page = (nuint)Environment.SystemPageSize;
+                    var p = mmap(null, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
+                    if (p == (void*)-1) throw new InvalidOperationException("mmap for the cache flush helper failed");
+                    code.CopyTo(new Span<byte>(p, code.Length));
+                    if (mprotect(p, page, PROT_READ | PROT_EXEC) != 0) throw new InvalidOperationException("mprotect for the cache flush helper failed");
+                    _clearCache = (delegate* unmanaged<void*, nuint, void>)p;
+                }
+                f = _clearCache;
+            }
+        }
+        f(addr, (nuint)len);
     }
 
     // ------------------------------------------------------------------ Windows
@@ -170,14 +204,24 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     private static partial void pthread_jit_write_protect_np(int enabled);
     [LibraryImport("libc")]
     private static partial void sys_icache_invalidate(void* start, nuint len);
+    [LibraryImport("libc", SetLastError = true)]
+    private static partial int mprotect(void* addr, nuint len, int prot);
+    [LibraryImport("libandroid", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int ASharedMemory_create(string name, nuint size);
 
     bool TryCreateLinux()
     {
-        int fd;
+        int fd = -1;
         try { fd = memfd_create("vitasharp-jit", 1 /*MFD_CLOEXEC*/); }
-        catch (EntryPointNotFoundException) { return false; }
+        catch (EntryPointNotFoundException) { }
+        if (fd >= 0 && ftruncate(fd, ReserveSize) != 0) { close(fd); fd = -1; }
+        // Android before API 30 has no memfd_create in bionic: an ashmem region (API 26+) is mappable twice too
+        if (fd < 0 && OperatingSystem.IsAndroid())
+        {
+            try { fd = ASharedMemory_create("vitasharp-jit", ReserveSize); }
+            catch (Exception e) when (e is EntryPointNotFoundException or DllNotFoundException) { }
+        }
         if (fd < 0) return false;
-        if (ftruncate(fd, ReserveSize) != 0) { close(fd); return false; }
         var w = mmap(null, ReserveSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         var x = mmap(null, ReserveSize, PROT_READ | PROT_EXEC, MAP_SHARED, fd, 0);
         if (w == (void*)-1 || x == (void*)-1)

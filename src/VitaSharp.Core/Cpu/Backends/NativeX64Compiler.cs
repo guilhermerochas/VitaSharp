@@ -97,7 +97,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
 }
 
 /// <summary>Size of a native block's code and its number of linkable exits.</summary>
-public sealed record NativeCodeInfo(int Size, int Exits, bool UnloggedStores = false)
+public sealed record NativeCodeInfo(int Size, int Exits, bool UnloggedStores = false, bool Arm64 = false)
 {
-    public string Disassemble(nint entry) => X64Disassembler.Disassemble(entry, Size);
+    public string Disassemble(nint entry) => Arm64 ? Arm64Dump.Dump(entry, Size) : X64Disassembler.Disassemble(entry, Size);
 }

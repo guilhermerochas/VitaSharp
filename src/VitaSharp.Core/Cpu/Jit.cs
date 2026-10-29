@@ -15,7 +15,7 @@ public unsafe delegate void JitBlockFn(CpuState* s);
 public static unsafe class Jit
 {
     /// <summary>Every backend known to this build, best first (the interpreter is implicit and always last).</summary>
-    public static IReadOnlyList<IBlockCompiler> All { get; } = [NativeX64Compiler.Instance, IlJitCompiler.Instance];
+    public static IReadOnlyList<IBlockCompiler> All { get; } = [NativeX64Compiler.Instance, NativeArm64Compiler.Instance, IlJitCompiler.Instance];
 
     /// <summary>Active backends in the order blocks are offered to them.</summary>
     public static IBlockCompiler[] Chain
@@ -67,7 +67,9 @@ public static unsafe class Jit
             return true;
         }
         int idx = -1;
-        for (int i = 0; i < All.Count; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase)) idx = i;
+        // several backends may share a name (native = x64 or ARM64): take the first one this host supports
+        for (int i = 0; i < All.Count && idx < 0; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase) && All[i].IsSupported) idx = i;
+        if (idx < 0) for (int i = 0; i < All.Count && idx < 0; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase)) idx = i;
         if (idx < 0 || !All[idx].IsSupported) return false;
         Chain = All.Skip(idx).Where(b => b.IsSupported).ToArray();
         Mode = All[idx].Name;
