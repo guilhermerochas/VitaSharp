@@ -51,7 +51,8 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test-results
 
-  # Self-contained single-file builds for every platform, cross-published from one Linux runner.
+  # Self-contained single-file builds for every platform, cross-published and packaged from one Linux runner (the
+  # macOS .app is unsigned; the Windows installer and the macOS .dmg come from the per-OS AOT jobs below).
   publish:
     name: Publish (${{ matrix.rid }})
     needs: build-test
@@ -71,12 +72,24 @@ jobs:
         with:
           path: third_party/ffmpeg
           key: ffmpeg-publish-${{ matrix.rid }}-${{ hashFiles('build/FFmpeg.targets') }}
-      - name: Publish
-        run: OUT=artifacts/publish bash build/publish.sh ${{ matrix.rid }}
+      - name: Install appimagetool
+        if: startsWith(matrix.rid, 'linux-')
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - name: Publish and package
+        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-${{ matrix.rid }}
           path: artifacts/publish/${{ matrix.rid }}
+      # zip / tar.gz / AppImage / .app.zip made by build/publish.sh --package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-${{ matrix.rid }}-packages
+          path: artifacts/publish/packages
+          compression-level: 0 # already compressed
 
   # Native AOT builds. Native AOT cannot cross-compile between operating systems, so every platform is built on its
   # own runner: MSVC (preinstalled on windows-latest), clang + zlib on Linux, Xcode command-line tools on macOS.
@@ -109,14 +122,33 @@ jobs:
           key: ffmpeg-publish-${{ matrix.rid }}-${{ hashFiles('build/FFmpeg.targets') }}
       - name: Install Native AOT prerequisites (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-      - name: Publish
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      # Windows: AOT build, zip and Inno Setup installer (installed with Chocolatey when the runner image lacks it)
+      - name: Publish and package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup *\ISCC.exe")
+          if (-not $found) { choco install innosetup -y --no-progress }
+          ./build/publish.ps1 -Aot -Package -Rid ${{ matrix.rid }} -Out artifacts/publish -Version ci-${{ github.run_number }}
+      # Linux: tar.gz + AppImage; macOS: .app zip + dmg
+      - name: Publish and package
+        if: runner.os != 'Windows'
         shell: bash
-        run: OUT=artifacts/publish bash build/publish.sh --aot ${{ matrix.rid }}
+        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --aot --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-${{ matrix.rid }}
           path: artifacts/publish/${{ matrix.rid }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-aot-${{ matrix.rid }}-packages
+          path: artifacts/publish/packages
+          compression-level: 0
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-${{ matrix.rid }}-symbols
@@ -141,13 +173,22 @@ jobs:
           path: third_party/ffmpeg
           key: ffmpeg-publish-linux-arm64-${{ hashFiles('build/FFmpeg.targets') }}
       - name: Install Native AOT prerequisites
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-      - name: Publish
-        run: OUT=artifacts/publish bash build/publish.sh --aot linux-arm64
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - name: Publish and package
+        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --aot --package linux-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-linux-arm64
           path: artifacts/publish/linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-aot-linux-arm64-packages
+          path: artifacts/publish/packages
+          compression-level: 0
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-linux-arm64-symbols

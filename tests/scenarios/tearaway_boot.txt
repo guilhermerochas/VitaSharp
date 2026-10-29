@@ -6,7 +6,9 @@
 # o0 and were read as F16x4); the hand screen was covered by random noise (an OUTPUT_UNDEFINED stencil program wrote
 # its uninitialised registers as colour).
 # Regression: on the hand screen only one of the two panels showed per frame (command lists recorded back to back
-# shared one uniform ring slot). Open: frames still alternate "lit world + panels" / "dark world + check button".
+# shared one uniform ring slot). Regression: frames alternated "lit world + panels" / "dark world + check button"
+# (visibility tests recorded in command lists on deferred contexts never got a result: the buffer of the executing
+# immediate context must be used, the game hid the tested objects every other frame).
 # Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/tearaway_boot.txt --data=<scratch root>
 title=PCSF00476
 args=--frames=2400 --seconds=1200 --dump-every=25 --shader-cache --debug-mode --input=start@f750:f8,tap@f1600:0.665:0.72:f8,tap@f1900:0.28:0.45:f8
