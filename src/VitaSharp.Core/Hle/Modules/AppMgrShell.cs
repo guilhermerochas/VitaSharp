@@ -115,6 +115,89 @@ public sealed class AppMgrShell : HleModule
         return 0;
     }
 
+    const int ERR_NOT_SHELL = unchecked((int)0x8080201F);
+
+    /// <summary>(SceAppMgrAppMgrState *state): the kernel's 0x80-byte state block (FW 3.74 appmgr 0x81008CDC copies it
+    /// under its lock; only the shell may ask). libpaf reads +8 and treats a negative value as "not set".</summary>
+    [Hle]
+    [Hle("_sceAppMgrGetAppMgrState")]
+    int sceAppMgrGetAppMgrState(uint state)
+    {
+        if (state == 0) return ERR_NULL;
+        lock (Emu.Vita.AppMgrState) Emu.Vita.AppMgrState.CopyTo(GuestMemory.Span(state, 0x80));
+        return 0;
+    }
+
+    void SetAppMgrState(int offset, int value)
+    {
+        lock (Emu.Vita.AppMgrState) BitConverter.TryWriteBytes(Emu.Vita.AppMgrState.AsSpan(offset), value);
+    }
+
+    /// <summary>(int enable): the registry's chat-priority setting the shell passes on; kept in the state block (+0).</summary>
+    [Hle] int sceAppMgrEnablePrioritizingSystemChat(int enable) { SetAppMgrState(0, enable); return 0; }
+
+    /// <summary>(int state): kept in the state block (+0x14) for libpaf's next sceAppMgrGetAppMgrState.</summary>
+    [Hle] int sceAppMgrSetSystemImposeState2(int state) { SetAppMgrState(0x14, state); return 0; }
+
+    /// <summary>(int appId): the application id an id stands for. Ids >= 0 are themselves while that application
+    /// exists; the kernel's pseudo ids (appmgr 0x81002BD8): -2 the caller's own application, -4 the application in the
+    /// foreground (entry state 2). The shell's music player asks for -4 and -2. -1 when there is none; only the shell may
+    /// ask (0x8080201F).</summary>
+    [Hle]
+    int sceAppMgrGetAppIdByAppId(int appId)
+    {
+        if (!Emu.IsShell) return ERR_NOT_SHELL;
+        Emulator? p = appId switch
+        {
+            -2 => Emu,
+            -4 => Emu.Vita.Foreground,
+            >= 0 => Emu.Vita.ByAppId(appId),
+            _ => null,
+        };
+        return p?.AppId ?? -1;
+    }
+
+    /// <summary>(SceAppMgrBgmState *state, 0x20 bytes; FW 3.74 appmgr 0x81007844): +0 the application holding the BGM
+    /// port, +4/+8 its port settings, +0xC that application's process (both -1 when no application holds it).</summary>
+    [Hle]
+    [Hle("_sceAppMgrGetCurrentBgmState2")]
+    int sceAppMgrGetCurrentBgmState2(uint state)
+    {
+        if (state == 0) return ERR_NULL;
+        GuestMemory.Fill(state, 0, 0x20);
+        var owner = Emu.Vita.BgmPortOwner >= 0 ? Emu.Vita.ByAppId(Emu.Vita.BgmPortOwner) : null;
+        GuestMemory.W32(state, (uint)(owner?.AppId ?? -1));
+        GuestMemory.W32(state + 0xC, (uint)(owner?.Pid ?? -1));
+        return 0;
+    }
+
+    /// <summary>(int priority, ...): the shell's music player takes the BGM port; 0 = granted (nothing else plays BGM).</summary>
+    [Hle] int sceAppMgrAcquireBgmPortWithPriority(int priority) { Emu.Vita.BgmPortOwner = Emu.AppId; return 0; }
+
+    /// <summary>The shell restores its own BGM settings after an application gave the port back.</summary>
+    [Hle] int sceAppMgrRestoreBgmSettingForShell() => 0;
+
+    /// <summary>(int enable, int keepScreen): the shell's power-save (dimming) mode; the emulated unit has no panel to dim.</summary>
+    [Hle] int sceAppMgrSetPowerSaveMode(int enable, int keepScreen) => 0;
+
+    /// <summary>(const char *name): ends an application by title id; NULL ends the calling application. The first-boot
+    /// setup (initialsetup.self, NPXS10062) ends itself this way once the user finishes it: the shell then gets its
+    /// application-ended event and takes the screen back. Without it the setup process stayed in front, no longer
+    /// drawing, and the screen stayed black.</summary>
+    [Hle]
+    int sceAppMgrDestroyAppByName(uint name)
+    {
+        Emulator? p = Emu;
+        if (name != 0)
+        {
+            string tid = GuestMemory.ReadCString(name, 0x20);
+            p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        }
+        if (p == null) return ERR_NAME;
+        p.Terminate(p == Emu ? "ended itself (sceAppMgrDestroyAppByName)" : $"ended by {Emu.Describe()}");
+        return 0;
+    }
+
     /// <summary>(SceUID appId, char path[0x100]): where an application's app0: is mounted from ("ux0:app/TITLEID").</summary>
     [Hle]
     int sceAppMgrGetRawPathOfApp0ByAppIdForShell(int appId, uint path)
