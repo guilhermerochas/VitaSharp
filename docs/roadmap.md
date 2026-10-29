@@ -60,6 +60,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
 - [ ] Killzone: em algumas áreas do kzl_walk3 o jogo cai para 5–10 fps por 20–40 s; a thread principal fica em polling com `sceKernelDelayThread` (loop em 8100D692) esperando algo que ninguém produz (jobs e GPU ociosos); ver docs/notes/kz-mainthread.md
 - [ ] Skullgirls: elementos do HUD (contador de combo, barra de cima) aparecem como caixas brancas por 1 quadro durante as lutas
+- [ ] Tearaway: na tela "mãos pequenas ou grandes" o jogo desenha só um dos dois painéis por quadro, alternando (a própria lista de draws do jogo; suspeita de feedback de visibility query/tempo)
+- [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7`
 - [ ] WRC 4: com o save copiado, o jogo fica parado em "Please wait" (já acontecia antes das correções)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
