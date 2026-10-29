@@ -282,13 +282,20 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         }
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     void Invoke(HleFunction f, uint index)
     {
         if (!HleFunction.Track) { f.Invoke!(Hle); return; }
+        InvokeTracked(f, index);
+    }
+
+    void InvokeTracked(HleFunction f, uint index)
+    {
+        // no try/finally: a throwing HLE call (thread exit) leaves a stale name, which the next call replaces
         var outer = CurrentHle;
         CurrentHle = f;
-        try { if (HleFunction.Profile) InvokeTimed(f, index); else f.Invoke!(Hle); }
-        finally { CurrentHle = outer; }
+        if (HleFunction.Profile) InvokeTimed(f, index); else f.Invoke!(Hle);
+        CurrentHle = outer;
     }
 
     void DispatchHle(CpuState* s)
