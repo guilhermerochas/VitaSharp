@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Numerics;
 using static VitaSharp.Core.Cpu.Arm;
 
@@ -28,7 +29,7 @@ public sealed unsafe partial class ArmFrontend
     /// Debug bisection: VITASHARP_NATIVE_NOINLINE=all or a comma-separated list of ops (e.g. A32_LdmStm,T16_Pop)
     /// turns those instructions into interpreter callouts.
     /// </summary>
-    static readonly bool[]? NoInline = Environment.GetEnvironmentVariable("VITASHARP_NATIVE_NOINLINE") is { Length: > 0 } list
+    static readonly bool[]? NoInline = Environment.GetEnvironmentVariable(EnvVars.NativeNoinline) is { Length: > 0 } list
         ? list == "all" ? [] : Enumerable.Range(0, (int)Op.Count).Select(i => list.Split(',').Contains(((Op)i).ToString())).ToArray()
         : null;
 

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gxm;
 
@@ -77,7 +78,7 @@ public static class Formats
         _ => Unknown(b),
     };
 
-    static readonly bool Swizzle1Legacy = Environment.GetEnvironmentVariable("VITASHARP_SWZ1") != "B"; // RGBA-order reading opt-in until verified
+    static readonly bool Swizzle1Legacy = Environment.GetEnvironmentVariable(EnvVars.Swz1) != "B"; // RGBA-order reading opt-in until verified
 
     public static ComponentMapping TextureSwizzle(uint format)
     {

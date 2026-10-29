@@ -478,7 +478,7 @@ public sealed unsafe class VkCore : IDisposable
     /// pages + device buffers). An allocation beyond it fails as ErrorOutOfDeviceMemory without reaching the driver,
     /// which exercises the eviction path on any GPU. 0 = no cap.
     /// </summary>
-    public readonly ulong BudgetCap = ParseBudgetCap(Environment.GetEnvironmentVariable("VITASHARP_VRAM_BUDGET_MB"));
+    public readonly ulong BudgetCap = ParseBudgetCap(Environment.GetEnvironmentVariable(EnvVars.VramBudgetMb));
 
     static ulong ParseBudgetCap(string? s) => ulong.TryParse(s?.Trim(), out var mb) && mb > 0 ? mb << 20 : 0;
 

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 ﻿using System.Buffers.Binary;
 using System.Text;
 
@@ -259,7 +260,7 @@ public sealed class ProgramInput
 {
     public const uint TextureBuffer = 15, LiteralBuffer = 16, ThreadBuffer = 18, DefaultUniformBuffer = 14, MaxUbInFloat = 2048;
     /// <summary>Debug (VITASHARP_UB_UNBOUNDED=1): size every indexed uniform buffer as unbounded (read up to the next buffer).</summary>
-    static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable("VITASHARP_UB_UNBOUNDED") == "1";
+    static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable(EnvVars.UbUnbounded) == "1";
     public static bool UnboundedUbsActive => UnboundedUbs;
 
     public List<ProgramInputItem> Inputs { get; } = new();

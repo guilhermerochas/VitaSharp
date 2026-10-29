@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Text;
 
 namespace VitaSharp.Desktop;
@@ -31,7 +32,7 @@ static class TestScenario
         {
             if (Program.DataFromCommandLine) Console.WriteLine($"Scenario data={data} overridden by --data={Program.DataRoot}");
             else if (!Path.IsPathFullyQualified(data) || !Directory.Exists(data)) Console.WriteLine($"Scenario data={data} not found here, using {Program.DataRoot}");
-            else Environment.SetEnvironmentVariable("VITASHARP_DATA", data);
+            else Environment.SetEnvironmentVariable(EnvVars.Data, data);
         }
 
         string name = Path.GetFileNameWithoutExtension(file);

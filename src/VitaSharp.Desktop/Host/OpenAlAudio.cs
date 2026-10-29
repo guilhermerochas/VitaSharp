@@ -40,13 +40,71 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         _updateSamples = refresh > 0 ? Math.Max(1, _mixRate / refresh) : 1024;
     }
 
-    public static OpenAlAudio? TryCreate()
+    const int ALC_DEFAULT_ALL_DEVICES_SPECIFIER = 0x1012, ALC_ALL_DEVICES_SPECIFIER = 0x1013;
+
+    /// <summary>
+    /// Output device names (ALC_ENUMERATE_ALL_EXT) and the system default. Game controllers with a headset jack or a
+    /// speaker (DualShock 4, DualSense, Xbox) show up as audio outputs and Windows can make them the default.
+    /// </summary>
+    static List<string> ListDevices(ALContext alc, out string? defaultName)
+    {
+        var names = new List<string>();
+        defaultName = null;
+        var getString = (delegate* unmanaged[Cdecl]<Device*, int, byte*>)alc.Context.GetProcAddress("alcGetString");
+        if (getString == null) return names;
+        byte* p = getString(null, ALC_ALL_DEVICES_SPECIFIER);
+        while (p != null && *p != 0)
+        {
+            var s = System.Runtime.InteropServices.Marshal.PtrToStringUTF8((nint)p)!;
+            names.Add(s);
+            p += System.Text.Encoding.UTF8.GetByteCount(s) + 1;
+        }
+        byte* d = getString(null, ALC_DEFAULT_ALL_DEVICES_SPECIFIER);
+        if (d != null) defaultName = System.Runtime.InteropServices.Marshal.PtrToStringUTF8((nint)d);
+        return names;
+    }
+
+    static readonly string[] ControllerMarkers = ["controller", "dualsense", "dualshock", "wireless controller", "xbox"];
+
+    static bool IsController(string name) => ControllerMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The device to open: <paramref name="requested"/> (--audio-device / VITASHARP_AUDIO_DEVICE) when it names one,
+    /// else the system default unless it is a game controller, in which case the first speaker or headphone output.
+    /// "" = OpenAL's own default.
+    /// </summary>
+    static string PickDevice(ALContext alc, string? requested)
+    {
+        var names = ListDevices(alc, out var def);
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            var match = names.FirstOrDefault(n => n.Equals(requested, StringComparison.OrdinalIgnoreCase))
+                        ?? names.FirstOrDefault(n => n.Contains(requested, StringComparison.OrdinalIgnoreCase));
+            if (match != null) return match;
+            Log.Warn($"Audio: device '{requested}' not found (available: {string.Join(", ", names)}); using the default");
+        }
+        if (def != null && IsController(def))
+        {
+            var other = names.FirstOrDefault(n => !IsController(n));
+            if (other != null)
+            {
+                Log.Info($"Audio: the default output '{def}' is a game controller; using '{other}' instead");
+                return other;
+            }
+        }
+        Log.Info($"Audio: outputs: {string.Join(" | ", names)}; system default: {def ?? "?"}");
+        return def ?? "";
+    }
+
+    public static OpenAlAudio? TryCreate(string? requestedDevice = null)
     {
         try
         {
             var alc = ALContext.GetApi(true);
             var al = AL.GetApi(true);
-            var dev = alc.OpenDevice("");
+            string name = PickDevice(alc, requestedDevice ?? Environment.GetEnvironmentVariable(EnvVars.AudioDevice));
+            var dev = alc.OpenDevice(name);
+            if (dev == null && name.Length > 0) dev = alc.OpenDevice("");
             if (dev == null) { Log.Warn("OpenAL: no output device"); return null; }
             var ctx = alc.CreateContext(dev, null);
             alc.MakeContextCurrent(ctx);

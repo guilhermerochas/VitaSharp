@@ -41,13 +41,13 @@ public static class Runner
     static int RunCore(string appPath, string[] options)
     {
         // watchpoints are compiled out unless enabled before the CPU helpers are first used
-        if (options.Any(o => o.StartsWith("--watch"))) Environment.SetEnvironmentVariable("VITASHARP_WATCH", "1");
+        if (options.Any(o => o.StartsWith("--watch"))) Environment.SetEnvironmentVariable(EnvVars.Watch, "1");
         bool trace = options.Contains("--trace-hle");
         bool noJit = options.Contains("--no-jit");
         bool headless = options.Contains("--headless") || Opt(options, "--seconds") != null;
         if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
         // debug mode (launcher "Modo de depuração"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
-        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable("VITASHARP_DEBUG_MODE") is "1" or "on" or "true") DebugMode.Enable();
+        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true") DebugMode.Enable();
         // logs/last.log for this session, the previous sessions kept as logs/<time>_<title>.log
         if (Opt(options, "--log") is { } logPath) Log.OpenFile(logPath);
         else LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
@@ -86,7 +86,7 @@ public static class Runner
         if (headless) return RunHeadless(emu, appPath, options, rendererOptions, fatal);
 
         using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
-        using var audio = OpenAlAudio.TryCreate();
+        using var audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device"));
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
         emu.Host.Input = scripted ?? (IInputBackend)window;
@@ -251,7 +251,7 @@ public static class Runner
             VitaSharp.Core.Util.IoTiming.BytesPerSecond = ioMBps * 1e6; // 0 = instant reads
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
         if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
-        if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(); // real audio device, as in the window mode
+        if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device")); // real audio device, as in the window mode
         if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
         if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
         emu.BacktraceHle = Opt(options, "--bt");
@@ -437,7 +437,7 @@ public static class Runner
     }
 
     /// <summary>Maximum number of watch hits logged (env VITASHARP_WATCH_MAX, default 4000).</summary>
-    static readonly int WatchMax = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WATCH_MAX"), out var wm) ? wm : 4000;
+    static readonly int WatchMax = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.WatchMax), out var wm) ? wm : 4000;
 
     /// <summary>--watch=ADDR:LEN[:FROM:TO] logs every CPU store into the range (optionally only in a frame window).</summary>
     static unsafe void InstallWatch(string spec)
@@ -628,7 +628,7 @@ public static class Runner
                 Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame");
         }
         // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
-        if (Environment.GetEnvironmentVariable("VITASHARP_PEEK_END") is { } peekEnd)
+        if (Environment.GetEnvironmentVariable(EnvVars.PeekEnd) is { } peekEnd)
             foreach (var spec in peekEnd.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 var pp = spec.Split(':');

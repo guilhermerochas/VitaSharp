@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.CompilerServices;
 
 namespace VitaSharp.Core.Cpu;
@@ -78,7 +79,7 @@ public sealed unsafe class CpuCore : IDisposable
     /// Cortex-A9 runs at 444 MHz for games (sceKernelPowerSetArmClockFrequency may change it), and pacing to it is what
     /// makes time-budgeted game code (physics sub-stepping, frame timers) behave as on hardware.
     /// </summary>
-    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable("VITASHARP_CPU_MHZ"), out var mhz) ? mhz * 1_000_000 : 444_000_000;
+    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.CpuMhz), out var mhz) ? mhz * 1_000_000 : 444_000_000;
     long _throttleInstrs, _throttleStart = -1;
     /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
     public volatile bool InThrottle;

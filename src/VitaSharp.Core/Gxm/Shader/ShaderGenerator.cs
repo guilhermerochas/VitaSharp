@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Text;
 
 namespace VitaSharp.Core.Gxm.Shader;
@@ -96,7 +97,7 @@ public static class ShaderGenerator
     /// files) behave as if <see cref="GeneratorVersion"/> had been bumped N times and every GLSL had changed, without
     /// changing the generated code. Used to measure the first session after an emulator update.
     /// </summary>
-    public static readonly int VersionSalt = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_GENERATOR_VERSION_SALT"), out var s) && s is > 0 and < 1000 ? s : 0;
+    public static readonly int VersionSalt = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.GeneratorVersionSalt), out var s) && s is > 0 and < 1000 ? s : 0;
 
     /// <summary>The version persistent caches are keyed by (<see cref="GeneratorVersion"/> + <see cref="VersionSalt"/>).</summary>
     public static int CacheVersion => GeneratorVersion + VersionSalt;
@@ -771,20 +772,20 @@ float packC10(vec3 c) {
         return bits != 0 && program.OutputCompCount * 4 == bytes ? bits : 0;
     }
 
-    static readonly bool DebugTex0 = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") is "1" or "uv" or "alpha" or "lod";
-    static readonly bool DebugHash = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "hash";
-    static readonly string? DebugFs = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_FS");
-    static readonly bool DebugLod = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "lod";
-    static readonly bool DebugAlpha = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "alpha";
-    static readonly bool DebugUv = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "uv";
-    static readonly bool DebugId = Environment.GetEnvironmentVariable("VITASHARP_DEBUG_TEX0") == "id";
+    static readonly bool DebugTex0 = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) is "1" or "uv" or "alpha" or "lod";
+    static readonly bool DebugHash = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "hash";
+    static readonly string? DebugFs = Environment.GetEnvironmentVariable(EnvVars.DebugFs);
+    static readonly bool DebugLod = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "lod";
+    static readonly bool DebugAlpha = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "alpha";
+    static readonly bool DebugUv = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "uv";
+    static readonly bool DebugId = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "id";
 
     /// <summary>
     /// VITASHARP_DEBUG_NAN=draws (debug, chosen at launch): every generated fragment shader checks its colour output
     /// and records NaN/Inf fragments per draw id in a storage buffer (set 0, <see cref="NanDrawBinding"/>). The output
     /// itself is unchanged, but the GLSL differs, so it counts as a debug override (persistent caches bypassed).
     /// </summary>
-    public static readonly bool NanDraws = string.Equals(Environment.GetEnvironmentVariable("VITASHARP_DEBUG_NAN"), "draws", StringComparison.OrdinalIgnoreCase);
+    public static readonly bool NanDraws = string.Equals(Environment.GetEnvironmentVariable(EnvVars.DebugNan), "draws", StringComparison.OrdinalIgnoreCase);
     /// <summary>Set 0 binding of the NaN draw buffer, and its entries (4 uints per draw id: fragments, flags 1 = NaN
     /// 2 = Inf, 0xFFFFFFFF - first pixel (y &lt;&lt; 16 | x), unused); draw ids at or above the last slot share it.</summary>
     public const int NanDrawBinding = 4, NanDrawSlots = 4096;

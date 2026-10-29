@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Text;
 using UcArm = UnicornEngine.Const.Arm;
 using Decoder = VitaSharp.Core.Cpu.Decoder;
@@ -31,7 +32,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>VITASHARP_TEST_TRACE=file logs every block before it runs natively (finds the block that crashed the host).</summary>
-    static readonly StreamWriter? Trace = Environment.GetEnvironmentVariable("VITASHARP_TEST_TRACE") is { Length: > 0 } p ? new StreamWriter(p) : null;
+    static readonly StreamWriter? Trace = Environment.GetEnvironmentVariable(EnvVars.TestTrace) is { Length: > 0 } p ? new StreamWriter(p) : null;
 
     // ---- SIMD encodings Unicorn accepts (the interpreter's NEON handlers assume defined encodings)
     static readonly Dictionary<(uint, bool), bool> SimdOk = new();
@@ -666,7 +667,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     [Fact]
     public void HuntBlock()
     {
-        if (Environment.GetEnvironmentVariable("VITASHARP_HUNT") is not { Length: > 2 } spec) return;
+        if (Environment.GetEnvironmentVariable(EnvVars.Hunt) is not { Length: > 2 } spec) return;
         bool thumb = spec[0] == 'T';
         EnsureGuestPages();
         var bytes = new List<byte>();
@@ -678,7 +679,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
         }
         var s = CpuState.Allocate();
-        if (Environment.GetEnvironmentVariable("VITASHARP_HUNT_NATIVE") == "1")
+        if (Environment.GetEnvironmentVariable(EnvVars.HuntNative) == "1")
         {
             // native vs interpreter from many random states: print the first mismatch in full
             bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
@@ -794,7 +795,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
@@ -868,7 +869,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         X64Emitter.VerifyAllocation = true;
         int oldMax = X64Emitter.MaxTempRegisters;
         if (spillStress) X64Emitter.MaxTempRegisters = 2;
-        if (int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_FUZZ_ITER"), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int Count, string Example)>();

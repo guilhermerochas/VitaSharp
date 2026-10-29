@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
@@ -35,7 +36,7 @@ public static unsafe class DirtyPages
 
     /// <summary>VITASHARP_TEXDIRTY: "0" = off (consumers re-check everything, as before), "verify" = consumers re-check
     /// everything and report changes the tracker missed, anything else = on.</summary>
-    public static readonly string Mode = Environment.GetEnvironmentVariable("VITASHARP_TEXDIRTY") ?? "1";
+    public static readonly string Mode = Environment.GetEnvironmentVariable(EnvVars.Texdirty) ?? "1";
     /// <summary>Producers mark pages (static readonly: the JIT drops the marking entirely when off).</summary>
     public static readonly bool Enabled = Mode != "0";
     /// <summary>Consumers re-check everything and compare (debug).</summary>

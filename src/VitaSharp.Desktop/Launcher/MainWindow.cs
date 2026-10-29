@@ -1,3 +1,4 @@
+using VitaSharp.Core.Util;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia;
@@ -266,7 +267,7 @@ public sealed class MainWindow : Window
         psi.ArgumentList.Add("run");
         psi.ArgumentList.Add(g.Path);
         foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
-        psi.Environment["VITASHARP_DATA"] = Program.DataRoot;
+        psi.Environment[EnvVars.Data] = Program.DataRoot;
 
         _logLines.Clear(); _logChars = 0; _log.Text = "";
         AppendLog($"> {g.Title} ({g.TitleId})");

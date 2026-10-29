@@ -17,7 +17,7 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Targets up to this many pixels are written back (luminance / histogram / small effect buffers).</summary>
-    static readonly uint WritebackMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WRITEBACK_MAX"), out var wb) ? wb : 512 * 512;
+    static readonly uint WritebackMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable(EnvVars.WritebackMax), out var wb) ? wb : 512 * 512;
 
     enum WritebackConvert : byte { None, SwapRb, Half4ToU2F10F10F10, Rgba8ToRgb8 }
 
@@ -54,7 +54,7 @@ public sealed unsafe partial class VulkanRenderer
     /// post-processing atlas and reads it with the CPU for auto exposure; without it the game read zeros and its tone
     /// mapping washed every frame out to near white.
     /// </summary>
-    static readonly uint WritebackRegionMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable("VITASHARP_WRITEBACK_REGION_MAX"), out var wr) ? wr : 64 * 64;
+    static readonly uint WritebackRegionMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable(EnvVars.WritebackRegionMax), out var wr) ? wr : 64 * 64;
     const int MaxWritebackRegions = 16;
 
     /// <summary>Small pixel rectangles drawn in the current scene of a target too large to write back whole.</summary>

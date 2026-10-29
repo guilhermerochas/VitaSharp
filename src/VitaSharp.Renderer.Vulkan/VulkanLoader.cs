@@ -19,7 +19,7 @@ public static class VulkanLoader
 
     public static Vk Load()
     {
-        var forced = Environment.GetEnvironmentVariable("VITASHARP_VULKAN_LIB");
+        var forced = Environment.GetEnvironmentVariable(EnvVars.VulkanLib);
         if (!string.IsNullOrEmpty(forced))
         {
             LoadedFrom = forced;
