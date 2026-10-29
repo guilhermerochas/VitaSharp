@@ -1,4 +1,6 @@
-# Resistance: Burning Skies: boot, dismiss the save prompt, Single Player > New Game > Normal, intro movie, first in-game scene (fire truck, ~f4300)
+# Resistance: Burning Skies: boot, dismiss the save prompt, Single Player > New Game > Normal, intro movie, first in-game scene (fire truck, ~f4400)
+# Needs a data root WITHOUT a PCSA00008 save (with a save the menu shows Continue first: use rbs_continue.txt) but with
+# the game's ux0:license folder (without it the game runs as a demo, "Play Demo / Options"). Run against a scratch root:
+# VitaSharp.Desktop test tests/scenarios/rbs_boot.txt --data=<scratch root>
 title=PCSA00008
-data=C:\Users\guisa\AppData\Roaming\VitaSharp
 args=--frames=4500 --seconds=400 --dump-every=50 --input=tap@f900:0.5:0.66:f10,cross@f1300:f10,tap@f1600:0.28:0.33:f10,tap@f1900:0.28:0.41:f10,cross@f2300:f10,cross@f2700:f10,cross@f3100:f10,cross@f3500:f10
