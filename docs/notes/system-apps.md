@@ -123,11 +123,12 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   `sceAppMgrGetCurrentBgmState2`, `sceAppMgrGetAppIdByAppId` (pseudo ids -2 self, -4 foreground),
   `sceAppMgrDestroyAppByName`, `vshKernelCheckModelCapability` (capabilities 2, 7, 10), `vshIdStorageLookup`,
   `sceErrorGetExternalString` (os0:kd/error_table.bin), `sceRegMgrSrvGetRegionStr` ("UC2").
-- The IME plugin's job threads (SceImeSetupJobQueue, SceImePredictionJobQueue) sometimes crash (jump to 0, or a BKPT
-  after unlocking a lightweight mutex it does not own) inside libpaf's resource loader: both load from
-  vs0:vsh/shell/ime_plugin.rco through the same paf Resource and each reopens the RCO; the file object one thread
-  holds is freed under the other (shared_ptr refcount reaching 0 in ScePaf+0x6D3B4). It is intermittent (2 of 4 user
-  sessions, 1 of ~10 test runs), only the IME (on-screen keyboard) is lost, and the shell keeps running.
+- (Fixed) The IME plugin's job threads (SceImeSetupJobQueue, SceImePredictionJobQueue) crashed inside libpaf's resource
+  loader (ScePaf+0x6CCF4 calling through a freed file object, or executing paf's 0xAF free fill): both reopen
+  ime_plugin.rco through the same paf Resource and swap its file shared_ptr without a lock. On the Vita the shell runs
+  on the 4th core, the one the system keeps, so its threads never run in parallel; VitaSharp ran them on the three
+  application cores. `Scheduler` now gives the shell process its own single core (3 of 4 traced runs crashed before,
+  0 of 4 after; `--cores=1` showed the same).
 - (Fixed) Shell text cut at the top and overlapping lines: libpaf sizes its line textures from scePvfGetFontInfo
   (ScePaf+0x19B64C) after `scePvfSetEM(lib, 1 / textSize)`. The real libpvf's GetFontInfo ignores the character size and
   scales the face's design metrics by 64 / (unitsPerEm x EM); the HLE used the current character size instead (the

@@ -39,6 +39,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public int Affinity { get; set; }
     /// <summary>The thread currently holds one of the emulated CPU cores (see <see cref="Scheduler"/>).</summary>
     public bool HasCore;
+    /// <summary>The thread runs on the system software's core, not the application cores (see <see cref="Scheduler"/>).</summary>
+    public bool OnSystemCore { get; }
     /// <summary>Blocked inside host-side HLE work (audio device, GPU queue, display queue): not waiting for a core.</summary>
     public volatile bool BlockedInHost;
     public uint StackAddr { get; }
@@ -82,6 +84,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         InitPriority = Priority = priority;
         Attr = attr;
         Affinity = affinity;
+        OnSystemCore = emu.RunsOnSystemCore;
         Core = new CpuCore(emu.Code);
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 

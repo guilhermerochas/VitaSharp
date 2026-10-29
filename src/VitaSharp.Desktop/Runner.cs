@@ -292,7 +292,11 @@ public static class Runner
         }
         // turbo: no vblank/audio pacing, guest time jumps one frame per frame (automated tests)
         VitaSharp.Core.Util.GuestClock.Turbo = options.Contains("--turbo");
-        if (int.TryParse(Opt(options, "--cores"), out var cores)) VitaSharp.Core.Kernel.Scheduler.Cores = cores; // 0 = unlimited (old behaviour)
+        if (int.TryParse(Opt(options, "--cores"), out var cores)) // 0 = unlimited (old behaviour), also for the shell's core
+        {
+            VitaSharp.Core.Kernel.Scheduler.Cores = cores;
+            if (cores <= 0) VitaSharp.Core.Kernel.Scheduler.SystemCores = 0;
+        }
         if (long.TryParse(Opt(options, "--cpu-mips"), out var mips)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = mips * 1_000_000;
         if (long.TryParse(Opt(options, "--cpu-mhz"), out var cpuMhz)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = cpuMhz * 1_000_000; // 0 = unpaced
         if (long.TryParse(Opt(options, "--jit-threshold"), out var jitT)) VitaSharp.Core.Cpu.Jit.HotInstructions = jitT; // executed instructions before a block is compiled
