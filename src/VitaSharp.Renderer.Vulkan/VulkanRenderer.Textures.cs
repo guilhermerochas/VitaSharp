@@ -199,6 +199,18 @@ public sealed unsafe partial class VulkanRenderer
     long _fbCopiesPixels;
     readonly HashSet<uint> _ssFetchLogged = new();
 
+    /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (a copy of it, binding 4)</param>
+    DescriptorSet BuildFramebufferFetchSet(bool tileWord1)
+    {
+        var set = BuildFramebufferFetchSet();
+        if (tileWord1 && _tw1 != null && _rt != null && !_ms) // (never the persistent empty set: there is a target)
+        {
+            EndRendering(resolve: false);
+            WriteTileWord1Copy(set, CopyTileWord1());
+        }
+        return set;
+    }
+
     DescriptorSet BuildFramebufferFetchSet()
     {
         if (_rt == null) return _emptyFbSet ??= BuildEmptyFbSet();

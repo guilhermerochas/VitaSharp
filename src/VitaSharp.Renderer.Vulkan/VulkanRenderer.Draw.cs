@@ -42,12 +42,16 @@ public sealed unsafe partial class VulkanRenderer
         _texLayoutV = TextureSetLayout(ShaderStageFlags.VertexBit, _texUnitsV);
         _texLayoutF = TextureSetLayout(ShaderStageFlags.FragmentBit, _texUnitsF);
         // binding 0: single-sampled framebuffer copy, binding 1: multisampled copy (real MSAA scenes), binding 2: the
-        // multisampled colour attachment as input attachment (real MSAA scenes rendered in render passes)
-        var fb = stackalloc DescriptorSetLayoutBinding[3];
+        // multisampled colour attachment as input attachment (real MSAA scenes rendered in render passes); 3/4: the
+        // scene's tile-word attachment as input attachment / a copy of it (VulkanRenderer.TileWord1.cs; written only
+        // by the sets of draws whose shaders read it: descriptors no pipeline uses need not be valid)
+        var fb = stackalloc DescriptorSetLayoutBinding[5];
         fb[0] = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
         fb[1] = new DescriptorSetLayoutBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
         fb[2] = new DescriptorSetLayoutBinding(2, DescriptorType.InputAttachment, 1, ShaderStageFlags.FragmentBit);
-        var fbci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 3, PBindings = fb };
+        fb[3] = new DescriptorSetLayoutBinding(3, DescriptorType.InputAttachment, 1, ShaderStageFlags.FragmentBit);
+        fb[4] = new DescriptorSetLayoutBinding(4, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
+        var fbci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 5, PBindings = fb };
         _vk.CreateDescriptorSetLayout(_dev, in fbci, null, out _fbLayout).Ok("set layout");
 
         var layouts = stackalloc DescriptorSetLayout[4] { _uboLayout, _texLayoutV, _texLayoutF, _fbLayout };
@@ -96,7 +100,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 5 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
-                sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 8192);
+                sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 16384); // two per framebuffer-fetch set
                 var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 3, PPoolSizes = sizes };
                 _vk.CreateDescriptorPool(_dev, in pci, null, out var pool).Ok("descriptor pool");
                 f.DescPools.Add(pool);
@@ -142,7 +146,7 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0)
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
@@ -150,7 +154,8 @@ public sealed unsafe partial class VulkanRenderer
             foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, a.Format); }
         h = ShaderHints.Fnv.Mix(h, colorFormat);
         if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
-        return fetchInput ? ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey) : h;
+        if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
+        return tileWord1 ? ShaderHints.Fnv.Mix(h, ShaderHints.TileWord1Key) : h;
     }
 
     static uint[] TextureFormats(GxmTextureDesc[] tex, uint used)
@@ -246,6 +251,15 @@ public sealed unsafe partial class VulkanRenderer
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
             OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
 
+    // variants that keep the second output register word in the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)
+    static ShaderHints FragmentHintsTileWord1(DrawCommand d, uint colorFormat) =>
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat,
+            OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram), TileWord1: true);
+
+    static ShaderHints FragmentHintsInputFetchTileWord1(DrawCommand d, uint colorFormat) =>
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
+            OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram), TileWord1: true);
+
     /// <summary>The <see cref="ShaderHints.OutputRegisterFormat"/> of a fragment program (part of its hint key).</summary>
     static uint NativeOutputFormat(GxmFragmentProgram fp) => ShaderHints.NativeOutputFormat(fp.Info.Program, fp.OutputFormat);
 
@@ -296,13 +310,20 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <param name="fetchInput">the variant whose programmable blending reads the input attachment</param>
-    FsEntry GetFragmentShader(DrawCommand d, bool fetchInput = false)
+    /// <param name="tileWord1">the variant that keeps the second output register word in the tile-word attachment</param>
+    FsEntry GetFragmentShader(DrawCommand d, bool fetchInput = false, bool tileWord1 = false)
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp));
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
-        var me = GetModule(fp.Info.Program, hk, fetchInput ? FragmentHintsInputFetch : FragmentHints, d, colorFormat);
+        var me = GetModule(fp.Info.Program, hk, (fetchInput, tileWord1) switch
+        {
+            (true, true) => FragmentHintsInputFetchTileWord1,
+            (false, true) => FragmentHintsTileWord1,
+            (true, false) => FragmentHintsInputFetch,
+            _ => FragmentHints,
+        }, d, colorFormat);
         e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
         _fsCache[(fp, hk)] = e;
         _fNewShaders++;
@@ -382,9 +403,11 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== pipelines
 
+    /// <param name="TileWord1">0: no auxiliary attachment; 1: the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)
+    /// is attached at location 1 and left unwritten; 2: attached and written</param>
     readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0, byte TileWord1 = 0);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -503,7 +526,8 @@ public sealed unsafe partial class VulkanRenderer
             ApplyStaticState(key.Static, ref ia, ref rs, ref ds);
             if (key.Static != 0) Interlocked.Increment(ref _statPipelinesStatic);
             if (StaticBias) rs.DepthBiasEnable = true;
-            var att = new PipelineColorBlendAttachmentState
+            var att = stackalloc PipelineColorBlendAttachmentState[2];
+            att[0] = new PipelineColorBlendAttachmentState
             {
                 BlendEnable = key.Blend,
                 SrcColorBlendFactor = Formats.Factor(key.ColorSrc),
@@ -514,7 +538,11 @@ public sealed unsafe partial class VulkanRenderer
                 AlphaBlendOp = Formats.Op(key.AlphaFunc),
                 ColorWriteMask = Formats.Mask(key.Mask),
             };
-            var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = key.HasColor ? 1u : 0u, PAttachments = &att,
+            // the tile-word attachment (location 1): written only by programs that write the word, never blended
+            bool tileWord = key.HasColor && key.TileWord1 != 0;
+            att[1] = new PipelineColorBlendAttachmentState { ColorWriteMask = key.TileWord1 == 2 ? ColorComponentFlags.RBit : 0 };
+            uint colorCount = key.HasColor ? tileWord ? 2u : 1u : 0u;
+            var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = colorCount, PAttachments = att,
                 // multisampled render passes declare rasterization-order colour access when the device has it
                 Flags = key.Samples != SampleCountFlags.Count1Bit && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0 };
             // viewport, scissor, line width, depth bias, stencil masks/reference and (unless a driver quirk bakes them
@@ -523,11 +551,12 @@ public sealed unsafe partial class VulkanRenderer
             int dynCount = DrawDynamicStates(dyn, key.Static != 0);
             var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = (uint)dynCount, PDynamicStates = dyn };
             var colorFormat = key.ColorFormat;
+            var colorFormats = stackalloc Format[2] { colorFormat, TileWord1Format };
             var rendering = new PipelineRenderingCreateInfo
             {
                 SType = StructureType.PipelineRenderingCreateInfo,
-                ColorAttachmentCount = key.HasColor ? 1u : 0u,
-                PColorAttachmentFormats = &colorFormat,
+                ColorAttachmentCount = colorCount,
+                PColorAttachmentFormats = colorFormats,
                 DepthAttachmentFormat = _core.DepthFormat,
                 StencilAttachmentFormat = _core.DepthFormat,
             };
@@ -537,7 +566,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
                 PNext = msPass ? null : &rendering,
-                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples) : default,
+                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples, tileWord) : default,
                 Subpass = 0,
                 StageCount = 2,
                 PStages = stages,
@@ -627,13 +656,17 @@ public sealed unsafe partial class VulkanRenderer
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
         // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
-        bool inputFetch = fs.Gen!.UsesFragColor && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
-        if (inputFetch)
+        // the second output register word a one-word native colour leaves in the tile: the first program of the scene
+        // that writes it attaches the tile-word attachment; from then on the programs that use it read/write it there
+        if (fs.Gen!.TileWord1 != 0 && !_tw1Active && (fs.Gen.TileWord1 & TileWord1Use.Writes) != 0 && fs.Gen.RawColorBits == 0) ActivateTileWord1();
+        bool tw1 = _tw1Active && fs.Gen!.TileWord1 != 0 && fs.Gen.RawColorBits == 0;
+        bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
+        if (inputFetch || tw1)
         {
-            fs = GetFragmentShader(d, fetchInput: true);
+            fs = GetFragmentShader(d, fetchInput: inputFetch, tileWord1: tw1);
             if (fs.Failed) return;
         }
-        var fbSet = inputFetch ? BuildMsaaInputFetchSet() : fs.Gen!.UsesFragColor ? BuildFramebufferFetchSet() : _emptyFbSet ??= BuildEmptyFbSet();
+        var fbSet = inputFetch ? BuildMsaaInputFetchSet(tw1) : fs.Gen!.UsesFragColor || tw1 ? BuildFramebufferFetchSet(tw1) : _emptyFbSet ??= BuildEmptyFbSet();
 
         // ---- pipeline
         var topology = Formats.Topology(d.PrimitiveType);
@@ -672,9 +705,10 @@ public sealed unsafe partial class VulkanRenderer
             if (_rawLogged.Add((_rt.Address, attachFormat)))
                 Log.Info($"[gpu] render target 0x{_rt.Address:X8} {_rt.Width}x{_rt.Height} fmt 0x{_rt.ColorFormat:X8}: raw {fs.Gen.RawColorBits}-bit fragment outputs written through a {attachFormat} view");
         }
+        byte tw1Key = !_tw1Active ? (byte)0 : tw1 && mask != 0 && (fs.Gen!.TileWord1 & TileWord1Use.Writes) != 0 ? (byte)2 : (byte)1;
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology));
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (pipeline.Handle == 0) return;
 

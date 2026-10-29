@@ -213,7 +213,7 @@ public sealed unsafe partial class VulkanRenderer
         var view = dt.View;
         foreach (var m in _msImages.Values)
         {
-            List<(ulong, ulong, ulong)>? dead = null;
+            List<(ulong, ulong, ulong, ulong)>? dead = null;
             foreach (var (k, _) in m.Framebuffers) if (k.Item2 == view.Handle) (dead ??= new()).Add(k);
             if (dead == null) continue;
             foreach (var k in dead)
@@ -478,6 +478,7 @@ public sealed unsafe partial class VulkanRenderer
                 _scene = null;
                 _rt = null;
                 _ss = _ms = _msaaNoDownscale = false;
+                EndTileWord1();
                 break;
             default: _oomOther++; what = $"{command.GetType().Name} skipped"; break;
         }

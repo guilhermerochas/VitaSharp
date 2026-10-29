@@ -67,7 +67,7 @@ public sealed unsafe partial class VulkanRenderer
     string GpuTimeReport()
     {
         if (!_timeOk || _presentCount == 0) return $"PERF gpu: no timestamps; {LoadStoreReport()}";
-        return $"PERF gpu: {_gpuNs / 1e6 / _presentCount:F3} ms GPU time per presented frame ({_gpuSubmits} submits, {_gpuNs / 1e6 / Math.Max(1, _gpuSubmits):F3} ms each), MSAA {MsaaReport()}; {LoadStoreReport()}";
+        return $"PERF gpu: {_gpuNs / 1e6 / _presentCount:F3} ms GPU time per presented frame ({_gpuSubmits} submits, {_gpuNs / 1e6 / Math.Max(1, _gpuSubmits):F3} ms each), MSAA {MsaaReport()}; {LoadStoreReport()}" + (_statTw1Scenes > 0 ? $"; {TileWord1Report()}" : "");
     }
 
     void DestroyGpuTime()
