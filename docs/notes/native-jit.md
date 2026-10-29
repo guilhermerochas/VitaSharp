@@ -1,4 +1,4 @@
-# feat/native-jit — native x86-64 CPU backend
+# Native CPU backends (x86-64 and ARM64)
 
 Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 
@@ -14,7 +14,7 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | 2c. LDREX/STREX (word) inline | done, commit 56e752a |
 | 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
 | 2e. NEON broad inline, LDREXD/STREXD, VCVTB/VCVTT (branch perf/neon-jit) | done, commits c36e70c, f587c79, a3740e2 (+ docs) |
-| ARM64 emitter | not started (design below) |
+| ARM64 backend (branch feat/arm64-jit): emitter, runtime, W^X + icache on ARM64 hosts, Unicorn/qemu tests | done, see "feat/arm64-jit" below |
 
 ## perf/neon-jit (2026-10-22)
 

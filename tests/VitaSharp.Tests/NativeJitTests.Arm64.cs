@@ -122,6 +122,7 @@ public sealed unsafe partial class NativeJitTests
                     prev = interp;
                 }
                 if (!stable) { unstable++; continue; }
+                if (Trace != null) { Trace.WriteLine($"  arm64 regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))} flags {st.Flags:X8}"); Trace.Flush(); }
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs);
                 Assert.NotNull(cb);
                 Restore();
@@ -154,6 +155,37 @@ public sealed unsafe partial class NativeJitTests
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
+    /// Debug aid: regenerates block <paramref name="index"/> of <see cref="Arm64Differential"/>'s sequence for
+    /// <paramref name="seed"/> (same generator calls, nothing executed before it) and runs it once natively.
+    /// </summary>
+    internal void Arm64Replay(bool thumb, int seed, int index)
+    {
+        EnsureGuestPages();
+        using var sb = Arm64Runner.Create();
+        var rng = new Random(seed);
+        var s = CpuState.Allocate();
+        try
+        {
+            for (int it = 0; it <= index; it++)
+            {
+                var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
+                if (b == null) continue;
+                var st = new RandomState(rng);
+                if (it < index) continue;
+                var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                output.WriteLine($"replay {b}\n{DescribeArm64(b, cb)}");
+                st.Apply(s, thumb);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                st.Apply(s, thumb);
+                Console.Error.WriteLine($"native entry {cb.NativeEntry:X}"); Console.Error.Flush();
+                var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                output.WriteLine($"diff: {Diff(interp, native)}");
+            }
+        }
+        finally { CpuState.Free(s); }
     }
 
     /// <summary>VFP blocks with special operands, Vita FPSCR mode mostly (fast paths) and other modes (handler).</summary>
