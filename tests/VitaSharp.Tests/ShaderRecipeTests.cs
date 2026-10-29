@@ -30,7 +30,8 @@ public class ShaderRecipeTests : IDisposable
     [Fact]
     public void ShaderRecipeRoundTrips()
     {
-        foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true) })
+        foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true), FragmentHints() with { OutputRegisterFormat = 1 },
+                     FragmentHints(fetch: true) with { OutputRegisterFormat = 5 } })
         {
             var r = new ShaderRecipe(0x1122334455667788, h.Key(), h.Attributes.Length > 0, h);
             var back = ShaderRecipe.Decode(r.Encode());
@@ -42,8 +43,21 @@ public class ShaderRecipeTests : IDisposable
             Assert.Equal(h.Attributes, back.Hints.Attributes);
             Assert.Equal(h.ColorFormat, back.Hints.ColorFormat);
             Assert.Equal(h.FetchInputAttachment, back.Hints.FetchInputAttachment);
+            Assert.Equal(h.OutputRegisterFormat, back.Hints.OutputRegisterFormat);
             Assert.Equal(h.Key(), back.Hints.Key());
         }
+    }
+
+    [Fact]
+    public void RecipesWithoutOutputFormatKeepTheirLayout()
+    {
+        var h = FragmentHints();
+        var plain = new ShaderRecipe(1, h.Key(), false, h).Encode();
+        Assert.Equal(2, plain[0]); // the tag and size older builds read
+        var withFormat = new ShaderRecipe(1, (h with { OutputRegisterFormat = 1 }).Key(), false, h with { OutputRegisterFormat = 1 }).Encode();
+        Assert.Equal(3, withFormat[0]);
+        Assert.Equal(plain.Length + 4, withFormat.Length);
+        Assert.Null(ShaderRecipe.Decode(withFormat.AsSpan(0, withFormat.Length - 1)));
     }
 
     [Fact]
