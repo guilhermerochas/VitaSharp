@@ -23,6 +23,9 @@ public static class EnvVars
     public const string DyldRelaunched = "VITASHARP_DYLD_RELAUNCHED";
     public const string FetchSplit = "VITASHARP_FETCH_SPLIT";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
+    /// <summary>Tests: an installed firmware to run firmware modules from (a Vita3K data folder with vs0/, or a vs0
+    /// folder itself). Unset: %APPDATA%\Vita3K\Vita3K when it exists, else the PSVUPDAT.PUP of FirmwarePup.</summary>
+    public const string FirmwareDir = "VITASHARP_FIRMWARE_DIR";
     public const string Ffmpeg = "VITASHARP_FFMPEG";
     public const string FuzzIter = "VITASHARP_FUZZ_ITER";
     public const string GeneratorVersionSalt = "VITASHARP_GENERATOR_VERSION_SALT";

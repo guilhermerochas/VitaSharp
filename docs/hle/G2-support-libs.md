@@ -15,7 +15,7 @@ protótipo não existe no vita-headers ele está marcado **(inferido)**; valores
 | Biblioteca | Funções | NID da biblioteca | Módulo (db/360) | Abordagem recomendada | Seção |
 | --- | ---: | --- | --- | --- | --- |
 | SceUlt | 62 | 0x220668A5 | SceUlt (`libult.suprx`) | LLE (fallback HLE descrito) | [2](#2-sceult) |
-| SceLibJson | 179 | 0x0854B69C | SceLibJson (`libSceJson.suprx`) | LLE | [3.1](#31-scelibjson-179-funções) |
+| SceLibJson | 179 | 0x0854B69C | SceLibJson (`libSceJson.suprx`) | LLE com firmware, HLE sem (feito) | [3.1](#31-scelibjson-179-funções) |
 | SceLibXml | 186 | 0xC2B22E99 | SceLibXml (`libSceXml.suprx`) | LLE | [3.2](#32-scelibxml-186-funções) |
 | SceSqlite | 171 | 0x67F02E1D | SceSqlite (`libSceSqlite.suprx`) | LLE | [3.3](#33-scesqlite-171-funções) |
 | SceRegMgrForGame | 7 | 0x0B351269 | SceRegistryMgr | HLE | [4.1](#41-sceregmgrforgame) |
@@ -134,8 +134,8 @@ O que muda:
    chaves de sistema) ou ELF já decriptado (`VitaSharp.Desktop self2elf in out`). **Implementado (feat/firmware):**
    o VitaSharp instala o PUP oficial (`install-firmware PSVUPDAT.PUP`, ou no launcher Configurações > Geral >
    Firmware; `src/VitaSharp.Core/Firmware/`) ou copia o firmware instalado do Vita3K (ver README, "Firmware").
-4. **Opção de configuração** (implementada): o firmware é usado sempre para as bibliotecas sem HLE (Json, Xml,
-   Sqlite, face, smart). As que têm HLE (`libfiber`, `libult`, `libsas`, `libatrac`) continuam vindo de
+4. **Opção de configuração** (implementada): o firmware é usado sempre para as bibliotecas sem HLE (Xml, Sqlite,
+   face, smart) e, quando presente, também para Json (que sem firmware cai no HLE da seção 3.1). As que têm HLE (`libfiber`, `libult`, `libsas`, `libatrac`) continuam vindo de
    `app0:sce_module` quando o jogo as traz, mas a cópia do `vs0` só entra com `EmulatorOptions.LleModules`
    (`--lle-modules=`, `VITASHARP_LLE_MODULES`). `EmulatorOptions.HleModules` (`--hle-modules=`,
    `VITASHARP_HLE_MODULES`, launcher "Manter em HLE") força HLE para qualquer uma, mesmo vinda do `app0`.
@@ -150,8 +150,9 @@ firmware podem importar funções do kernel ainda não implementadas.
   fixo (`sce::Json::Value` tem tipo + união + ponteiro para Array/Object), iteradores passados por valor
   (`Array::iterator::operator!=(iterator)`), `MemAllocator` com vtable que o jogo **herda** (a lib chama
   `allocate/deallocate/notifyError` virtuais no código do jogo), construtores C1/C2 e destrutores D0/D1/D2. Seria
-  preciso reproduzir layouts não documentados e chamar código guest a partir do HLE para cada alocação. Muito caro e
-  frágil.
+  preciso reproduzir layouts não documentados e chamar código guest a partir do HLE para cada alocação.
+  **Json foi feito assim mesmo** (seção 3.1), como fallback para quem não tem firmware: o módulo é pequeno (25 KB de
+  código) e foi transcrito e conferido contra o próprio `libSceJson.suprx`. Xml continua só LLE.
 - **Sqlite**: reimplementar o motor SQL é inviável; usar um SQLite do host exigiria traduzir `sqlite3*`,
   `sqlite3_stmt*`, callbacks (`exec`, `create_function`, `busy_handler`, collation), alocador customizado
   (`sceSqliteConfigMallocMethods`) e VFS sobre `sceIo` — mais trabalho que o LLE e menos fiel.
@@ -316,6 +317,55 @@ Itens com interesse especial se algum dia for preciso HLE parcial ou depurar:
 
 ### 3.1 SceLibJson (179 funções)
 
+- [x] **Status:** HLE feito (`Hle/Modules/Json.cs` = os 179 NIDs, `Json.Core.cs` = a biblioteca). Com o firmware
+  instalado o `libSceJson.suprx` continua sendo o padrão (LLE); sem ele, `sceSysmoduleLoadModule(0x55)` loga
+  `libSceJson.suprx not installed (no firmware) -> HLE` e os imports ficam no HLE. `--hle-modules=json` (ou
+  `libSceJson`, `VITASHARP_HLE_MODULES`, launcher *Manter em HLE*) força o HLE mesmo com firmware.
+- **Como foi feito:** transcrição instrução a instrução do `libSceJson.suprx` do FW 3.60 (0x6230 bytes de código,
+  desmontado com Capstone a partir do `self2elf`; o Vita3K não tem HLE dessa biblioteca, só carrega o módulo). Mesmos
+  layouts, mesma sequência de chamadas ao alocador do jogo (inclusive os blocos temporários de iteradores e as cópias
+  que `String::compare(const char*)`, `Object::insert` e `operator[]` fazem), mesmos códigos de erro.
+- **Layouts (32 bits):**
+  - `Value`, 0x18 bytes: +0 `Value*` pai (gravado pelo parser e pelo serializer), +4 `RootInfo*` (bloco 0xC:
+    callback de acesso nulo, userData, `Value*` nulo próprio da raiz), +8 payload (byte bool, int64, uint64, double, ou
+    `String*`/`Array*`/`Object*` alocados com 4 bytes), +0x14 `ValueType` (0 null, 1 boolean, 2 integer,
+    3 uinteger, 4 real, 5 string, 6 array, 7 object). `Value()` não inicializa +8..+0x13.
+  - `String`, 4 bytes: `rep*` (bloco 0xC: +0 `char*`, +4 tamanho). Vazia aponta para um literal de 1 byte nos dados
+    do módulo; todo `append`/`+=` realoca para o tamanho exato. Destrutores gravam -1 no rep antes de liberar.
+  - `Array`, 4 bytes: `impl*` (0xC: +0 sentinela, +4 contagem); lista duplamente ligada de nós de 0x20 (+0 prev,
+    +4 next, +8 `Value`).
+  - `Object`, 4 bytes: `impl*` (0xC: +0 nó cabeça, +4 contagem); árvore rubro-negra (map de Dinkumware, vermelho = 1),
+    nós de 0x48: +0 pai, +4 esq, +8 dir, +0x10 cópia inline do rep da chave, +0x20 `Pair` {`String` chave, 4 bytes
+    de padding, `Value`}, +0x40 cor, +0x41 is-nil. Ordem das chaves = `strcmp` (bytes sem sinal).
+  - Iteradores de Array e Object, 4 bytes: ponteiro para uma célula de 4 bytes no heap com o ponteiro do nó (cada
+    `begin()`/`end()`/`find()` aloca uma célula). `Array::begin/end/size/empty` e os de `Object` são o mesmo código.
+  - `Initializer`, 1 byte (inicializado). `InitParameter`: +0 `MemAllocator*`, +4 userData, +8 tamanho do buffer de
+    leitura de `Parser::parse(Value&, const char* path)`. `MemAllocator`: vtable {D1, D0, `allocate(size, user)`,
+    `deallocate(ptr, user)` (puras: abort), `notifyError(code, size, user)`}; a lib chama os slots 2/3/4 do objeto do
+    jogo.
+  - Dados do módulo (0x49 bytes): `String*`/`Array*`/`Object*` vazios compartilhados (o que `getString()` etc.
+    devolvem em tipo errado), contador de parses, flag de abort, lwmutex `SceJson_internal`, bloco do alocador,
+    `Value` nulo, zeros de int/uint/double/bool para os getters.
+- **Erros:** 0x80920101 PARSE_INVALID_CHAR (também o "fim" dos leitores de buffer/arquivo), 0x80920102 NOMEM,
+  0x80920103 NOFILE (sceIoOpen ENOENT), 0x80920104 NOROOT (`setNullAccessCallback` fora de raiz), 0x80920105 NOBUF
+  (parse de arquivo com bufSize 0), 0x80920110 NOINIT, 0x80920111 MULTIPLEINIT (nomes seguem o SDK do PS4).
+- **Comportamentos que diferem do que a tabela abaixo sugere:** os getters (`getInteger` etc.) devolvem
+  referência; `setAllocatorInfoCallBack` não guarda nada; `count()` só conta array/objeto; números do parser:
+  inteiros positivos viram **UInteger**, negativos Integer, -2^63 e qualquer estouro/fração/expoente vão pelo `strtod`
+  próprio do módulo (Real); `toString` de Real usa `%f` e corta a fração só quando é toda zero ("3.000000" → "3",
+  "3.500000" fica); parse/serialize definem o pai dos filhos e criam o RootInfo da raiz, e isso **zera** o callback
+  de acesso nulo; uma falha de alocação durante parse ou `push_back`/`operator[]` aborta com NOMEM.
+- **Validação:** `JsonHleTests` roda 14 cenários, que juntos chamam as 179 funções (init/terminate, parse+serialize de um documento com escapes,
+  surrogates e todos os tipos de número, 36 entradas inválidas, leitor por callback, arquivo com buffer de 16 bytes,
+  API de Value/String/Array, árvore com 48 chaves inseridas e 40 apagadas, callback de serialize, acesso nulo, falhas
+  de alocação injetadas, variantes C2/D2) duas vezes no mesmo emulador, contra os exports do `libSceJson.suprx` e contra o HLE, com o
+  mesmo alocador bump: as chamadas ao alocador, os resultados, os callbacks e os bytes do heap e da memória do "jogo"
+  saem idênticos (só o work area do lwmutex e o padding dos nós são mascarados). O firmware vem de
+  `VITASHARP_FIRMWARE_DIR`, `%APPDATA%\Vita3K\Vita3K` ou do `PSVUPDAT.PUP`; sem nenhum, só os testes HLE rodam.
+- **Jogos:** Devious Dungeon (PCSB01240), 99Vidas (PCSE00914) e Blast 'Em Bunnies (PCSE00328) carregam o sysmodule
+  e rodam igual com HLE e LLE (boot, menus, new game; o save do DD é serialização .NET, idêntico byte a byte), mas
+  nenhum chama função de Json nos cenários: os imports vêm do NpToolkit, que só faz parse de respostas de servidor.
+
 | NID | Assinatura demangled (namespace `sce::Json` omitido) | Comportamento |
 | --- | --- | --- |
 | 0xA3EA44E9 | `Initializer::initialize(const InitParameter*)` | inicializa o objeto (aloca estruturas internas pelo Initializer/alocador) |
@@ -370,7 +420,7 @@ Itens com interesse especial se algum dia for preciso HLE parcial ou depurar:
 | 0x2923CA00 | `Value::set(const String&)` | substitui o conteúdo do Value pelo argumento (muda o tipo) |
 | 0xA25972A1 | `Value::set(const Value&)` | substitui o conteúdo do Value pelo argumento (muda o tipo) |
 | 0x5423BA15 | `Value::set(long long)` | substitui o conteúdo do Value pelo argumento (muda o tipo) |
-| 0xCB972985 | `Value::set(NodeId(u64))` | substitui o conteúdo do Value pelo argumento (muda o tipo) |
+| 0xCB972985 | `Value::set(unsigned long long)` | substitui o conteúdo do Value pelo argumento (muda o tipo) |
 | 0xAD14CD26 | `Value::swap(Value&)` | troca o conteúdo de dois Values |
 | 0xC9813AC7 | `Value::clear()` | esvazia o conteúdo mantendo o objeto utilizável |
 | 0xB33FF9D6 | `Value::referReal()` | retorna ponteiro mutável para o double interno |
@@ -386,7 +436,7 @@ Itens com interesse especial se algum dia for preciso HLE parcial ou depurar:
 | 0xCC201CD2 | `Value::Value(const Value&)` [C1 complete] | construtor de cópia |
 | 0x7A9DECC0 | `Value::Value()` [C1 complete] | construtor padrão |
 | 0x1B23D989 | `Value::Value(long long)` [C1 complete] | construtor a partir do argumento |
-| 0xF785608C | `Value::Value(NodeId(u64))` [C1 complete] | construtor a partir do argumento |
+| 0xF785608C | `Value::Value(unsigned long long)` [C1 complete] | construtor a partir do argumento |
 | 0xB9AA1D08 | `Value::Value(bool)` [C2 base] | construtor a partir do argumento |
 | 0x33A75C2B | `Value::Value(double)` [C2 base] | construtor a partir do argumento |
 | 0x471A687D | `Value::Value(ValueType)` [C2 base] | construtor a partir do argumento |
@@ -396,7 +446,7 @@ Itens com interesse especial se algum dia for preciso HLE parcial ou depurar:
 | 0x2C83C840 | `Value::Value(const Value&)` [C2 base] | construtor de cópia |
 | 0x87A356B9 | `Value::Value()` [C2 base] | construtor padrão |
 | 0x6304C0BE | `Value::Value(long long)` [C2 base] | construtor a partir do argumento |
-| 0x22B3F3F1 | `Value::Value(NodeId(u64))` [C2 base] | construtor a partir do argumento |
+| 0x22B3F3F1 | `Value::Value(unsigned long long)` [C2 base] | construtor a partir do argumento |
 | 0xE07648EC | `Value::~Value()` [D1 complete] | destrutor |
 | 0xAE2322F7 | `Value::~Value()` [D2 base] | destrutor |
 | 0x5C6A0FAA | `Object::Pair::Pair(const String&, const Value&)` [C1 complete] | construtor a partir do argumento |

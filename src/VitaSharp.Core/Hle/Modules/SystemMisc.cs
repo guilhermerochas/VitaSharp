@@ -64,10 +64,16 @@ public sealed class SystemMisc : HleModule
     /// Libraries VitaSharp implements in HLE (Fiber.cs, Ult.cs, Sas.cs, Atrac.cs). A copy the game ships is still
     /// preferred (the title was tested with it), but the firmware's copy is only used when asked for
     /// (EmulatorOptions.LleModules / VITASHARP_LLE_MODULES), so installing the firmware does not move titles that
-    /// work on these HLE modules onto different code. Json, Xml, Sqlite, face and smart have no HLE: the firmware's
-    /// copy is the only implementation and is always used when present.
+    /// work on these HLE modules onto different code.
     /// </summary>
     static readonly HashSet<string> HleImplemented = new(StringComparer.OrdinalIgnoreCase) { "libfiber", "libult", "libsas", "libatrac" };
+
+    /// <summary>
+    /// Libraries with an HLE replacement that only runs without the firmware module: the firmware's copy stays the
+    /// default when installed, and the HLE (Json.cs) takes over when it is missing or when the library is listed in
+    /// the HLE modules option. Xml, Sqlite, face and smart have no HLE.
+    /// </summary>
+    static readonly HashSet<string> HleFallback = new(StringComparer.OrdinalIgnoreCase) { "libSceJson" };
 
     HashSet<string>? _lleModules, _hleModules;
 
@@ -75,14 +81,19 @@ public sealed class SystemMisc : HleModule
         new(option ?? (Environment.GetEnvironmentVariable(envVar) ?? "").Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The module options accept the file name ("libSceJson") or the short name ("json", "ult").</summary>
+    static bool Listed(HashSet<string> set, string lib) =>
+        set.Contains(lib) || (lib.StartsWith("libSce", StringComparison.OrdinalIgnoreCase) && set.Contains(lib[6..]))
+        || (lib.StartsWith("lib", StringComparison.OrdinalIgnoreCase) && set.Contains(lib[3..]));
+
     /// <summary>Where <paramref name="lib"/> may be loaded from, in order (empty: stay on HLE).</summary>
     internal string[] SysmoduleCandidates(string lib)
     {
         _lleModules ??= ModuleList(Emu.Options.LleModules, EnvVars.LleModules);
         _hleModules ??= ModuleList(Emu.Options.HleModules, EnvVars.HleModules);
-        if (_hleModules.Contains(lib)) return [];
+        if (Listed(_hleModules, lib)) return [];
         string app = $"app0:sce_module/{lib}.suprx", fw = $"vs0:sys/external/{lib}.suprx";
-        return !HleImplemented.Contains(lib) || _lleModules.Contains(lib) ? [app, fw] : [app];
+        return !HleImplemented.Contains(lib) || Listed(_lleModules, lib) ? [app, fw] : [app];
     }
 
     /// <summary>Loads app0:sce_module/&lt;lib&gt;.suprx, else (see <see cref="SysmoduleCandidates"/>)
@@ -117,6 +128,7 @@ public sealed class SystemMisc : HleModule
             return 0;
         }
         if (HleImplemented.Contains(lib)) Log.Info($"sceSysmoduleLoadModule: {lib} -> HLE");
+        else if (HleFallback.Contains(lib)) Log.Info($"sceSysmoduleLoadModule: {lib}.suprx not installed (no firmware) -> HLE");
         else Log.WarnOnce("sysmodule-" + lib, $"sceSysmoduleLoadModule: {lib}.suprx not found in app0:sce_module or vs0:sys/external " +
                                               "(install the firmware to provide it); its functions stay unimplemented");
         return 0;
