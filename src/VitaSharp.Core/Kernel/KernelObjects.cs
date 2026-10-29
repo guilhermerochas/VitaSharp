@@ -6,6 +6,8 @@ public abstract class KernelObject
 {
     public int Uid { get; internal set; }
     public string Name { get; init; } = "";
+    /// <summary>Process that created the object (<see cref="ProcessScope.CurrentPid"/> at registration; 0 = the system).</summary>
+    public int OwnerPid { get; internal set; }
 
     string? _waitDescription;
     /// <summary>"kind name" shown in thread states; built once so blocking waits do not allocate a string each time.</summary>
@@ -176,7 +178,7 @@ public static class SceError
     public const int IO_ENOTEMPTY = unchecked((int)0x8001005A);
 }
 
-/// <summary>UID table shared by every kernel object kind.</summary>
+/// <summary>UID table shared by every kernel object kind (and by every process: <see cref="VitaSystem.Objects"/>).</summary>
 public sealed class ObjectTable
 {
     readonly ConcurrentDictionary<int, KernelObject> _objects = new();
@@ -186,6 +188,7 @@ public sealed class ObjectTable
     {
         int uid = Interlocked.Add(ref _next, 2);
         o.Uid = uid;
+        o.OwnerPid = o switch { ProcessObject => uid, GuestThread t => t.Pid, _ => ProcessScope.CurrentPid };
         _objects[uid] = o;
         return uid;
     }
@@ -193,6 +196,17 @@ public sealed class ObjectTable
     public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out var o) ? o as T : null;
     public bool Remove(int uid) => _objects.TryRemove(uid, out _);
     public IEnumerable<T> All<T>() where T : KernelObject => _objects.Values.OfType<T>();
+    /// <summary>The objects of one kind that process <paramref name="pid"/> created.</summary>
+    public IEnumerable<T> Owned<T>(int pid) where T : KernelObject => _objects.Values.OfType<T>().Where(o => o.OwnerPid == pid);
+
+    /// <summary>Drops every object process <paramref name="pid"/> owns (its exit or exec; the process and application records stay); returns how many.</summary>
+    public int RemoveOwnedBy(int pid)
+    {
+        int n = 0;
+        foreach (var (uid, o) in _objects)
+            if (o.OwnerPid == pid && o is not (ProcessObject or AppObject) && _objects.TryRemove(uid, out _)) n++;
+        return n;
+    }
 
     public T? FindByName<T>(string name) where T : KernelObject => _objects.Values.OfType<T>().FirstOrDefault(o => o.Name == name);
 }

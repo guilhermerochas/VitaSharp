@@ -15,8 +15,6 @@ public sealed class AppMgr : HleModule
         ERR_NULL = unchecked((int)0x80800001), ERR_INVALID_VALUE = unchecked((int)0x80801000);
     const int ERRNO_ENOENT = unchecked((int)0x80010002), ERRNO_EINVAL = unchecked((int)0x80010016);
 
-    /// <summary>The process id returned by sceKernelGetProcessId.</summary>
-    const int ProcessId = 0x40010003;
 
     readonly HashSet<string> _mounts = new(StringComparer.OrdinalIgnoreCase);
 
@@ -466,13 +464,15 @@ public sealed class AppMgr : HleModule
         return 0;
     }
 
-    /// <summary>Only the running application exists.</summary>
+    /// <summary>The process running the application <paramref name="name"/> (title id), among the system's processes.</summary>
     [Hle]
     int sceAppMgrGetIdByName(Ptr<int> pid, uint name)
     {
         if (pid.IsNull || name == 0) return ERR_NULL_POINTER;
-        if (!string.Equals(GuestMemory.ReadCString(name, 32), Emu.TitleId, StringComparison.OrdinalIgnoreCase)) return ERR_NOT_FOUND;
-        pid.Value = ProcessId;
+        string tid = GuestMemory.ReadCString(name, 32);
+        var p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
+        if (p == null) return ERR_NOT_FOUND;
+        pid.Value = p.Pid;
         return 0;
     }
 
@@ -480,8 +480,8 @@ public sealed class AppMgr : HleModule
     int sceAppMgrGetNameById(int pid, uint name)
     {
         if (name == 0) return ERR_NULL_POINTER;
-        if (pid != ProcessId) return ERR_NOT_FOUND;
-        GuestMemory.WriteCString(name, Emu.TitleId, 32);
+        if (Emu.Vita.ByPid(pid) is not { } p) return ERR_NOT_FOUND;
+        GuestMemory.WriteCString(name, p.TitleId, 32);
         return 0;
     }
 
