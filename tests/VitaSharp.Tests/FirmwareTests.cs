@@ -574,11 +574,18 @@ public class FirmwareTests
             Directory.CreateDirectory(Path.Combine(other, "sa0", "data", "font", "pgf"));
             File.WriteAllBytes(Path.Combine(other, "sa0", "data", "font", "pgf", "ltn0.pgf"), Bytes(60, 2));
             Directory.CreateDirectory(Path.Combine(other, "ux0", "app", "GAME"));
+            // fonts already copied into sa0 by hand (no firmware.json, no vs0): seen, and merged over, not a failure
+            Directory.CreateDirectory(Path.Combine(fsRoot, "sa0", "data", "font", "pgf"));
+            File.WriteAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "ltn0.pgf"), Bytes(5, 9));
+            File.WriteAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "mine.pgf"), Bytes(5, 8));
+            Assert.Null(FirmwareInfo.Read(fsRoot));
+            Assert.True(FirmwareInfo.HasSystemFonts(fsRoot));
             var info = FirmwareInstaller.ImportFrom(other, fsRoot, "Vita3K");
             Assert.Equal(["vs0", "sa0"], info.Partitions);
             Assert.Equal("Vita3K", FirmwareInfo.Read(fsRoot)!.Source);
             Assert.True(File.Exists(Path.Combine(fsRoot, "vs0", "sys", "external", "libSceXml.suprx")));
-            Assert.True(File.Exists(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "ltn0.pgf")));
+            Assert.Equal(Bytes(60, 2), File.ReadAllBytes(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "ltn0.pgf"))); // overwritten
+            Assert.True(File.Exists(Path.Combine(fsRoot, "sa0", "data", "font", "pgf", "mine.pgf")));                       // kept
             Assert.False(Directory.Exists(Path.Combine(fsRoot, "ux0", "app", "GAME"))); // only firmware partitions
             Assert.True(File.Exists(Path.Combine(other, "vs0", "sys", "external", "libSceXml.suprx")));     // source untouched
             Assert.Throws<InvalidDataException>(() => FirmwareInstaller.ImportFrom(Path.Combine(tmp, "nothing"), fsRoot, "x"));
@@ -593,8 +600,10 @@ public class FirmwareTests
         try
         {
             Assert.Null(FirmwareInfo.Read(tmp));
+            Assert.False(FirmwareInfo.HasSystemFonts(tmp));
             Directory.CreateDirectory(Path.Combine(tmp, "vs0", "sys", "external")); // empty folders (Vfs creates them)
             Assert.Null(FirmwareInfo.Read(tmp));
+            Assert.False(FirmwareInfo.HasSystemFonts(tmp));
         }
         finally { FirmwareInstaller.DeleteTree(tmp); }
     }

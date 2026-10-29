@@ -62,6 +62,19 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
         File.WriteAllText(Path.Combine(fsRoot, MetadataFile), JsonSerializer.Serialize(d, CoreJson.Indented.SortedDictionaryStringString));
     }
 
+    /// <summary>True when sa0:data/font holds the system PGF or PVF fonts (installed with the font package, copied
+    /// from Vita3K, or put there by hand), whatever else is installed.</summary>
+    public static bool HasSystemFonts(string fsRoot)
+    {
+        foreach (var kind in new[] { "pgf", "pvf" })
+        {
+            var dir = Path.Combine(fsRoot, "sa0", "data", "font", kind);
+            try { if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*." + kind).Any()) return true; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return false;
+    }
+
     static bool HasModules(string fsRoot)
     {
         var ext = Path.Combine(fsRoot, "vs0", "sys", "external");

@@ -64,10 +64,12 @@ public sealed class FirmwarePanel : StackPanel
         FirmwareInfo? info = null;
         try { info = FirmwareInfo.Read(Program.FsRoot); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        // fonts count on their own: sa0 may have been filled without a firmware install (copied by hand)
+        bool fonts = FirmwareInfo.HasSystemFonts(Program.FsRoot);
         _status.Text = info == null
-            ? "Firmware: não instalado"
+            ? "Firmware: não instalado" + (fonts ? " — fontes do sistema presentes (sa0)" : "")
             : $"Firmware: {info.Display}" + (info.Partitions.Count > 0 ? $"  ({string.Join(", ", info.Partitions)})" : "") +
-              (info.Partitions.Contains("sa0") ? "" : " — sem fontes do sistema");
+              (fonts ? " — com fontes do sistema" : " — sem fontes do sistema");
     }
 
     async Task PickAndInstall()
