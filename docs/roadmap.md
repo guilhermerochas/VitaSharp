@@ -26,8 +26,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
-- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/`
-- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro
+- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
+  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita); o ícone adaptativo já
+  está em `src/VitaSharp.Android/Resources`
+- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (o layout dos controles na
+  tela, com o botão PS, já existe em `src/VitaSharp.Android/Input`)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
@@ -37,11 +40,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
 - [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
 - [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
-- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, tela "Driver da GPU" e teste num aparelho
-  (a interface e as configurações já existem em `src/VitaSharp.Android/Gpu`)
+- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, desenhar a tela "Driver da GPU" e testar num
+  aparelho (a interface, as configurações e o modelo da tela já existem em `src/VitaSharp.Android/Gpu`)
 - [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
-- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
+- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
+  (.PUP) pelo seletor (`src/VitaSharp.Android/Firmware` já instala a partir do arquivo aberto)
 
 ## Firmware e sistema
 
