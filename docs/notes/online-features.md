@@ -51,6 +51,25 @@ Legenda das funções que importam: **TUS** = `sceNpTus*` (Cross-Save, dados por
 - **Sakatsuku** (`st_boot.txt`): chega à tela de título; o contexto TUS agora é criado (antes falhava com
   INSUFFICIENT_ARGUMENT porque o jogo passa NULL); `sceNpAuthGetEntitlementById` responde "não encontrado" (nenhum DLC).
 
+## Internet real: jogos com `--net=off` e `--net=real` (2026-10-29, `feat/real-net`)
+
+Dados de rascunho (junções para os jogos), uma execução headless por modo; com `--net=real` sempre
+`--net-allow=localhost`, então todo destino do jogo seria bloqueado e registrado (nenhum pacote saiu do PC).
+
+| Jogo | Uso de rede no trecho testado | `--net=off` | `--net=real` |
+| --- | --- | --- | --- |
+| Tearaway (`tearaway_boot`) | só `sceNetCtlCheckCallback` | tela das mãos (~f1650), como o cenário espera | igual |
+| Gravity Rush (`gr_boot`) | nenhuma chamada até ~f2200 | introdução da maçã, "There was another way..." | igual |
+| LittleBigPlanet (`lbp_boot`) | `sceNetInit`, socket UDP com `sceNetRecvfrom` não bloqueante (EAGAIN) e `sceNetEpollWait` encerrado pelo próprio jogo (EINTR) | caderno da introdução até f4000 | igual (socket do host real; nada enviado) |
+| 99Vidas (`99vidas_boot`) | inits de Net/Http/Ssl/NetCtl (UnityNpToolkit), Cross-Save pelo TUS local | tutorial, `np/tus/NPWR11170_00/.../data_1.bin` gravado | igual (também depois do merge com o main 82f033f) |
+| WRC 4 (`wrc4_boot`) | NetCheckDialog PSN_ONLINE + estado NP | largada do estágio | largada (estágio sorteado pelo jogo) |
+| Killzone Mercenary (`kz_boot`) | `sceHttpInit`, `sceHttpsLoadCert`, 2 templates `killzonengp/469`, NetCtl | tela "Connection preferences" | igual |
+
+Killzone com AUTO CONNECT (toque em f400): com `--net=off` roda o NetCheckDialog e para em "LOGIN FAILED: You are
+unable to play online until the EULA is accepted" (o jogo não chegou a enviar HTTP no trecho). O par `--net=real`
+desse roteiro não pôde ser comparado: o `kz_boot` usa `--turbo`, e com o emulador limitado a 4 núcleos e prioridade
+abaixo do normal ele trava na f6 esperando a Fios **também com `--net=off`** (problema de tempo do turbo, não da rede).
+
 ## O que falta
 
 - RPCN além de Score/TUS: Matching2 (salas e signaling), amigos no `sceNpBasic*`, placar de amigos, tickets e
