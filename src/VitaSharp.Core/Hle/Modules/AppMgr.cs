@@ -130,7 +130,8 @@ public sealed class AppMgr : HleModule
 
     /// <summary>psp2/appmgr.h: <c>int (int id, const char *titleid, char *mount_point)</c>; the syscall adds an ignored
     /// opt. FW 3.60 accepts 104 (exact <c>ABCD12345_67</c> id), 106/107 (<c>ux0:psm/&lt;id&gt;/RO</c>, <c>/RW</c>) and
-    /// 110; the targets of 104 and 110 are not documented, so they are rejected like an unknown id.</summary>
+    /// 110 (<c>ux0:appmeta/&lt;id&gt;</c>, mounted by the shell's database rebuild for each folder it lists there); the
+    /// target of 104 is not documented, so it is rejected like an unknown id.</summary>
     [Hle]
     [Hle("_sceAppMgrAppDataMountById")]
     int sceAppMgrAppDataMountById(int id, uint titleId, uint mountPoint)
@@ -141,6 +142,9 @@ public sealed class AppMgr : HleModule
         {
             106 when tid.Length > 0 => $"ux0/psm/{tid}/RO",
             107 when tid.Length > 0 => $"ux0/psm/{tid}/RW",
+            // an installed application's metadata copy (param.sfo, icon, LiveArea) that the shell's database rebuild
+            // (dbrecovery_plugin) reads for every entry of ux0:appmeta
+            110 when tid.Length == 9 => $"ux0/appmeta/{tid}",
             _ => null,
         };
         if (rel == null)

@@ -160,6 +160,9 @@ public sealed class Emulator : IDisposable
         ExecRequested?.Invoke();
     }
 
+    /// <summary>The shell's executable in vs0:vsh/shell.</summary>
+    public const string ShellSelf = "shell.self";
+
     /// <summary>The main executable of the running program, relative to its folder.</summary>
     public string CurrentSelf { get; private set; } = "eboot.bin";
 
@@ -209,6 +212,11 @@ public sealed class Emulator : IDisposable
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
         IsSystemProgram = AppPath.StartsWith(vs0, StringComparison.OrdinalIgnoreCase);
         _startFirst.Clear();
+        // the shell starting = the system software coming up with the memory card inserted: titles VitaSharp installed
+        // (or that were copied into ux0:app) get the appmeta the Vita's installer leaves, for the shell's database
+        if (IsSystemProgram && string.Equals(self, ShellSelf, StringComparison.OrdinalIgnoreCase)
+            && Path.GetFileName(Path.TrimEndingDirectorySeparator(AppPath)).Equals("shell", StringComparison.OrdinalIgnoreCase))
+            Package.AppMeta.Sync(Path.Combine(Options.FsRoot, "ux0"), Log.Info);
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
         // per-title shader/pipeline caches start warming up while the executable loads
         try { Gpu.Backend?.BeginTitle(TitleId); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
