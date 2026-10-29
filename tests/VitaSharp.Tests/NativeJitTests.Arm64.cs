@@ -8,8 +8,8 @@ using VitaSharp.Core.Memory;
 namespace VitaSharp.Tests;
 
 /// <summary>
-/// The ARM64 backend on an x64 host: blocks are compiled by <see cref="NativeArm64Compiler"/> and the AArch64 code runs
-/// in <see cref="Arm64Sandbox"/> (Unicorn) on the real CpuState and guest memory. The same random guest blocks,
+/// The ARM64 backend: blocks are compiled by <see cref="NativeArm64Compiler"/> and the AArch64 code runs natively on ARM64
+/// hosts, elsewhere in <see cref="Arm64Sandbox"/> (Unicorn), on the real CpuState and guest memory. The same random guest blocks,
 /// states and snapshots as the x64 differential tests: registers, flags, FPSCR (QC included), the SIMD register file,
 /// the exclusive monitor, memory and the per-block accounting must match the interpreter bit for bit.
 /// </summary>
@@ -23,7 +23,7 @@ public sealed unsafe partial class NativeJitTests
         return $"guest: {string.Join(" ", b.Insts.Select(i => $"{i.Address:X}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"))}\nIR:\n{ir}\narm64 (entry {cb.NativeEntry:X}):\n{info.Disassemble(cb.NativeEntry)}";
     }
 
-    static void RunArm64(Arm64Sandbox sb, CpuState* s, nint entry)
+    static void RunArm64(IArm64Runner sb, CpuState* s, nint entry)
     {
         s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
         sb.Run(s, entry);
@@ -42,7 +42,7 @@ public sealed unsafe partial class NativeJitTests
     public void Arm64Smoke(bool thumb, string words)
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         Arm64Emitter.VerifyAllocation = true;
         var bytes = new List<byte>();
         foreach (var w in words.Split(','))
@@ -91,7 +91,7 @@ public sealed unsafe partial class NativeJitTests
     void Arm64Differential(bool thumb, int iterations, int seed, bool spillStress)
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
         Arm64Emitter.VerifyAllocation = true;
@@ -150,7 +150,7 @@ public sealed unsafe partial class NativeJitTests
             Arm64Emitter.MaxTempRegisters = oldMax;
             CpuState.Free(s);
         }
-        output.WriteLine($"compared {compared} blocks, {insts} instructions on the ARM64 backend ({unstable} skipped: memory-dependent), {sb.Instructions} callouts; failing kinds {failures.Count}");
+        output.WriteLine($"compared {compared} blocks, {insts} instructions on the ARM64 backend ({unstable} skipped: memory-dependent), {sb.Callouts} callouts; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
@@ -169,7 +169,7 @@ public sealed unsafe partial class NativeJitTests
     public void Arm64VfpMatchesInterpreter(bool thumb, int iterations, int seed)
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         var rng = new Random(seed);
         var s = CpuState.Allocate();
@@ -253,7 +253,7 @@ public sealed unsafe partial class NativeJitTests
     public void Arm64NeonMatchesInterpreter(bool thumb, NeonClass cls, int iterations, int seed)
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
@@ -300,7 +300,7 @@ public sealed unsafe partial class NativeJitTests
     public void Arm64ExclusivesMatchInterpreter(bool thumb, bool dual)
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         uint[] armFull = dual ? [0xE1B02F9F, 0xE2922001, 0xE1A04F92, 0xEAFFFFFE] : [0xE1901F9F, 0xE2811001, 0xE1802F91, 0xEAFFFFFE];
         uint[] armStore = dual ? [0xE1A04F92, 0xEAFFFFFE] : [0xE1802F91, 0xEAFFFFFE];
         string[] thumbFull = dual ? ["E8D0237F", "3201", "E8C02374", "E7FE"] : ["E8501F00", "3101", "E8401200", "E7FE"];
@@ -310,7 +310,9 @@ public sealed unsafe partial class NativeJitTests
         var s = CpuState.Allocate();
         try
         {
-            for (int scenario = 0; scenario < 7; scenario++)
+            // scenario 6 (unaligned address: the native plain-store path) only off ARM64: there the interpreter's own
+            // Interlocked compare-exchange raises an alignment fault (DataMisalignedException), as the guest CPU would
+            for (int scenario = 0; scenario < (Arm64Runner.Native ? 6 : 7); scenario++)
             {
                 bool storeOnly = scenario >= 1;
                 uint at = scenario == 6 ? addr + 2 : addr; // unaligned: the plain-store path
@@ -365,7 +367,7 @@ public sealed unsafe partial class NativeJitTests
     public void Arm64LinksAndDispatchTable()
     {
         EnsureGuestPages();
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         uint[] prog =
         [
             0xE2800001, // 00 loop: add r0, r0, #1
@@ -423,14 +425,56 @@ public sealed unsafe partial class NativeJitTests
         finally { CpuState.Free(s); }
     }
 
+    /// <summary>
+    /// The Windows-on-ARM lazy-commit exception handler for guest memory: commits the faulting page of an access
+    /// violation inside the guest range (VirtualAlloc is a stub here) and declines everything else.
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64LazyCommitHandler()
+    {
+        if (Arm64Runner.Native) return; // Windows-only code; the sandbox replaces VirtualAlloc with a stub
+        using var sb = new Arm64Sandbox();
+        const ulong Base = 0x7000_0000_0000, Size = 0x1_0001_0000;
+        var code = NativeRuntime.Instance.Code;
+        byte* handler = code.Place(_ => Arm64Emitter.EmitLazyCommitHandler(Base, Size, Arm64Sandbox.FakeStub));
+        var mem = (ulong*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(256);
+        try
+        {
+            ulong* record = mem + 8, pointers = mem;
+            pointers[0] = (ulong)record;
+            (ulong A, ulong S, ulong T, ulong P)? call = null;
+            ulong vaResult = 1;
+            sb.FakeFunction = (a, s, t, p) => { call = (a, s, t, p); return vaResult; };
+            ulong Run(uint code0, ulong address)
+            {
+                call = null;
+                *(uint*)record = code0;
+                record[5] = address; // ExceptionInformation[1] at +0x28
+                sb.Call((ulong)handler, (ulong)pointers, 0);
+                return sb.X0;
+            }
+            Assert.Equal(0xFFFFFFFFUL, Run(0xC0000005, Base + 0x12345) & 0xFFFFFFFF);
+            Assert.Equal((Base + 0x12000, 0x1000UL, 0x1000UL, 4UL), call);
+            Assert.Equal(0UL, Run(0xC0000005, Base + Size) & 0xFFFFFFFF);
+            Assert.Null(call);
+            Assert.Equal(0UL, Run(0xC0000005, Base - 1) & 0xFFFFFFFF);
+            Assert.Equal(0UL, Run(0xC0000096, Base + 8) & 0xFFFFFFFF);
+            Assert.Null(call);
+            vaResult = 0; // commit failed: let the next handler see it
+            Assert.Equal(0UL, Run(0xC0000005, Base + 8) & 0xFFFFFFFF);
+            Assert.NotNull(call);
+        }
+        finally { System.Runtime.InteropServices.NativeMemory.Free(mem); }
+    }
+
     /// <summary>The generated cache-maintenance helper (Linux/Android ARM64 __clear_cache) runs and returns.</summary>
     [Arm64SandboxFact]
     public void Arm64CacheFlushHelperRuns()
     {
-        using var sb = new Arm64Sandbox();
+        using var sb = Arm64Runner.Create();
         var code = NativeRuntime.Instance.Code;
         byte* helper = code.Place(_ => Arm64Emitter.EmitCacheFlush());
         sb.Call((ulong)helper, (ulong)code.ExecBase, 4096);
-        Assert.Equal(Arm64Sandbox.ReturnStub, sb.Pc);
+        // returning at all is the check (the sandbox throws on a fault, a native host would crash)
     }
 }

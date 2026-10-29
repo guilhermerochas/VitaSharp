@@ -18,6 +18,13 @@ internal static unsafe partial class HostVirtualMemory
     [LibraryImport("kernel32.dll")]
     private static partial nint AddVectoredExceptionHandler(uint first, void* handler);
 
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool FlushInstructionCache(nint process, void* addr, nuint size);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial nint GetCurrentProcess();
+
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
     private static partial nint GetModuleHandleW(string name);
 
@@ -105,13 +112,25 @@ internal static unsafe partial class HostVirtualMemory
     }
 
     /// <summary>
-    /// Installs a native (hand-assembled x64) vectored exception handler that commits zeroed pages on
+    /// Installs a native (hand-assembled x64, or generated ARM64 on Windows on ARM) vectored exception handler that commits zeroed pages on
     /// access violations inside [base, base+size). Pure machine code so it never re-enters the CLR
     /// while the faulting thread is in cooperative mode.
     /// </summary>
     public static bool InstallLazyCommitHandler(byte* @base, ulong size)
     {
-        if (!OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
+        if (!OperatingSystem.IsWindows()) return false;
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+        {
+            nint vaArm = GetProcAddress(GetModuleHandleW("kernel32.dll"), "VirtualAlloc");
+            if (vaArm == 0) return false;
+            var handler = Cpu.Native.Arm64Emitter.EmitLazyCommitHandler((ulong)@base, size, (ulong)vaArm);
+            byte* execArm = AllocExecutable(handler.Length);
+            if (execArm == null) return false;
+            handler.AsSpan().CopyTo(new Span<byte>(execArm, handler.Length));
+            FlushInstructionCache(GetCurrentProcess(), execArm, (nuint)handler.Length);
+            return AddVectoredExceptionHandler(1, execArm) != 0;
+        }
+        if (RuntimeInformation.ProcessArchitecture != Architecture.X64)
             return false;
 
         nint va = GetProcAddress(GetModuleHandleW("kernel32.dll"), "VirtualAlloc");

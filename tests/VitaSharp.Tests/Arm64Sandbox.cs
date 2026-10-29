@@ -14,12 +14,15 @@ namespace VitaSharp.Tests;
 /// calls the real callout bridge (<see cref="NativeRuntime.CalloutAddress"/>), so interpreter handlers run natively
 /// on the same state. The trampoline, epilogue, linking and dispatch-table code are the backend's own.
 /// </summary>
-public sealed unsafe partial class Arm64Sandbox : IDisposable
+public sealed unsafe partial class Arm64Sandbox : IArm64Runner
 {
     const int UC_ARCH_ARM64 = 2, UC_MODE_ARM = 0, UC_PROT_ALL = 7, UC_PROT_READ = 1, UC_PROT_EXEC = 4;
     const int UC_HOOK_CODE = 4, UC_HOOK_MEM_UNMAPPED = 112;
     const int RegX0 = 199, RegX30 = 2, RegSp = 4, RegPc = 260;
     public const ulong CalloutStub = 0x1000, ReturnStub = 0x2000;
+    /// <summary>A RET whose code hook calls <see cref="FakeFunction"/> with x0-x3 and puts its result in x0.</summary>
+    public const ulong FakeStub = 0x1800;
+    public Func<ulong, ulong, ulong, ulong, ulong>? FakeFunction;
     const ulong Page = 0x1000;
 
     nint _uc;
@@ -27,10 +30,10 @@ public sealed unsafe partial class Arm64Sandbox : IDisposable
     readonly byte* _stack;
     const int StackSize = 256 << 10;
     readonly ulong _tramp;
-    public readonly Arm64Emitter.Runtime Stubs;
+    public Arm64Emitter.Runtime Stubs { get; }
     /// <summary>The sandbox's own indirect-exit table (the process table holds x64 entries).</summary>
     public readonly NativeRuntime.DispatchEntry* Dispatch;
-    public long Instructions => _hits;
+    public long Callouts => _hits;
     long _hits;
     string? _fault;
 
@@ -47,6 +50,7 @@ public sealed unsafe partial class Arm64Sandbox : IDisposable
         uint ret = 0xD65F03C0, brk = 0xD4200000;
         Check(uc_mem_write(_uc, CalloutStub, &ret, 4), "write stub");
         Check(uc_mem_write(_uc, ReturnStub, &brk, 4), "write stub");
+        Check(uc_mem_write(_uc, FakeStub, &ret, 4), "write stub");
         // guest address space incl. the dirty-page table right below it
         ulong gb = (ulong)GuestMemory.Base - DirtyPages.TableBytes;
         MapRange(gb, 0x1_0001_0000UL + DirtyPages.TableBytes, UC_PROT_ALL);
@@ -61,6 +65,7 @@ public sealed unsafe partial class Arm64Sandbox : IDisposable
         _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline((ulong)GuestMemory.Base, out epi));
         Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, MemoryBase = (ulong)GuestMemory.Base };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
+        Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
     }
 
@@ -124,6 +129,16 @@ public sealed unsafe partial class Arm64Sandbox : IDisposable
     }
 
     public ulong Pc { get { ulong pc; uc_reg_read(_uc, RegPc, &pc); return pc; } }
+    public ulong X0 { get { ulong v; uc_reg_read(_uc, RegX0, &v); return v; } }
+
+    [UnmanagedCallersOnly]
+    static void OnFake(nint uc, ulong address, uint size, void* user)
+    {
+        ulong x0, x1, x2, x3;
+        uc_reg_read(uc, RegX0, &x0); uc_reg_read(uc, RegX0 + 1, &x1); uc_reg_read(uc, RegX0 + 2, &x2); uc_reg_read(uc, RegX0 + 3, &x3);
+        ulong r = _current?.FakeFunction?.Invoke(x0, x1, x2, x3) ?? 0;
+        uc_reg_write(uc, RegX0, &r);
+    }
 
     [UnmanagedCallersOnly]
     static void OnCallout(nint uc, ulong address, uint size, void* user)
@@ -198,14 +213,14 @@ public sealed unsafe partial class Arm64Sandbox : IDisposable
     [LibraryImport("unicorn")] private static partial int uc_hook_add(nint uc, out nint hh, int type, void* callback, void* userData, ulong begin, ulong end);
 }
 
-/// <summary>[Fact] that is skipped when the ARM64 sandbox (Unicorn) cannot run here.</summary>
+/// <summary>[Fact] for the ARM64 backend: runs natively on ARM64 hosts, in the sandbox elsewhere (skipped without Unicorn).</summary>
 public sealed class Arm64SandboxFactAttribute : FactAttribute
 {
-    public Arm64SandboxFactAttribute() { if (Arm64Sandbox.SkipReason is { } r) Skip = r; }
+    public Arm64SandboxFactAttribute() { if (Arm64Runner.SkipReason is { } r) Skip = r; }
 }
 
-/// <summary>[Theory] that is skipped when the ARM64 sandbox (Unicorn) cannot run here.</summary>
+/// <summary>[Theory] for the ARM64 backend: runs natively on ARM64 hosts, in the sandbox elsewhere (skipped without Unicorn).</summary>
 public sealed class Arm64SandboxTheoryAttribute : TheoryAttribute
 {
-    public Arm64SandboxTheoryAttribute() { if (Arm64Sandbox.SkipReason is { } r) Skip = r; }
+    public Arm64SandboxTheoryAttribute() { if (Arm64Runner.SkipReason is { } r) Skip = r; }
 }

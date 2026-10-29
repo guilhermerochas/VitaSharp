@@ -1002,6 +1002,51 @@ public sealed unsafe partial class Arm64Emitter
     }
 }
 
+public sealed unsafe partial class Arm64Emitter
+{
+    /// <summary>
+    /// Windows on ARM: the guest-memory lazy-commit vectored exception handler (the ARM64 twin of the hand-assembled
+    /// x64 one in <see cref="Memory.HostVirtualMemory.InstallLazyCommitHandler"/>). x0 = EXCEPTION_POINTERS*; an access
+    /// violation whose address (ExceptionInformation[1], at the same offset as on x64) lies in [base, base + size)
+    /// commits that page with VirtualAlloc and returns EXCEPTION_CONTINUE_EXECUTION (-1), anything else returns
+    /// EXCEPTION_CONTINUE_SEARCH (0). Pure machine code: it never re-enters the CLR.
+    /// </summary>
+    public static byte[] EmitLazyCommitHandler(ulong memBase, ulong size, ulong virtualAlloc)
+    {
+        var a = new Arm64Assembler();
+        int notOurs = a.NewLabel();
+        a.Stp(FP, LR, SP, -16, PairMode.Pre);
+        a.MovSp(FP, SP);
+        a.LdrX(X1, X0, 0);                   // ExceptionRecord
+        a.Ldr(X2, X1, 0);                    // ExceptionCode
+        a.MovImm(X3, 0xC0000005);
+        a.Cmp(X2, X3);
+        a.BCond(Cond.NE, notOurs);
+        a.LdrX(X4, X1, 0x28);                // faulting address
+        a.LdrLit(X5, memBase);
+        a.Sub(X4, X4, X5, x: true);
+        a.LdrLit(X6, size);
+        a.Cmp(X4, X6, true);
+        a.BCond(Cond.HS, notOurs);
+        a.LdrX(X0, X1, 0x28);
+        a.AndImm(X0, X0, ~0xFFFUL, true);    // page
+        a.MovImm(X1, 0x1000);                // size
+        a.MovImm(X2, 0x1000);                // MEM_COMMIT
+        a.MovImm(X3, 4);                     // PAGE_READWRITE
+        a.LdrLit(X16, virtualAlloc);
+        a.Blr(X16);
+        a.Cbz(X0, notOurs, true);
+        a.Movn(X0, 0);                       // -1: EXCEPTION_CONTINUE_EXECUTION
+        a.Ldp(FP, LR, SP, 16, PairMode.Post);
+        a.Ret();
+        a.Bind(notOurs);
+        a.Mov(X0, ZR);                       // 0: EXCEPTION_CONTINUE_SEARCH
+        a.Ldp(FP, LR, SP, 16, PairMode.Post);
+        a.Ret();
+        return a.Finish();
+    }
+}
+
 /// <summary>Debug view of generated ARM64 code (no disassembler is bundled: one hex word per instruction).</summary>
 public static unsafe class Arm64Dump
 {
