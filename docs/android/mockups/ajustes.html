@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ajustes · VitaSharp Android</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#05070A}
+a{color:#8FB2FF}a:hover{color:#B7CCFF}
+.phone{width:390px;height:844px;box-sizing:border-box;background:#0E1116;color:#E8ECF2;font-family:Inter,system-ui,sans-serif;display:flex;flex-direction:column;position:relative;overflow:hidden}
+h2{margin:0 0 6px 4px;font:600 13px Inter,sans-serif;color:#9AA4B2;text-transform:uppercase;letter-spacing:.08em}
+.card{background:#171B22;border-radius:18px;overflow:hidden}
+.row{height:58px;padding:0 16px;display:flex;align-items:center;gap:12px;text-decoration:none;color:#E8ECF2;border-bottom:1px solid #232A35}
+.row:last-child{border-bottom:none}
+.ic{width:34px;height:34px;border-radius:11px;background:#1E2A40;color:#9DB4E8;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.txt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.t{font:500 14px Inter,sans-serif}
+.s{font-size:12px;color:#9AA4B2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chev{color:#6B7584;flex-shrink:0}
+.pill{height:24px;padding:0 9px;border-radius:999px;font:600 11px Inter,sans-serif;display:flex;align-items:center;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <header style="display: flex; flex-direction: column; gap: 2px; padding: 20px 20px 8px 20px">
+    <span style="font-size: 12px; color: #9AA4B2; letter-spacing: 0.08em; text-transform: uppercase">VitaSharp</span>
+    <h1 style="margin: 0; font-family: Sora, Inter, sans-serif; font-size: 28px; font-weight: 700">Ajustes</h1>
+  </header>
+
+  <div style="flex: 1; overflow: hidden; padding: 12px 20px 0 20px; display: flex; flex-direction: column; gap: 18px">
+
+    <section>
+      <h2>Sistema</h2>
+      <div class="card">
+        <a class="row" href="firmware.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3M9 9h6v6H9z"></path></svg></span>
+          <span class="txt"><span class="t">Firmware</span><span class="s">3.74 · fontes ausentes</span></span>
+          <span class="pill" style="background: rgba(242,184,75,0.14); color: #F2B84B">Sem fontes</span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="row" href="sistema.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="6"></rect><rect x="8" y="8.5" width="8" height="7" rx="1.2"></rect></svg></span>
+          <span class="txt"><span class="t">Sistema do Vita</span><span class="s">shell.self do firmware em tela cheia</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="row" href="#">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg></span>
+          <span class="txt"><span class="t">Idioma do sistema</span><span class="s">Português (Brasil) · confirmar com X</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Desempenho</h2>
+      <div class="card">
+        <a class="row" href="#">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg></span>
+          <span class="txt"><span class="t">CPU</span><span class="s">Automático · Nativo (ARM64)</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="row" href="driver-gpu.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="2" y="6" width="17" height="12" rx="2"></rect><circle cx="10.5" cy="12" r="3"></circle><path d="M19 9h3M19 15h3M6 18v3M15 18v3"></path></svg></span>
+          <span class="txt"><span class="t">Driver da GPU</span><span class="s">Do sistema · 1 customizado instalado</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="row" href="gpu-info.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5v.5"></path></svg></span>
+          <span class="txt"><span class="t">Informações da GPU</span><span class="s">Adreno 740 · 5 contornos ativos</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Rede e PSN</h2>
+      <div class="card">
+        <a class="row" href="psn.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span>
+          <span class="txt"><span class="t">Conta PSN</span><span class="s">VitaSharp · conectada · serviços locais</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="row" href="psn.html">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"></path><circle cx="12" cy="19.5" r="1"></circle></svg></span>
+          <span class="txt"><span class="t">Internet real</span><span class="s">Desligada · nada sai do aparelho</span></span>
+          <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </a>
+      </div>
+    </section>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 0 4px">
+      <svg width="44" height="44" viewBox="0 0 108 108" role="img" aria-label="Ícone do VitaSharp">
+        <defs>
+          <linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C4DFF"></stop><stop offset="1" stop-color="#2979FF"></stop></linearGradient>
+          <linearGradient id="sc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A1B3A"></stop><stop offset="1" stop-color="#0B0C1E"></stop></linearGradient>
+          <linearGradient id="sh" gradientUnits="userSpaceOnUse" x1="95" y1="98" x2="160" y2="158"><stop offset="0" stop-color="#7DF9FF"></stop><stop offset="1" stop-color="#B388FF"></stop></linearGradient>
+          <clipPath id="m"><circle cx="54" cy="54" r="54"></circle></clipPath>
+        </defs>
+        <g clip-path="url(#m)">
+          <rect width="108" height="108" fill="#141A26"></rect>
+          <g transform="translate(54 54) scale(0.2667) translate(-128 -128)">
+            <rect x="8" y="64" width="240" height="128" rx="64" fill="url(#b)"></rect>
+            <rect x="66" y="80" width="124" height="96" rx="12" fill="url(#sc)"></rect>
+            <g stroke="url(#sh)" stroke-width="9" stroke-linecap="round"><line x1="118" y1="98" x2="108" y2="158"></line><line x1="146" y1="98" x2="136" y2="158"></line><line x1="98" y1="117" x2="160" y2="117"></line><line x1="95" y1="139" x2="157" y2="139"></line></g>
+            <g fill="#fff" fill-opacity="0.92"><rect x="31" y="96" width="8" height="26" rx="2"></rect><rect x="22" y="105" width="26" height="8" rx="2"></rect><circle cx="221" cy="97" r="5.5"></circle><circle cx="209" cy="109" r="5.5"></circle><circle cx="233" cy="109" r="5.5"></circle><circle cx="221" cy="121" r="5.5"></circle></g>
+            <circle cx="46" cy="152" r="5" fill="#fff" fill-opacity="0.85"></circle><circle cx="210" cy="152" r="5" fill="#fff" fill-opacity="0.85"></circle>
+          </g>
+        </g>
+      </svg>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font: 600 14px Sora, sans-serif">VitaSharp</span>
+        <span style="font-size: 12px; color: #9AA4B2">Android · arm64-v8a · Vulkan 1.3</span>
+      </div>
+    </div>
+  </div>
+
+  <nav aria-label="Navegação principal" style="height: 76px; border-top: 1px solid #222935; background: #12161C; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))">
+    <a href="biblioteca.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: #9AA4B2; font: 500 11px Inter, sans-serif">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg>
+      Biblioteca
+    </a>
+    <a href="controles.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: #9AA4B2; font: 500 11px Inter, sans-serif">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"></rect><path d="M7 10.5v4M5 12.5h4"></path><circle cx="16" cy="11.5" r="1"></circle><circle cx="18.5" cy="13.5" r="1"></circle></svg>
+      Controles
+    </a>
+    <a href="pausa.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: #9AA4B2; font: 500 11px Inter, sans-serif">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 19h16M4 15l4-6 4 4 3-5 5 7"></path></svg>
+      Desempenho
+    </a>
+    <a href="ajustes.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; color: #8FB2FF; font: 600 11px Inter, sans-serif">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>
+      Ajustes
+    </a>
+  </nav>
+</div>
+</body>
+</html>

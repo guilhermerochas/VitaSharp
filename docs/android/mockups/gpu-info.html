@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Informações da GPU · VitaSharp Android</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#05070A}
+a{color:#8FB2FF}a:hover{color:#B7CCFF}
+.phone{width:390px;height:844px;box-sizing:border-box;background:#0E1116;color:#E8ECF2;font-family:Inter,system-ui,sans-serif;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.back{width:44px;height:44px;border-radius:14px;background:#171B22;border:1px solid #2A313D;color:#E8ECF2;display:flex;align-items:center;justify-content:center}
+h2{margin:0 0 6px 4px;font:600 13px Inter,sans-serif;color:#9AA4B2;text-transform:uppercase;letter-spacing:.08em}
+.card{background:#171B22;border-radius:18px;overflow:hidden}
+.kv{height:40px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;font-size:13px;border-bottom:1px solid #232A35}
+.kv:last-child{border-bottom:none}
+.kv span:first-child{color:#9AA4B2}
+.kv span:last-child{font-weight:500;text-align:right}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:26px;padding:0 10px;border-radius:999px;font:500 12px Inter,sans-serif;display:flex;align-items:center;gap:5px}
+.yes{background:#16271F;color:#8FD9A8}.no{background:#2A1C1F;color:#F0A8A8}.via{background:#1E2A40;color:#8FB2FF}
+.q{padding:10px 16px;border-bottom:1px solid #232A35;display:flex;flex-direction:column;gap:2px}
+.q:last-child{border-bottom:none}
+.qn{font:600 13px Inter,sans-serif;display:flex;align-items:center;gap:8px}
+.qd{font-size:12px;color:#9AA4B2;line-height:1.35}
+.dot{width:7px;height:7px;border-radius:999px;flex-shrink:0}
+.body > *{flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <header style="display: flex; align-items: center; gap: 12px; padding: 16px 20px 8px 16px">
+    <a class="back" href="driver-gpu.html" aria-label="Voltar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></a>
+    <h1 style="margin: 0; font: 700 22px Sora, sans-serif; flex: 1">Informações da GPU</h1>
+    <button aria-label="Compartilhar relatório" style="width: 44px; height: 44px; border-radius: 14px; border: 1px solid #2A313D; background: #171B22; color: #E8ECF2; display: flex; align-items: center; justify-content: center">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"></path></svg>
+    </button>
+  </header>
+
+  <div class="body" style="flex: 1; overflow: hidden; padding: 8px 20px 0 20px; display: flex; flex-direction: column; gap: 16px">
+
+    <div class="card">
+      <div class="kv"><span>GPU</span><span>Adreno (TM) 740</span></div>
+      <div class="kv"><span>Driver</span><span>Qualcomm proprietário 512.676</span></div>
+      <div class="kv"><span>Vulkan</span><span>1.3.264</span></div>
+      <div class="kv"><span>Arquitetura</span><span>tile-based · memória unificada</span></div>
+      <div class="kv"><span>Orçamento de memória</span><span>VK_EXT_memory_budget</span></div>
+    </div>
+
+    <section>
+      <h2>Recursos</h2>
+      <div class="chips">
+        <span class="chip via">BCn via BCeNabler</span>
+        <span class="chip yes">sampleRateShading</span>
+        <span class="chip yes">MSAA 2x/4x</span>
+        <span class="chip yes">depthClamp</span>
+        <span class="chip yes">timestamps</span>
+        <span class="chip no">rasterization order</span>
+        <span class="chip no">wideLines</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Contornos ativos · 5</h2>
+      <div class="card">
+        <div class="q"><span class="qn"><span class="dot" style="background: #6E9BFF"></span>TileBased</span><span class="qd">load/store escolhidos por cena: a profundidade não volta para a memória quando a cena termina</span></div>
+        <div class="q"><span class="qn"><span class="dot" style="background: #6E9BFF"></span>DynamicIndexLowering</span><span class="qd">índices dinâmicos de registradores viram switch no shader</span></div>
+        <div class="q"><span class="qn"><span class="dot" style="background: #6E9BFF"></span>StaticExtendedDynamicState</span><span class="qd">cull, topologia, profundidade e stencil gravados no pipeline</span></div>
+        <div class="q"><span class="qn"><span class="dot" style="background: #6E9BFF"></span>StaticDepthBiasEnable</span><span class="qd">depth bias sempre ligado no pipeline, zero quando o draw não usa</span></div>
+        <div class="q"><span class="qn"><span class="dot" style="background: #6E9BFF"></span>PipelineCachePerDriverBuild</span><span class="qd">um cache de pipelines por build do driver (drivers customizados)</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Observados, sem contorno</h2>
+      <div class="card">
+        <div class="q"><span class="qn"><span class="dot" style="background: #F2B84B"></span>DynamicRenderingSuspect</span><span class="qd">registrado para relatórios de bug</span></div>
+        <div class="q"><span class="qn"><span class="dot" style="background: #5A6475"></span>AvoidPushDescriptors · AvoidClearAttachments · CustomDriverCapable</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>
