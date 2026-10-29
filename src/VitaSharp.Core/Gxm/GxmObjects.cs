@@ -154,8 +154,10 @@ public sealed class DrawRecipe
     public readonly uint[] VUbs = new uint[15], FUbs = new uint[15], Streams = new uint[16];
     public readonly GxmTextureDesc[] VTex = new GxmTextureDesc[16], FTex = new GxmTextureDesc[16];
     public uint PrimType, IndexType, IndexData, IndexCount, InstanceCount;
-    public uint VisAddress;
-    public bool VisIncrement;
+    /// <summary>Visibility test of the draw: the index and op only, the word is resolved against the visibility buffer
+    /// of the immediate context that executes the list.</summary>
+    public bool VisEnabled, VisIncrement;
+    public uint VisIndex;
     /// <summary>The deferred context set its own viewport / region clip before this draw; otherwise the executing
     /// immediate context's ones are used.</summary>
     public bool ViewportSet, RegionClipSet;

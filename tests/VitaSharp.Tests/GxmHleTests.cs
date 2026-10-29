@@ -237,6 +237,21 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(new VitaSharp.Core.Gpu.GxmTextureDesc(1, 2, 3, 4), fTex[0]);
     }
 
+    /// <summary>A command list draw keeps only the visibility index; the word is resolved against the visibility buffer
+    /// of the immediate context executing the list (sceGxmSetVisibilityBuffer is immediate-only, Vita3K). Tearaway's
+    /// job workers record visibility tests on deferred contexts: with the deferred context's (absent) buffer, no result
+    /// was ever written and the game hid the tested objects every other frame.</summary>
+    [Fact]
+    public void DeferredVisibilityResolvesAgainstExecutingContext()
+    {
+        var resolve = typeof(Gxm).GetMethod("VisibilityAddress", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var imm = new VitaSharp.Core.Gxm.GxmContext { Handle = 1, VisBuffer = 0x608C_1000, VisStride = 0x800 };
+        var deferred = new VitaSharp.Core.Gxm.GxmContext { Handle = 2, Deferred = true };
+        Assert.Equal(0x608C_1004u, U(resolve.Invoke(null, [imm, 1u])));
+        Assert.Equal(0u, U(resolve.Invoke(null, [imm, 0x200u])));     // past the per-core stride
+        Assert.Equal(0u, U(resolve.Invoke(null, [deferred, 1u])));    // no buffer of its own
+    }
+
     /// <summary>GXP parameter semantics (SceGxmProgramParameter +6 semantic, +7 semantic index; vita-headers
     /// SceGxmParameterSemantic, Vita3K sceGxmProgramFindParameterBySemantic/ParameterGetSemantic): only vertex
     /// attributes have a semantic, the index is the low nibble, NONE never matches, and the old-SDK `_`-prefixed

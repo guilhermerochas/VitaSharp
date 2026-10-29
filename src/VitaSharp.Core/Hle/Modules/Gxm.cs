@@ -810,10 +810,16 @@ public sealed class Gxm : HleModule
     {
         if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
         if ((bufferBase & (VisibilityAlignment - 1)) != 0) return ERR_INVALID_ALIGNMENT;
+        if (c.Deferred) return ERR_INVALID_VALUE;
         c.VisBuffer = bufferBase;
         c.VisStride = stride;
         return 0;
     }
+
+    /// <summary>The visibility word of <paramref name="index"/> in the immediate context's buffer (0: no buffer, or the
+    /// index is past the per-core stride).</summary>
+    static uint VisibilityAddress(GxmContext c, uint index) =>
+        c.VisBuffer != 0 && index < Math.Max(c.VisStride / 4, 1) ? c.VisBuffer + index * 4 : 0;
 
     // =========================================================== draws
 
@@ -882,24 +888,23 @@ public sealed class Gxm : HleModule
         if (indexData == 0) return ERR_INVALID_POINTER;
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawBacktrace(vp, fp, indexData, indexCount);
         // visibility test (front state; the back state applies when only it is enabled)
-        uint visAddress = 0;
-        bool visIncrement = false;
         bool front = c.VisFrontEnable, back = c.VisBackEnable;
-        if (c.VisBuffer != 0 && (front || back))
-        {
-            uint index = front ? c.VisFrontIndex : c.VisBackIndex;
-            if (index < Math.Max(c.VisStride / 4, 1))
-            {
-                visAddress = c.VisBuffer + index * 4;
-                visIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
-            }
-        }
+        bool visEnabled = front || back;
+        uint visIndex = front ? c.VisFrontIndex : c.VisBackIndex;
+        bool visIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
         if (c.Deferred)
         {
-            int r = RecordDraw(c, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+            // a deferred context has no visibility buffer of its own (sceGxmSetVisibilityBuffer is immediate-only):
+            // the draw keeps the index and op, and the buffer of the immediate context that executes the list is used
+            int r = RecordDraw(c, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount,
+                visEnabled, visIndex, visIncrement);
             if (r != 0) return r;
         }
-        else SubmitDraw(in c.State, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+        else
+        {
+            uint visAddress = visEnabled ? VisibilityAddress(c, visIndex) : 0;
+            SubmitDraw(in c.State, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+        }
 
         if (c.VertexDefaultReserved)
         {
@@ -996,7 +1001,7 @@ public sealed class Gxm : HleModule
 
     int RecordDraw(GxmContext c, GxmVertexProgram vp, GxmFragmentProgram fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex,
         GxmTextureDesc[] fTex, uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount,
-        uint visAddress, bool visIncrement)
+        bool visEnabled, uint visIndex, bool visIncrement)
     {
         int r = ConsumeVdm(c, VdmCostPerDraw);
         if (r != 0) return r;
@@ -1004,7 +1009,7 @@ public sealed class Gxm : HleModule
         {
             Vp = vp, Fp = fp, State = c.State,
             PrimType = primType, IndexType = indexType, IndexData = indexData, IndexCount = indexCount, InstanceCount = instanceCount,
-            VisAddress = visAddress, VisIncrement = visIncrement, ViewportSet = c.ViewportSet, RegionClipSet = c.RegionClipSet,
+            VisEnabled = visEnabled, VisIndex = visIndex, VisIncrement = visIncrement, ViewportSet = c.ViewportSet, RegionClipSet = c.RegionClipSet,
         };
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(d.VUbs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(d.FUbs);
@@ -1168,7 +1173,7 @@ public sealed class Gxm : HleModule
                 st.ClipMinX = im.ClipMinX; st.ClipMinY = im.ClipMinY; st.ClipMaxX = im.ClipMaxX; st.ClipMaxY = im.ClipMaxY;
             }
             SubmitDraw(in st, d.Vp, d.Fp, d.VUbs, d.FUbs, d.VTex, d.FTex, d.Streams, d.PrimType, d.IndexType, d.IndexData, d.IndexCount,
-                d.InstanceCount, d.VisAddress, d.VisIncrement);
+                d.InstanceCount, d.VisEnabled ? VisibilityAddress(c, d.VisIndex) : 0, d.VisIncrement);
         }
         if (Gpu.Pending > 20000) Gpu.WaitFor(Gpu.Submitted - 2000);
         return 0;
