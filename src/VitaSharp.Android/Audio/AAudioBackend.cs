@@ -5,17 +5,15 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Android.Audio;
 
 /// <summary>
-/// SKELETON (not built or tested yet: there is no Android front-end). Audio output through the NDK AAudio API
-/// (libaaudio.so, API 26+) behind the core's <see cref="IAudioBackend"/>, the interface the desktop's OpenAL backend
-/// implements. One AAudio stream per guest audio port, signed 16-bit interleaved, blocking writes so the guest is
-/// paced by the device like on the desktop. The Android front-end installs it with
-/// <c>emu.Host.Audio = AAudioBackend.TryCreate();</c>.
+/// Built into the app, not run on a device yet. Audio output through the NDK AAudio API (libaaudio.so, API 26+)
+/// behind the core's <see cref="IAudioBackend"/>, the interface the desktop's OpenAL backend implements. One AAudio
+/// stream per guest audio port, signed 16-bit interleaved, blocking writes so the guest is paced by the device like on
+/// the desktop. EmulationSession installs it and pauses/resumes it with the game activity.
 ///
 /// Remaining work:
 /// <list type="bullet">
 /// <item>Error/disconnect callback (AAudioStreamBuilder_setErrorCallback): reopen the stream on another device when
 ///   headphones/Bluetooth change; the callback must not reopen on its own thread.</item>
-/// <item>Activity lifecycle: pause (requestPause) on onPause, resume on onResume, close on destroy.</item>
 /// <item>Buffer sizing: setBufferSizeInFrames to about two guest grains (the Vita output is double-buffered) and
 ///   expose the real queue depth through <see cref="IAudioStream.PendingSamples"/> (done here from the frame counters).</item>
 /// <item>Sample-rate conversion when the device refuses 48 kHz in exclusive mode (AAudio resamples in shared mode).</item>
@@ -42,19 +40,45 @@ public sealed class AAudioBackend : IAudioBackend
         }
     }
 
-    public IAudioStream OpenStream(int sampleRate, int channels, int grainSamples) => new Stream(sampleRate, channels, grainSamples);
+    readonly List<Stream> _streams = new();
 
-    public void Dispose() { }
+    public IAudioStream OpenStream(int sampleRate, int channels, int grainSamples)
+    {
+        var s = new Stream(sampleRate, channels, grainSamples, this);
+        lock (_streams) _streams.Add(s);
+        return s;
+    }
+
+    /// <summary>Activity lifecycle: pauses every stream (onPause) so the device stops playing the queued grains.</summary>
+    public void Pause()
+    {
+        lock (_streams) foreach (var s in _streams) s.Pause();
+    }
+
+    /// <summary>Restarts the streams paused by <see cref="Pause"/> (onResume).</summary>
+    public void Resume()
+    {
+        lock (_streams) foreach (var s in _streams) s.Resume();
+    }
+
+    public void Dispose()
+    {
+        Stream[] all;
+        lock (_streams) all = [.. _streams];
+        foreach (var s in all) s.Dispose();
+    }
 
     sealed unsafe class Stream : IAudioStream
     {
         nint _stream;
         readonly int _channels;
+        readonly AAudioBackend _owner;
         short[] _scaled = [];
 
-        public Stream(int rate, int channels, int grain)
+        public Stream(int rate, int channels, int grain, AAudioBackend owner)
         {
             _channels = channels;
+            _owner = owner;
             if (AAudio.AAudio_createStreamBuilder(out nint b) != 0) throw new InvalidOperationException("AAudio: no stream builder");
             AAudio.AAudioStreamBuilder_setFormat(b, AAudio.FormatPcmI16);
             AAudio.AAudioStreamBuilder_setChannelCount(b, channels);
@@ -98,8 +122,19 @@ public sealed class AAudioBackend : IAudioBackend
             }
         }
 
+        public void Pause()
+        {
+            if (_stream != 0) AAudio.AAudioStream_requestPause(_stream);
+        }
+
+        public void Resume()
+        {
+            if (_stream != 0) AAudio.AAudioStream_requestStart(_stream);
+        }
+
         public void Dispose()
         {
+            lock (_owner._streams) _owner._streams.Remove(this);
             if (_stream == 0) return;
             AAudio.AAudioStream_requestStop(_stream);
             AAudio.AAudioStream_close(_stream);
@@ -125,6 +160,7 @@ internal static unsafe partial class AAudio
     [LibraryImport(Lib)] public static partial int AAudioStream_setBufferSizeInFrames(nint stream, int frames);
     [LibraryImport(Lib)] public static partial int AAudioStream_requestStart(nint stream);
     [LibraryImport(Lib)] public static partial int AAudioStream_requestStop(nint stream);
+    [LibraryImport(Lib)] public static partial int AAudioStream_requestPause(nint stream);
     [LibraryImport(Lib)] public static partial int AAudioStream_close(nint stream);
     [LibraryImport(Lib)] public static partial int AAudioStream_write(nint stream, void* buffer, int numFrames, long timeoutNanoseconds);
     [LibraryImport(Lib)] public static partial long AAudioStream_getFramesWritten(nint stream);
