@@ -1,0 +1,11 @@
+# Pause key end to end (the "Pausar emulação" hotkey, P by default, driven by --input key steps): Devious Dungeon
+# boots, the scripted P pauses the emulation at frame 300, F10 captures the paused frame 3 s later, and P resumes it
+# 8 s after frame 300. Checked in log.txt:
+#   "Emulation paused (--input) at guest frame N, guest time T s"
+#   "FPS frame N: 0.0 frames/s" while paused (the frame counter stands, the wall clock goes on)
+#   "Emulation resumed (--input) after ~8 s paused (guest clock +0.000 ms, frames +0 meanwhile) ... guest time T s"
+#   "[diag] saved: <data>/diagnostics/PCSB01240_<time>" with screenshot.png = the paused frame
+#   frames after the resume (the game goes on), no "[watchdog] STALL", no audio underrun burst
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/dd_pause.txt --data=<scratch root>
+title=PCSB01240
+args=--seconds=40 --dump-every=60 --no-inspect --input=key@f300:P,key@f300+3:F10,key@f300+8:P

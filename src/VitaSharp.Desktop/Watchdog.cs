@@ -43,6 +43,13 @@ public sealed class Watchdog : IDisposable
         {
             if (!_emu.Running) return;
             var now = DateTime.Now;
+            if (EmulationPause.IsPaused)
+            {
+                // a paused emulation presents nothing on purpose: no stall, and the stall timers restart at the resume
+                _frameAt = _gpuAt = now;
+                _reportsThisStall = 0;
+                return;
+            }
             long frames = Core.Hle.Modules.Display.FramesPresented;
             long completed = _emu.Gpu.Completed, submitted = _emu.Gpu.Submitted;
             if (frames != _lastFrames) { _lastFrames = frames; _frameAt = now; _reportsThisStall = 0; }

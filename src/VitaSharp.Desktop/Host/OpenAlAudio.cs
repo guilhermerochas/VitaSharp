@@ -145,6 +145,21 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     /// <summary>Times any output stream ran dry and was restarted (diagnostics for audio/video pacing).</summary>
     public static int TotalUnderruns;
 
+    /// <summary>The emulation is paused: the guest's sources are paused (AL_PAUSED keeps the queued grains and is not a
+    /// stop, so no underrun is counted) and none starts playing until the resume.</summary>
+    volatile bool _paused;
+
+    public void SetPaused(bool paused)
+    {
+        lock (_lock)
+        {
+            if (_paused == paused) return;
+            _paused = paused;
+            _alc.MakeContextCurrent(_context);
+            foreach (var s in _streams) s.SetPaused(paused);
+        }
+    }
+
     // one-shot host sound effects (the trophy chime): a static source of their own, never one of the guest's ports
     uint _fxSource, _fxBuffer;
 
@@ -225,10 +240,25 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
             }
         }
 
+        /// <summary>Called under the backend's lock with its context current.</summary>
+        internal void SetPaused(bool paused)
+        {
+            _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
+            if (paused) { if (state == (int)SourceState.Playing) _o._al.SourcePause(_source); }
+            else if (state == (int)SourceState.Paused || (state == (int)SourceState.Initial && _queued >= StartGrains)) _o._al.SourcePlay(_source);
+        }
+
         public void Submit(ReadOnlySpan<short> interleaved)
         {
             while (true)
             {
+                if (_o._paused)
+                {
+                    // a grain submitted as the pause began waits for the resume (or for the emulator to stop)
+                    if (VitaSharp.Core.Kernel.GuestThread.Current?.Core.StopRequested == true) return;
+                    Thread.Sleep(5);
+                    continue;
+                }
                 lock (_o._lock)
                 {
                     _o._alc.MakeContextCurrent(_o._context);
@@ -259,7 +289,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                             _o._al.BufferData(b, BufferFormat.Stereo16, p, interleaved.Length * 2, Rate);
                         _o._al.SourceQueueBuffers(_source, 1, &b);
                         _queued++;
-                        if (state != (int)SourceState.Playing && _queued >= StartGrains)
+                        if (state != (int)SourceState.Playing && state != (int)SourceState.Paused && _queued >= StartGrains && !_o._paused)
                         {
                             _o._al.SourcePlay(_source);
                             _starved = false;

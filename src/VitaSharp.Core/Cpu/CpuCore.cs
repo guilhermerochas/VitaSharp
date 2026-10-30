@@ -134,6 +134,9 @@ public sealed unsafe class CpuCore : IDisposable
     /// </summary>
     void PaceSleep(long expected, ref SleepStat stat)
     {
+        // paused emulation: the guest clock stands still, there is nothing to pace against (the thread parks at its
+        // next safe point, or it is the one finishing a GPU scene)
+        if (EmulationPause.IsPaused) return;
         InThrottle = true;
         long t0 = Util.GuestClock.Ticks, target = Math.Max(t0, expected - Volatile.Read(ref _wakeLate));
         Util.GuestClock.WaitUntil(target, allowSpin: false);

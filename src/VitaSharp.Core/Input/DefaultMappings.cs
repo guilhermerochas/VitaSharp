@@ -7,7 +7,8 @@ namespace VitaSharp.Core.Input;
 public static class DefaultMappings
 {
     /// <summary>Keyboard: arrows = D-pad, X/Space = Cross, C = Circle, Z = Square, V = Triangle, Q/E = L/R,
-    /// Enter = Start, Backspace/right Shift = Select, Home = PS button, WASD = left stick, IJKL = right stick.</summary>
+    /// Enter = Start, Backspace/right Shift = Select, Home = PS button, WASD = left stick, IJKL = right stick,
+    /// P = pause the emulation (Space is taken by Cross).</summary>
     public static ControllerProfile Keyboard()
     {
         var p = new ControllerProfile { Id = ControllerProfile.KeyboardId, Name = "Keyboard", Kind = ControllerKind.Keyboard };
@@ -21,7 +22,21 @@ public static class DefaultMappings
         // keys are digital: no deadzone needed
         p.LeftStick.Deadzone = p.RightStick.Deadzone = 0;
         AddMotionKeys(p);
+        AddHotkeys(p);
         return p;
+    }
+
+    /// <summary>Default key of the pause hotkey (<see cref="VitaControl.PauseEmulation"/>): P, free in the historic
+    /// mapping (Space, the usual pause key of emulators, is a Cross key here).</summary>
+    public const string PauseKey = "P";
+
+    /// <summary>Binds the default pause key when the hotkey has no binding yet and the key is free (an older keyboard
+    /// profile being upgraded).</summary>
+    public static void AddHotkeys(ControllerProfile p)
+    {
+        if (p.Get(VitaControl.PauseEmulation).Any() || p.GetCombos(VitaControl.PauseEmulation).Any()) return;
+        var b = InputBinding.OfKey(PauseKey);
+        if (!p.Bindings.Values.SelectMany(v => v).Contains(b.ToString())) p.Add(VitaControl.PauseEmulation, b);
     }
 
     /// <summary>

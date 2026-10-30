@@ -25,8 +25,12 @@ static class ControlNames
         VitaControl.TiltLeft => "Inclinar para esquerda", VitaControl.TiltRight => "Inclinar para direita",
         VitaControl.TwistLeft => "Girar para esquerda", VitaControl.TwistRight => "Girar para direita",
         VitaControl.MotionRecenter => "Recentralizar",
+        VitaControl.PauseEmulation => "Pausar emulação",
         _ => c.ToString(),
     };
+
+    /// <summary>A button combination ("Select + Start").</summary>
+    public static string Describe(InputCombo combo, ControllerKind kind) => string.Join(" + ", combo.Parts.Select(p => Describe(p, kind)));
 
     public static string Kind(ControllerKind k) => k switch
     {

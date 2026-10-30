@@ -33,6 +33,42 @@ public enum PadButton
 public enum PadAxis { LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger }
 
 /// <summary>
+/// Several host inputs that act only when all are held together, e.g. "pad:back&amp;pad:start" (Select + Start on a
+/// controller): how a controller binds an emulator hotkey (<see cref="VitaControl.PauseEmulation"/>) without giving up
+/// a button the game uses. Stored in the profile next to the single bindings; <see cref="InputBinding.TryParse"/>
+/// rejects it, so code that only knows single bindings skips it.
+/// </summary>
+public readonly record struct InputCombo(InputBinding[] Parts)
+{
+    public const char Separator = '&';
+
+    public override string ToString() => string.Join(Separator, Parts.Select(p => p.ToString()));
+
+    public static bool TryParse(string? s, out InputCombo combo)
+    {
+        combo = default;
+        if (string.IsNullOrWhiteSpace(s) || !s.Contains(Separator)) return false;
+        var items = s.Split(Separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parts = new InputBinding[items.Length];
+        for (int i = 0; i < items.Length; i++)
+            if (!InputBinding.TryParse(items[i], out parts[i])) return false;
+        if (parts.Length < 2) return false;
+        combo = new InputCombo(parts);
+        return true;
+    }
+
+    /// <summary>Activation 0..1: the weakest of the parts (all must be held).</summary>
+    public float Value(PadSnapshot? pad, IReadOnlySet<string>? keys)
+    {
+        float v = 1f;
+        foreach (var p in Parts) v = Math.Min(v, InputMapper.Value(p, pad, keys));
+        return v;
+    }
+
+    public string Describe(ControllerKind kind) => string.Join(" + ", Parts.Select(p => p.Describe(kind)));
+}
+
+/// <summary>
 /// One host input bound to a Vita control. Serialised as a short string: "key:Space", "pad:a", "pad:leftx-",
 /// "pad:lefttrigger", "joy:b3", "joy:a2+", "joy:a5~" (full-range axis), "joy:h0.4" — the gamepad names are those of
 /// the SDL GameControllerDB format.

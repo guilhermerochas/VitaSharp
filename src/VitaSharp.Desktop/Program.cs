@@ -436,6 +436,7 @@ public static class Program
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
+        Console.WriteLine("               --start-paused  pause the emulation right after the boot (P, or the key set in Controles, resumes)");
         Console.WriteLine("               --trophy-sound=on|off  chime with the trophy notification in the window (default on)");
         Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
         Console.WriteLine("               --shaderc-opt=zero|size|perf  shader optimisation (default zero: fast compiles, less stutter)");

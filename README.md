@@ -284,8 +284,12 @@ game's progress. Online multiplayer and other players' data need a real server; 
 | Front touch / rear touch | Left / right mouse button |
 | PS button | `Home` |
 | Fullscreen | `F11` |
+| Pause / resume the emulation | `P` |
 
-These are the defaults. Gamepads are detected automatically (including hot-plug) through SDL2 and its controller
+These are the defaults. The pause key freezes every guest process, the guest clock (no time jump on resume) and the
+audio; the window keeps the last frame with a "Pausado (P)" badge, and F10 captures that frame. It is the
+"Pausar emulação" row of Settings > Controles (`Space` would be the usual key, but it is a Cross key here); a controller
+can bind it to a button combination held together (none by default). `--start-paused` boots paused. Gamepads are detected automatically (including hot-plug) through SDL2 and its controller
 database: the layout is positional, so the bottom face button is Cross on Xbox, PlayStation and Nintendo pads alike,
 both bumpers and triggers act as L / R, the PS / Xbox / Home button is the PS button, and a DualShock 4 / DualSense
 touch pad touches the front screen (the rear pad while L2 is held, both while R2 is held). Controller gyros feed the

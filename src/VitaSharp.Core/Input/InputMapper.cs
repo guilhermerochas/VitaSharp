@@ -119,10 +119,13 @@ public sealed class CompiledProfile
     public ControllerProfile Profile { get; }
     readonly InputBinding[][] _bindings = new InputBinding[VitaControls.Count][];
 
+    readonly InputCombo[] _pauseCombos;
+
     public CompiledProfile(ControllerProfile p)
     {
         Profile = p;
         foreach (var c in VitaControls.All) _bindings[(int)c] = p.Get(c).ToArray();
+        _pauseCombos = p.GetCombos(VitaControl.PauseEmulation).ToArray();
         RearModifier = InputBinding.TryParse(p.TouchpadRearModifier, out var rm) ? rm : null;
         BothModifier = InputBinding.TryParse(p.TouchpadBothModifier, out var bm) ? bm : null;
         foreach (var c in VitaControls.All)
@@ -136,6 +139,9 @@ public sealed class CompiledProfile
     public InputBinding? BothModifier { get; }
 
     public ReadOnlySpan<InputBinding> this[VitaControl c] => _bindings[(int)c];
+
+    /// <summary>The button combinations of a hotkey (<see cref="VitaControls.IsHotkey"/>); none for other controls.</summary>
+    public ReadOnlySpan<InputCombo> Combos(VitaControl c) => c == VitaControl.PauseEmulation ? _pauseCombos : [];
 }
 
 public static class InputMapper
@@ -169,6 +175,17 @@ public static class InputMapper
 
     public static float Value(CompiledProfile p, VitaControl c, PadSnapshot? pad, IReadOnlySet<string>? keys)
         => Value(p, c, pad, keys, null, null);
+
+    /// <summary>Whether a hotkey (<see cref="VitaControl.PauseEmulation"/>) is held: one of its single bindings, or
+    /// every input of one of its combinations, at the profile's button threshold.</summary>
+    public static bool HotkeyHeld(CompiledProfile p, VitaControl c, PadSnapshot? pad, IReadOnlySet<string>? keys)
+    {
+        float threshold = p.Profile.ButtonThreshold is > 0 and <= 1 ? p.Profile.ButtonThreshold : 0.5f;
+        if (Value(p, c, pad, keys) >= threshold) return true;
+        foreach (ref readonly var combo in p.Combos(c))
+            if (combo.Value(pad, keys) >= threshold) return true;
+        return false;
+    }
 
     /// <summary>Activation of a control, ignoring the bindings <paramref name="skipA"/>/<paramref name="skipB"/>
     /// (touch pad layer modifiers that are in use).</summary>
@@ -274,6 +291,30 @@ public static class InputMapper
 public static class InputCapture
 {
     public const float AxisThreshold = 0.6f;
+
+    /// <summary>Every button (and trigger, hat direction) held now that was not held in <paramref name="baseline"/>:
+    /// recording a button combination (<see cref="InputCombo"/>). Sticks are left out: a combination is buttons.</summary>
+    public static List<InputBinding> Held(PadSnapshot baseline, PadSnapshot now)
+    {
+        var held = new List<InputBinding>();
+        if (now.IsGamepad)
+        {
+            for (int i = 0; i < now.Buttons.Length; i++)
+                if (now.Buttons[i] && !baseline.Buttons[i]) held.Add(InputBinding.Of((PadButton)i));
+            for (int i = (int)PadAxis.LeftTrigger; i <= (int)PadAxis.RightTrigger; i++)
+                if (now.Axes[i] >= AxisThreshold && baseline.Axes[i] < AxisThreshold) held.Add(InputBinding.Of((PadAxis)i));
+            return held;
+        }
+        for (int i = 0; i < now.JoyButtonCount; i++)
+            if (now.JoyButtons[i] && !baseline.JoyButtons[i]) held.Add(InputBinding.JoyButton(i));
+        for (int i = 0; i < now.JoyHatCount; i++)
+        {
+            int fresh = now.JoyHats[i] & ~baseline.JoyHats[i];
+            for (int bit = 1; bit <= 8; bit <<= 1)
+                if ((fresh & bit) != 0) held.Add(InputBinding.JoyHat(i, bit));
+        }
+        return held;
+    }
 
     public static InputBinding? Detect(PadSnapshot baseline, PadSnapshot now)
     {

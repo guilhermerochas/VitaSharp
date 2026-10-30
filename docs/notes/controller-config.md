@@ -89,3 +89,20 @@ Verified: unit tests `VirtualMotionTests`; ui-snapshot (`09_keyboard_tilt`, `10_
 (PCSA00552, SceMotionState at 0x823C70F8) with `--input=key@f300:Keypad8:f240,key@f300:H:f240,mlook@f800:150:0:f30`
 and `--peek`: at rest before the keys (identity quaternion), (0.433, 0.5, -0.75) G with keypad 8 + H held (30 deg
 forward + 30 deg right), back to (0, 0, -1) after release, and the quaternion Rx(-90) * Rz(-30) after 150 px of mouse look.
+
+## Pause hotkey (branch feat/pause-key)
+
+A host hotkey pauses and resumes the whole emulation. Default key: `P` (Space, the usual choice, is a Cross key of the
+historic mapping); controllers have none by default and can bind a button combination.
+
+| Where | What |
+| --- | --- |
+| `Core/EmulationPause.cs` | The Core pause API (`Pause`/`Resume`/`Toggle`/`IsPaused`, `Changed`). Freezes the guest clock, interrupts every live guest thread of every process (shell + applications): each parks at its next safe point, like a suspended process. The thread with a GPU scene open (`Emulator.OpenSceneThread`, set by `GpuQueue.Submit` on BeginScene/EndScene) runs on until it ends the scene, so the GPU finishes the frame. `WaitWhilePaused` blocks host-side clock waits; `ActiveHostTicks` leaves the pause out of host-time statistics (audio gaps). |
+| `Util/GuestClock.cs` | `Freeze`/`Thaw`: the clock reads a constant while paused and continues from that value (no time jump); `WaitUntil` waits for the resume (turbo moves are dropped). CPU pacing does not sleep while paused. |
+| `IAudioBackend.SetPaused` | The first `Emulator` follows `Changed`: OpenAL pauses its sources (AL_PAUSED, not counted as an underrun) and starts none until the resume; Android pauses its streams. |
+| Renderer (`VulkanRenderer.Pause.cs`) | While paused the idle GPU worker presents the last frame again when an overlay changes, on resize and about once a second; a pending F10 / --diag-at capture captures that frame at once. `SetStatusOverlay`: the top-left "Pausado (P)" badge (`Desktop/Host/PauseBadge.cs`). |
+| `VitaControl.PauseEmulation` | Host hotkey control (appended). Keyboard default `key:P`; input.json version 3, a version 2 keyboard profile gets `P` when free. `InputCombo` ("pad:back&pad:start") = inputs held together, stored with the single bindings (which skip it). |
+| Controles tab | "Atalhos do emulador" > "Pausar emulação"; on a controller the ⊕ button records a combination (hold the buttons, release). |
+| Window / CLI | `WindowHost.PauseToggled` (key event, never passed to the game; controllers polled at 100 Hz on the window thread since the paused guest polls nothing). `--start-paused`. Scripted input: `key@f300:P` toggles once when it starts, `fN+S` = S wall seconds after frame N (steps during a pause), `key@...:F10` captures. |
+| Android | The pause menu and onPause/onResume call the same Core API (`EmulationSession.Pause/Resume`). |
+| Watchdog | No stall reports while paused. |

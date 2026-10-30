@@ -291,9 +291,27 @@ static class UiSnapshot
             var bound = DefaultMappings.Keyboard().Get(c).Select(b => b.Key).ToArray();
             if (!keys.SequenceEqual(bound)) { Console.WriteLine($"  {c}: default keys {string.Join("/", bound)}"); failures++; }
         }
+        // emulator hotkeys: "Pausar emulação" on its default key
+        panel.ShowHotkeys();
+        await Snap("keyboard_hotkeys");
+        var pauseKeys = DefaultMappings.Keyboard().Get(VitaControl.PauseEmulation).Select(b => b.Key).ToArray();
+        if (!pauseKeys.SequenceEqual([DefaultMappings.PauseKey])) { Console.WriteLine($"  PauseEmulation: default keys {string.Join("/", pauseKeys)}"); failures++; }
 
         // back to the controller, then unplug it: the list falls back to the keyboard
         panel.SelectDevice(pads.Devices.FirstOrDefault(d => d.IsVirtual)?.Guid ?? "");
+        // the pause hotkey as a combination: Share + Options held together, then released
+        panel.ShowHotkeys();
+        panel.BeginListen(VitaControl.PauseEmulation, ControllerSettingsPanel.ListenModeArg.Combo);
+        pads.SetVirtual(v, PadButton.Back, true);
+        pads.SetVirtual(v, PadButton.Start, true);
+        await Snap("dualsense_pause_combo_held");
+        pads.SetVirtual(v, PadButton.Back, false);
+        pads.SetVirtual(v, PadButton.Start, false);
+        pads.Flush();
+        panel.Pump(); // records the combination (the rows are rebuilt)
+        await Task.Delay(100);
+        panel.ShowHotkeys();
+        await Snap("dualsense_pause_combo");
         await Snap("dualsense_profile_edited");
         panel.Save();
         var json = File.ReadAllText(HostInput.ConfigPath(Program.DataRoot));
@@ -310,6 +328,10 @@ static class UiSnapshot
         bool roundTrip = reloaded.Get(VitaControl.Triangle).SequenceEqual([InputBinding.Of(PadButton.Back)]);
         Console.WriteLine($"profile reload: {(roundTrip ? "ok" : "FAILED")}");
         if (!roundTrip) failures++;
+        var combos = reloaded.GetCombos(VitaControl.PauseEmulation).Select(k => k.ToString()).ToList();
+        bool comboOk = combos.SequenceEqual(["pad:back&pad:start"]);
+        Console.WriteLine($"pause combination: {(comboOk ? "ok" : $"FAILED ({string.Join(", ", combos)})")}");
+        if (!comboOk) failures++;
         dlg.ShowTab(SettingsDialog.GeneralTab);
         await Snap("general_tab");
         dlg.Firmware.BringIntoView();

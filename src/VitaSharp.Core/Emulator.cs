@@ -139,6 +139,7 @@ public sealed class Emulator : IDisposable
         AppId = Vita.RegisterApp(this);
         Vfs = new Vfs(options.FsRoot);
         InitProcess();
+        EmulationPause.Changed += OnPauseChanged;
     }
 
     /// <summary>A further process of the same system (<see cref="SpawnProcess"/>): shares the guest memory's shared regions
@@ -338,6 +339,29 @@ public sealed class Emulator : IDisposable
 
     /// <summary>The process is suspended: its threads stop at their next safe point (see <see cref="GuestThread"/>).</summary>
     public volatile bool Suspended;
+
+    /// <summary>The thread of this process that submitted a GPU BeginScene not yet followed by its EndScene (any thread
+    /// of the process may end it). While the emulation is paused that thread runs on until the scene is closed, so the
+    /// GPU finishes the frame (<see cref="EmulationPause"/>).</summary>
+    public GuestThread? OpenSceneThread
+    {
+        get => Volatile.Read(ref _openSceneThread);
+        set
+        {
+            var old = Interlocked.Exchange(ref _openSceneThread, value);
+            // the scene is closed during a pause: that thread parks at its next block boundary too
+            if (old != null && old != value && EmulationPause.IsPaused) old.Core.InterruptRequested = true;
+        }
+    }
+    GuestThread? _openSceneThread;
+
+    /// <summary>The emulation was paused or resumed: the host audio output follows (first process only: the devices are
+    /// its own).</summary>
+    void OnPauseChanged(bool paused)
+    {
+        try { Host.Audio?.SetPaused(paused); }
+        catch (Exception e) { Log.Warn($"Audio: could not {(paused ? "pause" : "resume")} the output: {e.Message}"); }
+    }
 
     /// <summary>Suspends the process (the shell took the screen back: the application waits in the background).</summary>
     public void Suspend()
@@ -741,6 +765,7 @@ public sealed class Emulator : IDisposable
     {
         Stop();
         if (Parent != null) return; // the GPU and host devices are the first process's
+        EmulationPause.Changed -= OnPauseChanged;
         Gpu.Dispose();
         Gpu.Backend?.Dispose();
         Host.Dispose();

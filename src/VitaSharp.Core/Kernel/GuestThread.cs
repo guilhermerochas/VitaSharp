@@ -164,6 +164,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     void HostMain()
     {
         _current = this;
+        Live[this] = 0;
         // the HLE calls of this thread (and the tasks they start) work in its process's address space
         Memory.AddressSpace.Enter(_emu.Space);
         Util.NativeThread.Register(Name);
@@ -197,6 +198,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 Status = ThreadStatus.Dormant;
                 Monitor.PulseAll(WaitLock);
             }
+            Live.TryRemove(this, out _);
+            if (FinishingScene) _emu.OpenSceneThread = null;
             _finished.Set();
             _emu.Kernel.OnThreadExit(this);
             if (delete) _emu.Kernel.DeleteThread(this);
@@ -212,7 +215,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         int depth = _callDepth;
         while (true)
         {
-            if (SuspendCount > 0 || ProcessSuspended) ParkWhileSuspended();
+            if (SuspendCount > 0 || ProcessSuspended || PausedHere) ParkWhileSuspended();
             _inGuest = true;
             ExitReason exit;
             try { exit = Core.Run(); }
@@ -422,17 +425,40 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     /// may stop here: not while its process has a GPU scene open, which the other processes would wait for.</summary>
     bool ProcessSuspended => _emu.Suspended && !_emu.Gpu.HasOpenScene(_emu.Pid);
 
+    /// <summary>The emulation is paused (<see cref="EmulationPause"/>) and the thread may stop here: every thread but the
+    /// one that has a GPU scene open, which goes on until it ends the scene so the GPU completes the frame.</summary>
+    bool PausedHere => EmulationPause.IsPaused && !FinishingScene;
+
+    /// <summary>The thread submitted a BeginScene whose EndScene is still to come (<see cref="Emulator.OpenSceneThread"/>).</summary>
+    public bool FinishingScene => ReferenceEquals(_emu.OpenSceneThread, this);
+
     void ParkWhileSuspended()
     {
         using var blocked = Scheduler.Block();
         lock (_suspendLock)
-            while ((SuspendCount > 0 || ProcessSuspended) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+            while ((SuspendCount > 0 || ProcessSuspended || PausedHere) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
     }
 
     /// <summary>Wakes the thread if it is parked by a process suspension (the process resumed).</summary>
     public void WakeFromSuspend()
     {
         lock (_suspendLock) Monitor.PulseAll(_suspendLock);
+    }
+
+    /// <summary>Guest threads whose host thread is running, in every process (<see cref="EmulationPause"/>).</summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<GuestThread, byte> Live = new();
+
+    /// <summary>The emulation was paused: every running guest thread leaves its guest code at the next block boundary
+    /// and parks (threads blocked in HLE park when they return to guest code).</summary>
+    internal static void InterruptAll()
+    {
+        foreach (var t in Live.Keys) t.Core.InterruptRequested = true;
+    }
+
+    /// <summary>The emulation resumed: parked threads go on at once instead of at their next 50 ms check.</summary>
+    internal static void WakeAll()
+    {
+        foreach (var t in Live.Keys) t.WakeFromSuspend();
     }
 
     /// <summary>--trace-hle: the arguments that point at a printable C string (paths, object names), quoted.</summary>

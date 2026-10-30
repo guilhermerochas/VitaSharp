@@ -123,6 +123,12 @@ public sealed class AndroidAudioBackend : IAudioBackend
         foreach (var s in Streams()) s.Resume();
     }
 
+    /// <summary>The emulation was paused or resumed (EmulationPause: the pause menu, the activity's lifecycle).</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused) Pause(); else Resume();
+    }
+
     void DevicesChanged(string what)
     {
         Log.Info($"Audio: {what}: the streams reopen on their next grain");
