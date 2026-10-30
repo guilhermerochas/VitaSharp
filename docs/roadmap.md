@@ -73,9 +73,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tocam sem ele)
 - [ ] Velocidade nativa no celular (meta: o fps do jogo no Vita; medir Knightin'+, Devious Dungeon e F1 2011 no
   Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
-  - [ ] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF)
-  - [ ] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
-    controle de velocidade da CPU emulada sem esperas à toa
+  - [x] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF) (30/10/2026,
+    branch feat/android-speed-1: clusters lidos do sysfs, thread principal e GPU nos núcleos rápidos, sessão ADPF com o
+    tempo de trabalho por quadro, `VITASHARP_ANDROID_AFFINITY=off` para comparar; falta medir no Redmi Note 14,
+    roteiro em `docs/android/README.md`, "CPU cores and ADPF")
+  - [x] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
+    controle de velocidade da CPU emulada sem esperas à toa (30/10/2026, mesmo branch: logcat só com avisos e erros a
+    partir do primeiro quadro, FIFO com 3 imagens, `Surface.setFrameRate` com o fps do jogo, nenhuma espera girando
+    no celular; o Swappy ficou de fora por ser biblioteca nativa, ver "Frame pacing" no README; falta medir)
   - [ ] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
     registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante
   - [ ] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android
