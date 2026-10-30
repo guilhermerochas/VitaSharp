@@ -74,8 +74,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Android como reserva, filmes do SceAvPlayer pelo MediaExtractor com AAC pelo MediaCodec, AAudio de baixa latência na
   taxa do aparelho com AudioTrack no Android 8.0, a mesma política de buffer do OpenAL e reabertura quando o aparelho de
   saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
-- [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
-  tocam sem ele)
+- [x] SceAudiodec (MP3/AAC) e SceMp4 no Android sem o FFmpeg (30/10/2026: interfaces `IAudioFrameDecoder` e
+  `IMp4Demuxer` no Core, FFmpeg no desktop; no Android MediaCodec atrás do `FrameAlignedAudioDecoder` (um quadro de
+  PCM por quadro, como o FFmpeg; AAC cru embrulhado em ADTS) e MediaExtractor no SceMp4; usados pelo player de filmes
+  do Persona 4 Golden e do F1 2011; falta testar num aparelho, item 8 da lista em `docs/android/README.md`)
 - [ ] Velocidade nativa no celular (meta: o fps do jogo no Vita; medir Knightin'+, Devious Dungeon e F1 2011 no
   Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
   - [ ] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF)

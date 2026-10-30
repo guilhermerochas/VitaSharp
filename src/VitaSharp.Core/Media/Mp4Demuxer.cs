@@ -11,7 +11,7 @@ public sealed record DemuxedStream(bool Video, AVCodecID Codec, int Width, int H
 
 /// <summary>Demuxes an MP4/MOV container with FFmpeg into access units (no decoding). H.264 is returned as an
 /// Annex B byte stream with SPS/PPS before every key frame, the format hardware decoders take.</summary>
-public sealed unsafe class Mp4Demuxer : IDisposable
+public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 {
     AVFormatContext* _fmt;
     readonly AVPacket* _pkt;

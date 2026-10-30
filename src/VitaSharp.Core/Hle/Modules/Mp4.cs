@@ -24,7 +24,7 @@ public sealed class Mp4 : HleModule
 
     sealed class File
     {
-        public Mp4Demuxer Demux = null!;
+        public IMp4Demuxer Demux = null!;
         public readonly HashSet<int> Enabled = new();
         public DemuxedUnit? Last;
         public uint Buffer, BufferSize;
@@ -47,7 +47,7 @@ public sealed class Mp4 : HleModule
             host = ReadThroughCallbacks(fileCallbacks, path);
             temp = host ?? "";
         }
-        var demux = host != null ? Mp4Demuxer.Open(host) : null;
+        var demux = host != null ? Mp4Demuxers.Open(host) : null;
         if (demux == null)
         {
             Log.Warn($"sceMp4OpenFile: cannot open {path}");

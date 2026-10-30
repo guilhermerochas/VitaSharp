@@ -164,8 +164,22 @@ phones.
 - **Movies** (`AndroidMediaPlayer`, installed as `MediaPlayers.Backend`): SceAvPlayer on the desktop demuxes and
   decodes AAC with FFmpeg, which the app does not carry. On Android `MediaExtractor` demuxes the MP4, H.264 goes
   through the same `IVideoDecoder` (csd-0/csd-1 in front of key frames) and AAC through a MediaCodec audio decoder, into
-  the same NV21/16-bit queues as the desktop player (`MediaPlayerBase` in the core). SceAudiodec (MP3/AAC) and SceMp4
-  still need FFmpeg: they report "no media" on Android.
+  the same NV21/16-bit queues as the desktop player (`MediaPlayerBase` in the core).
+- **SceAudiodec MP3/AAC and SceMp4** (used by the games' own movie players: Persona 4 Golden's AvPlayer on sceMp4 +
+  sceVideodec + sceAudiodec raw AAC in 0x200-byte ES slots, F1 2011's on sceMp4): the core's interfaces
+  (`IAudioFrameDecoder` / `AudioFrameDecoders.Backend`, `IMp4Demuxer` / `Mp4Demuxers.Backend`) have FFmpeg on the
+  desktop and, installed by `AndroidMediaBackends`, `MediaCodecAudioFrameBackend` and `MediaExtractorMp4Demuxer` in
+  the game process. MediaCodec decodes asynchronously, with its own start-up delay (Android's MP3 decoder drops 529
+  samples, AAC decoders may hold a frame) and buffer sizes; the core's `FrameAlignedAudioDecoder` turns it into
+  SceAudiodec's frame in, frame out with FFmpeg's counts (1152/576 samples per MP3 frame from its header, 1024 per AAC
+  frame, 2048 with SBR): missing start-up output is silence in front, so the stream is a constant few hundred samples
+  late but never short, and output beyond two frames is dropped. MediaCodec cannot report how long a raw AAC frame is
+  (FFmpeg measures it on a probe decoder), so raw frames get an ADTS header (from the AudioSpecificConfig of the init
+  parameters) covering the buffer the game hands over and the decoder runs in ADTS mode; inputEsSize then reports
+  that whole buffer. SceMp4 units from MediaExtractor match FFmpeg's (Annex B H.264 with csd-0/csd-1 before key
+  frames, raw AAC, 90 kHz), except DTS = PTS (MediaExtractor gives no decode times), a 30 fps fallback when the track
+  has no frame rate, and interleaving by timestamp rather than file position. The alignment, the ADTS header (checked
+  against FFmpeg) and the backend hooks are unit-tested on the desktop (`AudioFrameDecoderTests`).
 - **GPU drivers** (`AdrenoToolsDriverLoader`, see the [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android)):
   a Turnip or Qualcomm package (zip with `meta.json`, the Skyline/yuzu format) installed from "Driver da GPU" goes to
   internal storage; the game process opens it through libadrenotools with the file-redirect, BCeNabler and turbo
@@ -351,7 +365,16 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
    `MediaCodec: H.264 with <decoder>` and output-format lines; frames correct (no green/garbled chroma: the
    `getOutputImage` plane strides and the crop), the fallback to `c2.android.avc.decoder` when a hardware decoder fails
    (`MediaCodec: ... failed`), movie sound (AAC through MediaCodec) in sync; on the x86_64 emulator only the software
-   decoder exists. SceAudiodec MP3/AAC is expected to be silent (no FFmpeg).
+   decoder exists. **SceAudiodec / SceMp4** (Persona 4 Golden's opening and attract movies, `p4g_boot`; F1 2011's
+   intro movies): the log's `Audiodec: AAC through mediacodec <decoder> (raw, ADTS-wrapped, ...)` and
+   `Mp4 (MediaExtractor) <file>: ...` lines; the decoder accepts a raw frame inside an ADTS header longer than the
+   frame (the stale slot bytes after the raw_data_block are skipped, not decoded as more frames: no `audiodec-mc-*`
+   warnings, movie sound clean and not turning to noise after a few seconds); every `sceAudiodecDecode` returns
+   4096 PCM bytes (1024 stereo samples), never 0, so P4G keeps its 48 kHz movie port (no black screen after the attract
+   movie); sound in sync with the picture (the start-up delay is a few hundred samples); an MP3 game, if one turns up
+   (1152/576 samples per frame); MediaExtractor's frame rate / duration / language for the info SceMp4 reports, and
+   B-frame streams with DTS = PTS; the temp copy SceMp4 writes through the game's file callbacks lands in a writable
+   `Path.GetTempPath()`.
 9. **GPU drivers** on an Adreno phone: the APK has `lib/arm64-v8a/libadrenotools.so` and the four hooks (when
    `build/build-android-adrenotools.ps1` or `.sh` ran) and they are extracted to the native library directory
    (`extractNativeLibs`); install a Turnip package (K11MCH1/AdrenoToolsDrivers or Mesa Turnip releases) from "Driver da

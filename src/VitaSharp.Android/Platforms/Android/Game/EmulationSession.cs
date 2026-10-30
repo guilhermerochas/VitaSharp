@@ -93,6 +93,7 @@ public sealed class EmulationSession : IDisposable
         // MediaExtractor with AAC through MediaCodec
         VitaSharp.Core.Media.VideoDecoders.Backend = new MediaCodecVideoBackend();
         VitaSharp.Core.Media.MediaPlayers.Backend = AndroidMediaPlayer.Open;
+        AndroidMediaBackends.InstallAudioAndMp4(); // SceAudiodec MP3/AAC through MediaCodec, SceMp4 through MediaExtractor
         TrophyNotifications.Unlocked += OnTrophy;
 
         // a custom Adreno/Turnip driver (Driver da GPU) goes in before the first Vulkan call of the process
