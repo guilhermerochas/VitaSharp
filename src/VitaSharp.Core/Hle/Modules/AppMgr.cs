@@ -351,14 +351,54 @@ public sealed class AppMgr : HleModule
         return 0;
     }
 
-    /// <summary>No application events are ever queued (no suspend/resume on the host).</summary>
-    [Hle] int sceAppMgrReceiveEvent(uint appEvent) => appEvent == 0 ? ERR_NULL_POINTER : ERR_INVALID_VALUE;
+    // Application events (FW 3.74 kernel appmgr): one pending flag per event in the application's control block, not a
+    // queue. Posting an event sets its flag (ACTIVATE and DEACTIVATE cancel each other), ReceiveEventNum counts the flags
+    // set and ReceiveEvent takes them in a fixed order, writing {event, -1, 0x38 zero bytes}; with none it fails with
+    // 0x80802020. The launch posts PARAM_NOTIFY: libpaf-based system applications (Settings, Friends) build their first
+    // page only when it arrives, reading the launch parameter with sceAppMgrGetAppParam.
+    public const uint EventActivate = 0x10000001, EventDeactivate = 0x10000002, EventResume = 0x10000003,
+        EventRequestQuit = 0x20000001, EventParamNotify = 0x20000004;
+    const int ERR_NO_APP_EVENT = unchecked((int)0x80802020);
+    static readonly uint[] EventOrder = [EventActivate, EventDeactivate, EventResume, EventRequestQuit, EventParamNotify, 0x10000101, 0x10000102, 0x20000010];
+    readonly HashSet<uint> _pendingEvents = new();
+
+    /// <summary>Sets an application event's pending flag (kernel appmgr 0x81012C00).</summary>
+    public void PostEvent(uint ev)
+    {
+        lock (_pendingEvents)
+        {
+            // an activate pending when the application is deactivated again (or the reverse) is dropped with it
+            if (ev == EventActivate && _pendingEvents.Remove(EventDeactivate)) return;
+            if (ev == EventDeactivate && _pendingEvents.Remove(EventActivate)) return;
+            if (ev == 0x10000101) _pendingEvents.Remove(0x10000102);
+            if (ev == 0x10000102) _pendingEvents.Remove(0x10000101);
+            if (Array.IndexOf(EventOrder, ev) >= 0) _pendingEvents.Add(ev);
+        }
+    }
+
+    /// <summary>(SceAppMgrEvent *event, 0x40 bytes): takes the first pending application event.</summary>
+    [Hle]
+    int sceAppMgrReceiveEvent(uint appEvent)
+    {
+        if (appEvent == 0) return ERR_NULL_POINTER;
+        uint ev;
+        lock (_pendingEvents)
+        {
+            ev = EventOrder.FirstOrDefault(_pendingEvents.Contains);
+            if (ev == 0) return ERR_NO_APP_EVENT;
+            _pendingEvents.Remove(ev);
+        }
+        GuestMemory.W32(appEvent, ev);
+        GuestMemory.W32(appEvent + 4, 0xFFFFFFFF);
+        GuestMemory.Fill(appEvent + 8, 0, 0x38);
+        return 0;
+    }
 
     [Hle]
     int sceAppMgrReceiveEventNum(Ptr<int> eventNum)
     {
         if (eventNum.IsNull) return ERR_NULL_POINTER;
-        eventNum.Value = 0;
+        lock (_pendingEvents) eventNum.Value = _pendingEvents.Count;
         return 0;
     }
 
