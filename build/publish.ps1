@@ -34,6 +34,12 @@ $project = Join-Path $root 'src\VitaSharp.Desktop\VitaSharp.Desktop.csproj'
 $Out = [IO.Path]::GetFullPath($Out)
 $versionProps = @()
 if ($Version -match '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') { $versionProps = @("-p:Version=$Version") }
+# MSBuild turns every environment variable into a property, and property names ignore case: a VERSION=ci-12 left in
+# the environment would become $(Version) and fail the restore (NU1105 "'ci-12' is not a valid version string", which
+# NuGet does not even print: only "RestoreTask returned false but did not log an error"). Hidden from dotnet while
+# this script runs, like build/publish.sh does; restored at the end.
+$savedEnv = @{ VERSION = $env:VERSION; OUT = $env:OUT }
+$env:VERSION = $null; $env:OUT = $null
 
 function Test-AotHost([string]$r) {
     if ($IsLinux) { $hostArch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower(); return $r -eq "linux-$hostArch" }
@@ -87,29 +93,34 @@ if ($Aot -and -not ($IsLinux -or $IsMacOS)) {
     if (Test-Path (Join-Path $installer 'vswhere.exe')) { $env:PATH = "$installer;$env:PATH" }
 }
 
-foreach ($r in $Rid) {
-    $dest = Join-Path $Out $r
-    if ($SkipPublish) {
-        if (-not (Test-Path (Join-Path $dest '*'))) { throw "-SkipPublish: nothing published in $dest" }
-    }
-    elseif ($Aot -and (Test-AotHost $r)) {
-        Write-Host "== $r (Native AOT)"
-        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:VitaSharpAot=true @versionProps -o $dest
-        if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
-        $symbols = Join-Path $Out "$r-symbols"
-        New-Item -ItemType Directory -Force $symbols | Out-Null
-        Get-ChildItem $dest -File | Where-Object { $_.Extension -in '.pdb', '.dbg' -or $_.Name -like '*.dSYM' } | Move-Item -Destination $symbols -Force
-        Get-ChildItem $dest -Directory -Filter '*.dSYM' | Move-Item -Destination $symbols -Force
-    }
-    else {
-        if ($Aot) { Write-Warning "$r`: Native AOT cannot be cross-compiled from this OS, publishing ReadyToRun instead (build it on $r for AOT)" }
-        Write-Host "== $r (ReadyToRun)"
-        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:DebugType=embedded @versionProps -o $dest
-        if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
-    }
+try {
+    foreach ($r in $Rid) {
+        $dest = Join-Path $Out $r
+        if ($SkipPublish) {
+            if (-not (Test-Path (Join-Path $dest '*'))) { throw "-SkipPublish: nothing published in $dest" }
+        }
+        elseif ($Aot -and (Test-AotHost $r)) {
+            Write-Host "== $r (Native AOT)"
+            dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:VitaSharpAot=true @versionProps -o $dest
+            if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
+            $symbols = Join-Path $Out "$r-symbols"
+            New-Item -ItemType Directory -Force $symbols | Out-Null
+            Get-ChildItem $dest -File | Where-Object { $_.Extension -in '.pdb', '.dbg' -or $_.Name -like '*.dSYM' } | Move-Item -Destination $symbols -Force
+            Get-ChildItem $dest -Directory -Filter '*.dSYM' | Move-Item -Destination $symbols -Force
+        }
+        else {
+            if ($Aot) { Write-Warning "$r`: Native AOT cannot be cross-compiled from this OS, publishing ReadyToRun instead (build it on $r for AOT)" }
+            Write-Host "== $r (ReadyToRun)"
+            dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:DebugType=embedded @versionProps -o $dest
+            if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
+        }
 
-    if ($Package) {
-        if ($r -like 'win-*') { Write-Host "== $r package"; New-WindowsPackage $r $dest }
-        else { Write-Warning "$r`: Linux/macOS packages need Unix file permissions, build them with build/publish.sh --package on Linux or macOS" }
+        if ($Package) {
+            if ($r -like 'win-*') { Write-Host "== $r package"; New-WindowsPackage $r $dest }
+            else { Write-Warning "$r`: Linux/macOS packages need Unix file permissions, build them with build/publish.sh --package on Linux or macOS" }
+        }
     }
+}
+finally {
+    $env:VERSION = $savedEnv.VERSION; $env:OUT = $savedEnv.OUT
 }

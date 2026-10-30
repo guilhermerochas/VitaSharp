@@ -29,6 +29,10 @@ out="${OUT:-$root/artifacts/publish}"
 version="${VERSION:-dev}"
 version_props=()
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] && version_props=("-p:Version=$version")
+# MSBuild turns every environment variable into a property, and property names ignore case: VERSION=ci-12 would become
+# $(Version) and fail the restore (NU1105 "'ci-12' is not a valid version string", which NuGet does not even print:
+# only "RestoreTask returned false but did not log an error"). Both are read above, keep them away from dotnet.
+unset VERSION OUT
 aot=0
 package=0
 skip_publish=0
