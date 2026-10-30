@@ -26,8 +26,16 @@ the NDK ships (`sources/third_party/shaderc`, ndk-build, libc++ static, 16 KiB-p
 (`sdkmanager "ndk;30.0.16248370"`, r30 was used) and takes long (glslang + SPIRV-Tools, about 460 files per ABI;
 `-Jobs 2` by default).
 
+Custom GPU drivers need libadrenotools: `build/build-android-adrenotools.ps1` (or `.sh`) fetches its sources at a
+pinned commit (git, once) into `third_party/android-adrenotools/src` and builds `libadrenotools.so` and its four hook
+libraries for arm64-v8a with ndk-build (no CMake needed, 2 jobs, under a minute) into
+`third_party/android-adrenotools/libs/arm64-v8a/` (not committed); the app packages them when they exist, else the
+system Vulkan driver is always used. Details: [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android).
+
 Output: `src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-Signed.apk` (debug-keystore signed,
-arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); a Release rebuild of both
+arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); with the
+MediaCodec/AAudio backends, libadrenotools and `extractNativeLibs` (native libraries stored compressed), without
+libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); a Release rebuild of both
 ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faster, for iterating).
 
 | Project | Target | In `VitaSharp.sln` | What |
@@ -43,8 +51,11 @@ ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faste
   desktop `Runner`), `AndroidVulkanSurface` (`IPresentationSurface`), `OnScreenControlsView`.
 - `Platforms/Android/Services/`: `LogcatSink`, `Saf` (Storage Access Framework picker); `Services/AppServices.cs`:
   data folder, settings, controller profiles, Keystore.
-- `Audio/AAudioBackend.cs`, `Media/MediaCodecVideoDecoder.cs`, `Gpu/AdrenoToolsDriverLoader.cs`: the AAudio,
-  MediaCodec and libadrenotools backends (compiled into the app, not run yet).
+- `Audio/AndroidAudioBackend.cs` (AAudio, AudioTrack), `Media/MediaCodecVideoDecoder.cs`,
+  `Media/AndroidMediaPlayer.cs`, `Gpu/AdrenoToolsDriverLoader.cs`: the audio, video and GPU driver backends
+  ([below](#audio-video-and-gpu-drivers); compiled into the app, not run yet). Their platform-neutral halves are in
+  `VitaSharp.Android.Common` (`Audio/BufferedPcmStream.cs`, `Media/MediaCodecSupport.cs`,
+  `Storage/GameProcessMarker.cs`; unit-tested: `AndroidMediaDriverTests`).
 - `src/VitaSharp.Android.Common`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
   settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`), `Firmware/FirmwareSetup.cs`,
   `Gpu/GpuDriverScreen.cs` (Driver/Informações da GPU models), `Input/` (`OnScreenPad`, `AndroidGamepads`,
@@ -99,8 +110,9 @@ ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faste
 The data root is the **app-specific external storage** (`Context.GetExternalFilesDir(null)`,
 `/sdcard/Android/data/io.github.vitasharp/files`), or the internal files folder when it is not mounted; the layout is
 the desktop's (`fs/ux0/app` games, `fs/ux0/user/00/savedata` saves, `fs/vs0`... firmware, `logs`, `shadercache`,
-`np`, `config/app.json`, `config/games/TITLEID.json`, `config/input.json`, `gpu_driver.json`, `gpu_drivers/`;
-`DataLayout`). Why not a folder chosen with the Storage Access Framework: SAF gives `content://` URIs, not paths, and
+`np`, `config/app.json`, `config/games/TITLEID.json`, `config/input.json`, `gpu_driver.json`; `DataLayout`).
+GPU driver packages (`gpu_drivers/`, `gpu_driver_files/`) and the running game's marker (`run/game.json`) are in the
+**internal** files folder (`Context.FilesDir`) instead: the linker loads no library from shared storage. Why not a folder chosen with the Storage Access Framework: SAF gives `content://` URIs, not paths, and
 the emulator opens, maps and seeks guest files directly (and keeps the shader cache and saves next to them); the only
 way to a real path in a user folder is `MANAGE_EXTERNAL_STORAGE`, which needs a Play policy exception. So no storage
 permission is requested, and files come in through SAF: **Instalar VPK**, the firmware `.PUP` and GPU driver
@@ -108,6 +120,41 @@ packages are picked with `ACTION_OPEN_DOCUMENT` and read in place through `Conte
 (a provider that only streams, such as a cloud drive, is copied into the cache first). Uninstalling the app deletes
 the data folder (Android's rule for app-specific storage); a USB/MTP connection or the Files app can reach it on most
 phones.
+
+## Audio, video and GPU drivers
+
+- **Audio** (`AndroidAudioBackend`): one device stream per guest port, NDK **AAudio** on Android 8.1+ (low-latency
+  performance mode, exclusive/MMAP sharing when granted, usage GAME, 16-bit) and the Java **AudioTrack** in
+  low-latency mode on 8.0 (Oboe's rule: 8.0's AAudio is buggy) or when AAudio does not open. The stream runs at the
+  rate the device reports (`AudioManager` `PROPERTY_OUTPUT_SAMPLE_RATE`), so AAudio adds no resampler of its own;
+  the guest's 48 kHz is converted (linear) only when the device differs. `BufferedPcmStream` (Android.Common) holds
+  the policy of the desktop OpenAL backend: up to `max(4, 2 × period grains + 2)` grains queued (the device buffer is
+  sized to that), playback starting after one period plus a grain (primed before `requestStart`), Submit blocking
+  while full (the guest's pacing). A dry spell (the device's xrun counter moved) counts once in `IAudioStream.Underruns`,
+  so it shows in the `AUDIO summary` line and the debug-mode AUDIO lines; when the buffer was completely empty the next
+  grain is preceded by silence up to the start threshold, as OpenAL re-buffers. The AAudio error callback (headphones,
+  Bluetooth, USB) and `AudioDeviceCallback` (an output added or removed) make the stream reopen on its next grain, on
+  the guest thread, at the new device's rate; with no device at all the guest is paced by the clock. The device line
+  of the AUDIO summary (`AudioDiagnostics.DeviceInfo`) has the backend, mode, rate, burst, queue depth, latency and
+  underruns.
+- **Video** (`MediaCodecVideoBackend`, the default `VideoDecoders.Backend` in the game process): H.264 through the
+  `android.media.MediaCodec` bindings without a surface. Hardware decoders first, then Android's own software decoder
+  (`c2.android.avc.decoder` / `OMX.google.h264.decoder`, on every device); a decoder that fails while running hands
+  over to the next one from the last IDR picture (`DecoderReplay`, the FFmpeg hwaccel fallback's scheme). Output is
+  `COLOR_FormatYUV420Flexible` read with `getOutputImage` (plane row/pixel strides, crop rectangle; vendor layouts
+  work), the raw buffer in the two standard layouts otherwise; `KEY_LOW_LATENCY` (API 30) where supported; colour
+  range/standard from the output format. The pictures are the planar `DecodedPicture` the existing upload path takes
+  (SceAvcdec, SceVideodec).
+- **Movies** (`AndroidMediaPlayer`, installed as `MediaPlayers.Backend`): SceAvPlayer on the desktop demuxes and
+  decodes AAC with FFmpeg, which the app does not carry. On Android `MediaExtractor` demuxes the MP4, H.264 goes
+  through the same `IVideoDecoder` (csd-0/csd-1 in front of key frames) and AAC through a MediaCodec audio decoder, into
+  the same NV21/16-bit queues as the desktop player (`MediaPlayerBase` in the core). SceAudiodec (MP3/AAC) and SceMp4
+  still need FFmpeg: they report "no media" on Android.
+- **GPU drivers** (`AdrenoToolsDriverLoader`, see the [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android)):
+  a Turnip or Qualcomm package (zip with `meta.json`, the Skyline/yuzu format) installed from "Driver da GPU" goes to
+  internal storage; the game process opens it through libadrenotools with the file-redirect, BCeNabler and turbo
+  options. Each game process records the configuration it loaded (`run/game.json`); after a change the screen offers
+  to restart the running game (kills the `:game` process and starts the game again).
 
 ## Logging
 
@@ -153,8 +200,9 @@ reference; the app follows them with these differences:
 - **Ajustes**: no system-language row (`EmulatorOptions.Language` is not used by the core); adds data-folder and
   debugging sections.
 - **Driver da GPU / Informações da GPU**: the information comes from a surface-less `VkCore` probe in the screens'
-  process (the system driver); the driver list, install, remove and the three libadrenotools switches work on files
-  and apply to the next game.
+  process (the system driver); the driver list, install (SAF picker, then "Usar este driver agora?"), select, remove
+  and the three libadrenotools switches work on files and apply to the next start of a game; a game running with
+  another configuration is offered a restart.
 
 ## Before the first run: what the emulator/device step must verify
 
@@ -173,9 +221,24 @@ reference; the app follows them with these differences:
 5. Input: on-screen buttons and sticks, front touch on the image, TRÁS rear touch, PS opens the pause menu; a
    Bluetooth/USB controller (hot-plug, right stick axes, analog and digital triggers, Home = PS).
 6. Logcat tags and priorities (`adb logcat -s VitaSharp VitaSharp-Guest`), the file logs.
-7. AAudio output and pacing; MediaCodec (movies also need FFmpeg, which the app does not carry: SceAvPlayer movies
-   will not play yet).
-8. libadrenotools (NDK build + packaging) on an Adreno phone; the quirk table on Adreno/Mali
+7. **Audio**: the log's `Audio:` lines (AAudio on 8.1+, low-latency and exclusive or shared, the device rate and burst;
+   AudioTrack on the x86_64 emulator image if it is API 26); sound plays at the right pitch and pace (a 44.1 kHz
+   device exercises the resampler), the `AUDIO summary` device line and underruns after a session (debug mode for
+   the periodic AUDIO lines); home → back (pause/resume, no burst of stale grains); plugging/unplugging headphones and
+   connecting a Bluetooth headset during a game ("reopening the output", sound continues on the new device, at its
+   rate); writes before `requestStart` (priming) are accepted by AAudio.
+8. **Video**: SceAvcdec/SceVideodec games and SceAvPlayer movies (an intro movie, F1 2011's): the log's
+   `MediaCodec: H.264 with <decoder>` and output-format lines; frames correct (no green/garbled chroma: the
+   `getOutputImage` plane strides and the crop), the fallback to `c2.android.avc.decoder` when a hardware decoder fails
+   (`MediaCodec: ... failed`), movie sound (AAC through MediaCodec) in sync; on the x86_64 emulator only the software
+   decoder exists. SceAudiodec MP3/AAC is expected to be silent (no FFmpeg).
+9. **GPU drivers** on an Adreno phone: the APK has `lib/arm64-v8a/libadrenotools.so` and the four hooks (when
+   `build/build-android-adrenotools.ps1` or `.sh` ran) and they are extracted to the native library directory
+   (`extractNativeLibs`); install a Turnip package (K11MCH1/AdrenoToolsDrivers or Mesa Turnip releases) from "Driver da
+   GPU", select it, start a game: the log's `Vulkan driver: ... via libadrenotools` line, the capability block shows
+   Turnip (`TurnipDriver` quirk, none of the blob quirks); BCeNabler on a stock driver without BCn (`BCeNabler:` line);
+   file redirect and turbo; change the driver while a game runs and accept the restart (the `:game` process is killed,
+   the game starts again with the new driver); a Mali phone uses the system loader. The quirk table on Adreno/Mali
    ([mobile GPU notes](../notes/mobile-gpu.md)).
 
 ## Stack

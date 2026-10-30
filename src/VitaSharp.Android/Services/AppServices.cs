@@ -43,7 +43,7 @@ public static class AppServices
             AppContext = context.ApplicationContext ?? context;
             LogcatSink.Install();
             string root = context.GetExternalFilesDir(null)?.AbsolutePath is { Length: > 0 } ext ? ext : context.FilesDir!.AbsolutePath;
-            Data = new DataLayout(root);
+            Data = new DataLayout(root, context.FilesDir!.AbsolutePath);
             try { Data.EnsureCreated(); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {

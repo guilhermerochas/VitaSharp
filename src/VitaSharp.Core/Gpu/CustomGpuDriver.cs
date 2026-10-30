@@ -64,12 +64,21 @@ public sealed class CustomDriverStore(string root)
     public InstalledGpuDriver Install(string zipPath, int deviceApiLevel = int.MaxValue)
     {
         using var zip = ZipFile.OpenRead(zipPath);
-        var metaEntry = zip.GetEntry("meta.json") ?? throw new InvalidDataException("no meta.json in the package");
+        // meta.json at the top, or inside the one folder the zip holds (packages zipped together with their folder)
+        var metaEntry = zip.GetEntry("meta.json");
+        string prefix = "";
+        if (metaEntry == null)
+        {
+            var nested = zip.Entries.Where(e => e.FullName.EndsWith("/meta.json", StringComparison.Ordinal) && e.FullName.Count(c => c == '/') == 1).ToArray();
+            if (nested.Length != 1) throw new InvalidDataException("no meta.json in the package");
+            metaEntry = nested[0];
+            prefix = metaEntry.FullName[..^"meta.json".Length];
+        }
         string json;
         using (var s = new StreamReader(metaEntry.Open())) json = s.ReadToEnd();
         var meta = CustomDriverMeta.Parse(json, out var err) ?? throw new InvalidDataException($"meta.json: {err}");
         if (meta.MinApi > deviceApiLevel) throw new InvalidDataException($"needs Android API {meta.MinApi}, the device has {deviceApiLevel}");
-        if (zip.GetEntry(meta.LibraryName) == null) throw new InvalidDataException($"{meta.LibraryName} (libraryName) is not in the package");
+        if (zip.GetEntry(prefix + meta.LibraryName) == null) throw new InvalidDataException($"{meta.LibraryName} (libraryName) is not in the package");
         string id = IdOf(meta.Name);
         string dir = Path.Combine(Root, id);
         string tmp = dir + ".installing";
@@ -78,12 +87,15 @@ public sealed class CustomDriverStore(string root)
         string fullTmp = Path.GetFullPath(tmp) + Path.DirectorySeparatorChar;
         foreach (var e in zip.Entries)
         {
-            if (e.FullName.EndsWith('/')) continue;
+            if (e.FullName.EndsWith('/') || !e.FullName.StartsWith(prefix, StringComparison.Ordinal)) continue;
             // flat packages only: the library and its companions live next to meta.json
-            if (!CustomDriverMeta.IsSafeFileName(e.FullName)) continue;
-            string dest = Path.GetFullPath(Path.Combine(tmp, e.FullName));
+            string name = e.FullName[prefix.Length..];
+            if (!CustomDriverMeta.IsSafeFileName(name)) continue;
+            string dest = Path.GetFullPath(Path.Combine(tmp, name));
             if (!dest.StartsWith(fullTmp, StringComparison.Ordinal)) continue;
             e.ExtractToFile(dest, true);
+            // read-only, as Android 14 requires of dynamically loaded code (the driver is dlopen'd from here)
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(dest, UnixFileMode.UserRead | UnixFileMode.GroupRead);
         }
         if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
         System.IO.Directory.Move(tmp, dir);

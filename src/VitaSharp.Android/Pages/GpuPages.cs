@@ -1,6 +1,8 @@
 using MauiReactor;
 using VitaSharp.Android.Gpu;
+using VitaSharp.Android.Game;
 using VitaSharp.Android.Services;
+using VitaSharp.Android.Storage;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
@@ -44,7 +46,8 @@ public sealed class GpuDriverState
 /// <summary>
 /// Driver da GPU (driver-gpu.html): the system driver or an installed Turnip/Adreno package (zip with meta.json) loaded
 /// through libadrenotools, "Instalar driver (.zip)", and the BCeNabler, turbo and file-redirect options. A change applies
-/// to the next game (each game runs in a fresh process, and a process loads one driver). Custom drivers are offered on
+/// to the next start of a game (each game runs in a fresh process, and a process loads one driver): when a game is
+/// running with another configuration (GameProcessMarker) the screen offers to restart it. Custom drivers are offered on
 /// Adreno GPUs only.
 /// </summary>
 public sealed class GpuDriverPage : Screen<GpuDriverState>
@@ -53,7 +56,7 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
     {
         base.OnMounted();
         var caps = await GpuProbe.Get();
-        var model = await Task.Run(() => new GpuDriverScreen(AppServices.Data.Root, caps));
+        var model = await Task.Run(() => new GpuDriverScreen(AppServices.Data, caps));
         SetState(s => s.Model = model);
     }
 
@@ -106,8 +109,21 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
     void Option(Action change)
     {
         try { change(); }
-        catch (Exception e) { _ = Alert("Driver da GPU", e.Message); }
+        catch (Exception e) { _ = Alert("Driver da GPU", e.Message); return; }
         SetState(s => s.Revision++);
+        _ = OfferRestartAsync();
+    }
+
+    /// <summary>A game running with the previous configuration only picks the new one up in a new process: offer to
+    /// end it and start it again.</summary>
+    async Task OfferRestartAsync()
+    {
+        if (State.Model is not { } m) return;
+        var running = await Task.Run(() => GameProcessMarker.Read(AppServices.Data.GameProcessFile, GameProcessMarker.IsGameProcess));
+        if (running == null || !m.RestartNeeded(running)) return;
+        if (await Confirm("Reiniciar o jogo", $"{running.Title} está aberto com a configuração anterior da GPU. Reiniciar o jogo agora para usar a nova? " +
+                          "O progresso que não foi salvo no jogo se perde.", "Reiniciar", "Depois"))
+            await GameActivity.RestartAsync(MainActivity.Current!, running);
     }
 
     async void Install()
@@ -126,7 +142,8 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
                         ?? throw new IOException($"não foi possível abrir {doc.DisplayName}");
                     return m.Install(stream, (int)global::Android.OS.Build.VERSION.SdkInt);
                 });
-                await Alert("Driver da GPU", $"Instalado: {installed.Meta.Name} {installed.Meta.DriverVersion}");
+                if (await Confirm("Driver da GPU", $"Instalado: {installed.Meta.Name} {installed.Meta.DriverVersion}. Usar este driver agora?", "Usar", "Agora não"))
+                    Option(() => m.Select(installed.Id));
             }
             finally { SetState(s => { s.Installing = false; s.Revision++; }); }
         });

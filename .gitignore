@@ -490,6 +490,9 @@ third_party/ffmpeg/.download/
 # libshaderc_shared.so for Android, built from the NDK (build/build-android-shaderc.ps1)
 third_party/android-shaderc/
 
+# libadrenotools for Android: sources and arm64 build (build/build-android-adrenotools.ps1 or .sh)
+third_party/android-adrenotools/
+
 # Avalonia build task cache (created by Linux/macOS builds)
 .avalonia-build-tasks/
 

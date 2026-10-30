@@ -2,7 +2,7 @@
 
   <!--
     The VitaSharp Android app: .NET MAUI with MauiReactor (declarative C#, no XAML) for the screens of docs/android,
-    a native activity for the game (SurfaceView + Vulkan, Platforms/Android/Game), logcat logging, the AAudio and
+    a native activity for the game (SurfaceView + Vulkan, Platforms/Android/Game), logcat logging, the AAudio/AudioTrack and
     MediaCodec backends and the libadrenotools GPU driver loader. The platform-neutral models are in
     VitaSharp.Android.Common (part of VitaSharp.sln and unit-tested).
 
@@ -66,6 +66,14 @@
         Condition="Exists('..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so')" />
     <AndroidNativeLibrary Include="..\..\third_party\android-shaderc\libs\x86_64\libshaderc_shared.so" Abi="x86_64"
         Condition="Exists('..\..\third_party\android-shaderc\libs\x86_64\libshaderc_shared.so')" />
+  </ItemGroup>
+
+  <!-- libadrenotools and its hook libraries (arm64-v8a only), built by build/build-android-adrenotools.ps1 or .sh (not
+       committed): packaged when present; without them "Driver da GPU" cannot load custom drivers and the system Vulkan
+       driver is used. libadrenotools loads the hooks by path from the native library directory, so the manifest has
+       the libraries extracted at install (android:extractNativeLibs="true") -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="..\..\third_party\android-adrenotools\libs\arm64-v8a\*.so" Abi="arm64-v8a" />
   </ItemGroup>
 
   <ItemGroup>

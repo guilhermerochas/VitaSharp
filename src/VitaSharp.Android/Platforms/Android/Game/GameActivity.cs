@@ -9,6 +9,7 @@ using Android.Widget;
 using VitaSharp.Android.Input;
 using VitaSharp.Android.Library;
 using VitaSharp.Android.Services;
+using VitaSharp.Android.Storage;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Util;
 using AView = Android.Views.View;
@@ -59,6 +60,20 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         intent.PutExtra(ExtraTitleId, titleId);
         if (context is not Activity) intent.AddFlags(ActivityFlags.NewTask);
         context.StartActivity(intent);
+    }
+
+    /// <summary>
+    /// From the UI process: ends the running game process (same app, so the UI may kill it) and starts the same game in
+    /// a new one, which loads the GPU driver configuration chosen since (a process loads one Vulkan driver).
+    /// </summary>
+    public static async Task RestartAsync(Context context, GameProcessInfo running)
+    {
+        Log.Info($"Restarting {running.TitleId} (pid {running.Pid}) for a new GPU driver configuration");
+        Process.KillProcess(running.Pid);
+        for (int i = 0; i < 60 && GameProcessMarker.IsGameProcess(running.Pid); i++) await Task.Delay(50);
+        // the killed process could not remove its marker; the next game writes its own
+        GameProcessMarker.Clear(AppServices.Data.GameProcessFile, running.Pid);
+        Launch(context, running.TitleId);
     }
 
     protected override void OnCreate(Bundle? savedInstanceState)
