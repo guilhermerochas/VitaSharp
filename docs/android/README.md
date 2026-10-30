@@ -26,8 +26,8 @@ the NDK ships (`sources/third_party/shaderc`, ndk-build, libc++ static, 16 KiB-p
 `-Jobs 2` by default).
 
 Output: `src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-Signed.apk` (debug-keystore signed,
-arm64-v8a + x86_64). Size on 30/10/2026: 38,974,327 bytes (37.2 MiB); a Release build of both ABIs takes about
-2.5 minutes with `-m:2`. `-r android-arm64` builds one ABI (faster, for iterating).
+arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); a Release rebuild of both
+ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faster, for iterating).
 
 | Project | Target | In `VitaSharp.sln` | What |
 |---|---|---|---|
@@ -157,10 +157,10 @@ reference; the app follows them with these differences:
 
 ## Before the first run: what the emulator/device step must verify
 
-1. **Shader compiler**: the renderer compiles GLSL at run time with shaderc. `Silk.NET.Shaderc.Native` has no
-   Android binaries (its desktop-Linux `.so` is kept out of the APK), so `libshaderc_shared.so` for arm64-v8a and
-   x86_64 must be built with the NDK and added as `AndroidNativeLibrary` items; until then the renderer fails at the
-   first shader (the session reports it in a dialog and the log).
+1. **Shader compiler**: `libshaderc_shared.so` (built from the NDK r30 sources, 42 `shaderc_*` exports, 16 KiB
+   aligned, needs only libc/libm/libdl) is in the APK when `build/build-android-shaderc.ps1` ran; check that
+   Silk.NET.Shaderc loads it by that name and that the first shaders compile (a missing library shows as a
+   DllNotFoundException in the session dialog and the log).
 2. Install, launch, navigate every screen (portrait), fonts and colours; SAF pickers return (VPK, PUP, driver zip);
    VPK install and firmware install end to end; the Keystore stores the RPCN password.
 3. Game process: `surfaceCreated` → renderer → `LoadTitle` → frames on screen; landscape orientation and the

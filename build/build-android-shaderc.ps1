@@ -17,6 +17,8 @@ $project = Join-Path $root 'build\android-shaderc'
 $args = @("NDK_PROJECT_PATH=$project", "NDK_OUT=$out\obj", "NDK_LIBS_OUT=$out\libs", "-j$Jobs")
 if ($Abi) { $args += "APP_ABI=$Abi" }
 Write-Output "NDK: $ndk"
-& (Join-Path $ndk 'ndk-build.cmd') -C $project @args
+# make prints warnings on stderr (shaderc's Android.mk overrides a header recipe): not errors, only the exit code counts
+$ErrorActionPreference = 'Continue'
+& (Join-Path $ndk 'ndk-build.cmd') -C $project @args 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) { throw 'ndk-build failed' }
 Get-ChildItem (Join-Path $out 'libs') -Recurse -Filter libshaderc_shared.so | ForEach-Object { '{0,12:N0} {1}' -f $_.Length, $_.FullName }
