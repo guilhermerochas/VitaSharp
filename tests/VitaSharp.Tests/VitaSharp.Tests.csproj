@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
+    <!-- the platform-neutral models of the Android app (no Android workload needed) -->
+    <ProjectReference Include="..\..\src\VitaSharp.Android.Common\VitaSharp.Android.Common.csproj" />
     <!-- the HLE binder generator also binds the probe module of HleBinderTests -->
     <ProjectReference Include="..\..\src\VitaSharp.Core.Generators\VitaSharp.Core.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" UndefineProperties="RuntimeIdentifier;PublishAot;PublishTrimmed;SelfContained" />
   </ItemGroup>

@@ -6,11 +6,11 @@ namespace VitaSharp.Android.Gpu;
 public sealed record GpuDriverOption(string Id, string Title, string Detail, bool Selected, bool Removable);
 
 /// <summary>
-/// SKELETON (no Android front-end yet; platform-neutral, so it compiles and runs on the desktop). The model behind the
-/// "Driver da GPU" screen (docs/android/mockups/driver-gpu.html): list the system driver and the installed custom
-/// driver packages, pick one, install a package the user chose with the Storage Access Framework, remove one, and the
-/// libadrenotools options. The choice is stored in &lt;data&gt;/gpu_driver.json and read by
-/// <see cref="AdrenoToolsDriverLoader.Create"/> before the renderer starts.
+/// The model behind the "Driver da GPU" screen (docs/android/mockups/driver-gpu.html; platform-neutral, so it is
+/// unit-tested on the desktop): list the system driver and the installed custom driver packages, pick one, install a
+/// package the user chose with the Storage Access Framework, remove one, and the libadrenotools options. The choice is
+/// stored in &lt;data&gt;/gpu_driver.json and read by AdrenoToolsDriverLoader.Create (src/VitaSharp.Android) before
+/// the renderer starts.
 /// <para>
 /// A process can load one Vulkan driver safely, so a change only applies to the next emulation session:
 /// <see cref="Select"/> returns true when the front-end must restart a running game (or tell the user it will).

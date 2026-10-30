@@ -522,7 +522,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     // ---------------------------------------------------------------- trophies
 
     /// <summary>A TRP archive with the given files (big-endian header, 0x40-byte entries).</summary>
-    static byte[] BuildTrp(params (string Name, byte[] Data)[] files)
+    internal static byte[] BuildTrp(params (string Name, byte[] Data)[] files)
     {
         const int entrySize = 0x40;
         int dataStart = 0x40 + files.Length * entrySize;
@@ -546,7 +546,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         return ms.ToArray();
     }
 
-    static byte[] Sfm(string title, string first) => Encoding.UTF8.GetBytes(
+    internal static byte[] Sfm(string title, string first) => Encoding.UTF8.GetBytes(
         "<!--Sce-Np-Trophy-Signature: 0011223344-->\n" +
         "<trophyconf version=\"1.1\" platform=\"psp2\">\n" +
         $" <npcommid>NPWR00001_00</npcommid>\n <title-name>{title}</title-name>\n <title-detail>Detail</title-detail>\n" +
