@@ -1,0 +1,180 @@
+# Publishes a GitHub Release with the packages of every platform (see "Releases" in README.md).
+#   - push a tag v<version>:  git tag v0.1.0 && git push origin v0.1.0
+#   - or run it from the Actions tab (Run workflow) with a version; the tag v<version> is then created on the chosen
+#     branch's commit when the release is published.
+# A version with a suffix (0.2.0-alpha, 0.2.0-dev.1) or the "prerelease" checkbox makes a prerelease. The packages come
+# from the CI workflow (tests first, then ReadyToRun and Native AOT packages for each platform) built with the version,
+# which also becomes the app's version ("VitaSharp 0.1.0+<commit>" in the log).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, e.g. 0.1.0 or 0.2.0-alpha (the tag is v<version>)
+        required: true
+        type: string
+      prerelease:
+        description: Mark as a prerelease (versions with a suffix always are)
+        type: boolean
+        default: false
+
+# read-only for everything except the release job below
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then v="${REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$v' is not a release version: use 1.2.3 or 1.2.3-suffix (tag v1.2.3)"; exit 1
+          fi
+          pre=false
+          if [[ "$v" == *-* ]] || [ "$INPUT_PRERELEASE" = true ]; then pre=true; fi
+          { echo "version=$v"; echo "tag=v$v"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+          echo "Release v$v (prerelease: $pre)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch'
+      - name: Check the tag (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # an existing tag must already point at the commit being built (e.g. re-running a release)
+          refs="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          existing="$(grep -F "refs/tags/$TAG^{}" <<< "$refs" | cut -f1 || true)"
+          [ -n "$existing" ] || existing="$(cut -f1 <<< "$refs" | head -n1)"
+          if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $TAG already exists on $existing, not on $GITHUB_SHA"; exit 1
+          fi
+
+  build:
+    name: Build
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+
+  release:
+    name: Publish release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the whole history and its tags, for the commit list since the previous release
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VitaSharp-*-packages
+          path: packages
+
+      # Native AOT packages keep their names, ReadyToRun ones get "-readytorun" after the platform (both kinds are
+      # built for most platforms and would otherwise have the same file names).
+      - name: Collect the packages
+        run: |
+          mkdir -p release
+          for dir in packages/*/; do
+            name="$(basename "$dir")"; rid="${name%-packages}"
+            if [[ "$rid" == VitaSharp-aot-* ]]; then rid="${rid#VitaSharp-aot-}"; flavor=""; else rid="${rid#VitaSharp-}"; flavor="-readytorun"; fi
+            prefix="VitaSharp-$VERSION-$rid"
+            for f in "$dir"*; do
+              [ -f "$f" ] || continue
+              base="$(basename "$f")"
+              if [[ "$base" != "$prefix"* ]]; then echo "::error::unexpected file $base in $name"; exit 1; fi
+              dest="release/$prefix$flavor${base#"$prefix"}"
+              if [ -e "$dest" ]; then echo "::error::two packages named $(basename "$dest")"; exit 1; fi
+              mv "$f" "$dest"
+            done
+          done
+          [ -n "$(ls -A release)" ] || { echo "::error::no packages were built"; exit 1; }
+          ls -l release
+
+      # never publish Sony firmware: no .PUP file, and no .PUP or installed firmware partition inside the archives (the
+      # installers, AppImages and dmgs are made from the same folders as the zips and tar.gz files)
+      - name: Check that no firmware is included
+        run: |
+          shopt -s nocasematch
+          bad='(\.pup$|(^|/)(os0|vs0|sa0|pd0)/)'
+          for f in release/*; do
+            if [[ "$f" =~ \.pup$ ]]; then echo "::error::firmware file $f"; exit 1; fi
+            case "$f" in
+              *.zip) list="$(unzip -Z1 "$f")" ;;
+              *.tar.gz) list="$(tar -tzf "$f")" ;;
+              *) continue ;;
+            esac
+            if grep -qiE "$bad" <<< "$list"; then
+              echo "::error::$f contains firmware:"; grep -iE "$bad" <<< "$list" | head; exit 1
+            fi
+          done
+
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum -- * > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt .
+          cat SHA256SUMS.txt
+
+      # header (build/release-notes-header.md) + the commits since the previous v* tag
+      - name: Release notes
+        run: |
+          prev="$(git describe --tags --abbrev=0 --match 'v*' --exclude "$TAG" "$GITHUB_SHA" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then range="$prev..$GITHUB_SHA"; else range="$GITHUB_SHA"; fi
+          count="$(git rev-list --no-merges --count "$range")"
+          max=300
+          {
+            cat build/release-notes-header.md
+            echo
+            if [ -n "$prev" ]; then echo "## Changes since $prev"; else echo "## Changes"; fi
+            echo
+            git log --no-merges --pretty='format:- %s (%h)' -n "$max" "$range"
+            echo
+            if [ "$count" -gt "$max" ]; then echo "- ... and $((count - max)) earlier commits"; fi
+            echo
+            if [ -n "$prev" ]; then
+              echo "**Full changelog**: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$prev...$TAG"
+            else
+              echo "First release."
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
+      # a tag created here by the GITHUB_TOKEN does not start this workflow again
+      - name: Publish
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: VitaSharp ${{ env.VERSION }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          make_latest: ${{ needs.prepare.outputs.prerelease == 'true' && 'false' || 'true' }}
+          files: release/*
+          fail_on_unmatched_files: true

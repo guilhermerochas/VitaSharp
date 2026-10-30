@@ -5,10 +5,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # .github/workflows/release.yml calls this workflow to build the release packages (tests included) with the release version
+  workflow_call:
+    inputs:
+      version:
+        description: Package and app version (1.2.3 or 1.2.3-suffix); empty for ci-<run number>
+        type: string
+        default: ''
 
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # names the packages; a release version also becomes the app's version (see build/publish.sh)
+  PACKAGE_VERSION: ${{ inputs.version || format('ci-{0}', github.run_number) }}
 
 jobs:
   build-test:
@@ -88,7 +97,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/appimagetool"
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
       - name: Publish and package
-        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --package ${{ matrix.rid }}
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-${{ matrix.rid }}
@@ -143,12 +152,12 @@ jobs:
         run: |
           $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup *\ISCC.exe")
           if (-not $found) { choco install innosetup -y --no-progress }
-          ./build/publish.ps1 -Aot -Package -Rid ${{ matrix.rid }} -Out artifacts/publish -Version ci-${{ github.run_number }}
+          ./build/publish.ps1 -Aot -Package -Rid ${{ matrix.rid }} -Out artifacts/publish -Version $env:PACKAGE_VERSION
       # Linux: tar.gz + AppImage; macOS: .app zip + dmg
       - name: Publish and package
         if: runner.os != 'Windows'
         shell: bash
-        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --aot --package ${{ matrix.rid }}
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --aot --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-${{ matrix.rid }}
@@ -188,7 +197,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/appimagetool"
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
       - name: Publish and package
-        run: OUT=artifacts/publish VERSION=ci-${{ github.run_number }} bash build/publish.sh --aot --package linux-arm64
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --aot --package linux-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-linux-arm64

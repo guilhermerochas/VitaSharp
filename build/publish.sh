@@ -20,11 +20,15 @@
 #            VitaSharp-<v>-<rid>.AppImage     when appimagetool is on PATH or APPIMAGETOOL=<path> is set
 #   osx-*    VitaSharp-<v>-<rid>.app.zip      VitaSharp.app (Info.plist, VitaSharp.icns, executable + dylibs in
 #                                             Contents/MacOS), unsigned; on macOS also VitaSharp-<v>-<rid>.dmg
+# A release VERSION (1.2.3 or 1.2.3-suffix, as cut by .github/workflows/release.yml) also becomes the app's version
+# (-p:Version, shown as "VitaSharp 1.2.3+<commit>" in the log); dev and ci-<n> builds keep the default 1.0.0.
 # --skip-publish packages an existing publish output without rebuilding.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="${OUT:-$root/artifacts/publish}"
 version="${VERSION:-dev}"
+version_props=()
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] && version_props=("-p:Version=$version")
 aot=0
 package=0
 skip_publish=0
@@ -173,13 +177,13 @@ for rid in "${rids[@]}"; do
       echo "clang not found, linking with gcc"
       extra+=(-p:CppCompilerAndLinker=gcc)
     fi
-    dotnet publish "$project" -c Release -r "$rid" -p:VitaSharpRelease=true -p:VitaSharpAot=true ${extra[@]+"${extra[@]}"} -o "$out/$rid"
+    dotnet publish "$project" -c Release -r "$rid" -p:VitaSharpRelease=true -p:VitaSharpAot=true ${extra[@]+"${extra[@]}"} ${version_props[@]+"${version_props[@]}"} -o "$out/$rid"
     mkdir -p "$out/$rid-symbols"
     find "$out/$rid" -maxdepth 1 \( -name '*.pdb' -o -name '*.dbg' -o -name '*.dSYM' \) -exec mv -f {} "$out/$rid-symbols/" \;
   else
     [ $aot -eq 1 ] && echo "warning: $rid: Native AOT cannot be cross-compiled from this OS, publishing ReadyToRun instead (build it on $rid for AOT)" >&2
     echo "== $rid (ReadyToRun)"
-    dotnet publish "$project" -c Release -r "$rid" -p:VitaSharpRelease=true -p:DebugType=embedded -o "$out/$rid"
+    dotnet publish "$project" -c Release -r "$rid" -p:VitaSharpRelease=true -p:DebugType=embedded ${version_props[@]+"${version_props[@]}"} -o "$out/$rid"
   fi
 
   if [ $package -eq 1 ]; then
