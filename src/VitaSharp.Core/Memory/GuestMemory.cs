@@ -49,8 +49,16 @@ public sealed unsafe class GuestMemory : IDisposable
     public static byte* Base
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get { byte* b = t_base; return b != null ? b : s_primaryBase; }
+        get
+        {
+            if (s_onePrimarySpace) return s_primaryBase; // a game run directly: no thread-static lookup
+            byte* b = t_base;
+            return b != null ? b : s_primaryBase;
+        }
     }
+
+    // true until a second address space exists: then every thread's space is the first one, whatever it set
+    static bool s_onePrimarySpace;
 
     /// <summary>The first process's address space (also the only one when <see cref="SeparateSpaces"/> is false).</summary>
     public AddressSpace Primary { get; }
@@ -104,6 +112,7 @@ public sealed unsafe class GuestMemory : IDisposable
         Primary = primary;
         Primary.Label = "first process";
         s_primaryBase = Primary.Base;
+        s_onePrimarySpace = true;
         Instance = this;
         _freeUser.Add(UserStart, UserEnd - UserStart);
         _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
@@ -155,6 +164,7 @@ public sealed unsafe class GuestMemory : IDisposable
         {
             if (_idle.TryPop(out var s)) s.Renew();
             else s = NewSpace(true) ?? throw new OutOfMemoryException("cannot reserve another guest address space");
+            Volatile.Write(ref s_onePrimarySpace, false); // threads now follow their own space
             s.Label = label;
             Log.Info($"Guest memory: {s} created");
             return s;
@@ -552,6 +562,7 @@ public sealed unsafe class GuestMemory : IDisposable
         HostVirtualMemory.ReleaseSharedMemory(_kernelMemory);
         HostVirtualMemory.ReleaseSharedMemory(_cdramMemory);
         s_primaryBase = null;
+        s_onePrimarySpace = false;
         t_base = null;
         if (ReferenceEquals(Instance, this)) Instance = null;
     }
