@@ -134,9 +134,49 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 | initialsetup.self (first boot) | launched by the shell with `/CONFIG/SYSTEM/initialize` = 0, runs against the shell's IPC server: peel screen, language, time zone, date, "no account", country, date of birth, "setup completed", parental note; then it ends itself (`sceAppMgrDestroyAppByName(NULL)`) and the shell takes the screen: health warning, home screen with its first-run hint |
 | games from the LiveArea | each in its own process and address space: Devious Dungeon boots to its title screen, Sonic Mania and Persona 4 Golden (fixed-address eboot) run, PS / Continue suspend and resume them |
 | NPXS10008 Trophy Collection | started from its LiveArea, talks to the shell's trophy server and lists the installed titles with their unlocked trophies (Knightin'+ after it was started once from the shell); "There are no trophies" when nothing is installed |
-| NPXS10015 Settings | starts from the home screen as a process, opens the shell's shared framebuffer, loads system_settings_core.suprx, still draws nothing (black) |
+| NPXS10015 Settings | starts from the home screen as a process, opens the shell's shared framebuffer, loads system_settings_core.suprx, still draws nothing (black; see Remaining) |
+
+### System apps from the home screen (fix/system-apps-2, firmware 3.74, scratch data)
+
+Each started from its bubble, LiveArea Start, then the PS button (scenario: unlock, page swipe, tap; the LiveArea gate
+is at 0.5, 0.54 or, for Browser, Party, Calendar and near, at 0.75, 0.52).
+
+| App | Launch / draw | PS button back to the shell |
+|---|---|---|
+| NPXS10002 PS Store | draws; "An error has occurred (NW-2288-0)" (no network, expected) | yes, LiveArea with Continue |
+| NPXS10003 Browser | draws "Please wait..."; then the process crashes (libpaf assertion: a ScePafFileListJobQueue0 lock on an lwmutex returns UNKNOWN_LW_MUTEX_ID); the shell returns to the lock screen | (crashed) |
+| NPXS10008 Trophy Collection | draws ("There are no trophies" on a fresh root) | yes |
+| NPXS10006 Friends | black (as Settings) | yes |
+| NPXS10014 Messages | draws ("Sign up for PlayStation Network") | yes |
+| NPXS10001 Party | launches | yes |
+| NPXS10013 PS4 Link | launches, never draws: its main thread ScePS4LinkRPMain goes dormant right after its sysmodule loads (libpaf, common_gui_dialog, libsas, which pulled libfios2 and libc in a second time); the process stays in front with no frame | not tested (no frames, so the frame-timed PS press never comes) |
+| Parental Controls | the shell's own passcode screen | - |
+| NPXS10010 Videos | draws (Connect to Device / All / Rented / Folders) | yes |
+| NPXS10009 Music | **fixed** (was the hang): "Rebuilding database", then the menu | yes |
+| NPXS10004 Photos | draws the camera (gray preview: no webcam headless) | yes |
+| NPXS10072 Email | draws "A memory card that contains an email application database from another PS Vita..." (C2-14818-2) | yes |
+| NPXS10091 Calendar | launches (starts NPXS10092 Calendar BG) | yes |
+| NPXS10026 Content Manager | exits at once with 0x80020583 (its libipmi client finds no SceMtpService server; the MTP service is not emulated); the shell then shows the lock screen | - |
+| NPXS10000 near | launches | yes |
+| NPXS10012 PS3 Remote Play | draws the registration guide | yes |
+| NPXS10015 Settings | black (see Remaining) | yes |
 
 ## Remaining
+
+- (Fixed) Music (NPXS10009) froze the system when started: the shell's SceShellSvc libipmi server asserted (BKPT in
+  libshellsvc, "[SceIpmi] INTERNAL ASSERTION FAILURE") and its thread died. A new client makes the server walk its
+  sessions; the one of NPXS10079 (daily checker, ends right after boot) had its pipes removed with its process, and the
+  server's receive got UNKNOWN_MSG_PIPE_ID. libipmi handles 0x80028224 (pipe deleted) as "client gone". A message pipe
+  deleted (by its creator or with its process) while handles opened by name are open now stays until the last close,
+  and its operations fail with MPP_DELETED. Every system app started after the daily checker went through this.
+- Shareable memory blocks: the shell's libpaf allocates ScePafCRSurfacePoolOffset and ScePafCRSoundDataStorage with
+  attr 0x4000 and access flags at opt +0x14; other system programs open them. They are now allocated in the region
+  every address space maps (before, the opener read its own empty memory). It did not change Settings, Friends or the
+  Browser crash.
+- Browser (NPXS10003): crashes after "Please wait..." in ScePafFileListJobQueue0 (libpaf asserts on an lwmutex lock
+  returning UNKNOWN_LW_MUTEX_ID). Not investigated further.
+- Content Manager (NPXS10026): needs the SceMtpService IPC server (not emulated) and ends; Email's database check
+  reports a database "from another PS Vita" on a fresh ux0.
 
 - PS button: default host bindings are the controller's PS / Xbox guide / Home button (SDL "guide"; raw DirectInput
   button 12 on PlayStation pads) and the Home key; it is the "PS button" row of the controller settings. The press is
@@ -160,8 +200,17 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 - Shell overlay over a system app: Trophy Collection shows without the shell's status bar on top. The frames do go
   through the shell (SceSharedFb below); whether the shell is meant to draw its status bar there, and why it does not,
   is not checked.
-- Settings (NPXS10015): black. It opens the shared framebuffer and loads its core module; not investigated further
-  (start with the SharedFb Begin/End calls of its libpaf and the threads' states).
+- Settings (NPXS10015): still black. Checked: its libpaf is a SharedFb client and every frame's
+  `sceSharedFbBegin`/`End` pair returns 0 (the shell lets it draw each frame); its threads are idle, nothing waits or
+  crashed (SceSettingsMain in the paf main loop, ScePafJobDefault on its job semaphore). Startup order (traced): the
+  framework loads common_resource.rco, the SceSettingsModuleLoadJob thread loads ini_file_processor, bXCe,
+  common_gui_dialog, sqlite, dbutil and `system_settings_core.suprx`, then paf opens `system_settings_main.rco` and runs
+  the plugin's init callback (eboot 0x810034C6: `sceAppMgrGetStatusByName(NULL)` finds itself, creates the
+  "SceSettingsSharedInfo" event flag). The next step, the plugin start callback (0x810035D8: creates the core module's
+  page object, imports 2F3D38BD / 07036707 from SceSystemSettingsCore), leaves no trace: no other plugin rco
+  (system_settings_plugin.rco...) is ever opened. Next: break on 0x810035D8 and follow the core module's page creation;
+  `Log.WarnOnce` keys unimplemented NIDs per system, so an unimplemented call the shell made first is not reported for
+  Settings (trace with `--trace-hle-threads=SceSettings`).
 - `install-firmware PSVUPDAT.PUP` does write `os0:kd/registry.db0` (checked on main fb661f7: os0/kd has the same 48
   files as the user's install). Without it the registry has only the keys VitaSharp knows, `/CONFIG/NP/account_id` is
   missing and the shell's first initialisation stops before its NP services and the trophy server: a scratch root
@@ -214,6 +263,29 @@ process (the application's own imports stay on the HLE) and installs the set the
 gives the server the trophies already unlocked in VitaSharp's store and every new unlock. So, as on the Vita, a title
 appears in Trophy Collection once it has been started from the shell. Fixed-address executables (WRC 4, Killzone)
 replace the shell instead of running beside it, so they are not installed this way.
+
+### Importing trophies earned elsewhere
+
+`VitaSharp.Desktop --data=<root> import-trophies <folder>|--vita3k` (launcher: Configurações > Geral > Troféus),
+`Hle/Np/TrophyImport.cs`:
+
+- **A PS Vita's `ur0:user/00/trophy`**: the folder (or a dump with `ur0/` and `ux0/` side by side) replaces
+  `<fs>/ur0/user/00/trophy` (the old one is moved to `trophy.backup-<date>`); the shell's server and Trophy Collection
+  then read the console's own data. Only a *decrypted* copy works. On the console each `data/<NPCOMMID>` folder is a
+  protected file system folder (`sce_pfs/`) whose files are sealed with keys unique to that console (derived inside its
+  security processor); a copy taken with a file manager (VitaShell over USB/FTP) holds the encrypted bytes, and no
+  firmware key decrypts them on a PC. The importer recognises that case (a `sce_pfs` folder, or a TRPUSER.DAT that does
+  not start with the server's plain header 7F 15 99 36) and refuses it with that explanation. What works: a copy made on
+  the console through the system's own mounts (a homebrew that reads the folders with sceAppMgrTrophyMount 302/303 and
+  writes the plain files out). Not verified with a real console's copy: whether the server also checks the console's
+  account id inside TRPTITLE.DAT (then `/CONFIG/NP/account_id` must be the console's).
+- **Vita3K's trophies** (`ux0/user/00/trophy/data/<NPCOMMID>/TROPUSR.DAT`, Vita3K's own format: magic 0x12D5819A,
+  unlock bits at +4, Unix times at +0x70) are merged into VitaSharp's store (union, earliest time kept). Vita3K's folder
+  is only read. The real Trophy Collection shows such a title once the game has been started from the shell (the
+  bridge then gives the server every trophy of the store).
+- Not done: the server's files to VitaSharp's store (the TRPTITLE.DAT layout is not mapped), and giving the server the
+  titles of the store without starting each game once from the shell (that needs a client process with the game's
+  TROPHY.TRP mounted as trophy_sys0).
 
 ## SceSharedFb (from the FW 3.74 kernel appmgr)
 
