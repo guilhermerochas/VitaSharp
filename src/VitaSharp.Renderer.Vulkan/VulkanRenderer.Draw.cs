@@ -146,7 +146,8 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false)
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
+        bool fetchSingle = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
@@ -155,6 +156,7 @@ public sealed unsafe partial class VulkanRenderer
         h = ShaderHints.Fnv.Mix(h, colorFormat);
         if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
         if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
+        if (fetchSingle) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputSingleKey);
         return tileWord1 ? ShaderHints.Fnv.Mix(h, ShaderHints.TileWord1Key) : h;
     }
 
@@ -251,6 +253,11 @@ public sealed unsafe partial class VulkanRenderer
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
             OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
 
+    // one-sample scenes: the draw renders in a render pass and reads the surface as a single-sampled input attachment
+    static ShaderHints FragmentHintsInputFetchSingle(DrawCommand d, uint colorFormat) =>
+        new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
+            OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram), FetchInputSingleSample: true);
+
     // variants that keep the second output register word in the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)
     static ShaderHints FragmentHintsTileWord1(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat,
@@ -311,14 +318,16 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <param name="fetchInput">the variant whose programmable blending reads the input attachment</param>
     /// <param name="tileWord1">the variant that keeps the second output register word in the tile-word attachment</param>
-    FsEntry GetFragmentShader(DrawCommand d, bool fetchInput = false, bool tileWord1 = false)
+    /// <param name="fetchSingle">with <paramref name="fetchInput"/>: the single-sampled input attachment variant</param>
+    FsEntry GetFragmentShader(DrawCommand d, bool fetchInput = false, bool tileWord1 = false, bool fetchSingle = false)
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
         var me = GetModule(fp.Info.Program, hk, (fetchInput, tileWord1) switch
         {
+            (true, false) when fetchSingle => FragmentHintsInputFetchSingle,
             (true, true) => FragmentHintsInputFetchTileWord1,
             (false, true) => FragmentHintsTileWord1,
             (true, false) => FragmentHintsInputFetch,
@@ -407,7 +416,7 @@ public sealed unsafe partial class VulkanRenderer
     /// is attached at location 1 and left unwritten; 2: attached and written</param>
     readonly record struct PipelineKey(ulong Vs, ulong Fs, ulong VertexLayout, Format ColorFormat, bool HasColor,
         bool Blend, byte ColorFunc, byte AlphaFunc, byte ColorSrc, byte ColorDst, byte AlphaSrc, byte AlphaDst, byte Mask,
-        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0, byte TileWord1 = 0);
+        int TopologyClass, PolygonMode Polygon, SampleCountFlags Samples, ulong Static = 0, byte TileWord1 = 0, bool InputPass = false);
 
     /// <summary>GPU-thread view of the pipelines (lock-free lookups on the draw path).</summary>
     readonly Dictionary<PipelineKey, Pipeline> _pipelines = new();
@@ -542,9 +551,12 @@ public sealed unsafe partial class VulkanRenderer
             bool tileWord = key.HasColor && key.TileWord1 != 0;
             att[1] = new PipelineColorBlendAttachmentState { ColorWriteMask = key.TileWord1 == 2 ? ColorComponentFlags.RBit : 0 };
             uint colorCount = key.HasColor ? tileWord ? 2u : 1u : 0u;
+            // multisampled scenes and one-sample programmable-blending draws (VulkanRenderer.SingleFetch.cs) render in
+            // render passes (input attachments for programmable blending)
+            bool msPass = key.Samples != SampleCountFlags.Count1Bit || key.InputPass;
             var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = colorCount, PAttachments = att,
-                // multisampled render passes declare rasterization-order colour access when the device has it
-                Flags = key.Samples != SampleCountFlags.Count1Bit && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0 };
+                // those render passes declare rasterization-order colour access when the device has it
+                Flags = msPass && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0 };
             // viewport, scissor, line width, depth bias, stencil masks/reference and (unless a driver quirk bakes them
             // into the pipeline) cull mode, front face, topology, depth/stencil test state and depth bias enable
             var dyn = stackalloc DynamicState[16];
@@ -560,8 +572,6 @@ public sealed unsafe partial class VulkanRenderer
                 DepthAttachmentFormat = _core.DepthFormat,
                 StencilAttachmentFormat = _core.DepthFormat,
             };
-            // multisampled scenes render in render passes (input attachments for programmable blending)
-            bool msPass = key.Samples != SampleCountFlags.Count1Bit;
             // without dynamic rendering single-sampled scenes are render passes too (VulkanRenderer.RenderPasses.cs)
             bool rpPass = !msPass && UseRenderPasses;
             var gci = new GraphicsPipelineCreateInfo
@@ -664,15 +674,20 @@ public sealed unsafe partial class VulkanRenderer
         if (fs.Gen!.TileWord1 != 0 && !_tw1Active && (fs.Gen.TileWord1 & TileWord1Use.Writes) != 0 && fs.Gen.RawColorBits == 0) ActivateTileWord1();
         bool tw1 = _tw1Active && fs.Gen!.TileWord1 != 0 && fs.Gen.RawColorBits == 0;
         bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
-        if (inputFetch || tw1)
+        var topology = Formats.Topology(d.PrimitiveType);
+        // a small programmable-blending draw in a one-sample scene: rendered in its own render pass that reads the
+        // surface as an input attachment, piece by piece (FetchSplitDraw; VulkanRenderer.SingleFetch.cs)
+        bool singleFetch = !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && SingleFetchPossible()
+            && FetchSplitDraw(d, topology);
+        if (inputFetch || tw1 || singleFetch)
         {
-            fs = GetFragmentShader(d, fetchInput: inputFetch, tileWord1: tw1);
+            fs = GetFragmentShader(d, fetchInput: inputFetch || singleFetch, tileWord1: tw1, fetchSingle: singleFetch);
             if (fs.Failed) return;
         }
-        var fbSet = inputFetch ? BuildMsaaInputFetchSet(tw1) : fs.Gen!.UsesFragColor || tw1 ? BuildFramebufferFetchSet(tw1) : _emptyFbSet ??= BuildEmptyFbSet();
+        var fbSet = inputFetch ? BuildMsaaInputFetchSet(tw1) : singleFetch ? BuildSingleInputFetchSet()
+            : fs.Gen!.UsesFragColor || tw1 ? BuildFramebufferFetchSet(tw1) : _emptyFbSet ??= BuildEmptyFbSet();
 
         // ---- pipeline
-        var topology = Formats.Topology(d.PrimitiveType);
         bool hasColor = _rt != null;
         var blend = d.FragmentProgram.Blend;
         bool fragEnabled = st.Front.FragmentEnabled;
@@ -711,7 +726,7 @@ public sealed unsafe partial class VulkanRenderer
         byte tw1Key = !_tw1Active ? (byte)0 : tw1 && mask != 0 && (fs.Gen!.TileWord1 & TileWord1Use.Writes) != 0 ? (byte)2 : (byte)1;
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key);
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key, singleFetch);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (_frameStallTicks != stall0) NoteDrawStall(d, mask, tw1Key, fs.Gen!.UsesFragColor || tw1, _frameStallTicks - stall0);
         if (pipeline.Handle == 0) return;
@@ -762,10 +777,15 @@ public sealed unsafe partial class VulkanRenderer
         if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
         _renderRaw = raw;
         if (raw) _rawFormat = attachFormat;
-        BeginRendering();
-        var cmd = Cmd;
-        // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
-        if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
+        CommandBuffer cmd;
+        if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
+        else
+        {
+            BeginRendering();
+            cmd = Cmd;
+            // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
+            if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
+        }
         if (_boundPipeline.Handle != pipeline.Handle)
         {
             _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -786,8 +806,10 @@ public sealed unsafe partial class VulkanRenderer
         // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
         // blending over each other, strips of particle quads) are drawn piece by piece with a barrier in between. Only with input
         // attachments: on the copy path every piece would re-copy the framebuffer (Uncharted's thousands of small
-        // particle draws went from 6.7 to 32 ms of GPU time per frame).
-        if (inputFetch && !_core.RasterizationOrderColor && FetchSplitDraw(d, topology))
+        // particle draws went from 6.7 to 32 ms of GPU time per frame); one-sample scenes render such small draws in
+        // a render pass of their own for this (VulkanRenderer.SingleFetch.cs). The pieces of a singleFetch draw were
+        // built when it was chosen (_fetchPieces).
+        if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
         {
             for (int c = 0; c < _fetchPieces.Count; c++)
             {
@@ -802,6 +824,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
             if (visQuery) EndVisibilityQuery(query);
         }
+        if (singleFetch) EndSingleFetchPass();
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
