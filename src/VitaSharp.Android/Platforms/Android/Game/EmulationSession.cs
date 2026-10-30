@@ -73,7 +73,6 @@ public sealed class EmulationSession : IDisposable
 
         CpuCore.InstructionsPerSecond = _settings.ClockHz;
         HostThreads.Enabled = true;
-        // before the emulator starts its first threads: no spinning waits, thread placement on the fast cores, ADPF
         Performance = new GamePerformance(AppServices.AppContext);
         var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword);
         _emu = new Emulator(new EmulatorOptions
