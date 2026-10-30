@@ -197,6 +197,7 @@ public sealed class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            StartPeriodicReport();
         }
         catch (Exception e)
         {
@@ -228,6 +229,8 @@ public sealed class EmulationSession : IDisposable
         Paused = true;
         _played.Stop();
         EmulationPause.Pause(reason);
+        // the last callback Android guarantees before it may kill the process in the background
+        WritePeriodicReport();
         Log.Flush();
     }
 
@@ -255,6 +258,7 @@ public sealed class EmulationSession : IDisposable
             _disposed = true;
         }
         TrophyNotifications.Unlocked -= OnTrophy;
+        StopPeriodicReport();
         RecordStatistics();
         try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
@@ -263,10 +267,52 @@ public sealed class EmulationSession : IDisposable
             _emu.Stop();
             EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
+            // the desktop Runner's end-of-run lines (AUDIO summary, PERF gpu, PERF mobile, CPU backend report...)
+            if (_emuStarted)
+                try { foreach (var line in SessionReport.Lines(_emu)) Log.Info(line); }
+                catch (Exception e) { Log.Warn($"Session report: {e.GetType().Name}: {e.Message}"); }
             _emu.Dispose();
         }
         catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }
         Log.Flush();
+    }
+
+    // ------------------------------------------------------------------ periodic statistics
+
+    System.Threading.Timer? _reportTimer;
+    int _reporting;
+
+    /// <summary>
+    /// Android kills the game process more often than it lets it stop (swiped away, low memory, a crash), so the
+    /// performance lines of the desktop's end-of-run report (<see cref="SessionReport.PeriodicLines"/>: CPU backend
+    /// report, PERF cycles, PERF gpu / mobile, AUDIO summary, PERF cpu / threads / allocated) also go to the log file
+    /// every 30 s (<c>VITASHARP_SESSION_REPORT_SECONDS</c>, 0 = off) and when the game pauses. File only: logcat keeps
+    /// the gameplay quiet.
+    /// </summary>
+    void StartPeriodicReport()
+    {
+        string? env = Environment.GetEnvironmentVariable(EnvVars.SessionReportSeconds);
+        int seconds = int.TryParse(env, out int s) ? s : 30;
+        if (seconds <= 0) return;
+        _reportTimer = new System.Threading.Timer(_ => { if (!Paused) WritePeriodicReport(); }, null, seconds * 1000, seconds * 1000);
+    }
+
+    void WritePeriodicReport()
+    {
+        if (!_emuStarted || _disposed || Interlocked.Exchange(ref _reporting, 1) != 0) return;
+        try { foreach (var line in SessionReport.PeriodicLines(_emu)) Log.InfoFileOnly(line); }
+        catch (Exception e) { Log.Warn($"Periodic session report: {e.GetType().Name}: {e.Message}"); }
+        finally { Volatile.Write(ref _reporting, 0); }
+    }
+
+    /// <summary>Stops the timer and waits for a report in progress (the emulator is torn down next).</summary>
+    void StopPeriodicReport()
+    {
+        if (_reportTimer is not { } t) return;
+        using var done = new ManualResetEvent(false);
+        if (t.Dispose(done)) done.WaitOne(5000);
+        _reportTimer = null;
+        for (int i = 0; i < 100 && Volatile.Read(ref _reporting) != 0; i++) Thread.Sleep(10);
     }
 
     int _recorded;

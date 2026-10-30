@@ -75,6 +75,8 @@ public static class EnvVars
     /// <summary>=strict: every texture upload or copy in a scene ends the rendering, and single-sampled renderings are
     /// begun directly on desktop GPUs (the renderer before scene-break hoisting; VulkanRenderer.SceneBreaks.cs).</summary>
     public const string SceneBreaks = "VITASHARP_SCENE_BREAKS";
+    /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
+    public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
     /// <summary>1 = every process runs in the first process's address space (the model before per-process address
     /// spaces: executables linked at addresses another process uses cannot run next to it).</summary>
     public const string SharedAddressSpace = "VITASHARP_SHARED_ADDRESS_SPACE";

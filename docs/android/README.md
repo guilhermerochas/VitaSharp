@@ -181,6 +181,15 @@ at line breaks and at 4,000 bytes (liblog truncates near 4 KB). The console copy
 line). The file logs stay: `logs/app.log` (UI process, truncated at each start) and `logs/last.log` (the current or
 last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). "Modo de depuração" turns on debug level.
 
+**Session statistics** (`SessionReport` in the core, the same lines the desktop's `Runner` writes when a run stops):
+when the game ends, `EmulationSession` writes the whole end-of-run report (JIT and `CPU backend report`, busiest HLE
+functions, threads, `PERF cycles`, the renderer's report with `PERF gpu` and `PERF mobile`, `AUDIO summary`,
+`PERF cpu`/`PERF thread`/`PERF allocated`). Android kills the game process more often than it lets it stop, so the
+performance part (`SessionReport.PeriodicLines`, headed `PERF periodic summary: frame N`) also goes to the log file
+every 30 s while the game runs and whenever it pauses (pause menu, home), through `Log.InfoFileOnly`: the file only,
+not logcat. `VITASHARP_SESSION_REPORT_SECONDS` (in `config/env.txt`) changes the period, 0 turns it off. This is
+what phone performance is measured from: `logs/last.log` (or the kept `<time>_<TITLEID>.log`).
+
 ```
 adb logcat -s VitaSharp VitaSharp-Guest
 ```
@@ -326,7 +335,12 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
    motion game (the log's `Input: keyboard tilt keys drive the Vita's motion sensors` line), volume keys still change
    the volume, typing into a game's IME dialog with the keyboard (Enter confirms) while the soft keyboard stays down,
    a controller and a keyboard together (a gamepad's D-pad auto-repeat must not leave a key held).
-6. Logcat tags and priorities (`adb logcat -s VitaSharp VitaSharp-Guest`), the file logs.
+6. Logcat tags and priorities (`adb logcat -s VitaSharp VitaSharp-Guest`), the file logs. Session statistics:
+   `PERF periodic summary` blocks in `logs/last.log` every 30 s and at each pause but never in logcat; after leaving a
+   game through the menu, the full end-of-run report (`Stopping.`, `CPU backend report`, `PERF gpu`, `PERF mobile`,
+   `AUDIO summary`, `PERF cpu`) after `Session of ... ends`; a process killed from the recents screen keeps the last
+   periodic block; `PERF thread` lines list named threads with non-zero CPU times under Mono (if they are missing,
+   Mono does not report per-thread times there).
 7. **Audio**: the log's `Audio:` lines (AAudio on 8.1+, low-latency and exclusive or shared, the device rate and burst;
    AudioTrack on the x86_64 emulator image if it is API 26); sound plays at the right pitch and pace (a 44.1 kHz
    device exercises the resampler), the `AUDIO summary` device line and underruns after a session (debug mode for

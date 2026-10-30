@@ -42,8 +42,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de teclado do `input.json` e o mapeamento padrão do desktop, P e Home abrem o menu de pausa, teclas de inclinação
   no SceMotion pelo `VirtualMotion`, teclas soltas quando um diálogo pega o foco, texto do IME pelo teclado; falta
   testar num aparelho, item 5 da lista em `docs/android/README.md`)
-- [ ] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU):
-  o desktop as escreve no fim do `Runner`, o app não
+- [x] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU)
+  (30/10/2026: `SessionReport` no Core, o mesmo texto do `Runner` do desktop; o `EmulationSession` as escreve no fim
+  do jogo e, só no arquivo de log, a cada 30 s e a cada pausa, porque o Android costuma matar o processo; falta ver
+  num aparelho que as linhas aparecem e que os tempos por thread do Mono são lidos)
 - [ ] Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
   pontos em que o JIT do Mono dobra constantes de outro jeito que o CoreCLR (o backend IL e os blocos que sobem para
   ele)
