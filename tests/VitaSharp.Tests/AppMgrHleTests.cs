@@ -256,6 +256,32 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     }
 
     [Fact]
+    public void AppEventsArePendingFlagsTakenInKernelOrder()
+    {
+        var (mgr, _, _) = MakeWithAppUtil();
+        uint num = Alloc(4), ev = Alloc(0x40);
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrReceiveEventNum", new Ptr<int>(num)));
+        Assert.Equal(0, (int)GuestMemory.R32(num));
+        Assert.Equal(unchecked((int)0x80802020), Call<int>(mgr, "sceAppMgrReceiveEvent", ev));
+
+        mgr.PostEvent(AppMgr.EventParamNotify);
+        mgr.PostEvent(AppMgr.EventParamNotify); // a flag, not a queue
+        mgr.PostEvent(AppMgr.EventResume);
+        mgr.PostEvent(AppMgr.EventActivate);
+        mgr.PostEvent(AppMgr.EventDeactivate); // cancels the pending activate
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrReceiveEventNum", new Ptr<int>(num)));
+        Assert.Equal(2, (int)GuestMemory.R32(num));
+        GuestMemory.Fill(ev, 0xEE, 0x40);
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrReceiveEvent", ev));
+        Assert.Equal(AppMgr.EventResume, GuestMemory.R32(ev));
+        Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(ev + 4));
+        Assert.Equal(0u, GuestMemory.R32(ev + 0x3C));
+        Assert.Equal(0, Call<int>(mgr, "sceAppMgrReceiveEvent", ev));
+        Assert.Equal(AppMgr.EventParamNotify, GuestMemory.R32(ev));
+        Assert.Equal(unchecked((int)0x80802020), Call<int>(mgr, "sceAppMgrReceiveEvent", ev));
+    }
+
+    [Fact]
     public void AppParam2TrophyMountsDateTimeAndMediaType()
     {
         var (mgr, util, emu) = MakeWithAppUtil();

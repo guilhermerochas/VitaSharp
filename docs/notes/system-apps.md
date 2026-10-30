@@ -134,7 +134,7 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 | initialsetup.self (first boot) | launched by the shell with `/CONFIG/SYSTEM/initialize` = 0, runs against the shell's IPC server: peel screen, language, time zone, date, "no account", country, date of birth, "setup completed", parental note; then it ends itself (`sceAppMgrDestroyAppByName(NULL)`) and the shell takes the screen: health warning, home screen with its first-run hint |
 | games from the LiveArea | each in its own process and address space: Devious Dungeon boots to its title screen, Sonic Mania and Persona 4 Golden (fixed-address eboot) run, PS / Continue suspend and resume them |
 | NPXS10008 Trophy Collection | started from its LiveArea, talks to the shell's trophy server and lists the installed titles with their unlocked trophies (Knightin'+ after it was started once from the shell); "There are no trophies" when nothing is installed |
-| NPXS10015 Settings | starts from the home screen as a process, opens the shell's shared framebuffer, loads system_settings_core.suprx, still draws nothing (black; see Remaining) |
+| NPXS10015 Settings | starts from the home screen as a process and draws its menu (Flight Mode, System Update, Network, PSN, Devices, ...) in the shell's shared framebuffer; also with `run NPXS10015` |
 
 ### System apps from the home screen (fix/system-apps-2, firmware 3.74, scratch data)
 
@@ -144,22 +144,22 @@ is at 0.5, 0.54 or, for Browser, Party, Calendar and near, at 0.75, 0.52).
 | App | Launch / draw | PS button back to the shell |
 |---|---|---|
 | NPXS10002 PS Store | draws; "An error has occurred (NW-2288-0)" (no network, expected) | yes, LiveArea with Continue |
-| NPXS10003 Browser | draws "Please wait..."; then the process crashes (libpaf assertion: a ScePafFileListJobQueue0 lock on an lwmutex returns UNKNOWN_LW_MUTEX_ID); the shell returns to the lock screen | (crashed) |
+| NPXS10003 Browser | **fixed** (fix/system-apps-3): "Please wait...", then Bookmarks (History, PlayStation.com, ...) | not tested |
 | NPXS10008 Trophy Collection | draws ("There are no trophies" on a fresh root) | yes |
-| NPXS10006 Friends | black (as Settings) | yes |
+| NPXS10006 Friends | **fixed** (fix/system-apps-3): "You must sign in to PlayStation Network" with Sign In | yes |
 | NPXS10014 Messages | draws ("Sign up for PlayStation Network") | yes |
 | NPXS10001 Party | launches | yes |
-| NPXS10013 PS4 Link | launches, never draws: its main thread ScePS4LinkRPMain goes dormant right after its sysmodule loads (libpaf, common_gui_dialog, libsas, which pulled libfios2 and libc in a second time); the process stays in front with no frame | not tested (no frames, so the frame-timed PS press never comes) |
+| NPXS10013 PS4 Link | **fixed** (fix/system-apps-3): "Which feature do you want to use to connect to the PS4?" (Remote Play / Second Screen) | not tested |
 | Parental Controls | the shell's own passcode screen | - |
 | NPXS10010 Videos | draws (Connect to Device / All / Rented / Folders) | yes |
 | NPXS10009 Music | **fixed** (was the hang): "Rebuilding database", then the menu | yes |
 | NPXS10004 Photos | draws the camera (gray preview: no webcam headless) | yes |
-| NPXS10072 Email | draws "A memory card that contains an email application database from another PS Vita..." (C2-14818-2) | yes |
+| NPXS10072 Email | **fixed** (fix/system-apps-3): creates its database (ux0:email) and shows Email Accounts / Add Email Account, also on later starts | yes |
 | NPXS10091 Calendar | launches (starts NPXS10092 Calendar BG) | yes |
-| NPXS10026 Content Manager | exits at once with 0x80020583 (its libipmi client finds no SceMtpService server; the MTP service is not emulated); the shell then shows the lock screen | - |
+| NPXS10026 Content Manager | **fixed** (fix/system-apps-3): its menu (Manage Content on Memory Card / Copy Content), talking to the shell's SceMtpService server; no USB cable is ever connected | not tested |
 | NPXS10000 near | launches | yes |
 | NPXS10012 PS3 Remote Play | draws the registration guide | yes |
-| NPXS10015 Settings | black (see Remaining) | yes |
+| NPXS10015 Settings | **fixed** (fix/system-apps-3): the Settings menu | not tested |
 
 ## Remaining
 
@@ -173,10 +173,41 @@ is at 0.5, 0.54 or, for Browser, Party, Calendar and near, at 0.75, 0.52).
   attr 0x4000 and access flags at opt +0x14; other system programs open them. They are now allocated in the region
   every address space maps (before, the opener read its own empty memory). It did not change Settings, Friends or the
   Browser crash.
-- Browser (NPXS10003): crashes after "Please wait..." in ScePafFileListJobQueue0 (libpaf asserts on an lwmutex lock
-  returning UNKNOWN_LW_MUTEX_ID). Not investigated further.
-- Content Manager (NPXS10026): needs the SceMtpService IPC server (not emulated) and ends; Email's database check
-  reports a database "from another PS Vita" on a fresh ux0.
+- (Fixed, fix/system-apps-3) Settings and Friends black: both build their first page only when SceAppMgr's
+  PARAM_NOTIFY application event (0x20000004) arrives. Settings' start callback (eboot 0x810035D8) registers a per-frame
+  callback (0x8100458E) that polls `sceAppMgrReceiveEventNum`; on PARAM_NOTIFY it reads `sceAppMgrGetAppParam`
+  ("" = the top menu, "settings_dlg:..." = a page) and opens the page; on 0x10000003 (resume) it checks its
+  "SceSettingsSharedInfo" event flag. No event was ever queued. In the FW 3.74 kernel appmgr the application events are
+  pending flags in the application's control block (posted by 0x81012C00: +0xAD0 activate 0x10000001, +0xAD4 deactivate
+  0x10000002 (the two cancel each other), +0xAD8 resume 0x10000003, +0xADC request quit 0x20000001, +0xAE0 PARAM_NOTIFY,
+  +0xAE4 0x10000101/0x10000102, +0xAF4 0x20000010), `ReceiveEvent` (0x81013000) takes them in that order writing
+  {event, -1, 0x38 zeros} and fails with 0x80802020 when none is set, and the launch path (0x8100EC52) posts PARAM_NOTIFY.
+  `AppMgr` now keeps those flags; every launched process (not the shell) gets PARAM_NOTIFY, and a launch without a
+  parameter (the shell passes NULL from a bubble) leaves an empty one for the first `sceAppMgrGetAppParam`.
+- (Fixed) PS4 Link (NPXS10013) never drew: it calls `sceKernelLoadStartModule("vs0:sys/external/libfios2.suprx")` and
+  libc.suprx although the process preload already has them. A second copy of each was loaded, and the second libc's
+  start (which ends with `sceKernelExitThread`) ran on, and ended, the main thread. A vs0: module the process already
+  has is now returned by Load(Start)Module with one more reference (unloads drop it; StopModule leaves it running).
+- (Fixed) Content Manager (NPXS10026) exited with 0x80020583: the SceMtpService IPC server is the shell's, built on
+  vs0:vsh/common/libmtp.suprx, which starts its MTP device on the USB interface (SceMtpIf: StartDriver, GetPort,
+  StartPort through its interface table at libmtp+0x50004). `sceMtpIfGetPort` was missing, so libmtp failed ("unable to
+  hook I/F", sceMtpStart 0x80540008) and the shell tore the server down. `MtpIf.cs` is a USB port with no cable: the port
+  starts, `IsConnected` is 0, `WaitConnect(port, 1 s)` times out with 0x80028005 as the device loop expects, transfers fail,
+  and SceUdcd reports the cable unplugged. Content Manager shows its menu; nothing can be copied (no PC/PS3 is ever there).
+  Seen, not looked at: the MTP service logs `isCurrentActiveApp: sceAppMgrGetStatusByAppId failed 0x80802012`.
+- (Fixed) Email (NPXS10072) "database from another PS Vita" (C2-14818-2) was not an ID mismatch: the app writes
+  ux0:email/app/email_param.ini first (on a Vita that fails while ux0:email does not exist), then checks ux0:email and
+  ux0:email/app/email_id.dat. `sceIoOpen` with O_CREAT made the missing folders, so the app found ux0:email without its
+  id file and took it for another unit's database. sceIoOpen no longer creates folders below a device's top level (the
+  device root and its first-level folders, ux0:data, savedata0:sce_sys..., which a unit has but the host may not yet, are
+  still made). `_vshSblSsGenerateAppKey` (used when the database is created) is still unimplemented; later starts open
+  the same database fine.
+- (Fixed) Browser (NPXS10003) crash after "Please wait...": `sceRegMgrSrvGetRegion` takes no argument and returns the
+  region table index (all callers: shell, libmtp, Browser). The HLE wrote 1 through r0 and returned 0; in the Browser r0
+  was one of its own paf string objects, which was corrupted, its region lookup (eboot+0x89502) failed with 0x800051FE,
+  and it later freed a bad pointer: libpaf's free took the heap from the block header (0xDEADBEEF), locked its lwmutex at
+  +0x38 and asserted on UNKNOWN_LW_MUTEX_ID. Nothing crossed processes or address spaces. It now returns 2 (UC2).
+  `sceAppMgrLoadSafeMemory`/`SaveSafeMemory` (the Browser reads its tabs from safe memory) share the apputil storage.
 
 - PS button: default host bindings are the controller's PS / Xbox guide / Home button (SDL "guide"; raw DirectInput
   button 12 on PlayStation pads) and the Home key; it is the "PS button" row of the controller settings. The press is
@@ -200,7 +231,7 @@ is at 0.5, 0.54 or, for Browser, Party, Calendar and near, at 0.75, 0.52).
 - Shell overlay over a system app: Trophy Collection shows without the shell's status bar on top. The frames do go
   through the shell (SceSharedFb below); whether the shell is meant to draw its status bar there, and why it does not,
   is not checked.
-- Settings (NPXS10015): still black. Checked: its libpaf is a SharedFb client and every frame's
+- (Fixed, see above: PARAM_NOTIFY) Settings (NPXS10015) black. Earlier findings: its libpaf is a SharedFb client and every frame's
   `sceSharedFbBegin`/`End` pair returns 0 (the shell lets it draw each frame); its threads are idle, nothing waits or
   crashed (SceSettingsMain in the paf main loop, ScePafJobDefault on its job semaphore). Startup order (traced): the
   framework loads common_resource.rco, the SceSettingsModuleLoadJob thread loads ini_file_processor, bXCe,

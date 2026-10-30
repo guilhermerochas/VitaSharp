@@ -155,7 +155,7 @@ public sealed class AppUtil : HleModule
     }
 
     [Hle]
-    int sceAppUtilLoadSafeMemory(uint buf, uint size, long offset)
+    internal int sceAppUtilLoadSafeMemory(uint buf, uint size, long offset)
     {
         if (buf == 0 || offset + size > SafeMemorySize) return ERR_PARAMETER;
         var p = SavePath("sce_sys/safemem.dat");
@@ -165,7 +165,7 @@ public sealed class AppUtil : HleModule
     }
 
     [Hle]
-    int sceAppUtilSaveSafeMemory(uint buf, uint size, long offset)
+    internal int sceAppUtilSaveSafeMemory(uint buf, uint size, long offset)
     {
         if (buf == 0 || offset + size > SafeMemorySize) return ERR_PARAMETER;
         var data = LoadSafeMemory();

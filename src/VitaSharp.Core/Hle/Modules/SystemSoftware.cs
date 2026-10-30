@@ -74,7 +74,7 @@ public sealed class SystemSoftware : HleModule
         }
         var launcher = Emu;
         var app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
-        Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}): new process {app.Describe()}, application id 0x{app.AppId:X}");
+        Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}, param {(param != 0 ? Convert.ToHexString(GuestMemory.ReadSpan(param, 32)) : "null")}): new process {app.Describe()}, application id 0x{app.AppId:X}");
         // the sixth argument (the shell's launch parameters, 0x80 bytes, size first) points at +0x28 to where the
         // new application's SceAppMgrAppStatus goes: the shell takes the application id from it (+0x30)
         if (launchParam != 0 && GuestMemory.R32(launchParam) >= 0x2C && GuestMemory.R32(launchParam + 0x28) is var status and not 0)

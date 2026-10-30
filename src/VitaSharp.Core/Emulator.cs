@@ -707,6 +707,16 @@ public sealed class Emulator : IDisposable
         foreach (var m in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
                      .Where(m => m != MainModule && m.StartEntry != 0).ToList())
             RunOnNewThread($"start:{m.Name}", m.StartEntry);
+        // the launch posts the application's PARAM_NOTIFY event (FW 3.74 kernel appmgr, its launch path at 0x8100EC52):
+        // Settings and Friends wait for it to open their first page and then read the launch parameter, which a launch
+        // without one (the shell starting an application from its bubble passes NULL) leaves empty: the first
+        // sceAppMgrGetAppParam succeeds with "". (Not the shell itself: the kernel starts it, it is no launched application.)
+        if (!RunsOnSystemCore)
+        {
+            var appMgr = Hle.Modules.OfType<VitaSharp.Core.Hle.Modules.AppMgr>().First();
+            appMgr.LaunchParam ??= "";
+            appMgr.PostEvent(VitaSharp.Core.Hle.Modules.AppMgr.EventParamNotify);
+        }
         if (args is { Length: > 0 })
         {
             // argv as the kernel passes it: the strings back to back, NUL terminated
