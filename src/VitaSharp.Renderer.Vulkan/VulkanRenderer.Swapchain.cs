@@ -11,6 +11,10 @@ public sealed unsafe partial class VulkanRenderer
     Extent2D _swapExtent;
     Format _swapFormat;
     bool _swapchainDirty;
+    /// <summary>The swapchain's preTransform is not the surface's currentTransform (on purpose: IDENTITY on a rotated
+    /// Android display). Android then returns VK_SUBOPTIMAL_KHR from every acquire and present; recreating the
+    /// swapchain would not change that, so SUBOPTIMAL is ignored (OUT_OF_DATE and resizes still recreate it).</summary>
+    bool _suboptimalExpected;
 
     void CreateSwapchain()
     {
@@ -40,12 +44,14 @@ public sealed unsafe partial class VulkanRenderer
         // swapchain asks for IDENTITY (the compositor rotates) with the extent in the window's orientation (the
         // front-end's FramebufferSize). Desktop surfaces are always IDENTITY: nothing changes there.
         var transform = caps.CurrentTransform;
+        _suboptimalExpected = false;
         if (transform != SurfaceTransformFlagsKHR.IdentityBitKhr && (caps.SupportedTransforms & SurfaceTransformFlagsKHR.IdentityBitKhr) != 0)
         {
             if ((transform & (SurfaceTransformFlagsKHR.Rotate90BitKhr | SurfaceTransformFlagsKHR.Rotate270BitKhr)) != 0
                 && w > 0 && h > 0 && (w > h) != (extent.Width > extent.Height))
                 extent = new Extent2D(extent.Height, extent.Width);
             transform = SurfaceTransformFlagsKHR.IdentityBitKhr;
+            _suboptimalExpected = true;
         }
         if (extent.Width == 0 || extent.Height == 0) { _swapchainDirty = true; return; }
         uint count = Math.Max(caps.MinImageCount + 1, 3);
@@ -80,7 +86,8 @@ public sealed unsafe partial class VulkanRenderer
         _swapExtent = extent;
         _swapFormat = chosen.Format;
         _swapchainDirty = false;
-        Log.Info($"Swapchain {extent.Width}x{extent.Height} {chosen.Format} {mode} ({ic} images)");
+        Log.Info($"Swapchain {extent.Width}x{extent.Height} {chosen.Format} {mode} ({ic} images)"
+            + (_suboptimalExpected ? $", IDENTITY on a {caps.CurrentTransform} surface (the compositor rotates)" : ""));
     }
 
     public void NotifyResized() => _swapchainDirty = true;
@@ -133,7 +140,7 @@ public sealed unsafe partial class VulkanRenderer
         var r = _core.SwapchainExt!.AcquireNextImage(_dev, _swapchain, 1_000_000_000, F.Acquire, default, ref index);
         if (r is Result.ErrorOutOfDateKhr) { _swapchainDirty = true; return false; }
         if (r is not (Result.Success or Result.SuboptimalKhr)) return false;
-        if (r == Result.SuboptimalKhr) _swapchainDirty = true;
+        if (r == Result.SuboptimalKhr && !_suboptimalExpected) _swapchainDirty = true;
         return true;
     }
 
@@ -182,7 +189,7 @@ public sealed unsafe partial class VulkanRenderer
             PImageIndices = &index,
         };
         var r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
-        if (r is Result.ErrorOutOfDateKhr or Result.SuboptimalKhr) _swapchainDirty = true;
+        if (r == Result.ErrorOutOfDateKhr || (r == Result.SuboptimalKhr && !_suboptimalExpected)) _swapchainDirty = true;
     }
 
     void DestroySwapchain()
