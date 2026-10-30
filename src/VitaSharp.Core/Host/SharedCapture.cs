@@ -121,13 +121,21 @@ public sealed class SharedCapture : IDisposable
     /// <summary>Stops the capture now (even with live streams) and waits a bounded time for the device to close.</summary>
     public void Dispose()
     {
+        IHostCapture? c;
+        Task prev;
         lock (_gate)
         {
             if (_disposed) return;
             _disposed = true;
-            if (_capture != null) StopLocked();
+            c = _capture;
+            prev = _lastStop;
+            if (c != null) { _capture = null; _mode = null; _leases = 0; _generation++; }
         }
-        WaitStopped(TimeSpan.FromSeconds(3));
+        // stopped on this thread instead of queued to the thread pool, so a busy pool cannot delay it past the wait
+        try { prev.Wait(TimeSpan.FromSeconds(3)); } catch { }
+        if (c == null) return;
+        try { c.StopAsync().Wait(TimeSpan.FromSeconds(3)); }
+        catch (Exception e) { Log.Warn($"Camera: stopping the host capture failed: {e.Message}"); }
     }
 
     sealed class Lease(SharedCapture owner, IHostCapture capture) : ICameraStream
