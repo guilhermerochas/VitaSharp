@@ -302,6 +302,21 @@ public static class FirmwareInstaller
     /// macOS ~/Library/Application Support/Vita3K/Vita3K).</summary>
     public static string? FindVita3KFirmware()
     {
+        foreach (var c in Vita3KRoots())
+        {
+            try
+            {
+                var ext = Path.Combine(c, "vs0", "sys", "external");
+                if (Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any()) return c;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return null;
+    }
+
+    /// <summary>Where Vita3K keeps its data folder (ux0, vs0, ...) on this platform.</summary>
+    public static IEnumerable<string> Vita3KRoots()
+    {
         var candidates = new List<string>();
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -312,16 +327,7 @@ public static class FirmwareInstaller
             var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
             candidates.Add(Path.Combine(!string.IsNullOrEmpty(xdg) && Path.IsPathRooted(xdg) ? xdg : Path.Combine(home, ".local", "share"), "Vita3K", "Vita3K"));
         }
-        foreach (var c in candidates)
-        {
-            try
-            {
-                var ext = Path.Combine(c, "vs0", "sys", "external");
-                if (Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any()) return c;
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-        }
-        return null;
+        return candidates;
     }
 
     /// <summary>Moves a staged partition into place. Replace: the old folder (or a link standing for it) goes away

@@ -53,6 +53,8 @@ public static class Program
                 return FirmwareCli.Info();
             case "firmware-verify":
                 return FirmwareCli.Verify(args.Skip(1).ToArray());
+            case "import-trophies" when args.Length >= 2:
+                return ImportTrophies(args[1]);
             case "self2elf" when args.Length >= 3:
             {
                 byte[]? klic = args.Length >= 4 ? PkgInstaller.ReadKlicensee(args[3]) : null;
@@ -265,6 +267,31 @@ public static class Program
         }
     }
 
+    /// <summary>import-trophies &lt;folder|--vita3k&gt;: a PS Vita's ur0:user/00/trophy (decrypted copy) or Vita3K's trophies.</summary>
+    static int ImportTrophies(string source)
+    {
+        if (source == "--vita3k")
+        {
+            var v3k = VitaSharp.Core.Hle.Np.TrophyImport.FindVita3K();
+            if (v3k == null) { Console.Error.WriteLine("No Vita3K trophy data found."); return 1; }
+            source = v3k;
+        }
+        if (!Directory.Exists(source)) { Console.Error.WriteLine($"{source}: no such folder"); return 1; }
+        try
+        {
+            var r = VitaSharp.Core.Hle.Np.TrophyImport.Import(source, FsRoot);
+            foreach (var t in r.Titles)
+                Console.WriteLine(r.Kind == VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.Vita3K ? $"  {t.CommId}: {t.Total} unlocked, {t.Imported} new" : $"  {t.CommId}");
+            Console.WriteLine(r.Message);
+            return r.Kind is VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.Vita3K or VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.VitaDecrypted ? 0 : 1;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine("Import failed: " + e.Message);
+            return 1;
+        }
+    }
+
     static bool AskYesNo(string question)
     {
         if (Console.IsInputRedirected) return false;
@@ -353,6 +380,7 @@ public static class Program
         Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
+        Console.WriteLine("  import-trophies <folder>|--vita3k    import a PS Vita's ur0:user/00/trophy (decrypted copy) or Vita3K's trophies");
         Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (also a system app: NPXS10008; a vs0: folder with --self=x.self)");
         Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
         Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");

@@ -183,6 +183,8 @@ public sealed class SettingsDialog : Window
             Text = "Bibliotecas que continuam na implementação do VitaSharp mesmo quando o jogo ou o firmware traz o módulo " +
                    "(para contornar um problema com a versão original). Vazio: usa os módulos disponíveis.",
         });
+        general.Children.Add(new TextBlock { Text = "Troféus", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        general.Children.Add(new TrophyImportPanel());
         Closing += (_, e) =>
         {
             if (!firmware.Busy) return;
