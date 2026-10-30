@@ -26,7 +26,7 @@ public sealed record GxpAttributeDescriptor(uint AttributeInfo, uint ResourceInd
 /// <summary>Parsed view of a GXP (SceGxmProgram) binary.</summary>
 public sealed class GxpProgram
 {
-    public const uint FlagFragment = 1, FlagDiscardUsed = 1 << 3, FlagDepthUsed = 1 << 4, FlagSpriteCoordUsed = 1 << 5,
+    public const uint FlagFragment = 1, FlagFragColorDeclared = 1 << 2, FlagDiscardUsed = 1 << 3, FlagDepthUsed = 1 << 4, FlagSpriteCoordUsed = 1 << 5,
         FlagNativeColorUsed = 1 << 6, FlagFragColorUsed = 1 << 7, FlagOutputUndefined = 1 << 16, FlagIndexUsed = 1 << 17, FlagInstanceUsed = 1 << 18;
 
     public byte[] Data { get; }
@@ -38,6 +38,14 @@ public sealed class GxpProgram
     public bool IsVertex => !IsFragment;
     public bool IsNativeColor => (Flags & FlagNativeColorUsed) != 0;
     public bool IsFragColorUsed => (Flags & FlagFragColorUsed) != 0;
+    /// <summary>
+    /// A native-colour program that reads the fragment colour in its declared output type (flag 0x4, inferred, not in
+    /// the SDK headers): the colour fetch converts the pixel to that type instead of loading it in the output register
+    /// format. Without it the program reads the register-format bits. In Tearaway every program with the flag
+    /// starts on o0 with F16 instructions (the pause cross-fade, the intro's camera sky) and every native-colour
+    /// program without it copies o0 and unpacks it as bytes (VBW + SOP2/VPCK U8).
+    /// </summary>
+    public bool IsFragColorDeclared => (Flags & FlagFragColorDeclared) != 0;
     /// <summary>The program writes no colour (SCE_GXM_PROGRAM_FLAG_OUTPUT_UNDEFINED): its output registers hold undefined values.</summary>
     public bool IsOutputUndefined => (Flags & FlagOutputUndefined) != 0;
     public bool IsDiscardUsed => (Flags & FlagDiscardUsed) != 0;

@@ -15,11 +15,11 @@ public class NativeColorOutputTests
     static readonly ulong[] HalfColour = [0x4081017D201D8000];
 
     /// <summary>A native-colour fragment GXP declaring an F16x4 output, running <paramref name="code"/>.</summary>
-    static GxpProgram Program(ulong[] code)
+    static GxpProgram Program(ulong[] code, uint extraFlags = 0)
     {
         var d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
-        W32(0x14, GxpProgram.FlagFragment | GxpProgram.FlagNativeColorUsed);
+        W32(0x14, GxpProgram.FlagFragment | GxpProgram.FlagNativeColorUsed | extraFlags);
         W32(0x2C, 0x60 - 0x2C); // varyings
         d[0x60 + 10] = (byte)ParamType.F16; // output parameter type
         d[0x60 + 11] = 4; // output components
@@ -70,6 +70,29 @@ public class NativeColorOutputTests
         var glsl = Generate(PackedBytes, 1);
         Assert.DoesNotContain("o[0].x = uintBitsToFloat(packHalf2x16(", glsl);
         Assert.DoesNotContain("o[0].y = uintBitsToFloat(packHalf2x16(", glsl);
+    }
+
+    // the line of the framebuffer-fetch preload of o0 (programmable blending)
+    static string FetchPreload(ulong[] code, uint flags) =>
+        string.Join("\n", ShaderGenerator.Generate(Program(code, flags), new ShaderHints([], [], 0x00000000, false, 1)).Glsl
+            .Split('\n').SkipWhile(l => !l.Contains("last_frag_tex, ivec2")).Take(6));
+
+    [Fact]
+    public void FragColourIsFetchedAsPackedBytesWithUchar4()
+    {
+        // Tearaway's blend programs copy o0 and unpack it as bytes (VBW + SOP2): the fetch packs the pixel into o0.x
+        var fetch = FetchPreload(HalfColour, GxpProgram.FlagFragColorUsed);
+        Assert.Contains("bitfieldInsert", fetch);
+        Assert.DoesNotContain("packHalf2x16", fetch);
+    }
+
+    [Fact]
+    public void FragColourIsFetchedInTheDeclaredTypeWithFlag4()
+    {
+        // fs FBCBF73FF511C077 (pause cross-fade) / CED46C72A7EE1040 (intro camera sky) blend o0 with F16 instructions
+        var fetch = FetchPreload(HalfColour, GxpProgram.FlagFragColorUsed | GxpProgram.FlagFragColorDeclared);
+        Assert.Contains("packHalf2x16", fetch);
+        Assert.DoesNotContain("bitfieldInsert", fetch);
     }
 
     [Fact]
