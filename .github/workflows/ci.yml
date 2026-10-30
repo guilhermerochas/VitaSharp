@@ -5,10 +5,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # .github/workflows/release.yml calls this workflow to build the release packages (tests included) with the release version
+  workflow_call:
+    inputs:
+      version:
+        description: Package and app version (1.2.3 or 1.2.3-suffix); empty for ci-<run number>
+        type: string
+        default: ''
 
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # names the packages; a release version also becomes the app's version (see build/publish.sh)
+  PACKAGE_VERSION: ${{ inputs.version || format('ci-{0}', github.run_number) }}
 
 jobs:
   build-test:
@@ -40,9 +49,18 @@ jobs:
 
       # Long CPU fuzz/differential runs (Category=Slow, 15-45 min) are skipped here; run them locally with
       # `dotnet test tests/VitaSharp.Tests --filter Category=Slow`.
-      # --blame names the test that was running if the test host crashes or hangs (the run is otherwise just "aborted").
+      # When the test host crashes the run is otherwise just "aborted", so every run leaves enough to find out where:
+      # - --blame-crash: the Sequence_*.xml of started tests and a minidump of the crashed host (createdump);
+      # - --diag: the vstest/testhost logs, including the host's stderr (the runtime's fatal-error stack trace);
+      # - console verbosity=normal: every finished test in the log, so the last ones before the abort are visible.
+      # All of it lands in test-results, uploaded below.
       - name: Test
-        run: dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow" --blame --blame-hang-timeout 20m --blame-hang-dump-type none --logger "trx;LogFileName=results.trx" --results-directory test-results
+        shell: bash
+        run: >
+          dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow"
+          --blame-crash --blame-crash-dump-type mini --blame-hang --blame-hang-timeout 20m --blame-hang-dump-type none
+          --diag test-results/diag/vstest.log
+          --logger "console;verbosity=normal" --logger "trx;LogFileName=results.trx" --results-directory test-results
 
       - name: Upload test results
         if: always()
@@ -51,7 +69,8 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test-results
 
-  # Self-contained single-file builds for every platform, cross-published from one Linux runner.
+  # Self-contained single-file builds for every platform, cross-published and packaged from one Linux runner (the
+  # macOS .app is unsigned; the Windows installer and the macOS .dmg come from the per-OS AOT jobs below).
   publish:
     name: Publish (${{ matrix.rid }})
     needs: build-test
@@ -71,12 +90,24 @@ jobs:
         with:
           path: third_party/ffmpeg
           key: ffmpeg-publish-${{ matrix.rid }}-${{ hashFiles('build/FFmpeg.targets') }}
-      - name: Publish
-        run: OUT=artifacts/publish bash build/publish.sh ${{ matrix.rid }}
+      - name: Install appimagetool
+        if: startsWith(matrix.rid, 'linux-')
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - name: Publish and package
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-${{ matrix.rid }}
           path: artifacts/publish/${{ matrix.rid }}
+      # zip / tar.gz / AppImage / .app.zip made by build/publish.sh --package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-${{ matrix.rid }}-packages
+          path: artifacts/publish/packages
+          compression-level: 0 # already compressed
 
   # Native AOT builds. Native AOT cannot cross-compile between operating systems, so every platform is built on its
   # own runner: MSVC (preinstalled on windows-latest), clang + zlib on Linux, Xcode command-line tools on macOS.
@@ -109,14 +140,33 @@ jobs:
           key: ffmpeg-publish-${{ matrix.rid }}-${{ hashFiles('build/FFmpeg.targets') }}
       - name: Install Native AOT prerequisites (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-      - name: Publish
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      # Windows: AOT build, zip and Inno Setup installer (installed with Chocolatey when the runner image lacks it)
+      - name: Publish and package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $found = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup *\ISCC.exe")
+          if (-not $found) { choco install innosetup -y --no-progress }
+          ./build/publish.ps1 -Aot -Package -Rid ${{ matrix.rid }} -Out artifacts/publish -Version $env:PACKAGE_VERSION
+      # Linux: tar.gz + AppImage; macOS: .app zip + dmg
+      - name: Publish and package
+        if: runner.os != 'Windows'
         shell: bash
-        run: OUT=artifacts/publish bash build/publish.sh --aot ${{ matrix.rid }}
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --aot --package ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-${{ matrix.rid }}
           path: artifacts/publish/${{ matrix.rid }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-aot-${{ matrix.rid }}-packages
+          path: artifacts/publish/packages
+          compression-level: 0
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-${{ matrix.rid }}-symbols
@@ -141,13 +191,22 @@ jobs:
           path: third_party/ffmpeg
           key: ffmpeg-publish-linux-arm64-${{ hashFiles('build/FFmpeg.targets') }}
       - name: Install Native AOT prerequisites
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-      - name: Publish
-        run: OUT=artifacts/publish bash build/publish.sh --aot linux-arm64
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - name: Publish and package
+        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --aot --package linux-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-linux-arm64
           path: artifacts/publish/linux-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSharp-aot-linux-arm64-packages
+          path: artifacts/publish/packages
+          compression-level: 0
       - uses: actions/upload-artifact@v4
         with:
           name: VitaSharp-aot-linux-arm64-symbols

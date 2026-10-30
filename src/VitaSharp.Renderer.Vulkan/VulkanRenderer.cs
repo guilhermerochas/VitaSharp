@@ -577,6 +577,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         PollRetire(); // publish finished frames' results without waiting (cheap fence status checks)
         BeginFrameIfNeeded();
         EndRendering();
+        EndTileWord1();
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
@@ -625,6 +626,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void EndScene(EndSceneCommand e)
     {
         EndRendering(final: true);
+        EndTileWord1();
         if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
         _sceneRegions.Clear();
@@ -679,7 +681,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         if (_rendering || !_inScene) return;
         if (_ms) { BeginMsaaRendering(); return; }
-        var color = new RenderingAttachmentInfo
+        // attachment 1: the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)
+        var colors = stackalloc RenderingAttachmentInfo[2];
+        colors[0] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
             ImageView = _rt == null ? default : _renderRaw ? RawAttachmentView(_rt) : _ss ? SupersampleView(_rt) : _rtGamma ? _rt.SrgbView : _rt.View,
@@ -687,6 +691,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
         };
+        ref var color = ref colors[0];
+        bool word = _tw1Active && _rt != null;
+        if (word)
+        {
+            // the previous rendering's writes of the word come before this one's (renderings are not ordered)
+            Barrier(_tw1!.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
+                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit | AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
+        }
+        if (word)
+            colors[1] = new RenderingAttachmentInfo
+            {
+                SType = StructureType.RenderingAttachmentInfo, ImageView = _tw1!.View, ImageLayout = ImageLayout.General,
+                LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store,
+            };
         var bg = _scene?.Depth;
         var depth = new RenderingAttachmentInfo
         {
@@ -710,8 +729,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 SType = StructureType.RenderingInfo,
                 RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale)),
                 LayerCount = 1,
-                ColorAttachmentCount = _rt != null ? 1u : 0u,
-                PColorAttachments = &color,
+                ColorAttachmentCount = _rt != null ? word ? 2u : 1u : 0u,
+                PColorAttachments = colors,
                 PDepthAttachment = &depth,
                 PStencilAttachment = &depth,
             };
@@ -871,6 +890,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
 
         RecordFrameSummary(frame);
+        _presentedAddresses.Add(frame.Address);
         DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;
@@ -1163,6 +1183,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         RunAfterGpu(long.MaxValue);
         DestroyPersistentSets();
         DestroyMsaa();
+        DestroyTileWord1();
         DestroyGpuTime();
         DestroyPipelines();
         DestroyTextures();

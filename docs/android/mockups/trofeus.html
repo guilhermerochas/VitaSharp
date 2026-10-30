@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troféus · VitaSharp Android</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#05070A}
+a{color:#8FB2FF}a:hover{color:#B7CCFF}
+.phone{width:390px;height:844px;box-sizing:border-box;background:#0E1116;color:#E8ECF2;font-family:Inter,system-ui,sans-serif;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.back{width:44px;height:44px;border-radius:14px;background:#171B22;border:1px solid #2A313D;color:#E8ECF2;display:flex;align-items:center;justify-content:center}
+.grades{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.g{background:#171B22;border-radius:14px;padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:#9AA4B2}
+.g b{font:600 15px Sora,sans-serif;color:#E8ECF2}
+.chip{height:32px;padding:0 13px;border-radius:999px;border:1px solid #2A313D;background:transparent;color:#C9D1DC;font:500 13px Inter,sans-serif}
+.chip.on{border:none;background:#6E9BFF;color:#0B1220;font-weight:600}
+.tr{display:flex;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid #232A35}
+.tr:last-child{border-bottom:none}
+.ti{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative}
+.ti small{position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:999px;border:2px solid #171B22}
+.txt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.t{font:600 14px Inter,sans-serif}
+.s{font-size:12px;color:#9AA4B2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{font-size:11px;color:#8FB2FF;flex-shrink:0;text-align:right}
+.locked{opacity:.55}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <header style="display: flex; align-items: center; gap: 12px; padding: 16px 20px 8px 16px">
+    <a class="back" href="detalhes.html" aria-label="Voltar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></a>
+    <div style="display: flex; flex-direction: column; gap: 1px">
+      <h1 style="margin: 0; font: 700 22px Sora, sans-serif">Troféus</h1>
+      <span style="font-size: 12px; color: #9AA4B2">Killzone Mercenary · NPWR04120</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; overflow: hidden; padding: 8px 20px 0 20px; display: flex; flex-direction: column; gap: 14px">
+
+    <section aria-label="Progresso" style="border-radius: 22px; background: #1A2233; border: 1px solid #2B3A55; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline">
+        <span style="font: 700 26px Sora, sans-serif">18<span style="font-size: 16px; color: #9AA4B2"> / 48</span></span>
+        <span style="font: 600 14px Inter, sans-serif; color: #8FB2FF">37%</span>
+      </div>
+      <div style="height: 8px; border-radius: 999px; background: #2A3550; overflow: hidden"><div style="width: 37%; height: 100%; background: #6E9BFF; border-radius: 999px"></div></div>
+      <span style="font-size: 12px; color: #9AA4B2">Último: Atirador de elite · ontem às 22:09</span>
+    </section>
+
+    <div class="grades">
+      <div class="g"><span style="width: 12px; height: 12px; border-radius: 999px; background: #A9C4E8"></span><b>0/1</b>Platina</div>
+      <div class="g"><span style="width: 12px; height: 12px; border-radius: 999px; background: #E2B13C"></span><b>1/4</b>Ouro</div>
+      <div class="g"><span style="width: 12px; height: 12px; border-radius: 999px; background: #C3C7CE"></span><b>5/11</b>Prata</div>
+      <div class="g"><span style="width: 12px; height: 12px; border-radius: 999px; background: #C07A44"></span><b>12/32</b>Bronze</div>
+    </div>
+
+    <div style="display: flex; gap: 8px">
+      <button class="chip on">Todos</button>
+      <button class="chip">Conquistados</button>
+      <button class="chip">Faltando</button>
+    </div>
+
+    <div style="background: #171B22; border-radius: 18px; overflow: hidden">
+      <div class="tr">
+        <span class="ti" style="background: #4A3E22"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#E2B13C" stroke-width="1.8" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"></path></svg><small style="background: #E2B13C"></small></span>
+        <span class="txt"><span class="t">Atirador de elite</span><span class="s">Termine um contrato só com tiros na cabeça</span></span>
+        <span class="when">ontem</span>
+      </div>
+      <div class="tr">
+        <span class="ti" style="background: #3A3D44"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C3C7CE" stroke-width="1.8" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"></path></svg><small style="background: #C3C7CE"></small></span>
+        <span class="txt"><span class="t">Contrato cumprido</span><span class="s">Conclua o terceiro contrato da campanha</span></span>
+        <span class="when">ontem</span>
+      </div>
+      <div class="tr">
+        <span class="ti" style="background: #43301F"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C07A44" stroke-width="1.8" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"></path></svg><small style="background: #C07A44"></small></span>
+        <span class="txt"><span class="t">Primeiro pagamento</span><span class="s">Ganhe 10.000 créditos</span></span>
+        <span class="when">12/10</span>
+      </div>
+      <div class="tr locked">
+        <span class="ti" style="background: #232A35"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9AA4B2" stroke-width="1.9" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg><small style="background: #E2B13C"></small></span>
+        <span class="txt"><span class="t">Mercenário completo</span><span class="s">Complete todos os contratos no Difícil</span></span>
+      </div>
+      <div class="tr locked">
+        <span class="ti" style="background: #232A35"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9AA4B2" stroke-width="1.9" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg><small style="background: #C07A44"></small></span>
+        <span class="txt"><span class="t">Troféu oculto</span><span class="s">Continue jogando para descobrir</span></span>
+      </div>
+      <div class="tr locked">
+        <span class="ti" style="background: #232A35"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9AA4B2" stroke-width="1.9" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg><small style="background: #A9C4E8"></small></span>
+        <span class="txt"><span class="t">Platina</span><span class="s">Conquiste todos os outros troféus</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

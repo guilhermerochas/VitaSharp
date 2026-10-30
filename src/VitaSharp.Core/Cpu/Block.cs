@@ -110,7 +110,7 @@ public static unsafe class BlockBuilder
 
     /// <summary>
     /// Average cost of one instruction on the Vita's Cortex-A9, in quarter cycles (<see cref="CostUnit"/>). The
-    /// emulated CPU is paced by these (<see cref="CpuCore.InstructionsPerSecond"/>, 444 MHz), so game code sees
+    /// emulated CPU is paced by these (<see cref="CpuCore.InstructionsPerSecond"/>, 333 MHz unless the game raises it), so game code sees
     /// hardware-like execution times (physics budgets, frame timers, busy-wait loops) whatever the host speed. Every
     /// CPU backend charges the block total (<see cref="Block.Cycles"/>), so this table is the only place the model lives.
     /// <para>

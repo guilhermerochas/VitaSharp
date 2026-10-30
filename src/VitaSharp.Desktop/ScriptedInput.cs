@@ -11,6 +11,7 @@ namespace VitaSharp.Desktop;
 ///   button@T[:len]          press a button (cross, circle, square, triangle, start, select, up, down, left, right,
 ///                           ltrigger, rtrigger)
 ///   tap@T:x:y[:len]         touch the front panel at normalised x, y (btap: the rear touch panel)
+///   swipe@T:x0:y0:x1:y1[:len]  drag a finger on the front panel from x0, y0 to x1, y1 (default 0.5 s / 30 frames)
 ///   lstick@T:x:y[:len]      hold the left stick at x, y in -1..1 (rstick for the right stick)
 ///   tilt@T:pitch:roll[:len] motion sensors: the Vita (lying flat, screen up, by default) tilted pitch degrees about
 ///                           x (positive raises the top edge) then roll degrees about y (positive lowers the right
@@ -23,7 +24,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 {
     enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt }
 
-    sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y);
+    sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y, float X1 = float.NaN, float Y1 = float.NaN);
 
     readonly List<Step> _steps = new();
     readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -45,6 +46,10 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                 case "tap" or "btap":
                     _steps.Add(new Step(name == "tap" ? Kind.Tap : Kind.BackTap, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
                     break;
+                case "swipe":
+                    _steps.Add(new Step(Kind.Tap, 0, frames, start, parts.Length > 5 ? Len(5) : frames ? 30 : 0.5, float.Parse(parts[1], inv), float.Parse(parts[2], inv),
+                        float.Parse(parts[3], inv), float.Parse(parts[4], inv)));
+                    break;
                 case "tilt":
                     _steps.Add(new Step(Kind.Tilt, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
                     break;
@@ -62,6 +67,15 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         double now = s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _clock.Elapsed.TotalSeconds;
         return now >= s.Start && now < s.Start + s.Length;
+    }
+
+    /// <summary>The touch of a tap, or the point a swipe has reached.</summary>
+    TouchPoint Touch(Step s, bool back)
+    {
+        if (float.IsNaN(s.X1)) return new TouchPoint(back ? 2 : 1, s.X, s.Y);
+        double now = s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _clock.Elapsed.TotalSeconds;
+        float t = (float)Math.Clamp((now - s.Start) / Math.Max(s.Length, 1e-6), 0, 1);
+        return new TouchPoint(back ? 2 : 1, s.X + (s.X1 - s.X) * t, s.Y + (s.Y1 - s.Y) * t);
     }
 
     static byte Axis(float v) => (byte)Math.Clamp((int)MathF.Round((v + 1) * 127.5f), 0, 255);
@@ -86,7 +100,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         var kind = back ? Kind.BackTap : Kind.Tap;
         foreach (var s in _steps)
-            if (s.Kind == kind && Active(s)) return [new TouchPoint(back ? 2 : 1, s.X, s.Y)];
+            if (s.Kind == kind && Active(s)) return [Touch(s, back)];
         return [];
     }
 
@@ -125,7 +139,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         var kind = back ? Kind.BackTap : Kind.Tap;
         if (dest.Length == 0) return 0;
         foreach (var s in _steps)
-            if (s.Kind == kind && Active(s)) { dest[0] = new TouchPoint(back ? 2 : 1, s.X, s.Y); return 1; }
+            if (s.Kind == kind && Active(s)) { dest[0] = Touch(s, back); return 1; }
         return 0;
     }
 }

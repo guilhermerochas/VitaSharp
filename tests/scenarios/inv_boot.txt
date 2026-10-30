@@ -1,0 +1,5 @@
+# Invizimals: The Resistance (PCSA00552): epilepsy warning, logos, autosave notice, title (~f750), main menu (Story
+# Mode / Quick Battle / Multiplayer / Options, ~f900 on).
+# Run against a scratch data root with the game's ux0:license: VitaSharp.Desktop test tests/scenarios/inv_boot.txt --data=<scratch root>
+title=PCSA00552
+args=--frames=3600 --seconds=600 --dump-every=150 --input=cross@f450:f8,cross@f600:f8,cross@f750:f8,cross@f900:f8,cross@f1050:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8,cross@f1950:f8,cross@f2100:f8,cross@f2250:f8,cross@f2400:f8,cross@f2550:f8,cross@f2700:f8,cross@f2850:f8,cross@f3000:f8,cross@f3150:f8,cross@f3300:f8

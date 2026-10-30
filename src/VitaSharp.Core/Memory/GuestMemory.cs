@@ -40,7 +40,8 @@ public sealed unsafe class GuestMemory : IDisposable
     readonly SortedList<uint, uint> _freeCdram = new();
     readonly SortedList<uint, uint> _freeKernel = new();
 
-    public sealed record Block(uint Address, uint Size, string Name, MemoryRegion Region);
+    /// <summary>An allocated range; <paramref name="Owner"/> is the process that allocated it (0 = the system).</summary>
+    public sealed record Block(uint Address, uint Size, string Name, MemoryRegion Region, int Owner = 0);
 
     /// <summary>The process-wide address space (debug tools).</summary>
     public static GuestMemory? Instance { get; private set; }
@@ -240,7 +241,7 @@ public sealed unsafe class GuestMemory : IDisposable
         SetMapped(addr, size, true);
         new Span<byte>(Base + addr, (int)size).Clear();
         DirtyPages.MarkRange(addr, size);
-        _blocks[addr] = new Block(addr, size, name, region);
+        _blocks[addr] = new Block(addr, size, name, region, Kernel.ProcessScope.CurrentPid);
         CommittedBytes += size;
         return addr;
     }
@@ -251,6 +252,15 @@ public sealed unsafe class GuestMemory : IDisposable
         uint[] addrs;
         lock (_lock) addrs = _blocks.Keys.ToArray();
         foreach (var a in addrs) Free(a);
+    }
+
+    /// <summary>Frees the blocks process <paramref name="pid"/> allocated (its exit); returns the bytes released.</summary>
+    public long FreeOwnedBy(int pid)
+    {
+        Block[] owned;
+        lock (_lock) owned = _blocks.Values.Where(b => b.Owner == pid).ToArray();
+        foreach (var b in owned) Free(b.Address);
+        return owned.Sum(b => (long)b.Size);
     }
 
     public void Free(uint addr)

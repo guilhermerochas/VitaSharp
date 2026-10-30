@@ -117,7 +117,8 @@ public sealed class ProcessMgr : HleModule
     void sceKernelExitProcess(int res)
     {
         Log.Info($"sceKernelExitProcess({res})");
-        Emu.Stop();
+        // an application the shell launched: the shell comes back
+        if (!Emu.EndProcess(res)) Emu.Stop();
         throw new GuestThreadExitException(res, false);
     }
 
@@ -136,7 +137,7 @@ public sealed class ProcessMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelGetCurrentProcess() => 0x40010003;
+    [Hle] int sceKernelGetCurrentProcess() => Emu.Pid;
     [Hle] int sceKernelIsCDialogAvailable() => 1;
     [Hle] int sceKernelIsGameBudget() => 1;
     [Hle] int sceKernelGetProcessTitleId(uint buf, uint size) { GuestMemory.WriteCString(buf, Emu.TitleId, (int)size); return 0; }

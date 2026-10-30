@@ -152,7 +152,7 @@ public class InputMappingTests
             (PadButton.North, VitaButtons.Triangle), (PadButton.LeftShoulder, VitaButtons.LTrigger), (PadButton.RightShoulder, VitaButtons.RTrigger),
             (PadButton.Start, VitaButtons.Start), (PadButton.Back, VitaButtons.Select), (PadButton.DpadUp, VitaButtons.Up),
             (PadButton.DpadDown, VitaButtons.Down), (PadButton.DpadLeft, VitaButtons.Left), (PadButton.DpadRight, VitaButtons.Right),
-            (PadButton.LeftStick, VitaButtons.L3), (PadButton.RightStick, VitaButtons.R3), (PadButton.Guide, VitaButtons.None),
+            (PadButton.LeftStick, VitaButtons.L3), (PadButton.RightStick, VitaButtons.R3), (PadButton.Guide, VitaButtons.PsButton),
         ];
         foreach (var (padButton, vita) in table)
         {

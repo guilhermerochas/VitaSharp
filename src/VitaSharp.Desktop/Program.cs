@@ -61,6 +61,32 @@ public static class Program
                 Console.WriteLine($"Wrote {elf.Length} bytes");
                 return 0;
             }
+            case "rco-dump" when args.Length >= 2:
+                return RcoDump(args[1], args.Skip(2).FirstOrDefault(a => a.StartsWith("--extract="))?["--extract=".Length..]);
+            case "registry":
+            {
+                // registry [prefix] [path=value ...]: list the system registry (firmware template + written values);
+                // path=value writes an int key (or a string key, quoted value) first
+                var reg = VitaSharp.Core.Firmware.Registry.For(FsRoot);
+                string prefix = args.Skip(1).FirstOrDefault(a => !a.Contains('=')) ?? "/";
+                foreach (var set in args.Skip(1).Where(a => a.Contains('=')))
+                {
+                    int eq = set.IndexOf('='), slash = set.LastIndexOf('/', eq) + 1;
+                    string val = set[(eq + 1)..];
+                    bool ok = int.TryParse(val, out int iv)
+                        ? reg.SetInt(set[..slash], set[slash..eq], iv)
+                        : reg.Set(set[..slash], set[slash..eq], System.Text.Encoding.UTF8.GetBytes(val.Trim('"') + "\0"));
+                    Console.WriteLine(ok ? $"set {set[..eq]}" : $"no such key {set[..eq]}");
+                }
+                foreach (var k in reg.Keys.Where(k => k.Path.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(k => k.Path, StringComparer.Ordinal))
+                {
+                    var v = reg.Get(k.Path) ?? [];
+                    string shown = k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Int ? BitConverter.ToInt32(v.Concat(new byte[4]).Take(4).ToArray()).ToString()
+                        : k.Type == VitaSharp.Core.Firmware.Registry.KeyType.Str ? "\"" + System.Text.Encoding.UTF8.GetString(v).TrimEnd('\0') + "\"" : Convert.ToHexString(v);
+                    Console.WriteLine($"{k.Path} ({k.Type}, {k.Size}) = {shown}");
+                }
+                return 0;
+            }
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "toast-preview" when args.Length >= 2:
@@ -100,7 +126,13 @@ public static class Program
             {
                 Log.Level = LogLevel.Warn;
                 using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
-                emu.LoadTitle(ResolveApp(args[1]));
+                var selfArg = args.FirstOrDefault(a => a.StartsWith("--self="))?["--self=".Length..];
+                if (selfArg != null) emu.LoadTitle(ResolveApp(args[1]), selfArg); else emu.LoadTitle(ResolveApp(args[1]));
+                // --load=vs0:sys/external/libpaf.suprx,...: also load these modules (firmware code a system program
+                // loads at run time), each printed with its base so addresses like ScePaf+1E011E can be found
+                foreach (var mod in args.FirstOrDefault(a => a.StartsWith("--load="))?["--load=".Length..].Split(',') ?? [])
+                    Console.WriteLine($"{mod}: base 0x{emu.LoadModule(mod).Segments.Values.Min(s => s.Address):X8}");
+                args = args.Where(a => !a.StartsWith("--")).ToArray();
                 uint addr = Convert.ToUInt32(args[2], 16) & ~1u;
                 int count = args.Length > 3 ? int.Parse(args[3]) : 40;
                 for (int i = 0; i < count; i++)
@@ -133,6 +165,9 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "boot-shell":
+                // the PS Vita system software itself: vs0:vsh/shell/shell.self (home screen, LiveArea, system apps)
+                return Runner.Run(ResolveApp("vs0:vsh/shell"), args.Skip(1).Append("--self=shell.self").ToArray());
             case "test" when args.Length >= 2:
                 return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
@@ -146,9 +181,15 @@ public static class Program
     public static string ResolveApp(string arg)
     {
         if (Directory.Exists(arg)) return arg;
+        // a folder of the virtual file system: vs0:vsh/shell (the shell, with --self=shell.self)
+        if (arg.Length > 4 && arg.IndexOf(':') is > 1 and var colon && Path.Combine(FsRoot, arg[..colon], arg[(colon + 1)..].TrimStart('/')) is var dev && Directory.Exists(dev))
+            return dev;
         var p = Path.Combine(Ux0, "app", arg);
         if (Directory.Exists(p)) return p;
-        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p})");
+        // system applications of the installed firmware (vs0:app/NPXS*)
+        var sys = Path.Combine(FsRoot, "vs0", "app", arg);
+        if (Directory.Exists(sys)) return sys;
+        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
     }
 
     static bool IsArchive(string path) =>
@@ -273,6 +314,34 @@ public static class Program
         return 0;
     }
 
+    /// <summary>rco-dump &lt;file.rco&gt; [--extract=&lt;dir&gt;]: the element tree of a system RCO and, optionally, its files.</summary>
+    static int RcoDump(string path, string? extractDir)
+    {
+        var rco = VitaSharp.Core.Shell.Rco.Load(path);
+        Console.Write(rco.Dump());
+        if (extractDir == null) return 0;
+        Directory.CreateDirectory(extractDir);
+        int n = 0;
+        foreach (var f in rco.Files())
+        {
+            string name = string.Concat((f.Id.Length > 0 ? f.Id : $"{f.Table}_{n}").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+            File.WriteAllBytes(Path.Combine(extractDir, name + VitaSharp.Core.Shell.RcoResources.Extension(f)), f.Data);
+            n++;
+            if (!VitaSharp.Core.Shell.Gim.IsGim(f.Data)) continue;
+            try
+            {
+                var img = VitaSharp.Core.Shell.Gim.Decode(f.Data);
+                using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(img.Width, img.Height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Unpremul));
+                System.Runtime.InteropServices.Marshal.Copy(img.Pixels, 0, bmp.GetPixels(), img.Pixels.Length);
+                using var png = File.Create(Path.Combine(extractDir, name + ".png"));
+                bmp.Encode(png, SkiaSharp.SKEncodedImageFormat.Png, 100);
+            }
+            catch (InvalidDataException e) { Console.WriteLine($"  {name}: {e.Message}"); }
+        }
+        Console.WriteLine($"extracted {n} file(s) to {extractDir}");
+        return 0;
+    }
+
     static void PrintUsage()
     {
         Console.WriteLine("VitaSharp - PS Vita emulator");
@@ -284,7 +353,9 @@ public static class Program
         Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
-        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title");
+        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (also a system app: NPXS10008; a vs0: folder with --self=x.self)");
+        Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
+        Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");
         Console.WriteLine("  --data=<folder>                      use another data folder (default: " + DataPaths.DefaultRoot() + ")");
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
@@ -293,6 +364,7 @@ public static class Program
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
+        Console.WriteLine("  rco-dump <file.rco> [--extract=<dir>]  print a system RCO resource tree; write out its textures, sounds and other files");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
         Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
@@ -307,6 +379,10 @@ public static class Program
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");
         Console.WriteLine("                             (default on; off = every PSN server request fails as unreachable)");
+        Console.WriteLine("               --net=off|real  real internet for game sockets, DNS and HTTP (default off; Sony's servers stay blocked)");
+        Console.WriteLine("               --net-allow=host,...  with --net=real, only these hosts/addresses are reachable (localhost = loopback)");
+        Console.WriteLine("               --rpcn=host[:port] --rpcn-user=<name> [--rpcn-token=]  Score/TUS on an RPCN server (needs --net=real;");
+        Console.WriteLine("                             password in " + EnvVars.RpcnPassword + ")");
         Console.WriteLine("               --lle-modules=libsas,libatrac  load these from the installed firmware instead of HLE");
         Console.WriteLine("               --hle-modules=json,...    keep these on HLE even when the game or the firmware has the module");
     }

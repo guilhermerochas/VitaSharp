@@ -66,7 +66,24 @@ public static class Runner
             ffv.Configure(vdec);
         // --psn=on|off: emulated PSN account signed in (default) or signed out; --psn-id=<online id> names the account
         // (launcher: Configurações > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
-        string? psnId = Opt(options, "--psn-id");
+        // --net=off|real (default VITASHARP_NET, else off): real internet for SceNet/SceHttp; --net-allow=h1,h2 limits it to
+        // those hosts (default VITASHARP_NET_ALLOW). Sony's servers are always blocked.
+        string? netOpt = Opt(options, "--net") ?? Environment.GetEnvironmentVariable(EnvVars.Net);
+        var netMode = NetConfig.ParseMode(netOpt);
+        if (netOpt != null && netMode == null) Log.Warn($"--net={netOpt} not recognised (use off or real): internet stays off");
+        var net = new NetConfig(netMode ?? NetMode.Off,
+            (Opt(options, "--net-allow") ?? Environment.GetEnvironmentVariable(EnvVars.NetAllow))?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // --rpcn=host[:port] --rpcn-user=<name> [--rpcn-token=]: Score/TUS on an RPCN server (real internet only); the
+        // password comes from VITASHARP_RPCN_PASSWORD (the launcher sets it) so it never appears on a command line
+        VitaSharp.Core.Hle.Np.Rpcn.RpcnConfig? rpcn = null;
+        if (VitaSharp.Core.Hle.Np.Rpcn.RpcnConfig.ParseServer(Opt(options, "--rpcn")) is { } server)
+        {
+            string user = Opt(options, "--rpcn-user") ?? "";
+            string pass = Environment.GetEnvironmentVariable(EnvVars.RpcnPassword) ?? "";
+            if (user.Length == 0 || pass.Length == 0) Log.Warn($"--rpcn={server.Host}: needs --rpcn-user and the password in {EnvVars.RpcnPassword}; using the local PSN services");
+            else rpcn = new VitaSharp.Core.Hle.Np.Rpcn.RpcnConfig(server.Host, server.Port, user, pass, Opt(options, "--rpcn-token") ?? "");
+        }
+        string? psnId = Opt(options, "--psn-id") ?? (rpcn != null && PsnAccount.IsValidOnlineId(rpcn.User) ? rpcn.User : null);
         if (psnId != null && !PsnAccount.IsValidOnlineId(psnId))
             Log.Warn($"--psn-id={psnId} is not a valid online ID (3-16 letters, digits, '-' or '_', starting with a letter): using {PsnAccount.DefaultOnlineId}");
         // --psn-local=on|off: local PSN services (TUS / Cross-Save, rankings, tickets, matching, in <data>/np; default on)
@@ -83,6 +100,7 @@ public static class Runner
         {
             FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace,
             PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn, NpRoot = Path.Combine(Program.DataRoot, "np"),
+            Net = net, Rpcn = rpcn,
             LleModules = ModuleListOpt(options, "--lle-modules"), HleModules = ModuleListOpt(options, "--hle-modules"),
         });
         var fatal = new ManualResetEventSlim();
@@ -175,7 +193,7 @@ public static class Runner
             renderer = new VulkanRenderer(rendererOptions);
             renderer.AnomalyDetected += diag.OnAnomaly;
             emu.Gpu.Backend = renderer;
-            emu.LoadTitle(appPath);
+            emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
             emu.Start();
         };
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
@@ -276,7 +294,11 @@ public static class Runner
         }
         // turbo: no vblank/audio pacing, guest time jumps one frame per frame (automated tests)
         VitaSharp.Core.Util.GuestClock.Turbo = options.Contains("--turbo");
-        if (int.TryParse(Opt(options, "--cores"), out var cores)) VitaSharp.Core.Kernel.Scheduler.Cores = cores; // 0 = unlimited (old behaviour)
+        if (int.TryParse(Opt(options, "--cores"), out var cores)) // 0 = unlimited (old behaviour), also for the shell's core
+        {
+            VitaSharp.Core.Kernel.Scheduler.Cores = cores;
+            if (cores <= 0) VitaSharp.Core.Kernel.Scheduler.SystemCores = 0;
+        }
         if (long.TryParse(Opt(options, "--cpu-mips"), out var mips)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = mips * 1_000_000;
         if (long.TryParse(Opt(options, "--cpu-mhz"), out var cpuMhz)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = cpuMhz * 1_000_000; // 0 = unpaced
         if (long.TryParse(Opt(options, "--jit-threshold"), out var jitT)) VitaSharp.Core.Cpu.Jit.HotInstructions = jitT; // executed instructions before a block is compiled
@@ -313,7 +335,7 @@ public static class Runner
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
         var wall = Stopwatch.StartNew();
-        emu.LoadTitle(appPath);
+        emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;

@@ -17,7 +17,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
-- [ ] Opção de pular o desenho enquanto o pipeline não fica pronto (tira os últimos engasgos da primeira vez)
+- [ ] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
+  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
+  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
+  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
 - [ ] JIT: multiplicações Thumb (SMULxy/SMLAxy/SMULW/SMMUL) e somas/subtrações paralelas (Mania, Devious Dungeon)
 - [ ] JIT: VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS inline
 - [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)
@@ -26,8 +29,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
-- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/`
-- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro
+- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
+  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita); o ícone adaptativo já
+  está em `src/VitaSharp.Android/Resources`
+- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (o layout dos controles na
+  tela, com o botão PS, já existe em `src/VitaSharp.Android/Input`)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
@@ -37,32 +43,40 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
 - [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
 - [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
-- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, tela "Driver da GPU" e teste num aparelho
-  (a interface e as configurações já existem em `src/VitaSharp.Android/Gpu`)
+- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, desenhar a tela "Driver da GPU" e testar num
+  aparelho (a interface, as configurações e o modelo da tela já existem em `src/VitaSharp.Android/Gpu`)
 - [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
-- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves
+- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
+  (.PUP) pelo seletor (`src/VitaSharp.Android/Firmware` já instala a partir do arquivo aberto)
 
 ## Firmware e sistema
 
-- [ ] Tela inicial e LiveArea no launcher
-- [ ] Apps de sistema (Configurações, Gerenciador de Conteúdo): exige registro do sistema, SceShell/SceIpmi e
-  vários processos
+- [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
+  configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
+  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME), o aviso "Could not install" e as
+  funções restantes (sensor de movimento, sockets do sistema)
+
+## Código
+
+- [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
+  chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
+  membros, usings, comentários, `var`; regras num `.editorconfig` com analisadores. Cuidados: o GLSL gerado vem de
+  strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest) e fazer num momento sem
+  outros branches abertos (o diff toca quase todos os arquivos)
 
 ## Bugs em aberto
 
-- [ ] Gravity Rush: um toque em 0,46/0,48 no quadro 1000 da tela de título não registrou (o toque no centro funciona)
-- [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real
-- [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275)
-- [ ] Killzone: em algumas áreas do kzl_walk3 o jogo cai para 5–10 fps por 20–40 s; a thread principal fica em polling com `sceKernelDelayThread` (loop em 8100D692) esperando algo que ninguém produz (jobs e GPU ociosos); ver docs/notes/kz-mainthread.md
-- [ ] Skullgirls: elementos do HUD (contador de combo, barra de cima) aparecem como caixas brancas por 1 quadro durante as lutas
-- [ ] Tearaway: na tela "mãos pequenas ou grandes" os quadros alternam entre "mundo iluminado + painéis" e "mundo escuro + botão de confirmar" (as listas de comandos com os painéis, 22+20 draws, só são gravadas nos quadros pares). É decisão do próprio jogo: não há visibility queries nessa tela, as texturas são as mesmas e o padrão não muda com a CPU sem limite (`VITASHARP_CPU_MHZ=0`). Falta achar o que o jogo lê para alternar (o "um painel por quadro" era o anel de uniforms das listas de comandos, corrigido)
-- [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7`
-- [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções
-- [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado
-- [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa)
-- [ ] Cenário `rbs_boot.txt` do Resistance não serve mais com o save existente (usar `rbs_continue.txt`)
-- [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico
-- [ ] Persona 4: digitar o nome no começo do jogo exige o teclado na tela (IME); os testes automáticos só conseguem digitar "A"
-- [ ] Ninja Gaiden Sigma Plus: travamento intermitente no "Now Loading" do boot (antes dos logos), visto 1 vez em 3 execuções do `ngs_boot.txt` com dados novos; não depende da conta PSN (as outras execuções, com `--psn=on` e `--psn=off`, chegaram ao jogo)
-- [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente)
+- [ ] Gravity Rush: na tela de título "Tap the Apple", um toque registra (a maçã balança e o aviso some por ~180 quadros) mas não pega a maçã nem avança; igual em 0,46/0,48 e no centro, nos quadros 1000 e 1400 (29/10/2026, main c12927d, `gr_boot.txt` só com o toque); a diferença antiga "0,46/0,48 falha, centro funciona" não se repete. Falta saber se o Vita exige outro gesto (segurar, tocar na maçã de outro jeito)
+- [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real (não dá para conferir aqui)
+- [ ] Killzone: congelamento raro com comandos da GPU pendentes (visto uma vez no quadro 1275; 29/10/2026, main c12927d: não se repetiu no `kz_boot.txt` sem `--turbo`, 3000 quadros, nem no `kzl_walk3`, 10500 quadros)
+- [ ] Killzone: `kz_boot.txt` (com `--turbo`) para no quadro 6 em 2 de 2 execuções (29/10/2026, main c12927d, `.vitadata`): a thread `killzone_vita` espera em `condvar SceFiosOpWait`, as threads `SceFiosIO`/`SceFiosCallback` esperam em `SceFiosSchedulerWakeup` e a GPU está ociosa (29/29 comandos concluídos); o watchdog acusa `STALL` desde 6 s. Sem `--turbo`, o mesmo cenário chega aos 3000 quadros. Parece uma notificação perdida do FIOS quando o relógio do convidado avança direto (`GuestClock.Turbo`)
+- [ ] Killzone: em algumas áreas do kzl_walk3 o jogo cai para 5–10 fps por 20–40 s; a thread principal fica em polling com `sceKernelDelayThread` (loop em 8100D692) esperando algo que ninguém produz (jobs e GPU ociosos); ver docs/notes/kz-mainthread.md (29/10/2026, main c12927d: 1 execução completa do kzl_walk3 com `--profile --profile-from=4300` ficou em 29–30 fps do quadro 3300 ao 10500, sem nenhum `PROFILE slow window`; como só acontecia em algumas execuções, ainda não dá para dar como corrigido)
+- [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
+- [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
+- [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
+- [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
+- [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
+- [ ] Killzone: commit 3dc7d41 (sincronização U4U4U4U4) segurado porque deixava o rodapé do EULA em itálico (29/10/2026: continua só no branch `fix/kz-text`, fora do main)
+- [ ] Persona 4: digitar o nome no começo do jogo exige o teclado na tela (IME); os testes automáticos só conseguem digitar "A" (29/10/2026: o `--ime-text` citado em `Ime.cs` e `CommonDialog.cs` não existe na linha de comando; `CommonDialog.ImeDefaultText` nunca recebe valor)
+- [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)

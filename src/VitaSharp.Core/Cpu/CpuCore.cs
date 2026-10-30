@@ -70,16 +70,20 @@ public sealed unsafe class CpuCore : IDisposable
     public delegate bool BlockFn(CpuCore core, CpuState* s, Block b);
 
     /// <summary>
-    /// Emulated CPU speed in guest instructions per second per thread (0 = unlimited). The Vita's Cortex-A9 runs games
-    /// at 333 MHz; games budget work by measuring process time, so executing at host speed makes them do far more work
-    /// per frame than on hardware (streaming / job loops) and changes their behaviour.
+    /// Emulated CPU speed in cycles per second (see <see cref="BlockBuilder.CycleCost"/>); 0 runs unpaced. Pacing to it
+    /// is what makes time-budgeted game code (physics sub-stepping, frame timers, loads hidden behind timed sequences)
+    /// behave as on hardware.
+    /// <para>
+    /// An application starts at the system's default ARM clock, 333 MHz; 444 MHz is the most it may ask for, through
+    /// scePowerSetArmClockFrequency (which is why homebrew and the overclocking plugins raise it explicitly). None of
+    /// the installed retail titles calls it. Pacing at 444 by default let Silent Hill: Book of Memories finish loading
+    /// its title screen before its fixed-length splash sequence ended (17.5 s of fades): the splash thread then started
+    /// the loading screen with a texture the main thread had already released ("Texture 'ui\ui_loading_screen.tga' was
+    /// selected for rendering without being cached").
+    /// </para>
     /// </summary>
-    /// <summary>
-    /// Emulated CPU speed in cycles per second (see <see cref="BlockBuilder.CycleCost"/>); 0 runs unpaced. The Vita's
-    /// Cortex-A9 runs at 444 MHz for games (sceKernelPowerSetArmClockFrequency may change it), and pacing to it is what
-    /// makes time-budgeted game code (physics sub-stepping, frame timers) behave as on hardware.
-    /// </summary>
-    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.CpuMhz), out var mhz) ? mhz * 1_000_000 : 444_000_000;
+    public const long DefaultClockHz = 333_000_000;
+    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.CpuMhz), out var mhz) ? mhz * 1_000_000 : DefaultClockHz;
     long _throttleInstrs, _throttleStart = -1;
     /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
     public volatile bool InThrottle;

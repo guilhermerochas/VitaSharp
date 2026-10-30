@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Driver da GPU · VitaSharp Android</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#05070A}
+a{color:#8FB2FF}a:hover{color:#B7CCFF}
+.phone{width:390px;height:844px;box-sizing:border-box;background:#0E1116;color:#E8ECF2;font-family:Inter,system-ui,sans-serif;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.back{width:44px;height:44px;border-radius:14px;background:#171B22;border:1px solid #2A313D;color:#E8ECF2;display:flex;align-items:center;justify-content:center}
+h2{margin:0 0 6px 4px;font:600 13px Inter,sans-serif;color:#9AA4B2;text-transform:uppercase;letter-spacing:.08em}
+.card{background:#171B22;border-radius:18px;overflow:hidden}
+.row{min-height:60px;padding:10px 16px;box-sizing:border-box;display:flex;align-items:center;gap:12px;border-bottom:1px solid #232A35}
+.row:last-child{border-bottom:none}
+.txt{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.t{font:500 14px Inter,sans-serif}
+.s{font-size:12px;color:#9AA4B2}
+.radio{width:20px;height:20px;border-radius:999px;border:2px solid #3A4352;box-sizing:border-box;flex-shrink:0}
+.radio.on{border-color:#6E9BFF;background:radial-gradient(#6E9BFF 0 4.5px,transparent 5px)}
+.sw{width:46px;height:28px;border-radius:999px;background:#2A313D;position:relative;display:block;flex-shrink:0}
+.sw i{position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:999px;background:#9AA4B2;display:block}
+.sw.on{background:#6E9BFF}.sw.on i{left:auto;right:3px;background:#0B1220}
+.icon-btn{width:36px;height:36px;border-radius:12px;border:1px solid #2A313D;background:transparent;color:#C9D1DC;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tag{height:20px;padding:0 7px;border-radius:999px;font:600 10px Inter,sans-serif;display:inline-flex;align-items:center;vertical-align:1px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <header style="display: flex; align-items: center; gap: 12px; padding: 16px 20px 8px 16px">
+    <a class="back" href="ajustes.html" aria-label="Voltar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></a>
+    <h1 style="margin: 0; font: 700 22px Sora, sans-serif">Driver da GPU</h1>
+  </header>
+
+  <div style="flex: 1; overflow: hidden; padding: 8px 20px 0 20px; display: flex; flex-direction: column; gap: 16px">
+
+    <a href="gpu-info.html" style="text-decoration: none; color: inherit; border-radius: 22px; background: #1A2233; border: 1px solid #2B3A55; padding: 16px; display: flex; gap: 14px; align-items: center">
+      <div style="width: 52px; height: 52px; border-radius: 16px; background: #34405C; display: flex; align-items: center; justify-content: center; color: #DCE5F7; flex-shrink: 0">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="6" width="17" height="12" rx="2"></rect><circle cx="10.5" cy="12" r="3"></circle><path d="M19 9h3M19 15h3M6 18v3M15 18v3"></path></svg>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0">
+        <span style="font-size: 11px; color: #9DB4E8; text-transform: uppercase; letter-spacing: 0.08em">Em uso</span>
+        <span style="font: 600 16px Sora, sans-serif">Adreno (TM) 740</span>
+        <span style="font-size: 12px; color: #9AA4B2">Driver do sistema · Qualcomm 512.676 · Vulkan 1.3</span>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7584" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </a>
+
+    <section>
+      <h2>Drivers</h2>
+      <div class="card" role="radiogroup" aria-label="Driver Vulkan">
+        <div class="row" role="radio" aria-checked="true">
+          <span class="radio on"></span>
+          <span class="txt"><span class="t">Driver do sistema<span class="tag" style="background: #1E2A40; color: #8FB2FF">Padrão</span></span><span class="s">O que veio no aparelho, aberto pela libadrenotools</span></span>
+        </div>
+        <div class="row" role="radio" aria-checked="false">
+          <span class="radio"></span>
+          <span class="txt"><span class="t">Turnip 24.3.0</span><span class="s">Mesa · Vulkan 1.3.289 · vulkan.ad07XX.so · API 28+</span></span>
+          <button class="icon-btn" aria-label="Remover Turnip 24.3.0"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"></path></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <button style="height: 52px; border-radius: 18px; border: none; background: #6E9BFF; color: #0B1220; font: 600 15px Inter, sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Instalar driver (.zip)
+    </button>
+    <span style="margin-top: -8px; font-size: 12px; color: #9AA4B2; text-align: center">Pacote com meta.json (Turnip, drivers Adreno da comunidade)</span>
+
+    <section>
+      <h2>Opções</h2>
+      <div class="card">
+        <label class="row">
+          <span class="txt"><span class="t">Habilitar texturas BCn</span><span class="s">BCeNabler: libera BC1-BC5 em drivers Qualcomm que escondem o recurso</span></span>
+          <span class="sw on"><i></i></span><input type="checkbox" checked style="position: absolute; left: -9999px">
+        </label>
+        <label class="row">
+          <span class="txt"><span class="t">Modo turbo da GPU</span><span class="s">Clock máximo durante o jogo (mais calor e bateria)</span></span>
+          <span class="sw"><i></i></span><input type="checkbox" style="position: absolute; left: -9999px">
+        </label>
+        <label class="row">
+          <span class="txt"><span class="t">Redirecionar arquivos do driver</span><span class="s">Dumps e configs do driver vão para a pasta do app</span></span>
+          <span class="sw"><i></i></span><input type="checkbox" style="position: absolute; left: -9999px">
+        </label>
+      </div>
+    </section>
+
+    <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; background: #171B22; border: 1px solid #232A35">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9DB4E8" stroke-width="1.9" style="flex-shrink: 0; margin-top: 1px" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5v.5"></path></svg>
+      <span style="font-size: 12px; line-height: 1.45; color: #C9D1DC">A troca vale no próximo jogo: o processo carrega um driver só. Drivers customizados só aparecem em GPUs Adreno.</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

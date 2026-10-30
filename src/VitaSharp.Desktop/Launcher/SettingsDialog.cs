@@ -61,6 +61,15 @@ public sealed class SettingsDialog : Window
             ItemsSource = cpuChoices.Select(c => c.Label).ToArray(),
             Width = 320, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
         };
+        // emulated ARM clock (--cpu-mhz=): retail 333 MHz by default; 444 MHz is what a game gets when it asks for it
+        var clockValues = new[] { 0, 444 };
+        var clock = new ComboBox
+        {
+            ItemsSource = new[] { "333 MHz (como o Vita, recomendado)", "444 MHz (carregamentos mais rápidos)" },
+            Width = 320, SelectedIndex = settings.CpuMhz == 444 ? 1 : 0,
+        };
+        ToolTip.SetTip(clock, "Velocidade da CPU emulada. O Vita roda os jogos a 333 MHz; 444 MHz carrega mais rápido, " +
+                              "mas jogos que dependem do tempo do console (por exemplo Silent Hill: Book of Memories) podem falhar.");
         // performance: shader compilation stutter (--shaderc-opt=, --async-shaders=)
         const string fastShadersTip = "Reduz travamentos quando shaders novos aparecem; desligue se notar perda de desempenho.";
         const string asyncShadersTip = "Prepara shaders e pipelines novos em outras threads enquanto o jogo ainda envia o quadro, " +
@@ -88,8 +97,33 @@ public sealed class SettingsDialog : Window
             Text = "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.",
             Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false,
         };
-        void SyncPsn() => psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
+        // real internet (--net=real) and an optional RPCN server for Score/TUS (--rpcn=, --rpcn-user=, password in the
+        // game process environment): off by default, with the privacy note always visible
+        const string realNetTip = "Os sockets, o DNS e o HTTP dos jogos passam a usar a rede deste PC. Os servidores da Sony " +
+                                  "continuam bloqueados (a maioria já foi desligada); o resto do tráfego do jogo vai para os " +
+                                  "servidores que o próprio jogo escolher.";
+        var realNet = new CheckBox { Content = "Internet real", IsChecked = settings.RealInternet };
+        ToolTip.SetTip(realNet, realNetTip);
+        var realNetNote = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brushes.Goldenrod,
+            Text = "Privacidade: com a internet real ligada, o jogo envia dados (seu IP, o ID online, pontuações e salvamentos " +
+                   "na nuvem) para os servidores dele e para o servidor RPCN configurado abaixo. Desligada (padrão), nada sai do PC.",
+        };
+        var rpcnServer = new TextBox { Text = settings.RpcnServer, Width = 260, Watermark = "ex.: np.rpcs3.net" };
+        var rpcnUser = new TextBox { Text = settings.RpcnUser, Width = 200, MaxLength = 16 };
+        var rpcnPass = new TextBox { Text = settings.RpcnPassword, Width = 200, PasswordChar = '•' };
+        var rpcnToken = new TextBox { Text = settings.RpcnToken, Width = 200, Watermark = "só no primeiro login" };
+        const string rpcnTip = "Servidor RPCN (o servidor aberto do RPCS3) para placares e salvamento na nuvem (TUS) com " +
+                               "outros jogadores. Vazio: os serviços PSN locais. A senha fica gravada neste PC (launcher.json).";
+        ToolTip.SetTip(rpcnServer, rpcnTip);
+        void SyncPsn()
+        {
+            psnId.IsEnabled = psnLocal.IsEnabled = psnSignedIn.IsChecked == true;
+            rpcnServer.IsEnabled = rpcnUser.IsEnabled = rpcnPass.IsEnabled = rpcnToken.IsEnabled = realNet.IsChecked == true && psnSignedIn.IsChecked == true;
+        }
         psnSignedIn.IsCheckedChanged += (_, _) => SyncPsn();
+        realNet.IsCheckedChanged += (_, _) => SyncPsn();
         SyncPsn();
         var general = new StackPanel { Spacing = 12, Margin = new Thickness(4, 12), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         general.Children.Add(fullscreen);
@@ -98,6 +132,31 @@ public sealed class SettingsDialog : Window
         general.Children.Add(validation);
         general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
+        general.Children.Add(Row("Clock da CPU", clock));
+        // library view and the home screen ("Tela inicial": bubbles, LiveArea, theme, BGM and sounds of the firmware)
+        general.Children.Add(new TextBlock { Text = "Tela inicial", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
+        var view = new ComboBox { ItemsSource = new[] { "Lista", "Tela inicial recriada (provisória)" }, Width = 320, SelectedIndex = settings.View == LauncherSettings.ViewHome ? 1 : 0 };
+        general.Children.Add(Row("Exibição", view));
+        var shellAssets = new VitaSharp.Core.Shell.ShellAssets(Program.FsRoot);
+        var themes = shellAssets.Themes(VitaSharp.Core.Shell.LiveAreaTemplate.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
+        var theme = new ComboBox
+        {
+            ItemsSource = themes.Select(t => t.Title).ToArray(), Width = 320,
+            SelectedIndex = Math.Max(0, themes.FindIndex(t => t.Id == settings.Theme)),
+        };
+        // a choice only when there is more than one theme (the firmware's default plus themes installed in ux0:theme)
+        if (themes.Count > 1) general.Children.Add(Row("Tema", theme));
+        var homeBgm = new CheckBox { Content = "Música do sistema na tela inicial", IsChecked = settings.HomeBgm, IsEnabled = themes.Any(t => t.BgmPath != null) || shellAssets.SystemBgm != null };
+        general.Children.Add(WithHint(homeBgm, homeBgm.IsEnabled ? "Toca a música do tema (pd0:data/systembgm/home.at9 no tema padrão)."
+                                                                   : "Requer um firmware com a partição pd0 (por exemplo, importado do Vita3K) ou um tema com música."));
+        var systemSounds = new CheckBox { Content = "Efeitos sonoros do sistema", IsChecked = settings.SystemSounds, IsEnabled = shellAssets.HasFirmware };
+        general.Children.Add(WithHint(systemSounds, "Sons de confirmar e voltar do Vita (common_resource.rco do firmware)."));
+        if (!shellAssets.HasFirmware)
+            general.Children.Add(new TextBlock
+            {
+                Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
+                Text = "Sem firmware instalado a tela inicial usa um visual padrão. Instale o firmware (abaixo) para o papel de parede, ícones e sons do Vita.",
+            });
         general.Children.Add(new TextBlock { Text = "Desempenho", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         general.Children.Add(WithHint(fastShaders, fastShadersTip));
         general.Children.Add(WithHint(asyncShaders, asyncShadersTip));
@@ -106,6 +165,12 @@ public sealed class SettingsDialog : Window
         general.Children.Add(Row("ID online", psnId));
         general.Children.Add(psnIdError);
         general.Children.Add(WithHint(psnLocal, psnLocalTip));
+        general.Children.Add(WithHint(realNet, realNetTip));
+        general.Children.Add(realNetNote);
+        general.Children.Add(Row("Servidor RPCN", rpcnServer));
+        general.Children.Add(Row("Usuário RPCN", rpcnUser));
+        general.Children.Add(Row("Senha RPCN", rpcnPass));
+        general.Children.Add(Row("Token RPCN", rpcnToken));
         // firmware: install the official PUP (or copy Vita3K's), and the libraries to keep on HLE (--hle-modules=)
         general.Children.Add(new TextBlock { Text = "Firmware", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         var firmware = Firmware = new FirmwarePanel();
@@ -189,16 +254,26 @@ public sealed class SettingsDialog : Window
             settings.PsnSignedIn = psnSignedIn.IsChecked == true;
             settings.PsnOnlineId = id;
             settings.PsnLocalServices = psnLocal.IsChecked == true;
+            settings.RealInternet = realNet.IsChecked == true;
+            settings.RpcnServer = (rpcnServer.Text ?? "").Trim();
+            settings.RpcnUser = (rpcnUser.Text ?? "").Trim();
+            settings.RpcnPassword = rpcnPass.Text ?? "";
+            settings.RpcnToken = (rpcnToken.Text ?? "").Trim();
             settings.Fullscreen = fullscreen.IsChecked == true;
             settings.VSync = vsync.IsChecked == true;
             settings.Validation = validation.IsChecked == true;
             settings.Scale = scale.SelectedIndex + 1;
             settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
             settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
+            settings.CpuMhz = clock.SelectedIndex >= 0 ? clockValues[clock.SelectedIndex] : 0;
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;
             settings.HleModules = (hleModules.Text ?? "").Trim();
+            settings.View = view.SelectedIndex == 1 ? LauncherSettings.ViewHome : LauncherSettings.ViewList;
+            if (themes.Count > 0 && theme.SelectedIndex >= 0) settings.Theme = themes[theme.SelectedIndex].Id == VitaSharp.Core.Shell.ShellTheme.DefaultId ? "" : themes[theme.SelectedIndex].Id;
+            settings.HomeBgm = homeBgm.IsChecked == true;
+            settings.SystemSounds = systemSounds.IsChecked == true;
             settings.Save();
             Controls?.Save();
             Close();

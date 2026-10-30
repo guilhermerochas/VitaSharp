@@ -199,6 +199,18 @@ public sealed unsafe partial class VulkanRenderer
     long _fbCopiesPixels;
     readonly HashSet<uint> _ssFetchLogged = new();
 
+    /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (a copy of it, binding 4)</param>
+    DescriptorSet BuildFramebufferFetchSet(bool tileWord1)
+    {
+        var set = BuildFramebufferFetchSet();
+        if (tileWord1 && _tw1 != null && _rt != null && !_ms) // (never the persistent empty set: there is a target)
+        {
+            EndRendering(resolve: false);
+            WriteTileWord1Copy(set, CopyTileWord1());
+        }
+        return set;
+    }
+
     DescriptorSet BuildFramebufferFetchSet()
     {
         if (_rt == null) return _emptyFbSet ??= BuildEmptyFbSet();
@@ -786,7 +798,7 @@ public sealed unsafe partial class VulkanRenderer
     /// power-of-two chain (down to the level where one dimension reaches 1), even past the levels the texture uses, and
     /// is aligned to 2 KB when its base level is large enough (32x32 for compressed and 8-bit formats, 16x16 for 16 and
     /// 32-bit ones, 8x8 for 64-bit ones); otherwise faces are only 4-byte aligned. A raw mip count of 0xF (no mips)
-    /// packs the faces back to back.
+    /// packs the faces back to back, and a single-level face (raw count 0) reserves no further levels.
     /// </summary>
     static uint CubeFaceStride(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, uint mips, uint usedBytes)
     {
@@ -794,7 +806,9 @@ public sealed unsafe partial class VulkanRenderer
         if (d.MipCountRaw != 0xF)
         {
             uint pw = BitOperations.RoundUpToPowerOf2(w), ph = BitOperations.RoundUpToPowerOf2(h);
-            for (int m = (int)mips; m < 32 && (pw >> m) > 0 && (ph >> m) > 0; m++)
+            // only a mipmapped face reserves the rest of the chain: Silent Hill: Book of Memories' single-level 32x32
+            // U8U8U8U8 cube (raw mip count 0) has its faces 4 KB apart (with the chain, faces 4-5 read past the cube)
+            for (int m = (int)mips; mips > 1 && m < 32 && (pw >> m) > 0 && (ph >> m) > 0; m++)
             {
                 uint lw = pw >> m, lh = ph >> m;
                 size += info.Compressed

@@ -27,7 +27,8 @@ namespace VitaSharp.Android.Gpu;
 /// <item>Build libadrenotools for arm64-v8a and add it to the APK (AndroidNativeLibrary items).</item>
 /// <item>Verify that Silk.NET resolves every instance/device command through the returned handle's
 /// vkGetInstanceProcAddr (VulkanLoader wraps the handle in a LamdaNativeContext).</item>
-/// <item>UI: "Driver da GPU" screen (install a .zip with the Storage Access Framework, list, select, remove).</item>
+/// <item>UI: the "Driver da GPU" screen itself (its model, <see cref="GpuDriverScreen"/>, lists, selects, installs a
+/// .zip from a Storage Access Framework stream and removes; mockup docs/android/mockups/driver-gpu.html).</item>
 /// <item>Restart the emulation when the driver changes (a process can load only one driver safely).</item>
 /// <item>Check the quirk table against the custom driver (Turnip: no proprietary quirks; see docs/notes/mobile-gpu.md).</item>
 /// </list>

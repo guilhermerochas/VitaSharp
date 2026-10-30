@@ -26,8 +26,10 @@ public sealed class Audio : HleModule
     }
 
     readonly Dictionary<int, Port> _ports = new();
-    /// <summary>Handle of the extended MAIN port (sceAudioOutOpenExtPort); normal ports use 0..7.</summary>
-    const int ExtPortId = 8;
+    /// <summary>Port handles are positive, as on the hardware and in Vita3K (next_port_id starts at 1): Wwise
+    /// (Silent Hill: Book of Memories) treats a handle &lt;= 0 as a failed open and never starts its sound engine.
+    /// Normal ports use 1..8; the extended MAIN port (sceAudioOutOpenExtPort) is the ninth handle.</summary>
+    const int FirstPortId = 1, MaxPorts = 8, ExtPortId = FirstPortId + MaxPorts;
 
     [Hle]
     int sceAudioOutOpenPort(int type, int len, int freq, int mode)
@@ -57,7 +59,7 @@ public sealed class Audio : HleModule
             else
             {
                 id = -1;
-                for (int i = 0; i < ExtPortId; i++) if (!_ports.ContainsKey(i)) { id = i; break; } // lowest free handle
+                for (int i = FirstPortId; i < ExtPortId; i++) if (!_ports.ContainsKey(i)) { id = i; break; } // lowest free handle
                 if (id < 0) return ERR_PORT_FULL;
             }
             var p = new Port { Type = type, Grain = len, Freq = freq <= 0 ? 48000 : freq, Channels = mode == 0 ? 1 : 2 };

@@ -37,9 +37,10 @@ public sealed class Display : HleModule
 
     uint _base, _pitch, _format, _width, _height;
     long _lastSetVcount;
+    bool _shownBase;
 
     [Hle("sceDisplaySetFrameBuf")]
-    int SetFrameBuf(uint pParam, uint sync)
+    internal int SetFrameBuf(uint pParam, uint sync)
     {
         if (pParam == 0) { _base = 0; return 0; }
         uint size = GuestMemory.R32(pParam);
@@ -50,12 +51,31 @@ public sealed class Display : HleModule
         _width = GuestMemory.R32(pParam + 16);
         _height = GuestMemory.R32(pParam + 20);
         if (_base == 0) return 0;
-        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
+        if (!_shownBase) { _shownBase = true; Log.Info($"Display: {Emu.Describe()} framebuffer 0x{_base:X8} {_width}x{_height} pitch {_pitch} format 0x{_format:X} in {Emu.Memory.FindBlock(_base)}"); }
         _lastSetVcount = VBlank.Count;
+        // the display shows the foreground process (the shell, or the application it launched); a process in the
+        // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
+        // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
+        // layers over it (SceSharedFb), so the shell's frames stay on screen.
+        if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu))) return 0;
+        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = System.Diagnostics.Stopwatch.GetTimestamp();
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;
         return 0;
+    }
+
+    /// <summary>The process has set a framebuffer (it is showing frames).</summary>
+    internal bool HasFrame => _base != 0;
+
+    /// <summary>The framebuffer the process set last (what is on screen while it is in front).</summary>
+    internal DisplayFrame? Current => _base == 0 ? null : new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format);
+
+    /// <summary>The process came to the foreground: its last framebuffer is shown again right away.</summary>
+    internal void Represent()
+    {
+        if (_base == 0) return;
+        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
     }
 
     public static long FramesPresented;
@@ -181,9 +201,11 @@ public sealed class Display : HleModule
     [Hle]
     int sceDisplaySetFrameBufInternal(int head, int index, uint pParam, uint sync)
     {
-        if (head != 0) return ERR_INVALID_HEAD;
+        // head 0 is the handheld's screen, head 1 the external (HDMI) output: libpaf sets every frame on both. Nothing
+        // is connected to head 1, so its framebuffer is checked and not shown.
+        if (head is not (0 or 1)) return ERR_INVALID_HEAD;
         if (sync > 1) return ERR_INVALID_UPDATETIMING;
-        if (index == 0) return SetFrameBuf(pParam, sync);
+        if (head == 0 && index == 0) return SetFrameBuf(pParam, sync);
         if (pParam != 0 && GuestMemory.R32(pParam) is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
         return 0;
     }
@@ -210,8 +232,27 @@ public sealed class Ctrl : HleModule
 {
     uint _samplingMode;
     long _lastRead;
+    bool _psDown;
 
-    ControllerState State(int port) => Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
+    /// <summary>The buttons and sticks this process sees: the host's for the foreground process, nothing for a process in
+    /// the background. The PS button is a system button: a press seen by the shell's reads (whatever process is in
+    /// front) is handed to the system (<see cref="Kernel.VitaSystem.OnPsButton"/>); applications never see it.</summary>
+    ControllerState State(int port)
+    {
+        var s = Emu.Host.Input?.GetController(port) ?? ControllerState.Neutral;
+        bool ps = (s.Buttons & VitaButtons.PsButton) != 0;
+        if (Emu.IsShell)
+        {
+            // the kernel takes the press (SceAppMgrForDriver 0x29421DCD/0xF3B1D42E in FW 3.74: the application in front
+            // goes to its suspend state and the shell gets event 0x10 {application id})
+            if (ps && !_psDown) Emu.Vita.OnPsButton();
+            _psDown = ps;
+            return Emu.IsForeground ? s : ControllerState.Neutral;
+        }
+        if (!Emu.IsForeground) return ControllerState.Neutral;
+        s.Buttons &= ~VitaButtons.PsButton; // a system button: applications never see it
+        return s;
+    }
 
     /// <summary>Which sceCtrl buffer API family is reading: <c>Ext</c> = the *Ext / *2 functions (report the system
     /// bits above 0xFFFF), <c>V2</c> = the "2" functions (sceCtrl*Buffer*2, *Ext2).</summary>
@@ -441,7 +482,8 @@ public sealed class Touch : HleModule
         // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
         // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
         Span<TouchPoint> touches = stackalloc TouchPoint[8];
-        int reports = _sampling[port] != 0 && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        // only the foreground process is touched
+        int reports = _sampling[port] != 0 && Emu.IsForeground && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
         Span<byte> ids = stackalloc byte[8];
         lock (_ids)
         {

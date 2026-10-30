@@ -31,7 +31,8 @@ public class ShaderRecipeTests : IDisposable
     public void ShaderRecipeRoundTrips()
     {
         foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true), FragmentHints() with { OutputRegisterFormat = 1 },
-                     FragmentHints(fetch: true) with { OutputRegisterFormat = 5 } })
+                     FragmentHints(fetch: true) with { OutputRegisterFormat = 5 }, FragmentHints() with { OutputRegisterFormat = 1, TileWord1 = true },
+                     FragmentHints(fetch: true) with { OutputRegisterFormat = 1, TileWord1 = true } })
         {
             var r = new ShaderRecipe(0x1122334455667788, h.Key(), h.Attributes.Length > 0, h);
             var back = ShaderRecipe.Decode(r.Encode());
@@ -44,8 +45,24 @@ public class ShaderRecipeTests : IDisposable
             Assert.Equal(h.ColorFormat, back.Hints.ColorFormat);
             Assert.Equal(h.FetchInputAttachment, back.Hints.FetchInputAttachment);
             Assert.Equal(h.OutputRegisterFormat, back.Hints.OutputRegisterFormat);
+            Assert.Equal(h.TileWord1, back.Hints.TileWord1);
             Assert.Equal(h.Key(), back.Hints.Key());
         }
+    }
+
+    [Fact]
+    public void TileWord1VariantsHaveTheirOwnKeyAndLeaveOthersUnchanged()
+    {
+        var h = FragmentHints() with { OutputRegisterFormat = 1 };
+        var tw = h with { TileWord1 = true };
+        Assert.NotEqual(h.Key(), tw.Key());
+        Assert.NotEqual((h with { FetchInputAttachment = true }).Key(), (tw with { FetchInputAttachment = true }).Key());
+        // records without the flag keep their bytes (fetch flag byte 0/1)
+        var plain = new ShaderRecipe(1, h.Key(), false, h).Encode();
+        var flagged = new ShaderRecipe(1, tw.Key(), false, tw).Encode();
+        Assert.Equal(plain.Length, flagged.Length);
+        Assert.Equal(0, plain[^5]);
+        Assert.Equal(2, flagged[^5]);
     }
 
     [Fact]

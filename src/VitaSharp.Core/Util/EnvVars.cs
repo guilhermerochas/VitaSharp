@@ -42,6 +42,10 @@ public static class EnvVars
     public const string Lockstep = "VITASHARP_LOCKSTEP";
     public const string Msaa = "VITASHARP_MSAA";
     public const string MsaaFetch = "VITASHARP_MSAA_FETCH";
+    /// <summary>Default of --net=off|real (real internet for SceNet/SceHttp, off by default; see Hle/NetConfig.cs).</summary>
+    public const string Net = "VITASHARP_NET";
+    /// <summary>Default of --net-allow=host,host: with real internet, only these hosts (names or addresses) are reachable.</summary>
+    public const string NetAllow = "VITASHARP_NET_ALLOW";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";
@@ -50,11 +54,16 @@ public static class EnvVars
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
     public const string Replay = "VITASHARP_REPLAY";
+    /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
+    /// where other processes could read it.</summary>
+    public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
     public const string SamplerDebug = "VITASHARP_SAMPLER_DEBUG";
     public const string ShadercOpt = "VITASHARP_SHADERC_OPT";
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";
     public const string ShaderWorkerPrio = "VITASHARP_SHADER_WORKER_PRIO";
+    /// <summary>1 = an application the shell launches replaces the shell instead of running as a second process.</summary>
+    public const string SingleProcess = "VITASHARP_SINGLE_PROCESS";
     public const string SkipUnicorn = "VITASHARP_SKIP_UNICORN";
     public const string SnapFs = "VITASHARP_SNAP_FS";
     public const string Swz1 = "VITASHARP_SWZ1";

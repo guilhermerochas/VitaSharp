@@ -36,7 +36,8 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
             o += 9;
         }
         BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.ColorFormat); o += 4;
-        s[o++] = h.FetchInputAttachment ? (byte)1 : (byte)0;
+        // fetch flag byte: bit 0 FetchInputAttachment, bit 1 TileWord1 (records without the latter are unchanged)
+        s[o++] = (byte)((h.FetchInputAttachment ? 1 : 0) | (h.TileWord1 ? 2 : 0));
         if (outFmt) BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.OutputRegisterFormat);
         return buf;
     }
@@ -62,10 +63,10 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
             o += 9;
         }
         uint color = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]); o += 4;
-        if (s[o] > 1) return null;
+        if (s[o] > 3) return null;
         uint outputFormat = extra != 0 ? BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 1)..]) : 0;
         if (extra != 0 && outputFormat == 0) return null;
-        var hints = new ShaderHints(tex, attrs, color, s[o] != 0, outputFormat);
+        var hints = new ShaderHints(tex, attrs, color, (s[o] & 1) != 0, outputFormat, (s[o] & 2) != 0);
         // the key is the identity used by every cache: a record whose hints disagree with it is useless
         return hints.Key() == hintKey ? new ShaderRecipe(program, hintKey, s[1] != 0, hints) : null;
     }

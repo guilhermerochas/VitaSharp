@@ -1,2 +1,11 @@
 # shell scripts must keep LF endings to run on Linux/macOS (also when checked out on Windows)
 *.sh text eol=lf
+# files copied into Linux/macOS packages keep LF endings too
+build/package/AppRun text eol=lf
+*.desktop text eol=lf
+*.plist text eol=lf
+*.entitlements text eol=lf
+# generated application icons (build/make-icons.ps1)
+*.ico binary
+*.icns binary
+*.png binary

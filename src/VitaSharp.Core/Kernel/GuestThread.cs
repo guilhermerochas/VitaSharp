@@ -27,6 +27,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         TlsStackCheckGuard = 7, TlsCurrentPriority = 8, TlsAffinity = 9;
 
     readonly Emulator _emu;
+    /// <summary>The process the thread belongs to.</summary>
+    public Emulator Process => _emu;
+    public int Pid => _emu.Pid;
     public CpuCore Core { get; }
     public HleContext Hle { get; }
     public uint Entry { get; }
@@ -36,6 +39,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     public int Affinity { get; set; }
     /// <summary>The thread currently holds one of the emulated CPU cores (see <see cref="Scheduler"/>).</summary>
     public bool HasCore;
+    /// <summary>The thread runs on the system software's core, not the application cores (see <see cref="Scheduler"/>).</summary>
+    public bool OnSystemCore { get; }
     /// <summary>Blocked inside host-side HLE work (audio device, GPU queue, display queue): not waiting for a core.</summary>
     public volatile bool BlockedInHost;
     public uint StackAddr { get; }
@@ -79,10 +84,12 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         InitPriority = Priority = priority;
         Attr = attr;
         Affinity = affinity;
+        OnSystemCore = emu.RunsOnSystemCore;
         Core = new CpuCore(emu.Code);
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 
         StackSize = GuestMemory.AlignUp(Math.Max(stackSize, 0x4000u), 0x1000);
+        using var scope = ProcessScope.Enter(emu.Pid); // the stack and TLS belong to the thread's process
         StackAddr = emu.Memory.Alloc(StackSize, $"stack:{name}");
         GuestMemory.Fill(StackAddr, 0xCC, StackSize);
 
@@ -203,7 +210,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         int depth = _callDepth;
         while (true)
         {
-            if (SuspendCount > 0) ParkWhileSuspended();
+            if (SuspendCount > 0 || ProcessSuspended) ParkWhileSuspended();
             _inGuest = true;
             ExitReason exit;
             try { exit = Core.Run(); }
@@ -264,7 +271,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                 foreach (var p in _emu.TraceHleExclude) if (f.Name.StartsWith(p, StringComparison.Ordinal)) { trace = false; break; }
             }
         }
-        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}");
+        if (trace) Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}{TraceStrings(s)}");
         return trace;
     }
 
@@ -409,11 +416,37 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         }
     }
 
+    /// <summary>The thread's process is suspended (an application sent to the background by the shell), and the thread
+    /// may stop here: not while its process has a GPU scene open, which the other processes would wait for.</summary>
+    bool ProcessSuspended => _emu.Suspended && !_emu.Gpu.HasOpenScene(_emu.Pid);
+
     void ParkWhileSuspended()
     {
         using var blocked = Scheduler.Block();
         lock (_suspendLock)
-            while (SuspendCount > 0 && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+            while ((SuspendCount > 0 || ProcessSuspended) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+    }
+
+    /// <summary>Wakes the thread if it is parked by a process suspension (the process resumed).</summary>
+    public void WakeFromSuspend()
+    {
+        lock (_suspendLock) Monitor.PulseAll(_suspendLock);
+    }
+
+    /// <summary>--trace-hle: the arguments that point at a printable C string (paths, object names), quoted.</summary>
+    static string TraceStrings(CpuState* s)
+    {
+        System.Text.StringBuilder? sb = null;
+        for (int r = 0; r < 4; r++)
+        {
+            uint p = s->R[r];
+            if (p < 0x10000 || !GuestMemory.IsMapped(p) || !GuestMemory.IsMapped(p + 63)) continue;
+            int n = 0;
+            while (n < 64 && GuestMemory.Read<byte>(p + (uint)n) is >= 0x20 and < 0x7F) n++;
+            if (n < 3 || (n < 64 && GuestMemory.Read<byte>(p + (uint)n) != 0)) continue;
+            (sb ??= new()).Append($" a{r}=\"{GuestMemory.ReadCString(p)}\"");
+        }
+        return sb?.ToString() ?? "";
     }
 
     /// <summary>Heuristic backtrace: stack words that point just after a BL/BLX in loaded code.</summary>
@@ -497,6 +530,10 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         sb.AppendLine($"Thread '{Name}' state:");
         for (int i = 0; i < 16; i++) sb.Append($" R{i}={s->R[i]:X8}{(i % 4 == 3 ? "\n" : "")}");
         sb.AppendLine($" CPSR={s->Cpsr:X8} FPSCR={s->Fpscr:X8} T={s->Thumb}");
+        sb.AppendLine($" pc {_emu.Kernel.Symbolize(s->R[15])}, lr {_emu.Kernel.Symbolize(s->R[14])}");
+        sb.Append(" backtrace:");
+        foreach (var a in Backtrace(s).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            sb.Append(' ').Append(_emu.Kernel.Symbolize(Convert.ToUInt32(a, 16)));
         Log.Error(sb.ToString());
     }
 

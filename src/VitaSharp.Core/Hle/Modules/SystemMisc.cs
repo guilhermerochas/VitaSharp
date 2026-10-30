@@ -30,7 +30,12 @@ public sealed class SystemMisc : HleModule
         lock (_loadedSysmodules)
             if (_loadedSysmodules.Contains(id)) { if (resultPtr != 0) GuestMemory.W32(resultPtr, 0); return 0; }
         int start = 0;
-        if (LleSysmodules.TryGetValue(id, out var lib))
+        if (Emu.IsSystemProgram && InternalSysmodules.TryGetValue(id, out var internalLib))
+        {
+            int r = TryLoadModuleLle(internalLib, args, argp, out start);
+            if (r < 0) return r;
+        }
+        else if (LleSysmodules.TryGetValue(id, out var lib))
         {
             int r = TryLoadModuleLle(lib, args, argp, out start);
             if (r < 0) return r;
@@ -58,6 +63,28 @@ public sealed class SystemMisc : HleModule
         [0x0038] = "libface",      // FACE
         [0x0039] = "libsmart",     // SMART
         [0x0055] = "libSceJson",   // JSON
+    };
+
+    /// <summary>
+    /// SCE_SYSMODULE_INTERNAL_* (0x80000000 | n): the system software's own modules, loaded LLE from the firmware for
+    /// system programs (vs0:app, the shell). File names from Vita3K's sysmodule_internal_paths and the vs0 layout.
+    /// Games keep the HLE behaviour (these ids then load nothing).
+    /// </summary>
+    static readonly Dictionary<uint, string> InternalSysmodules = new()
+    {
+        [0x80000001] = "libscejpegencarm", [0x80000002] = "audiocodec", [0x80000003] = "libscejpegarm",
+        [0x80000004] = "libg729", [0x80000005] = "bXCe", [0x80000006] = "ini_file_processor",
+        [0x80000007] = "np_activity", [0x80000008] = "libpaf", [0x80000009] = "sqlite", [0x8000000A] = "dbutil",
+        [0x8000000B] = "activity_db", [0x8000000C] = "common_gui_dialog", [0x8000000D] = "store_checkout_plugin",
+        [0x8000000E] = "libcdlg_ime", [0x8000000F] = "libcdlg_photoimport", [0x80000010] = "libcdlg_photoreview",
+        [0x80000011] = "libcdlg_checkout", [0x80000012] = "libcdlg_main", [0x80000013] = "libcdlg_msg",
+        [0x80000014] = "libcdlg_netcheck", [0x80000015] = "libcdlg_savedata", [0x80000016] = "libcdlg_np_message",
+        [0x80000017] = "libcdlg_np_trophy_setup", [0x80000018] = "libcdlg_friendlist", [0x8000001A] = "near_profile",
+        [0x8000001B] = "np_friend_privacylevel", [0x8000001D] = "np_commerce2", [0x8000001E] = "np_kdc",
+        [0x8000001F] = "libSceMusicExport", [0x80000020] = "libSceVideoExport", [0x80000021] = "np_message_dialog_impl",
+        [0x80000022] = "np_message_contacts", [0x80000023] = "dbrecovery_utility", [0x80000024] = "libScePromoterUtil",
+        [0x80000025] = "libult", [0x80000026] = "party_member_list", [0x80000027] = "psmkdc",
+        [0x80000028] = "liblocation_internal", [0x80000029] = "liblocation_factory",
     };
 
     /// <summary>
@@ -93,6 +120,13 @@ public sealed class SystemMisc : HleModule
         _hleModules ??= ModuleList(Emu.Options.HleModules, EnvVars.HleModules);
         if (Listed(_hleModules, lib)) return [];
         string app = $"app0:sce_module/{lib}.suprx", fw = $"vs0:sys/external/{lib}.suprx";
+        if (Emu.IsSystemProgram)
+        {
+            // the system software's modules: whichever vs0 module folder holds the file
+            fw = Firmware.FirmwareLibraries.For(Emu.Options.FsRoot).Modules
+                .FirstOrDefault(m => string.Equals(Path.GetFileNameWithoutExtension(m.VitaPath), lib, StringComparison.OrdinalIgnoreCase))?.VitaPath ?? fw;
+            return [fw];
+        }
         return !HleImplemented.Contains(lib) || Listed(_lleModules, lib) ? [app, fw] : [app];
     }
 
@@ -116,6 +150,11 @@ public sealed class SystemMisc : HleModule
             try
             {
                 var m = Emu.LoadModule(path);
+                // system programs: the libraries it imports that nothing provides yet (sysmodule's dependency lists),
+                // loaded and started first (games keep the HLE for those)
+                foreach (var dep in Emu.IsSystemProgram ? Emu.LoadFirmwareDependencies(m) : [])
+                    if (dep.StartEntry != 0 && (int)GuestThread.Current!.CallGuest(dep.StartEntry, 0, 0) is var dr and < 0)
+                        Log.Warn($"sceSysmoduleLoadModule: dependency {dep.Path} module_start = 0x{dr:X8}");
                 if (m.StartEntry != 0) startResult = (int)GuestThread.Current!.CallGuest(m.StartEntry, args, argp);
             }
             catch (Exception e) when (e is not GuestThreadExitException)
@@ -322,7 +361,7 @@ public sealed class SystemMisc : HleModule
     int sceSblACMgrIsGameProgram(Ptr<int> result)
     {
         if (result.IsNull) return SceError.ILLEGAL_ADDR;
-        result.Value = 1;
+        result.Value = Emu.IsGameProgram ? 1 : 0;
         return 0;
     }
 
@@ -408,7 +447,10 @@ public sealed class SystemMisc : HleModule
 
     [Hle] int sceAppMgrAcquireBgmPort() => 0;
     [Hle] int sceAppMgrReleaseBgmPort() => 0;
-    [Hle] int sceAppMgrIsGameProgram() => 1;
+    [Hle] int sceAppMgrIsGameProgram() => Emu.IsGameProgram ? 1 : 0;
+    /// <summary>Third-party applications that are not games (store "apps"); libpaf asserts that the system software
+    /// is neither a game nor a non-game program.</summary>
+    [Hle] int sceAppMgrIsNonGameProgram() => 0;
     [Hle] int sceAppMgrSetInfobarState(int visible, int color, int transparency) => 0;
     [Hle] int sceAppMgrSetNetworkDisconnectionWarningDialogState(int state) => 0;
     [Hle] int sceAppMgrReceiveSystemEvent(uint ev) => unchecked((int)0x80801000);
@@ -425,6 +467,11 @@ public sealed class SystemMisc : HleModule
     {
         const int ERR_NULL = unchecked((int)0x80800001), ERR_VALUE = unchecked((int)0x80801000), ERR_INVALID = unchecked((int)0x8080201A);
         if (buf == 0) return ERR_NULL;
+        // pid 0 = the caller; the shell asks about the processes it launched (CATEGORY of a system app it starts)
+        var proc = pid == 0 || pid == Emu.Pid ? Emu : Emu.Vita.ByPid(pid);
+        if (proc == null) return ERR_INVALID;
+        if (!ReferenceEquals(proc, Emu))
+            return proc.Hle.Modules.OfType<SystemMisc>().FirstOrDefault() is { } other ? other.sceAppMgrAppParamGetString(0, param, buf, size) : ERR_INVALID;
         // 100/101: CONTENT_ID/TITLE overrides set by sceAppMgrAppParamSetString, falling back to param.sfo
         if (param is 100 or 101)
         {
@@ -495,7 +542,7 @@ public sealed class SystemMisc : HleModule
     [Hle] int scePowerSetBusClockFrequency(int f) => 0;
     [Hle] int scePowerSetGpuClockFrequency(int f) => 0;
     [Hle] int scePowerSetGpuXbarClockFrequency(int f) => 0;
-    [Hle] int scePowerGetArmClockFrequency() => Cpu.CpuCore.InstructionsPerSecond > 0 ? (int)(Cpu.CpuCore.InstructionsPerSecond / 1_000_000) : 444;
+    [Hle] int scePowerGetArmClockFrequency() => (int)((Cpu.CpuCore.InstructionsPerSecond > 0 ? Cpu.CpuCore.InstructionsPerSecond : Cpu.CpuCore.DefaultClockHz) / 1_000_000);
     [Hle] int scePowerGetBusClockFrequency() => 222;
     [Hle] int scePowerGetGpuClockFrequency() => 222;
     [Hle] int scePowerGetGpuXbarClockFrequency() => 166;

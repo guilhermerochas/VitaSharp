@@ -3,6 +3,9 @@
 Especificação HLE das bibliotecas de rede "não-PSN". As bibliotecas `SceNp*` estão em [E2-np.md](E2-np.md).
 Template, prioridades e convenções: [README.md](README.md).
 
+Este documento descreve o perfil offline (padrão). A internet real opcional (`--net=real`: sockets, epoll, resolver,
+NetCtl e HTTP pelo host, com os servidores da Sony bloqueados) está em [E2-np.md §0.000](E2-np.md).
+
 ## Escopo e contagem
 
 Fonte da lista: `pkg/E.tsv` filtrado pelas seis bibliotecas acima (106 funções faltantes) + revisão dos stubs triviais

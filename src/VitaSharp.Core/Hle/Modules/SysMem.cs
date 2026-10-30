@@ -53,7 +53,7 @@ public sealed class SysMem : HleModule
     int sceKernelAllocMemBlockForVM(string name, uint size)
     {
         if (size == 0 || (size & (VmBlockGranule - 1)) != 0) return SceError.ILLEGAL_MEMBLOCK_SIZE;
-        long used = K.Objects.All<MemBlock>().Where(b => b.IsVm).Sum(b => (long)b.Size);
+        long used = K.Objects.Owned<MemBlock>(Emu.Pid).Where(b => b.IsVm).Sum(b => (long)b.Size);
         if (used + size > VmBudget) return SceError.MEMBLOCK_OVERFLOW;
         int uid = sceKernelAllocMemBlock(name, TypeUserRx, size, 0);
         if (uid > 0 && K.Objects.Get<MemBlock>(uid) is { } blk) blk.IsVm = true;
@@ -116,7 +116,7 @@ public sealed class SysMem : HleModule
     [Hle]
     int sceKernelFindMemBlockByAddr(uint addr, uint size)
     {
-        foreach (var b in K.Objects.All<MemBlock>())
+        foreach (var b in K.Objects.Owned<MemBlock>(Emu.Pid))
             if (addr >= b.Address && addr < b.Address + b.Size) return b.Uid;
         return SceError.BLOCK_ERROR;
     }
@@ -124,7 +124,7 @@ public sealed class SysMem : HleModule
     [Hle]
     int sceKernelGetMemBlockInfoByAddr(uint addr, uint info)
     {
-        foreach (var b in K.Objects.All<MemBlock>())
+        foreach (var b in K.Objects.Owned<MemBlock>(Emu.Pid))
         {
             if (addr < b.Address || addr >= b.Address + b.Size) continue;
             GuestMemory.W32(info + 4, b.Address);
@@ -143,8 +143,8 @@ public sealed class SysMem : HleModule
     [Hle]
     int sceKernelGetFreeMemorySize(uint info)
     {
-        long used = K.Objects.All<MemBlock>().Where(b => b.Type != TypeUserCdramRw).Sum(b => (long)b.Size);
-        long usedCdram = K.Objects.All<MemBlock>().Where(b => b.Type == TypeUserCdramRw).Sum(b => (long)b.Size);
+        long used = K.Objects.Owned<MemBlock>(Emu.Pid).Where(b => b.Type != TypeUserCdramRw).Sum(b => (long)b.Size);
+        long usedCdram = K.Objects.Owned<MemBlock>(Emu.Pid).Where(b => b.Type == TypeUserCdramRw).Sum(b => (long)b.Size);
         GuestMemory.W32(info + 4, (uint)Math.Max(0, UserBudget - used));
         GuestMemory.W32(info + 8, (uint)Math.Max(0, CdramBudget - usedCdram));
         GuestMemory.W32(info + 12, (uint)PhyContBudget);
@@ -167,7 +167,7 @@ public sealed class SysMem : HleModule
         KernelInfo.Put(f, 0, 0xC);
         if (id == 0)
         {
-            long used = K.Objects.All<MemBlock>().Where(b => b.Type != TypeUserCdramRw).Sum(b => (long)b.Size);
+            long used = K.Objects.Owned<MemBlock>(Emu.Pid).Where(b => b.Type != TypeUserCdramRw).Sum(b => (long)b.Size);
             KernelInfo.Put(f, 4, (uint)UserBudget);
             KernelInfo.Put(f, 8, (uint)Math.Max(0, UserBudget - used));
         }

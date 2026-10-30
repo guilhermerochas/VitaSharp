@@ -59,7 +59,7 @@ public sealed unsafe partial class VulkanRenderer
         public readonly Dictionary<Format, ImageView> Views = new();
         /// <summary>Framebuffers per (colour view, depth view, resolve view); they live as long as the image (the
         /// surface views die with it, depth targets are never destroyed before shutdown).</summary>
-        public readonly Dictionary<(ulong, ulong, ulong), Framebuffer> Framebuffers = new();
+        public readonly Dictionary<(ulong, ulong, ulong, ulong), Framebuffer> Framebuffers = new();
     }
 
     /// <summary>Attachments of the open multisampled rendering; begun in the primary command buffer when it ends.</summary>
@@ -69,6 +69,9 @@ public sealed unsafe partial class VulkanRenderer
         public Image DepthImage;
         public Format Format;
         public ImageView Color, Depth;
+        /// <summary>The scene's tile-word attachment (default: none).</summary>
+        public ImageView Word;
+        public Image WordImage;
         public bool Raw;
         public AttachmentLoadOp ColorLoad, DepthLoad;
         public ClearValue DepthClear;
@@ -77,42 +80,49 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== render passes
 
+    /// <param name="TileWord1">the scene's tile-word attachment (VulkanRenderer.TileWord1.cs) is colour/input attachment 1</param>
     readonly record struct MsaaPassKey(Format Format, SampleCountFlags Samples, AttachmentLoadOp ColorLoad, AttachmentStoreOp ColorStore,
-        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve);
+        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve, bool TileWord1 = false);
 
     /// <summary>Render passes of multisampled renderings (shared with the pipeline prewarm thread, hence the lock).</summary>
     readonly Dictionary<MsaaPassKey, RenderPass> _msRenderPasses = new();
 
     /// <summary>The render pass multisampled pipelines and secondary command buffers are created against: one
     /// subpass, so any pass of the same format/sample count is compatible whatever its load/store ops and resolve.</summary>
-    RenderPass MsaaCompatPass(Format format, SampleCountFlags samples) =>
-        MsaaRenderPass(new MsaaPassKey(format, samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.Load, AttachmentStoreOp.Store, false));
+    RenderPass MsaaCompatPass(Format format, SampleCountFlags samples, bool tileWord1 = false) =>
+        MsaaRenderPass(new MsaaPassKey(format, samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.Load, AttachmentStoreOp.Store, false, tileWord1));
 
     /// <summary>
     /// One subpass: attachment 0 = the samples (colour AND input attachment, GENERAL layout, self-dependency for
-    /// programmable blending), 1 = multisampled depth/stencil, 2 = optional resolve into the surface.
+    /// programmable blending), 1 = multisampled depth/stencil, 2 = optional resolve into the surface. With the
+    /// tile-word attachment: 2 = the word (colour and input attachment 1, never resolved), 3 = the optional resolve.
     /// </summary>
     RenderPass MsaaRenderPass(MsaaPassKey k)
     {
         lock (_msRenderPasses)
         {
             if (_msRenderPasses.TryGetValue(k, out var rp)) return rp;
-            var att = stackalloc AttachmentDescription[3];
+            var att = stackalloc AttachmentDescription[4];
             att[0] = new AttachmentDescription(0, k.Format, k.Samples, k.ColorLoad, k.ColorStore, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
                 ImageLayout.General, ImageLayout.General);
             att[1] = new AttachmentDescription(0, _core.DepthFormat, k.Samples, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
                 ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal);
-            att[2] = new AttachmentDescription(0, k.Format, SampleCountFlags.Count1Bit, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store,
+            uint resolveIndex = k.TileWord1 ? 3u : 2u;
+            att[resolveIndex] = new AttachmentDescription(0, k.Format, SampleCountFlags.Count1Bit, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store,
                 AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
-            var color = new AttachmentReference(0, ImageLayout.General);
+            if (k.TileWord1)
+                att[2] = new AttachmentDescription(0, TileWord1Format, k.Samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
+                    ImageLayout.General, ImageLayout.General);
+            var colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(2, ImageLayout.General) };
             var depth = new AttachmentReference(1, ImageLayout.DepthStencilAttachmentOptimal);
-            var resolve = new AttachmentReference(2, ImageLayout.General);
+            var resolves = stackalloc AttachmentReference[2] { new(resolveIndex, ImageLayout.General), new(Vk.AttachmentUnused, ImageLayout.General) };
+            uint colorCount = k.TileWord1 ? 2u : 1u;
             var sub = new SubpassDescription
             {
                 PipelineBindPoint = PipelineBindPoint.Graphics,
-                InputAttachmentCount = 1, PInputAttachments = &color,
-                ColorAttachmentCount = 1, PColorAttachments = &color,
-                PResolveAttachments = k.Resolve ? &resolve : null,
+                InputAttachmentCount = colorCount, PInputAttachments = colors,
+                ColorAttachmentCount = colorCount, PColorAttachments = colors,
+                PResolveAttachments = k.Resolve ? resolves : null,
                 PDepthStencilAttachment = &depth,
                 // rasterization-order attachment access (Adreno/Mali): input attachment reads of the colour are
                 // ordered against earlier fragments' writes, no per-draw barrier needed
@@ -125,7 +135,7 @@ public sealed unsafe partial class VulkanRenderer
             var ci = new RenderPassCreateInfo
             {
                 SType = StructureType.RenderPassCreateInfo,
-                AttachmentCount = k.Resolve ? 3u : 2u, PAttachments = att,
+                AttachmentCount = (k.Resolve ? 3u : 2u) + (k.TileWord1 ? 1u : 0u), PAttachments = att,
                 SubpassCount = 1, PSubpasses = &sub,
                 DependencyCount = 1, PDependencies = &self,
             };
@@ -134,16 +144,17 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    Framebuffer MsaaFramebuffer(MsaaImage m, RenderPass pass, ImageView color, ImageView depth, ImageView resolve)
+    /// <param name="word">the tile-word attachment, or none (see <see cref="MsaaRenderPass"/> for the order)</param>
+    Framebuffer MsaaFramebuffer(MsaaImage m, RenderPass pass, ImageView color, ImageView depth, ImageView resolve, ImageView word = default)
     {
-        var key = (color.Handle, depth.Handle, resolve.Handle);
+        var key = (color.Handle, depth.Handle, resolve.Handle, word.Handle);
         if (m.Framebuffers.TryGetValue(key, out var fb)) return fb;
-        var views = stackalloc ImageView[3] { color, depth, resolve };
+        var views = stackalloc ImageView[4] { color, depth, word.Handle != 0 ? word : resolve, resolve };
         var ci = new FramebufferCreateInfo
         {
             SType = StructureType.FramebufferCreateInfo,
             RenderPass = pass,
-            AttachmentCount = resolve.Handle != 0 ? 3u : 2u,
+            AttachmentCount = (resolve.Handle != 0 ? 3u : 2u) + (word.Handle != 0 ? 1u : 0u),
             PAttachments = views,
             Width = m.Width, Height = m.Height, Layers = 1,
         };
@@ -301,6 +312,8 @@ public sealed unsafe partial class VulkanRenderer
             DepthLoad = _depthNeedsClear ? AttachmentLoadOp.Clear : AttachmentLoadOp.Load,
             DepthClear = new ClearValue(depthStencil: new ClearDepthStencilValue(Math.Clamp(bg?.BackgroundDepth ?? 1f, 0f, 1f), bg?.BackgroundStencil ?? 0)),
             Area = new Extent2D(_sceneW, _sceneH),
+            Word = _tw1Active ? _tw1!.View : default,
+            WordImage = _tw1Active ? _tw1!.Image : default,
         };
         _depthNeedsClear = false;
         if (_renderRaw) _msSceneRaw = true;
@@ -308,7 +321,7 @@ public sealed unsafe partial class VulkanRenderer
         // the draws go into a secondary command buffer that inherits a render pass compatible with the one begun
         // when the rendering ends (load/store ops and the resolve attachment do not affect compatibility)
         var cb = AllocSecondary();
-        var ii = new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, RenderPass = MsaaCompatPass(format, _msSamples), Subpass = 0 };
+        var ii = new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, RenderPass = MsaaCompatPass(format, _msSamples, _tw1Active), Subpass = 0 };
         var bi = new CommandBufferBeginInfo
         {
             SType = StructureType.CommandBufferBeginInfo,
@@ -325,7 +338,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_msNeedsLoad)
         {
             _msNeedsLoad = false;
-            RecordMsaaLoad(format);
+            RecordMsaaLoad(format, _tw1Active);
         }
     }
 
@@ -355,6 +368,10 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(p.DepthImage, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
             PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+        if (p.WordImage.Handle != 0)
+            Barrier(p.WordImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit,
+                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit);
         ImageView resolveView = default;
         if (inline)
         {
@@ -367,8 +384,8 @@ public sealed unsafe partial class VulkanRenderer
         CountOps(true, p.ColorLoad, colorStore, true, p.DepthLoad, depthStore);
         var pass = MsaaRenderPass(new MsaaPassKey(p.Format, _msSamples, p.ColorLoad,
             colorStore,
-            p.DepthLoad, depthStore, inline));
-        var fb = MsaaFramebuffer(p.Image, pass, p.Color, p.Depth, resolveView);
+            p.DepthLoad, depthStore, inline, p.Word.Handle != 0));
+        var fb = MsaaFramebuffer(p.Image, pass, p.Color, p.Depth, resolveView, p.Word);
         var clears = stackalloc ClearValue[3] { default, p.DepthClear, default };
         var rbi = new RenderPassBeginInfo
         {
@@ -444,7 +461,7 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSetLayout _msLoadSetLayout;
     PipelineLayout _msLoadLayout;
     ShaderModule _msLoadVs, _msLoadFsFloat, _msLoadFsUint;
-    readonly Dictionary<(Format, SampleCountFlags), Pipeline> _msLoadPipelines = new();
+    readonly Dictionary<(Format, SampleCountFlags, bool), Pipeline> _msLoadPipelines = new();
 
     static bool IsUintFormat(Format f) => f is Format.R8G8B8A8Uint or Format.R16G16B16A16Uint or Format.R16G16Uint or Format.R32G32Uint or Format.R32Uint;
 
@@ -490,9 +507,10 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         return _msLoadSetLayout;
     }
 
-    Pipeline MsaaLoadPipeline(Format format, SampleCountFlags samples)
+    /// <param name="tileWord1">for a render pass with the tile-word attachment (left unwritten)</param>
+    Pipeline MsaaLoadPipeline(Format format, SampleCountFlags samples, bool tileWord1)
     {
-        if (_msLoadPipelines.TryGetValue((format, samples), out var p)) return p;
+        if (_msLoadPipelines.TryGetValue((format, samples, tileWord1), out var p)) return p;
         EnsureLoadLayout();
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -504,29 +522,33 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         var rs = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, PolygonMode = PolygonMode.Fill, CullMode = CullModeFlags.None, LineWidth = 1 };
         var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = samples };
         var ds = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo };
-        var att = new PipelineColorBlendAttachmentState { ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
-        var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &att };
+        var att = stackalloc PipelineColorBlendAttachmentState[2]
+        {
+            new() { ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit },
+            new() { ColorWriteMask = 0 },
+        };
+        var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = tileWord1 ? 2u : 1u, PAttachments = att };
         var dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, RenderPass = MsaaCompatPass(format, samples), Subpass = 0, StageCount = 2, PStages = stages,
+            SType = StructureType.GraphicsPipelineCreateInfo, RenderPass = MsaaCompatPass(format, samples, tileWord1), Subpass = 0, StageCount = 2, PStages = stages,
             PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vp, PRasterizationState = &rs, PMultisampleState = &ms,
             PDepthStencilState = &ds, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out p).Ok("MSAA load pipeline");
-        return _msLoadPipelines[(format, samples)] = p;
+        return _msLoadPipelines[(format, samples, tileWord1)] = p;
     }
 
     /// <summary>
     /// First draw of a scene's first rendering: every sample takes the surface's pixel, read from the scene-start
     /// copy through a view of the attachment's format (raw integer views copy the bits exactly).
     /// </summary>
-    void RecordMsaaLoad(Format format)
+    void RecordMsaaLoad(Format format, bool tileWord1)
     {
         var src = SceneStartCopyView(_rt!, format);
         var cmd = _msCmd;
-        var pipeline = MsaaLoadPipeline(format, _msSamples);
+        var pipeline = MsaaLoadPipeline(format, _msSamples, tileWord1);
         var set = AllocSet(_msLoadSetLayout);
         var info = new DescriptorImageInfo(_dummySampler, src, ImageLayout.General);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
@@ -564,35 +586,39 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// <summary>Serial of the frame recording (bumped when a frame slot's descriptor pools are reset).</summary>
     long _frameSerial;
     DescriptorSet _msInputSet;
-    ImageView _msInputSetView;
+    ImageView _msInputSetView, _msInputSetWord;
     long _msInputSetFrame = -1;
 
     /// <summary>
     /// Programmable blending in a multisampled render pass: the shader reads the colour attachment itself as an input
     /// attachment (set 3 binding 2), per sample. No copy and no interruption of the rendering.
     /// </summary>
-    DescriptorSet BuildMsaaInputFetchSet()
+    /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (input attachment, binding 3)</param>
+    DescriptorSet BuildMsaaInputFetchSet(bool tileWord1 = false)
     {
         var m = GetMsaaImage(_rt!, _msSamples);
         var view = MsaaView(m, _rtAttachFormat);
-        // the set only names the attachment view: reused by every such draw of the frame (lighting passes issue many)
-        if (_msInputSet.Handle != 0 && _msInputSetView.Handle == view.Handle && _msInputSetFrame == _frameSerial) return _msInputSet;
+        var word = tileWord1 && _tw1 != null ? _tw1.View : default;
+        // the set only names the attachment views: reused by every such draw of the frame (lighting passes issue many)
+        if (_msInputSet.Handle != 0 && _msInputSetView.Handle == view.Handle && _msInputSetWord.Handle == word.Handle && _msInputSetFrame == _frameSerial) return _msInputSet;
         var set = AllocSet(_fbLayout);
-        (_msInputSet, _msInputSetView, _msInputSetFrame) = (set, view, _frameSerial);
-        var info = stackalloc DescriptorImageInfo[3]
+        (_msInputSet, _msInputSetView, _msInputSetWord, _msInputSetFrame) = (set, view, word, _frameSerial);
+        var info = stackalloc DescriptorImageInfo[4]
         {
             new(_dummySampler, _dummyView, ImageLayout.ShaderReadOnlyOptimal),
             new(_dummySampler, DummyMsView(), ImageLayout.General),
             new(default, view, ImageLayout.General),
+            new(default, word, ImageLayout.General),
         };
-        var w = stackalloc WriteDescriptorSet[3];
-        for (int i = 0; i < 3; i++)
+        uint count = word.Handle != 0 ? 4u : 3u;
+        var w = stackalloc WriteDescriptorSet[4];
+        for (int i = 0; i < count; i++)
             w[i] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1,
-                DescriptorType = i == 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler, PImageInfo = &info[i],
+                DescriptorType = i >= 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler, PImageInfo = &info[i],
             };
-        _vk.UpdateDescriptorSets(_dev, 3, w, 0, null);
+        _vk.UpdateDescriptorSets(_dev, count, w, 0, null);
         if (_statMsInputFetches++ == 0)
             Log.Info($"[gpu] programmable blending in multisampled scenes reads the colour attachment as an input attachment{(_core.SampleRateShading ? " per sample" : " (sample 0: no sampleRateShading)")}");
         return set;

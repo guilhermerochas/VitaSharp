@@ -190,6 +190,7 @@ public sealed partial class UsseTranslator
         {
             string s2;
             bool immediate = i.Bit('x') && src2.Bank == Bank.Immediate;
+            bool copy = false; // OR/XOR with 0 / AND with ~0 on a 32-bit word: a plain move
             if (immediate)
             {
                 uint value = i['q'] | (i['l'] << 7) | (i['h'] << 14);
@@ -206,6 +207,7 @@ public sealed partial class UsseTranslator
                 if (i.Bit('i')) value = ~value;
                 if (dt == DataType.UInt16) value &= 0xFFFF;
                 s2 = $"{value}u";
+                copy = dt == DataType.UInt32 && (op is VOp.Or or VOp.Xor ? value == 0 : op == VOp.And && value == uint.MaxValue);
             }
             else
             {
@@ -230,7 +232,11 @@ public sealed partial class UsseTranslator
                 VOp.Asr => $"uint(int({a}) >> int({s2}))",
                 _ => $"(({a} << ({s2} & 31u)) | ({a} >> ((32u - ({s2} & 31u)) & 31u)))", // ROL
             };
-            Store(dest, new Val(e, 'u', 1), 1, RepeatOffset(dest, r, RepeatMode.Slmsi));
+            int destOff = RepeatOffset(dest, r, RepeatMode.Slmsi);
+            Store(dest, new Val(e, 'u', 1), 1, destOff);
+            // keep track of copied SA words (texture state moved to temporaries for SMP, see Smp)
+            if (copy && src1.Bank is not (Bank.Indexed1 or Bank.Indexed2))
+                SetSaCopy(dest.Bank, dest.Num + destOff, SaWordOf(src1.Bank, src1.Num + RepeatOffset(src1, r, RepeatMode.Slmsi)));
         }
         ResetRepeatMultiplier();
     }

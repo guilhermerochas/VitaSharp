@@ -16,7 +16,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             var sizes = stackalloc DescriptorPoolSize[2];
             sizes[0] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 64);
-            sizes[1] = new DescriptorPoolSize(DescriptorType.InputAttachment, 16); // framebuffer-fetch sets (set 3 binding 2)
+            sizes[1] = new DescriptorPoolSize(DescriptorType.InputAttachment, 32); // framebuffer-fetch sets (set 3 bindings 2 and 3)
             var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 16, PoolSizeCount = 2, PPoolSizes = sizes };
             _vk.CreateDescriptorPool(_dev, in pci, null, out _persistentPool).Ok("persistent descriptor pool");
         }

@@ -50,7 +50,10 @@ public sealed class Gxm : HleModule
 
     // =========================================================== init / memory mapping
 
+    /// <summary>sceGxmVshInitialize (SceGxmInternalForVsh, libpaf and the shell): the same parameters; its flags word
+    /// (+0) differs from the public one, and neither is used here.</summary>
     [Hle]
+    [Hle("sceGxmVshInitialize")]
     int sceGxmInitialize(uint pParams)
     {
         if (pParams == 0) return ERR_INVALID_POINTER;
@@ -125,6 +128,7 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmUnmapMemory(uint baseAddr) => _mapped.TryRemove(baseAddr, out _) ? 0 : ERR_INVALID_VALUE;
 
     [Hle]
+    [Hle("sceGxmMapVertexUsseMemoryInternal")]
     int sceGxmMapVertexUsseMemory(uint baseAddr, uint size, Ptr<uint> offset)
     {
         if (baseAddr == 0 || offset.Address == 0) return ERR_INVALID_POINTER;
@@ -133,6 +137,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmMapFragmentUsseMemoryInternal")]
     int sceGxmMapFragmentUsseMemory(uint baseAddr, uint size, Ptr<uint> offset)
     {
         if (baseAddr == 0 || offset.Address == 0) return ERR_INVALID_POINTER;
@@ -140,8 +145,10 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
-    [Hle] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
-    [Hle] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
+    [Hle][Hle("sceGxmUnmapVertexUsseMemoryInternal")] int sceGxmUnmapVertexUsseMemory(uint baseAddr) => 0;
+    [Hle][Hle("sceGxmUnmapFragmentUsseMemoryInternal")] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
+    /// <summary>No prototype; Vita3K answers 0 (libpaf then initializes GXM itself).</summary>
+    [Hle] int sceGxmIsInitializationInternal() => 0;
     [Hle] int sceGxmPadHeartbeat(uint displaySurface, uint displaySync) => 0;
     /// <summary>SCE_GXM_WCLAMP_MODE_ENABLED = 0x8000. Stored in the draw state; the clamp itself is not applied by the
     /// renderer yet (Vulkan clipping already handles W &lt;= 0).</summary>
@@ -230,6 +237,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmGetRenderTargetMemSizeInternal")]
     int sceGxmGetRenderTargetMemSize(uint p, Ptr<uint> size)
     {
         if (p == 0 || size.Address == 0) return ERR_INVALID_POINTER;
@@ -238,6 +246,7 @@ public sealed class Gxm : HleModule
     }
 
     [Hle]
+    [Hle("sceGxmCreateRenderTargetInternal")]
     int sceGxmCreateRenderTarget(uint p, Ptr<uint> outRt)
     {
         if (p == 0 || outRt.Address == 0) return ERR_INVALID_POINTER;
@@ -275,6 +284,38 @@ public sealed class Gxm : HleModule
     }
 
     [Hle] int sceGxmSyncObjectDestroy(uint sync) { _syncObjects.TryRemove(sync, out _); return 0; }
+
+    /// <summary>Display sync objects the shell shares with the system programs by key (the shared framebuffer's
+    /// buffer number, 1-based), as libpaf uses them: the owner registers its own with sceGxmVshSyncObjectCreate,
+    /// the others look them up with sceGxmVshSyncObjectOpen.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<uint, uint> _vshSyncObjects = new();
+
+    /// <summary>(key, SceGxmSyncObject *sync): registers an existing sync object under <paramref name="key"/>.</summary>
+    [Hle]
+    int sceGxmVshSyncObjectCreate(uint key, uint sync)
+    {
+        if (sync == 0) return ERR_INVALID_POINTER;
+        _vshSyncObjects[key] = sync;
+        return 0;
+    }
+
+    /// <summary>(key, SceGxmSyncObject **sync): the sync object registered under <paramref name="key"/>; without an
+    /// owner process (no shell running) one is created for it.</summary>
+    [Hle]
+    int sceGxmVshSyncObjectOpen(uint key, Ptr<uint> outSync)
+    {
+        if (outSync.IsNull) return ERR_INVALID_POINTER;
+        outSync.Value = _vshSyncObjects.GetOrAdd(key, _ =>
+        {
+            uint h = AllocObj(16, "SceGxmSyncObject (vsh)");
+            _syncObjects[h] = new GxmSyncObject { Handle = h };
+            return h;
+        });
+        return 0;
+    }
+
+    [Hle] int sceGxmVshSyncObjectClose(uint key, uint sync) => 0;
+    [Hle] int sceGxmVshSyncObjectDestroy(uint key) { _vshSyncObjects.TryRemove(key, out _); return 0; }
 
     GxmContext? Ctx(uint h) => _contexts.TryGetValue(h, out var c) ? c : null;
 
@@ -810,10 +851,16 @@ public sealed class Gxm : HleModule
     {
         if (Ctx(ctx) is not { } c) return ERR_INVALID_POINTER;
         if ((bufferBase & (VisibilityAlignment - 1)) != 0) return ERR_INVALID_ALIGNMENT;
+        if (c.Deferred) return ERR_INVALID_VALUE;
         c.VisBuffer = bufferBase;
         c.VisStride = stride;
         return 0;
     }
+
+    /// <summary>The visibility word of <paramref name="index"/> in the immediate context's buffer (0: no buffer, or the
+    /// index is past the per-core stride).</summary>
+    static uint VisibilityAddress(GxmContext c, uint index) =>
+        c.VisBuffer != 0 && index < Math.Max(c.VisStride / 4, 1) ? c.VisBuffer + index * 4 : 0;
 
     // =========================================================== draws
 
@@ -882,24 +929,23 @@ public sealed class Gxm : HleModule
         if (indexData == 0) return ERR_INVALID_POINTER;
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawBacktrace(vp, fp, indexData, indexCount);
         // visibility test (front state; the back state applies when only it is enabled)
-        uint visAddress = 0;
-        bool visIncrement = false;
         bool front = c.VisFrontEnable, back = c.VisBackEnable;
-        if (c.VisBuffer != 0 && (front || back))
-        {
-            uint index = front ? c.VisFrontIndex : c.VisBackIndex;
-            if (index < Math.Max(c.VisStride / 4, 1))
-            {
-                visAddress = c.VisBuffer + index * 4;
-                visIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
-            }
-        }
+        bool visEnabled = front || back;
+        uint visIndex = front ? c.VisFrontIndex : c.VisBackIndex;
+        bool visIncrement = front ? c.VisFrontIncrement : c.VisBackIncrement;
         if (c.Deferred)
         {
-            int r = RecordDraw(c, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+            // a deferred context has no visibility buffer of its own (sceGxmSetVisibilityBuffer is immediate-only):
+            // the draw keeps the index and op, and the buffer of the immediate context that executes the list is used
+            int r = RecordDraw(c, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount,
+                visEnabled, visIndex, visIncrement);
             if (r != 0) return r;
         }
-        else SubmitDraw(in c.State, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+        else
+        {
+            uint visAddress = visEnabled ? VisibilityAddress(c, visIndex) : 0;
+            SubmitDraw(in c.State, vp, fp, vUbs, fUbs, vTex, fTex, streams, primType, indexType, indexData, indexCount, instanceCount, visAddress, visIncrement);
+        }
 
         if (c.VertexDefaultReserved)
         {
@@ -996,7 +1042,7 @@ public sealed class Gxm : HleModule
 
     int RecordDraw(GxmContext c, GxmVertexProgram vp, GxmFragmentProgram fp, uint[] vUbs, uint[] fUbs, GxmTextureDesc[] vTex,
         GxmTextureDesc[] fTex, uint[] streams, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount,
-        uint visAddress, bool visIncrement)
+        bool visEnabled, uint visIndex, bool visIncrement)
     {
         int r = ConsumeVdm(c, VdmCostPerDraw);
         if (r != 0) return r;
@@ -1004,7 +1050,7 @@ public sealed class Gxm : HleModule
         {
             Vp = vp, Fp = fp, State = c.State,
             PrimType = primType, IndexType = indexType, IndexData = indexData, IndexCount = indexCount, InstanceCount = instanceCount,
-            VisAddress = visAddress, VisIncrement = visIncrement, ViewportSet = c.ViewportSet, RegionClipSet = c.RegionClipSet,
+            VisEnabled = visEnabled, VisIndex = visIndex, VisIncrement = visIncrement, ViewportSet = c.ViewportSet, RegionClipSet = c.RegionClipSet,
         };
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(d.VUbs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(d.FUbs);
@@ -1168,7 +1214,7 @@ public sealed class Gxm : HleModule
                 st.ClipMinX = im.ClipMinX; st.ClipMinY = im.ClipMinY; st.ClipMaxX = im.ClipMaxX; st.ClipMaxY = im.ClipMaxY;
             }
             SubmitDraw(in st, d.Vp, d.Fp, d.VUbs, d.FUbs, d.VTex, d.FTex, d.Streams, d.PrimType, d.IndexType, d.IndexData, d.IndexCount,
-                d.InstanceCount, d.VisAddress, d.VisIncrement);
+                d.InstanceCount, d.VisEnabled ? VisibilityAddress(c, d.VisIndex) : 0, d.VisIncrement);
         }
         if (Gpu.Pending > 20000) Gpu.WaitFor(Gpu.Submitted - 2000);
         return 0;
