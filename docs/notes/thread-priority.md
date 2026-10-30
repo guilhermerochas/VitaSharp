@@ -46,8 +46,8 @@ Settings: `--host-prio=on|off` (default on), `VITASHARP_HOST_PRIO=0` turns it of
 | dd_boot | 51.8, 50.5 / 17, 37 / 5, 17 | 51.9 / 17 / 5 | 50.2, 51.8 / 38, 17 / 14, 5 | 49.9, 52.1 / 17, 17 / 5, 5 | 48.3, 49.8 / 17, 17 / 5, 5 | 51.3, 46.8 / 17, 17 / 5, 5 | 39.7, 51.7 / 66, 17 / 32, 5 | 51.7, 51.8 / 17, 17 / 5, 5 |
 | uc_walk | 34.3, 35.4 / 61, 39 / 106, 45 | 33.7, 35.2 / 71, 34 / 171, 29 | 35.4, 35.2 / 40, 42 / 46, 53 | 35.4, 34.7 / 36, 56 / 14, 121 | 35.3, 35.1 / 38, 46 / 36, 58 | 34.9, 34.9 / 49, 53 / 72, 88 | 35.0, 35.2 / 34, 43 / 18, 44 | 34.8, 35.5 / 53, 34 / 83, 19 |
 | wrc4_boot (race) | 30.0, 29.7 / 34, 47 / 0, 15 | 29.2, 27.8 / 62, 87 / 32, 73 | 29.8, 30.0 / 34, 34 / 9, 0 | 30.0, 30.0 / 34, 34 / 0, 0 | 29.8, 30.0 / 38, 34 / 4, 0 | 28.8, 30.0 / 75, 34 / 51, 1 | 29.9, 29.9 / 39, 34 / 2, 1 | 30.0, 29.1 / 34, 67 / 0, 41 |
-| kz_skin (from 4150) | 29.8, 29.9 / 36, 34 / 1, 0 | | | | FINAL_KZSKIN | | | |
-| kzl_walk3 (4300-5400) | 29.9, 29.9 / 34, 34 / 0, 0 | | | | FINAL_KZL | | | |
+| kz_skin (from 4150) | 29.8, 29.9 / 36, 34 / 1, 0 | | | | 29.9 / 34 / 0 (final build, 1 run) | | | |
+| kzl_walk3 (4300-5400) | 29.9, 29.9 / 34, 34 / 0, 0 | | | | 30.0 / 34 / 0 (final build, 1 run) | | | |
 
 Steady fps (loads excluded) was at the cap in every run: Mania 56.6-58.7, DD 59.0-60.0, Uncharted 36.5-36.9,
 WRC 4 29.9-30.0, Killzone 29.9-30.0. Every bad run (`dd_boot` mmcss run 1, `wrc4_boot` off run 2, `roles` Mania,
@@ -70,15 +70,40 @@ are the known Killzone slow stretches where the main thread polls in `sceKernelD
 8 busy threads (every logical CPU contended; 1 run each, 1-3 other emulators also running):
 | Scenario | off | gpu_above | guest_above | mmcss | power | **final build (default on)** |
 |---|---|---|---|---|---|---|
-| mania_boot fps (steady) | 19.9 (40.4), 19.0 (39.5) | 15.9 (33.7) | **31.6 (58.0)** | 14.5 (31.3) | 16.9 (37.1) | FINAL_MANIA8 |
-| mania_boot p99 ms | 95, 90 | 135 | **33** | 116 | 117 | |
-| mania_boot frames > 50 ms | 445, 334 | 847 | **19** | 781 | 594 | |
-| kzl_walk3 fps / p99 / hitches | 9.6 / 1334 / 842 | | | | | FINAL_KZL8 |
+| mania_boot fps (steady) | 19.9 (40.4), 19.0 (39.5) | 15.9 (33.7) | **31.6 (58.0)** | 14.5 (31.3) | 16.9 (37.1) | **32.1 (58.1)** |
+| mania_boot p99 ms | 95, 90 | 135 | **33** | 116 | 117 | **35** |
+| mania_boot frames > 50 ms | 445, 334 | 847 | **19** | 781 | 594 | **22** |
+| kzl_walk3 fps / p99 / hitches | 9.6 / 1334 / 842 | | | | | not measured (run stopped) |
 
 Under full contention Mania (guest-bound: its main thread needs most of a core) only keeps up when the guest
 threads outrank the busy programs. Raising only the GPU worker (normally, or through MMCSS) does nothing for a
 guest-bound game. EcoQoS does not apply to this foreground workload either.
 
+## Re-check after merging main fb661f7 (333 MHz default, shell core pool), under the shared-machine rules
+By then other agents shared the machine, and every emulator run had to be pinned to CPUs 0-3
+(`ProcessorAffinity = 0x0F`) with a BelowNormal process priority class. That distorts any priority experiment: the
+boost is now relative to a below-normal class, inside 4 logical CPUs that the other agents' processes also use. These
+runs show only the **relative** effect of `--host-prio=on` vs `off` under those same conditions. Mania, whole run, the
+pairs in run order:
+
+| Pair | on: fps / p99 ms / hitches | off: fps / p99 ms / hitches | CPU load before (on, off) |
+|---|---|---|---|
+| 1 (on first) | 27.5 / 457 / 156 | 43.5 / 28 / 4 | 49%, 63% |
+| 2 (off first) | 43.2 / 28 / 4 | 43.6 / 28 / 6 | 62%, 68% |
+| 3 (on first) | 43.6 / 28 / 14 | 33.9 / 173 / 73 | 22%, 24% |
+
+There was one bad run on each side, both guest-bound (`gpuIdle`/`pacing`). In pair 1 the bad "on" run also had more
+JIT time (1.20 vs 0.11 ms/frame) and GPU waits (3.5 vs 0.8). That fits a short load spike from another process
+more than a systematic cost, since pairs 2 and 3 do not repeat it. Steady fps was 54.8-55.3 in all six runs. So in
+this configuration the setting is neutral within the noise. Its measured gain is the unpinned full-contention case
+above.
+
+## Not measured
+- kzl_walk3 under full contention with the final build (stopped), and kz_skin under contention.
+- The window mode (OpenAL audio, SDL input, swapchain present). Every run was headless.
+- Hybrid CPUs, battery power, Linux and macOS (the macOS QoS call has not been run on a Mac).
+- Interaction with `--cores` and the shell's system-core pool from main fb661f7: those threads are guest threads too,
+  so they get the same boost.
 ## Kept
 - `HostThreads.Apply(Role.Guest)` in `GuestThread.HostMain` and `HostThreads.Apply(Role.Gpu)` in `GpuQueue.Run`:
   `ThreadPriority.AboveNormal` on Windows.
