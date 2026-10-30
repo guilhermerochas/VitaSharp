@@ -51,8 +51,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
-  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME), o aviso "Could not install" e as
-  funções restantes (sensor de movimento, sockets do sistema)
+  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
+  movimento, sockets do sistema)
 
 ## Bugs em aberto
 

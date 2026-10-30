@@ -130,7 +130,7 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 |---|---|
 | shell.self | boot, "Updating database", lock screen, home screen with the system app bubbles **and the installed games**, LiveArea of a game or system app, Start launches it as a second process; PS button: the game is suspended and the shell's home screen / LiveArea comes back (top bar shows the running game) |
 | initialsetup.self (first boot) | launched by the shell with `/CONFIG/SYSTEM/initialize` = 0, runs against the shell's IPC server: peel screen, language, time zone, date, "no account", country, date of birth, "setup completed", parental note; then it ends itself (`sceAppMgrDestroyAppByName(NULL)`) and the shell takes the screen: health warning, home screen with its first-run hint |
-| games from the LiveArea | Devious Dungeon boots to its title screen inside the shell session |
+| games from the LiveArea | each in its own process and address space: Devious Dungeon boots to its title screen, Sonic Mania and Persona 4 Golden (fixed-address eboot) run, PS / Continue suspend and resume them |
 | NPXS10008 Trophy Collection | renders its background through libpaf; no trophy list yet |
 | NPXS10015 Settings | starts from the home screen as a process, presents frames, still draws nothing |
 
@@ -142,11 +142,18 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   kernel appmgr that event is posted only by the function behind SceAppMgrForDriver 0x29421DCD / 0xF3B1D42E, which marks
   the application in front as suspending (state 3). Checked: in Devious Dungeon, PS brings the shell back (the game is
   suspended; first time with the home-screen hint), its LiveArea shows "Continue", and Continue resumes the game.
-  The gate's thumbnail of the suspended game stays black.
-- The "Could not install" dialog and the "!" notification after unlocking remain: not the background download
-  launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
-  `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the
-  background download queue the shell writes in `ux0:bgdl/w/patch_bg.bin` (`_vshAppMgrBgdlSetQueueStatus` takes it).
+  The gate's thumbnail of the suspended game stays black. Also checked with per-process address spaces: Persona 4
+  Golden (non-PIE eboot at the shell's 0x81000000) runs as a second process, PS shows its LiveArea with Continue and
+  Continue resumes it; Sonic Mania stays suspended for 35 s in its LiveArea (the shell closes nothing by itself: no
+  timer, no memory check) and Continue resumes it. The shell ends a suspended application only through
+  `sceAppMgrDestroyAppByAppId`: closing its LiveArea page (the peel at the top right) or starting another game.
+- (Fixed) "Could not install. An error has occurred (C0-11274-5)" with a blank icon after unlocking: C0-11274-5 is
+  `error_table.bin` entry 9274, 0x80AF5022, from the shell's game card promoter (`SceGameGcPromoteJobQueue`).
+  `sceIoGetstat("gro0:")` succeeded because gro0/grw0 were always mounted on empty host folders, so the shell saw a
+  card, `sceIoDopen("gro0:app")` failed and the promotion was shown as a failed install. gro0/grw0 are now mounted only
+  when `<fs>/gro0/app` holds a card dump (an empty slot otherwise). NPXS10079 (daily checker) is started twice at boot
+  and each run reads its launch parameter, polls `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits
+  normally; it is not a relaunch loop.
 - Trophy Collection (NPXS10008): its libpaf draws every frame into SharedFb base2 with curbuf 0; sceSharedFbEnd used to
   show base1/base2 alternately (black every other frame, the flicker). End now shows base2, the background is stable.
   `sceAppMgrAppParamGetString(pid, ...)` now answers for the process given (the shell asks the launched app's CATEGORY).
