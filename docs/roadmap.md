@@ -51,9 +51,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
 - [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
 - [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
-- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, desenhar a tela "Driver da GPU" e testar num
-  aparelho (a tela "Driver da GPU" e o carregador já estão no app, `src/VitaSharp.Android`)
-- [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (compilados no app, `src/VitaSharp.Android/Audio` e `Media`; falta testar num aparelho e o FFmpeg para os vídeos)
+- [x] Driver de GPU customizado: libadrenotools compilada com o NDK e empacotada, carregador (pacote Turnip/Adreno com
+  meta.json, redirecionamento de arquivos, BCeNabler, turbo) e a tela "Driver da GPU" (instalar o zip pelo seletor,
+  usar, reiniciar o jogo aberto) (30/10/2026: `build/build-android-adrenotools.ps1` (ou `.sh`); falta testar num
+  aparelho Adreno, item 9 da lista em `docs/android/README.md`)
+- [x] Vídeo pelo MediaCodec e áudio pelo AAudio (30/10/2026: H.264 sem superfície com o decodificador de software do
+  Android como reserva, filmes do SceAvPlayer pelo MediaExtractor com AAC pelo MediaCodec, AAudio de baixa latência na
+  taxa do aparelho com AudioTrack no Android 8.0, a mesma política de buffer do OpenAL e reabertura quando o aparelho de
+  saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
+- [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
+  tocam sem ele)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
 - [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
   (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
