@@ -5,7 +5,8 @@ namespace VitaSharp.Core.Kernel;
 /// <summary>
 /// The process a host thread is working for: a guest thread's own process, or the one a host-side operation (loading a
 /// new process's modules from the shell's launch call, say) declared with <see cref="Enter"/>. Kernel objects and guest
-/// memory blocks created on the thread are owned by it, and go away with the process.
+/// memory blocks created on the thread are owned by it, and go away with the process; guest memory is accessed in its
+/// address space (<see cref="Memory.AddressSpace.Current"/>).
 /// </summary>
 public static class ProcessScope
 {
@@ -14,15 +15,33 @@ public static class ProcessScope
     /// <summary>The current process id; 0 = the system (host threads that belong to no process).</summary>
     public static int CurrentPid => t_pid != 0 ? t_pid : GuestThread.Current?.Pid ?? 0;
 
-    /// <summary>Makes <paramref name="pid"/> the current process of this host thread until the result is disposed.</summary>
-    public static Scope Enter(int pid)
+    /// <summary>Makes <paramref name="process"/> the current process of this host thread (and its address space the one
+    /// guest memory accesses use, also in the tasks the thread starts) until the result is disposed.</summary>
+    public static Scope Enter(Emulator process)
     {
-        var s = new Scope(t_pid);
+        var s = new Scope(t_pid, Memory.AddressSpace.Enter(process.Space));
+        t_pid = process.Pid;
+        return s;
+    }
+
+    /// <summary>Only the process id (ownership of kernel objects and blocks); guest memory stays in the thread's space.</summary>
+    public static PidScope Enter(int pid)
+    {
+        var s = new PidScope(t_pid);
         t_pid = pid;
         return s;
     }
 
-    public readonly struct Scope(int previous) : IDisposable
+    public readonly struct Scope(int previous, Memory.AddressSpace.FlowScope space) : IDisposable
+    {
+        public void Dispose()
+        {
+            t_pid = previous;
+            space.Dispose();
+        }
+    }
+
+    public readonly struct PidScope(int previous) : IDisposable
     {
         public void Dispose() => t_pid = previous;
     }
@@ -100,7 +119,7 @@ public sealed class VitaSystem
     /// <summary>The application id of process <paramref name="e"/> (an <see cref="AppObject"/> it owns).</summary>
     internal int RegisterApp(Emulator e)
     {
-        using var scope = ProcessScope.Enter(e.Pid);
+        using var scope = ProcessScope.Enter(e);
         return Objects.Register(new AppObject(e));
     }
 
@@ -120,6 +139,10 @@ public sealed class VitaSystem
         BitConverter.TryWriteBytes(s.AsSpan(8), -1);
         return s;
     }
+
+    /// <summary>SceSharedFb: the system software's framebuffers, created by the shell and drawn into by the system
+    /// programs it composites.</summary>
+    public Hle.Modules.SharedFb.Registry SharedFbs { get; } = new();
 
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;

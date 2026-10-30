@@ -21,15 +21,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
   sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
+- [ ] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
+  power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
+  normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
 
 ## Android
 
-- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
-  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita); o ícone adaptativo já
-  está em `src/VitaSharp.Android/Resources`
-- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (o layout dos controles na
-  tela, com o botão PS, já existe em `src/VitaSharp.Android/Input`)
+- [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
+  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
+  APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
+- [ ] Primeira execução no emulador do Android e num aparelho: a lista do que verificar está no fim de
+  `docs/android/README.md` (superfície Vulkan, ciclo de vida, JIT nativo, entrada, logcat, SAF)
+- [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
+  ela o renderizador não compila shaders no celular (30/10/2026: `build/build-android-shaderc.ps1` (ou `.sh`), NDK r30)
+- [x] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (30/10/2026: `OnScreenPad`,
+  `AndroidGamepads` com os perfis de controle do desktop e o botão TRÁS; falta testar num aparelho e o editor de
+  layout)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
@@ -39,19 +47,27 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
 - [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
 - [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
-- [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, desenhar a tela "Driver da GPU" e testar num
-  aparelho (a interface, as configurações e o modelo da tela já existem em `src/VitaSharp.Android/Gpu`)
-- [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
+- [x] Driver de GPU customizado: libadrenotools compilada com o NDK e empacotada, carregador (pacote Turnip/Adreno com
+  meta.json, redirecionamento de arquivos, BCeNabler, turbo) e a tela "Driver da GPU" (instalar o zip pelo seletor,
+  usar, reiniciar o jogo aberto) (30/10/2026: `build/build-android-adrenotools.ps1` (ou `.sh`); falta testar num
+  aparelho Adreno, item 9 da lista em `docs/android/README.md`)
+- [x] Vídeo pelo MediaCodec e áudio pelo AAudio (30/10/2026: H.264 sem superfície com o decodificador de software do
+  Android como reserva, filmes do SceAvPlayer pelo MediaExtractor com AAC pelo MediaCodec, AAudio de baixa latência na
+  taxa do aparelho com AudioTrack no Android 8.0, a mesma política de buffer do OpenAL e reabertura quando o aparelho de
+  saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
+- [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
+  tocam sem ele)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
-- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
-  (.PUP) pelo seletor (`src/VitaSharp.Android/Firmware` já instala a partir do arquivo aberto)
+- [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
+  (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
+  lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
 
 ## Firmware e sistema
 
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
-  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME), o aviso "Could not install" e as
-  funções restantes (sensor de movimento, sockets do sistema)
+  no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
+  movimento, sockets do sistema)
 
 ## Código
 

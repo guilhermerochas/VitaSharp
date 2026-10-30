@@ -1044,4 +1044,50 @@ public sealed class NpUtility : HleModule
     [Hle] int sceNpBandwidthTestGetStatus() => 0;
     [Hle] int sceNpBandwidthTestShutdown(uint result) => 0;
     [Hle] int sceNpBandwidthTestAbort() => 0;
+
+    // ---- the library's internal setup (unnamed exports of vs0:sys/external/np_utility.suprx, FW 3.74), called by the
+    // system applications that use the utility (Trophy Collection: check the flag, configure the memory of slot 0, start
+    // its three request managers, set the flag; on a failure it stops what it started). Each export takes a slot
+    // 0..2 (SCE_NP_UTIL_ERROR 0x8055070E above), returns 0x80550701 when that part is already started and 0x80550702 when
+    // it is stopped and not started. The managers keep their requests in the firmware's own tables; the HLE has no
+    // requests of its own there, so only the started state is kept.
+    const int UTIL_ALREADY_INITIALIZED = unchecked((int)0x80550701), UTIL_NOT_INITIALIZED = unchecked((int)0x80550702),
+        UTIL_INVALID_ARGUMENT = unchecked((int)0x8055070E);
+    const int UtilSlots = 3;
+    int _utilFlag;
+    readonly bool[] _utilA = new bool[UtilSlots], _utilB = new bool[UtilSlots], _utilC = new bool[UtilSlots];
+
+    /// <summary>(void): the library-wide flag the caller sets once its setup is done (0 until then).</summary>
+    [Hle("sceNpUtility_16954FFF", Nid = 0x16954FFF, Library = "SceNpUtility")] int UtilGetFlag() => _utilFlag;
+    /// <summary>(int flag): sets it.</summary>
+    [Hle("sceNpUtility_5D6FC99E", Nid = 0x5D6FC99E, Library = "SceNpUtility")] int UtilSetFlag(int flag) { _utilFlag = flag; return 0; }
+
+    // the memory a slot allocates from: a heap created on a caller buffer (B5711AF9: slot, -, size, the firmware makes a
+    // mspace there), a caller's allocator (4A3FDD3B: slot, alloc, free) or the default one (5FC4B7D5: slot). HLE requests
+    // allocate nothing in guest memory, so the choice is accepted and has no effect.
+    [Hle("sceNpUtility_B5711AF9", Nid = 0xB5711AF9, Library = "SceNpUtility")] void UtilSetMemoryHeap(int slot, uint a, uint size) { }
+    [Hle("sceNpUtility_4A3FDD3B", Nid = 0x4A3FDD3B, Library = "SceNpUtility")] void UtilSetMemoryFuncs(int slot, uint alloc, uint free) { }
+    [Hle("sceNpUtility_5FC4B7D5", Nid = 0x5FC4B7D5, Library = "SceNpUtility")] void UtilSetMemoryDefault(int slot) { }
+
+    static int UtilStart(bool[] started, int slot)
+    {
+        if ((uint)slot >= UtilSlots) return UTIL_INVALID_ARGUMENT;
+        if (started[slot]) return UTIL_ALREADY_INITIALIZED;
+        started[slot] = true;
+        return 0;
+    }
+
+    static int UtilStop(bool[] started, int slot)
+    {
+        if ((uint)slot >= UtilSlots) return UTIL_INVALID_ARGUMENT;
+        if (!started[slot]) return UTIL_NOT_INITIALIZED;
+        started[slot] = false;
+        return 0;
+    }
+
+    [Hle("sceNpUtility_E38548AB", Nid = 0xE38548AB, Library = "SceNpUtility")] int UtilStartA(int slot) => UtilStart(_utilA, slot);
+    [Hle("sceNpUtility_26B4AC00", Nid = 0x26B4AC00, Library = "SceNpUtility")] int UtilStopA(int slot) => UtilStop(_utilA, slot);
+    [Hle("sceNpUtility_9F142A92", Nid = 0x9F142A92, Library = "SceNpUtility")] int UtilStartB(int slot) => UtilStart(_utilB, slot);
+    [Hle("sceNpUtility_6DF884DA", Nid = 0x6DF884DA, Library = "SceNpUtility")] int UtilStopB(int slot) => UtilStop(_utilB, slot);
+    [Hle("sceNpUtility_17385829", Nid = 0x17385829, Library = "SceNpUtility")] int UtilStartC(int slot) => UtilStart(_utilC, slot);
 }

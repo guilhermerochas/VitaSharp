@@ -85,11 +85,11 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         Attr = attr;
         Affinity = affinity;
         OnSystemCore = emu.RunsOnSystemCore;
-        Core = new CpuCore(emu.Code);
+        Core = new CpuCore(emu.Code, emu.Space.Base);
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 
         StackSize = GuestMemory.AlignUp(Math.Max(stackSize, 0x4000u), 0x1000);
-        using var scope = ProcessScope.Enter(emu.Pid); // the stack and TLS belong to the thread's process
+        using var scope = ProcessScope.Enter(emu); // the stack and TLS belong to the thread's process
         StackAddr = emu.Memory.Alloc(StackSize, $"stack:{name}");
         GuestMemory.Fill(StackAddr, 0xCC, StackSize);
 
@@ -164,7 +164,10 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     void HostMain()
     {
         _current = this;
+        // the HLE calls of this thread (and the tasks they start) work in its process's address space
+        Memory.AddressSpace.Enter(_emu.Space);
         Util.NativeThread.Register(Name);
+        Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;
         bool delete = false;
         Core.ShouldYield = () => Scheduler.ShouldYield(this);

@@ -4,10 +4,26 @@ namespace VitaSharp.Core.Util;
 
 public enum LogLevel { Trace, Debug, Info, Warn, Error }
 
-/// <summary>Lightweight thread-safe logger writing to the console and an optional file.</summary>
+/// <summary>
+/// An extra destination for log lines (the Android front-end's logcat). <see cref="Write"/> is called under the log
+/// lock, in order, for every line that passes <see cref="Log.Level"/>; it must be fast and must not throw.
+/// </summary>
+public interface ILogSink
+{
+    void Write(LogLevel level, string thread, string message);
+}
+
+/// <summary>Lightweight thread-safe logger writing to the console, an optional file and an optional sink.</summary>
 public static class Log
 {
     public static LogLevel Level { get; set; } = LogLevel.Info;
+
+    /// <summary>Extra destination (Android: logcat). Null on the desktop.</summary>
+    public static ILogSink? Sink { get; set; }
+
+    /// <summary>False stops the console copy (Android, where the sink already reaches logcat and stdout would
+    /// duplicate every line under another tag).</summary>
+    public static bool ConsoleEnabled { get; set; } = true;
     static StreamWriter? _file;
     static readonly object Lock = new();
     static readonly ConcurrentDictionary<string, int> Once = new();
@@ -61,12 +77,17 @@ public static class Log
             if (n > 3 && n is not (10 or 100 or 1000 or 10000 or 100000 or 1000000)) return;
             if (n > 3) msg += $" (repeated {n} times)";
         }
-        var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString()}] {msg}";
+        string thread = Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString();
+        var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{thread}] {msg}";
         lock (Lock)
         {
-            if (level >= LogLevel.Warn) Console.ForegroundColor = level == LogLevel.Error ? ConsoleColor.Red : ConsoleColor.Yellow;
-            Console.WriteLine(line);
-            if (level >= LogLevel.Warn) Console.ResetColor();
+            if (ConsoleEnabled)
+            {
+                if (level >= LogLevel.Warn) Console.ForegroundColor = level == LogLevel.Error ? ConsoleColor.Red : ConsoleColor.Yellow;
+                Console.WriteLine(line);
+                if (level >= LogLevel.Warn) Console.ResetColor();
+            }
+            Sink?.Write(level, thread, msg);
             if (_file != null)
             {
                 _written += line.Length + 2;

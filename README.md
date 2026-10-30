@@ -150,7 +150,7 @@ next to it as separate processes.
 
 **Platforms**
 - Windows, Linux (x64, ARM64) and macOS; self-contained ReadyToRun or Native AOT builds, packaged as zip, installer,
-  tar.gz, AppImage, `.app` and `.dmg`
+  tar.gz, AppImage, `.app` and `.dmg` (CI and releases: Native AOT for win-x64, linux-x64 and osx-arm64)
 
 ## Compatibility
 
@@ -209,6 +209,7 @@ Common `run` options:
 | `--cpu=native\|il\|interp` | CPU backend (default: the best one this PC supports; `native` is x86-64 or ARM64 code) |
 | `--shaderc-opt=zero\|size\|perf` | Shader optimisation level. `zero` (default) compiles ~6x faster and stutters far less when new shaders appear, with no measured GPU cost (launcher: *Compilação rápida de shaders*) |
 | `--async-shaders=on\|off` | Translate and compile new shaders and build their pipelines on worker threads as soon as the game submits them (default on; launcher: *Compilar shaders e pipelines em segundo plano*). `--async-pipelines=off` keeps only the shader part, `--shader-workers=<n>` sets the pool size (default: half the logical processors, 1-6) |
+| `--host-prio=on\|off` | Run the guest threads and the GPU worker above normal host priority, so other programs on the PC do not take their time (default on; `VITASHARP_HOST_PRIO=0` turns it off; see `docs/notes/thread-priority.md`) |
 | `--headless`, `--seconds <n>`, `--frames <n>` | Run without a window for a fixed time or number of frames |
 | `--input <script>` | Scripted input, e.g. `start@f3400,cross@f3600` |
 | `--dump-frames`, `--dump-every <n>` | Save rendered frames to disk |
@@ -445,8 +446,8 @@ build\publish.ps1 -Aot -Rid win-x64     # on Windows
 ```
 
 Native AOT cannot cross-compile between operating systems: each platform is built on its own OS (CI builds win-x64,
-linux-x64, linux-arm64, osx-x64 and osx-arm64 on matching runners). For a platform the host cannot build, the scripts
-print a warning and publish ReadyToRun instead. Prerequisites besides the .NET 10 SDK:
+linux-x64 and osx-arm64 on matching runners). For a platform the host cannot build, the scripts print a warning and
+publish ReadyToRun instead. Prerequisites besides the .NET 10 SDK:
 
 | Host | Needs |
 | --- | --- |
@@ -503,9 +504,11 @@ build\publish.ps1 -Aot -Package -Rid win-x64 -Version 0.2.0   # zip + installer
 ```
 
 They land in `artifacts/publish/packages/` (`-SkipPublish` / `--skip-publish` repacks an existing publish folder).
-CI builds every package on each push to `main` (ReadyToRun cross-published from Linux, Native AOT on each OS's own
-runner) and keeps them as workflow artifacts named `VitaSharp-*-packages`; tagged versions go to the Releases page
-(see [Releases](#releases)). A release version (`1.2.3` or `1.2.3-suffix`) passed as `VERSION` / `-Version` also
+CI builds the Native AOT packages of win-x64, linux-x64 and osx-arm64 on each push to `main`, each on its own OS's
+runner, and keeps them as workflow artifacts named `VitaSharp-aot-<rid>-packages` (the published folders as
+`VitaSharp-aot-<rid>`, debug symbols as `VitaSharp-aot-<rid>-symbols`); tagged versions go to the Releases page (see
+[Releases](#releases)). ReadyToRun builds and the other platforms (linux-arm64, osx-x64) are made locally with the
+scripts above. A release version (`1.2.3` or `1.2.3-suffix`) passed as `VERSION` / `-Version` also
 becomes the app's version (`VitaSharp 1.2.3+<commit>` in the log); `dev` and CI builds keep `1.0.0`.
 
 <details>
@@ -589,13 +592,12 @@ pushes; start it one of two ways:
 - or **Actions > Release > Run workflow**: pick the branch, type the version (`0.1.0`) and tick *prerelease* if
   wanted. The tag `v0.1.0` is created on that branch's commit when the release is published.
 
-The workflow runs the CI workflow with that version (tests, then the ReadyToRun and Native AOT packages of every
-platform, so the file names and the app's version carry it) and publishes `VitaSharp <version>` with:
+The workflow runs the CI workflow with that version (tests, then the Native AOT packages, so the file names and the
+app's version carry it) and publishes `VitaSharp <version>` with:
 
-- every package: the Native AOT ones under their usual names (`VitaSharp-0.1.0-win-x64.zip`, `-setup.exe`,
-  `linux-x64.tar.gz`, `.AppImage`, `osx-arm64.app.zip`, `.dmg`, ...) and the ReadyToRun ones with `-readytorun` after
-  the platform (`VitaSharp-0.1.0-win-x64-readytorun.zip`); linux-arm64 is ReadyToRun only while the repository is
-  private (no ARM64 runner);
+- the Native AOT packages: `VitaSharp-0.1.0-win-x64.zip` and `-win-x64-setup.exe`, `-linux-x64.tar.gz` and
+  `-linux-x64.AppImage`, `-osx-arm64.app.zip` and `-osx-arm64.dmg` (the job fails if one is missing, if a file has
+  any other name, or if two have the same name); an Android `-android-arm64.apk` is planned;
 - `SHA256SUMS.txt` with their checksums;
 - notes made of [`build/release-notes-header.md`](build/release-notes-header.md) (firmware not included, unsigned
   binaries, system requirements) and the commits since the previous `v*` tag.
@@ -647,7 +649,7 @@ dotnet test tests/VitaSharp.Tests
 The CPU fuzz tests compare the interpreter and the JIT backends with [Unicorn](https://www.unicorn-engine.org/); they
 take several minutes, and are skipped where Unicorn's native library is not available (macOS on Apple Silicon) or when
 `VITASHARP_SKIP_UNICORN=1` is set. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds and tests on
-Windows, Ubuntu and macOS and publishes every platform.
+Windows, Ubuntu and macOS and builds the Native AOT packages (win-x64, linux-x64, osx-arm64).
 
 Game scenarios boot a title headless, feed scripted input and write frames, a contact sheet, metrics and a report
 to the data folder:
@@ -675,6 +677,10 @@ Contributions are welcome, from bug reports to new system functions.
 2. Implement it as an `[Hle]` method in `src/VitaSharp.Core/Hle/Modules`. Registration is automatic.
 3. Check it with `imports <TITLEID>` and the scenarios of the affected game.
 4. Open a pull request describing what changed and which games it affects.
+
+Scripts are multiplatform: every script ships as a pair, `name.ps1` for Windows and `name.sh` for Linux/macOS (LF line
+endings, executable bit set), doing the same thing. CI enforces it with `build/check-script-parity.sh`
+(`.ps1` on Windows); only scripts that are inherently single-platform are listed as exceptions there.
 
 When reporting a bug, attach `logs/last.log` (and an F10 capture if the problem is visible) and say which game (title
 ID and version) and which hardware you used.

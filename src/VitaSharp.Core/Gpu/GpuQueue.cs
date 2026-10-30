@@ -44,12 +44,13 @@ public sealed class GpuQueue : IDisposable
     public static readonly object NotificationSync = new();
     public object NotificationLock => NotificationSync;
 
-    /// <summary>Writes a notification value and wakes guest waiters (used by backends once the GPU really finished).</summary>
-    public static void SignalNotification(uint address, uint value)
+    /// <summary>Writes a notification value in <paramref name="space"/> (the submitting process's) and wakes guest
+    /// waiters (used by backends once the GPU really finished).</summary>
+    public static void SignalNotification(AddressSpace? space, uint address, uint value)
     {
         lock (NotificationSync)
         {
-            GuestMemory.W32(address, value);
+            using (AddressSpace.Use(space ?? AddressSpace.Current)) GuestMemory.W32(address, value);
             Monitor.PulseAll(NotificationSync);
         }
     }
@@ -68,6 +69,7 @@ public sealed class GpuQueue : IDisposable
     {
         if (!_drawPool.TryTake(out var d)) d = new DrawCommand();
         d.Reset();
+        d.Space = null;
         return d;
     }
 
@@ -123,6 +125,7 @@ public sealed class GpuQueue : IDisposable
 
     public long Submit(GpuCommand cmd)
     {
+        cmd.Space ??= AddressSpace.Current; // the submitting thread's process, unless the command names another
         try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
         return SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
     }
@@ -155,6 +158,7 @@ public sealed class GpuQueue : IDisposable
     void Run()
     {
         NativeThread.Register("GPU worker");
+        HostThreads.Apply(HostThreads.Role.Gpu);
         while (!_stopping)
         {
             GpuCommand? cmd;
@@ -173,6 +177,9 @@ public sealed class GpuQueue : IDisposable
             }
             catch (ObjectDisposedException) { break; }
 
+            // the command's guest addresses are its process's: the worker reads and writes that address space until the
+            // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)
+            AddressSpace.MakeCurrent(cmd.Space);
             if (cmd is CallbackCommand pre)
             {
                 // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
@@ -233,7 +240,11 @@ public sealed class GpuQueue : IDisposable
     /// Writes a notification in GPU order: after all previously submitted work completed and its results (writebacks,
     /// visibility results) are in guest memory.
     /// </summary>
-    public void Notify(uint address, uint value) => Submit(new SignalCommand { Signal = () => SignalNotification(address, value) });
+    public void Notify(uint address, uint value)
+    {
+        var space = AddressSpace.Current;
+        Submit(new SignalCommand { Signal = () => SignalNotification(space, address, value) });
+    }
 
     /// <summary>A sync point the host can wait on: set once all work submitted before it is complete and published.</summary>
     public sealed class Fence

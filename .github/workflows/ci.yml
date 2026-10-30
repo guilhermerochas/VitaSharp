@@ -20,6 +20,15 @@ env:
   PACKAGE_VERSION: ${{ inputs.version || format('ci-{0}', github.run_number) }}
 
 jobs:
+  script-parity:
+    name: Script parity (.ps1 and .sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every script has a Windows and a Linux/macOS version
+        run: bash build/check-script-parity.sh
+
   build-test:
     name: Build and test (${{ matrix.os }})
     strategy:
@@ -69,48 +78,10 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test-results
 
-  # Self-contained single-file builds for every platform, cross-published and packaged from one Linux runner (the
-  # macOS .app is unsigned; the Windows installer and the macOS .dmg come from the per-OS AOT jobs below).
-  publish:
-    name: Publish (${{ matrix.rid }})
-    needs: build-test
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        rid: [win-x64, linux-x64, linux-arm64, osx-x64, osx-arm64]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - uses: actions/cache@v4
-        with:
-          path: third_party/ffmpeg
-          key: ffmpeg-publish-${{ matrix.rid }}-${{ hashFiles('build/FFmpeg.targets') }}
-      - name: Install appimagetool
-        if: startsWith(matrix.rid, 'linux-')
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x "$RUNNER_TEMP/appimagetool"
-          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
-      - name: Publish and package
-        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --package ${{ matrix.rid }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VitaSharp-${{ matrix.rid }}
-          path: artifacts/publish/${{ matrix.rid }}
-      # zip / tar.gz / AppImage / .app.zip made by build/publish.sh --package
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VitaSharp-${{ matrix.rid }}-packages
-          path: artifacts/publish/packages
-          compression-level: 0 # already compressed
-
-  # Native AOT builds. Native AOT cannot cross-compile between operating systems, so every platform is built on its
-  # own runner: MSVC (preinstalled on windows-latest), clang + zlib on Linux, Xcode command-line tools on macOS.
+  # The packages: Native AOT only, for win-x64, linux-x64 and osx-arm64 (ReadyToRun builds and the other platforms are
+  # still available locally through build/publish.sh / build/publish.ps1). Native AOT cannot cross-compile between
+  # operating systems, so every platform is built on its own runner: MSVC (preinstalled on windows-latest), clang +
+  # zlib on Linux, Xcode command-line tools on macOS.
   publish-aot:
     name: Publish Native AOT (${{ matrix.rid }})
     needs: build-test
@@ -125,8 +96,6 @@ jobs:
             os: ubuntu-latest
           - rid: osx-arm64
             os: macos-latest
-          - rid: osx-x64
-            os: macos-latest # Apple Silicon runner, cross-architecture AOT within macOS is supported
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -173,42 +142,7 @@ jobs:
           path: artifacts/publish/${{ matrix.rid }}-symbols
           if-no-files-found: ignore
 
-  # Linux ARM64 Native AOT on GitHub's ARM64 runner (free for public repositories only; skipped for private ones,
-  # where the job would otherwise wait for a runner that never comes).
-  publish-aot-linux-arm64:
-    name: Publish Native AOT (linux-arm64)
-    needs: build-test
-    if: github.event_name != 'pull_request' && !github.event.repository.private
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - uses: actions/cache@v4
-        with:
-          path: third_party/ffmpeg
-          key: ffmpeg-publish-linux-arm64-${{ hashFiles('build/FFmpeg.targets') }}
-      - name: Install Native AOT prerequisites
-        run: |
-          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage
-          chmod +x "$RUNNER_TEMP/appimagetool"
-          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
-      - name: Publish and package
-        run: OUT=artifacts/publish VERSION="$PACKAGE_VERSION" bash build/publish.sh --aot --package linux-arm64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VitaSharp-aot-linux-arm64
-          path: artifacts/publish/linux-arm64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VitaSharp-aot-linux-arm64-packages
-          path: artifacts/publish/packages
-          compression-level: 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: VitaSharp-aot-linux-arm64-symbols
-          path: artifacts/publish/linux-arm64-symbols
-          if-no-files-found: ignore
+  # TODO android-arm64: an APK job (`dotnet build src/VitaSharp.Android -c Release -r android-arm64` after
+  # `dotnet workload install maui-android`, plus the Android SDK/NDK and build/build-android-shaderc.sh), uploading
+  # VitaSharp-android-arm64-packages holding VitaSharp-<version>-android-arm64.apk, which release.yml then collects
+  # like the others.

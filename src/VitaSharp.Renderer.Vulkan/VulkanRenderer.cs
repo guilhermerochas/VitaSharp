@@ -180,7 +180,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _boundPipeline = default;
     }
 
+    // the queue is the GPU thread's; the lock only keeps DetachSurface/AttachSurface (UI thread) out of a submit
     void SubmitFrame(bool present, uint swapIndex)
+    {
+        lock (_presentLock) SubmitFrameCore(present, swapIndex);
+    }
+
+    void SubmitFrameCore(bool present, uint swapIndex)
     {
         var f = F;
         if (!f.Recording) return;
@@ -633,7 +639,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
-        if (e.Notifications.Length > 0 && (writeback || ResultsPending())) { foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(addr, value)); e.NotificationsDeferred = true; }
+        if (e.Notifications.Length > 0 && (writeback || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
         if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;
@@ -934,6 +940,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     /// <summary>Shows <paramref name="src"/> on the swapchain (or just submits the frame when there is none).</summary>
     void PresentOut(RenderTarget src, DisplayFrame frame)
+    {
+        lock (_presentLock) PresentOutCore(src, frame);
+    }
+
+    void PresentOutCore(RenderTarget src, DisplayFrame frame)
     {
         if (_swapchain.Handle != 0)
         {

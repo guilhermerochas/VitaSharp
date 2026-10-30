@@ -417,13 +417,13 @@ internal static unsafe class Vfp
         if (dbl)
         {
             uint d = DoubleD(ins);
-            if (l) Du(s, d) = Mem.R32(addr) | ((ulong)Mem.R32(addr + 4) << 32);
-            else { ulong v = Du(s, d); Mem.W32(addr, (uint)v); Mem.W32(addr + 4, (uint)(v >> 32)); }
+            if (l) Du(s, d) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
+            else { ulong v = Du(s, d); Mem.W32(s, addr, (uint)v); Mem.W32(s, addr + 4, (uint)(v >> 32)); }
         }
         else
         {
             uint d = SingleD(ins);
-            if (l) Su(s, d) = Mem.R32(addr); else Mem.W32(addr, Su(s, d));
+            if (l) Su(s, d) = Mem.R32(s, addr); else Mem.W32(s, addr, Su(s, d));
         }
     }
 
@@ -449,8 +449,8 @@ internal static unsafe class Vfp
             uint regs = imm8 >> 1;
             for (uint i = 0; i < regs; i++, addr += 8)
             {
-                if (l) Du(s, (d + i) & 31) = Mem.R32(addr) | ((ulong)Mem.R32(addr + 4) << 32);
-                else { ulong v = Du(s, (d + i) & 31); Mem.W32(addr, (uint)v); Mem.W32(addr + 4, (uint)(v >> 32)); }
+                if (l) Du(s, (d + i) & 31) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
+                else { ulong v = Du(s, (d + i) & 31); Mem.W32(s, addr, (uint)v); Mem.W32(s, addr + 4, (uint)(v >> 32)); }
             }
         }
         else
@@ -458,7 +458,7 @@ internal static unsafe class Vfp
             uint d = SingleD(ins);
             for (uint i = 0; i < imm8; i++, addr += 4)
             {
-                if (l) Su(s, (d + i) & 63) = Mem.R32(addr); else Mem.W32(addr, Su(s, (d + i) & 63));
+                if (l) Su(s, (d + i) & 63) = Mem.R32(s, addr); else Mem.W32(s, addr, Su(s, (d + i) & 63));
             }
         }
     }

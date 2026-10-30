@@ -1,3 +1,4 @@
+using VitaSharp.Android.Storage;
 using VitaSharp.Core.Gpu;
 
 namespace VitaSharp.Android.Gpu;
@@ -6,20 +7,20 @@ namespace VitaSharp.Android.Gpu;
 public sealed record GpuDriverOption(string Id, string Title, string Detail, bool Selected, bool Removable);
 
 /// <summary>
-/// SKELETON (no Android front-end yet; platform-neutral, so it compiles and runs on the desktop). The model behind the
-/// "Driver da GPU" screen (docs/android/mockups/driver-gpu.html): list the system driver and the installed custom
-/// driver packages, pick one, install a package the user chose with the Storage Access Framework, remove one, and the
-/// libadrenotools options. The choice is stored in &lt;data&gt;/gpu_driver.json and read by
-/// <see cref="AdrenoToolsDriverLoader.Create"/> before the renderer starts.
+/// The model behind the "Driver da GPU" screen (docs/android/mockups/driver-gpu.html; platform-neutral, so it is
+/// unit-tested on the desktop): list the system driver and the installed custom driver packages, pick one, install a
+/// package the user chose with the Storage Access Framework, remove one, and the libadrenotools options. The choice is
+/// stored in &lt;data&gt;/gpu_driver.json and read by AdrenoToolsDriverLoader.Create (src/VitaSharp.Android) before
+/// the renderer starts; the packages live in internal storage (&lt;internal&gt;/gpu_drivers, DataLayout), where the
+/// linker may load them.
 /// <para>
 /// A process can load one Vulkan driver safely, so a change only applies to the next emulation session:
-/// <see cref="Select"/> returns true when the front-end must restart a running game (or tell the user it will).
+/// <see cref="Select"/> returns true when the choice changed, and <see cref="RestartNeeded"/> tells whether the running
+/// game (<see cref="GameProcessMarker"/>) loaded another configuration and must be restarted to use the new one.
 /// </para>
 /// </summary>
 public sealed class GpuDriverScreen
 {
-    public const string SettingsFile = "gpu_driver.json", DriversDir = "gpu_drivers";
-
     readonly string _settingsPath;
 
     public CustomDriverStore Store { get; }
@@ -29,10 +30,10 @@ public sealed class GpuDriverScreen
     /// the screen offer custom drivers; elsewhere it shows the system driver and the GPU information only.</summary>
     public bool CustomDriversSupported { get; }
 
-    public GpuDriverScreen(string dataRoot, GpuCapabilities? caps)
+    public GpuDriverScreen(DataLayout data, GpuCapabilities? caps)
     {
-        _settingsPath = Path.Combine(dataRoot, SettingsFile);
-        Store = new CustomDriverStore(Path.Combine(dataRoot, DriversDir));
+        _settingsPath = data.GpuDriverSettingsFile;
+        Store = new CustomDriverStore(data.GpuDrivers);
         Settings = GpuDriverSettings.Load(_settingsPath);
         // before the first renderer start there are no capabilities yet: offer the list, the loader checks again
         CustomDriversSupported = caps == null || caps.Has(GpuQuirk.CustomDriverCapable);
@@ -109,6 +110,23 @@ public sealed class GpuDriverScreen
         if (fileRedirect is { } r) Settings.FileRedirect = r;
         Settings.Save(_settingsPath);
     }
+
+    /// <summary>
+    /// The GPU configuration a game process loads (driver id plus the libadrenotools options), recorded in its
+    /// <see cref="GameProcessMarker"/>. A driver that is no longer installed counts as the system driver, as
+    /// AdrenoToolsDriverLoader falls back to it.
+    /// </summary>
+    public static string ConfigOf(GpuDriverSettings s, CustomDriverStore store)
+    {
+        string driver = s.Driver.Length > 0 && store.Find(s.Driver) != null ? s.Driver : "";
+        return $"{driver}|bcn={(s.PatchBcn ? 1 : 0)}|turbo={(s.Turbo ? 1 : 0)}|redirect={(s.FileRedirect ? 1 : 0)}";
+    }
+
+    public string Config => ConfigOf(Settings, Store);
+
+    /// <summary>True when <paramref name="running"/> loaded a configuration other than the current one: the change only
+    /// takes effect when that game restarts.</summary>
+    public bool RestartNeeded(GameProcessInfo? running) => running != null && running.GpuConfig != Config;
 }
 
 /// <summary>A labelled value, feature or quirk line of the "Informações da GPU" view.</summary>

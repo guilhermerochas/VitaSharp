@@ -60,7 +60,8 @@ public struct FrameMetrics
 /// Debug mode: per-frame anomaly rules over <see cref="FrameMetrics"/> of every presented frame (see
 /// docs/notes/debug-mode.md). Reacts to short bursts: a magenta or saturated green/blue spike in 2 of 3 consecutive
 /// frames, or a brightness excursion of 1-3 frames that snaps back, fires at once. Slow conditions (blown-out, black,
-/// frozen) need to last. Pure logic, no GPU: <see cref="Feed"/> returns the events of that frame.
+/// frozen) need to last; blown-out only counts frames that change (a bright still image is a splash screen, not an
+/// exposure bug). Pure logic, no GPU: <see cref="Feed"/> returns the events of that frame.
 /// </summary>
 public sealed class FrameAnomalyDetector
 {
@@ -79,7 +80,8 @@ public sealed class FrameAnomalyDetector
     readonly FrameMetrics.Hit[] _recent = new FrameMetrics.Hit[SpikeWindow];
     bool _magentaOn, _saturatedOn;
     int _magentaQuiet, _saturatedQuiet;
-    int _brightRun, _blackRun, _frozenRun;
+    int _brightRun, _brightMoving, _blackRun, _frozenRun;
+    bool _fed;
     ulong _prevHash;
     // flicker: the last stable mean (not inside an excursion) and how long the current excursion lasts
     float _baseline = -1;
@@ -100,8 +102,8 @@ public sealed class FrameAnomalyDetector
         Spike(FrameMetrics.Hit.Saturated, "saturated", ref _saturatedOn, ref _saturatedQuiet, present,
             $"{m.Green:P0} pure green and {m.Blue:P0} pure blue pixels (garbage render target / effect)");
 
-        Run(hits.HasFlag(FrameMetrics.Hit.Bright), ref _brightRun, BrightFrames, "blown-out", true, present,
-            $"{m.White:P0} saturated white, mean brightness {m.Mean:F2} for {BrightFrames} frames");
+        BrightRun(hits.HasFlag(FrameMetrics.Hit.Bright), !_fed || m.Hash != _prevHash, present, m);
+        _fed = true;
         Run(hits.HasFlag(FrameMetrics.Hit.Black), ref _blackRun, BlackFrames, "black", false, present,
             $"more than 97% black pixels for {BlackFrames} frames");
         Run(m.Hash == _prevHash, ref _frozenRun, FrozenFrames, "frozen", false, present,
@@ -133,6 +135,25 @@ public sealed class FrameAnomalyDetector
             on = false;
             _events.Add(new Event(name, "cleared", false, present));
         }
+    }
+
+    /// <summary>
+    /// Blown-out: the picture stays too bright while it changes. Only bright frames that differ from the one before count
+    /// towards <see cref="BrightFrames"/>, so a legitimately bright still image (a white splash screen with a logo, Sonic
+    /// Mania's SEGA screen: 81% pure white for two seconds) never fires, while a moving scene washed out to white (Gravity
+    /// Rush's dream intro with a wrong exposure) does. The run ends at the first frame that is not bright.
+    /// </summary>
+    void BrightRun(bool bright, bool changed, long present, in FrameMetrics m)
+    {
+        if (!bright)
+        {
+            if (_brightMoving >= BrightFrames) _events.Add(new Event("blown-out", $"cleared after {_brightRun} frames", false, present));
+            _brightRun = _brightMoving = 0;
+            return;
+        }
+        _brightRun++;
+        if (changed && ++_brightMoving == BrightFrames)
+            _events.Add(new Event("blown-out", $"{m.White:P0} saturated white, mean brightness {m.Mean:F2} for {_brightRun} frames ({BrightFrames} of them changing)", true, present));
     }
 
     void Run(bool hit, ref int run, int need, string name, bool capture, long present, string detail)

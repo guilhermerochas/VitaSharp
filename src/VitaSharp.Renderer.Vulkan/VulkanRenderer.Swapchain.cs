@@ -35,6 +35,18 @@ public sealed unsafe partial class VulkanRenderer
         var extent = caps.CurrentExtent.Width != uint.MaxValue ? caps.CurrentExtent
             : new Extent2D((uint)Math.Clamp(w, (int)caps.MinImageExtent.Width, (int)caps.MaxImageExtent.Width),
                            (uint)Math.Clamp(h, (int)caps.MinImageExtent.Height, (int)caps.MaxImageExtent.Height));
+        // Android reports the display's rotation as currentTransform (ROTATE_90 for a landscape app on a portrait
+        // phone), with currentExtent possibly in the display's native orientation. The blit is not pre-rotated, so the
+        // swapchain asks for IDENTITY (the compositor rotates) with the extent in the window's orientation (the
+        // front-end's FramebufferSize). Desktop surfaces are always IDENTITY: nothing changes there.
+        var transform = caps.CurrentTransform;
+        if (transform != SurfaceTransformFlagsKHR.IdentityBitKhr && (caps.SupportedTransforms & SurfaceTransformFlagsKHR.IdentityBitKhr) != 0)
+        {
+            if ((transform & (SurfaceTransformFlagsKHR.Rotate90BitKhr | SurfaceTransformFlagsKHR.Rotate270BitKhr)) != 0
+                && w > 0 && h > 0 && (w > h) != (extent.Width > extent.Height))
+                extent = new Extent2D(extent.Height, extent.Width);
+            transform = SurfaceTransformFlagsKHR.IdentityBitKhr;
+        }
         if (extent.Width == 0 || extent.Height == 0) { _swapchainDirty = true; return; }
         uint count = Math.Max(caps.MinImageCount + 1, 3);
         if (caps.MaxImageCount > 0) count = Math.Min(count, caps.MaxImageCount);
@@ -50,7 +62,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageArrayLayers = 1,
             ImageUsage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.ColorAttachmentBit,
             ImageSharingMode = SharingMode.Exclusive,
-            PreTransform = caps.CurrentTransform,
+            PreTransform = transform,
             // opaque everywhere on desktop; Android surfaces typically only offer INHERIT
             CompositeAlpha = (caps.SupportedCompositeAlpha & CompositeAlphaFlagsKHR.OpaqueBitKhr) != 0 ? CompositeAlphaFlagsKHR.OpaqueBitKhr
                 : (caps.SupportedCompositeAlpha & CompositeAlphaFlagsKHR.InheritBitKhr) != 0 ? CompositeAlphaFlagsKHR.InheritBitKhr
@@ -72,6 +84,42 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     public void NotifyResized() => _swapchainDirty = true;
+
+    readonly object _presentLock = new();
+
+    /// <summary>
+    /// The window surface went away while the renderer lives on (Android: SurfaceView.surfaceDestroyed when the
+    /// activity goes to the background). Waits for the GPU, then destroys the swapchain and the VkSurfaceKHR; frames
+    /// keep being rendered and submitted, without presenting, until <see cref="AttachSurface"/>. Call it from the thread
+    /// that owns the window, before the native window is released.
+    /// </summary>
+    public void DetachSurface()
+    {
+        lock (_presentLock)
+        {
+            if (_core.SurfaceExt == null) return;
+            _vk.DeviceWaitIdle(_dev);
+            DestroySwapchain();
+            _core.ReplaceSurface(null);
+            Log.Info("Presentation surface detached");
+        }
+    }
+
+    /// <summary>A new window surface (Android: surfaceCreated after a <see cref="DetachSurface"/>): creates its
+    /// VkSurfaceKHR and a swapchain for it. The renderer must have been created with a surface (instance extensions).</summary>
+    public void AttachSurface(IPresentationSurface surface)
+    {
+        lock (_presentLock)
+        {
+            if (_core.SurfaceExt == null) throw new InvalidOperationException("the renderer was created without a presentation surface");
+            _vk.DeviceWaitIdle(_dev);
+            DestroySwapchain();
+            _core.ReplaceSurface(surface);
+            _opt.Surface = surface;
+            CreateSwapchain();
+            Log.Info("Presentation surface attached");
+        }
+    }
 
     bool AcquireSwapchain(out uint index)
     {

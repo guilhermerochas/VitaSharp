@@ -370,7 +370,7 @@ public sealed unsafe partial class NativeJitTests
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default;
+                    *s = default; s->MemBase = GuestMemory.Base;
                     s->R[0] = at; s->R[1] = 0x1234; s->R[2] = 0x1234; s->R[3] = 0x5678; s->R[4] = 0x99; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
                     GuestMemory.Write(at, unchecked((uint)mem0)); GuestMemory.Write(at + 4, (uint)(mem0 >> 32));
                     uint g0 = gens[genIdx];
@@ -428,7 +428,7 @@ public sealed unsafe partial class NativeJitTests
         try
         {
             // interpreter reference: block by block
-            *s = default; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
+            *s = default; s->MemBase = GuestMemory.Base; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
             long blocks = 0, cycles = 0;
             var all = new[] { loop, tail, target };
             while (s->Exit == ExitReason.None)
@@ -441,7 +441,7 @@ public sealed unsafe partial class NativeJitTests
             // native, driven like CpuCore.Run: run, then link the static exit that returned (if its slot is empty)
             sb.Publish(target.Start, false, cTarget.NativeEntry);
             var entries = new Dictionary<uint, nint> { [loop.Start] = cLoop.NativeEntry, [tail.Start] = cTail.NativeEntry, [target.Start] = cTarget.NativeEntry };
-            *s = default; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
+            *s = default; s->MemBase = GuestMemory.Base; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
             long nb = 0, cyc = 0;
             int runs = 0;
             while (s->Exit == ExitReason.None)

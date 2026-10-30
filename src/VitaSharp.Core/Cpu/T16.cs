@@ -140,7 +140,7 @@ internal static unsafe class T16
     /// <summary>LDR (literal): 01001 Rt imm8</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void LdrLit(CpuState* s, uint ins, uint pc)
-        => s->R[Bits(ins, 10, 8)] = Mem.R32(((pc + 4) & ~3u) + ((ins & 0xFF) << 2));
+        => s->R[Bits(ins, 10, 8)] = Mem.R32(s, ((pc + 4) & ~3u) + ((ins & 0xFF) << 2));
 
     /// <summary>Load/store register offset: 0101 op Rm Rn Rt</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -150,14 +150,14 @@ internal static unsafe class T16
         uint addr = s->R[rn] + s->R[rm];
         switch (op)
         {
-            case 0: Mem.W32(addr, s->R[rt]); break;
-            case 1: Mem.W16(addr, s->R[rt]); break;
-            case 2: Mem.W8(addr, s->R[rt]); break;
-            case 3: s->R[rt] = (uint)(sbyte)Mem.R8(addr); break;
-            case 4: s->R[rt] = Mem.R32(addr); break;
-            case 5: s->R[rt] = Mem.R16(addr); break;
-            case 6: s->R[rt] = Mem.R8(addr); break;
-            default: s->R[rt] = (uint)(short)Mem.R16(addr); break;
+            case 0: Mem.W32(s, addr, s->R[rt]); break;
+            case 1: Mem.W16(s, addr, s->R[rt]); break;
+            case 2: Mem.W8(s, addr, s->R[rt]); break;
+            case 3: s->R[rt] = (uint)(sbyte)Mem.R8(s, addr); break;
+            case 4: s->R[rt] = Mem.R32(s, addr); break;
+            case 5: s->R[rt] = Mem.R16(s, addr); break;
+            case 6: s->R[rt] = Mem.R8(s, addr); break;
+            default: s->R[rt] = (uint)(short)Mem.R16(s, addr); break;
         }
     }
 
@@ -168,8 +168,8 @@ internal static unsafe class T16
         bool b = Bit(ins, 12) != 0, l = Bit(ins, 11) != 0;
         uint imm5 = Bits(ins, 10, 6), rn = Bits(ins, 5, 3), rt = ins & 7;
         uint addr = s->R[rn] + (b ? imm5 : imm5 << 2);
-        if (l) s->R[rt] = b ? Mem.R8(addr) : Mem.R32(addr);
-        else if (b) Mem.W8(addr, s->R[rt]); else Mem.W32(addr, s->R[rt]);
+        if (l) s->R[rt] = b ? Mem.R8(s, addr) : Mem.R32(s, addr);
+        else if (b) Mem.W8(s, addr, s->R[rt]); else Mem.W32(s, addr, s->R[rt]);
     }
 
     /// <summary>STRH/LDRH imm5: 1000 L imm5 Rn Rt</summary>
@@ -178,7 +178,7 @@ internal static unsafe class T16
     {
         uint imm5 = Bits(ins, 10, 6), rn = Bits(ins, 5, 3), rt = ins & 7;
         uint addr = s->R[rn] + (imm5 << 1);
-        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R16(addr); else Mem.W16(addr, s->R[rt]);
+        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R16(s, addr); else Mem.W16(s, addr, s->R[rt]);
     }
 
     /// <summary>STR/LDR SP-relative: 1001 L Rt imm8</summary>
@@ -187,7 +187,7 @@ internal static unsafe class T16
     {
         uint rt = Bits(ins, 10, 8);
         uint addr = s->R[13] + ((ins & 0xFF) << 2);
-        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R32(addr); else Mem.W32(addr, s->R[rt]);
+        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R32(s, addr); else Mem.W32(s, addr, s->R[rt]);
     }
 
     /// <summary>ADR: 10100 Rd imm8</summary>

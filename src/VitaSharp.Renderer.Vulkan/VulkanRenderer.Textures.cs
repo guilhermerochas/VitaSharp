@@ -22,7 +22,13 @@ public sealed unsafe partial class VulkanRenderer
         public uint Stamp;
         /// <summary>Set by GPU transfers into the texture's memory: re-check regardless of the dirty pages.</summary>
         public bool ForceCheck;
+        /// <summary><see cref="AddressSpace.Id"/> of the process whose memory the contents were read from (0 for CDRAM
+        /// and kernel memory, the same in every space): private memory at the same address is another process's data.</summary>
+        public int SpaceId;
     }
+
+    /// <summary>The id the texture cache keeps for data at <paramref name="addr"/> read now (see <see cref="Texture.SpaceId"/>).</summary>
+    static int SpaceIdOf(uint addr) => GuestMemory.IsSharedAddress(addr) ? 0 : AddressSpace.Current?.Id ?? 0;
 
     /// <summary>Texture cache counters (PERF texcache line).</summary>
     long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
@@ -438,7 +444,7 @@ public sealed unsafe partial class VulkanRenderer
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         _textures.TryGetValue(key, out var tex);
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
-        if (tex != null && tex.CheckedFrame == FrameCount) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
+        if (tex != null && tex.CheckedFrame == FrameCount && tex.SpaceId == SpaceIdOf(addr)) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
 
         var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         bool cube = asCube || d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
@@ -463,7 +469,8 @@ public sealed unsafe partial class VulkanRenderer
         uint paletteBytes = info.Convert == TexConvert.Palette4 ? 64u : 1024u;
         SweepDirtyPages();
         _texChecks++;
-        bool written = tex == null || tex.ForceCheck
+        int spaceId = SpaceIdOf(addr);
+        bool written = tex == null || tex.ForceCheck || tex.SpaceId != spaceId
             || DirtyPages.WrittenSince(addr + residentOffset, total - residentOffset, tex.Stamp)
             || (paletted && DirtyPages.WrittenSince(d.PaletteAddress, paletteBytes, tex.Stamp));
         if (!written && !DirtyPages.Verify)
@@ -489,6 +496,7 @@ public sealed unsafe partial class VulkanRenderer
             tex.LastUsedFrame = FrameCount;
             tex.Stamp = DirtyPages.Epoch;
             tex.ForceCheck = false;
+            tex.SpaceId = spaceId;
             return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
         }
 
@@ -517,6 +525,7 @@ public sealed unsafe partial class VulkanRenderer
         tex.Hash = hash;
         tex.Stamp = DirtyPages.Epoch;
         tex.ForceCheck = false;
+        tex.SpaceId = spaceId;
         _texUploads++;
         tex.CheckedFrame = FrameCount;
         tex.LastUsedFrame = FrameCount;

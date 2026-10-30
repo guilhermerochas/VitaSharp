@@ -285,7 +285,7 @@ internal static unsafe class T32
     {
         uint rn = Bits(ins, 19, 16), rm = ins & 0xF;
         uint baseAddr = rn == 15 ? pc + 4 : s->R[rn];
-        uint off = Bit(ins, 4) != 0 ? Mem.R16(baseAddr + (s->R[rm] << 1)) : Mem.R8(baseAddr + s->R[rm]);
+        uint off = Bit(ins, 4) != 0 ? Mem.R16(s, baseAddr + (s->R[rm] << 1)) : Mem.R8(s, baseAddr + s->R[rm]);
         s->R[15] = pc + 4 + off * 2;
     }
 
@@ -314,13 +314,13 @@ internal static unsafe class T32
         uint addr = P ? offAddr : baseVal;
         if (L)
         {
-            uint a = Mem.R32(addr), b = Mem.R32(addr + 4);
+            uint a = Mem.R32(s, addr), b = Mem.R32(s, addr + 4);
             if (W) s->R[rn] = offAddr;
             s->R[rt] = a; s->R[rt2] = b;
         }
         else
         {
-            Mem.W32(addr, s->R[rt]); Mem.W32(addr + 4, s->R[rt2]);
+            Mem.W32(s, addr, s->R[rt]); Mem.W32(s, addr + 4, s->R[rt2]);
             if (W) s->R[rn] = offAddr;
         }
     }
@@ -383,9 +383,9 @@ internal static unsafe class T32
         {
             uint v = size switch
             {
-                0 => signed ? (uint)(sbyte)Mem.R8(addr) : Mem.R8(addr),
-                1 => signed ? (uint)(short)Mem.R16(addr) : Mem.R16(addr),
-                _ => Mem.R32(addr),
+                0 => signed ? (uint)(sbyte)Mem.R8(s, addr) : Mem.R8(s, addr),
+                1 => signed ? (uint)(short)Mem.R16(s, addr) : Mem.R16(s, addr),
+                _ => Mem.R32(s, addr),
             };
             if (wback) s->R[rn] = offAddr;
             if (rt == 15)
@@ -399,9 +399,9 @@ internal static unsafe class T32
             uint v = s->R[rt];
             switch (size)
             {
-                case 0: Mem.W8(addr, v); break;
-                case 1: Mem.W16(addr, v); break;
-                default: Mem.W32(addr, v); break;
+                case 0: Mem.W8(s, addr, v); break;
+                case 1: Mem.W16(s, addr, v); break;
+                default: Mem.W32(s, addr, v); break;
             }
             if (wback) s->R[rn] = offAddr;
         }

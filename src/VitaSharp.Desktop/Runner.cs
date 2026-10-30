@@ -36,6 +36,8 @@ public static class Runner
     {
         // 1 ms system timer resolution while a game runs (guest wait timeouts and audio/vsync pacing rely on it)
         if (OperatingSystem.IsWindows()) timeBeginPeriod(1);
+        // guest threads and the GPU worker above normal host priority (docs/notes/thread-priority.md); VITASHARP_HOST_PRIO wins
+        HostThreads.Enabled = OnOff(options, "--host-prio") ?? true;
         try { return RunCore(appPath, options); }
         finally { if (OperatingSystem.IsWindows()) timeEndPeriod(1); }
     }

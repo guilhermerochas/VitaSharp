@@ -51,6 +51,18 @@ public sealed class Linker(IImportResolver hle)
     readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
     public uint ProcessParam { get; private set; }
+
+    /// <summary>Address ranges whose import stubs keep their binding while modules load (a module loaded for the
+    /// emulator's own use must not take over the program's imports); null = none.</summary>
+    public List<(uint Start, uint Size)>? KeepBindingsIn { get; set; }
+
+    bool Kept(uint stub)
+    {
+        if (KeepBindingsIn is not { } ranges) return false;
+        foreach (var (s, n) in ranges) if (stub - s < n) return true;
+        return false;
+    }
+
     public Action<uint, uint>? InvalidateCode { get; set; }
     public Action<string>? Log { get; set; }
 
@@ -147,7 +159,7 @@ public sealed class Linker(IImportResolver hle)
                     _funcExportsByLib[(libNid, nid)] = addr;
                     foreach (var (bnid, blib, _, stub) in _funcBindings)
                     {
-                        if (bnid != nid || blib != libNid) continue;
+                        if (bnid != nid || blib != libNid || Kept(stub)) continue;
                         WriteJumpStub(stub, addr);
                         InvalidateCode?.Invoke(stub, 12);
                     }
@@ -250,7 +262,10 @@ public static class ModuleLoader
             if (ptype == PT_LOAD && memsz != 0)
             {
                 string name = $"{System.IO.Path.GetFileName(path)}:seg{i}";
-                uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name) : 0;
+                // a fixed segment only needs its range free in this process's address space (another process may use
+                // the same addresses in its own); a relocatable module takes its preferred address only when no process
+                // uses it, else any free range
+                uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name, exclusive: relocatable) : 0;
                 if (addr == 0)
                 {
                     if (!relocatable) throw new InvalidOperationException($"{path}: cannot map fixed segment at 0x{vaddr:X8}");

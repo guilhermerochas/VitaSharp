@@ -62,8 +62,8 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         for (int i = 0; i < 1 << NativeRuntime.DispatchBits; i++) { Dispatch[i].Key = NativeRuntime.NoKey; Dispatch[i].Code = 0; }
         MapRange((ulong)Dispatch, (ulong)(sizeof(NativeRuntime.DispatchEntry) << NativeRuntime.DispatchBits), UC_PROT_ALL);
         int epi = 0;
-        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline((ulong)GuestMemory.Base, out epi));
-        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, MemoryBase = (ulong)GuestMemory.Base };
+        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi));
+        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
@@ -98,6 +98,9 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     {
         _current = this;
         _fault = null;
+        // the trampoline loads the guest base and generated code the indirect-exit table from the state
+        s->DispatchTable = (nint)Dispatch;
+        if (s->MemBase == null) s->MemBase = GuestMemory.Base;
         ulong x0 = (ulong)s, x1 = (ulong)entry, lr = ReturnStub, sp = (ulong)(_stack + StackSize - 64);
         uc_reg_write(_uc, RegX0, &x0);
         uc_reg_write(_uc, RegX0 + 1, &x1);

@@ -68,6 +68,31 @@ public class FrameAnomalyDetectorTests
         Assert.DoesNotContain(ev, e => e.Kind == "flicker");
     }
 
+    /// <summary>A bright still image (Sonic Mania's SEGA screen: a white background with the logo, identical for two
+    /// seconds after its fade-in) is not an exposure bug; the same brightness on changing frames is.</summary>
+    [Fact]
+    public void BrightStillImageIsNotBlownOut()
+    {
+        var d = new FrameAnomalyDetector();
+        var logo = new FrameMetrics { Mean = 0.805f, White = 0.81f };
+        // fade-in (changing, getting brighter), then the still logo for 200 frames, then a fade-out
+        var fadeIn = Seq(30, i => new FrameMetrics { Mean = 0.02f * i, Hash = (ulong)(100 + i) });
+        var still = Seq(200, _ => logo with { Hash = 42 });
+        var fadeOut = Seq(30, i => new FrameMetrics { Mean = 0.8f - 0.02f * i, Hash = (ulong)(500 + i) });
+        var ev = Run(d, fadeIn.Concat(still).Concat(fadeOut));
+        Assert.DoesNotContain(ev, e => e.Kind == "blown-out");
+
+        // a moving scene washed out to white (wrong exposure) still fires
+        d = new FrameAnomalyDetector();
+        ev = Run(d, Seq(FrameAnomalyDetector.BrightFrames + 10, i => logo with { Hash = (ulong)i }));
+        Assert.Single(ev, e => e.Kind == "blown-out" && e.Capture);
+
+        // a mostly still bright screen with an occasional change counts only the changing frames
+        d = new FrameAnomalyDetector();
+        ev = Run(d, Seq(FrameAnomalyDetector.BrightFrames * 3, i => logo with { Hash = (ulong)(i / 4) }));
+        Assert.DoesNotContain(ev, e => e.Kind == "blown-out");
+    }
+
     [Fact]
     public void SlowConditionsNeedToLast()
     {

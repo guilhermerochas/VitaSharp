@@ -5,6 +5,9 @@ namespace VitaSharp.Core.Gpu;
 public abstract class GpuCommand
 {
     public long Sequence;
+    /// <summary>The address space of the process that submitted the command: the guest addresses it holds are that
+    /// process's (the GPU worker reads and writes guest memory there while it executes the command).</summary>
+    public Memory.AddressSpace? Space;
 }
 
 public sealed record ColorSurfaceInfo(uint Data, uint Width, uint Height, uint StrideInPixels, uint ColorFormat, uint SurfaceType, bool Downscale, uint GammaMode);

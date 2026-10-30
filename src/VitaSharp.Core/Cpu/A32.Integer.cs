@@ -672,14 +672,14 @@ internal static unsafe partial class A32
         bool wback = !P || W;
         if (L)
         {
-            uint v = Bb ? Mem.R8(addr) : Mem.R32(addr);
+            uint v = Bb ? Mem.R8(s, addr) : Mem.R32(s, addr);
             if (wback) s->R[rn] = offAddr;
             if (rt == 15) BxWritePc(s, v); else s->R[rt] = v;
         }
         else
         {
             uint v = rt == 15 ? pc + 8 : s->R[rt];
-            if (Bb) Mem.W8(addr, v); else Mem.W32(addr, v);
+            if (Bb) Mem.W8(s, addr, v); else Mem.W32(s, addr, v);
             if (wback) s->R[rn] = offAddr;
         }
     }
@@ -699,12 +699,12 @@ internal static unsafe partial class A32
         bool wback = !P || W;
         switch ((L ? 4u : 0u) | op)
         {
-            case 1: Mem.W16(addr, Rg(s, rt, pc)); break;                                        // STRH
-            case 2: s->R[rt] = Mem.R32(addr); s->R[rt + 1] = Mem.R32(addr + 4); break;          // LDRD
-            case 3: Mem.W32(addr, Rg(s, rt, pc)); Mem.W32(addr + 4, Rg(s, rt + 1, pc)); break;    // STRD
-            case 5: if (wback) s->R[rn] = offAddr; s->R[rt] = Mem.R16(addr); return;            // LDRH
-            case 6: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(sbyte)Mem.R8(addr); return; // LDRSB
-            case 7: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(short)Mem.R16(addr); return; // LDRSH
+            case 1: Mem.W16(s, addr, Rg(s, rt, pc)); break;                                        // STRH
+            case 2: s->R[rt] = Mem.R32(s, addr); s->R[rt + 1] = Mem.R32(s, addr + 4); break;          // LDRD
+            case 3: Mem.W32(s, addr, Rg(s, rt, pc)); Mem.W32(s, addr + 4, Rg(s, rt + 1, pc)); break;    // STRD
+            case 5: if (wback) s->R[rn] = offAddr; s->R[rt] = Mem.R16(s, addr); return;            // LDRH
+            case 6: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(sbyte)Mem.R8(s, addr); return; // LDRSB
+            case 7: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(short)Mem.R16(s, addr); return; // LDRSH
         }
         if (wback) s->R[rn] = offAddr;
     }
@@ -735,7 +735,7 @@ internal static unsafe partial class A32
             for (int i = 0; i < 16; i++)
             {
                 if ((list & (1u << i)) == 0) continue;
-                uint v = Mem.R32(addr);
+                uint v = Mem.R32(s, addr);
                 addr += 4;
                 if (i == 15) { pcLoad = v; loadPc = true; } else s->R[i] = v;
             }
@@ -746,7 +746,7 @@ internal static unsafe partial class A32
             for (int i = 0; i < 16; i++)
             {
                 if ((list & (1u << i)) == 0) continue;
-                Mem.W32(addr, i == 15 ? pcValue : (i == rn ? baseVal : s->R[i]));
+                Mem.W32(s, addr, i == 15 ? pcValue : (i == rn ? baseVal : s->R[i]));
                 addr += 4;
             }
             if (W) s->R[rn] = newBase;
@@ -776,10 +776,10 @@ internal static unsafe partial class A32
             ReserveExclusive(s, addr);
             switch (op)
             {
-                case 0: { uint v = Volatile.Read(ref *(uint*)(Mem.Base + addr)); s->R[rt] = v; SetExclusive(s, addr, v); break; }
-                case 1: { ulong v = Volatile.Read(ref *(ulong*)(Mem.Base + addr)); s->R[rt] = (uint)v; s->R[rt2] = (uint)(v >> 32); SetExclusive(s, addr, v); break; }
-                case 2: { uint v = Mem.R8(addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
-                default: { uint v = Mem.R16(addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
+                case 0: { uint v = Volatile.Read(ref *(uint*)Mem.Ptr(s, addr)); s->R[rt] = v; SetExclusive(s, addr, v); break; }
+                case 1: { ulong v = Volatile.Read(ref *(ulong*)Mem.Ptr(s, addr)); s->R[rt] = (uint)v; s->R[rt2] = (uint)(v >> 32); SetExclusive(s, addr, v); break; }
+                case 2: { uint v = Mem.R8(s, addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
+                default: { uint v = Mem.R16(s, addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
             }
         }
         else
@@ -804,14 +804,14 @@ internal static unsafe partial class A32
         uint addr = s->R[rn];
         if (b)
         {
-            uint old = Mem.R8(addr);
-            Mem.W8(addr, s->R[rt2]);
+            uint old = Mem.R8(s, addr);
+            Mem.W8(s, addr, s->R[rt2]);
             s->R[rt] = old;
         }
         else
         {
-            s->R[rt] = Interlocked.Exchange(ref *(uint*)(Mem.Base + addr), s->R[rt2]);
-            Mem.MarkDirty(addr);
+            s->R[rt] = Interlocked.Exchange(ref *(uint*)Mem.Ptr(s, addr), s->R[rt2]);
+            Mem.MarkDirty(s, addr);
         }
     }
 }

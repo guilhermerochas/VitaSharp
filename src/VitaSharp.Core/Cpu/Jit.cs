@@ -175,8 +175,15 @@ public static unsafe class Jit
             b.Compiled = cb.Managed;
             if (b.NativeEntry != 0) Native.NativeRuntime.Retire(b); // tier-up from native code
         }
-        if (cb.NativeEntry != 0) { b.NativeEntry = cb.NativeEntry; Native.NativeRuntime.Instance.Publish(b); }
+        // compiled before it is published: once NativeEntry is set the block runs natively and may ask to tier up at
+        // once (Jit.TierUp ignores a block still marked queued); publishing can take a while (the first block of a
+        // process allocates its indirect-exit table)
         b.JitState = 2;
+        if (cb.NativeEntry != 0)
+        {
+            b.NativeEntry = cb.NativeEntry;
+            Native.NativeRuntime.Instance.Publish(b);
+        }
     }
 
     /// <summary>

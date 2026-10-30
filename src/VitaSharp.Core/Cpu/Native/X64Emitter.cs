@@ -49,6 +49,8 @@ public sealed unsafe partial class X64Emitter
     static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
     static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
     static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
+    static readonly int OffMemBase = StateLayout.Of(nameof(CpuState.MemBase));
+    static readonly int OffDispatchTable = StateLayout.Of(nameof(CpuState.DispatchTable));
     static readonly int OffNSimdOps = StateLayout.Of(nameof(CpuState.NSimdOps));
     static readonly int OffNCondBranches = StateLayout.Of(nameof(CpuState.NCondBranches));
 
@@ -592,7 +594,7 @@ public sealed unsafe partial class X64Emitter
                     a.shr(edx, (byte)1);
                     a.and(edx, (1 << NativeRuntime.DispatchBits) - 1);
                     a.shl(rdx, (byte)4);
-                    a.mov(rcx, rt.DispatchTable);
+                    a.mov(rcx, __qword_ptr[rbx + OffDispatchTable]); // the thread's process's table
                     a.add(rcx, rdx);
                     // key, code, key again: a concurrent republish (key=invalid, code=new, key=new) between the
                     // loads is detected by the second compare (x64 never reorders loads with other loads)
@@ -1315,7 +1317,9 @@ public sealed unsafe partial class X64Emitter
         return ms.ToArray();
     }
 
-    public static byte[] EmitTrampoline(ulong rip, ulong memBase, out int epilogueOffset)
+    /// <summary>The entry trampoline (rcx/rdi = CpuState*, rdx/rsi = block entry): r15 = the state's guest memory base
+    /// (its process's address space), then jumps to the block.</summary>
+    public static byte[] EmitTrampoline(ulong rip, out int epilogueOffset)
     {
         var a = new Assembler(64);
         var epi = a.CreateLabel();
@@ -1325,7 +1329,7 @@ public sealed unsafe partial class X64Emitter
         int frame = ShadowSpace + 8 * SpillSlots + 8;
         a.sub(rsp, frame);
         if (Windows) a.mov(rbx, rcx); else a.mov(rbx, rdi);
-        a.mov(r15, memBase);
+        a.mov(r15, __qword_ptr[rbx + OffMemBase]);
         // VFP fast paths switch to FTZ+DAZ, round to nearest, all exceptions masked, and back to the host mode
         a.stmxcsr(__dword_ptr[rbx + OffMxcsrHost]);
         a.mov(eax, __dword_ptr[rbx + OffMxcsrHost]);

@@ -110,20 +110,28 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(read + 0x00, 0x48);
             GuestMemory.W32(read + 0x04, 0); // WAIT_NEXTFRAME_ON
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
-            Assert.Equal(0u, GuestMemory.R32(read + 0x0C)); // status ACTIVE
+            uint status = GuestMemory.R32(read + 0x0C);
             ulong frame = GuestMemory.Read<ulong>(read + 0x10);
-            Assert.True(frame >= 1);
-            Assert.True(GuestMemory.Read<ulong>(read + 0x18) > 0);
-            Assert.Equal(0xEEu, (uint)GuestMemory.Read<byte>(read + 0x48)); // nothing written past SceCameraRead
-            var px = GuestMemory.Span(buf, size);
-            for (int i = 0; i < size; i += 4) { Assert.Equal(200, px[i]); Assert.Equal(100, px[i + 1]); Assert.Equal(50, px[i + 2]); Assert.Equal(255, px[i + 3]); }
-            Assert.Equal(0xCC, GuestMemory.Read<byte>(buf + size)); // buffer end respected
+            ulong timestamp = GuestMemory.Read<ulong>(read + 0x18);
+            byte pastStruct = GuestMemory.Read<byte>(read + 0x48);
+            byte[] px = GuestMemory.ReadSpan(buf, size).ToArray();
+            byte pastBuffer = GuestMemory.Read<byte>(buf + size);
 
-            // no-wait read right after: same frame, ALREADY_READ
+            // no-wait read right after (before the slow checks below, which can outlast a 266 ms frame period on a
+            // slow CI host): same frame, ALREADY_READ
             GuestMemory.W32(read + 0x04, 1);
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
-            Assert.Equal(1u, GuestMemory.R32(read + 0x0C));
-            Assert.Equal(frame, GuestMemory.Read<ulong>(read + 0x10));
+            uint noWaitStatus = GuestMemory.R32(read + 0x0C);
+            ulong noWaitFrame = GuestMemory.Read<ulong>(read + 0x10);
+
+            Assert.Equal(0u, status); // status ACTIVE
+            Assert.True(frame >= 1);
+            Assert.True(timestamp > 0);
+            Assert.Equal(0xEE, pastStruct); // nothing written past SceCameraRead
+            for (int i = 0; i < size; i += 4) { Assert.Equal(200, px[i]); Assert.Equal(100, px[i + 1]); Assert.Equal(50, px[i + 2]); Assert.Equal(255, px[i + 3]); }
+            Assert.Equal(0xCC, pastBuffer); // buffer end respected
+            Assert.Equal(1u, noWaitStatus);
+            Assert.Equal(frame, noWaitFrame);
 
             // waiting read delivers a newer frame
             GuestMemory.W32(read + 0x04, 0);
