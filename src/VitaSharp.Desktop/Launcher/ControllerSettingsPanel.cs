@@ -47,6 +47,16 @@ public sealed class ControllerSettingsPanel : UserControl
     readonly Slider _dzL, _dzR, _sensL, _sensR;
     readonly TextBlock _dzLText, _dzRText, _sensLText, _sensRText;
     readonly Border _gamepadOptions;
+    // keyboard: virtual motion (tilt keys + mouse look)
+    readonly ComboBox _motionSource;
+    readonly Slider _tiltAngle, _tiltSpeed, _mouseSens;
+    readonly TextBlock _tiltAngleText, _tiltSpeedText, _mouseSensText, _tiltLive;
+    readonly CheckBox _mouseLook, _mouseInvert;
+    readonly Border _keyboardMotionOptions;
+    readonly VirtualMotion _tiltPreview = new();
+    readonly MotionSample[] _tiltScratch = new MotionSample[64];
+    TextBlock? _motionRowsHeader;
+    readonly System.Diagnostics.Stopwatch _tiltClock = System.Diagnostics.Stopwatch.StartNew();
     readonly DispatcherTimer _timer;
     int _ticks;
     bool _updatingUi;
@@ -139,6 +149,34 @@ public sealed class ControllerSettingsPanel : UserControl
         gp.Children.Add(_motionLive);
         _gamepadOptions = new Border { Child = gp };
 
+        _motionSource = new ComboBox
+        {
+            ItemsSource = new[] { "Automático", "Controle", "Teclado e mouse", "Desligado" },
+            Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
+        };
+        ToolTip.SetTip(_motionSource, "Quem move os sensores de movimento do Vita (giroscópio e acelerômetro), para o emulador todo. " +
+                                      "Automático: um controle com giroscópio quando conectado, senão as teclas de inclinação e o mouse.");
+        _motionSource.SelectionChanged += (_, _) => Edit(p => p.MotionSource = (MotionSourceMode)Math.Max(0, _motionSource.SelectedIndex));
+        (_tiltAngle, _tiltAngleText) = SliderRow(5, 85, v => Edit(p => p.Tilt.MaxAngle = (float)Math.Round(v)), v => $"{v:0}°");
+        (_tiltSpeed, _tiltSpeedText) = SliderRow(0.25, 4, v => Edit(p => p.Tilt.Speed = (float)v), v => $"{v:0.00}x");
+        (_mouseSens, _mouseSensText) = SliderRow(0.1, 4, v => Edit(p => p.Tilt.MouseSensitivity = (float)v), v => $"{v:0.00}x");
+        _mouseLook = new CheckBox { Content = "Mouse move o Vita com o botão do meio pressionado" };
+        ToolTip.SetTip(_mouseLook, "Segure o botão do meio (roda) e mova o mouse: na horizontal o Vita gira, na vertical inclina para frente / trás. Recentralizar volta ao neutro.");
+        _mouseLook.IsCheckedChanged += (_, _) => Edit(p => p.Tilt.MouseLook = _mouseLook.IsChecked == true);
+        _mouseInvert = new CheckBox { Content = "Inverter eixo Y do mouse" };
+        _mouseInvert.IsCheckedChanged += (_, _) => Edit(p => p.Tilt.MouseInvertY = _mouseInvert.IsChecked == true);
+        _tiltLive = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+        var km = new StackPanel { Spacing = 6 };
+        km.Children.Add(Header("Movimento (giroscópio)"));
+        km.Children.Add(Row("Movimento", _motionSource, new TextBlock()));
+        km.Children.Add(Row("Ângulo máx.", _tiltAngle, _tiltAngleText));
+        km.Children.Add(Row("Velocidade", _tiltSpeed, _tiltSpeedText));
+        km.Children.Add(_mouseLook);
+        km.Children.Add(Row("Mouse", _mouseSens, _mouseSensText));
+        km.Children.Add(_mouseInvert);
+        km.Children.Add(_tiltLive);
+        _keyboardMotionOptions = new Border { Child = km };
+
         (_dzL, _dzLText) = SliderRow(0, 0.5, v => Edit(p => p.LeftStick.Deadzone = (float)v), v => $"{v:P0}");
         (_sensL, _sensLText) = SliderRow(0.5, 2, v => Edit(p => p.LeftStick.Sensitivity = (float)v), v => $"{v:0.00}x");
         (_dzR, _dzRText) = SliderRow(0, 0.5, v => Edit(p => p.RightStick.Deadzone = (float)v), v => $"{v:P0}");
@@ -152,6 +190,7 @@ public sealed class ControllerSettingsPanel : UserControl
         options.Children.Add(Header("Opções"));
         options.Children.Add(_swap);
         options.Children.Add(_gamepadOptions);
+        options.Children.Add(_keyboardMotionOptions);
         options.Children.Add(Header("Analógico esquerdo"));
         options.Children.Add(Row("Zona morta", _dzL, _dzLText));
         options.Children.Add(Row("Sensibilidade", _sensL, _sensLText));
@@ -290,7 +329,7 @@ public sealed class ControllerSettingsPanel : UserControl
     {
         if (_current is not { } d) return;
         _deviceInfo.Text = d.IsKeyboard
-            ? $"Teclado da janela do jogo ({ProfileState(d.Id, _store.Config.Keyboard != null)}). Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro."
+            ? $"Teclado da janela do jogo ({ProfileState(d.Id, _store.Config.Keyboard != null)}). Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro, botão do meio = mover o Vita (giroscópio)."
             : d.Pad is { } info
                 ? $"{ControlNames.Kind(info.Kind)} · {ControlNames.Model(info.Model)} · {(info.IsGamepad ? "mapeamento da base SDL" : "joystick bruto")}{(info.HasTouchpad ? " · touchpad" : "")} · GUID {info.Guid}\n{MappingSource(info)}"
                 : $"Perfil salvo · GUID {d.Id} · conecte o controle para testá-lo.";
@@ -355,6 +394,12 @@ public sealed class ControllerSettingsPanel : UserControl
         _swap.IsChecked = _profile.SwapConfirm;
         bool isPad = _current is { IsKeyboard: false };
         _gamepadOptions.IsVisible = isPad;
+        _keyboardMotionOptions.IsVisible = !isPad;
+        _motionSource.SelectedIndex = (int)_profile.MotionSource;
+        _tiltAngle.Value = _profile.Tilt.MaxAngle; _tiltSpeed.Value = _profile.Tilt.Speed; _mouseSens.Value = _profile.Tilt.MouseSensitivity;
+        _tiltAngleText.Text = $"{_tiltAngle.Value:0}°"; _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x"; _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
+        _mouseLook.IsChecked = _profile.Tilt.MouseLook;
+        _mouseInvert.IsChecked = _profile.Tilt.MouseInvertY;
         _triggers.IsChecked = DefaultMappings.TriggersAsShoulders(_profile);
         _triggers.IsEnabled = _current?.IsGamepad == true;
         _touchpad.IsChecked = _profile.TouchpadEnabled;
@@ -383,6 +428,13 @@ public sealed class ControllerSettingsPanel : UserControl
         _bindingRows.Children.Clear();
         foreach (var c in VitaControls.All)
         {
+            if (c == VitaControl.TiltForward)
+            {
+                var h = Header("Movimento (inclinar o Vita)");
+                h.FontSize = 13;
+                _motionRowsHeader = h;
+                _bindingRows.Children.Add(h);
+            }
             bool listening = _listen == c;
             var name = new TextBlock { Text = ControlNames.Label(c), Width = 140, VerticalAlignment = VerticalAlignment.Center, FontSize = 13 };
             var value = new TextBlock
@@ -537,6 +589,14 @@ public sealed class ControllerSettingsPanel : UserControl
     /// <summary>Runs one update immediately (tests render right after changing the state).</summary>
     public void Pump() => Tick();
 
+    /// <summary>Test hook: scrolls the option list to the motion settings (<paramref name="rows"/> = to the tilt
+    /// binding rows).</summary>
+    public void ShowMotion(bool rows)
+    {
+        if (rows) { _bindingRows.Children[^1].BringIntoView(); _motionRowsHeader?.BringIntoView(); }
+        else _keyboardMotionOptions.BringIntoView();
+    }
+
     // ------------------------------------------------------------------ live update
 
     void Tick()
@@ -566,6 +626,23 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.TapPointFront = _compiled[VitaControl.TouchFront].Length > 0 ? new Point(_profile.TouchFrontX, _profile.TouchFrontY) : null;
         _layout.TapPointBack = _compiled[VitaControl.TouchBack].Length > 0 ? new Point(_profile.TouchBackX, _profile.TouchBackY) : null;
         _layout.SetState(m, rawL, rawR, _profile.LeftStick.Deadzone, _profile.RightStick.Deadzone);
+
+        if (_current?.IsKeyboard == true)
+        {
+            // the virtual motion as the game would get it from these keys
+            _tiltPreview.Settings = _profile.Tilt;
+            _tiltPreview.SetControls(_compiled, null, keys);
+            long now = (long)(_tiltClock.Elapsed.TotalMilliseconds * 1000);
+            while (_tiltPreview.Generate(now, _tiltScratch) == _tiltScratch.Length) { }
+            if (_ticks % 6 == 0)
+            {
+                var (tp, tr, ty) = _tiltPreview.Angles;
+                var g = VirtualMotion.Gravity(_tiltPreview.Pose);
+                _tiltLive.Text = _profile.MotionSource is MotionSourceMode.Off or MotionSourceMode.Controller
+                    ? "Teclado e mouse não movem o Vita com esta escolha."
+                    : $"Vita: inclinação {tp:+0;-0;0}° · rolagem {tr:+0;-0;0}° · giro {ty:+0;-0;0}°\nacelerômetro {g.X:+0.00;-0.00} {g.Y:+0.00;-0.00} {g.Z:+0.00;-0.00} G";
+            }
+        }
 
         if (_ticks % 6 == 0 && pad is { HasMotion: true })
         {

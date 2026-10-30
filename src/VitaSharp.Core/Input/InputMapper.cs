@@ -125,7 +125,12 @@ public sealed class CompiledProfile
         foreach (var c in VitaControls.All) _bindings[(int)c] = p.Get(c).ToArray();
         RearModifier = InputBinding.TryParse(p.TouchpadRearModifier, out var rm) ? rm : null;
         BothModifier = InputBinding.TryParse(p.TouchpadBothModifier, out var bm) ? bm : null;
+        foreach (var c in VitaControls.All)
+            if (VitaControls.IsMotion(c) && _bindings[(int)c].Length > 0) HasMotionBindings = true;
     }
+
+    /// <summary>Some virtual motion control (tilt, twist, re-centre) is bound.</summary>
+    public bool HasMotionBindings { get; }
 
     public InputBinding? RearModifier { get; }
     public InputBinding? BothModifier { get; }

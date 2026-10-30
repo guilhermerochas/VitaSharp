@@ -21,6 +21,10 @@ static class ControlNames
         VitaControl.RStickUp => "Analógico dir. ↑", VitaControl.RStickDown => "Analógico dir. ↓",
         VitaControl.RStickLeft => "Analógico dir. ←", VitaControl.RStickRight => "Analógico dir. →",
         VitaControl.TouchFront => "Toque frontal (ponto)", VitaControl.TouchBack => "Toque traseiro (ponto)",
+        VitaControl.TiltForward => "Inclinar para frente", VitaControl.TiltBack => "Inclinar para trás",
+        VitaControl.TiltLeft => "Inclinar para esquerda", VitaControl.TiltRight => "Inclinar para direita",
+        VitaControl.TwistLeft => "Girar para esquerda", VitaControl.TwistRight => "Girar para direita",
+        VitaControl.MotionRecenter => "Recentralizar",
         _ => c.ToString(),
     };
 

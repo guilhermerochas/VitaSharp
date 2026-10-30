@@ -20,7 +20,37 @@ public static class DefaultMappings
         K(VitaControl.RStickUp, "I"); K(VitaControl.RStickDown, "K"); K(VitaControl.RStickLeft, "J"); K(VitaControl.RStickRight, "L");
         // keys are digital: no deadzone needed
         p.LeftStick.Deadzone = p.RightStick.Deadzone = 0;
+        AddMotionKeys(p);
         return p;
+    }
+
+    /// <summary>
+    /// Default keys of the virtual motion: the numeric keypad (8/2/4/6 tilt forward/back/left/right, 7/9 twist,
+    /// 5 re-centres) and, for keyboards without one, the T/G/F/H cluster (R/Y twist, B re-centres), all free in the
+    /// historic mapping and away from the emulator's F8-F11 / Home keys.
+    /// </summary>
+    public static readonly (VitaControl Control, string[] Keys)[] MotionKeys =
+    [
+        (VitaControl.TiltForward, ["Keypad8", "T"]), (VitaControl.TiltBack, ["Keypad2", "G"]),
+        (VitaControl.TiltLeft, ["Keypad4", "F"]), (VitaControl.TiltRight, ["Keypad6", "H"]),
+        (VitaControl.TwistLeft, ["Keypad7", "R"]), (VitaControl.TwistRight, ["Keypad9", "Y"]),
+        (VitaControl.MotionRecenter, ["Keypad5", "B"]),
+    ];
+
+    /// <summary>Binds the default motion keys to the motion controls that have no binding yet, skipping keys the
+    /// profile already uses for something else (an older keyboard profile being upgraded).</summary>
+    public static void AddMotionKeys(ControllerProfile p)
+    {
+        var used = p.Bindings.Values.SelectMany(v => v).ToHashSet(StringComparer.Ordinal);
+        foreach (var (c, keys) in MotionKeys)
+        {
+            if (p.Get(c).Any()) continue;
+            foreach (var k in keys)
+            {
+                var b = InputBinding.OfKey(k);
+                if (!used.Contains(b.ToString())) p.Add(c, b);
+            }
+        }
     }
 
     /// <summary>

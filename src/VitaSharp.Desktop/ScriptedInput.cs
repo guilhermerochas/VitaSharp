@@ -17,14 +17,23 @@ namespace VitaSharp.Desktop;
 ///                           x (positive raises the top edge) then roll degrees about y (positive lowers the right
 ///                           edge); it turns there at up to 180 degrees/s and back to flat afterwards. Any tilt step
 ///                           makes the script the SceMotion source.
+///   key@T:Name[:len]        hold a keyboard key (Silk.NET key name: "Keypad8", "T", "Space"...) through the default
+///                           keyboard profile: Vita buttons and sticks, and the virtual motion's tilt keys
+///                           (<see cref="VirtualMotion"/>, which then becomes the SceMotion source when no tilt step
+///                           exists)
+///   mlook@T:dx:dy[:len]     mouse look: the mouse moves dx, dy pixels over len with the middle button held
 /// T is seconds ("12.5") or presented frames ("f1200"); len uses the same unit (default 0.25 s / 8 frames).
 /// Frame timing is deterministic whatever the emulation speed (turbo runs).
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource
 {
-    enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt }
+    enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook }
 
-    sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y, float X1 = float.NaN, float Y1 = float.NaN);
+    sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y, float X1 = float.NaN, float Y1 = float.NaN, string? KeyName = null);
+
+    readonly CompiledProfile _keyboard = new(DefaultMappings.Keyboard());
+    readonly VirtualMotion _virtual = new();
+    readonly Dictionary<Step, float> _mouseDone = new();
 
     readonly List<Step> _steps = new();
     readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -52,6 +61,12 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                     break;
                 case "tilt":
                     _steps.Add(new Step(Kind.Tilt, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
+                    break;
+                case "key":
+                    _steps.Add(new Step(Kind.Key, 0, frames, start, Len(2), 0, 0, KeyName: parts[1]));
+                    break;
+                case "mlook":
+                    _steps.Add(new Step(Kind.MouseLook, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
                     break;
                 case "lstick" or "rstick":
                     _steps.Add(new Step(name == "lstick" ? Kind.LStick : Kind.RStick, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
@@ -93,7 +108,23 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                 case Kind.RStick: st.Rx = Axis(s.X); st.Ry = Axis(s.Y); break;
             }
         }
+        if (HeldKeys() is { } keys)
+        {
+            var m = InputMapper.Map(_keyboard, null, keys);
+            st.Buttons |= m.State.Buttons;
+            if (m.Lx != 0 || m.Ly != 0) { st.Lx = m.State.Lx; st.Ly = m.State.Ly; }
+            if (m.Rx != 0 || m.Ry != 0) { st.Rx = m.State.Rx; st.Ry = m.State.Ry; }
+        }
         return st;
+    }
+
+    /// <summary>Keys of the active key steps; null when none is held.</summary>
+    HashSet<string>? HeldKeys()
+    {
+        HashSet<string>? keys = null;
+        foreach (var s in _steps)
+            if (s.Kind == Kind.Key && Active(s)) (keys ??= new()).Add(s.KeyName!);
+        return keys;
     }
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
@@ -110,13 +141,43 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     long _motionLastUs = -1;
     float _pitch, _roll; // radians, current (ramped towards the active step)
 
-    public bool HasSensors => _steps.Exists(s => s.Kind == Kind.Tilt);
+    bool HasTiltSteps => _steps.Exists(s => s.Kind == Kind.Tilt);
+
+    public bool HasSensors
+    {
+        get
+        {
+            if (HasTiltSteps) return true;
+            lock (_motionLock) { UpdateVirtual(); return _virtual.Used; }
+        }
+    }
+
+    /// <summary>Feeds the held keys and the mouse-look steps' progress to the virtual motion. Under _motionLock.</summary>
+    void UpdateVirtual()
+    {
+        _virtual.SetControls(_keyboard, null, HeldKeys());
+        foreach (var s in _steps)
+        {
+            if (s.Kind != Kind.MouseLook) continue;
+            double now = s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _clock.Elapsed.TotalSeconds;
+            float t = (float)Math.Clamp((now - s.Start) / Math.Max(s.Length, 1e-6), 0, 1);
+            float done = _mouseDone.GetValueOrDefault(s);
+            if (t <= done) continue;
+            _virtual.AddMouse(s.X * (t - done), s.Y * (t - done));
+            _mouseDone[s] = t;
+        }
+    }
 
     public int ReadSamples(Span<MotionSample> dest)
     {
         if (dest.Length == 0 || !HasSensors) return 0;
         lock (_motionLock)
         {
+            if (!HasTiltSteps)
+            {
+                UpdateVirtual();
+                return _virtual.Generate((long)(_clock.Elapsed.TotalMilliseconds * 1000), dest);
+            }
             long now = (long)(_clock.Elapsed.TotalMilliseconds * 1000);
             if (_motionLastUs >= 0 && now - _motionLastUs < 2000) return 0; // ~500 Hz at most
             float dt = _motionLastUs < 0 ? 0 : (now - _motionLastUs) / 1e6f;

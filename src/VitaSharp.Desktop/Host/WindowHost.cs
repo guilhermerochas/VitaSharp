@@ -163,10 +163,19 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             // left button = front touch screen, right button = rear touch panel
             m.MouseDown += (mouse, b) => { if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true); };
             m.MouseUp += (mouse, b) => { if (b == MouseButton.Left) UpdateTouch(mouse.Position, false, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, false, true); };
+            // middle button held = mouse look: moving the mouse rotates the Vita (virtual motion sensors)
+            System.Numerics.Vector2? look = null;
+            m.MouseDown += (mouse, b) => { if (b == MouseButton.Middle) look = mouse.Position; };
+            m.MouseUp += (_, b) => { if (b == MouseButton.Middle) look = null; };
             m.MouseMove += (mouse, pos) =>
             {
                 if (mouse.IsButtonPressed(MouseButton.Left)) UpdateTouch(pos, true, false);
                 if (mouse.IsButtonPressed(MouseButton.Right)) UpdateTouch(pos, true, true);
+                if (look is { } last && mouse.IsButtonPressed(MouseButton.Middle))
+                {
+                    _hostInput.MouseLook(pos.X - last.X, pos.Y - last.Y);
+                    look = pos;
+                }
             };
         }
         Loaded?.Invoke();

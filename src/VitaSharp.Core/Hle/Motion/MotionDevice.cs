@@ -57,6 +57,8 @@ public sealed class MotionDevice
             for (int i = 0; i < n; i++)
             {
                 var s = _buffer[i];
+                // over a second back in time: another source (controller <-> keyboard) with its own clock took over
+                if (_lastHostUs != 0 && s.TimestampUs + 1_000_000 < _lastHostUs) _lastHostUs = 0;
                 if (_lastHostUs != 0 && s.TimestampUs <= _lastHostUs) continue; // duplicate / out of order
                 float dt = _lastHostUs == 0 ? 0 : (s.TimestampUs - _lastHostUs) / 1e6f;
                 _lastHostUs = s.TimestampUs;
