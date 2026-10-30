@@ -64,7 +64,17 @@ public sealed partial class IoFileMgr : HleModule
         else fm = (flags & O_TRUNC) != 0 ? FileMode.Truncate : FileMode.Open;
         try
         {
-            if (fm != FileMode.Open && fm != FileMode.Truncate) Directory.CreateDirectory(Path.GetDirectoryName(host)!);
+            if (fm != FileMode.Open && fm != FileMode.Truncate && !Directory.Exists(Path.GetDirectoryName(host)))
+            {
+                // the Vita creates no directories on open: a file in a missing folder is ENOENT. The Email app
+                // relies on it (it writes ux0:email/app/email_param.ini before checking its database; with the folder
+                // made here it then found ux0:email without its email_id.dat and reported a database "from another PS
+                // Vita"). The device root and its top-level folders (ux0:data, savedata0:sce_sys...) exist on a
+                // unit but not always on the host yet: those are still made.
+                if (Io.Vfs.Split(path).rel.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries).Length > 2)
+                    return SceError.IO_ENOENT;
+                Directory.CreateDirectory(Path.GetDirectoryName(host)!);
+            }
             var fs = new FileStream(host, fm, write ? ((flags & O_RDONLY) != 0 ? FileAccess.ReadWrite : FileAccess.Write) : FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.RandomAccess); // per-open buffer: games open files continuously (larger reads bypass it)
             if ((flags & O_APPEND) != 0) fs.Seek(0, SeekOrigin.End);
