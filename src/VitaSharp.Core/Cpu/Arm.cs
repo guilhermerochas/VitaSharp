@@ -346,8 +346,18 @@ internal static unsafe class Arm
 
     // ------------------------------------------------------------- misc
 
+    /// <summary>
+    /// Sign-extends the low <paramref name="bits"/> bits of <paramref name="v"/>. Written with unsigned xor/subtract,
+    /// not the usual (int)(v &lt;&lt; n) &gt;&gt; n: Mono's JIT (.NET for Android) folds that shift pair as a logical shift when
+    /// v is a constant, which it is once the IL backend inlines a handler with the instruction word as a constant -
+    /// every backward Thumb B then branched 4 KB forward (found with VITASHARP_NATIVE_VERIFY on the Android emulator).
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static uint SignExtend(uint v, int bits) => (uint)(((int)(v << (32 - bits))) >> (32 - bits));
+    public static uint SignExtend(uint v, int bits)
+    {
+        uint sign = 1u << (bits - 1);
+        return ((v & ((sign << 1) - 1)) ^ sign) - sign;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Bit(uint v, int n) => (v >> n) & 1;
