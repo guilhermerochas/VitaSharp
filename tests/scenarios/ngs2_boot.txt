@@ -1,0 +1,5 @@
+# Ninja Gaiden Sigma 2 Plus (PCSE00233): Tecmo logo, title (PRESS START ~f900), New Game > Normal, chapter 1 card
+# (~f1650), then gameplay in Sky City Tokyo (~f2100 on).
+# Run against a scratch data root with the game's ux0:license: VitaSharp.Desktop test tests/scenarios/ngs2_boot.txt --data=<scratch root>
+title=PCSE00233
+args=--frames=3600 --seconds=600 --dump-every=150 --input=cross@f450:f8,cross@f600:f8,cross@f750:f8,cross@f900:f8,cross@f1050:f8,cross@f1200:f8,cross@f1350:f8,cross@f1500:f8,cross@f1650:f8,cross@f1800:f8,cross@f1950:f8,cross@f2100:f8,cross@f2250:f8,cross@f2400:f8,cross@f2550:f8,cross@f2700:f8,cross@f2850:f8,cross@f3000:f8,cross@f3150:f8,cross@f3300:f8
