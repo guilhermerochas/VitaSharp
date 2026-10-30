@@ -72,8 +72,14 @@ public sealed class NpTrophy : HleModule
             ctx.Value = _nextContext;
             _contexts[_nextContext++] = set;
         }
+        // with the shell running, its trophy server gets the set and what is unlocked (Trophy Collection lists it)
+        int[] unlocked;
+        lock (set) unlocked = set.Unlocked.Keys.Where(i => set.Trophies.FirstOrDefault(t => t.Id == i)?.Grade != TrophyGrade.Platinum).Order().ToArray();
+        (_bridge ??= new TrophyServerBridge(Emu)).ContextCreated(set.CommId, commId, commSign, unlocked);
         return 0;
     }
+
+    TrophyServerBridge? _bridge;
 
     string? DefaultCommId()
     {
@@ -141,6 +147,7 @@ public sealed class NpTrophy : HleModule
             }
             Save(set);
         }
+        _bridge?.Unlocked(set.CommId, trophyId);
         foreach (var u in unlocked) TrophyNotifications.Raise(new TrophyUnlockedEvent(set.CommId, set.Title, u, set.Pkg.TrophyIcon(u.Id)));
         return 0;
     }
