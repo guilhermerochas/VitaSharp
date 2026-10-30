@@ -54,6 +54,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME), o aviso "Could not install" e as
   funções restantes (sensor de movimento, sockets do sistema)
 
+## Código
+
+- [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
+  chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
+  membros, usings, comentários, `var`; regras num `.editorconfig` com analisadores. Cuidados: o GLSL gerado vem de
+  strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest) e fazer num momento sem
+  outros branches abertos (o diff toca quase todos os arquivos)
+
 ## Bugs em aberto
 
 - [ ] Gravity Rush: na tela de título "Tap the Apple", um toque registra (a maçã balança e o aviso some por ~180 quadros) mas não pega a maçã nem avança; igual em 0,46/0,48 e no centro, nos quadros 1000 e 1400 (29/10/2026, main c12927d, `gr_boot.txt` só com o toque); a diferença antiga "0,46/0,48 falha, centro funciona" não se repete. Falta saber se o Vita exige outro gesto (segurar, tocar na maçã de outro jeito)
