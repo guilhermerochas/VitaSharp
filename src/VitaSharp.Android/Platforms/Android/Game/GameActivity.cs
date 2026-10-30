@@ -47,6 +47,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     OnScreenControlsView? _controls;
     TextView? _fps, _toast;
     readonly OnScreenPad _pad = new();
+    AndroidKeyboard? _keyboard;
     AndroidInput? _input;
     InputManager? _inputManager;
     System.Threading.Timer? _fpsTimer;
@@ -94,7 +95,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         }
 
         var prefs = AppServices.Prefs;
-        _input = new AndroidInput(_pad, AppServices.Gamepads);
+        // a hardware/Bluetooth keyboard: the keyboard profile of input.json (the desktop's default mapping)
+        _keyboard = new AndroidKeyboard(AppServices.InputProfiles);
+        _input = new AndroidInput(_pad, AppServices.Gamepads, _keyboard);
         // the shell takes the PS button itself (the running game's LiveArea); a game on its own opens the pause menu
         if (system) _pad.Layout = OnScreenPad.SystemLayout;
         else _pad.PsPressed += OnPsPressed;
@@ -194,6 +197,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         base.OnPause();
         _pad.Reset();
+        _keyboard?.ReleaseAll();
         _session?.Pause();
     }
 
@@ -208,6 +212,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         base.OnWindowFocusChanged(hasFocus);
         if (hasFocus) EnterImmersive();
+        // a dialog (pause menu, IME text entry) took the key events: the key-up of a key held now would never come
+        // back here, and the game would see it held after the dialog closes
+        else _keyboard?.ReleaseAll();
     }
 
     protected override void OnDestroy()
@@ -284,6 +291,26 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             return true;
         }
         return base.DispatchKeyEvent(e);
+    }
+
+    // ------------------------------------------------------------------ hardware keyboard
+
+    // keys no view consumed (nothing in this activity takes the focus) and that are not a controller's: the keyboard
+    // profile. Unmapped keys (volume, Back, Escape, which Android turns into Back) keep their system meaning.
+    public override bool OnKeyDown(Keycode keyCode, KeyEvent? e) => OnKeyboardKey(keyCode, e, true) || base.OnKeyDown(keyCode, e);
+
+    public override bool OnKeyUp(Keycode keyCode, KeyEvent? e) => OnKeyboardKey(keyCode, e, false) || base.OnKeyUp(keyCode, e);
+
+    bool OnKeyboardKey(Keycode keyCode, KeyEvent? e, bool down)
+    {
+        if (_keyboard == null || e == null || (e.Source & InputSourceType.Keyboard) != InputSourceType.Keyboard) return false;
+        // a controller's own keys (and their auto-repeats, which DispatchKeyEvent leaves to us) are not keyboard keys
+        if (AppServices.Gamepads.IsConnected(e.DeviceId)) return false;
+        var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
+        if ((action & KeyboardKeyAction.Pause) != 0) OpenMenu();
+        // the PS key in a game without the shell: the pause menu, like the on-screen PS and a controller's PS button
+        if ((action & KeyboardKeyAction.PsButton) != 0 && !_isSystem) OnPsPressed();
+        return action != KeyboardKeyAction.None;
     }
 
     public override bool OnGenericMotionEvent(MotionEvent? e)

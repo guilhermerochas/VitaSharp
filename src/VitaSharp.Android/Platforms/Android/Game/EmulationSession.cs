@@ -26,7 +26,8 @@ namespace VitaSharp.Android.Game;
 /// <item>lifecycle and pause menu: onPause and the menu pause the whole emulation (<see cref="EmulationPause"/>: guest
 /// threads of every process stop at their next safe point, the guest clock stops, the audio streams pause); onResume
 /// and closing the menu resume it, with no time jump for the game;</item>
-/// <item>input: <see cref="AndroidInput"/> (on-screen pad + physical controllers) is the core's IInputBackend;</item>
+/// <item>input: <see cref="AndroidInput"/> (on-screen pad + physical controllers + a hardware keyboard) is the core's
+/// IInputBackend, the keyboard's tilt keys its IMotionSource;</item>
 /// <item>settings: the game's settings over the global ones (<see cref="EffectiveSettings"/>): CPU backend, clock,
 /// GPU profile, VSync; play time and average FPS are added to the game's statistics when it ends.</item>
 /// </list>
@@ -85,6 +86,8 @@ public sealed class EmulationSession : IDisposable
             Failed?.Invoke($"O jogo parou com um erro na thread {t.Name}: {e.Message}");
         };
         _emu.Host.Input = input;
+        // the keyboard's tilt keys (VirtualMotion), from their first use; the phone's own sensors are not wired yet
+        _emu.Host.Motion = input.Keyboard;
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
         // no FFmpeg in the app: H.264 (SceAvcdec, SceVideodec, movies) through MediaCodec, SceAvPlayer movies demuxed by
         // MediaExtractor with AAC through MediaCodec

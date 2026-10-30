@@ -38,7 +38,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Primeira execução num aparelho ARM64: JIT nativo ARM64 sob o SELinux, drivers Adreno/Mali, libadrenotools,
   AAudio de baixa latência, controle Bluetooth, giro de 180°, MediaCodec de hardware (o que falta da lista no fim de
   `docs/android/README.md`)
-- [ ] Teclado físico no jogo (setas/letras para os botões, como no desktop): hoje só controles de jogo e a tela
+- [x] Teclado físico no jogo (setas/letras para os botões, como no desktop) (30/10/2026: `AndroidKeyboard` com o perfil
+  de teclado do `input.json` e o mapeamento padrão do desktop, P e Home abrem o menu de pausa, teclas de inclinação
+  no SceMotion pelo `VirtualMotion`, teclas soltas quando um diálogo pega o foco, texto do IME pelo teclado; falta
+  testar num aparelho, item 5 da lista em `docs/android/README.md`)
 - [ ] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU):
   o desktop as escreve no fim do `Runner`, o app não
 - [ ] Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros

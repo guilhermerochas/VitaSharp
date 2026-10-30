@@ -62,7 +62,7 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
 - `src/VitaSharp.Android.Common`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
   settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`, `EnvironmentFile`), `Firmware/FirmwareSetup.cs`,
   `Gpu/GpuDriverScreen.cs` (Driver/Informações da GPU models), `Input/` (`OnScreenPad`, `AndroidGamepads`,
-  `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Storage/DataLayout.cs`.
+  `AndroidKeyboard`, `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Storage/DataLayout.cs`.
 - Icon: the adaptive launcher icon (`Platforms/Android/Resources/mipmap-*`) generated from `docs/assets/logo.svg` by
   `build/make-icons.ps1`.
 
@@ -105,6 +105,19 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
   right stick on AXIS_Z/RZ or RX/RY by what the device reports). TRÁS toggles rear touch (touches on the image go to
   the rear pad). The on-screen controls hide while a controller is connected (setting). In a game on its own the
   PS button (on-screen or the controller's) opens the pause menu; in Sistema do Vita it goes to the shell.
+- **Hardware keyboard** (`AndroidKeyboard`, USB or Bluetooth): `GameActivity.OnKeyDown`/`OnKeyUp` hand the key codes
+  of keyboard events that are not a connected controller's to the keyboard profile of `input.json`, the desktop's
+  (key codes become the Silk.NET key names the desktop stores, `AndroidKeyNames`), so the default mapping is the
+  desktop's: arrows = D-pad, X/Space = Cross, C = Circle, Z = Square, V = Triangle, Q/E = L/R, Enter = Start,
+  Backspace/right Shift = Select, Home = PS, WASD/IJKL = sticks. P (the pause hotkey) opens the pause menu and never
+  reaches the game; Home in a game on its own opens it too, like PS. The tilt keys (numeric keypad 8/2/4/6 tilt,
+  7/9 twist, 5 re-centres; or T/G/F/H, R/Y, B) drive SceMotion through the core's `VirtualMotion` from their first
+  use (`AndroidKeyboard` is the session's `IMotionSource`; the profile's motion source Off/Controller turns them off).
+  Keys outside the profile (volume, Back, Escape, which Android turns into Back) keep their system meaning; held keys
+  are released when a dialog takes the focus (pause menu, text entry) or the activity pauses. Text entry: the IME
+  dialog (`AndroidImeDialog`) is an `EditText`, so a hardware keyboard types into it (Enter confirms, Escape/Back
+  cancel) and Android leaves the soft keyboard down while one is attached. Letters follow the keyboard layout set in
+  Android (the desktop names US physical positions).
 - **Sistema do Vita** boots `vs0:vsh/shell/shell.self` from the installed firmware in the same activity with the
   PS-only layout.
 
@@ -256,7 +269,7 @@ boots on an idle PC chose the TSC. Forcing `clocksource=tsc tsc=reliable` with `
 | 2. screens, SAF | **pass**: Biblioteca (empty and with games, "Continuar jogando"), Detalhes, Troféus, Controles, Desempenho (Mono, dynamic code, Nativo (x64)), Informações da GPU, Driver da GPU, Ajustes, Firmware; the PUP picker (`ACTION_OPEN_DOCUMENT`) opens and returns on cancel. **Untested**: picking a real VPK/PUP/driver zip end to end (nothing may be put in public storage here), Keystore (no RPCN password set) |
 | 3. game process, surface | **pass**: surface → renderer → `LoadTitle` → frames; landscape 2400x1080 swapchain, IDENTITY on a `ROTATE_90` surface; home → back (`Presentation surface detached`/`attached`, `suspended`/`resumed`); PS and Back open the pause menu; "Sair do jogo" ends the `:game` process and Detalhes shows the play time (after the fix below). **Inconclusive**: 180° rotation (the emulator's rotation commands did not flip the sensor-landscape activity) |
 | 4. CPU | **pass**: `Runtime: .NET 10.0.11 (Mono), X64, android-x64`, `Dynamic code: supported True, compiled True`, chain `native > il > interp`; the native x64 JIT executes from the memfd dual mapping (SELinux allowed it on API 36); Detalhes > CPU switches native / IL / interpreter per game |
-| 5. input | **pass**: on-screen D-pad and Cross drive the menus, PS opens the pause menu. **Untested**: a real controller (`adb shell input gamepad` comes from a virtual device, which `AndroidGamepads` ignores by design); a hardware keyboard is not mapped to the pad (roadmap) |
+| 5. input | **pass**: on-screen D-pad and Cross drive the menus, PS opens the pause menu. **Untested**: a real controller (`adb shell input gamepad` comes from a virtual device, which `AndroidGamepads` ignores by design); a hardware keyboard was not mapped to the pad yet (`AndroidKeyboard` since, not run) |
 | 6. logcat | **pass**: `VitaSharp` (I/W/E) and `VitaSharp-Guest` lines; `logs/last.log` per game. Mono prints harmless `Shared library 'libc'/'libaaudio.so' not loaded, p/invoke ... may fail` warnings for P/Invokes that then resolve |
 | 7. audio | **pass (emulator)**: AAudio opened (`AAudio normal shared, capacity 8192 frames 48000 Hz, burst 4096 frames`): the emulator grants neither low latency nor exclusive mode; pause/resume on home. **Untested**: pitch/pace by ear, headphones/Bluetooth reopening, a 44.1 kHz device |
 | 8. video | **untested**: neither game uses SceAvcdec/SceAvPlayer |
@@ -307,7 +320,12 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
    emulator, ARM64 on a phone) and that SELinux lets the memfd/ashmem RX view execute; `--cpu`-equivalent choices from
    Detalhes.
 5. Input: on-screen buttons and sticks, front touch on the image, TRÁS rear touch, PS opens the pause menu; a
-   Bluetooth/USB controller (hot-plug, right stick axes, analog and digital triggers, Home = PS).
+   Bluetooth/USB controller (hot-plug, right stick axes, analog and digital triggers, Home = PS). A USB/Bluetooth
+   keyboard (or `adb shell input keyevent`, the virtual keyboard): arrows/X/C/Z/V/WASD drive the game, P and Home
+   open the pause menu, no key stays held after the menu or the IME dialog, numpad 8/2/4/6 (or T/G/F/H) tilt a
+   motion game (the log's `Input: keyboard tilt keys drive the Vita's motion sensors` line), volume keys still change
+   the volume, typing into a game's IME dialog with the keyboard (Enter confirms) while the soft keyboard stays down,
+   a controller and a keyboard together (a gamepad's D-pad auto-repeat must not leave a key held).
 6. Logcat tags and priorities (`adb logcat -s VitaSharp VitaSharp-Guest`), the file logs.
 7. **Audio**: the log's `Audio:` lines (AAudio on 8.1+, low-latency and exclusive or shared, the device rate and burst;
    AudioTrack on the x86_64 emulator image if it is API 26); sound plays at the right pitch and pace (a 44.1 kHz
