@@ -71,7 +71,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
 - [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
   tocam sem ele)
-- [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
+- [ ] Velocidade nativa no celular (meta: o fps do jogo no Vita; medir Knightin'+, Devious Dungeon e F1 2011 no
+  Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
+  - [ ] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF)
+  - [ ] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
+    controle de velocidade da CPU emulada sem esperas à toa
+  - [ ] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
+    registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante
+  - [ ] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android
+  - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
+  - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo
 - [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
   (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
   lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
