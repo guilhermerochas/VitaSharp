@@ -376,6 +376,12 @@ public sealed class AppMgr : HleModule
         }
     }
 
+    /// <summary>(void *buf, SceSize size, SceOff offset): the application's safe memory (64 KiB kept across runs), the
+    /// kernel side of sceAppUtilLoad/SaveSafeMemory and the same storage. Never written: zeros. The Browser restores its
+    /// tabs from it at start; unimplemented, the buffer kept whatever was in it and the Browser freed garbage pointers.</summary>
+    [Hle] int sceAppMgrLoadSafeMemory(uint buf, uint size, long offset) => AppUtil.sceAppUtilLoadSafeMemory(buf, size, offset);
+    [Hle] int sceAppMgrSaveSafeMemory(uint buf, uint size, long offset) => AppUtil.sceAppUtilSaveSafeMemory(buf, size, offset);
+
     /// <summary>(SceAppMgrEvent *event, 0x40 bytes): takes the first pending application event.</summary>
     [Hle]
     int sceAppMgrReceiveEvent(uint appEvent)

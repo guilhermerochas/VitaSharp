@@ -222,13 +222,11 @@ public sealed class RegMgrSystem : HleModule
 
     // ------------------------------------------------------------------ SceRegMgrService
 
-    /// <summary>(int *region): the unit's sales region. No prototype is known; the out pointer form matches how the
-    /// shell calls it. VitaSharp emulates a North American unit (SCE_REGION 1? inferred), consistent with the
-    /// "us" country of the NP keys.</summary>
+    /// <summary>(void): the unit's sales region as the index of the registry manager's region table (the one
+    /// sceRegMgrSrvGetRegionStr names: 1 J1, 2 UC2, ... 13 CN9), returned directly: every caller (the shell, libmtp,
+    /// the Browser) uses the result as that index and passes no pointer. A North American PCH-1001: 2 (UC2), as
+    /// GetRegionStr. It used to write 1 through r0 and return 0: the Browser's r0 was a string object of its own, so
+    /// it was corrupted, and the region lookup failed; the Browser then freed a bad pointer and asserted.</summary>
     [Hle]
-    int sceRegMgrSrvGetRegion(Ptr<int> region)
-    {
-        if (!region.IsNull) region.Value = 1;
-        return 0;
-    }
+    int sceRegMgrSrvGetRegion() => 2;
 }
