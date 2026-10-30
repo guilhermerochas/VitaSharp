@@ -375,13 +375,12 @@ O `Audio.cs` atual usa valores trocados (Anexo A).
 - [x] **Prioridade:** P1 · **Biblioteca:** SceAudio · **NID:** 0x6184B939
 - **Protótipo:** `int sceAudioOutOpenExtPort(int len, SceAudioOutMode mode);` (`psp2/audioout.h`)
 - **Comportamento:** abre a porta MAIN estendida do processo, a 48 kHz. É a nona porta MAIN, além das 8 normais.
-- **Retorno/erros:** handle **8**. INVALID_SIZE se `len` não for múltiplo de 64 ou passar de 65472; INVALID_FORMAT se
-  `mode` não for 0/1; PORT_FULL se a porta 8 já estiver aberta.
+- **Retorno/erros:** handle **9**. INVALID_SIZE se `len` não for múltiplo de 64 ou passar de 65472; INVALID_FORMAT se
+  `mode` não for 0/1; PORT_FULL se a porta 9 já estiver aberta.
 - **Estruturas:** —
-- **Implementação no VitaSharp:** `Audio.cs`: reaproveitar `sceAudioOutOpenPort(0, len, 48000, mode)`, mas registrando
-  em `_ports[8]`. O alocador atual (`_nextPort++`) precisa reservar 8. Os handles normais no hardware ficam em 0..7?
-  A confirmar, pela saída de `sceAudioOutOpenPort` num jogo rodando no Vita3K/hardware. Até lá, alocar o menor livre em
-  0..7 e nunca o 8.
+- **Implementação no VitaSharp:** `Audio.cs`: reaproveita `OpenPort(0, len, 48000, mode)`, registrando em `_ports[9]`.
+  Confirmado: os handles são **positivos** (Vita3K `next_port_id = 1`). O Wwise (Silent Hill: Book of Memories) trata
+  um handle <= 0 como falha (`cmp r0,#0; bgt`) e nunca inicia o motor de som. Os normais usam o menor livre em 1..8.
 - **Validação:** teste unitário: abrir 8 portas normais e a estendida.
 
 ### sceAudioOutSetCompress

@@ -148,13 +148,15 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     public void AudioOutPortsAndProfiles()
     {
         var a = new Audio();
-        for (int i = 0; i < 8; i++) Assert.Equal(i, Call(a, "sceAudioOutOpenPort", 0, 256, 48000, 1));
+        // handles are positive (Vita3K next_port_id = 1; Wwise treats <= 0 as a failed open)
+        for (int i = 1; i <= 8; i++) Assert.Equal(i, Call(a, "sceAudioOutOpenPort", 0, 256, 48000, 1));
         Assert.Equal(unchecked((int)0x80260005), Call(a, "sceAudioOutOpenPort", 1, 256, 48000, 1));
-        Assert.Equal(8, Call(a, "sceAudioOutOpenExtPort", 256, 1));
+        Assert.Equal(9, Call(a, "sceAudioOutOpenExtPort", 256, 1));
         Assert.Equal(unchecked((int)0x80260005), Call(a, "sceAudioOutOpenExtPort", 256, 1));
+        Assert.Equal(unchecked((int)0x80260003), Call(a, "sceAudioOutReleasePort", 0)); // 0 is never a handle
         Assert.Equal(0, Call(a, "sceAudioOutReleasePort", 3));
         Assert.Equal(3, Call(a, "sceAudioOutOpenPort", 2, 256, 48000, 0)); // lowest free handle
-        Assert.Equal(unchecked((int)0x8026000A), Call(a, "sceAudioOutSetCompress", 0, 1)); // MAIN
+        Assert.Equal(unchecked((int)0x8026000A), Call(a, "sceAudioOutSetCompress", 1, 1)); // MAIN
         Assert.Equal(0, Call(a, "sceAudioOutSetCompress", 3, 1));                          // VOICE
         Assert.Equal(unchecked((int)0x80260003), Call(a, "sceAudioOutSetCompress", 42, 1));
         Assert.Equal(256, Call(a, "sceAudioOutGetPortVolume_forUser", 0));
