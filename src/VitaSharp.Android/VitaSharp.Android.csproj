@@ -11,6 +11,24 @@
       dotnet build src/VitaSharp.Android -c Release -m:2
     (docs/android/README.md, "Building").
   -->
+  <!-- Android SDK: -p:AndroidSdkDirectory= wins (a global property); otherwise the first SDK that has the target API
+       platform (android-36): ANDROID_HOME, ANDROID_SDK_ROOT, an AndroidSdkDirectory environment variable (Visual Studio's
+       Xamarin installer sets one machine-wide, often to an older SDK), then the Android Studio default for the platform
+       (%LOCALAPPDATA%\Android\Sdk, ~/Library/Android/sdk, ~/Android/Sdk). -->
+  <PropertyGroup>
+    <_VitaSharpAndroidApi>android-36</_VitaSharpAndroidApi>
+    <_VitaSharpEnvSdk>$(AndroidSdkDirectory)</_VitaSharpEnvSdk>
+    <AndroidSdkDirectory></AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(ANDROID_HOME)' != '' and Exists('$(ANDROID_HOME)/platforms/$(_VitaSharpAndroidApi)')">$(ANDROID_HOME)</AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_SDK_ROOT)' != '' and Exists('$(ANDROID_SDK_ROOT)/platforms/$(_VitaSharpAndroidApi)')">$(ANDROID_SDK_ROOT)</AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(_VitaSharpEnvSdk)' != '' and Exists('$(_VitaSharpEnvSdk)/platforms/$(_VitaSharpAndroidApi)')">$(_VitaSharpEnvSdk)</AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and $([MSBuild]::IsOSPlatform('Windows')) and Exists('$(LOCALAPPDATA)\Android\Sdk\platforms\$(_VitaSharpAndroidApi)')">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and Exists('$(HOME)/Library/Android/sdk/platforms/$(_VitaSharpAndroidApi)')">$(HOME)/Library/Android/sdk</AndroidSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and $([MSBuild]::IsOSPlatform('Linux')) and Exists('$(HOME)/Android/Sdk/platforms/$(_VitaSharpAndroidApi)')">$(HOME)/Android/Sdk</AndroidSdkDirectory>
+    <!-- none has the platform: keep whatever was configured, so the SDK's own XA5207 message names it -->
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(_VitaSharpEnvSdk)</AndroidSdkDirectory>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0-android</TargetFramework>
     <OutputType>Exe</OutputType>
