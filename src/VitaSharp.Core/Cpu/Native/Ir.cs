@@ -104,6 +104,13 @@ public sealed class IrBlock
     public int Callouts;
     public int TempCount => IsConst.Count;
 
+    /// <summary>Empties the block for reuse (keeps the list capacity).</summary>
+    public void Reset()
+    {
+        Insts.Clear(); IsConst.Clear(); ConstValue.Clear();
+        Labels = 0; Cycles = 0; GuestInstructions = 0; StartPc = 0; Thumb = false; Callouts = 0;
+    }
+
     public int NewTemp() { IsConst.Add(false); ConstValue.Add(0); return IsConst.Count - 1; }
     public int NewConst(uint v) { IsConst.Add(true); ConstValue.Add(v); return IsConst.Count - 1; }
 

@@ -8,9 +8,12 @@ public static class IrPasses
     /// results superseded before the next flush, the high half of an unused product, ...). This is what makes flags
     /// lazy: a CMP whose N/C/V are overwritten before anything reads or stores them only produces Z.
     /// </summary>
+    [ThreadStatic] static bool[]? _used;
+
     public static void DeadCode(IrBlock b)
     {
-        var used = new bool[b.TempCount];
+        var used = _used is { } u0 && u0.Length >= b.TempCount ? u0 : (_used = new bool[Math.Max(256, b.TempCount * 2)]);
+        Array.Clear(used, 0, b.TempCount);
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
         for (int i = insts.Length - 1; i >= 0; i--)
         {

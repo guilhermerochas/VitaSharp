@@ -714,6 +714,7 @@ public sealed unsafe partial class X64Emitter
         StV(dOff, X0, true);
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void VecOpCore(IrInst x)
     {
         var a = _a;

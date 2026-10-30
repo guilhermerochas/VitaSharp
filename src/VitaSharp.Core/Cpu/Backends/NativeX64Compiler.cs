@@ -1,4 +1,5 @@
 using VitaSharp.Core.Util;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
 
@@ -21,6 +22,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     public static readonly NativeX64Compiler Instance = new();
 
     [ThreadStatic] static X64Emitter? _emitter;
+    [ThreadStatic] static ArmFrontend? _frontend;
     static readonly bool[] NeonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
 
     public string Name => "native";
@@ -28,7 +30,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     public string? UnsupportedReason =>
         RuntimeInformation.ProcessArchitecture != Architecture.X64 ? $"emits x86-64 code and this host is {RuntimeInformation.ProcessArchitecture}"
         : WriteWatch.Enabled ? "is off while write watchpoints are active" : null;
-    public BackendStats Stats { get; } = new();
+    public BackendStats Stats { get; } = new() { Phases = new() };
 
     /// <summary>A native block costs tens of microseconds to compile: worth it after a few thousand instructions.</summary>
     public long HotInstructions { get; set; } = 2_000;
@@ -38,9 +40,13 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
 
     public CompiledBlock? Compile(Block b)
     {
-        var ir = new ArmFrontend().Translate(b);
+        long t0 = Stopwatch.GetTimestamp();
+        // per compile thread, reusing its IR buffers: the IR is consumed before this thread translates another block
+        var ir = (_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true)).Translate(b);
+        long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
         if (ValidateIr) IrPasses.Validate(ir);
+        long t2 = Stopwatch.GetTimestamp();
         var rt = NativeRuntime.Instance;
         int exits = 0;
         foreach (var x in ir.Insts) if (x.Op == IrOp.ExitStatic) exits++;
@@ -61,10 +67,14 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
             }
         }
         if (!em.Prepare(ir, rt.Stubs, k => (nint)(slots + k), tierUp)) return null;
+        long t3 = Stopwatch.GetTimestamp();
         int size = 0;
-        byte* code = rt.Code.Place(rip => { var bytes = em.Assemble(rip); size = bytes.Length; return bytes; });
+        long encode = 0;
+        byte* code = rt.Code.Place(rip => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(rip); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref CodeBytes, size);
         rt.Register((nint)code, size, b);
+        Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
+        CompilePhases.Record(b);
         if (DumpCode) Console.Error.WriteLine($"[native] {b}\n{ir}\n{X64Disassembler.Disassemble((nint)code, size)}");
         bool unlogged = false; // callouts that may store to memory: the verifier cannot undo them
         foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;

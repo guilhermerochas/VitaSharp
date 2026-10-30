@@ -61,6 +61,7 @@ public sealed unsafe partial class Arm64Emitter
 
     // ------------------------------------------------------------------ lowering
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void VecOp(IrInst x)
     {
         var a = _a;

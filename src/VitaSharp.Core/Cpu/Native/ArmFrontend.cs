@@ -24,11 +24,17 @@ public sealed unsafe partial class ArmFrontend
     /// <param name="supportsVec">Which <see cref="VecKind"/>s (at a lane size) the target emitter lowers inline.</param>
     /// <param name="tinyCheck">The target flushes tiny float results after rounding (x86): mark the affected kinds
     /// <see cref="VecFlags.SlowPath"/>. ARM64 hosts detect tininess before rounding like the guest and need no check.</param>
-    public ArmFrontend(Func<VecKind, uint, bool> supportsVec, bool tinyCheck)
+    /// <param name="reuseIr">Translate into one IR block owned by this frontend (overwritten by the next Translate): the
+    /// compilers' per-thread frontends, which consume the IR before translating the next block, allocate nothing.</param>
+    public ArmFrontend(Func<VecKind, uint, bool> supportsVec, bool tinyCheck, bool reuseIr = false)
     {
         _supportsVec = supportsVec;
         _tinyCheck = tinyCheck;
+        _reuseIr = reuseIr;
     }
+
+    readonly bool _reuseIr;
+    IrBuilder? _reused;
 
     static readonly uint ExitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     static readonly uint SvcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
@@ -52,7 +58,9 @@ public sealed unsafe partial class ArmFrontend
 
     public IrBlock Translate(Block block)
     {
-        _b = new IrBuilder(block.Start, block.Thumb);
+        if (!_reuseIr) _b = new IrBuilder(block.Start, block.Thumb);
+        else if (_reused == null) _b = _reused = new IrBuilder(block.Start, block.Thumb);
+        else { _reused.Reset(block.Start, block.Thumb); _b = _reused; }
         _thumb = block.Thumb;
         var ir = _b.Block;
         ir.Cycles = block.Cycles;
@@ -143,6 +151,7 @@ public sealed unsafe partial class ArmFrontend
     // ------------------------------------------------------------------ dispatch
 
     /// <summary>Translates one instruction. Returns true when the block must end right after it without linking.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     bool Translate(DecodedInst d)
     {
         _ins = d.Raw; _op = d.Op;
@@ -190,14 +199,14 @@ public sealed unsafe partial class ArmFrontend
             Op.T16_CmpHi => T16CmpHi(in d),
             Op.T16_MovHi => T16MovHi(in d),
             Op.T16_BxBlx => T16BxBlx(in d),
-            Op.T16_LdrLit => Done(() => SetReg(Bits(d.Raw, 10, 8), B.Load(IrOp.Load32, C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2))))),
+            Op.T16_LdrLit => Done(Bits(d.Raw, 10, 8), B.Load(IrOp.Load32, C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2)))),
             Op.T16_LdStReg => T16LdStReg(in d),
             Op.T16_LdStImm => T16LdStImm(in d),
             Op.T16_LdStH => T16LdStH(in d),
             Op.T16_LdStSp => T16LdStSp(in d),
-            Op.T16_Adr => Done(() => SetReg(Bits(d.Raw, 10, 8), C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2)))),
-            Op.T16_AddSpImm => Done(() => SetReg(Bits(d.Raw, 10, 8), B.AddK(Reg(13), (d.Raw & 0xFF) << 2))),
-            Op.T16_AdjSp => Done(() => SetReg(13, Bit(d.Raw, 7) != 0 ? B.SubK(Reg(13), (d.Raw & 0x7F) << 2) : B.AddK(Reg(13), (d.Raw & 0x7F) << 2))),
+            Op.T16_Adr => Done(Bits(d.Raw, 10, 8), C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2))),
+            Op.T16_AddSpImm => Done(Bits(d.Raw, 10, 8), B.AddK(Reg(13), (d.Raw & 0xFF) << 2)),
+            Op.T16_AdjSp => Done(13, Bit(d.Raw, 7) != 0 ? B.SubK(Reg(13), (d.Raw & 0x7F) << 2) : B.AddK(Reg(13), (d.Raw & 0x7F) << 2)),
             Op.T16_Cbz => T16Cbz(in d),
             Op.T16_Extend => T16Extend(in d),
             Op.T16_Push => BlockTransfer(in d, 13, (d.Raw & 0xFF) | (Bit(d.Raw, 8) << 14), true, false, true, false, d.Address + 4),
@@ -259,7 +268,8 @@ public sealed unsafe partial class ArmFrontend
         return Callout(in d);
     }
 
-    static bool? Done(Action a) { a(); return false; }
+    /// <summary>R[rd] = v (an inline instruction that only sets one register).</summary>
+    bool? Done(uint rd, int v) { SetReg(rd, v); return false; }
 
     bool? DirectBranch(uint target) { SetReg(15, C(target)); return false; }
 

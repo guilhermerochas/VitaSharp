@@ -62,6 +62,8 @@ public unsafe struct CpuState
     public uint ExTmpHi;       // native STREXD scratch (high word; ExTmp:ExTmpHi are read as one 64-bit value)
     public uint StoreLogCount; // verify mode: guest stores of the current native block (address, size, old value)
     public nint StoreLog;
+    public long NSimdOps;      // profiling (VITASHARP_NATIVE_COUNTERS): VFP/NEON IR ops and conditional branches of
+    public long NCondBranches; // the native blocks run since entering native code (counted per block execution)
 
     public uint Cpsr
     {

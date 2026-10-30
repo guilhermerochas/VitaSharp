@@ -49,6 +49,11 @@ public sealed unsafe partial class X64Emitter
     static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
     static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
     static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
+    static readonly int OffNSimdOps = StateLayout.Of(nameof(CpuState.NSimdOps));
+    static readonly int OffNCondBranches = StateLayout.Of(nameof(CpuState.NCondBranches));
+
+    /// <summary>Profiling counters in generated code (<see cref="Util.EnvVars.NativeCounters"/>).</summary>
+    public static readonly bool Counters = Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) == "1";
 
     /// <summary>Debug knob for tests: restricts the temp registers so spilling paths get exercised.</summary>
     public static int MaxTempRegisters = int.MaxValue;
@@ -95,6 +100,13 @@ public sealed unsafe partial class X64Emitter
             _a.dec(__dword_ptr[rax]);
             _a.jz(tierUp);
         }
+        if (Counters)
+        {
+            int simd = 0, cond = 0;
+            foreach (var x in ir.Insts) { if (x.Op is IrOp.VecOp or IrOp.FpOp) simd++; else if (x.Op is IrOp.CondBranch or IrOp.BranchIf) cond++; }
+            if (simd > 0) _a.add(__qword_ptr[rbx + OffNSimdOps], simd);
+            if (cond > 0) _a.add(__qword_ptr[rbx + OffNCondBranches], cond);
+        }
         int exitIndex = 0;
         foreach (var x in ir.Insts) Lower(x, rt, slotFor, ref exitIndex);
         // shared path for callouts that threw: account the block and leave
@@ -115,6 +127,11 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Encodes the prepared code for execution at <paramref name="rip"/>.</summary>
     public byte[] Assemble(ulong rip)
     {
+        if (FastEncode)
+        {
+            if (TryFastAssemble(rip, out var fast)) return fast;
+            Interlocked.Increment(ref FastEncodeFallbacks);
+        }
         _code.SetLength(0);
         _a.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
         return _code.ToArray();
@@ -122,9 +139,14 @@ public sealed unsafe partial class X64Emitter
 
     // ------------------------------------------------------------------ register allocation
 
+    /// <summary>Stopwatch ticks the last <see cref="Prepare"/> spent in register allocation (compile-phase statistics).</summary>
+    public long AllocTicks;
+
     bool Allocate()
     {
-        var loc = LinearScan.Allocate(_ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var loc = LinearScan.Allocate(_ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
+        AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         if (loc == null) return false;
         _loc = loc;
         return true;
@@ -253,6 +275,9 @@ public sealed unsafe partial class X64Emitter
         _a.add(__qword_ptr[rbx + OffNInstr], _ir.GuestInstructions);
     }
 
+    // the compile-time hot spots are compiled fully optimized from the start: a game compiles only thousands of blocks
+    // per worker, much of it while these big methods would still run as unoptimized tier-0 code
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void Lower(IrInst x, Runtime rt, Func<int, nint> slotFor, ref int exitIndex)
     {
         var a = _a;
