@@ -161,7 +161,7 @@ public sealed unsafe partial class VulkanRenderer
                     _oomTextures++;
                     LogOom($"[vram] out of GPU memory, texture 0x{desc.DataAddress:X8} {desc.Width}x{desc.Height} fmt 0x{desc.Format:X8} skipped for this draw (present {_presentCount}, draw {_drawSerial}): {e.Message}", force: _oomTextures <= 3);
                 }
-                if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); }
+                if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
                 else if (cubeType) view = _dummyCubeView;
                 if (_drawRing != null) DrawRingTexture(layout.Handle == _texLayoutV.Handle, i, desc, v.Handle == 0);
             }
@@ -500,9 +500,17 @@ public sealed unsafe partial class VulkanRenderer
             return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
         }
 
-        // GPUs without BC support (most Android devices): decode the blocks on the CPU into RGBA8
-        if (info.Compressed && info.Convert == TexConvert.None && !_core.TextureCompressionBC)
-            info = info with { Format = BcSoftware.FormatFor(GxmFormats.BaseOf(d.Format)), Convert = TexConvert.BcSoftware };
+        // GPUs without BC support (most Android devices): transcoded to ASTC 4x4 where the GPU samples ASTC
+        // (AstcTranscoder), else decoded on the CPU into RGBA8; PVRTC (always decoded on the CPU) likewise on such GPUs
+        // (desktop GPUs keep their RGBA8 PVRTC, as before)
+        var baseFormat = GxmFormats.BaseOf(d.Format);
+        AstcChannels? astc = null;
+        if (!_core.TextureCompressionBC && ((info.Compressed && info.Convert == TexConvert.None) || info.Convert == TexConvert.Pvrtc))
+        {
+            astc = AstcUsable ? AstcTranscoder.ChannelsFor(baseFormat, gamma) : null;
+            if (astc != null) info = info with { Format = AstcTranscoder.FormatFor(gamma), Convert = info.Convert == TexConvert.Pvrtc ? TexConvert.AstcFromPvrtc : TexConvert.AstcFromBc };
+            else if (info.Convert == TexConvert.None) info = info with { Format = BcSoftware.FormatFor(baseFormat), Convert = TexConvert.BcSoftware };
+        }
         var format = info.Format;
         // texture gamma: the colour channels are sRGB-encoded and must be linearised when sampled
         if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb)) format = srgb;
@@ -516,6 +524,8 @@ public sealed unsafe partial class VulkanRenderer
             EvictOverlappingTextures(addr, total);
             tex = new Texture();
             var swizzle = Formats.TextureSwizzle(d.Format);
+            // BC4/BC5 as ASTC luminance(+alpha): the channels come from L (and A)
+            if (astc is { } ch) swizzle = AstcTranscoder.Compose(swizzle, ch);
             (tex.Image, tex.View, tex.Mem) = CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips - lodMin, faces, cube: cube, swizzle: swizzle);
             _textures[key] = tex;
@@ -622,7 +632,7 @@ public sealed unsafe partial class VulkanRenderer
             r.View = CreateView(r.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, RtSwizzle(rt, texFormat));
             _rtRegions[key] = r;
             BeginFrameIfNeeded();
-            PauseRendering();
+            using var clearOutside = BeginOutside(r.View);
             Barrier(r.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             var clear = new ClearColorValue(0f, 0f, 0f, 0f);
@@ -634,9 +644,11 @@ public sealed unsafe partial class VulkanRenderer
         r.LastUsedFrame = FrameCount;
         if (r.Version == rt.Version) return r.View;
         r.Version = rt.Version;
+        // another surface's region is copied before the open rendering; a region of the scene's own surface too when
+        // the rendering has not drawn there, else it ends the rendering
+        using var outside = BeginOutside(r.View, rt, readRect: (x, y, Math.Min(w, rt.Width - x), Math.Min(h, rt.Height - y)));
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
-        PauseRendering(rt);
         Barrier(r.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
@@ -834,7 +846,8 @@ public sealed unsafe partial class VulkanRenderer
     void UploadTexture(Texture tex, GxmTextureDesc d, TexFormatInfo info, TexLayout layout, uint w, uint h, uint mips, uint faces, Format format, uint baseLevel = 0)
     {
         using var ledger = FrameLedger.Time(FrameLedger.Cat.TextureUpload);
-        PauseRendering();
+        // reads guest memory only: recorded before the open rendering unless a draw of it already samples the texture
+        using var outside = BeginOutside(tex.View);
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
 
@@ -849,8 +862,8 @@ public sealed unsafe partial class VulkanRenderer
                 var r = new BufferImageCopy
                 {
                     BufferOffset = off,
-                    BufferRowLength = info.Compressed && info.Convert == TexConvert.None ? Align(outW, (uint)info.BlockW) : outW,
-                    BufferImageHeight = info.Compressed && info.Convert == TexConvert.None ? Align(outH, (uint)info.BlockH) : outH,
+                    BufferRowLength = info.Compressed && info.Convert == TexConvert.None ? Align(outW, (uint)info.BlockW) : IsAstc(info) ? Align(outW, 4) : outW,
+                    BufferImageHeight = info.Compressed && info.Convert == TexConvert.None ? Align(outH, (uint)info.BlockH) : IsAstc(info) ? Align(outH, 4) : outH,
                     ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, m - baseLevel, face, 1),
                     ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
                 };

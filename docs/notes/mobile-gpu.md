@@ -21,7 +21,7 @@ exercised on the GTX 1650 with emulated device profiles (`--gpu-profile=adreno|m
 | `src/VitaSharp.Renderer.Vulkan/IVulkanDriverProvider.cs`, `VulkanLoader.DriverProvider` | hook that replaces the system Vulkan driver |
 | `src/VitaSharp.Android/Gpu/AdrenoToolsDriverLoader.cs` | libadrenotools implementation of the hook (in the app, not run yet) |
 
-Switches: `--gpu-profile=adreno|mali|desktop` (`run`, `test`, scenario `args=`, `replay-gpu`) or
+Switches: `--gpu-profile=adreno|adreno-vk11|mali|desktop` (`run`, `test`, scenario `args=`, `replay-gpu`) or
 `VITASHARP_GPU_PROFILE`; `VITASHARP_GPU_QUIRKS=+Quirk,-Quirk,-Feature` forces quirks on/off or removes features
 (for example `-StaticExtendedDynamicState` on a phone to check whether the workaround is still needed, or
 `+TileBased,-Timestamps` on the desktop).
@@ -33,7 +33,10 @@ are queried so the log and info.txt say what the device has, and are never enabl
 
 | Feature / limit | Used for | Without it |
 |---|---|---|
-| `textureCompressionBC` | GXM UBC1-UBC5, SBC4/SBC5 sampled compressed | CPU decode to RGBA8 (BC4: R001, BC5: RG01; SBC4/SBC5 to R8G8B8A8_SNORM, exact RGTC signed decode), cached by content hash (64 MB LRU). GXM has no BC6H/BC7. Android: libadrenotools' BCeNabler may enable BCn on Qualcomm drivers that hide it (`IVulkanDriverProvider.TryEnableBcn`). ASTC transcoding: hook point documented in `BcSoftware.cs`, not implemented |
+| `textureCompressionBC` | GXM UBC1-UBC5, SBC4/SBC5 sampled compressed | with `textureCompressionASTC_LDR`: transcoded to ASTC 4x4 (UBC1-3 RGB/RGBA, UBC4 luminance, UBC5 luminance+alpha behind a view swizzle), with a per-title disk cache ([mobile renderer notes](mobile-renderer.md#2-astc-transcoding-with-a-disk-cache-coregpuastccs-astctranscodercs-coregputranscodediskcachecs)); otherwise, and for SBC4/SBC5, CPU decode to RGBA8 (BC4: R001, BC5: RG01; SBC4/SBC5 to R8G8B8A8_SNORM, exact RGTC signed decode), cached by content hash (64 MB LRU). GXM has no BC6H/BC7. Android: libadrenotools' BCeNabler may enable BCn on Qualcomm drivers that hide it (`IVulkanDriverProvider.TryEnableBcn`) |
+| `textureCompressionASTC_LDR` | BC/PVRTC transcoded to ASTC 4x4 on devices without BC (enabled only then) | RGBA8 (as before); `VITASHARP_ASTC=0` forces that |
+| dynamic rendering (Vulkan 1.3) | single-sampled scene renderings | render passes and framebuffers (`RenderPasses`, the Vulkan 1.1 path: [mobile renderer notes](mobile-renderer.md#3-the-vulkan-11-path-vulkanrendererrenderpassescs)) |
+| extended dynamic state 1/2 (Vulkan 1.3) | cull mode, topology, depth/stencil state, depth bias enable | baked into the pipelines (`StaticExtendedDynamicState`, `StaticDepthBiasEnable`) |
 | `shaderStorageImageWriteWithoutFormat` | not used | - |
 | `sampleRateShading` | programmable blending in MSAA scenes per sample (`gl_SampleID`) | shaders read sample 0 (part of the shader cache key, as before) |
 | framebuffer sample counts | GXM 2X/4X downscale MSAA | 2X with 4 samples when the device has 4 but not 2 (Mali, `Msaa2xAs4x`); no usable count: 2x2 supersampling (existing fallback) |
@@ -50,8 +53,9 @@ are queried so the log and info.txt say what the device has, and are never enabl
 | pipeline cache | driver's `VkPipelineCache` blob per title | header checked against vendor, device, driver version and UUID (as before); Qualcomm drivers (`PipelineCachePerDriverBuild`) get one file per driver build (hash of driver ID, name, info string and version) because custom drivers replace the system one without changing the IDs |
 
 Also checked but not a quirk: shaders are compiled for the Vulkan 1.0 SPIR-V environment (SPIR-V 1.0), which every
-mobile driver accepts. The renderer does require Vulkan 1.3 (dynamic rendering, synchronization2, extended dynamic
-state as core features): Adreno 6xx on older drivers exposes only Vulkan 1.1 and is rejected at startup (see below).
+mobile driver accepts. The minimum is Vulkan 1.1 (plus `shaderClipDistance`; `VK_KHR_sampler_mirror_clamp_to_edge`
+when present): devices without the 1.3 features render with render passes and static pipeline state (Adreno 6xx on
+older drivers exposes only Vulkan 1.1). Until branch feat/mobile-renderer the renderer required Vulkan 1.3.
 
 ## Quirk table
 
@@ -67,7 +71,8 @@ version (without driver properties: vendor plus Vita3K's rule, a Qualcomm major 
 | `StaticDepthBiasEnable` | Qualcomm proprietary, all versions | depth bias always enabled in the pipeline, zero bias when the draw has none (exact) instead of `vkCmdSetDepthBiasEnable` | yuzu: VK_EXT_extended_dynamic_state2 reported but broken on newer Qualcomm drivers |
 | `AvoidPushDescriptors` | Qualcomm, ARM, Imagination proprietary | none needed: the renderer allocates descriptor sets | yuzu (slow on Qualcomm), DuckStation ("broken on Adreno v502") |
 | `AvoidClearAttachments` | Qualcomm, ARM proprietary | none needed: clears are load ops, or `vkCmdClearColorImage` outside renderings | precautionary; DuckStation avoids it in feedback passes / on NVIDIA |
-| `DynamicRenderingSuspect` | Qualcomm, ARM, Imagination proprietary | **not worked around**: logged so device reports point at it. Single-sampled scenes use `VK_KHR_dynamic_rendering`; MSAA scenes already use render passes | DuckStation disables dynamic rendering on these blobs |
+| `DynamicRenderingSuspect` | Qualcomm, ARM, Imagination proprietary | selects `RenderPasses` (overridable with `-RenderPasses` where the driver has dynamic rendering) | DuckStation disables dynamic rendering on these blobs |
+| `RenderPasses` | no Vulkan 1.3 dynamic rendering, `DynamicRenderingSuspect` drivers, `+RenderPasses` | every rendering is a render pass + framebuffer ([mobile renderer notes](mobile-renderer.md#3-the-vulkan-11-path-vulkanrendererrenderpassescs)) | Vulkan 1.1 devices; DuckStation |
 | `PipelineCachePerDriverBuild` | Qualcomm (blob and Turnip) | one driver-cache file per driver build | custom drivers via libadrenotools (Vita3K, yuzu) |
 | `TurnipDriver` | Qualcomm on Mesa Turnip | none of the blob quirks | Vita3K: "say it is a turnip driver if the major driver version is less than 100" |
 | `CustomDriverCapable` | Qualcomm | the Android UI may offer custom drivers | Vita3K `support_custom_drivers()` |
@@ -91,7 +96,9 @@ the scene goes on:
 - MSAA scenes (unchanged): samples start DONT_CARE (the scene-start copy is drawn into them), resolve inside the
   render pass, are discarded at the scene end; depth as above.
 
-Desktop GPUs keep beginning renderings directly (no behaviour change). The ops of every scene rendering are counted
+Since feat/mobile-renderer desktop GPUs defer their single-sampled renderings the same way (still storing depth), so
+uploads and copies that do not read the scene are recorded before the rendering instead of ending it
+([mobile renderer notes](mobile-renderer.md)); `VITASHARP_SCENE_BREAKS=strict` restores the old behaviour. The ops of every scene rendering are counted
 and printed in the `PERF gpu` line and info.txt, e.g.
 `load/store ops (tile-based, 2704 deferred renderings): colour load 2704/clear 0/dont-care 0, store 2704/dont-care 0; depth load 899/clear 1805/dont-care 0, store 899/dont-care 1805` (skullgirls_boot, adreno profile).
 
@@ -187,11 +194,12 @@ the load/store counters into info.txt (and renderer.txt).
   per-triangle splits) has never executed; neither desktop GPU here has the extension.
 - Real tile-memory savings: the counters show which ops are chosen; bandwidth/power needs the device's profiler
   (Snapdragon Profiler, Arm Performance Studio).
-- `DynamicRenderingSuspect`: if dynamic rendering misbehaves on a blob, single-sampled scenes need a render-pass path
-  (the MSAA code already has one to generalise).
-- Vulkan 1.1 devices (many Adreno 6xx on older drivers): rejected today; supporting them needs render passes instead
-  of dynamic rendering, `VK_KHR_synchronization2` or classic barriers, and the static-state path above.
+- `DynamicRenderingSuspect` now selects the render-pass path on the proprietary blobs; whether a blob's dynamic
+  rendering actually works (`VITASHARP_GPU_QUIRKS=-RenderPasses`) needs the device.
+- Vulkan 1.1 devices (many Adreno 6xx on older drivers): the render-pass path and static state are implemented and
+  were checked on the desktop with `--gpu-profile=adreno-vk11` (device created without any 1.2/1.3 feature struct);
+  a real 1.1 driver has not run it.
 - libadrenotools: building it for arm64-v8a, packaging the hook libraries, verifying that Silk.NET resolves all
   commands through the returned handle, the "Driver da GPU" screen, and BCeNabler on real blobs.
-- ASTC transcoding of BCn/PVRTC (memory: RGBA8 is 4-8x larger than the compressed data) and a disk cache of decoded
-  textures.
+- ASTC transcoding of BCn/PVRTC with a disk cache: implemented and checked on the Iris Xe; the speed and quality on a
+  phone CPU/GPU are unmeasured ([mobile renderer notes](mobile-renderer.md)).

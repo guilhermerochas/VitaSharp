@@ -5,7 +5,8 @@ using VitaSharp.Core.Gxm;
 namespace VitaSharp.Renderer.Vulkan;
 
 /// <summary>How a GXM texture base format is uploaded: either directly or converted on the CPU to RGBA8.</summary>
-public enum TexConvert { None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware }
+/// <summary>AstcFromBc / AstcFromPvrtc: the level is transcoded to ASTC 4x4 blocks (AstcTranscoder).</summary>
+public enum TexConvert { None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc }
 
 public readonly record struct TexFormatInfo(Format Format, int BitsPerPixel, int BlockW, int BlockH, int BlockBytes, TexConvert Convert)
 {

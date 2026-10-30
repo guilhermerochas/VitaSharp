@@ -104,9 +104,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     readonly Frame[] _frames = new Frame[FramesInFlight];
     int _frameIndex;
     Frame F => _frames[_frameIndex];
-    /// <summary>Where commands go: the open multisampled rendering's secondary command buffer, else the frame's.
-    /// Tile-based GPUs also record single-sampled renderings into a secondary (VulkanRenderer.Tiler.cs).</summary>
-    CommandBuffer Cmd => _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : F.Cmd;
+    /// <summary>Where commands go: the open rendering's secondary command buffer (multisampled renderings, and
+    /// single-sampled ones unless VITASHARP_SCENE_BREAKS=strict on a desktop GPU), else the frame's; work hoisted out
+    /// of the open rendering goes to the frame's (VulkanRenderer.SceneBreaks.cs).</summary>
+    CommandBuffer Cmd => _hoisting ? F.Cmd : _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : PrimaryTouched();
     public long FrameCount { get; private set; }
 
     public VulkanRenderer(VulkanRendererOptions options)
@@ -191,6 +192,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var f = F;
         if (!f.Recording) return;
         EndRendering();
+        FlushChain(false);
         if (f.Nan is { Used: true }) NanBeforeSubmit(f);
         EndGpuTime(f);
         _vk.EndCommandBuffer(f.Cmd);
@@ -592,6 +594,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // MSAA without downscale renders at 2x into the sample-sized surface
         ChooseMsaaPath(b);
         _fScenes++;
+        _statScenes++;
         if (DebugMode.Enabled) DbgScene(b);
         if (_drawRing != null) DrawRingScene(b);
         if (_rt != null) CaptureSceneStart(_rt);
@@ -632,6 +635,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void EndScene(EndSceneCommand e)
     {
         EndRendering(final: true);
+        FlushChain(true); // renderings ended earlier and waiting to be merged: the scene ends with them
         EndTileWord1();
         if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
@@ -686,7 +690,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void BeginRendering()
     {
         if (_rendering || !_inScene) return;
-        if (_ms) { BeginMsaaRendering(); return; }
+        if (_ms) { _renderingSerial++; _statRenderings++; BeginMsaaRendering(); return; }
         // attachment 1: the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)
         var colors = stackalloc RenderingAttachmentInfo[2];
         colors[0] = new RenderingAttachmentInfo
@@ -723,10 +727,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ClearValue = new ClearValue(depthStencil: new ClearDepthStencilValue(Math.Clamp(bg?.BackgroundDepth ?? 1f, 0f, 1f), bg?.BackgroundStencil ?? 0)),
         };
         _depthNeedsClear = false;
-        if (TiledRenderings)
+        _renderingSerial++;
+        _statRenderings++;
+        if (DeferredRenderings)
         {
-            // tile-based GPU: the store ops are chosen when the rendering ends (VulkanRenderer.Tiler.cs)
-            BeginTiledRendering(color.ImageView, _renderRaw ? _rawFormat : _rtAttachFormat, depth.LoadOp, depth.ClearValue);
+            // begun in the primary when it ends: the store ops are chosen then, and work outside the rendering can be
+            // recorded before it meanwhile (VulkanRenderer.Tiler.cs, VulkanRenderer.SceneBreaks.cs)
+            BeginTiledRendering(color.ImageView, word ? _tw1!.View : default, _renderRaw ? _rawFormat : _rtAttachFormat, depth.LoadOp, depth.ClearValue);
         }
         else
         {
@@ -750,8 +757,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     /// <param name="resolve">false keeps a supersampled scene's samples unfiltered (the next pause filters them)</param>
     /// <param name="final">the scene ends: a multisampled rendering discards its samples instead of storing them</param>
-    void EndRendering(bool resolve = true, bool final = false)
+    void EndRendering(bool resolve = true, bool final = false, [CallerMemberName] string caller = "")
     {
+        // work hoisted before the open rendering never ends it (it does not read what the rendering writes)
+        if (_hoisting) return;
+        if (!final) NoteBreak(caller);
         if (_rendering && _msCmd.Handle != 0)
         {
             _rendering = false;
@@ -783,13 +793,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// scene resolves its samples only when the work reads its own surface; otherwise the resolve waits for the next
     /// rendering (texture uploads and reads of other surfaces break multisampled scenes often).
     /// </summary>
-    void PauseRendering(RenderTarget? reads = null) => EndRendering(resolve: !_ms || (reads != null && reads == _rt));
+    void PauseRendering(RenderTarget? reads = null, [CallerMemberName] string caller = "") => EndRendering(resolve: !_ms || (reads != null && reads == _rt), caller: caller);
 
-    void SyncRenderTargetForRead(RenderTarget rt)
+    void SyncRenderTargetForRead(RenderTarget rt, [CallerMemberName] string caller = "")
     {
         rt.LastTouchedFrame = FrameCount;
         if (!rt.Dirty) return;
-        PauseRendering(rt);
+        // another surface's barrier goes before the open rendering; reading the scene's own surface ends it
+        using var outside = BeginOutside(reads: rt, caller: caller);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
@@ -897,6 +908,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
         RecordFrameSummary(frame);
         _presentedAddresses.Add(frame.Address);
+        _sampledIn.Clear(); // no rendering is open and no draw pending (VulkanRenderer.SceneBreaks.cs)
         DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;

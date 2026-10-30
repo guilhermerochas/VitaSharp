@@ -240,6 +240,16 @@ reference; the app follows them with these differences:
    file redirect and turbo; change the driver while a game runs and accept the restart (the `:game` process is killed,
    the game starts again with the new driver); a Mali phone uses the system loader. The quirk table on Adreno/Mali
    ([mobile GPU notes](../notes/mobile-gpu.md)).
+10. **Renderer paths** ([mobile renderer notes](../notes/mobile-renderer.md)): the capability block's `RenderPasses`
+    line (proprietary Adreno/Mali/PowerVR drivers and every device without Vulkan 1.3 dynamic rendering render with
+    render passes; `VITASHARP_GPU_QUIRKS=-RenderPasses` tries dynamic rendering on a 1.3 driver); an Adreno 6xx on an
+    old driver (Vulkan 1.1) boots instead of "No Vulkan 1.1 capable device", with `StaticExtendedDynamicState` and
+    `StaticDepthBiasEnable`; the `[texcache] BC/PVRTC textures are transcoded to ASTC 4x4` line and the ASTC part of
+    `PERF mobile` (levels encoded, M texels/s, memory/disk hits) after a session, BC games look as on desktop (no
+    blocky or discoloured textures, BC4/BC5 normal maps lit correctly), a second start of the same game hits the disk
+    cache (`<data>/shadercache/titles/<TITLEID>/astc`, at most 512 MB, `VITASHARP_ASTC_CACHE_MB`); `PERF gpu`'s
+    renderings per scene and hoisted breaks, and the tile load/store counters in the device's profiler (Snapdragon
+    Profiler / Arm Performance Studio: fewer GMEM loads and stores per frame than with `VITASHARP_SCENE_BREAKS=strict`).
 
 ## Stack
 
