@@ -91,6 +91,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+- [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
+  a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
+  e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
+  `SceCameraCoreCameraDeviceThread` espera em `condvar SceCameraCoreCameraDeviceLoopStatusCond` e a outra está Dormant.
+  Funções que faltam no caminho: `ScePhotoExport::NID_16B1028E`, `SceLibLocation::NID_EFC9BD25` / `NID_2311B24A`,
+  `sceAppMgrMmsMount`, `_vshAppMgrRegisterPath`, `sceKernelCheckModelCapability`, e um `IO: unmapped path ''` logo
+  antes de criar as threads da câmera
 
 ## Código
 
@@ -101,6 +108,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   outros branches abertos (o diff toca quase todos os arquivos)
 
 ## Bugs em aberto
+
+- [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
+  biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
+  locationDelta < 0, voiceLocation = 0x0, previous = 0x700…` — a posição de leitura que a voz NGS informa volta a 0
+  em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
+  campo é acumulado (pode causar música repetindo ou cortando em outros jogos com SndStream). Também:
+  `sce_scream_api.cpp(1385): Invalid parameter` na inicialização do som e `sceNetInit` chamado duas vezes (o
+  segundo recebe EBUSY, como no firmware; o jogo segue)
 
 - [ ] Gravity Rush: na tela de título "Tap the Apple", um toque registra (a maçã balança e o aviso some por ~180 quadros) mas não pega a maçã nem avança; igual em 0,46/0,48 e no centro, nos quadros 1000 e 1400 (29/10/2026, main c12927d, `gr_boot.txt` só com o toque); a diferença antiga "0,46/0,48 falha, centro funciona" não se repete. Falta saber se o Vita exige outro gesto (segurar, tocar na maçã de outro jeito)
 - [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real (não dá para conferir aqui)
