@@ -68,8 +68,10 @@ public sealed unsafe partial class VulkanRenderer
 
     // frames whose GPU-thread work included shader translation/compilation or pipeline compilation (hitches)
     const double HitchMs = 4;
-    long _frameStallTicks, _statWorstFrameStallTicks;
-    int _statHitchFrames;
+    long _frameStallTicks, _statWorstFrameStallTicks, _statPipelineWaitTicks;
+    int _statHitchFrames, _statLongHitchFrames;
+    /// <summary>A stall this long costs a whole 60 Hz frame (a visible hitch rather than a late frame).</summary>
+    const double LongHitchMs = 16.7;
 
     static double Ms(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
 
@@ -84,6 +86,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_frameStallTicks == 0) return;
         if (Ms(_frameStallTicks) >= HitchMs) _statHitchFrames++;
+        if (Ms(_frameStallTicks) >= LongHitchMs) _statLongHitchFrames++;
         if (_frameStallTicks > _statWorstFrameStallTicks) _statWorstFrameStallTicks = _frameStallTicks;
         _frameStallTicks = 0;
     }
@@ -641,8 +644,10 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[shadercache] session {_titleId}: shaders {_statShaderPackHits} from cache, {_statShaderMisses} translated+compiled, {_statShaderMemHits} prewarmed/shared"
                 + $" ({Ms(_statShaderTicks):F0} ms on the GPU thread); pipelines {_statPrewarmed} prewarmed ({_statPrewarmUsed} used),"
                 + $" {_statGpuPipelines} compiled on the GPU thread ({Ms(_statGpuPipelineTicks):F0} ms, worst {Ms(_statGpuPipelineMaxTicks):F1} ms);"
-                + $" frames stalled >= {HitchMs} ms by shader/pipeline work: {_statHitchFrames} (worst {Ms(_statWorstFrameStallTicks):F1} ms);"
-                + $" shaderc ({_compiler.OptLevel}): {ShaderCompiler.Compiled} compiled in {Ms(ShaderCompiler.CompileTicks):F0} ms, {ShaderCompiler.DiskHits} .spv disk hits; prefetch: {_statAsyncQueued} shaders queued to {(_shaderWorkers?.Length ?? 0)} workers, {_statAsyncWaited} waited for by the GPU thread; {_statPipelinesPrefetched} pipelines prefetched, {_statPipelineWaits} waited for"
+                + $" frames stalled >= {HitchMs} ms by shader/pipeline work: {_statHitchFrames}, >= {LongHitchMs} ms: {_statLongHitchFrames} (worst {Ms(_statWorstFrameStallTicks):F1} ms);"
+                + $" shaderc ({_compiler.OptLevel}): {ShaderCompiler.Compiled} compiled in {Ms(ShaderCompiler.CompileTicks):F0} ms, {ShaderCompiler.DiskHits} .spv disk hits; prefetch: {_statAsyncQueued} shaders queued to {(_shaderWorkers?.Length ?? 0)} workers, {_statAsyncWaited} waited for by the GPU thread; {_statPipelinesPrefetched} pipelines prefetched, {_statPipelineWaits} waited for ({Ms(_statPipelineWaitTicks):F0} ms)"
                 + $"; rebuild: {_rebuildSummary ?? (_rebuildActive ? "still running" : "not needed")}");
+        if (_titleId != null) Log.Info(StallReport());
+        _stalls.Clear();
     }
 }
