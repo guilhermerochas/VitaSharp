@@ -58,7 +58,7 @@ public sealed unsafe partial class VulkanRenderer
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
             _depthTextures[dt] = t;
             BeginFrameIfNeeded();
-            EndRendering();
+            using var init = BeginOutside(t.View);
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
@@ -66,7 +66,8 @@ public sealed unsafe partial class VulkanRenderer
         if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
         t.Version = dt.Version;
 
-        EndRendering();
+        // another scene's depth is copied before the open rendering; the scene's own depth ends it
+        using var outside = BeginOutside(t.View, readsDepth: dt == _depth);
         const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
         Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit,
@@ -159,7 +160,18 @@ public sealed unsafe partial class VulkanRenderer
             SType = StructureType.RenderingInfo, RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)), LayerCount = 1,
             PDepthAttachment = &att, PStencilAttachment = &att,
         };
-        _vk.CmdBeginRendering(cmd, in ri);
+        if (UseRenderPasses)
+        {
+            // Vulkan 1.1 path (VulkanRenderer.RenderPasses.cs)
+            var pass = DepthUnpackPass();
+            var rbi = new RenderPassBeginInfo
+            {
+                SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = TransientFramebuffer(pass, new Extent2D(w, h), t.AttachView),
+                RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)),
+            };
+            _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
+        }
+        else _vk.CmdBeginRendering(cmd, in ri);
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, DepthUnpackPipeline());
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
         var vp = new Viewport(0, 0, w, h, 0, 1);
@@ -167,7 +179,8 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdSetViewport(cmd, 0, 1, in vp);
         _vk.CmdSetScissor(cmd, 0, 1, in sc);
         _vk.CmdDraw(cmd, 3, 1, 0, 0);
-        _vk.CmdEndRendering(cmd);
+        if (UseRenderPasses) _vk.CmdEndRenderPass(cmd);
+        else _vk.CmdEndRendering(cmd);
         _boundPipeline = default;
 
         Barrier(dt.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
@@ -215,7 +228,8 @@ void main() {
         };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, PNext = &rendering, StageCount = 2, PStages = stages,
+            SType = StructureType.GraphicsPipelineCreateInfo, PNext = UseRenderPasses ? null : &rendering,
+            RenderPass = UseRenderPasses ? DepthUnpackPass() : default, StageCount = 2, PStages = stages,
             PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vps, PRasterizationState = &rs, PMultisampleState = &ms,
             PDepthStencilState = &dss, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
         };

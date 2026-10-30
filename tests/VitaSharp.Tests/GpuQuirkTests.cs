@@ -12,7 +12,8 @@ public sealed class GpuQuirkTests
     const GpuFeature Desktop = GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
         | GpuFeature.DepthClamp | GpuFeature.FillModeNonSolid | GpuFeature.GeometryShader | GpuFeature.LogicOp | GpuFeature.Storage16Bit
         | GpuFeature.WideLines | GpuFeature.OcclusionQueryPrecise | GpuFeature.MemoryBudget | GpuFeature.Timestamps | GpuFeature.PushDescriptor
-        | GpuFeature.IndependentBlend | GpuFeature.DepthBiasClamp | GpuFeature.SamplerMirrorClampToEdge | GpuFeature.SamplerAnisotropy;
+        | GpuFeature.IndependentBlend | GpuFeature.DepthBiasClamp | GpuFeature.SamplerMirrorClampToEdge | GpuFeature.SamplerAnisotropy
+        | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState;
 
     static readonly GpuLimits DesktopLimits = new()
     {
@@ -216,7 +217,48 @@ public sealed class GpuQuirkTests
         Assert.Equal(GpuQuirk.TileBased, on.Quirks);
     }
 
+    [Fact]
+    public void Vulkan11DeviceUsesRenderPassesAndStaticState()
+    {
+        var old = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 454),
+            Desktop & ~(GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.TextureCompressionBC)) with { ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128) };
+        var c = GpuQuirkTable.Select(old);
+        Assert.True(c.Has(GpuQuirk.RenderPasses));
+        Assert.True(c.Has(GpuQuirk.StaticExtendedDynamicState));
+        Assert.True(c.Has(GpuQuirk.StaticDepthBiasEnable));
+        Assert.Contains(c.QuirkReasons, r => r.StartsWith("RenderPasses:"));
+        // what the device cannot do is not overridable; Turnip on the same phone (no blob quirks) still needs them
+        Assert.True(GpuQuirkTable.Select(old, GpuProfile.Native, "-RenderPasses,-StaticExtendedDynamicState").Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState));
+        var turnip = GpuQuirkTable.Select(old with { DriverId = GpuQuirkTable.DriverTurnip, DriverVersion = GpuQuirkTable.MakeVersion(24, 1) });
+        Assert.True(turnip.Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState));
+    }
+
+    [Fact]
+    public void RenderPassesFollowSuspectDriversAndOverrides()
+    {
+        Assert.False(GpuQuirkTable.Select(Nvidia).Has(GpuQuirk.RenderPasses));
+        Assert.Equal(GpuQuirk.RenderPasses, GpuQuirkTable.Select(Nvidia, GpuProfile.Native, "+RenderPasses").Quirks);
+        // proprietary mobile blobs with suspect dynamic rendering get render passes (DuckStation); a phone whose
+        // driver has working dynamic rendering can turn them off
+        Assert.True(GpuQuirkTable.Select(AdrenoBlob).Has(GpuQuirk.RenderPasses));
+        Assert.False(GpuQuirkTable.Select(AdrenoBlob, GpuProfile.Native, "-RenderPasses").Has(GpuQuirk.RenderPasses));
+        Assert.False(GpuQuirkTable.Select(Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverTurnip, GpuQuirkTable.MakeVersion(24, 1))).Has(GpuQuirk.RenderPasses));
+    }
+
+    [Fact]
+    public void AdrenoVulkan11ProfileRemovesDynamicRendering()
+    {
+        var c = GpuQuirkTable.Select(Nvidia, GpuProfile.AdrenoVulkan11);
+        Assert.Equal(GpuVendor.Qualcomm, c.Vendor);
+        Assert.False(c.Has(GpuFeature.DynamicRendering));
+        Assert.False(c.Has(GpuFeature.ExtendedDynamicState));
+        Assert.False(c.Has(GpuFeature.TextureCompressionBC));
+        Assert.True(c.Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState | GpuQuirk.StaticDepthBiasEnable | GpuQuirk.TileBased));
+        Assert.Contains("emulating Qualcomm", c.Describe());
+    }
+
     [Theory]
+    [InlineData("adreno-vk11", GpuProfile.AdrenoVulkan11)]
     [InlineData("adreno", GpuProfile.Adreno)]
     [InlineData(" Mali ", GpuProfile.Mali)]
     [InlineData("desktop", GpuProfile.Desktop)]

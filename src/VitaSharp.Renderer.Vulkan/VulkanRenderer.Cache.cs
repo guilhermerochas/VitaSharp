@@ -103,6 +103,7 @@ public sealed unsafe partial class VulkanRenderer
             var dir = Path.Combine(_opt.ShaderCacheDir, "titles", safe.Length > 0 ? safe : "unknown");
             try { Directory.CreateDirectory(dir); }
             catch (Exception e) { Log.Warn($"[shadercache] cannot create {dir}: {e.Message}"); return; }
+            OpenAstcCache(dir);
 
             var props = _core.Properties;
             // drivers whose cache UUID does not identify the build (custom Adreno/Turnip drivers): one file per build
