@@ -147,6 +147,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             return;
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
+        _session.Performance.FrameRateChanged += fps => RunOnUiThread(() => ApplyFrameRate(fps));
+        ApplyFrameRate(_session.Performance.RefreshRate);
+        ApplySustainedPerformance();
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
@@ -162,6 +165,45 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         if (holder.Surface is not { IsValid: true } s) return;
         _surface = new AndroidVulkanSurface(s);
         _session?.SurfaceCreated(_surface);
+        _frameRateSet = 0; // a new Surface starts without a frame rate
+        if (_session != null) ApplyFrameRate(_session.Performance.RefreshRate);
+    }
+
+    float _frameRateSet;
+
+    /// <summary>
+    /// The game's frame rate as the surface's frame rate (API 30+), so a 90/120 Hz panel runs at a rate the game's
+    /// 60 or 30 fps divides evenly (no judder; the system may pick 60 or 120 for 60, 30/60/120 for 30). The first rate
+    /// of a surface may switch the display mode even when that is not seamless (a full-screen game, at its start);
+    /// later changes only when seamless.
+    /// </summary>
+    void ApplyFrameRate(float fps)
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(30) || _view?.Holder?.Surface is not { IsValid: true } s || fps == _frameRateSet) return;
+        try
+        {
+            if (OperatingSystem.IsAndroidVersionAtLeast(31))
+                s.SetFrameRate(fps, (int)SurfaceFrameRateCompatibility.Default,
+                    _frameRateSet == 0 ? (int)SurfaceChangeFrameRate.Always : (int)SurfaceChangeFrameRate.OnlyIfSeamless);
+            else s.SetFrameRate(fps, (int)SurfaceFrameRateCompatibility.Default);
+            Log.Info($"Surface frame rate: {fps:F0} Hz{(Display?.RefreshRate is float hz ? $" (display at {hz:F0} Hz now)" : "")}");
+            _frameRateSet = fps;
+        }
+        catch (Exception e) { Log.Warn($"Surface.setFrameRate({fps}): {e.Message}"); }
+    }
+
+    /// <summary>
+    /// <c>VITASHARP_ANDROID_SUSTAINED=1</c>: Window.setSustainedPerformanceMode where the device supports it. Off by
+    /// default: it holds the clocks at a level the phone can keep for hours, which is below its peak, and the ADPF
+    /// session already asks for what each frame needs. Worth trying for long sessions on a phone that throttles hard.
+    /// </summary>
+    void ApplySustainedPerformance()
+    {
+        bool want = System.Environment.GetEnvironmentVariable(EnvVars.AndroidSustained)?.Trim() is "1" or "on" or "true" or "yes";
+        bool supported = GetSystemService(PowerService) is PowerManager pm && pm.IsSustainedPerformanceModeSupported;
+        if (want && supported) Window?.SetSustainedPerformanceMode(true);
+        Log.Info($"Sustained performance mode: {(supported ? "supported" : "not supported")}, {(want && supported ? "on" : "off")}"
+                 + (want ? "" : $" ({EnvVars.AndroidSustained}=1 to try it)"));
     }
 
     public void SurfaceChanged(ISurfaceHolder holder, Format format, int width, int height)
