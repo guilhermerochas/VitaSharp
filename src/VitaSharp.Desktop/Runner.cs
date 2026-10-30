@@ -703,6 +703,13 @@ public static class Runner
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
         foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());
+        // the other processes of the system (applications the shell started)
+        foreach (var p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
+        {
+            Log.Info($"  process {p.Describe()}{(p.Suspended ? " (suspended)" : "")}:");
+            using var space = VitaSharp.Core.Memory.AddressSpace.Use(p.Space);
+            foreach (var t in p.Kernel.Threads) Log.Info("    thread " + t.Describe());
+        }
         {
             long fr = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
             foreach (var t in emu.Kernel.Threads.Where(t => t.Core.BlockCycles + t.Core.ChargedCycles > 0).OrderByDescending(t => t.Core.BlockCycles + t.Core.ChargedCycles).Take(6))

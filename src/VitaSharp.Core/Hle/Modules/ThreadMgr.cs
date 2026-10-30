@@ -772,7 +772,7 @@ public sealed class ThreadMgr : HleModule
     [Hle] int sceKernelCreateMsgPipeWithLR(string name, uint type, uint attr, uint bufSize, uint opt) => sceKernelCreateMsgPipe(name, type, attr, bufSize, opt);
 
     [Hle] int sceKernelGetMsgPipeCreatorId(int uid) => Obj<MsgPipe>(uid)?.CreatorThreadUid ?? SceError.UNKNOWN_MSG_PIPE_ID;
-    [Hle] int sceKernelOpenMsgPipe(uint name) => KernelInfo.OpenByName<MsgPipe>(K.Objects, name);
+    [Hle] int sceKernelOpenMsgPipe(uint name) => KernelInfo.OpenByName<MsgPipe>(K.Objects, name, p => !p.IsDeleted);
     [Hle] int sceKernelCloseMsgPipe(int uid) => KernelInfo.CloseHandle<MsgPipe>(K.Objects, uid, SceError.UNKNOWN_MSG_PIPE_ID);
 
     /// <summary>SceKernelMppInfo (0x3C): +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads.</summary>
@@ -841,7 +841,15 @@ public sealed class ThreadMgr : HleModule
     [Hle] int sceKernelTryReceiveMsgPipeVector(int uid, uint vec, uint count, uint mode, Ptr<uint> result)
         => MsgPipeVector(uid, vec, count, mode, result, default, false, true);
 
-    [Hle] int sceKernelDeleteMsgPipe(int uid) { var p = Obj<MsgPipe>(uid); if (p == null) return SceError.UNKNOWN_MSG_PIPE_ID; p.Delete(); K.Objects.Remove(uid); return 0; }
+    /// <summary>Handles other processes opened stay valid until closed; their operations fail with MPP_DELETED.</summary>
+    [Hle]
+    int sceKernelDeleteMsgPipe(int uid)
+    {
+        var p = Obj<MsgPipe>(uid);
+        if (p == null || p.IsDeleted) return SceError.UNKNOWN_MSG_PIPE_ID;
+        K.Objects.Delete(p);
+        return 0;
+    }
 
     [Hle("sceKernelSendMsgPipe")]
     [Hle("sceKernelSendMsgPipeCB")]

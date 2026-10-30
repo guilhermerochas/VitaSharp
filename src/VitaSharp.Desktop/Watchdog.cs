@@ -114,6 +114,17 @@ public sealed class Watchdog : IDisposable
                 sb.AppendLine("thread " + t.Describe());
                 foreach (var call in t.RecentHleCalls(hleCalls)) sb.AppendLine("    hle " + call);
             }
+            // the applications the shell started run as processes of their own (read in their address space)
+            foreach (var p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
+            {
+                sb.AppendLine($"process {p.Describe()}{(p.Suspended ? " (suspended)" : "")}{(p.IsForeground ? " (in front)" : "")}:");
+                using var space = Core.Memory.AddressSpace.Use(p.Space);
+                foreach (var t in p.Kernel.Threads.ToArray())
+                {
+                    sb.AppendLine("  thread " + t.Describe());
+                    foreach (var call in t.RecentHleCalls(hleCalls)) sb.AppendLine("      hle " + call);
+                }
+            }
             foreach (var m in emu.Kernel.Objects.All<Core.Kernel.Mutex>().ToArray())
                 if (m.Owner != null && m.Waiters > 0)
                     sb.AppendLine($"mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");

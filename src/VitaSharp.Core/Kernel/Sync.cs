@@ -525,6 +525,8 @@ public sealed class MsgPipe : KernelObject
     public int FreeSize { get { lock (this) return BufferSize - _data.Count; } }
     bool _deleted;
     int _cancelled;
+    /// <summary>Deleted while a handle opened by name was still open (<see cref="ObjectTable.Delete(MsgPipe)"/>).</summary>
+    public bool IsDeleted { get { lock (this) return _deleted; } }
 
     /// <summary>Guest buffers taken as one contiguous byte range in order (MsgPipeVector entries {base, size}).</summary>
     public readonly struct Segments(uint[] addrs, int[] sizes)
@@ -556,6 +558,7 @@ public sealed class MsgPipe : KernelObject
         int size = src.Total;
         lock (this)
         {
+            if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
             int gen = _cancelled;
             int sent = 0;
             bool asap = (mode & WaitAsap) != 0;
@@ -596,6 +599,7 @@ public sealed class MsgPipe : KernelObject
         int size = dst.Total;
         lock (this)
         {
+            if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
             int gen = _cancelled;
             int got = 0;
             bool asap = (mode & WaitAsap) != 0;
