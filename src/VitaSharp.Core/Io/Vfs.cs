@@ -14,8 +14,17 @@ public sealed class Vfs
     public Vfs(string fsRoot)
     {
         FsRoot = fsRoot;
-        foreach (var dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "gro0", "grw0", "host0", "sd0", "photo0", "music0", "video0" })
+        foreach (var dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "host0", "sd0", "photo0", "music0", "video0" })
             Mount(dev, Path.Combine(fsRoot, dev));
+        // the game card: gro0 (the card's read-only application) and grw0 (its writable area) exist only while a card
+        // is in the slot. With them always mounted the shell's game card promoter saw a card (sceIoGetstat("gro0:")
+        // succeeded), found no gro0:app and reported "Could not install. (C0-11274-5)" (0x80AF5022) at every boot.
+        // A card dump placed in <fs>/gro0/app is a card in the slot.
+        if (Directory.Exists(Path.Combine(fsRoot, "gro0", "app")))
+        {
+            Mount("gro0", Path.Combine(fsRoot, "gro0"));
+            Mount("grw0", Path.Combine(fsRoot, "grw0"));
+        }
     }
 
     public void Mount(string device, string hostPath)
