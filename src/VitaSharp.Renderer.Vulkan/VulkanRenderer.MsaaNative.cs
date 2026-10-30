@@ -726,7 +726,7 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         MsaaEmulation.Supersample => "supersampled (VITASHARP_MSAA=ss)",
         MsaaEmulation.Off => "off (VITASHARP_MSAA=off)",
         _ => $"native: {_statMsScenes} scenes, {_statMsPasses} renderings ({_statMsDiscards} discarding their samples at scene end), {_statMsResolves} resolves, {_statMsInputFetches} input-attachment fetches, {_statMsFetchCopies} multisampled framebuffer-fetch copies",
-    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split per triangle";
+    }) + $"; framebuffer-fetch copies moved {_statFetchPixels / 1e6:F1} M of {_statFetchFullPixels / 1e6:F1} M pixels; {_statFetchSplitDraws} programmable-blending draws split into pieces";
 
     void DestroyMsaa()
     {

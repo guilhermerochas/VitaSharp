@@ -73,8 +73,11 @@ normal colours (rbs_boot as committed no longer reaches gameplay because a save 
   ~100% of the target per programmable-blending draw); not exposed by the dev drivers.
 - FORCE_STORE of 2X depth, of stencil, or read through the CDRAM mirror is warned, not unpacked.
 - Programmable blending reads the framebuffer as of the start of the draw (copy, or input attachment behind a
-  barrier). With input attachments, triangle-list draws of <= 256 triangles are drawn one triangle at a time with a
-  barrier in between, so overlapping primitives of one draw see each other (LittleBigPlanet's text glyph quads). The
+  barrier). With input attachments, small draws are drawn piece by piece with a barrier in between, so overlapping
+  primitives of one draw see each other (LittleBigPlanet's text glyph quads): triangle lists one triangle per piece,
+  triangle strips two triangles per piece from an even index (keeps the winding; Soul Sacrifice's fire and smoke are
+  strips of particle quads joined by degenerate triangles, which raced in 8x8-pixel blocks before), pieces of only
+  degenerate triangles left out, at most 256 pieces (`Core/Gpu/FetchSplit.cs`). Fans are not split. The
   copy path (1x and supersampled scenes) does not split: a copy per triangle cost Uncharted 6.7 -> 32 ms of GPU time
   per frame. Larger or copied self-overlapping draws would need VK_EXT_fragment_shader_interlock (Vita3K's approach). `VITASHARP_FETCH_SPLIT=0` disables the split.
 - MoltenVK: render passes with input attachments, secondary command buffers, sampleRateShading and resolve
