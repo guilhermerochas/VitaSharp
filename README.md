@@ -150,7 +150,7 @@ next to it as separate processes.
 
 **Platforms**
 - Windows, Linux (x64, ARM64) and macOS; self-contained ReadyToRun or Native AOT builds, packaged as zip, installer,
-  tar.gz, AppImage, `.app` and `.dmg`
+  tar.gz, AppImage, `.app` and `.dmg` (CI and releases: Native AOT for win-x64, linux-x64 and osx-arm64)
 
 ## Compatibility
 
@@ -446,8 +446,8 @@ build\publish.ps1 -Aot -Rid win-x64     # on Windows
 ```
 
 Native AOT cannot cross-compile between operating systems: each platform is built on its own OS (CI builds win-x64,
-linux-x64, linux-arm64, osx-x64 and osx-arm64 on matching runners). For a platform the host cannot build, the scripts
-print a warning and publish ReadyToRun instead. Prerequisites besides the .NET 10 SDK:
+linux-x64 and osx-arm64 on matching runners). For a platform the host cannot build, the scripts print a warning and
+publish ReadyToRun instead. Prerequisites besides the .NET 10 SDK:
 
 | Host | Needs |
 | --- | --- |
@@ -504,9 +504,11 @@ build\publish.ps1 -Aot -Package -Rid win-x64 -Version 0.2.0   # zip + installer
 ```
 
 They land in `artifacts/publish/packages/` (`-SkipPublish` / `--skip-publish` repacks an existing publish folder).
-CI builds every package on each push to `main` (ReadyToRun cross-published from Linux, Native AOT on each OS's own
-runner) and keeps them as workflow artifacts named `VitaSharp-*-packages`; tagged versions go to the Releases page
-(see [Releases](#releases)). A release version (`1.2.3` or `1.2.3-suffix`) passed as `VERSION` / `-Version` also
+CI builds the Native AOT packages of win-x64, linux-x64 and osx-arm64 on each push to `main`, each on its own OS's
+runner, and keeps them as workflow artifacts named `VitaSharp-aot-<rid>-packages` (the published folders as
+`VitaSharp-aot-<rid>`, debug symbols as `VitaSharp-aot-<rid>-symbols`); tagged versions go to the Releases page (see
+[Releases](#releases)). ReadyToRun builds and the other platforms (linux-arm64, osx-x64) are made locally with the
+scripts above. A release version (`1.2.3` or `1.2.3-suffix`) passed as `VERSION` / `-Version` also
 becomes the app's version (`VitaSharp 1.2.3+<commit>` in the log); `dev` and CI builds keep `1.0.0`.
 
 <details>
@@ -590,13 +592,12 @@ pushes; start it one of two ways:
 - or **Actions > Release > Run workflow**: pick the branch, type the version (`0.1.0`) and tick *prerelease* if
   wanted. The tag `v0.1.0` is created on that branch's commit when the release is published.
 
-The workflow runs the CI workflow with that version (tests, then the ReadyToRun and Native AOT packages of every
-platform, so the file names and the app's version carry it) and publishes `VitaSharp <version>` with:
+The workflow runs the CI workflow with that version (tests, then the Native AOT packages, so the file names and the
+app's version carry it) and publishes `VitaSharp <version>` with:
 
-- every package: the Native AOT ones under their usual names (`VitaSharp-0.1.0-win-x64.zip`, `-setup.exe`,
-  `linux-x64.tar.gz`, `.AppImage`, `osx-arm64.app.zip`, `.dmg`, ...) and the ReadyToRun ones with `-readytorun` after
-  the platform (`VitaSharp-0.1.0-win-x64-readytorun.zip`); linux-arm64 is ReadyToRun only while the repository is
-  private (no ARM64 runner);
+- the Native AOT packages: `VitaSharp-0.1.0-win-x64.zip` and `-win-x64-setup.exe`, `-linux-x64.tar.gz` and
+  `-linux-x64.AppImage`, `-osx-arm64.app.zip` and `-osx-arm64.dmg` (the job fails if one is missing, if a file has
+  any other name, or if two have the same name); an Android `-android-arm64.apk` is planned;
 - `SHA256SUMS.txt` with their checksums;
 - notes made of [`build/release-notes-header.md`](build/release-notes-header.md) (firmware not included, unsigned
   binaries, system requirements) and the commits since the previous `v*` tag.
@@ -648,7 +649,7 @@ dotnet test tests/VitaSharp.Tests
 The CPU fuzz tests compare the interpreter and the JIT backends with [Unicorn](https://www.unicorn-engine.org/); they
 take several minutes, and are skipped where Unicorn's native library is not available (macOS on Apple Silicon) or when
 `VITASHARP_SKIP_UNICORN=1` is set. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) builds and tests on
-Windows, Ubuntu and macOS and publishes every platform.
+Windows, Ubuntu and macOS and builds the Native AOT packages (win-x64, linux-x64, osx-arm64).
 
 Game scenarios boot a title headless, feed scripted input and write frames, a contact sheet, metrics and a report
 to the data folder:

@@ -3,8 +3,8 @@
 #   - or run it from the Actions tab (Run workflow) with a version; the tag v<version> is then created on the chosen
 #     branch's commit when the release is published.
 # A version with a suffix (0.2.0-alpha, 0.2.0-dev.1) or the "prerelease" checkbox makes a prerelease. The packages come
-# from the CI workflow (tests first, then ReadyToRun and Native AOT packages for each platform) built with the version,
-# which also becomes the app's version ("VitaSharp 0.1.0+<commit>" in the log).
+# from the CI workflow (tests first, then the Native AOT packages of win-x64, linux-x64 and osx-arm64) built with the
+# version, which also becomes the app's version ("VitaSharp 0.1.0+<commit>" in the log).
 name: Release
 
 on:
@@ -96,25 +96,29 @@ jobs:
           pattern: VitaSharp-*-packages
           path: packages
 
-      # Native AOT packages keep their names, ReadyToRun ones get "-readytorun" after the platform (both kinds are
-      # built for most platforms and would otherwise have the same file names).
+      # one artifact per platform, VitaSharp-aot-<rid>-packages (a future VitaSharp-<rid>-packages, such as the
+      # Android APK, is collected the same way); every file must be VitaSharp-<version>-<rid>.<ext> or -setup.exe
       - name: Collect the packages
         run: |
           mkdir -p release
           for dir in packages/*/; do
-            name="$(basename "$dir")"; rid="${name%-packages}"
-            if [[ "$rid" == VitaSharp-aot-* ]]; then rid="${rid#VitaSharp-aot-}"; flavor=""; else rid="${rid#VitaSharp-}"; flavor="-readytorun"; fi
+            name="$(basename "$dir")"; rid="${name%-packages}"; rid="${rid#VitaSharp-}"; rid="${rid#aot-}"
             prefix="VitaSharp-$VERSION-$rid"
             for f in "$dir"*; do
               [ -f "$f" ] || continue
               base="$(basename "$f")"
-              if [[ "$base" != "$prefix"* ]]; then echo "::error::unexpected file $base in $name"; exit 1; fi
-              dest="release/$prefix$flavor${base#"$prefix"}"
-              if [ -e "$dest" ]; then echo "::error::two packages named $(basename "$dest")"; exit 1; fi
-              mv "$f" "$dest"
+              case "${base#"$prefix"}" in
+                .zip|-setup.exe|.tar.gz|.AppImage|.app.zip|.dmg|.apk) ;;
+                *) echo "::error::unexpected file $base in $name (expected $prefix.<zip|tar.gz|AppImage|app.zip|dmg|apk> or $prefix-setup.exe)"; exit 1 ;;
+              esac
+              if [ -e "release/$base" ]; then echo "::error::two packages named $base"; exit 1; fi
+              mv "$f" "release/$base"
             done
           done
           [ -n "$(ls -A release)" ] || { echo "::error::no packages were built"; exit 1; }
+          for want in win-x64.zip win-x64-setup.exe linux-x64.tar.gz linux-x64.AppImage osx-arm64.app.zip osx-arm64.dmg; do
+            [ -f "release/VitaSharp-$VERSION-$want" ] || { echo "::error::missing package VitaSharp-$VERSION-$want"; exit 1; }
+          done
           ls -l release
 
       # never publish Sony firmware: no .PUP file, and no .PUP or installed firmware partition inside the archives (the
