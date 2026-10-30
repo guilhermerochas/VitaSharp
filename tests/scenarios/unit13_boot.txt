@@ -1,0 +1,9 @@
+# Unit 13 (PCSF00034) from an empty save into the training level: touch to launch (f420), Solo Missions (f520), Begin
+# (f620), gameplay from ~f1800, then the tutorial's "look up" / "look down" (right stick) ends facing the camp gate,
+# with posters on the wooden walls left and right of it (~f2050 onwards).
+# Regression: the posters and parts of the walls showed red/green/purple blocks. The deferred ambient light samples a
+# single-level 32x32 UBC1 cube whose faces are packed 512 bytes apart; faces were read 2 KB apart, so faces 2-5 were
+# other memory and normals pointing at them got random colours (TextureLayout.CubeFaceStride).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/unit13_boot.txt --data=<scratch root> --shader-cache=<dir>
+title=PCSF00034
+args=--frames=2200 --seconds=900 --dump-every=50 --dump-from=1800 --debug-mode --diag-at=2150 --input=tap@f420:0.5:0.5:f8,tap@f520:0.13:0.40:f8,tap@f620:0.5:0.36:f8,rstick@f1900:0:-1:f25,rstick@f2000:0:1:f14
