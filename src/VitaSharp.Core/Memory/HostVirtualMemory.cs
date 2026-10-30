@@ -142,12 +142,6 @@ internal static unsafe partial class HostVirtualMemory
     private static partial int memfd_create(string name, uint flags);
 
     [LibraryImport("libc", SetLastError = true)]
-    private static partial int mkstemp(byte* template);
-
-    [LibraryImport("libc", SetLastError = true)]
-    private static partial int unlink(byte* path);
-
-    [LibraryImport("libc", SetLastError = true)]
     private static partial int ftruncate(int fd, long length);
 
     [LibraryImport("libc", SetLastError = true)]
@@ -157,8 +151,8 @@ internal static unsafe partial class HostVirtualMemory
 
     /// <summary>
     /// Memory that several reservations map at once (<see cref="ReserveWithViews"/>): a pagefile-backed section whose pages
-    /// are committed on demand (Windows), or an anonymous memory file (Linux memfd, an unlinked temporary file elsewhere).
-    /// Returns 0 when the host cannot provide it.
+    /// are committed on demand (Windows), or an anonymous memory file (Linux and Android memfd). Returns 0 when the host
+    /// cannot provide it.
     /// </summary>
     public static nint CreateSharedMemory(ulong size, string tag)
     {
@@ -169,19 +163,12 @@ internal static unsafe partial class HostVirtualMemory
                 nint h = CreateFileMappingW(-1, null, PAGE_READWRITE | SEC_RESERVE, (uint)(size >> 32), (uint)size, null);
                 return h;
             }
+            // anonymous shared memory: memfd (Linux, Android). Elsewhere (macOS) a temporary file would do, but its dirty
+            // pages are written back to disk, which CDRAM traffic must not cost: there all processes share one space
             int fd = -1;
             if (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid())
             {
                 try { fd = memfd_create("vitasharp-" + tag, 1 /*MFD_CLOEXEC*/); } catch (EntryPointNotFoundException) { fd = -1; }
-            }
-            if (fd < 0)
-            {
-                var template = System.Text.Encoding.UTF8.GetBytes(Path.Combine(Path.GetTempPath(), $"vitasharp-{tag}-XXXXXX") + "\0");
-                fixed (byte* t = template)
-                {
-                    fd = mkstemp(t);
-                    if (fd >= 0) unlink(t);
-                }
             }
             if (fd < 0) return 0;
             if (ftruncate(fd, (long)size) != 0) { close(fd); return 0; }

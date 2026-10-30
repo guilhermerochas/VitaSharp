@@ -70,7 +70,8 @@ Each process is its own `Emulator` (kernel state, HLE modules, linker, mounts, c
   (HLE trampolines, objects visible to the guest) and CDRAM 0x60000000-0x70000000 (SceSharedFb, display buffers, GPU
   memory). On Windows the reservation is split with placeholders (`VirtualAlloc2`) and the shared regions are views of
   pagefile-backed `SEC_RESERVE` sections (`MapViewOfFile3`, committed on demand by the same lazy-commit handler); on
-  Linux/Android memfd views, elsewhere an unlinked temporary file. User memory is private: a block exists only in the
+  Linux/Android memfd views. macOS has no anonymous memory file (a temporary file's dirty pages would be written to
+  disk), so there every process shares the first one's space. User memory is private: a block exists only in the
   space of the process that allocated it. Relocatable allocations still take ranges no space uses, so a guest address
   names one piece of data for the GPU's caches whichever process submitted it; only fixed executable segments
   (`TryAllocAt(exclusive: false)`) share addresses with other processes' blocks. A process's space comes from

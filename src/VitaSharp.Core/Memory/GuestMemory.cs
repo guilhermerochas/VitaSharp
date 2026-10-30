@@ -109,7 +109,7 @@ public sealed unsafe class GuestMemory : IDisposable
         _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
         _freeKernel.Add(KernelStart, KernelEnd - KernelStart);
         if (!separate && separateSpaces != false && Environment.GetEnvironmentVariable(EnvVars.SharedAddressSpace) != "1")
-            Log.Warn("Guest memory: the host cannot map shared memory twice; all processes share one address space");
+            Log.Info("Guest memory: the host cannot map shared memory twice; all processes share one address space");
     }
 
     /// <summary>Reserves a new space; with <paramref name="views"/> the shared regions are views of the system's memory.
