@@ -906,7 +906,21 @@ public sealed class Ngs : HleModule
             int bp = 8 + cur * pl.Stride;
             uint buf = m.Param32(bp);
             int bytes = (int)m.Param32(bp + 4);
-            if (buf == 0 || bytes == 0) { finished = true; break; }
+            if (buf == 0 || bytes == 0)
+            {
+                // an empty buffer is skipped silently when it chains to a valid one (Vita3K's player): FMOD's NGS
+                // streams start on a 0-byte buffer 0 whose next is the looping stream ring
+                int nx = m.ParamI16(bp + 10);
+                if (ValidPlayerBuffer(m, pl, nx))
+                {
+                    SetState(m, 4, nx);
+                    SetState(m, 0, 0);
+                    st.LoopCount = 0;
+                    continue;
+                }
+                finished = true;
+                break;
+            }
             int pos = GetState(m, 0);
             if (pos >= bytes)
             {
@@ -918,7 +932,7 @@ public sealed class Ngs : HleModule
                     int next = m.ParamI16(bp + 10);
                     st.LoopCount = 0;
                     SetState(m, 4, next);
-                    if (next < 0 || next >= 4 || m.Param32(8 + next * pl.Stride) == 0 || m.Param32(8 + next * pl.Stride + 4) == 0)
+                    if (!ValidPlayerBuffer(m, pl, next))
                     {
                         InvokeCallback(v, m.Callback, m.UserData, 0x5CE6, PLAYER_END_OF_DATA, 0, 0);
                         finished = true;
@@ -968,6 +982,9 @@ public sealed class Ngs : HleModule
         SetState(m, 16, GetState(m, 16) + produced * channels);
         return finished;
     }
+
+    static bool ValidPlayerBuffer(NgsModuleData m, PlayerParamLayout pl, int index) =>
+        index is >= 0 and < 4 && m.Param32(8 + index * pl.Stride) != 0 && m.Param32(8 + index * pl.Stride + 4) != 0;
 
     /// <summary>Decodes into the source state's reusable buffer; returns the number of floats written.</summary>
     static int DecodeHevag(uint addr, int size, int channels, NgsSourceState st)

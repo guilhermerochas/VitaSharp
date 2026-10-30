@@ -245,4 +245,43 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(n, "sceNgsSystemUnlock", sys.Handle));                // unbalanced unlock is harmless
         Assert.Equal(0, sys.GuestLockCount);
     }
+
+    [Fact]
+    public void NgsPlayerSkipsEmptyBufferChainedToValidOne()
+    {
+        // LittleBigPlanet (FMOD streams): buffer 0 has 0 bytes and chains to buffer 1, the looping stream ring. The
+        // player must move on to buffer 1 (Vita3K), not finish the voice on its first tick: FMOD then saw the channel
+        // as stopped, the game released the stream and reloaded it every couple of frames (silence).
+        var n = new Ngs();
+        var sys = new VitaSharp.Core.Hle.Audio.NgsSystem { Handle = 0x1000, Granularity = 256, SampleRate = 48000 };
+        var rack = new VitaSharp.Core.Hle.Audio.NgsRack { System = sys, ChannelsPerVoice = 2 };
+        var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
+        uint pcm = fx.Memory.Alloc(0x1000, "ngs pcm");
+        for (uint i = 0; i < 0x1000; i += 2) GuestMemory.Write<short>(pcm + i, 0x1000);
+        uint prm = fx.Memory.Alloc(0x54, "ngs player params");
+        GuestMemory.Fill(prm, 0, 0x54);
+        GuestMemory.W32(prm + 4, 0x54);                                                  // 84-byte layout
+        GuestMemory.W32(prm + 8, pcm); GuestMemory.Write<short>(prm + 18, 1);             // buffer 0: 0 bytes, next 1
+        GuestMemory.W32(prm + 20, pcm); GuestMemory.W32(prm + 24, 0x1000);                // buffer 1: loops forever
+        GuestMemory.Write<short>(prm + 28, -1); GuestMemory.Write<short>(prm + 30, -1);
+        GuestMemory.W32(prm + 56, BitConverter.SingleToUInt32Bits(48000f));
+        GuestMemory.W32(prm + 60, BitConverter.SingleToUInt32Bits(1f));
+        GuestMemory.Write<byte>(prm + 76, 2);                                             // stereo PCM16
+        var m = new VitaSharp.Core.Hle.Audio.NgsModuleData
+        {
+            Voice = voice, Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Player, ParamAddr = prm, ParamSize = 0x54,
+            GuestState = new byte[0x20], Source = new VitaSharp.Core.Hle.Audio.NgsSourceState(),
+        };
+        voice.Modules = [m];
+        bool finished = (bool)Invoke(n, "ProcessPlayer", voice, m, 256)!;
+        Assert.False(finished);
+        Assert.Equal(1, BitConverter.ToInt32(m.GuestState, 4));                           // current buffer
+        Assert.Equal(0x1000 / 32768f, voice.Product![0]);
+
+        GuestMemory.Write<short>(prm + 18, -1);                                           // empty buffer, no next: done
+        voice.Product = null;
+        Array.Clear(m.GuestState);
+        m.Source.Reset();
+        Assert.True((bool)Invoke(n, "ProcessPlayer", voice, m, 256)!);
+    }
 }

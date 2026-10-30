@@ -55,7 +55,40 @@ not done").
 - Not used with supersampling, the tile-word attachment, or tile-based (mobile) renderings. Disabled together with
   the MSAA split by `VITASHARP_FETCH_SPLIT=0`.
 
-## Not fixed: audio
+## Fixed: audio (FMOD streams stopped on their first NGS tick)
+
+**Cause.** FMOD plays each stream on an NGS player voice whose buffer 0 is empty (0 bytes) and chains (`next = 1`)
+to buffer 1, the stream ring, which loops forever. Our player finished the voice as soon as the current buffer had
+0 bytes. FMOD's `ChannelNGS::isPlaying` (0x81520F42: `sceNgsVoiceGetInfo`, state bit 0) then reported the channel
+as stopped. The game killed the voice (`sceNgsVoiceKill` from 0x815206E1), released the stream (the decoder churn
+below) and started it again about every 2 frames, so nothing was heard.
+
+**Fix** (`Ngs.ProcessPlayer`, as in Vita3K's player). An empty or null buffer moves on to its `next` buffer, with
+no callback, when that buffer is valid. It finishes the voice only when there is no valid next buffer. Test:
+`DevicesHleTests.NgsPlayerSkipsEmptyBufferChainedToValidOne`. Vita3K's ATRAC9 module handles empty buffers through
+its loop/next path instead; that module is unchanged here.
+
+**Result.** Measured on port 1 as the share of 100 ms windows that peak above |64|. The run is 2900 frames: boot,
+pod, planet, level map.
+
+| build | port 1 audio | non-silent windows |
+|---|---|---|
+| main | 106 s | 3.8% |
+| fix | 90 s | 63.7% |
+
+- With the fix, sound is continuous from the first FMOD sound (about 32 s) to the end. The silent part before it is
+  the logos and the intro movie, which plays on port 2.
+- On main, only scattered blips are heard after 44 s.
+- Audiodec decoder creations over 1400 frames went from 331 to 7.
+- Regressions over 1500 frames, port 1 non-silent windows, fix vs main. The differences are run-to-run timing:
+
+  | game | engine | fix | main |
+  |---|---|---|---|
+  | 99vidas | FMOD/NGS | 26.1% | 26.8% |
+  | sm2e | NGS | 32.8% | 30.7% |
+  | shbom | Wwise | 59.2% | 58.4% |
+
+### Investigation history (before the fix)
 
 Measured with `--audio-dump` and `wavstat`. Runs:
 - `lbp_a`: boot to the pod;
