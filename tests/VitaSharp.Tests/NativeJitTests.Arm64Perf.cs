@@ -20,6 +20,8 @@ public sealed unsafe partial class NativeJitTests
         ("arm sum", false, "E4903004,E0844003,E2522001,1AFFFFFB"),
         // add r5,r5,#1; cmp r5,r2; blt loop
         ("arm cmp loop", false, "E2855001,E1550002,BAFFFFFC"),
+        // ldr r3,[r0],#4; cmp r3,r4; movgt r4,r3; subs r2,r2,#1; bne loop (running maximum: a GT region)
+        ("arm max", false, "E4903004,E1530004,C1A04003,E2522001,1AFFFFFA"),
         // ldmia r1!,{r3-r6}; stmia r0!,{r3-r6}; subs r2,#1; bne loop
         ("thumb memcpy", true, "C978,C078,3A01,D1FB"),
         // ldrb r3,[r1,r5]; strb r3,[r0,r5]; adds r5,#1; cmp r5,r2; blt loop
@@ -94,6 +96,65 @@ public sealed unsafe partial class NativeJitTests
             return ((double)sb.Executed / blocks, info.Size / 4, Diff(interp, native));
         }
         finally { CpuState.Free(s); }
+    }
+
+    /// <summary>
+    /// Compare + branch fusion: every flag-setting form (CMP, CMN, TST, TEQ, ADDS, SUBS, ADCS, SBCS, MOVS with a shift
+    /// carry) followed by an instruction under each of the 14 conditions, with operands at the flag edges, against the
+    /// interpreter, with fusion on and off. The fused forms must also be shorter.
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64FusedConditionsMatchInterpreter()
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        uint[] setters = [0xE1500001, 0xE1700001, 0xE1100001, 0xE1300001, 0xE0903001, 0xE0503001, 0xE0B03001, 0xE0D03001, 0xE1B03080];
+        uint[] edge = [0, 1, 2, 0x7FFFFFFF, 0x80000000, 0x80000001, 0xFFFFFFFF, 0xFFFFFFFE, 0x12345678];
+        var rng = new Random(77);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        int compared = 0, shorter = 0;
+        var failures = new List<string>();
+        try
+        {
+            foreach (uint setter in setters)
+                for (uint cond = 0; cond < 14; cond++)
+                {
+                    uint[] prog = [setter, cond << 28 | 0x03A02001, (cond ^ 1) << 28 | 0x03A02002, 0xE12FFF1E];
+                    var bytes = prog.SelectMany(BitConverter.GetBytes).ToArray();
+                    bytes.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                    var b = BlockBuilder.Build(CodeBase, false);
+                    int[] size = new int[2];
+                    for (int fused = 0; fused < 2; fused++)
+                    {
+                        Arm64Emitter.Opts = fused == 1 ? old | Arm64Emitter.A64Opt.FuseBranch : old & ~Arm64Emitter.A64Opt.FuseBranch;
+                        var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                        size[fused] = ((NativeCodeInfo)cb.Tag!).Size;
+                        for (int k = 0; k < 24; k++)
+                        {
+                            var st = new RandomState(rng);
+                            st.Regs[0] = edge[rng.Next(edge.Length)];
+                            st.Regs[1] = rng.Next(3) == 0 ? (uint)rng.NextInt64() : edge[rng.Next(edge.Length)];
+                            st.Flags = (uint)rng.Next(16) << 28;
+                            st.Apply(s, false);
+                            var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                            st.Apply(s, false);
+                            var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                            compared++;
+                            string d = Diff(interp, native);
+                            if (d.Length > 0 && failures.Count < 10) failures.Add($"{setter:X8} cond {cond} fused {fused} r0 {st.Regs[0]:X8} r1 {st.Regs[1]:X8} flags {st.Flags:X8}:{d}");
+                        }
+                    }
+                    if (size[1] < size[0]) shorter++;
+                }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        output.WriteLine($"compared {compared} runs; fused code shorter for {shorter} of {setters.Length * 14} setter/condition pairs");
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+        // CMP/CMN/ADDS/SUBS/ADCS/SBCS under HI/LS/GT/LE save four instructions (GE/LT save one, which the literal pool's
+        // 8-byte alignment can absorb); TST/TEQ/MOVS leave C/V to older flags and are not fused for those conditions
+        Assert.True(shorter >= 6 * 4, $"fusion shortened only {shorter} blocks");
     }
 
     [Arm64SandboxFact]

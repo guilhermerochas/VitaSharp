@@ -157,6 +157,7 @@ public sealed unsafe partial class Arm64Emitter
         _vcache = (opts & A64Opt.VecCache) != 0;
         _lazyFpcr = (opts & A64Opt.LazyFpcr) != 0;
         _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
+        ForgetHostFlags();
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? CalleeSavedPinned : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -273,10 +274,41 @@ public sealed unsafe partial class Arm64Emitter
         else { _a.MovImm64(X8, v); _a.Add(r, r, X8, x: true); }
     }
 
+    // ------------------------------------------------------------------ host flags (compare + branch fusion)
+
+    /// <summary>Flag temps whose values the host NZCV currently hold (-1: none); valid while only ops that keep the
+    /// host flags were lowered since the AddC/SubC/TestNZ that set them.</summary>
+    int _hfN = -1, _hfZ = -1, _hfC = -1, _hfV = -1;
+
+    /// <summary>IR ops whose lowering never writes NZCV (and is not a merge point).</summary>
+    static bool KeepsHostFlags(IrOp op) => op is IrOp.Nop or IrOp.GetReg or IrOp.GetFlag or IrOp.LoadState or IrOp.SetReg
+        or IrOp.SetFlag or IrOp.StoreState or IrOp.Add or IrOp.Sub or IrOp.And or IrOp.Or or IrOp.Xor or IrOp.AndNot
+        or IrOp.OrNot or IrOp.Mul or IrOp.Not or IrOp.Neg or IrOp.Shl or IrOp.Shr or IrOp.Sar or IrOp.Ror or IrOp.Clz
+        or IrOp.Bswap or IrOp.Rev16 or IrOp.RevSh or IrOp.Rbit or IrOp.SExt8 or IrOp.SExt16 or IrOp.ZExt8 or IrOp.ZExt16
+        or IrOp.Bit or IrOp.UDiv or IrOp.SDiv or IrOp.UMulL or IrOp.SMulL or IrOp.Load8 or IrOp.Load8S or IrOp.Load16
+        or IrOp.Load16S or IrOp.Load32 or IrOp.Store8 or IrOp.Store16 or IrOp.Store32 or IrOp.LoadD or IrOp.StoreD
+        or IrOp.Fence or IrOp.CondBranch or IrOp.BranchIf;
+
+    void ForgetHostFlags() { _hfN = _hfZ = _hfC = _hfV = -1; }
+
+    /// <summary>Records that the host NZCV now equal these flag temps (call right after the flag-setting instruction).</summary>
+    void HostFlagsAre(int n, int z, int c, int v) { if (_fuse) { _hfN = n; _hfZ = z; _hfC = c; _hfV = v; } }
+
+    /// <summary>Whether CondBranch <paramref name="x"/> can test the host flags: every flag its condition reads is the
+    /// temp the host flag currently holds.</summary>
+    bool HostFlagsMatch(in IrInst x)
+    {
+        static bool Same(int used, int host) => used < 0 || used == host;
+        bool any = x.A >= 0 || x.B >= 0 || x.C >= 0 || x.E >= 0;
+        return any && x.Imm < 14 && Same(x.A, _hfN) && Same(x.B, _hfZ) && Same(x.C, _hfC) && Same(x.E, _hfV);
+    }
+
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void Lower(IrInst x, Func<int, nint> slotFor, ref int exitIndex)
     {
         var a = _a;
+        if (_hfN >= 0 || _hfZ >= 0 || _hfC >= 0 || _hfV >= 0)
+            if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
         switch (x.Op)
         {
             case IrOp.Nop: return;
@@ -349,6 +381,7 @@ public sealed unsafe partial class Arm64Emitter
             {
                 int s = UseZ(x.A, X0);
                 a.Tst(s, s);
+                HostFlagsAre(x.Fn, x.Fz, -1, -1);
                 SetFlagOut(x.Fn, Cond.MI);
                 SetFlagOut(x.Fz, Cond.EQ);
                 return;
@@ -654,6 +687,7 @@ public sealed unsafe partial class Arm64Emitter
             if (sub) a.Sbcs(d, n, m); else a.Adcs(d, n, m);
         }
     flags:
+        HostFlagsAre(x.Fn, x.Fz, x.Fc, x.Fv);
         SetFlagOut(x.Fn, Cond.MI);
         SetFlagOut(x.Fz, Cond.EQ);
         SetFlagOut(x.Fc, Cond.HS);
@@ -714,6 +748,13 @@ public sealed unsafe partial class Arm64Emitter
         var a = _a;
         int skip = _labels[x.Imm2];
         uint cond = x.Imm;
+        if (_fuse && HostFlagsMatch(x))
+        {
+            // the host NZCV are the guest flags these temps hold (0/1 values from the same ADDS/SUBS/TST): skip on the
+            // inverse condition (ARM32 and ARM64 condition codes are the same)
+            a.BCond(Invert((Cond)cond), skip);
+            return;
+        }
         void If(int t, bool set) { int r = UseZ(t, X0); if (set) a.Cbnz(r, skip); else a.Cbz(r, skip); }
         switch (cond)
         {
