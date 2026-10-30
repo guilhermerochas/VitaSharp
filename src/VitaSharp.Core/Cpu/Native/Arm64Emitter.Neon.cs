@@ -282,6 +282,24 @@ public sealed unsafe partial class Arm64Emitter
                 Store();
                 return;
             case VecKind.Clz: LdV(V2, mOff, q); a.V2(0x04, true, size, q, V0, V2); Store(); return;
+            case VecKind.Cls: LdV(V2, mOff, q); a.V2(0x04, false, size, q, V0, V2); Store(); return;
+            case VecKind.Qmovn: // SQXTN / UQXTN / SQXTUN: Q source, D result (size = narrow lanes)
+                LdV(V2, mOff, true);
+                QcBegin();
+                if (aux == 1) a.V2(0x12, true, size, false, V0, V2); else a.V2(0x14, u, size, false, V0, V2);
+                StV(dOff, V0, false);
+                QcEnd();
+                return;
+            case VecKind.MullI:
+            {
+                // SMULL/UMULL/PMULL (opcode 1100/1110), SMLAL/UMLAL (1000), SMLSL/UMLSL (1010): D sources, Q result
+                LdV(V1, nOff, false); LdV(V2, mOff, false);
+                if (acc) LdV(V0, dOff, true);
+                uint opc = (aux & 1) != 0 ? 0xEu : !acc ? 0xCu : (aux & 2) != 0 ? 0xAu : 0x8u;
+                a.V3Diff(opc, u && (aux & 1) == 0, size, false, V0, V1, V2);
+                StV(dOff, V0, true);
+                return;
+            }
             case VecKind.RecpeF: LdV(V2, mOff, q); a.V2(0x1D, false, 2, q, V0, V2); Store(); return;
             case VecKind.RsqrteF: LdV(V2, mOff, q); a.V2(0x1D, true, 2, q, V0, V2); Store(); return;
             case VecKind.RecpeU: LdV(V2, mOff, q); a.V2(0x1C, false, 2, q, V0, V2); Store(); return;

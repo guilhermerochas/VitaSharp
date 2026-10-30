@@ -28,7 +28,7 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>NEON classes the generator targets (each with its encoding template).</summary>
-    public enum NeonClass { ThreeSame, ThreeSameFloat, Scalar, Shift, Misc, Vext, Vtbl, LoadStore, Any }
+    public enum NeonClass { ThreeSame, ThreeSameFloat, Scalar, Shift, Misc, Vext, Vtbl, LoadStore, ThreeDiff, Any }
 
     /// <summary>A random NEON instruction of <paramref name="cls"/> in ARM form (callers convert it to Thumb).</summary>
     internal static uint RandomNeon(Random rng, NeonClass cls)
@@ -59,6 +59,11 @@ public sealed unsafe partial class NativeJitTests
                 return 0xF2B00000u | (r & 0x004FFFEF);
             case NeonClass.Vtbl: // 1111 0011 1D11 nnnn dddd 10ll NxM0 mmmm
                 return 0xF3B00800u | (r & 0x004FF3EF);
+            case NeonClass.ThreeDiff: // 1111 001U 1Dsz nnnn dddd AAAA N0M0 mmmm, sz != 11; mostly VMULL/VMLAL/VMLSL/VMULL.P8
+            {
+                uint[] aField = [8, 10, 12, 14, 12, 14, (uint)rng.Next(16)];
+                return 0xF2800000u | (r & 0x014FF0AF) | ((uint)rng.Next(3) << 20) | (aField[rng.Next(aField.Length)] << 8);
+            }
             default: // 1111 0100 AD L0 nnnn dddd tttt ssaa mmmm
             {
                 // Rn = r4-r12 (data addresses), Rm = r0-r3 (small increments, see NeonState): every access stays inside
@@ -142,6 +147,8 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(false, NeonClass.Vtbl, 300, 1610)]
     [InlineData(false, NeonClass.LoadStore, 400, 1611)]
     [InlineData(true, NeonClass.LoadStore, 300, 1612)]
+    [InlineData(false, NeonClass.ThreeDiff, 300, 1615)]
+    [InlineData(true, NeonClass.ThreeDiff, 300, 1616)]
     [InlineData(false, NeonClass.Any, 400, 1613)]
     [InlineData(true, NeonClass.Any, 400, 1614)]
     public void NativeNeonQuick(bool thumb, NeonClass cls, int iterations, int seed) => NativeNeonMatchesInterpreter(thumb, cls, iterations, seed);
@@ -160,6 +167,8 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(false, NeonClass.Vtbl, 2_000, 610)]
     [InlineData(false, NeonClass.LoadStore, 6_000, 611)]
     [InlineData(true, NeonClass.LoadStore, 3_000, 612)]
+    [InlineData(false, NeonClass.ThreeDiff, 4_000, 615)]
+    [InlineData(true, NeonClass.ThreeDiff, 3_000, 616)]
     [InlineData(false, NeonClass.Any, 6_000, 613)]
     [InlineData(true, NeonClass.Any, 6_000, 614)]
     public void NativeNeonMatchesInterpreter(bool thumb, NeonClass cls, int iterations, int seed)
@@ -201,6 +210,43 @@ public sealed unsafe partial class NativeJitTests
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>The NEON forms added to the inline set in perf/jit-complete compile without callouts on both frontends.</summary>
+    [NativeTheory]
+    [InlineData(0xF424080Fu, Op.Neon_LoadStore)] // vld2.8 {d0, d1}, [r4]
+    [InlineData(0xF424044Du, Op.Neon_LoadStore)] // vld3.16 {d0, d1, d2}, [r4]!
+    [InlineData(0xF424008Fu, Op.Neon_LoadStore)] // vld4.32 {d0-d3}, [r4]
+    [InlineData(0xF424030Fu, Op.Neon_LoadStore)] // vld2.8 {d0-d3}, [r4]
+    [InlineData(0xF404030Fu, Op.Neon_LoadStore)] // vst2.8 {d0-d3}, [r4]
+    [InlineData(0xF404014Fu, Op.Neon_LoadStore)] // vst4.16 {d0, d2, d4, d6}, [r4]
+    [InlineData(0xF404054Fu, Op.Neon_LoadStore)] // vst3.16 {d0, d2, d4}, [r4]
+    [InlineData(0xF2320401u, Op.Neon_ThreeSame)] // vshl.s64 d0, d1, d2
+    [InlineData(0xF3340442u, Op.Neon_ThreeSame)] // vshl.u64 q0, q1, q2
+    [InlineData(0xF2910C02u, Op.Neon_ThreeDiff)] // vmull.s16 q0, d1, d2
+    [InlineData(0xF3A10C02u, Op.Neon_ThreeDiff)] // vmull.u32 q0, d1, d2
+    [InlineData(0xF2810E02u, Op.Neon_ThreeDiff)] // vmull.p8 q0, d1, d2
+    [InlineData(0xF2810802u, Op.Neon_ThreeDiff)] // vmlal.s8 q0, d1, d2
+    [InlineData(0xF3910A02u, Op.Neon_ThreeDiff)] // vmlsl.u16 q0, d1, d2
+    [InlineData(0xF3B00401u, Op.Neon_Misc)]      // vcls.s8 d0, d1
+    [InlineData(0xF3B80442u, Op.Neon_Misc)]      // vcls.s32 q0, q1
+    [InlineData(0xF3B20282u, Op.Neon_Misc)]      // vqmovn.s16 d0, q1
+    [InlineData(0xF3B602C2u, Op.Neon_Misc)]      // vqmovn.u32 d0, q1
+    [InlineData(0xF3BA0242u, Op.Neon_Misc)]      // vqmovun.s64 d0, q1
+    public void NewNeonFormsAreInline(uint arm, Op op)
+    {
+        EnsureGuestPages();
+        foreach (bool thumb in new[] { false, true })
+        {
+            uint ins = thumb ? ToThumb(arm) : arm;
+            var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
+            Assert.Equal(op, d.Op);
+            byte[] code = !thumb ? [.. BitConverter.GetBytes(ins), 0xFE, 0xFF, 0xFF, 0xEA] : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8), 0xFE, 0xE7];
+            code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+            var b = BlockBuilder.Build(CodeBase, thumb);
+            Assert.Equal(0, new ArmFrontend().Translate(b).Callouts);
+            Assert.Equal(0, NativeArm64Compiler.NewFrontend().Translate(b).Callouts);
+        }
     }
 
     /// <summary>

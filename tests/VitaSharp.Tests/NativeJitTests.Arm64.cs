@@ -263,6 +263,9 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(false, NeonClass.Vext, 150, 2609)]
     [InlineData(false, NeonClass.Vtbl, 150, 2610)]
     [InlineData(false, NeonClass.LoadStore, 150, 2611)]
+    [InlineData(true, NeonClass.LoadStore, 150, 2612)]
+    [InlineData(false, NeonClass.ThreeDiff, 150, 2615)]
+    [InlineData(true, NeonClass.ThreeDiff, 150, 2616)]
     [InlineData(false, NeonClass.Any, 150, 2613)]
     [InlineData(true, NeonClass.Any, 150, 2614)]
     public void Arm64NeonQuick(bool thumb, NeonClass cls, int iterations, int seed) => Arm64NeonMatchesInterpreter(thumb, cls, iterations, seed);
@@ -280,6 +283,9 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(false, NeonClass.Vext, 2_000, 2709)]
     [InlineData(false, NeonClass.Vtbl, 2_000, 2710)]
     [InlineData(false, NeonClass.LoadStore, 6_000, 2711)]
+    [InlineData(true, NeonClass.LoadStore, 3_000, 2712)]
+    [InlineData(false, NeonClass.ThreeDiff, 4_000, 2715)]
+    [InlineData(true, NeonClass.ThreeDiff, 3_000, 2716)]
     [InlineData(false, NeonClass.Any, 6_000, 2713)]
     [InlineData(true, NeonClass.Any, 6_000, 2714)]
     public void Arm64NeonMatchesInterpreter(bool thumb, NeonClass cls, int iterations, int seed)

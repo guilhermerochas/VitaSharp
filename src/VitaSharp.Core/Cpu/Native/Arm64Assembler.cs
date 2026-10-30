@@ -438,6 +438,10 @@ public sealed class Arm64Assembler
     public void V2(uint opcode, bool u, uint size, bool q, int rd, int rn) =>
         Emit(0x0E200800 | Qb(q) | (u ? 1u << 29 : 0) | size << 22 | opcode << 12 | (uint)rn << 5 | (uint)rd);
 
+    /// <summary>Three registers, different types (SMULL/UMULL/PMULL/SMLAL...): opcode = bits 15:12, size = the narrow lanes.</summary>
+    public void V3Diff(uint opcode, bool u, uint size, bool q, int rd, int rn, int rm) =>
+        Emit(0x0E200000 | Qb(q) | (u ? 1u << 29 : 0) | size << 22 | (uint)rm << 16 | opcode << 12 | (uint)rn << 5 | (uint)rd);
+
     /// <summary>Permute (UZP1/TRN1/ZIP1 = 1/2/3, UZP2/TRN2/ZIP2 = 5/6/7).</summary>
     public void VPerm(uint opcode, uint size, bool q, int rd, int rn, int rm) =>
         Emit(0x0E000800 | Qb(q) | size << 22 | (uint)rm << 16 | opcode << 12 | (uint)rn << 5 | (uint)rd);

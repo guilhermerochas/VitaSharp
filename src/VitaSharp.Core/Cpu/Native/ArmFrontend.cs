@@ -229,6 +229,7 @@ public sealed unsafe partial class ArmFrontend
 
             Op.A32_Exclusive => A32Exclusive(in d),
             Op.Neon_ThreeSame => NeonThreeSame(in d),
+            Op.Neon_ThreeDiff => NeonThreeDiff(in d),
             Op.Neon_VdupScalar => NeonVdupScalar(in d),
             Op.Neon_Imm => NeonImm(in d),
             Op.Neon_LoadStore => NeonLoadStore(in d),

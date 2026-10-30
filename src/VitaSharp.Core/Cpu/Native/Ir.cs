@@ -172,6 +172,10 @@ public enum VecKind : byte
     RecpeF, RsqrteF, RecpeU, RsqrteU, CvtS2F, CvtU2F, CvtF2S, CvtF2U, CvtF2H, CvtH2F,
     Ext,                                     // VEXT: Imm2 = byte offset
     Tbl,                                     // VTBL/VTBX: Imm2 = length (1-4) | tbx << 4
+    // three registers, different lengths: D n, D m -> Q d (size = source lanes)
+    MullI,                                   // VMULL (Imm2 bit 0 = polynomial, 8-bit lanes) / VMLAL (Accumulate) / VMLSL (Accumulate, Imm2 bit 1)
+    Cls,                                     // VCLS
+    Qmovn,                                   // VQMOVN (Unsigned: .U) / VQMOVUN (Imm2 = 1): Q m -> D d with saturation (QC), size = narrow lanes
 }
 
 /// <summary>Modifier bits of an <see cref="IrOp.VecOp"/> (in Imm).</summary>
