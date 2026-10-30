@@ -157,6 +157,47 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(shorter >= 6 * 4, $"fusion shortened only {shorter} blocks");
     }
 
+    /// <summary>The VFP fast-path mode check (<see cref="Arm64Emitter.A64Opt.FastFpCheck"/>) at every FPSCR bit around
+    /// the mode field (LEN, the reserved bit 19, STRIDE, RMode, FZ, DN, AHP, QC and the flags), against the interpreter.</summary>
+    [Arm64SandboxFact]
+    public void Arm64VfpModeCheckEdges()
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        // vadd.f32 s3,s1,s4; vmul.f64 d5,d6,d7; vcmp.f32 s1,s4; b .
+        uint[] prog = [0xEE701A82, 0xEE265B07, 0xEEF40A42, 0xEAFFFFFE];
+        prog.SelectMany(BitConverter.GetBytes).ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+        var b = BlockBuilder.Build(CodeBase, false);
+        var old = Arm64Emitter.Opts;
+        var rng = new Random(91);
+        var s = CpuState.Allocate();
+        var failures = new List<string>();
+        try
+        {
+            foreach (bool fast in new[] { false, true })
+            {
+                Arm64Emitter.Opts = fast ? old | Arm64Emitter.A64Opt.FastFpCheck : old & ~Arm64Emitter.A64Opt.FastFpCheck;
+                var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                for (int bit = 15; bit <= 31; bit++)
+                    for (int k = 0; k < 8; k++)
+                    {
+                        var st = new RandomState(rng);
+                        for (int i = 0; i < 32; i++) st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                        st.Fpscr = 0x0300_0000u ^ (1u << bit);
+                        st.Apply(s, false);
+                        var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                        st.Apply(s, false);
+                        var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                        string d = Diff(interp, native);
+                        if (d.Length > 0 && failures.Count < 10) failures.Add($"fast {fast} fpscr {st.Fpscr:X8}:{d}");
+                    }
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
     [Arm64SandboxFact]
     public void Arm64CodeQualityTable()
     {

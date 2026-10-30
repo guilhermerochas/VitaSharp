@@ -1023,10 +1023,20 @@ public sealed unsafe partial class Arm64Emitter
         var st = dbl ? LsKind.StrD : LsKind.StrS;
 
         LdState(X16, OffFpscr);
-        a.MovImm(X17, 0x03F70000);
-        a.And(X16, X16, X17);
-        a.MovImm(X17, 0x03000000);
-        a.Cmp(X16, X17);
+        if (_fastFpCheck)
+        {
+            // FPSCR[25:16] == DN FZ, RMode 0, STRIDE 0, LEN 0, and bit 19 (reserved on the Vita) clear; a set bit 19 only
+            // takes the handler, which is always exact
+            a.Ubfx(X16, X16, 16, 10);
+            a.CmpImm(X16, 0x300);
+        }
+        else
+        {
+            a.MovImm(X17, 0x03F70000);
+            a.And(X16, X16, X17);
+            a.MovImm(X17, 0x03000000);
+            a.Cmp(X16, X17);
+        }
         a.BCond(Cond.NE, slow);
 
         switch (kind)
