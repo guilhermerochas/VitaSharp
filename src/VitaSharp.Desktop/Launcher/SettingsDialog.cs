@@ -61,6 +61,15 @@ public sealed class SettingsDialog : Window
             ItemsSource = cpuChoices.Select(c => c.Label).ToArray(),
             Width = 320, SelectedIndex = Math.Max(0, Array.FindIndex(cpuValues, v => v.Equals(settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
         };
+        // emulated ARM clock (--cpu-mhz=): retail 333 MHz by default; 444 MHz is what a game gets when it asks for it
+        var clockValues = new[] { 0, 444 };
+        var clock = new ComboBox
+        {
+            ItemsSource = new[] { "333 MHz (como o Vita, recomendado)", "444 MHz (carregamentos mais rápidos)" },
+            Width = 320, SelectedIndex = settings.CpuMhz == 444 ? 1 : 0,
+        };
+        ToolTip.SetTip(clock, "Velocidade da CPU emulada. O Vita roda os jogos a 333 MHz; 444 MHz carrega mais rápido, " +
+                              "mas jogos que dependem do tempo do console (por exemplo Silent Hill: Book of Memories) podem falhar.");
         // performance: shader compilation stutter (--shaderc-opt=, --async-shaders=)
         const string fastShadersTip = "Reduz travamentos quando shaders novos aparecem; desligue se notar perda de desempenho.";
         const string asyncShadersTip = "Prepara shaders e pipelines novos em outras threads enquanto o jogo ainda envia o quadro, " +
@@ -123,6 +132,7 @@ public sealed class SettingsDialog : Window
         general.Children.Add(validation);
         general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
+        general.Children.Add(Row("Clock da CPU", clock));
         // library view and the home screen ("Tela inicial": bubbles, LiveArea, theme, BGM and sounds of the firmware)
         general.Children.Add(new TextBlock { Text = "Tela inicial", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
         var view = new ComboBox { ItemsSource = new[] { "Lista", "Tela inicial recriada (provisória)" }, Width = 320, SelectedIndex = settings.View == LauncherSettings.ViewHome ? 1 : 0 };
@@ -255,6 +265,7 @@ public sealed class SettingsDialog : Window
             settings.Scale = scale.SelectedIndex + 1;
             settings.Camera = camera.SelectedIndex >= 0 ? cameraValues[camera.SelectedIndex] : "";
             settings.CpuBackend = cpu.SelectedIndex >= 0 ? cpuValues[cpu.SelectedIndex] : "";
+            settings.CpuMhz = clock.SelectedIndex >= 0 ? clockValues[clock.SelectedIndex] : 0;
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;

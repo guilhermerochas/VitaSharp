@@ -14,6 +14,9 @@ public sealed class LauncherSettings
     public string Camera { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
+    /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
+    /// maximum a game can request. Faster loads, but games that rely on retail timing can break.</summary>
+    public int CpuMhz { get; set; }
     /// <summary>"Compilação rápida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
     public bool FastShaderCompile { get; set; } = true;
     /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
@@ -87,6 +90,7 @@ public sealed class LauncherSettings
         if (Validation) yield return "--validation";
         if (!string.IsNullOrWhiteSpace(Camera)) yield return $"--camera={Camera}";
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
+        if (CpuMhz > 0) yield return $"--cpu-mhz={CpuMhz}";
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
         if (DebugMode) yield return "--debug-mode";
