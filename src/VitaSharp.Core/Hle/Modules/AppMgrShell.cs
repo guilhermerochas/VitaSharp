@@ -284,8 +284,12 @@ public sealed class AppMgrShell : HleModule
         if (dBase == 0 || dW == 0 || dH == 0 || dPitch < dW) return ERR_NULL;
         if (p.Hle.Modules.OfType<Display>().FirstOrDefault()?.Current is not { } src) return ERR_NOT_FOUND;
         uint w = scale ? dW : Math.Min(dW, src.Width), h = scale ? dH : Math.Min(dH, src.Height);
+        // the framebuffer is in the application's address space (the GPU writes a rendered surface back there before the
+        // callback), the thumbnail in the caller's
+        var callerSpace = Emu.Space;
         long seq = Emu.Gpu.Submit(new Gpu.CallbackCommand
         {
+            Space = p.Space,
             ReadAddress = src.Address, ReadSize = src.Pitch * src.Height * 4,
             WriteAddress = dBase, WriteSize = dPitch * dH * 4,
             Action = () =>
@@ -301,7 +305,7 @@ public sealed class AppMgrShell : HleModule
                             v = ((v >> 2) & 0xFF) | (((v >> 12) & 0xFF) << 8) | (((v >> 22) & 0xFF) << 16) | 0xFF000000;
                         if (dFmt == (uint)Gpu.DisplayPixelFormat.A2B10G10R10)
                             v = ((v & 0xFF) << 2) | (((v >> 8) & 0xFF) << 12) | (((v >> 16) & 0xFF) << 22) | 0xC0000000;
-                        GuestMemory.W32(dBase + (y * dPitch + x) * 4, v);
+                        using (AddressSpace.Use(callerSpace)) GuestMemory.W32(dBase + (y * dPitch + x) * 4, v);
                     }
                 }
             },

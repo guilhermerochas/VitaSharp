@@ -65,10 +65,37 @@ database"). No row is ever written into app.db by VitaSharp.
 Each process is its own `Emulator` (kernel state, HLE modules, linker, mounts, code cache) and all share one
 `VitaSystem` (`Kernel/VitaSystem.cs`):
 
-- **one guest address space**: executables are relocatable (ET_SCE_RELEXEC) and the allocator hands each
-  process free ranges, so the shell (from 0x81000000) and an application live side by side. Memory blocks and
-  kernel objects record their owner (`ProcessScope`) and go away with the process. An executable linked at fixed
-  addresses that are taken falls back to the old replace-the-shell launch.
+- **an address space per process** (`Memory/AddressSpace.cs`), as on the Vita: the shell and a game linked at the
+  same fixed address (shell.self and non-PIE eboots like Persona 4 Golden's are both at 0x81000000) run side by side.
+  Each space is a host reservation of the 4 GB guest window (fastmem) with its page dirty table below guest address 0.
+  The regions the Vita shares are one host memory mapped into every space: the kernel region 0x40000000-0x50000000
+  (HLE trampolines, objects visible to the guest) and CDRAM 0x60000000-0x70000000 (SceSharedFb, display buffers, GPU
+  memory). On Windows the reservation is split with placeholders (`VirtualAlloc2`) and the shared regions are views of
+  pagefile-backed `SEC_RESERVE` sections (`MapViewOfFile3`, committed on demand by the same lazy-commit handler); on
+  Linux/Android memfd views. macOS has no anonymous memory file (a temporary file's dirty pages would be written to
+  disk), so there every process shares the first one's space. User memory is private: a block exists only in the
+  space of the process that allocated it. Relocatable allocations still take ranges no space uses, so a guest address
+  names one piece of data for the GPU's caches whichever process submitted it; only fixed executable segments
+  (`TryAllocAt(exclusive: false)`) share addresses with other processes' blocks. A process's space comes from
+  `GuestMemory.CreateSpace` and goes back to a pool when the process ends (reservations are never released while the
+  system runs: a straggling host thread may still touch it). Memory blocks and kernel objects record their owner
+  (`ProcessScope`) and go away with the process. `VITASHARP_SHARED_ADDRESS_SPACE=1` (or a host that cannot map memory
+  twice) puts every process in the first one's space; an executable linked at addresses in use then falls back to the
+  old replace-the-shell launch.
+- **which space is used**: guest threads run in their process's (the CPU state's `MemBase`: the interpreter, the IL
+  backend and the native trampolines address memory through it, so a direct game run costs nothing extra), and their
+  host thread works there (`AddressSpace.Current`, read by every `GuestMemory` static accessor and `Ptr<T>`).
+  `ProcessScope.Enter(process)` switches the space for host work done for a process (loading its modules on the
+  launch task) and the choice flows into the tasks and threads it starts (an `AsyncLocal`). Code that touches another
+  process's memory says so with `AddressSpace.Use(space)`: a simple event's setter writing a waiter's results, the
+  foreground switch re-presenting a process's frame. Message pipes copy through a kernel-side queue, so each side
+  copies in its own space. Native code looks indirect exits up in its process's dispatch table
+  (`BlockCache.DispatchTable`, through the state): two processes can have different code at one address.
+- **the GPU** reads and writes the space of the command it executes (`GpuCommand.Space`, set at submission);
+  results that land later (render-target writebacks, visibility results, deferred notifications) carry their own.
+  The texture cache keeps the space id (`AddressSpace.Id`, renewed when a space is reused) of textures read from user
+  memory and re-checks one sampled from another space. The dirty-page sweep folds the tables of every space into one
+  set of page versions.
 - **one kernel object table**: one UID space (process ids and application ids are UIDs too; the first process is
   0x40010003) and the namespace `sceKernelOpen*` searches, so IPC objects cross processes.
 - **the GPU**: one queue and renderer; a scene (BeginScene..EndScene) belongs to one process at a time
@@ -105,7 +132,7 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
 |---|---|
 | shell.self | boot, "Updating database", lock screen, home screen with the system app bubbles **and the installed games**, LiveArea of a game or system app, Start launches it as a second process; PS button: the game is suspended and the shell's home screen / LiveArea comes back (top bar shows the running game) |
 | initialsetup.self (first boot) | launched by the shell with `/CONFIG/SYSTEM/initialize` = 0, runs against the shell's IPC server: peel screen, language, time zone, date, "no account", country, date of birth, "setup completed", parental note; then it ends itself (`sceAppMgrDestroyAppByName(NULL)`) and the shell takes the screen: health warning, home screen with its first-run hint |
-| games from the LiveArea | Devious Dungeon boots to its title screen inside the shell session |
+| games from the LiveArea | each in its own process and address space: Devious Dungeon boots to its title screen, Sonic Mania and Persona 4 Golden (fixed-address eboot) run, PS / Continue suspend and resume them |
 | NPXS10008 Trophy Collection | started from its LiveArea, talks to the shell's trophy server and lists the installed titles with their unlocked trophies (Knightin'+ after it was started once from the shell); "There are no trophies" when nothing is installed |
 | NPXS10015 Settings | starts from the home screen as a process, opens the shell's shared framebuffer, loads system_settings_core.suprx, still draws nothing (black) |
 
@@ -119,18 +146,26 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   suspended; first time with the home-screen hint), its LiveArea shows "Continue", and Continue resumes the game.
   The gate's thumbnail of a suspended game is `sceAppMgrCaptureFrameBufIFTUByAppId` (the shell clears it when that
   fails); it now copies the application's last framebuffer: Knightin'+ suspended with PS shows its screen on the gate.
-- The "Could not install" dialog and the "!" notification after unlocking remain: not the background download
-  launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
-  `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the
-  background download queue the shell writes in `ux0:bgdl/w/patch_bg.bin` (`_vshAppMgrBgdlSetQueueStatus` takes it).
+  Also checked with per-process address spaces: Persona 4 Golden (non-PIE eboot at the shell's 0x81000000) runs as a second process, PS shows its LiveArea with Continue and
+  Continue resumes it; Sonic Mania stays suspended for 35 s in its LiveArea (the shell closes nothing by itself: no
+  timer, no memory check) and Continue resumes it. The shell ends a suspended application only through
+  `sceAppMgrDestroyAppByAppId`: closing its LiveArea page (the peel at the top right) or starting another game.
+- (Fixed) "Could not install. An error has occurred (C0-11274-5)" with a blank icon after unlocking: C0-11274-5 is
+  `error_table.bin` entry 9274, 0x80AF5022, from the shell's game card promoter (`SceGameGcPromoteJobQueue`).
+  `sceIoGetstat("gro0:")` succeeded because gro0/grw0 were always mounted on empty host folders, so the shell saw a
+  card, `sceIoDopen("gro0:app")` failed and the promotion was shown as a failed install. gro0/grw0 are now mounted only
+  when `<fs>/gro0/app` holds a card dump (an empty slot otherwise). NPXS10079 (daily checker) is started twice at boot
+  and each run reads its launch parameter, polls `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits
+  normally; it is not a relaunch loop.
 - Shell overlay over a system app: Trophy Collection shows without the shell's status bar on top. The frames do go
   through the shell (SceSharedFb below); whether the shell is meant to draw its status bar there, and why it does not,
   is not checked.
 - Settings (NPXS10015): black. It opens the shared framebuffer and loads its core module; not investigated further
   (start with the SharedFb Begin/End calls of its libpaf and the threads' states).
-- The scratch root made with `install-firmware PSVUPDAT.PUP` has no `os0:kd/registry.db0`: then the registry has only
-  the keys VitaSharp knows, `/CONFIG/NP/account_id` is missing and the shell's first initialisation stops before its
-  NP services and the trophy server. Copy the template in (as the Vita3K install does).
+- `install-firmware PSVUPDAT.PUP` does write `os0:kd/registry.db0` (checked on main fb661f7: os0/kd has the same 48
+  files as the user's install). Without it the registry has only the keys VitaSharp knows, `/CONFIG/NP/account_id` is
+  missing and the shell's first initialisation stops before its NP services and the trophy server: a scratch root
+  missing it was not made by the installer.
 - Still stubs: SceMotionDev (calibration data and device info of the sensor chip), SceNetPs syscalls, the unnamed
   SceNetCtl / SceNpCommon / SceNpManager / SceLibMtp / SceHttp NIDs, `_sceNpDrmGetFixedRifName`, registry change
   callbacks (recorded, never notified). Implemented from the FW 3.74 kernel (bootimage appmgr, vshbridge, SceError,

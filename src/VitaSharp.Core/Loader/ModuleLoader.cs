@@ -262,7 +262,10 @@ public static class ModuleLoader
             if (ptype == PT_LOAD && memsz != 0)
             {
                 string name = $"{System.IO.Path.GetFileName(path)}:seg{i}";
-                uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name) : 0;
+                // a fixed segment only needs its range free in this process's address space (another process may use
+                // the same addresses in its own); a relocatable module takes its preferred address only when no process
+                // uses it, else any free range
+                uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name, exclusive: relocatable) : 0;
                 if (addr == 0)
                 {
                     if (!relocatable) throw new InvalidOperationException($"{path}: cannot map fixed segment at 0x{vaddr:X8}");

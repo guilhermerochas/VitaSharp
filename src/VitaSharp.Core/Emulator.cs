@@ -60,7 +60,11 @@ public sealed class Emulator : IDisposable
     public int AppId { get; }
     /// <summary>The process declared itself the shell (sceAppMgrDeclareShellProcess2): SceAppMgr's shell events go to it.</summary>
     public bool IsShell { get; set; }
+    /// <summary>The system's guest memory (allocator, shared regions), the same object for every process.</summary>
     public GuestMemory Memory { get; }
+    /// <summary>The process's own address space (<see cref="AddressSpace"/>): its threads, and host work done for it,
+    /// read and write guest memory there.</summary>
+    public AddressSpace Space { get; }
     public BlockCache Code { get; } = new();
     public Kernel.Kernel Kernel { get; private set; }
     public HleRegistry Hle { get; private set; }
@@ -127,6 +131,7 @@ public sealed class Emulator : IDisposable
             ? $"PSN: emulated account '{options.Psn.OnlineId}' signed in ({(LocalPsn.Rpcn is { } rc ? $"Score/TUS on RPCN server {rc.Config.Host}:{rc.Config.Port}" : options.Psn.LocalServices ? $"local services in {NpRoot}" : "servers unreachable")})"
             : "PSN: signed out, offline");
         Memory = options.Memory ?? new GuestMemory();
+        Space = Memory.Primary;
         Host = new Host.HostServices();
         Gpu = new Gpu.GpuQueue();
         Vita = new VitaSystem();
@@ -136,14 +141,16 @@ public sealed class Emulator : IDisposable
         InitProcess();
     }
 
-    /// <summary>A further process of the same system (<see cref="SpawnProcess"/>): shares the address space, GPU, host
-    /// devices and kernel object table of <paramref name="parent"/>, with its own kernel state, HLE modules and mounts.</summary>
+    /// <summary>A further process of the same system (<see cref="SpawnProcess"/>): shares the guest memory's shared regions
+    /// (CDRAM, kernel), GPU, host devices and kernel object table of <paramref name="parent"/>, with its own address
+    /// space, kernel state, HLE modules and mounts.</summary>
     Emulator(Emulator parent)
     {
         Parent = parent;
         Options = parent.Options;
         Vita = parent.Vita;
         Memory = parent.Memory;
+        Space = Memory.CreateSpace("process"); // its own user address space (CDRAM and the kernel region are shared)
         Host = parent.Host;
         Gpu = parent.Gpu;
         LocalPsn = parent.LocalPsn;
@@ -163,7 +170,7 @@ public sealed class Emulator : IDisposable
     [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(Kernel), nameof(Hle), nameof(Linker))]
     void InitProcess()
     {
-        using var scope = ProcessScope.Enter(Pid);
+        using var scope = ProcessScope.Enter(this);
         Kernel = new Kernel.Kernel(this);
         Hle = new HleRegistry(this);
         Linker = new Linker(Hle) { InvalidateCode = Code.Invalidate, Log = Log.Warn };
@@ -182,8 +189,9 @@ public sealed class Emulator : IDisposable
 
     /// <summary>
     /// The programs waiting to come back when the running one exits, most recent last: the shell launching an
-    /// application suspends itself here. VitaSharp runs one guest process at a time (they share one address
-    /// space), so a launch replaces the shell's process and the shell is started again when the application ends.
+    /// application suspends itself here, in the one-process-at-a-time model (VITASHARP_SINGLE_PROCESS=1, or an
+    /// application that cannot be placed next to the shell): a launch replaces the shell's process and the shell is
+    /// started again when the application ends.
     /// </summary>
     public Stack<(string AppDir, string Self)> SuspendedPrograms { get; } = new();
 
@@ -243,8 +251,10 @@ public sealed class Emulator : IDisposable
     /// <paramref name="appDir"/> (the shell launching a game from its LiveArea) and boots it on a host thread: loading
     /// the executable and running its module_start functions takes a while. The process (with its application id) exists
     /// at once; it takes the display when the shell activates it (sceAppMgrActivateApp), or with
-    /// <paramref name="activate"/>. It is placed in free ranges of the shared address space; when it cannot be (an
-    /// executable linked at fixed addresses that are in use) it ends and <paramref name="cannotPlace"/> runs instead.
+    /// <paramref name="activate"/>. It runs in its own address space (<see cref="Memory.GuestMemory.CreateSpace"/>), so an
+    /// executable linked at the shell's addresses runs too; only when every process shares one space
+    /// (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can such an executable not be placed:
+    /// then it ends and <paramref name="cannotPlace"/> runs instead.
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false)
     {
@@ -252,6 +262,7 @@ public sealed class Emulator : IDisposable
         var child = new Emulator(this) { _background = background };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
+        if (!ReferenceEquals(child.Space, Space)) child.Space.Label = child.Describe();
         child.Running = true;
         // SceAppMgr tells the shell about the new application process: event 2 {pid, application id}
         if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
@@ -317,8 +328,11 @@ public sealed class Emulator : IDisposable
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
         int objects = Vita.Objects.RemoveOwnedBy(Pid);
+        // the GPU finishes the process's commands before its memory goes (bounded: a stuck GPU must not keep the space)
+        if (!Task.Run(Gpu.WaitIdle).Wait(5000)) Log.Warn($"{Describe()}: the GPU did not finish its work in time");
         long bytes = Memory.FreeOwnedBy(Pid);
         Code.Clear();
+        Memory.ReleaseSpace(Space);
         Log.Info($"Process {Describe()} released: {objects} kernel objects, {bytes / 1024} KB of memory");
     }
 
@@ -348,6 +362,8 @@ public sealed class Emulator : IDisposable
     /// <summary>The system made this process the foreground one: what it last displayed goes back on screen.</summary>
     internal void OnForeground()
     {
+        // called on the thread that switched the foreground (the shell's): the frame is in this process's memory
+        using var space = AddressSpace.Use(Space);
         foreach (var d in Hle.Modules.OfType<Hle.Modules.Display>()) d.Represent();
     }
 
@@ -390,7 +406,7 @@ public sealed class Emulator : IDisposable
     /// <summary>Loads an installed title (folder ux0:app/TITLEID) or a loose folder containing eboot.bin.</summary>
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
-        using var scope = ProcessScope.Enter(Pid);
+        using var scope = ProcessScope.Enter(this);
         AppPath = Path.GetFullPath(appPath);
         CurrentSelf = self;
         Vfs.ClearApp0Overlays(); // a process switch brings another application's patch folder
@@ -651,7 +667,7 @@ public sealed class Emulator : IDisposable
     public void Start(string[]? args = null)
     {
         if (MainModule == null) throw new InvalidOperationException("No title loaded");
-        using var scope = ProcessScope.Enter(Pid);
+        using var scope = ProcessScope.Enter(this);
         Running = true;
         int priority = (int)(ProcessParamPtrValue(0x14) ?? 0x10000100);
         uint stackSize = ProcessParamPtrValue(0x18) ?? 256 * 1024;

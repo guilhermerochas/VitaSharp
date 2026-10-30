@@ -242,7 +242,7 @@ garbage render target / effect).
 | `magenta` | > 5% magenta in 2 of 3 consecutive frames | yes |
 | `saturated` | > 8% pure green + pure blue in 2 of 3 consecutive frames (a 2-frame burst, or on/off/on) | yes |
 | `flicker` | the mean brightness jumps by > 0.35 for 1-3 frames and then comes back to within 0.12 of the frame before (a transient flash or black frame; a cut or fade that stays is not one). The frames before and after must not be black | yes |
-| `blown-out` | > 35% saturated white, or mean brightness > 0.85, for 60 frames | yes |
+| `blown-out` | > 35% saturated white, or mean brightness > 0.85, on 60 frames that differ from the frame before, without a frame that is not bright in between. A bright still image (a white splash screen with a logo: Sonic Mania's SEGA screen is 81% pure white for 2 s) does not count; a moving scene washed out by a wrong exposure (Gravity Rush's dream intro before `fix/gr-exposure`) does | yes |
 | `black` | > 97% black for 30 frames | no (loading screens) |
 | `frozen` | identical image for 600 presents | no (pause menus) |
 

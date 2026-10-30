@@ -42,7 +42,8 @@ public static unsafe class DirtyPages
     /// <summary>Consumers re-check everything and compare (debug).</summary>
     public static readonly bool Verify = Mode == "verify";
 
-    /// <summary>The byte table (one byte per guest page), right below guest address 0.</summary>
+    /// <summary>The byte table (one byte per guest page) of the calling thread's address space, right below guest
+    /// address 0. Every address space has its own (<see cref="AddressSpace"/>); the sweep folds them all.</summary>
     public static byte* Table => GuestMemory.Base - TableBytes;
 
     static readonly uint[] _version = new uint[Pages];
@@ -52,31 +53,45 @@ public static unsafe class DirtyPages
     public static uint Epoch => _epoch;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Mark(uint addr)
+    public static void Mark(uint addr) => Mark(GuestMemory.Base, addr);
+
+    /// <summary>Marks the page of <paramref name="addr"/> in the address space whose guest base is <paramref name="spaceBase"/>.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Mark(byte* spaceBase, uint addr)
     {
         if (!Enabled) return;
-        byte* p = GuestMemory.Base - TableBytes + (addr >> PageShift);
+        byte* p = spaceBase - TableBytes + (addr >> PageShift);
         if (*p == 0) *p = 1;
     }
 
-    public static void MarkRange(uint addr, uint length)
+    public static void MarkRange(uint addr, uint length) => MarkRange(GuestMemory.Base, addr, length);
+
+    /// <inheritdoc cref="Mark(byte*, uint)"/>
+    public static void MarkRange(byte* spaceBase, uint addr, uint length)
     {
-        if (!Enabled || length == 0 || GuestMemory.Base == null) return;
-        byte* t = GuestMemory.Base - TableBytes;
+        if (!Enabled || length == 0 || spaceBase == null) return;
+        byte* t = spaceBase - TableBytes;
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         for (ulong p = addr >> PageShift; p <= last >> PageShift; p++)
             if (t[p] == 0) t[p] = 1;
     }
 
     /// <summary>
-    /// Folds the table into the page versions and clears it. Consumer thread only. Returns the new epoch: anything
-    /// validated from now on is stamped with it.
+    /// Folds the tables of every address space into the page versions and clears them. Consumer thread only. Returns
+    /// the new epoch: anything validated from now on is stamped with it. The versions are per guest address, whichever
+    /// space was written: consumers caching data of several spaces at one address tell them apart by
+    /// <see cref="AddressSpace.Id"/>.
     /// </summary>
     public static uint Sweep()
     {
         uint e = ++_epoch;
-        if (!Enabled || GuestMemory.Base == null) return e;
-        byte* t = Table;
+        if (!Enabled || GuestMemory.Instance is not { } mem) return e;
+        foreach (var space in mem.Spaces) SweepTable(space.Base - TableBytes, e);
+        return e;
+    }
+
+    static void SweepTable(byte* t, uint e)
+    {
         fixed (uint* ver = _version)
         {
             for (uint i = 0; i < Pages; i += 64)
@@ -92,7 +107,6 @@ public static unsafe class DirtyPages
                 }
             }
         }
-        return e;
     }
 
     /// <summary>

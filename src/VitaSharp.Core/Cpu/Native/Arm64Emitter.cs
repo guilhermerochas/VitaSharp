@@ -47,6 +47,8 @@ public sealed unsafe partial class Arm64Emitter
     static readonly int OffLinkBreak = StateLayout.Of(nameof(CpuState.LinkBreak));
     static readonly int OffThumb = StateLayout.Of(nameof(CpuState.Thumb));
     static readonly int OffFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
+    static readonly int OffMemBase = StateLayout.Of(nameof(CpuState.MemBase));
+    static readonly int OffDispatchTable = StateLayout.Of(nameof(CpuState.DispatchTable));
     static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
     static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
     static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
@@ -71,9 +73,9 @@ public sealed unsafe partial class Arm64Emitter
     {
         public ulong Epilogue;
         public ulong Callout;
+        /// <summary>Nonzero: indirect exits look their target up in the dispatch table (each thread's state holds its
+        /// process's, <see cref="CpuState.DispatchTable"/>).</summary>
         public ulong DispatchTable;
-        /// <summary>Guest memory base (only the trampoline uses it; blocks address memory through x20).</summary>
-        public ulong MemoryBase;
     }
 
     /// <summary>
@@ -372,7 +374,7 @@ public sealed unsafe partial class Arm64Emitter
                     LdState(X1, OffThumb);
                     a.Orr(X1, X0, X1);                                   // key = pc | thumb
                     a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
-                    a.LdrLit(X3, _rt.DispatchTable);
+                    a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
                     a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
                     a.Ldar(X4, X3);
                     a.Cmp(X4, X1);
@@ -924,7 +926,7 @@ public sealed unsafe partial class Arm64Emitter
     /// spill slots), loads x19/x20, switches FPCR to the guest mode and jumps to the block. Blocks leave through the
     /// epilogue (returned in <paramref name="epilogueOffset"/>), which restores the host FPCR.
     /// </summary>
-    public static byte[] EmitTrampoline(ulong memBase, out int epilogueOffset)
+    public static byte[] EmitTrampoline(out int epilogueOffset)
     {
         var a = new Arm64Assembler();
         a.Stp(FP, LR, SP, -SavedRegs, PairMode.Pre);
@@ -936,7 +938,7 @@ public sealed unsafe partial class Arm64Emitter
         a.MovSp(FP, SP);
         a.SubImm(SP, SP, FrameSize, true);
         a.MovSp(State, X0);
-        a.LdrLit(MemBase, memBase);
+        a.LdrX(MemBase, State, OffMemBase); // the state's guest memory base: its process's address space
         a.Mrs(X16, SysReg.Fpcr);
         a.StrX(X16, SP, FrameHostFpcr);
         a.MovImm(X17, FpcrGuestMask);

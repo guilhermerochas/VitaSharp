@@ -234,7 +234,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
         public void Apply(CpuState* s, bool thumb)
         {
-            *s = default;
+            *s = default; s->MemBase = GuestMemory.Base;
             for (int r = 0; r < 15; r++) s->R[r] = Regs[r];
             s->R[15] = CodeBase;
             s->Cpsr = Flags | 0x10 | (thumb ? 0x20u : 0);
@@ -413,7 +413,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default;
+                    *s = default; s->MemBase = GuestMemory.Base;
                     s->R[0] = addr; s->R[1] = 0x1234; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
                     GuestMemory.Write(addr, 41u);
                     uint g0 = gens[genIdx];
@@ -475,7 +475,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default;
+                    *s = default; s->MemBase = GuestMemory.Base;
                     s->R[0] = addr; s->R[2] = 0x1234; s->R[3] = 0x5678; s->R[4] = 0x99; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
                     GuestMemory.Write(addr, unchecked((uint)Mem0)); GuestMemory.Write(addr + 4, (uint)(Mem0 >> 32));
                     uint g0 = gens[genIdx];

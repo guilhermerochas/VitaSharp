@@ -51,14 +51,13 @@ public sealed unsafe partial class NativeRuntime
         if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
         {
             int epi = 0;
-            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline((ulong)GuestMemory.Base, out epi));
+            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline(out epi));
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
             Arm64Stubs = new Arm64Emitter.Runtime
             {
                 Epilogue = (ulong)(entry64 + epi),
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
-                MemoryBase = (ulong)GuestMemory.Base,
             };
             return;
         }
@@ -70,7 +69,7 @@ public sealed unsafe partial class NativeRuntime
             AddVectoredExceptionHandler(1, filter);
         }
         int epilogueOffset = 0;
-        byte* tramp = Code.Place(rip => X64Emitter.EmitTrampoline(rip, (ulong)GuestMemory.Base, out epilogueOffset));
+        byte* tramp = Code.Place(rip => X64Emitter.EmitTrampoline(rip, out epilogueOffset));
         _enter = (delegate* unmanaged<CpuState*, nint, void>)tramp;
         Stubs = new X64Emitter.Runtime
         {
@@ -80,9 +79,17 @@ public sealed unsafe partial class NativeRuntime
         };
     }
 
-    /// <summary>Runs native code from <paramref name="entry"/> until a block returns to the dispatcher.</summary>
+    /// <summary>Runs native code from <paramref name="entry"/> until a block returns to the dispatcher. The code addresses
+    /// guest memory and looks indirect exits up through the state (<see cref="CpuState.MemBase"/>,
+    /// <see cref="CpuState.DispatchTable"/>: its process's); a state bound to neither uses the calling thread's address
+    /// space and the runtime's own table (tests).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Run(CpuState* s, nint entry) => _enter(s, entry);
+    public void Run(CpuState* s, nint entry)
+    {
+        if (s->DispatchTable == 0) s->DispatchTable = (nint)Dispatch;
+        if (s->MemBase == null) s->MemBase = GuestMemory.Base;
+        _enter(s, entry);
+    }
 
     // ------------------------------------------------------------------ callouts
 
@@ -135,18 +142,28 @@ public sealed unsafe partial class NativeRuntime
     /// check key, read code, check key again (x64 keeps loads in order), so a slot being republished is never misread.
     /// </summary>
     public const int DispatchBits = 16;
-    public readonly DispatchEntry* Dispatch = (DispatchEntry*)NativeMemory.AlignedAlloc((nuint)(sizeof(DispatchEntry) << DispatchBits), 64);
+    /// <summary>The runtime's own table: threads not bound to a process (tests). Every process has its own
+    /// (<see cref="BlockCache.DispatchTable"/>): two processes can have different code at the same address.</summary>
+    public readonly DispatchEntry* Dispatch = (DispatchEntry*)AllocateDispatchTable();
     public const uint NoKey = 0xFFFFFFFF; // never a valid key: block addresses are even
 
     public struct DispatchEntry { public uint Key, Pad; public nint Code; }
 
-    void InitDispatch()
+    /// <summary>A new, empty indirect-exit table.</summary>
+    public static nint AllocateDispatchTable()
     {
-        for (int i = 0; i < 1 << DispatchBits; i++) { Dispatch[i].Key = NoKey; Dispatch[i].Code = 0; }
+        var t = (DispatchEntry*)NativeMemory.AlignedAlloc((nuint)(sizeof(DispatchEntry) << DispatchBits), 64);
+        for (int i = 0; i < 1 << DispatchBits; i++) { t[i].Key = NoKey; t[i].Code = 0; }
+        return (nint)t;
     }
 
+    public static void FreeDispatchTable(nint table) => NativeMemory.AlignedFree((void*)table);
+
+    void InitDispatch() { }
+
     static uint KeyOf(Block b) => b.Start | (b.Thumb ? 1u : 0u);
-    DispatchEntry* EntryOf(Block b) => Dispatch + ((b.Start >> 1) & ((1u << DispatchBits) - 1));
+    DispatchEntry* EntryOf(Block b) =>
+        (b.Owner != null ? (DispatchEntry*)b.Owner.DispatchTable : Dispatch) + ((b.Start >> 1) & ((1u << DispatchBits) - 1));
 
     /// <summary>Makes a native block reachable from indirect exits.</summary>
     public void Publish(Block b)
@@ -274,8 +291,8 @@ public sealed unsafe partial class NativeRuntime
         var code = _instance.Code;
         if (rip < (ulong)code.ExecBase || rip >= (ulong)code.ExecBase + ExecutableMemory.ReserveSize) return 0;
         ulong addr = *(ulong*)(rec + 0x28);
+        if (GuestMemory.Instance?.SpaceOfHost(addr) != null) return 0; // guest page (any address space): the lazy-commit handler commits it
         ulong gb = (ulong)GuestMemory.Base;
-        if (addr >= gb && addr < gb + 0x1_0001_0000UL) return 0; // guest page: the lazy-commit handler commits it
         if (Interlocked.Exchange(ref _reported, 1) != 0) return 0;
         try
         {

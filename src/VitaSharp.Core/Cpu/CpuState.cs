@@ -62,6 +62,11 @@ public unsafe struct CpuState
     public uint ExTmpHi;       // native STREXD scratch (high word; ExTmp:ExTmpHi are read as one 64-bit value)
     public uint StoreLogCount; // verify mode: guest stores of the current native block (address, size, old value)
     public nint StoreLog;
+    // ---- the thread's process: every backend addresses guest memory through MemBase (its address space, see
+    // Memory.AddressSpace), and native indirect exits look blocks up in the process's DispatchTable (block addresses
+    // of different processes may be equal)
+    public byte* MemBase;
+    public nint DispatchTable;
 
     public uint Cpsr
     {
@@ -85,6 +90,7 @@ public unsafe struct CpuState
         var p = (CpuState*)NativeMemory.AlignedAlloc((nuint)sizeof(CpuState), 64);
         Unsafe.InitBlockUnaligned(p, 0, (uint)sizeof(CpuState));
         p->Fpscr = 0x0300_0000; // default NaN + flush-to-zero as set by the Vita runtime
+        p->MemBase = Memory.GuestMemory.Base; // the allocating thread's address space (CpuCore binds a process's own)
         return p;
     }
 

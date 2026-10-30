@@ -29,6 +29,9 @@ public sealed unsafe partial class VulkanRenderer
         public ulong Size;
         public uint Address, Width, Rows, HostStride, GuestStride, GuestBpp;
         public WritebackConvert Convert;
+        /// <summary>The address space of the process whose scene rendered the target (the frame retires later, maybe
+        /// while another process's command runs).</summary>
+        public AddressSpace? Space;
     }
 
     readonly Dictionary<ulong, Stack<RtWriteback>> _writebackPool = new();
@@ -191,6 +194,7 @@ public sealed unsafe partial class VulkanRenderer
         wb.HostStride = w * (uint)hostBpp;
         wb.GuestBpp = (uint)guestBpp;
         wb.Convert = conv;
+        wb.Space = AddressSpace.Current;
         var region = new BufferImageCopy
         {
             BufferOffset = 0,
@@ -211,6 +215,7 @@ public sealed unsafe partial class VulkanRenderer
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (var wb in f.Writebacks)
         {
+            using var space = AddressSpace.Use(wb.Space);
             var src = new ReadOnlySpan<byte>((void*)wb.Ptr, (int)wb.Size);
             for (uint y = 0; y < wb.Rows; y++)
             {

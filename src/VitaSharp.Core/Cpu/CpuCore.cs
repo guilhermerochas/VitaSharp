@@ -31,11 +31,25 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Guest instructions executed by this thread (diagnostics; weighted cycles are in <see cref="BlockCycles"/>).</summary>
     public long InstructionsExecuted;
 
-    public CpuCore(BlockCache cache)
+    /// <param name="cache">The process's translated code.</param>
+    /// <param name="memBase">Guest address 0 of the process's address space (<see cref="Memory.AddressSpace.Base"/>);
+    /// null = the creating thread's.</param>
+    public CpuCore(BlockCache cache, byte* memBase = null)
     {
         _cache = cache;
         State = CpuState.Allocate();
+        _memBase = memBase != null ? memBase : State->MemBase;
+        State->MemBase = _memBase;
         HandlerTable.EnsureInitialized();
+    }
+
+    readonly byte* _memBase;
+
+    /// <summary>Points a (re)initialised state at the process's address space and indirect-exit table.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    void Bind(CpuState* s)
+    {
+        if (s->MemBase == null) s->MemBase = _memBase;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -210,6 +224,7 @@ public sealed unsafe class CpuCore : IDisposable
     public ExitReason Run()
     {
         var s = State;
+        Bind(s);
         s->Exit = ExitReason.None;
         // every ~20 us of guest CPU time when throttling (a physics step of a few ms must be paced from inside), else ~0.5 ms
         long checkWindow = InstructionsPerSecond > 0 ? InstructionsPerSecond / 4000 : 200_000; // ~0.25 ms of guest CPU time
@@ -236,6 +251,7 @@ public sealed unsafe class CpuCore : IDisposable
                 s->CheckWindow = Probes != null ? 0 : checkWindow;
                 s->LinkBreak = _interrupt || _stop ? 1u : 0u;
                 s->NBlocks = 0; s->NInstr = 0;
+                if (s->DispatchTable == 0) s->DispatchTable = _cache.DispatchTable;
                 Native.NativeRuntime.Instance.Run(s, b.NativeEntry);
                 if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
                 BlocksExecuted += s->NBlocks;
@@ -270,6 +286,7 @@ public sealed unsafe class CpuCore : IDisposable
     public ExitReason Step()
     {
         var s = State;
+        Bind(s);
         s->Exit = ExitReason.None;
         var b = Lookup(s->R[15], s->Thumb != 0);
         Interpret(s, b);
