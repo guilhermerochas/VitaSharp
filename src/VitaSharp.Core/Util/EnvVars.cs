@@ -34,6 +34,8 @@ public static class EnvVars
     public const string GpuProfile = "VITASHARP_GPU_PROFILE";
     public const string GpuQuirks = "VITASHARP_GPU_QUIRKS";
     public const string HleModules = "VITASHARP_HLE_MODULES";
+    /// <summary>0/off: guest threads and the GPU worker keep normal host priority (HostThreads; overrides --host-prio).</summary>
+    public const string HostPrio = "VITASHARP_HOST_PRIO";
     public const string Hunt = "VITASHARP_HUNT";
     public const string HuntNative = "VITASHARP_HUNT_NATIVE";
     public const string LleModules = "VITASHARP_LLE_MODULES";
