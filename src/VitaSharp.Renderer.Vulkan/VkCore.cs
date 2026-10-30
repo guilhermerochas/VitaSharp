@@ -218,12 +218,14 @@ public sealed unsafe class VkCore : IDisposable
         var devices = new PhysicalDevice[count];
         fixed (PhysicalDevice* p = devices) Vk.EnumeratePhysicalDevices(Instance, ref count, p);
         PhysicalDevice best = default;
-        int bestScore = -1;
+        int bestScore = int.MinValue;
         var rejected = new List<string>();
         foreach (var d in devices)
         {
             Vk.GetPhysicalDeviceProperties(d, out var props);
-            if (props.ApiVersion < Vk.Version13)
+            // Vulkan 1.1 is the minimum: older devices render with render passes and static pipeline state
+            // (GpuQuirk.RenderPasses); 1.3 devices are preferred within a device type
+            if (props.ApiVersion < Vk.Version11)
             {
                 rejected.Add($"{Marshal.PtrToStringAnsi((nint)props.DeviceName)} (Vulkan {props.ApiVersion >> 22}.{(props.ApiVersion >> 12) & 0x3FF})");
                 continue;
@@ -233,11 +235,15 @@ public sealed unsafe class VkCore : IDisposable
                 PhysicalDeviceType.DiscreteGpu => 3000,
                 PhysicalDeviceType.IntegratedGpu => 2000,
                 _ => 1000,
-            };
+            } + (props.ApiVersion >= Vk.Version13 ? 100 : 0);
+            // VITASHARP_GPU_DEVICE=<index or name part>: pick a specific device (an integrated GPU with ASTC, say)
+            if (DeviceFilter is { } want && !(int.TryParse(want, out int wi) ? wi == Array.IndexOf(devices, d)
+                    : (Marshal.PtrToStringAnsi((nint)props.DeviceName) ?? "").Contains(want, StringComparison.OrdinalIgnoreCase)))
+                score -= 10000;
             if (score > bestScore) { bestScore = score; best = d; }
         }
-        if (bestScore < 0)
-            throw new InvalidOperationException($"No Vulkan 1.3 capable device found (found: {string.Join(", ", rejected)}). " +
+        if (best.Handle == 0)
+            throw new InvalidOperationException($"No Vulkan 1.1 capable device found (found: {string.Join(", ", rejected)}). " +
                                                 (OperatingSystem.IsMacOS() ? "MoltenVK 1.3 or newer is required. " : "") + VulkanLoader.InstallHint());
         Physical = best;
         Vk.GetPhysicalDeviceProperties(Physical, out Properties);
@@ -255,7 +261,7 @@ public sealed unsafe class VkCore : IDisposable
 
     /// <summary>The driver's identity and what it supports, for <see cref="GpuQuirkTable.Select"/>.</summary>
     GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures f, in PhysicalDeviceVulkan11Features f11, in PhysicalDeviceVulkan12Features f12,
-        HashSet<string> exts, bool roaa, uint timestampBits, bool bcPatched)
+        HashSet<string> exts, bool roaa, uint timestampBits, bool bcPatched, bool dynamicRendering)
     {
         uint driverId = 0;
         string driverName = "", driverInfo = "";
@@ -292,6 +298,8 @@ public sealed unsafe class VkCore : IDisposable
         Set(exts.Contains(CustomBorderColorExt), GpuFeature.CustomBorderColor);
         Set(roaa, GpuFeature.RasterizationOrderColor);
         Set(timestampBits > 0 && Properties.Limits.TimestampPeriod > 0, GpuFeature.Timestamps);
+        Set(dynamicRendering, GpuFeature.DynamicRendering);
+        Set(Properties.ApiVersion >= Vk.Version13, GpuFeature.ExtendedDynamicState);
         var l = Properties.Limits;
         bool unified = true;
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
@@ -349,14 +357,28 @@ public sealed unsafe class VkCore : IDisposable
         // portability subset on MoltenVK)
         string? roaaName = devExts.Contains(RoaaExt) ? RoaaExt : devExts.Contains(RoaaArm) ? RoaaArm : null;
         var hasRoaa = new PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT { SType = StructureType.PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesExt };
+        // the 1.2/1.3 feature structs are only valid on devices of that version (1.1 devices: render passes, static
+        // pipeline state, VK_KHR_sampler_mirror_clamp_to_edge)
+        uint api = Properties.ApiVersion;
         var has13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, PNext = roaaName != null ? &hasRoaa : null };
-        var has12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &has13 };
+        var has12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = api >= Vk.Version13 ? &has13 : roaaName != null ? &hasRoaa : null };
         var has11 = new PhysicalDeviceVulkan11Features { SType = StructureType.PhysicalDeviceVulkan11Features, PNext = &has12 };
-        var hasPortability = new PhysicalDevicePortabilitySubsetFeaturesKHR { SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, PNext = &has11 };
-        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = portability ? &hasPortability : &has11 };
+        if (api < Vk.Version12)
+        {
+            // VkPhysicalDeviceVulkan11Features is 1.2 too: query the 1.1 16-bit storage struct instead
+            has11.PNext = roaaName != null ? &hasRoaa : null;
+        }
+        var has16 = new PhysicalDevice16BitStorageFeatures { SType = StructureType.PhysicalDevice16BitStorageFeatures, PNext = roaaName != null ? &hasRoaa : null };
+        void* chain = api >= Vk.Version12 ? &has11 : &has16;
+        var hasPortability = new PhysicalDevicePortabilitySubsetFeaturesKHR { SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr, PNext = chain };
+        var supported2 = new PhysicalDeviceFeatures2 { SType = StructureType.PhysicalDeviceFeatures2, PNext = portability ? &hasPortability : chain };
         Vk.GetPhysicalDeviceFeatures2(Physical, &supported2);
-        if (!has13.DynamicRendering || !has13.Synchronization2)
-            throw new InvalidOperationException($"{DeviceName} lacks dynamicRendering/synchronization2 (Vulkan 1.3 features). {VulkanLoader.InstallHint()}");
+        if (api < Vk.Version12)
+        {
+            has11.StorageBuffer16BitAccess = has16.StorageBuffer16BitAccess;
+            has12.SamplerMirrorClampToEdge = devExts.Contains(MirrorClampExtension);
+        }
+        bool dynamicRendering = api >= Vk.Version13 && has13.DynamicRendering && has13.Synchronization2;
         if (!supported2.Features.ShaderClipDistance)
             throw new InvalidOperationException($"{DeviceName} lacks shaderClipDistance (needed for the GXM far plane). {VulkanLoader.InstallHint()}");
 
@@ -371,7 +393,7 @@ public sealed unsafe class VkCore : IDisposable
             if (bcPatched) Log.Info("BCn textures enabled by the driver patch (BCeNabler)");
         }
         Caps = GpuQuirkTable.Select(DescribeDevice(supported2.Features, has11, has12, devExts, roaaName != null && hasRoaa.RasterizationOrderColorAttachmentAccess,
-            families[QueueFamily].TimestampValidBits, bcPatched), profile, Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
+            families[QueueFamily].TimestampValidBits, bcPatched, dynamicRendering), profile, Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
         bool Has(GpuFeature f) => Caps.Has(f);
         // the sample counts every multisampling check reads: the profile's (e.g. Mali: no 2x)
         var counts = (SampleCountFlags)Caps.Limits.FramebufferSampleCounts;
@@ -388,12 +410,21 @@ public sealed unsafe class VkCore : IDisposable
         {
             SType = StructureType.PhysicalDeviceRasterizationOrderAttachmentAccessFeaturesExt, RasterizationOrderColorAttachmentAccess = true,
         };
+        // dynamic rendering only where the renderer uses it; a Vulkan 1.1 device (or the adreno-vk11 profile) gets no
+        // 1.2/1.3 feature structs at all, and mirror-clamp-to-edge through its extension
+        bool chain13 = Has(GpuFeature.DynamicRendering) && !Caps.Has(GpuQuirk.RenderPasses);
+        bool chain12 = api >= Vk.Version12 && profile != GpuProfile.AdrenoVulkan11;
+        bool mirrorExt = !chain12 && SamplerMirrorClampToEdge && devExts.Contains(MirrorClampExtension);
+        if (!chain12 && !mirrorExt) { SamplerMirrorClampToEdge = false; Formats.MirrorClampToEdgeSupported = false; }
+        UsesDynamicRendering = chain13;
         var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true,
             PNext = RasterizationOrderColor ? &fRoaa : null };
-        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = &f13, SamplerMirrorClampToEdge = SamplerMirrorClampToEdge };
+        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null,
+            SamplerMirrorClampToEdge = SamplerMirrorClampToEdge };
+        void* featureChain = chain12 ? &f12 : chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null;
         // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
         // enable whatever the device has, then degrade where the renderer depends on a missing one
-        var fPortability = hasPortability with { PNext = &f12 };
+        var fPortability = hasPortability with { PNext = featureChain };
         var feats = new PhysicalDeviceFeatures
         {
             SamplerAnisotropy = Has(GpuFeature.SamplerAnisotropy),
@@ -401,6 +432,8 @@ public sealed unsafe class VkCore : IDisposable
             WideLines = Has(GpuFeature.WideLines),
             // a patched driver samples BCn without the feature (it still reports none, so it is not enabled)
             TextureCompressionBC = supported2.Features.TextureCompressionBC && Has(GpuFeature.TextureCompressionBC),
+            // BC/PVRTC transcoded to ASTC 4x4 on GPUs without BCn (AstcTranscoder)
+            TextureCompressionAstcLdr = supported2.Features.TextureCompressionAstcLdr && Has(GpuFeature.TextureCompressionAstc),
             ShaderStorageImageWriteWithoutFormat = Has(GpuFeature.ShaderStorageImageWriteWithoutFormat),
             IndependentBlend = Has(GpuFeature.IndependentBlend),
             DepthBiasClamp = Has(GpuFeature.DepthBiasClamp),
@@ -426,11 +459,12 @@ public sealed unsafe class VkCore : IDisposable
         MemoryBudgetSupported = Has(GpuFeature.MemoryBudget);
         if (MemoryBudgetSupported) exts.Add(MemoryBudgetExtension);
         if (RasterizationOrderColor) exts.Add(roaaName!);
+        if (mirrorExt) exts.Add(MirrorClampExtension);
         var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
-            PNext = portability ? &fPortability : &f12,
+            PNext = portability ? &fPortability : featureChain,
             QueueCreateInfoCount = 1,
             PQueueCreateInfos = &qci,
             PEnabledFeatures = &feats,
@@ -450,6 +484,8 @@ public sealed unsafe class VkCore : IDisposable
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+    /// <summary>dynamicRendering is enabled and used; false: every rendering is a render pass (GpuQuirk.RenderPasses).</summary>
+    public bool UsesDynamicRendering;
     /// <summary>sampleRateShading: fragment shaders that read the framebuffer in a multisampled scene run per sample
     /// (as GXM's NATIVECOLOR_MSAA programs do). Without it they read sample 0 and their output covers the pixel.</summary>
     public bool SampleRateShading;
@@ -591,6 +627,9 @@ public sealed unsafe class VkCore : IDisposable
     // =================================================================== memory accounting and budget
 
     const string MemoryBudgetExtension = "VK_EXT_memory_budget";
+    const string MirrorClampExtension = "VK_KHR_sampler_mirror_clamp_to_edge";
+    /// <summary>VITASHARP_GPU_DEVICE: index or part of the name of the physical device to use (default: the best one).</summary>
+    static readonly string? DeviceFilter = Environment.GetEnvironmentVariable(EnvVars.GpuDevice) is { Length: > 0 } s ? s.Trim() : null;
     /// <summary>VK_EXT_memory_budget is enabled: <see cref="Heaps"/> reports per-heap budgets and this process's usage.</summary>
     public bool MemoryBudgetSupported;
 

@@ -54,7 +54,7 @@ public sealed unsafe partial class VulkanRenderer
             _rtMipTextures[key] = t;
             Log.WarnOnce($"rtmips-{d.DataAddress:X8}", $"[gpu] texture 0x{d.DataAddress:X8} {w}x{h} with {mips} levels: level 0 is render target 0x{rt.Address:X8}, the rest comes from memory");
             BeginFrameIfNeeded();
-            PauseRendering();
+            using var init = BeginOutside(t.View);
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
@@ -79,8 +79,9 @@ public sealed unsafe partial class VulkanRenderer
         bool copyBase = t.Version != rt.Version;
         if (!copyBase && !uploadUpper) return t.View;
 
+        // another surface (and the levels from memory) go before the open rendering; the scene's own surface ends it
+        using var outside = BeginOutside(t.View, rt);
         if (copyBase) { rt.Dirty = true; SyncRenderTargetForRead(rt); }
-        PauseRendering(rt);
         Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         if (copyBase)

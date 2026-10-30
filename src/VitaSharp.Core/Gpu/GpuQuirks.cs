@@ -50,6 +50,13 @@ public enum GpuFeature : long
     SamplerAnisotropy = 1L << 20,
     /// <summary>VK_EXT_custom_border_color (not used).</summary>
     CustomBorderColor = 1L << 21,
+    /// <summary>dynamicRendering and synchronization2 (Vulkan 1.3 core). Without it renderings use render passes
+    /// (<see cref="GpuQuirk.RenderPasses"/>). VK_KHR_dynamic_rendering on a 1.2 device is not wired up (its
+    /// commands have KHR names): such a device uses render passes too.</summary>
+    DynamicRendering = 1L << 22,
+    /// <summary>Extended dynamic state 1 and 2 (Vulkan 1.3 core). Without it the state is baked into the pipelines
+    /// (<see cref="GpuQuirk.StaticExtendedDynamicState"/>, <see cref="GpuQuirk.StaticDepthBiasEnable"/>).</summary>
+    ExtendedDynamicState = 1L << 23,
 }
 
 /// <summary>Driver workarounds and tile-based-GPU behaviour. Each one is selected by <see cref="GpuQuirkTable"/>.</summary>
@@ -84,11 +91,15 @@ public enum GpuQuirk : long
     /// <summary>Android: the device can load a user-supplied Adreno/Turnip driver through libadrenotools.</summary>
     CustomDriverCapable = 1L << 9,
     /// <summary>Known proprietary-driver problems with VK_KHR_dynamic_rendering (DuckStation disables it on
-    /// Qualcomm, ARM and Imagination blobs). Not worked around yet: logged so device reports can point at it.</summary>
+    /// Qualcomm, ARM and Imagination blobs): such drivers get <see cref="RenderPasses"/>.</summary>
     DynamicRenderingSuspect = 1L << 10,
     /// <summary>No usable memory budget: eviction pressure is computed against a smaller share of the heap (unified
     /// memory on phones is shared with Android, which kills apps before the heap is full).</summary>
     ConservativeMemoryBudget = 1L << 11,
+    /// <summary>Every rendering uses a VkRenderPass and a VkFramebuffer instead of dynamic rendering (the Vulkan 1.1
+    /// path): selected without <see cref="GpuFeature.DynamicRendering"/> and on <see cref="DynamicRenderingSuspect"/>
+    /// drivers; VITASHARP_GPU_QUIRKS=+RenderPasses forces it on a desktop GPU for testing.</summary>
+    RenderPasses = 1L << 12,
 }
 
 /// <summary>Driver limits the renderer checks (a subset of VkPhysicalDeviceLimits).</summary>
@@ -136,6 +147,9 @@ public enum GpuProfile
     Adreno,
     /// <summary>An ARM Mali (Bifrost/Valhall, proprietary driver): its missing features, limits and quirks.</summary>
     Mali,
+    /// <summary>An Adreno 6xx on an old proprietary driver that exposes only Vulkan 1.1: as <see cref="Adreno"/>,
+    /// without dynamic rendering and extended dynamic state (the device is created without the 1.2/1.3 features).</summary>
+    AdrenoVulkan11,
 }
 
 /// <summary>Effective device capabilities: real features and limits, minus what a test profile removes, plus the
@@ -194,7 +208,7 @@ public sealed class GpuCapabilities
     {
         var sb = new StringBuilder();
         sb.Append($"GPU profile: {Profile.ToString().ToLowerInvariant()}");
-        if (Profile is GpuProfile.Adreno or GpuProfile.Mali) sb.Append($" (emulating {VendorName(Vendor)} {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)} on {Device.DeviceName})");
+        if (Profile is GpuProfile.Adreno or GpuProfile.AdrenoVulkan11 or GpuProfile.Mali) sb.Append($" (emulating {VendorName(Vendor)} {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)} on {Device.DeviceName})");
         sb.AppendLine();
         sb.AppendLine($"GPU class: {VendorName(Vendor)}, driver {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)}{(Has(GpuQuirk.TileBased) ? ", tile-based" : "")}{(Device.UnifiedMemory ? ", unified memory" : "")}");
         var all = Enum.GetValues<GpuFeature>().Where(f => f != GpuFeature.None).ToArray();
@@ -335,6 +349,7 @@ public static class GpuQuirkTable
         GpuProfile.Adreno => GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
                              | GpuFeature.MemoryBudget | GpuFeature.FillModeNonSolid | GpuFeature.LogicOp | GpuFeature.Storage16Bit | GpuFeature.WideLines
                              | GpuFeature.PushDescriptor | GpuFeature.CustomBorderColor,
+        GpuProfile.AdrenoVulkan11 => ProfileMask(GpuProfile.Adreno) | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState,
         // Mali Bifrost/Valhall: additionally no depth clamp, no geometry shaders, no logic op, no fill modes
         GpuProfile.Mali => GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
                            | GpuFeature.MemoryBudget | GpuFeature.DepthClamp | GpuFeature.FillModeNonSolid | GpuFeature.GeometryShader | GpuFeature.LogicOp
@@ -345,7 +360,7 @@ public static class GpuQuirkTable
     /// <summary>Limits of the emulated device class (each is the minimum of this and the real device's).</summary>
     public static GpuLimits ProfileLimits(GpuProfile p, GpuLimits real) => p switch
     {
-        GpuProfile.Adreno => real with
+        GpuProfile.Adreno or GpuProfile.AdrenoVulkan11 => real with
         {
             MaxPushConstantsSize = Math.Min(real.MaxPushConstantsSize, 128),
             FramebufferSampleCounts = real.FramebufferSampleCounts & (1 | 2 | 4),
@@ -369,6 +384,7 @@ public static class GpuQuirkTable
     public static (GpuVendor Vendor, GpuDriver Driver, uint Version) ProfileIdentity(GpuProfile p, GpuDeviceInfo real) => p switch
     {
         GpuProfile.Adreno => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 615)),
+        GpuProfile.AdrenoVulkan11 => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 454)),
         GpuProfile.Mali => (GpuVendor.Arm, GpuDriver.ArmProprietary, MakeVersion(38, 1)),
         _ => (VendorOf(real.VendorId), DriverOf(real.VendorId, real.DriverId, real.DriverVersion), real.DriverVersion),
     };
@@ -376,6 +392,7 @@ public static class GpuQuirkTable
     public static GpuProfile ParseProfile(string? s) => (s ?? "").Trim().ToLowerInvariant() switch
     {
         "adreno" or "qualcomm" => GpuProfile.Adreno,
+        "adreno-vk11" or "adreno-vulkan11" or "vk11" => GpuProfile.AdrenoVulkan11,
         "mali" or "arm" => GpuProfile.Mali,
         "desktop" or "none" => GpuProfile.Desktop,
         _ => GpuProfile.Native,
@@ -414,6 +431,11 @@ public static class GpuQuirkTable
             quirks |= GpuQuirk.Msaa2xAs4x;
             reasons.Add($"{GpuQuirk.Msaa2xAs4x}: no 2-sample framebuffers (framebuffer sample counts 0x{limits.FramebufferSampleCounts:X})");
         }
+        if ((quirks & GpuQuirk.DynamicRenderingSuspect) != 0)
+        {
+            quirks |= GpuQuirk.RenderPasses;
+            reasons.Add($"{GpuQuirk.RenderPasses}: {GpuQuirk.DynamicRenderingSuspect} driver, renderings use render passes (DuckStation)");
+        }
         if ((features & GpuFeature.MemoryBudget) == 0 && (dev.UnifiedMemory || IsTileBased(vendor)) && profile != GpuProfile.Desktop)
         {
             quirks |= GpuQuirk.ConservativeMemoryBudget;
@@ -436,6 +458,21 @@ public static class GpuQuirkTable
                 mask |= f & dev.Features;
             }
             else unknown.Add(raw);
+        }
+        // what the device (or the profile/overrides) cannot do at all: not overridable
+        if ((features & GpuFeature.DynamicRendering) == 0 && (quirks & GpuQuirk.RenderPasses) == 0)
+        {
+            quirks |= GpuQuirk.RenderPasses;
+            reasons.Add($"{GpuQuirk.RenderPasses}: no dynamic rendering (Vulkan {dev.ApiVersion >> 22}.{(dev.ApiVersion >> 12) & 0x3FF} device or profile)");
+        }
+        if ((features & GpuFeature.ExtendedDynamicState) == 0)
+        {
+            foreach (var q in new[] { GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable })
+            {
+                if ((quirks & q) != 0) continue;
+                quirks |= q;
+                reasons.Add($"{q}: no extended dynamic state (Vulkan 1.3 core)");
+            }
         }
         // a quirk forced off must not leave its reason line behind
         reasons.RemoveAll(r => !r.Contains(" forced ") && Enum.TryParse<GpuQuirk>(r[..r.IndexOf(':')], out var q) && (quirks & q) == 0);

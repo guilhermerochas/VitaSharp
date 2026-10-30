@@ -60,6 +60,14 @@ public static class TextureDecoder
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
                 return Pvrtc.Decode(GuestMemory.ReadSpan(addr, (int)(nx * ny * 8)), w, h, two, ii);
             }
+            if (info.Convert == TexConvert.AstcFromPvrtc)
+            {
+                // GPUs without BCn but with ASTC: PVRTC decoded, then encoded as ASTC 4x4 (AstcTranscoder)
+                var bf = GxmFormats.BaseOf(d.Format);
+                bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
+                uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
+                return AstcTranscoder.FromPvrtc(bf, GuestMemory.ReadSpan(addr, (int)(nx * ny * 8)), w, h, two, ii);
+            }
             uint bw = (w + 3) / 4, bh = (h + 3) / 4;
             int bb = info.BlockBytes;
             var outBuf = Texels.Rent(bw * bh * bb);
@@ -82,6 +90,11 @@ public static class TextureDecoder
             if (info.Convert == TexConvert.BcSoftware)
             {
                 using (outBuf) return BcSoftware.Decode(GxmFormats.BaseOf(d.Format), outBuf.Span, w, h);
+            }
+            if (info.Convert == TexConvert.AstcFromBc)
+            {
+                var bf = GxmFormats.BaseOf(d.Format);
+                using (outBuf) return AstcTranscoder.FromBc(bf, outBuf.Span, w, h, AstcTranscoder.ChannelsFor(bf, false) ?? AstcChannels.Rgba);
             }
             return outBuf;
         }

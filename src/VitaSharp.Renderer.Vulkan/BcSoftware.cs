@@ -13,8 +13,8 @@ namespace VitaSharp.Renderer.Vulkan;
 /// LRU, <see cref="CacheBudget"/> bytes): re-uploads of unchanged data (texture cache evictions, the same texture
 /// at another address, streaming that rewrites identical data) skip the decode.
 /// </para>
-/// <para>ASTC (hook): a transcoder to ASTC 4x4 would plug in where <see cref="FormatFor"/> picks the image format and
-/// <see cref="Decode"/> produces the texels (BC to ASTC 4x4 would quarter the memory of the RGBA8 fallback); not implemented.</para>
+/// <para>On GPUs that sample ASTC the decoded texels are re-encoded as ASTC 4x4 instead of uploaded (<see cref="AstcTranscoder"/>);
+/// this RGBA8 path remains for GPUs without ASTC and for the signed formats.</para>
 /// </summary>
 public static class BcSoftware
 {

@@ -562,11 +562,13 @@ public sealed unsafe partial class VulkanRenderer
             };
             // multisampled scenes render in render passes (input attachments for programmable blending)
             bool msPass = key.Samples != SampleCountFlags.Count1Bit;
+            // without dynamic rendering single-sampled scenes are render passes too (VulkanRenderer.RenderPasses.cs)
+            bool rpPass = !msPass && UseRenderPasses;
             var gci = new GraphicsPipelineCreateInfo
             {
                 SType = StructureType.GraphicsPipelineCreateInfo,
-                PNext = msPass ? null : &rendering,
-                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples, tileWord) : default,
+                PNext = msPass || rpPass ? null : &rendering,
+                RenderPass = msPass ? MsaaCompatPass(colorFormat, key.Samples, tileWord) : rpPass ? SingleCompatPass(key.HasColor ? colorFormat : Format.Undefined, tileWord) : default,
                 Subpass = 0,
                 StageCount = 2,
                 PStages = stages,
@@ -802,7 +804,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
-        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); }
+        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
     }
 
     /// <summary>VITASHARP_FETCH_SPLIT=0 disables the per-triangle split of programmable-blending draws.</summary>

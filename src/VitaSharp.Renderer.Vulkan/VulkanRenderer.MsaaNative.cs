@@ -451,6 +451,24 @@ public sealed unsafe partial class VulkanRenderer
             PColorAttachments = &color,
         };
         CountOps(true, color.LoadOp, color.StoreOp, false, default, default);
+        if (UseRenderPasses)
+        {
+            // Vulkan 1.1 path: an empty MSAA render pass whose resolve attachment is the surface (integer views of
+            // raw scenes resolve one sample, as SAMPLE_ZERO does); depth is loaded and stored unchanged
+            var format = _msSceneRaw ? _rawFormat : _rtAttachFormat;
+            var pass = MsaaRenderPass(new MsaaPassKey(format, _msSamples, AttachmentLoadOp.Load, color.StoreOp,
+                AttachmentLoadOp.Load, AttachmentStoreOp.Store, true));
+            var fb = MsaaFramebuffer(m, pass, color.ImageView, _depth!.View, color.ResolveImageView);
+            var clears = stackalloc ClearValue[3];
+            var rbi = new RenderPassBeginInfo
+            {
+                SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = fb,
+                RenderArea = ri.RenderArea, ClearValueCount = 3, PClearValues = clears,
+            };
+            _vk.CmdBeginRenderPass(F.Cmd, in rbi, SubpassContents.Inline);
+            _vk.CmdEndRenderPass(F.Cmd);
+            return;
+        }
         _vk.CmdBeginRendering(F.Cmd, in ri);
         _vk.CmdEndRendering(F.Cmd);
     }
