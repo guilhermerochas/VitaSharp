@@ -64,8 +64,10 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_ssImages.TryGetValue(rt, out var ss)) return ss;
         ss = new SupersampleImage { Width = rt.Width * 2, Height = rt.Height * 2 };
+        // input attachment: small programmable-blending draws read it in a render pass (VulkanRenderer.SingleFetch.cs)
         (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
-            ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, mutable: true);
+            ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
+            ImageAspectFlags.ColorBit, mutable: true);
         var srgb = Formats.Srgb(rt.Format);
         if (srgb != rt.Format && _core.SupportsColorAttachment(srgb))
             ss.SrgbView = CreateView(ss.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);

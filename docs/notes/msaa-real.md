@@ -77,9 +77,16 @@ normal colours (rbs_boot as committed no longer reaches gameplay because a save 
   primitives of one draw see each other (LittleBigPlanet's text glyph quads): triangle lists one triangle per piece,
   triangle strips two triangles per piece from an even index (keeps the winding; Soul Sacrifice's fire and smoke are
   strips of particle quads joined by degenerate triangles, which raced in 8x8-pixel blocks before), pieces of only
-  degenerate triangles left out, at most 256 pieces (`Core/Gpu/FetchSplit.cs`). Fans are not split. The
-  copy path (1x and supersampled scenes) does not split: a copy per triangle cost Uncharted 6.7 -> 32 ms of GPU time
-  per frame. Larger or copied self-overlapping draws would need VK_EXT_fragment_shader_interlock (Vita3K's approach). `VITASHARP_FETCH_SPLIT=0` disables the split.
+  degenerate triangles left out, at most 256 pieces (`Core/Gpu/FetchSplit.cs`). Fans are not split. One-sample
+  images (1x surface, supersample image, MSAA without downscale, also on tile-based GPUs) render such draws in a
+  one-subpass render pass of their own with the image as input attachment (`VulkanRenderer.SingleFetch.cs`); the
+  one-sample copy path (scenes with the tile-word attachment) does not split: a copy per triangle cost Uncharted
+  6.7 -> 32 ms of GPU time per frame. `VITASHARP_MSAA_FETCH=copy` (a fallback) does split, with a new copy of the
+  samples per piece. Larger or copied self-overlapping draws would need VK_EXT_fragment_shader_interlock (Vita3K's
+  approach). `VITASHARP_FETCH_SPLIT=0` disables the split.
+- Copy path: a scene whose first draw reads the framebuffer copied its samples before the scene's first rendering
+  had loaded them (undefined samples: Soul Sacrifice's heat-haze quad drew a triangle of coloured dots with
+  `VITASHARP_MSAA_FETCH=copy`); `BuildMsaaFetchSet` now begins that rendering first.
 - MoltenVK: render passes with input attachments, secondary command buffers, sampleRateShading and resolve
   attachments are supported features of MoltenVK; not tested on macOS.
 

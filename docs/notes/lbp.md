@@ -52,8 +52,9 @@ not done").
 - The draw renders piece by piece with a by-region barrier in between: one triangle per piece in lists, two in
   strips (from an even index), pieces of only degenerate triangles left out.
 - Render targets get INPUT_ATTACHMENT usage.
-- Not used with supersampling, the tile-word attachment, or tile-based (mobile) renderings. Disabled together with
-  the MSAA split by `VITASHARP_FETCH_SPLIT=0`.
+- Also used for the 2x sample image of supersampled scenes (`VITASHARP_MSAA=ss`), the 2x surface of MSAA without
+  downscale and tile-based (mobile) renderings (since `fix/ss-copy-path`: Soul Sacrifice's fire smoke was missing
+  there). Not used with the tile-word attachment. Disabled together with the MSAA split by `VITASHARP_FETCH_SPLIT=0`.
 
 ## Fixed: audio (FMOD streams stopped on their first NGS tick)
 
