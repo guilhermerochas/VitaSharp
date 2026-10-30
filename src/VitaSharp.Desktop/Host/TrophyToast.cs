@@ -16,16 +16,19 @@ public sealed class TrophyToast : IDisposable
 
     readonly Action<byte[]?, int, int> _show;
     readonly Func<int> _windowHeight;
+    readonly Action? _shown;
     readonly Queue<TrophyUnlockedEvent> _queue = new();
     readonly Timer _timer;
     bool _showing;
 
     /// <param name="show">sets (or clears, null) the overlay image: BGRA bytes, width, height</param>
     /// <param name="windowHeight">framebuffer height, to scale the card</param>
-    public TrophyToast(Action<byte[]?, int, int> show, Func<int> windowHeight)
+    /// <param name="shown">called each time a card appears (the trophy sound)</param>
+    public TrophyToast(Action<byte[]?, int, int> show, Func<int> windowHeight, Action? shown = null)
     {
         _show = show;
         _windowHeight = windowHeight;
+        _shown = shown;
         _timer = new Timer(_ => Next(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -57,6 +60,8 @@ public sealed class TrophyToast : IDisposable
         {
             Log.WarnOnce("trophy-toast", $"Trophy notification could not be drawn: {ex.Message}");
         }
+        try { _shown?.Invoke(); }
+        catch (Exception ex) { Log.WarnOnce("trophy-sound", $"Trophy sound could not be played: {ex.Message}"); }
         _timer.Change(Duration, Timeout.InfiniteTimeSpan);
     }
 

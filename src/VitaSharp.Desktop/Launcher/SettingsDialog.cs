@@ -130,6 +130,9 @@ public sealed class SettingsDialog : Window
         general.Children.Add(Row("Tamanho", scale));
         general.Children.Add(vsync);
         general.Children.Add(validation);
+        var trophySound = new CheckBox { Content = "Som de troféu", IsChecked = settings.TrophySound };
+        general.Children.Add(WithHint(trophySound, "Toca um som quando um troféu é desbloqueado no jogo: o som de aviso do firmware " +
+                                                   "do Vita, ou um som próprio do VitaSharp quando não há firmware instalado."));
         general.Children.Add(Row("Câmera", camera));
         general.Children.Add(Row("CPU", cpu));
         general.Children.Add(Row("Clock da CPU", clock));
@@ -274,6 +277,7 @@ public sealed class SettingsDialog : Window
             if (themes.Count > 0 && theme.SelectedIndex >= 0) settings.Theme = themes[theme.SelectedIndex].Id == VitaSharp.Core.Shell.ShellTheme.DefaultId ? "" : themes[theme.SelectedIndex].Id;
             settings.HomeBgm = homeBgm.IsChecked == true;
             settings.SystemSounds = systemSounds.IsChecked == true;
+            settings.TrophySound = trophySound.IsChecked == true;
             settings.Save();
             Controls?.Save();
             Close();

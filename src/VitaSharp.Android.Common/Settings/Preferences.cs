@@ -33,6 +33,9 @@ public sealed class AppPreferences
     public bool HideOnScreenWithGamepad { get; set; } = true;
     /// <summary>Vibrate briefly on an on-screen button press.</summary>
     public bool Haptics { get; set; } = true;
+    /// <summary>"Som de troféu": a chime with the in-game trophy notification (the firmware's notice sound, else a
+    /// built-in one; same as the desktop launcher's option, --trophy-sound=).</summary>
+    public bool TrophySound { get; set; } = true;
     /// <summary>"Conta PSN e rede" (password excluded: it lives in the Android Keystore).</summary>
     public NetworkSettings Network { get; set; } = new();
     /// <summary>Title id of the last game played ("Continuar jogando").</summary>

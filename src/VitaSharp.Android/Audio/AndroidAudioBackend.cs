@@ -89,6 +89,28 @@ public sealed class AndroidAudioBackend : IAudioBackend
         return all.Length == 0 ? head : head + "; " + string.Join("; ", all.Select(s => s.Describe()));
     }
 
+    int _effectBusy;
+
+    /// <summary>
+    /// Plays a short host sound (the trophy chime) on a device stream of its own (AAudio, else AudioTrack), mixed by
+    /// the system over the game's streams, which are never touched. Returns at once; a sound still playing makes a new
+    /// one be skipped.
+    /// </summary>
+    public void PlayEffect(VitaSharp.Core.Shell.PcmSound pcm, float gain = 1f)
+    {
+        if (Interlocked.Exchange(ref _effectBusy, 1) == 1) return;
+        new Thread(() =>
+        {
+            try
+            {
+                using var sink = OpenSink(Math.Clamp(pcm.Channels, 1, 2));
+                if (sink != null) EffectPlayer.Play(sink, pcm, gain);
+            }
+            catch (Exception e) { Log.WarnOnce("effect-play", $"Audio: sound effect failed: {e.Message}"); }
+            finally { Volatile.Write(ref _effectBusy, 0); }
+        }) { IsBackground = true, Name = "Sound effect" }.Start();
+    }
+
     /// <summary>Activity lifecycle: pauses every stream (onPause) so the device stops playing the queued grains.</summary>
     public void Pause()
     {

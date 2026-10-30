@@ -141,6 +141,12 @@ public sealed class AndroidAppTests : IDisposable
         // missing or broken files give the defaults
         File.WriteAllText(data.AppSettingsFile, "{ not json");
         Assert.Equal(0, AppPreferences.Load(data.AppSettingsFile).CpuMhz);
+        // "Som de troféu" is on by default, also for a settings file written before the option existed
+        Assert.True(AppPreferences.Load(data.AppSettingsFile).TrophySound);
+        File.WriteAllText(data.AppSettingsFile, "{ \"CpuMhz\": 444 }");
+        Assert.True(AppPreferences.Load(data.AppSettingsFile).TrophySound);
+        new AppPreferences { TrophySound = false }.Save(data.AppSettingsFile);
+        Assert.False(AppPreferences.Load(data.AppSettingsFile).TrophySound);
         Assert.False(GameSettings.Load(Path.Combine(_root, "none.json")).HasOverrides);
         Assert.EndsWith(Path.Combine("games", "_.json"), data.GameSettingsFile("../../.."));
     }

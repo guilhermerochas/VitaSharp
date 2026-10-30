@@ -145,6 +145,35 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     /// <summary>Times any output stream ran dry and was restarted (diagnostics for audio/video pacing).</summary>
     public static int TotalUnderruns;
 
+    // one-shot host sound effects (the trophy chime): a static source of their own, never one of the guest's ports
+    uint _fxSource, _fxBuffer;
+
+    /// <summary>
+    /// Plays a short host sound (the trophy notification) on its own OpenAL source, mixed over the game without touching
+    /// the guest's audio streams; a new effect replaces the one still playing. Any thread; never blocks.
+    /// </summary>
+    public void PlayEffect(VitaSharp.Core.Shell.PcmSound pcm, float gain = 1f)
+    {
+        if (pcm.Samples.Length == 0 || pcm.Channels is < 1 or > 2) return;
+        lock (_lock)
+        {
+            _alc.MakeContextCurrent(_context);
+            if (_fxSource == 0) _fxSource = _al.GenSource();
+            else
+            {
+                _al.SourceStop(_fxSource);
+                _al.SetSourceProperty(_fxSource, SourceInteger.Buffer, 0);
+            }
+            if (_fxBuffer != 0) _al.DeleteBuffer(_fxBuffer);
+            _fxBuffer = _al.GenBuffer();
+            fixed (short* p = pcm.Samples)
+                _al.BufferData(_fxBuffer, pcm.Channels == 1 ? BufferFormat.Mono16 : BufferFormat.Stereo16, p, pcm.Samples.Length * 2, pcm.SampleRate);
+            _al.SetSourceProperty(_fxSource, SourceInteger.Buffer, (int)_fxBuffer);
+            _al.SetSourceProperty(_fxSource, SourceFloat.Gain, gain);
+            _al.SourcePlay(_fxSource);
+        }
+    }
+
     sealed class Stream : IAudioStream
     {
         readonly OpenAlAudio _o;
@@ -273,6 +302,12 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     public void Dispose()
     {
         if (AudioDiagnostics.DeviceInfo == Describe) AudioDiagnostics.DeviceInfo = null;
+        lock (_lock)
+        {
+            _alc.MakeContextCurrent(_context);
+            if (_fxSource != 0) { _al.SourceStop(_fxSource); _al.DeleteSource(_fxSource); _fxSource = 0; }
+            if (_fxBuffer != 0) { _al.DeleteBuffer(_fxBuffer); _fxBuffer = 0; }
+        }
         _alc.MakeContextCurrent(null);
         _alc.DestroyContext(_context);
         _alc.CloseDevice(_device);

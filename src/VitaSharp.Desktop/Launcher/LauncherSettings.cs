@@ -55,6 +55,9 @@ public sealed class LauncherSettings
     public bool HomeBgm { get; set; }
     /// <summary>Play the system sound effects (common_resource.rco) on the home screen and LiveArea.</summary>
     public bool SystemSounds { get; set; }
+    /// <summary>"Som de troféu": a chime with the in-game trophy notification (the firmware's notice sound, else a
+    /// built-in one), --trophy-sound=.</summary>
+    public bool TrophySound { get; set; } = true;
 
     public const string ViewList = "list", ViewHome = "home";
 
@@ -94,6 +97,7 @@ public sealed class LauncherSettings
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
         if (DebugMode) yield return "--debug-mode";
+        yield return TrophySound ? "--trophy-sound=on" : "--trophy-sound=off";
         yield return PsnSignedIn ? "--psn=on" : "--psn=off";
         if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";
         yield return PsnLocalServices ? "--psn-local=on" : "--psn-local=off";
