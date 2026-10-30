@@ -16,6 +16,13 @@ static class ShaderTest
         bool dumpAll = args.Contains("--dump");
         // --lower-dynamic-indexing: translate as for Qualcomm's proprietary driver (GpuQuirk.DynamicIndexLowering)
         ShaderGenerator.LowerDynamicIndexing = args.Contains("--lower-dynamic-indexing");
+        // --far-plane=discard|hardware: translate as for a device without shaderClipDistance (Mali, GpuQuirk.FarPlaneDiscard)
+        ShaderGenerator.FarPlane = args.FirstOrDefault(a => a.StartsWith("--far-plane="))?["--far-plane=".Length..] switch
+        {
+            "discard" => ShaderGenerator.FarPlaneClip.Discard,
+            "hardware" => ShaderGenerator.FarPlaneClip.Hardware,
+            _ => ShaderGenerator.FarPlaneClip.ClipDistance,
+        };
         byte[]? klic = null;
         var work = Path.Combine(appDir, "sce_sys", "package", "work.bin");
         if (File.Exists(work)) klic = PkgInstaller.ReadKlicensee(work);

@@ -13,7 +13,7 @@ public sealed class GpuQuirkTests
         | GpuFeature.DepthClamp | GpuFeature.FillModeNonSolid | GpuFeature.GeometryShader | GpuFeature.LogicOp | GpuFeature.Storage16Bit
         | GpuFeature.WideLines | GpuFeature.OcclusionQueryPrecise | GpuFeature.MemoryBudget | GpuFeature.Timestamps | GpuFeature.PushDescriptor
         | GpuFeature.IndependentBlend | GpuFeature.DepthBiasClamp | GpuFeature.SamplerMirrorClampToEdge | GpuFeature.SamplerAnisotropy
-        | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState;
+        | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.ShaderClipDistance;
 
     static readonly GpuLimits DesktopLimits = new()
     {
@@ -169,13 +169,40 @@ public sealed class GpuQuirkTests
     {
         var c = GpuQuirkTable.Select(Nvidia, GpuProfile.Mali);
         Assert.Equal(GpuVendor.Arm, c.Vendor);
-        Assert.False(c.Has(GpuFeature.DepthClamp));
+        // as the Mali-G57 MC2 (r54) reports: depth clamp but no clip distance, so the far plane is a fragment discard
+        Assert.True(c.Has(GpuFeature.DepthClamp));
+        Assert.False(c.Has(GpuFeature.ShaderClipDistance));
+        Assert.True(c.Has(GpuQuirk.FarPlaneDiscard));
+        Assert.False(c.Has(GpuFeature.TextureCompressionBC));
         Assert.False(c.Has(GpuFeature.FillModeNonSolid));
         Assert.Equal(16u, c.Limits.MaxPerStageDescriptorSamplers);
         Assert.Equal(4u, c.Limits.MaxBoundDescriptorSets);
         Assert.Equal(1u | 4, c.Limits.FramebufferSampleCounts);
         Assert.True(c.Has(GpuQuirk.Msaa2xAs4x));
         Assert.False(c.Has(GpuQuirk.StaticExtendedDynamicState));
+    }
+
+    [Fact]
+    public void FarPlaneWithoutClipDistance()
+    {
+        var mali = GpuFeature.DepthClamp | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState;
+        // depth clamp, no clip distance: fragment discard
+        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(54, 1), mali));
+        Assert.True(c.Has(GpuQuirk.FarPlaneDiscard));
+        Assert.True(c.Has(GpuFeature.DepthClamp));
+        Assert.Contains("FarPlaneDiscard", c.Describe());
+        // forced off: no depth clamp, the hardware clips both planes
+        var off = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, mali), overrides: "-FarPlaneDiscard");
+        Assert.False(off.Has(GpuQuirk.FarPlaneDiscard));
+        Assert.False(off.Has(GpuFeature.DepthClamp));
+        Assert.True((off.Masked & GpuFeature.DepthClamp) != 0);
+        // neither: the hardware clips the far plane, nothing to emulate
+        var none = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, GpuFeature.DynamicRendering));
+        Assert.False(none.Has(GpuQuirk.FarPlaneDiscard));
+        // a desktop GPU has both: clip distance, no quirk
+        Assert.False(GpuQuirkTable.Select(Nvidia).Has(GpuQuirk.FarPlaneDiscard));
+        // forced on a desktop GPU (testing the discard path)
+        Assert.True(GpuQuirkTable.Select(Nvidia, overrides: "+FarPlaneDiscard").Has(GpuQuirk.FarPlaneDiscard));
     }
 
     [Fact]

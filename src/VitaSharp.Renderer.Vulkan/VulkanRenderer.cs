@@ -126,6 +126,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         // Qualcomm proprietary driver: dynamically indexed register words through switch helpers (GLSL changes only then)
         Core.Gxm.Shader.ShaderGenerator.LowerDynamicIndexing = _core.Caps.Has(GpuQuirk.DynamicIndexLowering);
+        // the GXM far plane: a clip distance, else a fragment discard (depth clamp on) or the hardware's own clip
+        Core.Gxm.Shader.ShaderGenerator.FarPlane = _core.Caps.Has(GpuQuirk.FarPlaneDiscard) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Discard
+            : _core.Caps.Has(GpuFeature.ShaderClipDistance) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.ClipDistance
+            : Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Hardware;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
