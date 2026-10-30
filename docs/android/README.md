@@ -136,7 +136,7 @@ adb logcat -s VitaSharp VitaSharp-Guest
 | --- | --- |
 | <img src="screens/driver-gpu.png" width="200" alt="GPU driver"> | <img src="screens/gpu-info.png" width="200" alt="GPU information"> |
 
-The mockups (`mockups/*.html`, rendered to `screens/*.png` by `build/render-android-mockups.ps1`) are the visual
+The mockups (`mockups/*.html`, rendered to `screens/*.png` by `build/render-android-mockups.ps1` or `.sh`) are the visual
 reference; the app follows them with these differences:
 
 - **Biblioteca**: as the mockup, plus a fourth tab "Desempenho" (runtime/CPU backends, GPU pages, play statistics).
@@ -213,5 +213,5 @@ for the menu. Touches on the image are the front touch screen.
 ## Files
 
 - [`mockups/`](mockups): standalone HTML for each screen (open in a browser).
-- [`screens/`](screens): PNG renders of the mockups (2× scale), made with `build/render-android-mockups.ps1`
+- [`screens/`](screens): PNG renders of the mockups (2× scale), made with `build/render-android-mockups.ps1` (Windows) or `build/render-android-mockups.sh` (Linux/macOS)
   (headless Edge, the centred phone frame cropped out).
