@@ -51,8 +51,13 @@ public static class AppServices
                 Data = new DataLayout(context.FilesDir!.AbsolutePath);
                 Data.EnsureCreated();
             }
+            // config/env.txt: the desktop's VITASHARP_* switches, set before anything below reads them
+            List<KeyValuePair<string, string>> env = [];
+            try { env = EnvironmentFile.Apply(Path.Combine(Data.Config, EnvironmentFile.FileName)); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"{EnvironmentFile.FileName}: {e.Message}"); }
             // the UI process keeps logs/app.log (truncated per start); a game session writes logs/last.log (SessionLog)
             if (!gameProcess) Log.OpenFile(Path.Combine(Data.Logs, "app.log"));
+            foreach (var (name, value) in env) Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             if (Prefs.DebugMode) { Log.Level = LogLevel.Debug; DebugMode.Enable(); }
             InputProfiles = InputProfileStore.Load(Data.InputProfiles);

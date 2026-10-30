@@ -51,7 +51,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     InputManager? _inputManager;
     System.Threading.Timer? _fpsTimer;
     long _lastFrames;
-    bool _menuOpen, _isSystem;
+    bool _menuOpen, _isSystem, _endedShown;
 
     /// <summary>Starts a game from the UI process.</summary>
     public static void Launch(Context context, string titleId)
@@ -81,7 +81,6 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         base.OnCreate(savedInstanceState);
         AppServices.Initialize(this, gameProcess: true);
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
-        EnterImmersive();
 
         string titleId = Intent?.GetStringExtra(ExtraTitleId) ?? "";
         bool system = titleId == SystemTitleId;
@@ -114,6 +113,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         root.AddView(_toast, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.Right)
         { TopMargin = Dp(12), RightMargin = Dp(96) });
         SetContentView(root);
+        // after SetContentView: Window.InsetsController needs the decor view, which does not exist before it (a
+        // NullPointerException inside PhoneWindow.getInsetsController on API 30+)
+        EnterImmersive();
         _view.ViewTreeObserver!.GlobalLayout += (_, _) => UpdateImageRect();
 
         // physical controllers: the ones already connected, then hot-plug
@@ -302,6 +304,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         bar.AddView(_fps);
         var pause = Chip("❚❚", 12);
         pause.Click += (_, _) => OpenMenu();
+        // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
+        // and drew Android's focus highlight over the game
+        pause.Focusable = false;
         var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(8) };
         bar.AddView(pause, lp);
         return bar;
@@ -324,6 +329,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     void UpdateFps()
     {
         if (_session == null || _fps == null) return;
+        // the guest process stopped by itself (exit, stack-protector failure, crash): say so instead of a frozen image
+        if (_session.Ended && !_endedShown)
+        {
+            _endedShown = true;
+            Log.Warn($"The process of {_session.Game.TitleId} ended");
+            ShowFatal("O jogo terminou.");
+            return;
+        }
         long frames = _session.Frames;
         long fps = frames - _lastFrames;
         _lastFrames = frames;
@@ -364,7 +377,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
                 {
                     case 1: _pad.RearTouch = !_pad.RearTouch; break;
                     case 2: _pad.Visible = !_pad.Visible; break;
-                    case 3: Finish(); return;
+                    case 3: Leave(); return;
                 }
                 _controls?.Invalidate();
             })!
@@ -377,13 +390,21 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             .Show();
     }
 
+    /// <summary>Leaves the game: the statistics are written first, since the screens re-read them as soon as this
+    /// activity finishes (before its onDestroy).</summary>
+    void Leave()
+    {
+        _session?.RecordStatistics();
+        Finish();
+    }
+
     void ShowFatal(string message)
     {
         _session?.Pause();
         new AlertDialog.Builder(this)
             .SetTitle("VitaSharp")!
             .SetMessage(message + "\n\nO log completo está em " + System.IO.Path.Combine(AppServices.Data.Logs, "last.log"))!
-            .SetPositiveButton("Sair", (_, _) => Finish())!
+            .SetPositiveButton("Sair", (_, _) => Leave())!
             .SetCancelable(false)!
             .Show();
     }

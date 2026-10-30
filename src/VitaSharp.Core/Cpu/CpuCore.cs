@@ -272,6 +272,7 @@ public sealed unsafe class CpuCore : IDisposable
             {
                 var fn = b.Compiled;
                 if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
+                else if (fn != null && Native.NativeVerifier.Enabled) Native.NativeVerifier.RunCompiled(s, b, fn);
                 else if (fn != null) fn(s);
                 else
                 {

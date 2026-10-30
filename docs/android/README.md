@@ -1,10 +1,11 @@
 # Android app
 
 `src/VitaSharp.Android` is a .NET MAUI Android app (MauiReactor screens, a native game activity with a Vulkan
-SurfaceView) that builds into an installable APK. It has **not been run yet**: no device or Android emulator was used
-while writing it, so everything below that depends on a running process (surface, JIT, audio, input) is unverified;
-the checklist at the end lists what the first run must check. On-screen text is in Portuguese, like the desktop
-launcher.
+SurfaceView) that builds into an installable APK. It has run on the **x86_64 Android emulator** (30/10/2026, results in
+[Emulator run](#emulator-run-30102026)): every screen, two games to their menus on the native x64 JIT, the surface,
+pause/resume, AAudio and the on-screen controls. It has **not run on a phone yet**: the ARM64 JIT, the Adreno/Mali
+drivers, libadrenotools and real controllers are still unverified (the checklist at the end). On-screen text is in
+Portuguese, like the desktop launcher.
 
 ## Building
 
@@ -35,8 +36,10 @@ system Vulkan driver is always used. Details: [mobile GPU notes](../notes/mobile
 Output: `src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-Signed.apk` (debug-keystore signed,
 arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); with the
 MediaCodec/AAudio backends, libadrenotools and `extractNativeLibs` (native libraries stored compressed), without
-libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); a Release rebuild of both
-ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faster, for iterating).
+libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); with both libshaderc
+builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`.
+`-r android-arm64` (phones) or `-r android-x64` (the emulator) builds one ABI, into `bin/Release/net10.0-android/<rid>/`
+(about 2 minutes, for iterating).
 
 | Project | Target | In `VitaSharp.sln` | What |
 |---|---|---|---|
@@ -57,7 +60,7 @@ ABIs takes about 3 minutes with `-m:2`. `-r android-arm64` builds one ABI (faste
   `VitaSharp.Android.Common` (`Audio/BufferedPcmStream.cs`, `Media/MediaCodecSupport.cs`,
   `Storage/GameProcessMarker.cs`; unit-tested: `AndroidMediaDriverTests`).
 - `src/VitaSharp.Android.Common`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
-  settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`), `Firmware/FirmwareSetup.cs`,
+  settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`, `EnvironmentFile`), `Firmware/FirmwareSetup.cs`,
   `Gpu/GpuDriverScreen.cs` (Driver/Informações da GPU models), `Input/` (`OnScreenPad`, `AndroidGamepads`,
   `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Storage/DataLayout.cs`.
 - Icon: the adaptive launcher icon (`Platforms/Android/Resources/mipmap-*`) generated from `docs/assets/logo.svg` by
@@ -169,6 +172,21 @@ last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). "Modo 
 adb logcat -s VitaSharp VitaSharp-Guest
 ```
 
+**Environment switches** (`config/env.txt`, `EnvironmentFile`): an Android process cannot be started with
+environment variables, so each process reads `<data>/config/env.txt` at startup (before any emulator type reads its
+switches) and sets the `VITASHARP_*` variables in it, one `NAME=value` per line (`#` comments; other names are
+ignored). It applies to the next game started; the log shows each one (`env.txt: NAME=value`). For example:
+
+```
+# VITASHARP_GPU_QUIRKS=-TextureCompressionBC  (ASTC transcoding on a GPU with BC)
+# VITASHARP_GPU_PROFILE=adreno-vk11           (render passes + static state)
+VITASHARP_NATIVE_VERIFY=1
+```
+```
+adb push env.txt /sdcard/Android/data/io.github.vitasharp/files/config/env.txt
+adb shell rm /sdcard/Android/data/io.github.vitasharp/files/config/env.txt
+```
+
 ## Screens
 
 | Biblioteca | Detalhes do jogo | Troféus | Controles |
@@ -203,6 +221,76 @@ reference; the app follows them with these differences:
   process (the system driver); the driver list, install (SAF picker, then "Usar este driver agora?"), select, remove
   and the three libadrenotools switches work on files and apply to the next start of a game; a game running with
   another configuration is offered a restart.
+
+## Emulator run (30/10/2026)
+
+**AVD `VitaSharp_Test`** (kept on the dev PC; `avdmanager create avd -n VitaSharp_Test -k
+"system-images;android-36;google_apis;x86_64" -d pixel_8`, then in its `config.ini`): Android 16 (API 36) Google APIs
+x86_64 image (its `abilist64` is `x86_64,arm64-v8a`: the image carries Google's ARM translation, so arm64-only apps
+install too; the APK's x86_64 libraries are used, so the native backend is x64), Pixel 8 profile (1080x2400, 420 dpi),
+`hw.ramSize=6144`, `hw.cpu.ncore=4`, `vm.heapSize=512M`, `disk.dataPartition.size=16G`, `hw.keyboard=yes`,
+`hw.gpu.enabled=yes`, `hw.gpu.mode=host`. Started with
+
+```
+emulator -avd VitaSharp_Test -gpu host -cores 4 -feature Vulkan,GLDirectMem -no-snapshot-save -no-boot-anim
+```
+
+WHPX acceleration (`emulator -accel-check`); the `Vulkan` feature is off in the emulator's default
+`advancedFeatures.ini`, `-feature Vulkan` turns it on: the guest sees the GTX 1650 through gfxstream as Vulkan 1.3
+(`NvidiaProprietary 546.17`, BC, ASTC LDR emulated by gfxstream, ETC2, dynamic rendering, extended dynamic state, no
+`VK_EXT_memory_budget`). Games were copied into the app's own folder (`adb push <game> /sdcard/Android/data/io.github
+.vitasharp/files/fs/ux0/app/`, the `.rif` into `ux0/license/<TITLEID>/`); no firmware was installed (the games run on
+HLE).
+
+**Clock source caveat.** Under WHPX the guest kernel has no kvm-clock; it uses the TSC when it trusts it and HPET
+otherwise (`/sys/devices/system/clocksource/clocksource0/current_clocksource`, needs `adb root`). The first boot, made
+while the PC was building shaderc, fell back to HPET: every `clock_gettime` then traps to the hypervisor (~13 µs, all
+of a guest thread's time in `read_hpet` in `simpleperf`), and Knightin'+ took minutes in its loading screen. Later
+boots on an idle PC chose the TSC. Forcing `clocksource=tsc tsc=reliable` with `kernel.parameters` froze the display
+(vsync stopped): do not. If games crawl, check the clock source (`adb root`, then
+`echo tsc > .../current_clocksource` if `tsc` is listed). A phone reads the clock in the vDSO.
+
+| Checklist item | Result |
+|---|---|
+| 1. shaderc | **pass**: `libshaderc_shared.so` for both ABIs in the APK, loaded by Silk.NET; Devious Dungeon compiled its 6 shaders (`shaderc (Zero): 6 compiled in 220 ms`), the pipeline cache and shader recipes are reused on the next start |
+| 2. screens, SAF | **pass**: Biblioteca (empty and with games, "Continuar jogando"), Detalhes, Troféus, Controles, Desempenho (Mono, dynamic code, Nativo (x64)), Informações da GPU, Driver da GPU, Ajustes, Firmware; the PUP picker (`ACTION_OPEN_DOCUMENT`) opens and returns on cancel. **Untested**: picking a real VPK/PUP/driver zip end to end (nothing may be put in public storage here), Keystore (no RPCN password set) |
+| 3. game process, surface | **pass**: surface → renderer → `LoadTitle` → frames; landscape 2400x1080 swapchain, IDENTITY on a `ROTATE_90` surface; home → back (`Presentation surface detached`/`attached`, `suspended`/`resumed`); PS and Back open the pause menu; "Sair do jogo" ends the `:game` process and Detalhes shows the play time (after the fix below). **Inconclusive**: 180° rotation (the emulator's rotation commands did not flip the sensor-landscape activity) |
+| 4. CPU | **pass**: `Runtime: .NET 10.0.11 (Mono), X64, android-x64`, `Dynamic code: supported True, compiled True`, chain `native > il > interp`; the native x64 JIT executes from the memfd dual mapping (SELinux allowed it on API 36); Detalhes > CPU switches native / IL / interpreter per game |
+| 5. input | **pass**: on-screen D-pad and Cross drive the menus, PS opens the pause menu. **Untested**: a real controller (`adb shell input gamepad` comes from a virtual device, which `AndroidGamepads` ignores by design); a hardware keyboard is not mapped to the pad (roadmap) |
+| 6. logcat | **pass**: `VitaSharp` (I/W/E) and `VitaSharp-Guest` lines; `logs/last.log` per game. Mono prints harmless `Shared library 'libc'/'libaaudio.so' not loaded, p/invoke ... may fail` warnings for P/Invokes that then resolve |
+| 7. audio | **pass (emulator)**: AAudio opened (`AAudio normal shared, capacity 8192 frames 48000 Hz, burst 4096 frames`): the emulator grants neither low latency nor exclusive mode; pause/resume on home. **Untested**: pitch/pace by ear, headphones/Bluetooth reopening, a 44.1 kHz device |
+| 8. video | **untested**: neither game uses SceAvcdec/SceAvPlayer |
+| 9. GPU drivers | libadrenotools and the four hooks are in `lib/arm64-v8a`; on the emulator "Driver da GPU" shows the system driver (no `/dev/kgsl-3d0`). **Device only** |
+| 10. renderer paths | **pass on gfxstream**: native profile = dynamic rendering, no quirks; `VITASHARP_GPU_QUIRKS=-TextureCompressionBC` (env.txt) transcodes BC to ASTC 4x4 through gfxstream's ASTC emulation (disk cache written, frames as with BC); `VITASHARP_GPU_PROFILE=adreno-vk11` (render passes, static state, ASTC) renders Devious Dungeon's menus the same. Real Vulkan 1.1 / Adreno / Mali drivers: **device only** |
+
+**Fixed during the run:**
+
+- `GameActivity` crashed at start on API 30+: `EnterImmersive` ran before `SetContentView`, and
+  `Window.InsetsController` needs the decor view (NullPointerException in `PhoneWindow.getInsetsController`).
+- The swapchain was recreated every frame: Android returns `VK_SUBOPTIMAL_KHR` from every acquire/present while
+  `preTransform` (IDENTITY, by design) differs from `currentTransform`, and the renderer recreated the swapchain on
+  SUBOPTIMAL (with a `vkDeviceWaitIdle`; 13 fps on Knightin'+'s logo, 30 after). SUBOPTIMAL is now ignored when the
+  transform mismatch was chosen; OUT_OF_DATE and resizes still recreate it.
+- **Mono miscompiled `Arm.SignExtend`**: `(int)(v << n) >> n` folded to a logical shift when `v` is a constant, which it
+  is once the IL backend inlines a handler with the instruction word as a constant: every backward Thumb `B` jumped
+  4 KB forward. The IL backend crashed the game in 1.6 s (`__stack_chk_fail`), and the native backend after ~95 s
+  (blocks it hands to the IL backend). Found with `VITASHARP_NATIVE_VERIFY=1`, which now also checks store-free IL
+  blocks against the interpreter; `SignExtend` is written with unsigned xor/subtract. After the fix Knightin'+ reaches
+  its title menu on the native backend and runs on the IL backend.
+- A game process that ends by itself (guest exit, stack-protector failure) left a frozen image: the game screen now
+  shows "O jogo terminou." with the log path.
+- Play time was not shown after leaving a game: the screens resume (and re-read the statistics) before the game
+  activity's `onDestroy`, which wrote them; they are written when the player leaves now.
+- Dark status/navigation bar icons on the dark screens (MAUI's light window flags); the pause chip took the keyboard
+  focus (arrow keys drew Android's focus highlight over the game); the ASTC log line claimed transcoding on GPUs with
+  BC; "Driver do sistema" said "aberto pela libadrenotools" on GPUs where libadrenotools is not used.
+
+Screenshots of the run are not committed (they show game content).
+
+**Still device-only:** the ARM64 native JIT under a phone's SELinux policy (memfd/ashmem RX views), Adreno/Mali
+proprietary driver behaviour and every quirk of the table, libadrenotools (custom drivers, BCeNabler, file redirect,
+turbo), `VK_EXT_rasterization_order_attachment_access`, tile memory savings, AAudio low-latency/exclusive streams and
+output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° rotation, thermal behaviour and speed.
 
 ## Before the first run: what the emulator/device step must verify
 

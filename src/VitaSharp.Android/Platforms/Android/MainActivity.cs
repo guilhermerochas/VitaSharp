@@ -19,6 +19,13 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         Current = this;
         base.OnCreate(savedInstanceState);
+        // the screens are always dark (Ui/Theme), but the MAUI theme asks for dark status/navigation bar icons (a light
+        // window): they were nearly invisible on the dark background
+        if (Window is { } w && AndroidX.Core.View.WindowCompat.GetInsetsController(w, w.DecorView) is { } bars)
+        {
+            bars.AppearanceLightStatusBars = false;
+            bars.AppearanceLightNavigationBars = false;
+        }
     }
 
     protected override void OnResume()

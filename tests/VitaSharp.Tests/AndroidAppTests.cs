@@ -21,6 +21,15 @@ public sealed class AndroidAppTests : IDisposable
         try { Directory.Delete(_root, true); } catch (DirectoryNotFoundException) { }
     }
 
+    // ---------------------------------------------------------------- env.txt
+
+    [Fact]
+    public void EnvironmentFileTakesOnlyVitaSharpVariables()
+    {
+        var vars = EnvironmentFile.Parse("# comment\r\nVITASHARP_GPU_QUIRKS=-RenderPasses,+TileBased\r\n\r\nexport VITASHARP_ASTC = \"0\"\nPATH=/x\nVITASHARP_BAD NAME=1\n=1\nVITASHARP_EMPTY=\n");
+        Assert.Equal([new("VITASHARP_GPU_QUIRKS", "-RenderPasses,+TileBased"), new("VITASHARP_ASTC", "0"), new("VITASHARP_EMPTY", "")], vars);
+    }
+
     // ---------------------------------------------------------------- logcat
 
     [Theory]

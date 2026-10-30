@@ -23,7 +23,8 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Title start: the ASTC disk cache goes into the title's shader cache folder.</summary>
     void OpenAstcCache(string titleDir)
     {
-        if (!AstcUsable) return;
+        // a GPU that samples BCn natively never transcodes (desktop GPUs, the Android emulator's host GPU)
+        if (!AstcUsable || _core.TextureCompressionBC) return;
         AstcTranscoder.Disk = new TranscodeDiskCache(Path.Combine(titleDir, "astc"), AstcCacheBytes);
         Log.Info($"[texcache] BC/PVRTC textures are transcoded to ASTC 4x4; disk cache {AstcTranscoder.Disk.Directory} (limit {AstcCacheBytes >> 20} MB, {AstcTranscoder.Disk.Bytes >> 20} MB used)");
     }

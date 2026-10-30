@@ -13,7 +13,8 @@ namespace VitaSharp.Core.Cpu.Native;
 /// real - the guest always continues with the interpreter's result. Registers, flags, Thumb, the SIMD file, FPSCR,
 /// the exit fields and the final contents of every address the native code stored to are compared; mismatches are
 /// logged with the block's IR and disassembly. Blocks whose callouts store to memory (NEON stores, exclusives) cannot
-/// be undone and are only interpreted. Debug only: roughly halves CPU speed.
+/// be undone and are only interpreted. IL-backend blocks without stores are checked the same way (<see cref="RunCompiled"/>).
+/// Debug only: roughly halves CPU speed.
 /// </summary>
 public static unsafe class NativeVerifier
 {
@@ -75,6 +76,32 @@ public static unsafe class NativeVerifier
         try { CpuCore.Interpret(s, b); }
         catch (Exception e) { interpFault = e.GetType().Name; Compare(s, &s0, &sn, b, n, finals, nativeFault, interpFault); throw; }
         Compare(s, &s0, &sn, b, n, finals, nativeFault, interpFault);
+    }
+
+    /// <summary>
+    /// The IL backend's blocks (the fallback for blocks the native backend rejects, or the backend itself): the IL code
+    /// cannot log its stores, so only blocks without memory stores are checked - the compiled code runs on a copy of the
+    /// state, the interpreter on the real one, and registers, flags, FPSCR, the SIMD file and the exit fields are
+    /// compared. Blocks that store are only interpreted.
+    /// </summary>
+    public static void RunCompiled(CpuState* s, Block b, JitBlockFn fn)
+    {
+        if (b.Insts.Any(i => MayStore(i.Op)))
+        {
+            Interlocked.Increment(ref Skipped);
+            CpuCore.Interpret(s, b);
+            return;
+        }
+        var s0 = *s;
+        string? compiledFault = null;
+        try { fn(s); }
+        catch (Exception e) { compiledFault = e.GetType().Name; }
+        var sc = *s;
+        *s = s0;
+        string? interpFault = null;
+        try { CpuCore.Interpret(s, b); }
+        catch (Exception e) { interpFault = e.GetType().Name; Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault); throw; }
+        Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault);
     }
 
     static uint Read(uint addr, uint size) => size switch

@@ -43,7 +43,9 @@ public sealed class GpuDriverScreen
     {
         var installed = Store.List();
         bool systemSelected = Settings.Driver.Length == 0 || installed.All(d => d.Id != Settings.Driver);
-        var list = new List<GpuDriverOption> { new("", "Driver do sistema", "O que veio no aparelho, aberto pela libadrenotools", systemSelected, false) };
+        var list = new List<GpuDriverOption> { new("", "Driver do sistema",
+            // libadrenotools only opens it on Adreno GPUs; elsewhere the system's Vulkan loader does
+            CustomDriversSupported ? "O que veio no aparelho, aberto pela libadrenotools" : "O que veio no aparelho", systemSelected, false) };
         foreach (var d in installed)
             list.Add(new(d.Id, d.Meta.Name, Detail(d.Meta), !systemSelected && d.Id == Settings.Driver, true));
         return list;
