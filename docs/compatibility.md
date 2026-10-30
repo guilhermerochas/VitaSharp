@@ -60,7 +60,7 @@ point a scenario reaches is not the end of the game.
 | Minecraft: PlayStation Vita Edition | PCSE00491 | Menus | Terms of use, main menu, new world options | `minecraft_boot` |
 | Ninja Gaiden Σ Plus | PCSB00097 | In‑game | Intro movie, menus, new game and the first fights | `ngs_boot` |
 | Ninja Gaiden Σ2 Plus | PCSE00233 | In‑game | Title, new game, first fights of chapter 1 | `ngs2_boot` |
-| Persona 4 Golden | PCSB00245 | In‑game | New game up to the station scene; name entry needs the on-screen keyboard (IME); cannot start from the real shell yet (fixed-address executable) | `p4g_newgame` |
+| Persona 4 Golden | PCSB00245 | In‑game | New game up to the station scene (the scenario types a full name on the game's own letter grid); cannot start from the real shell yet (fixed-address executable) | `p4g_newgame` |
 | Resistance: Burning Skies | PCSA00008 | In‑game | New game, intro movie, first scene | `rbs_boot` |
 | Sakatsuku (J.League Pro Soccer Club wo Tsukurou!) 2013 | PCSG00198 | Menus | Title, save flow, new-game creation | `st_boot`, `st_game2` |
 | Sengoku Musou 2 Empires HD | PCSG00230 | Menus | Empire mode setup, army cutscene, first strategy turn | `sm2e_play` |
