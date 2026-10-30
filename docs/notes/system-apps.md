@@ -118,7 +118,7 @@ ELFs follow each other; appmgr is the one at file offset 0x27B048 in 3.74). Lear
   the application in front as suspending (state 3). Checked: in Devious Dungeon, PS brings the shell back (the game is
   suspended; first time with the home-screen hint), its LiveArea shows "Continue", and Continue resumes the game.
   The gate's thumbnail of a suspended game is `sceAppMgrCaptureFrameBufIFTUByAppId` (the shell clears it when that
-  fails); it now copies the application's last framebuffer (not checked in a run yet).
+  fails); it now copies the application's last framebuffer: Knightin'+ suspended with PS shows its screen on the gate.
 - The "Could not install" dialog and the "!" notification after unlocking remain: not the background download
   launch. NPXS10079 (daily checker) is started twice at boot and each run reads its launch parameter, polls
   `vshAppMgrGetPfsProcessStatus` (0: nothing pending) and exits normally; it is not a relaunch loop. Lead: the
