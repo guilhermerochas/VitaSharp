@@ -48,7 +48,7 @@ public sealed unsafe partial class ArmFrontend
             1 => b ? (VecKind)((u ? 4u : 0u) + size) : s64 ? null : VecKind.RhaddI,
             2 => b ? VecKind.QsubI : s64 ? null : VecKind.HsubI,
             3 => s64 ? null : b ? VecKind.CgeI : VecKind.CgtI,
-            4 => !b && size == 2 ? VecKind.ShlRegI : null,
+            4 => !b ? VecKind.ShlRegI : null, // VSHL (register), every lane size (the emitter's SupportsVec decides)
             6 => s64 ? null : b ? VecKind.MinI : VecKind.MaxI,
             7 => s64 ? null : b ? VecKind.AbaI : VecKind.AbdI,
             8 => !b ? (u ? VecKind.SubI : VecKind.AddI) : s64 ? null : u ? VecKind.CeqI : VecKind.TstI,
@@ -173,6 +173,7 @@ public sealed unsafe partial class ArmFrontend
                     if (size == 3) return null;
                     return Vec(VecKind.Paddl, q, size, vd, 0, vm, ((op & 1) != 0 ? VecFlags.Unsigned : 0) | (op >= 0xC ? VecFlags.Accumulate : 0));
                 }
+                if (op == 8 && size != 3) return Vec(VecKind.Cls, q, size, vd, 0, vm);
                 if (op == 9 && size != 3) return Vec(VecKind.Clz, q, size, vd, 0, vm);
                 if (op == 0xA && size == 0) return Vec(VecKind.Cnt, q, 0, vd, 0, vm);
                 if (op == 0xB) return Vec(VecKind.Mvn, q, size, vd, 0, vm);
@@ -208,9 +209,11 @@ public sealed unsafe partial class ArmFrontend
                     case 1: case 2: case 3:
                         if (oddQ || size == 3) return null;
                         return Vec(op == 1 ? VecKind.Trn : op == 2 ? VecKind.Uzp : VecKind.Zip, q, size, vd, 0, vm);
-                    case 4:
-                        if (b != 8 || size == 3 || (vm & 1) != 0) return null; // VMOVN only; VQMOVUN: callout
-                        return Vec(VecKind.Movn, false, size, vd, 0, vm);
+                    case 4: case 5:
+                        if (size == 3 || (vm & 1) != 0) return null;
+                        // b = 8 VMOVN, 9 VQMOVUN (signed -> unsigned), 10 VQMOVN.S, 11 VQMOVN.U
+                        if (b == 8) return Vec(VecKind.Movn, false, size, vd, 0, vm);
+                        return Vec(VecKind.Qmovn, false, size, vd, 0, vm, b == 11 ? VecFlags.Unsigned : 0, b == 9 ? 1u : 0u);
                     case 6:
                         if (size == 3 || (vd & 1) != 0 || q) return null;
                         return Vec(VecKind.ShllImm, false, size, vd, 0, vm, VecFlags.Unsigned, 8u << (int)size);
@@ -320,7 +323,7 @@ public sealed unsafe partial class ArmFrontend
         {
             uint type = Bits(ins, 11, 8);
             int regs = type switch { 0x7 => 1, 0xA => 2, 0x6 => 3, 0x2 => 4, _ => 0 };
-            if (regs == 0) return null;                       // interleaving VLD2-4 / VST2-4: callouts
+            if (regs == 0) return InterleavedLoadStore(load, type, Bits(ins, 7, 6), vd, baseVal, rn, rm);
             for (uint r = 0; r < regs; r++)
             {
                 int a = B.AddK(baseVal, r * 8);
@@ -391,4 +394,84 @@ public sealed unsafe partial class ArmFrontend
     }
 
     int LoadElem(int addr, uint eb) => B.Load(eb == 1 ? IrOp.Load8 : eb == 2 ? IrOp.Load16 : IrOp.Load32, addr);
+
+    /// <summary>
+    /// VLD2-4/VST2-4 (multiple structures, Neon.MultipleStructures/Interleave) in plain IR: element e of structure
+    /// register k is at base + (e * n + k) * esize. Loads assemble each 32-bit word of the destination registers from its
+    /// elements (the registers are distinct, so the final state equals the handler's element order); stores run in the
+    /// handler's order, element by element, so overlapping stores land the same way.
+    /// </summary>
+    bool? InterleavedLoadStore(bool load, uint type, uint size, uint vd, int baseVal, uint rn, uint rm)
+    {
+        int nStruct, inc, passes = 1;
+        switch (type)
+        {
+            case 0x8: nStruct = 2; inc = 1; break;
+            case 0x9: nStruct = 2; inc = 2; break;
+            case 0x3: nStruct = 2; inc = 2; passes = 2; break;   // two interleaved pairs: (d, d+2) then (d+1, d+3)
+            case 0x4: nStruct = 3; inc = 1; break;
+            case 0x5: nStruct = 3; inc = 2; break;
+            case 0x0: nStruct = 4; inc = 1; break;
+            case 0x1: nStruct = 4; inc = 2; break;
+            default: return null;                                // UNDEFINED type: the handler raises it
+        }
+        if (size == 3) return null;                              // UNDEFINED for VLD2-4 (the handler moves 64-bit elements)
+        uint eb = 1u << (int)size, perWord = 4 / eb;
+        int elements = (int)(8 / eb);
+        for (int p = 0; p < passes; p++)
+        {
+            uint d0 = vd + (uint)p, passBase = (uint)(p * nStruct * 8);
+            uint Addr(int e, int k) => passBase + (uint)(e * nStruct + k) * eb;
+            uint RegOff(int k) => DOff((d0 + (uint)(k * inc)) & 31);
+            if (load)
+            {
+                for (int k = 0; k < nStruct; k++)
+                    for (int w = 0; w < 2; w++)
+                    {
+                        int word = -1;
+                        for (int j = 0; j < perWord; j++)
+                        {
+                            int v = LoadElem(B.AddK(baseVal, Addr(w * (int)perWord + j, k)), eb);
+                            word = j == 0 ? v : B.Or(word, B.Shl(v, (int)(j * eb * 8)));
+                        }
+                        B.StoreState(RegOff(k) + (uint)w * 4, word);
+                    }
+            }
+            else
+            {
+                var words = new int[nStruct * 2];
+                Array.Fill(words, -1);
+                for (int e = 0; e < elements; e++)
+                    for (int k = 0; k < nStruct; k++)
+                    {
+                        int w = e / (int)perWord, j = e % (int)perWord;
+                        ref int word = ref words[k * 2 + w];
+                        if (word < 0) word = B.LoadState(RegOff(k) + (uint)w * 4);
+                        int v = j == 0 ? word : B.Shr(word, (int)(j * eb * 8));
+                        B.Store(eb == 1 ? IrOp.Store8 : eb == 2 ? IrOp.Store16 : IrOp.Store32, B.AddK(baseVal, Addr(e, k)), v);
+                    }
+            }
+        }
+        uint transferred = (uint)(passes * nStruct * 8);
+        if (rm != 15) SetReg(rn, rm == 13 ? B.AddK(baseVal, transferred) : B.Add(baseVal, Reg(rm)));
+        return false;
+    }
+
+    /// <summary>Neon.ThreeDiff: VMULL (signed, unsigned, polynomial), VMLAL, VMLSL. The other long/wide/narrow forms stay callouts.</summary>
+    bool? NeonThreeDiff(in DecodedInst d)
+    {
+        uint ins = d.Raw, a = Bits(ins, 11, 8), size = Bits(ins, 21, 20);
+        bool u = Bit(ins, 24) != 0;
+        uint vd = NRd(ins), vn = NRn(ins), vm = NRm(ins);
+        if ((vd & 1) != 0 || size == 3) return null; // Q destination: odd registers are UNDEFINED
+        var uf = u ? VecFlags.Unsigned : 0;
+        return a switch
+        {
+            12 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf),
+            8 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf | VecFlags.Accumulate),
+            10 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf | VecFlags.Accumulate, 2),
+            14 => u || size != 0 ? null : Vec(VecKind.MullI, false, 0, vd, vn, vm, 0, 1),
+            _ => null,
+        };
+    }
 }

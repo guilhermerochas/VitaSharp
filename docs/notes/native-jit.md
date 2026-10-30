@@ -15,6 +15,93 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | 2d. NEON subset inline (three-same bitwise/int add-sub/f32 add-sub-mul-mla-mls, VDUP scalar, VMOV/VMVN/VORR/VBIC imm, VLD1/VST1 multiple) | done, commits 7e2a31f, 3320ff1 |
 | 2e. NEON broad inline, LDREXD/STREXD, VCVTB/VCVTT (branch perf/neon-jit) | done, commits c36e70c, f587c79, a3740e2 (+ docs) |
 | ARM64 backend (branch feat/arm64-jit): emitter, runtime, W^X + icache on ARM64 hosts, Unicorn/qemu tests | done, see "feat/arm64-jit" below |
+| Media instructions, VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS, VQMOVN inline on both backends; cheaper compilation (branch perf/jit-complete) | done, see "perf/jit-complete" below |
+
+## perf/jit-complete (2026-10-29)
+
+Branch `perf/jit-complete` (worktree `.claude/worktrees/jit-complete`, from main 9ffaa48). Not merged, not pushed.
+
+### Coverage added (both backends: the work is in the shared frontend or has an ARM64 twin)
+- Media instructions in plain IR (`Native/ArmFrontend.Media.cs`, no new IR ops, so x64 and ARM64 lower them alike), ARM
+  and Thumb: SMULxy/SMLAxy/SMULWy/SMLAWy/SMLALxy, SMUAD/SMUSD/SMLAD/SMLSD/SMLALD/SMLSLD, SMMUL/SMMLA/SMMLS (+R),
+  S/Q/SH/U/UQ/UH ADD16/ASX/SAX/SUB16/ADD8/SUB8 with GE, SEL, QADD/QSUB/QDADD/QDSUB, SSAT/USAT(16), PKH, USAD8/USADA8,
+  UMAAL (Thumb), SXTB16/UXTB16 (+A), ARM-state SDIV/UDIV. Q is ORed into `CpuState.Q`, GE stored to `CpuState.GE`;
+  operands the handlers read as the raw R15 use the cached R15 (same value). Only PC destinations stay callouts.
+- VLD2-4/VST2-4 multiple structures in plain IR (loads build each destination word from its elements; stores go element
+  by element in the handler's order). Single lane and all lanes were already inline.
+- VSHL (register) 64-bit lanes: x64 in GPRs (two lanes), ARM64 SSHL/USHL d (ARM64 also gets 8/16-bit lanes; x64 keeps
+  those as callouts, no variable 8/16-bit SSE shifts).
+- New VecKinds: `MullI` (VMULL.S/U8/16/32, VMULL.P8, VMLAL, VMLSL), `Cls` (VCLS), `Qmovn` (VQMOVN.S/U, VQMOVUN; x64 uses
+  packs for 16/32-bit sources and GPRs for 64-bit ones; ARM64 SQXTN/UQXTN/SQXTUN). `Arm64Assembler.V3Diff`; every new
+  ARM64 encoding checked against GNU as 2.40 (`Arm64AssemblerTests`).
+
+### Callouts executed per run, before -> after
+| Scenario | before (main 9ffaa48) | after |
+|---|---|---|
+| mania_boot | 122.8M (T32_Mul.SMLABB 120.9M, VLD4/VLD2 multiple 1.06M, T32_Parallel/T32_Misc 0.74M) | 5K (LDREXB/STREXB) |
+| dd_boot | 2.85M (T32_Parallel 2.56M, VLD4/VST2/VLD2 multiple 0.29M) | 0 |
+| kz_skin | 0.20M (VSHL.reg.U64 0.14M, VMULL.U 0.05M) | 6K (VMLA.F32 tininess slow paths) |
+| uc_walk | 0.35M (VSHL.reg.U64 0.35M) | 0 |
+
+### Compile cost
+`BackendStats` now carries per-phase times (`CompilePhases`: frontend, passes, register allocation, lowering, encoding,
+install), printed in the backend summary. Changes: the x64 fast encoder (`X64Emitter.Encode.cs`: each instruction encoded
+once with a reused Iced `Encoder`, label branches short/near by layout iteration, fallback to Iced's BlockEncoder for
+anything unexpected; `FastEncoderMatchesIced` compares both on 1500 blocks), per-thread reuse of the IR block/builder,
+liveness and linear-scan buffers, no closures in the frontend switch, `AggressiveOptimization` on the hot compile
+methods (tier-0 code dominated the first thousands of blocks).
+
+Benchmark (`CompileCostBenchmark`, Slow; corpus of 17,730 real blocks recorded with `VITASHARP_NATIVE_CORPUS` in Sonic
+Mania, Devious Dungeon and Killzone, replayed with `VITASHARP_BENCH_CORPUS`; idle thread, 7 rounds):
+
+| | x64 before | x64 after | ARM64 before | ARM64 after |
+|---|---|---|---|---|
+| steady (median of rounds) | 19.4 us/block | 9.8-10.3 us/block | 6.0 us/block | 4.2 us/block |
+| cold (first round, tier-0 compiler code) | 74 us/block | 35 us/block | 12.4 us/block | 10.8 us/block |
+| allocated per block | 22.8 KB | 1.6 KB | 12.6 KB | 2.0 KB |
+
+x64 steady split after: frontend 0.7, passes 0.2, allocation 1.2, lowering 2.7, encoding 4.3 us (Iced's encoder itself is
+the largest remaining part). In-game (wall time on the JIT workers, contended with the emulation threads):
+mania_boot 151 -> 96 us/block, dd_boot 93 -> 45, kz_skin 119 -> 61, uc_walk 122-144 -> 49-100 (the old ~188 us figure was also wall time).
+
+### Measured and rejected: NEON register pinning, compare + branch fusion
+Data: `VITASHARP_NATIVE_COUNTERS=1` (x64 blocks count executed VFP/NEON ops and conditional branches; PERF cycles lines),
+the PERF cycles lines' new "host time in native code", and `NeonRegisterFileBenchmark` (128-op blocks: a dependent
+VADD chain through q0 against eight independent chains).
+- Uncharted main thread: 140K VFP/NEON ops and 243K conditional branches per frame, 4.4 ms/frame in native code; each
+  worker 70K ops, 1.1 ms. Killzone main: 98K ops, 151K branches, 4.2 ms.
+- A dependent chain costs 1.54 ns/op (VADD.I32) against 0.32 ns for independent ops: keeping the register in an XMM
+  register could save at most ~1.2 ns per *dependent* op (store-forwarding latency); float ops (3.8 ns dependent) are
+  dominated by the explicit flush/default-NaN fix-ups, which pinning does not remove. Upper bound for Uncharted's main
+  thread: 140K x 1.2 ns = 0.17 ms/frame (4% of its native time, ~1% of process CPU), less in reality since most ops are
+  not chained through one register. Compare + branch fusion would remove a `test`/`cmp` of materialised flags per
+  conditional exit (the flags still have to be stored, they are live-out): about 0.1 ms/frame for 243K branches.
+- Both games are paced/vsync-bound (UC 30/60, KZ 30 fps), so neither change can move fps; CPU savings would be ~1%.
+  Not implemented. Cheaper per-block exit accounting (three memory read-modify-writes per block, 200-350K blocks per
+  frame on the busiest threads) would be the bigger lever if generated-code time ever matters.
+
+### Verification
+- New fuzz: `NativeMediaQuick`/`Arm64MediaQuick` (fast) and `NativeMediaMatchesInterpreter`/`Arm64MediaMatchesInterpreter`
+  (Slow: 40,000 x64 and 15,000 ARM64 blocks per state) with operands at the saturation/overflow edges, Q and GE compared,
+  and every block required to compile without callouts; NEON class `ThreeDiff` (VMULL/VMLAL/VMLSL/P8) in the x64 and
+  ARM64 NEON fuzz (quick and Slow), Thumb LoadStore on ARM64, `NewNeonFormsAreInline`. ARM64 code runs in Unicorn's
+  AArch64 model (`Arm64Sandbox`). A mutation (wrong overflow shift in SMLAD) was caught at once.
+- Slow variants for the new ops, run alone once at the end (1.8 h, 50 tests): x64 and ARM64 media (40,000 / 15,000 blocks per state), every NEON class on x64 and ARM64 (2,000-6,000 blocks each, ThreeDiff included), native NEON vs Unicorn, the random-block differentials on both backends: 0 native/interpreter differences. One interpreter-vs-Unicorn difference: VTRN.32 with d == m (UNPREDICTABLE; QEMU swaps, the handler duplicates), reached because the new NEON class shifted the random sequence; VTRN/VUZP/VZIP with d == m are now filtered like the other UNPREDICTABLE forms (`CpuFuzzTests.IsUnpredictable`), and the test passes.
+- Fast suite (`Category!=Slow`): 987/987 in 5 min, build with 0 warnings.
+
+### Performance (default 333 MHz, one emulator at a time, affinity 4 cores, BelowNormal, other agents active)
+| Scenario | fps (whole run) before / after | steady fps | p99 frame interval ms | process CPU ms/frame | busiest guest thread ms/frame |
+|---|---|---|---|---|---|
+| mania_boot | 37.3 / 44.0 | 55.0 / 55.2 | 93.7 / 28.2 | 11.3 / 10.2 | main 5.28 / 5.11, pthread 2.33 / 1.87 |
+| dd_boot | 49.8 / 50.4 | 60.0 / 60.0 | 17.3 / 17.2 | 14.0 / 12.9 | Unity main 5.55 / 5.00 |
+| kz_skin | 27.8 / 28.7 | 30.0 / 30.0 | 91.2 / 35.0 | 30.9 / 30.3 | killzone_vita 11.94 / 11.73 |
+| uc_walk (back to back) | 35.0 / 35.3 | 36.5 / 36.6 | 35.3 / 33.7 | 17.4 / 17.0 | ProjectUncharted 5.64 / 5.39 |
+
+PERF cycles (guest code M cycles/frame) are unchanged, as expected: the cycle model charges the same instructions, only the
+host cost changes. The Sonic Mania menu dip (frames ~1100-1600: 36-52 fps, average 39.1 before / 38.8 after) is not
+caused by the CPU backend: 121M SMLABB callouts went inline and the menu frame rate did not move (the roadmap item
+stays). The first uc_walk "after" run in the batch measured 31.1 fps / main 5.67 ms with other agents loading the
+machine; the back-to-back rerun above is the comparison.
 
 ## perf/neon-jit (2026-10-22)
 
@@ -52,6 +139,8 @@ pushed.
 T32_Mul (SMUL/SMLA<x><y>, SMULW, SMMUL... about 120M in Sonic Mania), T32_Parallel (2.6M in Devious Dungeon),
 VSHL.reg.U64 (0.5M in Killzone), VLD2/VLD4/VST2 multiple (under 1M anywhere: `IrOp.VecLdSt` is declared but not
 lowered), VMULL/ThreeDiff, VCLS, VQSHL/VRSHL register forms, VQMOVN, VCVT fixed point, LDREXB/H.
+(Since perf/jit-complete everything in this list is inline except VQSHL/VRSHL register forms, the other ThreeDiff forms,
+VCVT fixed point and LDREXB/H.)
 
 ### Callout ranking before -> after (executed callouts per run)
 | Scenario | before (main b93da80) | after | top remaining |
@@ -227,9 +316,12 @@ half/fixed-point conversions are callouts.
 - VFP also VCVTB/VCVTT (F16C).
 - NEON: see "perf/neon-jit" above (nearly all three-same, by-scalar, shift, misc, VEXT, VTBL forms), VDUP (scalar),
   VMOV/VMVN/VORR/VBIC (immediate), VLD1/VST1 (multiple 1-4 registers, single lane, all lanes).
-- Callouts: VLD2-4/VST2-4, the NEON forms listed under "Still callouts", byte/halfword exclusives, SWP, saturating and parallel add/sub, SSAT/USAT, PKH, SEL, USAD8, halfword and
-  dual multiplies, MRS/MSR, SDIV/UDIV in ARM state (SignedMultiplyMedia), VFMA, half/fixed-point VCVT, BKPT/UDF/
-  YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
+- Media (perf/jit-complete, ARM and Thumb): halfword, dual and most-significant-word multiplies (SMULxy/SMLAxy/SMULWy/
+  SMLAWy/SMLALxy, SMUAD/SMUSD/SMLAD/SMLSD/SMLALD/SMLSLD, SMMUL/SMMLA/SMMLS with and without R), parallel add/subtract
+  (S/Q/SH/U/UQ/UH ADD16/ASX/SAX/SUB16/ADD8/SUB8) with GE, SEL, QADD/QSUB/QDADD/QDSUB, SSAT/USAT/SSAT16/USAT16, PKH,
+  USAD8/USADA8, UMAAL, SXTB16/UXTB16 (+accumulate), SDIV/UDIV in ARM state.
+- Callouts: the NEON forms listed under "Still callouts", byte/halfword exclusives, SWP, MRS/MSR, VFMA, half/fixed-point
+  VCVT, BKPT/UDF/YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
 
 ## Verification
 - Unit tests: `NativeJitTests` (20 tests: random multi-instruction blocks native vs interpreter incl. a
@@ -277,17 +369,18 @@ callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the
 - `VITASHARP_NATIVE_NOLINK=1`: no exit linking / dispatch table.
 - `VITASHARP_NATIVE_TIERUP=0`: no IL tier-up.
 - `VITASHARP_NATIVE_VALIDATE=1`: validate IR of every block.
+- `VITASHARP_NATIVE_COUNTERS=1`: x64 blocks count executed VFP/NEON ops and conditional branches (PERF cycles lines).
+- `VITASHARP_NATIVE_CORPUS=file`: append every compiled block (for `CompileCostBenchmark`, read via `VITASHARP_BENCH_CORPUS`).
 - Tests: `NativeJitTests` (`VITASHARP_FUZZ_ITER=N` shortens the fuzz, `VITASHARP_TEST_TRACE=file` logs blocks,
   `VITASHARP_HUNT=T|A:words` + `VITASHARP_HUNT_NATIVE=1` searches states for a native/interpreter mismatch).
 
 ## Next steps
-1. See "perf/neon-jit > Next steps" above (Killzone main-thread profile, T32 multiplies/parallel ops, VLD2-4).
-   With NEON inline, tier-up to IL no longer triggers in the tested games and can likely go.
-2. Keep SIMD registers in XMM across a block (today every VFP/NEON op loads/stores the register file).
-3. Fold `[base + imm]` into the addressing mode when the frontend can prove no 32-bit wrap; CMP+branch fusion
-   (use host flags directly instead of materialised Z/N/C/V temps).
-4. Reduce compile allocations (IR lists, closures) — native compile is ~80-110 us/block today.
-5. Windows unwind info for the arena (RtlAddGrowableFunctionTable) so profilers/debuggers walk through JIT frames.
+1. T32 multiplies/parallel ops, VLD2-4, register pinning, CMP+branch fusion and compile cost: done or measured and
+   rejected in perf/jit-complete (see there). With NEON inline, tier-up to IL no longer triggers in the tested games and
+   can likely go.
+2. Cheaper per-block exit accounting (CycleAcc/NBlocks/NInstr are three memory read-modify-writes per block).
+3. Fold `[base + imm]` into the addressing mode when the frontend can prove no 32-bit wrap.
+4. Windows unwind info for the arena (RtlAddGrowableFunctionTable) so profilers/debuggers walk through JIT frames.
 
 ## feat/arm64-jit (2026-10-29) — native ARM64 backend
 
@@ -359,8 +452,8 @@ Everything the x64 backend inlines is inline on ARM64 too (the frontend and IR a
 fastmem loads/stores, LDM/STM, linking, the indirect-exit table, SVC/exits, CLREX/barriers, MRC/MCR, LDREX/STREX and
 LDREXD/STREXD, VFP transfers and scalar fast paths, VCVTB/VCVTT, and every `VecKind` (ARM64's `SupportsVec` is true for
 all kinds; on x64 the FMA/F16C/AVX2 kinds depend on the host). The callouts are the same on both (see "Still
-callouts" above: T32 halfword/dual multiplies, parallel add/sub, VLD2-4/VST2-4, VMULL, VCLS, VQSHL/VRSHL register,
-VQMOVN, VCVT fixed point, byte/halfword exclusives, SWP, MRS/MSR, ...).
+callouts" above: VQSHL/VRSHL register, the remaining ThreeDiff forms, VCVT fixed point, byte/halfword exclusives, SWP,
+MRS/MSR, ...), except VSHL (register) on 8/16-bit lanes, inline only on ARM64 (x86 has no variable 8/16-bit shifts).
 
 ### Verification (this machine is x64 Windows; no ARM64 hardware)
 - Encodings: `Arm64AssemblerTests`, 302 instructions against GNU as (aarch64-linux-gnu-as 2.40 from Debian's
@@ -404,6 +497,6 @@ VQMOVN, VCVT fixed point, byte/halfword exclusives, SWP, MRS/MSR, ...).
 3. macOS ARM64: untested; hardened builds need `com.apple.security.cs.allow-jit`.
 4. Fault reporting inside generated code (the x64 vectored filter with disassembly) has no ARM64 equivalent, and
    `VITASHARP_NATIVE_DUMP` prints ARM64 code as hex words (no bundled disassembler).
-5. Performance work not started: no CMP+B.cond fusion (flags are materialised temps), every SIMD op loads/stores the
-   register file, FPCR is written twice per callout.
+5. Performance: CMP+B.cond fusion and SIMD register pinning were measured on x64 and rejected (perf/jit-complete);
+   FPCR is written twice per callout. Re-measure on hardware.
 

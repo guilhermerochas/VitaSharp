@@ -24,10 +24,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
-- [ ] JIT: multiplicações Thumb (SMULxy/SMLAxy/SMULW/SMMUL) e somas/subtrações paralelas (Mania, Devious Dungeon)
-- [ ] JIT: VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS inline
-- [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)
-- [ ] JIT: compilação mais barata por bloco
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
 
 ## Android

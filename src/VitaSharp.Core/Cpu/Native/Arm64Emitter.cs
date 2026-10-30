@@ -82,12 +82,17 @@ public sealed unsafe partial class Arm64Emitter
     /// Allocates registers and lowers the block. <paramref name="slotFor"/> returns the address of the link slot of
     /// the k-th static exit. Returns false when the block needs more spill slots than the frame has.
     /// </summary>
+    /// <summary>Stopwatch ticks the last <see cref="Prepare"/> spent in register allocation (compile-phase statistics).</summary>
+    public long AllocTicks;
+
     public bool Prepare(IrBlock ir, Runtime rt, Func<int, nint> slotFor, nint tierUpCounter = 0)
     {
         _ir = ir;
         _rt = rt;
         _a.Reset();
-        var loc = LinearScan.Allocate(ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var loc = LinearScan.Allocate(ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
+        AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         if (loc == null) return false;
         _loc = loc;
         _labels = new int[ir.Labels];
@@ -189,6 +194,7 @@ public sealed unsafe partial class Arm64Emitter
         else { _a.MovImm64(X8, v); _a.Add(r, r, X8, x: true); }
     }
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void Lower(IrInst x, Func<int, nint> slotFor, ref int exitIndex)
     {
         var a = _a;

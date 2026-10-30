@@ -343,6 +343,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         if (d.Op == Op.Neon_LoadStore) return NeonRegsOutOfRange(i) || F(19, 16) == 15; // Rn = PC is UNPREDICTABLE
         // VQDMLAL / VQDMLSL / VQDMULL exist only with U = 0: U = 1 is UNDEFINED (QEMU computes something anyway)
         if (d.Op == Op.Neon_ThreeDiff && (thumb ? F(28, 28) : F(24, 24)) == 1 && F(11, 8) is 9 or 11 or 13) return true;
+        // VTRN / VUZP / VZIP with d == m are UNPREDICTABLE (QEMU and the handlers pick different element orders)
+        if (d.Op == Op.Neon_Misc && F(17, 16) == 2 && F(10, 7) is 1 or 2 or 3 && (F(22, 22) << 4 | F(15, 12)) == (F(5, 5) << 4 | F(3, 0))) return true;
         if (!thumb)
         {
             switch (d.Op)
