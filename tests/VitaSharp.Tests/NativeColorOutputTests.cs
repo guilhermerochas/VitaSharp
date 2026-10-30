@@ -14,14 +14,18 @@ public class NativeColorOutputTests
     // o0..o1 = VPCK.F16.U8 scaled r0 (fs 124F80244364D367, the final full-screen pass)
     static readonly ulong[] HalfColour = [0x4081017D201D8000];
 
-    /// <summary>A native-colour fragment GXP declaring an F16x4 output, running <paramref name="code"/>.</summary>
-    static GxpProgram Program(ulong[] code, uint extraFlags = 0)
+    // LittleBigPlanet UI blend tail (fs 57824E964A7FD2D2, declared uchar4, created with HALF4): pa0 = VPCK.U8.F16
+    // scaled pa0..pa1, r0 = SOP2 blend of pa0 over the framebuffer colour o0 (packed bytes), o0 = VBW r0
+    static readonly ulong[] ByteBlend = [0x40850A3EA01D8000, 0x8180821C90000000, 0x50A1000920000000];
+
+    /// <summary>A native-colour fragment GXP declaring an F16x4 output (or <paramref name="output"/>), running <paramref name="code"/>.</summary>
+    static GxpProgram Program(ulong[] code, uint extraFlags = 0, ParamType output = ParamType.F16)
     {
         var d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0x14, GxpProgram.FlagFragment | GxpProgram.FlagNativeColorUsed | extraFlags);
         W32(0x2C, 0x60 - 0x2C); // varyings
-        d[0x60 + 10] = (byte)ParamType.F16; // output parameter type
+        d[0x60 + 10] = (byte)output; // output parameter type
         d[0x60 + 11] = 4; // output components
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40); // primary program
@@ -61,6 +65,17 @@ public class NativeColorOutputTests
     {
         var glsl = Generate(PackedBytes, 0);
         Assert.Contains("unpackHalf2x16(floatBitsToUint(o[0].x))", OutColor(glsl));
+    }
+
+    [Fact]
+    public void DeclaredBytesStayBytesWithHalf4()
+    {
+        var glsl = ShaderGenerator.Generate(Program(ByteBlend, GxpProgram.FlagFragColorUsed, ParamType.U8),
+            new ShaderHints([], [], 0x00000000, false, 5)).Glsl;
+        // the framebuffer colour is preloaded as packed bytes and the blended bytes are the colour
+        Assert.DoesNotContain("unpackHalf2x16", OutColor(glsl));
+        Assert.Contains("bitfieldExtract(floatBitsToUint(o[0].x), 24, 8)", OutColor(glsl));
+        Assert.DoesNotContain("o[0].x = uintBitsToFloat(packHalf2x16(", glsl);
     }
 
     [Fact]
