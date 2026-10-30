@@ -84,10 +84,14 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
         catch (Java.Lang.ClassCastException) { return f.GetFloat(key); }
     }
 
-    static byte[] Bytes(JByteBuffer b)
+    /// <summary>The remaining bytes of a buffer. MediaFormat's csd-0/csd-1 are heap buffers (no direct address: the
+    /// first device run crashed on them), extractor samples direct ones.</summary>
+    internal static byte[] Bytes(JByteBuffer b)
     {
         var a = new byte[b.Remaining()];
-        new ReadOnlySpan<byte>((byte*)b.GetDirectBufferAddress() + b.Position(), a.Length).CopyTo(a);
+        nint p = b.GetDirectBufferAddress();
+        if (p != 0) new ReadOnlySpan<byte>((byte*)p + b.Position(), a.Length).CopyTo(a);
+        else b.Duplicate()!.Get(a);
         return a;
     }
 

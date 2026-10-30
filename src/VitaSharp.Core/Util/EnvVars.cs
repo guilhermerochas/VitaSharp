@@ -9,12 +9,16 @@ public static class EnvVars
     public const string Prefix = "VITASHARP_";
 
     /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>
+    /// <summary>Android: scripted buttons/sticks for unattended device runs (ScriptedPad: "cross@12,start@20:0.5").</summary>
+    public const string AndroidInput = "VITASHARP_ANDROID_INPUT";
     public const string Astc = "VITASHARP_ASTC";
     /// <summary>Size limit in MB of a title's ASTC transcode disk cache (default 512).</summary>
     public const string AstcCacheMb = "VITASHARP_ASTC_CACHE_MB";
     public const string AsyncPipelines = "VITASHARP_ASYNC_PIPELINES";
     public const string AsyncShaders = "VITASHARP_ASYNC_SHADERS";
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
+    /// <summary>Android: folder (relative to the data folder) for per-port WAVs of the guest's audio (desktop: --audio-dump).</summary>
+    public const string AudioDump = "VITASHARP_AUDIO_DUMP";
     public const string BtDraw = "VITASHARP_BT_DRAW";
     public const string Cpu = "VITASHARP_CPU";
     public const string CpuMhz = "VITASHARP_CPU_MHZ";
