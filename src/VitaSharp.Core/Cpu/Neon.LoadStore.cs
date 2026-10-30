@@ -52,7 +52,7 @@ internal static unsafe partial class Neon
             for (int r = 0; r < regs; r++)
             {
                 ulong* reg = &s->D[(d + (uint)r) & 31];
-                if (load) *reg = Mem.R64(a); else Mem.W64(a, *reg);
+                if (load) *reg = Mem.R64(s, a); else Mem.W64(s, a, *reg);
                 a += 8;
             }
             return (uint)(8 * regs);
@@ -78,30 +78,30 @@ internal static unsafe partial class Neon
             for (int k = 0; k < nStruct; k++)
             {
                 byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
-                if (load) Set(reg, e, esize, ReadElem(a, esize));
-                else WriteElem(a, esize, GetU(reg, e, esize));
+                if (load) Set(reg, e, esize, ReadElem(s, a, esize));
+                else WriteElem(s, a, esize, GetU(reg, e, esize));
                 a += (uint)ebytes;
             }
         }
         return a;
     }
 
-    static ulong ReadElem(uint a, int esize) => esize switch
+    static ulong ReadElem(CpuState* s, uint a, int esize) => esize switch
     {
-        8 => Mem.R8(a),
-        16 => Mem.R16(a),
-        32 => Mem.R32(a),
-        _ => Mem.R64(a),
+        8 => Mem.R8(s, a),
+        16 => Mem.R16(s, a),
+        32 => Mem.R32(s, a),
+        _ => Mem.R64(s, a),
     };
 
-    static void WriteElem(uint a, int esize, ulong v)
+    static void WriteElem(CpuState* s, uint a, int esize, ulong v)
     {
         switch (esize)
         {
-            case 8: Mem.W8(a, (uint)v); break;
-            case 16: Mem.W16(a, (uint)v); break;
-            case 32: Mem.W32(a, (uint)v); break;
-            default: Mem.W64(a, v); break;
+            case 8: Mem.W8(s, a, (uint)v); break;
+            case 16: Mem.W16(s, a, (uint)v); break;
+            case 32: Mem.W32(s, a, (uint)v); break;
+            default: Mem.W64(s, a, v); break;
         }
     }
 
@@ -123,8 +123,8 @@ internal static unsafe partial class Neon
         for (int k = 0; k < nStruct; k++)
         {
             byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
-            if (load) Set(reg, index, esize, ReadElem(a, esize));
-            else WriteElem(a, esize, GetU(reg, index, esize));
+            if (load) Set(reg, index, esize, ReadElem(s, a, esize));
+            else WriteElem(s, a, esize, GetU(reg, index, esize));
             a += (uint)(esize / 8);
         }
         return a - addr;
@@ -140,7 +140,7 @@ internal static unsafe partial class Neon
         uint a = addr;
         if (nStruct == 1)
         {
-            ulong v = ReadElem(a, esize);
+            ulong v = ReadElem(s, a, esize);
             ulong rep = esize switch { 8 => v * 0x0101010101010101ul, 16 => v * 0x0001000100010001ul, _ => v | (v << 32) };
             s->D[d & 31] = rep;
             if (t) s->D[(d + 1) & 31] = rep;
@@ -149,7 +149,7 @@ internal static unsafe partial class Neon
         int inc = t ? 2 : 1;
         for (int k = 0; k < nStruct; k++)
         {
-            ulong v = ReadElem(a, esize);
+            ulong v = ReadElem(s, a, esize);
             byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
             for (int e = 0; e < count; e++) Set(reg, e, esize, v);
             a += (uint)(esize / 8);

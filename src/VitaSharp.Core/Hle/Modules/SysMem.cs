@@ -174,6 +174,14 @@ public sealed class SysMem : HleModule
         return KernelInfo.Write(info, f);
     }
 
-    [Hle] int sceKernelOpenMemBlock(string name, int flags) => K.Objects.FindByName<MemBlock>(name)?.Uid ?? SceError.UID_CANNOT_FIND_BY_NAME;
+    [Hle]
+    int sceKernelOpenMemBlock(string name, int flags)
+    {
+        if (K.Objects.FindByName<MemBlock>(name) is not { } b) return SceError.UID_CANNOT_FIND_BY_NAME;
+        // CDRAM is in every address space; another process's user memory is not mapped in this one
+        if (!GuestMemory.IsSharedAddress(b.Address) && Emu.Vita.ByPid(b.OwnerPid) is { } owner && !ReferenceEquals(owner.Space, Emu.Space))
+            Log.WarnOnce($"openmemblock-{name}", $"sceKernelOpenMemBlock({name}): user memory of {owner.Describe()} is not mapped in {Emu.Describe()}'s address space");
+        return b.Uid;
+    }
     [Hle] int sceKernelCloseMemBlock(int uid) => KernelInfo.CloseHandle<MemBlock>(K.Objects, uid, SceError.INVALID_UID);
 }

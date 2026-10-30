@@ -1,53 +1,81 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Memory;
 
 public enum MemoryRegion
 {
-    /// <summary>Main LPDDR2 user memory (eboot, heaps, stacks, user memblocks).</summary>
+    /// <summary>Main LPDDR2 user memory (eboot, heaps, stacks, user memblocks): private to the process's address space.</summary>
     User,
-    /// <summary>CDRAM (video memory) memblocks.</summary>
+    /// <summary>CDRAM (video memory) memblocks: shared by every address space.</summary>
     Cdram,
-    /// <summary>Emulator-internal allocations (HLE trampolines, kernel objects visible to the guest).</summary>
+    /// <summary>Emulator-internal allocations (HLE trampolines, kernel objects visible to the guest): shared by every
+    /// address space.</summary>
     Kernel,
     /// <summary>A fixed range outside the three allocator regions (<see cref="GuestMemory.MapFixed"/>: tests and tools).</summary>
     Fixed,
 }
 
 /// <summary>
-/// The whole 32-bit guest address space mapped 1:1 onto a host reservation (fastmem):
-/// host pointer = Base + guest address. Pages are committed on allocation and, on Windows x64,
-/// lazily on first touch through a native vectored exception handler.
+/// Guest memory of the emulated system: the allocator of the three regions (user, CDRAM, kernel) and the address spaces of
+/// the processes (<see cref="AddressSpace"/>), each mapping the 32-bit guest address space 1:1 onto a host reservation
+/// (fastmem: host pointer = space base + guest address). Pages are committed on allocation and, on Windows, lazily on
+/// first touch through a native vectored exception handler.
+/// <para>
+/// The CDRAM and kernel regions are shared: one host memory mapped into every space, one allocator. User memory is
+/// private: a block exists only in the space of the process that allocated it. Relocatable allocations still take
+/// ranges no space uses (so a guest address names the same data for the GPU's caches whichever process submitted it);
+/// only executables linked at fixed addresses (<see cref="TryAllocAt"/> with exclusive = false) share addresses with
+/// other processes' blocks, in their own space.
+/// </para>
+/// The static accessors read and write the current host thread's space (<see cref="AddressSpace.Current"/>).
 /// </summary>
 public sealed unsafe class GuestMemory : IDisposable
 {
     public const uint PageSize = 0x1000;
-    const ulong ReserveSize = 0x1_0001_0000; // 4 GiB + slack so 16-byte accesses at the top don't fault
+    internal const ulong ReserveSize = 0x1_0001_0000; // 4 GiB + slack so 16-byte accesses at the top don't fault
     /// <summary>
     /// The page dirty table (<see cref="DirtyPages"/>) sits right below guest address 0, inside the same reservation,
     /// so native code reaches it from the guest base register with a 32-bit displacement.
     /// </summary>
     const ulong DirtyTableBytes = DirtyPages.TableBytes;
 
-    /// <summary>Host address of guest address 0. Static so JIT-compiled code can embed it.</summary>
-    public static byte* Base { get; private set; }
+    // the current thread's space base (null = the first process's): read by every static accessor
+    [ThreadStatic] internal static byte* t_base;
+    static byte* s_primaryBase;
 
-    readonly bool _lazy;
+    /// <summary>Host address of guest address 0 in the calling thread's address space.</summary>
+    public static byte* Base
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get { byte* b = t_base; return b != null ? b : s_primaryBase; }
+    }
+
+    /// <summary>The first process's address space (also the only one when <see cref="SeparateSpaces"/> is false).</summary>
+    public AddressSpace Primary { get; }
+
+    /// <summary>True when every process gets its own address space (<see cref="CreateSpace"/>); false when the host cannot
+    /// map shared memory twice or VITASHARP_SHARED_ADDRESS_SPACE=1: then all processes share <see cref="Primary"/>.</summary>
+    public bool SeparateSpaces { get; }
+
     readonly object _lock = new();
-    readonly Dictionary<uint, Block> _blocks = new();
-    readonly SortedList<uint, uint> _freeUser = new();   // start -> size
+    readonly nint _kernelMemory, _cdramMemory;
+    readonly Dictionary<uint, Block> _shared = new();   // CDRAM and kernel blocks (in every space)
+    readonly SortedList<uint, uint> _freeUser = new();   // start -> size: ranges no space uses
     readonly SortedList<uint, uint> _freeCdram = new();
     readonly SortedList<uint, uint> _freeKernel = new();
+    readonly List<AddressSpace> _spaces = new();
+    readonly Stack<AddressSpace> _idle = new();
+    AddressSpace[] _spaceSnapshot = [];
+    readonly ulong[] _sharedMapped = new ulong[(1 << 20) / 64];
 
-    /// <summary>An allocated range; <paramref name="Owner"/> is the process that allocated it (0 = the system).</summary>
-    public sealed record Block(uint Address, uint Size, string Name, MemoryRegion Region, int Owner = 0);
+    /// <summary>An allocated range; <paramref name="Owner"/> is the process that allocated it (0 = the system),
+    /// <paramref name="Space"/> the address space of a private block (null: CDRAM and kernel blocks are in all).</summary>
+    public sealed record Block(uint Address, uint Size, string Name, MemoryRegion Region, int Owner = 0, AddressSpace? Space = null);
 
-    /// <summary>The process-wide address space (debug tools).</summary>
+    /// <summary>The system's guest memory (debug tools).</summary>
     public static GuestMemory? Instance { get; private set; }
-
-    /// <summary>Snapshot of the allocated blocks (debug tools).</summary>
-    public List<Block> Blocks() { lock (_lock) return _blocks.Values.OrderBy(b => b.Address).ToList(); }
 
     public const uint UserStart = 0x8100_0000, UserEnd = 0xE000_0000;
     public const uint CdramStart = 0x6000_0000, CdramEnd = 0x7000_0000;
@@ -55,20 +83,114 @@ public sealed unsafe class GuestMemory : IDisposable
 
     public long CommittedBytes { get; private set; }
 
-    public GuestMemory()
+    /// <param name="separateSpaces">Per-process address spaces; null = unless VITASHARP_SHARED_ADDRESS_SPACE=1.</param>
+    public GuestMemory(bool? separateSpaces = null)
     {
-        if (Base != null) throw new InvalidOperationException("Only one guest address space per process");
-        byte* reservation = HostVirtualMemory.Reserve(unchecked((nuint)(ReserveSize + DirtyTableBytes)), out _lazy);
-        HostVirtualMemory.Commit(reservation, (nuint)DirtyTableBytes);
-        Base = reservation + DirtyTableBytes;
+        if (s_primaryBase != null) throw new InvalidOperationException("Only one guest memory per process");
+        bool separate = separateSpaces ?? Environment.GetEnvironmentVariable(EnvVars.SharedAddressSpace) != "1";
+        if (separate)
+        {
+            _kernelMemory = HostVirtualMemory.CreateSharedMemory(KernelEnd - KernelStart, "kernel");
+            _cdramMemory = HostVirtualMemory.CreateSharedMemory(CdramEnd - CdramStart, "cdram");
+            separate = _kernelMemory != 0 && _cdramMemory != 0;
+        }
+        var primary = separate ? NewSpace(true) : null;
+        if (primary == null)
+        {
+            separate = false;
+            primary = NewSpace(false)!;
+        }
+        SeparateSpaces = separate;
+        Primary = primary;
+        Primary.Label = "first process";
+        s_primaryBase = Primary.Base;
         Instance = this;
-        if (!_lazy) _lazy = HostVirtualMemory.InstallLazyCommitHandler(Base, ReserveSize);
         _freeUser.Add(UserStart, UserEnd - UserStart);
         _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
         _freeKernel.Add(KernelStart, KernelEnd - KernelStart);
+        if (!separate && separateSpaces != false && Environment.GetEnvironmentVariable(EnvVars.SharedAddressSpace) != "1")
+            Log.Warn("Guest memory: the host cannot map shared memory twice; all processes share one address space");
     }
 
-    // ---------------- raw access ----------------
+    /// <summary>Reserves a new space; with <paramref name="views"/> the shared regions are views of the system's memory.
+    /// Null when that mapping fails.</summary>
+    AddressSpace? NewSpace(bool views)
+    {
+        nuint total = unchecked((nuint)(ReserveSize + DirtyTableBytes));
+        byte* reservation;
+        bool lazy;
+        (nint, nuint, bool)[] parts;
+        if (views)
+        {
+            ReadOnlySpan<HostVirtualMemory.View> v =
+            [
+                new((nuint)(DirtyTableBytes + KernelStart), KernelEnd - KernelStart, _kernelMemory),
+                new((nuint)(DirtyTableBytes + CdramStart), CdramEnd - CdramStart, _cdramMemory),
+            ];
+            reservation = HostVirtualMemory.ReserveWithViews(total, v, out lazy, out parts);
+            if (reservation == null) return null;
+        }
+        else
+        {
+            reservation = HostVirtualMemory.Reserve(total, out lazy);
+            parts = [((nint)reservation, total, false)];
+        }
+        HostVirtualMemory.Commit(reservation, (nuint)DirtyTableBytes);
+        byte* @base = reservation + DirtyTableBytes;
+        if (!lazy) HostVirtualMemory.InstallLazyCommitHandler(@base, ReserveSize);
+        var space = new AddressSpace(@base, parts, views);
+        _spaces.Add(space);
+        _spaceSnapshot = _spaces.ToArray();
+        return space;
+    }
+
+    /// <summary>
+    /// An address space for a new process: a fresh one (or one a process that ended left), with the shared regions
+    /// mapped. Without <see cref="SeparateSpaces"/> it is <see cref="Primary"/>.
+    /// </summary>
+    public AddressSpace CreateSpace(string label)
+    {
+        if (!SeparateSpaces) return Primary;
+        lock (_lock)
+        {
+            if (_idle.TryPop(out var s)) s.Renew();
+            else s = NewSpace(true) ?? throw new OutOfMemoryException("cannot reserve another guest address space");
+            s.Label = label;
+            Log.Info($"Guest memory: {s} created");
+            return s;
+        }
+    }
+
+    /// <summary>The process using <paramref name="space"/> ended and its blocks were freed: the space is kept for the next
+    /// process (reservations are never handed back while the system runs: a straggling host thread may still touch it).</summary>
+    public void ReleaseSpace(AddressSpace space)
+    {
+        if (ReferenceEquals(space, Primary) || !SeparateSpaces) return;
+        lock (_lock)
+        {
+            if (space.Blocks.Count > 0)
+            {
+                Log.Warn($"Guest memory: {space} still has {space.Blocks.Count} blocks; it is not reused");
+                return;
+            }
+            space.Label = "";
+            if (!_idle.Contains(space)) _idle.Push(space);
+        }
+    }
+
+    /// <summary>Every address space (the dirty-page sweep, fault reports).</summary>
+    public ReadOnlySpan<AddressSpace> Spaces => Volatile.Read(ref _spaceSnapshot);
+
+    /// <summary>The space a host address belongs to, or null.</summary>
+    public AddressSpace? SpaceOfHost(ulong hostAddress)
+    {
+        foreach (var s in Spaces) if (s.ContainsHost(hostAddress)) return s;
+        return null;
+    }
+
+    static AddressSpace CurrentOf(GuestMemory m) => AddressSpace.Current ?? m.Primary;
+
+    // ---------------- raw access (the calling thread's space)
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static byte* Ptr(uint addr) => Base + addr;
@@ -79,8 +201,9 @@ public sealed unsafe class GuestMemory : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Write<T>(uint addr, T value) where T : unmanaged
     {
-        Unsafe.WriteUnaligned(Base + addr, value);
-        DirtyPages.Mark(addr); // after the store (see DirtyPages); a store crossing into the next page is covered by the sweep
+        byte* b = Base;
+        Unsafe.WriteUnaligned(b + addr, value);
+        DirtyPages.Mark(b, addr); // after the store (see DirtyPages); a store crossing into the next page is covered by the sweep
     }
 
     /// <summary>Writable reference: the pages are marked written (callers may store through it).</summary>
@@ -139,14 +262,16 @@ public sealed unsafe class GuestMemory : IDisposable
         Span<byte> bytes = len <= 256 ? stackalloc byte[256] : new byte[len]; // short names: no garbage
         Encoding.UTF8.GetBytes(s, bytes);
         int n = Math.Min(len, max - 1);
-        bytes[..n].CopyTo(new Span<byte>(Base + addr, n));
-        Base[addr + (uint)n] = 0;
+        byte* b = Base;
+        bytes[..n].CopyTo(new Span<byte>(b + addr, n));
+        b[addr + (uint)n] = 0;
         DirtyPages.MarkRange(addr, (uint)n + 1);
     }
 
     public static void Copy(uint dst, uint src, uint len)
     {
-        Buffer.MemoryCopy(Base + src, Base + dst, len, len);
+        byte* b = Base;
+        Buffer.MemoryCopy(b + src, b + dst, len, len);
         DirtyPages.MarkRange(dst, len);
     }
 
@@ -156,7 +281,7 @@ public sealed unsafe class GuestMemory : IDisposable
         DirtyPages.MarkRange(dst, len);
     }
 
-    // ---------------- allocation ----------------
+    // ---------------- allocation
 
     SortedList<uint, uint> FreeList(MemoryRegion r) => r switch
     {
@@ -165,6 +290,10 @@ public sealed unsafe class GuestMemory : IDisposable
         _ => _freeUser,
     };
 
+    static bool IsSharedRegion(MemoryRegion r) => r is MemoryRegion.Cdram or MemoryRegion.Kernel;
+
+    /// <summary>Allocates in <paramref name="region"/>: user memory in the calling thread's address space (a range no
+    /// other space uses either), CDRAM and kernel memory in all of them.</summary>
     public uint Alloc(uint size, string name, MemoryRegion region = MemoryRegion.User, uint align = PageSize)
     {
         if (size == 0) size = 1;
@@ -179,14 +308,18 @@ public sealed unsafe class GuestMemory : IDisposable
                 uint aligned = AlignUp(start, align);
                 if (aligned < start || aligned - start + (ulong)size > len) continue;
                 Carve(free, start, len, aligned, size);
-                return Commit(aligned, size, name, region);
+                return Commit(CurrentOf(this), aligned, size, name, region);
             }
         }
         throw new OutOfMemoryException($"Guest {region} memory exhausted allocating 0x{size:X} for {name}");
     }
 
-    /// <summary>Allocate at a fixed address. Returns 0 when the range is not free.</summary>
-    public uint TryAllocAt(uint addr, uint size, string name)
+    /// <summary>
+    /// Allocates at a fixed address. Returns 0 when the range is not free. <paramref name="exclusive"/> = false (an
+    /// executable linked at fixed addresses) only needs the range free in the calling thread's address space: other
+    /// processes may use the same user addresses in theirs.
+    /// </summary>
+    public uint TryAllocAt(uint addr, uint size, string name, bool exclusive = true)
     {
         uint start = addr & ~(PageSize - 1);
         uint end = AlignUp(addr + size, PageSize);
@@ -201,17 +334,32 @@ public sealed unsafe class GuestMemory : IDisposable
                     if (start >= fs && (ulong)end <= (ulong)fs + fl)
                     {
                         Carve(free, fs, fl, start, end - start);
-                        Commit(start, end - start, name, region);
+                        Commit(CurrentOf(this), start, end - start, name, region);
                         return addr;
                     }
                 }
             }
+            if (exclusive || !SeparateSpaces || start < UserStart || end > UserEnd || end <= start) return 0;
+            // the range is used by other processes: it is free when this space has nothing there
+            var space = CurrentOf(this);
+            foreach (var b in space.Blocks.Values)
+                if (start < b.Address + b.Size && b.Address < end) return 0;
+            // the parts no space uses leave the shared free list
+            for (int i = _freeUser.Count - 1; i >= 0; i--)
+            {
+                uint fs = _freeUser.Keys[i], fl = _freeUser.Values[i];
+                ulong fe = (ulong)fs + fl;
+                if (fe <= start || fs >= end) continue;
+                uint os = Math.Max(fs, start), oe = (uint)Math.Min(fe, end);
+                Carve(_freeUser, fs, fl, os, oe - os);
+            }
+            Commit(space, start, end - start, name, MemoryRegion.User);
+            return addr;
         }
-        return 0;
     }
 
     /// <summary>Maps a fixed range that lies outside the user/CDRAM/kernel regions (CPU tests place code at low
-    /// addresses). Returns false when it overlaps a region or an existing block.</summary>
+    /// addresses) in the calling thread's space. Returns false when it overlaps a region or an existing block.</summary>
     public bool MapFixed(uint addr, uint size, string name)
     {
         uint start = addr & ~(PageSize - 1), end = AlignUp(addr + size, PageSize);
@@ -220,9 +368,10 @@ public sealed unsafe class GuestMemory : IDisposable
             return false;
         lock (_lock)
         {
-            foreach (var b in _blocks.Values)
+            var space = CurrentOf(this);
+            foreach (var b in space.Blocks.Values)
                 if (Overlaps(start, end, b.Address, b.Address + b.Size)) return false;
-            Commit(start, end - start, name, MemoryRegion.Fixed);
+            Commit(space, start, end - start, name, MemoryRegion.Fixed);
         }
         return true;
     }
@@ -235,13 +384,17 @@ public sealed unsafe class GuestMemory : IDisposable
         if (tail > 0) free.Add(start + size, (uint)tail);
     }
 
-    uint Commit(uint addr, uint size, string name, MemoryRegion region)
+    uint Commit(AddressSpace space, uint addr, uint size, string name, MemoryRegion region)
     {
-        HostVirtualMemory.Commit(Base + addr, size);
-        SetMapped(addr, size, true);
-        new Span<byte>(Base + addr, (int)size).Clear();
-        DirtyPages.MarkRange(addr, size);
-        _blocks[addr] = new Block(addr, size, name, region, Kernel.ProcessScope.CurrentPid);
+        bool shared = IsSharedRegion(region);
+        byte* host = space.Base + addr; // a shared region is the same memory in every space
+        HostVirtualMemory.Commit(host, size);
+        SetMapped(shared ? _sharedMapped : space.MappedPages, addr, size, true);
+        new Span<byte>(host, (int)size).Clear();
+        DirtyPages.MarkRange(space.Base, addr, size);
+        var block = new Block(addr, size, name, region, Kernel.ProcessScope.CurrentPid, shared ? null : space);
+        if (shared) _shared[addr] = block;
+        else space.Blocks[addr] = block;
         CommittedBytes += size;
         return addr;
     }
@@ -249,84 +402,157 @@ public sealed unsafe class GuestMemory : IDisposable
     /// <summary>Frees every block (process exec: the address space is reused for a new executable).</summary>
     public void FreeAll()
     {
-        uint[] addrs;
-        lock (_lock) addrs = _blocks.Keys.ToArray();
-        foreach (var a in addrs) Free(a);
+        Block[] all;
+        lock (_lock) all = AllBlocks().ToArray();
+        foreach (var b in all) Free(b);
     }
 
     /// <summary>Frees the blocks process <paramref name="pid"/> allocated (its exit); returns the bytes released.</summary>
     public long FreeOwnedBy(int pid)
     {
         Block[] owned;
-        lock (_lock) owned = _blocks.Values.Where(b => b.Owner == pid).ToArray();
-        foreach (var b in owned) Free(b.Address);
+        lock (_lock) owned = AllBlocks().Where(b => b.Owner == pid).ToArray();
+        foreach (var b in owned) Free(b);
         return owned.Sum(b => (long)b.Size);
     }
 
+    IEnumerable<Block> AllBlocks()
+    {
+        foreach (var b in _shared.Values) yield return b;
+        foreach (var s in _spaces)
+            foreach (var b in s.Blocks.Values) yield return b;
+    }
+
+    /// <summary>Frees the block at <paramref name="addr"/> of the calling thread's space (or a CDRAM / kernel block).</summary>
     public void Free(uint addr)
+    {
+        Block? b;
+        lock (_lock)
+            if (!CurrentOf(this).Blocks.TryGetValue(addr, out b) && !_shared.TryGetValue(addr, out b)) return;
+        Free(b);
+    }
+
+    void Free(Block b)
     {
         lock (_lock)
         {
-            if (!_blocks.Remove(addr, out var b)) return;
+            bool shared = b.Space == null;
+            if (shared ? !_shared.Remove(b.Address) : !b.Space!.Blocks.Remove(b.Address)) return;
             CommittedBytes -= b.Size;
-            HostVirtualMemory.Decommit(Base + b.Address, b.Size);
-            SetMapped(b.Address, b.Size, false);
-            DirtyPages.MarkRange(b.Address, b.Size);
+            var space = b.Space ?? Primary;
+            byte* host = space.Base + b.Address;
+            if (shared && SeparateSpaces) HostVirtualMemory.Discard(host, b.Size); // a view: its pages stay committed
+            else HostVirtualMemory.Decommit(host, b.Size);
+            SetMapped(shared ? _sharedMapped : space.MappedPages, b.Address, b.Size, false);
+            DirtyPages.MarkRange(space.Base, b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed) return;
-            var free = FreeList(b.Region);
-            uint start = b.Address, size = b.Size;
-            // merge with neighbours
-            int idx = 0;
-            while (idx < free.Count && free.Keys[idx] < start) idx++;
-            if (idx > 0 && free.Keys[idx - 1] + free.Values[idx - 1] == start)
-            {
-                start = free.Keys[idx - 1];
-                size += free.Values[idx - 1];
-                free.RemoveAt(idx - 1);
-                idx--;
-            }
-            if (idx < free.Count && start + size == free.Keys[idx])
-            {
-                size += free.Values[idx];
-                free.RemoveAt(idx);
-            }
-            free.Add(start, size);
+            if (b.Region == MemoryRegion.User && SeparateSpaces) ReturnUserRange(b.Address, b.Size);
+            else AddFree(FreeList(b.Region), b.Address, b.Size);
         }
     }
 
+    /// <summary>A private user block was freed: the parts of its range no other space uses become free again.</summary>
+    void ReturnUserRange(uint start, uint size)
+    {
+        ulong end = (ulong)start + size;
+        List<(uint S, ulong E)>? used = null;
+        foreach (var s in _spaces)
+            foreach (var b in s.Blocks.Values)
+                if (b.Region == MemoryRegion.User && b.Address < end && (ulong)b.Address + b.Size > start)
+                    (used ??= new()).Add((b.Address, (ulong)b.Address + b.Size));
+        if (used == null) { AddFree(_freeUser, start, size); return; }
+        used.Sort();
+        ulong at = start;
+        foreach (var (s, e) in used)
+        {
+            if (s > at) AddFree(_freeUser, (uint)at, (uint)(Math.Min(s, end) - at));
+            at = Math.Max(at, e);
+            if (at >= end) break;
+        }
+        if (at < end) AddFree(_freeUser, (uint)at, (uint)(end - at));
+    }
+
+    static void AddFree(SortedList<uint, uint> free, uint start, uint size)
+    {
+        if (size == 0) return;
+        // merge with neighbours
+        int idx = 0;
+        while (idx < free.Count && free.Keys[idx] < start) idx++;
+        if (idx > 0 && free.Keys[idx - 1] + free.Values[idx - 1] == start)
+        {
+            start = free.Keys[idx - 1];
+            size += free.Values[idx - 1];
+            free.RemoveAt(idx - 1);
+            idx--;
+        }
+        if (idx < free.Count && start + size == free.Keys[idx])
+        {
+            size += free.Values[idx];
+            free.RemoveAt(idx);
+        }
+        free.Add(start, size);
+    }
+
+    /// <summary>The block containing <paramref name="addr"/> in the calling thread's space (or in the shared regions).</summary>
     public Block? FindBlock(uint addr)
     {
         lock (_lock)
         {
-            foreach (var b in _blocks.Values)
+            foreach (var b in CurrentOf(this).Blocks.Values)
+                if (addr >= b.Address && addr - b.Address < b.Size) return b;
+            foreach (var b in _shared.Values)
                 if (addr >= b.Address && addr - b.Address < b.Size) return b;
         }
         return null;
     }
 
+    /// <summary>Snapshot of the allocated blocks of every space (debug tools).</summary>
+    public List<Block> Blocks() { lock (_lock) return AllBlocks().OrderBy(b => b.Address).ToList(); }
+
     // One bit per 4 KB page: set while the page belongs to an allocated block. Data accesses to other pages still
     // succeed (lazy commit reads zeros), but instruction fetches check it so a jump to a bad address faults instead
     // of sliding through gigabytes of zero words ("andeq r0, r0, r0") and translating each 192-instruction block.
-    static readonly ulong[] s_mappedPages = new ulong[(1 << 20) / 64];
-
-    static void SetMapped(uint addr, uint size, bool mapped)
+    // The shared regions have one bitmap, every space its own for the rest.
+    static void SetMapped(ulong[] bits, uint addr, uint size, bool mapped)
     {
         for (ulong p = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize; p < end; p++)
         {
-            ref ulong w = ref s_mappedPages[p >> 6];
+            ref ulong w = ref bits[p >> 6];
             if (mapped) w |= 1UL << (int)(p & 63); else w &= ~(1UL << (int)(p & 63));
         }
     }
 
-    /// <summary>True when <paramref name="addr"/> lies in an allocated block (module segment, memblock, stack, ...).</summary>
-    public static bool IsMapped(uint addr) => (Volatile.Read(ref s_mappedPages[addr >> 18]) & (1UL << (int)((addr >> 12) & 63))) != 0;
+    static bool InSharedRegion(uint addr) => addr - KernelStart < KernelEnd - KernelStart || addr - CdramStart < CdramEnd - CdramStart;
+
+    /// <summary>True for CDRAM and kernel addresses: the same memory in every address space.</summary>
+    public static bool IsSharedAddress(uint addr) => InSharedRegion(addr);
+
+    /// <summary>True when <paramref name="addr"/> lies in an allocated block (module segment, memblock, stack, ...) of the
+    /// calling thread's space.</summary>
+    public static bool IsMapped(uint addr)
+    {
+        var m = Instance;
+        if (m == null) return false;
+        var bits = InSharedRegion(addr) ? m._sharedMapped : CurrentOf(m).MappedPages;
+        return (Volatile.Read(ref bits[addr >> 18]) & (1UL << (int)((addr >> 12) & 63))) != 0;
+    }
 
     public static uint AlignUp(uint v, uint a) => (v + a - 1) & ~(a - 1);
 
     public void Dispose()
     {
-        if (Base != null) HostVirtualMemory.Release(Base - DirtyTableBytes, unchecked((nuint)(ReserveSize + DirtyTableBytes)));
-        Base = null;
-        Array.Clear(s_mappedPages);
+        if (s_primaryBase == null) return;
+        lock (_lock)
+        {
+            foreach (var s in _spaces) HostVirtualMemory.ReleaseWithViews(s.Parts);
+            _spaces.Clear();
+            _spaceSnapshot = [];
+            _idle.Clear();
+        }
+        HostVirtualMemory.ReleaseSharedMemory(_kernelMemory);
+        HostVirtualMemory.ReleaseSharedMemory(_cdramMemory);
+        s_primaryBase = null;
+        t_base = null;
+        if (ReferenceEquals(Instance, this)) Instance = null;
     }
 }

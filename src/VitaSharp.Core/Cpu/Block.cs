@@ -28,6 +28,8 @@ public sealed unsafe class Block
     public volatile bool Invalidated;
     /// <summary>Exit link slots that jump into this block's native code (cleared on invalidation).</summary>
     internal List<nint>? LinkedFrom;
+    /// <summary>The cache (process) the block belongs to: its indirect-exit table is the process's.</summary>
+    public BlockCache? Owner;
 
     public override string ToString() => $"Block {Start:X8}-{End:X8} {(Thumb ? "T" : "A")} n={Insts.Length}";
 }
@@ -58,7 +60,7 @@ public static unsafe class BlockBuilder
             {
                 if (addr != pc && CpuCore.Probes is { } pa && pa.Contains(addr)) break; // probes are block starts
                 if (!GuestMemory.IsMapped(addr)) { list.Add(FetchFault(addr, false)); break; }
-                var d = Decoder.DecodeArm(Mem.R32(addr), addr);
+                var d = Decoder.DecodeArm(GuestMemory.Read<uint>(addr), addr); // the building thread's (its process's) space
                 list.Add(d);
                 addr += 4;
                 if (d.EndsBlock || list.Count >= MaxInstructions) break;
@@ -72,12 +74,12 @@ public static unsafe class BlockBuilder
                 if (addr != pc && CpuCore.Probes is { } pt && pt.Contains(addr) && (itState & 0xF) == 0) break; // probes are block starts
                 bool inIt = (itState & 0xF) != 0;
                 byte itCond = (byte)(itState >> 4);
-                if (!GuestMemory.IsMapped(addr) || (Decoder.IsThumb32(Mem.R16(addr)) && !GuestMemory.IsMapped(addr + 2))) { list.Add(FetchFault(addr, true)); break; }
-                ushort hw1 = Mem.R16(addr);
+                if (!GuestMemory.IsMapped(addr) || (Decoder.IsThumb32(GuestMemory.Read<ushort>(addr)) && !GuestMemory.IsMapped(addr + 2))) { list.Add(FetchFault(addr, true)); break; }
+                ushort hw1 = GuestMemory.Read<ushort>(addr);
                 DecodedInst d;
                 if (Decoder.IsThumb32(hw1))
                 {
-                    uint ins = ((uint)hw1 << 16) | Mem.R16(addr + 2);
+                    uint ins = ((uint)hw1 << 16) | GuestMemory.Read<ushort>(addr + 2);
                     d = Decoder.DecodeThumb32(ins, addr, inIt, itCond);
                 }
                 else d = Decoder.DecodeThumb16(hw1, addr, inIt, itCond);
@@ -181,9 +183,14 @@ public static unsafe class BlockBuilder
 }
 
 /// <summary>Process-wide translation cache shared by all guest threads.</summary>
-public sealed class BlockCache
+/// <summary>
+/// The translated code of one process (each <see cref="Emulator"/> has its own: processes in different address spaces
+/// can have different code at the same address), with the native backend's indirect-exit table for its threads.
+/// </summary>
+public sealed unsafe class BlockCache
 {
     readonly ConcurrentDictionary<ulong, Block> _blocks = new();
+    nint _dispatch;
 
     static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
 
@@ -192,7 +199,26 @@ public sealed class BlockCache
         var key = Key(pc, thumb);
         if (_blocks.TryGetValue(key, out var b)) return b;
         b = BlockBuilder.Build(pc, thumb);
+        b.Owner = this;
         return _blocks.GetOrAdd(key, b);
+    }
+
+    /// <summary>The native backend's indirect-exit table of this process (<see cref="Native.NativeRuntime.Publish"/>),
+    /// allocated when native code first needs it.</summary>
+    public nint DispatchTable
+    {
+        get
+        {
+            if (_dispatch != 0) return _dispatch;
+            var t = Native.NativeRuntime.AllocateDispatchTable();
+            if (Interlocked.CompareExchange(ref _dispatch, t, 0) != 0) Native.NativeRuntime.FreeDispatchTable(t);
+            return _dispatch;
+        }
+    }
+
+    ~BlockCache()
+    {
+        if (_dispatch != 0) Native.NativeRuntime.FreeDispatchTable(_dispatch);
     }
 
     public bool TryGet(uint pc, bool thumb, out Block? block) => _blocks.TryGetValue(Key(pc, thumb), out block);

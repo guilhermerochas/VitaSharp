@@ -63,10 +63,36 @@ database"). No row is ever written into app.db by VitaSharp.
 Each process is its own `Emulator` (kernel state, HLE modules, linker, mounts, code cache) and all share one
 `VitaSystem` (`Kernel/VitaSystem.cs`):
 
-- **one guest address space**: executables are relocatable (ET_SCE_RELEXEC) and the allocator hands each
-  process free ranges, so the shell (from 0x81000000) and an application live side by side. Memory blocks and
-  kernel objects record their owner (`ProcessScope`) and go away with the process. An executable linked at fixed
-  addresses that are taken falls back to the old replace-the-shell launch.
+- **an address space per process** (`Memory/AddressSpace.cs`), as on the Vita: the shell and a game linked at the
+  same fixed address (shell.self and non-PIE eboots like Persona 4 Golden's are both at 0x81000000) run side by side.
+  Each space is a host reservation of the 4 GB guest window (fastmem) with its page dirty table below guest address 0.
+  The regions the Vita shares are one host memory mapped into every space: the kernel region 0x40000000-0x50000000
+  (HLE trampolines, objects visible to the guest) and CDRAM 0x60000000-0x70000000 (SceSharedFb, display buffers, GPU
+  memory). On Windows the reservation is split with placeholders (`VirtualAlloc2`) and the shared regions are views of
+  pagefile-backed `SEC_RESERVE` sections (`MapViewOfFile3`, committed on demand by the same lazy-commit handler); on
+  Linux/Android memfd views, elsewhere an unlinked temporary file. User memory is private: a block exists only in the
+  space of the process that allocated it. Relocatable allocations still take ranges no space uses, so a guest address
+  names one piece of data for the GPU's caches whichever process submitted it; only fixed executable segments
+  (`TryAllocAt(exclusive: false)`) share addresses with other processes' blocks. A process's space comes from
+  `GuestMemory.CreateSpace` and goes back to a pool when the process ends (reservations are never released while the
+  system runs: a straggling host thread may still touch it). Memory blocks and kernel objects record their owner
+  (`ProcessScope`) and go away with the process. `VITASHARP_SHARED_ADDRESS_SPACE=1` (or a host that cannot map memory
+  twice) puts every process in the first one's space; an executable linked at addresses in use then falls back to the
+  old replace-the-shell launch.
+- **which space is used**: guest threads run in their process's (the CPU state's `MemBase`: the interpreter, the IL
+  backend and the native trampolines address memory through it, so a direct game run costs nothing extra), and their
+  host thread works there (`AddressSpace.Current`, read by every `GuestMemory` static accessor and `Ptr<T>`).
+  `ProcessScope.Enter(process)` switches the space for host work done for a process (loading its modules on the
+  launch task) and the choice flows into the tasks and threads it starts (an `AsyncLocal`). Code that touches another
+  process's memory says so with `AddressSpace.Use(space)`: a simple event's setter writing a waiter's results, the
+  foreground switch re-presenting a process's frame. Message pipes copy through a kernel-side queue, so each side
+  copies in its own space. Native code looks indirect exits up in its process's dispatch table
+  (`BlockCache.DispatchTable`, through the state): two processes can have different code at one address.
+- **the GPU** reads and writes the space of the command it executes (`GpuCommand.Space`, set at submission);
+  results that land later (render-target writebacks, visibility results, deferred notifications) carry their own.
+  The texture cache keeps the space id (`AddressSpace.Id`, renewed when a space is reused) of textures read from user
+  memory and re-checks one sampled from another space. The dirty-page sweep folds the tables of every space into one
+  set of page versions.
 - **one kernel object table**: one UID space (process ids and application ids are UIDs too; the first process is
   0x40010003) and the namespace `sceKernelOpen*` searches, so IPC objects cross processes.
 - **the GPU**: one queue and renderer; a scene (BeginScene..EndScene) belongs to one process at a time

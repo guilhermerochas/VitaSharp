@@ -21,10 +21,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         public QueryPool Pool;
         public uint Used;
-        public readonly List<(uint Address, bool Increment)> Queries = new();
+        /// <summary>The result word of each query, in the address space of the process that drew.</summary>
+        public readonly List<(uint Address, bool Increment, AddressSpace? Space)> Queries = new();
         /// <summary>Reused per completion (no per-frame garbage): query results and per-address sums.</summary>
         public uint[] Results = [];
-        public readonly Dictionary<uint, (ulong Samples, bool Increment)> Sums = new();
+        public readonly Dictionary<(AddressSpace?, uint), (ulong Samples, bool Increment)> Sums = new();
     }
 
     VisibilityFrame Vis(Frame f)
@@ -54,7 +55,7 @@ public sealed unsafe partial class VulkanRenderer
         var v = Vis(F);
         if (v.Used >= VisQueriesPerFrame) { Log.WarnOnce("visq-full", "[gpu] visibility queries per frame exhausted"); return false; }
         query = v.Used++;
-        v.Queries.Add((d.VisAddress, d.VisIncrement));
+        v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space));
         var flags = d.VisIncrement && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
         _vk.CmdBeginQuery(Cmd, v.Pool, query, flags);
         return true;
@@ -75,13 +76,13 @@ public sealed unsafe partial class VulkanRenderer
         sums.Clear();
         for (int i = 0; i < v.Queries.Count; i++)
         {
-            var (addr, inc) = v.Queries[i];
-            var cur = sums.GetValueOrDefault(addr);
-            sums[addr] = (cur.Samples + (ForceVisible ? 1u << 16 : results[i]), inc);
+            var (addr, inc, space) = v.Queries[i];
+            var cur = sums.GetValueOrDefault((space, addr));
+            sums[(space, addr)] = (cur.Samples + (ForceVisible ? 1u << 16 : results[i]), inc);
         }
-        foreach (var (addr, (samples, inc)) in sums)
-            GuestMemory.W32(addr, inc ? (uint)Math.Min(samples, uint.MaxValue) : samples > 0 ? 1u : 0u);
-        if (TraceVis) Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key).Select(k => $"{k.Key:X}={k.Value.Samples}")));
+        foreach (var ((space, addr), (samples, inc)) in sums)
+            using (AddressSpace.Use(space)) GuestMemory.W32(addr, inc ? (uint)Math.Min(samples, uint.MaxValue) : samples > 0 ? 1u : 0u);
+        if (TraceVis) Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key.Item2).Select(k => $"{k.Key.Item2:X}={k.Value.Samples}")));
         v.Used = 0;
         v.Queries.Clear();
     }

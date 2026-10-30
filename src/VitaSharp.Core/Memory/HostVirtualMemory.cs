@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Memory;
 
@@ -93,6 +94,17 @@ internal static unsafe partial class HostVirtualMemory
         }
     }
 
+    /// <summary>
+    /// Freed pages of shared memory (a view several reservations map, which cannot be decommitted through one of them):
+    /// their content is no longer needed, so the OS may drop it instead of paging it out. They read back as garbage or
+    /// zeros; allocations clear what they commit.
+    /// </summary>
+    public static void Discard(byte* addr, nuint size)
+    {
+        const uint MEM_RESET = 0x80000;
+        if (OperatingSystem.IsWindows()) VirtualAlloc(addr, size, MEM_RESET, PAGE_NOACCESS);
+    }
+
     static void Clear(nuint from, nuint to)
     {
         if (to > from) NativeMemory.Clear((void*)from, to - from);
@@ -102,6 +114,169 @@ internal static unsafe partial class HostVirtualMemory
     {
         if (OperatingSystem.IsWindows()) VirtualFree(addr, 0, MEM_RELEASE);
         else munmap(addr, size);
+    }
+
+    // ------------------------------------------------------------------ shared regions (several views of one memory)
+
+    const uint MEM_RESERVE_PLACEHOLDER = 0x00040000, MEM_REPLACE_PLACEHOLDER = 0x00004000, MEM_PRESERVE_PLACEHOLDER = 0x2;
+    const uint SEC_RESERVE = 0x04000000;
+
+    [LibraryImport("kernelbase.dll", SetLastError = true)]
+    private static partial void* VirtualAlloc2(nint process, void* baseAddress, nuint size, uint allocationType, uint pageProtection, void* extendedParameters, uint parameterCount);
+
+    [LibraryImport("kernelbase.dll", SetLastError = true)]
+    private static partial void* MapViewOfFile3(nint fileMapping, nint process, void* baseAddress, ulong offset, nuint viewSize, uint allocationType, uint pageProtection, void* extendedParameters, uint parameterCount);
+
+    [LibraryImport("kernelbase.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool UnmapViewOfFile2(nint process, void* baseAddress, uint unmapFlags);
+
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    private static partial nint CreateFileMappingW(nint file, void* attributes, uint protect, uint maximumSizeHigh, uint maximumSizeLow, string? name);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseHandle(nint handle);
+
+    [LibraryImport("libc", SetLastError = true, EntryPoint = "memfd_create", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int memfd_create(string name, uint flags);
+
+    [LibraryImport("libc", SetLastError = true)]
+    private static partial int mkstemp(byte* template);
+
+    [LibraryImport("libc", SetLastError = true)]
+    private static partial int unlink(byte* path);
+
+    [LibraryImport("libc", SetLastError = true)]
+    private static partial int ftruncate(int fd, long length);
+
+    [LibraryImport("libc", SetLastError = true)]
+    private static partial int close(int fd);
+
+    const int MAP_SHARED = 1, MAP_FIXED = 0x10;
+
+    /// <summary>
+    /// Memory that several reservations map at once (<see cref="ReserveWithViews"/>): a pagefile-backed section whose pages
+    /// are committed on demand (Windows), or an anonymous memory file (Linux memfd, an unlinked temporary file elsewhere).
+    /// Returns 0 when the host cannot provide it.
+    /// </summary>
+    public static nint CreateSharedMemory(ulong size, string tag)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                nint h = CreateFileMappingW(-1, null, PAGE_READWRITE | SEC_RESERVE, (uint)(size >> 32), (uint)size, null);
+                return h;
+            }
+            int fd = -1;
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid())
+            {
+                try { fd = memfd_create("vitasharp-" + tag, 1 /*MFD_CLOEXEC*/); } catch (EntryPointNotFoundException) { fd = -1; }
+            }
+            if (fd < 0)
+            {
+                var template = System.Text.Encoding.UTF8.GetBytes(Path.Combine(Path.GetTempPath(), $"vitasharp-{tag}-XXXXXX") + "\0");
+                fixed (byte* t = template)
+                {
+                    fd = mkstemp(t);
+                    if (fd >= 0) unlink(t);
+                }
+            }
+            if (fd < 0) return 0;
+            if (ftruncate(fd, (long)size) != 0) { close(fd); return 0; }
+            return fd + 1; // 0 means "none"
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>One shared memory mapped at <paramref name="Offset"/> of a reservation.</summary>
+    public readonly record struct View(nuint Offset, nuint Size, nint Memory);
+
+    /// <summary>
+    /// Reserves <paramref name="size"/> bytes like <see cref="Reserve"/>, with the shared memories of
+    /// <paramref name="views"/> (sorted, 64 KB aligned, not overlapping) mapped at their offsets. On Windows the
+    /// reservation is split with placeholders: the views replace their placeholders and the gaps become ordinary reserved
+    /// memory (<paramref name="parts"/> lists every piece for <see cref="ReleaseWithViews"/>). Returns null when the host
+    /// cannot do it (the caller then falls back to a single reservation).
+    /// </summary>
+    public static byte* ReserveWithViews(nuint size, ReadOnlySpan<View> views, out bool lazyCommitted, out (nint Address, nuint Size, bool View)[] parts)
+    {
+        parts = [];
+        lazyCommitted = !OperatingSystem.IsWindows();
+        try
+        {
+            if (OperatingSystem.IsWindows()) return ReserveWithViewsWindows(size, views, out parts);
+            byte* p = Reserve(size, out lazyCommitted);
+            foreach (var v in views)
+            {
+                var m = mmap(p + v.Offset, v.Size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)v.Memory - 1, 0);
+                if (m == (void*)-1) { munmap(p, size); return null; }
+            }
+            parts = [((nint)p, size, false)];
+            return p;
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    static byte* ReserveWithViewsWindows(nuint size, ReadOnlySpan<View> views, out (nint Address, nuint Size, bool View)[] parts)
+    {
+        parts = [];
+        nint proc = GetCurrentProcess();
+        byte* p = (byte*)VirtualAlloc2(proc, null, size, MEM_RESERVE | MEM_RESERVE_PLACEHOLDER, PAGE_NOACCESS, null, 0);
+        if (p == null) return null;
+        var list = new List<(nint, nuint, bool)>();
+        nuint at = 0;
+        bool ok = true;
+        foreach (var v in views)
+        {
+            // split the placeholder that holds the view's range off, and map the shared memory in its place
+            if (!VirtualFree(p + v.Offset, v.Size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)
+                || MapViewOfFile3(v.Memory, proc, p + v.Offset, 0, v.Size, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE, null, 0) == null)
+            {
+                ok = false;
+                break;
+            }
+            if (v.Offset > at) list.Add(((nint)(p + at), v.Offset - at, false));
+            list.Add(((nint)(p + v.Offset), v.Size, true));
+            at = v.Offset + v.Size;
+        }
+        if (ok && at < size) list.Add(((nint)(p + at), size - at, false));
+        // the remaining placeholders become ordinary reserved memory (committed by VirtualAlloc and the lazy handler)
+        foreach (var (a, len, view) in list)
+            if (ok && !view && VirtualAlloc2(proc, (void*)a, len, MEM_RESERVE | MEM_REPLACE_PLACEHOLDER, PAGE_NOACCESS, null, 0) == null) ok = false;
+        parts = list.ToArray();
+        if (ok) return p;
+        Log.Warn($"Address space with shared views: Windows placeholder mapping failed ({Marshal.GetLastPInvokeError()})");
+        ReleaseWithViews(parts);
+        return null;
+    }
+
+    /// <summary>Releases a reservation made by <see cref="ReserveWithViews"/>.</summary>
+    public static void ReleaseWithViews((nint Address, nuint Size, bool View)[] parts)
+    {
+        foreach (var (a, len, view) in parts)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                if (view) UnmapViewOfFile2(GetCurrentProcess(), (void*)a, 0);
+                else VirtualFree((void*)a, 0, MEM_RELEASE);
+            }
+            else munmap((void*)a, len);
+        }
+    }
+
+    public static void ReleaseSharedMemory(nint memory)
+    {
+        if (memory == 0) return;
+        if (OperatingSystem.IsWindows()) CloseHandle(memory);
+        else close((int)memory - 1);
     }
 
     public static byte* AllocExecutable(int size)

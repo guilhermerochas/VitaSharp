@@ -4,30 +4,31 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Cpu;
 
-/// <summary>Raw guest memory base cached as a static readonly so JIT-compiled code folds it to a constant.</summary>
+/// <summary>
+/// Guest memory accesses of the interpreter and the IL backend: through the thread's address space
+/// (<see cref="CpuState.MemBase"/>, its process's <see cref="AddressSpace"/>), one load from the state the handlers already
+/// hold. The page dirty table sits right below guest address 0 of the same space.
+/// </summary>
 internal static unsafe class Mem
 {
-    public static readonly byte* Base = GuestMemory.Base;
-    /// <summary>Page dirty table (<see cref="DirtyPages"/>), folded to a constant like <see cref="Base"/>.</summary>
-    public static readonly byte* Dirty = GuestMemory.Base - DirtyPages.TableBytes;
-
     /// <summary>Marks the page of a store as written: after the store, and the byte is only written while clear.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void MarkDirty(uint a)
+    public static void MarkDirty(CpuState* s, uint a)
     {
         if (!DirtyPages.Enabled) return;
-        byte* p = Dirty + (a >> DirtyPages.PageShift);
+        byte* p = s->MemBase - DirtyPages.TableBytes + (a >> DirtyPages.PageShift);
         if (*p == 0) *p = 1;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static byte R8(uint a) => Base[a];
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static ushort R16(uint a) => Unsafe.ReadUnaligned<ushort>(Base + a);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static uint R32(uint a) { if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 3 < WriteWatch.ReadSpan + 3) WriteWatch.ReadHit(a, 4); return Unsafe.ReadUnaligned<uint>(Base + a); }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static ulong R64(uint a) { if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 7 < WriteWatch.ReadSpan + 7) WriteWatch.ReadHit(a, 8); return Unsafe.ReadUnaligned<ulong>(Base + a); }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W8(uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo < WriteWatch.Span) WriteWatch.Hit(a, 1, v); Base[a] = (byte)v; MarkDirty(a); }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W16(uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 1 < WriteWatch.Span + 1) WriteWatch.Hit(a, 2, v); Unsafe.WriteUnaligned(Base + a, (ushort)v); MarkDirty(a); }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W32(uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 3 < WriteWatch.Span + 3) WriteWatch.Hit(a, 4, v); Unsafe.WriteUnaligned(Base + a, v); MarkDirty(a); }
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W64(uint a, ulong v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 7 < WriteWatch.Span + 7) WriteWatch.Hit(a, 8, v); Unsafe.WriteUnaligned(Base + a, v); MarkDirty(a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static byte* Ptr(CpuState* s, uint a) => s->MemBase + a;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static byte R8(CpuState* s, uint a) => s->MemBase[a];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static ushort R16(CpuState* s, uint a) => Unsafe.ReadUnaligned<ushort>(s->MemBase + a);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static uint R32(CpuState* s, uint a) { if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 3 < WriteWatch.ReadSpan + 3) WriteWatch.ReadHit(a, 4); return Unsafe.ReadUnaligned<uint>(s->MemBase + a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static ulong R64(CpuState* s, uint a) { if (WriteWatch.Enabled && a - WriteWatch.ReadLo + 7 < WriteWatch.ReadSpan + 7) WriteWatch.ReadHit(a, 8); return Unsafe.ReadUnaligned<ulong>(s->MemBase + a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W8(CpuState* s, uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo < WriteWatch.Span) WriteWatch.Hit(a, 1, v); s->MemBase[a] = (byte)v; MarkDirty(s, a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W16(CpuState* s, uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 1 < WriteWatch.Span + 1) WriteWatch.Hit(a, 2, v); Unsafe.WriteUnaligned(s->MemBase + a, (ushort)v); MarkDirty(s, a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W32(CpuState* s, uint a, uint v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 3 < WriteWatch.Span + 3) WriteWatch.Hit(a, 4, v); Unsafe.WriteUnaligned(s->MemBase + a, v); MarkDirty(s, a); }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] public static void W64(CpuState* s, uint a, ulong v) { if (WriteWatch.Enabled && a - WriteWatch.Lo + 7 < WriteWatch.Span + 7) WriteWatch.Hit(a, 8, v); Unsafe.WriteUnaligned(s->MemBase + a, v); MarkDirty(s, a); }
 }
 
 /// <summary>Shared ARMv7 semantics (pseudocode functions from the ARM ARM) used by every encoding.</summary>
@@ -291,14 +292,14 @@ internal static unsafe class Arm
     static bool EndExclusiveStore(CpuState* s, uint addr, bool ok)
     {
         Volatile.Write(ref GenOf(addr), ok ? s->ExclusiveGen + 2 : s->ExclusiveGen);
-        if (ok) Mem.MarkDirty(addr);
+        if (ok) Mem.MarkDirty(s, addr);
         return ok;
     }
 
     public static bool StoreExclusive32(CpuState* s, uint addr, uint value)
     {
         if (!BeginExclusiveStore(s, addr)) return false;
-        ref uint target = ref Unsafe.AsRef<uint>(Mem.Base + addr);
+        ref uint target = ref Unsafe.AsRef<uint>(s->MemBase +addr);
         bool ok = Interlocked.CompareExchange(ref target, value, (uint)s->ExclusiveValue) == (uint)s->ExclusiveValue;
         if (WriteWatch.Enabled && ok && addr - WriteWatch.Lo + 3 < WriteWatch.Span + 3) WriteWatch.Hit(addr, 4, value);
         return EndExclusiveStore(s, addr, ok);
@@ -307,7 +308,7 @@ internal static unsafe class Arm
     public static bool StoreExclusive64(CpuState* s, uint addr, ulong value)
     {
         if (!BeginExclusiveStore(s, addr)) return false;
-        ref ulong target = ref Unsafe.AsRef<ulong>(Mem.Base + addr);
+        ref ulong target = ref Unsafe.AsRef<ulong>(s->MemBase +addr);
         bool ok = Interlocked.CompareExchange(ref target, value, s->ExclusiveValue) == s->ExclusiveValue;
         return EndExclusiveStore(s, addr, ok);
     }
@@ -318,7 +319,7 @@ internal static unsafe class Arm
         // CAS on the containing aligned word, only replacing our halfword.
         uint wa = addr & ~3u;
         int sh = (int)(addr & 2) * 8;
-        ref uint w = ref Unsafe.AsRef<uint>(Mem.Base + wa);
+        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase +wa);
         while (true)
         {
             uint old = Volatile.Read(ref w);
@@ -333,7 +334,7 @@ internal static unsafe class Arm
         if (!BeginExclusiveStore(s, addr)) return false;
         uint wa = addr & ~3u;
         int sh = (int)(addr & 3) * 8;
-        ref uint w = ref Unsafe.AsRef<uint>(Mem.Base + wa);
+        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase +wa);
         while (true)
         {
             uint old = Volatile.Read(ref w);

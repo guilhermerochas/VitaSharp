@@ -56,6 +56,9 @@ public static class EnvVars
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
     public const string SamplerDebug = "VITASHARP_SAMPLER_DEBUG";
+    /// <summary>1 = every process runs in the first process's address space (the model before per-process address
+    /// spaces: executables linked at addresses another process uses cannot run next to it).</summary>
+    public const string SharedAddressSpace = "VITASHARP_SHARED_ADDRESS_SPACE";
     public const string ShadercOpt = "VITASHARP_SHADERC_OPT";
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";

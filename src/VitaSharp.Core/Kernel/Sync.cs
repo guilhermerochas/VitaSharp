@@ -986,6 +986,9 @@ public sealed class SimpleEvent : KernelObject
         public Ptr<ulong> UserData;
         public int Priority;
         public int? Code;
+        /// <summary>The waiter's address space: the thread that sets the event writes the results there (simple
+        /// events are shared between processes).</summary>
+        public AddressSpace? Space;
     }
 
     readonly LinkedList<Waiter> _waiters = new();
@@ -1013,7 +1016,7 @@ public sealed class SimpleEvent : KernelObject
         {
             int r = TryTake(waitPattern, result, userData);
             if (r != SceError.EVENT_COND) return r;
-            var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0 };
+            var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0, Space = AddressSpace.Current };
             LinkedListNode<Waiter> node;
             if ((Attr & EventBits.AttrThPrio) != 0)
             {
@@ -1049,8 +1052,11 @@ public sealed class SimpleEvent : KernelObject
                 var w = n.Value;
                 if ((Pattern & w.WaitPattern) != 0)
                 {
-                    w.Result.TrySet(Pattern & w.WaitPattern);
-                    w.UserData.TrySet(LastUserData);
+                    using (AddressSpace.Use(w.Space))
+                    {
+                        w.Result.TrySet(Pattern & w.WaitPattern);
+                        w.UserData.TrySet(LastUserData);
+                    }
                     if (AutoReset) Pattern &= ~w.WaitPattern;
                     w.Code = SceError.OK;
                     _waiters.Remove(n);
@@ -1092,8 +1098,11 @@ public sealed class SimpleEvent : KernelObject
             {
                 if ((w.WaitPattern & EventBits.Delete) != 0)
                 {
-                    w.Result.TrySet((Pattern | EventBits.Delete) & w.WaitPattern);
-                    w.UserData.TrySet(LastUserData);
+                    using (AddressSpace.Use(w.Space))
+                    {
+                        w.Result.TrySet((Pattern | EventBits.Delete) & w.WaitPattern);
+                        w.UserData.TrySet(LastUserData);
+                    }
                     w.Code = SceError.OK;
                 }
                 else w.Code = SceError.WAIT_DELETE;
