@@ -219,13 +219,12 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
 
     MappedInput Current()
     {
-        var m = new MappedInput { State = Pad.GetController(0) };
-        foreach (var t in Pad.GetTouches(false)) m.AddTouch(false, t);
-        foreach (var t in Pad.GetTouches(true)) m.AddTouch(true, t);
-        if (Gamepads.AnyConnected) m = InputMapper.Combine(m, Gamepads.Map());
+        var touch = new MappedInput { State = Pad.GetController(0) };
+        foreach (var t in Pad.GetTouches(false)) touch.AddTouch(false, t);
+        foreach (var t in Pad.GetTouches(true)) touch.AddTouch(true, t);
+        var m = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
         // keyboard contacts (TouchFront/TouchBack keys) get ids of their own
-        if (Keyboard is { AnyHeld: true } k) m = InputMapper.Combine(m, k.Map(), 200);
-        return m;
+        return Keyboard is { AnyHeld: true } k ? InputMapper.Combine(m, k.Map(), 200) : m;
     }
 
     public ControllerState GetController(int port) => port == 0 ? Current().State : ControllerState.Neutral;
