@@ -97,8 +97,11 @@ public sealed class AndroidAppTests : IDisposable
             Log.Level = LogLevel.Info;
             Log.Debug("filtered out");
             Log.Warn("android-sink-test warning");
-            Assert.Contains(sink.Lines, l => l.Item1 == LogLevel.Warn && l.Item3 == "android-sink-test warning");
-            Assert.DoesNotContain(sink.Lines, l => l.Item3 == "filtered out");
+            // other tests running in parallel log through the same global sink: read a snapshot under the sink's lock
+            (LogLevel, string, string)[] lines;
+            lock (sink.Lines) lines = sink.Lines.ToArray();
+            Assert.Contains(lines, l => l.Item1 == LogLevel.Warn && l.Item3 == "android-sink-test warning");
+            Assert.DoesNotContain(lines, l => l.Item3 == "filtered out");
         }
         finally
         {
