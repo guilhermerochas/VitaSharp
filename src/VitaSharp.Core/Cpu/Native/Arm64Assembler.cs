@@ -387,6 +387,16 @@ public sealed class Arm64Assembler
     public enum PairMode : uint { Post = 1, Offset = 2, Pre = 3 }
     public void Stp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8000000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     public void Ldp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8400000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    /// <summary>Whether a 32-bit pair access can use <paramref name="off"/> (signed offset, multiple of 4 in -256..252).</summary>
+    public static bool FitsPairW(int off) => off % 4 == 0 && off >= -256 && off <= 252;
+    /// <summary>STP Wt, Wt2, [Xn, #off] (signed offset).</summary>
+    public void StpW(int rt, int rt2, int rn, int off) { if (!FitsPairW(off)) throw new ArgumentOutOfRangeException(nameof(off)); Emit(0x29000000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt); }
+    /// <summary>LDP Wt, Wt2, [Xn, #off] (signed offset; Wt != Wt2).</summary>
+    public void LdpW(int rt, int rt2, int rn, int off)
+    {
+        if (!FitsPairW(off) || rt == rt2) throw new ArgumentOutOfRangeException(nameof(off));
+        Emit(0x29400000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    }
 
     // exclusives / acquire-release
     public void Ldaxr(int rt, int rn, bool x = false) => Emit((x ? 0xC85FFC00u : 0x885FFC00u) | (uint)rn << 5 | (uint)rt);

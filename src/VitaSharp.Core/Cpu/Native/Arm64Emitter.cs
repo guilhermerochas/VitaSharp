@@ -177,7 +177,12 @@ public sealed unsafe partial class Arm64Emitter
             _a.BCond(Cond.EQ, tierUp);
         }
         int exitIndex = 0;
-        foreach (var x in ir.Insts) Lower(x, slotFor, ref exitIndex);
+        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        for (int i = 0; i < insts.Length; i++)
+        {
+            if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1])) { i++; continue; }
+            Lower(insts[i], slotFor, ref exitIndex);
+        }
         _a.Bind(_abort);
         EmitAccounting();
         _a.StrX(ZR, State, OffLastExitSlot);
@@ -237,6 +242,48 @@ public sealed unsafe partial class Arm64Emitter
 
     void LdState(int r, int off) => _a.Ldr(r, State, off);
     void StState(int r, int off) => _a.Str(r, State, off);
+
+    /// <summary>State offset of a 32-bit state store (SetReg/SetFlag/StoreState) or load (GetReg/GetFlag/LoadState), else -1.</summary>
+    static int StateOffset(in IrInst x, bool store) => (store, x.Op) switch
+    {
+        (true, IrOp.SetReg) or (false, IrOp.GetReg) => OffR + 4 * (int)x.Imm,
+        (true, IrOp.SetFlag) or (false, IrOp.GetFlag) => OffN + 4 * (int)x.Imm,
+        (true, IrOp.StoreState) or (false, IrOp.LoadState) => (int)x.Imm,
+        _ => -1,
+    };
+
+    /// <summary>
+    /// <see cref="A64Opt.PairState"/>: two consecutive 32-bit state stores (or loads) of adjacent fields as one STP (LDP).
+    /// The register flushes the frontend emits before exits and conditional regions are runs of these (R0..R15, then
+    /// N Z C V, which follow R15 in the state). Only ops that keep the host flags are paired, so the flag tracking of
+    /// <see cref="Lower"/> needs no update.
+    /// </summary>
+    bool TryPair(in IrInst x, in IrInst y)
+    {
+        var a = _a;
+        int o1 = StateOffset(x, true), o2 = StateOffset(y, true);
+        if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1))
+        {
+            int r1 = UseZ(x.A, X0), r2 = UseZ(y.A, X1);
+            a.StpW(r1, r2, State, o1);
+            StateWritten(o1, 8);
+            return true;
+        }
+        o1 = StateOffset(x, false); o2 = StateOffset(y, false);
+        if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1) && x.D >= 0 && y.D >= 0)
+        {
+            int d1 = Def(x.D, X0), d2 = Def(y.D, X1);
+            if (d1 == d2) return false;
+            a.LdpW(d1, d2, State, o1);
+            Commit(x.D, d1);
+            Commit(y.D, d2);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>A plain store wrote state bytes [off, off + len): cached copies of SIMD registers there are stale.</summary>
+    void StateWritten(int off, int len) { }
 
     // ------------------------------------------------------------------ lowering
 
