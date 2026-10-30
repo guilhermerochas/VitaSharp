@@ -31,8 +31,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
-- [ ] Primeira execução no emulador do Android e num aparelho: a lista do que verificar está no fim de
-  `docs/android/README.md` (superfície Vulkan, ciclo de vida, JIT nativo, entrada, logcat, SAF)
+- [x] Primeira execução no emulador do Android (30/10/2026: AVD `VitaSharp_Test`, API 36 x86_64, GPU do host;
+  Knightin'+ chega ao menu e Devious Dungeon ao load com o JIT nativo x64; corrigidos o crash do `GameActivity`, a
+  swapchain recriada a cada quadro e o `SignExtend` que o JIT do Mono compilava errado; resultados em
+  `docs/android/README.md`, "Emulator run")
+- [ ] Primeira execução num aparelho ARM64: JIT nativo ARM64 sob o SELinux, drivers Adreno/Mali, libadrenotools,
+  AAudio de baixa latência, controle Bluetooth, giro de 180°, MediaCodec de hardware (o que falta da lista no fim de
+  `docs/android/README.md`)
+- [ ] Teclado físico no jogo (setas/letras para os botões, como no desktop): hoje só controles de jogo e a tela
+- [ ] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU):
+  o desktop as escreve no fim do `Runner`, o app não
+- [ ] Rodar sessões longas com `VITASHARP_NATIVE_VERIFY=1` (pelo `config/env.txt`) no Android para achar outros
+  pontos em que o JIT do Mono dobra constantes de outro jeito que o CoreCLR (o backend IL e os blocos que sobem para
+  ele)
 - [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
   ela o renderizador não compila shaders no celular (30/10/2026: `build/build-android-shaderc.ps1` (ou `.sh`), NDK r30)
 - [x] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (30/10/2026: `OnScreenPad`,
