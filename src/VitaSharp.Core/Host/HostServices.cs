@@ -70,6 +70,25 @@ public interface ITextInputBackend
     void End();
 }
 
+/// <summary>What sceImeDialogInit asks for. <paramref name="Type"/> is SceImeType (0 default, 1 basic Latin, 2 URL,
+/// 3 mail, 4 number, 5 extended number); <paramref name="TextBoxMode"/> 0 default, 1 password, 2 password with the
+/// last character shown.</summary>
+public sealed record ImeDialogRequest(string Title, string InitialText, int MaxLength, int Type, bool Multiline, int TextBoxMode)
+{
+    public bool Password => TextBoxMode is 1 or 2;
+}
+
+/// <summary>
+/// Host text entry backing the system IME dialog (sceImeDialog*): a modal text field over the game. <see cref="Open"/>
+/// is called from a guest thread and must not block; the front-end calls <c>done</c> once, from any thread, with the
+/// confirmed text or null when the user cancelled. <see cref="Close"/> hides it without an answer (sceImeDialogAbort).
+/// </summary>
+public interface IImeDialogBackend
+{
+    void Open(ImeDialogRequest request, Action<string?> done);
+    void Close();
+}
+
 /// <summary>Host services the core needs from a front-end. Everything is optional (headless runs).</summary>
 public sealed class HostServices : IDisposable
 {
@@ -77,6 +96,9 @@ public sealed class HostServices : IDisposable
     public IAudioBackend? Audio { get; set; }
     /// <summary>Keyboard for the in-game IME (sceImeOpen); null = no host keyboard (scripted --ime-text only).</summary>
     public ITextInputBackend? TextInput { get; set; }
+    /// <summary>Text entry for the IME dialog (sceImeDialogInit); null = answered at once with --ime-text or the
+    /// initial text.</summary>
+    public IImeDialogBackend? ImeDialog { get; set; }
     /// <summary>Webcam / device camera backing SceCamera; null = emulated camera delivering grey frames.</summary>
     public ICameraSource? Camera { get; set; }
     /// <summary>Motion sensors backing SceMotion (controller gyro, phone sensors); null = device at rest.</summary>

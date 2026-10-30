@@ -9,9 +9,10 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>
 /// SceIme: the in-game keyboard (no modal dialog). The game draws its own text box; the system keyboard delivers
 /// events (OPEN, UPDATE_TEXT, UPDATE_CARET, PRESS_ENTER, PRESS_CLOSE) to the game's handler from inside sceImeUpdate,
-/// on the calling thread. Text comes from <see cref="HostServices.TextInput"/> when the front-end provides a keyboard;
-/// otherwise, if --ime-text is set (<see cref="CommonDialog.ImeDefaultText"/>, the same source as sceImeDialog), the
-/// text is "typed" and Enter pressed right after OPEN. Without either the IME stays open and only OPEN is delivered.
+/// on the calling thread. If --ime-text is set (<see cref="CommonDialog.ImeDefaultText"/>, the same source as
+/// sceImeDialog) the text is "typed" and Enter pressed right after OPEN; otherwise text comes from
+/// <see cref="HostServices.TextInput"/> when the front-end provides a keyboard. Without either the IME stays open and
+/// only OPEN is delivered.
 /// There is no pre-edit (kana/hangul composition): preeditLength is always 0.
 /// </summary>
 public sealed class Ime : HleModule
@@ -100,19 +101,21 @@ public sealed class Ime : HleModule
             session = _session;
         }
         Log.WarnOnce("ime-rect", $"sceIme: keyboard rectangle reported as 960x{KeyboardHeight} (height to confirm)");
-        if (backend != null)
+        if (CommonDialog.ImeDefaultText is { } scripted)
+        {
+            // automated runs: the user "types" --ime-text and presses Enter (same source as sceImeDialog), even when a
+            // host keyboard exists
+            lock (_lock) _backend = null;
+            string t = scripted.Replace("\r\n", "\n");
+            Post(session, new Pending(EVENT_UPDATE_TEXT, t, t.Length));
+            Post(session, new Pending(EVENT_PRESS_ENTER, null, 0));
+        }
+        else if (backend != null)
         {
             backend.Begin(initial, (int)maxLen, (int)type, (option & OptionMultiline) != 0,
                 (t, c) => Post(session, new Pending(EVENT_UPDATE_TEXT, t, c)),
                 () => Post(session, new Pending(EVENT_PRESS_ENTER, null, 0)),
                 () => Post(session, new Pending(EVENT_PRESS_CLOSE, null, 0)));
-        }
-        else if (CommonDialog.ImeDefaultText is { } scripted)
-        {
-            // no host keyboard: the user "types" --ime-text and presses Enter (same source as sceImeDialog)
-            string t = scripted.Replace("\r\n", "\n");
-            Post(session, new Pending(EVENT_UPDATE_TEXT, t, t.Length));
-            Post(session, new Pending(EVENT_PRESS_ENTER, null, 0));
         }
         else Log.WarnOnce("ime-nokeyboard", "sceIme: no host keyboard and no --ime-text: the IME stays open without input");
         return 0;

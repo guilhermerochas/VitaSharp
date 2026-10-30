@@ -146,6 +146,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
+        // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
+        var ime = new AndroidImeDialog(this);
+        _session.SetTextInput(ime, ime);
         if (_surface != null) _session.SurfaceCreated(_surface);
         _fpsTimer = new System.Threading.Timer(_ => RunOnUiThread(UpdateFps), null, 1000, 1000);
     }
@@ -334,6 +337,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         _toast.Text = $"🏆 Troféu desbloqueado\n{e.Trophy.Name} · {TrophyList.GradeName(e.Trophy.Grade)}";
         _toast.Visibility = ViewStates.Visible;
         _toast.PostDelayed(() => _toast.Visibility = ViewStates.Gone, 5000);
+        _session?.PlayTrophySound();
     }
 
     void OnPsPressed() => RunOnUiThread(OpenMenu);

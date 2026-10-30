@@ -94,17 +94,34 @@ public static class Program
                 // toast-preview <out.png> [TITLEID]: draws the in-game trophy notification (first trophy of the title's set)
                 VitaSharp.Core.Hle.Np.TrophyInfo t = new(1, VitaSharp.Core.Hle.Np.TrophyGrade.Gold, false, 0, -1, "A trophy with quite a long name to shorten", "");
                 byte[]? icon = null;
-                if (args.Length >= 3 && VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(ResolveApp(args[2])).FirstOrDefault() is { TrpPath: not null } set
+                if (args.Skip(2).FirstOrDefault(a => !a.StartsWith("--")) is { } toastTitle
+                    && VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(ResolveApp(toastTitle)).FirstOrDefault() is { TrpPath: not null } set
                     && VitaSharp.Core.Hle.Np.TrophyPackage.Load(set.TrpPath, set.CommId) is { } pkg && pkg.Trophies.Count > 1)
                 {
                     t = pkg.Trophies[1];
                     icon = pkg.TrophyIcon(t.Id);
                 }
                 var (bgra, w, h) = Host.TrophyToast.Render(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent("", "", t, icon), 2f);
-                using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul));
-                System.Runtime.InteropServices.Marshal.Copy(bgra, 0, bmp.GetPixels(), bgra.Length);
-                using var f = File.Create(args[1]);
-                bmp.Encode(f, SkiaSharp.SKEncodedImageFormat.Png, 100);
+                WriteBgraPng(args[1], bgra, w, h);
+                // --sound=<out.wav>: also writes the trophy sound the game window plays (firmware chime or built-in)
+                if (args.FirstOrDefault(a => a.StartsWith("--sound="))?["--sound=".Length..] is { } wav)
+                {
+                    var (pcm, source) = VitaSharp.Core.Shell.TrophySound.Load(FsRoot);
+                    WriteWav(wav, pcm);
+                    Console.WriteLine($"Trophy sound: {source}, {pcm.Seconds:F2} s, {pcm.SampleRate} Hz, {pcm.Channels} ch -> {wav}");
+                }
+                return 0;
+            }
+            case "ime-preview" when args.Length >= 2:
+            {
+                // ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]: draws the IME text entry
+                // overlay of the game window (sceImeDialog / SceIme) as it looks with that text typed
+                var rest = args.Skip(2).Where(a => !a.StartsWith("--")).ToArray();
+                int max = int.TryParse(args.FirstOrDefault(a => a.StartsWith("--max="))?["--max=".Length..], out var m) ? m : 16;
+                var entry = new VitaSharp.Core.Host.TextEntry(rest.ElementAtOrDefault(0) ?? "Nome", rest.ElementAtOrDefault(1) ?? "", max, 0,
+                    args.Contains("--multiline"), args.Contains("--password"));
+                var (bgra, w, h) = Host.ImeOverlay.Render(entry, 2f);
+                WriteBgraPng(args[1], bgra, w, h);
                 return 0;
             }
             case "pad-test":
@@ -190,6 +207,25 @@ public static class Program
         var sys = Path.Combine(FsRoot, "vs0", "app", arg);
         if (Directory.Exists(sys)) return sys;
         throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
+    }
+
+    static void WriteBgraPng(string path, byte[] bgra, int w, int h)
+    {
+        using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul));
+        System.Runtime.InteropServices.Marshal.Copy(bgra, 0, bmp.GetPixels(), bgra.Length);
+        using var f = File.Create(path);
+        bmp.Encode(f, SkiaSharp.SKEncodedImageFormat.Png, 100);
+    }
+
+    /// <summary>A 16-bit PCM WAV file.</summary>
+    static void WriteWav(string path, VitaSharp.Core.Shell.PcmSound pcm)
+    {
+        using var w = new BinaryWriter(File.Create(path));
+        int bytes = pcm.Samples.Length * 2;
+        w.Write("RIFF"u8); w.Write(36 + bytes); w.Write("WAVEfmt "u8); w.Write(16); w.Write((short)1); w.Write((short)pcm.Channels);
+        w.Write(pcm.SampleRate); w.Write(pcm.SampleRate * pcm.Channels * 2); w.Write((short)(pcm.Channels * 2)); w.Write((short)16);
+        w.Write("data"u8); w.Write(bytes);
+        foreach (var s in pcm.Samples) w.Write(s);
     }
 
     static bool IsArchive(string path) =>
@@ -368,7 +404,11 @@ public static class Program
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
         Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
+        Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
+        Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
+        Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
+        Console.WriteLine("               --trophy-sound=on|off  chime with the trophy notification in the window (default on)");
         Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
         Console.WriteLine("               --shaderc-opt=zero|size|perf  shader optimisation (default zero: fast compiles, less stutter)");
         Console.WriteLine("               --async-shaders=on|off  compile new shaders and pipelines on worker threads (default on)");

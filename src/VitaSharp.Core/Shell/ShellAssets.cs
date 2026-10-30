@@ -24,8 +24,9 @@ public sealed class ShellTheme
 /// <summary>A system application in vs0:app with a home-screen bubble (Settings, Trophies, Browser, Content manager...).</summary>
 public sealed record ShellSystemApp(string TitleId, string Title, string Path, string? IconPath);
 
-/// <summary>Which shell sound effect to play.</summary>
-public enum ShellSoundEffect { Confirm, Cancel, Alternate }
+/// <summary>Which shell sound effect to play. <see cref="Notice"/> is the system's notice chime (see
+/// <see cref="TrophySound"/>).</summary>
+public enum ShellSoundEffect { Confirm, Cancel, Alternate, Notice }
 
 /// <summary>
 /// What the installed firmware offers the launcher's Vita-style home screen: themes (vs0:data/internal/theme and
@@ -248,14 +249,16 @@ public sealed class ShellAssets
         PcmSound? pcm = null;
         var r = RcoOf(CommonRco);
         var index = r?.Root.Descendants().FirstOrDefault(e => e.Name == "soundindextable");
-        if (r != null && index != null)
+        if (r != null && (index != null || effect == ShellSoundEffect.Notice))
         {
-            var check = index.Children.FirstOrDefault(c => c.Name == "sound_check_box");
-            var buttons = index.Children.Where(c => c.Name == "sound_button").ToList();
+            var check = index?.Children.FirstOrDefault(c => c.Name == "sound_check_box");
+            var buttons = index?.Children.Where(c => c.Name == "sound_button").ToList() ?? [];
             uint? id = effect switch
             {
                 ShellSoundEffect.Confirm => check?.Attribute("check")?.Hash ?? buttons.FirstOrDefault()?.Attribute("decide")?.Hash,
                 ShellSoundEffect.Cancel => check?.Attribute("uncheck")?.Hash,
+                // not a control sound: the system code plays it by id (TrophySound.FirmwareNoticeSound)
+                ShellSoundEffect.Notice => TrophySound.FirmwareNoticeSound,
                 _ => buttons.Select(b => b.Attribute("decide")?.Hash).Where(h => h != null)
                     .FirstOrDefault(h => h != check?.Attribute("check")?.Hash && h != check?.Attribute("uncheck")?.Hash),
             };

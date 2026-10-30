@@ -72,6 +72,9 @@ public sealed class SettingsView : Screen<SettingsState>
                     Divider(),
                     ToggleRow("Mostrar FPS", p.ShowFps, v => Change(x => x.ShowFps = v)),
                     Divider(),
+                    ToggleRow("Som de troféu", p.TrophySound, v => Change(x => x.TrophySound = v),
+                        detail: "Som de aviso do firmware ao desbloquear um troféu (ou um som próprio sem firmware)"),
+                    Divider(),
                     Row("Driver da GPU", null, () => Navigation?.PushAsync<GpuDriverPage>()),
                     Divider(),
                     Row("Informações da GPU", null, () => Navigation?.PushAsync<GpuInfoPage>())

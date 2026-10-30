@@ -13,6 +13,13 @@ using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Desktop.Host;
 
+/// <summary>Receives the keyboard while a text entry is open over the game (<see cref="WindowHost.TextCapture"/>).</summary>
+public interface ITextCapture
+{
+    void OnKey(Key key);
+    void OnChar(char c);
+}
+
 /// <summary>Desktop window: Vulkan surface, keyboard/gamepad/mouse input.</summary>
 public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDisposable
 {
@@ -42,6 +49,33 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? GpuDumpToggled;
 
     /// <summary>
+    /// Text entry (the IME overlay): while set, key presses and typed characters go to it instead of the Vita button
+    /// mapping (key releases still reach the mapping, so nothing stays held) and the game sees a neutral controller.
+    /// Called on the window thread; F8-F11 keep their meaning.
+    /// </summary>
+    public ITextCapture? TextCapture { get; set; }
+
+    /// <summary>Raised on the window thread at the window's update rate (the text entry polls the gamepad here).</summary>
+    public event Action? Tick;
+
+    /// <summary>Clipboard text (Ctrl+V in the text entry); "" when unavailable. Window thread only.</summary>
+    public string ClipboardText
+    {
+        get
+        {
+            try { return _input?.Keyboards.FirstOrDefault()?.ClipboardText ?? ""; }
+            catch (Exception) { return ""; }
+        }
+    }
+
+    /// <summary>The mapped controller state, also while <see cref="TextCapture"/> hides it from the game.</summary>
+    public ControllerState RawController() => _hostInput.Poll().State;
+
+    /// <summary>Whether Shift / Control is held (window thread).</summary>
+    public bool IsShiftDown => _input?.Keyboards.Any(k => k.IsKeyPressed(Key.ShiftLeft) || k.IsKeyPressed(Key.ShiftRight)) == true;
+    public bool IsControlDown => _input?.Keyboards.Any(k => k.IsKeyPressed(Key.ControlLeft) || k.IsKeyPressed(Key.ControlRight)) == true;
+
+    /// <summary>
     /// Registers the GLFW window/input platforms explicitly: Silk.NET otherwise finds them by loading assemblies by
     /// name through reflection, which trimming / Native AOT removes.
     /// </summary>
@@ -69,6 +103,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
         _window.Update += _ =>
         {
+            Tick?.Invoke();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250) return;
             _lastFallbackPoll = now;
@@ -121,6 +156,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             k.KeyDown += (_, key, _) => OnKey(key, true);
             k.KeyUp += (_, key, _) => OnKey(key, false);
+            k.KeyChar += (_, c) => TextCapture?.OnChar(c);
         }
         foreach (var m in _input.Mice)
         {
@@ -177,6 +213,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         if (key == Key.F10) { if (down) DiagnosticRequested?.Invoke(); return; }
         if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
         if (key == Key.F8) { if (down) GpuDumpToggled?.Invoke(); return; }
+        if (down && TextCapture is { } capture) { capture.OnKey(key); return; }
         // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
         _hostInput.KeyChanged(key.ToString(), down);
     }
@@ -254,7 +291,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _hostInput.SetFallbackPad(null, "", "");
     }
 
-    public ControllerState GetController(int port) => _hostInput.Poll().State;
+    public ControllerState GetController(int port) => TextCapture != null ? ControllerState.Neutral : _hostInput.Poll().State;
 
     /// <summary>Controller gyroscope/accelerometer for SceMotion.</summary>
     public IMotionSource Motion => _hostInput;
