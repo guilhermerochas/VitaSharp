@@ -679,6 +679,9 @@ public sealed unsafe partial class VulkanRenderer
         // surface as an input attachment, piece by piece (FetchSplitDraw; VulkanRenderer.SingleFetch.cs)
         bool singleFetch = !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && SingleFetchPossible()
             && FetchSplitDraw(d, topology);
+        // a small programmable-blending draw of a multisampled scene that reads copies of the samples
+        // (VITASHARP_MSAA_FETCH=copy): drawn piece by piece, each piece reading a new copy (what the earlier pieces drew)
+        bool copySplit = _ms && !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && FetchSplitDraw(d, topology);
         if (inputFetch || tw1 || singleFetch)
         {
             fs = GetFragmentShader(d, fetchInput: inputFetch || singleFetch, tileWord1: tw1, fetchSingle: singleFetch);
@@ -774,57 +777,68 @@ public sealed unsafe partial class VulkanRenderer
         if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
 
         // ---- record
-        if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
-        _renderRaw = raw;
-        if (raw) _rawFormat = attachFormat;
-        CommandBuffer cmd;
-        if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
-        else
-        {
-            BeginRendering();
-            cmd = Cmd;
-            // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
-            if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
-        }
-        if (_boundPipeline.Handle != pipeline.Handle)
-        {
-            _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
-            _boundPipeline = pipeline;
-        }
+        // copySplit: one pass of this loop per piece, each after a new copy of the samples (the rendering ends for it)
+        int passes = copySplit ? _fetchPieces.Count : 1;
         var sets = stackalloc DescriptorSet[4] { uSet, vSet, fSet, fbSet };
-        _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
-        for (int s = 0; s < 16; s++)
-            if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
-        if (vs.Bindings.Any(b => b.Binding == 16))
+        if (copySplit) _statFetchSplitDraws++;
+        for (int piece = 0; piece < passes; piece++)
         {
-            var db = _dummyBuffer; ulong dz = 0;
-            _vk.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
-        }
-        _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
-        SetDynamicState(cmd, st, topology);
-        // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
-        // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
-        // blending over each other, strips of particle quads) are drawn piece by piece with a barrier in between. Only with input
-        // attachments: on the copy path every piece would re-copy the framebuffer (Uncharted's thousands of small
-        // particle draws went from 6.7 to 32 ms of GPU time per frame); one-sample scenes render such small draws in
-        // a render pass of their own for this (VulkanRenderer.SingleFetch.cs). The pieces of a singleFetch draw were
-        // built when it was chosen (_fetchPieces).
-        if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
-        {
-            for (int c = 0; c < _fetchPieces.Count; c++)
+            if (piece > 0) fbSet = BuildFramebufferFetchSet();
+            if (_rendering && (_renderRaw != raw || (raw && _rawFormat != attachFormat))) EndRendering(resolve: false);
+            _renderRaw = raw;
+            if (raw) _rawFormat = attachFormat;
+            CommandBuffer cmd;
+            if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
+            else
             {
-                if (c > 0) InputFetchBarrier(cmd);
-                _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, 0, 0);
+                BeginRendering();
+                cmd = Cmd;
+                // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
+                if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
-            _statFetchSplitDraws++;
+            if (_boundPipeline.Handle != pipeline.Handle)
+            {
+                _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
+                _boundPipeline = pipeline;
+            }
+            sets[3] = fbSet;
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
+            for (int s = 0; s < 16; s++)
+                if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
+            if (vs.Bindings.Any(b => b.Binding == 16))
+            {
+                var db = _dummyBuffer; ulong dz = 0;
+                _vk.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
+            }
+            _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
+            SetDynamicState(cmd, st, topology);
+            // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
+            // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
+            // blending over each other, strips of particle quads) are drawn piece by piece with a barrier in between.
+            // Input attachments: multisampled render passes, and one-sample images (surface or supersample image) in a
+            // render pass of their own for this (VulkanRenderer.SingleFetch.cs). Copies of a one-sample image would be
+            // re-taken for every piece (Uncharted's thousands of small particle draws went from 6.7 to 32 ms of GPU
+            // time per frame); only the multisampled copy path (VITASHARP_MSAA_FETCH=copy, a fallback) does that
+            // (copySplit). The pieces of a singleFetch / copySplit draw were built when it was chosen (_fetchPieces).
+            if (copySplit)
+                _vk.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, 0, 0);
+            else if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
+            {
+                for (int c = 0; c < _fetchPieces.Count; c++)
+                {
+                    if (c > 0) InputFetchBarrier(cmd);
+                    _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, 0, 0);
+                }
+                _statFetchSplitDraws++;
+            }
+            else
+            {
+                bool visQuery = BeginVisibilityQuery(d, out uint query);
+                _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
+                if (visQuery) EndVisibilityQuery(query);
+            }
+            if (singleFetch) EndSingleFetchPass();
         }
-        else
-        {
-            bool visQuery = BeginVisibilityQuery(d, out uint query);
-            _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
-            if (visQuery) EndVisibilityQuery(query);
-        }
-        if (singleFetch) EndSingleFetchPass();
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }

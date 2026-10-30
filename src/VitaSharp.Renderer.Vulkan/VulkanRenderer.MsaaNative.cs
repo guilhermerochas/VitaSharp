@@ -654,6 +654,10 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     DescriptorSet BuildMsaaFetchSet()
     {
         var rt = _rt!;
+        // the scene's first rendering loads the samples (draws the scene-start content into them): when the scene
+        // starts with a programmable-blending draw that rendering has not happened yet, and the copy read undefined
+        // samples (Soul Sacrifice's heat-haze quad, the first draw of a scene, became a triangle of coloured dots)
+        if (_msNeedsLoad) BeginRendering();
         EndRendering(resolve: false); // stores the samples (the scene goes on); the next rendering resolves
         var m = GetMsaaImage(rt, _msSamples);
         var key = (rt.Width, rt.Height, _rtAttachFormat, _msSamples);
