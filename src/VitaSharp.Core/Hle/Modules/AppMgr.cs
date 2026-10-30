@@ -69,18 +69,26 @@ public sealed class AppMgr : HleModule
     }
 
     /// <summary>
-    /// Trophy data mounts (used by the LLE SceNpTrophy; the HLE one keeps its own files). The FW 3.60 kernel mounts
-    /// the fixed devices trophy_sys0:, trophy_dat0: and trophy_dbk0:; which id selects which, and their targets, are
-    /// inferred: 300 = the title's trophy configuration (app0:sce_sys/trophy), 302 = the user's trophy data folder,
-    /// 303/304 = another title's data folder and its _BK backup (title id "ABCD12345_67", an NP communication id).
+    /// Trophy data mounts, used by the shell's trophy server (shell.self, FW 3.74; the HLE SceNpTrophy keeps its own
+    /// files). Targets as the server uses them: 300 = the application of a process (it opens
+    /// trophy_sys0:sce_sys/trophy/&lt;NPCOMMID&gt;/TROPHY.TRP), 302 = ur0:user/00/trophy/data/sce_trop (TRPUSER.DAT),
+    /// 303/304 = a title's data folder (TRPTITLE.DAT, TRPTRANS.DAT) and its _BK backup (title id "ABCD12345_67", an NP
+    /// communication id).
     /// </summary>
     int TrophyMount(string device, string? hostDir, uint mountPoint)
     {
         if (mountPoint == 0) return ERR_NULL_POINTER;
         if (hostDir == null) return ERR_NOT_FOUND;
         Directory.CreateDirectory(hostDir);
+        // each mount gets its own device (trophy_dat0:, trophy_dat1:...): the shell's trophy server keeps the user's
+        // file (302) and a title's data (303) mounted at the same time and opens files through the names it got
+        lock (_mounts)
+        {
+            string prefix = device.TrimEnd('0');
+            for (int i = 0; _mounts.Contains(device); i++) device = $"{prefix}{i}";
+            _mounts.Add(device);
+        }
         Emu.Vfs.Mount(device, hostDir);
-        lock (_mounts) _mounts.Add(device);
         GuestMemory.Fill(mountPoint, 0, 16);
         GuestMemory.WriteCString(mountPoint, device + ":", 16);
         return 0;
@@ -93,8 +101,11 @@ public sealed class AppMgr : HleModule
     [Hle("_sceAppMgrTrophyMount")]
     int sceAppMgrTrophyMount(int id, int pid, uint mountPoint) => id switch
     {
-        300 => Emu.Vfs.Resolve("app0:sce_sys/trophy") is { } conf && Directory.Exists(conf)
-            ? TrophyMount("trophy_sys0", conf, mountPoint) : mountPoint == 0 ? ERR_NULL_POINTER : ERR_NOT_FOUND,
+        // the application of process pid (-1: the caller), read only for its trophy configuration: the shell's trophy
+        // server (FW 3.74) installs a set from trophy_sys0:sce_sys/trophy/<NPCOMMID>/TROPHY.TRP
+        300 => (pid > 0 ? Emu.Vita.ByPid(pid) ?? Emu : Emu).Vfs.Resolve("app0:sce_sys/trophy") is { } conf && Directory.Exists(conf)
+            ? TrophyMount("trophy_sys0", Path.GetDirectoryName(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(conf))), mountPoint)
+            : mountPoint == 0 ? ERR_NULL_POINTER : ERR_NOT_FOUND,
         // the user's trophy file: the shell's trophy server (FW 3.74) mounts 302 and opens trophy_dat0:TRPUSER.DAT, and
         // checks ur0:user/00/trophy/data/sce_trop by path when it is missing
         302 => TrophyMount("trophy_dat0", TrophyData("sce_trop"), mountPoint),

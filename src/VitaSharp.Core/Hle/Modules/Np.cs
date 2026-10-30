@@ -335,6 +335,39 @@ public sealed class NpManager : HleModule
     [Hle] int sceNpGetPlatformType(uint npId) => NpIdUtil.GetPlatformType(npId);
     [Hle] int sceNpSetPlatformType(uint npId, int type) => NpIdUtil.SetPlatformType(npId, type);
 
+    // ---------------------------------------------------------------- communication id text (SceNpCommon)
+    // np_common.suprx FW 3.74 (the shell's trophy server names a title's folders this way): SceNpCommunicationId
+    // (char data[9], term, uint8 num, dummy) <-> "NPWR12345_00".
+    const int COMMON_NULL = unchecked((int)0x80550601), COMMON_SIZE = unchecked((int)0x80550602), COMMON_INVALID = unchecked((int)0x8055060A);
+
+    /// <summary>(const SceNpCommunicationId *id, char *out, size_t size): size at least 13.</summary>
+    [Hle("sceNpCommon_E426FEE8", Nid = 0xE426FEE8, Library = "SceNpCommon")]
+    int NpCommonCommIdToString(uint id, uint str, uint size)
+    {
+        if (id == 0 || str == 0) return COMMON_NULL;
+        if (size < 13) return COMMON_SIZE;
+        byte num = GuestMemory.Read<byte>(id + 10);
+        if (num > 99) return COMMON_INVALID;
+        GuestMemory.Copy(str, id, 9);
+        GuestMemory.WriteCString(str + 9, $"_{num:D2}", 4);
+        return 0;
+    }
+
+    /// <summary>(SceNpCommunicationId *id, const char *str): "NPWR12345_00".</summary>
+    [Hle("sceNpCommon_5BC54899", Nid = 0x5BC54899, Library = "SceNpCommon")]
+    int NpCommonStringToCommId(uint id, uint str)
+    {
+        if (str == 0) return COMMON_NULL;
+        string s = GuestMemory.ReadCString(str, 64);
+        if (s.Length > 12 || s.Length < 10 || s[9] != '_') return COMMON_INVALID;
+        GuestMemory.Fill(id, 0, 12);
+        GuestMemory.Copy(id, str, 9);
+        int n = 0;
+        foreach (char c in s[10..]) { if (c is < '0' or > '9') break; n = n * 10 + (c - '0'); }
+        GuestMemory.Write(id + 10, (byte)n);
+        return 0;
+    }
+
     // ---------------------------------------------------------------- the library heap (SceNpCommon)
     // vs0:sys/external/np_common.suprx (FW 3.74): the system software gives the library a memory block at start (the
     // shell's main initialisation: 0x14E000 bytes; a failure there ends that initialisation, and with it the services it

@@ -51,6 +51,18 @@ public sealed class Linker(IImportResolver hle)
     readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
     public uint ProcessParam { get; private set; }
+
+    /// <summary>Address ranges whose import stubs keep their binding while modules load (a module loaded for the
+    /// emulator's own use must not take over the program's imports); null = none.</summary>
+    public List<(uint Start, uint Size)>? KeepBindingsIn { get; set; }
+
+    bool Kept(uint stub)
+    {
+        if (KeepBindingsIn is not { } ranges) return false;
+        foreach (var (s, n) in ranges) if (stub - s < n) return true;
+        return false;
+    }
+
     public Action<uint, uint>? InvalidateCode { get; set; }
     public Action<string>? Log { get; set; }
 
@@ -147,7 +159,7 @@ public sealed class Linker(IImportResolver hle)
                     _funcExportsByLib[(libNid, nid)] = addr;
                     foreach (var (bnid, blib, _, stub) in _funcBindings)
                     {
-                        if (bnid != nid || blib != libNid) continue;
+                        if (bnid != nid || blib != libNid || Kept(stub)) continue;
                         WriteJumpStub(stub, addr);
                         InvalidateCode?.Invoke(stub, 12);
                     }
