@@ -43,13 +43,14 @@ small draws one triangle at a time with input attachments; one-sample scenes had
 not done").
 
 **Fix** (`VulkanRenderer.SingleFetch.cs`).
-- Programmable-blending draws of at most 256 triangles in one-sample scenes end the open rendering (recorded in a
+- Programmable-blending draws of at most 256 pieces (`Core/Gpu/FetchSplit.cs`, shared with the MSAA split) in one-sample scenes end the open rendering (recorded in a
   secondary and begun in the primary, VulkanRenderer.SceneBreaks.cs) and render in a one-subpass render pass of their
   own on the surface, recorded in the primary after the ended renderings.
 - That render pass uses the same MSAA render-pass builder with one sample, plus a self-dependency.
 - The surface is the input attachment. A new `ShaderHints.FetchInputSingleSample` reads it with a plain
   `subpassInput`; the recipe flag is bit 2.
-- The draw renders one triangle at a time with a by-region barrier.
+- The draw renders piece by piece with a by-region barrier in between: one triangle per piece in lists, two in
+  strips (from an even index), pieces of only degenerate triangles left out.
 - Render targets get INPUT_ATTACHMENT usage.
 - Not used with supersampling, the tile-word attachment, or tile-based (mobile) renderings. Disabled together with
   the MSAA split by `VITASHARP_FETCH_SPLIT=0`.

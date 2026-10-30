@@ -1,0 +1,5 @@
+# Soul Sacrifice Delta (PCSA00152): boot, title (~f750), Cross through the save-data selection and the opening
+# movies into the first area (~f2750, 'Control Camera' hint), then turn the camera right to the bonfire smoke and fire (~f3050).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/soulsac_boot.txt --data=<scratch root>
+title=PCSA00152
+args=--frames=3300 --seconds=900 --dump-every=50 --shader-cache --no-inspect --input=cross@f800:f6,cross@f850:f6,cross@f900:f6,cross@f950:f6,cross@f1000:f6,cross@f1050:f6,cross@f1100:f6,cross@f1150:f6,cross@f1200:f6,cross@f1250:f6,cross@f1300:f6,cross@f1350:f6,cross@f1400:f6,cross@f1450:f6,cross@f1500:f6,cross@f1550:f6,cross@f1600:f6,cross@f1650:f6,cross@f1700:f6,cross@f1750:f6,cross@f1800:f6,cross@f1850:f6,cross@f1900:f6,cross@f1950:f6,cross@f2000:f6,cross@f2050:f6,cross@f2100:f6,cross@f2150:f6,cross@f2200:f6,cross@f2250:f6,cross@f2300:f6,cross@f2350:f6,cross@f2400:f6,cross@f2450:f6,cross@f2500:f6,cross@f2550:f6,cross@f2600:f6,cross@f2650:f6,cross@f2700:f6,cross@f2750:f6,cross@f2800:f6,cross@f2850:f6,cross@f2900:f6,rstick@f3000:1:0:f12

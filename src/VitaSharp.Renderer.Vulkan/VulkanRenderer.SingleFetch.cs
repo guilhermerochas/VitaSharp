@@ -10,9 +10,10 @@ namespace VitaSharp.Renderer.Vulkan;
 /// draws a text string as one draw of SDF glyph quads whose padding overlaps the neighbouring glyphs, and every glyph
 /// blended the background from before the draw over the right side of the previous one ("of" became "cf", "STORY"
 /// became "STCRY"). Multisampled scenes already render in render passes whose colour attachment is also the input
-/// attachment and draw such draws one triangle at a time (VulkanRenderer.MsaaNative.cs); here a small draw of a
+/// attachment and draw such draws piece by piece (VulkanRenderer.MsaaNative.cs); here a small draw of a
 /// one-sample scene leaves the dynamic rendering and renders in a one-subpass render pass of its own on the surface,
-/// read as a single-sampled input attachment, with the same per-triangle barriers.
+/// read as a single-sampled input attachment, with the same pieces and barriers (Core/Gpu/FetchSplit.cs: one
+/// triangle per piece in lists, two in strips).
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {

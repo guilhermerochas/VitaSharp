@@ -676,9 +676,9 @@ public sealed unsafe partial class VulkanRenderer
         bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
         var topology = Formats.Topology(d.PrimitiveType);
         // a small programmable-blending draw in a one-sample scene: rendered in its own render pass that reads the
-        // surface as an input attachment, one triangle at a time (VulkanRenderer.SingleFetch.cs)
+        // surface as an input attachment, piece by piece (FetchSplitDraw; VulkanRenderer.SingleFetch.cs)
         bool singleFetch = !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && SingleFetchPossible()
-            && FetchSplitTriangles(d, topology) > 1;
+            && FetchSplitDraw(d, topology);
         if (inputFetch || tw1 || singleFetch)
         {
             fs = GetFragmentShader(d, fetchInput: inputFetch || singleFetch, tileWord1: tw1, fetchSingle: singleFetch);
@@ -804,16 +804,17 @@ public sealed unsafe partial class VulkanRenderer
         SetDynamicState(cmd, st, topology);
         // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
         // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
-        // blending over each other) are drawn one triangle at a time with a barrier in between. Only with input
+        // blending over each other, strips of particle quads) are drawn piece by piece with a barrier in between. Only with input
         // attachments: on the copy path every piece would re-copy the framebuffer (Uncharted's thousands of small
         // particle draws went from 6.7 to 32 ms of GPU time per frame); one-sample scenes render such small draws in
-        // a render pass of their own for this (VulkanRenderer.SingleFetch.cs).
-        if ((inputFetch || singleFetch) && !_core.RasterizationOrderColor && FetchSplitTriangles(d, topology) is var triangles and > 1)
+        // a render pass of their own for this (VulkanRenderer.SingleFetch.cs). The pieces of a singleFetch draw were
+        // built when it was chosen (_fetchPieces).
+        if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
         {
-            for (uint c = 0; c < triangles; c++)
+            for (int c = 0; c < _fetchPieces.Count; c++)
             {
                 if (c > 0) InputFetchBarrier(cmd);
-                _vk.CmdDrawIndexed(cmd, 3, 1, c * 3, 0, 0);
+                _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, 0, 0);
             }
             _statFetchSplitDraws++;
         }
@@ -829,21 +830,24 @@ public sealed unsafe partial class VulkanRenderer
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
     }
 
-    /// <summary>VITASHARP_FETCH_SPLIT=0 disables the per-triangle split of programmable-blending draws.</summary>
+    /// <summary>VITASHARP_FETCH_SPLIT=0 disables the piece-by-piece split of programmable-blending draws.</summary>
     static readonly bool FetchSplit = Environment.GetEnvironmentVariable(EnvVars.FetchSplit)?.Trim() != "0";
-    /// <summary>Largest programmable-blending draw drawn one triangle at a time (each piece costs a barrier).</summary>
-    const uint FetchSplitMax = 256;
+    /// <summary>Largest programmable-blending draw drawn piece by piece (each piece costs a barrier).</summary>
+    const int FetchSplitMax = 256;
     long _statFetchSplitDraws;
+    readonly List<(uint First, uint Count)> _fetchPieces = new();
 
     /// <summary>
-    /// Number of triangles of a programmable-blending draw to draw one by one (0 = draw it whole): plain triangle
-    /// lists without instancing or visibility queries, up to <see cref="FetchSplitMax"/> triangles.
+    /// Splits a programmable-blending draw into pieces drawn one by one with a barrier in between (false = draw it
+    /// whole): triangle lists and strips without instancing or visibility queries, up to <see cref="FetchSplitMax"/>
+    /// pieces (<see cref="Core.Gpu.FetchSplit.Pieces"/>: one triangle each in lists, two in strips).
     /// </summary>
-    static uint FetchSplitTriangles(DrawCommand d, PrimitiveTopology topology)
+    bool FetchSplitDraw(DrawCommand d, PrimitiveTopology topology)
     {
-        if (!FetchSplit || topology != PrimitiveTopology.TriangleList || d.InstanceCount != 1 || d.VisAddress != 0) return 0;
-        uint triangles = d.IndexCount / 3;
-        return triangles is > 1 and <= FetchSplitMax ? triangles : 0;
+        if (!FetchSplit || d.InstanceCount != 1 || d.VisAddress != 0) return false;
+        if (topology is not (PrimitiveTopology.TriangleList or PrimitiveTopology.TriangleStrip)) return false;
+        var raw = GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * (d.Index32 ? 4 : 2)));
+        return Core.Gpu.FetchSplit.Pieces(raw, d.Index32, topology == PrimitiveTopology.TriangleStrip, _fetchPieces, FetchSplitMax);
     }
 
     DescriptorBufferInfo UniformInfo(ReadOnlySpan<byte> data)
