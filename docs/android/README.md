@@ -15,7 +15,8 @@ platform-neutral `VitaSharp.Android.Common` (plain `net10.0`).
 ```
 dotnet build src/VitaSharp.Android -c Release -m:2
 # or the whole Android side: dotnet build VitaSharp.Android.sln -c Release -m:2
-# without ANDROID_HOME in the environment: add -p:AndroidSdkDirectory=%LOCALAPPDATA%\Android\Sdk
+# without ANDROID_HOME in the environment: add -p:AndroidSdkDirectory=<sdk>
+#   (Windows %LOCALAPPDATA%\Android\Sdk, Linux ~/Android/Sdk, macOS ~/Library/Android/sdk)
 ```
 
 The renderer needs shaderc on the device, and `Silk.NET.Shaderc.Native` has no Android build: once per checkout,
