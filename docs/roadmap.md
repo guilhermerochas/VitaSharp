@@ -41,12 +41,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
-  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado) e o ganho real dos
-  load/store por cena no perfilador do aparelho
-- [ ] Menos interrupções de cena no renderizador (no Killzone cada cena vira ~13 renderizações por uploads de
-  textura e cópias; em GPU tile-based cada uma custa um store e um load da memória do tile)
-- [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
-- [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
+  continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
+  load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
+  antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
+- [x] Menos interrupções de cena no renderizador (30/10/2026: uploads e cópias que não leem a cena são gravados
+  antes da renderização, que continua; `docs/notes/mobile-renderer.md`)
+- [x] Texturas BC/PVRTC convertidas para ASTC 4x4 com cache em disco por jogo (30/10/2026: codificador em C#,
+  RGBA8 quando não há ASTC; testado no Iris Xe; `docs/notes/mobile-renderer.md`)
+- [x] Caminho para Vulkan 1.1 (30/10/2026: render passes no lugar de dynamic rendering, estado fixo nos pipelines,
+  perfil `--gpu-profile=adreno-vk11`; comparado pixel a pixel na GTX 1650; falta rodar num aparelho)
 - [x] Driver de GPU customizado: libadrenotools compilada com o NDK e empacotada, carregador (pacote Turnip/Adreno com
   meta.json, redirecionamento de arquivos, BCeNabler, turbo) e a tela "Driver da GPU" (instalar o zip pelo seletor,
   usar, reiniciar o jogo aberto) (30/10/2026: `build/build-android-adrenotools.ps1` (ou `.sh`); falta testar num
