@@ -263,6 +263,7 @@ Common `run` options:
 | `--cpu=native\|il\|interp` | CPU backend (default: the best one this PC supports) |
 | `--shaderc-opt=zero\|size\|perf` | Shader optimisation level. `zero` (default) compiles ~6x faster and stutters far less when new shaders appear, with no measured GPU cost (launcher: *Compilação rápida de shaders*) |
 | `--async-shaders=on\|off` | Translate and compile new shaders and build their pipelines on worker threads as soon as the game submits them (default on; launcher: *Compilar shaders e pipelines em segundo plano*). `--async-pipelines=off` keeps only the shader part, `--shader-workers=<n>` sets the pool size (default: half the logical processors, 1-6) |
+| `--host-prio=on\|off` | Run the guest threads and the GPU worker above normal host priority, so other programs on the PC do not take their time (default on; `VITASHARP_HOST_PRIO=0` turns it off; see `docs/notes/thread-priority.md`) |
 | `--headless`, `--seconds <n>`, `--frames <n>` | Run without a window for a fixed time or number of frames |
 | `--input <script>` | Scripted input, e.g. `start@f3400,cross@f3600` |
 | `--dump-frames`, `--dump-every <n>` | Save rendered frames to disk |

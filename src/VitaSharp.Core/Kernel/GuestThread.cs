@@ -158,6 +158,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
     {
         _current = this;
         Util.NativeThread.Register(Name);
+        Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;
         bool delete = false;
         Core.ShouldYield = () => Scheduler.ShouldYield(this);

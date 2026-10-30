@@ -103,6 +103,7 @@ public sealed class GpuQueue : IDisposable
     void Run()
     {
         NativeThread.Register("GPU worker");
+        HostThreads.Apply(HostThreads.Role.Gpu);
         while (!_stopping)
         {
             GpuCommand? cmd;
