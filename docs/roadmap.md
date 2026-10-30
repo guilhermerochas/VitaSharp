@@ -17,7 +17,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
-- [ ] Opção de pular o desenho enquanto o pipeline não fica pronto (tira os últimos engasgos da primeira vez)
+- [ ] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
+  rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
+  tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
+  sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
 - [ ] JIT: multiplicações Thumb (SMULxy/SMLAxy/SMULW/SMMUL) e somas/subtrações paralelas (Mania, Devious Dungeon)
 - [ ] JIT: VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS inline
 - [ ] JIT: registradores NEON presos em registradores XMM do PC e comparação + desvio juntos (medir antes)

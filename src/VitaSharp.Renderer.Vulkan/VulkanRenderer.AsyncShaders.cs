@@ -314,8 +314,11 @@ public sealed unsafe partial class VulkanRenderer
         if (!_pipelineInflight.TryGetValue(key, out var ev)) return false;
         long t0 = FrameLedger.Now();
         ev.Wait();
-        FrameLedger.AddSince(FrameLedger.Cat.ShaderWait, t0);
+        long dt = FrameLedger.Now() - t0;
+        FrameLedger.Add(FrameLedger.Cat.ShaderWait, dt);
         _statPipelineWaits++;
+        _statPipelineWaitTicks += dt;
+        _frameStallTicks += dt; // a frame waiting for a worker's pipeline stalls like one compiling it
         return _sharedPipelines.TryGetValue(key, out p);
     }
 

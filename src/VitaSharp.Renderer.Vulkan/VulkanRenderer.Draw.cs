@@ -641,6 +641,7 @@ public sealed unsafe partial class VulkanRenderer
         var st = d.State;
         if (st.RegionClipMode == 1) return; // clip everything
         BeginFrameIfNeeded();
+        long stall0 = _frameStallTicks;
 
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
@@ -710,6 +711,7 @@ public sealed unsafe partial class VulkanRenderer
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key);
         var pipeline = GetPipeline(key, vs, fs, topology);
+        if (_frameStallTicks != stall0) NoteDrawStall(d, mask, tw1Key, fs.Gen!.UsesFragColor || tw1, _frameStallTicks - stall0);
         if (pipeline.Handle == 0) return;
 
         // ---- geometry upload
