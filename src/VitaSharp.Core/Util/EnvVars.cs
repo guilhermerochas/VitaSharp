@@ -46,6 +46,14 @@ public static class EnvVars
     public const string Net = "VITASHARP_NET";
     /// <summary>Default of --net-allow=host,host: with real internet, only these hosts (names or addresses) are reachable.</summary>
     public const string NetAllow = "VITASHARP_NET_ALLOW";
+    /// <summary>File the native backends append every compiled block's instructions to (a corpus for the compile-cost
+    /// benchmark NativeJitTests.CompileCostBenchmark, which reads it from <see cref="BenchCorpus"/>).</summary>
+    public const string NativeCorpus = "VITASHARP_NATIVE_CORPUS";
+    /// <summary>Tests: the block corpus (recorded with <see cref="NativeCorpus"/>) the compile-cost benchmark compiles.</summary>
+    public const string BenchCorpus = "VITASHARP_BENCH_CORPUS";
+    /// <summary>=1: x64 native blocks count the VFP/NEON ops and conditional branches they execute (profiling of
+    /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
+    public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";

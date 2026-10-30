@@ -27,9 +27,16 @@ public sealed unsafe class IrBuilder
 
     static readonly uint ThumbOffset = (uint)StateLayout.Of(nameof(CpuState.Thumb));
 
-    public IrBuilder(uint startPc, bool thumb)
+    public IrBuilder(uint startPc, bool thumb) => Reset(startPc, thumb);
+
+    /// <summary>Starts a new block in this builder, reusing its buffers (the previous <see cref="Block"/> is overwritten).</summary>
+    public void Reset(uint startPc, bool thumb)
     {
+        Block.Reset();
         Array.Fill(_val, -1);
+        Array.Clear(_dirty);
+        Array.Clear(_written);
+        _regionLabel = -1;
         Block.StartPc = startPc;
         Block.Thumb = thumb;
         // at block entry R15 is the block address (the dispatcher looked the block up by it) and Thumb its state

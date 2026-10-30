@@ -67,6 +67,8 @@ public unsafe struct CpuState
     // of different processes may be equal)
     public byte* MemBase;
     public nint DispatchTable;
+    public long NSimdOps;      // profiling (VITASHARP_NATIVE_COUNTERS): VFP/NEON IR ops and conditional branches of
+    public long NCondBranches; // the native blocks run since entering native code (counted per block execution)
 
     public uint Cpsr
     {

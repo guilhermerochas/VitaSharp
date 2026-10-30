@@ -29,14 +29,14 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
 }
 
 /// <summary>
-/// SKELETON (no Android front-end yet; platform-neutral). Installs a system update or the font package chosen with the
-/// Storage Access Framework: the front-end starts ACTION_OPEN_DOCUMENT (MIME "application/octet-stream", the .PUP has
-/// no registered type), then passes <c>() =&gt; new FileStream(resolver.OpenFileDescriptor(uri, "r"), ...)</c> or any
-/// other seekable stream of the document. The PUP is read in place, never copied: FirmwareInstaller extracts into a
-/// staging folder under &lt;data&gt;/fs and swaps the partitions in at the end, so cancelling (the "Cancelar" button)
-/// keeps the previous firmware.
-/// <para>Remaining work (needs the front-end): run it from a foreground service so a long install survives the
-/// activity going to the background, and keep the screen awake during the install.</para>
+/// Installs a system update or the font package chosen with the Storage Access Framework (platform-neutral): the
+/// front-end starts ACTION_OPEN_DOCUMENT (MIME "application/octet-stream", the .PUP has no registered type), then
+/// passes <c>() =&gt; new FileStream(resolver.OpenFileDescriptor(uri, "r"), ...)</c> or any other seekable stream of
+/// the document (src/VitaSharp.Android/Platforms/Android/Saf.cs). The PUP is read in place, never copied:
+/// FirmwareInstaller extracts into a staging folder under &lt;data&gt;/fs and swaps the partitions in at the end, so
+/// cancelling (the "Cancelar" button) keeps the previous firmware.
+/// <para>Remaining work: run it from a foreground service so a long install survives the activity going to the
+/// background (the app keeps the screen awake during the install only).</para>
 /// </summary>
 public static class FirmwareSetup
 {

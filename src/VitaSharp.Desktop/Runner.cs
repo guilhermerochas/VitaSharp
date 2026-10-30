@@ -683,7 +683,9 @@ public static class Runner
         {
             long fr = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
             foreach (var t in emu.Kernel.Threads.Where(t => t.Core.BlockCycles + t.Core.ChargedCycles > 0).OrderByDescending(t => t.Core.BlockCycles + t.Core.ChargedCycles).Take(6))
-                Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame");
+                Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame" +
+                    (t.Core.NativeTicks > 0 ? $"; host time in native code {t.Core.NativeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / fr:F2} ms/frame" : "") +
+                    (t.Core.SimdOps + t.Core.CondBranches > 0 ? $", {t.Core.SimdOps / 1e3 / fr:F0} K VFP/NEON ops/frame, {t.Core.CondBranches / 1e3 / fr:F0} K conditional branches/frame" : ""));
         }
         // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
         if (Environment.GetEnvironmentVariable(EnvVars.PeekEnd) is { } peekEnd)

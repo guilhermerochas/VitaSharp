@@ -31,10 +31,13 @@ public interface IBlockCompiler
 public sealed class BackendStats
 {
     public long Blocks, Instructions, Ticks, Rejected;
+    /// <summary>Per-phase compile time (native backends).</summary>
+    public CompilePhases? Phases;
 
     public override string ToString() =>
         $"{Blocks} blocks ({Instructions} instructions, {Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms compiling, " +
-        $"{Ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, Blocks):F0} us/block, {Rejected} rejected)";
+        $"{Ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, Blocks):F0} us/block, {Rejected} rejected" +
+        (Phases is { Blocks: > 0 } p ? $"; {p}" : "") + ")";
 }
 
 /// <summary>Code produced by a backend for one block: a managed delegate or a native entry point.</summary>

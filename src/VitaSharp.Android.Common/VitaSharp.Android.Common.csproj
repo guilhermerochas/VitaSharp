@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The platform-neutral half of the Android app: the models behind its screens (library, per-game settings, trophies,
+    firmware, GPU driver, PSN/network, controls), the on-screen pad and the Android gamepad mapping (as an
+    IInputBackend), and the logcat line formatting. Plain net10.0, so it is part of VitaSharp.sln, builds without the
+    Android workload and is unit-tested by tests/VitaSharp.Tests. The app itself (src/VitaSharp.Android, MAUI,
+    net10.0-android) references it.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>VitaSharp.Android</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VitaSharp.Tests" />
+  </ItemGroup>
+
+</Project>

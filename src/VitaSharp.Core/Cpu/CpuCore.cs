@@ -220,6 +220,10 @@ public sealed unsafe class CpuCore : IDisposable
     public void ChargeInstructions(long n) { ChargedCycles += n; if (InstructionsPerSecond > 0) _throttleInstrs += n; }
     /// <summary>Profiling totals: cycles of executed guest blocks and cycles charged for host-side (HLE) work.</summary>
     public long BlockCycles, ChargedCycles;
+    /// <summary>Profiling: host time (Stopwatch ticks) spent inside native-backend code, its callouts included.</summary>
+    public long NativeTicks;
+    /// <summary>Profiling (VITASHARP_NATIVE_COUNTERS=1): VFP/NEON ops and conditional branches run in native code.</summary>
+    public long SimdOps, CondBranches;
 
     public ExitReason Run()
     {
@@ -252,7 +256,10 @@ public sealed unsafe class CpuCore : IDisposable
                 s->LinkBreak = _interrupt || _stop ? 1u : 0u;
                 s->NBlocks = 0; s->NInstr = 0;
                 if (s->DispatchTable == 0) s->DispatchTable = _cache.DispatchTable;
+                long n0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 Native.NativeRuntime.Instance.Run(s, b.NativeEntry);
+                NativeTicks += System.Diagnostics.Stopwatch.GetTimestamp() - n0;
+                SimdOps += s->NSimdOps; CondBranches += s->NCondBranches; s->NSimdOps = 0; s->NCondBranches = 0;
                 if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
                 BlocksExecuted += s->NBlocks;
                 InstructionsExecuted += s->NInstr;

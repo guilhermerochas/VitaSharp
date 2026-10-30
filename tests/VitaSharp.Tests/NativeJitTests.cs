@@ -612,10 +612,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         uint[] arm =
         [
             0xE3A00000, // 00 mov r0, #0
-            0xF3B00401, // 04 loop: vcls.s8 d0, d1 (NEON forms that stay interpreter callouts)
-            0xF3B03404, // 08 vcls.s8 d3, d4
-            0xF3B06407, // 0C vcls.s8 d6, d7
-            0xF3B0940A, // 10 vcls.s8 d9, d10
+            0xF2020411, // 04 loop: vqshl.s8 d0, d1, d2 (NEON forms that stay interpreter callouts)
+            0xF2053414, // 08 vqshl.s8 d3, d4, d5
+            0xF2086417, // 0C vqshl.s8 d6, d7, d8
+            0xF20B941A, // 10 vqshl.s8 d9, d10, d11
             0xE2800001, // 14 add r0, r0, #1
             0xE3500B02, // 18 cmp r0, #0x800
             0xBAFFFFF8, // 1C blt loop

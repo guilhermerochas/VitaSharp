@@ -29,7 +29,7 @@ public sealed unsafe partial class X64Emitter
         return k switch
         {
             VecKind.FmaF or VecKind.FmsF => HasFma,
-            VecKind.ShlRegI => HasAvx2,
+            VecKind.ShlRegI => size == 3 || (size == 2 && HasAvx2), // 8/16-bit lanes: no variable SSE shifts (callouts)
             VecKind.CvtF2H or VecKind.CvtH2F => HasF16c,
             VecKind.QaddI or VecKind.QsubI => size < 3 || HasSse42,
             _ => true,
@@ -522,6 +522,199 @@ public sealed unsafe partial class X64Emitter
         a.jnz(_tinySlow);
     }
 
+    /// <summary>Per-lane count of leading zeros of xmm0 into xmm2 (clobbers xmm0, xmm1, xmm3, xmm4, rax).</summary>
+    void ClzLanes(uint size)
+    {
+        // bytes: clz8 = clz4(hi) + (hi == 0 ? clz4(lo) : 0); wider lanes combine the two halves the same way
+        var a = _a;
+        a.movdqa(X3, K8(0x0F));
+        Mov(X1, X0);
+        a.psrlw(X1, 4);
+        a.pand(X1, X3);                // hi nibbles
+        a.pand(X0, X3);                // lo nibbles
+        a.movdqa(X2, K(ClzLutLo, ClzLutHi));
+        Mov(X4, X2);
+        a.pshufb(X2, X1);              // clz4(hi)
+        a.pshufb(X4, X0);              // clz4(lo)
+        a.pxor(X3, X3);
+        a.pcmpeqb(X1, X3);             // hi == 0
+        a.pand(X4, X1);
+        a.paddb(X2, X4);               // clz8 per byte
+        for (uint s = 1; s <= size; s++)
+        {
+            Mov(X1, X2);
+            if (s == 1) a.psrlw(X1, 8); else a.psrld(X1, 16);              // clz of the high half
+            Mov(X4, X1);
+            if (s == 1) a.pcmpeqw(X4, K16(8)); else a.pcmpeqd(X4, K32(16)); // high half all zero
+            a.pand(X2, s == 1 ? K16(0x00FF) : K32(0xFFFF));               // clz of the low half
+            a.pand(X2, X4);
+            if (s == 1) a.paddw(X2, X1); else a.paddd(X2, X1);
+        }
+    }
+
+    // clz of a nibble (0 -> 4), as a pshufb table
+    const ulong ClzLutLo = 0x0101010102020304, ClzLutHi = 0x0000000000000000;
+
+    /// <summary>
+    /// Saturating narrow of the Q register at m (wide lanes of size + 1, shifted right by <paramref name="shift"/>,
+    /// optionally rounding) into the D register at d: VQ(R)SHRN, VQ(R)SHRUN (<paramref name="toUnsigned"/>: signed source,
+    /// unsigned result) and VQMOVN/VQMOVUN (shift 0). QC when a lane saturates. Narrow sizes 0 and 1.
+    /// </summary>
+    void QNarrow(bool toUnsigned, bool u, uint size, bool round, int shift, int dOff, int mOff)
+    {
+        var a = _a;
+        uint w = size + 1;
+        bool srcSigned = toUnsigned || !u;
+        LdV(X0, mOff, true);
+        if (round) RoundShr(X0, w, shift, srcSigned, X1, X2); else Shr(X0, w, shift, srcSigned, X1);
+        Mov(X1, X0);
+        if (toUnsigned)
+        {
+            // signed source, unsigned saturation
+            if (w == 1) { a.packuswb(X1, X1); a.pmovzxbw(X2, X1); a.pcmpeqw(X2, X0); }
+            else { a.packusdw(X1, X1); a.pmovzxwd(X2, X1); a.pcmpeqd(X2, X0); }
+        }
+        else if (!u)
+        {
+            if (w == 1) { a.packsswb(X1, X1); a.pmovsxbw(X2, X1); a.pcmpeqw(X2, X0); }
+            else { a.packssdw(X1, X1); a.pmovsxwd(X2, X1); a.pcmpeqd(X2, X0); }
+        }
+        else
+        {
+            // unsigned: clamp to the narrow maximum, then truncate
+            if (w == 1) { a.pminuw(X1, K16(0xFF)); Mov(X2, X1); a.pcmpeqw(X2, X0); a.packuswb(X1, X1); }
+            else { a.pminud(X1, K32(0xFFFF)); Mov(X2, X1); a.pcmpeqd(X2, X0); a.packusdw(X1, X1); }
+        }
+        QcIfNotAll(X2, true);
+        StV(dOff, X1, false);
+    }
+
+    /// <summary>VQMOVN/VQMOVUN from 64-bit lanes (no SSE pack for them): both lanes in GPRs, read before the D store.</summary>
+    void QNarrow64(bool toUnsigned, bool u, int dOff, int mOff)
+    {
+        var a = _a;
+        a.mov(rax, __qword_ptr[rbx + OffD + mOff]);
+        a.mov(rdx, __qword_ptr[rbx + OffD + mOff + 8]);
+        for (int lane = 0; lane < 2; lane++)
+        {
+            var r = lane == 0 ? rax : rdx;
+            var r32 = lane == 0 ? eax : edx;
+            var ok = a.CreateLabel(); var sat = a.CreateLabel();
+            if (toUnsigned)
+            {
+                var pos = a.CreateLabel();
+                a.test(r, r);
+                a.jns(pos);
+                a.xor(r32, r32);
+                a.jmp(sat);
+                Place(ref pos);
+                a.mov(rcx, r);
+                a.shr(rcx, 32);
+                a.jz(ok);
+                a.mov(r32, -1);
+            }
+            else if (u)
+            {
+                a.mov(rcx, r);
+                a.shr(rcx, 32);
+                a.jz(ok);
+                a.mov(r32, -1);
+            }
+            else
+            {
+                a.movsxd(rcx, r32);
+                a.cmp(rcx, r);
+                a.je(ok);
+                a.sar(r, 63);
+                a.xor(r32, 0x7FFFFFFF);    // 0x7FFFFFFF for positive, 0x80000000 for negative values
+            }
+            Place(ref sat);
+            a.or(State(OffFpscr), 0x08000000);
+            Place(ref ok);
+        }
+        a.mov(__dword_ptr[rbx + OffD + dOff], eax);
+        a.mov(__dword_ptr[rbx + OffD + dOff + 4], edx);
+    }
+
+    /// <summary>VSHL (register) on 64-bit lanes: shift = signed low byte of the n lane; |shift| >= 64 gives 0 or the sign.</summary>
+    void ShlReg64(bool u, bool q, int dOff, int nOff, int mOff)
+    {
+        var a = _a;
+        for (int lane = 0; lane < (q ? 2 : 1); lane++)
+        {
+            int o = lane * 8;
+            var neg = a.CreateLabel(); var left = a.CreateLabel(); var right = a.CreateLabel(); var store = a.CreateLabel();
+            a.mov(rax, __qword_ptr[rbx + OffD + mOff + o]);
+            a.movsx(ecx, __byte_ptr[rbx + OffD + nOff + o]);
+            a.test(ecx, ecx);
+            a.js(neg);
+            a.cmp(ecx, 64);
+            a.jb(left);
+            a.xor(eax, eax);
+            a.jmp(store);
+            Place(ref left);
+            a.shl(rax, cl);
+            a.jmp(store);
+            Place(ref neg);
+            a.neg(ecx);
+            a.cmp(ecx, 64);
+            a.jb(right);
+            if (u) a.xor(eax, eax); else a.sar(rax, 63);
+            a.jmp(store);
+            Place(ref right);
+            if (u) a.shr(rax, cl); else a.sar(rax, cl);
+            Place(ref store);
+            a.mov(__qword_ptr[rbx + OffD + dOff + o], rax);
+        }
+    }
+
+    /// <summary>
+    /// VMULL (signed, unsigned; polynomial with <paramref name="aux"/> bit 0), VMLAL / VMLSL (accumulate, aux bit 1 =
+    /// subtract): D n x D m -> Q d with lanes of twice the size.
+    /// </summary>
+    void MulLong(uint size, bool u, bool acc, int aux, int dOff, int nOff, int mOff)
+    {
+        var a = _a;
+        LdV(X1, nOff, false); LdV(X2, mOff, false);
+        if ((aux & 1) != 0)
+        {
+            // carry-less 8x8 -> 16: xor of the shifted multiplicand for every set bit of the multiplier
+            a.pmovzxbw(X0, X1);
+            a.pmovzxbw(X3, X2);
+            a.pxor(X4, X4);
+            for (int i = 0; i < 8; i++)
+            {
+                a.movdqa(X5, K16(1u << i));
+                Mov(X1, X3);
+                a.pand(X1, X5);
+                a.pcmpeqw(X1, X5);
+                a.pand(X1, X0);
+                a.pxor(X4, X1);
+                if (i < 7) a.psllw(X0, 1);
+            }
+            Mov(X0, X4);
+        }
+        else
+        {
+            Widen(X0, X1, size, u);
+            Widen(X3, X2, size, u);
+            switch (size)
+            {
+                case 0: a.pmullw(X0, X3); break;
+                case 1: a.pmulld(X0, X3); break;
+                default: if (u) a.pmuludq(X0, X3); else a.pmuldq(X0, X3); break;
+            }
+        }
+        if (acc)
+        {
+            LdV(X1, dOff, true);
+            if ((aux & 2) != 0) { PSub(size + 1, X1, X0); Mov(X0, X1); }
+            else PAdd(size + 1, X0, X1);
+        }
+        StV(dOff, X0, true);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     void VecOpCore(IrInst x)
     {
         var a = _a;
@@ -678,7 +871,8 @@ public sealed unsafe partial class X64Emitter
                 QcIfAny(X2, q);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.ShlRegI: // 32-bit lanes, AVX2: VSHL (register), shift = signed low byte of each n lane
+            case VecKind.ShlRegI: // VSHL (register), shift = signed low byte of each n lane: 32-bit lanes with AVX2, 64-bit in GPRs
+                if (size == 3) { ShlReg64(u, q, dOff, nOff, mOff); return; }
                 LdV(X0, mOff, q); LdV(X1, nOff, q);
                 a.pslld(X1, 24);
                 a.psrad(X1, 24);
@@ -848,33 +1042,8 @@ public sealed unsafe partial class X64Emitter
                 return;
             }
             case VecKind.QshrnImm: case VecKind.QshrunImm:
-            {
-                uint w = size + 1;
-                bool srcSigned = kind == VecKind.QshrunImm || !u;
-                LdV(X0, mOff, true);
-                if (round) RoundShr(X0, w, aux, srcSigned, X1, X2); else Shr(X0, w, aux, srcSigned, X1);
-                Mov(X1, X0);
-                if (kind == VecKind.QshrunImm)
-                {
-                    // signed source, unsigned saturation
-                    if (w == 1) { a.packuswb(X1, X1); a.pmovzxbw(X2, X1); a.pcmpeqw(X2, X0); }
-                    else { a.packusdw(X1, X1); a.pmovzxwd(X2, X1); a.pcmpeqd(X2, X0); }
-                }
-                else if (!u)
-                {
-                    if (w == 1) { a.packsswb(X1, X1); a.pmovsxbw(X2, X1); a.pcmpeqw(X2, X0); }
-                    else { a.packssdw(X1, X1); a.pmovsxwd(X2, X1); a.pcmpeqd(X2, X0); }
-                }
-                else
-                {
-                    // unsigned: clamp to the narrow maximum, then truncate
-                    if (w == 1) { a.pminuw(X1, K16(0xFF)); Mov(X2, X1); a.pcmpeqw(X2, X0); a.packuswb(X1, X1); }
-                    else { a.pminud(X1, K32(0xFFFF)); Mov(X2, X1); a.pcmpeqd(X2, X0); a.packusdw(X1, X1); }
-                }
-                QcIfNotAll(X2, true);
-                StV(dOff, X1, false);
+                QNarrow(kind == VecKind.QshrunImm, u, size, round, aux, dOff, mOff);
                 return;
-            }
             case VecKind.ShllImm: // D source, Q result
                 LdV(X1, mOff, false);
                 Widen(X0, X1, size, u);
@@ -1013,37 +1182,27 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X0, q);
                 return;
             case VecKind.Clz:
-            {
-                // bytes: clz8 = clz4(hi) + (hi == 0 ? clz4(lo) : 0); wider lanes combine the two halves the same way
-                var lut = new byte[16];
-                for (int i = 0; i < 16; i++) lut[i] = (byte)(i == 0 ? 4 : System.Numerics.BitOperations.LeadingZeroCount((uint)i) - 28);
                 LdV(X0, mOff, q);
-                a.movdqa(X3, K8(0x0F));
-                Mov(X1, X0);
-                a.psrlw(X1, 4);
-                a.pand(X1, X3);                // hi nibbles
-                a.pand(X0, X3);                // lo nibbles
-                a.movdqa(X2, KBytes(lut));
-                Mov(X4, X2);
-                a.pshufb(X2, X1);              // clz4(hi)
-                a.pshufb(X4, X0);              // clz4(lo)
-                a.pxor(X3, X3);
-                a.pcmpeqb(X1, X3);             // hi == 0
-                a.pand(X4, X1);
-                a.paddb(X2, X4);               // clz8 per byte
-                for (uint s = 1; s <= size; s++)
-                {
-                    Mov(X1, X2);
-                    if (s == 1) a.psrlw(X1, 8); else a.psrld(X1, 16);              // clz of the high half
-                    Mov(X4, X1);
-                    if (s == 1) a.pcmpeqw(X4, K16(8)); else a.pcmpeqd(X4, K32(16)); // high half all zero
-                    a.pand(X2, s == 1 ? K16(0x00FF) : K32(0xFFFF));               // clz of the low half
-                    a.pand(X2, X4);
-                    if (s == 1) a.paddw(X2, X1); else a.paddd(X2, X1);
-                }
+                ClzLanes(size);
                 StV(dOff, X2, q);
                 return;
-            }
+            case VecKind.Cls: // cls(x) = clz(x ^ (x >> 1, arithmetic)) - 1
+                LdV(X0, mOff, q);
+                Mov(X1, X0);
+                ShrS(X1, size, 1, X2);
+                a.pxor(X0, X1);
+                ClzLanes(size);
+                a.movdqa(X1, KLane(size, 1));
+                PSub(size, X2, X1);
+                StV(dOff, X2, q);
+                return;
+            case VecKind.MullI:
+                MulLong(size, u, acc, aux, dOff, nOff, mOff);
+                return;
+            case VecKind.Qmovn:
+                if (size < 2) QNarrow(aux == 1, u, size, false, 0, dOff, mOff);
+                else QNarrow64(aux == 1, u, dOff, mOff);
+                return;
             case VecKind.Cnt: // bytes: nibble popcount table
             {
                 var lut = new byte[16];

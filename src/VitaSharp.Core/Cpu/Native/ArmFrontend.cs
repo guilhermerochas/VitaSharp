@@ -24,11 +24,17 @@ public sealed unsafe partial class ArmFrontend
     /// <param name="supportsVec">Which <see cref="VecKind"/>s (at a lane size) the target emitter lowers inline.</param>
     /// <param name="tinyCheck">The target flushes tiny float results after rounding (x86): mark the affected kinds
     /// <see cref="VecFlags.SlowPath"/>. ARM64 hosts detect tininess before rounding like the guest and need no check.</param>
-    public ArmFrontend(Func<VecKind, uint, bool> supportsVec, bool tinyCheck)
+    /// <param name="reuseIr">Translate into one IR block owned by this frontend (overwritten by the next Translate): the
+    /// compilers' per-thread frontends, which consume the IR before translating the next block, allocate nothing.</param>
+    public ArmFrontend(Func<VecKind, uint, bool> supportsVec, bool tinyCheck, bool reuseIr = false)
     {
         _supportsVec = supportsVec;
         _tinyCheck = tinyCheck;
+        _reuseIr = reuseIr;
     }
+
+    readonly bool _reuseIr;
+    IrBuilder? _reused;
 
     static readonly uint ExitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     static readonly uint SvcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
@@ -52,7 +58,9 @@ public sealed unsafe partial class ArmFrontend
 
     public IrBlock Translate(Block block)
     {
-        _b = new IrBuilder(block.Start, block.Thumb);
+        if (!_reuseIr) _b = new IrBuilder(block.Start, block.Thumb);
+        else if (_reused == null) _b = _reused = new IrBuilder(block.Start, block.Thumb);
+        else { _reused.Reset(block.Start, block.Thumb); _b = _reused; }
         _thumb = block.Thumb;
         var ir = _b.Block;
         ir.Cycles = block.Cycles;
@@ -143,6 +151,7 @@ public sealed unsafe partial class ArmFrontend
     // ------------------------------------------------------------------ dispatch
 
     /// <summary>Translates one instruction. Returns true when the block must end right after it without linking.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     bool Translate(DecodedInst d)
     {
         _ins = d.Raw; _op = d.Op;
@@ -153,6 +162,15 @@ public sealed unsafe partial class ArmFrontend
             Op.A32_MovW => A32MovW(in d),
             Op.A32_MovT => A32MovT(in d),
             Op.A32_Multiply => A32Multiply(in d),
+            Op.A32_HalfMultiply => A32HalfMultiply(in d),
+            Op.A32_SignedMultiplyMedia => A32SignedMultiplyMedia(in d),
+            Op.A32_SatAddSub => A32SatAddSub(in d),
+            Op.A32_Parallel => A32Parallel(in d),
+            Op.A32_Pkh => A32Pkh(in d),
+            Op.A32_Sat => A32Sat(in d),
+            Op.A32_Sat16 => A32Sat16(in d),
+            Op.A32_Sel => A32Sel(in d),
+            Op.A32_Usad8 => A32Usad8(in d),
             Op.A32_Extend => A32Extend(in d),
             Op.A32_Reverse => A32Reverse(in d),
             Op.A32_Bfx => Bfx(in d, Bits(d.Raw, 15, 12), Reg(d.Raw & 0xF), Bit(d.Raw, 22) != 0, (int)Bits(d.Raw, 11, 7), (int)Bits(d.Raw, 20, 16)),
@@ -181,14 +199,14 @@ public sealed unsafe partial class ArmFrontend
             Op.T16_CmpHi => T16CmpHi(in d),
             Op.T16_MovHi => T16MovHi(in d),
             Op.T16_BxBlx => T16BxBlx(in d),
-            Op.T16_LdrLit => Done(() => SetReg(Bits(d.Raw, 10, 8), B.Load(IrOp.Load32, C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2))))),
+            Op.T16_LdrLit => Done(Bits(d.Raw, 10, 8), B.Load(IrOp.Load32, C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2)))),
             Op.T16_LdStReg => T16LdStReg(in d),
             Op.T16_LdStImm => T16LdStImm(in d),
             Op.T16_LdStH => T16LdStH(in d),
             Op.T16_LdStSp => T16LdStSp(in d),
-            Op.T16_Adr => Done(() => SetReg(Bits(d.Raw, 10, 8), C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2)))),
-            Op.T16_AddSpImm => Done(() => SetReg(Bits(d.Raw, 10, 8), B.AddK(Reg(13), (d.Raw & 0xFF) << 2))),
-            Op.T16_AdjSp => Done(() => SetReg(13, Bit(d.Raw, 7) != 0 ? B.SubK(Reg(13), (d.Raw & 0x7F) << 2) : B.AddK(Reg(13), (d.Raw & 0x7F) << 2))),
+            Op.T16_Adr => Done(Bits(d.Raw, 10, 8), C(((d.Address + 4) & ~3u) + ((d.Raw & 0xFF) << 2))),
+            Op.T16_AddSpImm => Done(Bits(d.Raw, 10, 8), B.AddK(Reg(13), (d.Raw & 0xFF) << 2)),
+            Op.T16_AdjSp => Done(13, Bit(d.Raw, 7) != 0 ? B.SubK(Reg(13), (d.Raw & 0x7F) << 2) : B.AddK(Reg(13), (d.Raw & 0x7F) << 2)),
             Op.T16_Cbz => T16Cbz(in d),
             Op.T16_Extend => T16Extend(in d),
             Op.T16_Push => BlockTransfer(in d, 13, (d.Raw & 0xFF) | (Bit(d.Raw, 8) << 14), true, false, true, false, d.Address + 4),
@@ -205,6 +223,7 @@ public sealed unsafe partial class ArmFrontend
             Op.T32_DPPlainImm => T32DPPlainImm(in d),
             Op.T32_ShiftReg => T32ShiftReg(in d),
             Op.T32_Extend => T32Extend(in d),
+            Op.T32_Parallel => T32Parallel(in d),
             Op.T32_Misc => T32Misc(in d),
             Op.T32_Mul => T32Mul(in d),
             Op.T32_LongMul => T32LongMul(in d),
@@ -219,6 +238,7 @@ public sealed unsafe partial class ArmFrontend
 
             Op.A32_Exclusive => A32Exclusive(in d),
             Op.Neon_ThreeSame => NeonThreeSame(in d),
+            Op.Neon_ThreeDiff => NeonThreeDiff(in d),
             Op.Neon_VdupScalar => NeonVdupScalar(in d),
             Op.Neon_Imm => NeonImm(in d),
             Op.Neon_LoadStore => NeonLoadStore(in d),
@@ -248,7 +268,8 @@ public sealed unsafe partial class ArmFrontend
         return Callout(in d);
     }
 
-    static bool? Done(Action a) { a(); return false; }
+    /// <summary>R[rd] = v (an inline instruction that only sets one register).</summary>
+    bool? Done(uint rd, int v) { SetReg(rd, v); return false; }
 
     bool? DirectBranch(uint target) { SetReg(15, C(target)); return false; }
 
@@ -408,11 +429,18 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
-    /// <summary>ExtendCore ops 2/3/6/7 (byte/halfword, optionally accumulating); the 16-bit-lane forms are callouts.</summary>
+    /// <summary>ExtendCore ops 0/4 (SXTB16/UXTB16, optionally accumulating per halfword) and 2/3/6/7 (byte/halfword).</summary>
     bool? Extend(uint rd, uint op, uint rn, uint rm, int rot)
     {
-        if (rd == 15 || op is not (2 or 3 or 6 or 7)) return null;
+        if (rd == 15 || op is not (0 or 2 or 3 or 4 or 6 or 7)) return null;
         int v = B.Ror(Reg(rm), rot);
+        if (op is 0 or 4)
+        {
+            int lo = op == 0 ? B.SExt8(v) : B.ZExt8(v), hi = op == 0 ? B.SExt8(B.Shr(v, 16)) : B.ZExt8(B.Shr(v, 16));
+            if (rn != 15) { int a = Reg(rn); lo = B.Add(a, lo); hi = B.Add(B.Shr(a, 16), hi); }
+            SetReg(rd, B.Or(B.ZExt16(lo), B.Shl(hi, 16)));
+            return false;
+        }
         int e = op switch { 2 => B.SExt8(v), 3 => B.SExt16(v), 6 => B.ZExt8(v), _ => B.ZExt16(v) };
         SetReg(rd, rn == 15 ? e : B.Add(Reg(rn), e));
         return false;
@@ -816,7 +844,13 @@ public sealed unsafe partial class ArmFrontend
     bool? T32DPShiftReg(in DecodedInst d)
     {
         uint ins = d.Raw, op = Bits(ins, 24, 21), rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8);
-        if (op == 6 || !T32DPDefined(op)) return null; // PKH / undefined opcodes: interpreter
+        if (op == 6)
+        {
+            if (rd == 15) return null;
+            SetReg(rd, Pkh(Reg(rn), Reg(ins & 0xF), Bit(ins, 5) != 0, (Bits(ins, 14, 12) << 2) | Bits(ins, 7, 6)));
+            return false;
+        }
+        if (!T32DPDefined(op)) return null; // undefined opcodes: interpreter
         uint imm5 = (Bits(ins, 14, 12) << 2) | Bits(ins, 7, 6);
         var (b, carry) = ShiftImm(Reg(ins & 0xF), Bits(ins, 5, 4), imm5);
         int a = (rn == 15 && (op == 2 || op == 3)) ? C(0) : Reg(rn);
@@ -841,7 +875,8 @@ public sealed unsafe partial class ArmFrontend
             case 0x14: return Bfx(in d, rd, Reg(rn), false, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
             case 0x1C: return Bfx(in d, rd, Reg(rn), true, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
             case 0x16: return Bfi(in d, rd, rn, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
-            default: return null; // SSAT/USAT and the rest
+            case 0x10: case 0x12: case 0x18: case 0x1A: return T32Sat(in d, op, rn, rd, imm3, imm2);
+            default: return null; // no effect in the handler
         }
     }
 
@@ -873,19 +908,13 @@ public sealed unsafe partial class ArmFrontend
             return false;
         }
         if (op1 == 3) { SetReg(rd, B.Clz(Reg(rm))); return false; }
-        return null; // QADD family, SEL
-    }
-
-    bool? T32Mul(in DecodedInst d)
-    {
-        uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 5, 4);
-        uint rn = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rd = Bits(ins, 11, 8), rm = ins & 0xF;
-        if (op1 != 0 || rd == 15) return null;
-        int prod = B.Mul(Reg(rn), Reg(rm));
-        if (op2 == 0) SetReg(rd, ra == 15 ? prod : B.Add(prod, Reg(ra)));
-        else SetReg(rd, B.Sub(Reg(ra), prod));
+        uint rn = Bits(ins, 19, 16);
+        if (op1 == 2) { SetReg(rd, Sel(Reg(rn), Reg(rm))); return false; }
+        SetReg(rd, SatAddSub(((op2 & 1) << 1) | (op2 >> 1), Reg(rm), Reg(rn))); // QADD / QDADD / QSUB / QDSUB
         return false;
     }
+
+    bool? T32Mul(in DecodedInst d) => T32MulMedia(in d);
 
     bool? T32LongMul(in DecodedInst d)
     {
@@ -896,8 +925,9 @@ public sealed unsafe partial class ArmFrontend
         switch (op1)
         {
             case 0: case 2: { var (l, h) = B.MulLong(vn, vm, op1 == 0); SetReg(lo, l); SetReg(hi, h); return false; }
+            case 5: return T32LongMulMedia(in d, op1, op2, rn, lo, hi, rm); // SMLSLD
             case 4: case 6:
-                if (op2 != 0) return null; // SMLALxy / SMLALD / UMAAL
+                if (op2 != 0) return T32LongMulMedia(in d, op1, op2, rn, lo, hi, rm); // SMLALxy / SMLALD / UMAAL
                 {
                     var (l, h) = B.MulLong(vn, vm, op1 == 4);
                     (l, h) = B.Add64(l, h, Reg(lo), Reg(hi));

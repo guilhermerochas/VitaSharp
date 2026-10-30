@@ -19,7 +19,7 @@ exercised on the GTX 1650 with emulated device profiles (`--gpu-profile=adreno|m
 | `ShaderGenerator.LowerDynamicIndexing` | switch lowering of dynamically indexed register words |
 | `src/VitaSharp.Core/Gpu/CustomGpuDriver.cs` | custom driver packages (meta.json + zip), store, settings |
 | `src/VitaSharp.Renderer.Vulkan/IVulkanDriverProvider.cs`, `VulkanLoader.DriverProvider` | hook that replaces the system Vulkan driver |
-| `src/VitaSharp.Android/Gpu/AdrenoToolsDriverLoader.cs` | libadrenotools implementation of the hook (skeleton) |
+| `src/VitaSharp.Android/Gpu/AdrenoToolsDriverLoader.cs` | libadrenotools implementation of the hook (in the app, not run yet) |
 
 Switches: `--gpu-profile=adreno|mali|desktop` (`run`, `test`, scenario `args=`, `replay-gpu`) or
 `VITASHARP_GPU_PROFILE`; `VITASHARP_GPU_QUIRKS=+Quirk,-Quirk,-Feature` forces quirks on/off or removes features
@@ -106,9 +106,29 @@ BCn without enabling the feature (BCeNabler patches `vkGetPhysicalDeviceFormatPr
 with `ADRENOTOOLS_DRIVER_CUSTOM` / `FILE_REDIRECT`, `adrenotools_get_bcn_type` + `adrenotools_patch_bcn`,
 `adrenotools_set_turbo`). Driver packages are the community format (zip with `meta.json`: `schemaVersion` 1, `name`,
 `vendor`, `driverVersion`, `minApi`, `libraryName`), installed by `CustomDriverStore` into
-`<data>/gpu_drivers/<id>/` (flat packages only, unsafe names skipped); the choice lives in `GpuDriverSettings`
-(`gpu_driver.json`: driver id, file redirect, turbo, BCn patch). Store and settings are unit-tested on the desktop;
-the loader was compile-checked against a desktop target only (the Android SDK platform is not installed here).
+`<internal>/gpu_drivers/<id>/` (the app's internal files folder: the linker refuses libraries on shared storage;
+`meta.json` at the top of the zip or inside its one folder; nested paths and unsafe names skipped; files made
+read-only, as Android 14 requires of dynamically loaded code); the choice lives in `GpuDriverSettings`
+(`gpu_driver.json`: driver id, file redirect, turbo, BCn patch). Store, settings and the "Driver da GPU" model are
+unit-tested on the desktop (`GpuQuirkTests`, `AndroidMediaDriverTests`).
+
+libadrenotools is built from source by `build/build-android-adrenotools.ps1` (or `.sh`): the pinned commit
+(8fae8ce, with liblinkernsbypass aa39758) is fetched into `third_party/android-adrenotools/src` and compiled with
+ndk-build (`build/android-adrenotools/jni`, the upstream CMake modules without needing CMake; arm64-v8a, libc++ static
+and hidden, 16 KiB-page aligned) into `third_party/android-adrenotools/libs/arm64-v8a/`: `libadrenotools.so` (283 KB)
+and the hooks `libhook_impl.so`, `libmain_hook.so`, `libfile_redirect_hook.so`, `libgsl_alloc_hook.so`. The app
+packages them when they exist (about 140 KB compressed) and declares `android:extractNativeLibs="true"`, because
+libadrenotools loads the hooks by path from the native library directory.
+
+The game session installs `AdrenoToolsDriverLoader` before the renderer starts. It uses the system loader directly
+when nothing needs libadrenotools (system driver, no option), when the GPU is not an Adreno (`/dev/kgsl-3d0` absent),
+when libadrenotools or a hook is missing from the native library directory, or when the package needs a newer API.
+Otherwise `adrenotools_open_libvulkan` gets `ADRENOTOOLS_DRIVER_CUSTOM` for a package and
+`ADRENOTOOLS_DRIVER_FILE_REDIRECT` with `<internal>/gpu_driver_files/` for the redirect option; BCeNabler runs from
+`TryEnableBcn` (`adrenotools_get_bcn_type`, then `adrenotools_patch_bcn`), turbo with `adrenotools_set_turbo`. A
+process loads one driver, so the game process records its configuration in `<internal>/run/game.json`; after a change,
+"Driver da GPU" offers to restart a game that runs with another one (the UI kills the `:game` process and starts the
+game again). None of this has run on a device.
 
 ## What was tested (GTX 1650, emulated profiles)
 

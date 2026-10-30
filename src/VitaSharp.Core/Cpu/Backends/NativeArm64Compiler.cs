@@ -1,4 +1,5 @@
 using VitaSharp.Core.Util;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
 
@@ -16,6 +17,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     public static readonly NativeArm64Compiler Instance = new();
 
     [ThreadStatic] static Arm64Emitter? _emitter;
+    [ThreadStatic] static ArmFrontend? _frontend; // reuses its IR buffers (consumed before the next block)
     static readonly bool[] NeonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
 
     public string Name => "native";
@@ -24,7 +26,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         RuntimeInformation.ProcessArchitecture != Architecture.Arm64 ? $"emits ARM64 code and this host is {RuntimeInformation.ProcessArchitecture}"
         : ExecutableMemory.UnsupportedReason is { } r ? r
         : WriteWatch.Enabled ? "is off while write watchpoints are active" : null;
-    public BackendStats Stats { get; } = new();
+    public BackendStats Stats { get; } = new() { Phases = new() };
 
     public long HotInstructions { get; set; } = 2_000;
 
@@ -39,9 +41,12 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     /// </summary>
     public CompiledBlock? Compile(Block b, Arm64Emitter.Runtime stubs)
     {
-        var ir = NewFrontend().Translate(b);
+        long t0 = Stopwatch.GetTimestamp();
+        var ir = (_frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true)).Translate(b);
+        long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
         if (NativeX64Compiler.ValidateIr) IrPasses.Validate(ir);
+        long t2 = Stopwatch.GetTimestamp();
         var rt = NativeRuntime.Instance;
         int exits = 0;
         foreach (var x in ir.Insts) if (x.Op == IrOp.ExitStatic) exits++;
@@ -60,10 +65,14 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             }
         }
         if (!em.Prepare(ir, stubs, k => (nint)(slots + k), tierUp)) return null;
+        long t3 = Stopwatch.GetTimestamp();
         int size = 0;
-        byte* code = rt.Code.Place(addr => { var bytes = em.Assemble(addr); size = bytes.Length; return bytes; });
+        long encode = 0;
+        byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         rt.Register((nint)code, size, b);
+        Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
+        CompilePhases.Record(b);
         if (NativeX64Compiler.DumpCode) Console.Error.WriteLine($"[native-arm64] {b}\n{ir}\n{Arm64Dump.Dump((nint)code, size)}");
         bool unlogged = false;
         foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;

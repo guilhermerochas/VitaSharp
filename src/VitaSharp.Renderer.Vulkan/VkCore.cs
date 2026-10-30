@@ -10,12 +10,16 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace VitaSharp.Renderer.Vulkan;
 
-/// <summary>Window surface provided by the front-end (desktop window now, Android surface later).</summary>
+/// <summary>Window surface provided by the front-end (the desktop window, the Android SurfaceView).</summary>
 public interface IPresentationSurface
 {
     string[] RequiredInstanceExtensions { get; }
     SurfaceKHR CreateSurface(Instance instance);
     (int Width, int Height) FramebufferSize { get; }
+
+    /// <summary>Creates the surface with the renderer's own Vulkan entry points (the Android front-end needs them for
+    /// vkCreateAndroidSurfaceKHR, which may come from a custom driver); the desktop window uses its windowing library's.</summary>
+    SurfaceKHR CreateSurface(Vk vk, Instance instance) => CreateSurface(instance);
 }
 
 public static class VkCheck
@@ -101,7 +105,7 @@ public sealed unsafe class VkCore : IDisposable
         {
             Vk.TryGetInstanceExtension(Instance, out KhrSurface se);
             SurfaceExt = se;
-            Surface = surface.CreateSurface(Instance);
+            Surface = surface.CreateSurface(Vk, Instance);
         }
         PickDevice();
         CreateDevice(surface != null, GpuQuirkTable.ParseProfile(gpuProfile ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile)));
@@ -827,6 +831,18 @@ public sealed unsafe class VkCore : IDisposable
         MemCat.GpuDump => "GPU dump",
         _ => "other",
     };
+
+    /// <summary>Destroys the current surface and creates one for <paramref name="surface"/> (null: none). The caller
+    /// has destroyed the swapchain and waited for the device.</summary>
+    public void ReplaceSurface(IPresentationSurface? surface)
+    {
+        if (Surface.Handle != 0) SurfaceExt!.DestroySurface(Instance, Surface, null);
+        Surface = default;
+        if (surface == null) return;
+        Surface = surface.CreateSurface(Vk, Instance);
+        SurfaceExt!.GetPhysicalDeviceSurfaceSupport(Physical, QueueFamily, Surface, out var supported);
+        if (!supported) Log.Warn("The new presentation surface is not supported by the renderer's queue family");
+    }
 
     public void Dispose()
     {
