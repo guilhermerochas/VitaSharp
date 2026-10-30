@@ -175,7 +175,8 @@ menus. The full table (status, notes and the test scenario of each game) and mor
 4. Optional: install the official firmware (see [Firmware](#firmware-optional)) to get the system fonts and
    libraries and the real PS Vita system (**Sistema do Vita**).
 
-Ready-made packages for each platform are built by CI (see [Publish](#publish)).
+Ready-made packages for each platform are published on the repository's Releases page (see [Releases](#releases))
+and built by CI (see [Publish](#publish)).
 
 ## Usage
 
@@ -503,7 +504,9 @@ build\publish.ps1 -Aot -Package -Rid win-x64 -Version 0.2.0   # zip + installer
 
 They land in `artifacts/publish/packages/` (`-SkipPublish` / `--skip-publish` repacks an existing publish folder).
 CI builds every package on each push to `main` (ReadyToRun cross-published from Linux, Native AOT on each OS's own
-runner) and keeps them as workflow artifacts named `VitaSharp-*-packages`.
+runner) and keeps them as workflow artifacts named `VitaSharp-*-packages`; tagged versions go to the Releases page
+(see [Releases](#releases)). A release version (`1.2.3` or `1.2.3-suffix`) passed as `VERSION` / `-Version` also
+becomes the app's version (`VitaSharp 1.2.3+<commit>` in the log); `dev` and CI builds keep `1.0.0`.
 
 <details>
 <summary>Package contents, sizes, icons</summary>
@@ -576,6 +579,31 @@ The packages are not signed.
 - **Linux**: no signing step; AppImages can carry a GPG signature (`appimagetool --sign`).
 
 </details>
+
+### Releases
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) publishes a GitHub Release. It never runs on ordinary
+pushes; start it one of two ways:
+
+- push a version tag: `git tag v0.1.0` and `git push origin v0.1.0`;
+- or **Actions > Release > Run workflow**: pick the branch, type the version (`0.1.0`) and tick *prerelease* if
+  wanted. The tag `v0.1.0` is created on that branch's commit when the release is published.
+
+The workflow runs the CI workflow with that version (tests, then the ReadyToRun and Native AOT packages of every
+platform, so the file names and the app's version carry it) and publishes `VitaSharp <version>` with:
+
+- every package: the Native AOT ones under their usual names (`VitaSharp-0.1.0-win-x64.zip`, `-setup.exe`,
+  `linux-x64.tar.gz`, `.AppImage`, `osx-arm64.app.zip`, `.dmg`, ...) and the ReadyToRun ones with `-readytorun` after
+  the platform (`VitaSharp-0.1.0-win-x64-readytorun.zip`); linux-arm64 is ReadyToRun only while the repository is
+  private (no ARM64 runner);
+- `SHA256SUMS.txt` with their checksums;
+- notes made of [`build/release-notes-header.md`](build/release-notes-header.md) (firmware not included, unsigned
+  binaries, system requirements) and the commits since the previous `v*` tag.
+
+A version with a suffix (`0.2.0-alpha`, `0.2.0-dev.1`) or the *prerelease* box makes a prerelease, which does not
+become the "latest" release. No firmware is ever attached: the job fails if a `.PUP` file or a firmware partition
+(`os0`, `vs0`, `sa0`, `pd0`) shows up in the packages. Only the publishing job can write to the repository
+(`contents: write`); the builds are read-only.
 
 ## Architecture
 
