@@ -71,4 +71,37 @@ public static class TextureLayout
                 src.Slice(s, bytesPerPixel).CopyTo(dst.Slice(d, bytesPerPixel));
             }
     }
+
+    /// <summary>
+    /// Distance in bytes between the faces of a cube texture whose levels take <paramref name="usedBytes"/> per face.
+    /// After Vita3K (texture/cache.cpp), a mipmapped face reserves its whole power-of-two chain, down to the level
+    /// where one dimension reaches 1, even past the levels the texture uses. It is aligned to 2 KB when its base level
+    /// is large enough: 32x32 for compressed and 8-bit formats, 16x16 for 16- and 32-bit ones, 8x8 for 64-bit ones.
+    /// Otherwise faces are only 4-byte aligned.
+    /// Faces that are not mipmapped are packed back to back: a raw mip count of 0xF (no mips), or a single level (raw
+    /// count 0). Vita3K reserves the chain and the 2 KB alignment for the single-level case too, but the data says
+    /// otherwise. Silent Hill: Book of Memories' single-level 32x32 U8U8U8U8 cube has faces 4 KB apart; with the chain,
+    /// faces 4-5 read past the cube. Unit 13's single-level 32x32 UBC1 ambient cube has faces 512 bytes apart; with
+    /// 2 KB alignment, faces 2-5 read other data and the deferred ambient term turned into coloured blocks.
+    /// </summary>
+    public static uint CubeFaceStride(uint mipCountRaw, uint mips, uint width, uint height, int bitsPerPixel, bool compressed,
+        uint blockWidth, uint blockHeight, uint blockBytes, uint usedBytes)
+    {
+        if (mipCountRaw == 0xF || mips <= 1) return Align(usedBytes, 4);
+        uint size = usedBytes;
+        uint pw = BitOperations.RoundUpToPowerOf2(width), ph = BitOperations.RoundUpToPowerOf2(height);
+        for (int m = (int)mips; m < 32 && (pw >> m) > 0 && (ph >> m) > 0; m++)
+        {
+            uint lw = pw >> m, lh = ph >> m;
+            size += compressed
+                ? Align(lw, blockWidth) / blockWidth * (Align(lh, blockHeight) / blockHeight) * blockBytes
+                : (uint)((ulong)lw * lh * (uint)bitsPerPixel / 8);
+        }
+        bool large = (width >= 32 && height >= 32 && (bitsPerPixel <= 8 || compressed))
+            || (width >= 16 && height >= 16 && bitsPerPixel is 16 or 32)
+            || (width >= 8 && height >= 8 && bitsPerPixel == 64);
+        return Align(size, large ? 2048u : 4u);
+    }
+
+    static uint Align(uint v, uint a) => (v + a - 1) / a * a;
 }
