@@ -195,6 +195,7 @@ public sealed unsafe partial class VulkanRenderer
             Format.R4G4B4A4UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)((v >> 12) * 17), (byte)(((v >> 8) & 15) * 17), (byte)(((v >> 4) & 15) * 17), (byte)((v & 15) * 17)); }),
             Format.A1R5G5B5UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)(((v >> 10) & 31) * 255 / 31), (byte)(((v >> 5) & 31) * 255 / 31), (byte)((v & 31) * 255 / 31), (byte)((v >> 15) * 255)); }),
             Format.R8G8B8A8SNorm => Expand(data, w * h, 4, (s, i) => ((byte)(s[i] + 128), (byte)(s[i + 1] + 128), (byte)(s[i + 2] + 128), (byte)255)),
+            Format.Astc4x4UnormBlock or Format.Astc4x4SrgbBlock => AstcToRgba(data, w, h),
             _ => null,
         });
 
@@ -236,6 +237,14 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     static byte ToByte(float v) => (byte)Math.Clamp((int)(v * 255f + 0.5f), 0, 255);
+
+    /// <summary>Transcoded ASTC blocks back to RGBA8 (inspection and traces; the luminance layouts show as grey).</summary>
+    static byte[] AstcToRgba(byte[] blocks, uint w, uint h)
+    {
+        var rgba = new byte[w * h * 4];
+        AstcDecoder.Decode(blocks, (int)w, (int)h, rgba);
+        return rgba;
+    }
 
     static byte[] Expand(byte[] src, uint count, int bpp, Func<byte[], int, (byte, byte, byte, byte)> f)
     {

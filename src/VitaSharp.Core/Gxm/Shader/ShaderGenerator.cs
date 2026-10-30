@@ -125,7 +125,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 17;
+    public const int GeneratorVersion = 18;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -641,7 +641,7 @@ float packC10(vec3 c) {
         {
             result.UsesFragColor = true;
             var target = Operand.Make(3); target.Bank = Bank.Output; target.Num = 0;
-            target.Type = OutputType(program, hints);
+            target.Type = FetchType(program, hints);
             string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
             Val src;
             if (hints.FetchInputAttachment && hints.FetchInputSingleSample)
@@ -690,6 +690,20 @@ float packC10(vec3 c) {
     }
 
     static string Paren(string e) => e.StartsWith('(') || e.All(c => char.IsLetterOrDigit(c) || c == '_') ? e : $"({e})";
+
+    /// <summary>
+    /// Type of the framebuffer-fetch preload of o0: the output register layout (<see cref="OutputType"/>), except for
+    /// native-colour programs that read the colour in their declared type (<see cref="GxpProgram.IsFragColorDeclared"/>).
+    /// Tearaway's pause cross-fade (fs FBCBF73FF511C077) and intro camera sky (fs CED46C72A7EE1040) blend the pixel with
+    /// F16 instructions; preloaded as packed UCHAR4 bytes, the halves were garbage (purple world without green, black
+    /// sky with saturated blue/magenta shards).
+    /// </summary>
+    internal static DataType FetchType(GxpProgram program, ShaderHints hints)
+    {
+        if (program.IsNativeColor && program.IsFragColorDeclared)
+            return OutputType(program, hints with { OutputRegisterFormat = 0 });
+        return OutputType(program, hints);
+    }
 
     /// <summary>
     /// Type of the colour in the fragment program's output registers: the framebuffer-fetch preload of o0, and the

@@ -47,7 +47,7 @@ public sealed unsafe partial class VulkanRenderer
     string MobileReport()
     {
         var c = _core.Caps;
-        if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC)) return "";
+        if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0) return "";
         return $"\nPERF mobile ({c.Profile.ToString().ToLowerInvariant()} profile): {MobilePathsSummary()}; {_statPipelinesStatic} static-state pipelines";
     }
 
@@ -57,7 +57,8 @@ public sealed unsafe partial class VulkanRenderer
         var c = _core.Caps;
         var sb = new StringBuilder();
         void Add(string s) { if (sb.Length > 0) sb.Append("; "); sb.Append(s); }
-        Add(c.Has(GpuFeature.TextureCompressionBC) ? "BC sampled compressed" : $"BC decoded on the CPU ({BcCacheSummary()})");
+        Add(c.Has(GpuFeature.TextureCompressionBC) ? "BC sampled compressed" : AstcUsable ? $"BC transcoded to ASTC (signed BC4/BC5 decoded on the CPU: {BcCacheSummary()})" : $"BC decoded on the CPU ({BcCacheSummary()})");
+        Add(AstcUsable ? AstcTranscoder.Summary() : "PVRTC decoded on the CPU");
         Add($"texture units {_texUnitsV} vertex / {_texUnitsF} fragment{(_statUnitSkips > 0 ? $" ({_statUnitSkips} draws skipped)" : "")}");
         Add($"MSAA 2X scenes {(c.MsaaSamples(2) is var s2 && s2 == 0 ? "not multisampled" : $"with {s2} samples")}, 4X {(c.MsaaSamples(4) == 0 ? "not multisampled" : "with 4 samples")}");
         Add($"MSAA framebuffer fetch {(_core.RasterizationOrderColor ? "rasterization-order input attachment (no barriers)" : "input attachment + by-region barrier")}, {(_core.SampleRateShading ? "per sample" : "sample 0 (no sampleRateShading)")}");
@@ -65,6 +66,7 @@ public sealed unsafe partial class VulkanRenderer
         Add(c.Has(GpuQuirk.StaticDepthBiasEnable) ? "depth bias always enabled (zero when off)" : "dynamic depth bias enable");
         Add(ShaderGenerator.LowerDynamicIndexing ? "dynamic register indexing lowered to switches" : "dynamic register indexing");
         Add(c.Has(GpuQuirk.TileBased) ? "tile-based load/store ops" : "immediate-mode load/store ops");
+        Add(RenderPassReport());
         Add(_core.DepthClamp ? "depth clamp" : "no depth clamp (near plane clips)");
         Add(_core.FillModeNonSolid ? "line/point fill" : "line/point fill drawn filled");
         Add(_core.MemoryBudgetSupported ? "memory budget" : $"no memory budget (eviction at {c.FallbackBudgetFraction:P0} of the device heap)");

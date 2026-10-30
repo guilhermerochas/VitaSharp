@@ -17,17 +17,20 @@ namespace VitaSharp.Renderer.Vulkan;
 /// scene start. Multisampled scenes start from DONT_CARE samples (the scene-start copy is drawn into them), resolve
 /// inside the render pass and discard their samples at the scene end.</item>
 /// </list>
-/// Desktop GPUs keep beginning renderings directly in the primary command buffer (no behaviour change). The load and
-/// store ops of every scene rendering are counted for the PERF gpu line.
+/// Desktop GPUs defer their renderings the same way (so texture uploads and copies can be recorded before them,
+/// VulkanRenderer.SceneBreaks.cs) but always store depth/stencil (VITASHARP_SCENE_BREAKS=strict: begun directly, as
+/// before). The load and store ops of every scene rendering are counted for the PERF gpu line.
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    /// <summary>Single-sampled renderings are deferred into secondaries so their store ops can be DONT_CARE.</summary>
+    /// <summary>Tile-based GPU: depth/stencil store ops of scene renderings can be DONT_CARE at the scene end.</summary>
     bool TiledRenderings => _core.Caps.Has(GpuQuirk.TileBased);
 
     struct TilePass
     {
         public ImageView Color, Depth;
+        /// <summary>The scene's tile-word attachment (colour attachment 1), default = none.</summary>
+        public ImageView Word;
         public Format ColorFormat;
         public AttachmentLoadOp DepthLoad;
         public ClearValue DepthClear;
@@ -60,29 +63,37 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>"load/store: colour L/C/D a/b/c S/D d/e, depth ..." for the PERF gpu line.</summary>
     string LoadStoreReport() =>
-        $"load/store ops{(TiledRenderings ? $" (tile-based, {_tileDeferred} deferred renderings)" : "")}: colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
-        $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}";
+        $"load/store ops{(TiledRenderings ? " (tile-based" : " (desktop")}, {_tileDeferred} deferred single-sampled renderings): colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
+        $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}; {SceneBreakReport()}";
 
-    /// <summary>Opens a single-sampled scene rendering in a secondary command buffer (tile-based GPUs).</summary>
-    void BeginTiledRendering(ImageView colorView, Format colorFormat, AttachmentLoadOp depthLoad, ClearValue depthClear)
+    /// <summary>Opens a single-sampled scene rendering in a secondary command buffer.</summary>
+    /// <param name="wordView">the scene's tile-word attachment (colour attachment 1), default = none</param>
+    void BeginTiledRendering(ImageView colorView, ImageView wordView, Format colorFormat, AttachmentLoadOp depthLoad, ClearValue depthClear)
     {
         _tilePass = new TilePass
         {
-            Color = colorView, ColorFormat = colorFormat, HasColor = _rt != null, Depth = _depth!.View, DepthLoad = depthLoad, DepthClear = depthClear,
+            Color = colorView, Word = wordView, ColorFormat = colorFormat, HasColor = _rt != null, Depth = _depth!.View, DepthLoad = depthLoad, DepthClear = depthClear,
             Area = new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale),
         };
+        // merge: the renderings ended since the primary was last touched continue on the same attachments
+        if (_chain.Count > 0 && !(_chainScene == _sceneSerial && SameAttachments(in _chainPass, in _tilePass))) FlushChain(false);
+        if (_chain.Count > 0) _statMerged++;
+        else { _chainStartSerial = _renderingSerial; ResetDrawn(); }
         var cb = AllocSecondary();
-        var fmt = colorFormat;
+        var fmt = stackalloc Format[2] { colorFormat, TileWord1Format };
         var rii = new CommandBufferInheritanceRenderingInfo
         {
             SType = StructureType.CommandBufferInheritanceRenderingInfo,
-            ColorAttachmentCount = _tilePass.HasColor ? 1u : 0u,
-            PColorAttachmentFormats = &fmt,
+            ColorAttachmentCount = _tilePass.HasColor ? wordView.Handle != 0 ? 2u : 1u : 0u,
+            PColorAttachmentFormats = fmt,
             DepthAttachmentFormat = _core.DepthFormat,
             StencilAttachmentFormat = _core.DepthFormat,
             RasterizationSamples = SampleCountFlags.Count1Bit,
         };
-        var ii = new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, PNext = &rii };
+        // render-pass path (VulkanRenderer.RenderPasses.cs): the secondary inherits the compatible pass instead
+        var ii = UseRenderPasses
+            ? new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, RenderPass = SingleCompatPass(_tilePass.HasColor ? colorFormat : Format.Undefined, wordView.Handle != 0), Subpass = 0 }
+            : new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, PNext = &rii };
         var bi = new CommandBufferBeginInfo
         {
             SType = StructureType.CommandBufferBeginInfo,
@@ -102,11 +113,38 @@ public sealed unsafe partial class VulkanRenderer
         _vk.EndCommandBuffer(cb).Ok("vkEndCommandBuffer(tiled secondary)");
         _tileCmd = default;
         _boundPipeline = default;
-        var p = _tilePass;
-        bool keepDepth = !final || _scene?.Depth is { ForceStore: true } || _depth is { EverRead: true };
-        var color = new RenderingAttachmentInfo
+        if (_chain.Count == 0) { _chainPass = _tilePass; _chainScene = _sceneSerial; }
+        _chain.Add(cb);
+        // not begun yet: the next rendering may continue it (merge) unless something is recorded into the primary first
+        if (final || StrictSceneBreaks) FlushChain(final);
+    }
+
+    /// <summary>Ended renderings not yet begun in the primary (same attachments; the first one's load ops).</summary>
+    readonly List<CommandBuffer> _chain = new();
+    TilePass _chainPass;
+    long _chainScene, _chainStartSerial, _statMerged;
+
+    static bool SameAttachments(in TilePass a, in TilePass b) =>
+        a.Color.Handle == b.Color.Handle && a.Word.Handle == b.Word.Handle && a.Depth.Handle == b.Depth.Handle && a.ColorFormat == b.ColorFormat
+        && a.HasColor == b.HasColor && a.Area.Width == b.Area.Width && a.Area.Height == b.Area.Height;
+
+    /// <summary>Begins the pending renderings in the primary as one rendering executing their secondaries.</summary>
+    /// <param name="final">the scene ends with them: depth/stencil are discarded unless the scene forces the store</param>
+    void FlushChain(bool final)
+    {
+        if (_chain.Count == 0) return;
+        var p = _chainPass;
+        // desktop GPUs store depth/stencil as before (no tile memory to save)
+        bool keepDepth = !TiledRenderings || !final || _scene?.Depth is { ForceStore: true } || _depth is { EverRead: true };
+        var colors = stackalloc RenderingAttachmentInfo[2];
+        colors[0] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo, ImageView = p.Color, ImageLayout = ImageLayout.General,
+            LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store,
+        };
+        colors[1] = new RenderingAttachmentInfo
+        {
+            SType = StructureType.RenderingAttachmentInfo, ImageView = p.Word, ImageLayout = ImageLayout.General,
             LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store,
         };
         var depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
@@ -121,15 +159,28 @@ public sealed unsafe partial class VulkanRenderer
             Flags = RenderingFlags.ContentsSecondaryCommandBuffersBit,
             RenderArea = new Rect2D(new Offset2D(0, 0), p.Area),
             LayerCount = 1,
-            ColorAttachmentCount = p.HasColor ? 1u : 0u,
-            PColorAttachments = &color,
+            ColorAttachmentCount = p.HasColor ? p.Word.Handle != 0 ? 2u : 1u : 0u,
+            PColorAttachments = colors,
             PDepthAttachment = &depth,
             PStencilAttachment = &depth,
         };
         CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore);
         var cmd = F.Cmd;
-        _vk.CmdBeginRendering(cmd, in ri);
-        _vk.CmdExecuteCommands(cmd, 1, in cb);
-        _vk.CmdEndRendering(cmd);
+        var cbs = stackalloc CommandBuffer[_chain.Count];
+        for (int i = 0; i < _chain.Count; i++) cbs[i] = _chain[i];
+        uint n = (uint)_chain.Count;
+        _chain.Clear();
+        if (UseRenderPasses)
+        {
+            BeginSingleRenderPass(cmd, in p, depthStore);
+            _vk.CmdExecuteCommands(cmd, n, cbs);
+            _vk.CmdEndRenderPass(cmd);
+        }
+        else
+        {
+            _vk.CmdBeginRendering(cmd, in ri);
+            _vk.CmdExecuteCommands(cmd, n, cbs);
+            _vk.CmdEndRendering(cmd);
+        }
     }
 }

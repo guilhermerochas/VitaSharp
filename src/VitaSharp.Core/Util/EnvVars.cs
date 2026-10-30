@@ -8,6 +8,10 @@ public static class EnvVars
 {
     public const string Prefix = "VITASHARP_";
 
+    /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>
+    public const string Astc = "VITASHARP_ASTC";
+    /// <summary>Size limit in MB of a title's ASTC transcode disk cache (default 512).</summary>
+    public const string AstcCacheMb = "VITASHARP_ASTC_CACHE_MB";
     public const string AsyncPipelines = "VITASHARP_ASYNC_PIPELINES";
     public const string AsyncShaders = "VITASHARP_ASYNC_SHADERS";
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
@@ -32,6 +36,8 @@ public static class EnvVars
     public const string GlfwPlatform = "VITASHARP_GLFW_PLATFORM";
     public const string GpuDumpAt = "VITASHARP_GPU_DUMP_AT";
     public const string GpuProfile = "VITASHARP_GPU_PROFILE";
+    /// <summary>Index or part of the name of the Vulkan physical device to render with (default: the discrete GPU).</summary>
+    public const string GpuDevice = "VITASHARP_GPU_DEVICE";
     public const string GpuQuirks = "VITASHARP_GPU_QUIRKS";
     public const string HleModules = "VITASHARP_HLE_MODULES";
     /// <summary>0/off: guest threads and the GPU worker keep normal host priority (HostThreads; overrides --host-prio).</summary>
@@ -66,6 +72,9 @@ public static class EnvVars
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
     public const string SamplerDebug = "VITASHARP_SAMPLER_DEBUG";
+    /// <summary>=strict: every texture upload or copy in a scene ends the rendering, and single-sampled renderings are
+    /// begun directly on desktop GPUs (the renderer before scene-break hoisting; VulkanRenderer.SceneBreaks.cs).</summary>
+    public const string SceneBreaks = "VITASHARP_SCENE_BREAKS";
     /// <summary>1 = every process runs in the first process's address space (the model before per-process address
     /// spaces: executables linked at addresses another process uses cannot run next to it).</summary>
     public const string SharedAddressSpace = "VITASHARP_SHARED_ADDRESS_SPACE";

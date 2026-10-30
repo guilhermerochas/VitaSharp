@@ -9,6 +9,10 @@
 # shared one uniform ring slot). Regression: frames alternated "lit world + panels" / "dark world + check button"
 # (visibility tests recorded in command lists on deferred contexts never got a result: the buffer of the executing
 # immediate context must be used, the game hid the tested objects every other frame).
+# Regression: pausing over the camera window turned the world purple without green, and the intro's sky/sun burst
+# became black with pure blue/magenta shards (the cross-fade and camera-sky programs carry GXP flag 0x4 and read the
+# framebuffer colour as F16, not as the packed UCHAR4 bytes of the other native-colour programs; see the user's GPU
+# dumps replayed with replay-gpu).
 # Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/tearaway_boot.txt --data=<scratch root>
 title=PCSF00476
 args=--frames=2400 --seconds=1200 --dump-every=25 --shader-cache --debug-mode --input=start@f750:f8,tap@f1600:0.665:0.72:f8,tap@f1900:0.28:0.45:f8

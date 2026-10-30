@@ -23,7 +23,8 @@ previous scene as its blurred background, so it bakes the panels in.
 
 **Fix** (`ShaderGenerator.OutputType`). When the program declares a byte colour (U8/S8), a wider output register
 format (HALF4/HALF2/FLOAT2/FLOAT) does not override it. UCHAR4/CHAR4/USHORT2/SHORT2 still win, which is the
-Tearaway case. GeneratorVersion 17.
+Tearaway case. Main's flag-0x4 rule (`FetchType`: programs with `IsFragColorDeclared` fetch the framebuffer colour
+in their declared type, Tearaway's F16 cross-fade/sky) still applies on top. GeneratorVersion 18.
 
 **Other leads from the WIP notes.**
 - The U16 texture 0x62C9F504 reinterpreting the RGBA8 768x1024 target (post-processing atlas, depth-of-field) is a
@@ -42,8 +43,9 @@ small draws one triangle at a time with input attachments; one-sample scenes had
 not done").
 
 **Fix** (`VulkanRenderer.SingleFetch.cs`).
-- Programmable-blending draws of at most 256 triangles in one-sample scenes leave the dynamic rendering and render in
-  a one-subpass render pass on the surface.
+- Programmable-blending draws of at most 256 triangles in one-sample scenes end the open rendering (recorded in a
+  secondary and begun in the primary, VulkanRenderer.SceneBreaks.cs) and render in a one-subpass render pass of their
+  own on the surface, recorded in the primary after the ended renderings.
 - That render pass uses the same MSAA render-pass builder with one sample, plus a self-dependency.
 - The surface is the input attachment. A new `ShaderHints.FetchInputSingleSample` reads it with a plain
   `subpassInput`; the recipe flag is bit 2.

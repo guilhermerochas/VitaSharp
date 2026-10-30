@@ -59,6 +59,9 @@ public sealed unsafe partial class VulkanRenderer
         EndRendering();
         // a pending depth clear (no rendering yet in this scene) happens in an empty rendering first
         if (_depthNeedsClear) { BeginRendering(); EndRendering(); }
+        // the scene-break bookkeeping (VulkanRenderer.SceneBreaks.cs) sees this pass as a rendering of its own
+        _renderingSerial++;
+        _statRenderings++;
         var rt = _rt!;
         var depth = _depth!;
         // the earlier renderings' writes come before this pass's loads, input attachment reads and writes
@@ -92,7 +95,8 @@ public sealed unsafe partial class VulkanRenderer
             RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW, _sceneH)),
         };
         CountOps(true, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, AttachmentLoadOp.Load, AttachmentStoreOp.Store);
-        var cmd = F.Cmd;
+        // the primary, after any ended renderings still waiting to be begun there (VulkanRenderer.SceneBreaks.cs)
+        var cmd = Cmd;
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         _boundPipeline = default;
         rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;
