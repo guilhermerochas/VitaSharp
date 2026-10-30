@@ -4,9 +4,7 @@ using VitaSharp.Core.Hle.Np.Rpcn;
 
 namespace VitaSharp.Android.Settings;
 
-/// <summary>A choice of the per-game / global CPU setting ("CPU" in detalhes.html and ajustes.html).</summary>
-public sealed record CpuChoice(string Value, string Label);
-
+/// <summary>The choices of the per-game / global CPU setting ("CPU" in detalhes.html and ajustes.html).</summary>
 public static class CpuChoices
 {
     /// <summary>
@@ -14,9 +12,9 @@ public static class CpuChoices
     /// JIT (docs/notes/native-jit.md); the IL JIT only exists when the runtime can compile IL (not under Native AOT);
     /// the interpreter is always there.
     /// </summary>
-    public static IReadOnlyList<CpuChoice> Available()
+    public static IReadOnlyList<Choice> Available()
     {
-        var list = new List<CpuChoice> { new("", $"Automático · {Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp")}") };
+        var list = new List<Choice> { new("", $"Automático · {Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp")}") };
         foreach (var b in Jit.All.Where(b => b.IsSupported)) list.Add(new(b.Name, Label(b.Name)));
         list.Add(new("interp", Label("interp")));
         return list;

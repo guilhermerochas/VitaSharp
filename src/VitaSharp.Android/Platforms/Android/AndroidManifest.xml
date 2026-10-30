@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Vulkan 1.1+ is required by the renderer (it asks for 1.3 and checks what the device has) -->
+  <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="true" />
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+  <!-- "Internet real" (opt-in) and RPCN; nothing is sent while it is off -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <application
+      android:label="VitaSharp"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:allowBackup="false"
+      android:largeHeap="true"
+      android:isGame="true"
+      android:appCategory="game"
+      android:supportsRtl="true">
+  </application>
+</manifest>

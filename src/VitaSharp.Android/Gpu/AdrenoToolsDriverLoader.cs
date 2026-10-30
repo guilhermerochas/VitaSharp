@@ -6,10 +6,10 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Android.Gpu;
 
 /// <summary>
-/// SKELETON (not run on a device yet: there is no Android front-end and no Adreno hardware was available). Loads a
-/// user-supplied Adreno/Turnip Vulkan driver through libadrenotools (github.com/bylaws/libadrenotools, the library
-/// yuzu, Skyline, Strato and Vita3K use) instead of the system driver, and applies its BCeNabler patch and turbo
-/// mode. The Android front-end installs it before creating the renderer:
+/// Built into the app, not run on a device yet (no Adreno hardware was available). Loads a user-supplied Adreno/Turnip
+/// Vulkan driver through libadrenotools (github.com/bylaws/libadrenotools, the library yuzu, Skyline, Strato and
+/// Vita3K use) instead of the system driver, and applies its BCeNabler patch and turbo mode. EmulationSession installs
+/// it before creating the renderer:
 /// <code>
 /// var settings = GpuDriverSettings.Load(Path.Combine(dataRoot, "gpu_driver.json"));
 /// var store = new CustomDriverStore(Path.Combine(dataRoot, "gpu_drivers"));
@@ -27,9 +27,6 @@ namespace VitaSharp.Android.Gpu;
 /// <item>Build libadrenotools for arm64-v8a and add it to the APK (AndroidNativeLibrary items).</item>
 /// <item>Verify that Silk.NET resolves every instance/device command through the returned handle's
 /// vkGetInstanceProcAddr (VulkanLoader wraps the handle in a LamdaNativeContext).</item>
-/// <item>UI: the "Driver da GPU" screen itself (its model, <see cref="GpuDriverScreen"/>, lists, selects, installs a
-/// .zip from a Storage Access Framework stream and removes; mockup docs/android/mockups/driver-gpu.html).</item>
-/// <item>Restart the emulation when the driver changes (a process can load only one driver safely).</item>
 /// <item>Check the quirk table against the custom driver (Turnip: no proprietary quirks; see docs/notes/mobile-gpu.md).</item>
 /// </list>
 /// </summary>

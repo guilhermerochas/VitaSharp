@@ -32,11 +32,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
-- [ ] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
-  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita); o ícone adaptativo já
-  está em `src/VitaSharp.Android/Resources`
-- [ ] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (o layout dos controles na
-  tela, com o botão PS, já existe em `src/VitaSharp.Android/Input`)
+- [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
+  e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
+  APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
+- [ ] Primeira execução no emulador do Android e num aparelho: a lista do que verificar está no fim de
+  `docs/android/README.md` (superfície Vulkan, ciclo de vida, JIT nativo, entrada, logcat, SAF)
+- [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
+  ela o renderizador não compila shaders no celular (30/10/2026: `build/build-android-shaderc.ps1`, NDK r30)
+- [x] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (30/10/2026: `OnScreenPad`,
+  `AndroidGamepads` com os perfis de controle do desktop e o botão TRÁS; falta testar num aparelho e o editor de
+  layout)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
@@ -47,11 +52,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Texturas BC/PVRTC convertidas para ASTC (hoje BC vira RGBA8 na CPU, com cache em memória) e cache em disco
 - [ ] Caminho para Vulkan 1.1 (Adreno 6xx com drivers antigos): render passes no lugar de dynamic rendering
 - [ ] Driver de GPU customizado: compilar e empacotar a libadrenotools, desenhar a tela "Driver da GPU" e testar num
-  aparelho (a interface, as configurações e o modelo da tela já existem em `src/VitaSharp.Android/Gpu`)
-- [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (hoje só existem esqueletos em `src/VitaSharp.Android`)
+  aparelho (a tela "Driver da GPU" e o carregador já estão no app, `src/VitaSharp.Android`)
+- [ ] Vídeo pelo MediaCodec e áudio pelo AAudio/Oboe (compilados no app, `src/VitaSharp.Android/Audio` e `Media`; falta testar num aparelho e o FFmpeg para os vídeos)
 - [ ] Energia e telas: Performance Hint API (ADPF), Swappy (90/120 Hz), threads nos núcleos rápidos
-- [ ] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
-  (.PUP) pelo seletor (`src/VitaSharp.Android/Firmware` já instala a partir do arquivo aberto)
+- [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware
+  (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
+  lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
 
 ## Firmware e sistema
 

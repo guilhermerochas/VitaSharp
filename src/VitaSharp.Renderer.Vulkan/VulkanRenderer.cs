@@ -180,7 +180,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _boundPipeline = default;
     }
 
+    // the queue is the GPU thread's; the lock only keeps DetachSurface/AttachSurface (UI thread) out of a submit
     void SubmitFrame(bool present, uint swapIndex)
+    {
+        lock (_presentLock) SubmitFrameCore(present, swapIndex);
+    }
+
+    void SubmitFrameCore(bool present, uint swapIndex)
     {
         var f = F;
         if (!f.Recording) return;
@@ -934,6 +940,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     /// <summary>Shows <paramref name="src"/> on the swapchain (or just submits the frame when there is none).</summary>
     void PresentOut(RenderTarget src, DisplayFrame frame)
+    {
+        lock (_presentLock) PresentOutCore(src, frame);
+    }
+
+    void PresentOutCore(RenderTarget src, DisplayFrame frame)
     {
         if (_swapchain.Handle != 0)
         {
