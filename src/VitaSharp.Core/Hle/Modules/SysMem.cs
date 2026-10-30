@@ -18,7 +18,9 @@ public sealed class SysMem : HleModule
         TypeUserMainPhyContRw = 0x0C80D060, TypeUserMainPhyContNcRw = 0x0D808060, TypeUserMainCdialogRw = 0x0CA0D060,
         TypeUserMainCdialogNcRw = 0x0CA08060, TypeUserRx = 0x0C20D050;
 
-    const long UserBudget = 365L * 1024 * 1024, CdramBudget = 112L * 1024 * 1024, PhyContBudget = 26L * 1024 * 1024;
+    /// <summary>SceKernelAllocMemBlockOpt attr: the block may be opened by other processes (access flags at +0x14).</summary>
+    const uint ShareAttr = 0x4000;
+    const long UserBudget =365L * 1024 * 1024, CdramBudget = 112L * 1024 * 1024, PhyContBudget = 26L * 1024 * 1024;
 
     [Hle]
     int sceKernelAllocMemBlock(string name, uint type, uint size, uint opt)
@@ -26,15 +28,22 @@ public sealed class SysMem : HleModule
         if (size == 0) return SceError.ILLEGAL_SIZE;
         bool cdram = type == TypeUserCdramRw;
         uint align = cdram ? 0x40000u : (type == TypeUserMainPhyContRw || type == TypeUserMainPhyContNcRw) ? 0x100000u : 0x1000u;
+        bool shareable = false;
         if (opt != 0)
         {
             uint optSize = GuestMemory.R32(opt), attr = GuestMemory.R32(opt + 4);
             if ((attr & 4) != 0 && optSize >= 12) align = Math.Max(align, GuestMemory.R32(opt + 8)); // ALIGNMENT attr
+            // attr 0x4000 with the access other processes get at +0x14 (0x10 read, 0x30 read/write: what their
+            // sceKernelOpenMemBlock asks for): a block meant to be opened by other processes, mapped in theirs too. The
+            // shell's libpaf shares its common resources this way (ScePafCRSurfacePoolOffset, ScePafCRSoundDataStorage:
+            // FW 3.74, opt 0x40 bytes, attr 0x4020); the libpaf of every other system program opens them.
+            shareable = (attr & ShareAttr) != 0 && optSize >= 0x18 && GuestMemory.R32(opt + 0x14) != 0;
         }
         if ((size & (align - 1)) != 0 && !cdram && (size & 0xFFF) != 0) return SceError.ILLEGAL_SIZE;
         try
         {
-            uint addr = Mem.Alloc(size, $"memblock:{name}", cdram ? MemoryRegion.Cdram : MemoryRegion.User, align);
+            // a shareable block lives in memory every address space maps (as the CDRAM ones)
+            uint addr = Mem.Alloc(size, $"memblock:{name}", cdram ? MemoryRegion.Cdram : shareable ? MemoryRegion.Kernel : MemoryRegion.User, align);
             var b = new MemBlock { Name = name, Address = addr, Size = GuestMemory.AlignUp(size, 0x1000), Type = type };
             return K.Objects.Register(b);
         }
