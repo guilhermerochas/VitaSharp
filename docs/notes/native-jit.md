@@ -396,8 +396,9 @@ VQMOVN, VCVT fixed point, byte/halfword exclusives, SWP, MRS/MSR, ...).
 1. Real hardware (an Android phone, a Raspberry Pi 4/5, Apple silicon): everything so far ran in Unicorn or qemu-user.
    Only hardware shows cross-core ordering under real contention in the link/dispatch/exclusive paths (qemu-user is
    not a weak-memory model), I/D cache behaviour of the dual mapping, and performance.
-2. The Android host: an Android front end (none yet) and the .NET for Android runtime choice (Native AOT has no IL
-   backend, so this backend plus the interpreter are the CPU paths there); confirm on a device that SELinux allows
+2. The Android host: the front end exists (`src/VitaSharp.Android`, not run yet) and runs on Mono with its JIT, so the
+   IL backend stays available next to this one (Native AOT, not used, would have no IL backend;
+   [docs/android/README.md](../android/README.md), "Runtime and CPU backends"); confirm on a device that SELinux allows
    executing the memfd/ashmem RX view (what ART does); 16 KiB-page devices (the arena is page-agnostic on POSIX,
    GuestMemory protections assume 4 KiB).
 3. macOS ARM64: untested; hardened builds need `com.apple.security.cs.allow-jit`.

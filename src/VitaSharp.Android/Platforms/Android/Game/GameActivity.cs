@@ -108,6 +108,11 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         AppServices.Gamepads.DevicesChanged += OnGamepadsChanged;
         OnGamepadsChanged();
 
+        // back opens the pause menu: OnBackPressed below API 33, the back-invoked callback from 33 on (predictive
+        // back, the default for apps targeting API 36, no longer calls OnBackPressed)
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+            OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(0, new BackCallback(OpenMenu));
+
         _ = StartSessionAsync(game);
     }
 
@@ -362,6 +367,12 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             .SetPositiveButton("Sair", (_, _) => Finish())!
             .SetCancelable(false)!
             .Show();
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("android33.0")]
+    sealed class BackCallback(Action onBack) : Java.Lang.Object, global::Android.Window.IOnBackInvokedCallback
+    {
+        public void OnBackInvoked() => onBack();
     }
 
     sealed class DismissListener(Action onDismiss) : Java.Lang.Object, IDialogInterfaceOnDismissListener

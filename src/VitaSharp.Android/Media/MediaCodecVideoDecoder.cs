@@ -5,10 +5,10 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Android.Media;
 
 /// <summary>
-/// SKELETON (not built or tested yet: there is no Android front-end). Hardware H.264 decoding through the NDK
-/// MediaCodec API (libmediandk.so, API 21+), behind the same <see cref="IVideoDecoder"/> interface the desktop's
-/// FFmpeg decoder implements. The Android front-end installs it with
-/// <c>VideoDecoders.Backend = new MediaCodecVideoBackend();</c>, keeping FFmpeg (software) as the fallback.
+/// Built into the app, not run on a device yet. Hardware H.264 decoding through the NDK MediaCodec API
+/// (libmediandk.so, API 21+), behind the same <see cref="IVideoDecoder"/> interface the desktop's FFmpeg decoder
+/// implements. EmulationSession installs it with <c>VideoDecoders.Backend = new MediaCodecVideoBackend();</c>, keeping
+/// FFmpeg (software) as the fallback (the app does not carry FFmpeg yet, and SceAvPlayer demuxes with it).
 ///
 /// Remaining work:
 /// <list type="bullet">

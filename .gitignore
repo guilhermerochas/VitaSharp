@@ -487,6 +487,9 @@ $RECYCLE.BIN/
 third_party/ffmpeg/*/
 third_party/ffmpeg/.download/
 
+# libshaderc_shared.so for Android, built from the NDK (build/build-android-shaderc.ps1)
+third_party/android-shaderc/
+
 # Avalonia build task cache (created by Linux/macOS builds)
 .avalonia-build-tasks/
 

@@ -7,7 +7,7 @@
     VitaSharp.Android.Common (part of VitaSharp.sln and unit-tested).
 
     Not part of VitaSharp.sln: building it needs the .NET MAUI Android workload (dotnet workload install maui-android)
-    and the Android SDK, which the desktop build does not require. Build it on its own or through VitaSharp.Android.slnf:
+    and the Android SDK, which the desktop build does not require. Build it on its own or through VitaSharp.Android.sln:
       dotnet build src/VitaSharp.Android -c Release -m:2
     (docs/android/README.md, "Building").
   -->
@@ -57,6 +57,15 @@
     <!-- Silk.NET.Shaderc.Native (from the renderer) carries glibc builds for desktop Linux, which cannot load on Android:
          keep them out of the APK. The Android libshaderc_shared.so comes from the NDK build (docs/android/README.md) -->
     <PackageReference Include="Silk.NET.Shaderc.Native" Version="2.23.0" ExcludeAssets="all" />
+  </ItemGroup>
+
+  <!-- libshaderc_shared.so built from the NDK's shaderc by build/build-android-shaderc.ps1 (not committed): packaged
+       when present; without it the renderer cannot compile shaders on the device -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so" Abi="arm64-v8a"
+        Condition="Exists('..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so')" />
+    <AndroidNativeLibrary Include="..\..\third_party\android-shaderc\libs\x86_64\libshaderc_shared.so" Abi="x86_64"
+        Condition="Exists('..\..\third_party\android-shaderc\libs\x86_64\libshaderc_shared.so')" />
   </ItemGroup>
 
   <ItemGroup>

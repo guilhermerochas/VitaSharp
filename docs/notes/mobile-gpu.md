@@ -19,7 +19,7 @@ exercised on the GTX 1650 with emulated device profiles (`--gpu-profile=adreno|m
 | `ShaderGenerator.LowerDynamicIndexing` | switch lowering of dynamically indexed register words |
 | `src/VitaSharp.Core/Gpu/CustomGpuDriver.cs` | custom driver packages (meta.json + zip), store, settings |
 | `src/VitaSharp.Renderer.Vulkan/IVulkanDriverProvider.cs`, `VulkanLoader.DriverProvider` | hook that replaces the system Vulkan driver |
-| `src/VitaSharp.Android/Gpu/AdrenoToolsDriverLoader.cs` | libadrenotools implementation of the hook (skeleton) |
+| `src/VitaSharp.Android/Gpu/AdrenoToolsDriverLoader.cs` | libadrenotools implementation of the hook (in the app, not run yet) |
 
 Switches: `--gpu-profile=adreno|mali|desktop` (`run`, `test`, scenario `args=`, `replay-gpu`) or
 `VITASHARP_GPU_PROFILE`; `VITASHARP_GPU_QUIRKS=+Quirk,-Quirk,-Feature` forces quirks on/off or removes features
@@ -108,7 +108,8 @@ with `ADRENOTOOLS_DRIVER_CUSTOM` / `FILE_REDIRECT`, `adrenotools_get_bcn_type` +
 `vendor`, `driverVersion`, `minApi`, `libraryName`), installed by `CustomDriverStore` into
 `<data>/gpu_drivers/<id>/` (flat packages only, unsafe names skipped); the choice lives in `GpuDriverSettings`
 (`gpu_driver.json`: driver id, file redirect, turbo, BCn patch). Store and settings are unit-tested on the desktop;
-the loader was compile-checked against a desktop target only (the Android SDK platform is not installed here).
+the loader is built into the Android app and installed by its game session before the renderer starts (not run yet:
+libadrenotools itself still has to be built with the NDK and packaged).
 
 ## What was tested (GTX 1650, emulated profiles)
 
