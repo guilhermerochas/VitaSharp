@@ -269,7 +269,8 @@ public sealed unsafe partial class VulkanRenderer
     {
         var list = _pipelineList;
         // pipelines with the tile-word attachment are not recorded (the recipe has no field for it; rare, built on use)
-        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds || key.TileWord1 != 0) return;
+        // nor one-sample programmable-blending render pass pipelines (VulkanRenderer.SingleFetch.cs)
+        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds || key.TileWord1 != 0 || key.InputPass) return;
         var rec = new PipelineRecipe(vs.ProgramHash, vs.HintKey, fs.ProgramHash, fs.HintKey, (int)key.ColorFormat, key.HasColor, key.Blend,
             key.ColorFunc, key.AlphaFunc, key.ColorSrc, key.ColorDst, key.AlphaSrc, key.AlphaDst, key.Mask,
             (byte)topology, (byte)key.Polygon, (byte)key.Samples, fs.Gen.UsesFragColor, (byte)fs.Gen.RawColorBits, vp.Attributes, vp.Streams).Encode();

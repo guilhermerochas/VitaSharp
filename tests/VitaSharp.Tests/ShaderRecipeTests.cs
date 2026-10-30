@@ -32,7 +32,8 @@ public class ShaderRecipeTests : IDisposable
     {
         foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true), FragmentHints() with { OutputRegisterFormat = 1 },
                      FragmentHints(fetch: true) with { OutputRegisterFormat = 5 }, FragmentHints() with { OutputRegisterFormat = 1, TileWord1 = true },
-                     FragmentHints(fetch: true) with { OutputRegisterFormat = 1, TileWord1 = true } })
+                     FragmentHints(fetch: true) with { OutputRegisterFormat = 1, TileWord1 = true },
+                     FragmentHints(fetch: true) with { FetchInputSingleSample = true } })
         {
             var r = new ShaderRecipe(0x1122334455667788, h.Key(), h.Attributes.Length > 0, h);
             var back = ShaderRecipe.Decode(r.Encode());
@@ -46,8 +47,20 @@ public class ShaderRecipeTests : IDisposable
             Assert.Equal(h.FetchInputAttachment, back.Hints.FetchInputAttachment);
             Assert.Equal(h.OutputRegisterFormat, back.Hints.OutputRegisterFormat);
             Assert.Equal(h.TileWord1, back.Hints.TileWord1);
+            Assert.Equal(h.FetchInputSingleSample, back.Hints.FetchInputSingleSample);
             Assert.Equal(h.Key(), back.Hints.Key());
         }
+    }
+
+    [Fact]
+    public void SingleSampleFetchVariantsHaveTheirOwnKey()
+    {
+        var ms = FragmentHints(fetch: true);
+        var single = ms with { FetchInputSingleSample = true };
+        Assert.NotEqual(ms.Key(), single.Key());
+        // records of the other variants keep their fetch flag byte
+        Assert.Equal(1, new ShaderRecipe(1, ms.Key(), false, ms).Encode()[^1]);
+        Assert.Equal(5, new ShaderRecipe(1, single.Key(), false, single).Encode()[^1]);
     }
 
     [Fact]

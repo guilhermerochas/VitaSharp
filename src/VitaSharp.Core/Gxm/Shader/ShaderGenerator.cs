@@ -13,11 +13,16 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// attachment (see <see cref="TileWord1Use"/>): the shader starts with o[0].y = that word (set 3 binding 3 input
 /// attachment with <see cref="FetchInputAttachment"/>, else binding 4, a copy) and, when it writes the word, outputs
 /// it at location 1</param>
+/// <param name="FetchInputSingleSample">with <see cref="FetchInputAttachment"/>: the attachment is single-sampled (a
+/// one-sample scene whose programmable-blending draw renders in a render pass, VulkanRenderer.SingleFetch.cs), read
+/// as a plain subpassInput</param>
 public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
-    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false)
+    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false, bool FetchInputSingleSample = false)
 {
     /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
     public const uint FetchInputKey = 0x46494E50;
+    /// <summary>Mixed into the key of <see cref="FetchInputSingleSample"/> variants (other keys are unchanged).</summary>
+    public const uint FetchInputSingleKey = 0x46495331;
     /// <summary>Mixed (xor the format) into the key when <see cref="OutputRegisterFormat"/> is set; the keys of all
     /// other shaders are unchanged.</summary>
     public const uint OutputFormatKey = 0x4F524600;
@@ -37,6 +42,7 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
         h = Fnv.Mix(h, ColorFormat);
         if (OutputRegisterFormat != 0) h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
         if (FetchInputAttachment) h = Fnv.Mix(h, FetchInputKey);
+        if (FetchInputSingleSample) h = Fnv.Mix(h, FetchInputSingleKey);
         return TileWord1 ? Fnv.Mix(h, TileWord1Key) : h;
     }
 
@@ -119,7 +125,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 16;
+    public const int GeneratorVersion = 17;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -638,7 +644,13 @@ float packC10(vec3 c) {
             target.Type = OutputType(program, hints);
             string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
             Val src;
-            if (hints.FetchInputAttachment)
+            if (hints.FetchInputAttachment && hints.FetchInputSingleSample)
+            {
+                // one-sample scene, the draw rendered in a render pass: the colour attachment is the input attachment
+                decl.AppendLine("layout(input_attachment_index = 0, set = 3, binding = 2) uniform subpassInput last_frag_in;");
+                src = new Val("subpassLoad(last_frag_in)", 'f', 4);
+            }
+            else if (hints.FetchInputAttachment)
             {
                 // multisampled scene rendered in a render pass: the colour attachment itself is the input attachment
                 // (subpass self-dependency), read per sample
@@ -690,19 +702,25 @@ float packC10(vec3 c) {
     /// </summary>
     internal static DataType OutputType(GxpProgram program, ShaderHints hints)
     {
+        var type = GxpProgram.StoreType(program.OutputParamType);
         if (program.IsNativeColor)
         {
+            // a program that declares a packed byte colour keeps bytes in o0 whatever wider register format it was
+            // created with: LittleBigPlanet creates its native-colour UI programs (declared uchar4) with HALF4, and
+            // their blend code (VPCK F16 -> U8, SOP2 on the framebuffer colour) reads and writes packed bytes. Read as
+            // halves the framebuffer colour became garbage: posterised purple/green panels over the planet view and
+            // the level-complete scoreboard, which bakes that image as its background.
+            bool declaredBytes = type is DataType.UInt8 or DataType.Int8;
             switch (hints.OutputRegisterFormat)
             {
                 case 1: return DataType.UInt8;        // UCHAR4
                 case 2: return DataType.Int8;         // CHAR4
                 case 3: return DataType.UInt16;       // USHORT2
                 case 4: return DataType.Int16;        // SHORT2
-                case 5: case 6: return DataType.F16;  // HALF4, HALF2
-                case 7: case 8: return DataType.F32;  // FLOAT2, FLOAT
+                case 5: case 6: return declaredBytes ? type : DataType.F16;  // HALF4, HALF2
+                case 7: case 8: return declaredBytes ? type : DataType.F32;  // FLOAT2, FLOAT
             }
         }
-        var type = GxpProgram.StoreType(program.OutputParamType);
         // U32/S32 outputs are raw bits: the surface stores the output registers unconverted, so read them in the
         // surface's own component layout. Resistance: Burning Skies packs two RGBA8 G-buffer words (VPCK) into a
         // 64-bit F16F16F16F16 target and samples it back as a 1440-wide U8U8U8U8 texture; reading the registers as

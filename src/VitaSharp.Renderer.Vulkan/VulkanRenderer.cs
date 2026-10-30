@@ -472,8 +472,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _mirroredRt.Remove(old);
         }        var format = SurfaceFormat(c.ColorFormat);
         if (!_core.SupportsColorAttachment(format)) format = Format.R8G8B8A8Unorm;
+        // input attachment: programmable-blending draws of one-sample scenes read it in a render pass (VulkanRenderer.SingleFetch.cs)
         var (img, view, mem) = CreateImage(MemCat.RenderTarget, c.Width, c.Height, format,
-            ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit,
+            ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
             ImageAspectFlags.ColorBit, mutable: true);
         rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount };
         // start from the guest memory content (games often fill the surface with the CPU first)
