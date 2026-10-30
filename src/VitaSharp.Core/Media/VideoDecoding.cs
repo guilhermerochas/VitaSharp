@@ -14,7 +14,7 @@ public sealed class DecodedPicture
 /// An H.264 decoder fed with Annex B access units (start-code delimited NAL units, SPS/PPS in band), the way the
 /// Vita's SceAvcdec receives them. Pictures come out in presentation order through <see cref="Take"/>.
 /// Implementations: FFmpeg (software or FFmpeg hwaccel: D3D11VA, VAAPI, VideoToolbox) on desktop; Android's
-/// MediaCodec later (src/VitaSharp.Android). Not thread-safe: one caller at a time.
+/// MediaCodec (src/VitaSharp.Android/Media). Not thread-safe: one caller at a time.
 /// </summary>
 public interface IVideoDecoder : IDisposable
 {

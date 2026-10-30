@@ -28,7 +28,7 @@ public sealed class AvPlayer : HleModule
         public bool AutoStart;
 
         public readonly Queue<string> Sources = new();
-        public MediaPlayer? Media;
+        public MediaPlayerBase? Media;
         public string SourcePath = "";
         public bool Started, Paused, Looping, StopSent;
         public readonly GuestStopwatch Clock = new();
@@ -170,7 +170,7 @@ public sealed class AvPlayer : HleModule
         {
             var src = p.Sources.Dequeue();
             p.SourcePath = src;
-            p.Media = MediaPlayer.Open(src);
+            p.Media = MediaPlayers.Open(src);
             if (p.Media == null) Log.Warn($"AvPlayer: could not decode {src}");
         }
         if (p.Media != null)
@@ -300,7 +300,7 @@ public sealed class AvPlayer : HleModule
 
     [Hle] int sceAvPlayerStreamCount(uint handle) => Get(handle)?.Media is { } m ? (m.HasVideo ? 1 : 0) + (m.HasAudio ? 1 : 0) : 0;
 
-    int StreamType(MediaPlayer m, uint index) => index == 0 ? (m.HasVideo ? STREAM_VIDEO : STREAM_AUDIO) : index == 1 && m.HasVideo && m.HasAudio ? STREAM_AUDIO : -1;
+    int StreamType(MediaPlayerBase m, uint index) => index == 0 ? (m.HasVideo ? STREAM_VIDEO : STREAM_AUDIO) : index == 1 && m.HasVideo && m.HasAudio ? STREAM_AUDIO : -1;
 
     [Hle]
     int sceAvPlayerGetStreamInfo(uint handle, uint index, uint info)
