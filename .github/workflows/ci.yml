@@ -20,6 +20,15 @@ env:
   PACKAGE_VERSION: ${{ inputs.version || format('ci-{0}', github.run_number) }}
 
 jobs:
+  script-parity:
+    name: Script parity (.ps1 and .sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every script has a Windows and a Linux/macOS version
+        run: bash build/check-script-parity.sh
+
   build-test:
     name: Build and test (${{ matrix.os }})
     strategy:
