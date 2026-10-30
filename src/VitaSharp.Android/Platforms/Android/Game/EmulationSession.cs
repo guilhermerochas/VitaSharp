@@ -57,6 +57,9 @@ public sealed class EmulationSession : IDisposable
     public bool Paused { get; private set; }
     public string? DeviceName => _renderer?.DeviceName;
 
+    /// <summary>Thread placement, ADPF and the game's frame rate (for the display refresh rate).</summary>
+    public GamePerformance Performance { get; }
+
     public EmulationSession(GameEntry game, AndroidInput input, string rpcnPassword)
     {
         _game = game;
@@ -70,6 +73,8 @@ public sealed class EmulationSession : IDisposable
 
         CpuCore.InstructionsPerSecond = _settings.ClockHz;
         HostThreads.Enabled = true;
+        // before the emulator starts its first threads: no spinning waits, thread placement on the fast cores, ADPF
+        Performance = new GamePerformance(AppServices.AppContext);
         var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword);
         _emu = new Emulator(new EmulatorOptions
         {
@@ -194,6 +199,7 @@ public sealed class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            Performance.Start();
         }
         catch (Exception e)
         {
@@ -260,6 +266,7 @@ public sealed class EmulationSession : IDisposable
             _emu.Stop();
             EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
+            Performance.Dispose();
             _emu.Dispose();
         }
         catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }
