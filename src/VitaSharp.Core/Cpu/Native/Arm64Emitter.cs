@@ -25,8 +25,13 @@ public sealed unsafe partial class Arm64Emitter
 
     /// <summary>Callee-saved registers available for temps (survive callouts).</summary>
     static readonly int[] CalleeSaved = [21, 22, 23, 24, 25, 26, 27, 28];
+    /// <summary>The callee-saved temps when x26-x28 hold the pinned block counters.</summary>
+    static readonly int[] CalleeSavedPinned = [21, 22, 23, 24, 25];
     /// <summary>Caller-saved registers available for temps (not across callouts).</summary>
     static readonly int[] CallerSaved = [9, 10, 11, 12, 13, 14, 15];
+    /// <summary>Pinned block counters (<see cref="A64Opt.PinnedCounters"/>): blocks, instructions, and CycleAcc - CheckWindow
+    /// (the window is full once it is &gt;= 0). Loaded by the trampoline, stored back by the epilogue.</summary>
+    const int PinBlocks = 26, PinInstr = 27, PinBudget = 28;
 
     public const int SpillSlots = 64;
     const int FrameHostFpcr = 0, FrameGuestFpcr = 8, SpillBase = 16;
@@ -53,6 +58,55 @@ public sealed unsafe partial class Arm64Emitter
     static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
     static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
 
+    /// <summary>Code-quality optimisations of this emitter, each of which can be turned off for bisection
+    /// (<see cref="Util.EnvVars.NativeA64NoOpt"/>: a comma-separated list of the names in <see cref="OptNames"/>, or all).</summary>
+    [Flags]
+    public enum A64Opt
+    {
+        None = 0,
+        /// <summary>Block accounting in pinned registers (x26 blocks, x27 instructions, x28 cycles minus the window):
+        /// three ALU instructions and a B.GE per exit instead of three memory read-modify-writes and a compare with
+        /// the window in memory. Changes the trampoline too (<see cref="Runtime.PinnedCounters"/>).</summary>
+        PinnedCounters = 1,
+        /// <summary>Static exits to a later guest address skip the LinkBreak load (every cycle of linked blocks has an
+        /// exit to an address at or below its block's start, which keeps the check).</summary>
+        BackEdgeBreak = 2,
+        /// <summary>CondBranch on the host NZCV left by the AddC/SubC/TestNZ that produced its flag temps (B.cond,
+        /// no compare of materialised flags).</summary>
+        FuseBranch = 4,
+        /// <summary>Adjacent 32-bit state stores/loads (SetReg/SetFlag/StoreState, GetReg/GetFlag) as STP/LDP.</summary>
+        PairState = 8,
+        /// <summary>Guest D/Q registers stay in host v18-v31 between VecOps of a straight-line region (write-through:
+        /// the register file in memory stays current, so only reloads are removed).</summary>
+        VecCache = 16,
+        /// <summary>FPCR is switched back to the guest mode lazily after a callout (only before FP code, a branch,
+        /// a label or an exit), so consecutive callouts share one switch pair.</summary>
+        LazyFpcr = 32,
+        /// <summary>The VFP fast-path FPSCR mode check in 4 instructions (UBFX of bits 16-25) instead of 6.</summary>
+        FastFpCheck = 64,
+        All = 127,
+    }
+
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck"];
+
+    /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
+    public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
+
+    public static A64Opt ParseOpts(string? noOpt)
+    {
+        if (string.IsNullOrWhiteSpace(noOpt)) return A64Opt.All;
+        var o = A64Opt.All;
+        foreach (var raw in noOpt.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (raw.Equals("all", StringComparison.OrdinalIgnoreCase)) return A64Opt.None;
+            int i = Array.FindIndex(OptNames, n => n.Equals(raw, StringComparison.OrdinalIgnoreCase));
+            if (i >= 0) o &= ~(A64Opt)(1 << i);
+        }
+        return o;
+    }
+
+    static bool On(A64Opt o) => (Opts & o) != 0;
+
     /// <summary>Debug knob for tests: restricts the temp registers so spilling paths get exercised.</summary>
     public static int MaxTempRegisters = int.MaxValue;
     /// <summary>Debug: check the register allocation of every block (tests).</summary>
@@ -76,7 +130,12 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Nonzero: indirect exits look their target up in the dispatch table (each thread's state holds its
         /// process's, <see cref="CpuState.DispatchTable"/>).</summary>
         public ulong DispatchTable;
+        /// <summary>The trampoline keeps the block counters in x26-x28 (<see cref="A64Opt.PinnedCounters"/>): blocks
+        /// compiled for this runtime must account in them.</summary>
+        public bool PinnedCounters;
     }
+
+    bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck;
 
     /// <summary>
     /// Allocates registers and lowers the block. <paramref name="slotFor"/> returns the address of the link slot of
@@ -90,8 +149,16 @@ public sealed unsafe partial class Arm64Emitter
         _ir = ir;
         _rt = rt;
         _a.Reset();
+        var opts = Opts;
+        _pin = rt.PinnedCounters;
+        _backEdge = (opts & A64Opt.BackEdgeBreak) != 0;
+        _fuse = (opts & A64Opt.FuseBranch) != 0;
+        _pair = (opts & A64Opt.PairState) != 0;
+        _vcache = (opts & A64Opt.VecCache) != 0;
+        _lazyFpcr = (opts & A64Opt.LazyFpcr) != 0;
+        _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var loc = LinearScan.Allocate(ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
+        var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? CalleeSavedPinned : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         if (loc == null) return false;
         _loc = loc;
@@ -172,10 +239,22 @@ public sealed unsafe partial class Arm64Emitter
 
     // ------------------------------------------------------------------ lowering
 
-    /// <summary>Adds the block's cycles and counts to the state; leaves CycleAcc in x16.</summary>
+    /// <summary>
+    /// Adds the block's cycles and counts to the state; leaves CycleAcc in x16. With pinned counters: x26 += 1,
+    /// x27 += instructions, ADDS x28 += cycles, so the flags say GE exactly when CycleAcc reached CheckWindow.
+    /// </summary>
     void EmitAccounting()
     {
         var a = _a;
+        if (_pin)
+        {
+            a.AddImm(PinBlocks, PinBlocks, 1, true);
+            AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
+            ulong c = (ulong)Math.Min(_ir.Cycles, int.MaxValue);
+            if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24)) a.AddsImm(PinBudget, PinBudget, (uint)c, true);
+            else { a.MovImm64(X8, c); a.Adds(PinBudget, PinBudget, X8, x: true); }
+            return;
+        }
         a.LdrX(X16, State, OffCycleAcc);
         AddConst64(X16, (ulong)Math.Min(_ir.Cycles, int.MaxValue));
         a.StrX(X16, State, OffCycleAcc);
@@ -354,8 +433,27 @@ public sealed unsafe partial class Arm64Emitter
             {
                 nint slot = slotFor(exitIndex++);
                 int ret = a.NewLabel();
+                // LinkBreak only on back edges: every cycle of linked blocks has an exit to an address at or below its
+                // block's start (forward chains end by themselves, at an unlinked exit or the pacing window)
+                bool linkBreak = !_backEdge || x.Imm <= _ir.StartPc;
+                if (_pin)
+                {
+                    // the slot address first (it is also the return path's LastExitSlot), the link target load early
+                    a.LdrLit(X16, (ulong)slot);
+                    EmitAccounting();
+                    a.LdrX(X17, X16, 0);
+                    a.BCond(Cond.GE, ret);                     // CycleAcc >= CheckWindow
+                    if (linkBreak) { LdState(X8, OffLinkBreak); a.Cbnz(X8, ret); }
+                    if (_checkExit) { LdState(X8, OffExit); a.Cbnz(X8, ret); }
+                    a.Cbz(X17, ret, true);
+                    a.Br(X17);
+                    a.Bind(ret);
+                    a.StrX(X16, State, OffLastExitSlot);
+                    JumpTo(_rt.Epilogue);
+                    return;
+                }
                 EmitAccounting();
-                WindowChecks(ret);
+                WindowChecks(ret, linkBreak);
                 a.LdrLit(X16, (ulong)slot);
                 a.LdrX(X17, X16, 0);
                 a.Cbz(X17, ret, true);
@@ -401,15 +499,20 @@ public sealed unsafe partial class Arm64Emitter
         }
     }
 
-    /// <summary>Branches to <paramref name="ret"/> when the block must return to the dispatcher (expects CycleAcc in x16).</summary>
-    void WindowChecks(int ret)
+    /// <summary>
+    /// Branches to <paramref name="ret"/> when the block must return to the dispatcher (expects CycleAcc in x16, or
+    /// with pinned counters the flags of <see cref="EmitAccounting"/>).
+    /// </summary>
+    void WindowChecks(int ret, bool linkBreak = true)
     {
         var a = _a;
-        a.LdrX(X17, State, OffCheckWindow);
-        a.Cmp(X16, X17, true);
+        if (!_pin)
+        {
+            a.LdrX(X17, State, OffCheckWindow);
+            a.Cmp(X16, X17, true);
+        }
         a.BCond(Cond.GE, ret);
-        LdState(X17, OffLinkBreak);
-        a.Cbnz(X17, ret);
+        if (linkBreak) { LdState(X17, OffLinkBreak); a.Cbnz(X17, ret); }
         if (_checkExit) { LdState(X17, OffExit); a.Cbnz(X17, ret); }
     }
 
@@ -932,7 +1035,7 @@ public sealed unsafe partial class Arm64Emitter
     /// spill slots), loads x19/x20, switches FPCR to the guest mode and jumps to the block. Blocks leave through the
     /// epilogue (returned in <paramref name="epilogueOffset"/>), which restores the host FPCR.
     /// </summary>
-    public static byte[] EmitTrampoline(out int epilogueOffset)
+    public static byte[] EmitTrampoline(out int epilogueOffset, bool pinnedCounters = false)
     {
         var a = new Arm64Assembler();
         a.Stp(FP, LR, SP, -SavedRegs, PairMode.Pre);
@@ -945,6 +1048,15 @@ public sealed unsafe partial class Arm64Emitter
         a.SubImm(SP, SP, FrameSize, true);
         a.MovSp(State, X0);
         a.LdrX(MemBase, State, OffMemBase); // the state's guest memory base: its process's address space
+        if (pinnedCounters)
+        {
+            // x28 = CycleAcc - CheckWindow (the window is full when it reaches 0), x26/x27 = NBlocks/NInstr
+            a.LdrX(PinBudget, State, OffCycleAcc);
+            a.LdrX(X17, State, OffCheckWindow);
+            a.Sub(PinBudget, PinBudget, X17, x: true);
+            a.LdrX(PinBlocks, State, OffNBlocks);
+            a.LdrX(PinInstr, State, OffNInstr);
+        }
         a.Mrs(X16, SysReg.Fpcr);
         a.StrX(X16, SP, FrameHostFpcr);
         a.MovImm(X17, FpcrGuestMask);
@@ -954,6 +1066,14 @@ public sealed unsafe partial class Arm64Emitter
         a.Msr(SysReg.Fpcr, X16);
         a.Br(X1);
         epilogueOffset = a.Count * 4;
+        if (pinnedCounters)
+        {
+            a.LdrX(X17, State, OffCheckWindow);
+            a.Add(X16, PinBudget, X17, x: true);
+            a.StrX(X16, State, OffCycleAcc);
+            a.StrX(PinBlocks, State, OffNBlocks);
+            a.StrX(PinInstr, State, OffNInstr);
+        }
         a.LdrX(X16, SP, FrameHostFpcr);
         a.Msr(SysReg.Fpcr, X16);
         a.AddImm(SP, SP, FrameSize, true);

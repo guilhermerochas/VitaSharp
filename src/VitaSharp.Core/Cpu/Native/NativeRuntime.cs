@@ -51,13 +51,15 @@ public sealed unsafe partial class NativeRuntime
         if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
         {
             int epi = 0;
-            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline(out epi));
+            bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
+            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned));
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
             Arm64Stubs = new Arm64Emitter.Runtime
             {
                 Epilogue = (ulong)(entry64 + epi),
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
+                PinnedCounters = pinned,
             };
             return;
         }
