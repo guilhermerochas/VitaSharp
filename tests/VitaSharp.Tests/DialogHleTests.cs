@@ -147,6 +147,156 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(NOT_FINISHED, Call(d, "sceImeDialogGetResult", res));
     }
 
+    sealed class FakeImeBackend : VitaSharp.Core.Host.IImeDialogBackend
+    {
+        public VitaSharp.Core.Host.ImeDialogRequest? Request;
+        public Action<string?>? Done;
+        public int Closed;
+        public void Open(VitaSharp.Core.Host.ImeDialogRequest request, Action<string?> done) { Request = request; Done = done; }
+        public void Close() => Closed++;
+    }
+
+    /// <summary>An IME dialog param: title, initial text, max length, type, option, text box mode; returns the buffer.</summary>
+    (uint Param, uint Buffer) ImeDialogParam(string title, string initial, uint maxLen, uint type = 0, uint option = 0, uint textBoxMode = 0)
+    {
+        uint param = Alloc(0xA8), t = Alloc(0x110), init = Alloc(0x1010), buf = Alloc(0x1010);
+        var tb = Encoding.Unicode.GetBytes(title + "\0");
+        tb.CopyTo(GuestMemory.Span(t, tb.Length));
+        var ib = Encoding.Unicode.GetBytes(initial + "\0");
+        ib.CopyTo(GuestMemory.Span(init, ib.Length));
+        GuestMemory.Fill(buf, 0xEE, 0x40); // garbage: the dialog must NUL-terminate
+        GuestMemory.W32(param + 0x14, type);
+        GuestMemory.W32(param + 0x18, option);
+        GuestMemory.W32(param + 0x24, textBoxMode);
+        GuestMemory.W32(param + 0x28, t);
+        GuestMemory.W32(param + 0x2C, maxLen);
+        GuestMemory.W32(param + 0x30, init);
+        GuestMemory.W32(param + 0x34, buf);
+        return (param, buf);
+    }
+
+    static string ReadUtf16Z(uint addr)
+    {
+        int n = 0;
+        while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0) n++;
+        return Encoding.Unicode.GetString(GuestMemory.Span(addr, n * 2));
+    }
+
+    static T WithoutScriptedText<T>(Func<T> f)
+    {
+        string? saved = CommonDialog.ImeDefaultText;
+        CommonDialog.ImeDefaultText = null;
+        try { return f(); }
+        finally { CommonDialog.ImeDefaultText = saved; }
+    }
+
+    [Fact]
+    public void ImeDialogHostKeyboardConfirmWritesUtf16WithinMaxLength() => WithoutScriptedText(() =>
+    {
+        var host = new FakeImeBackend();
+        var d = new CommonDialog { ImeBackendOverride = host };
+        var (param, buf) = ImeDialogParam("Nome", "Yu", 6, type: 1, textBoxMode: 1);
+        Assert.Equal(0, Call(d, "sceImeDialogInit", param));
+        // waits for the user: RUNNING, no result yet, the buffer holds the initial text
+        Assert.Equal(1, Call(d, "sceImeDialogGetStatus"));
+        uint res = Alloc(0x24);
+        Assert.Equal(NOT_FINISHED, Call(d, "sceImeDialogGetResult", res));
+        Assert.Equal(NOT_FINISHED, Call(d, "sceImeDialogTerm"));
+        Assert.Equal("Yu", ReadUtf16Z(buf));
+        Assert.Equal(new VitaSharp.Core.Host.ImeDialogRequest("Nome", "Yu", 6, 1, false, 1), host.Request);
+        Assert.True(host.Request!.Password);
+
+        // the line break is dropped (single line), then the text is cut to 6 UTF-16 units without splitting the emoji's
+        // surrogate pair (it would need units 6 and 7): "Yu\nNar😀x" -> "YuNar"
+        host.Done!("Yu\nNar😀x");
+        Assert.Equal(2, Call(d, "sceImeDialogGetStatus"));
+        Assert.Equal("YuNar", ReadUtf16Z(buf));
+        Assert.Equal(0, Call(d, "sceImeDialogGetResult", res));
+        Assert.Equal(0u, GuestMemory.R32(res));      // OK
+        Assert.Equal(2u, GuestMemory.R32(res + 4));  // ENTER
+        host.Done!("late");                          // a second answer is ignored
+        Assert.Equal("YuNar", ReadUtf16Z(buf));
+        Assert.Equal(0, Call(d, "sceImeDialogTerm"));
+        return 0;
+    });
+
+    [Fact]
+    public void ImeDialogHostKeyboardMultilineAndNonAscii() => WithoutScriptedText(() =>
+    {
+        var host = new FakeImeBackend();
+        var d = new CommonDialog { ImeBackendOverride = host };
+        var (param, buf) = ImeDialogParam("Msg", "", 32, option: 1);
+        Assert.Equal(0, Call(d, "sceImeDialogInit", param));
+        Assert.True(host.Request!.Multiline);
+        host.Done!("Olá\r\nmundo ção 鳴上");
+        Assert.Equal("Olá\nmundo ção 鳴上", ReadUtf16Z(buf));
+        var bytes = GuestMemory.Span(buf, 4).ToArray();
+        Assert.Equal(new byte[] { (byte)'O', 0, (byte)'l', 0 }, bytes); // UTF-16LE
+        Assert.Equal(0, Call(d, "sceImeDialogTerm"));
+        return 0;
+    });
+
+    [Fact]
+    public void ImeDialogHostKeyboardCancelKeepsInitialText() => WithoutScriptedText(() =>
+    {
+        var host = new FakeImeBackend();
+        var d = new CommonDialog { ImeBackendOverride = host };
+        var (param, buf) = ImeDialogParam("Nome", "Souji", 16);
+        Assert.Equal(0, Call(d, "sceImeDialogInit", param));
+        host.Done!(null);
+        Assert.Equal(2, Call(d, "sceImeDialogGetStatus"));
+        uint res = Alloc(0x24);
+        Assert.Equal(0, Call(d, "sceImeDialogGetResult", res));
+        Assert.Equal(1u, GuestMemory.R32(res));      // USER_CANCELED
+        Assert.Equal(1u, GuestMemory.R32(res + 4));  // CLOSE
+        Assert.Equal("Souji", ReadUtf16Z(buf));
+        Assert.Equal(0, Call(d, "sceImeDialogTerm"));
+        return 0;
+    });
+
+    [Fact]
+    public void ImeDialogAbortClosesHostKeyboard() => WithoutScriptedText(() =>
+    {
+        var host = new FakeImeBackend();
+        var d = new CommonDialog { ImeBackendOverride = host };
+        var (param, buf) = ImeDialogParam("Nome", "A", 16);
+        Assert.Equal(0, Call(d, "sceImeDialogInit", param));
+        Assert.Equal(0, Call(d, "sceImeDialogAbort"));
+        Assert.Equal(1, host.Closed);
+        host.Done!("too late");                      // the answer after Abort is dropped
+        uint res = Alloc(0x24);
+        Assert.Equal(0, Call(d, "sceImeDialogGetResult", res));
+        Assert.Equal(2u, GuestMemory.R32(res));      // ABORTED
+        Assert.Equal(0u, GuestMemory.R32(res + 4));  // NONE
+        Assert.Equal("A", ReadUtf16Z(buf));
+        Assert.Equal(0, Call(d, "sceImeDialogAbort")); // already finished: no second Close
+        Assert.Equal(1, host.Closed);
+        Assert.Equal(0, Call(d, "sceImeDialogTerm"));
+        return 0;
+    });
+
+    [Fact]
+    public void ImeDialogScriptedTextWinsOverHostKeyboard()
+    {
+        string? saved = CommonDialog.ImeDefaultText;
+        CommonDialog.ImeDefaultText = "Yu Narukami";
+        try
+        {
+            var host = new FakeImeBackend();
+            var d = new CommonDialog { ImeBackendOverride = host };
+            var (param, buf) = ImeDialogParam("Nome", "", 8);
+            Assert.Equal(0, Call(d, "sceImeDialogInit", param));
+            Assert.Null(host.Request);
+            Assert.Equal(2, Call(d, "sceImeDialogGetStatus"));
+            Assert.Equal("Yu Narukami"[..8], ReadUtf16Z(buf));
+            uint res = Alloc(0x24);
+            Assert.Equal(0, Call(d, "sceImeDialogGetResult", res));
+            Assert.Equal((0u, 2u), (GuestMemory.R32(res), GuestMemory.R32(res + 4)));
+            Assert.Equal(0, Call(d, "sceImeDialogTerm"));
+        }
+        finally { CommonDialog.ImeDefaultText = saved; }
+    }
+
     [Fact]
     public void UnnamedNpDialogAndOtherFamilies()
     {

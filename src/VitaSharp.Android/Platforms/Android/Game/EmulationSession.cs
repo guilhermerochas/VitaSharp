@@ -130,6 +130,33 @@ public sealed class EmulationSession : IDisposable
 
     void OnTrophy(TrophyUnlockedEvent e) => TrophyUnlocked?.Invoke(e);
 
+    VitaSharp.Core.Shell.PcmSound? _trophySound;
+
+    /// <summary>"Som de troféu" (on by default): the firmware's notice chime, else the built-in one, on a device stream
+    /// of its own (the guest's ports are untouched). Called when the trophy toast appears.</summary>
+    public void PlayTrophySound()
+    {
+        if (!AppServices.Prefs.TrophySound || _audio is not { } audio) return;
+        // the first time reads the firmware's RCO: off the UI thread
+        Task.Run(() =>
+        {
+            if (Volatile.Read(ref _trophySound) is not { } pcm)
+            {
+                (pcm, string source) = VitaSharp.Core.Shell.TrophySound.Load(AppServices.Data.Fs);
+                Log.Info($"Trophy sound: {source}, {pcm.Seconds:F2} s");
+                Volatile.Write(ref _trophySound, pcm);
+            }
+            audio.PlayEffect(pcm, 0.8f);
+        });
+    }
+
+    /// <summary>The host text entry for the IME dialog and the in-game keyboard (the activity's soft keyboard).</summary>
+    public void SetTextInput(VitaSharp.Core.Host.IImeDialogBackend dialog, VitaSharp.Core.Host.ITextInputBackend keyboard)
+    {
+        _emu.Host.ImeDialog = dialog;
+        _emu.Host.TextInput = keyboard;
+    }
+
     /// <summary>surfaceCreated: the first one boots the game, later ones re-attach the renderer.</summary>
     public void SurfaceCreated(AndroidVulkanSurface surface)
     {

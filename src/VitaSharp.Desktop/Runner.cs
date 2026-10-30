@@ -60,6 +60,13 @@ public static class Runner
         else LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
         if (DebugMode.Enabled) Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");
         InstallCrashLogging();
+        // --ime-text=<text>: every IME dialog / SceIme keyboard is answered with this text and Enter, without any UI
+        // (automated runs; "\n" in the value is a line break for multiline dialogs)
+        if (Opt(options, "--ime-text") is { } imeText)
+        {
+            VitaSharp.Core.Hle.Modules.CommonDialog.ImeDefaultText = imeText.Replace("\\n", "\n");
+            Log.Info($"IME: scripted answer \"{imeText}\" (--ime-text)");
+        }
 
         // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
@@ -162,7 +169,23 @@ public static class Runner
         };
         // trophy unlocks: a card in the top-right corner of the window (renderer overlay) and a notice in the title bar,
         // like the console's pop-up
-        using var trophyToast = new TrophyToast((bgra, w, h) => renderer?.SetOverlay(bgra, w, h), () => window.FramebufferSize.Height);
+        // --trophy-sound=on|off (launcher "Som de troféu", on by default): the firmware's notice chime, else a built-in
+        // one, on its own OpenAL source when the card appears
+        var trophySound = (OnOff(options, "--trophy-sound") ?? true) && audio != null
+            ? new Lazy<VitaSharp.Core.Shell.PcmSound>(() =>
+            {
+                var (pcm, source) = VitaSharp.Core.Shell.TrophySound.Load(Program.FsRoot);
+                Log.Info($"Trophy sound: {source}, {pcm.Seconds:F2} s");
+                return pcm;
+            })
+            : null;
+        using var trophyToast = new TrophyToast((bgra, w, h) => renderer?.SetOverlay(bgra, w, h), () => window.FramebufferSize.Height,
+            trophySound != null ? () => audio!.PlayEffect(trophySound.Value) : null);
+        // text entry for the IME dialog and SceIme: an overlay over the game typed with the physical keyboard
+        // (Enter / Cross confirm, Esc / Circle cancel)
+        var imeOverlay = new ImeOverlay(window, (bgra, w, h) => renderer?.SetCenterOverlay(bgra, w, h));
+        emu.Host.ImeDialog = imeOverlay;
+        emu.Host.TextInput = imeOverlay;
         VitaSharp.Core.Hle.Np.TrophyNotifications.Unlocked += e => { trophyToast.Enqueue(e); diag.Status?.Invoke(TrophyNotice(e)); };
         // --trophy-toast-test=<seconds>: shows the notification of the title's trophy 1 (nothing is unlocked), to check it
         if (int.TryParse(Opt(options, "--trophy-toast-test"), out int toastAt))

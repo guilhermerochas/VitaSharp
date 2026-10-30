@@ -2813,9 +2813,11 @@ checa; implementar checagem só depois de confirmar, para não quebrar jogos).
   `PRESS_ENTER` após N frames.
   Sem back-end: `sceImeOpen` funciona, entrega só `OPEN` e nunca mais nada (o jogo fica esperando entrada, mas não
   trava).
-  **Implementado:** `ITextInputBackend` (com `SetText`) e `HostServices.TextInput` existem (nenhum front-end o fornece
-  ainda). Sem back-end, se `--ime-text` estiver definido (`CommonDialog.ImeDefaultText`, a mesma fonte do
-  `sceImeDialog`), o `Ime` entrega `OPEN → UPDATE_TEXT(texto) → PRESS_ENTER` nas próximas `sceImeUpdate`. Callbacks
+  **Implementado:** `ITextInputBackend` (com `SetText`) e `HostServices.TextInput`, fornecidos pelo desktop
+  (`Desktop/Host/ImeOverlay.cs`: painel sobre o jogo digitado no teclado físico) e pelo Android
+  (`AndroidImeDialog`: EditText com o teclado virtual do sistema). Se `--ime-text` estiver definido
+  (`CommonDialog.ImeDefaultText`, a mesma fonte do `sceImeDialog`; vale mesmo com back-end), o `Ime` entrega
+  `OPEN → UPDATE_TEXT(texto) → PRESS_ENTER` nas próximas `sceImeUpdate`. Callbacks
   vindos do back-end de uma sessão já fechada são descartados (contador de sessão).
 - **Arquivo novo:** `src/VitaSharp.Core/Hle/Modules/Ime.cs`, `public sealed class Ime : HleModule`. Todos os seis
   nomes estão em `Hle/Data/nids.txt` (não precisa `Nid =`).

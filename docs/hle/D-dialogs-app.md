@@ -291,6 +291,15 @@ Erros próprios (`SceImeDialogErrorCode`): `PARAM` 0x80102001, `INTERNAL` 0x8010
   usar `"Player"` (heurística: muitos jogos recusam nome vazio e reabrem o teclado em loop). Escrever o buffer na hora
   da conclusão, não no `Init`. Logar título e texto escolhido (`Log.Info`).
   Estratégia integrada: `Emu.Host.Dialogs?.ShowText(...)`, status RUNNING até o callback.
+  **Implementado (30/10/2026):** `--ime-text=` (Runner) preenche `CommonDialog.ImeDefaultText` e responde na hora, sem
+  UI. Sem ele, com `HostServices.ImeDialog` (desktop: `ImeOverlay`, painel sobre o jogo com título, texto inicial,
+  limite e tipo; Android: `AndroidImeDialog` com o teclado virtual) o diálogo fica RUNNING até o usuário: Enter/Cruz
+  = resultado OK, botão ENTER, texto UTF-16 cortado em `maxTextLength` sem partir par substituto; Esc/Círculo/Voltar
+  = USER_CANCELED, botão CLOSE, buffer com o texto inicial; `sceImeDialogAbort` fecha a UI (ABORTED, botão NONE) e
+  ignora a resposta tardia. Sem nenhum dos dois, o texto inicial (ou `"Player"`) como antes.
+  Programas do sistema (shell, apps NPXS) não passam por aqui: carregam o `libcdlg`/`libcdlg_ime` do firmware, e as
+  caixas de texto do libpaf conversam com o `ime_plugin` do shell por IPC (nenhum módulo do firmware importa SceIme);
+  digitar no shell real usa o teclado na tela do próprio firmware.
 - **Validação:** Sakatsuku: cenário `st_*` até a tela de nome do clube (adicionar `--trace-hle-only=sceImeDialog`);
   conferir que o nome aparece na UI do jogo. Invizimals: criar `tests/scenarios/inv_ime.txt` até a criação de perfil.
   `VitaSharp.Desktop imports PCSA00552` / `PCSG00198` não devem mais listar `sceImeDialog*`.

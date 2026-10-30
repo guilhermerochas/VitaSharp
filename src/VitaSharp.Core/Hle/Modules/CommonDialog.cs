@@ -1,4 +1,5 @@
 using System.Text;
+using VitaSharp.Core.Host;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -88,8 +89,9 @@ public sealed class CommonDialogState
 /// <summary>
 /// SceCommonDialog: message, save data, IME, net check, NP and the other system dialogs over one shared state machine.
 /// No PSN server is reachable, so online dialogs finish as "user canceled" (the NetCheckDialog PSN modes follow the
-/// emulated account, see <see cref="PsnAccount"/>); message and
-/// IME dialogs complete at once with the default choice (no host UI yet).
+/// emulated account, see <see cref="PsnAccount"/>); message dialogs complete at once with the default choice. The IME
+/// dialog asks the front-end's text entry when there is one (<see cref="HostServices.ImeDialog"/>), else it answers at
+/// once with --ime-text or the initial text.
 /// </summary>
 public sealed class CommonDialog : HleModule
 {
@@ -98,7 +100,8 @@ public sealed class CommonDialog : HleModule
 
     public CommonDialogState State { get; } = new();
 
-    /// <summary>Text returned by the IME dialog when there is no host keyboard (--ime-text); null = initial text.</summary>
+    /// <summary>--ime-text: the answer of every IME dialog and SceIme session, typed and confirmed at once without any
+    /// host UI (automated runs); null = ask the host text entry, or keep the initial text when there is none.</summary>
     public static string? ImeDefaultText;
 
     /// <summary>sceCommonDialogSetConfigParam values (0xFFFFFFFF = use the system setting).</summary>
@@ -406,15 +409,43 @@ public sealed class CommonDialog : HleModule
     const int ImeErrParam = unchecked((int)0x80102001), ImeErrDialogMode = unchecked((int)0x80102003),
         ImeErrTextBoxMode = unchecked((int)0x80102004), ImeErrTitle = unchecked((int)0x80102005);
     const int ImeButtonNone = 0, ImeButtonClose = 1, ImeButtonEnter = 2;
+    const uint ImeOptionMultiline = 1;
     int _imeButton;
+    /// <summary>Open IME dialog session (bumped by every Init and Abort, so a late host answer is ignored).</summary>
+    int _imeSession;
+    uint _imeBuffer, _imeMaxLen, _imeOption;
+    string _imeTitle = "";
+    IImeDialogBackend? _imeBackend;
 
-    /// <summary>SceImeDialogParam (0xA8): +0x14 type, +0x18 option, +0x20 dialogMode, +0x24 textBoxMode, +0x28 title*,
-    /// +0x2C maxTextLength, +0x30 initialText*, +0x34 inputTextBuffer*, +0x38 commonParam.</summary>
+    /// <summary>Test hook: the host text entry (null = <see cref="Emulator"/>'s <c>Host.ImeDialog</c>).</summary>
+    internal IImeDialogBackend? ImeBackendOverride;
+
+    /// <summary>The text as the dialog returns it: CRLF folded to LF, line breaks removed unless the dialog is
+    /// multiline, then cut to <paramref name="maxLen"/> UTF-16 units without splitting a surrogate pair.</summary>
+    internal static string ImeResultText(string text, uint option, int maxLen)
+    {
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        if ((option & ImeOptionMultiline) == 0) text = text.Replace("\n", "");
+        if (text.Length > maxLen) text = text[..maxLen];
+        if (text.Length > 0 && char.IsHighSurrogate(text[^1])) text = text[..^1];
+        return text;
+    }
+
+    /// <summary>
+    /// SceImeDialogParam (0xA8): +0x14 type, +0x18 option, +0x20 dialogMode, +0x24 textBoxMode, +0x28 title*,
+    /// +0x2C maxTextLength, +0x30 initialText*, +0x34 inputTextBuffer*, +0x38 commonParam.
+    /// Answered in one of three ways: with --ime-text (<see cref="ImeDefaultText"/>, automated runs) the text is "typed"
+    /// and Enter pressed at once; with a host text entry (<see cref="HostServices.ImeDialog"/>: the desktop overlay, the
+    /// Android soft keyboard) the dialog stays RUNNING until the user confirms (Enter: result OK, button ENTER, the text
+    /// in inputTextBuffer) or cancels (result USER_CANCELED, button CLOSE, the buffer keeps the initial text); without
+    /// either the initial text is confirmed at once.
+    /// </summary>
     [Hle]
     int sceImeDialogInit(uint param)
     {
         if (param == 0) return CommonDialogError.NULL;
-        uint option = GuestMemory.R32(param + 0x18), dialogMode = GuestMemory.R32(param + 0x20), textBoxMode = GuestMemory.R32(param + 0x24);
+        uint type = GuestMemory.R32(param + 0x14), option = GuestMemory.R32(param + 0x18);
+        uint dialogMode = GuestMemory.R32(param + 0x20), textBoxMode = GuestMemory.R32(param + 0x24);
         uint titlePtr = GuestMemory.R32(param + 0x28), maxLen = GuestMemory.R32(param + 0x2C);
         uint initPtr = GuestMemory.R32(param + 0x30), buffer = GuestMemory.R32(param + 0x34);
         if (maxLen == 0 || maxLen > 2048 || buffer == 0) return ImeErrParam;
@@ -425,17 +456,55 @@ public sealed class CommonDialog : HleModule
         string initial = ReadUtf16(initPtr, (int)maxLen);
         int r = State.Begin(DialogType.Ime);
         if (r < 0) return r;
-        // no host keyboard yet: the user "types" --ime-text (or keeps the initial text) and presses Enter
-        string text = ImeDefaultText ?? initial;
-        if (text.Length == 0) text = "Player"; // many games refuse an empty name and reopen the keyboard forever
-        text = text.Replace("\r\n", "\n");
-        if ((option & 1) == 0) text = text.Replace("\n", "");
-        WriteUtf16(buffer, text, (int)maxLen);
-        _imeButton = ImeButtonEnter;
-        State.Finish(ResultOk);
-        Log.Info($"ImeDialog \"{title}\": entered \"{text}\"");
+        var backend = ImeDefaultText == null ? ImeBackendOverride ?? Emu?.Host.ImeDialog : null;
+        int session;
+        lock (State.Lock)
+        {
+            session = ++_imeSession;
+            _imeBuffer = buffer; _imeMaxLen = maxLen; _imeOption = option; _imeTitle = title;
+            _imeButton = ImeButtonNone;
+            _imeBackend = backend;
+            WriteUtf16(buffer, ImeResultText(initial, option, (int)maxLen), (int)maxLen);
+        }
+        if (backend != null)
+        {
+            Log.Info($"ImeDialog \"{title}\": waiting for the host keyboard (type {type}, max {maxLen}, initial \"{initial}\")");
+            backend.Open(new ImeDialogRequest(title, initial, (int)maxLen, (int)type, (option & ImeOptionMultiline) != 0, (int)textBoxMode),
+                text => ImeAnswer(session, text));
+            return 0;
+        }
+        // automated runs: the user "types" --ime-text (or keeps the initial text) and presses Enter
+        string answer = ImeDefaultText ?? initial;
+        if (answer.Length == 0) answer = "Player"; // many games refuse an empty name and reopen the keyboard forever
+        ImeAnswer(session, answer);
         return 0;
     }
+
+    /// <summary>The user's answer (any thread): the text, or null for Cancel. Ignored once the session is over.</summary>
+    internal void ImeAnswer(int session, string? text)
+    {
+        lock (State.Lock)
+        {
+            if (session != _imeSession || State.StatusOf(DialogType.Ime) != StatusRunning) return;
+            if (text == null)
+            {
+                _imeButton = ImeButtonClose;
+                State.Finish(ResultUserCanceled);
+                _imeBackend = null;
+                Log.Info($"ImeDialog \"{_imeTitle}\": canceled");
+                return;
+            }
+            string s = ImeResultText(text, _imeOption, (int)_imeMaxLen);
+            WriteUtf16(_imeBuffer, s, (int)_imeMaxLen);
+            _imeButton = ImeButtonEnter;
+            State.Finish(ResultOk);
+            _imeBackend = null;
+            Log.Info($"ImeDialog \"{_imeTitle}\": entered \"{s}\"");
+        }
+    }
+
+    /// <summary>Current IME dialog session (tests).</summary>
+    internal int ImeSession { get { lock (State.Lock) return _imeSession; } }
 
     [Hle] int sceImeDialogGetStatus() => State.StatusOf(DialogType.Ime);
 
@@ -453,7 +522,23 @@ public sealed class CommonDialog : HleModule
     }
 
     [Hle] int sceImeDialogTerm() => State.Term(DialogType.Ime);
-    [Hle] int sceImeDialogAbort() => State.Abort(DialogType.Ime);
+
+    /// <summary>Closes the host text entry (if it is still open) and finishes ABORTED.</summary>
+    [Hle]
+    int sceImeDialogAbort()
+    {
+        IImeDialogBackend? backend;
+        int r;
+        lock (State.Lock)
+        {
+            bool running = State.StatusOf(DialogType.Ime) == StatusRunning;
+            r = State.Abort(DialogType.Ime);
+            backend = running ? _imeBackend : null;
+            if (running) { _imeSession++; _imeBackend = null; }
+        }
+        backend?.Close();
+        return r;
+    }
 
     // ------------------------------------------------------------------ NetCheckDialog
 
