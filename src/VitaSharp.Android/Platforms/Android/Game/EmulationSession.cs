@@ -7,6 +7,7 @@ using VitaSharp.Android.Logging;
 using VitaSharp.Android.Media;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Settings;
+using VitaSharp.Android.Storage;
 using VitaSharp.Core;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Gpu;
@@ -23,7 +24,7 @@ namespace VitaSharp.Android.Game;
 /// <item>surface: the renderer is created on the first surfaceCreated (with the Android surface's instance
 /// extensions), detached in surfaceDestroyed and attached to the new window in the next surfaceCreated;</item>
 /// <item>lifecycle: onPause suspends the process (Emulator.Suspend: guest threads stop at their next safe point) and
-/// pauses the AAudio streams; onResume resumes both. The guest clock keeps running meanwhile, as the Vita's RTC does
+/// pauses the audio streams; onResume resumes both. The guest clock keeps running meanwhile, as the Vita's RTC does
 /// across a suspend;</item>
 /// <item>input: <see cref="AndroidInput"/> (on-screen pad + physical controllers) is the core's IInputBackend;</item>
 /// <item>settings: the game's settings over the global ones (<see cref="EffectiveSettings"/>): CPU backend, clock,
@@ -37,7 +38,7 @@ public sealed class EmulationSession : IDisposable
     readonly EffectiveSettings _settings;
     readonly Emulator _emu;
     readonly VulkanRendererOptions _rendererOptions;
-    readonly AAudioBackend? _audio;
+    readonly AndroidAudioBackend? _audio;
     readonly Stopwatch _played = new();
     VulkanRenderer? _renderer;
     Thread? _boot;
@@ -83,16 +84,25 @@ public sealed class EmulationSession : IDisposable
             Failed?.Invoke($"O jogo parou com um erro na thread {t.Name}: {e.Message}");
         };
         _emu.Host.Input = input;
-        _emu.Host.Audio = _audio = AAudioBackend.TryCreate();
-        // hardware H.264 (MediaCodec), FFmpeg software as the fallback when the app carries it
+        _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
+        // no FFmpeg in the app: H.264 (SceAvcdec, SceVideodec, movies) through MediaCodec, SceAvPlayer movies demuxed by
+        // MediaExtractor with AAC through MediaCodec
         VitaSharp.Core.Media.VideoDecoders.Backend = new MediaCodecVideoBackend();
+        VitaSharp.Core.Media.MediaPlayers.Backend = AndroidMediaPlayer.Open;
         TrophyNotifications.Unlocked += OnTrophy;
 
         // a custom Adreno/Turnip driver (Driver da GPU) goes in before the first Vulkan call of the process
         var ctx = AppServices.AppContext;
-        var gpuSettings = GpuDriverSettings.Load(Path.Combine(data.Root, GpuDriverScreen.SettingsFile));
-        VulkanLoader.DriverProvider = AdrenoToolsDriverLoader.Create(gpuSettings, new CustomDriverStore(Path.Combine(data.Root, GpuDriverScreen.DriversDir)),
-            ctx.ApplicationInfo!.NativeLibraryDir!, ctx.CacheDir!.AbsolutePath, Path.Combine(data.Root, "gpu_driver_files"));
+        var gpuSettings = GpuDriverSettings.Load(data.GpuDriverSettingsFile);
+        var gpuStore = new CustomDriverStore(data.GpuDrivers);
+        VulkanLoader.DriverProvider = AdrenoToolsDriverLoader.Create(gpuSettings, gpuStore, data, ctx.ApplicationInfo!.NativeLibraryDir!, ctx.CacheDir!.AbsolutePath);
+        // the screens' process reads this to know which driver the running game loaded ("Driver da GPU" restarts it)
+        try
+        {
+            GameProcessMarker.Write(data.GameProcessFile, new GameProcessInfo(global::Android.OS.Process.MyPid(), game.TitleId, game.Title,
+                GpuDriverScreen.ConfigOf(gpuSettings, gpuStore), DateTime.UtcNow));
+        }
+        catch (IOException e) { Log.Warn($"Game process marker: {e.Message}"); }
 
         _rendererOptions = new VulkanRendererOptions
         {
@@ -220,6 +230,7 @@ public sealed class EmulationSession : IDisposable
             AppServices.SavePrefs();
         }
         catch (Exception e) { Log.Warn($"Play statistics: {e.Message}"); }
+        try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
         try
         {

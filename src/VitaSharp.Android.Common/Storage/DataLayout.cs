@@ -12,15 +12,24 @@ namespace VitaSharp.Android.Storage;
 /// &lt;root&gt;/config/app.json           global settings (AppPreferences)
 /// &lt;root&gt;/config/games/TITLEID.json per-game settings and play statistics (GameSettings)
 /// &lt;root&gt;/config/input.json         controller profiles (Core InputProfileStore)
-/// &lt;root&gt;/gpu_driver.json, gpu_drivers/  GPU driver choice and packages (GpuDriverScreen)
+/// &lt;root&gt;/gpu_driver.json           GPU driver choice and libadrenotools options (GpuDriverScreen)
+/// &lt;internal&gt;/gpu_drivers/TITLE    installed GPU driver packages, &lt;internal&gt;/gpu_driver_files the driver's redirected files
+/// &lt;internal&gt;/run/game.json         the running game process (GameProcessMarker)
 /// </code>
 /// The root is the app-specific external storage (Context.GetExternalFilesDir(null),
 /// /sdcard/Android/data/&lt;package&gt;/files) when it is mounted, else the internal files folder. Both are plain
-/// POSIX paths the emulator opens and maps directly; neither needs a storage permission.
+/// POSIX paths the emulator opens and maps directly; neither needs a storage permission. &lt;internal&gt; is the internal
+/// files folder (Context.FilesDir): GPU driver libraries must be there, because the linker refuses to load a library from
+/// shared storage (libadrenotools: "MUST NOT be on sdcard/storage").
 /// </summary>
-public sealed class DataLayout(string root)
+public sealed class DataLayout(string root, string? internalRoot = null)
 {
     public string Root { get; } = Path.GetFullPath(root);
+    public string InternalRoot { get; } = Path.GetFullPath(internalRoot ?? root);
+    public string GpuDriverSettingsFile => Path.Combine(Root, "gpu_driver.json");
+    public string GpuDrivers => Path.Combine(InternalRoot, "gpu_drivers");
+    public string GpuDriverFiles => Path.Combine(InternalRoot, "gpu_driver_files");
+    public string GameProcessFile => Path.Combine(InternalRoot, "run", "game.json");
     public string Fs => Path.Combine(Root, "fs");
     public string Ux0 => Path.Combine(Fs, "ux0");
     public string Apps => Path.Combine(Ux0, "app");
