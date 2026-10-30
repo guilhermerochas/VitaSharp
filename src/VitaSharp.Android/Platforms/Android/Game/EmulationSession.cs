@@ -44,6 +44,7 @@ public sealed class EmulationSession : IDisposable
     Thread? _boot;
     long _framesAtStart;
     bool _started, _disposed;
+    volatile bool _emuStarted;
 
     /// <summary>Raised (on an emulator thread) when the game crashes or cannot start.</summary>
     public event Action<string>? Failed;
@@ -192,6 +193,7 @@ public sealed class EmulationSession : IDisposable
             _framesAtStart = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
             _played.Start();
             _emu.Start();
+            _emuStarted = true;
         }
         catch (Exception e)
         {
@@ -234,6 +236,10 @@ public sealed class EmulationSession : IDisposable
         if (_started) _played.Start();
     }
 
+    /// <summary>The game was started and its process has stopped by itself (the guest exited, a stack-protector
+    /// failure or a crash terminated it): nothing more will be drawn, the activity offers to leave.</summary>
+    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null;
+
     /// <summary>Frames the guest presented since the game started.</summary>
     public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesPresented - _framesAtStart;
 
@@ -246,6 +252,29 @@ public sealed class EmulationSession : IDisposable
             _disposed = true;
         }
         TrophyNotifications.Unlocked -= OnTrophy;
+        RecordStatistics();
+        try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
+        Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
+        try
+        {
+            _emu.Stop();
+            _boot?.Join(5000);
+            _emu.Dispose();
+        }
+        catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }
+        Log.Flush();
+    }
+
+    int _recorded;
+
+    /// <summary>
+    /// Adds the play time and average FPS to the game's statistics (once). Called when the player leaves the game,
+    /// before the activity finishes: the screens' activity resumes (and re-reads the statistics) as soon as this one
+    /// finishes, before its onDestroy runs, so recording only there showed the previous numbers.
+    /// </summary>
+    public void RecordStatistics()
+    {
+        if (Interlocked.Exchange(ref _recorded, 1) != 0) return;
         _played.Stop();
         try
         {
@@ -257,15 +286,5 @@ public sealed class EmulationSession : IDisposable
             AppServices.SavePrefs();
         }
         catch (Exception e) { Log.Warn($"Play statistics: {e.Message}"); }
-        try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
-        Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
-        try
-        {
-            _emu.Stop();
-            _boot?.Join(5000);
-            _emu.Dispose();
-        }
-        catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }
-        Log.Flush();
     }
 }
