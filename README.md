@@ -677,6 +677,10 @@ Contributions are welcome, from bug reports to new system functions.
 3. Check it with `imports <TITLEID>` and the scenarios of the affected game.
 4. Open a pull request describing what changed and which games it affects.
 
+Scripts are multiplatform: every script ships as a pair, `name.ps1` for Windows and `name.sh` for Linux/macOS (LF line
+endings, executable bit set), doing the same thing. CI enforces it with `build/check-script-parity.sh`
+(`.ps1` on Windows); only scripts that are inherently single-platform are listed as exceptions there.
+
 When reporting a bug, attach `logs/last.log` (and an F10 capture if the problem is visible) and say which game (title
 ID and version) and which hardware you used.
 
