@@ -19,7 +19,7 @@ dotnet build src/VitaSharp.Android -c Release -m:2
 ```
 
 The renderer needs shaderc on the device, and `Silk.NET.Shaderc.Native` has no Android build: once per checkout,
-`build/build-android-shaderc.ps1` compiles `libshaderc_shared.so` for arm64-v8a and x86_64 from the shaderc sources
+`build/build-android-shaderc.ps1` (or `.sh`) compiles `libshaderc_shared.so` for arm64-v8a and x86_64 from the shaderc sources
 the NDK ships (`sources/third_party/shaderc`, ndk-build, libc++ static, 16 KiB-page aligned) into
 `third_party/android-shaderc/libs/<abi>/` (not committed); the app packages them when they exist. It needs the NDK
 (`sdkmanager "ndk;30.0.16248370"`, r30 was used) and takes long (glslang + SPIRV-Tools, about 460 files per ABI;
@@ -158,7 +158,7 @@ reference; the app follows them with these differences:
 ## Before the first run: what the emulator/device step must verify
 
 1. **Shader compiler**: `libshaderc_shared.so` (built from the NDK r30 sources, 42 `shaderc_*` exports, 16 KiB
-   aligned, needs only libc/libm/libdl) is in the APK when `build/build-android-shaderc.ps1` ran; check that
+   aligned, needs only libc/libm/libdl) is in the APK when `build/build-android-shaderc.ps1` (or `.sh`) ran; check that
    Silk.NET.Shaderc loads it by that name and that the first shaders compile (a missing library shows as a
    DllNotFoundException in the session dialog and the log).
 2. Install, launch, navigate every screen (portrait), fonts and colours; SAF pickers return (VPK, PUP, driver zip);

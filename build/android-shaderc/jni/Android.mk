@@ -1,6 +1,6 @@
 # libshaderc_shared.so for Android, from the shaderc sources the NDK ships (sources/third_party/shaderc): the same
 # shared library Silk.NET.Shaderc loads on the desktop (shaderc's C API), with libc++ linked in statically so the
-# APK needs nothing else. Built by build/build-android-shaderc.ps1; see docs/android/README.md.
+# APK needs nothing else. Built by build/build-android-shaderc.ps1 or .sh; see docs/android/README.md.
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)

@@ -2,6 +2,7 @@
 # into third_party/android-shaderc/libs/<abi>/ (not committed). src/VitaSharp.Android packages whatever is there.
 # Needs the NDK (sdkmanager "ndk;<version>"); ANDROID_NDK_HOME picks one, else the newest under the SDK's ndk folder.
 # The compile is long (glslang + SPIRV-Tools, ~460 files per ABI): -Jobs sets the parallel compiles (default 2).
+# Linux/macOS: build/build-android-shaderc.sh (same steps).
 param([int]$Jobs = 2, [string]$Abi = '')
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
