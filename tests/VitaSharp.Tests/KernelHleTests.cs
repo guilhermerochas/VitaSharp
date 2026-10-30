@@ -228,6 +228,36 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void DeletedMsgPipeStaysForOpenHandles()
+    {
+        // a libipmi server opens its client's pipes by name; when the client deletes them (or its process ends) the
+        // server's handle reports MPP_DELETED (its "client gone" case) instead of an unknown id, until it is closed
+        var table = new ObjectTable();
+        var pipe = new MsgPipe { Name = "SceShellSvc40010b2dRQM00", BufferSize = 64 };
+        int uid = table.Register(pipe);
+        Assert.Equal(uid, KernelInfo.OpenByName<MsgPipe>(table, WriteName("SceShellSvc40010b2dRQM00"), p => !p.IsDeleted));
+        Assert.True(table.Delete(pipe));
+        uint buf = Alloc(8), res = Alloc(4);
+        Assert.Same(pipe, table.Get<MsgPipe>(uid));
+        Assert.Equal(SceError.MPP_DELETED, pipe.Receive(buf, 8, MsgPipe.WaitAsap, new Ptr<uint>(res), default, false));
+        Assert.Equal(SceError.UID_CANNOT_FIND_BY_NAME, KernelInfo.OpenByName<MsgPipe>(table, WriteName("SceShellSvc40010b2dRQM00"), p => !p.IsDeleted));
+        Assert.Equal(SceError.OK, KernelInfo.CloseHandle<MsgPipe>(table, uid, SceError.UNKNOWN_MSG_PIPE_ID));
+        Assert.Null(table.Get<MsgPipe>(uid));
+        // not opened by anyone: deleting removes it at once
+        var lone = new MsgPipe { Name = "lone", BufferSize = 8 };
+        int lu = table.Register(lone);
+        Assert.False(table.Delete(lone));
+        Assert.Null(table.Get<MsgPipe>(lu));
+    }
+
+    uint WriteName(string s)
+    {
+        uint p = Alloc(32);
+        GuestMemory.WriteCString(p, s, 32);
+        return p;
+    }
+
+    [Fact]
     public void RwLockCancelWakesWaiters()
     {
         // distinct thread identities (only compared by reference)

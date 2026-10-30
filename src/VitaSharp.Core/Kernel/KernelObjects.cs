@@ -76,6 +76,8 @@ public static class KernelInfo
         if (o == null || (filter != null && !filter(o))) return unknownError;
         int c;
         while ((c = Volatile.Read(ref o.OpenCount)) > 0 && Interlocked.CompareExchange(ref o.OpenCount, c - 1, c) != c) { }
+        // the last handle to a deleted pipe: the object goes away now
+        if (o is MsgPipe { IsDeleted: true } && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
         return SceError.OK;
     }
 }
@@ -120,6 +122,8 @@ public static class SceError
     public const int UNKNOWN_CALLBACK_ID = unchecked((int)0x800280A1);
     public const int UNKNOWN_MSG_PIPE_ID = unchecked((int)0x80028221);
     public const int MPP_EMPTY = unchecked((int)0x80028223);
+    /// <summary>The pipe was deleted (by its creator, or with its process) while this handle to it stayed open.</summary>
+    public const int MPP_DELETED = unchecked((int)0x80028224);
     public const int MPP_FULL = unchecked((int)0x80028222);
     public const int UNKNOWN_RW_LOCK_ID = unchecked((int)0x800281E1);
     public const int UNKNOWN_TIMER_ID = unchecked((int)0x80028241);
@@ -195,6 +199,16 @@ public sealed class ObjectTable
 
     public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out var o) ? o as T : null;
     public bool Remove(int uid) => _objects.TryRemove(uid, out _);
+
+    /// <summary>Deletes a message pipe: its waiters wake with WAIT_DELETE. When handles opened by name are still open
+    /// the object stays (unnamed for sceKernelOpenMsgPipe) until the last one is closed, and returns true.</summary>
+    public bool Delete(MsgPipe pipe)
+    {
+        pipe.Delete();
+        if (Volatile.Read(ref pipe.OpenCount) > 0) return true;
+        _objects.TryRemove(pipe.Uid, out _);
+        return false;
+    }
     public IEnumerable<T> All<T>() where T : KernelObject => _objects.Values.OfType<T>();
     /// <summary>The objects of one kind that process <paramref name="pid"/> created.</summary>
     public IEnumerable<T> Owned<T>(int pid) where T : KernelObject => _objects.Values.OfType<T>().Where(o => o.OwnerPid == pid);
@@ -204,7 +218,13 @@ public sealed class ObjectTable
     {
         int n = 0;
         foreach (var (uid, o) in _objects)
-            if (o.OwnerPid == pid && o is not (ProcessObject or AppObject) && _objects.TryRemove(uid, out _)) n++;
+        {
+            if (o.OwnerPid != pid || o is ProcessObject or AppObject) continue;
+            // a message pipe another process still holds a handle to stays until that handle is closed: its
+            // operations fail with MPP_DELETED (a libipmi server sees its client gone)
+            if (o is MsgPipe pipe) { if (!Delete(pipe)) n++; continue; }
+            if (_objects.TryRemove(uid, out _)) n++;
+        }
         return n;
     }
 
