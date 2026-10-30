@@ -38,7 +38,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Primeira execução no emulador do Android e num aparelho: a lista do que verificar está no fim de
   `docs/android/README.md` (superfície Vulkan, ciclo de vida, JIT nativo, entrada, logcat, SAF)
 - [x] shaderc para Android: compilar a `libshaderc_shared.so` (arm64-v8a e x86_64) com o NDK e empacotar no APK; sem
-  ela o renderizador não compila shaders no celular (30/10/2026: `build/build-android-shaderc.ps1`, NDK r30)
+  ela o renderizador não compila shaders no celular (30/10/2026: `build/build-android-shaderc.ps1` (ou `.sh`), NDK r30)
 - [x] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (30/10/2026: `OnScreenPad`,
   `AndroidGamepads` com os perfis de controle do desktop e o botão TRÁS; falta testar num aparelho e o editor de
   layout)

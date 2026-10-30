@@ -59,7 +59,7 @@
     <PackageReference Include="Silk.NET.Shaderc.Native" Version="2.23.0" ExcludeAssets="all" />
   </ItemGroup>
 
-  <!-- libshaderc_shared.so built from the NDK's shaderc by build/build-android-shaderc.ps1 (not committed): packaged
+  <!-- libshaderc_shared.so built from the NDK's shaderc by build/build-android-shaderc.ps1 or .sh (not committed): packaged
        when present; without it the renderer cannot compile shaders on the device -->
   <ItemGroup>
     <AndroidNativeLibrary Include="..\..\third_party\android-shaderc\libs\arm64-v8a\libshaderc_shared.so" Abi="arm64-v8a"
