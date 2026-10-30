@@ -23,9 +23,9 @@ namespace VitaSharp.Android.Game;
 /// <list type="bullet">
 /// <item>surface: the renderer is created on the first surfaceCreated (with the Android surface's instance
 /// extensions), detached in surfaceDestroyed and attached to the new window in the next surfaceCreated;</item>
-/// <item>lifecycle: onPause suspends the process (Emulator.Suspend: guest threads stop at their next safe point) and
-/// pauses the audio streams; onResume resumes both. The guest clock keeps running meanwhile, as the Vita's RTC does
-/// across a suspend;</item>
+/// <item>lifecycle and pause menu: onPause and the menu pause the whole emulation (<see cref="EmulationPause"/>: guest
+/// threads of every process stop at their next safe point, the guest clock stops, the audio streams pause); onResume
+/// and closing the menu resume it, with no time jump for the game;</item>
 /// <item>input: <see cref="AndroidInput"/> (on-screen pad + physical controllers) is the core's IInputBackend;</item>
 /// <item>settings: the game's settings over the global ones (<see cref="EffectiveSettings"/>): CPU backend, clock,
 /// GPU profile, VSync; play time and average FPS are added to the game's statistics when it ends.</item>
@@ -217,22 +217,22 @@ public sealed class EmulationSession : IDisposable
         }
     }
 
-    public void Pause()
+    /// <summary>The pause menu or the activity going to the background: the Core's pause of the whole emulation (the
+    /// desktop's pause key does the same), which also pauses the audio streams.</summary>
+    public void Pause(string reason = "pause menu")
     {
         if (Paused || _disposed) return;
         Paused = true;
         _played.Stop();
-        _emu.Suspend();
-        _audio?.Pause();
+        EmulationPause.Pause(reason);
         Log.Flush();
     }
 
-    public void Resume()
+    public void Resume(string reason = "pause menu")
     {
         if (!Paused || _disposed) return;
         Paused = false;
-        _audio?.Resume();
-        _emu.Resume();
+        EmulationPause.Resume(reason);
         if (_started) _played.Start();
     }
 
@@ -258,6 +258,7 @@ public sealed class EmulationSession : IDisposable
         try
         {
             _emu.Stop();
+            EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
             _emu.Dispose();
         }

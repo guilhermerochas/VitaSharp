@@ -152,7 +152,8 @@ public static class Runner
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            try { window.Title = st != null ? $"VitaSharp | {st}" : $"VitaSharp | {emu.TitleId} {emu.Title} | {fps:F0} FPS | {renderer?.DeviceName}"; } catch { }
+            string rate = EmulationPause.IsPaused ? PauseBadge.Text(window.PauseKeyLabel) : $"{fps:F0} FPS";
+            try { window.Title = st != null ? $"VitaSharp | {st}" : $"VitaSharp | {emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
         var titleTimer = new System.Threading.Timer(_ =>
         {
@@ -210,6 +211,25 @@ public static class Runner
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => renderer, options);
 
+        // pause hotkey (Controles > "Pausar emulação": P by default, or a controller combination): freezes every guest
+        // process, the guest clock and the audio; the window keeps the last frame with a "Pausado" badge
+        void ShowPauseBadge(VulkanRenderer? r)
+        {
+            if (r == null) return;
+            var badge = EmulationPause.IsPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
+            if (badge is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height); else r.SetStatusOverlay(null, 0, 0);
+        }
+        void OnPauseChanged(bool paused)
+        {
+            ShowPauseBadge(renderer);
+            ShowTitle();
+        }
+        EmulationPause.Changed += OnPauseChanged;
+        window.PauseToggled += () => EmulationPause.Toggle("pause key");
+        // scripted pause / F10 key steps (--input key@...:P) also work in the window
+        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag);
+        window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
+
         window.Loaded += () =>
         {
             rendererOptions.Surface = window;
@@ -218,11 +238,13 @@ public static class Runner
             emu.Gpu.Backend = renderer;
             emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
             emu.Start();
+            // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
+            if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
         };
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
         emu.ExecRequested += () => Task.Run(() =>
         {
-            try { emu.PerformExec(() => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; return renderer = r; }); }
+            try { emu.PerformExec(() => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }); }
             catch (Exception e) { Log.Error($"LoadExec failed: {e}"); fatal.Set(); }
         });
         window.Resized += () => renderer?.NotifyResized();
@@ -231,10 +253,23 @@ public static class Runner
         window.Run();
         GpuDumpControl.StopAtExit();
         titleTimer.Dispose();
+        EmulationPause.Changed -= OnPauseChanged;
         emu.Stop();
+        EmulationPause.Resume("window closed"); // parked threads see the stop; the summary's timings stay right
         diag.WaitIdle(20000);
         PrintStats(emu);
         return 0;
+    }
+
+    /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures.</summary>
+    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag)
+    {
+        if (script.TakeHostKeys() is not { } keys) return;
+        foreach (var k in keys)
+        {
+            if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
+            else if (k == "F10") diag.Capture("--input F10");
+        }
     }
 
     /// <summary>--debug-mode-at=FRAME[,FRAME...]: toggles debug mode like F9 when the guest frame is reached (tests).</summary>
@@ -360,6 +395,8 @@ public static class Runner
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();
+        if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
+        var hostKeyScript = emu.Host.Input is ScriptedInput { HasHostKeySteps: true } ps ? ps : null;
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
         bool profileHle = options.Contains("--profile-hle");
@@ -369,6 +406,8 @@ public static class Runner
         var allocMarks = new List<AllocMark>();
         while (!fatal.Wait(50) && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
+            // scripted pause / F10 key steps (key@f300:P, key@f300+5:P): the guest polls no input while paused, so here
+            if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag);
             double now = wall.Elapsed.TotalSeconds;
             if (now - fpsAt >= 5) // periodic frame rate, so boot and gameplay can be told apart
             {
@@ -390,6 +429,7 @@ public static class Runner
         long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
         LogSteadyAllocations(allocMarks, frames);
         emu.Stop();
+        EmulationPause.Resume("run finished");
         Log.Info($"Run finished: {frames} frames in {wall.Elapsed.TotalSeconds:F1} s ({frames / Math.Max(wall.Elapsed.TotalSeconds, 0.001):F1} frames/s)");
         if (dumpDir != null && thumbs != null) WriteContactSheet(dumpDir, thumbs);
         return 0;

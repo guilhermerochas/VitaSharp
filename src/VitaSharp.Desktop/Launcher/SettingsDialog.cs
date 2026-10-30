@@ -200,6 +200,7 @@ public sealed class SettingsDialog : Window
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap,
             Text = "Teclado, controles e toque são configurados na aba Controles. F11 alterna a tela cheia no jogo. " +
+                   "P pausa e retoma a emulação (tecla em Controles > Atalhos do emulador; um controle pode usar uma combinação de botões). " +
                    "F10 captura um diagnóstico (quadro, texturas, captura de tela e log) em um .zip na pasta de diagnósticos. " +
                    "F9 liga ou desliga o modo de depuração no meio do jogo. " +
                    "Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.",

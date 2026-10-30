@@ -45,12 +45,14 @@ public sealed class InputProfileStore
     public static InputConfig? Deserialize(string json) => JsonSerializer.Deserialize(json, InputJson.Default.InputConfig);
 
     /// <summary>The keyboard profile (a copy). A profile saved before the virtual motion existed (version 1) gets the
-    /// default tilt keys that do not clash with its own bindings.</summary>
+    /// default tilt keys that do not clash with its own bindings; one saved before the pause hotkey (version 2) gets
+    /// its default key the same way.</summary>
     public ControllerProfile KeyboardProfile()
     {
         if (Config.Keyboard == null) return DefaultMappings.Keyboard();
         var p = Config.Keyboard.Clone();
         if (Config.Version < 2) DefaultMappings.AddMotionKeys(p);
+        if (Config.Version < 3) DefaultMappings.AddHotkeys(p);
         return p;
     }
 

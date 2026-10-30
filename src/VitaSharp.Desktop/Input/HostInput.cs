@@ -109,6 +109,38 @@ public sealed class HostInput : IMotionSource, IDisposable
         }
     }
 
+    // ------------------------------------------------------------------ emulator hotkeys
+
+    /// <summary>The keyboard key (Silk.NET name) is bound to hotkey <paramref name="c"/> in the keyboard profile.</summary>
+    public bool IsHotkeyKey(VitaControl c, string key)
+    {
+        foreach (ref readonly var b in _keyboard[c])
+            if (b.Kind == BindingKind.Key && b.Key == key) return true;
+        return false;
+    }
+
+    /// <summary>Some controller holds hotkey <paramref name="c"/> (a single binding or a whole combination of its
+    /// profile). Polled by the window, since the guest does not poll the controllers while the emulation is paused.</summary>
+    public bool PadHotkeyHeld(VitaControl c)
+    {
+        lock (_lock)
+        {
+            if (_pads != null)
+            {
+                foreach (var info in _pads.Devices)
+                {
+                    var cp = ProfileFor(info);
+                    if ((cp[c].Length > 0 || cp.Combos(c).Length > 0) && _pads.TryGetState(info.InstanceId, _scratch) && InputMapper.HotkeyHeld(cp, c, _scratch, null)) return true;
+                }
+                return false;
+            }
+            return _fallback != null && _fallbackProfile != null && InputMapper.HotkeyHeld(_fallbackProfile, c, _fallback, null);
+        }
+    }
+
+    /// <summary>The keyboard profile's first binding of hotkey <paramref name="c"/> (null: none), for on-screen hints.</summary>
+    public InputBinding? KeyboardHotkey(VitaControl c) => _keyboard[c].Length > 0 ? _keyboard[c][0] : null;
+
     // ------------------------------------------------------------------ motion (IMotionSource)
 
     /// <summary>Tilt keys + mouse look, the motion source when no controller with sensors drives the Vita (or when

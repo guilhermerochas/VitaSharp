@@ -79,6 +79,7 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public void Idle()
     {
+        if (VitaSharp.Core.EmulationPause.IsPaused) PresentWhilePaused();
         // keep latency low when the guest stops producing work (loading screens etc.)
         bool resultsRecorded = F.Recording && HasPendingResults(F);
         if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))

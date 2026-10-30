@@ -5,7 +5,8 @@ namespace VitaSharp.Renderer.Vulkan;
 
 /// <summary>
 /// Small host-drawn overlays copied onto the swapchain image after the game frame: a notification (trophy unlocks) in
-/// the top-right corner and a centred panel (the IME text entry). The front end rasterises each on the CPU (BGRA,
+/// the top-right corner, a status badge (the paused emulation) in the top-left one and a centred panel (the IME text
+/// entry). The front end rasterises each on the CPU (BGRA,
 /// premultiplied onto its own opaque background) and hands it over with <see cref="SetOverlay"/> /
 /// <see cref="SetCenterOverlay"/>; null removes it. The copy is a plain buffer-to-image transfer, so an overlay never
 /// touches the guest's render targets or the captured frames.
@@ -14,9 +15,10 @@ public sealed unsafe partial class VulkanRenderer
 {
     sealed record OverlayImage(byte[] Bgra, int Width, int Height);
 
-    OverlayImage? _overlay, _centerOverlay;
+    OverlayImage? _overlay, _centerOverlay, _statusOverlay;
     readonly (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] _overlayBufs = new (Buffer, DeviceMemory, nint, ulong)[FramesInFlight];
     readonly (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] _centerOverlayBufs = new (Buffer, DeviceMemory, nint, ulong)[FramesInFlight];
+    readonly (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] _statusOverlayBufs = new (Buffer, DeviceMemory, nint, ulong)[FramesInFlight];
 
     static OverlayImage? NewOverlay(byte[]? bgra, int width, int height) =>
         bgra == null || width <= 0 || height <= 0 || bgra.Length < width * height * 4 ? null : new OverlayImage(bgra, width, height);
@@ -29,10 +31,15 @@ public sealed unsafe partial class VulkanRenderer
     /// entry); drawn under the corner overlay. Any thread.</summary>
     public void SetCenterOverlay(byte[]? bgra, int width, int height) => Volatile.Write(ref _centerOverlay, NewOverlay(bgra, width, height));
 
+    /// <summary>Like <see cref="SetOverlay"/>, in the top-left corner (a status badge: the paused emulation). While the
+    /// emulation is paused the last frame is presented again with it (VulkanRenderer.Pause.cs). Any thread.</summary>
+    public void SetStatusOverlay(byte[]? bgra, int width, int height) => Volatile.Write(ref _statusOverlay, NewOverlay(bgra, width, height));
+
     /// <summary>After the game frame was blitted (dst in TRANSFER_DST layout).</summary>
     void DrawOverlay(Image dst)
     {
         int margin = (int)Math.Max(8, _swapExtent.Height / 40);
+        if (Volatile.Read(ref _statusOverlay) is { } st) CopyOverlay(dst, st, _statusOverlayBufs, margin, margin);
         if (Volatile.Read(ref _centerOverlay) is { } c)
         {
             int w = Math.Min(c.Width, (int)_swapExtent.Width - 2 * margin);
@@ -76,7 +83,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyOverlay()
     {
-        foreach (var bufs in new[] { _overlayBufs, _centerOverlayBufs })
+        foreach (var bufs in new[] { _overlayBufs, _centerOverlayBufs, _statusOverlayBufs })
             for (int i = 0; i < bufs.Length; i++)
             {
                 if (bufs[i].Buffer.Handle == 0) continue;

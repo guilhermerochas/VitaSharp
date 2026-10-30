@@ -20,7 +20,38 @@ public static class GuestClock
 
     static long RealElapsed => Speed == 1.0 ? Stopwatch.GetTimestamp() - Start : (long)((Stopwatch.GetTimestamp() - Start) * Speed);
 
-    public static long Ticks => RealElapsed + Interlocked.Read(ref _offset);
+    /// <summary>The clock's reading while the emulation is paused (<see cref="EmulationPause"/>); NotFrozen otherwise.</summary>
+    static long _frozen = NotFrozen;
+    const long NotFrozen = long.MinValue;
+
+    public static long Ticks
+    {
+        get
+        {
+            long f = Volatile.Read(ref _frozen);
+            return f != NotFrozen ? f : RealElapsed + Interlocked.Read(ref _offset);
+        }
+    }
+
+    /// <summary>The clock is stopped (the emulation is paused).</summary>
+    public static bool Frozen => Volatile.Read(ref _frozen) != NotFrozen;
+
+    /// <summary>Stops the clock at its current reading (<see cref="EmulationPause.Pause"/>).</summary>
+    internal static void Freeze()
+    {
+        if (Frozen) return;
+        Volatile.Write(ref _frozen, RealElapsed + Interlocked.Read(ref _offset));
+    }
+
+    /// <summary>Restarts the clock from the reading it stopped at: the time spent frozen never reaches the guest, so a
+    /// game sees no jump on resume. Moves made by <see cref="AdvanceTo"/> while frozen are dropped.</summary>
+    internal static void Thaw()
+    {
+        long f = Volatile.Read(ref _frozen);
+        if (f == NotFrozen) return;
+        Interlocked.Exchange(ref _offset, f - RealElapsed);
+        Volatile.Write(ref _frozen, NotFrozen);
+    }
     public static long Microseconds => (long)(Ticks * (1_000_000.0 / Stopwatch.Frequency));
     public static double Seconds => Ticks / (double)Stopwatch.Frequency;
 
@@ -50,9 +81,11 @@ public static class GuestClock
 
     public static long ToMicroseconds(long ticks) => (long)(ticks * (1_000_000.0 / Stopwatch.Frequency));
 
-    /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there.</summary>
+    /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there. While the
+    /// emulation is paused it first waits for the resume (see <see cref="EmulationPause.WaitWhilePaused"/>).</summary>
     public static void WaitUntil(long deadline, bool allowSpin = true)
     {
+        if (EmulationPause.IsPaused && EmulationPause.WaitWhilePaused()) { Thread.Sleep(1); return; } // the thread finishing a GPU scene: the frozen clock never gets there
         long now = Ticks;
         if (now >= deadline) return;
         if (Turbo) { AdvanceTo(deadline); return; }

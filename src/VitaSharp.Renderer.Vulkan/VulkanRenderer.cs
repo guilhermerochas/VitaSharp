@@ -906,6 +906,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
+        _lastPresented = (src, frame); // shown again while the emulation is paused (VulkanRenderer.Pause.cs)
 
         RecordFrameSummary(frame);
         _presentedAddresses.Add(frame.Address);

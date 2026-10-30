@@ -127,7 +127,17 @@ public sealed class GpuQueue : IDisposable
     {
         cmd.Space ??= AddressSpace.Current; // the submitting thread's process, unless the command names another
         try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
-        return SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
+        long seq = SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
+        TrackSceneThread(cmd);
+        return seq;
+    }
+
+    /// <summary>Which guest thread has a scene open (it finishes the scene while the emulation is paused, see
+    /// <see cref="EmulationPause"/>).</summary>
+    static void TrackSceneThread(GpuCommand cmd)
+    {
+        if (cmd is not (BeginSceneCommand or EndSceneCommand) || Kernel.GuestThread.Current is not { } t) return;
+        t.Process.OpenSceneThread = cmd is BeginSceneCommand ? t : null;
     }
 
     long Enqueue(GpuCommand cmd)

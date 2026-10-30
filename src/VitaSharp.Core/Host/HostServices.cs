@@ -53,6 +53,10 @@ public interface IAudioStream : IDisposable
 public interface IAudioBackend : IDisposable
 {
     IAudioStream OpenStream(int sampleRate, int channels, int grainSamples);
+
+    /// <summary>The emulation was paused (true) or resumed (<see cref="EmulationPause"/>): the device stops playing the
+    /// queued grains, without counting it as underruns, and goes on where it stopped. Any thread.</summary>
+    void SetPaused(bool paused) { }
 }
 
 /// <summary>

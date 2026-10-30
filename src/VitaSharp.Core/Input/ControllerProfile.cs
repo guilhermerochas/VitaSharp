@@ -125,6 +125,23 @@ public sealed class ControllerProfile
 
     public bool Has(VitaControl c, InputBinding b) => Bindings.TryGetValue(c.ToString(), out var list) && list.Contains(b.ToString());
 
+    /// <summary>The button combinations bound to <paramref name="c"/> (<see cref="InputCombo"/>; hotkeys).</summary>
+    public IEnumerable<InputCombo> GetCombos(VitaControl c)
+    {
+        if (!Bindings.TryGetValue(c.ToString(), out var list)) yield break;
+        foreach (var s in list)
+            if (InputCombo.TryParse(s, out var combo)) yield return combo;
+    }
+
+    /// <summary>Adds a combination to <paramref name="c"/>, or replaces every binding with it.</summary>
+    public void AddCombo(VitaControl c, InputCombo combo, bool replace = false)
+    {
+        var key = c.ToString();
+        if (replace || !Bindings.TryGetValue(key, out var list)) Bindings[key] = list = new();
+        var s = combo.ToString();
+        if (!list.Contains(s)) list.Add(s);
+    }
+
     public ControllerProfile Clone() => new()
     {
         Id = Id, Name = Name, Kind = Kind,
@@ -140,10 +157,11 @@ public sealed class ControllerProfile
 public sealed class InputConfig
 {
     /// <summary>2: the keyboard profile has the virtual motion controls (version 1 files get the default tilt keys
-    /// added on load, see <see cref="InputProfileStore.KeyboardProfile"/>).</summary>
+    /// added on load, see <see cref="InputProfileStore.KeyboardProfile"/>). 3: it has the pause hotkey (older files get
+    /// the default key when it is free).</summary>
     public int Version { get; set; } = CurrentVersion;
 
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public ControllerProfile? Keyboard { get; set; }
     public List<ControllerProfile> Controllers { get; set; } = new();
 }

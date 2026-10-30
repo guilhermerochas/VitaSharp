@@ -25,11 +25,15 @@ public enum VitaControl
     TiltForward, TiltBack, TiltLeft, TiltRight, TwistLeft, TwistRight,
     /// <summary>Virtual motion: brings the mouse-look rotation back to neutral.</summary>
     MotionRecenter,
+    /// <summary>Host hotkey, not a Vita input: pressing it pauses the whole emulation, pressing it again resumes it
+    /// (<see cref="EmulationPause"/>). Keyboard default: P. On a controller a binding may be a combination of buttons
+    /// held together (<see cref="InputCombo"/>); controllers have none by default.</summary>
+    PauseEmulation,
 }
 
 public static class VitaControls
 {
-    public const int Count = (int)VitaControl.MotionRecenter + 1;
+    public const int Count = (int)VitaControl.PauseEmulation + 1;
 
     public static readonly VitaControl[] All = Enum.GetValues<VitaControl>();
 
@@ -51,6 +55,9 @@ public static class VitaControls
     /// <summary>Controls of the virtual motion sensors (keyboard tilt), not of the Vita's buttons.</summary>
     public static bool IsMotion(VitaControl c) => c is >= VitaControl.TiltForward and <= VitaControl.MotionRecenter;
 
+    /// <summary>Emulator hotkeys (pause), handled by the front-end and never seen by the game.</summary>
+    public static bool IsHotkey(VitaControl c) => c == VitaControl.PauseEmulation;
+
     /// <summary>English label for the configuration screen.</summary>
     public static string Label(VitaControl c) => c switch
     {
@@ -66,6 +73,7 @@ public static class VitaControls
         VitaControl.TiltForward => "Tilt forward", VitaControl.TiltBack => "Tilt back",
         VitaControl.TiltLeft => "Tilt left", VitaControl.TiltRight => "Tilt right",
         VitaControl.TwistLeft => "Twist left", VitaControl.TwistRight => "Twist right", VitaControl.MotionRecenter => "Re-centre motion",
+        VitaControl.PauseEmulation => "Pause emulation",
         _ => c.ToString(),
     };
 }

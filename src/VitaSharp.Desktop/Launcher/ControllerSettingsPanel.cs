@@ -25,7 +25,8 @@ public sealed class ControllerSettingsPanel : UserControl
         public override string ToString() => Label;
     }
 
-    enum ListenMode { Replace, Add }
+    /// <summary>Combo: record several controller buttons held together (a hotkey combination, <see cref="InputCombo"/>).</summary>
+    enum ListenMode { Replace, Add, Combo }
 
     readonly InputProfileStore _store;
     readonly Dictionary<string, ControllerProfile> _working = new(StringComparer.OrdinalIgnoreCase);
@@ -69,6 +70,9 @@ public sealed class ControllerSettingsPanel : UserControl
     ListenMode _listenMode;
     readonly Queue<VitaControl> _sequence = new();
     DateTime _listenUntil;
+    /// <summary>Buttons pressed so far while recording a combination (in the order they were pressed).</summary>
+    readonly List<InputBinding> _comboParts = new();
+    TextBlock? _hotkeyRowsHeader;
 
     /// <summary>Raised whenever a profile changes (the dialog's Save button saves them).</summary>
     public event Action? Changed;
@@ -419,9 +423,17 @@ public sealed class ControllerSettingsPanel : UserControl
     string Describe(VitaControl c)
     {
         var kind = _current?.Kind ?? ControllerKind.Generic;
-        var list = _profile.Get(c).Select(b => ControlNames.Describe(b, kind)).ToList();
+        var list = _profile.Get(c).Select(b => ControlNames.Describe(b, kind))
+            .Concat(_profile.GetCombos(c).Select(k => ControlNames.Describe(k, kind))).ToList();
         return list.Count == 0 ? "—" : string.Join(", ", list);
     }
+
+    string ListeningText => _listenMode switch
+    {
+        ListenMode.Add => "adicionar: aperte…",
+        ListenMode.Combo => _comboParts.Count == 0 ? "combinação: segure os botões…" : string.Join(" + ", _comboParts.Select(b => ControlNames.Describe(b, _current?.Kind ?? ControllerKind.Generic))) + "…",
+        _ => "aperte…",
+    };
 
     void RefreshBindings()
     {
@@ -435,11 +447,19 @@ public sealed class ControllerSettingsPanel : UserControl
                 _motionRowsHeader = h;
                 _bindingRows.Children.Add(h);
             }
+            if (c == VitaControl.PauseEmulation)
+            {
+                // host hotkeys: handled by the emulator, never seen by the game
+                var h = Header("Atalhos do emulador");
+                h.FontSize = 13;
+                _hotkeyRowsHeader = h;
+                _bindingRows.Children.Add(h);
+            }
             bool listening = _listen == c;
             var name = new TextBlock { Text = ControlNames.Label(c), Width = 140, VerticalAlignment = VerticalAlignment.Center, FontSize = 13 };
             var value = new TextBlock
             {
-                Text = listening ? (_listenMode == ListenMode.Add ? "adicionar: aperte…" : "aperte…") : Describe(c),
+                Text = listening ? ListeningText : Describe(c),
                 Foreground = listening ? new SolidColorBrush(Color.Parse("#FFB547")) : LauncherTheme.Muted,
                 VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13,
             };
@@ -452,7 +472,9 @@ public sealed class ControllerSettingsPanel : UserControl
                 Content = rowContent, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Padding = new Thickness(8, 3), Background = _layout.SelectedControl == c || listening ? new SolidColorBrush(Color.Parse("#2A3550")) : Brushes.Transparent,
             };
-            ToolTip.SetTip(row, "Clique para remapear");
+            ToolTip.SetTip(row, c == VitaControl.PauseEmulation
+                ? "Pausa e retoma a emulação inteira (todos os processos, relógio do jogo e áudio). Clique para remapear"
+                : "Clique para remapear");
             row.Click += (_, _) => BeginListen(c, ListenMode.Replace);
             var add = new Button { Content = "+", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
             ToolTip.SetTip(add, "Adicionar outro mapeamento");
@@ -465,6 +487,15 @@ public sealed class ControllerSettingsPanel : UserControl
             DockPanel.SetDock(add, Dock.Right);
             line.Children.Add(clear);
             line.Children.Add(add);
+            if (VitaControls.IsHotkey(c) && _current is { IsKeyboard: false })
+            {
+                // a controller binds a hotkey to buttons held together, so no button the game uses is given up
+                var combo = new Button { Content = "⊕", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
+                ToolTip.SetTip(combo, "Adicionar uma combinação de botões (segure-os juntos e solte)");
+                combo.Click += (_, _) => BeginListen(c, ListenMode.Combo);
+                DockPanel.SetDock(combo, Dock.Right);
+                line.Children.Add(combo);
+            }
             line.Children.Add(row);
             _bindingRows.Children.Add(line);
         }
@@ -494,21 +525,23 @@ public sealed class ControllerSettingsPanel : UserControl
     }
 
     /// <summary>Starts waiting for the input to bind to <paramref name="c"/>.</summary>
-    public void BeginListen(VitaControl c, ListenModeArg mode = ListenModeArg.Replace) => BeginListen(c, mode == ListenModeArg.Add ? ListenMode.Add : ListenMode.Replace);
+    public void BeginListen(VitaControl c, ListenModeArg mode = ListenModeArg.Replace) =>
+        BeginListen(c, mode switch { ListenModeArg.Add => ListenMode.Add, ListenModeArg.Combo => ListenMode.Combo, _ => ListenMode.Replace });
 
-    public enum ListenModeArg { Replace, Add }
+    public enum ListenModeArg { Replace, Add, Combo }
 
     void BeginListen(VitaControl c, ListenMode mode, bool keepSequence = false)
     {
         if (!keepSequence) _sequence.Clear();
         _listen = c;
         _listenMode = mode;
+        _comboParts.Clear();
         _listenUntil = DateTime.UtcNow.AddSeconds(8);
         _layout.ListeningControl = c;
         _layout.SelectedControl = c;
         if (_current?.Pad is { } pad && _pads != null) _pads.TryGetState(pad.InstanceId, _baseline);
         else _baseline.Clear();
-        _status.Text = $"{ControlNames.Label(c)}: {(_current?.IsKeyboard == true ? "aperte uma tecla" : "aperte um botão ou mova um analógico / gatilho")} (Esc cancela)…";
+        _status.Text = $"{ControlNames.Label(c)}: {(_current?.IsKeyboard == true ? "aperte uma tecla" : mode == ListenMode.Combo ? "segure dois ou mais botões juntos e solte" : "aperte um botão ou mova um analógico / gatilho")} (Esc cancela)…";
         RefreshBindings();
         Focus();
     }
@@ -539,6 +572,21 @@ public sealed class ControllerSettingsPanel : UserControl
             var next = _sequence.Dequeue();
             DispatcherTimer.RunOnce(() => BeginListen(next, ListenMode.Replace, keepSequence: true), TimeSpan.FromMilliseconds(350));
         }
+    }
+
+    /// <summary>A combination was recorded (all its buttons released): added to the control's bindings; a single
+    /// button is added as a plain binding.</summary>
+    void BoundCombo()
+    {
+        var c = _listen!.Value;
+        var parts = _comboParts.ToArray();
+        _comboParts.Clear();
+        if (parts.Length == 1) { _listenMode = ListenMode.Add; Bound(parts[0]); return; }
+        _listen = null;
+        _layout.ListeningControl = null;
+        var combo = new InputCombo(parts);
+        Edit(p => p.AddCombo(c, combo));
+        _status.Text = $"{ControlNames.Label(c)} = {ControlNames.Describe(combo, _current?.Kind ?? ControllerKind.Generic)} (segurados juntos)";
     }
 
     void OnKeyDown(object? sender, KeyEventArgs e)
@@ -597,6 +645,13 @@ public sealed class ControllerSettingsPanel : UserControl
         else _keyboardMotionOptions.BringIntoView();
     }
 
+    /// <summary>Test hook: scrolls the option list to the emulator hotkey rows (the end of the list).</summary>
+    public void ShowHotkeys()
+    {
+        _bindingRows.Children[^1].BringIntoView();
+        _hotkeyRowsHeader?.BringIntoView();
+    }
+
     // ------------------------------------------------------------------ live update
 
     void Tick()
@@ -610,6 +665,19 @@ public sealed class ControllerSettingsPanel : UserControl
         if (_listen != null)
         {
             if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = "Nenhuma entrada detectada."; }
+            else if (_listenMode == ListenMode.Combo)
+            {
+                if (pad != null)
+                {
+                    // the combination is every button pressed until all are released again
+                    var held = InputCapture.Held(_baseline, pad);
+                    bool grew = false;
+                    foreach (var h in held)
+                        if (!_comboParts.Contains(h)) { _comboParts.Add(h); grew = true; }
+                    if (grew) { _listenUntil = DateTime.UtcNow.AddSeconds(8); RefreshBindings(); }
+                    if (held.Count == 0 && _comboParts.Count > 0) BoundCombo();
+                }
+            }
             else if (pad != null && InputCapture.Detect(_baseline, pad) is { } b)
             {
                 // a pad binding of the other view (raw vs gamepad) would never fire: InputCapture follows the device

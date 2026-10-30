@@ -47,6 +47,17 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? DebugModeToggled;
     /// <summary>F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
     public event Action? GpuDumpToggled;
+    /// <summary>The pause hotkey (<see cref="VitaControl.PauseEmulation"/>: a key of the keyboard profile, P by default,
+    /// or a controller binding / button combination) was pressed: pause or resume the emulation (window thread).</summary>
+    public event Action? PauseToggled;
+
+    /// <summary>On-screen name of the keyboard's pause key ("P"), "" when it has none.</summary>
+    public string PauseKeyLabel => _hostInput.KeyboardHotkey(VitaControl.PauseEmulation) is { } b
+        ? Launcher.ControlNames.Describe(b, ControllerKind.Keyboard) : "";
+
+    readonly HashSet<Key> _pauseKeysDown = new();
+    bool _padPauseHeld;
+    long _lastHotkeyPoll;
 
     /// <summary>
     /// Text entry (the IME overlay): while set, key presses and typed characters go to it instead of the Vita button
@@ -105,6 +116,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             Tick?.Invoke();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now - _lastHotkeyPoll >= System.Diagnostics.Stopwatch.Frequency / 100)
+            {
+                _lastHotkeyPoll = now;
+                PollPadHotkeys();
+            }
             if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250) return;
             _lastFallbackPoll = now;
             PollFallbackGamepad();
@@ -223,8 +239,23 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
         if (key == Key.F8) { if (down) GpuDumpToggled?.Invoke(); return; }
         if (down && TextCapture is { } capture) { capture.OnKey(key); return; }
+        // the pause hotkey never reaches the game; a held key toggles once (key repeat is ignored)
+        if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key.ToString()))
+        {
+            if (!down) _pauseKeysDown.Remove(key);
+            else if (_pauseKeysDown.Add(key)) PauseToggled?.Invoke();
+            return;
+        }
         // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
         _hostInput.KeyChanged(key.ToString(), down);
+    }
+
+    /// <summary>A controller's pause binding or combination: toggles when it becomes held.</summary>
+    void PollPadHotkeys()
+    {
+        bool held = _hostInput.PadHotkeyHeld(VitaControl.PauseEmulation);
+        if (held && !_padPauseHeld) PauseToggled?.Invoke();
+        _padPauseHeld = held;
     }
 
     void ToggleFullscreen()

@@ -18,7 +18,8 @@ public static class AudioDiagnostics
     /// <summary>Underruns closer together than this belong to one burst.</summary>
     const double BurstQuietSeconds = 1.0;
 
-    static double Now => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+    /// <summary>Host time without the time the emulation spent paused: a pause is not a gap between outputs.</summary>
+    static double Now => EmulationPause.ActiveHostTicks / (double)Stopwatch.Frequency;
 
     public sealed class PortStats
     {
