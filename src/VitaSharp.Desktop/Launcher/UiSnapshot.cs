@@ -276,6 +276,22 @@ static class UiSnapshot
                      (Avalonia.Input.Key.D, PhysicalKey.D), (Avalonia.Input.Key.L, PhysicalKey.L), (Avalonia.Input.Key.T, PhysicalKey.T) })
             Key(k, pk, false);
 
+        // virtual motion: keypad 8 + 6 held tilt the Vita forward and right (live readout), then the tilt rows
+        Key(Avalonia.Input.Key.NumPad8, PhysicalKey.NumPad8, true);
+        Key(Avalonia.Input.Key.NumPad6, PhysicalKey.NumPad6, true);
+        panel.ShowMotion(rows: false);
+        await Task.Delay(700);
+        await Snap("keyboard_tilt");
+        Key(Avalonia.Input.Key.NumPad8, PhysicalKey.NumPad8, false);
+        Key(Avalonia.Input.Key.NumPad6, PhysicalKey.NumPad6, false);
+        panel.ShowMotion(rows: true);
+        await Snap("keyboard_motion_rows");
+        foreach (var (c, keys) in DefaultMappings.MotionKeys)
+        {
+            var bound = DefaultMappings.Keyboard().Get(c).Select(b => b.Key).ToArray();
+            if (!keys.SequenceEqual(bound)) { Console.WriteLine($"  {c}: default keys {string.Join("/", bound)}"); failures++; }
+        }
+
         // back to the controller, then unplug it: the list falls back to the keyboard
         panel.SelectDevice(pads.Devices.FirstOrDefault(d => d.IsVirtual)?.Guid ?? "");
         await Snap("dualsense_profile_edited");

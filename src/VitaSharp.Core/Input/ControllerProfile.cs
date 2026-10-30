@@ -16,6 +16,38 @@ public sealed class StickSettings
     public StickSettings Clone() => new() { Deadzone = Deadzone, Sensitivity = Sensitivity, InvertY = InvertY };
 }
 
+/// <summary>Which host device moves the Vita's motion sensors (SceMotion).</summary>
+public enum MotionSourceMode
+{
+    /// <summary>A controller with a gyroscope when one is connected, otherwise the keyboard tilt keys and mouse look.</summary>
+    Auto,
+    /// <summary>Only a controller's gyroscope + accelerometer (the Vita stays at rest without one).</summary>
+    Controller,
+    /// <summary>Only the virtual motion: tilt keys and mouse look (<see cref="VirtualMotion"/>).</summary>
+    KeyboardMouse,
+    /// <summary>The Vita stays at rest (lying flat, screen up).</summary>
+    Off,
+}
+
+/// <summary>Feel of the virtual motion driven by keys and the mouse (<see cref="VirtualMotion"/>).</summary>
+public sealed class TiltSettings
+{
+    /// <summary>Angle in degrees a held tilt / twist key reaches (5..85).</summary>
+    public float MaxAngle { get; set; } = DefaultMaxAngle;
+    /// <summary>Ramp speed multiplier (0.25..4): 1 reaches ~95% of the angle in 0.4 s.</summary>
+    public float Speed { get; set; } = 1f;
+    /// <summary>While the middle mouse button is held, moving the mouse rotates the Vita (horizontal = twist,
+    /// vertical = tilt forward/back).</summary>
+    public bool MouseLook { get; set; } = true;
+    /// <summary>Mouse look gain (0.1..4): 1 = 0.2 degrees per pixel.</summary>
+    public float MouseSensitivity { get; set; } = 1f;
+    public bool MouseInvertY { get; set; }
+
+    public const float DefaultMaxAngle = 30f;
+
+    public TiltSettings Clone() => new() { MaxAngle = MaxAngle, Speed = Speed, MouseLook = MouseLook, MouseSensitivity = MouseSensitivity, MouseInvertY = MouseInvertY };
+}
+
 /// <summary>
 /// Mapping of one host input device (the keyboard, or a controller identified by its GUID and name) onto the Vita's
 /// controls. Bindings are kept as strings (see <see cref="InputBinding"/>) so the JSON stays readable and editable.
@@ -53,6 +85,11 @@ public sealed class ControllerProfile
     /// <summary>How the controller's attitude maps onto the Vita's.</summary>
     [JsonConverter(typeof(JsonStringEnumConverter<MotionOrientation>))]
     public MotionOrientation MotionOrientation { get; set; }
+    /// <summary>Which device moves the Vita (read from the keyboard profile only: it is a global choice).</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<MotionSourceMode>))]
+    public MotionSourceMode MotionSource { get; set; }
+    /// <summary>Virtual motion feel: maximum angle and ramp speed of the tilt controls, mouse look.</summary>
+    public TiltSettings Tilt { get; set; } = new();
 
     public const string DefaultRearModifier = "pad:lefttrigger", DefaultBothModifier = "pad:righttrigger";
 
@@ -95,14 +132,18 @@ public sealed class ControllerProfile
         LeftStick = LeftStick.Clone(), RightStick = RightStick.Clone(), SwapConfirm = SwapConfirm, ButtonThreshold = ButtonThreshold,
         TouchFrontX = TouchFrontX, TouchFrontY = TouchFrontY, TouchBackX = TouchBackX, TouchBackY = TouchBackY,
         TouchpadEnabled = TouchpadEnabled, TouchpadRearModifier = TouchpadRearModifier, TouchpadBothModifier = TouchpadBothModifier,
-        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation,
+        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation, MotionSource = MotionSource, Tilt = Tilt.Clone(),
     };
 }
 
 /// <summary>Contents of input.json: the keyboard profile plus one profile per controller that was customised.</summary>
 public sealed class InputConfig
 {
-    public int Version { get; set; } = 1;
+    /// <summary>2: the keyboard profile has the virtual motion controls (version 1 files get the default tilt keys
+    /// added on load, see <see cref="InputProfileStore.KeyboardProfile"/>).</summary>
+    public int Version { get; set; } = CurrentVersion;
+
+    public const int CurrentVersion = 2;
     public ControllerProfile? Keyboard { get; set; }
     public List<ControllerProfile> Controllers { get; set; } = new();
 }

@@ -19,11 +19,17 @@ public enum VitaControl
     TouchFront,
     /// <summary>Holds a finger on the rear touch pad at the profile's touch point.</summary>
     TouchBack,
+    /// <summary>Virtual motion (<see cref="VirtualMotion"/>): while held, the emulated Vita tilts its top edge away
+    /// from the player (forward) / towards the player (back), lowers its left / right edge, or twists about the
+    /// screen normal, up to the profile's maximum angle; released, it eases back to neutral.</summary>
+    TiltForward, TiltBack, TiltLeft, TiltRight, TwistLeft, TwistRight,
+    /// <summary>Virtual motion: brings the mouse-look rotation back to neutral.</summary>
+    MotionRecenter,
 }
 
 public static class VitaControls
 {
-    public const int Count = (int)VitaControl.TouchBack + 1;
+    public const int Count = (int)VitaControl.MotionRecenter + 1;
 
     public static readonly VitaControl[] All = Enum.GetValues<VitaControl>();
 
@@ -42,6 +48,9 @@ public static class VitaControls
 
     public static bool IsStickDirection(VitaControl c) => c is >= VitaControl.LStickUp and <= VitaControl.RStickRight;
 
+    /// <summary>Controls of the virtual motion sensors (keyboard tilt), not of the Vita's buttons.</summary>
+    public static bool IsMotion(VitaControl c) => c is >= VitaControl.TiltForward and <= VitaControl.MotionRecenter;
+
     /// <summary>English label for the configuration screen.</summary>
     public static string Label(VitaControl c) => c switch
     {
@@ -54,6 +63,9 @@ public static class VitaControls
         VitaControl.RStickUp => "Right stick up", VitaControl.RStickDown => "Right stick down",
         VitaControl.RStickLeft => "Right stick left", VitaControl.RStickRight => "Right stick right",
         VitaControl.TouchFront => "Front touch (tap point)", VitaControl.TouchBack => "Rear touch (tap point)",
+        VitaControl.TiltForward => "Tilt forward", VitaControl.TiltBack => "Tilt back",
+        VitaControl.TiltLeft => "Tilt left", VitaControl.TiltRight => "Tilt right",
+        VitaControl.TwistLeft => "Twist left", VitaControl.TwistRight => "Twist right", VitaControl.MotionRecenter => "Re-centre motion",
         _ => c.ToString(),
     };
 }

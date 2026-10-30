@@ -62,9 +62,30 @@ Controller gyroscope + accelerometer drive SceMotion.
 | Controles tab | "Usar giroscópio do controle", orientation picker, live tilt/rotation readout. |
 | `ScriptedInput` | `tilt@T:pitch:roll[:len]` (degrees, from flat) makes a script the motion source (`--input=`). |
 
-No mouse fallback: the right mouse button already drives the rear touch pad.
+Mouse: the right button drives the rear touch pad, so mouse look (below) uses the middle button.
 
 Verified: unit tests `MotionTests` (synthetic samples); Invizimals (PCSA00552, calls sceMotionGetState every frame
 without starting sampling) with `--input=tilt@...` and `--peek` of its SceMotionState: flat, 30 deg pitch, -40 deg
 roll and 80 deg pitch give the expected acceleration, quaternion and basic orientation. No controller with sensors
 was connected on the dev machine (SDL2 virtual controllers cannot emulate sensors), so the live SDL path is untested.
+
+## Keyboard / mouse motion (branch feat/keyboard-motion)
+
+For players without a controller gyroscope: keys tilt the emulated Vita, the mouse rotates it.
+
+| Where | What |
+| --- | --- |
+| `Core/Input/VirtualMotion.cs` | Platform-neutral integrator. Neutral = lying flat, screen up (the historic at-rest values). Pose = `Yaw(z) * Pitch(x) * Roll(y)` in the flat frame. Each key-driven angle follows its target (held = ±max angle, released = 0) through a critically damped spring (omega 12 rad/s x speed): 30 deg reached ~70% at 0.2 s, ~97% at 0.45 s, peak ~130 deg/s, no overshoot; release eases back the same way. Mouse look adds pitch/yaw offsets (0.2 deg/px x sensitivity, pitch clamped to ±80 deg, total pitch ±89.5 deg) that stay until re-centred; spread over the poll interval and capped at 720 deg/s (below SceMotion's 5 rev/s gyro clamp). Samples every 4 ms of host time: accel = gravity seen by the pose, gyro = body-frame rotation between consecutive poses, so MotionFusion's quaternion / matrices / basic orientation agree with the accelerometer. Gaps over 1 s are skipped (springs still advance). |
+| `VitaControl` | `TiltForward/Back/Left/Right`, `TwistLeft/Right`, `MotionRecenter` (appended: older enum values unchanged). Any profile can bind them (a pad without a gyro too); they press no Vita button. |
+| `DefaultMappings.MotionKeys` | Keypad 8/2/4/6 tilt forward/back/left/right, 7/9 twist, 5 re-centres; plus T/G/F/H, R/Y, B for keyboards without a keypad. input.json version 2; a version 1 keyboard profile gets the defaults whose key it does not already use. |
+| `ControllerProfile` | `MotionSource` (keyboard profile; `Auto` = controller with sensors if connected, else keys/mouse; `Controller`, `KeyboardMouse`, `Off`) and `Tilt` (`MaxAngle` 30, `Speed` 1, `MouseLook` on, `MouseSensitivity` 1, `MouseInvertY`). |
+| `Desktop/Input/HostInput.cs` | Picks the source. The virtual motion stays silent (historic at-rest SceMotion state) until a tilt key or mouse look is first used. |
+| `Desktop/Host/WindowHost.cs` | Middle mouse button held + move = mouse look. |
+| `Hle/Motion/MotionDevice.cs` | A sample over 1 s older than the previous one starts a new stream (switching between the controller's clock and the keyboard's). |
+| Controles tab (Teclado) | "Movimento (giroscópio)": source, max angle, speed, mouse look + sensitivity + invert, live readout; rows "Inclinar para frente/trás/esquerda/direita", "Girar para esquerda/direita", "Recentralizar". |
+| `ScriptedInput` | `key@T:Name[:len]` holds a key (Silk.NET name) through the default keyboard profile (buttons, sticks and tilt), `mlook@T:dx:dy[:len]` moves the mouse with the middle button held. |
+
+Verified: unit tests `VirtualMotionTests`; ui-snapshot (`09_keyboard_tilt`, `10_keyboard_motion_rows`); Invizimals
+(PCSA00552, SceMotionState at 0x823C70F8) with `--input=key@f300:Keypad8:f240,key@f300:H:f240,mlook@f800:150:0:f30`
+and `--peek`: at rest before the keys (identity quaternion), (0.433, 0.5, -0.75) G with keypad 8 + H held (30 deg
+forward + 30 deg right), back to (0, 0, -1) after release, and the quaternion Rx(-90) * Rz(-30) after 150 px of mouse look.

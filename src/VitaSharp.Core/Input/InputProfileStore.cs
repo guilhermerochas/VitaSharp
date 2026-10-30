@@ -44,7 +44,15 @@ public sealed class InputProfileStore
     public static string Serialize(InputConfig c) => JsonSerializer.Serialize(c, InputJson.Default.InputConfig);
     public static InputConfig? Deserialize(string json) => JsonSerializer.Deserialize(json, InputJson.Default.InputConfig);
 
-    public ControllerProfile KeyboardProfile() => Config.Keyboard?.Clone() ?? DefaultMappings.Keyboard();
+    /// <summary>The keyboard profile (a copy). A profile saved before the virtual motion existed (version 1) gets the
+    /// default tilt keys that do not clash with its own bindings.</summary>
+    public ControllerProfile KeyboardProfile()
+    {
+        if (Config.Keyboard == null) return DefaultMappings.Keyboard();
+        var p = Config.Keyboard.Clone();
+        if (Config.Version < 2) DefaultMappings.AddMotionKeys(p);
+        return p;
+    }
 
     /// <summary>The saved profile for a controller, or null.</summary>
     public ControllerProfile? FindSaved(string guid, string name)
@@ -59,7 +67,12 @@ public sealed class InputProfileStore
     public void Put(ControllerProfile p)
     {
         var copy = p.Clone();
-        if (p.Id == ControllerProfile.KeyboardId) { Config.Keyboard = copy; return; }
+        if (p.Id == ControllerProfile.KeyboardId)
+        {
+            Config.Keyboard = copy;
+            Config.Version = InputConfig.CurrentVersion; // stored as the player sees it, motion keys included
+            return;
+        }
         int i = Config.Controllers.FindIndex(x => x.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
         if (i >= 0) Config.Controllers[i] = copy; else Config.Controllers.Add(copy);
     }
