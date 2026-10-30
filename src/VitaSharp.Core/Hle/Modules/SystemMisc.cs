@@ -542,7 +542,7 @@ public sealed class SystemMisc : HleModule
     [Hle] int scePowerSetBusClockFrequency(int f) => 0;
     [Hle] int scePowerSetGpuClockFrequency(int f) => 0;
     [Hle] int scePowerSetGpuXbarClockFrequency(int f) => 0;
-    [Hle] int scePowerGetArmClockFrequency() => Cpu.CpuCore.InstructionsPerSecond > 0 ? (int)(Cpu.CpuCore.InstructionsPerSecond / 1_000_000) : 444;
+    [Hle] int scePowerGetArmClockFrequency() => (int)((Cpu.CpuCore.InstructionsPerSecond > 0 ? Cpu.CpuCore.InstructionsPerSecond : Cpu.CpuCore.DefaultClockHz) / 1_000_000);
     [Hle] int scePowerGetBusClockFrequency() => 222;
     [Hle] int scePowerGetGpuClockFrequency() => 222;
     [Hle] int scePowerGetGpuXbarClockFrequency() => 166;
