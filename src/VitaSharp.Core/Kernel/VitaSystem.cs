@@ -140,6 +140,10 @@ public sealed class VitaSystem
         return s;
     }
 
+    /// <summary>SceSharedFb: the system software's framebuffers, created by the shell and drawn into by the system
+    /// programs it composites.</summary>
+    public Hle.Modules.SharedFb.Registry SharedFbs { get; } = new();
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
 

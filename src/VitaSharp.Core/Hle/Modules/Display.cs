@@ -54,8 +54,10 @@ public sealed class Display : HleModule
         if (!_shownBase) { _shownBase = true; Log.Info($"Display: {Emu.Describe()} framebuffer 0x{_base:X8} {_width}x{_height} pitch {_pitch} format 0x{_format:X} in {Emu.Memory.FindBlock(_base)}"); }
         _lastSetVcount = VBlank.Count;
         // the display shows the foreground process (the shell, or the application it launched); a process in the
-        // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again
-        if (!Emu.IsForeground) return 0;
+        // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
+        // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
+        // layers over it (SceSharedFb), so the shell's frames stay on screen.
+        if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu))) return 0;
         Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = System.Diagnostics.Stopwatch.GetTimestamp();
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
@@ -65,6 +67,9 @@ public sealed class Display : HleModule
 
     /// <summary>The process has set a framebuffer (it is showing frames).</summary>
     internal bool HasFrame => _base != 0;
+
+    /// <summary>The framebuffer the process set last (what is on screen while it is in front).</summary>
+    internal DisplayFrame? Current => _base == 0 ? null : new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format);
 
     /// <summary>The process came to the foreground: its last framebuffer is shown again right away.</summary>
     internal void Represent()
@@ -196,9 +201,11 @@ public sealed class Display : HleModule
     [Hle]
     int sceDisplaySetFrameBufInternal(int head, int index, uint pParam, uint sync)
     {
-        if (head != 0) return ERR_INVALID_HEAD;
+        // head 0 is the handheld's screen, head 1 the external (HDMI) output: libpaf sets every frame on both. Nothing
+        // is connected to head 1, so its framebuffer is checked and not shown.
+        if (head is not (0 or 1)) return ERR_INVALID_HEAD;
         if (sync > 1) return ERR_INVALID_UPDATETIMING;
-        if (index == 0) return SetFrameBuf(pParam, sync);
+        if (head == 0 && index == 0) return SetFrameBuf(pParam, sync);
         if (pParam != 0 && GuestMemory.R32(pParam) is not (0x18 or 0x1C)) return ERR_INVALID_VALUE;
         return 0;
     }

@@ -393,6 +393,7 @@ public sealed partial class IoFileMgr : HleModule
         string path;
         if (_files.TryGetValue(fd, out var f)) path = f.VitaPath;
         else if (IsSpecialFd(fd)) path = "stdio";
+        else if (_dirs.ContainsKey(fd)) path = "directory"; // the shell's trophy server sends 0x1802 to the data folder it lists
         else return SceError.IO_EBADF;
         Log.WarnOnce($"ioctl{cmd:X}", $"sceIoIoctl fd=0x{fd:X} cmd=0x{cmd:X} in={argLen} out={bufLen} path={path}");
         if (buf != 0 && (int)bufLen > 0) GuestMemory.Span(buf, (int)bufLen).Clear();

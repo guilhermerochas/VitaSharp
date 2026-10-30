@@ -16,7 +16,10 @@
 # folder, or named by the ISCC environment variable), the installer VitaSharp-<version>-<rid>-setup.exe. Linux
 # (.tar.gz, AppImage) and macOS (.app) packages need Unix file permissions: build them with build/publish.sh --package
 # on Linux or macOS.
-# -Version names the packages (default: dev). -SkipPublish packages an existing publish output without rebuilding.
+# -Version names the packages (default: dev). A release version (1.2.3 or 1.2.3-suffix, as cut by
+# .github/workflows/release.yml) also becomes the app's version (-p:Version, shown as "VitaSharp 1.2.3+<commit>" in
+# the log); dev and ci-<n> builds keep the default 1.0.0. -SkipPublish packages an existing publish output without
+# rebuilding.
 param(
     [string[]]$Rid = @('win-x64', 'linux-x64', 'linux-arm64', 'osx-x64', 'osx-arm64'),
     [string]$Out = (Join-Path $PSScriptRoot '..\artifacts\publish'),
@@ -29,6 +32,8 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $project = Join-Path $root 'src\VitaSharp.Desktop\VitaSharp.Desktop.csproj'
 $Out = [IO.Path]::GetFullPath($Out)
+$versionProps = @()
+if ($Version -match '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') { $versionProps = @("-p:Version=$Version") }
 
 function Test-AotHost([string]$r) {
     if ($IsLinux) { $hostArch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower(); return $r -eq "linux-$hostArch" }
@@ -89,7 +94,7 @@ foreach ($r in $Rid) {
     }
     elseif ($Aot -and (Test-AotHost $r)) {
         Write-Host "== $r (Native AOT)"
-        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:VitaSharpAot=true -o $dest
+        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:VitaSharpAot=true @versionProps -o $dest
         if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
         $symbols = Join-Path $Out "$r-symbols"
         New-Item -ItemType Directory -Force $symbols | Out-Null
@@ -99,7 +104,7 @@ foreach ($r in $Rid) {
     else {
         if ($Aot) { Write-Warning "$r`: Native AOT cannot be cross-compiled from this OS, publishing ReadyToRun instead (build it on $r for AOT)" }
         Write-Host "== $r (ReadyToRun)"
-        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:DebugType=embedded -o $dest
+        dotnet publish $project -c Release -r $r -p:VitaSharpRelease=true -p:DebugType=embedded @versionProps -o $dest
         if ($LASTEXITCODE -ne 0) { throw "publish $r failed" }
     }
 

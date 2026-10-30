@@ -260,4 +260,57 @@ public sealed class AppMgrShell : HleModule
         e.CopyTo(GuestMemory.Span(ev, e.Length));
         return 0;
     }
+
+    /// <summary>(int appId, SceDisplayFrameBuf *dst): copies what the application shows (its last framebuffer) into the
+    /// caller's buffer, scaled to its size (IFTU, the display's scaler) or 1:1 (DMAC). The shell captures the application
+    /// it suspends this way for the gate of its LiveArea (on failure it clears the thumbnail: black). Application ids as
+    /// in GetAppIdByAppId (-2 the caller, -4 the application in front).</summary>
+    [Hle]
+    [Hle("_sceAppMgrCaptureFrameBufIFTUByAppId")]
+    int sceAppMgrCaptureFrameBufIFTUByAppId(int appId, uint dst) => Capture(appId, dst, scale: true);
+
+    [Hle]
+    [Hle("_sceAppMgrCaptureFrameBufDMACByAppId")]
+    int sceAppMgrCaptureFrameBufDMACByAppId(int appId, uint dst) => Capture(appId, dst, scale: false);
+
+    int Capture(int appId, uint dst, bool scale)
+    {
+        if (dst == 0) return ERR_NULL;
+        Emulator? p = appId switch { -2 => Emu, < 0 => Emu.Vita.Foreground, _ => Emu.Vita.ByAppId(appId) };
+        if (p == null) return ERR_NOT_FOUND;
+        if (GuestMemory.R32(dst) is not (0x18 or 0x1C)) return ERR_NULL;
+        uint dBase = GuestMemory.R32(dst + 4), dPitch = GuestMemory.R32(dst + 8), dFmt = GuestMemory.R32(dst + 12);
+        uint dW = GuestMemory.R32(dst + 16), dH = GuestMemory.R32(dst + 20);
+        if (dBase == 0 || dW == 0 || dH == 0 || dPitch < dW) return ERR_NULL;
+        if (p.Hle.Modules.OfType<Display>().FirstOrDefault()?.Current is not { } src) return ERR_NOT_FOUND;
+        uint w = scale ? dW : Math.Min(dW, src.Width), h = scale ? dH : Math.Min(dH, src.Height);
+        // the framebuffer is in the application's address space (the GPU writes a rendered surface back there before the
+        // callback), the thumbnail in the caller's
+        var callerSpace = Emu.Space;
+        long seq = Emu.Gpu.Submit(new Gpu.CallbackCommand
+        {
+            Space = p.Space,
+            ReadAddress = src.Address, ReadSize = src.Pitch * src.Height * 4,
+            WriteAddress = dBase, WriteSize = dPitch * dH * 4,
+            Action = () =>
+            {
+                for (uint y = 0; y < h; y++)
+                {
+                    uint sy = scale ? y * src.Height / dH : y;
+                    for (uint x = 0; x < w; x++)
+                    {
+                        uint sx = scale ? x * src.Width / dW : x;
+                        uint v = GuestMemory.R32(src.Address + (sy * src.Pitch + sx) * 4);
+                        if (src.Format == Gpu.DisplayPixelFormat.A2B10G10R10) // 10-bit channels to 8 bits
+                            v = ((v >> 2) & 0xFF) | (((v >> 12) & 0xFF) << 8) | (((v >> 22) & 0xFF) << 16) | 0xFF000000;
+                        if (dFmt == (uint)Gpu.DisplayPixelFormat.A2B10G10R10)
+                            v = ((v & 0xFF) << 2) | (((v >> 8) & 0xFF) << 12) | (((v >> 16) & 0xFF) << 22) | 0xC0000000;
+                        using (AddressSpace.Use(callerSpace)) GuestMemory.W32(dBase + (y * dPitch + x) * 4, v);
+                    }
+                }
+            },
+        });
+        Emu.Gpu.WaitFor(seq);
+        return 0;
+    }
 }

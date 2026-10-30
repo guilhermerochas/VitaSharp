@@ -890,6 +890,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
 
         RecordFrameSummary(frame);
+        _presentedAddresses.Add(frame.Address);
         DrawRingPresent(frame);
         _presentCount++;
         _drawSerial = 0;

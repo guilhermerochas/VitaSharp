@@ -69,6 +69,7 @@ public sealed class GpuQueue : IDisposable
     {
         if (!_drawPool.TryTake(out var d)) d = new DrawCommand();
         d.Reset();
+        d.Space = null;
         return d;
     }
 
@@ -124,7 +125,7 @@ public sealed class GpuQueue : IDisposable
 
     public long Submit(GpuCommand cmd)
     {
-        cmd.Space = AddressSpace.Current; // the submitting thread's process
+        cmd.Space ??= AddressSpace.Current; // the submitting thread's process, unless the command names another
         try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
         return SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
     }

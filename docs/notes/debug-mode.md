@@ -412,18 +412,18 @@ at 5, latency ~47 ms, underruns N`) appears in the summary, the snapshot and aud
 
 | Line | When |
 |---|---|
-| `Audio: underrun burst #n on port 0 MAIN at f..: host queue ran dry, X ms since the previous output (grain Y ms), host queue N samples` | first underrun of a burst (underruns less than 1 s apart are one burst). With debug mode off: bursts 1-3, 10, 100, ... |
+| `Audio: underrun burst #n on port 1 MAIN at f..: host queue ran dry, X ms since the previous output (grain Y ms), host queue N samples` | first underrun of a burst (underruns less than 1 s apart are one burst). With debug mode off: bursts 1-3, 10, 100, ... |
 | `AUDIO summary: device ...` and `AUDIO summary: port <id> <MAIN/BGM/VOICE> grain G F Hz stereo volume l/r: N outputs in T s (R/s while active, expected E), gap avg/max, underruns n (n/min) in b bursts, silent s` | end of the session (window and test runs; test reports include them). `while active` = outputs over the time spent between outputs, so a port that is idle for a while is not penalised |
 
 **Debug mode adds** (all `[dbg] f<frame> AUDIO ...`):
 
 | Line | When |
 |---|---|
-| `AUDIO open port 0 MAIN grain 256 48000 Hz stereo volume 1,00/1,00, expected 187,5 outputs/s` / `AUDIO release ...: <totals>` / `AUDIO config ...` | sceAudioOutOpenPort / OpenExtPort, ReleasePort, SetConfig |
+| `AUDIO open port 1 MAIN grain 256 48000 Hz stereo volume 1,00/1,00, expected 187,5 outputs/s` / `AUDIO release ...: <totals>` / `AUDIO config ...` | sceAudioOutOpenPort / OpenExtPort, ReleasePort, SetConfig |
 | `AUDIO open NGS system 0x..: granularity 256, 48000 Hz, 64 voices` | sceNgsSystemInit (and `release` at sceNgsSystemRelease) |
 | `AUDIO open Audiodec decoder N: AAC 2 ch` / `Atrac handle N: ATRAC9 2 ch 48000 Hz, ... samples, loop ..` / `AvPlayer <file>: audio 2 ch 48000 Hz, video WxH fps, duration` | decoder streams created / deleted (Audiodec, Atrac, HLE SceAvPlayer). Games that link their own AvPlayer show up through Audiodec and their audio port instead |
 | `AUDIO snapshot: device ...`, one line per open port (with host queue and totals so far), one per NGS system / decoder stream | debug mode switched on mid-game (F9, `--debug-mode-at`): the open events already happened, so their state is listed once |
-| `AUDIO port 0 MAIN: R outputs/s (expected E), gap avg A ms max M ms (grain G ms), host queue Q samples, underruns u, silent s/N over T s` | every 10 s per open port while debug mode is on (stops when it is turned off) |
+| `AUDIO port 1 MAIN: R outputs/s (expected E), gap avg A ms max M ms (grain G ms), host queue Q samples, underruns u, silent s/N over T s` | every 10 s per open port while debug mode is on (stops when it is turned off) |
 | `AUDIO underrun burst #n on <port> ended: k underruns over T ms` | a burst is over (no underrun for 1 s; checked with the periodic line) |
 
 Reading them: `outputs/s` below `expected` with underruns = the guest produces too slowly (emulated CPU, a starved
