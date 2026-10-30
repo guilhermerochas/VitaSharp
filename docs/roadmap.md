@@ -49,8 +49,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [x] Controles na tela (horizontal), mapeamento de controles Bluetooth e toque traseiro (30/10/2026: `OnScreenPad`,
   `AndroidGamepads` com os perfis de controle do desktop e o botão TRÁS; falta testar num aparelho e o editor de
   layout)
-- [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
-  no SceCamera
+- [x] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
+  no SceCamera (30/10/2026: acelerômetro + giroscópio no SENSOR_DELAY_GAME com os eixos girados pela rotação da tela,
+  ajuste "Movimento" (celular, controle no Android 12+, desligado), Recentralizar no menu de pausa; Camera2 em
+  YUV_420_888, frontal/traseira para as câmeras 0/1, tamanho e fps pedidos pelo jogo, imagem em pé, permissão CAMERA
+  pedida no primeiro uso (negada = quadros cinza); falta testar num aparelho, item 11 da lista em
+  `docs/android/README.md`)
 - [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
   continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
   load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver

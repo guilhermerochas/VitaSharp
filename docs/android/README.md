@@ -159,6 +159,39 @@ phones.
   options. Each game process records the configuration it loaded (`run/game.json`); after a change the screen offers
   to restart the running game (kills the `:game` process and starts the game again).
 
+## Motion sensors and cameras
+
+Compiled into the app, not run on a device yet (item 11 of the list at the end). `GameSensors` (game process) owns both
+and follows the activity: listeners and cameras only between `onResume` and `onPause`.
+
+- **Motion** (`AndroidMotionSensors`, the core's `IMotionSource` through `AndroidMotion`): `TYPE_ACCELEROMETER` and
+  `TYPE_GYROSCOPE` at `SENSOR_DELAY_GAME` on a `sensors` HandlerThread, each gyroscope event paired with the latest
+  acceleration into a `MotionSample` with the event's timestamp (`SensorMotionSource`). The phone's axes are those of
+  its natural orientation; `AndroidMotionAxes.DeviceToScreen` turns them into the screen's for `Display.getRotation()`
+  (the game is `sensorLandscape`, so turning the phone over flips ROTATION_90/270 without a configuration change:
+  a `DisplayManager` listener keeps the rotation current), which in landscape are the Vita's (x right, y top, z out
+  of the screen); then `MotionAxes.FromDevice` (m/s² to G with the Vita's sign, flat = (0, 0, -1); rad/s unchanged).
+  The orientation the game reads comes from the core's `MotionFusion`, as on the desktop, so
+  `TYPE_GAME_ROTATION_VECTOR` is not used. "Movimento" (Controles screen, `AppPreferences.Motion`): **Sensores do
+  celular** (the default when the phone has both sensors), **Giroscópio do controle** (a controller's sensors through
+  `InputDevice.getSensorManager`, Android 12+, mapped like the desktop's SDL pads with `MotionOrientation.Natural`;
+  the default when the phone has none) or **Desligado** (the Vita at rest). While the chosen device has not delivered,
+  the session's earlier motion source (a hardware keyboard's tilt keys) drives the Vita, like the desktop where a
+  controller's gyroscope wins over the keys. **Recentralizar movimento** (pause menu, while a sensor device is in use)
+  makes the pose the phone is held in the Vita lying flat, screen up (the at-rest pose of the tilt keys); doing it with
+  the phone lying flat clears it.
+- **Camera** (`AndroidCamera`, the core's `ICameraSource`): Camera2 with an `ImageReader` in `YUV_420_888`; Vita
+  camera 0 (front) opens the phone's front camera, 1 (back) the back one (an external camera, then any, when one is
+  missing). The capture size is the smallest covering the game's request with the closest aspect ratio, the AE
+  frame-rate range the steadiest one reaching the game's rate (`CameraSupport`). Each frame is converted (full-range
+  BT.601) and turned upright for the sensor orientation and the current display rotation into RGBA, which the core
+  crops/scales to the game's resolution and converts to its format (YUV422/YUV420 planar, packed, ARGB/ABGR:
+  `CameraImage`), mirroring only when the game asks (SCE_CAMERA_REVERSE). One capture serves both Vita cameras and
+  lingers 2 s after a stop (`SharedCapture`, as the desktop webcam). The `CAMERA` permission (manifest, not required
+  hardware) is asked the first time a game starts a camera; denied, the game sees the grey "no camera" frames of a
+  desktop without a webcam, for the rest of the process. In the background the camera is closed and reopened on resume;
+  a disconnect (another app took it) or error is retried with a growing delay.
+
 ## Logging
 
 `LogcatSink` routes every line of VitaSharp's `Log` to logcat through `__android_log_write` (liblog): tag
@@ -338,6 +371,23 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
     cache (`<data>/shadercache/titles/<TITLEID>/astc`, at most 512 MB, `VITASHARP_ASTC_CACHE_MB`); `PERF gpu`'s
     renderings per scene and hoisted breaks, and the tile load/store counters in the device's profiler (Snapdragon
     Profiler / Arm Performance Studio: fewer GMEM loads and stores per frame than with `VITASHARP_SCENE_BREAKS=strict`).
+11. **Motion sensors and cameras** ([above](#motion-sensors-and-cameras)): the log's `Motion:` lines at start
+    (`Sensores do celular`, `phone sensors registered (<accelerometer>, <gyroscope>, rotation 90)`), then
+    `phone sensors drive the Vita's motion sensors` once the game samples. Axes, in a SceMotion game (Tearaway,
+    Invizimals; also Devious Dungeon, God of War, Killzone import SceMotion): phone flat on the table = the game's at-rest
+    view; raising the screen's top edge, lowering its right edge and turning the phone flat on the table each move the
+    game the way a Vita would (not mirrored or swapped), the same after turning the phone over (ROTATION_270; the
+    `Display rotation 270 degrees` line); no drift while still. Pause menu > Recentralizar movimento (`Motion: re-centred`
+    line) makes the held pose the flat one; Controles > Movimento > Desligado keeps the game at rest; Giroscópio do
+    controle with a DualShock 4/DualSense on Android 12+ (`controller '<name>' registered`; check its axes the same
+    way, the mapping is the desktop's SDL one, unverified on Android's kernel drivers); the listeners stop in the
+    background (no `sensors` thread CPU in a profiler while paused) and resume. Camera, in Tearaway or Invizimals' AR
+    mode: the permission dialog appears on the first camera start, not at app start; allowed: `Camera: ... -> front
+    camera <id> 640x480 YUV_420_888, fps 30-30` and `Camera: first frame` lines, the image upright (not rotated or
+    upside down, both landscape directions), the front camera for the Vita's front camera and the back one for the back,
+    colours right (not green/pink: the chroma planes and their pixel stride), the frame rate the game asked for; a
+    sensor switch in Tearaway reuses or reopens the capture without errors; home and back to the game reopens the
+    camera; denied (and on a second start): grey frames, no crash, no new dialog.
 
 ## Stack
 
