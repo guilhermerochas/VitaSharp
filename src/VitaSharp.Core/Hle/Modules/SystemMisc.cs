@@ -205,9 +205,37 @@ public sealed class SystemMisc : HleModule
 
     // ------------------------------------------------------------------ module manager
 
+    /// <summary>A system module (vs0:) the process already has loaded: the firmware's shared modules exist once per
+    /// process, so loading one again gives the loaded module (PS4 Link loads libfios2 and libc, which the process
+    /// preload already brought: a second libc started again on its main thread and ended it there).
+    /// Each such load counts a reference that an unload drops (the module stays for the others).</summary>
+    Loader.LoadedModule? LoadedSystemModule(string path)
+    {
+        if (!path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase)) return null;
+        var m = K.Modules.Values.FirstOrDefault(m => string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (m != null) lock (_openCounts) _openCounts[m.Uid] = _openCounts.GetValueOrDefault(m.Uid, 1) + 1;
+        return m;
+    }
+
+    /// <summary>An unload of a module loaded more than once only drops one reference.</summary>
+    bool DropReference(int uid)
+    {
+        lock (_openCounts)
+        {
+            if (_openCounts.GetValueOrDefault(uid, 1) <= 1) return false;
+            _openCounts[uid]--;
+            return true;
+        }
+    }
+
     [Hle]
     int sceKernelLoadStartModule(string path, uint args, uint argp, uint flags, uint opt, Ptr<int> status)
     {
+        if (LoadedSystemModule(path) is { } loaded)
+        {
+            status.TrySet(0);
+            return loaded.Uid;
+        }
         try
         {
             var m = Emu.LoadModule(path);
@@ -227,6 +255,7 @@ public sealed class SystemMisc : HleModule
     [Hle]
     int sceKernelLoadModule(string path, uint flags, uint opt)
     {
+        if (LoadedSystemModule(path) is { } loaded) return loaded.Uid;
         try { return Emu.LoadModule(path).Uid; }
         catch (FileNotFoundException) { return unchecked((int)0x8002D01C); }
     }
@@ -244,6 +273,7 @@ public sealed class SystemMisc : HleModule
     int sceKernelStopUnloadModule(int uid, uint args, uint argp, uint flags, uint opt, Ptr<int> status)
     {
         if (!K.Modules.TryGetValue(uid, out var m)) return SceError.MODULEMGR_NO_MOD;
+        if (DropReference(uid)) { status.TrySet(0); return 0; }
         int r = m.StopEntry != 0 ? (int)GuestThread.Current!.CallGuest(m.StopEntry, args, argp) : 0;
         status.TrySet(r);
         return UnloadModule(m);
@@ -254,7 +284,7 @@ public sealed class SystemMisc : HleModule
     [Hle]
     [Hle("_sceKernelUnloadModule")]
     int sceKernelUnloadModule(int uid, uint flags, uint opt)
-        => K.Modules.TryGetValue(uid, out var m) ? UnloadModule(m) : SceError.MODULEMGR_NO_MOD;
+        => K.Modules.TryGetValue(uid, out var m) ? (DropReference(uid) ? 0 : UnloadModule(m)) : SceError.MODULEMGR_NO_MOD;
 
     int UnloadModule(Loader.LoadedModule m)
     {
@@ -312,6 +342,9 @@ public sealed class SystemMisc : HleModule
     int sceKernelStopModule(int uid, uint args, uint argp, uint flags, uint opt, Ptr<int> status)
     {
         if (!K.Modules.TryGetValue(uid, out var m)) return SceError.MODULEMGR_NO_MOD;
+        bool shared;
+        lock (_openCounts) shared = _openCounts.GetValueOrDefault(uid, 1) > 1;
+        if (shared) { status.TrySet(0); return 0; } // still in use by another load: not stopped
         int r = m.StopEntry != 0 ? (int)GuestThread.Current!.CallGuest(m.StopEntry, args, argp) : 0;
         status.TrySet(r);
         return 0;
