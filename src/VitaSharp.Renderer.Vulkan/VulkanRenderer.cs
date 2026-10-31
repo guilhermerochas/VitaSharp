@@ -569,7 +569,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         else
         {
-            var clear = new ClearColorValue(0, 0, 0, 1);
+            // VITASHARP_GPU_POISON=1: a new surface the guest never wrote starts magenta (shows reads of undefined content)
+            var clear = Poison ? new ClearColorValue(1, 0, 1, 1) : new ClearColorValue(0, 0, 0, 1);
             var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
             _vk.CmdClearColorImage(Cmd, rt.Image, ImageLayout.General, in clear, 1, in range);
         }

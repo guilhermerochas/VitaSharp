@@ -42,6 +42,9 @@ public static class EnvVars
     public const string GeneratorVersionSalt = "VITASHARP_GENERATOR_VERSION_SALT";
     public const string GlfwPlatform = "VITASHARP_GLFW_PLATFORM";
     public const string GpuDumpAt = "VITASHARP_GPU_DUMP_AT";
+    /// <summary>=1: undefined Vulkan contents get loud values (new render targets magenta, depth/stencil discarded at a
+    /// scene's end cleared to 0 / 0xFF), so tiler-only flicker shows on a desktop GPU (VulkanRenderer.Tiler.cs).</summary>
+    public const string GpuPoison = "VITASHARP_GPU_POISON";
     public const string GpuProfile = "VITASHARP_GPU_PROFILE";
     /// <summary>Index or part of the name of the Vulkan physical device to render with (default: the discrete GPU).</summary>
     public const string GpuDevice = "VITASHARP_GPU_DEVICE";
