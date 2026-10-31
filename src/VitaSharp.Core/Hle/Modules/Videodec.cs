@@ -52,7 +52,8 @@ public sealed class Videodec : HleModule
     /// The last picture of the last deleted asynchronous decoder. A new MediaCodec decoder needs several calls (about 0.4 s on
     /// the MediaTek one) before its first picture; the Vita's answers the first call. Games that recreate the decoder to
     /// loop a movie (Uncharted's title) showed a stale picture buffer then, a one-frame flash of an older scene: until the
-    /// new decoder's first picture, calls answer with this one.
+    /// new decoder's first picture, calls answer with this one; a decoder flushed to loop a movie (Uncharted's title keeps
+    /// its decoder) answers with its own last picture until the first one of the new pass.
     /// </summary>
     DecodedPicture? _carryOver;
     uint _nextHandle = 1;
@@ -190,10 +191,10 @@ public sealed class Videodec : HleModule
             d.Repeats++;
             n = 1;
         }
-        if (n == 0 && repeatIfLate && !d.Started && _carryOver != null && d.Codec is { Asynchronous: true } && capacity > 0
+        if (n == 0 && repeatIfLate && !d.Started && (d.Last ?? _carryOver) is { } carried && d.Codec is { Asynchronous: true } && capacity > 0
             && GuestMemory.R32(list) is var firstPic && firstPic != 0)
         {
-            WritePicture(firstPic, _carryOver, stampPts);
+            WritePicture(firstPic, carried, stampPts);
             d.CarriedOver++;
             n = 1;
         }
