@@ -681,6 +681,20 @@ the Mali-G57; F1's movie sound (a silent AAC frame in four, above); Devious Dung
 ~40 s left in Uncharted's title loop; an intermittent Mali driver crash (null pointer in `libGLES_mali.so` under `vkEndCommandBuffer`, GPU
 worker) between F1's menu and race, also seen with the previous builds (2 of about 12 F1 runs today, 6 the day before).
 
+**Next steps, in order** (status at the end of 31/10/2026; the final `mono-aot-llvm` build of the branch is installed
+on the phone):
+1. F1 2011 races: profile the GPU worker per draw (simpleperf, `GPU worker` thread) and split it into a preparing
+   thread (texture resolve, uniform packing, pipeline key) and a recording thread; then cut per-draw Vulkan calls
+   (push constants only when changed, uniform sets with dynamic offsets). Main thread: the ~15,000 HLE calls per frame
+   (GXM state setters, `sceClibMemset`, `sceKernelGetProcessTimeWide`) through the SVC callouts are next to make cheaper.
+2. F1 movie sound: log per `sceAudiodecDecode` and `sceMp4` call when the game's player asks for the next AAC frame
+   and when it gets it (MediaExtractor read time), to find which side is late; compare with the desktop FFmpeg path.
+3. The Mali `vkEndCommandBuffer` crash: catch it with `VITASHARP_GPU_DUMP_AT` around F1's menu-to-race load and replay
+   the dump with `--gpu-profile=mali`, or package the Khronos validation layer in a debug APK.
+4. Devious Dungeon's last 15%: generated code (cross-block guest registers, smaller exit stubs, flag materialisation
+   only when live).
+5. Uncharted's remaining stale frame per loop: log the decoder calls around a loop (`sceAvcdecDecodeStop`/`Flush`).
+
 ## Before the first run: what the emulator/device step must verify
 
 1. **Shader compiler**: `libshaderc_shared.so` (built from the NDK r30 sources, 42 `shaderc_*` exports, 16 KiB
