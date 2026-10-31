@@ -277,18 +277,18 @@ public sealed class Videodec : HleModule
             {
                 // planar: Y (pitch x height), then U and V (pitch/2 x height/2)
                 uint uOff = pitch * bufH, vOff = uOff + pitch / 2 * (bufH / 2);
-                for (int y = 0; y < h; y++) p.Y.AsSpan(y * p.Width, w).CopyTo(GuestMemory.Span(dst + (uint)y * pitch, w));
+                for (int y = 0; y < h; y++) FastCopy.Copy(p.Y.AsSpan(y * p.Width, w), GuestMemory.Span(dst + (uint)y * pitch, w));
                 for (int y = 0; y < h / 2; y++)
                 {
-                    p.U.AsSpan(y * cw, w / 2).CopyTo(GuestMemory.Span(dst + uOff + (uint)y * (pitch / 2), w / 2));
-                    p.V.AsSpan(y * cw, w / 2).CopyTo(GuestMemory.Span(dst + vOff + (uint)y * (pitch / 2), w / 2));
+                    FastCopy.Copy(p.U.AsSpan(y * cw, w / 2), GuestMemory.Span(dst + uOff + (uint)y * (pitch / 2), w / 2));
+                    FastCopy.Copy(p.V.AsSpan(y * cw, w / 2), GuestMemory.Span(dst + vOff + (uint)y * (pitch / 2), w / 2));
                 }
                 break;
             }
             case PIXEL_YUV420_PACKED_RASTER:
             {
                 uint uvOff = pitch * bufH;
-                for (int y = 0; y < h; y++) p.Y.AsSpan(y * p.Width, w).CopyTo(GuestMemory.Span(dst + (uint)y * pitch, w));
+                for (int y = 0; y < h; y++) FastCopy.Copy(p.Y.AsSpan(y * p.Width, w), GuestMemory.Span(dst + (uint)y * pitch, w));
                 for (int y = 0; y < h / 2; y++)
                 {
                     var row = GuestMemory.Span(dst + uvOff + (uint)y * pitch, w);

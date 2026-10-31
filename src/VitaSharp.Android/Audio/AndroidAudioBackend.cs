@@ -219,7 +219,11 @@ sealed unsafe class AAudioSink : IPcmSink
             AAudio.AAudioStreamBuilder_setPerformanceMode(b, AAudio.PerformanceModeLowLatency);
             // MMAP when the device offers it; AAudio falls back to shared on its own
             AAudio.AAudioStreamBuilder_setSharingMode(b, AAudio.SharingModeExclusive);
-            AAudio.AAudioStreamBuilder_setBufferCapacityInFrames(b, 8192);
+            // the capacity is AAudio's own unless VITASHARP_AAUDIO_CAPACITY asks for one: requesting 8192 frames gave the
+            // Redmi Note 14 a 4096-frame burst and ~181 ms of latency; AAudio's own is 4104 frames, a 2052-frame burst and
+            // ~96 ms, with no underrun in Devious Dungeon (86 s) or Knightin'+
+            int capacity = int.TryParse(System.Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.AAudioCapacity), out int cap) ? cap : 0;
+            if (capacity > 0) AAudio.AAudioStreamBuilder_setBufferCapacityInFrames(b, capacity);
             if (OperatingSystem.IsAndroidVersionAtLeast(28)) AAudio.AAudioStreamBuilder_setUsage(b, AAudio.UsageGame);
             AAudio.AAudioStreamBuilder_setErrorCallback(b, &OnError, GCHandle.ToIntPtr(handle));
             r = AAudio.AAudioStreamBuilder_openStream(b, out stream);
