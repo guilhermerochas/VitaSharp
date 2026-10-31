@@ -119,6 +119,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
   lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
 
+## Controles
+
+- [ ] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e
+  girar a câmera como num jogo de PC (ex.: Killzone, Uncharted). Captura do cursor na janela (com tecla para soltar),
+  sensibilidade, inverter eixo Y, zona morta/curva de resposta e retorno ao centro quando o mouse para; opção no
+  perfil de controle (`input.json`) e na tela de controles do launcher. Hoje o mouse só move o giroscópio
+  (`HostInput.MouseLook`, com o botão do meio)
+
 ## Firmware e sistema
 
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
