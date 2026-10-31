@@ -222,6 +222,7 @@ public sealed class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            ScheduleGpuDump();
             _stats.Start();
             Performance.Start();
         }
@@ -277,6 +278,47 @@ public sealed class EmulationSession : IDisposable
     /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
     public string AudioSummary => _audio?.Describe() ?? "no audio backend";
 
+    /// <summary>
+    /// VITASHARP_GPU_DUMP_AT=F1:F2[:file] in env.txt: records renderer presents F1..F2 into &lt;data&gt;/gpudumps (the
+    /// desktop's --gpu-dump-at; docs/notes/gpu-dump.md), for <c>replay-gpu</c> on the PC. A LoadExec creates a new
+    /// renderer whose presents count from 1 again: the dump is armed for the renderer running when F1 is reached.
+    /// </summary>
+    void ScheduleGpuDump()
+    {
+        if (System.Environment.GetEnvironmentVariable(EnvVars.GpuDumpAt) is not { Length: > 0 } spec) return;
+        var parts = spec.Split(':', 3);
+        if (parts.Length < 2 || !long.TryParse(parts[0].TrimStart('f'), out long f1) || !long.TryParse(parts[1].TrimStart('f'), out long f2) || f1 < 1 || f2 < f1)
+        {
+            Log.Warn($"{EnvVars.GpuDumpAt}={spec} not recognised (use FIRST:LAST[:file], frames counted from 1)");
+            return;
+        }
+        string dir = Path.Combine(AppServices.Data.Root, "gpudumps");
+        Directory.CreateDirectory(dir);
+        string path = parts.Length > 2 && parts[2].Length > 0 ? Path.Combine(dir, parts[2]) : Path.Combine(dir, $"{_game.TitleId}_{DateTime.Now:yyyyMMdd_HHmmss}{GpuDumpFormat.Extension}");
+        var header = new GpuDumpHeader();
+        header["title-id"] = _emu.TitleId;
+        header["title"] = _emu.Title;
+        header["app-path"] = _emu.AppPath;
+        header["build"] = $"android {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}";
+        header["created"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        header["os"] = $"{System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}, .NET {System.Environment.Version}";
+        header["cpu"] = Jit.Describe();
+        if (_renderer != null)
+        {
+            header["gpu"] = _renderer.DeviceName;
+            int i = 0;
+            foreach (var line in _renderer.DescribeForDiagnostics().Split('\n')) header[$"renderer.{i++}"] = line.TrimEnd('\r');
+        }
+        foreach (System.Collections.DictionaryEntry e in System.Environment.GetEnvironmentVariables())
+            if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase)) header["env." + k] = e.Value as string ?? "";
+        var rec = GpuDumpRecorder.Start(new GpuDumpOptions
+        {
+            Path = path, Header = header, StartAfterPresent = f1 - 1, MaxFrames = f2 - f1 + 1,
+            Finished = r => Log.Warn(r.Error != null ? $"[gpudump] failed: {r.Error}" : $"[gpudump] saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
+        });
+        if (rec != null) Log.Warn($"[gpudump] armed: {path} after present #{f1 - 1}, {f2 - f1 + 1} frames");
+    }
+
     /// <summary>Stops the game and records the session in the game's statistics.</summary>
     public void Dispose()
     {
@@ -290,6 +332,8 @@ public sealed class EmulationSession : IDisposable
         RecordStatistics();
         try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
+        // a GPU dump still recording is completed while the GPU worker runs
+        if (GpuDumpRecorder.Current is { } dump && dump.StopNow(15000) == null) Log.Warn("[gpudump] the recording did not finish in time");
         try
         {
             _emu.Stop();
