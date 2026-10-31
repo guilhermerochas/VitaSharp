@@ -30,6 +30,8 @@ public sealed unsafe partial class VulkanRenderer
     readonly long[] _retireWaitTicks = new long[RetireCauses];
     long _idleWaitTicks, _idleYields;
     long _wbCount, _wbBytes, _wbTicks;
+    /// <summary>Bytes copied into upload rings (geometry, uniforms, textures).</summary>
+    long _uploadBytes;
 
     static readonly bool TraceSync = Environment.GetEnvironmentVariable(EnvVars.TraceSync) == "1";
     (RetireCause Cause, double Ms)? _longWait;
@@ -132,7 +134,7 @@ public sealed unsafe partial class VulkanRenderer
             sb.Append($" {(RetireCause)i} {_retireBlocked[i]}/{_retireCount[i]} {Ms(_retireWaitTicks[i]):F0};");
         }
         sb.Append($" total {Ms(total) / frames:F3} ms/frame; idle (queue empty) {Ms(_idleWaitTicks) / frames:F3} ms/frame, {_idleYields} yields to new work;");
-        sb.Append($" {_submitSeq / frames:F2} submits/frame; writebacks {_wbCount / frames:F2}/frame ({_wbBytes / frames / 1024:F0} KB/frame, {Ms(_wbTicks) / frames:F3} ms/frame)");
+        sb.Append($" {_submitSeq / frames:F2} submits/frame; writebacks {_wbCount / frames:F2}/frame ({_wbBytes / frames / 1024:F0} KB/frame, {Ms(_wbTicks) / frames:F3} ms/frame); uploads {_uploadBytes / frames / 1024:F0} KB/frame");
         return sb.ToString();
     }
 }

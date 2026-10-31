@@ -623,20 +623,22 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== draw
 
-    static uint MaxIndex(uint addr, uint count, bool i32)
+    static uint MaxIndex(uint addr, uint count, bool i32) => MinMaxIndex(addr, count, i32).Max;
+
+    static (uint Min, uint Max) MinMaxIndex(uint addr, uint count, bool i32)
     {
-        uint max = 0;
+        uint max = 0, min = uint.MaxValue;
         if (i32)
         {
             var s = GuestMemory.ReadSpan<uint>(addr, (int)count);
-            foreach (var v in s) if (v > max) max = v;
+            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
         }
         else
         {
             var s = GuestMemory.ReadSpan<ushort>(addr, (int)count);
-            foreach (var v in s) if (v > max) max = v;
+            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
         }
-        return max;
+        return (count == 0 ? 0 : min, max);
     }
 
     /// <summary>Draw number within the presented frame (debug: VITASHARP_DEBUG_TEX0=id paints it, the draw trace logs it).</summary>
@@ -742,7 +744,12 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- geometry upload
         int indexSize = d.Index32 ? 4 : 2;
-        uint maxIndex = MaxIndex(d.IndexAddress, d.IndexCount, d.Index32);
+        var (minIndex, maxIndex) = MinMaxIndex(d.IndexAddress, d.IndexCount, d.Index32);
+        // per-vertex streams are uploaded from the lowest index used, the draw rebased with vertexOffset (meshes drawn in
+        // pieces out of one big vertex buffer uploaded it whole for every piece: F1 2011's races copied tens of MB per
+        // frame); not when the program reads the vertex index itself (gl_VertexIndex includes the offset)
+        uint firstVertex = minIndex > 0 && (d.VertexProgram.Info.Program.Flags & Core.Gxm.Shader.GxpProgram.FlagIndexUsed) == 0 ? minIndex : 0;
+        int vertexOffset = -(int)firstVertex;
         var (ib, ibOff) = UploadSpan(GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * indexSize)), 4);
         var vbufs = stackalloc Buffer[17];
         var voffs = stackalloc ulong[17];
@@ -760,10 +767,11 @@ public sealed unsafe partial class VulkanRenderer
                 uint attrBytes = (uint)(size * Math.Max(1, (a.ComponentCount + 3) / 4));
                 end = Math.Max(end, a.Offset + attrBytes);
             }
-            uint count = instanced ? d.InstanceCount : maxIndex + 1;
+            uint count = instanced ? d.InstanceCount : maxIndex + 1 - firstVertex;
             uint length = (count - 1) * stream.Stride + end + 16;
             uint addr = d.Streams[s];
             if (addr == 0) { vbufs[s] = _dummyBuffer; voffs[s] = 0; continue; }
+            if (!instanced) addr += firstVertex * stream.Stride;
             var (b, off) = UploadSpan(GuestMemory.ReadSpan(addr, (int)length), 4);
             vbufs[s] = b;
             voffs[s] = off;
@@ -827,20 +835,20 @@ public sealed unsafe partial class VulkanRenderer
             // time per frame); only the multisampled copy path (VITASHARP_MSAA_FETCH=copy, a fallback) does that
             // (copySplit). The pieces of a singleFetch / copySplit draw were built when it was chosen (_fetchPieces).
             if (copySplit)
-                _vk.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, 0, 0);
+                _vk.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, vertexOffset, 0);
             else if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
             {
                 for (int c = 0; c < _fetchPieces.Count; c++)
                 {
                     if (c > 0) InputFetchBarrier(cmd);
-                    _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, 0, 0);
+                    _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, vertexOffset, 0);
                 }
                 _statFetchSplitDraws++;
             }
             else
             {
                 bool visQuery = BeginVisibilityQuery(d, out uint query);
-                _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, 0, 0);
+                _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
                 if (visQuery) EndVisibilityQuery(query);
             }
             if (singleFetch) EndSingleFetchPass();

@@ -228,13 +228,13 @@ public sealed unsafe partial class VulkanRenderer
                     case WritebackConvert.None:
                     {
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)(wb.Width * wb.GuestBpp));
-                        row[..dst.Length].CopyTo(dst);
+                        FastCopy.Copy(row[..dst.Length], dst);
                         break;
                     }
                     case WritebackConvert.SwapRb:
                     {
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
-                        row[..dst.Length].CopyTo(dst);
+                        FastCopy.Copy(row[..dst.Length], dst);
                         for (int i = 0; i + 3 < dst.Length; i += 4) (dst[i], dst[i + 2]) = (dst[i + 2], dst[i]);
                         break;
                     }

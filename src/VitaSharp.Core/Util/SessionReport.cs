@@ -76,7 +76,7 @@ public static class SessionReport
         long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         var top = emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(12)
             .Select(f => $"{f.Name} {f.CallCount} ({f.CallCount / (double)frames:F0}/frame)");
-        return $"PERF hle calls: {string.Join(", ", top)}";
+        return $"PERF hle calls: {string.Join(", ", top)}; GXM uniforms copied {VitaSharp.Core.Hle.Modules.Gxm.UniformBytesCopied / 1024.0 / frames:F0} KB/frame";
     }
 
     /// <summary>Native JIT verification and the native backend's report.</summary>
