@@ -96,7 +96,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     partir do primeiro quadro, FIFO com 3 imagens, `Surface.setFrameRate` com o fps do jogo, nenhuma espera girando
     no celular; o Swappy ficou de fora por ser biblioteca nativa, ver "Frame pacing" no README; falta medir)
   - [ ] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
-    registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante
+    registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante (30/10/2026: feito no
+    branch `perf/arm64-jit`, cerca de 25% menos instruções por instrução do Vita nos blocos de teste, cada otimização
+    com chave em `VITASHARP_NATIVE_A64_NOOPT`; falta medir no aparelho: sessão com `VITASHARP_NATIVE_VERIFY=1` e fps
+    A/B com `VITASHARP_NATIVE_A64_NOOPT=all`; ver `docs/notes/native-jit.md`, "perf/arm64-jit")
   - [ ] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android
   - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
   - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo

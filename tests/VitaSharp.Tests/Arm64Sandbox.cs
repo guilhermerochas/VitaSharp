@@ -181,7 +181,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     /// </summary>
     static void ClobberCallerSaved(nint uc)
     {
-        for (int n = 1; n <= 17; n++) { ulong junk = 0xDEAD_0000_0000_0000UL | (ulong)n << 8; uc_reg_write(uc, RegX0 + n, &junk); }
+        for (int n = 1; n <= 17; n++) { ulong junk = 0xDEAD_0000_0000_0000UL | (uint)n << 8; uc_reg_write(uc, RegX0 + n, &junk); }
         var q = stackalloc ulong[2];
         for (int n = 0; n < 32; n++)
         {
@@ -190,7 +190,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
                 uc_reg_read(uc, RegQ0 + n, q);
                 q[1] = 0x7FC0_DEAD_7FC0_DEADUL; // only d8-d15 are callee-saved
             }
-            else { q[0] = 0x7FC0_BEEF_0000_0000UL | (ulong)n; q[1] = 0x7FC0_DEAD_7FC0_DEADUL; }
+            else { q[0] = 0x7FC0_BEEF_0000_0000UL | (uint)n; q[1] = 0x7FC0_DEAD_7FC0_DEADUL; }
             uc_reg_write(uc, RegQ0 + n, q);
         }
     }
