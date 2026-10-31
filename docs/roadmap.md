@@ -212,6 +212,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
+  por mais de 1 minuto (31/10/2026, main 13ca113, log `20261031_193411_PCSA00080`). A thread `avPlayer Controller` (o
+  player do vídeo de abertura) chama `SceMp4::NID_D5B26179`, que não está implementada (o `Mp4.cs` já tem stubs para
+  outros NIDs desconhecidos), logo depois de um `sceGxmWaitEvent` da `main`; o jogo provavelmente espera o filme
+  começar/terminar. Descobrir o que a `D5B26179` faz (assinatura no `libSceMp4`/firmware, Vita3K) e implementar, e
+  ver se o player do jogo precisa de mais funções do SceMp4/SceAvPlayer; também havia 2 underruns de áudio sem
+  nenhum quadro
 - [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
   13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
   Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável
