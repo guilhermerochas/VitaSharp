@@ -84,10 +84,14 @@ public sealed unsafe partial class Arm64Emitter
         LazyFpcr = 32,
         /// <summary>The VFP fast-path FPSCR mode check in 4 instructions (UBFX of bits 16-25) instead of 6.</summary>
         FastFpCheck = 64,
-        All = 127,
+        /// <summary>The dirty-page mark after a guest store indexes from the address temp's own register (no copy).</summary>
+        DirtyReg = 128,
+        /// <summary>Stored constants that need MOVZ + MOVK (R15 values, addresses) come from the literal pool: one LDR.</summary>
+        StoreLiteral = 256,
+        All = 511,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -135,7 +139,7 @@ public sealed unsafe partial class Arm64Emitter
         public bool PinnedCounters;
     }
 
-    bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck;
+    bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck, _dirtyReg, _storeLit;
 
     /// <summary>
     /// Allocates registers and lowers the block. <paramref name="slotFor"/> returns the address of the link slot of
@@ -157,6 +161,8 @@ public sealed unsafe partial class Arm64Emitter
         _vcache = (opts & A64Opt.VecCache) != 0;
         _lazyFpcr = (opts & A64Opt.LazyFpcr) != 0;
         _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
+        _dirtyReg = (opts & A64Opt.DirtyReg) != 0;
+        _storeLit = (opts & A64Opt.StoreLiteral) != 0;
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
@@ -234,6 +240,14 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>Like <see cref="Use"/>, but the constant 0 is WZR (only for operand fields where 31 means the zero register).</summary>
     int UseZ(int t, int scratch) => t < 0 || (IsConst(t, out uint v) && v == 0) ? ZR : Use(t, scratch);
 
+    /// <summary>Like <see cref="UseZ"/> for a value that is only stored: a constant needing MOVZ + MOVK is one literal-pool
+    /// load instead (<see cref="A64Opt.StoreLiteral"/>; the load's latency is off the critical path of a store).</summary>
+    int UseStored(int t, int scratch)
+    {
+        if (_storeLit && IsConst(t, out uint v) && MovImmIsLong(v)) { _a.LdrLitW(scratch, v); return scratch; }
+        return UseZ(t, scratch);
+    }
+
     int Def(int t, int scratch) => t >= 0 && InReg(t, out int r) ? r : scratch;
 
     void Commit(int t, int r)
@@ -267,7 +281,7 @@ public sealed unsafe partial class Arm64Emitter
         int o1 = StateOffset(x, true), o2 = StateOffset(y, true);
         if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1))
         {
-            int r1 = UseZ(x.A, X0), r2 = UseZ(y.A, X1);
+            int r1 = UseStored(x.A, X0), r2 = UseStored(y.A, X1);
             a.StpW(r1, r2, State, o1);
             StateWritten(o1, 8);
             return true;
@@ -370,9 +384,9 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.GetReg: { int d = Def(x.D, X0); LdState(d, OffR + 4 * (int)x.Imm); Commit(x.D, d); return; }
             case IrOp.GetFlag: { int d = Def(x.D, X0); LdState(d, OffN + 4 * (int)x.Imm); Commit(x.D, d); return; }
             case IrOp.LoadState: { int d = Def(x.D, X0); LdState(d, (int)x.Imm); Commit(x.D, d); return; }
-            case IrOp.SetReg: StState(UseZ(x.A, X0), OffR + 4 * (int)x.Imm); return;
-            case IrOp.SetFlag: StState(UseZ(x.A, X0), OffN + 4 * (int)x.Imm); return;
-            case IrOp.StoreState: StState(UseZ(x.A, X0), (int)x.Imm); StateWritten((int)x.Imm, 4); return;
+            case IrOp.SetReg: StState(UseStored(x.A, X0), OffR + 4 * (int)x.Imm); return;
+            case IrOp.SetFlag: StState(UseStored(x.A, X0), OffN + 4 * (int)x.Imm); return;
+            case IrOp.StoreState: StState(UseStored(x.A, X0), (int)x.Imm); StateWritten((int)x.Imm, 4); return;
 
             // ---------------- ALU
             case IrOp.Add: case IrOp.Sub: case IrOp.And: case IrOp.Or: case IrOp.Xor: case IrOp.AndNot: case IrOp.OrNot: case IrOp.Mul:
@@ -478,7 +492,7 @@ public sealed unsafe partial class Arm64Emitter
             {
                 if (LogStores) EmitStoreLog(x);
                 int ad = UseZ(x.A, X16);
-                int v = UseZ(x.B, X17);
+                int v = UseStored(x.B, X17);
                 var k = x.Op == IrOp.Store8 ? LsKind.Strb : x.Op == IrOp.Store16 ? LsKind.Strh : LsKind.StrW;
                 a.LdStReg(k, v, MemBase, ad);
                 MarkDirty(x.A);

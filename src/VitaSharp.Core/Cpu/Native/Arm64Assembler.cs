@@ -278,6 +278,12 @@ public sealed class Arm64Assembler
 
     /// <summary>Xd = 64-bit literal (LDR literal from the pool).</summary>
     public void LdrLit(int rt, ulong v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x58000000 | (uint)rt); }
+    /// <summary>Wt = 32-bit literal (the low word of a 64-bit pool entry, shared with <see cref="LdrLit"/> entries of the same value).</summary>
+    public void LdrLitW(int rt, uint v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x18000000 | (uint)rt); }
+
+    /// <summary>Whether <see cref="MovImm"/> needs two instructions for <paramref name="v"/> (MOVZ + MOVK).</summary>
+    public static bool MovImmIsLong(uint v) =>
+        (v & 0xFFFF0000) != 0 && (v & 0xFFFF) != 0 && (~v & 0xFFFF0000) != 0 && (~v & 0xFFFF) != 0 && !TryLogicalImm(v, false, out _);
     /// <summary>Qt = 128-bit literal.</summary>
     public void LdrLitQ(int vt, ulong lo, ulong hi) { _litFixups.Add((_code.Count, Literal(lo, hi, true))); Emit(0x9C000000 | (uint)vt); }
 

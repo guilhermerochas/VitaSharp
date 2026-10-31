@@ -190,6 +190,8 @@ public sealed class Arm64AssemblerTests
         (0x36000044, "tbz w4, #0, 1f; nop; 1:", a => { int l = a.NewLabel(); a.Tbz(4, 0, l); a.Emit(A.Nop); a.Bind(l); }),
         (0x17FFFFFF, "1: nop; b 1b", a => { int l = a.NewLabel(); a.Bind(l); a.Emit(A.Nop); a.B(l); }),
         (0x58000090, "ldr x16, 1f; nop; nop; nop; 1:", a => a.LdrLit(16, 0x1122334455667788)), // pool after padding to 16 bytes
+        (0x18000080, "ldr w0, 1f; nop; nop; nop; 1:", a => a.LdrLitW(0, 0x81234567)),
+        (0x18000091, "ldr w17, 1f; nop; nop; nop; 1:", a => a.LdrLitW(17, 0x81234567)),
         // ---- scalar FP
         (0x1E222820, "fadd s0, s1, s2", a => a.Fadd(0, 1, 2)),
         (0x1E622820, "fadd d0, d1, d2", a => a.Fadd(0, 1, 2, true)),
