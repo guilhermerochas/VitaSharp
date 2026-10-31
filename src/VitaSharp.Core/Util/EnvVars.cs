@@ -113,4 +113,14 @@ public static class EnvVars
     public const string WatchMax = "VITASHARP_WATCH_MAX";
     public const string WritebackMax = "VITASHARP_WRITEBACK_MAX";
     public const string WritebackRegionMax = "VITASHARP_WRITEBACK_REGION_MAX";
+
+    /// <summary>Android: =off turns off both the pinning of the hot threads (guest main thread, GPU worker) to the
+    /// fast cores and the Performance Hint (ADPF) session, to compare with them on (docs/android/README.md).</summary>
+    public const string AndroidAffinity = "VITASHARP_ANDROID_AFFINITY";
+    /// <summary>Android: =info, =debug or =all keeps forwarding info/debug lines to logcat while a game runs (by
+    /// default only warnings and errors reach logcat once the first frame is shown; the log file keeps everything).</summary>
+    public const string AndroidLogcat = "VITASHARP_ANDROID_LOGCAT";
+    /// <summary>Android: =1 asks for Window.setSustainedPerformanceMode where the device supports it (lower, steadier
+    /// clocks for long sessions; off by default because it lowers peak speed).</summary>
+    public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
 }

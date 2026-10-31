@@ -42,6 +42,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         new(SystemTitleId, "Sistema do Vita", "", "sys", System.IO.Path.Combine(AppServices.Data.Fs, "vs0", "vsh", "shell"), null, 0);
 
     EmulationSession? _session;
+    GameDisplayTuning? _displayTuning;
     AndroidVulkanSurface? _surface;
     SurfaceView? _view;
     OnScreenControlsView? _controls;
@@ -152,6 +153,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             return;
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
+        _displayTuning = GameDisplayTuning.Start(this, _view!, _session.Performance);
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
@@ -167,6 +169,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         if (holder.Surface is not { IsValid: true } s) return;
         _surface = new AndroidVulkanSurface(s);
         _session?.SurfaceCreated(_surface);
+        _displayTuning?.SurfaceCreated();
     }
 
     public void SurfaceChanged(ISurfaceHolder holder, Format format, int width, int height)

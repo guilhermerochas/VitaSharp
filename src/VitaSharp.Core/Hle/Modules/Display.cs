@@ -14,6 +14,26 @@ public static class VBlank
 
     public static long Count => (long)(GuestClock.Seconds * TimeScale.VBlank / PeriodSeconds);
 
+    /// <summary>Display waits (sceDisplayWait*) that lasted more than one vblank period: only a wait for two or more
+    /// vblanks does, so a frame with one is paced by the game's own choice of a lower rate (30 fps), not by the host
+    /// being slow (the Android performance hints' target).</summary>
+    public static long LongWaits;
+
+    /// <summary>A display wait: <see cref="WaitFor"/>, counted in <see cref="LongWaits"/> when it lasts over a period.</summary>
+    internal static long DisplayWait(long target)
+    {
+        long t0 = GuestClock.Ticks, r = WaitFor(target);
+        if (GuestClock.Ticks - t0 > GuestClock.FromSeconds(1.05 * PeriodSeconds / TimeScale.VBlank)) Interlocked.Increment(ref LongWaits);
+        return r;
+    }
+
+    /// <summary>Host time (Stopwatch ticks) left until vblank <paramref name="n"/> starts (outside turbo mode).</summary>
+    internal static long HostTicksUntil(long n)
+    {
+        long at = GuestClock.FromSeconds(n * PeriodSeconds / TimeScale.VBlank) + 1;
+        return (long)((at - GuestClock.Ticks) / GuestClock.Speed);
+    }
+
     /// <summary>Blocks until vblank number <paramref name="target"/> (immediately in turbo mode).</summary>
     public static long WaitFor(long target)
     {
@@ -62,6 +82,7 @@ public sealed class Display : HleModule
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = System.Diagnostics.Stopwatch.GetTimestamp();
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;
+        Presented?.Invoke();
         return 0;
     }
 
@@ -79,6 +100,9 @@ public sealed class Display : HleModule
     }
 
     public static long FramesPresented;
+    /// <summary>Called on the presenting guest thread after each frame the foreground process shows (the Android app
+    /// reports the frame's work duration to its performance hint session here). Must be cheap and must not throw.</summary>
+    public static Action? Presented;
     /// <summary>Host timestamps of the last 8192 presented frames, indexed by frame number (profiling).</summary>
     public static readonly long[] PresentTimes = new long[8192];
     public static int FrameSleepMs;
@@ -114,7 +138,7 @@ public sealed class Display : HleModule
     [Hle]
     int sceDisplayWaitVblankStartMulti(uint count)
     {
-        VBlank.WaitFor(VBlank.Count + Math.Max(count, 1));
+        VBlank.DisplayWait(VBlank.Count + Math.Max(count, 1));
         return 0;
     }
 
@@ -122,8 +146,8 @@ public sealed class Display : HleModule
 
     [Hle] int sceDisplayWaitSetFrameBuf() { VBlank.WaitFor(_lastSetVcount + 1); return 0; }
     [Hle] int sceDisplayWaitSetFrameBufCB() { VBlank.WaitFor(_lastSetVcount + 1); RunCallbacks(); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufMulti(uint count) { VBlank.WaitFor(_lastSetVcount + Math.Max(count, 1)); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { VBlank.WaitFor(_lastSetVcount + Math.Max(count, 1)); RunCallbacks(); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufMulti(uint count) { VBlank.DisplayWait(_lastSetVcount + Math.Max(count, 1)); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { VBlank.DisplayWait(_lastSetVcount + Math.Max(count, 1)); RunCallbacks(); return 0; }
 
     /// <summary>On hardware the callbacks notified during a *CB wait run inside the wait, before it returns.</summary>
     static void RunCallbacks()
@@ -163,7 +187,11 @@ public sealed class Display : HleModule
         long last = VBlank.Count;
         while (Emu.Running || Emu.MainModule == null)
         {
-            Thread.Sleep(1);
+            // phones: sleep to the next vblank instead of waking 1000 times a second (turbo mode, which moves the
+            // clock forward, and a paused emulation keep the 1 ms poll)
+            long wait = HostTuning.AvoidBusyWaits && !GuestClock.Turbo && !GuestClock.Frozen ? VBlank.HostTicksUntil(last + 1) : 0;
+            if (wait > Stopwatch.Frequency / 1000) PreciseSleep.Microseconds(Math.Min(wait, Stopwatch.Frequency / 10) * 1_000_000 / Stopwatch.Frequency);
+            else Thread.Sleep(1);
             long now = VBlank.Count;
             if (now <= last) continue;
             int n = (int)Math.Min(now - last, 4);

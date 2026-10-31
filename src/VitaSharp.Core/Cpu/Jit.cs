@@ -129,7 +129,7 @@ public static unsafe class Jit
         {
             var t = new Thread(() =>
             {
-                Util.NativeThread.Register("JIT worker");
+                Util.NativeThread.Register("JIT worker", Util.NativeThread.Role.JitWorker);
                 foreach (var b in Queue.GetConsumingEnumerable())
                 {
                     try { Compile(b); }
