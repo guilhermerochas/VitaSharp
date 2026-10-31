@@ -802,10 +802,13 @@ public sealed unsafe partial class VulkanRenderer
         bufInfos[0] = UniformInfo(d.VertexUniformSpan);
         bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
         var writes = stackalloc WriteDescriptorSet[4];
+        // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
+        uint nw = 0;
         for (int i = 0; i < 4; i++)
-            writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
-        _vk.UpdateDescriptorSets(_dev, 4, writes, 0, null);
-        _statDescWrites += 4;
+            if (bufInfos[i].Buffer.Handle != _dummyBuffer.Handle || ShaderGenerator.NanDraws)
+                writes[nw++] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
+        if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
+        _statDescWrites += nw;
         if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
 
         // ---- record
