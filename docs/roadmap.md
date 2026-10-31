@@ -35,9 +35,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Knightin'+ chega ao menu e Devious Dungeon ao load com o JIT nativo x64; corrigidos o crash do `GameActivity`, a
   swapchain recriada a cada quadro e o `SignExtend` que o JIT do Mono compilava errado; resultados em
   `docs/android/README.md`, "Emulator run")
-- [ ] Primeira execução num aparelho ARM64: JIT nativo ARM64 sob o SELinux, drivers Adreno/Mali, libadrenotools,
-  AAudio de baixa latência, controle Bluetooth, giro de 180°, MediaCodec de hardware (o que falta da lista no fim de
-  `docs/android/README.md`)
+- [x] Primeira execução num aparelho ARM64 (30/10/2026: Redmi Note 14, Helio G99, Mali-G57: JIT nativo ARM64 sob o
+  SELinux, driver Mali sem `shaderClipDistance` (plano distante pelo fragment shader, `FarPlaneDiscard`), MediaCodec de
+  hardware, AAudio; Devious Dungeon, Knightin'+, F1 2011, Persona 4 Golden, Killzone e Uncharted; resultados em
+  `docs/android/README.md`, "Phone run")
+- [ ] Aparelho Adreno: driver da Qualcomm, libadrenotools (driver customizado, BCeNabler), controle Bluetooth, giro de
+  180° (o que falta da lista no fim de `docs/android/README.md`)
+- [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
+  FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
+  `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
+- [ ] Uncharted no celular: na tela de título, um quadro escuro e velho do filme de fundo a cada ~5 s (não é o caso
+  "decodificador sem quadro"; 30/10/2026, Redmi Note 14); achar de onde vem o quadro velho (ring de buffers do
+  player do jogo com a CPU lenta, ou o cache de texturas da imagem YUV)
+- [ ] F1 2011 no celular: quadros pretos nos filmes, porque o player do jogo pula o desenho do quadro quando o
+  decodificador atrasa (CPU lenta: ~20 fps; reproduz no PC com `--cpu-mhz=120`); some com a velocidade nativa (item
+  abaixo), conferir depois
 - [ ] Teclado físico no jogo (setas/letras para os botões, como no desktop): hoje só controles de jogo e a tela
 - [ ] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU):
   o desktop as escreve no fim do `Runner`, o app não
@@ -51,7 +63,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   layout)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
-- [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
+- [ ] Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
+  `docs/notes/mobile-gpu.md`): quais contornos
   continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
   load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
   antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
@@ -69,7 +82,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Android como reserva, filmes do SceAvPlayer pelo MediaExtractor com AAC pelo MediaCodec, AAudio de baixa latência na
   taxa do aparelho com AudioTrack no Android 8.0, a mesma política de buffer do OpenAL e reabertura quando o aparelho de
   saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
-- [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
+- [ ] SceAudiodec MP3 no Android: ainda usa o FFmpeg, que o app não leva (AAC e SceMp4 já vão pelo MediaCodec e pelo
+  MediaExtractor desde 30/10/2026, e os filmes do SceAvPlayer já
   tocam sem ele)
 - [ ] Velocidade nativa no celular (meta: o fps do jogo no Vita; medir Knightin'+, Devious Dungeon e F1 2011 no
   Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
