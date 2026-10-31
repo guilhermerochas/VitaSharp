@@ -278,6 +278,12 @@ public sealed class Arm64Assembler
 
     /// <summary>Xd = 64-bit literal (LDR literal from the pool).</summary>
     public void LdrLit(int rt, ulong v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x58000000 | (uint)rt); }
+    /// <summary>Wt = 32-bit literal (the low word of a 64-bit pool entry, shared with <see cref="LdrLit"/> entries of the same value).</summary>
+    public void LdrLitW(int rt, uint v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x18000000 | (uint)rt); }
+
+    /// <summary>Whether <see cref="MovImm"/> needs two instructions for <paramref name="v"/> (MOVZ + MOVK).</summary>
+    public static bool MovImmIsLong(uint v) =>
+        (v & 0xFFFF0000) != 0 && (v & 0xFFFF) != 0 && (~v & 0xFFFF0000) != 0 && (~v & 0xFFFF) != 0 && !TryLogicalImm(v, false, out _);
     /// <summary>Qt = 128-bit literal.</summary>
     public void LdrLitQ(int vt, ulong lo, ulong hi) { _litFixups.Add((_code.Count, Literal(lo, hi, true))); Emit(0x9C000000 | (uint)vt); }
 
@@ -387,6 +393,16 @@ public sealed class Arm64Assembler
     public enum PairMode : uint { Post = 1, Offset = 2, Pre = 3 }
     public void Stp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8000000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     public void Ldp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8400000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    /// <summary>Whether a 32-bit pair access can use <paramref name="off"/> (signed offset, multiple of 4 in -256..252).</summary>
+    public static bool FitsPairW(int off) => off % 4 == 0 && off >= -256 && off <= 252;
+    /// <summary>STP Wt, Wt2, [Xn, #off] (signed offset).</summary>
+    public void StpW(int rt, int rt2, int rn, int off) { if (!FitsPairW(off)) throw new ArgumentOutOfRangeException(nameof(off)); Emit(0x29000000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt); }
+    /// <summary>LDP Wt, Wt2, [Xn, #off] (signed offset; Wt != Wt2).</summary>
+    public void LdpW(int rt, int rt2, int rn, int off)
+    {
+        if (!FitsPairW(off) || rt == rt2) throw new ArgumentOutOfRangeException(nameof(off));
+        Emit(0x29400000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    }
 
     // exclusives / acquire-release
     public void Ldaxr(int rt, int rn, bool x = false) => Emit((x ? 0xC85FFC00u : 0x885FFC00u) | (uint)rn << 5 | (uint)rt);

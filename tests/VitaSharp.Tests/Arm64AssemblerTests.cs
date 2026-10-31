@@ -190,6 +190,8 @@ public sealed class Arm64AssemblerTests
         (0x36000044, "tbz w4, #0, 1f; nop; 1:", a => { int l = a.NewLabel(); a.Tbz(4, 0, l); a.Emit(A.Nop); a.Bind(l); }),
         (0x17FFFFFF, "1: nop; b 1b", a => { int l = a.NewLabel(); a.Bind(l); a.Emit(A.Nop); a.B(l); }),
         (0x58000090, "ldr x16, 1f; nop; nop; nop; 1:", a => a.LdrLit(16, 0x1122334455667788)), // pool after padding to 16 bytes
+        (0x18000080, "ldr w0, 1f; nop; nop; nop; 1:", a => a.LdrLitW(0, 0x81234567)),
+        (0x18000091, "ldr w17, 1f; nop; nop; nop; 1:", a => a.LdrLitW(17, 0x81234567)),
         // ---- scalar FP
         (0x1E222820, "fadd s0, s1, s2", a => a.Fadd(0, 1, 2)),
         (0x1E622820, "fadd d0, d1, d2", a => a.Fadd(0, 1, 2, true)),
@@ -340,6 +342,32 @@ public sealed class Arm64AssemblerTests
         (0x4F07E7E7, "movi v7.16b, #0xff", a => a.MoviB(7, 0xFF, true)),
         (0x4C40A200, "ld1 {v0.16b, v1.16b}, [x16]", a => a.Ld1(0, 2, 16)),
         (0x4C407200, "ld1 {v0.16b}, [x16]", a => a.Ld1(0, 1, 16)),
+        // ---- perf/arm64-jit: pinned block counters, state pairs, FPSCR check, SIMD register cache (GNU as 2.40)
+        (0xB100339C, "adds x28, x28, #0xc", a => a.AddsImm(28, 28, 12, true)),
+        (0xB1400F9C, "adds x28, x28, #3, lsl #12", a => a.AddsImm(28, 28, 3 << 12, true)),
+        (0xAB08039C, "adds x28, x28, x8", a => a.Adds(28, 28, 8, x: true)),
+        (0x9100075A, "add x26, x26, #1", a => a.AddImm(26, 26, 1, true)),
+        (0x9100177B, "add x27, x27, #5", a => a.AddImm(27, 27, 5, true)),
+        (0xCB11039C, "sub x28, x28, x17", a => a.Sub(28, 28, 17, x: true)),
+        (0x8B110390, "add x16, x28, x17", a => a.Add(16, 28, 17, x: true)),
+        (0xF941127C, "ldr x28, [x19, #544]", a => a.LdrX(28, 19, 544)),
+        (0xF9011A7A, "str x26, [x19, #560]", a => a.StrX(26, 19, 560)),
+        (0xB9424A68, "ldr w8, [x19, #584]", a => a.Ldr(8, 19, 584)),
+        (0x29080660, "stp w0, w1, [x19, #64]", a => a.StpW(0, 1, 19, 64)),
+        (0x291F267F, "stp wzr, w9, [x19, #248]", a => a.StpW(ZR, 9, 19, 248)),
+        (0x29145A75, "stp w21, w22, [x19, #160]", a => a.StpW(21, 22, 19, 160)),
+        (0x29412A69, "ldp w9, w10, [x19, #8]", a => a.LdpW(9, 10, 19, 8)),
+        (0x295F0660, "ldp w0, w1, [x19, #248]", a => a.LdpW(0, 1, 19, 248)),
+        (0x53106610, "ubfx w16, w16, #16, #10", a => a.Ubfx(16, 16, 16, 10)),
+        (0x710C021F, "cmp w16, #0x300", a => a.CmpImm(16, 0x300)),
+        (0x4EB31E72, "mov v18.16b, v19.16b", a => a.VMov(18, 19)),
+        (0x3DC02A72, "ldr q18, [x19, #160]", a => a.LdSt(LsKind.LdrQ, 18, 19, 160)),
+        (0xFD005674, "str d20, [x19, #168]", a => a.LdSt(LsKind.StrD, 20, 19, 168)),
+        (0xFD40CE7F, "ldr d31, [x19, #408]", a => a.LdSt(LsKind.LdrD, 31, 19, 408)),
+        (0x4E3FD672, "fadd v18.4s, v19.4s, v31.4s", a => a.V3(0x1A, false, 0, true, 18, 19, 31)),
+        (0x2E34DE40, "fmul v0.2s, v18.2s, v20.2s", a => a.V3(0x1B, true, 0, false, 0, 18, 20)),
+        (0x4EB38655, "add v21.4s, v18.4s, v19.4s", a => a.V3(0x10, false, 2, true, 21, 18, 19)),
+        (0x3D806676, "str q22, [x19, #400]", a => a.LdSt(LsKind.StrQ, 22, 19, 400)),
     ];
 
     public static IEnumerable<object[]> CaseIndices() => Enumerable.Range(0, Cases.Length).Select(i => new object[] { i });

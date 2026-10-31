@@ -16,6 +16,78 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | 2e. NEON broad inline, LDREXD/STREXD, VCVTB/VCVTT (branch perf/neon-jit) | done, commits c36e70c, f587c79, a3740e2 (+ docs) |
 | ARM64 backend (branch feat/arm64-jit): emitter, runtime, W^X + icache on ARM64 hosts, Unicorn/qemu tests | done, see "feat/arm64-jit" below |
 | Media instructions, VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS, VQMOVN inline on both backends; cheaper compilation (branch perf/jit-complete) | done, see "perf/jit-complete" below |
+| ARM64 code quality: pinned block counters, compare + branch fusion, STP/LDP state flushes, SIMD register cache, lazy FPCR (branch perf/arm64-jit) | done in the sandbox, falta medir no aparelho; see "perf/arm64-jit" below |
+
+## perf/arm64-jit (2026-10-30): ARM64 code quality
+
+Branch `perf/arm64-jit` (worktree `.claude/worktrees/a64jit`, from main 4dbe06c, main 241ad19 merged). Not merged, not
+pushed. Roadmap item "Ajuste do JIT nativo ARM64" (Android, "Velocidade nativa no celular"). Everything here is counted
+in the Unicorn sandbox; **falta medir no aparelho** (Redmi Note 14, Helio G99: 2x Cortex-A76 + 6x A55). The x64 backend
+is untouched (no x64 file changed; the IR and frontend are unchanged).
+
+### What changed (each one a commit and a switch)
+`VITASHARP_NATIVE_A64_NOOPT=all` or a comma list of the names below turns optimisations off (`Arm64Emitter.A64Opt`,
+read once at startup; `Arm64Emitter.Opts` in tests).
+
+| Name | Change |
+|---|---|
+| `pin` | Block accounting in pinned registers: x26 = NBlocks, x27 = NInstr, x28 = CycleAcc - CheckWindow, loaded by the trampoline and stored back by the epilogue (`Runtime.PinnedCounters` carries the trampoline's mode, so blocks and trampoline always agree). An exit is `add x26; add x27; adds x28, #cycles; b.ge ret` instead of three memory read-modify-writes plus a load and compare of the window. The link slot address is loaded first (it is also the return path's LastExitSlot), the link target right after the accounting. Callee-saved temps drop from 8 to 5 (x21-x25). Linked static exit: 18 -> 10 instructions, 10 -> 3 memory accesses. |
+| `backedge` | Static exits to a guest address above their block's start skip the LinkBreak load + CBNZ: every cycle of linked blocks has an exit to an address at or below its block's start, which keeps the check (forward chains end by themselves). Indirect exits keep it. |
+| `fuse` | CondBranch tests the host NZCV when every flag its condition reads is a temp of the AddC/SubC/TestNZ whose ADDS/SUBS/ADCS/SBCS/TST last set them and only flag-neutral ops (state moves, plain ALU, loads/stores) were lowered since: one B.cond on the inverse condition (ARM32 and ARM64 condition codes coincide). HI/LS/GT/LE 5 -> 1 instruction, GE/LT 2 -> 1, the rest 1 -> 1 without the CSET dependency. The flag temps are still stored (live out). |
+| `pair` | Two consecutive 32-bit state stores/loads of adjacent fields as STP/LDP: the flushes are runs of R0..R15 then N Z C V (which follow R15), so the four flag stores become two STPs and R15 pairs with N. |
+| `vcache` | Guest D/Q registers stay in v18-v31 between VecOps of a straight-line region, write-through (results still stored, the register file always current): only reloads disappear. Entries die when their bytes are written another way (StoreState of an S register, LDP/STP pairs, LoadD), at labels and callouts; FpOp keeps them and reloads them on its handler path (which clobbers v16-v31). Accumulating ops rewrite the cached destination in place. |
+| `fpcr` | After a callout FPCR stays in the host mode until an op that needs the guest mode (FpOp, VecOp, labels, branches, exits): a run of callouts pays one MSR pair instead of one per call. FpOp's handler path still restores at once. |
+| `fpcheck` | VFP fast-path FPSCR check `ubfx w16, w16, #16, #10; cmp w16, #0x300` (4 instructions instead of 6: the old mask is not a logical immediate). Bit 19, reserved on the Vita, is included: when set the op takes the handler, which is always exact. |
+| `lit` | Stored constants that need MOVZ + MOVK (every R15 value of Vita code, constant addresses) come from the literal pool with one LDR W. |
+| `dirty` | The dirty-page mark after a guest store (DirtyPages is on by default) shifts the address temp's own register instead of copying it to x0 first. |
+
+### Instructions executed per loop iteration (`Arm64CodeQualityTable`)
+Loop blocks linked to themselves through their link slot, 40 iterations, host instructions counted by a Unicorn code
+hook over the code arena (trampoline/epilogue amortised: the ".7"), divided by the iterations; each switch alone and all
+together, every run compared with the interpreter.
+
+| Block (guest instructions) | none | pin | backedge | fuse | pair | vcache | fpcr | fpcheck | dirty | lit | all | per guest instruction none -> all | static words none -> all |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ARM sum: ldr post-index, add, subs, bne (4) | 42.7 | 35.0 | 42.7 | 42.7 | 39.7 | 42.7 | 42.7 | 42.7 | 42.7 | 42.7 | 31.9 | 10.7 -> 8.0 | 86 -> 58 |
+| ARM add, cmp, blt (3) | 38.7 | 31.0 | 38.7 | 37.7 | 36.7 | 38.7 | 38.7 | 38.7 | 38.7 | 37.7 | 26.9 | 12.9 -> 9.0 | 82 -> 56 |
+| ARM max: ldr, cmp, movgt, subs, bne (5) | 55.8 | 48.1 | 55.8 | 51.8 | 51.8 | 55.8 | 55.8 | 55.8 | 55.8 | 54.8 | 39.0 | 11.2 -> 7.8 | 102 -> 68 |
+| Thumb ldmia/stmia 4 regs, subs, bne (4) | 79.7 | 72.0 | 79.7 | 79.7 | 74.7 | 79.7 | 79.7 | 79.7 | 75.7 | 78.7 | 61.9 | 19.9 -> 15.5 | 134 -> 100 |
+| Thumb ldrb/strb, adds, cmp, blt (5) | 50.7 | 43.0 | 50.7 | 49.7 | 48.7 | 50.7 | 50.7 | 50.7 | 49.7 | 49.7 | 37.9 | 10.1 -> 7.6 | 98 -> 68 |
+| NEON vld1, vmul, vmla, vadd .f32 q, vst1, subs, bne (7) | 75.7 | 68.0 | 75.7 | 75.7 | 72.7 | 71.7 | 75.7 | 75.7 | 73.7 | 74.7 | 57.9 | 10.8 -> 8.3 | 126 -> 92 |
+| Two VQSHL callouts, subs, bne (4) | 66.7 | 59.0 | 66.7 | 66.7 | 64.7 | 66.7 | 62.7 | 66.7 | 66.7 | 66.7 | 52.9 | 16.7 -> 13.2 (MSR FPCR 4 -> 2) | 122 -> 90 |
+| VFP vldr, vmul, vadd, add, subs, bne (6) | 64.7 | 57.0 | 64.7 | 64.7 | 62.7 | 64.7 | 64.7 | 60.7 | 64.7 | 63.7 | 49.9 | 10.8 -> 8.3 | 140 -> 110 |
+
+About -25% host instructions on these blocks; the memory accesses drop more (pin: 7 per exit; vcache: one load per reused
+SIMD operand). `backedge` does not show on self-loops (their exit is a back edge); it saves 2 instructions and a load on
+every forward linked exit. What is left per conditional block exit: the four CSETs + two STPs of the live-out flags, the R15
+stores (the frontend stores the fall-through R15 before the conditional region and the taken path stores it again) and
+the link-slot double load.
+
+### Verification
+- Encodings: every new instruction form (pinned-counter ADDS/ADD/SUB/LDR/STR, STP/LDP W, UBFX/CMP, LDR W literal, vector
+  MOV/LDR/STR/arithmetic on v18-v31) is in `Arm64AssemblerTests`, checked against GNU as 2.40 (binutils-aarch64-linux-gnu
+  unpacked in WSL with `apt-get download` + `dpkg -x`, ~3 MB, no root).
+- The sandbox now clobbers the caller-saved registers (x1-x17, v0-v7, v16-v31, upper halves of v8-v15) after every
+  callout, like a real AAPCS64 callee: before, code that wrongly kept a value in them across a handler call passed in
+  Unicorn (found while writing the SIMD cache: the reload after FpOp's handler path was untested).
+- New tests (fast suite): `Arm64FusedConditionsMatchInterpreter` (9 flag setters x 14 conditions at the flag edges, fused
+  and not), `Arm64VfpModeCheckEdges` (each FPSCR bit 15-31 flipped), `Arm64SimdCacheMatchesInterpreter` (blocks of 6-16
+  instructions over D0-D7: NEON, VFP in and out of the Vita mode, VMOV core/S, VLDR/VSTR, conditional VFP, MRS/MSR and
+  VQSHL callouts; cache and lazy FPCR in all four combinations), `Arm64LinkBreakOnBackEdges`, `Arm64CodeQualityTable`
+  (every switch position against the interpreter). Mutations caught: no SIMD-cache invalidation on S stores, no reload
+  after the FpOp handler, no guest-FPCR restore before vector ops.
+- The existing ARM64 tests (random blocks incl. spill stress, VFP, every NEON class, exclusives, links/dispatch table)
+  run with all optimisations on.
+- `VITASHARP_NATIVE_VERIFY=1` covers everything inside a block (fusion, pairs, SIMD cache, lazy FPCR, literals) and the
+  pinned counters (the verifier runs blocks through the trampoline with CheckWindow 0); it does not chain, so `backedge`
+  is covered only by the test above and game runs.
+
+### Device plan (serial, when the phone is free)
+1. `VITASHARP_NATIVE_VERIFY=1` session (`config/env.txt`), `--speed=0.25`, Knightin'+ and Devious Dungeon to gameplay:
+   expect 0 mismatches in blocks with NEON/VFP ops (shared-counter mismatches of multi-threaded games are known noise).
+2. fps / CPU A/B on the same scene: default build vs `VITASHARP_NATIVE_A64_NOOPT=all` (Knightin'+, Devious Dungeon, F1
+   2011), PERF lines (busiest guest thread ms/frame, host time in native code).
+3. If anything differs or crashes: bisect with `VITASHARP_NATIVE_A64_NOOPT=pin`, `=fuse`, ... one name at a time.
 
 ## perf/jit-complete (2026-10-29)
 
@@ -368,6 +440,8 @@ callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the
 - `VITASHARP_NATIVE_NOINLINE=all|Op,Op,...`: force interpreter callouts for those ops (bisection).
 - `VITASHARP_NATIVE_NOLINK=1`: no exit linking / dispatch table.
 - `VITASHARP_NATIVE_TIERUP=0`: no IL tier-up.
+- `VITASHARP_NATIVE_A64_NOOPT=all|pin,backedge,fuse,pair,vcache,fpcr,fpcheck,dirty,lit`: ARM64 backend optimisations off
+  (bisection on a device, see "perf/arm64-jit").
 - `VITASHARP_NATIVE_VALIDATE=1`: validate IR of every block.
 - `VITASHARP_NATIVE_COUNTERS=1`: x64 blocks count executed VFP/NEON ops and conditional branches (PERF cycles lines).
 - `VITASHARP_NATIVE_CORPUS=file`: append every compiled block (for `CompileCostBenchmark`, read via `VITASHARP_BENCH_CORPUS`).
@@ -497,6 +571,6 @@ MRS/MSR, ...), except VSHL (register) on 8/16-bit lanes, inline only on ARM64 (x
 3. macOS ARM64: untested; hardened builds need `com.apple.security.cs.allow-jit`.
 4. Fault reporting inside generated code (the x64 vectored filter with disassembly) has no ARM64 equivalent, and
    `VITASHARP_NATIVE_DUMP` prints ARM64 code as hex words (no bundled disassembler).
-5. Performance: CMP+B.cond fusion and SIMD register pinning were measured on x64 and rejected (perf/jit-complete);
-   FPCR is written twice per callout. Re-measure on hardware.
+5. Performance: done in the sandbox on branch perf/arm64-jit (pinned counters, fusion, SIMD cache, lazy FPCR, see
+   above); falta medir no aparelho.
 

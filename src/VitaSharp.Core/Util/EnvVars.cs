@@ -65,6 +65,9 @@ public static class EnvVars
     /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
+    /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
+    /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
+    public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";
     public const string NativeTierup = "VITASHARP_NATIVE_TIERUP";

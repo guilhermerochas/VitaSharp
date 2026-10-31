@@ -62,8 +62,9 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         for (int i = 0; i < 1 << NativeRuntime.DispatchBits; i++) { Dispatch[i].Key = NativeRuntime.NoKey; Dispatch[i].Code = 0; }
         MapRange((ulong)Dispatch, (ulong)(sizeof(NativeRuntime.DispatchEntry) << NativeRuntime.DispatchBits), UC_PROT_ALL);
         int epi = 0;
-        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi));
-        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch };
+        bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
+        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned));
+        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, PinnedCounters = pinned };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
@@ -131,6 +132,22 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         if (err != 0 || _fault != null) throw new InvalidOperationException($"ARM64 sandbox: {(_fault ?? Marshal.PtrToStringAnsi(uc_strerror(err)))} at pc={Pc:X}");
     }
 
+    /// <summary>Host instructions executed in the code arena (blocks, trampoline, epilogue) while <see cref="Counting"/>
+    /// (sandboxes created with instruction counting only: Unicorn does not re-instrument code it already translated).</summary>
+    public long Executed;
+    public bool Counting;
+
+    /// <summary>A sandbox whose code hook counts every instruction executed in the code arena (slow).</summary>
+    public Arm64Sandbox(bool countInstructions) : this()
+    {
+        if (!countInstructions) return;
+        ulong lo = (ulong)NativeRuntime.Instance.Code.ExecBase;
+        Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCount, null, lo, lo + ExecutableMemory.ReserveSize - 1), "hook count");
+    }
+
+    [UnmanagedCallersOnly]
+    static void OnCount(nint uc, ulong address, uint size, void* user) { if (_current is { Counting: true } sb) sb.Executed++; }
+
     public ulong Pc { get { ulong pc; uc_reg_read(_uc, RegPc, &pc); return pc; } }
     public ulong X0 { get { ulong v; uc_reg_read(_uc, RegX0, &v); return v; } }
 
@@ -151,7 +168,31 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         var bridge = (delegate* unmanaged<CpuState*, int, uint, uint, int>)NativeRuntime.CalloutAddress;
         ulong r = (uint)bridge((CpuState*)x0, (int)x1, (uint)x2, (uint)x3);
         uc_reg_write(uc, RegX0, &r);
+        ClobberCallerSaved(uc);
         if (_current != null) _current._hits++;
+    }
+
+    const int RegQ0 = 104;
+
+    /// <summary>
+    /// What a real AAPCS64 callee may do: the handler ran on the host, so without this the emulated caller-saved
+    /// registers would survive the call and code that wrongly keeps values in them (x1-x17, v0-v7, v16-v31, the upper
+    /// halves of v8-v15) would pass here and fail on hardware.
+    /// </summary>
+    static void ClobberCallerSaved(nint uc)
+    {
+        for (int n = 1; n <= 17; n++) { ulong junk = 0xDEAD_0000_0000_0000UL | (uint)n << 8; uc_reg_write(uc, RegX0 + n, &junk); }
+        var q = stackalloc ulong[2];
+        for (int n = 0; n < 32; n++)
+        {
+            if (n is >= 8 and < 16)
+            {
+                uc_reg_read(uc, RegQ0 + n, q);
+                q[1] = 0x7FC0_DEAD_7FC0_DEADUL; // only d8-d15 are callee-saved
+            }
+            else { q[0] = 0x7FC0_BEEF_0000_0000UL | (uint)n; q[1] = 0x7FC0_DEAD_7FC0_DEADUL; }
+            uc_reg_write(uc, RegQ0 + n, q);
+        }
     }
 
     [UnmanagedCallersOnly]
