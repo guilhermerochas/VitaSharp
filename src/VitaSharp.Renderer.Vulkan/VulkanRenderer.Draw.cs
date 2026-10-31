@@ -92,6 +92,7 @@ public sealed unsafe partial class VulkanRenderer
 
     DescriptorSet AllocSet(DescriptorSetLayout layout)
     {
+        _statSets++;
         var f = F;
         var sizes = stackalloc DescriptorPoolSize[3]; // outside the loop (CA2014)
         while (true)
@@ -146,13 +147,27 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
+    /// <summary>
+    /// An attribute's format for the shader hints: the GXM format, plus <see cref="ShaderGenerator.ByteFetchFlag"/> when
+    /// its address is not a multiple of its component size (offset or stream stride). Vulkan requires that alignment;
+    /// GXM does not, and God of War's character streams have a 19-byte stride with F16 attributes at offsets 3 and 11:
+    /// NVIDIA read them anyway, Mali-G57 returned garbage (yellow, purple and blue patches on Kratos and the enemies).
+    /// Such attributes are fetched as bytes (R8 formats need no alignment) and rebuilt in the shader: no copy, and
+    /// aligned attributes keep their shaders.
+    /// </summary>
+    static byte AttributeFormatKey(GxmVertexAttribute a, GxmVertexStream[]? streams)
+    {
+        if (streams == null || a.StreamIndex >= streams.Length) return a.Format;
+        return ShaderGenerator.AttributeMisaligned(a.Format, a.Offset, streams[a.StreamIndex].Stride) ? (byte)(a.Format | ShaderGenerator.ByteFetchFlag) : a.Format;
+    }
+
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, GxmVertexStream[]? streams, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
         bool fetchSingle = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
         if (attrs != null)
-            foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, a.Format); }
+            foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, AttributeFormatKey(a, streams)); }
         h = ShaderHints.Fnv.Mix(h, colorFormat);
         if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
         if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
@@ -244,7 +259,7 @@ public sealed unsafe partial class VulkanRenderer
 
     // hints are only built when a shader really has to be translated (static: no per-draw closure allocation)
     static ShaderHints VertexHints(DrawCommand d, uint _) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
-        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, a.Format)).ToArray(), 0);
+        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, AttributeFormatKey(a, d.VertexProgram.Streams))).ToArray(), 0);
 
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
@@ -305,7 +320,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var vp = d.VertexProgram;
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
-        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
+        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
         var me = GetModule(vp.Info.Program, hk, VertexHints, d, 0);
         e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk, Vp = vp };
@@ -323,7 +338,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
         var me = GetModule(fp.Info.Program, hk, (fetchInput, tileWord1) switch
         {
@@ -750,7 +765,7 @@ public sealed unsafe partial class VulkanRenderer
         // frame); not when the program reads the vertex index itself (gl_VertexIndex includes the offset)
         uint firstVertex = minIndex > 0 && (d.VertexProgram.Info.Program.Flags & Core.Gxm.Shader.GxpProgram.FlagIndexUsed) == 0 ? minIndex : 0;
         int vertexOffset = -(int)firstVertex;
-        var (ib, ibOff) = UploadSpan(GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * indexSize)), 4);
+        var (ib, ibOff) = UploadRange(d.IndexAddress, d.IndexCount * (uint)indexSize);
         var vbufs = stackalloc Buffer[17];
         var voffs = stackalloc ulong[17];
         var vp = d.VertexProgram;
@@ -774,7 +789,7 @@ public sealed unsafe partial class VulkanRenderer
             if (!instanced) addr += firstVertex * stream.Stride;
             // vertices an earlier draw's program stored to memory are only in the mirror (VulkanRenderer.Mapped.cs)
             if (GpuWrittenStream(addr, length) is >= 0 and var mirrorOff) { vbufs[s] = _mirror; voffs[s] = (ulong)mirrorOff; continue; }
-            var (b, off) = UploadSpan(GuestMemory.ReadSpan(addr, (int)length), 4);
+            var (b, off) = UploadRange(addr, length);
             vbufs[s] = b;
             voffs[s] = off;
         }
@@ -787,9 +802,13 @@ public sealed unsafe partial class VulkanRenderer
         bufInfos[0] = UniformInfo(d.VertexUniformSpan);
         bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
         var writes = stackalloc WriteDescriptorSet[4];
+        // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
+        uint nw = 0;
         for (int i = 0; i < 4; i++)
-            writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
-        _vk.UpdateDescriptorSets(_dev, 4, writes, 0, null);
+            if (bufInfos[i].Buffer.Handle != _dummyBuffer.Handle || ShaderGenerator.NanDraws)
+                writes[nw++] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
+        if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
+        _statDescWrites += nw;
         if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
 
         // ---- record
@@ -804,7 +823,8 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
+            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); }
+            else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
             else
             {
                 BeginRendering();
@@ -816,6 +836,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
+                _statPipelineBinds++;
                 _boundPipeline = pipeline;
             }
             sets[3] = fbSet;
@@ -852,10 +873,11 @@ public sealed unsafe partial class VulkanRenderer
             {
                 bool visQuery = BeginVisibilityQuery(d, out uint query);
                 _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
+                _statDraws++;
                 if (visQuery) { EndVisibilityQuery(query); CostNoteVisQuery(query); }
             }
             EndCostQuery(cmd);
-            if (singleFetch) EndSingleFetchPass();
+            if (singleFetch && !(FetchPassMerge && _core.RasterizationOrderColor)) EndSingleFetchPass();
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         if (CostOn) CostNoteDraw(d, vs, fs);

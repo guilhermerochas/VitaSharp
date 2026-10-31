@@ -11,6 +11,10 @@ public static class EnvVars
     /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>
     /// <summary>Android: scripted buttons/sticks for unattended device runs (ScriptedPad: "cross@12,start@20:0.5").</summary>
     public const string AndroidInput = "VITASHARP_ANDROID_INPUT";
+    /// <summary>Android: =0 tries the hardware H.264 decoders first even for pictures up to 960x544 (default: Android's own first there), =1 always Android's own first.</summary>
+    public const string MediaCodecSoftware = "VITASHARP_MEDIACODEC_SOFTWARE";
+    /// <summary>Android: AAudio buffer capacity requested in frames (default 0 = AAudio's own; 8192 = the earlier request).</summary>
+    public const string AAudioCapacity = "VITASHARP_AAUDIO_CAPACITY";
     public const string Astc = "VITASHARP_ASTC";
     /// <summary>Size limit in MB of a title's ASTC transcode disk cache (default 512).</summary>
     public const string AstcCacheMb = "VITASHARP_ASTC_CACHE_MB";
@@ -33,6 +37,9 @@ public static class EnvVars
     public const string DebugTex0 = "VITASHARP_DEBUG_TEX0";
     public const string DyldRelaunched = "VITASHARP_DYLD_RELAUNCHED";
     public const string FetchSplit = "VITASHARP_FETCH_SPLIT";
+    /// <summary>=1: consecutive programmable-blending draws of a one-sample scene share one fetch pass where the GPU orders
+    /// input attachment reads with the rasterization (VulkanRenderer.SingleFetch.cs; experimental: dark frames on Mali).</summary>
+    public const string FetchPassMerge = "VITASHARP_FETCH_PASS_MERGE";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>Tests: an installed firmware to run firmware modules from (a Vita3K data folder with vs0/, or a vs0
     /// folder itself). Unset: %APPDATA%\Vita3K\Vita3K when it exists, else the PSVUPDAT.PUP of FirmwarePup.</summary>
@@ -42,6 +49,9 @@ public static class EnvVars
     public const string GeneratorVersionSalt = "VITASHARP_GENERATOR_VERSION_SALT";
     public const string GlfwPlatform = "VITASHARP_GLFW_PLATFORM";
     public const string GpuDumpAt = "VITASHARP_GPU_DUMP_AT";
+    /// <summary>=1: undefined Vulkan contents get loud values (new render targets magenta, depth/stencil discarded at a
+    /// scene's end cleared to 0 / 0xFF), so tiler-only flicker shows on a desktop GPU (VulkanRenderer.Tiler.cs).</summary>
+    public const string GpuPoison = "VITASHARP_GPU_POISON";
     public const string GpuProfile = "VITASHARP_GPU_PROFILE";
     /// <summary>Index or part of the name of the Vulkan physical device to render with (default: the discrete GPU).</summary>
     public const string GpuDevice = "VITASHARP_GPU_DEVICE";
@@ -112,6 +122,8 @@ public static class EnvVars
     public const string SyscallLatencyUs = "VITASHARP_SYSCALL_LATENCY_US";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
     public const string Texdirty = "VITASHARP_TEXDIRTY";
+    /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
+    public const string VertexCache = "VITASHARP_VERTEX_CACHE";
     public const string TraceRt = "VITASHARP_TRACE_RT";
     public const string TraceSnap = "VITASHARP_TRACE_SNAP";
     public const string TraceSync = "VITASHARP_TRACE_SYNC";

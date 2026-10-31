@@ -214,6 +214,14 @@ r54 proprietary driver (`ArmProprietary 54.1.0`), Vulkan 1.3, Android 16. Capabi
   decoder thread is late, which happens when the emulated CPU cannot keep up (the phone runs F1 at about 20 fps); the
   desktop does the same with `--cpu-mhz=120`.
 
+- Misaligned vertex attributes (31/10/2026, God of War Collection): GXM streams may place 16- and 32-bit attributes
+  at addresses that are not multiples of their component size (a 19-byte stride with F16 at offsets 3 and 11); Vulkan
+  forbids it, NVIDIA reads them anyway, the Mali-G57 returns garbage. Such attributes are fetched as R8 bytes and
+  rebuilt in the vertex shader on every GPU (`ShaderGenerator.ByteFetchFlag`, [notes](gow-textures.md)).
+- One-sample programmable blending keeps one fetch render pass per draw: sharing it between consecutive draws
+  (`VITASHARP_FETCH_PASS_MERGE=1`, with `VK_ARM_rasterization_order_attachment_access`) cut Uncharted's renderings per
+  scene from 5.4 to 1.6 but darkened about one frame in seven on the Mali-G57 (cause open).
+
 ## What needs a real device
 
 - Everything Adreno/Mali-specific actually running: the profiles only remove features and pretend to be the vendor;

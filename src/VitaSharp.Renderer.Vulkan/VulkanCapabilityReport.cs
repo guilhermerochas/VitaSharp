@@ -30,7 +30,7 @@ static unsafe class VulkanCapabilityReport
     }
 
     public static List<string> Lines(in PhysicalDeviceProperties props, in PhysicalDeviceFeatures f10, in PhysicalDeviceVulkan11Features f11,
-        in PhysicalDeviceVulkan12Features f12, in PhysicalDeviceVulkan13Features f13, uint api, HashSet<string> exts, Func<Format, string> format)
+        in PhysicalDeviceVulkan12Features f12, in PhysicalDeviceVulkan13Features f13, uint api, HashSet<string> exts, Func<Format, string> format, Func<Format, bool>? vertex = null)
     {
         var r = new List<string> { $"Vulkan 1.0 features missing: {Join(Missing(f10))}" };
         if (api >= Vk.Version12)
@@ -50,6 +50,8 @@ static unsafe class VulkanCapabilityReport
             Format.D24UnormS8Uint, Format.D32SfloatS8Uint, Format.D16Unorm, Format.R16G16B16A16Sfloat, Format.B10G11R11UfloatPack32,
             Format.A2B10G10R10UnormPack32, Format.R5G6B5UnormPack16, Format.BC1RgbaUnormBlock, Format.Astc4x4UnormBlock, Format.Etc2R8G8B8A8UnormBlock,
         }.Select(x => $"{x} {format(x)}")));
+        if (vertex != null)
+            r.Add($"Vulkan vertex formats missing (of the GXM attribute formats): {Join(Formats.AllAttributeFormats().Where(x => !vertex(x)).Select(x => x.ToString()).ToList())}");
         r.Add($"Vulkan device extensions ({exts.Count}): {string.Join(" ", exts.Order(StringComparer.Ordinal))}");
         return r;
     }

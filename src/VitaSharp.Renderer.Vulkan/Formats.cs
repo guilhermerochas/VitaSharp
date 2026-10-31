@@ -207,6 +207,20 @@ public static class Formats
 
     // ---------------------------------------------------------------- vertex attributes
 
+    /// <summary>Every vertex format <see cref="Attribute"/> can return (the capability report checks them).</summary>
+    public static IEnumerable<Format> AllAttributeFormats()
+    {
+        var all = new List<Format>();
+        for (byte g = 0; g <= 10; g++)
+            foreach (char k in "fiu")
+                for (int c = 1; c <= 4; c++)
+                {
+                    var f = Attribute(g, c, k).Format;
+                    if (!all.Contains(f)) all.Add(f);
+                }
+        return all;
+    }
+
     public static (Format Format, int Size) Attribute(byte gxmFormat, int count, char kind)
     {
         count = Math.Clamp(count, 1, 4);

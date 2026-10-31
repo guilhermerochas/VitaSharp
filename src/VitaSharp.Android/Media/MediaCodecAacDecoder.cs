@@ -17,6 +17,7 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     const long InputTimeoutUs = 10_000, OutputWaitUs = 30_000;
     long _queued, _producedSamples;
     int _frames, _silent;
+    long _decodeTicks, _maxDecodeTicks, _firstCall, _lastCall;
     // decoded interleaved PCM not handed out yet
     short[] _samples = new short[8192];
     int _fill;
@@ -90,6 +91,18 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     }
 
     public int Decode(byte* data, int size, Span<short> pcmOut, int outChannels = 0)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_firstCall == 0) _firstCall = t0;
+        try { return DecodeCore(data, size, pcmOut, outChannels); }
+        finally
+        {
+            long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+            _decodeTicks += t1 - t0; _maxDecodeTicks = Math.Max(_maxDecodeTicks, t1 - t0); _lastCall = t1;
+        }
+    }
+
+    int DecodeCore(byte* data, int size, Span<short> pcmOut, int outChannels)
     {
         var c = _codec;
         _frames++;
@@ -191,7 +204,7 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         var c = _codec;
         _codec = null;
         if (c == null) return;
-        Log.Info($"sceAudiodec: MediaCodec AAC decoder closed after {_frames} frames, {_silent} answered with silence (decoder late)");
+        Log.Info($"sceAudiodec: MediaCodec AAC decoder closed after {_frames} frames, {_silent} answered with silence (decoder late); {_decodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, _frames):F2} ms per call (worst {_maxDecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1}), calls over {(_lastCall - _firstCall) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms");
         try { c.Stop(); } catch (Java.Lang.Exception) { }
         try { c.Release(); } catch (Java.Lang.Exception) { }
         c.Dispose();

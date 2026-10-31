@@ -1,0 +1,3 @@
+title=PCSB01070
+args=--frames=4000 --seconds=900 --dump-every=50 --input=start@f500:f8,cross@f600:f8,cross@f800:f8,cross@f1000:f8,cross@f1200:f8,cross@f1400:f8,cross@f1600:f8,cross@f1800:f8,cross@f2000:f8,cross@f2200:f8,cross@f2400:f8,cross@f2600:f8,cross@f2800:f8,cross@f3000:f8,cross@f3200:f8,cross@f3400:f8,cross@f3600:f8,cross@f3800:f8
+data=C:\Users\guisa\AppData\Roaming\VitaSharp

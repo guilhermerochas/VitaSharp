@@ -140,6 +140,7 @@ public sealed unsafe partial class VulkanRenderer
         public DescriptorSet Set;
         public long Serial = -1;
         public int Units;
+        public uint Mask;
     }
     readonly TexSetCache _texSetV = new(), _texSetF = new();
 
@@ -181,27 +182,36 @@ public sealed unsafe partial class VulkanRenderer
             infos[i] = new DescriptorImageInfo(sampler, view, layout2);
         }
         var cache = vertexStage ? _texSetV : _texSetF;
-        if (cache.Serial == _frameSerial && cache.Units == units && cache.Set.Handle != 0)
+        // only the units the program samples are written: the others are never read by its shader (a set from a frame
+        // pool may leave them undefined), and writing all 16 per stage was most of F1 2011's 15,000 descriptor writes
+        // per race frame on the phone's GPU worker
+        uint mask = units >= 32 ? used : used & ((1u << units) - 1);
+        if (cache.Serial == _frameSerial && cache.Units == units && cache.Mask == mask && cache.Set.Handle != 0)
         {
             bool same = true;
             for (int i = 0; i < units && same; i++)
             {
+                if ((mask & (1u << i)) == 0) continue;
                 ref var c = ref cache.Infos[i];
                 same = c.Sampler.Handle == infos[i].Sampler.Handle && c.ImageView.Handle == infos[i].ImageView.Handle && c.ImageLayout == infos[i].ImageLayout;
             }
             if (same) return cache.Set;
         }
         var set = AllocSet(layout);
+        uint n = 0;
         for (int i = 0; i < units; i++)
         {
-            writes[i] = new WriteDescriptorSet
+            if ((mask & (1u << i)) == 0) continue;
+            writes[n++] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1,
                 DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[i],
             };
             cache.Infos[i] = infos[i];
         }
-        _vk.UpdateDescriptorSets(_dev, (uint)units, writes, 0, null);
+        if (n > 0) _vk.UpdateDescriptorSets(_dev, n, writes, 0, null);
+        _statDescWrites += n;
+        cache.Mask = mask;
         cache.Set = set;
         cache.Serial = _frameSerial;
         cache.Units = units;

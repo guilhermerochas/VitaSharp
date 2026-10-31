@@ -381,7 +381,7 @@ public sealed unsafe class VkCore : IDisposable
         }
         bool dynamicRendering = api >= Vk.Version13 && has13.DynamicRendering && has13.Synchronization2;
         // the raw device capabilities, before anything can fail (phones have no vulkaninfo)
-        foreach (var line in VulkanCapabilityReport.Lines(Properties, supported2.Features, has11, has12, has13, api, devExts, FormatSupport)) Log.Info(line);
+        foreach (var line in VulkanCapabilityReport.Lines(Properties, supported2.Features, has11, has12, has13, api, devExts, FormatSupport, SupportsVertexFormat)) Log.Info(line);
 
         // capabilities and quirks: the real features, minus what a test profile (--gpu-profile) removes
         // Android: a Qualcomm driver that hides BCn may be patched to sample it (libadrenotools BCeNabler)

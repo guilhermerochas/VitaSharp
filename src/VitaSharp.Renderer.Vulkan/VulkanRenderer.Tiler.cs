@@ -133,6 +133,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="final">the scene ends with them: depth/stencil are discarded unless the scene forces the store</param>
     void FlushChain(bool final)
     {
+        if (_fetchPassOpen) EndSingleFetchPass();
         if (_chain.Count == 0) return;
         var p = _chainPass;
         // desktop GPUs store depth/stencil as before (no tile memory to save)
@@ -183,5 +184,27 @@ public sealed unsafe partial class VulkanRenderer
             _vk.CmdExecuteCommands(cmd, n, cbs);
             _vk.CmdEndRendering(cmd);
         }
+        if (Poison && depthStore == AttachmentStoreOp.DontCare && _depth != null) PoisonDepth(cmd, _depth.Image);
+    }
+
+    /// <summary>
+    /// VITASHARP_GPU_POISON=1 (debugging, mainly for replay-gpu on a desktop GPU): what Vulkan leaves undefined gets a
+    /// loud value instead of whatever the driver keeps. A desktop GPU usually keeps the old content, so a scene that
+    /// wrongly relies on it looks right there and only flickers on a tiler (Mali, Adreno) that really drops it. New render
+    /// targets the guest never wrote start magenta, and a depth/stencil buffer discarded at a scene's end (DONT_CARE
+    /// store) is cleared to depth 0 / stencil 0xFF: a later scene that loads it draws nothing where it depended on it.
+    /// </summary>
+    static readonly bool Poison = Environment.GetEnvironmentVariable(Core.Util.EnvVars.GpuPoison) == "1";
+
+    void PoisonDepth(CommandBuffer cmd, Image image)
+    {
+        const ImageAspectFlags aspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        var all = PipelineStageFlags.AllCommandsBit;
+        var rw = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit;
+        Barrier(image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, aspect, all, PipelineStageFlags.TransferBit, rw, AccessFlags.TransferWriteBit);
+        var clear = new ClearDepthStencilValue(0f, 0xFF);
+        var range = new ImageSubresourceRange(aspect, 0, 1, 0, 1);
+        _vk.CmdClearDepthStencilImage(cmd, image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+        Barrier(image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, aspect, PipelineStageFlags.TransferBit, all, AccessFlags.TransferWriteBit, rw);
     }
 }

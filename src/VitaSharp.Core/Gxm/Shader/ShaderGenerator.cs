@@ -390,6 +390,12 @@ float packC10(vec3 c) {
                         inAllocated += (hint.ComponentCount + 3) / 4 * 4;
                         break;
                     }
+                    if ((hint.Format & ByteFetchFlag) != 0 && hint.ComponentCount > 0)
+                    {
+                        int k = EmitByteFetchAttribute(t, decl, result, reg, a.Index, location, n, (byte)(hint.Format & ~ByteFetchFlag), hint.ComponentCount);
+                        inAllocated += k * 4;
+                        break;
+                    }
                     EmitAttribute(t, decl, result, reg, a.Index, location, n, hintCount: hint.ComponentCount);
                     inAllocated += (n + 3) / 4 * 4;
                     break;
@@ -567,6 +573,83 @@ float packC10(vec3 c) {
             t.Store(raw, new Val($"({string.Join(" | ", parts)})", 'u', 1), 1, w);
         }
         result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(comps, 4), k, typeSize, comps));
+    }
+
+    /// <summary>Set in a vertex hint's attribute format (bit 7; GXM formats are 0-10) when the attribute's address is not
+    /// a multiple of its component size: it is fetched as bytes (<see cref="EmitByteFetchAttribute"/>).</summary>
+    public const byte ByteFetchFlag = 0x80;
+
+    /// <summary>Bytes per component of a GXM attribute format (U8/S8 and their normalised forms 1, 16-bit 2, F32 and
+    /// untyped 4).</summary>
+    public static int AttributeComponentBytes(byte gxmFormat) => (gxmFormat & 0x7F) switch
+    {
+        0 or 1 or 4 or 5 => 1,
+        2 or 3 or 6 or 7 or 8 => 2,
+        _ => 4,
+    };
+
+    /// <summary>Whether an attribute's address can be a non-multiple of its component size (its offset or its stream's
+    /// stride), which Vulkan does not allow for vertex attribute formats.</summary>
+    public static bool AttributeMisaligned(byte gxmFormat, int offset, int stride)
+    {
+        int cs = AttributeComponentBytes(gxmFormat);
+        return cs > 1 && (offset % cs != 0 || stride % cs != 0);
+    }
+
+    /// <summary>
+    /// A misaligned attribute (<see cref="ByteFetchFlag"/>). Vulkan requires a vertex attribute's address to be a multiple
+    /// of its component size; GXM does not. God of War's character streams have a 19-byte stride with F16 attributes at
+    /// offsets 3 and 11: NVIDIA read them anyway, Mali-G57 returned garbage (yellow, purple and blue patches on Kratos and
+    /// the enemies). The attribute's bytes are fetched as R8 unsigned integers (no alignment needed, no copy) and each
+    /// component is rebuilt with the conversion the hardware applies (F16, U16/S16 scaled or normalised, F32, untyped
+    /// words); components the stream lacks read as 0, the fourth as 1. Aligned attributes keep their shaders. Returns
+    /// the input locations used.
+    /// </summary>
+    static int EmitByteFetchAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location,
+        int n, byte fmt, int count)
+    {
+        int cs = AttributeComponentBytes(fmt);
+        count = Math.Clamp(count, 1, 4);
+        int bytes = count * cs, k = (bytes + 3) / 4;
+        string name = $"in_attr{location}";
+        if (k == 1) decl.AppendLine($"layout(location = {location}) in {(bytes == 1 ? "uint" : $"uvec{bytes}")} {name};");
+        else decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        string B(int i) => k == 1 ? (bytes == 1 ? name : $"{name}.{"xyzw"[i]}") : $"{name}[{i / 4}].{"xyzw"[i % 4]}";
+        string Bits(int c) => cs == 2 ? $"({B(2 * c)} | ({B(2 * c + 1)} << 8))"
+            : $"({B(4 * c)} | ({B(4 * c + 1)} << 8) | ({B(4 * c + 2)} << 16) | ({B(4 * c + 3)} << 24))";
+        char kind = GxpProgram.IsSigned(reg.Type) ? 'i' : GxpProgram.IsUnsigned(reg.Type) ? 'u' : 'f';
+        if (fmt == AttributeFormatUntyped) kind = 'u';
+        int dst = Math.Clamp(n, 1, 4);
+        var comps = new List<string>();
+        for (int c = 0; c < dst; c++)
+        {
+            if (c >= count)
+            {
+                comps.Add(kind == 'f' ? (c == 3 ? "1.0" : "0.0") : kind == 'i' ? (c == 3 ? "1" : "0") : (c == 3 ? "1u" : "0u"));
+                continue;
+            }
+            string bits = Bits(c);
+            string sext = $"(int({bits} << 16) >> 16)";
+            string f = fmt switch
+            {
+                8 => $"unpackHalf2x16({bits}).x",
+                2 => $"float({bits})",
+                3 => $"float({sext})",
+                6 => $"(float({bits}) / 65535.0)",
+                7 => $"max(float({sext}) / 32767.0, -1.0)",
+                _ => $"uintBitsToFloat({bits})",
+            };
+            comps.Add(kind switch
+            {
+                'f' => f,
+                'i' => fmt is 3 or 7 ? sext : fmt is 9 or 10 ? $"int({bits})" : $"int({f})",
+                _ => fmt is 9 or 10 or 2 or 6 ? bits : $"uint({f})",
+            });
+        }
+        string vt = kind switch { 'i' => "ivec", 'u' => "uvec", _ => "vec" };
+        t.Store(reg, new Val(dst == 1 ? comps[0] : $"{vt}{dst}({string.Join(", ", comps)})", kind, dst), (1 << dst) - 1);
+        result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(bytes, 4), k, 1, bytes));
+        return k;
     }
 
     static void EmitAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int n, bool forceArray = false, int hintCount = 0)
