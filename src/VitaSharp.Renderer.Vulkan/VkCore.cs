@@ -300,6 +300,7 @@ public sealed unsafe class VkCore : IDisposable
         Set(timestampBits > 0 && Properties.Limits.TimestampPeriod > 0, GpuFeature.Timestamps);
         Set(dynamicRendering, GpuFeature.DynamicRendering);
         Set(Properties.ApiVersion >= Vk.Version13, GpuFeature.ExtendedDynamicState);
+        Set(f.ShaderClipDistance, GpuFeature.ShaderClipDistance);
         var l = Properties.Limits;
         bool unified = true;
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
@@ -379,8 +380,8 @@ public sealed unsafe class VkCore : IDisposable
             has12.SamplerMirrorClampToEdge = devExts.Contains(MirrorClampExtension);
         }
         bool dynamicRendering = api >= Vk.Version13 && has13.DynamicRendering && has13.Synchronization2;
-        if (!supported2.Features.ShaderClipDistance)
-            throw new InvalidOperationException($"{DeviceName} lacks shaderClipDistance (needed for the GXM far plane). {VulkanLoader.InstallHint()}");
+        // the raw device capabilities, before anything can fail (phones have no vulkaninfo)
+        foreach (var line in VulkanCapabilityReport.Lines(Properties, supported2.Features, has11, has12, has13, api, devExts, FormatSupport)) Log.Info(line);
 
         // capabilities and quirks: the real features, minus what a test profile (--gpu-profile) removes
         // Android: a Qualcomm driver that hides BCn may be patched to sample it (libadrenotools BCeNabler)
@@ -440,7 +441,9 @@ public sealed unsafe class VkCore : IDisposable
             FragmentStoresAndAtomics = supported2.Features.FragmentStoresAndAtomics,
             OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise),
             DepthClamp = Has(GpuFeature.DepthClamp),
-            ShaderClipDistance = true,
+            // without it the GXM far plane is clipped by the hardware (no depth clamp) or in the fragment shader
+            // (GpuQuirk.FarPlaneDiscard)
+            ShaderClipDistance = Has(GpuFeature.ShaderClipDistance),
             SampleRateShading = Has(GpuFeature.SampleRateShading),
         };
         OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise);
@@ -542,6 +545,17 @@ public sealed unsafe class VkCore : IDisposable
             if ((props.OptimalTilingFeatures & need) == need) return f;
         }
         return Format.D32SfloatS8Uint;
+    }
+
+    /// <summary>Optimal-tiling support of a format for the capability report: S sampled, C colour attachment, B blend,
+    /// D depth/stencil attachment, "-" none.</summary>
+    string FormatSupport(Format f)
+    {
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        var t = props.OptimalTilingFeatures;
+        var s = ((t & FormatFeatureFlags.SampledImageBit) != 0 ? "S" : "") + ((t & FormatFeatureFlags.ColorAttachmentBit) != 0 ? "C" : "")
+                + ((t & FormatFeatureFlags.ColorAttachmentBlendBit) != 0 ? "B" : "") + ((t & FormatFeatureFlags.DepthStencilAttachmentBit) != 0 ? "D" : "");
+        return s.Length == 0 ? "-" : s;
     }
 
     public bool SupportsVertexFormat(Format f)

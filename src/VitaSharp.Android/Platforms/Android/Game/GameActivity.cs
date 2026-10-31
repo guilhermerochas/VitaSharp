@@ -42,16 +42,18 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         new(SystemTitleId, "Sistema do Vita", "", "sys", System.IO.Path.Combine(AppServices.Data.Fs, "vs0", "vsh", "shell"), null, 0);
 
     EmulationSession? _session;
+    GameDisplayTuning? _displayTuning;
     AndroidVulkanSurface? _surface;
     SurfaceView? _view;
     OnScreenControlsView? _controls;
     TextView? _fps, _toast;
     readonly OnScreenPad _pad = new();
+    AndroidKeyboard? _keyboard;
     AndroidInput? _input;
     GameSensors? _sensors;
     InputManager? _inputManager;
     System.Threading.Timer? _fpsTimer;
-    long _lastFrames;
+    long _lastFrames, _framesAtLog, _fpsTicks;
     bool _menuOpen, _isSystem, _endedShown;
 
     /// <summary>Starts a game from the UI process.</summary>
@@ -95,7 +97,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         }
 
         var prefs = AppServices.Prefs;
-        _input = new AndroidInput(_pad, AppServices.Gamepads);
+        // a hardware/Bluetooth keyboard: the keyboard profile of input.json (the desktop's default mapping)
+        _keyboard = new AndroidKeyboard(AppServices.InputProfiles);
+        _input = new AndroidInput(_pad, AppServices.Gamepads, _keyboard);
+        if (System.Environment.GetEnvironmentVariable(EnvVars.AndroidInput) is { Length: > 0 } script)
+        {
+            try { _input.Script = new ScriptedPad(script); Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
+            catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
+        }
         _sensors = new GameSensors(this); // SceMotion from the phone's sensors, SceCamera from its cameras
         // the shell takes the PS button itself (the running game's LiveArea); a game on its own opens the pause menu
         if (system) _pad.Layout = OnScreenPad.SystemLayout;
@@ -149,6 +158,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             return;
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
+        _displayTuning = GameDisplayTuning.Start(this, _view!, _session.Performance);
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
@@ -165,6 +175,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         if (holder.Surface is not { IsValid: true } s) return;
         _surface = new AndroidVulkanSurface(s);
         _session?.SurfaceCreated(_surface);
+        _displayTuning?.SurfaceCreated();
     }
 
     public void SurfaceChanged(ISurfaceHolder holder, Format format, int width, int height)
@@ -197,6 +208,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         base.OnPause();
         _pad.Reset();
+        _keyboard?.ReleaseAll();
         _session?.Pause();
         _sensors?.Pause();
     }
@@ -220,6 +232,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         base.OnWindowFocusChanged(hasFocus);
         if (hasFocus) EnterImmersive();
+        // a dialog (pause menu, IME text entry) took the key events: the key-up of a key held now would never come
+        // back here, and the game would see it held after the dialog closes
+        else _keyboard?.ReleaseAll();
     }
 
     protected override void OnDestroy()
@@ -299,6 +314,26 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         return base.DispatchKeyEvent(e);
     }
 
+    // ------------------------------------------------------------------ hardware keyboard
+
+    // keys no view consumed (nothing in this activity takes the focus) and that are not a controller's: the keyboard
+    // profile. Unmapped keys (volume, Back, Escape, which Android turns into Back) keep their system meaning.
+    public override bool OnKeyDown(Keycode keyCode, KeyEvent? e) => OnKeyboardKey(keyCode, e, true) || base.OnKeyDown(keyCode, e);
+
+    public override bool OnKeyUp(Keycode keyCode, KeyEvent? e) => OnKeyboardKey(keyCode, e, false) || base.OnKeyUp(keyCode, e);
+
+    bool OnKeyboardKey(Keycode keyCode, KeyEvent? e, bool down)
+    {
+        if (_keyboard == null || e == null || (e.Source & InputSourceType.Keyboard) != InputSourceType.Keyboard) return false;
+        // a controller's own keys (and their auto-repeats, which DispatchKeyEvent leaves to us) are not keyboard keys
+        if (AppServices.Gamepads.IsConnected(e.DeviceId)) return false;
+        var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
+        if ((action & KeyboardKeyAction.Pause) != 0) OpenMenu();
+        // the PS key in a game without the shell: the pause menu, like the on-screen PS and a controller's PS button
+        if ((action & KeyboardKeyAction.PsButton) != 0 && !_isSystem) OnPsPressed();
+        return action != KeyboardKeyAction.None;
+    }
+
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
         if (e != null && (e.Source & InputSourceType.Joystick) == InputSourceType.Joystick && e.Action == MotionEventActions.Move
@@ -354,6 +389,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         long fps = frames - _lastFrames;
         _lastFrames = frames;
         _fps.Text = _session.Paused ? "Pausado" : $"{fps} FPS";
+        // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
+        if (++_fpsTicks % 30 == 0 && !_session.Paused)
+        {
+            Log.Info($"[perf] {(frames - _framesAtLog) / 30.0:F1} fps over 30 s, {frames} frames");
+            if (Core.Cpu.Jit.Enabled) Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
+            Log.Info($"[perf] audio: {_session.AudioSummary}");
+            _framesAtLog = frames;
+        }
         _fps.Visibility = _session.Settings.ShowFps || _session.Paused ? ViewStates.Visible : ViewStates.Invisible;
     }
 

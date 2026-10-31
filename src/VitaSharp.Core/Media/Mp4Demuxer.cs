@@ -9,9 +9,29 @@ public sealed record DemuxedUnit(int Stream, byte[] Data, long Pts90k, long Dts9
 public sealed record DemuxedStream(bool Video, AVCodecID Codec, int Width, int Height, int Channels, int SampleRate,
     int BitRate, long Duration90k, double FrameRate, string Language);
 
+/// <summary>An MP4 demuxer for SceMp4: access units of every stream in file order (H.264 as Annex B with SPS/PPS
+/// before every key frame, AAC as raw frames), timestamps in 90 kHz units.</summary>
+public interface IMp4Demuxer : IDisposable
+{
+    IReadOnlyList<DemuxedStream> Streams { get; }
+    long Duration90k { get; }
+    /// <summary>Next unit of any enabled stream in file order, or null at the end.</summary>
+    DemuxedUnit? Next(Func<int, bool> enabled);
+    void Seek(long pts90k);
+}
+
+/// <summary>Opens MP4 files for SceMp4: FFmpeg (<see cref="Mp4Demuxer"/>) unless a front-end installs another
+/// <see cref="Backend"/> (Android: MediaExtractor, there being no FFmpeg in the app).</summary>
+public static class Mp4Demuxers
+{
+    public static Func<string, IMp4Demuxer?>? Backend { get; set; }
+
+    public static IMp4Demuxer? Open(string path) => Backend?.Invoke(path) ?? Mp4Demuxer.Open(path);
+}
+
 /// <summary>Demuxes an MP4/MOV container with FFmpeg into access units (no decoding). H.264 is returned as an
 /// Annex B byte stream with SPS/PPS before every key frame, the format hardware decoders take.</summary>
-public sealed unsafe class Mp4Demuxer : IDisposable
+public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 {
     AVFormatContext* _fmt;
     readonly AVPacket* _pkt;

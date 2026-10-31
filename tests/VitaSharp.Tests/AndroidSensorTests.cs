@@ -145,6 +145,25 @@ public sealed class AndroidSensorTests
         Assert.False(new AndroidMotion(AndroidMotionMode.Off) { Sensors = sensors, Fallback = keys }.HasSensors);
     }
 
+    [Fact]
+    public void KeyboardTiltKeysAreTheFallback()
+    {
+        long now = 0;
+        var keyboard = new AndroidKeyboard(null, () => now);
+        var sensors = new SensorMotionSource(SensorFrame.Phone, "phone");
+        var m = new AndroidMotion(AndroidMotionMode.Phone) { Sensors = sensors, Fallback = keyboard };
+        Assert.False(m.HasSensors); // at rest until a tilt key is used
+        keyboard.OnKey(AndroidKeyNames.Numpad0 + 8, true); // keypad 8: tilt forward
+        now = 100_000;
+        Assert.True(m.HasSensors);
+        Assert.True(m.ReadSamples(new MotionSample[64]) > 0);
+        sensors.OnAccelerometer(new Vector3(0, 0, G));
+        sensors.OnGyroscope(9000, Vector3.Zero);
+        var buf = new MotionSample[64];
+        Assert.Equal(1, m.ReadSamples(buf)); // the phone's sensors take over
+        Assert.Equal(9UL, buf[0].TimestampUs);
+    }
+
     [Theory]
     [InlineData("", true, AndroidMotionMode.Phone)]
     [InlineData("", false, AndroidMotionMode.Controller)]

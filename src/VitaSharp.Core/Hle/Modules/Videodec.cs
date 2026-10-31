@@ -21,6 +21,10 @@ public sealed class Videodec : HleModule
         public IVideoDecoder? Codec;
         public uint MaxWidth, MaxHeight;
         public DecodedPicture? Last;
+        /// <summary>A picture came out since the decoder was created or flushed (see Output's repeatIfLate).</summary>
+        public bool Started;
+        /// <summary>Scratch list of an asynchronous decoder's ready pictures (Output).</summary>
+        public readonly List<DecodedPicture> Ready = [];
     }
 
     readonly Dictionary<uint, Decoder> _decoders = new();
@@ -93,22 +97,49 @@ public sealed class Videodec : HleModule
         long pts = ((long)GuestMemory.R32(au) << 32) | GuestMemory.R32(au + 4);
         uint es = GuestMemory.R32(au + 16), size = GuestMemory.R32(au + 20);
         if (d.Codec != null && es != 0 && size != 0) d.Codec.Send(GuestMemory.Span(es, (int)size), pts);
-        return Output(d, array);
+        return Output(d, array, repeatIfLate: true);
     }
 
-    /// <summary>Writes every ready picture into the caller's picture array.</summary>
-    int Output(Decoder d, uint array)
+    /// <summary>Writes every ready picture into the caller's picture array. <paramref name="repeatIfLate"/>: an
+    /// asynchronous decoder (<see cref="IVideoDecoder.Asynchronous"/>) whose picture is not out yet, after the stream's
+    /// first picture, hands out the previous picture again.</summary>
+    int Output(Decoder d, uint array, bool repeatIfLate = false)
     {
         uint capacity = GuestMemory.R32(array + 4), list = GuestMemory.R32(array + 8);
         uint n = 0;
-        while (n < capacity && d.Codec?.Take() is { } pic)
+        bool Emit(DecodedPicture pic)
         {
             uint picture = GuestMemory.R32(list + n * 4);
-            if (picture == 0) break;
+            if (picture == 0) return false;
             WritePicture(picture, pic);
             if (d.Last != null && d.Last != pic) d.Codec!.Recycle(d.Last); // its planes were already written out
             d.Last = pic;
+            d.Started = true;
             n++;
+            return true;
+        }
+        if (repeatIfLate && d.Codec is { Asynchronous: true } codec)
+        {
+            // pictures of an asynchronous decoder come out late and in bursts: the newest ones are shown and the older
+            // ones dropped, so the delay does not grow with every late picture
+            d.Ready.Clear();
+            while (codec.Take() is { } p) d.Ready.Add(p);
+            int skip = Math.Max(0, d.Ready.Count - (int)capacity);
+            for (int i = 0; i < d.Ready.Count; i++)
+            {
+                if (i < skip || n >= capacity || !Emit(d.Ready[i])) codec.Recycle(d.Ready[i]);
+            }
+            d.Ready.Clear();
+        }
+        else
+        {
+            while (n < capacity && d.Codec?.Take() is { } pic)
+                if (!Emit(pic)) break;
+        }
+        if (n == 0 && repeatIfLate && d.Started && d.Last != null && d.Codec is { Asynchronous: true } && capacity > 0 && GuestMemory.R32(list) is var first && first != 0)
+        {
+            WritePicture(first, d.Last);
+            n = 1;
         }
         GuestMemory.W32(array, n);
         return 0;
@@ -120,6 +151,7 @@ public sealed class Videodec : HleModule
         var d = Find(ctrl, out int err);
         if (d == null) return err;
         d.Codec?.Flush();
+        d.Started = false;
         return array == 0 ? 0 : Output(d, array);
     }
 
@@ -129,6 +161,7 @@ public sealed class Videodec : HleModule
         var d = Find(ctrl, out int err);
         if (d == null) return err;
         d.Codec?.Reset();
+        d.Started = false;
         return 0;
     }
 

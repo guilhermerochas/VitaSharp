@@ -3,8 +3,9 @@
 Preparation for the Android port: the Vulkan renderer no longer assumes a desktop GPU. Every optional feature it
 uses is checked against one capabilities object built at device creation, known driver bugs of Qualcomm's Adreno
 driver (and of the other mobile blobs) are worked around behind quirk flags, and tile-based GPUs get per-scene
-load/store ops. None of this was run on a phone: there is no Adreno or Mali hardware here. The mobile paths were
-exercised on the GTX 1650 with emulated device profiles (`--gpu-profile=adreno|mali`).
+load/store ops. The mobile paths were first exercised on the GTX 1650 with emulated device profiles
+(`--gpu-profile=adreno|mali`); since 30/10/2026 they have also run on a real Mali phone ([below](#real-device-mali-g57-mc2-30102026)).
+No Adreno has run them yet.
 
 ## Where things are
 
@@ -47,14 +48,16 @@ are queried so the log and info.txt say what the device has, and are never enabl
 | `maxBoundDescriptorSets` | 4 sets | 4 is the Vulkan minimum: always fits |
 | `geometryShader`, `logicOp`, 16-bit storage, `shaderInt16` | not used (GXM has no logic op; the generator packs halves with `packHalf2x16`) | - |
 | `depthClamp` | GXM does not clip at the near plane | the near plane clips (as before) |
+| `shaderClipDistance` | the GXM far plane (`gl_ClipDistance[0] = w - z`): depth clamp also turns off the hardware's far clip | with depth clamp: `FarPlaneDiscard` (w - z as a varying at location 14, `discard` where it is negative, after the rest of the fragment shader); without depth clamp: nothing, the hardware clips the far plane. Mali Bifrost/Valhall has no clip distances (`maxClipDistances` 0) |
+| colour formats that render but do not blend (`COLOR_ATTACHMENT` without `COLOR_ATTACHMENT_BLEND`; Mali: 32-bit float such as R32G32_SFLOAT) | GXM colour surfaces in their own format | the surface keeps its format (`RenderableFormat`); a blended draw into it is drawn unblended with a warning. Until fix/mali-g57 such surfaces fell back to RGBA8: half the bytes per pixel, raw 32-bit outputs skipped, no writeback (Uncharted's title background black) |
 | `fillModeNonSolid` | GXM line/point polygon modes | drawn filled (as before) |
 | `wideLines` | GXM line width | 1-pixel lines (as before) |
 | timestamps | `PERF gpu` GPU time | "no timestamps" (the load/store counters are still printed) |
 | pipeline cache | driver's `VkPipelineCache` blob per title | header checked against vendor, device, driver version and UUID (as before); Qualcomm drivers (`PipelineCachePerDriverBuild`) get one file per driver build (hash of driver ID, name, info string and version) because custom drivers replace the system one without changing the IDs |
 
 Also checked but not a quirk: shaders are compiled for the Vulkan 1.0 SPIR-V environment (SPIR-V 1.0), which every
-mobile driver accepts. The minimum is Vulkan 1.1 (plus `shaderClipDistance`; `VK_KHR_sampler_mirror_clamp_to_edge`
-when present): devices without the 1.3 features render with render passes and static pipeline state (Adreno 6xx on
+mobile driver accepts. The minimum is Vulkan 1.1 (`VK_KHR_sampler_mirror_clamp_to_edge` when present;
+`shaderClipDistance` was required until branch fix/mali-g57): devices without the 1.3 features render with render passes and static pipeline state (Adreno 6xx on
 older drivers exposes only Vulkan 1.1). Until branch feat/mobile-renderer the renderer required Vulkan 1.3.
 
 ## Quirk table
@@ -78,6 +81,14 @@ version (without driver properties: vendor plus Vita3K's rule, a Qualcomm major 
 | `CustomDriverCapable` | Qualcomm | the Android UI may offer custom drivers | Vita3K `support_custom_drivers()` |
 | `Msaa2xAs4x` | any device with 4 but not 2 framebuffer samples | 2X scenes render with 4 samples | capability |
 | `ConservativeMemoryBudget` | tile-based or unified-memory device without `VK_EXT_memory_budget` | eviction at 50% of the heap | capability |
+| `FarPlaneDiscard` | no `shaderClipDistance` but `depthClamp` (Mali) | far plane as a fragment `discard` (`ShaderGenerator.FarPlane`, part of the shader pack key; the desktop GLSL is unchanged). `-FarPlaneDiscard`: depth clamp off instead, the hardware clips both planes (keeps early depth tests, but the near plane clips) | capability; measured on Mali-G57 |
+
+Measured on real devices (the startup log's `Vulkan 1.x features missing`, `Vulkan limits`, `Vulkan formats` and
+`Vulkan device extensions` lines, `VulkanCapabilityReport`, written before the device is created):
+
+| Device | Driver | Missing (of what the renderer uses) | Quirks selected | Result |
+|---|---|---|---|---|
+| Mali-G57 MC2 (Redmi Note 14, MediaTek Helio G99), Vulkan 1.3, Android 16 | ArmProprietary 54.1.0 | `shaderClipDistance` (maxClipDistances 0), `textureCompressionBC`, `fillModeNonSolid`, `VK_EXT_memory_budget`; has depth clamp, sample-rate shading, geometry shaders, logic op, wide lines, 16-bit storage, `VK_ARM`/`VK_EXT_rasterization_order_attachment_access`, push descriptors, custom border colour, ASTC LDR (BC goes to ASTC 4x4), ETC2; D24S8; framebuffer samples 1/4/8; per-stage descriptor limits 8388608, 7 sets, 256 B push constants | `TileBased AvoidPushDescriptors AvoidClearAttachments Msaa2xAs4x DynamicRenderingSuspect ConservativeMemoryBudget RenderPasses FarPlaneDiscard` | before branch fix/mali-g57: no device ("lacks shaderClipDistance"). Now: Devious Dungeon, Knightin'+, F1 2011, Persona 4 Golden, Killzone Mercenary (into gameplay) and Uncharted render correctly ([device run](../android/README.md#phone-run-redmi-note-14-mali-g57-30102026)); no Mali driver bug seen. `-TileBased`, `-RenderPasses` (dynamic rendering), `-RasterizationOrderColor`, `-FarPlaneDiscard` and the `desktop` profile all ran F1 2011 the same |
 
 The proprietary-only quirks key off the driver, not the vendor: a Turnip driver on the same Adreno gets none of
 them. Shader-generator changes are opt-in through `ShaderGenerator.LowerDynamicIndexing`, which is part of the shader
@@ -184,11 +195,31 @@ loads and stores.
 **F10 capture:** `--diag-at=1200` under the adreno profile writes the capability block, the "Mobile paths" line and
 the load/store counters into info.txt (and renderer.txt).
 
+## Real device: Mali-G57 MC2 (30/10/2026)
+
+Redmi Note 14 (24117RN76L), MediaTek MT6789 (Helio G99: 2x Cortex-A76 2.2 GHz + 6x A55 2.0 GHz), Mali-G57 MC2 on the
+r54 proprietary driver (`ArmProprietary 54.1.0`), Vulkan 1.3, Android 16. Capabilities and quirks: the table above.
+
+- The far plane: `FarPlaneDiscard` alone on the Killzone dump (frames 4200-4300, desktop GPU,
+  `VITASHARP_GPU_QUIRKS=+FarPlaneDiscard`) is 101/101 pixel-identical to the clip-distance path; the updated `mali`
+  profile (no BCn, fill modes, memory budget, clip distance; depth clamp) differs only by the BC decode (worst mean
+  0.79, as before). The desktop default path stays pixel-identical (101/101 against the base commit).
+- The renderer paths the device selects were active: render passes (the blob is `DynamicRenderingSuspect`), tile-based
+  load/store, BC to ASTC 4x4 (Killzone: UBC1-4, PVRTC-II), 2X MSAA as 4X (no 2X scene in these games), rasterization-order attachment access enabled (`VK_ARM_...`; whether a
+  multisampled framebuffer-fetch scene used it was not checked), no draw skipped for texture units. Turning each workaround off
+  (`-TileBased`, `-RenderPasses`, `-RasterizationOrderColor`, `-FarPlaneDiscard`, the `desktop` profile) changed
+  nothing visible in F1 2011: none of them is known to be needed on this driver, none hurt.
+- Black frames in F1 2011's movies on the phone are not a GPU problem: a GPU dump replayed on the desktop shows the
+  same frames, and in each the game issues no draw of its movie picture. Its movie player drops a frame whenever its
+  decoder thread is late, which happens when the emulated CPU cannot keep up (the phone runs F1 at about 20 fps); the
+  desktop does the same with `--cpu-mhz=120`.
+
 ## What needs a real device
 
 - Everything Adreno/Mali-specific actually running: the profiles only remove features and pretend to be the vendor;
   they cannot reproduce the driver bugs themselves, so whether each quirk is still needed (or sufficient) has to be
-  checked on devices, ideally old (512.5xx) and new (512.7xx+) Adreno blobs, Turnip, and Mali r3x/r4x. Use
+  checked on devices, ideally old (512.5xx) and new (512.7xx+) Adreno blobs, Turnip, and older Mali (r3x/r4x;
+  a Mali-G57 on r54 ran, see above). Use
   `VITASHARP_GPU_QUIRKS=-Quirk` to turn a workaround off.
 - `VK_EXT/ARM_rasterization_order_attachment_access`: the code path (subpass flag, pipeline flag, no barriers or
   per-triangle splits) has never executed; neither desktop GPU here has the extension.

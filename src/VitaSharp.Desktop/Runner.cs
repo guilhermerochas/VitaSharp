@@ -735,64 +735,7 @@ public static class Runner
 
     static void PrintStats(Emulator emu)
     {
-        Log.Info($"Stopping. {VitaSharp.Core.Cpu.Jit.Describe()}");
-        if (VitaSharp.Core.Cpu.Native.NativeVerifier.Enabled)
-            Log.Info($"CPU backend report: native verify: {VitaSharp.Core.Cpu.Native.NativeVerifier.Verified} block runs verified, {VitaSharp.Core.Cpu.Native.NativeVerifier.Mismatches} mismatches ({VitaSharp.Core.Cpu.Native.NativeVerifier.SimdMismatches} in blocks with NEON/VFP ops), {VitaSharp.Core.Cpu.Native.NativeVerifier.Skipped} interpreted (unloggable stores)");
-        if (VitaSharp.Core.Cpu.Jit.Chain.Any(c => c is VitaSharp.Core.Cpu.Backends.NativeX64Compiler or VitaSharp.Core.Cpu.Backends.NativeArm64Compiler))
-            Log.Info($"CPU backend report: {VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Report()}");
-        foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
-            Log.Info($"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}");
-        foreach (var t in emu.Kernel.Threads) Log.Info("  thread " + t.Describe());
-        // the other processes of the system (applications the shell started)
-        foreach (var p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
-        {
-            Log.Info($"  process {p.Describe()}{(p.Suspended ? " (suspended)" : "")}:");
-            using var space = VitaSharp.Core.Memory.AddressSpace.Use(p.Space);
-            foreach (var t in p.Kernel.Threads) Log.Info("    thread " + t.Describe());
-        }
-        {
-            long fr = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
-            foreach (var t in emu.Kernel.Threads.Where(t => t.Core.BlockCycles + t.Core.ChargedCycles > 0).OrderByDescending(t => t.Core.BlockCycles + t.Core.ChargedCycles).Take(6))
-                Log.Info($"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame" +
-                    (t.Core.NativeTicks > 0 ? $"; host time in native code {t.Core.NativeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / fr:F2} ms/frame" : "") +
-                    (t.Core.SimdOps + t.Core.CondBranches > 0 ? $", {t.Core.SimdOps / 1e3 / fr:F0} K VFP/NEON ops/frame, {t.Core.CondBranches / 1e3 / fr:F0} K conditional branches/frame" : ""));
-        }
-        // VITASHARP_PEEK_END=ADDR:LEN[,ADDR:LEN...] hex-dumps guest memory when the run stops (state of a hang)
-        if (Environment.GetEnvironmentVariable(EnvVars.PeekEnd) is { } peekEnd)
-            foreach (var spec in peekEnd.Split(',', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var pp = spec.Split(':');
-                uint pa = Convert.ToUInt32(pp[0], 16), pl = Convert.ToUInt32(pp[1], 16);
-                var sb = new System.Text.StringBuilder($"  peek-end {pa:X8}:");
-                for (uint i = 0; i < pl; i += 4) { if (i % 32 == 0) sb.Append($"\n   {pa + i:X8}:"); sb.Append($" {VitaSharp.Core.Memory.GuestMemory.R32(pa + i):X8}"); }
-                Log.Info(sb.ToString());
-            }
-        // held mutexes with waiters: the first thing to look at when threads sit in "wait=[mutex ...]" (deadlocks)
-        foreach (var m in emu.Kernel.Objects.All<VitaSharp.Core.Kernel.Mutex>())
-            if (m.Owner != null && m.Waiters > 0)
-                Log.Info($"  mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
-        if (emu.Gpu.Backend?.Report() is { } gpuReport) Log.Info(gpuReport);
-        {
-            long hwPics = VitaSharp.Core.Media.FFmpegVideoDecoder.HardwarePictures, swPics = VitaSharp.Core.Media.FFmpegVideoDecoder.SoftwarePictures;
-            if (hwPics + swPics > 0)
-                Log.Info($"PERF video decode: {hwPics} pictures in hardware, {swPics} in software, {VitaSharp.Core.Media.FFmpegVideoDecoder.Fallbacks} hardware fallbacks, {VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms decoding ({VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / (hwPics + swPics):F2} ms/picture)");
-        }
-        Log.Info($"  GPU commands: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}; frames presented {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
-        foreach (var l in AudioDiagnostics.SummaryLines()) Log.Info(l); // always: ports, outputs/s, underruns per minute
-        Watchdog.LogSummaries();
-        long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
-        var gcInfo = GC.GetGCMemoryInfo();
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        Log.Info($"PERF cpu {proc.TotalProcessorTime.TotalSeconds:F1} s ({proc.TotalProcessorTime.TotalMilliseconds / frames:F1} ms/frame, user {proc.UserProcessorTime.TotalSeconds:F1} s, kernel {proc.PrivilegedProcessorTime.TotalSeconds:F1} s), threads {proc.Threads.Count}");
-        var byCpu = new List<(string Name, double Ms)>();
-        foreach (System.Diagnostics.ProcessThread t in proc.Threads)
-        {
-            try { byCpu.Add((VitaSharp.Core.Util.NativeThread.Names.GetValueOrDefault(t.Id, $"host#{t.Id}"), t.TotalProcessorTime.TotalMilliseconds)); }
-            catch (InvalidOperationException) { }
-        }
-        foreach (var (name, ms) in byCpu.OrderByDescending(x => x.Ms).Take(12))
-            Log.Info($"PERF thread {name}: {ms / 1000:F1} s cpu ({ms / frames:F2} ms/frame)");
-        Log.Info($"PERF allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB total ({GC.GetTotalAllocatedBytes() / 1024.0 / frames:F0} KB/frame), GC gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, pause {gcInfo.PauseTimePercentage:F1}%, heap {gcInfo.HeapSizeBytes / 1048576.0:F0} MB, working set {Environment.WorkingSet / 1048576.0:F0} MB");
+        foreach (var l in SessionReport.Lines(emu)) Log.Info(l);
     }
 }
 

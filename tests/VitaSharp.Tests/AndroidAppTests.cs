@@ -30,6 +30,18 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal([new("VITASHARP_GPU_QUIRKS", "-RenderPasses,+TileBased"), new("VITASHARP_ASTC", "0"), new("VITASHARP_EMPTY", "")], vars);
     }
 
+    // ---------------------------------------------------------------- runtime report
+
+    [Fact]
+    public void RuntimeReportOnTheDesktopHasNoAndroidBuildVariant()
+    {
+        // the variant comes from the VitaSharp.Android assembly's metadata, which the test host does not load
+        Assert.Null(RuntimeReport.BuildRuntime);
+        var lines = RuntimeReport.Lines().ToList();
+        Assert.EndsWith(", build ?", lines[0]);
+        Assert.Equal($"Dynamic code: supported {RuntimeReport.DynamicCodeSupported}, compiled {RuntimeReport.DynamicCodeCompiled}", lines[1]);
+    }
+
     // ---------------------------------------------------------------- logcat
 
     [Theory]
@@ -97,11 +109,14 @@ public sealed class AndroidAppTests : IDisposable
             Log.Level = LogLevel.Info;
             Log.Debug("filtered out");
             Log.Warn("android-sink-test warning");
+            // the periodic session report goes to the log file only, not to logcat
+            Log.InfoFileOnly("android-sink-test file only");
             // other tests running in parallel log through the same global sink: read a snapshot under the sink's lock
             (LogLevel, string, string)[] lines;
             lock (sink.Lines) lines = sink.Lines.ToArray();
             Assert.Contains(lines, l => l.Item1 == LogLevel.Warn && l.Item3 == "android-sink-test warning");
             Assert.DoesNotContain(lines, l => l.Item3 == "filtered out");
+            Assert.DoesNotContain(lines, l => l.Item3 == "android-sink-test file only");
         }
         finally
         {
@@ -385,5 +400,142 @@ public sealed class AndroidAppTests : IDisposable
         Span<TouchPoint> dest = stackalloc TouchPoint[4];
         Assert.Equal(1, input.GetTouches(false, dest));
         Assert.Single(input.GetTouches(false));
+    }
+
+    [Fact]
+    public void AndroidKeyNamesAreTheDesktopKeyNames()
+    {
+        Assert.Equal("A", AndroidKeyNames.Name(29));
+        Assert.Equal("Z", AndroidKeyNames.Name(54));
+        Assert.Equal("Number0", AndroidKeyNames.Name(7));
+        Assert.Equal("Keypad8", AndroidKeyNames.Name(152));
+        Assert.Equal("F12", AndroidKeyNames.Name(142));
+        Assert.Equal("Up", AndroidKeyNames.Name(AndroidKeys.DpadUp));
+        Assert.Equal("Backspace", AndroidKeyNames.Name(67));   // KEYCODE_DEL
+        Assert.Equal("Home", AndroidKeyNames.Name(122));       // KEYCODE_MOVE_HOME (KEYCODE_HOME is the system's)
+        Assert.Equal("ShiftRight", AndroidKeyNames.Name(60));
+        Assert.Equal("Enter", AndroidKeyNames.Name(66));
+        Assert.Null(AndroidKeyNames.Name(24));                 // volume up
+        Assert.Null(AndroidKeyNames.Name(AndroidKeys.Back));
+        Assert.Null(AndroidKeyNames.Name(AndroidKeys.ButtonA));
+        // every key of the default keyboard profile has an Android key code
+        var names = Enumerable.Range(0, 300).Select(AndroidKeyNames.Name).OfType<string>().ToHashSet();
+        foreach (var keys in DefaultMappings.Keyboard().Bindings.Values)
+            foreach (var k in keys)
+                Assert.True(InputBinding.TryParse(k, out var b) && b.Key is { } key && names.Contains(key), k);
+    }
+
+    [Fact]
+    public void AndroidKeyboardUsesTheDesktopDefaultMapping()
+    {
+        var kb = new AndroidKeyboard();
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(AndroidKeys.DpadLeft, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52 /* X */, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(32 /* D */, true));
+        var s = kb.Map().State;
+        Assert.Equal(VitaButtons.Left | VitaButtons.Cross, s.Buttons);
+        Assert.Equal(255, s.Lx);
+        Assert.Equal(128, s.Ly);
+        // an auto-repeat is consumed and changes nothing; the key-up lets go
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52, true, repeat: true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52, false));
+        Assert.Equal(VitaButtons.Left, kb.Map().State.Buttons);
+        // keys outside the profile stay with Android
+        Assert.Equal(KeyboardKeyAction.None, kb.OnKey(24 /* volume up */, true));
+        Assert.Equal(KeyboardKeyAction.None, kb.OnKey(AndroidKeys.Back, true));
+        Assert.Equal(KeyboardKeyAction.None, kb.OnKey(AndroidKeyNames.Escape, true));
+        // Home = PS button (the activity opens the pause menu in a game without the shell); once per press
+        Assert.Equal(KeyboardKeyAction.Handled | KeyboardKeyAction.PsButton, kb.OnKey(AndroidKeyNames.MoveHome, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(AndroidKeyNames.MoveHome, true, repeat: true));
+        Assert.True((kb.Map().State.Buttons & VitaButtons.PsButton) != 0);
+        kb.OnKey(AndroidKeyNames.MoveHome, false);
+
+        // P = pause: never reaches the game, a held key opens the menu once
+        Assert.Equal(KeyboardKeyAction.Handled | KeyboardKeyAction.Pause, kb.OnKey(44 /* P */, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(44, true, repeat: true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(44, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(44, false));
+        Assert.Equal(KeyboardKeyAction.Handled | KeyboardKeyAction.Pause, kb.OnKey(44, true));
+        Assert.Equal(VitaButtons.Left, kb.Map().State.Buttons);
+
+        // a dialog took the focus: everything is released
+        kb.ReleaseAll();
+        Assert.False(kb.AnyHeld);
+        Assert.Equal(ControllerState.Neutral.Buttons, kb.Map().State.Buttons);
+        Assert.Equal(KeyboardKeyAction.Handled | KeyboardKeyAction.Pause, kb.OnKey(44, true));
+    }
+
+    [Fact]
+    public void AndroidKeyboardFollowsTheSavedKeyboardProfile()
+    {
+        var store = new InputProfileStore(Path.Combine(_root, "input.json"));
+        var p = DefaultMappings.Keyboard();
+        p.Remove(VitaControl.Cross, InputBinding.OfKey("X"));
+        p.Add(VitaControl.Cross, InputBinding.OfKey("K"));
+        p.Remove(VitaControl.RStickDown, InputBinding.OfKey("K"));
+        store.Put(p);
+        var kb = new AndroidKeyboard(store);
+        Assert.Equal(KeyboardKeyAction.None, kb.OnKey(52 /* X */, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(39 /* K */, true));
+        Assert.Equal(VitaButtons.Cross, kb.Map().State.Buttons);
+        Assert.Equal(128, kb.Map().State.Ry);
+    }
+
+    [Fact]
+    public void AndroidKeyboardTiltKeysDriveTheMotionSensors()
+    {
+        long now = 1_000_000;
+        var kb = new AndroidKeyboard(null, () => now);
+        Span<MotionSample> samples = stackalloc MotionSample[64];
+        // at rest until a tilt key is used
+        Assert.False(kb.HasSensors);
+        Assert.Equal(0, kb.ReadSamples(samples));
+        // tilt keys are motion controls, not Vita buttons
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(152 /* numpad 8 */, true));
+        Assert.Equal(ControllerState.Neutral.Buttons, kb.Map().State.Buttons);
+        Assert.True(kb.HasSensors);
+        Assert.Equal(1, kb.ReadSamples(samples)); // the first read: one sample of the current pose
+        now += 200_000;
+        int n = kb.ReadSamples(samples);
+        Assert.Equal(50, n); // 200 ms at 250 Hz
+        Assert.True(kb.Virtual.Angles.Pitch < -5, $"pitch {kb.Virtual.Angles.Pitch}"); // forward: the top edge goes down
+        kb.OnKey(152, false);
+        // the letter cluster too: H tilts right, B (re-centre) is bound
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(36 /* H */, true));
+        now += 400_000;
+        kb.ReadSamples(samples);
+        Assert.True(kb.Virtual.Angles.Roll > 5, $"roll {kb.Virtual.Angles.Roll}");
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(30 /* B */, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(149 /* numpad 5 */, true));
+
+        // motion source Off: the tilt keys do nothing
+        var store = new InputProfileStore(Path.Combine(_root, "input.json"));
+        var off = DefaultMappings.Keyboard();
+        off.MotionSource = MotionSourceMode.Off;
+        store.Put(off);
+        var kbOff = new AndroidKeyboard(store, () => now);
+        kbOff.OnKey(152, true);
+        Assert.False(kbOff.HasSensors);
+        Assert.Equal(0, kbOff.ReadSamples(samples));
+    }
+
+    [Fact]
+    public void AndroidInputCombinesTheKeyboard()
+    {
+        var pad = new OnScreenPad();
+        var pads = new AndroidGamepads();
+        var kb = new AndroidKeyboard();
+        var input = new AndroidInput(pad, pads, kb);
+        pads.Connect(1, "Xbox Wireless Controller", 0x045E, 0x0B13, [AndroidKeys.AxisX, AndroidKeys.AxisY, AndroidKeys.AxisZ, AndroidKeys.AxisRz]);
+        Assert.True(pads.IsConnected(1));
+        Assert.False(pads.IsConnected(2));
+        pads.OnKey(1, AndroidKeys.ButtonStart, true);
+        kb.OnKey(31 /* C */, true);
+        kb.OnKey(51 /* W */, true);
+        var s = input.GetController(0);
+        Assert.Equal(VitaButtons.Start | VitaButtons.Circle, s.Buttons);
+        Assert.Equal(0, s.Ly);
+        kb.ReleaseAll();
+        Assert.Equal(VitaButtons.Start, input.GetController(0).Buttons);
     }
 }
