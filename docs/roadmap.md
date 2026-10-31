@@ -44,6 +44,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
   FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
   `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
+- [ ] God of War Collection (PCSA00126) no celular: o Kratos aparece com problemas de textura (visto pelo usuário em
+  31/10/2026 no Redmi Note 14, build de release do `perf/android-phone`); comparar com o desktop na mesma cena (perfis
+  `desktop` e `mali`) para saber se é da Mali (conversão BC → ASTC/RGBA8, formato sem suporte, mipmaps) ou geral, e
+  pegar o log/captura do celular
+- [ ] GPU da Mali sobrecarregada (Uncharted no título: 33,7 ms de GPU por quadro na Mali-G57 contra 4,2 ms no PC,
+  8x mais que a diferença de força esperada): medir com os contadores da Mali (Arm Performance Studio / contadores
+  via adb) onde vai o tempo (cálculo, texturas, leitura/gravação de tiles, vértices) e reduzir: shaders em 16 bits
+  onde o Vita usa `half` (mediump na Mali), menos load/store de tiles entre etapas, MSAA/superfícies extras no perfil
+  Mali, shaders traduzidos mais enxutos e uma opção de resolução interna menor (75%/50%)
 - [ ] Uncharted no celular: na tela de título, um quadro escuro e velho do filme de fundo a cada ~5 s (não é o caso
   "decodificador sem quadro"; 30/10/2026, Redmi Note 14); achar de onde vem o quadro velho (ring de buffers do
   player do jogo com a CPU lenta, ou o cache de texturas da imagem YUV)
