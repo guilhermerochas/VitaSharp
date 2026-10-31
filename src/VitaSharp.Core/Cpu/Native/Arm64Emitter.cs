@@ -1015,6 +1015,7 @@ public sealed unsafe partial class Arm64Emitter
     void MarkDirty(int t)
     {
         if (!Memory.DirtyPages.Enabled) return;
+        if (_dirtyReg && !IsConst(t, out _) && InReg(t, out int r)) { MarkDirtyReg(r); return; }
         LoadTo(X0, t);
         MarkDirtyReg(X0);
     }
