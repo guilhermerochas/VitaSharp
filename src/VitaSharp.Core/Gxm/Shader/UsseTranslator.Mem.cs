@@ -206,7 +206,16 @@ public sealed partial class UsseTranslator
             string baseAddr = Bind(new Val($"(int({b0}) + {addr})", 'i', 1)).E;
             if (isStore)
             {
-                Warnings.Add("buffer store unsupported (uniform buffers are read-only)");
+                // memory written by the program (Croixleur Sigma skins its meshes in a vertex program that stores the
+                // vertices for later draws): only through a mapped slot's pointer, into the renderer's mirror of
+                // guest memory; 32-bit words only (a narrower store would have to merge into its word)
+                if (!ShaderGenerator.MemoryStores(_program.IsVertex) || type != DataType.F32)
+                {
+                    Warnings.Add(type != DataType.F32 ? $"buffer store of {type} unsupported" : "buffer store unsupported (no shader stores on this device)");
+                    continue;
+                }
+                WritesMemory = true;
+                Line($"storeMemory({baseAddr}, {Load(toStore, 1, storeOff)});");
                 continue;
             }
             for (int k = 0; k < totalBytes / 4; k++)

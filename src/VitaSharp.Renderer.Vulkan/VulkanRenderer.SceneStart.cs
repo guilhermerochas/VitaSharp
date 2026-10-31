@@ -31,6 +31,21 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (st.RegionClipMode == 2) { _drawMinX = st.ClipMinX; _drawMinY = st.ClipMinY; _drawMaxX = st.ClipMaxX; _drawMaxY = st.ClipMaxY; }
         else { _drawMinX = _drawMinY = 0; _drawMaxX = _drawMaxY = int.MaxValue; }
+        // the draw is rendered through a Vulkan viewport of the GXM viewport's rectangle, which clips it to that
+        // rectangle: post-processing passes chained through regions of one surface (Croixleur Sigma's bloom blurs one
+        // half of a 1024x512 target into the other with a full-surface region clip) do not render where they sample
+        if (st.ViewportEnabled && float.IsFinite(st.VpOffX) && float.IsFinite(st.VpOffY) && float.IsFinite(st.VpScaleX) && float.IsFinite(st.VpScaleY))
+        {
+            float x0 = st.VpOffX - MathF.Abs(st.VpScaleX), x1 = st.VpOffX + MathF.Abs(st.VpScaleX);
+            float y0 = st.VpOffY - MathF.Abs(st.VpScaleY), y1 = st.VpOffY + MathF.Abs(st.VpScaleY);
+            if (x1 > x0 && y1 > y0 && x1 < int.MaxValue && y1 < int.MaxValue)
+            {
+                _drawMinX = Math.Max(_drawMinX, (int)MathF.Floor(x0));
+                _drawMinY = Math.Max(_drawMinY, (int)MathF.Floor(y0));
+                _drawMaxX = Math.Min(_drawMaxX, (int)MathF.Ceiling(x1) - 1);
+                _drawMaxY = Math.Min(_drawMaxY, (int)MathF.Ceiling(y1) - 1);
+            }
+        }
     }
 
     /// <summary>

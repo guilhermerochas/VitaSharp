@@ -62,6 +62,9 @@ public sealed partial class UsseTranslator
     public int ThreadBufferBase { get; set; }
     public bool UsesFragDepth { get; private set; }
     public bool UsesThreadBuffer { get; private set; }
+    /// <summary>The program stores to memory through a buffer pointer (<c>storeMemory</c>, see
+    /// <see cref="ShaderGenerator.MemoryStores"/>).</summary>
+    public bool WritesMemory { get; private set; }
     public readonly Dictionary<int, SamplerUse> Samplers = new(); // keyed by SA offset (dependent) or REG_SA_COUNT+index
     public readonly HashSet<string> Warnings = new();
     /// <summary>Banks accessed at a dynamic word index through the switch helpers (<see cref="ShaderGenerator.LowerDynamicIndexing"/>).</summary>

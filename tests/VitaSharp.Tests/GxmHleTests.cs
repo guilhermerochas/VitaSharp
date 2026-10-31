@@ -54,6 +54,20 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(0x805B0004u, U(Call(gxm, "sceGxmColorSurfaceInit", 0u, 0u, 0u, 0u, 0u, 320u, 204u, 512u, 0u)));
     }
 
+    /// <summary>A colour surface Init never accepted (zeroed memory: no size) gives the scene no colour surface; the
+    /// renderer otherwise built a 0x0 target whose zero-byte buffers failed as out of memory (Croixleur Sigma).</summary>
+    [Fact]
+    public void ColorSurfaceWithoutSizeIsNoColorSurface()
+    {
+        uint s = fx.Memory.Alloc(0x40, "surface");
+        GuestMemory.Fill(s, 0, 48);
+        GuestMemory.W32(s + 16, 0x81000000u);
+        Assert.Null(Call(new Gxm(), "ReadColorSurface", s));
+        Assert.Equal(0u, U(Call(new Gxm(), "sceGxmColorSurfaceInit", s, 0u, 0u, 0u, 0u, 320u, 204u, 320u, 0x81000000u)));
+        var info = Assert.IsType<VitaSharp.Core.Gpu.ColorSurfaceInfo>(Call(new Gxm(), "ReadColorSurface", s));
+        Assert.Equal(320u, info.Width);
+    }
+
     [Fact]
     public void TextureGettersAndStride()
     {
