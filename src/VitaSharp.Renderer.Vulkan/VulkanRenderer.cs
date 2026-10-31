@@ -1254,6 +1254,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var a in f.Deferred) a();
         }
         RunAfterGpu(long.MaxValue);
+        DestroyRangeCache();
         DestroyPersistentSets();
         DestroyMsaa();
         DestroyTileWord1();

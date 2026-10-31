@@ -140,6 +140,7 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append($" {_submitSeq / frames:F2} submits/frame; writebacks {_wbCount / frames:F2}/frame ({_wbBytes / frames / 1024:F0} KB/frame, {Ms(_wbTicks) / frames:F3} ms/frame); uploads {_uploadBytes / frames / 1024:F0} KB/frame");
         double wf = Math.Max(1, _workFrames); // presents of this renderer (a replay starts at the recorded present number)
         sb.Append($"; work per frame ({_workFrames} frames): {_statDraws / wf:F0} draws, {_statPipelineBinds / wf:F0} pipeline binds, {_statSets / wf:F0} descriptor sets, {_statDescWrites / wf:F0} descriptor writes, {_uploadBytes / wf / 1024:F0} KB uploaded; one-sample fetch draws {_statSingleFetchDraws + _statFetchPassMerged} ({_statFetchPassMerged} in an open fetch pass)");
+        sb.Append(RangeCacheReport());
         return sb.ToString();
     }
 }

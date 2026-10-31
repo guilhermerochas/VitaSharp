@@ -122,6 +122,8 @@ public static class EnvVars
     public const string SyscallLatencyUs = "VITASHARP_SYSCALL_LATENCY_US";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
     public const string Texdirty = "VITASHARP_TEXDIRTY";
+    /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
+    public const string VertexCache = "VITASHARP_VERTEX_CACHE";
     public const string TraceRt = "VITASHARP_TRACE_RT";
     public const string TraceSnap = "VITASHARP_TRACE_SNAP";
     public const string TraceSync = "VITASHARP_TRACE_SYNC";

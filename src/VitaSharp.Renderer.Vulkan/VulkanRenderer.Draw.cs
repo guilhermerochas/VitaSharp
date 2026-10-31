@@ -765,7 +765,7 @@ public sealed unsafe partial class VulkanRenderer
         // frame); not when the program reads the vertex index itself (gl_VertexIndex includes the offset)
         uint firstVertex = minIndex > 0 && (d.VertexProgram.Info.Program.Flags & Core.Gxm.Shader.GxpProgram.FlagIndexUsed) == 0 ? minIndex : 0;
         int vertexOffset = -(int)firstVertex;
-        var (ib, ibOff) = UploadSpan(GuestMemory.ReadSpan(d.IndexAddress, (int)(d.IndexCount * indexSize)), 4);
+        var (ib, ibOff) = UploadRange(d.IndexAddress, d.IndexCount * (uint)indexSize);
         var vbufs = stackalloc Buffer[17];
         var voffs = stackalloc ulong[17];
         var vp = d.VertexProgram;
@@ -789,7 +789,7 @@ public sealed unsafe partial class VulkanRenderer
             if (!instanced) addr += firstVertex * stream.Stride;
             // vertices an earlier draw's program stored to memory are only in the mirror (VulkanRenderer.Mapped.cs)
             if (GpuWrittenStream(addr, length) is >= 0 and var mirrorOff) { vbufs[s] = _mirror; voffs[s] = (ulong)mirrorOff; continue; }
-            var (b, off) = UploadSpan(GuestMemory.ReadSpan(addr, (int)length), 4);
+            var (b, off) = UploadRange(addr, length);
             vbufs[s] = b;
             voffs[s] = off;
         }

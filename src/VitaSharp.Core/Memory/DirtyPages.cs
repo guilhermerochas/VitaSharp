@@ -109,6 +109,17 @@ public static unsafe class DirtyPages
         }
     }
 
+    /// <summary>True when a page of [addr, addr + length) is marked in the calling thread's table now (written since
+    /// the last <see cref="Sweep"/>, which <see cref="WrittenSince"/> does not see yet).</summary>
+    public static bool MarkedNow(uint addr, uint length)
+    {
+        if (!Enabled) return true;
+        if (length == 0) return false;
+        ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
+        uint first = addr >> PageShift;
+        return new ReadOnlySpan<byte>(Table + first, (int)((last >> PageShift) - first + 1)).IndexOfAnyExcept((byte)0) >= 0;
+    }
+
     /// <summary>
     /// True when a page of [addr, addr + length) may have been written after the sweep <paramref name="stamp"/> was
     /// taken from (see the class remarks for the one-sweep grace). Always true when tracking is off.
