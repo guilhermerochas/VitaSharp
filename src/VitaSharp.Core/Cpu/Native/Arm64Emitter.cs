@@ -158,6 +158,8 @@ public sealed unsafe partial class Arm64Emitter
         _lazyFpcr = (opts & A64Opt.LazyFpcr) != 0;
         _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
         ForgetHostFlags();
+        Array.Fill(_vcOff, -1);
+        _vcAny = false;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? CalleeSavedPinned : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -283,7 +285,7 @@ public sealed unsafe partial class Arm64Emitter
     }
 
     /// <summary>A plain store wrote state bytes [off, off + len): cached copies of SIMD registers there are stale.</summary>
-    void StateWritten(int off, int len) { }
+    void StateWritten(int off, int len) => VcInvalidate(off - OffD, len);
 
     // ------------------------------------------------------------------ lowering
 
@@ -356,6 +358,8 @@ public sealed unsafe partial class Arm64Emitter
         var a = _a;
         if (_hfN >= 0 || _hfZ >= 0 || _hfC >= 0 || _hfV >= 0)
             if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
+        // merge points and callouts end the SIMD register cache (FpOp reloads it after its handler path instead)
+        if (_vcAny && x.Op is IrOp.Label or IrOp.Callout) VcForget();
         switch (x.Op)
         {
             case IrOp.Nop: return;
@@ -366,7 +370,7 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.LoadState: { int d = Def(x.D, X0); LdState(d, (int)x.Imm); Commit(x.D, d); return; }
             case IrOp.SetReg: StState(UseZ(x.A, X0), OffR + 4 * (int)x.Imm); return;
             case IrOp.SetFlag: StState(UseZ(x.A, X0), OffN + 4 * (int)x.Imm); return;
-            case IrOp.StoreState: StState(UseZ(x.A, X0), (int)x.Imm); return;
+            case IrOp.StoreState: StState(UseZ(x.A, X0), (int)x.Imm); StateWritten((int)x.Imm, 4); return;
 
             // ---------------- ALU
             case IrOp.Add: case IrOp.Sub: case IrOp.And: case IrOp.Or: case IrOp.Xor: case IrOp.AndNot: case IrOp.OrNot: case IrOp.Mul:
@@ -486,6 +490,7 @@ public sealed unsafe partial class Arm64Emitter
                 int ad = UseZ(x.A, X16);
                 a.LdStReg(LsKind.LdrX, X0, MemBase, ad);
                 a.StrX(X0, State, (int)x.Imm);
+                StateWritten((int)x.Imm, 8);
                 return;
             }
             case IrOp.StoreD:
@@ -1121,8 +1126,12 @@ public sealed unsafe partial class Arm64Emitter
                 break;
         }
         a.B(done);
+        // both paths write d (at most 8 bytes at its offset): cached SIMD copies there are stale; the handler path
+        // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
+        VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);
         CallHandler((uint)op, x.Imm2, x.Imm3);
+        VcReload();
         a.Bind(done);
     }
 

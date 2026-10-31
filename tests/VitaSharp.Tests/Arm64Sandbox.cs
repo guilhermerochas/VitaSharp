@@ -168,7 +168,31 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         var bridge = (delegate* unmanaged<CpuState*, int, uint, uint, int>)NativeRuntime.CalloutAddress;
         ulong r = (uint)bridge((CpuState*)x0, (int)x1, (uint)x2, (uint)x3);
         uc_reg_write(uc, RegX0, &r);
+        ClobberCallerSaved(uc);
         if (_current != null) _current._hits++;
+    }
+
+    const int RegQ0 = 104;
+
+    /// <summary>
+    /// What a real AAPCS64 callee may do: the handler ran on the host, so without this the emulated caller-saved
+    /// registers would survive the call and code that wrongly keeps values in them (x1-x17, v0-v7, v16-v31, the upper
+    /// halves of v8-v15) would pass here and fail on hardware.
+    /// </summary>
+    static void ClobberCallerSaved(nint uc)
+    {
+        for (int n = 1; n <= 17; n++) { ulong junk = 0xDEAD_0000_0000_0000UL | (ulong)n << 8; uc_reg_write(uc, RegX0 + n, &junk); }
+        var q = stackalloc ulong[2];
+        for (int n = 0; n < 32; n++)
+        {
+            if (n is >= 8 and < 16)
+            {
+                uc_reg_read(uc, RegQ0 + n, q);
+                q[1] = 0x7FC0_DEAD_7FC0_DEADUL; // only d8-d15 are callee-saved
+            }
+            else { q[0] = 0x7FC0_BEEF_0000_0000UL | (ulong)n; q[1] = 0x7FC0_DEAD_7FC0_DEADUL; }
+            uc_reg_write(uc, RegQ0 + n, q);
+        }
     }
 
     [UnmanagedCallersOnly]

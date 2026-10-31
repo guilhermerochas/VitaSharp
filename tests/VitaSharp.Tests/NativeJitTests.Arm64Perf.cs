@@ -1,3 +1,5 @@
+using VitaSharp.Core.Util;
+using Decoder = VitaSharp.Core.Cpu.Decoder;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Cpu.Native;
@@ -196,6 +198,86 @@ public sealed unsafe partial class NativeJitTests
         }
         finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// The SIMD register cache (<see cref="Arm64Emitter.A64Opt.VecCache"/>) under stress: long ARM blocks whose NEON,
+    /// VFP, VMOV core/S, VLDR/VSTR and conditional VFP instructions all use D0-D7 / S0-S15 (so cached registers are
+    /// reused, overwritten through every other path, and reloaded after FpOp handler calls when FPSCR is not in the Vita
+    /// mode), against the interpreter with the cache on and off.
+    /// </summary>
+    static readonly NeonClass[] NeonNoMemory =
+        [NeonClass.ThreeSame, NeonClass.ThreeSameFloat, NeonClass.ThreeSameFloat, NeonClass.Scalar, NeonClass.Shift, NeonClass.Misc, NeonClass.Vext, NeonClass.Vtbl, NeonClass.ThreeDiff];
+
+    [Arm64SandboxTheory]
+    [InlineData(400, 3101)]
+    public void Arm64SimdCacheMatchesInterpreter(int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        var rng = new Random(seed);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0, insts = 0, detailed = 0;
+        const uint LowRegs = ~(0x00400000u | 0x00088000u | 0x000000A8u); // D/N/M bits and the top bit of each field: D0-D7, S0-S15
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var code = new List<byte>();
+                int n = rng.Next(6, 16);
+                for (int k = 0, attempts = 0; k < n && attempts < 400; attempts++)
+                {
+                    uint r = (uint)rng.NextInt64();
+                    uint ins = rng.Next(10) switch
+                    {
+                        < 4 => RandomNeon(rng, NeonNoMemory[rng.Next(NeonNoMemory.Length)]) & LowRegs,
+                        < 7 => ((rng.Next(4) == 0 ? (uint)rng.Next(14) : 14u) << 28) | 0x0E000A00u | (r & 0x00FFF1EF & LowRegs), // VFP data processing
+                        7 => 0xEE000A10u | (r & 0x00106000) | 0x1000 | (r & 0x00070080),                                            // VMOV S0-S15 <-> r1/r3/r5/r7
+                        8 => 0xED900B00u | (r & 0x0000700F),                                                                        // VLDR d0-d7, [r0, #0-60]
+                        _ => 0xED800B00u | (r & 0x0000700F),                                                                        // VSTR
+                    };
+                    var d = Decoder.DecodeArm(ins, CodeBase);
+                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, false)) continue;
+                    if (d.Op.ToString().StartsWith("Neon_") && !SimdDefined(ins, false)) continue;
+                    code.AddRange(BitConverter.GetBytes(ins));
+                    k++;
+                }
+                if (code.Count == 0) continue;
+                code.AddRange([0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, false);
+                var st = new RandomState(rng);
+                NeonState(rng, st);
+                st.Regs[0] = DataBase + 0x400;
+                st.Fpscr = rng.Next(4) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
+                st.Apply(s, false);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                foreach (bool cache in new[] { true, false })
+                {
+                    Arm64Emitter.Opts = cache ? old | Arm64Emitter.A64Opt.VecCache : old & ~Arm64Emitter.A64Opt.VecCache;
+                    var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                    st.Apply(s, false);
+                    var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                    compared++;
+                    insts += b.Insts.Length;
+                    string diff = Diff(interp, native);
+                    if (diff.Length > 0)
+                    {
+                        if (detailed++ < 4) output.WriteLine($"--- cache {cache} fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
+                        Record(failures, cache ? "cache" : "nocache", b, diff);
+                    }
+                }
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        output.WriteLine($"compared {compared} runs ({insts} instructions); failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
     [Arm64SandboxFact]
