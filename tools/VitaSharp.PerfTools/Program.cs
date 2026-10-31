@@ -2,7 +2,7 @@ using VitaSharp.PerfTools;
 using VitaSharp.PerfTools.Commands;
 
 // vitasharp-perf <command> [arguments]: one IPerfCommand per file in Commands/, registered here.
-IPerfCommand[] commands = [new MaliCostCommand(), new FlickerCommand()];
+IPerfCommand[] commands = [new MaliCostCommand(), new FlickerCommand(), new AudioCheckCommand()];
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {

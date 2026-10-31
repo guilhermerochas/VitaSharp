@@ -13,6 +13,7 @@ dotnet build tools/VitaSharp.PerfTools -c Release -m:2 -o <dir>
 |---|---|---|
 | `mali-cost` | replays a GPU dump (`.vsgd`, F8 / `--gpu-dump-at`) headless and estimates each frame's GPU time on a Mali GPU with Arm's Mali Offline Compiler (`malioc`): per-draw fragments and vertices, top draws, bound units, spilling shaders, tile load/store bytes, an fp16 what-if | [mobile-gpu.md](../../docs/notes/mobile-gpu.md#mali-cost-estimator-vitasharp-perf-mali-cost) |
 | `flicker` | flags one-frame flashes and stale frames in a `frame_N.png` sequence (replays, test runs, phone screen recordings) | [Android README](../../docs/android/README.md#phone-run-3-correctness-tooling-god-of-war-flicker-31102026) |
+| `audio-check` | silent gaps, repeated grains and clicks in guest audio WAV dumps (`VITASHARP_AUDIO_DUMP` on Android, `--audio-dump` on the desktop) | this file |
 
 Adding a command: one class implementing `IPerfCommand` (`PerfCommand.cs`) per file in `Commands/`, registered in
 `Program.cs`. Commands that replay a dump use `GpuDumpPlayer` (VitaSharp.Renderer.Vulkan), the loop `replay-gpu`
