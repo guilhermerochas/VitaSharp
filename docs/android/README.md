@@ -38,7 +38,9 @@ Output: `src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-S
 arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); with the
 MediaCodec/AAudio backends, libadrenotools and `extractNativeLibs` (native libraries stored compressed), without
 libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); with both libshaderc
-builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`.
+builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`. Since the
+full AOT default (30/10/2026, [Runtime and AOT choice](#runtime-and-aot-choice-vitasharpandroidruntime)): 66,860,650
+bytes and about 5 minutes; `-p:VitaSharpAndroidRuntime=mono-jit` gives the old build.
 `-r android-arm64` (phones) or `-r android-x64` (the emulator) builds one ABI, into `bin/Release/net10.0-android/<rid>/`
 (about 2 minutes, for iterating).
 
@@ -71,12 +73,16 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
 
 ## Runtime and CPU backends
 
-- **.NET for Android 10 runs on Mono** (the MAUI default; CoreCLR on Android is experimental in .NET 10 and not
-  used). The APK carries `libmonosgen-2.0.so` (JIT) and, in Release, profiled AOT images of the startup code
-  (`libaot-*.so`); everything else is JIT-compiled at run time. So `RuntimeFeature.IsDynamicCodeSupported` and
-  `IsDynamicCodeCompiled` are true: the **IL backend** (DynamicMethod/Reflection.Emit) is available, as on the
-  desktop. `UseInterpreter` is off, and the app does not use full AOT or Native AOT (either would remove the IL
-  backend; the native backend and the interpreter would remain).
+- **.NET for Android 10 runs on Mono** (the MAUI default). The APK carries `libmonosgen-2.0.so` with its JIT and,
+  in Release, AOT images of **every method of every assembly** (`libaot-*.so`, `VitaSharpAndroidRuntime=mono-aot`,
+  [below](#runtime-and-aot-choice-vitasharpandroidruntime)). The AOT mode is Mono's `Normal` one: the JIT stays and
+  compiles what the AOT images do not cover (the `[UnsafeAccessor]` stubs of the HLE bindings, some generic
+  instantiations, every DynamicMethod). So `RuntimeFeature.IsDynamicCodeSupported` and `IsDynamicCodeCompiled` stay
+  true: the **IL backend** (DynamicMethod/Reflection.Emit) is available, as on the desktop. `UseInterpreter` is off;
+  the app does not use Mono's AOT-only modes or Native AOT, which remove the JIT: `AndroidAotMode=Full` and Native AOT
+  have no Reflection.Emit at all (no IL backend, and Full cannot run the UnsafeAccessor stubs either), `Hybrid` runs
+  DynamicMethods in Mono's interpreter (the IL backend would work, interpreted); the native backend and the guest
+  interpreter work under all of them.
 - **Native ARM64 JIT**: it does not depend on Reflection.Emit (generated code is called through
   `delegate* unmanaged`, callouts are `[UnmanagedCallersOnly]`), so it works under Mono as under CoreCLR or Native
   AOT. Its code arena is the Android dual mapping of `ExecutableMemory` (memfd on API 30+, ASharedMemory on 26-29;
@@ -162,6 +168,107 @@ thread and `GPU worker` should show 6 or 7 on the G99) and `adb shell cat /proc/
 Cpus_allowed_list`. Clocks during the run: `adb shell cat /sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq`
 (the policy number is the first core of the fast cluster); ADPF effects in `adb shell dumpsys power | grep -i hint`
 and Perfetto (`power.hint` / cpufreq tracks).
+
+### Runtime and AOT choice (`VitaSharpAndroidRuntime`)
+
+The roadmap's "Custo do Mono" item: everything managed (HLE modules, renderer, GXM/shader translation, audio, the
+JIT compilers themselves) ran on Mono's JIT, whose code is much weaker than CoreCLR's RyuJIT, and the .NET for
+Android Release default only AOT-compiles the methods of the MAUI startup profiles plus the app assembly
+(`profile-only`): `VitaSharp.Core.dll` (4.3 MB of IL) got a 384 KB AOT image, the renderer 19 KB. The csproj now
+selects the runtime with one property; **Release defaults to `mono-aot`**, Debug to `mono-jit`:
+
+```
+dotnet build src/VitaSharp.Android -c Release -m:2                                   # mono-aot
+dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-jit   # the old Release
+#   mono-jit | mono-aot | mono-aot-llvm | coreclr; anything else stops the build
+```
+
+| Value | What it sets | Runtime |
+|---|---|---|
+| `mono-jit` | nothing (SDK defaults: profiled AOT in Release, no AOT in Debug) | Mono JIT for everything outside the startup profiles |
+| `mono-aot` | `RunAOTCompilation=true`, `AndroidEnableProfiledAot=false`, `AndroidAotMode=Normal` | every method AOT-compiled by Mono's own backend, the JIT kept |
+| `mono-aot-llvm` | the same plus `EnableLLVM=true` | AOT through LLVM (`opt`/`llc` of the AOT cross pack), the JIT kept |
+| `coreclr` | `UseMonoRuntime=false` | CoreCLR, RyuJIT with tiering, partial ReadyToRun; warning XA1040 (experimental) |
+
+Mono's AOT task starts one compiler per logical CPU (plus `opt`/`llc` each with LLVM), which pinned the PC's 8 cores
+above 90%; the csproj sets `_DisableParallelAot=true` (one assembly at a time per ABI, two ABIs in parallel with
+`-m:2`) unless `-p:VitaSharpParallelAot=true`. The variant is in the app assembly's metadata and the startup log
+says which one ran: `Runtime: .NET 10.0.x (Mono), Arm64, android-arm64, build mono-aot`.
+
+Measured on 30/10/2026 (both ABIs, `-m:2`, only the app's `obj/Release` cleaned; the referenced projects already
+built; with libshaderc and libadrenotools):
+
+| Variant | Builds | App build | Signed APK | arm64 AOT images | `VitaSharp.Core` image | `Renderer.Vulkan` image |
+|---|---|---|---|---|---|---|
+| `mono-jit` | yes | 2 min 24 s | 44,156,522 | 13.6 MB, profile-only | 384,080 | 18,736 |
+| `mono-aot` (default) | yes | 4 min 46 s (3 min 41 s parallel) | 66,860,650 | 55.4 MB, all methods | 12,356,512 | 1,436,320 |
+| `mono-aot-llvm` | yes | 19 min 4 s | 68,417,130 | 51.1 MB, all methods | 9,407,576 | 1,139,272 |
+| `coreclr` | yes (XA1040) | 2 min 55 s | 77,141,717 | partial R2R inside the DLLs | (R2R: 4.36 MB vs 4.30 MB IL) | |
+| Native AOT (`-p:PublishAot=true`, publish) | **no** | 6 min 27 s to the link error | | | | |
+
+- **`mono-aot`**: `VitaSharp.Core` compiles 21,303 of 24,155 methods; the other 2,852 are the `[UnsafeAccessor]`
+  externs the HLE binder generates ("Method has zero rva"), tiny stubs the JIT builds on first call. The renderer:
+  1,208/1,208. Size: +22.7 MB APK (the AOT images of the framework, MAUI and Iced are most of it; the hot managed code
+  of the emulator also lives in CoreLib: collections, spans, `Math`, so the whole set is compiled, not only
+  VitaSharp's assemblies).
+- **`mono-aot-llvm`**: builds (NDK r30 present; the toolchain is the AOT cross pack's LLVM), 4x the build time,
+  +1.5 MB over `mono-aot`, smaller code for VitaSharp.Core (9.4 vs 12.4 MB). LLVM usually generates much better
+  loops and register use than Mono's own backend, but it is the riskier code generator: a candidate for the phone
+  A/B, not the default.
+- **`coreclr`**: builds and packs `libcoreclr.so` + `libclrjit.so` (the MAUI app included); RyuJIT is the best
+  managed code generator of the four once the hot methods reach tier 1, but .NET 10 marks the runtime experimental
+  (XA1040, "not intended for production"), the R2R of the release build is partial (VitaSharp.Core gains 54 KB of
+  precompiled code, so startup and the first minutes are JIT time) and the APK is the largest (debugger libraries
+  `libmscordaccore.so`/`libmscordbi.so` included). It is .NET 11's default, so it is the path forward: second
+  candidate for the phone A/B.
+- **Native AOT**: ILC compiles the whole app (MAUI, MauiReactor; only Silk.NET's loader IL3000/IL3002 warnings), but
+  the link fails with NDK r30: `ld.lld: duplicate symbol: __unw_init_local` (the runtime pack's libunwind against the
+  NDK's). Even fixed, it would be a dead end here: .NET 10 MAUI supports Native AOT only on iOS/Mac Catalyst
+  (Android is experimental even in .NET 11), `TrimMode` must be full (Silk.NET and the HLE tables are not
+  trim-annotated) and there is no Reflection.Emit, so the IL backend goes. Not offered by the switch.
+- **What each keeps of the CPU backends**: the native ARM64 JIT maps its arena with mmap/memfd and calls into it
+  through `delegate* unmanaged`, with `[UnmanagedCallersOnly]` callouts: no Reflection.Emit, so it works under all of
+  them (Mono's AOT compiles the native-to-managed wrappers of the callouts; under `Normal` the JIT can still build
+  any missing one). Mono `Normal` AOT keeps `mono_aot_only` off, so dynamic code is supported and compiled: the startup
+  line should stay `Dynamic code: supported True, compiled True` and `CPU backend selected: native (chain: native > il
+  > interp)`, as with `mono-jit`; CoreCLR reports the same. The desktop build is untouched (only the Android csproj
+  and `RuntimeReport`'s first line changed).
+
+**Speed on the phone: still to be measured** (the plan below). Until then `mono-aot` is the default because it moves
+all hot managed code out of the device's JIT with no runtime change, builds in under 5 minutes and keeps every
+backend; `mono-aot-llvm` and `coreclr` are one property away.
+
+#### Phone measurement plan (Redmi Note 14, one agent, serially)
+
+1. Build the four APKs for the phone only, each into its own folder (the debug keystore is the same, so `adb install
+   -r` keeps the data folder, firmware and games):
+   `dotnet build src/VitaSharp.Android -c Release -r android-arm64 -m:2 -p:VitaSharpAndroidRuntime=<v> -o <dir>\<v>`
+   for `mono-jit`, `mono-aot`, `mono-aot-llvm`, `coreclr`, deleting `src/VitaSharp.Android/obj/Release` before each
+   (the SDK's property cache does not track `EnableLLVM`; the variant attribute changes the app assembly, which
+   re-runs the AOT step, but a clean intermediate folder rules out stale images).
+2. Settings for every run: CPU automatic, default clock, GPU profile native, **VSync off** (Ajustes), no
+   `config/env.txt`, debug mode off; phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
+   at status 0 before each run (wait otherwise), the app killed between runs (`adb shell am force-stop
+   io.github.vitasharp`).
+3. Games and scenes, in this order: **Knightin'+** (title screen, then the first level, 3 minutes), **Devious
+   Dungeon** (title, 3 minutes), **F1 2011** (intro movie skipped, menus, 3 minutes; the heaviest HLE/GXM load).
+   Two runs per variant and game, alternating the variants (A B C D A B C D) so heat does not favour one.
+4. Capture: `adb logcat -c`, then `adb logcat -v monotonic -s VitaSharp VitaSharp-Guest > <v>_<game>_<n>.txt` during
+   the run; after it `adb pull /sdcard/Android/data/io.github.vitasharp/files/logs/last.log`. While it runs, every 30 s:
+   `adb shell cat /proc/$(adb shell pidof io.github.vitasharp:game)/stat` (fields 14-15, utime and stime in ticks).
+5. Lines to read:
+   - `Runtime: ... build <v>` (proves which APK ran), `Dynamic code: supported True, compiled True`,
+     `CPU backend native (NativeArm64Compiler): available` and `CPU backend selected: native (chain: native > il >
+     interp)`: must be identical for all four (else the run is invalid);
+   - `Game <TITLEID> ...` and `Renderer: ...` (their monotonic timestamps: start-up time of the game process);
+   - `Session of <TITLEID> ends after hh:mm:ss, N frames`: **average fps = N / seconds** (also Desempenho's "FPS
+     médio");
+   - the process CPU time from `/proc/<pid>/stat` divided by N: **CPU ms per frame** (the main A/B number: with VSync
+     off it shows the managed-code gain even where a game already reaches its frame rate).
+6. Compare with `mono-jit` as the baseline: fps and CPU ms/frame per game (mean of the two runs), plus game start-up
+   time and the installed size (`adb shell pm path` + `du`). Keep `mono-aot` as the default unless `mono-aot-llvm` or
+   `coreclr` is at least 10% better in CPU ms/frame on two of the three games with no crash or new log errors; then
+   switch the default in the csproj and record the numbers here.
 
 ## Process model and the game screen
 
@@ -442,7 +549,8 @@ MediaCodec); `MediaFormat` csd buffers are heap buffers (`GetDirectBufferAddress
 3. Game process: `surfaceCreated` → renderer → `LoadTitle` → frames on screen; landscape orientation and the
    swapchain extent/transform (the IDENTITY choice); home → back (detach/attach, `Suspend`/`Resume`, audio pause);
    rotation by 180°; leaving the game kills the `:game` process and the library shows the new play time.
-4. CPU: the log's `RuntimeReport` lines (Mono, dynamic code true); the native backend selected (x64 on the x86_64
+4. CPU: the log's `RuntimeReport` lines (Mono, `build mono-aot`, dynamic code supported and compiled true; the
+   full-AOT images load, no AOT-related crash at startup); the native backend selected (x64 on the x86_64
    emulator, ARM64 on a phone) and that SELinux lets the memfd/ashmem RX view execute; `--cpu`-equivalent choices from
    Detalhes.
 5. Input: on-screen buttons and sticks, front touch on the image, TRÁS rear touch, PS opens the pause menu; a

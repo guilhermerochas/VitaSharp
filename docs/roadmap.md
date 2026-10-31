@@ -100,7 +100,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     branch `perf/arm64-jit`, cerca de 25% menos instruções por instrução do Vita nos blocos de teste, cada otimização
     com chave em `VITASHARP_NATIVE_A64_NOOPT`; falta medir no aparelho: sessão com `VITASHARP_NATIVE_VERIFY=1` e fps
     A/B com `VITASHARP_NATIVE_A64_NOOPT=all`; ver `docs/notes/native-jit.md`, "perf/arm64-jit")
-  - [ ] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android
+  - [x] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android (30/10/2026:
+    Release com AOT completo do Mono, todos os métodos de todos os assemblies com o JIT mantido; troca por
+    `-p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr`; APK de 44,2 para 66,9 MB; a velocidade no
+    celular ainda falta medir, plano A/B contra mono-jit em `docs/android/README.md`, "Runtime and AOT choice")
   - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
   - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo
 - [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware

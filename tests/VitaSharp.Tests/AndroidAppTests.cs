@@ -30,6 +30,18 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal([new("VITASHARP_GPU_QUIRKS", "-RenderPasses,+TileBased"), new("VITASHARP_ASTC", "0"), new("VITASHARP_EMPTY", "")], vars);
     }
 
+    // ---------------------------------------------------------------- runtime report
+
+    [Fact]
+    public void RuntimeReportOnTheDesktopHasNoAndroidBuildVariant()
+    {
+        // the variant comes from the VitaSharp.Android assembly's metadata, which the test host does not load
+        Assert.Null(RuntimeReport.BuildRuntime);
+        var lines = RuntimeReport.Lines().ToList();
+        Assert.EndsWith(", build ?", lines[0]);
+        Assert.Equal($"Dynamic code: supported {RuntimeReport.DynamicCodeSupported}, compiled {RuntimeReport.DynamicCodeCompiled}", lines[1]);
+    }
+
     // ---------------------------------------------------------------- logcat
 
     [Theory]
