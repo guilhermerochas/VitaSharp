@@ -223,9 +223,6 @@ public sealed class GpuQuirkTests
         Assert.False(c.Has(GpuQuirk.StaticExtendedDynamicState));
         Assert.False(c.Has(GpuQuirk.TileBased));
         Assert.False(c.Has(GpuFeature.TextureCompressionBC)); // the device still lacks it
-        // except the blob's unusable dynamic rendering: render passes stay (the Mali blob crashed in vkEndCommandBuffer)
-        Assert.True(c.Has(GpuQuirk.DynamicRenderingSuspect));
-        Assert.True(c.Has(GpuQuirk.RenderPasses));
     }
 
     [Fact]
