@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
@@ -439,6 +439,8 @@ public sealed unsafe class VkCore : IDisposable
             IndependentBlend = Has(GpuFeature.IndependentBlend),
             DepthBiasClamp = Has(GpuFeature.DepthBiasClamp),
             FragmentStoresAndAtomics = supported2.Features.FragmentStoresAndAtomics,
+            // programs that store to memory (ShaderGenerator.VertexStores)
+            VertexPipelineStoresAndAtomics = supported2.Features.VertexPipelineStoresAndAtomics,
             OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise),
             DepthClamp = Has(GpuFeature.DepthClamp),
             // without it the GXM far plane is clipped by the hardware (no depth clamp) or in the fragment shader
@@ -447,6 +449,8 @@ public sealed unsafe class VkCore : IDisposable
             SampleRateShading = Has(GpuFeature.SampleRateShading),
         };
         OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise);
+        VertexStores = feats.VertexPipelineStoresAndAtomics;
+        FragmentStores = feats.FragmentStoresAndAtomics;
         DepthClamp = Has(GpuFeature.DepthClamp);
         TextureCompressionBC = Has(GpuFeature.TextureCompressionBC);
         FillModeNonSolid = Has(GpuFeature.FillModeNonSolid);
@@ -487,6 +491,8 @@ public sealed unsafe class VkCore : IDisposable
     }
 
     public bool TextureCompressionBC, FillModeNonSolid, WideLines, OcclusionQueryPrecise, SamplerMirrorClampToEdge;
+    /// <summary>vertexPipelineStoresAndAtomics / fragmentStoresAndAtomics are enabled (shader memory stores).</summary>
+    public bool VertexStores, FragmentStores;
     /// <summary>dynamicRendering is enabled and used; false: every rendering is a render pass (GpuQuirk.RenderPasses).</summary>
     public bool UsesDynamicRendering;
     /// <summary>sampleRateShading: fragment shaders that read the framebuffer in a multisampled scene run per sample

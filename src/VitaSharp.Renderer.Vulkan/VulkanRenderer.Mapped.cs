@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_mirror.Handle != 0) return;
         (_mirror, _mirrorMem) = _core.CreateDeviceBuffer((ulong)CdramBytes + ScratchBytes,
-            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.PipelineBuffer);
+            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.VertexBufferBit, MemCat.PipelineBuffer);
         // the last 256 bytes stay zero: slots bound to a null address read from there
         EndRendering();
         _vk.CmdFillBuffer(Cmd, _mirror, (ulong)CdramBytes + ScratchBytes - 256, 256, 0);
@@ -39,8 +39,9 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
     }
 
-    /// <summary>Fills the header of every mapped slot in <paramref name="data"/> and returns the stage's mapped-memory binding.</summary>
-    DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs)
+    /// <summary>Fills the header of every mapped slot in <paramref name="data"/> and returns the stage's mapped-memory binding.
+    /// <paramref name="writes"/>: the program stores through its mapped slots (<see cref="GeneratedShader.WritesMemory"/>).</summary>
+    DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs, bool writes = false)
     {
         var dummy = new DescriptorBufferInfo(_dummyBuffer, 0, 256);
         if (data.Length == 0 || addrs.Length == 0) return dummy;
@@ -49,19 +50,113 @@ public sealed unsafe partial class VulkanRenderer
         if (!anyMapped) return dummy;
         EnsureMirror();
         if (_scratchFrame != FrameCount) { _scratchFrame = FrameCount; _scratchUsed = 0; }
+        // a reader of memory an earlier draw's shader wrote waits for those writes
+        if (!writes) AwaitMirrorWrites(PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit);
 
         foreach (var s in slots)
         {
             if (!s.Mapped) continue;
             uint addr = addrs[Math.Min(s.GuestIndex, 14)];
             if (addr == 0) { WriteHeader(data, s, CdramBytes + ScratchBytes - 256); continue; }
-            WriteHeader(data, s, PrepareMapped(addr, s.DeclaredBytes));
+            WriteHeader(data, s, PrepareMapped(addr, s.DeclaredBytes, writes));
         }
         return new DescriptorBufferInfo(_mirror, 0, (ulong)CdramBytes + ScratchBytes);
     }
 
+    // ------------------------------------------------------------------ memory written by shaders
+
+    /// <summary>
+    /// CDRAM ranges whose mirror content was written by a program's memory stores (<see cref="GeneratedShader.WritesMemory"/>),
+    /// keyed by start: end and the dirty-page epoch when they were written. The guest memory there is stale (GPU stores do
+    /// not reach it), so these ranges are not copied from guest memory again, and vertex streams inside them are read from
+    /// the mirror. A CPU write to their pages since gives the memory back to the guest copy. Croixleur Sigma skins its
+    /// meshes this way: point draws whose vertex program stores the transformed vertices, then the draws of the meshes
+    /// with those vertices as a stream.
+    /// </summary>
+    readonly SortedList<uint, (uint End, uint Stamp)> _gpuWritten = new();
+    /// <summary>Shader writes into the mirror not yet made visible to later reads (barrier pending).</summary>
+    bool _mirrorWritesPending, _gpuWrittenStreamLogged;
+
+    void AwaitMirrorWrites(PipelineStageFlags dstStage, AccessFlags dstAccess)
+    {
+        if (!_mirrorWritesPending) return;
+        _mirrorWritesPending = false;
+        EndRendering();
+        BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, dstStage | PipelineStageFlags.TransferBit,
+            AccessFlags.ShaderWriteBit, dstAccess | AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
+    }
+
+    /// <summary>Drops the shader-written ranges overlapping [start, end) whose pages the CPU wrote since.</summary>
+    void ExpireGpuWritten(uint start, uint end)
+    {
+        if (_gpuWritten.Count == 0) return;
+        SweepDirtyPages();
+        for (int i = _gpuWritten.Count - 1; i >= 0; i--)
+        {
+            uint s = _gpuWritten.Keys[i];
+            var (e, stamp) = _gpuWritten.Values[i];
+            if (e <= start || s >= end) continue;
+            if (DirtyPages.WrittenSince(s, e - s, stamp)) _gpuWritten.RemoveAt(i);
+        }
+    }
+
+    /// <summary>Records [start, end) as written by a shader (merged with the ranges it touches).</summary>
+    void NoteGpuWritten(uint start, uint end)
+    {
+        if (_gpuWritten.Count >= 4096) _gpuWritten.Clear(); // runaway bookkeeping: back to guest copies
+        for (int i = _gpuWritten.Count - 1; i >= 0; i--)
+        {
+            uint s = _gpuWritten.Keys[i];
+            uint e = _gpuWritten.Values[i].End;
+            if (e < start || s > end) continue;
+            start = Math.Min(start, s);
+            end = Math.Max(end, e);
+            _gpuWritten.RemoveAt(i);
+        }
+        _gpuWritten[start] = (end, DirtyPages.Epoch);
+        _mirrorWritesPending = true;
+    }
+
+    /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
+    long GpuWrittenStream(uint addr, uint length)
+    {
+        if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd) return -1;
+        ExpireGpuWritten(addr, addr + length);
+        foreach (var (s, (e, _)) in _gpuWritten)
+        {
+            if (s > addr) break;
+            if (addr + length <= e)
+            {
+                AwaitMirrorWrites(PipelineStageFlags.VertexInputBit, AccessFlags.VertexAttributeReadBit);
+                if (!_gpuWrittenStreamLogged)
+                {
+                    _gpuWrittenStreamLogged = true;
+                    Log.Info($"[gpu] vertex stream 0x{addr:X8} ({length} bytes) is read from memory a program stored to");
+                }
+                return addr - GuestMemory.CdramStart;
+            }
+        }
+        return -1;
+    }
+
+    /// <summary>Copies [addr, addr + size) of guest CDRAM into the mirror except the parts shaders wrote.</summary>
+    void CopyGuestToMirrorExceptGpuWritten(uint addr, uint size)
+    {
+        uint end = addr + size, at = addr;
+        ExpireGpuWritten(addr, end);
+        foreach (var (s, (e, _)) in _gpuWritten)
+        {
+            if (e <= at) continue;
+            if (s >= end) break;
+            if (s > at) CopyGuestToMirror(at, s - at, at - GuestMemory.CdramStart);
+            at = Math.Max(at, e);
+            if (at >= end) return;
+        }
+        if (at < end) CopyGuestToMirror(at, end - at, at - GuestMemory.CdramStart);
+    }
+
     /// <summary>Makes the data at <paramref name="addr"/> current in the mirror; returns its offset in the mirror buffer.</summary>
-    uint PrepareMapped(uint addr, int declaredBytes)
+    uint PrepareMapped(uint addr, int declaredBytes, bool writes = false)
     {
         if (addr is >= GuestMemory.CdramStart and < GuestMemory.CdramEnd)
         {
@@ -77,9 +172,11 @@ public sealed unsafe partial class VulkanRenderer
             }
             Log.DebugOnce($"mapped-{addr:X8}", $"[gpu] mapped 0x{addr:X8}: guest memory");
             uint n = (uint)Math.Min(Math.Min(declaredBytes, MappedWindowBytes), GuestMemory.CdramEnd - addr);
-            CopyGuestToMirror(addr, n, addr - GuestMemory.CdramStart);
+            CopyGuestToMirrorExceptGpuWritten(addr, n);
+            if (writes) NoteGpuWritten(addr, addr + n);
             return addr - GuestMemory.CdramStart;
         }
+        if (writes) Log.WarnOnce("mapped-store-scratch", $"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM: later draws do not see what it wrote");
         uint size = (uint)Math.Min(declaredBytes, MappedWindowBytes);
         if (_scratchUsed + size > ScratchBytes - 256) _scratchUsed = 0; // wrap: draws recorded earlier read their windows before these copies (ordered by barriers)
         uint off = CdramBytes + _scratchUsed;
@@ -92,12 +189,13 @@ public sealed unsafe partial class VulkanRenderer
     {
         var (src, srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
         EndRendering();
+        // shader stores into the mirror (other ranges) and the reads of earlier draws come before the copy
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
-            AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
+            AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit, AccessFlags.TransferWriteBit);
         var region = new BufferCopy(srcOff, mirrorOffset, size);
         _vk.CmdCopyBuffer(Cmd, src, _mirror, 1, in region);
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
-            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
     }
 
     static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)

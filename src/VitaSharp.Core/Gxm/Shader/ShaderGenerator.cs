@@ -90,6 +90,9 @@ public sealed class GeneratedShader
     /// also means the shader outputs the word at location 1.</summary>
     public TileWord1Use TileWord1 { get; set; }
     public HashSet<string> Warnings { get; set; } = new();
+    /// <summary>The program stores to memory through a mapped slot: its mapped-memory buffer is writable, and the
+    /// renderer keeps what it wrote (vertex streams read later in the frame come from there).</summary>
+    public bool WritesMemory { get; set; }
 }
 
 /// <summary>
@@ -125,7 +128,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 18;
+    public const int GeneratorVersion = 19;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -168,6 +171,16 @@ public static class ShaderGenerator
     /// <summary>The far-plane clip of the generated shaders. Every mode except <see cref="FarPlaneClip.ClipDistance"/>
     /// (the default; its GLSL is byte-identical to before) changes the shaders and is part of the shader cache key.</summary>
     public static FarPlaneClip FarPlane = FarPlaneClip.ClipDistance;
+
+    /// <summary>
+    /// The device lets vertex (vertexPipelineStoresAndAtomics) / fragment (fragmentStoresAndAtomics) shaders write
+    /// storage buffers. Programs that store to memory through a mapped slot's pointer (USSE VLDST stores) then write
+    /// the renderer's mirror of guest memory (<see cref="GeneratedShader.WritesMemory"/>); without it the stores are
+    /// dropped with a warning. Programs without stores are generated the same either way. Part of the cache key.
+    /// </summary>
+    public static bool VertexStores = true, FragmentStores = true;
+
+    public static bool MemoryStores(bool vertex) => vertex ? VertexStores : FragmentStores;
 
     /// <summary>Read/write helpers of the dynamically indexed banks (<see cref="LowerDynamicIndexing"/>).</summary>
     static string DynHelpers(IEnumerable<string> banks)
@@ -429,6 +442,25 @@ float packC10(vec3 c) {
         }
 
         result.WritesDepth = t.UsesFragDepth;
+        if (t.WritesMemory)
+        {
+            // stores land in the mapped-memory buffer only (the uniform data is a per-draw copy); without a mapped slot
+            // the program has no pointer the renderer can keep, so its stores do nothing
+            string mapped = $"layout(std430, set = 0, binding = {(vertex ? 2 : 3)}) readonly restrict buffer MappedData";
+            string text = decl.ToString();
+            if (hasMapped && text.Contains(mapped))
+            {
+                decl.Clear().Append(text.Replace(mapped, $"layout(std430, set = 0, binding = {(vertex ? 2 : 3)}) restrict buffer MappedData"));
+                decl.AppendLine($"void storeMemory(int addr, float v) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint j = uint(addr & 0x{MappedFlag - 1:X}) >> 2; " +
+                                "if (j < uint(mem.length())) mem[j] = floatBitsToUint(v); } }");
+                result.WritesMemory = true;
+            }
+            else
+            {
+                decl.AppendLine("void storeMemory(int addr, float v) { }");
+                result.Warnings.Add("buffer store without a mapped uniform buffer (dropped)");
+            }
+        }
 
         // ---- assemble
         var sb = new StringBuilder();
@@ -466,6 +498,7 @@ float packC10(vec3 c) {
             RawColorBits = result.RawColorBits,
             TileWord1 = result.TileWord1,
             Warnings = result.Warnings,
+            WritesMemory = result.WritesMemory,
         }.CopyLists(result);
     }
 
