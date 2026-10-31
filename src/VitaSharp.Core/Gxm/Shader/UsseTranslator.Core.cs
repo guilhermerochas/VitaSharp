@@ -310,7 +310,7 @@ public sealed partial class UsseTranslator
         bool indexed = op.Bank is Bank.Indexed1 or Bank.Indexed2;
         if (op.Bank == Bank.Immediate || (!indexed && BankName(op.Bank) == ""))
         {
-            if (op.Bank != Bank.Immediate) Warnings.Add($"load from unsupported bank {op.Bank}");
+            if (op.Bank != Bank.Immediate) Warnings.Add($"load from unsupported bank {op.Bank} register {op.Num}");
             int imm = op.Bank == Bank.Immediate ? op.Num : 0;
             string c = kind switch { 'f' => F(imm), 'i' => imm.ToString(CultureInfo.InvariantCulture), _ => $"{(uint)imm}u" };
             var cs = new List<string>();

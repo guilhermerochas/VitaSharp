@@ -71,6 +71,7 @@ point a scenario reaches is not the end of the game.
 | Tearaway (Trial & Unlock) | PCSF00476 | In‑game | New profile up to the first papercraft tutorial | `tearaway_tutorial` |
 | Uncharted: Golden Abyss | PCSA00029 | In‑game | First level | `uc_walk` |
 | WRC 4 FIA World Rally Championship | PCSE00411 | In‑game | Fresh profile to a stage start and driving | `wrc4_boot` |
+| Zero Escape: Zero Time Dilemma | PCSE00781 | In‑game | Logos, title menu at 60 fps, New Game, opening and the first ~2.5 minutes of story cutscenes at 30 fps (does not boot on Vita3K) | `ztd_boot` |
 
 Missing system functions are tracked one by one in [`docs/hle`](hle/README.md), with priorities based on what
 the tested games actually import. Known bugs and future work are in the [roadmap](roadmap.md).
