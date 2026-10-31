@@ -783,6 +783,19 @@ of the busiest threads and GPU ms from the session's `PERF` lines):
   burst) halves the latency, 181 -> 96 ms, no underrun in Devious Dungeon (86 s) or Knightin'+. Still "normal shared":
   `aaudio.mmap_policy` is 2 (auto) but the speaker's output thread has no fast or MMAP path on this phone.
 
+**Next steps, in order** (status at the end of 31/10/2026; the `mono-aot-llvm` build of the branch up to the
+descriptor-write change is installed on the phone):
+1. Uncharted: the fetch-pass merge's dark frames (`VITASHARP_FETCH_PASS_MERGE=1`; one frame in seven 15% darker in a
+   screen recording, none in the PC replay of a dump of such a run). Ruled out: lazily closed passes using the wrong
+   surface for their barriers, passes continued across scenes. Then the DONT_CARE ideas (colourless renderings,
+   scene-start loads covered by the first draw).
+2. F1 2011's race: a simpleperf profile of the GPU worker and the main thread on the phone, then the prepare/record
+   split and cheaper hot HLE calls; uniform uploads (most of the 15 MB a frame) are the next copy to avoid.
+3. Movies still slower than on the PC (F1's first movie 5.6 s against 4.8 s): profile the guest player threads.
+4. Devious Dungeon's generated code; audio comparisons of F1 and God of War against desktop dumps of the same scenes.
+5. The Mali crash in `libGLES_mali.so` between F1's menu and race (1 in 3 runs): Khronos validation layer in a debug
+   APK (the Android binaries are on the Vulkan-ValidationLayers releases page).
+
 **Desktop revalidation** of the 34 installed games (Croixleur Sigma excluded; scratch data root with copied saves,
 sheets and the review in `scratchpad/phone2_shots/pc`): no crash; Sonic & All-Stars Racing still hangs at frame 29
 (known). New: The Deer God unpaced (214-348 fps), Shinobido 2 green line under the intro movie and
