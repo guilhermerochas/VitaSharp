@@ -52,15 +52,26 @@ public sealed unsafe partial class NativeRuntime
         {
             int epi = 0;
             bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
-            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned));
+            int trampSize = 0;
+            byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned); trampSize = t.Length; return t; });
+            if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
+            ulong epilogue = (ulong)(entry64 + epi);
+            if (!NoLink) ResumeEntry = (nint)Code.Place(_ => Arm64Emitter.EmitDispatchEntry(epilogue));
+            if (SkipGcTransition)
+            {
+                _enterFast = (delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void>)entry64;
+                Util.Log.Info("Native backend: entered without the GC transition (Mono)");
+            }
             Arm64Stubs = new Arm64Emitter.Runtime
             {
                 Epilogue = (ulong)(entry64 + epi),
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
                 PinnedCounters = pinned,
+                PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0,
             };
+            PatchLinks = Arm64Stubs.PatchLinks;
             return;
         }
         if (OperatingSystem.IsWindows())
@@ -90,8 +101,41 @@ public sealed unsafe partial class NativeRuntime
     {
         if (s->DispatchTable == 0) s->DispatchTable = (nint)Dispatch;
         if (s->MemBase == null) s->MemBase = GuestMemory.Base;
-        _enter(s, entry);
+        if (_enterFast != null) _enterFast(s, entry);
+        else _enter(s, entry);
     }
+
+    /// <summary>
+    /// Mono (the Android app): enter native code without the GC transition. Every HLE call leaves native code and
+    /// enters it again, and Mono's transition (thread-state CAS, TLS lookups, LMF) was several percent of a phone core
+    /// in HLE-heavy games. Mono's hybrid suspend stops a thread running in managed mode with a signal, so the GC does not
+    /// wait for guest code, and an [UnmanagedCallersOnly] callout from that mode is a no-op transition there. CoreCLR
+    /// (the desktop) keeps the transition: its reverse P/Invoke from cooperative mode is a fatal error.
+    /// <see cref="EnvVars.NativeGcTransition"/>=on keeps it on Mono too.
+    /// </summary>
+    /// <summary>ARM64: linked static exits are patched into direct branches (<see cref="Arm64Emitter.Runtime.PatchLinks"/>).</summary>
+    public readonly bool PatchLinks;
+
+    /// <summary>
+    /// Rewrites the patch site of a two-word link slot (target, site): a direct B to <paramref name="target"/>, or the
+    /// unlinked B to the slot path when it is 0. A B replaced by another B is one of the instructions the architecture
+    /// allows to be modified while other cores execute it; a target out of B range keeps the slot path.
+    /// </summary>
+    void PatchSite(nint slot, nint target)
+    {
+        nint site = ((nint*)slot)[1];
+        if (site == 0) return;
+        uint word = target == 0 ? Arm64Emitter.UnlinkedSiteWord : Arm64Emitter.BranchWord(site, target);
+        if (word != 0) Code.PatchWord((byte*)site, word);
+    }
+
+    /// <summary>ARM64: native code that continues at the state's pc through the dispatch table
+    /// (<see cref="Arm64Emitter.EmitDispatchEntry"/>); 0 elsewhere.</summary>
+    public readonly nint ResumeEntry;
+
+    static readonly bool SkipGcTransition = Type.GetType("Mono.RuntimeStructs") != null
+        && Environment.GetEnvironmentVariable(EnvVars.NativeGcTransition) is not ("on" or "1");
+    readonly delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void> _enterFast;
 
     // ------------------------------------------------------------------ callouts
 
@@ -114,6 +158,7 @@ public sealed unsafe partial class NativeRuntime
     {
         try
         {
+            if (op == (int)ArmFrontend.HleCalloutOp) return HleCall(s);
             CalloutHits[op]++; // racy on purpose: statistics only
             CalloutClasses.Hits[op * CalloutClasses.Sub + CalloutClasses.Of(op, ins)]++;
             HandlerTable.Pointers[op](s, ins, pc);
@@ -125,6 +170,21 @@ public sealed unsafe partial class NativeRuntime
             s->CalloutFault = 1;
             return 1;
         }
+    }
+
+    /// <summary>Executed HLE callouts (statistics).</summary>
+    public static long HleCallouts;
+
+    /// <summary>
+    /// An SVC from native code (<see cref="ArmFrontend.HleCallouts"/>): the thread's HLE dispatch runs here and the block goes
+    /// on at the pc it set. What the dispatcher must handle (the return trap, callback waits, no handler) is left to it
+    /// by raising the SVC exit, which the block's indirect exit sees. A throwing call is caught by the caller.
+    /// </summary>
+    static int HleCall(CpuState* s)
+    {
+        HleCallouts++;
+        if (CpuCore.CurrentSvcHandler is not { } h || !h.TryHandleSvcNative(s)) s->Exit = ExitReason.Svc;
+        return 0;
     }
 
     public static void ThrowPendingFault(CpuState* s)
@@ -143,7 +203,7 @@ public sealed unsafe partial class NativeRuntime
     /// returns stay in native code without a trip through the dispatcher. Publishing writes key-invalid, code, key; readers
     /// check key, read code, check key again (x64 keeps loads in order), so a slot being republished is never misread.
     /// </summary>
-    public const int DispatchBits = 16;
+    public const int DispatchBits = 18;
     /// <summary>The runtime's own table: threads not bound to a process (tests). Every process has its own
     /// (<see cref="BlockCache.DispatchTable"/>): two processes can have different code at the same address.</summary>
     public readonly DispatchEntry* Dispatch = (DispatchEntry*)AllocateDispatchTable();
@@ -180,6 +240,17 @@ public sealed unsafe partial class NativeRuntime
         }
     }
 
+
+    /// <summary>
+    /// An indirect exit missed the table and the dispatcher found <paramref name="b"/>: if another block took its entry
+    /// (the table is direct-mapped by address), it gets it back, so a target that lost a collision does not take the slow
+    /// path on every jump to it from then on.
+    /// </summary>
+    public void Republish(Block b)
+    {
+        var e = EntryOf(b);
+        if (Volatile.Read(ref e->Key) != KeyOf(b)) Publish(b);
+    }
 
     readonly object _dispatchLock = new();
 
@@ -220,6 +291,7 @@ public sealed unsafe partial class NativeRuntime
             if (target.NativeEntry == 0 || target.Invalidated || NoLink) return;
             (target.LinkedFrom ??= new List<nint>()).Add(slot);
             Volatile.Write(ref *(nint*)slot, target.NativeEntry);
+            if (_instance is { PatchLinks: true } rt) rt.PatchSite(slot, target.NativeEntry);
         }
         Interlocked.Increment(ref Links);
     }
@@ -262,7 +334,11 @@ public sealed unsafe partial class NativeRuntime
         }
         if (b.LinkedFrom == null) return;
         foreach (var slot in b.LinkedFrom)
-            if (*(nint*)slot == entry) Volatile.Write(ref *(nint*)slot, 0);
+            if (*(nint*)slot == entry)
+            {
+                Volatile.Write(ref *(nint*)slot, 0);
+                if (_instance is { PatchLinks: true } rt) rt.PatchSite(slot, 0);
+            }
         Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
         b.LinkedFrom = null;
     }

@@ -63,10 +63,20 @@ public static class SessionReport
         }
         Add(CpuBackendLines);
         Add(() => CycleLines(emu));
+        Add(() => [HleCallsLine(emu)]);
         Add(() => GpuLines(emu));
         Add(AudioDiagnostics.SummaryLines);
         Add(ProcessLines);
         return lines;
+    }
+
+    /// <summary>The busiest HLE functions so far, on one line (the end-of-run report lists 40, one per line).</summary>
+    static string HleCallsLine(Emulator emu)
+    {
+        long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
+        var top = emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(12)
+            .Select(f => $"{f.Name} {f.CallCount} ({f.CallCount / (double)frames:F0}/frame)");
+        return $"PERF hle calls: {string.Join(", ", top)}; GXM uniforms copied {VitaSharp.Core.Hle.Modules.Gxm.UniformBytesCopied / 1024.0 / frames:F0} KB/frame";
     }
 
     /// <summary>Native JIT verification and the native backend's report.</summary>
@@ -84,7 +94,7 @@ public static class SessionReport
         long fr = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         foreach (var t in emu.Kernel.Threads.ToArray().Where(t => t.Core.BlockCycles + t.Core.ChargedCycles > 0).OrderByDescending(t => t.Core.BlockCycles + t.Core.ChargedCycles).Take(6))
             yield return $"PERF cycles {t.Name}: guest code {t.Core.BlockCycles / 1e6 / fr:F2} M/frame ({t.Core.BlocksExecuted / 1e3 / fr:F0} K blocks), charged HLE {t.Core.ChargedCycles / 1e6 / fr:F2} M/frame" +
-                (t.Core.NativeTicks > 0 ? $"; host time in native code {t.Core.NativeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / fr:F2} ms/frame" : "") +
+                (t.Core.NativeTicks > 0 ? $"; host time in native code {t.Core.NativeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / fr:F2} ms/frame, {t.Core.NativeEntries / (double)fr:F0} entries/frame ({t.Core.NativeReturnsUnlinked / (double)fr:F0} returned through an exit with no link or table entry)" : "") +
                 (t.Core.SimdOps + t.Core.CondBranches > 0 ? $", {t.Core.SimdOps / 1e3 / fr:F0} K VFP/NEON ops/frame, {t.Core.CondBranches / 1e3 / fr:F0} K conditional branches/frame" : "");
     }
 

@@ -131,10 +131,22 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== descriptor sets
 
+    /// <summary>The last texture set built for each stage: consecutive draws that bind the same views and samplers reuse it
+    /// (a set allocation and up to 16 descriptor writes per stage and draw were a large part of the GPU worker's time on
+    /// a Mali phone). Valid until a frame's descriptor pools are reset (<see cref="_frameSerial"/>).</summary>
+    sealed class TexSetCache
+    {
+        public readonly DescriptorImageInfo[] Infos = new DescriptorImageInfo[16];
+        public DescriptorSet Set;
+        public long Serial = -1;
+        public int Units;
+    }
+    readonly TexSetCache _texSetV = new(), _texSetF = new();
+
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
-        var set = AllocSet(layout);
-        int units = layout.Handle == _texLayoutV.Handle ? _texUnitsV : _texUnitsF;
+        bool vertexStage = layout.Handle == _texLayoutV.Handle;
+        int units = vertexStage ? _texUnitsV : _texUnitsF;
         var infos = stackalloc DescriptorImageInfo[16];
         var writes = stackalloc WriteDescriptorSet[16];
         for (int i = 0; i < units; i++)
@@ -167,13 +179,32 @@ public sealed unsafe partial class VulkanRenderer
             }
             else if (cubeType) view = _dummyCubeView;
             infos[i] = new DescriptorImageInfo(sampler, view, layout2);
+        }
+        var cache = vertexStage ? _texSetV : _texSetF;
+        if (cache.Serial == _frameSerial && cache.Units == units && cache.Set.Handle != 0)
+        {
+            bool same = true;
+            for (int i = 0; i < units && same; i++)
+            {
+                ref var c = ref cache.Infos[i];
+                same = c.Sampler.Handle == infos[i].Sampler.Handle && c.ImageView.Handle == infos[i].ImageView.Handle && c.ImageLayout == infos[i].ImageLayout;
+            }
+            if (same) return cache.Set;
+        }
+        var set = AllocSet(layout);
+        for (int i = 0; i < units; i++)
+        {
             writes[i] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1,
                 DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[i],
             };
+            cache.Infos[i] = infos[i];
         }
         _vk.UpdateDescriptorSets(_dev, (uint)units, writes, 0, null);
+        cache.Set = set;
+        cache.Serial = _frameSerial;
+        cache.Units = units;
         return set;
     }
 

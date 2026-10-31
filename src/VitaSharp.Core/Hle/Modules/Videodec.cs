@@ -25,9 +25,37 @@ public sealed class Videodec : HleModule
         public bool Started;
         /// <summary>Scratch list of an asynchronous decoder's ready pictures (Output).</summary>
         public readonly List<DecodedPicture> Ready = [];
+        /// <summary>The last access unit's pts, and whether the stream sent one out of order (B-frames).</summary>
+        public long AuPts = long.MinValue;
+        public bool AuReordered;
+        /// <summary>Statistics, logged when the decoder is deleted: calls, pictures repeated, calls with no picture,
+        /// the slowest call (Stopwatch ticks).</summary>
+        public long Calls, Repeats, Empty, MaxCallTicks, Dropped, CarriedOver;
     }
 
+    /// <summary>
+    /// An asynchronous decoder (MediaCodec) hands its pictures out one or more calls after their access unit, or repeats the
+    /// previous one (Output). The Vita's decoder answers each call with the picture of the unit it was given, and movie
+    /// players compare that pts with their clock: a lagging or repeated old pts made F1 2011's player skip its picture
+    /// draw now and then (one-frame black flashes in the movies on a phone). So each picture an asynchronous decoder hands
+    /// out carries the pts of the unit of that call, as long as the units come in pts order (no B-frames).
+    /// VITASHARP_AVCDEC_PTS=picture keeps the decoded picture's own pts.
+    /// </summary>
+    /// <summary>Pictures of an asynchronous decoder that may wait for the next calls (beyond the call's capacity).</summary>
+    const int MaxBacklog = 4;
+
+    static readonly bool StampUnitPts = Environment.GetEnvironmentVariable(EnvVars.AvcdecPts) != "picture";
+
     readonly Dictionary<uint, Decoder> _decoders = new();
+
+    /// <summary>
+    /// The last picture of the last deleted asynchronous decoder. A new MediaCodec decoder needs several calls (about 0.4 s on
+    /// the MediaTek one) before its first picture; the Vita's answers the first call. Games that recreate the decoder to
+    /// loop a movie (Uncharted's title) showed a stale picture buffer then, a one-frame flash of an older scene: until the
+    /// new decoder's first picture, calls answer with this one; a decoder flushed to loop a movie (Uncharted's title keeps
+    /// its decoder) answers with its own last picture until the first one of the new pass.
+    /// </summary>
+    DecodedPicture? _carryOver;
     uint _nextHandle = 1;
 
     [Hle] int sceVideodecInitLibrary(uint codecType, uint initInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
@@ -96,22 +124,34 @@ public sealed class Videodec : HleModule
         if (au == 0 || array == 0) return ERR_INVALID_POINTER;
         long pts = ((long)GuestMemory.R32(au) << 32) | GuestMemory.R32(au + 4);
         uint es = GuestMemory.R32(au + 16), size = GuestMemory.R32(au + 20);
-        if (d.Codec != null && es != 0 && size != 0) d.Codec.Send(GuestMemory.Span(es, (int)size), pts);
-        return Output(d, array, repeatIfLate: true);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        long? stamp = null;
+        if (d.Codec != null && es != 0 && size != 0)
+        {
+            d.Codec.Send(GuestMemory.Span(es, (int)size), pts);
+            if (d.AuPts != long.MinValue && pts < d.AuPts) d.AuReordered = true;
+            d.AuPts = pts;
+            if (StampUnitPts && d.Codec.Asynchronous && !d.AuReordered) stamp = pts;
+        }
+        int r = Output(d, array, repeatIfLate: true, stamp);
+        d.Calls++;
+        d.MaxCallTicks = Math.Max(d.MaxCallTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        return r;
     }
 
     /// <summary>Writes every ready picture into the caller's picture array. <paramref name="repeatIfLate"/>: an
     /// asynchronous decoder (<see cref="IVideoDecoder.Asynchronous"/>) whose picture is not out yet, after the stream's
     /// first picture, hands out the previous picture again.</summary>
-    int Output(Decoder d, uint array, bool repeatIfLate = false)
+    int Output(Decoder d, uint array, bool repeatIfLate = false, long? stampPts = null)
     {
         uint capacity = GuestMemory.R32(array + 4), list = GuestMemory.R32(array + 8);
+        if (capacity != 1) stampPts = null; // several pictures per call keep their own pts
         uint n = 0;
         bool Emit(DecodedPicture pic)
         {
             uint picture = GuestMemory.R32(list + n * 4);
             if (picture == 0) return false;
-            WritePicture(picture, pic);
+            WritePicture(picture, pic, stampPts);
             if (d.Last != null && d.Last != pic) d.Codec!.Recycle(d.Last); // its planes were already written out
             d.Last = pic;
             d.Started = true;
@@ -120,27 +160,45 @@ public sealed class Videodec : HleModule
         }
         if (repeatIfLate && d.Codec is { Asynchronous: true } codec)
         {
-            // pictures of an asynchronous decoder come out late and in bursts: the newest ones are shown and the older
-            // ones dropped, so the delay does not grow with every late picture
-            d.Ready.Clear();
+            // pictures of an asynchronous decoder come out late and in bursts (the MediaTek decoder hands two out every
+            // other call): they wait in a short queue and go out one per call in order. Showing only the newest of a burst
+            // and repeating it on the next call showed every other picture of F1 2011's movies twice. The queue is capped
+            // (oldest dropped) so the delay cannot grow.
             while (codec.Take() is { } p) d.Ready.Add(p);
-            int skip = Math.Max(0, d.Ready.Count - (int)capacity);
-            for (int i = 0; i < d.Ready.Count; i++)
+            int keep = (int)capacity + MaxBacklog;
+            while (d.Ready.Count > keep) { codec.Recycle(d.Ready[0]); d.Ready.RemoveAt(0); d.Dropped++; }
+            while (n < capacity && d.Ready.Count > 0)
             {
-                if (i < skip || n >= capacity || !Emit(d.Ready[i])) codec.Recycle(d.Ready[i]);
+                var p = d.Ready[0];
+                d.Ready.RemoveAt(0);
+                if (!Emit(p)) { codec.Recycle(p); break; }
             }
-            d.Ready.Clear();
         }
         else
         {
+            while (n < capacity && d.Ready.Count > 0) // pictures still queued from earlier calls first
+            {
+                var q = d.Ready[0];
+                d.Ready.RemoveAt(0);
+                if (!Emit(q)) { d.Codec?.Recycle(q); break; }
+            }
             while (n < capacity && d.Codec?.Take() is { } pic)
                 if (!Emit(pic)) break;
         }
         if (n == 0 && repeatIfLate && d.Started && d.Last != null && d.Codec is { Asynchronous: true } && capacity > 0 && GuestMemory.R32(list) is var first && first != 0)
         {
-            WritePicture(first, d.Last);
+            WritePicture(first, d.Last, stampPts);
+            d.Repeats++;
             n = 1;
         }
+        if (n == 0 && repeatIfLate && !d.Started && (d.Last ?? _carryOver) is { } carried && d.Codec is { Asynchronous: true } && capacity > 0
+            && GuestMemory.R32(list) is var firstPic && firstPic != 0)
+        {
+            WritePicture(firstPic, carried, stampPts);
+            d.CarriedOver++;
+            n = 1;
+        }
+        if (n == 0 && repeatIfLate) d.Empty++;
         GuestMemory.W32(array, n);
         return 0;
     }
@@ -152,6 +210,7 @@ public sealed class Videodec : HleModule
         if (d == null) return err;
         d.Codec?.Flush();
         d.Started = false;
+        d.AuPts = long.MinValue; d.AuReordered = false;
         return array == 0 ? 0 : Output(d, array);
     }
 
@@ -160,8 +219,11 @@ public sealed class Videodec : HleModule
     {
         var d = Find(ctrl, out int err);
         if (d == null) return err;
+        foreach (var q in d.Ready) d.Codec?.Recycle(q);
+        d.Ready.Clear();
         d.Codec?.Reset();
         d.Started = false;
+        d.AuPts = long.MinValue; d.AuReordered = false;
         return 0;
     }
 
@@ -179,11 +241,15 @@ public sealed class Videodec : HleModule
         Decoder? d;
         lock (_decoders)
             if (!_decoders.Remove(GuestMemory.R32(ctrl), out d)) return ERR_INVALID_PARAM;
+        if (d.Calls > 0)
+            Log.Info($"sceAvcdec: decoder {d.Codec?.Name ?? "none"} deleted after {d.Calls} decode calls, {d.Repeats} pictures repeated, {d.Dropped} dropped, {d.Empty} calls without a picture ({d.CarriedOver} answered with the previous decoder's last picture), " +
+                     $"slowest call {d.MaxCallTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1} ms{(d.AuReordered ? ", units out of pts order" : "")}");
+        if (d.Codec is { Asynchronous: true } && d.Last != null) _carryOver = d.Last; // kept out of the closed decoder's pool
         d.Codec?.Dispose();
         return 0;
     }
 
-    static void WritePicture(uint picture, DecodedPicture p)
+    static void WritePicture(uint picture, DecodedPicture p, long? stampPts = null)
     {
         uint frame = picture + 4;
         uint pixelType = GuestMemory.R32(frame);
@@ -196,8 +262,9 @@ public sealed class Videodec : HleModule
         GuestMemory.W32(frame + 20, (uint)p.Height);  // verticalSize
         for (uint o = 24; o < 40; o += 4) GuestMemory.W32(frame + o, 0); // no cropping
         // info.pts (upper, lower)
-        GuestMemory.W32(picture + 0x5C, (uint)(p.Pts >> 32));
-        GuestMemory.W32(picture + 0x60, (uint)p.Pts);
+        long outPts = stampPts ?? p.Pts;
+        GuestMemory.W32(picture + 0x5C, (uint)(outPts >> 32));
+        GuestMemory.W32(picture + 0x60, (uint)outPts);
         if (dst == 0) return;
         int cw = (p.Width + 1) / 2;
         switch (pixelType & 0x38)

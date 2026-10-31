@@ -879,6 +879,9 @@ public sealed class Gxm : HleModule
         return b.Address + b.Size - addr;
     }
 
+    /// <summary>Profiling: bytes of uniform buffers copied into draw commands (racy, one counter for all threads).</summary>
+    public static long UniformBytesCopied;
+
     /// <summary>Gathers the draw's uniform buffers into <paramref name="data"/> (zero-filled, UniformBytes long); returns the byte count.</summary>
     static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data)
     {
@@ -895,7 +898,8 @@ public sealed class Gxm : HleModule
                 if (other > addr && other - addr < size) size = (int)(other - addr);
             // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
             if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
-            GuestMemory.Span(addr, size).CopyTo(data.Slice(slot.ByteOffset, size));
+            FastCopy.Copy(GuestMemory.Span(addr, size), data.Slice(slot.ByteOffset, size));
+            UniformBytesCopied += size;
         }
         return info.UniformBytes;
     }

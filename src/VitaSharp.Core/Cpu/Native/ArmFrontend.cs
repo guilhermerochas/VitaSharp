@@ -275,8 +275,25 @@ public sealed unsafe partial class ArmFrontend
 
     bool? Bx(int target) { BxWritePc(target); return false; }
 
+    /// <summary>The callout op value of an HLE call made from native code (<see cref="HleCallouts"/>).</summary>
+    public const uint HleCalloutOp = 0xFFFF; // Op is 16-bit: the largest value, never a real op
+
+    /// <summary>
+    /// SVC as a callout into the guest thread's HLE dispatch (<see cref="NativeRuntime.HleCall"/>) instead of an exit to
+    /// the dispatcher: the block then continues at the pc the call set, through the dispatch table. ARM64 backend only.
+    /// </summary>
+    public bool HleCallouts;
+
     bool? Svc(in DecodedInst d, uint imm, uint size)
     {
+        if (HleCallouts)
+        {
+            B.StoreState(SvcImmOffset, C(imm));
+            B.StoreState(SvcPcOffset, C(d.Address));
+            SetReg(15, C(d.Address + size));
+            B.Callout(unchecked((Op)HleCalloutOp), imm, d.Address, touchesCore: true);
+            return false; // SVC ends the block: an indirect exit to the pc the call left in the state
+        }
         B.StoreState(ExitOffset, C((uint)ExitReason.Svc));
         B.StoreState(SvcImmOffset, C(imm));
         B.StoreState(SvcPcOffset, C(d.Address));

@@ -12,6 +12,9 @@ public enum ExitReason : int
     BudgetExpired = 4,
     Halt = 5,
     Yield = 6,
+    /// <summary>Managed only (never set by generated code): an SVC was handled inside CpuCore.Run and the thread must leave it
+    /// (suspension, pause) before going on at the state's pc.</summary>
+    Handled = 7,
 }
 
 /// <summary>

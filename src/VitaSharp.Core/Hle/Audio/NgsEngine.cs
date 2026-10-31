@@ -201,22 +201,43 @@ public sealed class NgsSourceState
         int frames = stereo.Length / 2;
         if (Math.Abs(ratio - 1.0) < 1e-6)
         {
-            foreach (var s in stereo) Pcm.Add(s);
+            Pcm.AddRange(stereo); // one copy (List.Add per sample was a call each under Mono's AOT)
             if (frames > 0) { LastL = stereo[^2]; LastR = stereo[^1]; }
             return;
         }
         // linear interpolation between the previous block's last frame and this block
         double pos = ResamplePos;
-        while (pos < frames)
+        // the output is written in place: at most floor((frames - pos) / ratio) + 1 frames come out
+        double bound = pos < frames ? (frames - pos) / ratio + 2 : 0;
+        if (bound < 1 << 20)
         {
-            int i = (int)Math.Floor(pos);
-            float t = (float)(pos - i);
-            float l0 = i == 0 ? LastL : stereo[(i - 1) * 2], r0 = i == 0 ? LastR : stereo[(i - 1) * 2 + 1];
-            float l1 = stereo[i * 2], r1 = stereo[i * 2 + 1];
-            Pcm.Add(l0 + (l1 - l0) * t);
-            Pcm.Add(r0 + (r1 - r0) * t);
-            pos += ratio;
+            int start = Pcm.Count, n = 0;
+            System.Runtime.InteropServices.CollectionsMarshal.SetCount(Pcm, start + 2 * (int)bound);
+            var outSpan = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(Pcm)[start..];
+            while (pos < frames)
+            {
+                int i = (int)Math.Floor(pos);
+                float t = (float)(pos - i);
+                float l0 = i == 0 ? LastL : stereo[(i - 1) * 2], r0 = i == 0 ? LastR : stereo[(i - 1) * 2 + 1];
+                float l1 = stereo[i * 2], r1 = stereo[i * 2 + 1];
+                outSpan[n] = l0 + (l1 - l0) * t;
+                outSpan[n + 1] = r0 + (r1 - r0) * t;
+                n += 2;
+                pos += ratio;
+            }
+            System.Runtime.InteropServices.CollectionsMarshal.SetCount(Pcm, start + n);
         }
+        else
+            while (pos < frames)
+            {
+                int i = (int)Math.Floor(pos);
+                float t = (float)(pos - i);
+                float l0 = i == 0 ? LastL : stereo[(i - 1) * 2], r0 = i == 0 ? LastR : stereo[(i - 1) * 2 + 1];
+                float l1 = stereo[i * 2], r1 = stereo[i * 2 + 1];
+                Pcm.Add(l0 + (l1 - l0) * t);
+                Pcm.Add(r0 + (r1 - r0) * t);
+                pos += ratio;
+            }
         ResamplePos = pos - frames;
         if (frames > 0) { LastL = stereo[^2]; LastR = stereo[^1]; }
     }

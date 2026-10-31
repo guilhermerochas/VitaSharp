@@ -590,6 +590,60 @@ public sealed unsafe class VkCore : IDisposable
         throw new InvalidOperationException($"No memory type for {flags}");
     }
 
+    /// <summary>
+    /// A host buffer the CPU reads after the GPU wrote it (render-target writebacks): cached memory first, coherent if a
+    /// cached type is, else non-coherent (the reader then invalidates, <see cref="InvalidateMapped"/>). Uncached
+    /// coherent memory is the last resort: CPU reads from it are an order of magnitude slower (Mali: a 1 MB
+    /// writeback per frame took 20 ms on a Helio G99). <paramref name="coherent"/> says what the buffer got.
+    /// </summary>
+    public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateReadbackBuffer(ulong size, BufferUsageFlags usage, MemCat category, out bool coherent)
+    {
+        var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
+        Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
+        try
+        {
+            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
+            uint type;
+            const MemoryPropertyFlags Visible = MemoryPropertyFlags.HostVisibleBit, Coherent = MemoryPropertyFlags.HostCoherentBit, Cached = MemoryPropertyFlags.HostCachedBit;
+            if (TryFindMemoryType(req.MemoryTypeBits, Visible | Coherent | Cached, out type)) coherent = true;
+            else if (TryFindMemoryType(req.MemoryTypeBits, Visible | Cached, out type)) coherent = false;
+            else { type = FindMemoryType(req.MemoryTypeBits, Visible | Coherent); coherent = true; }
+            if (!_readbackTypeLogged)
+            {
+                _readbackTypeLogged = true;
+                Log.Info($"Readback buffers: memory type {type} ({MemoryProperties.MemoryTypes[(int)type].PropertyFlags})");
+            }
+            var mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(readback buffer)");
+            Vk.BindBufferMemory(Device, buf, mem, 0);
+            void* p;
+            var r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
+            if (r != Result.Success) { FreeMemory(mem); r.Ok("vkMapMemory"); }
+            return (buf, mem, (nint)p);
+        }
+        catch
+        {
+            Vk.DestroyBuffer(Device, buf, null);
+            throw;
+        }
+    }
+
+    bool _readbackTypeLogged;
+
+    /// <summary>Makes GPU writes to non-coherent mapped memory visible to the CPU (after the fence that covers them).</summary>
+    public void InvalidateMapped(DeviceMemory memory)
+    {
+        var range = new MappedMemoryRange { SType = StructureType.MappedMemoryRange, Memory = memory, Offset = 0, Size = Vk.WholeSize };
+        Vk.InvalidateMappedMemoryRanges(Device, 1, in range);
+    }
+
+    bool TryFindMemoryType(uint typeBits, MemoryPropertyFlags flags, out uint type)
+    {
+        for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
+            if ((typeBits & (1u << i)) != 0 && (MemoryProperties.MemoryTypes[i].PropertyFlags & flags) == flags) { type = (uint)i; return true; }
+        type = 0;
+        return false;
+    }
+
     public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage, MemCat category)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };

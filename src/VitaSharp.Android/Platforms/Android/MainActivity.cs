@@ -45,7 +45,7 @@ public sealed class MainActivity : MauiAppCompatActivity
         if (intent?.GetStringExtra(Game.GameActivity.ExtraTitleId) is not { Length: > 0 } titleId) return;
         intent.RemoveExtra(Game.GameActivity.ExtraTitleId);
         Core.Util.Log.Info($"Launch intent: starting {titleId}");
-        Game.GameActivity.Launch(this, titleId);
+        Game.GameActivity.Launch(this, titleId, wakeScreen: true);
     }
 
     protected override void OnResume()

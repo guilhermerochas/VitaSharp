@@ -114,6 +114,18 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         FlushInstructionCache(execAddr, code.Length);
     }
 
+    /// <summary>Replaces one aligned instruction word of placed code (link patching) atomically and makes it visible to
+    /// instruction fetch.</summary>
+    public void PatchWord(byte* execAddr, uint word)
+    {
+        long off = execAddr - _exec;
+        if (off < 0 || off + 4 > _used || (off & 3) != 0) throw new ArgumentOutOfRangeException(nameof(execAddr));
+        if (_mode == Mode.AppleJit) AppleWriteProtect(false);
+        try { Volatile.Write(ref *(uint*)(_write + off), word); }
+        finally { if (_mode == Mode.AppleJit) AppleWriteProtect(true); }
+        FlushInstructionCache(execAddr, 4);
+    }
+
     /// <summary>Forgets every block (process exec): only valid when no thread can run generated code.</summary>
     public void Reset(int keepBytes)
     {

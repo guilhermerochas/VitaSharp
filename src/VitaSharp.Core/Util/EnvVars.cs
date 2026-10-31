@@ -19,6 +19,9 @@ public static class EnvVars
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
     /// <summary>Android: folder (relative to the data folder) for per-port WAVs of the guest's audio (desktop: --audio-dump).</summary>
     public const string AudioDump = "VITASHARP_AUDIO_DUMP";
+    /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
+    /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
+    public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";
     public const string BtDraw = "VITASHARP_BT_DRAW";
     public const string Cpu = "VITASHARP_CPU";
     public const string CpuMhz = "VITASHARP_CPU_MHZ";
@@ -65,6 +68,16 @@ public static class EnvVars
     /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
+    /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
+    /// bytes) for attributing CPU-profiler samples in the code arena (Cpu/Native/NativeCodeMap).</summary>
+    public const string NativeMap = "VITASHARP_NATIVE_MAP";
+    /// <summary>=off: ARM64 code leaves native code for every HLE call (SVC) instead of calling the HLE dispatch from it
+    /// (Cpu/Native/ArmFrontend.HleCallouts).</summary>
+    public const string NativeHleCallout = "VITASHARP_NATIVE_HLE_CALLOUT";
+    /// <summary>Mono only (Android): =on enters native code with the runtime's GC transition, as CoreCLR always does;
+    /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's
+    /// hybrid suspend handles; callouts from that mode are allowed).</summary>
+    public const string NativeGcTransition = "VITASHARP_NATIVE_GC_TRANSITION";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
     /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";

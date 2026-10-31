@@ -25,5 +25,7 @@
       android:extractNativeLibs="true"
       android:appCategory="game"
       android:supportsRtl="true">
+    <!-- simpleperf / Perfetto CPU profiles of a release build from adb (API 29+); no debugger, no run-as -->
+    <profileable android:shell="true" />
   </application>
 </manifest>

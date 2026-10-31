@@ -295,6 +295,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     (Buffer Buffer, ulong Offset, nint Ptr) Upload(ulong size, ulong align = 16)
     {
+        _uploadBytes += (long)size;
         var f = F;
         ulong off = (f.RingOffset + align - 1) & ~(align - 1);
         if (off + size <= RingSize)
@@ -311,7 +312,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     (Buffer Buffer, ulong Offset) UploadSpan(ReadOnlySpan<byte> data, ulong align = 16)
     {
         var (b, off, p) = Upload((ulong)data.Length, align);
-        data.CopyTo(new Span<byte>((void*)p, data.Length));
+        FastCopy.Copy(data, new Span<byte>((void*)p, data.Length));
         return (b, off);
     }
 

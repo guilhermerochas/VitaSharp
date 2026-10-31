@@ -66,18 +66,19 @@
 
   <!--
     Runtime and AOT: -p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr (docs/android/README.md,
-    "Runtime and CPU backends"). Release defaults to mono-aot, Debug to mono-jit. Every choice keeps a JIT, so dynamic
+    "Runtime and CPU backends"). Release defaults to mono-aot-llvm (measured fastest on a phone), Debug to mono-jit. Every choice keeps a JIT, so dynamic
     code stays supported and compiled and the CPU chain is still native > il > interpreter.
       mono-jit       Mono with its JIT; in Release the .NET for Android default profiled AOT (the startup methods of
                      the MAUI profiles and the app assembly; VitaSharp.Core and the renderer are JIT-compiled on the
                      device)
       mono-aot       Mono, every method of every assembly AOT-compiled (AndroidAotMode=Normal: the JIT stays and
                      compiles what AOT cannot cover: UnsafeAccessor stubs, some generic instantiations, DynamicMethods)
-      mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); much slower to build
+      mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); the Release default: about 17 min to build
+                     instead of 5, but F1 2011 races ran 35% faster on the phone than with mono-aot
       coreclr        CoreCLR (RyuJIT, partial ReadyToRun), experimental in .NET 10 (warning XA1040)
   -->
   <PropertyGroup>
-    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">mono-aot</VitaSharpAndroidRuntime>
+    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">mono-aot-llvm</VitaSharpAndroidRuntime>
     <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == ''">mono-jit</VitaSharpAndroidRuntime>
   </PropertyGroup>
   <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'mono-aot' or '$(VitaSharpAndroidRuntime)' == 'mono-aot-llvm'">

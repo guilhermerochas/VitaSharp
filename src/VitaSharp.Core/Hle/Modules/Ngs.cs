@@ -838,11 +838,14 @@ public sealed class Ngs : HleModule
             float m00 = p.Volume[0, 0], m01 = p.Volume[0, 1], m10 = p.Volume[1, 0], m11 = p.Volume[1, 1];
             if (v.Rack.ChannelsPerVoice == 1) { m10 = 0; m11 = 0; }
             if (p.Dest.Rack.ChannelsPerVoice == 1) { m01 = 0; m11 = 0; }
-            for (int k = 0; k < g; k++)
+            var s = src.AsSpan(0, g * 2);
+            var d = dst.AsSpan(0, g * 2);
+            for (int k = 0; k < s.Length; k += 2)
             {
-                float l = src[k * 2], r = src[k * 2 + 1];
-                dst[k * 2] = Math.Clamp(dst[k * 2] + l * m00 + r * m10, -1f, 1f);
-                dst[k * 2 + 1] = Math.Clamp(dst[k * 2 + 1] + l * m01 + r * m11, -1f, 1f);
+                float l = s[k], r = s[k + 1];
+                float a = d[k] + l * m00 + r * m10, b = d[k + 1] + l * m01 + r * m11;
+                d[k] = a < -1f ? -1f : a > 1f ? 1f : a; // Math.Clamp, inline (a call per sample under Mono's AOT)
+                d[k + 1] = b < -1f ? -1f : b > 1f ? 1f : b;
             }
         }
     }
@@ -987,30 +990,35 @@ public sealed class Ngs : HleModule
         index is >= 0 and < 4 && m.Param32(8 + index * pl.Stride) != 0 && m.Param32(8 + index * pl.Stride + 4) != 0;
 
     /// <summary>Decodes into the source state's reusable buffer; returns the number of floats written.</summary>
-    static int DecodeHevag(uint addr, int size, int channels, NgsSourceState st)
+    static unsafe int DecodeHevag(uint addr, int size, int channels, NgsSourceState st)
     {
         int framesPerChannel = size / 16 / channels;
         int outLen = framesPerChannel * 28 * 2;
         var outBuf = st.DecodeBuffer(outLen);
         int ch = 0, block = 0;
+        // one view of the input (each GuestMemory.Read resolves the thread's address space) and the coefficient row
+        // per frame (2-D array reads are calls under Mono's AOT): the HEVAG decode was the busiest NGS work on a phone
+        byte* input = GuestMemory.Base + addr;
+        var coefs = HevagTables.Coefs;
         for (int f = 0; f < size / 16; f++)
         {
-            uint fr = addr + (uint)f * 16;
-            byte b0 = GuestMemory.Read<byte>(fr), b1 = GuestMemory.Read<byte>(fr + 1);
+            byte* fr = input + f * 16;
+            byte b0 = fr[0], b1 = fr[1];
             int coef = ((b0 >> 4) & 0xF) | (b1 & 0xF0);
             int shift = b0 & 0xF;
             int flag = b1 & 0xF;
             if (coef > 127) coef = 0;
             shift = 20 - shift;
             int h1 = st.AdpcmHist[ch, 0], h2 = st.AdpcmHist[ch, 1], h3 = st.AdpcmHist[ch, 2], h4 = st.AdpcmHist[ch, 3];
+            int k0 = coefs[coef, 0], k1 = coefs[coef, 1], k2 = coefs[coef, 2], k3 = coefs[coef, 3];
             for (int j = 0; j < 28; j++)
             {
                 int sample = 0;
                 if (flag < 7)
                 {
-                    byte nib = GuestMemory.Read<byte>(fr + 2 + (uint)(j / 2));
+                    byte nib = fr[2 + j / 2];
                     sample = HevagTables.Nibbles[(j & 1) != 0 ? nib >> 4 : nib & 0xF] << shift;
-                    sample += (h1 * HevagTables.Coefs[coef, 0] + h2 * HevagTables.Coefs[coef, 1] + h3 * HevagTables.Coefs[coef, 2] + h4 * HevagTables.Coefs[coef, 3]) >> 5;
+                    sample += (h1 * k0 + h2 * k1 + h3 * k2 + h4 * k3) >> 5;
                     sample >>= 8;
                 }
                 float fs = Math.Clamp(sample, -32768, 32767) / 32768f;
