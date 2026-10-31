@@ -30,7 +30,7 @@ public sealed class Videodec : HleModule
         public bool AuReordered;
         /// <summary>Statistics, logged when the decoder is deleted: calls, pictures repeated, calls with no picture,
         /// the slowest call (Stopwatch ticks).</summary>
-        public long Calls, Repeats, Empty, MaxCallTicks, Dropped;
+        public long Calls, Repeats, Empty, MaxCallTicks, Dropped, CarriedOver;
     }
 
     /// <summary>
@@ -47,6 +47,14 @@ public sealed class Videodec : HleModule
     static readonly bool StampUnitPts = Environment.GetEnvironmentVariable(EnvVars.AvcdecPts) != "picture";
 
     readonly Dictionary<uint, Decoder> _decoders = new();
+
+    /// <summary>
+    /// The last picture of the last deleted asynchronous decoder. A new MediaCodec decoder needs several calls (about 0.4 s on
+    /// the MediaTek one) before its first picture; the Vita's answers the first call. Games that recreate the decoder to
+    /// loop a movie (Uncharted's title) showed a stale picture buffer then, a one-frame flash of an older scene: until the
+    /// new decoder's first picture, calls answer with this one.
+    /// </summary>
+    DecodedPicture? _carryOver;
     uint _nextHandle = 1;
 
     [Hle] int sceVideodecInitLibrary(uint codecType, uint initInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
@@ -182,6 +190,13 @@ public sealed class Videodec : HleModule
             d.Repeats++;
             n = 1;
         }
+        if (n == 0 && repeatIfLate && !d.Started && _carryOver != null && d.Codec is { Asynchronous: true } && capacity > 0
+            && GuestMemory.R32(list) is var firstPic && firstPic != 0)
+        {
+            WritePicture(firstPic, _carryOver, stampPts);
+            d.CarriedOver++;
+            n = 1;
+        }
         if (n == 0 && repeatIfLate) d.Empty++;
         GuestMemory.W32(array, n);
         return 0;
@@ -226,8 +241,9 @@ public sealed class Videodec : HleModule
         lock (_decoders)
             if (!_decoders.Remove(GuestMemory.R32(ctrl), out d)) return ERR_INVALID_PARAM;
         if (d.Calls > 0)
-            Log.Info($"sceAvcdec: decoder {d.Codec?.Name ?? "none"} deleted after {d.Calls} decode calls, {d.Repeats} pictures repeated, {d.Dropped} dropped, {d.Empty} calls without a picture, " +
+            Log.Info($"sceAvcdec: decoder {d.Codec?.Name ?? "none"} deleted after {d.Calls} decode calls, {d.Repeats} pictures repeated, {d.Dropped} dropped, {d.Empty} calls without a picture ({d.CarriedOver} answered with the previous decoder's last picture), " +
                      $"slowest call {d.MaxCallTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1} ms{(d.AuReordered ? ", units out of pts order" : "")}");
+        if (d.Codec is { Asynchronous: true } && d.Last != null) _carryOver = d.Last; // kept out of the closed decoder's pool
         d.Codec?.Dispose();
         return 0;
     }
