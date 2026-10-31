@@ -158,6 +158,7 @@ public sealed unsafe partial class Arm64Emitter
         _lazyFpcr = (opts & A64Opt.LazyFpcr) != 0;
         _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
         ForgetHostFlags();
+        _fpcrHost = false;
         Array.Fill(_vcOff, -1);
         _vcAny = false;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -360,6 +361,7 @@ public sealed unsafe partial class Arm64Emitter
             if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
         // merge points and callouts end the SIMD register cache (FpOp reloads it after its handler path instead)
         if (_vcAny && x.Op is IrOp.Label or IrOp.Callout) VcForget();
+        if (_fpcrHost && NeedsGuestFpcr(x.Op)) EnsureGuestFpcr(); // MSR FPCR leaves NZCV alone (branch fusion)
         switch (x.Op)
         {
             case IrOp.Nop: return;
@@ -601,21 +603,51 @@ public sealed unsafe partial class Arm64Emitter
         if (_checkExit) { LdState(X17, OffExit); a.Cbnz(X17, ret); }
     }
 
-    /// <summary>Calls the interpreter handler of <paramref name="op"/> (FPCR switched to the host mode around the call).</summary>
-    void CallHandler(uint op, uint ins, uint pc)
+    /// <summary>FPCR holds the host mode at this point of the straight-line code (<see cref="A64Opt.LazyFpcr"/>: after a
+    /// callout, until code that needs the guest mode).</summary>
+    bool _fpcrHost;
+
+    /// <summary>Switches FPCR back to the guest mode if a callout left the host mode in it.</summary>
+    void EnsureGuestFpcr()
+    {
+        if (!_fpcrHost) return;
+        _a.LdrX(X16, SP, FrameGuestFpcr);
+        _a.Msr(SysReg.Fpcr, X16);
+        _fpcrHost = false;
+    }
+
+    /// <summary>IR ops that need the guest FPCR: FP arithmetic, and every control transfer (labels merge paths, exits
+    /// chain into blocks that start in the guest mode).</summary>
+    static bool NeedsGuestFpcr(IrOp op) => op is IrOp.FpOp or IrOp.VecOp or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf
+        or IrOp.ExitStatic or IrOp.ExitDynamic;
+
+    /// <summary>
+    /// Calls the interpreter handler of <paramref name="op"/> with FPCR in the host mode. The guest mode is restored
+    /// right after the call, or with <see cref="A64Opt.LazyFpcr"/> (unless <paramref name="restore"/>) only before the
+    /// next op that needs it, so a run of callouts separated by integer code switches FPCR twice instead of twice per call.
+    /// </summary>
+    void CallHandler(uint op, uint ins, uint pc, bool restore = false)
     {
         var a = _a;
-        a.LdrX(X16, SP, FrameHostFpcr);
-        a.Msr(SysReg.Fpcr, X16);
+        if (!_fpcrHost)
+        {
+            a.LdrX(X16, SP, FrameHostFpcr);
+            a.Msr(SysReg.Fpcr, X16);
+        }
         a.MovSp(X0, State); // mov x0, x19 (ADD #0 is fine for non-SP registers too)
         a.MovImm(X1, op);
         a.MovImm(X2, ins);
         a.MovImm(X3, pc);
         a.LdrLit(X16, _rt.Callout);
         a.Blr(X16);
-        a.LdrX(X16, SP, FrameGuestFpcr);
-        a.Msr(SysReg.Fpcr, X16);
-        a.Cbnz(X0, _abort);
+        if (_lazyFpcr && !restore) _fpcrHost = true;
+        else
+        {
+            a.LdrX(X16, SP, FrameGuestFpcr);
+            a.Msr(SysReg.Fpcr, X16);
+            _fpcrHost = false;
+        }
+        a.Cbnz(X0, _abort); // the abort path ends in the epilogue, which sets the host mode anyway
     }
 
     void SetFlagOut(int t, Cond c)
@@ -1130,7 +1162,7 @@ public sealed unsafe partial class Arm64Emitter
         // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
         VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);
-        CallHandler((uint)op, x.Imm2, x.Imm3);
+        CallHandler((uint)op, x.Imm2, x.Imm3, restore: true); // merges with the fast path, which is in the guest mode
         VcReload();
         a.Bind(done);
     }

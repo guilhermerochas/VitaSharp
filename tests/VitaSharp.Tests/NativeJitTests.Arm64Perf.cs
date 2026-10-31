@@ -30,6 +30,8 @@ public sealed unsafe partial class NativeJitTests
         ("thumb bytecopy", true, "5D4B,5543,3501,4295,DBFA"),
         // vld1.32 {d0-d1},[r0]!; vmul.f32 q1,q0,q2; vmla.f32 q3,q1,q2; vadd.f32 q4,q3,q1; vst1.32 {d8-d9},[r1]!; subs r2,r2,#1; bne loop
         ("neon mla", false, "F4200A8D,F3002D54,F2026D54,F2068D42,F4018A8D,E2522001,1AFFFFF8"),
+        // vqshl.s32 d0,d1,d2; vqshl.s32 d3,d4,d5; subs r2,r2,#1; bne loop (two SIMD callouts in a row)
+        ("arm 2 callouts", false, "F2220411,F2253414,E2522001,1AFFFFFB"),
         // vldr s0,[r0]; vmul.f32 s1,s0,s2; vadd.f32 s3,s3,s1; add r0,r0,#4; subs r2,r2,#1; bne loop
         ("vfp dot", false, "ED900A00,EE600A01,EE711AA0,E2800004,E2522001,1AFFFFF9"),
     ];
@@ -221,7 +223,7 @@ public sealed unsafe partial class NativeJitTests
         var old = Arm64Emitter.Opts;
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
-        int compared = 0, insts = 0, detailed = 0;
+        int compared = 0, insts = 0, detailed = 0, withCallouts = 0;
         const uint LowRegs = ~(0x00400000u | 0x00088000u | 0x000000A8u); // D/N/M bits and the top bit of each field: D0-D7, S0-S15
         try
         {
@@ -232,13 +234,17 @@ public sealed unsafe partial class NativeJitTests
                 for (int k = 0, attempts = 0; k < n && attempts < 400; attempts++)
                 {
                     uint r = (uint)rng.NextInt64();
-                    uint ins = rng.Next(10) switch
+                    uint ins = rng.Next(12) switch
                     {
                         < 4 => RandomNeon(rng, NeonNoMemory[rng.Next(NeonNoMemory.Length)]) & LowRegs,
                         < 7 => ((rng.Next(4) == 0 ? (uint)rng.Next(14) : 14u) << 28) | 0x0E000A00u | (r & 0x00FFF1EF & LowRegs), // VFP data processing
                         7 => 0xEE000A10u | (r & 0x00106000) | 0x1000 | (r & 0x00070080),                                            // VMOV S0-S15 <-> r1/r3/r5/r7
                         8 => 0xED900B00u | (r & 0x0000700F),                                                                        // VLDR d0-d7, [r0, #0-60]
-                        _ => 0xED800B00u | (r & 0x0000700F),                                                                        // VSTR
+                        9 => 0xED800B00u | (r & 0x0000700F),                                                                        // VSTR
+                        // callouts (handler calls, FPCR switched to the host mode): MRS r1/r3/r5/r7, APSR; MSR APSR_nzcvq, r3;
+                        // VQSHL/VQRSHL (register), a SIMD-only callout
+                        10 => rng.Next(3) == 0 ? 0xE128F003u : 0xE10F1000u | (r & 0x6000),
+                        _ => (0xF2000410u | (r & 0x01300100) | (r & 0x00076007 & LowRegs)) & ~0x40u,
                     };
                     var d = Decoder.DecodeArm(ins, CodeBase);
                     if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, false)) continue;
@@ -256,9 +262,12 @@ public sealed unsafe partial class NativeJitTests
                 st.Fpscr = rng.Next(4) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
                 st.Apply(s, false);
                 var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
-                foreach (bool cache in new[] { true, false })
+                if (NativeArm64Compiler.NewFrontend().Translate(b).Callouts > 0) withCallouts++;
+                for (int mode = 0; mode < 4; mode++)
                 {
-                    Arm64Emitter.Opts = cache ? old | Arm64Emitter.A64Opt.VecCache : old & ~Arm64Emitter.A64Opt.VecCache;
+                    bool cache = (mode & 1) != 0, lazy = (mode & 2) != 0;
+                    var o = old & ~(Arm64Emitter.A64Opt.VecCache | Arm64Emitter.A64Opt.LazyFpcr);
+                    Arm64Emitter.Opts = o | (cache ? Arm64Emitter.A64Opt.VecCache : 0) | (lazy ? Arm64Emitter.A64Opt.LazyFpcr : 0);
                     var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
                     st.Apply(s, false);
                     var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
@@ -267,14 +276,15 @@ public sealed unsafe partial class NativeJitTests
                     string diff = Diff(interp, native);
                     if (diff.Length > 0)
                     {
-                        if (detailed++ < 4) output.WriteLine($"--- cache {cache} fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
-                        Record(failures, cache ? "cache" : "nocache", b, diff);
+                        if (detailed++ < 4) output.WriteLine($"--- cache {cache} lazy fpcr {lazy} fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
+                        Record(failures, $"cache {cache} lazy {lazy}", b, diff);
                     }
                 }
             }
         }
         finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
-        output.WriteLine($"compared {compared} runs ({insts} instructions); failing kinds {failures.Count}");
+        output.WriteLine($"compared {compared} runs ({insts} instructions, {withCallouts} blocks with callouts); failing kinds {failures.Count}");
+        Assert.True(withCallouts > iterations / 10, "too few blocks with callouts");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
