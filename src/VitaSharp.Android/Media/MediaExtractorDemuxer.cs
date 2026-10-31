@@ -100,6 +100,15 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
 
     public DemuxedUnit? Next(Func<int, bool> enabled)
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { return NextCore(enabled); }
+        finally { _nextTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; _nexts++; }
+    }
+
+    long _nextTicks, _nexts;
+
+    DemuxedUnit? NextCore(Func<int, bool> enabled)
+    {
         lock (_ex)
         {
             for (int track; (track = _ex.SampleTrackIndex) >= 0; _ex.Advance())
@@ -152,6 +161,7 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
 
     public void Dispose()
     {
+        if (_nexts > 0) Log.Info($"SceMp4: MediaExtractor read {_nexts} units, {_nextTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _nexts:F2} ms per unit");
         lock (_ex)
         {
             _sample?.Dispose();

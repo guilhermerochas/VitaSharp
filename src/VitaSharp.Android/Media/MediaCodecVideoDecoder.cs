@@ -74,7 +74,13 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
 
     public static MediaCodecVideoDecoder? Create(int maxWidth, int maxHeight)
     {
-        var names = H264Decoders();
+        // Android's own decoder first for pictures up to the Vita's screen (every Vita movie): it gives a picture back in
+        // the call that decoded it, as the Vita does; the MediaTek hardware decoder holds several in flight, and the
+        // players of F1 2011 and Uncharted pace themselves by the pictures' timestamps: F1's 5 s movie took 6.25 s
+        // (one audio frame in four came out as silence), 5.6 s with the software decoder. VITASHARP_MEDIACODEC_SOFTWARE=0
+        // puts the hardware decoders first again, =1 always the software one.
+        string? sw = System.Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.MediaCodecSoftware);
+        var names = H264Decoders(sw == "1" || (sw != "0" && (long)maxWidth * maxHeight <= 960 * 544));
         if (names.Length == 0) { Log.Warn("MediaCodec: no H.264 decoder on this device"); return null; }
         var d = new MediaCodecVideoDecoder(names, maxWidth, maxHeight);
         if (!d.OpenNext()) return null;
@@ -82,7 +88,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     }
 
     /// <summary>The device's H.264 decoders, hardware ones first (vendor names before Android's own c2.android/OMX.google).</summary>
-    static string[] H264Decoders()
+    static string[] H264Decoders(bool softwareFirst)
     {
         var list = new List<(string Name, bool Software)>();
         try
@@ -97,7 +103,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             }
         }
         catch (Java.Lang.Exception e) { Log.Warn($"MediaCodec: listing decoders failed: {e.Message}"); }
-        return list.OrderBy(c => c.Software).Select(c => c.Name).ToArray();
+        return list.OrderBy(c => c.Software != softwareFirst).Select(c => c.Name).ToArray();
     }
 
     bool OpenNext()
