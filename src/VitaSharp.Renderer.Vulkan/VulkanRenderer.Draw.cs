@@ -146,13 +146,27 @@ public sealed unsafe partial class VulkanRenderer
     readonly Dictionary<(GxmFragmentProgram, ulong), FsEntry> _fsCache = new();
 
     /// <summary>Same value as <see cref="ShaderHints.Key"/> for the hints a draw would produce, without allocating them.</summary>
-    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
+    /// <summary>
+    /// An attribute's format for the shader hints: the GXM format, plus <see cref="ShaderGenerator.ByteFetchFlag"/> when
+    /// its address is not a multiple of its component size (offset or stream stride). Vulkan requires that alignment;
+    /// GXM does not, and God of War's character streams have a 19-byte stride with F16 attributes at offsets 3 and 11:
+    /// NVIDIA read them anyway, Mali-G57 returned garbage (yellow, purple and blue patches on Kratos and the enemies).
+    /// Such attributes are fetched as bytes (R8 formats need no alignment) and rebuilt in the shader: no copy, and
+    /// aligned attributes keep their shaders.
+    /// </summary>
+    static byte AttributeFormatKey(GxmVertexAttribute a, GxmVertexStream[]? streams)
+    {
+        if (streams == null || a.StreamIndex >= streams.Length) return a.Format;
+        return ShaderGenerator.AttributeMisaligned(a.Format, a.Offset, streams[a.StreamIndex].Stride) ? (byte)(a.Format | ShaderGenerator.ByteFetchFlag) : a.Format;
+    }
+
+    static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, GxmVertexStream[]? streams, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
         bool fetchSingle = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
         if (attrs != null)
-            foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, a.Format); }
+            foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, AttributeFormatKey(a, streams)); }
         h = ShaderHints.Fnv.Mix(h, colorFormat);
         if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
         if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
@@ -244,7 +258,7 @@ public sealed unsafe partial class VulkanRenderer
 
     // hints are only built when a shader really has to be translated (static: no per-draw closure allocation)
     static ShaderHints VertexHints(DrawCommand d, uint _) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
-        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, a.Format)).ToArray(), 0);
+        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, AttributeFormatKey(a, d.VertexProgram.Streams))).ToArray(), 0);
 
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
@@ -305,7 +319,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var vp = d.VertexProgram;
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
-        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
+        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
         var me = GetModule(vp.Info.Program, hk, VertexHints, d, 0);
         e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk, Vp = vp };
@@ -323,7 +337,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
         var me = GetModule(fp.Info.Program, hk, (fetchInput, tileWord1) switch
         {

@@ -111,4 +111,19 @@ public class MaliDeviceTests
         Assert.Throws<FormatException>(() => new ScriptedPad("jump@1"));
         Assert.Throws<FormatException>(() => new ScriptedPad("cross"));
     }
+
+    // God of War Collection on Mali: F16 attributes at offsets 3 and 11 of a 19-byte stride (Vulkan requires the
+    // component size alignment; such attributes are fetched as bytes, ShaderGenerator.ByteFetchFlag)
+    [Theory]
+    [InlineData(8, 3, 19, true)]   // F16 at an odd offset
+    [InlineData(8, 0, 19, true)]   // F16 at 0, odd stride: every other vertex misaligned
+    [InlineData(8, 4, 20, false)]
+    [InlineData(5, 0, 19, false)]  // S8N: bytes need no alignment
+    [InlineData(9, 6, 24, true)]   // F32 at offset 6
+    [InlineData(9, 8, 24, false)]
+    [InlineData(10, 2, 16, true)]  // untyped words
+    public void MisalignedAttributesAreFetchedAsBytes(byte format, int offset, int stride, bool misaligned)
+    {
+        Assert.Equal(misaligned, ShaderGenerator.AttributeMisaligned(format, offset, stride));
+    }
 }

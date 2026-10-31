@@ -154,12 +154,12 @@ public sealed unsafe partial class VulkanRenderer
                 case DrawCommand d:
                     if (d.IndexCount == 0 || d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null || d.VertexProgram?.Info == null) return;
                     var vp = d.VertexProgram;
-                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, 0);
+                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0);
                     if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, 0));
                     else PromoteRebuildJob(vp.Info.Program.Hash, vk);
                     var fp = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;
-                    ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, cf, outputFormat: NativeOutputFormat(fp));
+                    ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, cf, outputFormat: NativeOutputFormat(fp));
                     if (NeedsJob(fp.Info.Program, fk)) Queue(fp.Info.Program, fk, FragmentHints(d, cf));
                     else PromoteRebuildJob(fp.Info.Program.Hash, fk);
                     if (_asyncPipelines) PrefetchPipeline(d, vk, fk, cf);
@@ -221,7 +221,7 @@ public sealed unsafe partial class VulkanRenderer
         if (!_seenDrawSignatures.TryAdd(sig, 0)) return;
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
         var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
-            ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
+            ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
             ms ? FragmentHintsInputFetch(d, colorFormat) : null,
             scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode, staticKey);
         if (!EnsureShaderWorkers()) return;
