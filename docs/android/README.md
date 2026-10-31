@@ -753,6 +753,27 @@ of the busiest threads and GPU ms from the session's `PERF` lines):
 | Uncharted, title | 60 | 25 | **25.4** (36 with `VITASHARP_FETCH_PASS_MERGE=1`, dark frames) | GPU worker 13.6, game 11.4 | 32.2 | the Mali GPU (fetch passes) |
 | God of War I, first fight (30) | 30 | patches on the characters | **23-29.5, correct picture** | Render 10.3, GPU worker 8.8 | 10.8 | CPU (the game's render thread) |
 
+**Audio.** `vitasharp-perf audio-check` reads the guest audio dumps (`VITASHARP_AUDIO_DUMP` on the phone,
+`--audio-dump` on the desktop): silent gaps inside the sound, repeated grains, clicks (jumps above 12,000).
+
+| Game | Phone (guest dump) | Desktop (same scene) | Notes |
+|---|---|---|---|
+| Knightin'+ | 72 s of sound, 1 gap (85 ms, a load), 0 repeats, 0 clicks | - | clean |
+| Devious Dungeon | 90 s, 0 repeats, 204-270 clicks | - | the FMOD mixer late below 60 fps (guest side; goes with the speed work) |
+| F1 2011 movies | first movie 6.53 s of sound for 5 s of audio, 75 gaps -> **5.85 s, 45 gaps** | 4.95 s, 1 gap | movie players paced by picture timestamps: Android's own H.264 decoder now (below) |
+| F1 2011 menus and race | 250 s, 2 gaps, 245 clicks | - | to compare with a desktop dump of the same scene |
+| Uncharted title | music 85 s, 0 gaps, 0 clicks; movie port 63 -> **40 gaps** | movie port 2 gaps | as F1 |
+| God of War | 129 s + 36 s, 30 + 127 clicks | - | to compare with a desktop dump |
+
+- **Movies.** The decoders are not slow (phone: AAC 5 ms per call, H.264 12.8 ms after faster picture copies,
+  MediaExtractor 0.3-0.4 ms per unit), but the MediaTek H.264 decoder holds pictures in flight and the players pace
+  themselves by the pictures' timestamps: F1's first movie took 6.25 s instead of 5 (one AAC frame in four became a
+  silent grain). Android's own decoder (`c2.android.avc.decoder`) answers in the same call, as the Vita does: 5.6 s, 45
+  gaps; no black frame in a recording. Still slower than the desktop's 4.8 s (open: the guest player threads).
+- **Latency.** The AAudio stream no longer requests 8192 frames: AAudio's own capacity (4104 frames, a 2052-frame
+  burst) halves the latency, 181 -> 96 ms, no underrun in Devious Dungeon (86 s) or Knightin'+. Still "normal shared":
+  `aaudio.mmap_policy` is 2 (auto) but the speaker's output thread has no fast or MMAP path on this phone.
+
 **Desktop revalidation** of the 34 installed games (Croixleur Sigma excluded; scratch data root with copied saves,
 sheets and the review in `scratchpad/phone2_shots/pc`): no crash; Sonic & All-Stars Racing still hangs at frame 29
 (known). New: The Deer God unpaced (214-348 fps), Shinobido 2 green line under the intro movie and
