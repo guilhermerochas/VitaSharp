@@ -88,10 +88,13 @@ public sealed unsafe partial class Arm64Emitter
         DirtyReg = 128,
         /// <summary>Stored constants that need MOVZ + MOVK (R15 values, addresses) come from the literal pool: one LDR.</summary>
         StoreLiteral = 256,
-        All = 511,
+        /// <summary>Linked static exits become direct branches patched into the code (<see cref="Runtime.PatchLinks"/>,
+        /// set by the runtime that owns the code arena; with pinned counters only).</summary>
+        PatchLinks = 512,
+        All = 1023,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -137,7 +140,26 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>The trampoline keeps the block counters in x26-x28 (<see cref="A64Opt.PinnedCounters"/>): blocks
         /// compiled for this runtime must account in them.</summary>
         public bool PinnedCounters;
+        /// <summary>Linked static exits are patched into direct branches (<see cref="A64Opt.PinnedCounters"/> code only):
+        /// each exit has a patch site, a B to the next instruction until linked, then a B to the target block; its link
+        /// slot is two words, the target and the patch site (<see cref="PatchSites"/>, <see cref="NativeRuntime.Link"/>).</summary>
+        public bool PatchLinks;
     }
+
+    /// <summary>Byte offsets in the last prepared block of each static exit's patch site (<see cref="Runtime.PatchLinks"/>),
+    /// indexed like the link slots; -1 where an exit has none.</summary>
+    public readonly List<int> PatchSites = new();
+
+    /// <summary>The B instruction from <paramref name="site"/> to <paramref name="target"/>, or 0 when out of range (+-128 MiB).</summary>
+    public static uint BranchWord(long site, long target)
+    {
+        long d = target - site;
+        if ((d & 3) != 0 || d < -(1L << 27) || d >= 1L << 27) return 0;
+        return 0x14000000u | (uint)((d >> 2) & 0x3FFFFFF);
+    }
+
+    /// <summary>An unlinked patch site: B to the next instruction (the link-slot path).</summary>
+    public const uint UnlinkedSiteWord = 0x14000001;
 
     bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck, _dirtyReg, _storeLit;
 
@@ -153,6 +175,7 @@ public sealed unsafe partial class Arm64Emitter
         _ir = ir;
         _rt = rt;
         _a.Reset();
+        PatchSites.Clear();
         var opts = Opts;
         _pin = rt.PinnedCounters;
         _backEdge = (opts & A64Opt.BackEdgeBreak) != 0;
@@ -537,6 +560,29 @@ public sealed unsafe partial class Arm64Emitter
                 // LinkBreak only on back edges: every cycle of linked blocks has an exit to an address at or below its
                 // block's start (forward chains end by themselves, at an unlinked exit or the pacing window)
                 bool linkBreak = !_backEdge || x.Imm <= _ir.StartPc;
+                if (_pin && _rt.PatchLinks)
+                {
+                    // linked: the patch site is a direct B to the target (no slot load, no indirect branch); unlinked it
+                    // falls into the slot path, which also serves a link whose target is out of B range
+                    int ret2 = a.NewLabel();
+                    EmitAccounting();
+                    a.BCond(Cond.GE, ret);                     // CycleAcc >= CheckWindow
+                    if (linkBreak) { LdState(X8, OffLinkBreak); a.Cbnz(X8, ret); }
+                    if (_checkExit) { LdState(X8, OffExit); a.Cbnz(X8, ret); }
+                    while (PatchSites.Count < exitIndex - 1) PatchSites.Add(-1);
+                    PatchSites.Add(a.Count * 4);
+                    a.Emit(UnlinkedSiteWord);
+                    a.LdrLit(X16, (ulong)slot);
+                    a.LdrX(X17, X16, 0);
+                    a.Cbz(X17, ret2, true);
+                    a.Br(X17);
+                    a.Bind(ret);
+                    a.LdrLit(X16, (ulong)slot);
+                    a.Bind(ret2);
+                    a.StrX(X16, State, OffLastExitSlot);
+                    JumpTo(_rt.Epilogue);
+                    return;
+                }
                 if (_pin)
                 {
                     // the slot address first (it is also the return path's LastExitSlot), the link target load early

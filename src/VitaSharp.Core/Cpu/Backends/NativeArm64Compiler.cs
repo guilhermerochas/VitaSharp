@@ -50,7 +50,9 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         var rt = NativeRuntime.Instance;
         int exits = 0;
         foreach (var x in ir.Insts) if (x.Op == IrOp.ExitStatic) exits++;
-        nint* slots = rt.AllocateSlots(exits);
+        // patched links: two words per exit, the target and the patch site (Arm64Emitter.Runtime.PatchLinks)
+        int stride = stubs.PatchLinks ? 2 : 1;
+        nint* slots = rt.AllocateSlots(exits * stride);
         var em = _emitter ??= new Arm64Emitter();
         nint tierUp = 0;
         if (NativeX64Compiler.TierUp && Jit.Chain.Contains(IlJitCompiler.Instance))
@@ -64,12 +66,15 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, stubs, k => (nint)(slots + k), tierUp)) return null;
+        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp)) return null;
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
         byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
+        if (stubs.PatchLinks)
+            for (int k = 0; k < em.PatchSites.Count; k++)
+                if (em.PatchSites[k] >= 0) slots[k * 2 + 1] = (nint)(code + em.PatchSites[k]);
         rt.Register((nint)code, size, b);
         if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)code, size, b.Start, b.Thumb);
         Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);

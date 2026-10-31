@@ -69,7 +69,9 @@ public sealed unsafe partial class NativeRuntime
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
                 PinnedCounters = pinned,
+                PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0,
             };
+            PatchLinks = Arm64Stubs.PatchLinks;
             return;
         }
         if (OperatingSystem.IsWindows())
@@ -111,6 +113,22 @@ public sealed unsafe partial class NativeRuntime
     /// (the desktop) keeps the transition: its reverse P/Invoke from cooperative mode is a fatal error.
     /// <see cref="EnvVars.NativeGcTransition"/>=on keeps it on Mono too.
     /// </summary>
+    /// <summary>ARM64: linked static exits are patched into direct branches (<see cref="Arm64Emitter.Runtime.PatchLinks"/>).</summary>
+    public readonly bool PatchLinks;
+
+    /// <summary>
+    /// Rewrites the patch site of a two-word link slot (target, site): a direct B to <paramref name="target"/>, or the
+    /// unlinked B to the slot path when it is 0. A B replaced by another B is one of the instructions the architecture
+    /// allows to be modified while other cores execute it; a target out of B range keeps the slot path.
+    /// </summary>
+    void PatchSite(nint slot, nint target)
+    {
+        nint site = ((nint*)slot)[1];
+        if (site == 0) return;
+        uint word = target == 0 ? Arm64Emitter.UnlinkedSiteWord : Arm64Emitter.BranchWord(site, target);
+        if (word != 0) Code.PatchWord((byte*)site, word);
+    }
+
     /// <summary>ARM64: native code that continues at the state's pc through the dispatch table
     /// (<see cref="Arm64Emitter.EmitDispatchEntry"/>); 0 elsewhere.</summary>
     public readonly nint ResumeEntry;
@@ -169,7 +187,7 @@ public sealed unsafe partial class NativeRuntime
     /// returns stay in native code without a trip through the dispatcher. Publishing writes key-invalid, code, key; readers
     /// check key, read code, check key again (x64 keeps loads in order), so a slot being republished is never misread.
     /// </summary>
-    public const int DispatchBits = 16;
+    public const int DispatchBits = 18;
     /// <summary>The runtime's own table: threads not bound to a process (tests). Every process has its own
     /// (<see cref="BlockCache.DispatchTable"/>): two processes can have different code at the same address.</summary>
     public readonly DispatchEntry* Dispatch = (DispatchEntry*)AllocateDispatchTable();
@@ -257,6 +275,7 @@ public sealed unsafe partial class NativeRuntime
             if (target.NativeEntry == 0 || target.Invalidated || NoLink) return;
             (target.LinkedFrom ??= new List<nint>()).Add(slot);
             Volatile.Write(ref *(nint*)slot, target.NativeEntry);
+            if (_instance is { PatchLinks: true } rt) rt.PatchSite(slot, target.NativeEntry);
         }
         Interlocked.Increment(ref Links);
     }
@@ -299,7 +318,11 @@ public sealed unsafe partial class NativeRuntime
         }
         if (b.LinkedFrom == null) return;
         foreach (var slot in b.LinkedFrom)
-            if (*(nint*)slot == entry) Volatile.Write(ref *(nint*)slot, 0);
+            if (*(nint*)slot == entry)
+            {
+                Volatile.Write(ref *(nint*)slot, 0);
+                if (_instance is { PatchLinks: true } rt) rt.PatchSite(slot, 0);
+            }
         Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
         b.LinkedFrom = null;
     }
