@@ -48,6 +48,7 @@ point a scenario reaches is not the end of the game.
 | 99Vidas | PCSE00914 | In‑game | Tutorial stage and first fights; Cross-Save through the local PSN services | `99vidas_boot` |
 | Blast 'Em Bunnies | PCSE00328 | In‑game | First level and tutorial | `bunnies_boot` |
 | Call of Duty: Black Ops Declassified | PCSB00232 | Menus | Logos and title screen | `cod_boot` |
+| Croixleur Sigma | PCSG00537 | In‑game | Help pages, opening, title menu, character select with the 3D model, story dialogue over the 3D scene at ~30 fps (Japanese release: Circle confirms; Vita3K crashes generating its shaders) | `croixleur_boot` |
 | Devious Dungeon | PCSB01240 | In‑game | 60 fps; also starts from the real shell's LiveArea | `dd_boot` |
 | F1 2011 | PCSE00002 | In‑game | Races with HUD, menus and video (from an existing profile: with fresh data the scenario stops at the driver name keyboard) | `f1_drive` |
 | Final Fantasy X HD Remaster | PCSE00293 | Menus | Launcher menu, then the game's opening scene with credits | `ffx_boot` |
