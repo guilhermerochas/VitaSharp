@@ -53,12 +53,17 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     readonly Stack<DecodedPicture> _free = new();
     readonly DecoderReplay _replay = new();
     int _skip;
+    // SceAvcdec hands a picture out in the call that decoded it; MediaCodec decodes asynchronously and holds several
+    // pictures in flight (IVideoDecoder.Asynchronous: SceAvcdec repeats or skips pictures to stay in step)
+    long _queued, _produced;
+    const long OutputGraceUs = 5_000;
     // output format (raw-buffer path and crop)
     int _width, _height, _stride, _sliceHeight, _colorFormat, _cropX, _cropY;
     bool _fullRange, _bt709;
 
     public string Name => $"mediacodec-{_codecName}";
     public bool IsHardware => _hardware;
+    public bool Asynchronous => true;
 
     MediaCodecVideoDecoder(string[] candidates, int maxWidth, int maxHeight)
     {
@@ -158,6 +163,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         Log.Warn($"MediaCodec: {failed} failed ({why}); continuing with {_codecName} from the last IDR picture");
         var (units, skip) = _replay.TakeReplay();
         _skip = skip;
+        _queued = _produced = 0;
         foreach (var (data, pts) in units) Send(data, pts);
     }
 
@@ -165,7 +171,14 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     {
         if (_codec == null) return;
         _replay.Add(accessUnit, pts);
-        try { Queue(accessUnit, pts, 0); Drain(); }
+        try
+        {
+            Queue(accessUnit, pts, 0);
+            Drain();
+            // a short grace for a picture already in the works; never longer: the MediaTek decoder holds several
+            // pictures in flight and waiting for each one (40 ms) slowed F1 2011's movies below real time
+            if (_codec != null && _ready.Count == 0 && _produced > 0 && _queued > _produced) Drain(OutputGraceUs);
+        }
         catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
     }
 
@@ -181,6 +194,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             if (n < data.Length) Log.WarnOnce("mediacodec-in-size", $"MediaCodec: access unit of {data.Length} bytes truncated to {n}");
             data[..n].CopyTo(new Span<byte>((void*)buf.GetDirectBufferAddress(), n));
             c.QueueInputBuffer(idx, 0, n, Math.Max(0, pts), flags);
+            if (n > 0) _queued++;
             return;
         }
         Log.WarnOnce("mediacodec-in", "MediaCodec: no input buffer available, access unit dropped");
@@ -193,6 +207,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         while (true)
         {
             int idx = c.DequeueOutputBuffer(_info, timeoutUs);
+            if (idx >= 0) timeoutUs = 0; // waited for one buffer; the rest only if already there
             if (idx == InfoOutputFormatChanged) { ReadOutputFormat(c.OutputFormat); continue; }
             if (idx == InfoOutputBuffersChanged) continue;
             if (idx < 0) return false; // InfoTryAgainLater
@@ -203,6 +218,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 if (p != null)
                 {
                     Interlocked.Increment(ref Pictures);
+                    _produced++;
                     _replay.Produced();
                     if (_skip > 0) { _skip--; Recycle(p); }
                     else _ready.Enqueue(p);
@@ -292,6 +308,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         }
         catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
         _replay.Clear();
+        _queued = _produced = 0;
     }
 
     public void Reset()
@@ -300,6 +317,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
         while (_ready.Count > 0) Recycle(_ready.Dequeue());
         _replay.Clear();
+        _queued = _produced = 0;
         _skip = 0;
     }
 

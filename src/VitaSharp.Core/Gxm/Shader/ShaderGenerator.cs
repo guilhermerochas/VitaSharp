@@ -153,6 +153,22 @@ public static class ShaderGenerator
     /// </summary>
     public static bool LowerDynamicIndexing;
 
+    /// <summary>How the GXM far plane (z &lt;= w after the depth transform) is clipped; GXM does not clip at the near plane.</summary>
+    public enum FarPlaneClip
+    {
+        /// <summary>gl_ClipDistance[0] = w - z (the renderer enables depth clamp, which turns off the hardware's far clip).</summary>
+        ClipDistance,
+        /// <summary>No shaderClipDistance (Mali), depth clamp on: w - z is passed as a varying (location 14) and the
+        /// fragment shader discards where it is negative (GpuQuirk.FarPlaneDiscard).</summary>
+        Discard,
+        /// <summary>No shaderClipDistance, no depth clamp: the hardware clips the far plane (and the near plane) itself.</summary>
+        Hardware,
+    }
+
+    /// <summary>The far-plane clip of the generated shaders. Every mode except <see cref="FarPlaneClip.ClipDistance"/>
+    /// (the default; its GLSL is byte-identical to before) changes the shaders and is part of the shader cache key.</summary>
+    public static FarPlaneClip FarPlane = FarPlaneClip.ClipDistance;
+
     /// <summary>Read/write helpers of the dynamically indexed banks (<see cref="LowerDynamicIndexing"/>).</summary>
     static string DynHelpers(IEnumerable<string> banks)
     {
@@ -404,6 +420,13 @@ float packC10(vec3 c) {
 
         if (vertex) EmitVertexFinalize(program, t, decl);
         else EmitFragmentFinalize(program, hints, t, decl, result);
+        if (!vertex && FarPlane == FarPlaneClip.Discard)
+        {
+            // the far-plane clip without gl_ClipDistance, after everything else: texture derivatives stay in uniform
+            // control flow, the fragment's outputs are dropped with it
+            decl.AppendLine("layout(location = 14) in float v_FarClip;");
+            t.Line("if (v_FarClip < 0.0) discard;");
+        }
 
         result.WritesDepth = t.UsesFragDepth;
 
@@ -959,6 +982,11 @@ float packC10(vec3 c) {
             string name = loc switch { 1 => "v_Color0", 2 => "v_Color1", 3 => "v_Fog", _ => $"v_TexCoord{loc - 4}" };
             decl.AppendLine($"layout(location = {loc}) out vec4 {name};");
         }
+        if (FarPlane == FarPlaneClip.Discard)
+        {
+            decl.AppendLine("layout(location = 14) out float v_FarClip;");
+            t.Line("v_FarClip = 0.0;");
+        }
         var written = new HashSet<string>();
         int num = 0;
         foreach (var (flag, name, count, loc) in list)
@@ -983,7 +1011,8 @@ float packC10(vec3 c) {
                 t.Line("gl_Position = vpos;");
                 t.Line("gl_Position.z = vpos.z * rinfo.z_scale + rinfo.z_offset * vpos.w;");
                 t.Close();
-                t.Line("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;");
+                if (FarPlane == FarPlaneClip.ClipDistance) t.Line("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;");
+                else if (FarPlane == FarPlaneClip.Discard) t.Line("v_FarClip = gl_Position.w - gl_Position.z;");
             }
             else if (flag == GxpProgram.OutPsize)
             {

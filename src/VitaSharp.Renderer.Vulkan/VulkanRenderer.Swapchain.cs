@@ -54,7 +54,9 @@ public sealed unsafe partial class VulkanRenderer
             _suboptimalExpected = true;
         }
         if (extent.Width == 0 || extent.Height == 0) { _swapchainDirty = true; return; }
-        uint count = Math.Max(caps.MinImageCount + 1, 3);
+        // Android: 3 images (triple buffering under FIFO) unless the driver needs more; minImageCount + 1 there gave 4
+        // on drivers that report 3, one more frame of latency for nothing. The desktop is unchanged.
+        uint count = OperatingSystem.IsAndroid() ? Math.Max(caps.MinImageCount, 3) : Math.Max(caps.MinImageCount + 1, 3);
         if (caps.MaxImageCount > 0) count = Math.Min(count, caps.MaxImageCount);
         var old = _swapchain;
         var ci = new SwapchainCreateInfoKHR

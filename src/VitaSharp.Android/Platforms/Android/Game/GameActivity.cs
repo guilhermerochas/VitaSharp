@@ -42,6 +42,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         new(SystemTitleId, "Sistema do Vita", "", "sys", System.IO.Path.Combine(AppServices.Data.Fs, "vs0", "vsh", "shell"), null, 0);
 
     EmulationSession? _session;
+    GameDisplayTuning? _displayTuning;
     AndroidVulkanSurface? _surface;
     SurfaceView? _view;
     OnScreenControlsView? _controls;
@@ -50,7 +51,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     AndroidInput? _input;
     InputManager? _inputManager;
     System.Threading.Timer? _fpsTimer;
-    long _lastFrames;
+    long _lastFrames, _framesAtLog, _fpsTicks;
     bool _menuOpen, _isSystem, _endedShown;
 
     /// <summary>Starts a game from the UI process.</summary>
@@ -95,6 +96,11 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
 
         var prefs = AppServices.Prefs;
         _input = new AndroidInput(_pad, AppServices.Gamepads);
+        if (System.Environment.GetEnvironmentVariable(EnvVars.AndroidInput) is { Length: > 0 } script)
+        {
+            try { _input.Script = new ScriptedPad(script); Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
+            catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
+        }
         // the shell takes the PS button itself (the running game's LiveArea); a game on its own opens the pause menu
         if (system) _pad.Layout = OnScreenPad.SystemLayout;
         else _pad.PsPressed += OnPsPressed;
@@ -147,6 +153,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             return;
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
+        _displayTuning = GameDisplayTuning.Start(this, _view!, _session.Performance);
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
@@ -162,6 +169,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         if (holder.Surface is not { IsValid: true } s) return;
         _surface = new AndroidVulkanSurface(s);
         _session?.SurfaceCreated(_surface);
+        _displayTuning?.SurfaceCreated();
     }
 
     public void SurfaceChanged(ISurfaceHolder holder, Format format, int width, int height)
@@ -341,6 +349,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         long fps = frames - _lastFrames;
         _lastFrames = frames;
         _fps.Text = _session.Paused ? "Pausado" : $"{fps} FPS";
+        // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
+        if (++_fpsTicks % 30 == 0 && !_session.Paused)
+        {
+            Log.Info($"[perf] {(frames - _framesAtLog) / 30.0:F1} fps over 30 s, {frames} frames");
+            if (Core.Cpu.Jit.Enabled) Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
+            Log.Info($"[perf] audio: {_session.AudioSummary}");
+            _framesAtLog = frames;
+        }
         _fps.Visibility = _session.Settings.ShowFps || _session.Paused ? ViewStates.Visible : ViewStates.Invisible;
     }
 

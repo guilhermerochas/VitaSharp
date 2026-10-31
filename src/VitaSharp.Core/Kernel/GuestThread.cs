@@ -167,7 +167,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         Live[this] = 0;
         // the HLE calls of this thread (and the tasks they start) work in its process's address space
         Memory.AddressSpace.Enter(_emu.Space);
-        Util.NativeThread.Register(Name);
+        Util.NativeThread.Register(Name, Util.NativeThread.Role.Guest);
         Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;
         bool delete = false;

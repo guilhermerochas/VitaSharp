@@ -7,6 +7,7 @@ namespace VitaSharp.Tests;
 /// Colour output of native-colour fragment programs created with an explicit output register format (Tearaway: half4
 /// declared, UCHAR4 output registers, colour packed to U8 by the program itself), with instructions from its menu.
 /// </summary>
+[Collection("shadergen")]
 public class NativeColorOutputTests
 {
     // pa0.x = VPCK.U8.F16 scaled (pa0.z, pa0.w); pa0.y = VPCK.F16 sa0; o0..o1 = VMOV.F16 pa0..pa1 (fs A726102642A48D16)

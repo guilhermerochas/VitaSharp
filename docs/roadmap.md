@@ -35,9 +35,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Knightin'+ chega ao menu e Devious Dungeon ao load com o JIT nativo x64; corrigidos o crash do `GameActivity`, a
   swapchain recriada a cada quadro e o `SignExtend` que o JIT do Mono compilava errado; resultados em
   `docs/android/README.md`, "Emulator run")
-- [ ] Primeira execução num aparelho ARM64: JIT nativo ARM64 sob o SELinux, drivers Adreno/Mali, libadrenotools,
-  AAudio de baixa latência, controle Bluetooth, giro de 180°, MediaCodec de hardware (o que falta da lista no fim de
-  `docs/android/README.md`)
+- [x] Primeira execução num aparelho ARM64 (30/10/2026: Redmi Note 14, Helio G99, Mali-G57: JIT nativo ARM64 sob o
+  SELinux, driver Mali sem `shaderClipDistance` (plano distante pelo fragment shader, `FarPlaneDiscard`), MediaCodec de
+  hardware, AAudio; Devious Dungeon, Knightin'+, F1 2011, Persona 4 Golden, Killzone e Uncharted; resultados em
+  `docs/android/README.md`, "Phone run")
+- [ ] Aparelho Adreno: driver da Qualcomm, libadrenotools (driver customizado, BCeNabler), controle Bluetooth, giro de
+  180° (o que falta da lista no fim de `docs/android/README.md`)
+- [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
+  FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
+  `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
+- [ ] Uncharted no celular: na tela de título, um quadro escuro e velho do filme de fundo a cada ~5 s (não é o caso
+  "decodificador sem quadro"; 30/10/2026, Redmi Note 14); achar de onde vem o quadro velho (ring de buffers do
+  player do jogo com a CPU lenta, ou o cache de texturas da imagem YUV)
+- [ ] F1 2011 no celular: quadros pretos nos filmes, porque o player do jogo pula o desenho do quadro quando o
+  decodificador atrasa (CPU lenta: ~20 fps; reproduz no PC com `--cpu-mhz=120`); some com a velocidade nativa (item
+  abaixo), conferir depois
 - [ ] Teclado físico no jogo (setas/letras para os botões, como no desktop): hoje só controles de jogo e a tela
 - [ ] Linhas de fim de sessão no Android (`AUDIO summary`, `PERF gpu`, `PERF mobile`, relatório do backend de CPU):
   o desktop as escreve no fim do `Runner`, o app não
@@ -51,7 +63,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   layout)
 - [ ] Sensores do celular alimentando o SceMotion (interface `IMotionSource` já existe no Core) e câmera do celular
   no SceCamera
-- [ ] Validar num aparelho Adreno e Mali a camada de quirks de GPU (`docs/notes/mobile-gpu.md`): quais contornos
+- [ ] Validar num aparelho Adreno a camada de quirks de GPU (na Mali-G57 nenhum contorno fez diferença visível, 30/10/2026;
+  `docs/notes/mobile-gpu.md`): quais contornos
   continuam necessários, `VK_EXT_rasterization_order_attachment_access` (nunca executado), o ganho real dos
   load/store por cena no perfilador do aparelho, o caminho de render passes (Vulkan 1.1) num Adreno 6xx com driver
   antigo e a qualidade/velocidade da conversão para ASTC (item 10 da lista em `docs/android/README.md`)
@@ -69,13 +82,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Android como reserva, filmes do SceAvPlayer pelo MediaExtractor com AAC pelo MediaCodec, AAudio de baixa latência na
   taxa do aparelho com AudioTrack no Android 8.0, a mesma política de buffer do OpenAL e reabertura quando o aparelho de
   saída muda; falta testar num aparelho, itens 7 e 8 da lista em `docs/android/README.md`)
-- [ ] SceAudiodec (MP3/AAC) e SceMp4 no Android: ainda usam o FFmpeg, que o app não leva (os filmes do SceAvPlayer já
+- [ ] SceAudiodec MP3 no Android: ainda usa o FFmpeg, que o app não leva (AAC e SceMp4 já vão pelo MediaCodec e pelo
+  MediaExtractor desde 30/10/2026, e os filmes do SceAvPlayer já
   tocam sem ele)
 - [ ] Velocidade nativa no celular (meta: o fps do jogo no Vita; medir Knightin'+, Devious Dungeon e F1 2011 no
   Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
-  - [ ] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF)
-  - [ ] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
-    controle de velocidade da CPU emulada sem esperas à toa
+  - [x] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF) (30/10/2026,
+    branch feat/android-speed-1: clusters lidos do sysfs, thread principal e GPU nos núcleos rápidos, sessão ADPF com o
+    tempo de trabalho por quadro, `VITASHARP_ANDROID_AFFINITY=off` para comparar; falta medir no Redmi Note 14,
+    roteiro em `docs/android/README.md`, "CPU cores and ADPF")
+  - [x] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
+    controle de velocidade da CPU emulada sem esperas à toa (30/10/2026, mesmo branch: logcat só com avisos e erros a
+    partir do primeiro quadro, FIFO com 3 imagens, `Surface.setFrameRate` com o fps do jogo, nenhuma espera girando
+    no celular; o Swappy ficou de fora por ser biblioteca nativa, ver "Frame pacing" no README; falta medir)
   - [ ] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
     registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante
   - [ ] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android
@@ -91,6 +110,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+- [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
+  a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
+  e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
+  `SceCameraCoreCameraDeviceThread` espera em `condvar SceCameraCoreCameraDeviceLoopStatusCond` e a outra está Dormant.
+  Funções que faltam no caminho: `ScePhotoExport::NID_16B1028E`, `SceLibLocation::NID_EFC9BD25` / `NID_2311B24A`,
+  `sceAppMgrMmsMount`, `_vshAppMgrRegisterPath`, `sceKernelCheckModelCapability`, e um `IO: unmapped path ''` logo
+  antes de criar as threads da câmera
 
 ## Código
 
@@ -101,6 +127,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   outros branches abertos (o diff toca quase todos os arquivos)
 
 ## Bugs em aberto
+
+- [ ] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
+  frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
+  skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
+  cruza o plano próximo sem recorte). Captura F10 em `%APPDATA%\VitaSharp\diagnostics\PCSE00093_20261030_204939`
+  (127 quadros em `replay/`, 109 desenhos em `draws.txt`; aviso de profundidade de cena MSAA lida como textura
+  X8U24 960x1088) (30/10/2026, main 4dbe06c)
+
+- [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
+  biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
+  locationDelta < 0, voiceLocation = 0x0, previous = 0x700…` — a posição de leitura que a voz NGS informa volta a 0
+  em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
+  campo é acumulado (pode causar música repetindo ou cortando em outros jogos com SndStream). Também:
+  `sce_scream_api.cpp(1385): Invalid parameter` na inicialização do som e `sceNetInit` chamado duas vezes (o
+  segundo recebe EBUSY, como no firmware; o jogo segue)
 
 - [ ] Gravity Rush: na tela de título "Tap the Apple", um toque registra (a maçã balança e o aviso some por ~180 quadros) mas não pega a maçã nem avança; igual em 0,46/0,48 e no centro, nos quadros 1000 e 1400 (29/10/2026, main c12927d, `gr_boot.txt` só com o toque); a diferença antiga "0,46/0,48 falha, centro funciona" não se repete. Falta saber se o Vita exige outro gesto (segurar, tocar na maçã de outro jeito)
 - [ ] Killzone: depois da correção dos blocos, cada tiro clareia a cena por 1–3 quadros e às vezes deixa a tela inteira com um brilho forte (a luz do disparo agora é aplicada); confirmar a intensidade com o Vita real (não dá para conferir aqui)

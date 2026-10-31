@@ -126,6 +126,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;
         // Qualcomm proprietary driver: dynamically indexed register words through switch helpers (GLSL changes only then)
         Core.Gxm.Shader.ShaderGenerator.LowerDynamicIndexing = _core.Caps.Has(GpuQuirk.DynamicIndexLowering);
+        // the GXM far plane: a clip distance, else a fragment discard (depth clamp on) or the hardware's own clip
+        Core.Gxm.Shader.ShaderGenerator.FarPlane = _core.Caps.Has(GpuQuirk.FarPlaneDiscard) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Discard
+            : _core.Caps.Has(GpuFeature.ShaderClipDistance) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.ClipDistance
+            : Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Hardware;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
@@ -457,6 +461,27 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         return f;
     }
 
+    /// <summary>
+    /// The host format a colour surface renders in: its own whenever the GPU can render to it, blendable or not, else
+    /// RGBA8. Mali cannot blend 32-bit float formats: requiring blending turned Uncharted's R32G32_SFLOAT surface
+    /// (guest 0x11000000, 8 bytes per pixel) into RGBA8, which skipped its raw 32-bit outputs and could not be written
+    /// back to memory (the title screen's background stayed black). Draws with blending into a target that cannot blend
+    /// render unblended (<see cref="BlendSupported"/>).
+    /// </summary>
+    Format RenderableFormat(Format f) => BlendSupported(f) || _core.SupportsUnblendedColorAttachment(f) ? f : Format.R8G8B8A8Unorm;
+
+    readonly Dictionary<Format, bool> _blendOk = new();
+
+    /// <summary>The format supports blending as a colour attachment (cached).</summary>
+    bool BlendSupported(Format f)
+    {
+        lock (_blendOk)
+        {
+            if (!_blendOk.TryGetValue(f, out bool ok)) _blendOk[f] = ok = _core.SupportsColorAttachment(f);
+            return ok;
+        }
+    }
+
     RenderTarget GetRenderTarget(ColorSurfaceInfo c)
     {
         var key = (c.Data, c.Width, c.Height, c.ColorFormat);
@@ -473,7 +498,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             else DestroyLater(old);
             _mirroredRt.Remove(old);
         }        var format = SurfaceFormat(c.ColorFormat);
-        if (!_core.SupportsColorAttachment(format)) format = Format.R8G8B8A8Unorm;
+        format = RenderableFormat(format);
         // input attachment: programmable-blending draws of one-sample scenes read it in a render pass (VulkanRenderer.SingleFetch.cs)
         var (img, view, mem) = CreateImage(MemCat.RenderTarget, c.Width, c.Height, format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
