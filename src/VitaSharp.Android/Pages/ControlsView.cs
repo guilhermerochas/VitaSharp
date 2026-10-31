@@ -83,6 +83,9 @@ public sealed class ControlsView : Screen<ControlsState>
                     ToggleRow("Esconder com controle conectado", prefs.HideOnScreenWithGamepad,
                         v => { prefs.HideOnScreenWithGamepad = v; AppServices.SavePrefs(); SetState(s => s.Revision++); })
                 ),
+                SectionTitle("Movimento"),
+                Card(Row("Sensores de movimento", AndroidMotionModes.Label(AndroidMotionModes.Resolve(prefs.Motion, PhoneHasMotionSensors())), ChooseMotion,
+                    detail: "Inclinação e giroscópio do Vita (SceMotion); Recentralizar fica no menu de pausa")),
                 Note("No jogo: TRÁS liga o toque traseiro (os toques na imagem vão para o painel de trás); PS abre o menu de pausa " +
                      "quando o jogo roda sem o sistema. O botão Home/PS do controle faz o mesmo.")
             ));
@@ -134,6 +137,31 @@ public sealed class ControlsView : Screen<ControlsState>
         if (v == null) return;
         float dz = int.Parse(v) / 100f;
         SaveProfile(x => { x.LeftStick.Deadzone = dz; x.RightStick.Deadzone = dz; });
+    }
+
+    static bool PhoneHasMotionSensors()
+    {
+        var sm = (global::Android.Hardware.SensorManager?)AppServices.AppContext.GetSystemService(global::Android.Content.Context.SensorService);
+        return sm?.GetDefaultSensor(global::Android.Hardware.SensorType.Accelerometer) != null
+            && sm.GetDefaultSensor(global::Android.Hardware.SensorType.Gyroscope) != null;
+    }
+
+    /// <summary>"Movimento": the phone's sensors (the default when it has them), a controller's, or off (the desktop's
+    /// motion source setting; the hardware keyboard's tilt keys take over while no sensor device feeds).</summary>
+    async void ChooseMotion()
+    {
+        bool phone = PhoneHasMotionSensors();
+        var choices = new List<Settings.Choice>
+        {
+            new(AndroidMotionModes.Phone, AndroidMotionModes.Label(AndroidMotionMode.Phone) + (phone ? "" : " (este aparelho não tem)")),
+            new(AndroidMotionModes.Controller, AndroidMotionModes.Label(AndroidMotionMode.Controller) + " (Android 12+)"),
+            new(AndroidMotionModes.Off, AndroidMotionModes.Label(AndroidMotionMode.Off)),
+        };
+        var v = await Choose("Movimento", choices);
+        if (v == null) return;
+        AppServices.Prefs.Motion = v;
+        AppServices.SavePrefs();
+        SetState(s => s.Revision++);
     }
 
     async void Opacity()

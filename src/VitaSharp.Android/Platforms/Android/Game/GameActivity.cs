@@ -50,6 +50,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     readonly OnScreenPad _pad = new();
     AndroidKeyboard? _keyboard;
     AndroidInput? _input;
+    GameSensors? _sensors;
     InputManager? _inputManager;
     System.Threading.Timer? _fpsTimer;
     long _lastFrames, _framesAtLog, _fpsTicks;
@@ -104,6 +105,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             try { _input.Script = new ScriptedPad(script); Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
             catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
         }
+        _sensors = new GameSensors(this); // SceMotion from the phone's sensors, SceCamera from its cameras
         // the shell takes the PS button itself (the running game's LiveArea); a game on its own opens the pause menu
         if (system) _pad.Layout = OnScreenPad.SystemLayout;
         else _pad.PsPressed += OnPsPressed;
@@ -161,6 +163,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
         _session.SetTextInput(ime, ime);
+        _sensors?.Attach(_session);
         if (_surface != null) _session.SurfaceCreated(_surface);
         _fpsTimer = new System.Threading.Timer(_ => RunOnUiThread(UpdateFps), null, 1000, 1000);
     }
@@ -207,6 +210,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         _pad.Reset();
         _keyboard?.ReleaseAll();
         _session?.Pause();
+        _sensors?.Pause();
     }
 
     protected override void OnResume()
@@ -214,6 +218,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         base.OnResume();
         EnterImmersive();
         if (!_menuOpen) _session?.Resume();
+        _sensors?.Resume();
+    }
+
+    // the CAMERA permission, asked when a game first starts a camera (AndroidCamera)
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        if (_sensors?.OnRequestPermissionsResult(requestCode, permissions, grantResults) != true)
+            base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     public override void OnWindowFocusChanged(bool hasFocus)
@@ -232,6 +244,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         _inputManager?.UnregisterInputDeviceListener(this);
         _session?.Dispose();
         _session = null;
+        _sensors?.Dispose();
         _surface?.Dispose();
         base.OnDestroy();
         // the game process exists for one game: end it so the next game starts clean
@@ -409,6 +422,7 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             "Continuar",
             _pad.RearTouch ? "Toque traseiro: ligado" : "Toque traseiro: desligado",
             _pad.Visible ? "Esconder controles na tela" : "Mostrar controles na tela",
+            .. (_sensors?.CanRecenter == true ? new[] { "Recentralizar movimento" } : []),
             "Sair do jogo",
         ];
         var title = _session != null ? $"{_session.Game.Title}" : "VitaSharp";
@@ -420,7 +434,8 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
                 {
                     case 1: _pad.RearTouch = !_pad.RearTouch; break;
                     case 2: _pad.Visible = !_pad.Visible; break;
-                    case 3: Leave(); return;
+                    case var last when last == items.Length - 1: Leave(); return;
+                    case 3: _sensors?.Recenter(); break; // "Recentralizar movimento"
                 }
                 _controls?.Invalidate();
             })!

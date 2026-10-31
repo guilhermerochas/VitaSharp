@@ -9,6 +9,12 @@
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.VIBRATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- SceCamera: the phone's cameras, asked at run time when a game first starts a camera (denied = grey frames) -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
+  <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+  <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+  <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
   <application
       android:label="VitaSharp"
       android:icon="@mipmap/ic_launcher"

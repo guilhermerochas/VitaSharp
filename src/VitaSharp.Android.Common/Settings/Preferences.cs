@@ -33,6 +33,9 @@ public sealed class AppPreferences
     public bool HideOnScreenWithGamepad { get; set; } = true;
     /// <summary>Vibrate briefly on an on-screen button press.</summary>
     public bool Haptics { get; set; } = true;
+    /// <summary>"Movimento": what drives SceMotion, "" = automatic (the phone's sensors when it has them, else a
+    /// controller's), "phone", "controller" or "off" (Input.AndroidMotionModes).</summary>
+    public string Motion { get; set; } = "";
     /// <summary>"Som de troféu": a chime with the in-game trophy notification (the firmware's notice sound, else a
     /// built-in one; same as the desktop launcher's option, --trophy-sound=).</summary>
     public bool TrophySound { get; set; } = true;
