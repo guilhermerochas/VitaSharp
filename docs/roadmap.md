@@ -17,6 +17,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
+- [ ] Reflexão o mínimo possível (desktop e Android; ajuda o Native AOT, o Mono AOT e o tempo de início). Hoje
+  (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
+  `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o
+  backend IL do JIT, que precisa dele). Análises e trocas:
+  - [ ] Auditar cada uso e trocar por geradores de código (source generators) ou tabelas fixas: atributos lidos em
+    tempo de execução viram tabelas geradas na compilação; enums com `switch` gerado em vez de `Enum.ToString/Parse`
+  - [ ] Ligar os analisadores de trimming/AOT (`IsAotCompatible`, `EnableTrimAnalyzer`, `EnableAotAnalyzer`) em todos
+    os projetos com aviso tratado como erro, para nenhum uso novo entrar sem ser visto (IL2026/IL3050)
+  - [ ] Conferir o JSON: todos os `JsonSerializer` com contexto gerado (sem o serializador por reflexão como reserva;
+    `JsonSerializerIsReflectionEnabledByDefault=false`)
+  - [ ] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
+    (tabelas de HLE, NIDs, formatos) — gerar na compilação o que hoje é montado ao iniciar
+  - [ ] Caminhos quentes sem custos escondidos: boxing, `params object[]`, interpolação de string em logs desligados
+    (usar `[InterpolatedStringHandler]`/checar o nível antes), LINQ e lambdas que alocam por quadro, `ToString()` de
+    enums em logs; medir com o contador de alocações (`PERF allocated`) e zerar o que for por quadro
+  - [ ] Backend IL do JIT (único uso real de `Reflection.Emit`): manter só onde não há JIT nativo e documentar
 - [ ] Instalação de `.pkg` + `work.bin` muito lenta no build Native AOT do desktop (relato do usuário, 31/10/2026: a
   "transferência de arquivos" demora demais): medir a vazão em MB/s do `PkgInstaller` no pacote AOT contra o build
   JIT do mesmo commit, por etapa (leitura do `.pkg`, descriptografia AES-CTR com a klicensee, PFS/arquivos,
