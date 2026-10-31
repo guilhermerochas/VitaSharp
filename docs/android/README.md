@@ -3,9 +3,10 @@
 `src/VitaSharp.Android` is a .NET MAUI Android app (MauiReactor screens, a native game activity with a Vulkan
 SurfaceView) that builds into an installable APK. It has run on the **x86_64 Android emulator** (30/10/2026, results in
 [Emulator run](#emulator-run-30102026)): every screen, two games to their menus on the native x64 JIT, the surface,
-pause/resume, AAudio and the on-screen controls. It has **not run on a phone yet**: the ARM64 JIT, the Adreno/Mali
-drivers, libadrenotools and real controllers are still unverified (the checklist at the end). On-screen text is in
-Portuguese, like the desktop launcher.
+pause/resume, AAudio and the on-screen controls. It has also run on a **phone** (Redmi Note 14, Mali-G57, 30/10/2026:
+[Phone run](#phone-run-redmi-note-14-mali-g57-30102026)): the native ARM64 JIT, the Mali driver, AAudio, MediaCodec
+movies and six games. Adreno (and libadrenotools) and real controllers are still unverified (the checklist at the end).
+On-screen text is in Portuguese, like the desktop launcher.
 
 ## Building
 
@@ -291,6 +292,59 @@ Screenshots of the run are not committed (they show game content).
 proprietary driver behaviour and every quirk of the table, libadrenotools (custom drivers, BCeNabler, file redirect,
 turbo), `VK_EXT_rasterization_order_attachment_access`, tile memory savings, AAudio low-latency/exclusive streams and
 output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° rotation, thermal behaviour and speed.
+(The phone run below covered the JIT, the Mali driver, MediaCodec, AAudio shared streams, thermals and speed.)
+
+## Phone run: Redmi Note 14, Mali-G57 (30/10/2026)
+
+**Device:** Xiaomi Redmi Note 14 (24117RN76L, "tanzanite"), MediaTek MT6789 (Helio G99: 2x Cortex-A76 2.2 GHz + 6x
+A55 2.0 GHz), Mali-G57 MC2 (Vulkan 1.3, driver r54 `ArmProprietary 54.1.0`), 8 GB, Android 16 (HyperOS), arm64-v8a,
+2400x1080. Games and `.rif` licences in the app's own folder (`ux0/app`, `ux0/license`), no firmware (HLE).
+
+**First failure:** "Mali-G57 MC2 lacks shaderClipDistance (needed for the GXM far plane)": the renderer required clip
+distances, which Mali does not have. Fixed with a fragment-shader far-plane clip (`GpuQuirk.FarPlaneDiscard`); the
+device's full capability list and its quirks are in the [mobile GPU notes](../notes/mobile-gpu.md#real-device-mali-g57-mc2-30102026).
+
+**Driving the phone from the PC.** HyperOS refuses `adb shell input` (INJECT_EVENTS) unless "USB debugging (Security
+settings)" is on, a system setting this run did not change. Instead:
+
+- the launcher intent takes a title: `adb shell am start -n io.github.vitasharp/crc64ca1c02f6e48bb1c7.MainActivity
+  --es titleId PCSB01240` (`adb shell cmd package resolve-activity --brief io.github.vitasharp` prints the activity);
+- `VITASHARP_ANDROID_INPUT` in `config/env.txt` scripts the pad: `cross@20,start@31:0.5,lstick@40:1:0:2,tap@50:0.5:0.6`
+  (ScriptedPad, seconds since the game first read the pad; buttons, sticks, front/rear taps);
+- `VITASHARP_AUDIO_DUMP=<folder>` writes the guest's audio as WAVs (as the desktop's `--audio-dump`);
+- every 30 s the game log gets `[perf]` lines: fps, the CPU backends' statistics, the audio streams;
+- `build/android-device-test.ps1` (or `.sh`) does a whole run: pushes the game if it is not on the phone, runs it
+  with a pad script, collects `last.log`, screenshots, the audio WAVs and a summary, and removes the game again
+  (`-Keep` / `KEEP=1` keeps it). Only the app's files folder is touched.
+
+| Game | Result on the phone |
+|---|---|
+| Devious Dungeon (PCSB01240, Unity) | title, story, menus correct; 6-11 fps in the first 30 s (loading, JIT warm-up: the Unity main thread at 93 % of an A76), 46 fps the next 30 s, then 55-60 fps |
+| Knightin'+ (PCSE01444, Construct 2) | logos, title, story scroll correct; 27-30 fps (the game's 30) |
+| F1 2011 (PCSE00002) | was black (SceMp4 needed FFmpeg); now the intro movies play through MediaExtractor + MediaCodec (`c2.mtk.avc.decoder` hardware, `c2.android.aac.decoder`) with sound; about 20 fps in the menus. Movies show black frames: the game's movie player skips its picture draw when its decoder thread is late (CPU-bound; reproduced on the desktop with `--cpu-mhz=120`, see the GPU notes) |
+| Persona 4 Golden (PCSB00245) | CRIWARE logo, PSN prompt, opening movie (AvPlayer-style player on SceMp4/SceAvcdec/AAC), title and main menu; 26-30 fps (the game's 30) |
+| Killzone Mercenary (PCSC00045) | intro, main menu, into gameplay with correct 3D (BC/PVRTC-II transcoded to ASTC, 4X MSAA); menus 22-29 fps, the first gameplay seconds 1-3 fps (shader/pipeline compiles and transcodes on a first run) |
+| Uncharted: Golden Abyss (PCSA00029) | intro movie, title and main menu at 21-27 fps. Two bugs found and fixed: the title's background stayed black (its R32G32_SFLOAT surface fell back to RGBA8 because the Mali cannot blend 32-bit float formats; the renderer now keeps any renderable format and draws blended draws into it unblended), and the game screen said "O jogo terminou" during the game's LoadExec (launcher to `uncharted.self`). Open: a single dark, stale movie picture about every 5 s on the title background (not the decoder's "no picture" case; cause not found yet) |
+
+- **CPU:** `CPU backend selected: native` (NativeArm64Compiler), and it executes: Devious Dungeon 28k blocks (164k
+  guest instructions, about 160 µs per block to compile), Killzone 32k blocks, no rejections; HyperOS's SELinux allows
+  the dual-mapped code. The phone is CPU-bound everywhere: slow first minutes (compiling) and F1's 20 fps.
+- **Audio:** AAudio at 48 kHz, but only as a *normal shared* stream: the track lands on the speaker's primary mixer
+  thread, which has no FastMixer on this phone (`dumpsys media.audio_flinger`: flags 0x0, HAL period 1024 frames), so
+  the reported burst is 4096 frames and the latency about 180-230 ms; no underruns on the device side in any run.
+  Garbled sound in Devious Dungeon's first 90 s was the guest's own: its WAV repeats whole 512-frame grains (428
+  discontinuities, none on the desktop) only while the game ran at 6-46 fps, i.e. its mixer thread missed deadlines;
+  at 60 fps the sound is clean. F1's movie sound has the game's own silence grains for the same reason.
+- **Video:** SceAvcdec through the hardware decoder. MediaCodec is asynchronous (pictures come out one or more calls
+  late): Videodec repeats the previous picture rather than returning none, and drops older pictures when several
+  arrive at once; blocking for every picture made the movies slower than real time.
+- **On-screen controls:** drawn over the image and used by hand on the phone (the scripted pad drove the runs).
+- **Thermals:** no throttling: thermal status 0 after an hour of runs, skin 36.5 °C, battery 30 -> 34 °C (charging
+  over USB).
+
+**Fixed during the run:** `shaderClipDistance` required; colour surfaces whose format renders but cannot blend on the GPU (R32G32_SFLOAT on Mali) fell back to RGBA8 (Uncharted's black title background); "O jogo terminou" shown during a LoadExec (`Emulator.Execing`); SceMp4 and SceAudiodec AAC without FFmpeg (MediaExtractor,
+MediaCodec); `MediaFormat` csd buffers are heap buffers (`GetDirectBufferAddress` 0: a crash in the demuxer, latent in
+`AndroidMediaPlayer`); the asynchronous decoder behaviour above; the Vulkan error hint mentioned `vulkan-1.dll`.
 
 ## Before the first run: what the emulator/device step must verify
 

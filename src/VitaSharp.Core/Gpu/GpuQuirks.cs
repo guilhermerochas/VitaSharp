@@ -57,6 +57,11 @@ public enum GpuFeature : long
     /// <summary>Extended dynamic state 1 and 2 (Vulkan 1.3 core). Without it the state is baked into the pipelines
     /// (<see cref="GpuQuirk.StaticExtendedDynamicState"/>, <see cref="GpuQuirk.StaticDepthBiasEnable"/>).</summary>
     ExtendedDynamicState = 1L << 23,
+    /// <summary>shaderClipDistance: the GXM far plane (z &lt;= w) is a clip distance, because depth clamp (the GXM
+    /// near plane) also turns off the hardware's far-plane clip. Without it (Mali Bifrost/Valhall) the fragment shader
+    /// discards beyond the far plane (<see cref="GpuQuirk.FarPlaneDiscard"/>), or, without depth clamp, the hardware
+    /// clips there itself.</summary>
+    ShaderClipDistance = 1L << 24,
 }
 
 /// <summary>Driver workarounds and tile-based-GPU behaviour. Each one is selected by <see cref="GpuQuirkTable"/>.</summary>
@@ -100,6 +105,11 @@ public enum GpuQuirk : long
     /// path): selected without <see cref="GpuFeature.DynamicRendering"/> and on <see cref="DynamicRenderingSuspect"/>
     /// drivers; VITASHARP_GPU_QUIRKS=+RenderPasses forces it on a desktop GPU for testing.</summary>
     RenderPasses = 1L << 12,
+    /// <summary>No shaderClipDistance but depth clamp: the vertex shader passes the far-plane distance (w - z) as a
+    /// varying and the fragment shader discards where it is negative, the clip the clip distance did (exact up to the
+    /// interpolation of the distance). Forced off (VITASHARP_GPU_QUIRKS=-FarPlaneDiscard) the device runs without depth
+    /// clamp instead: the hardware clips the far plane and also the near plane (keeps early depth tests).</summary>
+    FarPlaneDiscard = 1L << 13,
 }
 
 /// <summary>Driver limits the renderer checks (a subset of VkPhysicalDeviceLimits).</summary>
@@ -350,10 +360,10 @@ public static class GpuQuirkTable
                              | GpuFeature.MemoryBudget | GpuFeature.FillModeNonSolid | GpuFeature.LogicOp | GpuFeature.Storage16Bit | GpuFeature.WideLines
                              | GpuFeature.PushDescriptor | GpuFeature.CustomBorderColor,
         GpuProfile.AdrenoVulkan11 => ProfileMask(GpuProfile.Adreno) | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState,
-        // Mali Bifrost/Valhall: additionally no depth clamp, no geometry shaders, no logic op, no fill modes
-        GpuProfile.Mali => GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
-                           | GpuFeature.MemoryBudget | GpuFeature.DepthClamp | GpuFeature.FillModeNonSolid | GpuFeature.GeometryShader | GpuFeature.LogicOp
-                           | GpuFeature.Storage16Bit | GpuFeature.WideLines | GpuFeature.PushDescriptor | GpuFeature.OcclusionQueryPrecise,
+        // Mali-G57 MC2 (Valhall) on the r54 proprietary driver, as measured on a Redmi Note 14 (Android 16): no BCn, no
+        // non-solid fill, no memory budget and no shaderClipDistance (the far plane is clipped by a fragment discard,
+        // GpuQuirk.FarPlaneDiscard); it has depth clamp, sample-rate shading, geometry shaders, logic op and wide lines
+        GpuProfile.Mali => GpuFeature.TextureCompressionBC | GpuFeature.FillModeNonSolid | GpuFeature.MemoryBudget | GpuFeature.ShaderClipDistance,
         _ => GpuFeature.None,
     };
 
@@ -385,7 +395,7 @@ public static class GpuQuirkTable
     {
         GpuProfile.Adreno => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 615)),
         GpuProfile.AdrenoVulkan11 => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 454)),
-        GpuProfile.Mali => (GpuVendor.Arm, GpuDriver.ArmProprietary, MakeVersion(38, 1)),
+        GpuProfile.Mali => (GpuVendor.Arm, GpuDriver.ArmProprietary, MakeVersion(54, 1)),
         _ => (VendorOf(real.VendorId), DriverOf(real.VendorId, real.DriverId, real.DriverVersion), real.DriverVersion),
     };
 
@@ -472,6 +482,25 @@ public static class GpuQuirkTable
                 if ((quirks & q) != 0) continue;
                 quirks |= q;
                 reasons.Add($"{q}: no extended dynamic state (Vulkan 1.3 core)");
+            }
+        }
+        // GXM clips at the far plane but not at the near one: depth clamp plus a far-plane clip distance; without the
+        // clip distance a fragment-shader discard, or (forced off, or no depth clamp) the hardware's own clip
+        if ((features & (GpuFeature.ShaderClipDistance | GpuFeature.DepthClamp)) == GpuFeature.DepthClamp)
+        {
+            bool forcedOff = (overrides ?? "").Split(',', StringSplitOptions.TrimEntries)
+                .Any(o => o.Equals("-" + nameof(GpuQuirk.FarPlaneDiscard), StringComparison.OrdinalIgnoreCase));
+            if (!forcedOff)
+            {
+                if ((quirks & GpuQuirk.FarPlaneDiscard) == 0)
+                    reasons.Add($"{GpuQuirk.FarPlaneDiscard}: no shaderClipDistance: the far plane is clipped by a fragment-shader discard (depth clamp keeps the near plane unclipped)");
+                quirks |= GpuQuirk.FarPlaneDiscard;
+            }
+            else
+            {
+                features &= ~GpuFeature.DepthClamp;
+                mask |= GpuFeature.DepthClamp & dev.Features;
+                reasons.Add($"{GpuQuirk.FarPlaneDiscard}: forced off without shaderClipDistance: depth clamp off, the hardware clips the far and the near plane");
             }
         }
         // a quirk forced off must not leave its reason line behind

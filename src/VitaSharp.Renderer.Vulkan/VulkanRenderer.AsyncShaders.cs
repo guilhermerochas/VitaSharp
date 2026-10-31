@@ -188,7 +188,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (b.Color is not { } c) { _prefetchScene = NoColorScene; return; }
         var f = SurfaceFormat(c.ColorFormat);
-        if (!_core.SupportsColorAttachment(f)) f = Format.R8G8B8A8Unorm;
+        f = RenderableFormat(f);
         var srgb = Formats.Srgb(f);
         var attach = c.GammaMode != 0 && srgb != f && _core.SupportsColorAttachment(srgb) ? srgb : f;
         var samples = SampleCountFlags.Count1Bit;

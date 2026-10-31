@@ -107,7 +107,8 @@ public static class VulkanLoader
     }
 
     public static string InstallHint() =>
-        OperatingSystem.IsMacOS() ? "Install the LunarG Vulkan SDK (it includes MoltenVK) or `brew install molten-vk vulkan-loader`."
+        OperatingSystem.IsAndroid() ? "The GPU driver comes with the Android system: update the system, or on an Adreno choose a custom driver in \"Driver da GPU\"."
+        : OperatingSystem.IsMacOS() ? "Install the LunarG Vulkan SDK (it includes MoltenVK) or `brew install molten-vk vulkan-loader`."
         : OperatingSystem.IsLinux() ? "Install the Vulkan loader and a driver, e.g. `sudo apt install libvulkan1 mesa-vulkan-drivers` (lavapipe = software fallback)."
         : "Install or update the GPU driver (it provides vulkan-1.dll).";
 }

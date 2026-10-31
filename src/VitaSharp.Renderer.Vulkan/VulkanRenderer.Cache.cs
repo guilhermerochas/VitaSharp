@@ -193,7 +193,9 @@ public sealed unsafe partial class VulkanRenderer
     {
         // the per-sample framebuffer fetch choice changes the GLSL of programmable-blending shaders
         // and so does the Adreno dynamic-indexing lowering (driver quirk)
-        ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32) | (ShaderGenerator.LowerDynamicIndexing ? 1ul << 33 : 0);
+        // and the far-plane clip without shaderClipDistance (Mali)
+        ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32) | (ShaderGenerator.LowerDynamicIndexing ? 1ul << 33 : 0)
+                    | (ulong)ShaderGenerator.FarPlane << 34;
         Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, gen };
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }

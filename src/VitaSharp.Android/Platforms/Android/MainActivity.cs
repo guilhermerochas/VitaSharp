@@ -26,6 +26,26 @@ public sealed class MainActivity : MauiAppCompatActivity
             bars.AppearanceLightStatusBars = false;
             bars.AppearanceLightNavigationBars = false;
         }
+        LaunchRequestedGame(Intent);
+    }
+
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        LaunchRequestedGame(intent);
+    }
+
+    /// <summary>
+    /// A launcher intent with a "titleId" extra starts that game directly (home-screen shortcuts, and testing on a
+    /// device: <c>adb shell am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p io.github.vitasharp
+    /// --es titleId PCSB01240</c>).
+    /// </summary>
+    void LaunchRequestedGame(Intent? intent)
+    {
+        if (intent?.GetStringExtra(Game.GameActivity.ExtraTitleId) is not { Length: > 0 } titleId) return;
+        intent.RemoveExtra(Game.GameActivity.ExtraTitleId);
+        Core.Util.Log.Info($"Launch intent: starting {titleId}");
+        Game.GameActivity.Launch(this, titleId);
     }
 
     protected override void OnResume()

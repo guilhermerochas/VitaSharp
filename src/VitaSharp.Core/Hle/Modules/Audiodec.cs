@@ -31,7 +31,7 @@ public sealed unsafe class Audiodec : HleModule
         public int FrameIndex, SuperframeUsed;
         public byte[] Staging = [];
         // MP3 / AAC
-        public FrameDecoder? Codec;
+        public IAudioFrameDecoder? Codec;
         public bool Adts;
         public short[] Pcm = [];
     }
@@ -123,7 +123,7 @@ public sealed unsafe class Audiodec : HleModule
                 d.Channels = Math.Clamp((int)GuestMemory.R32(info + 8), 1, 2);
                 int rate = (int)GuestMemory.R32(info + 12);
                 bool sbr = GuestMemory.R32(info + 16) != 0;
-                d.Codec = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, rate, d.Channels, d.Adts ? null : FrameDecoder.AacConfig(sbr ? rate / 2 : rate, d.Channels));
+                d.Codec = AudioFrameDecoders.CreateAac(rate, d.Channels, d.Adts ? null : FrameDecoder.AacConfig(sbr ? rate / 2 : rate, d.Channels));
                 esMax = d.Adts ? 1536u + 0x100 : 1536u;
                 pcmMax = (uint)(d.Channels * 2048 * (sbr ? 2 : 1));
                 break;
@@ -133,7 +133,7 @@ public sealed unsafe class Audiodec : HleModule
                 return ERR_INVALID_TYPE;
         }
         if (d.Codec == null && d.At9 == null)
-            Log.WarnOnce("audiodec-noffmpeg", "sceAudiodec: FFmpeg is unavailable, MP3/AAC frames decode to silence");
+            Log.WarnOnce("audiodec-noffmpeg" + d.Type, $"sceAudiodec: no {CodecName(d.Type)} decoder (FFmpeg is unavailable): frames decode to silence");
         d.Pcm = new short[pcmMax / 2 + 4096];
         lock (_decoders)
         {

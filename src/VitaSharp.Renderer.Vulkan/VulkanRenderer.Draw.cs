@@ -726,6 +726,12 @@ public sealed unsafe partial class VulkanRenderer
             if (_rawLogged.Add((_rt.Address, attachFormat)))
                 Log.Info($"[gpu] render target 0x{_rt.Address:X8} {_rt.Width}x{_rt.Height} fmt 0x{_rt.ColorFormat:X8}: raw {fs.Gen.RawColorBits}-bit fragment outputs written through a {attachFormat} view");
         }
+        // a surface format the GPU renders but cannot blend (32-bit float on Mali): the draw is drawn unblended
+        if (blendOn && !raw && hasColor && !BlendSupported(attachFormat))
+        {
+            Log.WarnOnce($"noblend-{attachFormat}", $"[gpu] {attachFormat} cannot blend on this GPU: blended draws into render target 0x{_rt!.Address:X8} drawn without blending");
+            blendOn = false;
+        }
         byte tw1Key = !_tw1Active ? (byte)0 : tw1 && mask != 0 && (fs.Gen!.TileWord1 & TileWord1Use.Writes) != 0 ? (byte)2 : (byte)1;
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,

@@ -68,6 +68,12 @@ public sealed unsafe partial class VulkanRenderer
         Add(c.Has(GpuQuirk.TileBased) ? "tile-based load/store ops" : "immediate-mode load/store ops");
         Add(RenderPassReport());
         Add(_core.DepthClamp ? "depth clamp" : "no depth clamp (near plane clips)");
+        Add(ShaderGenerator.FarPlane switch
+        {
+            ShaderGenerator.FarPlaneClip.Discard => "far plane clipped by a fragment discard (no shaderClipDistance)",
+            ShaderGenerator.FarPlaneClip.Hardware => "far plane clipped by the hardware (no shaderClipDistance, no depth clamp)",
+            _ => "far plane clip distance",
+        });
         Add(_core.FillModeNonSolid ? "line/point fill" : "line/point fill drawn filled");
         Add(_core.MemoryBudgetSupported ? "memory budget" : $"no memory budget (eviction at {c.FallbackBudgetFraction:P0} of the device heap)");
         Add(_core.Timestamps ? "timestamps" : "no timestamps");

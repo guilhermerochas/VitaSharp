@@ -3,7 +3,7 @@ using FFmpeg.AutoGen;
 namespace VitaSharp.Core.Media;
 
 /// <summary>Decodes individual compressed audio frames (MP3, AAC) with FFmpeg into interleaved S16.</summary>
-public sealed unsafe class FrameDecoder : IDisposable
+public sealed unsafe class FrameDecoder : IAudioFrameDecoder
 {
     AVCodecContext* _ctx;
     readonly AVPacket* _pkt;

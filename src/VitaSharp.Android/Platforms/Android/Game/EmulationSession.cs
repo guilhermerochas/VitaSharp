@@ -86,10 +86,21 @@ public sealed class EmulationSession : IDisposable
         };
         _emu.Host.Input = input;
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
+        // VITASHARP_AUDIO_DUMP=<folder, relative to the data folder>: per-port WAVs of what the guest output (--audio-dump)
+        if (System.Environment.GetEnvironmentVariable(EnvVars.AudioDump) is { Length: > 0 } dump)
+        {
+            string dir = Path.Combine(data.Root, dump);
+            VitaSharp.Core.Util.AudioDump.Enable(dir);
+            Log.Info($"Audio: guest output dumped to {dir}");
+        }
         // no FFmpeg in the app: H.264 (SceAvcdec, SceVideodec, movies) through MediaCodec, SceAvPlayer movies demuxed by
         // MediaExtractor with AAC through MediaCodec
         VitaSharp.Core.Media.VideoDecoders.Backend = new MediaCodecVideoBackend();
         VitaSharp.Core.Media.MediaPlayers.Backend = AndroidMediaPlayer.Open;
+        // SceMp4 (F1 2011's movies): MediaExtractor
+        VitaSharp.Core.Media.Mp4Demuxers.Backend = MediaExtractorDemuxer.Open;
+        // SceAudiodec AAC (movie sound): MediaCodec
+        VitaSharp.Core.Media.AudioFrameDecoders.AacBackend = MediaCodecAacDecoder.Create;
         TrophyNotifications.Unlocked += OnTrophy;
 
         // a custom Adreno/Turnip driver (Driver da GPU) goes in before the first Vulkan call of the process
@@ -238,10 +249,13 @@ public sealed class EmulationSession : IDisposable
 
     /// <summary>The game was started and its process has stopped by itself (the guest exited, a stack-protector
     /// failure or a crash terminated it): nothing more will be drawn, the activity offers to leave.</summary>
-    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null;
+    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null && !_emu.Execing;
 
     /// <summary>Frames the guest presented since the game started.</summary>
     public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesPresented - _framesAtStart;
+
+    /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
+    public string AudioSummary => _audio?.Describe() ?? "no audio backend";
 
     /// <summary>Stops the game and records the session in the game's statistics.</summary>
     public void Dispose()
