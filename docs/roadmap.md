@@ -171,8 +171,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 ## Código
 
 - [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
-  mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para um nome que diga o que
-  é, por exemplo `VitaSharp.Mobile` ou `VitaSharp.Mobile.Core`; fazer quando não houver branches abertas (namespaces,
+  mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
+  `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
+  projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
 - [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
   chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
