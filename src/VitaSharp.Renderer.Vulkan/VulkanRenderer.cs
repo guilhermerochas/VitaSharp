@@ -940,6 +940,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _sampledIn.Clear(); // no rendering is open and no draw pending (VulkanRenderer.SceneBreaks.cs)
         DrawRingPresent(frame);
         _presentCount++;
+        _workFrames++;
         _drawSerial = 0;
         EndFrameStallStats();
         TrimAtFrameBoundary();

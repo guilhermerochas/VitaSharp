@@ -202,6 +202,7 @@ public sealed unsafe partial class VulkanRenderer
             cache.Infos[i] = infos[i];
         }
         _vk.UpdateDescriptorSets(_dev, (uint)units, writes, 0, null);
+        _statDescWrites += units;
         cache.Set = set;
         cache.Serial = _frameSerial;
         cache.Units = units;

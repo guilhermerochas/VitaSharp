@@ -92,6 +92,7 @@ public sealed unsafe partial class VulkanRenderer
 
     DescriptorSet AllocSet(DescriptorSetLayout layout)
     {
+        _statSets++;
         var f = F;
         var sizes = stackalloc DescriptorPoolSize[3]; // outside the loop (CA2014)
         while (true)
@@ -802,6 +803,7 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = 0; i < 4; i++)
             writes[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
         _vk.UpdateDescriptorSets(_dev, 4, writes, 0, null);
+        _statDescWrites += 4;
         if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
 
         // ---- record
@@ -827,6 +829,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
+                _statPipelineBinds++;
                 _boundPipeline = pipeline;
             }
             sets[3] = fbSet;
@@ -863,6 +866,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 bool visQuery = BeginVisibilityQuery(d, out uint query);
                 _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
+                _statDraws++;
                 if (visQuery) EndVisibilityQuery(query);
             }
             if (singleFetch) EndSingleFetchPass();
