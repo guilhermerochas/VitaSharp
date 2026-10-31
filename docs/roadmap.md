@@ -212,6 +212,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
+  13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
+  Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável
+  render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
+  um F10 ou dump de GPU numa troca de tela); (3) 19–30 fps, quase sempre 22–24 (Unity, alvo provável 30): medir com
+  `--profile`/F10 se é CPU ou espera da GPU, como no The Deer God
 - [ ] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
