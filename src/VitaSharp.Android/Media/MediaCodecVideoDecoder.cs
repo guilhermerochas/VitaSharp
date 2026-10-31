@@ -169,15 +169,31 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
 
     public void Send(ReadOnlySpan<byte> accessUnit, long pts)
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { SendCore(accessUnit, pts); }
+        finally { _sendTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; _sends++; }
+    }
+
+    long _sendTicks, _queueTicks, _waitTicks, _copyTicks, _sends;
+
+    void SendCore(ReadOnlySpan<byte> accessUnit, long pts)
+    {
         if (_codec == null) return;
         _replay.Add(accessUnit, pts);
         try
         {
+            long q0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Queue(accessUnit, pts, 0);
+            _queueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - q0;
             Drain();
             // a short grace for a picture already in the works; never longer: the MediaTek decoder holds several
             // pictures in flight and waiting for each one (40 ms) slowed F1 2011's movies below real time
-            if (_codec != null && _ready.Count == 0 && _produced > 0 && _queued > _produced) Drain(OutputGraceUs);
+            if (_codec != null && _ready.Count == 0 && _produced > 0 && _queued > _produced)
+            {
+                long w0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                Drain(OutputGraceUs);
+                _waitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - w0;
+            }
         }
         catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
     }
@@ -214,7 +230,9 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             bool eos = (_info.Flags & MediaCodecBufferFlags.EndOfStream) != 0;
             if (_info.Size > 0)
             {
+                long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 var p = Output(c, idx);
+                _copyTicks += System.Diagnostics.Stopwatch.GetTimestamp() - c0;
                 if (p != null)
                 {
                     Interlocked.Increment(ref Pictures);
@@ -327,6 +345,8 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
 
     public void Dispose()
     {
+        double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency, n = Math.Max(1, _sends);
+        if (_sends > 0) Log.Info($"MediaCodec: {_codecName}: {_sends} units, per unit {_sendTicks * f / n:F1} ms in Send (queue {_queueTicks * f / n:F1}, output waits {_waitTicks * f / n:F1}, picture copies {_copyTicks * f / n:F1})");
         ReleaseCodec();
         _info.Dispose();
     }

@@ -735,6 +735,13 @@ default (`VITASHARP_FETCH_PASS_MERGE=1`), cause open. Work per frame (replays of
 draws, 366 descriptor sets, 2,520 descriptor writes, 4.2 MB uploaded; God of War 394 / 451 / 2,478 / 3.0 MB;
 Knightin'+ 69 / 125 / 1,175 / 2.2 MB; Devious Dungeon 32 / 49 / 400 / 0.5 MB.
 
+**F1 2011's GPU worker.** The race replay (phone dump, PC) showed 1,626 draws, 2,164 descriptor sets and 15,110
+descriptor writes per frame: texture sets wrote all 16 units per stage and the uniform set all four buffers, dummies
+included. Only the units and buffers the shaders declare are written now: 3,877 writes per frame, all five phone dumps
+pixel-identical on the PC. Still 18.7 MB of vertex, index and uniform uploads per race frame (next: cache static vertex
+streams with the dirty-page tracker). The Mali crash in `libGLES_mali.so` between F1's menu and race happened once in
+three runs of this build, as often as before.
+
 **Numbers on the phone** (`mono-aot-llvm` build of the branch, VSync on, same scenes as Phone run 2; CPU ms per frame
 of the busiest threads and GPU ms from the session's `PERF` lines):
 
@@ -742,7 +749,7 @@ of the busiest threads and GPU ms from the session's `PERF` lines):
 |---|---|---|---|---|---|---|
 | Knightin'+, first room (30) | 30 | 30 | **30.0** | main 6.7, GPU worker 4.7 | 10.6 | nothing (the game's rate) |
 | Devious Dungeon, town (60) | 60 | 52-53 | 48.7 at 150 s (still warming up; 52-53 later in run 2) | Unity main 21.9 | 7.8 | the Unity main thread (generated code) |
-| F1 2011, race start | 53 | 16.5 | **17.3** | GPU worker 25.7, main 23.8 | 13.0 | CPU: the GPU worker and the HLE main thread |
+| F1 2011, race start | 53 | 16.5 | **17.3**; 17.8-20.7 with fewer descriptor writes (the user drove in that run: at the back of the field, fewer cars in view) | GPU worker 25.7 -> 23.4, main 23.8 -> 21.0 | 13.0 -> 12.3 | CPU: the GPU worker and the HLE main thread |
 | Uncharted, title | 60 | 25 | **25.4** (36 with `VITASHARP_FETCH_PASS_MERGE=1`, dark frames) | GPU worker 13.6, game 11.4 | 32.2 | the Mali GPU (fetch passes) |
 | God of War I, first fight (30) | 30 | patches on the characters | **23-29.5, correct picture** | Render 10.3, GPU worker 8.8 | 10.8 | CPU (the game's render thread) |
 

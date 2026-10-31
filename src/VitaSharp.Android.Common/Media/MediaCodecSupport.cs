@@ -35,19 +35,41 @@ public static class YuvImageCopy
         CopyPlane(v, cropX / 2, cropY / 2, cw, ch, picture.V);
     }
 
-    static void CopyPlane(Plane p, int x0, int y0, int w, int h, Span<byte> dst)
+    // Every movie picture goes through here on the decoding thread (F1 2011's movies spent 5 ms per 960x544 picture
+    // with Span.CopyTo rows, Mono's slow block copy, and a bounds-checked byte loop for interleaved chroma): rows go to
+    // FastCopy (libc memmove on Mono), interleaved chroma through pointers.
+    static unsafe void CopyPlane(Plane p, int x0, int y0, int w, int h, Span<byte> dst)
     {
-        for (int row = 0; row < h; row++)
+        if (h <= 0 || w <= 0) return;
+        // the last row reads only up to its last sample: check the whole range once
+        int lastStart = (y0 + h - 1) * p.RowStride + x0 * p.PixelStride;
+        if (lastStart + (w - 1) * p.PixelStride >= p.Data.Length || dst.Length < w * h) throw new ArgumentOutOfRangeException(nameof(p), "plane smaller than the crop rectangle");
+        fixed (byte* src0 = p.Data)
+        fixed (byte* dst0 = dst)
         {
-            int start = (y0 + row) * p.RowStride + x0 * p.PixelStride;
-            var d = dst.Slice(row * w, w);
-            if (p.PixelStride == 1)
+            for (int row = 0; row < h; row++)
             {
-                p.Data.Slice(start, w).CopyTo(d);
-                continue;
+                byte* s = src0 + (y0 + row) * p.RowStride + x0 * p.PixelStride;
+                byte* d = dst0 + row * w;
+                if (p.PixelStride == 1)
+                {
+                    VitaSharp.Core.Util.FastCopy.Copy(new ReadOnlySpan<byte>(s, w), new Span<byte>(d, w));
+                    continue;
+                }
+                int stride = p.PixelStride, x = 0;
+                if (stride == 2)
+                {
+                    // 8 samples from 16 bytes at a time (the even bytes)
+                    for (; x + 8 <= w && (x + 8) * 2 - 1 <= (w - 1) * 2; x += 8)
+                    {
+                        ulong a = *(ulong*)(s + x * 2), b = *(ulong*)(s + x * 2 + 8);
+                        ulong ea = (a & 0xFF) | ((a >> 8) & 0xFF00) | ((a >> 16) & 0xFF0000) | ((a >> 24) & 0xFF000000);
+                        ulong eb = (b & 0xFF) | ((b >> 8) & 0xFF00) | ((b >> 16) & 0xFF0000) | ((b >> 24) & 0xFF000000);
+                        *(ulong*)(d + x) = ea | (eb << 32);
+                    }
+                }
+                for (; x < w; x++) d[x] = s[x * stride];
             }
-            var s = p.Data[start..];
-            for (int x = 0; x < w; x++) d[x] = s[x * p.PixelStride];
         }
     }
 

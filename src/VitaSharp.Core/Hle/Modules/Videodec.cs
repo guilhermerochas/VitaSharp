@@ -30,7 +30,7 @@ public sealed class Videodec : HleModule
         public bool AuReordered;
         /// <summary>Statistics, logged when the decoder is deleted: calls, pictures repeated, calls with no picture,
         /// the slowest call (Stopwatch ticks).</summary>
-        public long Calls, Repeats, Empty, MaxCallTicks, Dropped, CarriedOver;
+        public long Calls, Repeats, Empty, MaxCallTicks, Dropped, CarriedOver, CallTicks, FirstCall, LastCall;
     }
 
     /// <summary>
@@ -136,6 +136,9 @@ public sealed class Videodec : HleModule
         int r = Output(d, array, repeatIfLate: true, stamp);
         d.Calls++;
         d.MaxCallTicks = Math.Max(d.MaxCallTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        d.CallTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        if (d.FirstCall == 0) d.FirstCall = t0;
+        d.LastCall = t0;
         return r;
     }
 
@@ -243,6 +246,7 @@ public sealed class Videodec : HleModule
             if (!_decoders.Remove(GuestMemory.R32(ctrl), out d)) return ERR_INVALID_PARAM;
         if (d.Calls > 0)
             Log.Info($"sceAvcdec: decoder {d.Codec?.Name ?? "none"} deleted after {d.Calls} decode calls, {d.Repeats} pictures repeated, {d.Dropped} dropped, {d.Empty} calls without a picture ({d.CarriedOver} answered with the previous decoder's last picture), " +
+                     $"{d.CallTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, d.Calls):F1} ms per call over {(d.LastCall - d.FirstCall) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms, " +
                      $"slowest call {d.MaxCallTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1} ms{(d.AuReordered ? ", units out of pts order" : "")}");
         if (d.Codec is { Asynchronous: true } && d.Last != null) _carryOver = d.Last; // kept out of the closed decoder's pool
         d.Codec?.Dispose();
