@@ -39,6 +39,21 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(300u, GuestMemory.R32(outs + 8));
     }
 
+    /// <summary>The firmware accepts a colour surface without memory (attached later with SetData); Zero Time
+    /// Dilemma asserts when it is refused. Only the surface pointer is required.</summary>
+    [Fact]
+    public void ColorSurfaceInitAcceptsNullData()
+    {
+        var gxm = new Gxm();
+        uint s = fx.Memory.Alloc(0x40, "surface");
+        Assert.Equal(0u, U(Call(gxm, "sceGxmColorSurfaceInit", s, 0u, 0u, 0u, 0u, 320u, 204u, 512u, 0u)));
+        Assert.Equal(0u, U(Call(gxm, "sceGxmColorSurfaceGetData", s)));
+        Assert.Equal(512u, U(Call(gxm, "sceGxmColorSurfaceGetStrideInPixels", s)));
+        Call(gxm, "sceGxmColorSurfaceSetData", s, 0x81000000u);
+        Assert.Equal(0x81000000u, U(Call(gxm, "sceGxmColorSurfaceGetData", s)));
+        Assert.Equal(0x805B0004u, U(Call(gxm, "sceGxmColorSurfaceInit", 0u, 0u, 0u, 0u, 0u, 320u, 204u, 512u, 0u)));
+    }
+
     [Fact]
     public void TextureGettersAndStride()
     {

@@ -325,7 +325,10 @@ public sealed class Gxm : HleModule
     int sceGxmColorSurfaceInit(uint surface, uint colorFormat, uint surfaceType, uint scaleMode, uint outputRegisterSize,
         uint width, uint height, uint strideInPixels, uint data)
     {
-        if (surface == 0 || data == 0) return ERR_INVALID_POINTER;
+        // data may be NULL: a surface can be described first and get its memory later (sceGxmColorSurfaceSetData).
+        // Zero Time Dilemma (vita_game+4294) passes a literal NULL for the surface of a strided texture and asserts
+        // (BKPT) on any error, so the firmware accepts it. Only the surface pointer itself is required.
+        if (surface == 0) return ERR_INVALID_POINTER;
         if (width == 0 || width > 4096 || height == 0 || height > 4096) return ERR_INVALID_VALUE;
         if ((strideInPixels & 1) != 0) return ERR_INVALID_ALIGNMENT;
         if (strideInPixels < width || (data & 3) != 0) return ERR_INVALID_VALUE;

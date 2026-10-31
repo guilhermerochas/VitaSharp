@@ -1,0 +1,8 @@
+# Zero Escape: Zero Time Dilemma (PCSE00781, US): Aksys and Spike Chunsoft logos, title menu (~f960), New Game at
+# f1000, opening text, "Now Loading", Nevada Desert intro and the first cutscenes (dialogue advanced with Cross).
+# Regression: the game builds colour surfaces for its strided textures with sceGxmColorSurfaceInit(data = NULL)
+# and attaches the memory later; refusing NULL data (SCE_GXM_ERROR_INVALID_POINTER) made main_th hit its BKPT
+# assert right after the first framebuffer was set (the same failure Vita3K shows).
+# Run against a scratch data root: VitaSharp.Desktop test tests/scenarios/ztd_boot.txt --data=<scratch root>
+title=PCSE00781
+args=--frames=2700 --seconds=240 --dump-every=60 --input=cross@f1000:f6,cross@f2000:f6,cross@f2250:f6,cross@f2500:f6
