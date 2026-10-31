@@ -56,6 +56,8 @@ public sealed unsafe partial class NativeRuntime
             byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned); trampSize = t.Length; return t; });
             if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
+            ulong epilogue = (ulong)(entry64 + epi);
+            if (!NoLink) ResumeEntry = (nint)Code.Place(_ => Arm64Emitter.EmitDispatchEntry(epilogue));
             if (SkipGcTransition)
             {
                 _enterFast = (delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void>)entry64;
@@ -109,6 +111,10 @@ public sealed unsafe partial class NativeRuntime
     /// (the desktop) keeps the transition: its reverse P/Invoke from cooperative mode is a fatal error.
     /// <see cref="EnvVars.NativeGcTransition"/>=on keeps it on Mono too.
     /// </summary>
+    /// <summary>ARM64: native code that continues at the state's pc through the dispatch table
+    /// (<see cref="Arm64Emitter.EmitDispatchEntry"/>); 0 elsewhere.</summary>
+    public readonly nint ResumeEntry;
+
     static readonly bool SkipGcTransition = Type.GetType("Mono.RuntimeStructs") != null
         && Environment.GetEnvironmentVariable(EnvVars.NativeGcTransition) is not ("on" or "1");
     readonly delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void> _enterFast;
@@ -200,6 +206,17 @@ public sealed unsafe partial class NativeRuntime
         }
     }
 
+
+    /// <summary>
+    /// An indirect exit missed the table and the dispatcher found <paramref name="b"/>: if another block took its entry
+    /// (the table is direct-mapped by address), it gets it back, so a target that lost a collision does not take the slow
+    /// path on every jump to it from then on.
+    /// </summary>
+    public void Republish(Block b)
+    {
+        var e = EntryOf(b);
+        if (Volatile.Read(ref e->Key) != KeyOf(b)) Publish(b);
+    }
 
     readonly object _dispatchLock = new();
 

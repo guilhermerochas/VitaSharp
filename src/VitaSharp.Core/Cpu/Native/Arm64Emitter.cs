@@ -1242,6 +1242,37 @@ public sealed unsafe partial class Arm64Emitter
     }
 
     /// <summary>
+    /// An entry that continues at the state's pc through the dispatch table, like an indirect exit (no block accounting):
+    /// the dispatcher enters here after an HLE call instead of looking the return address up in managed code. A miss
+    /// returns to the dispatcher with no exit slot, which then looks the block up as usual.
+    /// </summary>
+    public static byte[] EmitDispatchEntry(ulong epilogue)
+    {
+        var a = new Arm64Assembler();
+        int miss = a.NewLabel();
+        a.Ldr(X0, State, OffR + 60);
+        a.Ldr(X1, State, OffThumb);
+        a.Orr(X1, X0, X1);                                   // key = pc | thumb
+        a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
+        a.LdrX(X3, State, OffDispatchTable);
+        a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
+        a.Ldar(X4, X3);
+        a.Cmp(X4, X1);
+        a.BCond(Cond.NE, miss);
+        a.AddImm(X5, X3, 8, true);
+        a.Ldar(X6, X5, true);
+        a.Ldr(X4, X3, 0);
+        a.Cmp(X4, X1);
+        a.BCond(Cond.NE, miss);
+        a.Br(X6);
+        a.Bind(miss);
+        a.StrX(ZR, State, OffLastExitSlot);
+        a.LdrLit(X16, epilogue);
+        a.Br(X16);
+        return a.Finish();
+    }
+
+    /// <summary>
     /// Instruction-cache maintenance for code written through another mapping (x0 = start, x1 = length): clean the
     /// data cache to the point of unification and invalidate the instruction cache line by line (line sizes from
     /// CTR_EL0, which Linux lets user space read), then synchronize. This is what __clear_cache does; Linux and Android

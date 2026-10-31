@@ -225,6 +225,9 @@ public sealed unsafe class CpuCore : IDisposable
     public long BlockCycles, ChargedCycles;
     /// <summary>Profiling: host time (Stopwatch ticks) spent inside native-backend code, its callouts included.</summary>
     public long NativeTicks;
+    /// <summary>Profiling: entries into native code, and returns with no exit slot and no exit reason (an indirect exit
+    /// whose target was not in the dispatch table, or the pacing window / a link break at an indirect exit).</summary>
+    public long NativeEntries, NativeReturnsUnlinked;
     /// <summary>Profiling (VITASHARP_NATIVE_COUNTERS=1): VFP/NEON ops and conditional branches run in native code.</summary>
     public long SimdOps, CondBranches;
 
@@ -262,11 +265,21 @@ public sealed unsafe class CpuCore : IDisposable
         // read once per Run: static reads cost a class-initialisation check each under Mono's AOT
         bool verify = Native.NativeVerifier.Enabled;
         Native.NativeRuntime? native = null;
+        bool resume = false; // an HLE call returned: native code continues through the dispatch table
+        bool republish = false; // an indirect exit missed the dispatch table: the block found next takes its entry back
         while (!StopRequested)
         {
-            if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
-            var b = Lookup(s->R[15], s->Thumb != 0);
-            if (b.NativeEntry != 0 && BlockHook == null && verify)
+            Block? b = null;
+            nint entry = 0;
+            if (resume) { resume = false; entry = native!.ResumeEntry; }
+            else
+            {
+                if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
+                b = Lookup(s->R[15], s->Thumb != 0);
+                if (b.NativeEntry != 0 && BlockHook == null && !verify) entry = b.NativeEntry;
+                if (republish) { republish = false; if (entry != 0) native!.Republish(b); }
+            }
+            if (entry == 0 && b!.NativeEntry != 0 && BlockHook == null && verify)
             {
                 // differential mode: native run checked against the interpreter, which provides the result
                 Native.NativeVerifier.Run(s, b);
@@ -274,7 +287,7 @@ public sealed unsafe class CpuCore : IDisposable
                 InstructionsExecuted += b.Insts.Length;
                 sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             }
-            else if (b.NativeEntry != 0 && BlockHook == null)
+            else if (entry != 0)
             {
                 // Native code accounts each block it runs in the state and chains through linked exits until the
                 // pacing window is full, an interrupt/stop is flagged or an exit cannot be linked: the same per-block
@@ -289,10 +302,12 @@ public sealed unsafe class CpuCore : IDisposable
                 {
                     _nativeEntries = 0;
                     long n0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                    native.Run(s, b.NativeEntry);
+                    native.Run(s, entry);
                     NativeTicks += (System.Diagnostics.Stopwatch.GetTimestamp() - n0) * NativeTimingSample;
                 }
-                else native.Run(s, b.NativeEntry);
+                else native.Run(s, entry);
+                NativeEntries++;
+                if (s->LastExitSlot == 0 && s->Exit == ExitReason.None) { NativeReturnsUnlinked++; republish = true; }
                 SimdOps += s->NSimdOps; CondBranches += s->NCondBranches; s->NSimdOps = 0; s->NCondBranches = 0;
                 if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
                 BlocksExecuted += s->NBlocks;
@@ -304,6 +319,7 @@ public sealed unsafe class CpuCore : IDisposable
             }
             else
             {
+                b ??= Lookup(s->R[15], s->Thumb != 0); // always looked up above (only a resume skips it, and it runs native code)
                 var fn = b.Compiled;
                 if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
                 else if (fn != null && Native.NativeVerifier.Enabled) Native.NativeVerifier.RunCompiled(s, b, fn);
@@ -328,6 +344,7 @@ public sealed unsafe class CpuCore : IDisposable
                 sinceCheck = PendingInstructions;
                 PendingInstructions = 0;
                 if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
+                resume = native != null && native.ResumeEntry != 0 && Probes == null && BlockHook == null && !verify;
             }
             if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }
         }
