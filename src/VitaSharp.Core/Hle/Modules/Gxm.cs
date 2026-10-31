@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Numerics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
@@ -435,8 +435,17 @@ public sealed class Gxm : HleModule
         if (s == 0) return null;
         uint w0 = GuestMemory.R32(s);
         if ((w0 & 1) != 0) return null;
+        // a surface sceGxmColorSurfaceInit never accepted (it refuses a zero width or height) has no pixels to write:
+        // the scene renders without colour. Passed on, the renderer built a 0x0 target and its zero-byte readback and
+        // writeback buffers failed as out of memory (Croixleur Sigma, when Init still refused NULL data).
+        uint width = GuestMemory.R32(s + 4), height = GuestMemory.R32(s + 8);
+        if (width == 0 || height == 0)
+        {
+            Log.WarnOnce($"gxm-cs0-{s:X}", $"[gxm] colour surface 0x{s:X8} has no size ({width}x{height}, data 0x{GuestMemory.R32(s + 16):X8}): the scene renders without colour");
+            return null;
+        }
         // scenes reuse the same few surfaces every frame: share one (immutable) record per distinct value
-        var key = (GuestMemory.R32(s + 16), GuestMemory.R32(s + 4), GuestMemory.R32(s + 8), GuestMemory.R32(s + 12),
+        var key = (GuestMemory.R32(s + 16), width, height, GuestMemory.R32(s + 12),
             GuestMemory.R32(s + 20), GuestMemory.R32(s + 24), (w0 & 2) != 0, (w0 >> 2) & 3);
         lock (ColorSurfaces)
         {
