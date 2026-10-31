@@ -126,6 +126,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   sensibilidade, inverter eixo Y, zona morta/curva de resposta e retorno ao centro quando o mouse para; opção no
   perfil de controle (`input.json`) e na tela de controles do launcher. Hoje o mouse só move o giroscópio
   (`HostInput.MouseLook`, com o botão do meio)
+  - [ ] Modo do mouse escolhido no mapeamento: giroscópio, analógico direito, analógico esquerdo ou desligado
+    (qualquer analógico pode ser o alvo), com um botão/tecla de atalho para alternar entre os modos com o jogo rodando
+    (aviso na tela com o modo atual) e o modo salvo por jogo no perfil de controle
 
 ## Firmware e sistema
 
