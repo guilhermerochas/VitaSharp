@@ -695,6 +695,65 @@ on the phone):
    only when live).
 5. Uncharted's remaining stale frame per loop: log the decoder calls around a loop (`sceAvcdecDecodeStop`/`Flush`).
 
+## Phone run 3: correctness tooling, God of War, flicker (31/10/2026)
+
+Same Redmi Note 14, branch perf/android-phone-2 (from main ca6f938). The phone captures; the investigation runs on
+the PC wherever the bug survives a GPU dump.
+
+**The PC loop.** `VITASHARP_GPU_DUMP_AT=F1:F2[:file]` in `env.txt` now records a GPU dump on the phone too
+(`<data>/gpudumps`; presents count from 1 again after a LoadExec). `build/android-gpu-dump.ps1`/`.sh` starts a game with
+it, pulls the dump and replays it with `replay-gpu --validation` and synchronization validation (needs the Khronos
+layer on the PC: not installed on this one). Replay aids: `VITASHARP_GPU_POISON=1` (new render targets magenta,
+depth/stencil discarded at a scene's end cleared to 0/0xFF, so tiler-only dependencies on undefined contents show on a
+desktop GPU; with `--gpu-profile=mali` for the tile-based paths), `VitaSharp.Desktop flicker <dir>` (frames that differ
+from both neighbours while the neighbours match; self-contained, to move into the analysis tools project), and work
+counters in the `PERF sync` line (draws, pipeline binds, descriptor sets and writes, uploads per frame: deterministic
+for a replay). The startup log also lists the GXM vertex formats the device cannot fetch (none on the Mali-G57).
+
+**God of War: Kratos' patches** ([notes](../notes/gow-textures.md)). Yellow, purple and blue patches on Kratos and the
+enemies, only on the phone. Ruled out on the phone: ASTC (`VITASHARP_ASTC=0`), descriptor-set reuse, the vertex rebase,
+zero-initialised registers, an integer register file (NaN canonicalisation), the `desktop` profile, the JIT
+(`VITASHARP_NATIVE_VERIFY=1`); the phone's dump replayed correctly on the PC. The draw trace showed the cause: 19-byte
+vertex strides with F16 attributes at offsets 3 and 11; Vulkan requires component-size alignment, NVIDIA tolerates
+the misalignment, Mali reads garbage. Misaligned attributes are now fetched as R8 bytes and rebuilt in the vertex
+shader (no copy; aligned attributes keep their shaders; the phone dump replays pixel-identical on the PC, 15/15
+frames). Fixed on the phone (`phone2_shots/gow_bytefetch`).
+
+**Flicker.** Phone dumps of all five games (120 consecutive frames each: Knightin'+ room, Devious Dungeon town,
+Uncharted title, God of War gameplay, F1 2011) replayed on the PC, plain and with `--gpu-profile=mali` +
+`VITASHARP_GPU_POISON=1`: 0 flagged frames. Screen recordings on the phone (`adb exec-out screenrecord`, streamed to
+the PC, frames through `flicker` and ffmpeg `signalstats`): Knightin'+ 241, Devious Dungeon 380, God of War 124, F1 45
+and Uncharted 259 frames, 0 flagged and no luma outliers with the default settings.
+
+**Mali GPU cost, Uncharted's title.** 28 ms of GPU per frame on the phone; the `PERF gpu` line showed 5.4 renderings
+per scene: every small programmable-blending draw (about 18 a frame: particles) renders in a render pass of its own
+reading the surface as an input attachment, each a store and load of the whole surface and depth. Keeping that pass
+open across consecutive such draws (the GPU orders the reads with `VK_ARM_rasterization_order_attachment_access`):
+1.6 renderings per scene, 25 -> 36 fps, 24 ms of GPU. But one frame in seven came out 15% darker on the phone (luma 74
+-> 63 in the recording; a dump of such a run replays without them on the PC, so it is the Mali side), so it is off by
+default (`VITASHARP_FETCH_PASS_MERGE=1`), cause open. Work per frame (replays of the phone dumps): Uncharted title 233
+draws, 366 descriptor sets, 2,520 descriptor writes, 4.2 MB uploaded; God of War 394 / 451 / 2,478 / 3.0 MB;
+Knightin'+ 69 / 125 / 1,175 / 2.2 MB; Devious Dungeon 32 / 49 / 400 / 0.5 MB.
+
+**Numbers on the phone** (`mono-aot-llvm` build of the branch, VSync on, same scenes as Phone run 2; CPU ms per frame
+of the busiest threads and GPU ms from the session's `PERF` lines):
+
+| Game, scene | Desktop | Phone run 2 | Phone run 3 | Busiest threads (ms/frame) | GPU ms | What limits it |
+|---|---|---|---|---|---|---|
+| Knightin'+, first room (30) | 30 | 30 | **30.0** | main 6.7, GPU worker 4.7 | 10.6 | nothing (the game's rate) |
+| Devious Dungeon, town (60) | 60 | 52-53 | 48.7 at 150 s (still warming up; 52-53 later in run 2) | Unity main 21.9 | 7.8 | the Unity main thread (generated code) |
+| F1 2011, race start | 53 | 16.5 | **17.3** | GPU worker 25.7, main 23.8 | 13.0 | CPU: the GPU worker and the HLE main thread |
+| Uncharted, title | 60 | 25 | **25.4** (36 with `VITASHARP_FETCH_PASS_MERGE=1`, dark frames) | GPU worker 13.6, game 11.4 | 32.2 | the Mali GPU (fetch passes) |
+| God of War I, first fight (30) | 30 | patches on the characters | **23-29.5, correct picture** | Render 10.3, GPU worker 8.8 | 10.8 | CPU (the game's render thread) |
+
+**Desktop revalidation** of the 34 installed games (Croixleur Sigma excluded; scratch data root with copied saves,
+sheets and the review in `scratchpad/phone2_shots/pc`): no crash; Sonic & All-Stars Racing still hangs at frame 29
+(known). New: The Deer God unpaced (214-348 fps), Shinobido 2 green line under the intro movie and
+`sceKernelGetCpuId` unimplemented (31,410 calls), Call of Duty's title in Russian, slow screens confirmed on an idle PC: Silent
+Hill's Zone Select (15-22 fps) and Crazy Market's terms of service (16 fps); the Soul Sacrifice and Skullgirls dips
+were loads or CPU contention (60 and 30 fps at the end of the reruns); Tearaway's static-menu stall not rerun, Zero Time Dilemma's title at
+47-57 fps (was 60). The scenarios that start a new game need a data root without saves (they took Continue).
+
 ## Before the first run: what the emulator/device step must verify
 
 1. **Shader compiler**: `libshaderc_shared.so` (built from the NDK r30 sources, 42 `shaderc_*` exports, 16 KiB
