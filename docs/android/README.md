@@ -735,6 +735,15 @@ default (`VITASHARP_FETCH_PASS_MERGE=1`), cause open. Work per frame (replays of
 draws, 366 descriptor sets, 2,520 descriptor writes, 4.2 MB uploaded; God of War 394 / 451 / 2,478 / 3.0 MB;
 Knightin'+ 69 / 125 / 1,175 / 2.2 MB; Devious Dungeon 32 / 49 / 400 / 0.5 MB.
 
+**Mali cost of Uncharted's title** (`vitasharp-perf mali-cost` on the phone dump, Mali-G57, 61 frames): 31.7 ms estimated against
+28-32 ms measured; 27.5 ms of it tile loads and stores (210 MB per frame, the fetch passes' renderings); half-precision
+registers would save 0.6% (1.0% with every fragment float mediump), one shader of 41 runs at 50% occupancy. Fewer
+renderings (the fetch-pass merge, once its dark frames are understood) is the lever, not fp16.
+
+The vertex/index cache (unchanged ranges of 16 KB or more kept in buffers of their own, page-dirty tracked) cut F1's
+race uploads from 18.7 to 15.3 MB per frame on the PC replay; on the phone the race stayed at 12.4-13.3 fps
+(`mono-aot` build), the GPU worker at about 30 ms per frame: it needs a profile before the prepare/record split.
+
 **F1 2011's GPU worker.** The race replay (phone dump, PC) showed 1,626 draws, 2,164 descriptor sets and 15,110
 descriptor writes per frame: texture sets wrote all 16 units per stage and the uniform set all four buffers, dummies
 included. Only the units and buffers the shaders declare are written now: 3,877 writes per frame, all five phone dumps
