@@ -132,6 +132,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="final">the scene ends with them: depth/stencil are discarded unless the scene forces the store</param>
     void FlushChain(bool final)
     {
+        if (_fetchPassOpen) EndSingleFetchPass();
         if (_chain.Count == 0) return;
         var p = _chainPass;
         // desktop GPUs store depth/stencil as before (no tile memory to save)

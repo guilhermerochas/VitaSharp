@@ -818,7 +818,8 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
+            if (singleFetch && FetchPassContinues(attachFormat)) { cmd = F.Cmd; _statFetchPassMerged++; }
+            else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
             else
             {
                 BeginRendering();
@@ -869,7 +870,7 @@ public sealed unsafe partial class VulkanRenderer
                 _statDraws++;
                 if (visQuery) EndVisibilityQuery(query);
             }
-            if (singleFetch) EndSingleFetchPass();
+            if (singleFetch && !(FetchPassMerge && _core.RasterizationOrderColor)) EndSingleFetchPass();
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;

@@ -107,7 +107,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// <summary>Where commands go: the open rendering's secondary command buffer (multisampled renderings, and
     /// single-sampled ones unless VITASHARP_SCENE_BREAKS=strict on a desktop GPU), else the frame's; work hoisted out
     /// of the open rendering goes to the frame's (VulkanRenderer.SceneBreaks.cs).</summary>
-    CommandBuffer Cmd => _hoisting ? F.Cmd : _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : PrimaryTouched();
+    CommandBuffer Cmd
+    {
+        get
+        {
+            // an open one-sample fetch pass (VulkanRenderer.SingleFetch.cs) ends before anything else is recorded
+            if (_fetchPassOpen) EndSingleFetchPass();
+            return _hoisting ? F.Cmd : _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : PrimaryTouched();
+        }
+    }
     public long FrameCount { get; private set; }
 
     public VulkanRenderer(VulkanRendererOptions options)
@@ -195,6 +203,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         var f = F;
         if (!f.Recording) return;
+        if (_fetchPassOpen) EndSingleFetchPass();
         EndRendering();
         FlushChain(false);
         if (f.Nan is { Used: true }) NanBeforeSubmit(f);
@@ -717,6 +726,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void BeginRendering()
     {
+        if (_fetchPassOpen) EndSingleFetchPass();
         if (_rendering || !_inScene) return;
         if (_ms) { _renderingSerial++; _statRenderings++; BeginMsaaRendering(); return; }
         // attachment 1: the scene's tile-word attachment (VulkanRenderer.TileWord1.cs)

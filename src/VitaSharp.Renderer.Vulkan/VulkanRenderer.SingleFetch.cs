@@ -116,13 +116,34 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[gpu] programmable blending in one-sample scenes: small draws render in a render pass that reads the surface as an input attachment (render target 0x{rt.Address:X8})");
         if (_ss && _singleFetchSsLogged.Add(rt.Address))
             Log.Info($"[gpu] programmable blending in supersampled scene 0x{rt.Address:X8}: small draws render in a render pass that reads the {w}x{h} sample image as an input attachment");
+        _fetchPassOpen = true;
+        (_fetchPassRt, _fetchPassDepth, _fetchPassFormat) = (rt, depth, format);
         return cmd;
     }
 
     readonly HashSet<uint> _singleFetchSsLogged = new();
 
+    /// <summary>
+    /// The fetch pass stays open after its draw when the GPU orders input attachment reads with the rasterization
+    /// (VK_EXT/ARM_rasterization_order_attachment_access): the next programmable-blending draw of the same scene renders
+    /// in it too, instead of a store and a load of the whole surface and depth/stencil per draw (Uncharted's title had
+    /// about 18 such draws a frame: 45 renderings per frame instead of 8, most of its 28 ms of GPU time on a Mali-G57).
+    /// Any other recording ends it first (<see cref="Cmd"/>). VITASHARP_FETCH_PASS_MERGE=0 ends it after every draw.
+    /// </summary>
+    bool _fetchPassOpen;
+    RenderTarget? _fetchPassRt;
+    DepthTarget? _fetchPassDepth;
+    Format _fetchPassFormat;
+    long _statFetchPassMerged;
+    static readonly bool FetchPassMerge = Environment.GetEnvironmentVariable(Core.Util.EnvVars.FetchPassMerge) != "0";
+
+    /// <summary>The open fetch pass can take the next programmable-blending draw (same surface, depth and format).</summary>
+    bool FetchPassContinues(Format format) =>
+        _fetchPassOpen && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting;
+
     void EndSingleFetchPass()
     {
+        _fetchPassOpen = false;
         var cmd = F.Cmd;
         _vk.CmdEndRenderPass(cmd);
         _boundPipeline = default;
