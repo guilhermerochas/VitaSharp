@@ -228,6 +228,28 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Profiling (VITASHARP_NATIVE_COUNTERS=1): VFP/NEON ops and conditional branches run in native code.</summary>
     public long SimdOps, CondBranches;
 
+    /// <summary>
+    /// Handles a supervisor call inside <see cref="Run"/> (the guest thread's HLE dispatch): an HLE call returns to the
+    /// block loop instead of leaving Run and entering it again, which on a phone cost more than most HLE functions do
+    /// themselves (lwmutex lock/unlock run hundreds of thousands of times a second in Unity games).
+    /// </summary>
+    public interface ISvcHandler
+    {
+        /// <summary>False: not handled (Run returns <see cref="ExitReason.Svc"/>). True: handled; the guest continues at
+        /// the state's pc, unless the handler set <c>s->Exit</c> (Run then returns that, e.g. <see cref="ExitReason.Handled"/>
+        /// when the thread must be parked).</summary>
+        bool TryHandleSvc(CpuState* s);
+    }
+
+    /// <summary>See <see cref="ISvcHandler"/>; null: every SVC leaves <see cref="Run"/>.</summary>
+    public ISvcHandler? SvcHandler;
+
+    /// <summary>Profiling: one native entry in <see cref="NativeTimingSample"/> is timed (twice a clock read per entry
+    /// was a few percent of a phone core when HLE calls enter and leave native code hundreds of thousands of times a
+    /// second); <see cref="NativeTicks"/> is scaled back.</summary>
+    const int NativeTimingSample = 16;
+    int _nativeEntries;
+
     public ExitReason Run()
     {
         var s = State;
@@ -237,11 +259,14 @@ public sealed unsafe class CpuCore : IDisposable
         long checkWindow = InstructionsPerSecond > 0 ? InstructionsPerSecond / 4000 : 200_000; // ~0.25 ms of guest CPU time
         long sinceCheck = PendingInstructions;
         PendingInstructions = 0;
+        // read once per Run: static reads cost a class-initialisation check each under Mono's AOT
+        bool verify = Native.NativeVerifier.Enabled;
+        Native.NativeRuntime? native = null;
         while (!StopRequested)
         {
             if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
             var b = Lookup(s->R[15], s->Thumb != 0);
-            if (b.NativeEntry != 0 && BlockHook == null && Native.NativeVerifier.Enabled)
+            if (b.NativeEntry != 0 && BlockHook == null && verify)
             {
                 // differential mode: native run checked against the interpreter, which provides the result
                 Native.NativeVerifier.Run(s, b);
@@ -259,9 +284,15 @@ public sealed unsafe class CpuCore : IDisposable
                 s->LinkBreak = _interrupt || _stop ? 1u : 0u;
                 s->NBlocks = 0; s->NInstr = 0;
                 if (s->DispatchTable == 0) s->DispatchTable = _cache.DispatchTable;
-                long n0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                Native.NativeRuntime.Instance.Run(s, b.NativeEntry);
-                NativeTicks += System.Diagnostics.Stopwatch.GetTimestamp() - n0;
+                native ??= Native.NativeRuntime.Instance;
+                if (++_nativeEntries >= NativeTimingSample)
+                {
+                    _nativeEntries = 0;
+                    long n0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                    native.Run(s, b.NativeEntry);
+                    NativeTicks += (System.Diagnostics.Stopwatch.GetTimestamp() - n0) * NativeTimingSample;
+                }
+                else native.Run(s, b.NativeEntry);
                 SimdOps += s->NSimdOps; CondBranches += s->NCondBranches; s->NSimdOps = 0; s->NCondBranches = 0;
                 if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
                 BlocksExecuted += s->NBlocks;
@@ -287,7 +318,17 @@ public sealed unsafe class CpuCore : IDisposable
                 sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             }
             if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
-            if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
+            if (s->Exit != ExitReason.None)
+            {
+                PendingInstructions = sinceCheck;
+                if (s->Exit != ExitReason.Svc || SvcHandler is not { } svc) return s->Exit;
+                s->Exit = ExitReason.None;
+                if (!svc.TryHandleSvc(s)) { s->Exit = ExitReason.Svc; return ExitReason.Svc; }
+                // handled in place: the HLE call may have settled the pending instructions (a blocking wait)
+                sinceCheck = PendingInstructions;
+                PendingInstructions = 0;
+                if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
+            }
             if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }
         }
         return ExitReason.Halt;

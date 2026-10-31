@@ -20,7 +20,7 @@ public sealed class GuestThreadExitException(int status, bool delete) : Exceptio
 public sealed class GuestFaultException(string message) : Exception(message);
 
 /// <summary>A guest thread backed by a dedicated host thread (true parallelism across host cores).</summary>
-public sealed unsafe class GuestThread : KernelObject, IDisposable
+public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.ISvcHandler
 {
     public const uint KernelTlsSize = 0x800;
     public const int TlsThreadId = 1, TlsSpTop = 2, TlsSpBottom = 3, TlsVfpException = 4, TlsReserved6 = 6,
@@ -172,6 +172,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         int status = 0;
         bool delete = false;
         Core.ShouldYield = () => Scheduler.ShouldYield(this);
+        Core.SvcHandler = this;
         try
         {
             Scheduler.Acquire(this);
@@ -240,6 +241,8 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
                     break;
                 case ExitReason.Yield:
                     Scheduler.Yield(this);
+                    break;
+                case ExitReason.Handled: // an HLE call ran inside Core.Run; the loop parks the thread if it must
                     break;
                 case ExitReason.Halt:
                     throw new GuestThreadExitException(0, false);
@@ -317,6 +320,21 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable
         CurrentHle = f;
         if (HleFunction.Profile) InvokeTimed(f, index); else f.Invoke!(Hle);
         CurrentHle = outer;
+    }
+
+    /// <summary>
+    /// An HLE call inside <see cref="CpuCore.Run"/> (<see cref="CpuCore.ISvcHandler"/>): the same dispatch as
+    /// <see cref="RunUntilTrap"/>'s, without leaving and re-entering the block loop. The return trap and anything that
+    /// needs the outer loop (suspension, pause) still go through it.
+    /// </summary>
+    bool CpuCore.ISvcHandler.TryHandleSvc(CpuState* s)
+    {
+        if (s->SvcImm == Kernel.TrapSvc) return false;
+        _inGuest = false; // a blocking HLE call is not guest code (SuspendForVm waits for guest code only)
+        DispatchHle(s);
+        _inGuest = true;
+        if (SuspendCount > 0 || ProcessSuspended || PausedHere) s->Exit = ExitReason.Handled;
+        return true;
     }
 
     void DispatchHle(CpuState* s)
