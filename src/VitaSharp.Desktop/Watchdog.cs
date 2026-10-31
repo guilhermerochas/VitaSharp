@@ -103,9 +103,7 @@ public sealed class Watchdog : IDisposable
     /// <summary>Debug mode: warnings by count and HLE error/unimplemented summaries (also at the end of a run).</summary>
     public static void LogSummaries()
     {
-        if (!DebugMode.Enabled) return;
-        foreach (var l in Log.WarningSummary()) Log.Info(l);
-        foreach (var l in DebugMode.HleSummary()) Log.Info(l);
+        foreach (var l in SessionReport.DebugSummaryLines()) Log.Info(l);
     }
 
     /// <summary>Threads, mutexes, GPU queue and renderer state (hang reports, diagnostic captures).</summary>

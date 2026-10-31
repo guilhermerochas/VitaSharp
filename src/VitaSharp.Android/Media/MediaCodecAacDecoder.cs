@@ -54,6 +54,34 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         }
     }
 
+    /// <summary>
+    /// SceAudiodec's MP3 (<see cref="AudioFrameDecoders.Mp3Backend"/>; no game known to use it yet, not run on a device):
+    /// the same synchronous frame-in, frame-out driving with "audio/mpeg". The frame size comes from the first frame's
+    /// header (1152 or 576 samples, FFmpeg's count), not from the first output buffer: Android's MP3 decoder drops its
+    /// first 529 samples, which would otherwise set a short frame size for the whole stream.
+    /// </summary>
+    public static IAudioFrameDecoder? CreateMp3(int channels)
+    {
+        MediaCodec? codec = null;
+        try
+        {
+            var fmt = MediaFormat.CreateAudioFormat(MediaFormat.MimetypeAudioMpeg, 44100, Math.Max(1, channels));
+            codec = MediaCodec.CreateDecoderByType(MediaFormat.MimetypeAudioMpeg);
+            codec.Configure(fmt, null, null, MediaCodecConfigFlags.None);
+            codec.Start();
+            Log.Info($"sceAudiodec: MP3 through MediaCodec {codec.Name} ({channels} ch)");
+            return new MediaCodecAacDecoder(codec, Math.Max(1, channels)) { _mp3 = true };
+        }
+        catch (Java.Lang.Exception e)
+        {
+            Log.Warn($"sceAudiodec: no MediaCodec MP3 decoder ({e.Message})");
+            try { codec?.Release(); } catch (Java.Lang.Exception) { }
+            return null;
+        }
+    }
+
+    bool _mp3;
+
     public int RawFrameLength(byte* data, int maxSize)
     {
         int n = RawAudioFrameLengths.Find(new ReadOnlySpan<byte>(data, maxSize));
@@ -67,6 +95,7 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         _frames++;
         if (c == null) return 0;
         int oc = outChannels > 0 ? outChannels : _outChannels;
+        if (_mp3 && _frameSamples == 0) _frameSamples = AudioFrameDecoders.Mp3FrameSamples(new ReadOnlySpan<byte>(data, size));
         try
         {
             int idx = c.DequeueInputBuffer(InputTimeoutUs);

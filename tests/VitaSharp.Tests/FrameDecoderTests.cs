@@ -65,7 +65,7 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
 /// </summary>
 public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
 {
-    static unsafe List<byte[]> EncodeSine(int frames, out byte[] config)
+    internal static unsafe List<byte[]> EncodeSine(int frames, out byte[] config)
     {
         config = [];
         var packets = new List<byte[]>();

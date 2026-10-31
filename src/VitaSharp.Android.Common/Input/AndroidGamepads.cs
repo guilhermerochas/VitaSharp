@@ -95,6 +95,9 @@ public sealed class AndroidGamepads
 
     public bool AnyConnected { get { lock (_lock) return _devices.Count > 0; } }
 
+    /// <summary>The device is a connected controller (its key events are controller keys, not keyboard keys).</summary>
+    public bool IsConnected(int deviceId) { lock (_lock) return _devices.ContainsKey(deviceId); }
+
     /// <summary>An SDL 2 style GUID from the USB/Bluetooth vendor and product ids, so <see cref="ControllerClassifier"/>
     /// and saved profiles work like on the desktop.</summary>
     public static string Guid(int vendorId, int productId)
@@ -205,13 +208,14 @@ public sealed class AndroidGamepads
 }
 
 /// <summary>
-/// The core's <see cref="IInputBackend"/> on Android: the on-screen pad and every physical controller combined (buttons
-/// OR-ed, sticks taking the value furthest from the centre, touches of both).
+/// The core's <see cref="IInputBackend"/> on Android: the on-screen pad, every physical controller and a hardware
+/// keyboard combined (buttons OR-ed, sticks taking the value furthest from the centre, touches of all).
 /// </summary>
-public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads) : IInputBackend
+public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, AndroidKeyboard? keyboard = null) : IInputBackend
 {
     public OnScreenPad Pad { get; } = pad;
     public AndroidGamepads Gamepads { get; } = gamepads;
+    public AndroidKeyboard? Keyboard { get; } = keyboard;
 
     MappedInput Current()
     {
@@ -219,6 +223,8 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads) : II
         foreach (var t in Pad.GetTouches(false)) touch.AddTouch(false, t);
         foreach (var t in Pad.GetTouches(true)) touch.AddTouch(true, t);
         var r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
+        // keyboard contacts (TouchFront/TouchBack keys) get ids of their own
+        if (Keyboard is { AnyHeld: true } k) r = InputMapper.Combine(r, k.Map(), 200);
         if (Script is { } s)
         {
             r.State = s.Apply(r.State);

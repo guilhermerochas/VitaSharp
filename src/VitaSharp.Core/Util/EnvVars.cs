@@ -123,4 +123,6 @@ public static class EnvVars
     /// <summary>Android: =1 asks for Window.setSustainedPerformanceMode where the device supports it (lower, steadier
     /// clocks for long sessions; off by default because it lowers peak speed).</summary>
     public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
+    /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
+    public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
 }

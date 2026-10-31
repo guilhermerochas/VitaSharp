@@ -68,7 +68,13 @@ public static class Log
         lock (Lock) { try { _file?.Flush(); } catch (ObjectDisposedException) { } }
     }
 
-    public static void Write(LogLevel level, string msg)
+    public static void Write(LogLevel level, string msg) => Write(level, msg, toSink: true);
+
+    /// <summary>An Info line for the log file (and the console) only, kept out of <see cref="Sink"/> (Android: logcat):
+    /// periodic statistics that only the file needs.</summary>
+    public static void InfoFileOnly(string m) => Write(LogLevel.Info, m, toSink: false);
+
+    static void Write(LogLevel level, string msg, bool toSink)
     {
         if (level < Level) return;
         if (level == LogLevel.Warn && DedupeWarnings)
@@ -87,7 +93,7 @@ public static class Log
                 Console.WriteLine(line);
                 if (level >= LogLevel.Warn) Console.ResetColor();
             }
-            Sink?.Write(level, thread, msg);
+            if (toSink) Sink?.Write(level, thread, msg);
             if (_file != null)
             {
                 _written += line.Length + 2;
