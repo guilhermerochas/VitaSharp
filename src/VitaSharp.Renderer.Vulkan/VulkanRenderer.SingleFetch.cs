@@ -117,7 +117,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_ss && _singleFetchSsLogged.Add(rt.Address))
             Log.Info($"[gpu] programmable blending in supersampled scene 0x{rt.Address:X8}: small draws render in a render pass that reads the {w}x{h} sample image as an input attachment");
         _fetchPassOpen = true;
-        (_fetchPassRt, _fetchPassDepth, _fetchPassFormat) = (rt, depth, format);
+        (_fetchPassRt, _fetchPassDepth, _fetchPassFormat, _fetchPassScene, _fetchPassImage) = (rt, depth, format, _sceneSerial, image);
         return cmd;
     }
 
@@ -128,18 +128,33 @@ public sealed unsafe partial class VulkanRenderer
     /// (VK_EXT/ARM_rasterization_order_attachment_access): the next programmable-blending draw of the same scene renders
     /// in it too, instead of a store and a load of the whole surface and depth/stencil per draw (Uncharted's title had
     /// about 18 such draws a frame: 45 renderings per frame instead of 8, most of its 28 ms of GPU time on a Mali-G57).
-    /// Any other recording ends it first (<see cref="Cmd"/>). VITASHARP_FETCH_PASS_MERGE=0 ends it after every draw.
+    /// Any other recording ends it first (<see cref="Cmd"/>). Off by default (VITASHARP_FETCH_PASS_MERGE=1 turns it on): on
+    /// the Mali-G57 it brought Uncharted's title from 25 to 36 fps, but about one frame in seven came out 15% darker
+    /// (screenrecord + signalstats), a cause not found yet.
     /// </summary>
     bool _fetchPassOpen;
     RenderTarget? _fetchPassRt;
     DepthTarget? _fetchPassDepth;
     Format _fetchPassFormat;
+    long _fetchPassScene;
+    /// <summary>The image the open pass renders into: a pass ended lazily (after the scene moved on) still makes its
+    /// own surface and depth visible, not the current scene's.</summary>
+    Image _fetchPassImage;
     long _statFetchPassMerged;
-    static readonly bool FetchPassMerge = Environment.GetEnvironmentVariable(Core.Util.EnvVars.FetchPassMerge) != "0";
+    static readonly bool FetchPassMerge = Environment.GetEnvironmentVariable(Core.Util.EnvVars.FetchPassMerge) == "1";
+
+    /// <summary>The next draw renders in the open fetch pass: the bookkeeping <see cref="BeginSingleFetchPass"/> does.</summary>
+    void ContinueSingleFetchPass()
+    {
+        _statFetchPassMerged++;
+        var rt = _fetchPassRt!;
+        rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;
+        _fetchPassDepth!.Version++;
+    }
 
     /// <summary>The open fetch pass can take the next programmable-blending draw (same surface, depth and format).</summary>
     bool FetchPassContinues(Format format) =>
-        _fetchPassOpen && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting;
+        _fetchPassOpen && _fetchPassScene == _sceneSerial && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting;
 
     void EndSingleFetchPass()
     {
@@ -150,12 +165,12 @@ public sealed unsafe partial class VulkanRenderer
         // the samples of a supersampled scene now hold rendering that is not filtered into the surface yet
         if (_ss) _ssUnresolved = true;
         // the next rendering (or a copy / sampling of the surface) comes after this pass's writes
-        Barrier(SingleFetchImage(), ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+        Barrier(_fetchPassImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit,
             AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit | AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
-        Barrier(_depth!.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+        Barrier(_fetchPassDepth!.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
             PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
     }

@@ -818,7 +818,7 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch && FetchPassContinues(attachFormat)) { cmd = F.Cmd; _statFetchPassMerged++; }
+            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); }
             else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
             else
             {

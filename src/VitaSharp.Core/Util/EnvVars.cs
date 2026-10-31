@@ -33,8 +33,8 @@ public static class EnvVars
     public const string DebugTex0 = "VITASHARP_DEBUG_TEX0";
     public const string DyldRelaunched = "VITASHARP_DYLD_RELAUNCHED";
     public const string FetchSplit = "VITASHARP_FETCH_SPLIT";
-    /// <summary>=0: a one-sample fetch pass ends after every programmable-blending draw even where the GPU orders input
-    /// attachment reads with the rasterization (VulkanRenderer.SingleFetch.cs).</summary>
+    /// <summary>=1: consecutive programmable-blending draws of a one-sample scene share one fetch pass where the GPU orders
+    /// input attachment reads with the rasterization (VulkanRenderer.SingleFetch.cs; experimental: dark frames on Mali).</summary>
     public const string FetchPassMerge = "VITASHARP_FETCH_PASS_MERGE";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>Tests: an installed firmware to run firmware modules from (a Vita3K data folder with vs0/, or a vs0
