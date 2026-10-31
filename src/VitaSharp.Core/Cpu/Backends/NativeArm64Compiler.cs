@@ -33,16 +33,23 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     /// <summary>The frontend configured for this emitter (its SIMD coverage, no FZ tininess slow paths).</summary>
     public static ArmFrontend NewFrontend() => new(Arm64Emitter.SupportsVec, tinyCheck: false);
 
-    public CompiledBlock? Compile(Block b) => Compile(b, NativeRuntime.Instance.Arm64Stubs);
+    public CompiledBlock? Compile(Block b) => Compile(b, NativeRuntime.Instance.Arm64Stubs, hleCallouts: HleCallouts);
+
+    /// <summary>SVCs call the HLE dispatch from native code (<see cref="ArmFrontend.HleCallouts"/>): on unless
+    /// VITASHARP_NATIVE_HLE_CALLOUT=off or the differential verifier runs (it would run every HLE call twice).</summary>
+    public static readonly bool HleCallouts = !NativeVerifier.Enabled
+        && Environment.GetEnvironmentVariable(Util.EnvVars.NativeHleCallout) is not ("off" or "0");
 
     /// <summary>
     /// Compiles for the given runtime entry points. On an ARM64 host these are <see cref="NativeRuntime.Arm64Stubs"/>;
     /// tests on other hosts pass their own (the code then runs under an AArch64 emulator).
     /// </summary>
-    public CompiledBlock? Compile(Block b, Arm64Emitter.Runtime stubs)
+    public CompiledBlock? Compile(Block b, Arm64Emitter.Runtime stubs, bool hleCallouts = false)
     {
         long t0 = Stopwatch.GetTimestamp();
-        var ir = (_frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true)).Translate(b);
+        var fe = _frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
+        fe.HleCallouts = hleCallouts;
+        var ir = fe.Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
         if (NativeX64Compiler.ValidateIr) IrPasses.Validate(ir);
@@ -59,7 +66,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         {
             int simd = 0;
             foreach (var x in ir.Insts)
-                if (x.Op == IrOp.Callout && NeonOp[x.Imm]) simd++;
+                if (x.Op == IrOp.Callout && x.Imm < (uint)NeonOp.Length && NeonOp[x.Imm]) simd++;
             if (simd >= 2 && simd * 4 >= b.Insts.Length)
             {
                 tierUp = (nint)rt.AllocateSlots(1);
@@ -81,7 +88,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         CompilePhases.Record(b);
         if (NativeX64Compiler.DumpCode) Console.Error.WriteLine($"[native-arm64] {b}\n{ir}\n{Arm64Dump.Dump((nint)code, size)}");
         bool unlogged = false;
-        foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;
+        foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && (x.Imm == ArmFrontend.HleCalloutOp || NativeVerifier.MayStore((Op)x.Imm)))) unlogged = true;
         return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged, Arm64: true));
     }
 }

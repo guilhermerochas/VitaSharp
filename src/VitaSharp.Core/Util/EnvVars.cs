@@ -71,6 +71,9 @@ public static class EnvVars
     /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
     /// bytes) for attributing CPU-profiler samples in the code arena (Cpu/Native/NativeCodeMap).</summary>
     public const string NativeMap = "VITASHARP_NATIVE_MAP";
+    /// <summary>=off: ARM64 code leaves native code for every HLE call (SVC) instead of calling the HLE dispatch from it
+    /// (Cpu/Native/ArmFrontend.HleCallouts).</summary>
+    public const string NativeHleCallout = "VITASHARP_NATIVE_HLE_CALLOUT";
     /// <summary>Mono only (Android): =on enters native code with the runtime's GC transition, as CoreCLR always does;
     /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's
     /// hybrid suspend handles; callouts from that mode are allowed).</summary>

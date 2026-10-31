@@ -158,6 +158,7 @@ public sealed unsafe partial class NativeRuntime
     {
         try
         {
+            if (op == (int)ArmFrontend.HleCalloutOp) return HleCall(s);
             CalloutHits[op]++; // racy on purpose: statistics only
             CalloutClasses.Hits[op * CalloutClasses.Sub + CalloutClasses.Of(op, ins)]++;
             HandlerTable.Pointers[op](s, ins, pc);
@@ -169,6 +170,21 @@ public sealed unsafe partial class NativeRuntime
             s->CalloutFault = 1;
             return 1;
         }
+    }
+
+    /// <summary>Executed HLE callouts (statistics).</summary>
+    public static long HleCallouts;
+
+    /// <summary>
+    /// An SVC from native code (<see cref="ArmFrontend.HleCallouts"/>): the thread's HLE dispatch runs here and the block goes
+    /// on at the pc it set. What the dispatcher must handle (the return trap, callback waits, no handler) is left to it
+    /// by raising the SVC exit, which the block's indirect exit sees. A throwing call is caught by the caller.
+    /// </summary>
+    static int HleCall(CpuState* s)
+    {
+        HleCallouts++;
+        if (CpuCore.CurrentSvcHandler is not { } h || !h.TryHandleSvcNative(s)) s->Exit = ExitReason.Svc;
+        return 0;
     }
 
     public static void ThrowPendingFault(CpuState* s)

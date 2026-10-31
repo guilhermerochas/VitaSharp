@@ -242,10 +242,17 @@ public sealed unsafe class CpuCore : IDisposable
         /// the state's pc, unless the handler set <c>s->Exit</c> (Run then returns that, e.g. <see cref="ExitReason.Handled"/>
         /// when the thread must be parked).</summary>
         bool TryHandleSvc(CpuState* s);
+
+        /// <summary>The same from native code (an SVC callout, <see cref="Native.ArmFrontend.HleCallouts"/>): false leaves it to
+        /// the dispatcher (the return trap, calls that run guest callbacks).</summary>
+        bool TryHandleSvcNative(CpuState* s);
     }
 
     /// <summary>See <see cref="ISvcHandler"/>; null: every SVC leaves <see cref="Run"/>.</summary>
     public ISvcHandler? SvcHandler;
+
+    /// <summary>The SVC handler of the thread running native code (HLE callouts find it here).</summary>
+    [ThreadStatic] public static ISvcHandler? CurrentSvcHandler;
 
     /// <summary>Profiling: one native entry in <see cref="NativeTimingSample"/> is timed (twice a clock read per entry
     /// was a few percent of a phone core when HLE calls enter and leave native code hundreds of thousands of times a
@@ -264,6 +271,7 @@ public sealed unsafe class CpuCore : IDisposable
         PendingInstructions = 0;
         // read once per Run: static reads cost a class-initialisation check each under Mono's AOT
         bool verify = Native.NativeVerifier.Enabled;
+        CurrentSvcHandler = SvcHandler;
         Native.NativeRuntime? native = null;
         bool resume = false; // an HLE call returned: native code continues through the dispatch table
         bool republish = false; // an indirect exit missed the dispatch table: the block found next takes its entry back

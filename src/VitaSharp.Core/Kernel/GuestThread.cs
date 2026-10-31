@@ -337,6 +337,12 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
         return true;
     }
 
+    bool CpuCore.ISvcHandler.TryHandleSvcNative(CpuState* s)
+    {
+        if (s->SvcImm == Kernel.TrapSvc || _emu.Hle.GetFunction(s->SvcImm).IsCallbackWait) return false;
+        return ((CpuCore.ISvcHandler)this).TryHandleSvc(s);
+    }
+
     void DispatchHle(CpuState* s)
     {
         var f = _emu.Hle.GetFunction(s->SvcImm);
