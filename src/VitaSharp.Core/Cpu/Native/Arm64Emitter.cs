@@ -91,10 +91,14 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Linked static exits become direct branches patched into the code (<see cref="Runtime.PatchLinks"/>,
         /// set by the runtime that owns the code arena; with pinned counters only).</summary>
         PatchLinks = 512,
-        All = 1023,
+        /// <summary>Conditional instructions that fall through keep the dirty guest state cached across their region
+        /// (the frontend's <see cref="ArmFrontend.DeferRegions"/>): flags a later instruction supersedes are never
+        /// materialised, and only the slots the region writes are stored before its branch.</summary>
+        DeferRegions = 1024,
+        All = 2047,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));

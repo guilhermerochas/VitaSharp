@@ -291,6 +291,89 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>
+    /// Deferred conditional regions (<see cref="Arm64Emitter.A64Opt.DeferRegions"/>) under stress: long ARM blocks of
+    /// conditional data processing (flag setters and not, inside and outside the regions), conditional loads/stores,
+    /// conditional MRS/MSR APSR (core callouts: a flush and invalidation inside the region) and VQSHL (SIMD-only
+    /// callouts), against the interpreter with the option on and off.
+    /// </summary>
+    [Arm64SandboxTheory]
+    [InlineData(600, 3301)]
+    public void Arm64DeferredRegionsMatchInterpreter(int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        var rng = new Random(seed);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0, shorter = 0, longer = 0, detailed = 0;
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var code = new List<byte>();
+                int n = rng.Next(4, 28);
+                for (int k = 0, attempts = 0; k < n && attempts < 400; attempts++)
+                {
+                    uint r = (uint)rng.NextInt64();
+                    uint cond = rng.Next(3) == 0 ? 14u : (uint)rng.Next(14);
+                    uint ins = rng.Next(10) switch
+                    {
+                        // data processing, r0-r7, immediate or shifted register
+                        < 6 => (cond << 28) | (r & 0x03F77F67) & ~(rng.Next(2) == 0 ? 0x02000000u : 0x10u),
+                        6 => (cond << 28) | 0x05800000u | (r & 0x00106000) | 0x1000 | (r & 0x3FC), // LDR/STR r1/r3/r5/r7, [r0, #imm]
+                        7 => (cond << 28) | (rng.Next(3) == 0 ? 0x0128F003u : 0x010F1000u | (r & 0x6000)), // MSR APSR_nzcvq, r3 / MRS
+                        8 => (cond << 28) | 0x00100000u | (r & 0x00E00000) | (r & 0x00077007) & ~0x8000u, // flag setters, Rd r0-r7
+                        _ => (0xF2000410u | (r & 0x01300100) | (r & 0x00076007)) & ~0x40u,  // VQSHL/VQRSHL d, d, d
+                    };
+                    if (rng.Next(10) == 0) ins = (cond << 28) | 0x0A000000u; // a conditional branch (ends the block)
+                    var d = Decoder.DecodeArm(ins, CodeBase);
+                    if (d.EndsBlock && d.Op.ToString() != "A32_B" || CpuFuzzTests.IsUnpredictable(d, false)) continue;
+                    if (d.Op.ToString().StartsWith("Neon_") && !SimdDefined(ins, false)) continue;
+                    code.AddRange(BitConverter.GetBytes(ins));
+                    k++;
+                    if (d.EndsBlock) break;
+                }
+                if (code.Count == 0) continue;
+                code.AddRange([0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, false);
+                var st = new RandomState(rng);
+                NeonState(rng, st);
+                st.Regs[0] = DataBase + 0x400;
+                st.Apply(s, false);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                int[] words = new int[2];
+                for (int mode = 0; mode < 2; mode++)
+                {
+                    Arm64Emitter.Opts = mode == 1 ? old | Arm64Emitter.A64Opt.DeferRegions : old & ~Arm64Emitter.A64Opt.DeferRegions;
+                    var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                    words[mode] = ((NativeCodeInfo)cb.Tag!).Size;
+                    st.Apply(s, false);
+                    var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                    compared++;
+                    string diff = Diff(interp, native);
+                    if (diff.Length > 0)
+                    {
+                        if (detailed++ < 4) output.WriteLine($"--- deferred {mode == 1}{diff}\n{DescribeArm64(b, cb)}");
+                        Record(failures, $"deferred {mode == 1}", b, diff);
+                    }
+                }
+                if (words[1] < words[0]) shorter++;
+                if (words[1] > words[0]) longer++;
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        output.WriteLine($"compared {compared} runs, {shorter} blocks shorter, {longer} longer with deferred regions; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(shorter > 2 * longer && shorter > 0, "deferred regions made code longer");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
     /// <see cref="Arm64Emitter.A64Opt.BackEdgeBreak"/>: with LinkBreak set and a full pacing window left, a linked forward
     /// exit chains on and the linked back edge returns (two blocks); without the option the first exit returns.
     /// The pinned counters must also hand the dispatcher the right block and cycle totals.
