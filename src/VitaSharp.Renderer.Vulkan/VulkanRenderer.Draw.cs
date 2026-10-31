@@ -823,7 +823,7 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); }
+            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); if (!_core.RasterizationOrderColor || Environment.GetEnvironmentVariable("VITASHARP_X_FETCH_BARRIER") == "1") InputFetchBarrier(cmd); }
             else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
             else
             {
@@ -871,13 +871,13 @@ public sealed unsafe partial class VulkanRenderer
             }
             else
             {
-                bool visQuery = BeginVisibilityQuery(d, out uint query);
+                bool visQuery = BeginVisibilityQuery(cmd, d, out uint query);
                 _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
                 _statDraws++;
-                if (visQuery) { EndVisibilityQuery(query); CostNoteVisQuery(query); }
+                if (visQuery) { EndVisibilityQuery(cmd, query); CostNoteVisQuery(query); }
             }
             EndCostQuery(cmd);
-            if (singleFetch && !(FetchPassMerge && _core.RasterizationOrderColor)) EndSingleFetchPass();
+            if (singleFetch && !FetchPassMerge) EndSingleFetchPass();
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         if (CostOn) CostNoteDraw(d, vs, fs);

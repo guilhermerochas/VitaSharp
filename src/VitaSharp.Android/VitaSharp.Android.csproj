@@ -132,6 +132,13 @@
         Condition="Exists('..\..\third_party\android-shaderc\libs\x86_64\libshaderc_shared.so')" />
   </ItemGroup>
 
+  <!-- Diagnostic builds: -p:VitaSharpValidationLayer=<dir>/arm64-v8a/libVkLayer_khronos_validation.so (Android binaries
+       from the Vulkan-ValidationLayers releases) packages the Khronos validation layer; VITASHARP_VK_VALIDATION=1 in
+       env.txt enables it (the loader finds layers in the app's own native library directory) -->
+  <ItemGroup Condition="'$(VitaSharpValidationLayer)' != ''">
+    <AndroidNativeLibrary Include="$(VitaSharpValidationLayer)" Abi="arm64-v8a" />
+  </ItemGroup>
+
   <!-- libadrenotools and its hook libraries (arm64-v8a only), built by build/build-android-adrenotools.ps1 or .sh (not
        committed): packaged when present; without them "Driver da GPU" cannot load custom drivers and the system Vulkan
        driver is used. libadrenotools loads the hooks by path from the native library directory, so the manifest has

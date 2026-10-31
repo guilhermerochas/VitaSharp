@@ -48,7 +48,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Starts the occlusion query for a draw with a visibility test; returns false when none is needed.</summary>
-    bool BeginVisibilityQuery(DrawCommand d, out uint query)
+    bool BeginVisibilityQuery(CommandBuffer cmd, DrawCommand d, out uint query)
     {
         query = 0;
         if (d.VisAddress == 0) return false;
@@ -57,11 +57,11 @@ public sealed unsafe partial class VulkanRenderer
         query = v.Used++;
         v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space));
         var flags = (d.VisIncrement || CostOn) && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
-        _vk.CmdBeginQuery(Cmd, v.Pool, query, flags);
+        _vk.CmdBeginQuery(cmd, v.Pool, query, flags);
         return true;
     }
 
-    void EndVisibilityQuery(uint query) => _vk.CmdEndQuery(Cmd, Vis(F).Pool, query);
+    void EndVisibilityQuery(CommandBuffer cmd, uint query) => _vk.CmdEndQuery(cmd, Vis(F).Pool, query);
 
     /// <summary>Runs after the frame's fence signalled: writes the results into guest memory.</summary>
     void CompleteVisibility(Frame f)

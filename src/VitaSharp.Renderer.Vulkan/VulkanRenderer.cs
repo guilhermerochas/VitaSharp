@@ -127,7 +127,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         _opt = options;
         _presentCount = Math.Max(0, options.FirstPresent);
-        _core = new VkCore(options.Surface, options.Validation, options.GpuProfile);
+        _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) == "1", options.GpuProfile);
         _vk = _core.Vk;
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);

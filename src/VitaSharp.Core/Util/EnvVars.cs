@@ -41,6 +41,9 @@ public static class EnvVars
     /// input attachment reads with the rasterization (VulkanRenderer.SingleFetch.cs; experimental: dark frames on Mali).</summary>
     public const string FetchPassMerge = "VITASHARP_FETCH_PASS_MERGE";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
+    /// <summary>=1: the Khronos validation layer when it can be found (Android: an APK built with
+    /// -p:VitaSharpValidationLayer=path/to/arm64-v8a/libVkLayer_khronos_validation.so); messages go to the log.</summary>
+    public const string VkValidation = "VITASHARP_VK_VALIDATION";
     /// <summary>Tests: an installed firmware to run firmware modules from (a Vita3K data folder with vs0/, or a vs0
     /// folder itself). Unset: %APPDATA%\Vita3K\Vita3K when it exists, else the PSVUPDAT.PUP of FirmwarePup.</summary>
     public const string FirmwareDir = "VITASHARP_FIRMWARE_DIR";

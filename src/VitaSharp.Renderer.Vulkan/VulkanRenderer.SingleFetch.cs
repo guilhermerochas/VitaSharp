@@ -116,7 +116,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[gpu] programmable blending in one-sample scenes: small draws render in a render pass that reads the surface as an input attachment (render target 0x{rt.Address:X8})");
         if (_ss && _singleFetchSsLogged.Add(rt.Address))
             Log.Info($"[gpu] programmable blending in supersampled scene 0x{rt.Address:X8}: small draws render in a render pass that reads the {w}x{h} sample image as an input attachment");
-        _fetchPassOpen = true;
+        _fetchPassOpen = true; _fetchPassDraws = 0;
         (_fetchPassRt, _fetchPassDepth, _fetchPassFormat, _fetchPassScene, _fetchPassImage) = (rt, depth, format, _sceneSerial, image);
         return cmd;
     }
@@ -146,7 +146,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The next draw renders in the open fetch pass: the bookkeeping <see cref="BeginSingleFetchPass"/> does.</summary>
     void ContinueSingleFetchPass()
     {
-        _statFetchPassMerged++;
+        _statFetchPassMerged++; _fetchPassDraws++;
         var rt = _fetchPassRt!;
         rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;
         _fetchPassDepth!.Version++;
@@ -154,7 +154,9 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>The open fetch pass can take the next programmable-blending draw (same surface, depth and format).</summary>
     bool FetchPassContinues(Format format) =>
-        _fetchPassOpen && _fetchPassScene == _sceneSerial && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting;
+        _fetchPassOpen && _fetchPassScene == _sceneSerial && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting && _fetchPassDraws < XFetchMax;
+    int _fetchPassDraws;
+    static readonly int XFetchMax = int.TryParse(Environment.GetEnvironmentVariable("VITASHARP_X_FETCH_MAX"), out var xm) ? xm : int.MaxValue;
 
     void EndSingleFetchPass()
     {
