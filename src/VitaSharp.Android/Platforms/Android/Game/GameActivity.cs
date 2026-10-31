@@ -56,11 +56,19 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     long _lastFrames, _framesAtLog, _fpsTicks;
     bool _menuOpen, _isSystem, _endedShown;
 
+    /// <summary>
+    /// Set by a launch-intent start (<c>am start ... --es titleId</c>: shortcuts and the device-test scripts): the game
+    /// turns the screen on and shows over a non-secure lock screen, so a scripted run on a sleeping phone still renders.
+    /// Starts from the library leave the screen and the keyguard alone.
+    /// </summary>
+    public const string ExtraWakeScreen = "wakeScreen";
+
     /// <summary>Starts a game from the UI process.</summary>
-    public static void Launch(Context context, string titleId)
+    public static void Launch(Context context, string titleId, bool wakeScreen = false)
     {
         var intent = new Intent(context, typeof(GameActivity));
         intent.PutExtra(ExtraTitleId, titleId);
+        if (wakeScreen) intent.PutExtra(ExtraWakeScreen, true);
         if (context is not Activity) intent.AddFlags(ActivityFlags.NewTask);
         context.StartActivity(intent);
     }
@@ -79,11 +87,36 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         Launch(context, running.TitleId);
     }
 
+    /// <summary>
+    /// A launch-intent start (<see cref="ExtraWakeScreen"/>): screen on, shown over the lock screen, and a non-secure
+    /// keyguard dismissed (a PIN/pattern keyguard stays; the game then renders behind it until it is unlocked).
+    /// </summary>
+    void WakeScreen()
+    {
+        if (OperatingSystem.IsAndroidVersionAtLeast(27))
+        {
+            SetTurnScreenOn(true);
+            SetShowWhenLocked(true);
+            if (GetSystemService(KeyguardService) is KeyguardManager km)
+            {
+                if (!km.IsKeyguardSecure) km.RequestDismissKeyguard(this, null);
+                else if (km.IsKeyguardLocked) Log.Warn("Launch intent: the lock screen is secure (PIN/pattern); unlock the phone to see the game");
+            }
+        }
+        else
+        {
+#pragma warning disable CA1422 // the pre-27 flags
+            Window?.AddFlags(WindowManagerFlags.TurnScreenOn | WindowManagerFlags.ShowWhenLocked | WindowManagerFlags.DismissKeyguard);
+#pragma warning restore CA1422
+        }
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
         AppServices.Initialize(this, gameProcess: true);
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
+        if (Intent?.GetBooleanExtra(ExtraWakeScreen, false) == true) WakeScreen();
 
         string titleId = Intent?.GetStringExtra(ExtraTitleId) ?? "";
         bool system = titleId == SystemTitleId;
