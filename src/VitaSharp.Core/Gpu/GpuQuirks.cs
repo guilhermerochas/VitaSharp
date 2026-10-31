@@ -421,11 +421,16 @@ public static class GpuQuirkTable
         var limits = ProfileLimits(profile, dev.Limits);
         var quirks = GpuQuirk.None;
         var reasons = new List<string>();
-        if (profile != GpuProfile.Desktop)
+        // the desktop profile drops the vendor workarounds (to test whether they are needed), except a real mobile driver's
+        // unusable dynamic rendering: kept on the Mali blob under the desktop profile, vkEndCommandBuffer crashed in the
+        // driver now and then (F1 2011 on a Redmi Note 14)
+        bool desktopOnMobile = profile == GpuProfile.Desktop && IsTileBased(vendor);
+        if (profile != GpuProfile.Desktop || desktopOnMobile)
         {
             foreach (var e in Table)
             {
                 if (!e.When(vendor, driver, version)) continue;
+                if (desktopOnMobile && e.Quirk != GpuQuirk.DynamicRenderingSuspect) continue;
                 quirks |= e.Quirk;
                 reasons.Add($"{e.Quirk}: {e.Applies} [{e.Source}]");
             }
