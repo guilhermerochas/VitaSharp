@@ -65,6 +65,13 @@ public static class EnvVars
     /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
+    /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
+    /// bytes) for attributing CPU-profiler samples in the code arena (Cpu/Native/NativeCodeMap).</summary>
+    public const string NativeMap = "VITASHARP_NATIVE_MAP";
+    /// <summary>Mono only (Android): =on enters native code with the runtime's GC transition, as CoreCLR always does;
+    /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's
+    /// hybrid suspend handles; callouts from that mode are allowed).</summary>
+    public const string NativeGcTransition = "VITASHARP_NATIVE_GC_TRANSITION";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
     /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";

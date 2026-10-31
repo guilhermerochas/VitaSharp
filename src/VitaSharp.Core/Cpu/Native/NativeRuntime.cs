@@ -52,8 +52,15 @@ public sealed unsafe partial class NativeRuntime
         {
             int epi = 0;
             bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
-            byte* entry64 = Code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned));
+            int trampSize = 0;
+            byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned); trampSize = t.Length; return t; });
+            if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
+            if (SkipGcTransition)
+            {
+                _enterFast = (delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void>)entry64;
+                Util.Log.Info("Native backend: entered without the GC transition (Mono)");
+            }
             Arm64Stubs = new Arm64Emitter.Runtime
             {
                 Epilogue = (ulong)(entry64 + epi),
@@ -90,8 +97,21 @@ public sealed unsafe partial class NativeRuntime
     {
         if (s->DispatchTable == 0) s->DispatchTable = (nint)Dispatch;
         if (s->MemBase == null) s->MemBase = GuestMemory.Base;
-        _enter(s, entry);
+        if (_enterFast != null) _enterFast(s, entry);
+        else _enter(s, entry);
     }
+
+    /// <summary>
+    /// Mono (the Android app): enter native code without the GC transition. Every HLE call leaves native code and
+    /// enters it again, and Mono's transition (thread-state CAS, TLS lookups, LMF) was several percent of a phone core
+    /// in HLE-heavy games. Mono's hybrid suspend stops a thread running in managed mode with a signal, so the GC does not
+    /// wait for guest code, and an [UnmanagedCallersOnly] callout from that mode is a no-op transition there. CoreCLR
+    /// (the desktop) keeps the transition: its reverse P/Invoke from cooperative mode is a fatal error.
+    /// <see cref="EnvVars.NativeGcTransition"/>=on keeps it on Mono too.
+    /// </summary>
+    static readonly bool SkipGcTransition = Type.GetType("Mono.RuntimeStructs") != null
+        && Environment.GetEnvironmentVariable(EnvVars.NativeGcTransition) is not ("on" or "1");
+    readonly delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void> _enterFast;
 
     // ------------------------------------------------------------------ callouts
 

@@ -71,6 +71,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         rt.Register((nint)code, size, b);
+        if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)code, size, b.Start, b.Thumb);
         Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
         if (NativeX64Compiler.DumpCode) Console.Error.WriteLine($"[native-arm64] {b}\n{ir}\n{Arm64Dump.Dump((nint)code, size)}");

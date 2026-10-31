@@ -63,10 +63,20 @@ public static class SessionReport
         }
         Add(CpuBackendLines);
         Add(() => CycleLines(emu));
+        Add(() => [HleCallsLine(emu)]);
         Add(() => GpuLines(emu));
         Add(AudioDiagnostics.SummaryLines);
         Add(ProcessLines);
         return lines;
+    }
+
+    /// <summary>The busiest HLE functions so far, on one line (the end-of-run report lists 40, one per line).</summary>
+    static string HleCallsLine(Emulator emu)
+    {
+        long frames = Math.Max(1, VitaSharp.Core.Hle.Modules.Display.FramesPresented);
+        var top = emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(12)
+            .Select(f => $"{f.Name} {f.CallCount} ({f.CallCount / (double)frames:F0}/frame)");
+        return $"PERF hle calls: {string.Join(", ", top)}";
     }
 
     /// <summary>Native JIT verification and the native backend's report.</summary>
