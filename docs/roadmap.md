@@ -48,6 +48,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   31/10/2026 no Redmi Note 14, build de release do `perf/android-phone`); comparar com o desktop na mesma cena (perfis
   `desktop` e `mali`) para saber se é da Mali (conversão BC → ASTC/RGBA8, formato sem suporte, mipmaps) ou geral, e
   pegar o log/captura do celular
+- [ ] Flicker no celular em todos os jogos testados (Knightin'+, Devious Dungeon, F1 2011, Uncharted, God of War
+  Collection): sequências de 10+ quadros seguidos (`screencap`/`screenrecord`) comparadas com o desktop na mesma cena
+  e zero quadro piscando; o que falta hoje: o quadro escuro do Uncharted (1 a cada volta do filme do título) e
+  conferir o God of War
 - [ ] GPU da Mali sobrecarregada (Uncharted no título: 33,7 ms de GPU por quadro na Mali-G57 contra 4,2 ms no PC,
   8x mais que a diferença de força esperada): medir com os contadores da Mali (Arm Performance Studio / contadores
   via adb) onde vai o tempo (cálculo, texturas, leitura/gravação de tiles, vértices) e reduzir: shaders em 16 bits
