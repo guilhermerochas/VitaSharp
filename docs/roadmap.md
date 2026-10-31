@@ -98,21 +98,32 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Redmi Note 14 (Helio G99, Mali-G57) antes e depois de cada passo), nesta ordem:
   - [x] Threads do jogo e da GPU nos núcleos rápidos (2× A76) e sessão da Performance Hint API (ADPF) (30/10/2026,
     branch feat/android-speed-1: clusters lidos do sysfs, thread principal e GPU nos núcleos rápidos, sessão ADPF com o
-    tempo de trabalho por quadro, `VITASHARP_ANDROID_AFFINITY=off` para comparar; falta medir no Redmi Note 14,
-    roteiro em `docs/android/README.md`, "CPU cores and ADPF")
+    tempo de trabalho por quadro, `VITASHARP_ANDROID_AFFINITY=off` para comparar; medido no Redmi Note 14 em 31/10:
+    thread principal e GPU nos núcleos 6-7, ver "Phone run 2" em `docs/android/README.md`)
   - [x] Ganhos rápidos: sem logs de nível info no logcat durante o jogo, Swappy (ritmo de quadros, 90/120 Hz) e o
     controle de velocidade da CPU emulada sem esperas à toa (30/10/2026, mesmo branch: logcat só com avisos e erros a
     partir do primeiro quadro, FIFO com 3 imagens, `Surface.setFrameRate` com o fps do jogo, nenhuma espera girando
-    no celular; o Swappy ficou de fora por ser biblioteca nativa, ver "Frame pacing" no README; falta medir)
-  - [ ] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
+    no celular; o Swappy ficou de fora por ser biblioteca nativa, ver "Frame pacing" no README; medido em 31/10:
+    Knightin'+ estável em 30 fps com 60 Hz na tela)
+  - [x] Ajuste do JIT nativo ARM64 no aparelho: contagem de ciclos na saída dos blocos, comparação e desvio juntos,
     registradores NEON mantidos nos do processador, menos trocas do modo de ponto flutuante (30/10/2026: feito no
     branch `perf/arm64-jit`, cerca de 25% menos instruções por instrução do Vita nos blocos de teste, cada otimização
-    com chave em `VITASHARP_NATIVE_A64_NOOPT`; falta medir no aparelho: sessão com `VITASHARP_NATIVE_VERIFY=1` e fps
-    A/B com `VITASHARP_NATIVE_A64_NOOPT=all`; ver `docs/notes/native-jit.md`, "perf/arm64-jit")
+    com chave em `VITASHARP_NATIVE_A64_NOOPT`; 31/10/2026, branch perf/android-phone: 0 divergências com
+    `VITASHARP_NATIVE_VERIFY=1`, mais saídas ligadas por B direto, chamadas HLE de dentro do código nativo, sem a
+    transição de GC do Mono; Devious Dungeon de 27-30 para 52 fps; ver `docs/notes/native-jit.md`, "On the device")
   - [x] Custo do Mono: AOT do código gerenciado quente (HLE, renderizador, áudio) ou CoreCLR no Android (30/10/2026:
     Release com AOT completo do Mono, todos os métodos de todos os assemblies com o JIT mantido; troca por
-    `-p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr`; APK de 44,2 para 66,9 MB; a velocidade no
-    celular ainda falta medir, plano A/B contra mono-jit em `docs/android/README.md`, "Runtime and AOT choice")
+    `-p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr`; APK de 44,2 para 66,9 MB; 31/10: medido
+    no celular, `mono-aot-llvm` virou o padrão (corrida do F1 2011 35% mais rápida que `mono-aot`), ver "Runtime and AOT
+    choice" em `docs/android/README.md`)
+  - [ ] Custo por draw do worker da GPU no celular: F1 2011 na corrida ainda abaixo de 30 fps (cerca de 1.000 draws por
+    quadro, o worker da GPU num núcleo A76 inteiro); dividir a preparação e a gravação dos comandos em duas threads,
+    menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
+  - [ ] Crash do driver Mali em `vkEndCommandBuffer` (GPU worker, ponteiro nulo em `libGLES_mali.so`): de vez em quando
+    no F1 2011 entre o menu e a corrida, também nas versões anteriores; causa ainda não achada
+  - [ ] Som dos filmes do F1 2011 no celular: um quadro AAC de silêncio a cada quatro (o player do jogo recebe o áudio
+    devagar pelo SceMp4/MediaExtractor + SceAudiodec/MediaCodec; no PC, com FFmpeg, sem buracos); imagem dos filmes já
+    corrigida (31/10: fila de quadros do MediaCodec, pts da unidade, sem flashes pretos)
   - [ ] Shaders: shaderc em segundo plano nos núcleos rápidos e reaproveitar o cache de shaders gerado no PC
   - [ ] GPU: conversão para ASTC com cache em disco sempre ligada na Mali (sem BC), MSAA nativo
 - [x] Armazenamento: escolher a pasta dos jogos (Storage Access Framework), instalar VPK, saves e instalar o firmware

@@ -40,7 +40,8 @@ MediaCodec/AAudio backends, libadrenotools and `extractNativeLibs` (native libra
 libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); with both libshaderc
 builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`. Since the
 full AOT default (30/10/2026, [Runtime and AOT choice](#runtime-and-aot-choice-vitasharpandroidruntime)): 66,860,650
-bytes and about 5 minutes; `-p:VitaSharpAndroidRuntime=mono-jit` gives the old build.
+bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes for `-r android-arm64` (82 MB APK);
+`-p:VitaSharpAndroidRuntime=mono-aot` builds in 5, `mono-jit` gives the old build.
 `-r android-arm64` (phones) or `-r android-x64` (the emulator) builds one ABI, into `bin/Release/net10.0-android/<rid>/`
 (about 2 minutes, for iterating).
 
@@ -95,7 +96,7 @@ bytes and about 5 minutes; `-p:VitaSharpAndroidRuntime=mono-jit` gives the old b
 ## CPU cores and ADPF
 
 The game process places its hot threads itself (`Platforms/Android/Game/GamePerformance.cs`; the decisions are in
-`VitaSharp.Android.Common/Performance`, unit-tested: `AndroidPerformanceTests`). Not measured on a phone yet.
+`VitaSharp.Android.Common/Performance`, unit-tested: `AndroidPerformanceTests`). Measured on the Redmi Note 14 ([Phone run 2](#phone-run-2-performance-31102026)): the main guest thread and the GPU worker run on cores 6-7, the rest on 0-5.
 
 - **Clusters** (`CpuTopology`): read at start from `/sys/devices/system/cpu/cpuN/cpu_capacity` and
   `cpufreq/cpuinfo_max_freq`, cores grouped by (capacity, maximum frequency) and ordered slowest to fastest; capacity
@@ -175,10 +176,12 @@ The roadmap's "Custo do Mono" item: everything managed (HLE modules, renderer, G
 JIT compilers themselves) ran on Mono's JIT, whose code is much weaker than CoreCLR's RyuJIT, and the .NET for
 Android Release default only AOT-compiles the methods of the MAUI startup profiles plus the app assembly
 (`profile-only`): `VitaSharp.Core.dll` (4.3 MB of IL) got a 384 KB AOT image, the renderer 19 KB. The csproj now
-selects the runtime with one property; **Release defaults to `mono-aot`**, Debug to `mono-jit`:
+selects the runtime with one property; **Release defaults to `mono-aot-llvm`** (since 31/10/2026, measured below), Debug to
+`mono-jit`:
 
 ```
-dotnet build src/VitaSharp.Android -c Release -m:2                                   # mono-aot
+dotnet build src/VitaSharp.Android -c Release -m:2                                   # mono-aot-llvm
+dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-aot   # 5-minute build
 dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-jit   # the old Release
 #   mono-jit | mono-aot | mono-aot-llvm | coreclr; anything else stops the build
 ```
@@ -201,8 +204,8 @@ built; with libshaderc and libadrenotools):
 | Variant | Builds | App build | Signed APK | arm64 AOT images | `VitaSharp.Core` image | `Renderer.Vulkan` image |
 |---|---|---|---|---|---|---|
 | `mono-jit` | yes | 2 min 24 s | 44,156,522 | 13.6 MB, profile-only | 384,080 | 18,736 |
-| `mono-aot` (default) | yes | 4 min 46 s (3 min 41 s parallel) | 66,860,650 | 55.4 MB, all methods | 12,356,512 | 1,436,320 |
-| `mono-aot-llvm` | yes | 19 min 4 s | 68,417,130 | 51.1 MB, all methods | 9,407,576 | 1,139,272 |
+| `mono-aot` (default until 31/10) | yes | 4 min 46 s (3 min 41 s parallel) | 66,860,650 | 55.4 MB, all methods | 12,356,512 | 1,436,320 |
+| `mono-aot-llvm` (default) | yes | 19 min 4 s | 68,417,130 | 51.1 MB, all methods | 9,407,576 | 1,139,272 |
 | `coreclr` | yes (XA1040) | 2 min 55 s | 77,141,717 | partial R2R inside the DLLs | (R2R: 4.36 MB vs 4.30 MB IL) | |
 | Native AOT (`-p:PublishAot=true`, publish) | **no** | 6 min 27 s to the link error | | | | |
 
@@ -234,9 +237,20 @@ built; with libshaderc and libadrenotools):
   > interp)`, as with `mono-jit`; CoreCLR reports the same. The desktop build is untouched (only the Android csproj
   and `RuntimeReport`'s first line changed).
 
-**Speed on the phone: still to be measured** (the plan below). Until then `mono-aot` is the default because it moves
-all hot managed code out of the device's JIT with no runtime change, builds in under 5 minutes and keeps every
-backend; `mono-aot-llvm` and `coreclr` are one property away.
+**Speed on the phone (31/10/2026, [Phone run 2](#phone-run-2-performance-31102026)): `mono-aot-llvm` is the Release
+default now.** Same code (branch perf/android-phone), same scenes, VSync on, `mono-aot` against `mono-aot-llvm`:
+
+| Game, scene | `mono-aot` | `mono-aot-llvm` |
+|---|---|---|
+| F1 2011, race start (GPU worker and NGS bound) | 10-12 fps; NGS thread 8.7 ms/frame | 15.4-15.8 fps (+35%); NGS 3.8 ms/frame |
+| Devious Dungeon, town (JIT bound) | 49-50 fps; 13.8 fps in the first 30 s | 52 fps; 20.8 fps in the first 30 s |
+
+LLVM's code is much better for the managed hot loops (renderer, HLE, NGS, copies) that Mono's own AOT backend compiles
+poorly; the guest code is the native JIT's in both. The cost is the build: about 17 minutes for one ABI instead of 5
+(single-threaded `opt`/`llc`, so it stays well under the CPU cap). One native crash happened in an LLVM run of F1 2011
+(GPU worker, null pointer in `libGLES_mali.so` under `vkEndCommandBuffer`); the same crash (same driver pc) also
+happened with `mono-aot` and in the earlier phone runs, so it is a driver issue, not the runtime (open, see below).
+`coreclr` was not measured. `-p:VitaSharpAndroidRuntime=mono-aot` gives the faster-building variant.
 
 #### Phone measurement plan (Redmi Note 14, one agent, serially)
 
@@ -602,6 +616,70 @@ settings)" is on, a system setting this run did not change. Instead:
 **Fixed during the run:** `shaderClipDistance` required; colour surfaces whose format renders but cannot blend on the GPU (R32G32_SFLOAT on Mali) fell back to RGBA8 (Uncharted's black title background); "O jogo terminou" shown during a LoadExec (`Emulator.Execing`); SceMp4 and SceAudiodec AAC without FFmpeg (MediaExtractor,
 MediaCodec); `MediaFormat` csd buffers are heap buffers (`GetDirectBufferAddress` 0: a crash in the demuxer, latent in
 `AndroidMediaPlayer`); the asynchronous decoder behaviour above; the Vulkan error hint mentioned `vulkan-1.dll`.
+
+## Phone run 2: performance (31/10/2026)
+
+Same Redmi Note 14, branch perf/android-phone (from main 4603a03), one agent. Scenes driven by
+`VITASHARP_ANDROID_INPUT` (Cross every 4 s; F1: Start at 40 s, then Cross every 5 s into the first race; Uncharted:
+Start), the phone on USB power, thermal status 0 throughout (A76 at 2.0-2.2 GHz). The game settings on the phone were
+left as found (F1 2011 and Knightin'+ at 444 MHz, F1 2011 with the `desktop` GPU profile, VSync on). Desktop
+reference: the same games and saves on the PC (GTX 1650, `VITASHARP_DATA` without firmware like the phone).
+
+| Game, scene | Desktop | Phone before (main, `mono-aot`) | Phone after (`mono-aot-llvm`) | What limits it now |
+|---|---|---|---|---|
+| Knightin'+, first dungeon room (30 fps game) | 30.0 | 28-30 (main 10.5 + GPU worker 8.6 ms/frame) | **30.0** steady after the first minute (main 11.7, GPU worker 5.6 ms) | nothing (the game's rate) |
+| Devious Dungeon, town (60 fps game) | 60 | 27-30; first 30 s 6.5 | **50-52**; first 30 s 20 | the Unity main thread: 18.9 ms/frame on an A76, 75% of it generated code |
+| F1 2011, menus | 60 | 60 | 60 | - |
+| F1 2011, intro movies (25 fps) | 25 | 25, black one-frame flashes, half the pictures shown twice | 25, no flashes in 30 s recordings, 5/150 pictures repeated | - |
+| F1 2011, race start | 53 | 3-6 | **16.3-16.5** | the GPU worker (one A76, ~1,000 draws per frame) and the HLE main thread (~15,000 calls per frame) |
+| Uncharted, title (movie background) | 60 | 21-30 | 25 | the Mali GPU: 33.7 ms of GPU time per frame (4.2 on the desktop) |
+
+**Bottlenecks found (simpleperf `--app` on a `<profileable>` build, `-p:_AndroidAotStripLibraries=false` for symbols;
+`VITASHARP_NATIVE_MAP` for the JIT arena) and what was done:**
+- HLE round trip (Unity's lwmutex/TLS: 5,100 calls per frame): SVCs handled inside `CpuCore.Run`, then called from the
+  native code itself (`VITASHARP_NATIVE_HLE_CALLOUT`), resume through the dispatch table, two clock reads per native entry
+  sampled 1 in 16. Mono's GC transition on every native entry (7.7% of the Unity thread): skipped
+  (`SuppressGCTransition`, Mono only, `VITASHARP_NATIVE_GC_TRANSITION=on` restores it).
+- JIT code: linked exits patched into direct branches, dispatch table 4x larger, evicted targets republished
+  ([native JIT notes](../notes/native-jit.md#on-the-device-branch-perfandroid-phone-31102026-redmi-note-14)).
+- Mono's managed block copy (~250 MB/s on an A76): F1 copies 8 MB of uniforms and uploads 13 MB per race frame;
+  `FastCopy` sends large copies to libc's `memmove` on Mono. Vertex streams are uploaded from the lowest index used.
+- Render-target writebacks read through uncached memory (20 ms per frame in F1): cached readback buffers (5 ms, then
+  0.8 ms with `FastCopy`).
+- NGS (F1's audio thread, 14.6 ms per frame on an A55): HEVAG decode, resampler and mixer without per-sample calls (7.7 ms;
+  3.8 with LLVM).
+- Per-draw descriptor writes on Mali: repeated texture sets reused.
+- Managed code quality: `mono-aot-llvm` made the Release default ([Runtime and AOT choice](#runtime-and-aot-choice-vitasharpandroidruntime)).
+
+**Movies.** F1's "broken" movies were the MediaTek decoder's bursts: the newest picture of a burst was shown and repeated
+on the next call (73 of 150 pictures repeated), and repeated pictures carried an old pts, after which the game's player
+skipped its picture draw now and then (black flashes, seen in `adb shell screenrecord` + ffmpeg `signalstats`). Pictures
+now queue and go out one per call with the pts of that call's unit (repeats 73/150 -> 0-6, no black flash in 30 s
+recordings); until its first picture a new or flushed decoder answers with the last picture it (or the previous
+decoder) produced: Uncharted's looping title movie flashed an older, darker frame at every loop (4 flashes in a 40 s
+recording -> 1). Hardware decoding (`c2.mtk.avc.decoder`) was already used. **Movie sound is still wrong:** F1's
+movie port gets a 1024-sample block of silence every 4096 samples (one AAC frame in four; 304 silent grains in a 5 s
+movie, none on the desktop with FFmpeg), so the movie sound runs 40% longer with gaps. All 235 AAC frames are decoded
+(2 answered with silence), so it is the rate at which the game's player gets them through SceMp4 (MediaExtractor) and
+SceAudiodec (MediaCodec); a one-frame decode cushion instead of waiting for each frame did not change it. Open.
+
+**Audio.** AAudio still opens as a normal shared stream (the speaker path has no fast mixer on this phone; the backend
+already asks for low latency and exclusive mode). Guest-side WAV dumps against the desktop (`VITASHARP_AUDIO_DUMP`,
+`--audio-dump`): Knightin'+ clean (no repeated grains, no gaps, no clicks); Devious Dungeon has no repeated grains any
+more (428 in the first run, when the game ran at 6-30 fps) but still 288 clicks (sample jumps above 12,000) in 165 s,
+most of them in its slow first 45 s and then one every few seconds at 52 fps (none on the desktop at 60): the FMOD
+mixer missing deadlines while the game runs below its rate, so it goes with the speed work. Uncharted's title
+music has no clicks.
+
+**Rendering parity** (phone screenshots against desktop frames of the same scenes, `scratchpad/phone_shots` of the run):
+Knightin'+ room, Devious Dungeon town, F1 2011 race start (chase camera), Uncharted title match apart from the on-screen controls drawn over
+the phone's picture.
+
+**Open:** F1 2011 races (16 fps of the desktop's 53) need the GPU worker split over two threads and fewer per-draw
+Vulkan calls; Devious Dungeon's last 15% is generated-code quality (cross-block registers); Uncharted is GPU bound on
+the Mali-G57; F1's movie sound (a silent AAC frame in four, above); Devious Dungeon's clicks below 60 fps; one stale frame per
+~40 s left in Uncharted's title loop; an intermittent Mali driver crash (null pointer in `libGLES_mali.so` under `vkEndCommandBuffer`, GPU
+worker) between F1's menu and race, also seen with the previous builds (2 of about 12 F1 runs today, 6 the day before).
 
 ## Before the first run: what the emulator/device step must verify
 

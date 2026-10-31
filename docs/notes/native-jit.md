@@ -89,6 +89,23 @@ the link-slot double load.
    2011), PERF lines (busiest guest thread ms/frame, host time in native code).
 3. If anything differs or crashes: bisect with `VITASHARP_NATIVE_A64_NOOPT=pin`, `=fuse`, ... one name at a time.
 
+### On the device (branch perf/android-phone, 31/10/2026, Redmi Note 14)
+- `VITASHARP_NATIVE_VERIFY=1`: Knightin'+ 25.2 M block runs, Devious Dungeon 19.8 M, **0 mismatches** (0 in NEON/VFP
+  blocks). No bisection needed.
+- Where the time went (simpleperf with `<profileable android:shell="true">`, `--app`, the unstripped AOT images of a
+  `-p:_AndroidAotStripLibraries=false` build; `VITASHARP_NATIVE_MAP=file` maps the anonymous code arena to guest blocks):
+  Devious Dungeon's Unity main thread was 61% generated code, 18% `VitaSharp.Core` (the HLE round trip: 5,100
+  lwmutex/TLS calls per frame), 7.6% Mono's GC transition, 4.8% `clock_gettime`; IPC 0.65 with 33 M L1i and 21 M dTLB
+  misses per second (no transparent huge pages on Android). Samples spread over thousands of blocks (no hot loop).
+- Changes, each measured on the phone (Devious Dungeon town, fps): HLE calls handled inside `CpuCore.Run` (27-30 -> 35),
+  no GC transition on Mono (`SuppressGCTransition`, -> 37), resume through the dispatch table after an HLE call and
+  republish of evicted table entries (-> 45), linked exits patched into direct `B` (`patch`, 64K -> 256K table entries),
+  SVC callouts (`VITASHARP_NATIVE_HLE_CALLOUT`, native entries 6,400 -> 1,500 per frame, -> 50-51), and the
+  `mono-aot-llvm` runtime (-> 52). The desktop runs the same guest work (2.6 M cycles, 380 K blocks per frame) at 60.
+- Still to do: the remaining gap is the generated code itself (per-block state loads/stores and flag materialisation,
+  i-cache footprint: 9 MB of code for 188 K guest instructions); cross-block register allocation and smaller exit
+  stubs are the next steps.
+
 ## perf/jit-complete (2026-10-29)
 
 Branch `perf/jit-complete` (worktree `.claude/worktrees/jit-complete`, from main 9ffaa48). Not merged, not pushed.
