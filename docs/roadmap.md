@@ -17,6 +17,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
+- [ ] Build Native AOT do desktop demora muito para abrir um jogo (relato do usuário, 31/10/2026): medir o tempo do
+  clique até o primeiro quadro no pacote AOT contra o build normal (JIT) do mesmo commit, por etapa (carregar e
+  descriptografar o eboot e os módulos, LLE do firmware, relocação/imports, JIT do jogo, shaders/pipelines, cache de
+  shaders, áudio, primeira cena), e corrigir o que for exclusivo do AOT (código sem otimização tiered, reflexão/JSON,
+  inicialização estática pesada, caminhos sem `Vector` acelerado, I/O síncrono)
 - [ ] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
