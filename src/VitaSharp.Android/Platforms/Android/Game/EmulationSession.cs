@@ -249,7 +249,7 @@ public sealed class EmulationSession : IDisposable
 
     /// <summary>The game was started and its process has stopped by itself (the guest exited, a stack-protector
     /// failure or a crash terminated it): nothing more will be drawn, the activity offers to leave.</summary>
-    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null;
+    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null && !_emu.Execing;
 
     /// <summary>Frames the guest presented since the game started.</summary>
     public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesPresented - _framesAtStart;
