@@ -222,10 +222,19 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
         var touch = new MappedInput { State = Pad.GetController(0) };
         foreach (var t in Pad.GetTouches(false)) touch.AddTouch(false, t);
         foreach (var t in Pad.GetTouches(true)) touch.AddTouch(true, t);
-        var m = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
+        var r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
         // keyboard contacts (TouchFront/TouchBack keys) get ids of their own
-        return Keyboard is { AnyHeld: true } k ? InputMapper.Combine(m, k.Map(), 200) : m;
+        if (Keyboard is { AnyHeld: true } k) r = InputMapper.Combine(r, k.Map(), 200);
+        if (Script is { } s)
+        {
+            r.State = s.Apply(r.State);
+            s.AddTouches(ref r);
+        }
+        return r;
     }
+
+    /// <summary>Scripted buttons, sticks and taps for unattended runs (VITASHARP_ANDROID_INPUT), or null.</summary>
+    public ScriptedPad? Script { get; set; }
 
     public ControllerState GetController(int port) => port == 0 ? Current().State : ControllerState.Neutral;
 

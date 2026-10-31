@@ -25,9 +25,11 @@ public static class PreciseSleep
 
     /// <summary>Sleeps most of the way to <paramref name="deadlineTicks"/> (Stopwatch ticks) and spins the rest.</summary>
     /// <param name="allowSpin">false: only sleep (may wake up to ~0.5 ms late, but never burns a core); used by the
-    /// CPU pacing, where accuracy matters less than battery.</param>
+    /// CPU pacing, where accuracy matters less than battery. <see cref="HostTuning.AvoidBusyWaits"/> (phones) turns
+    /// spinning off everywhere.</param>
     public static void Until(long deadlineTicks, bool allowSpin = true)
     {
+        if (HostTuning.AvoidBusyWaits) allowSpin = false;
         while (true)
         {
             long left = deadlineTicks - Stopwatch.GetTimestamp();

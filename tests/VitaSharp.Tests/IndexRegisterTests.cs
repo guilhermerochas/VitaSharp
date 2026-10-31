@@ -9,6 +9,7 @@ namespace VitaSharp.Tests;
 /// half of r0.w was never written: with an uninitialised GLSL temporary it was driver garbage (bone matrices read far
 /// out of range, black spiky "vertex explosions" changing every frame).
 /// </summary>
+[Collection("shadergen")]
 public class IndexRegisterTests
 {
     // 19: VBW r0.w.u16 = (o0.x.u16 << 3); 20: VBW idx1 = r0.w | 0

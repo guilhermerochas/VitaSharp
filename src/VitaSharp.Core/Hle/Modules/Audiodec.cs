@@ -1,3 +1,4 @@
+using FFmpeg.AutoGen;
 using VitaSharp.Core.Media;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -6,8 +7,7 @@ using At9Decoder = VitaSharp.Core.Hle.Audio.Atrac9.Atrac9Decoder;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
-/// SceAudiodec: frame-by-frame decoding of ATRAC9 (built-in decoder), MP3 and AAC (<see cref="AudioFrameDecoders"/>:
-/// FFmpeg on the desktop, MediaCodec on Android) into S16 PCM.
+/// SceAudiodec: frame-by-frame decoding of ATRAC9 (built-in decoder), MP3 and AAC (FFmpeg) into S16 PCM.
 /// SceAudiodecCtrl (0x28 bytes): size, handle, pEs, inputEsSize, maxEsSize, pPcm, outputPcmSize, maxPcmSize,
 /// wordLength, pInfo. SceAudiodecInfo starts with its size followed by the codec-specific fields.
 /// </summary>
@@ -111,7 +111,7 @@ public sealed unsafe class Audiodec : HleModule
                 uint version = GuestMemory.R32(info + 8);
                 if (version is not (0 or 2 or 3)) return ERR_MP3_INVALID_VERSION;
                 d.Channels = Math.Clamp(ch, 1, 2);
-                d.Codec = AudioFrameDecoders.Create(new AudioFrameDecoderOptions(AudioFrameCodec.Mp3, 0, d.Channels));
+                d.Codec = AudioFrameDecoders.CreateMp3(d.Channels);
                 esMax = 1441;
                 pcmMax = (uint)(d.Channels * (version == 3 ? 2304 : 1152));
                 break;
@@ -123,8 +123,7 @@ public sealed unsafe class Audiodec : HleModule
                 d.Channels = Math.Clamp((int)GuestMemory.R32(info + 8), 1, 2);
                 int rate = (int)GuestMemory.R32(info + 12);
                 bool sbr = GuestMemory.R32(info + 16) != 0;
-                d.Codec = AudioFrameDecoders.Create(new AudioFrameDecoderOptions(AudioFrameCodec.Aac, rate, d.Channels,
-                    d.Adts ? null : AudioFrames.AacConfig(sbr ? rate / 2 : rate, d.Channels), d.Adts, sbr));
+                d.Codec = AudioFrameDecoders.CreateAac(rate, d.Channels, d.Adts ? null : FrameDecoder.AacConfig(sbr ? rate / 2 : rate, d.Channels));
                 esMax = d.Adts ? 1536u + 0x100 : 1536u;
                 pcmMax = (uint)(d.Channels * 2048 * (sbr ? 2 : 1));
                 break;
@@ -134,9 +133,7 @@ public sealed unsafe class Audiodec : HleModule
                 return ERR_INVALID_TYPE;
         }
         if (d.Codec == null && d.At9 == null)
-            Log.WarnOnce("audiodec-noffmpeg", AudioFrameDecoders.Backend is FFmpegAudioFrameBackend
-                ? "sceAudiodec: FFmpeg is unavailable, MP3/AAC frames decode to silence"
-                : $"sceAudiodec: the {AudioFrameDecoders.Backend.Name} backend has no {CodecName(codecType)} decoder, frames decode to silence");
+            Log.WarnOnce("audiodec-noffmpeg" + d.Type, $"sceAudiodec: no {CodecName(d.Type)} decoder (FFmpeg is unavailable): frames decode to silence");
         d.Pcm = new short[pcmMax / 2 + 4096];
         lock (_decoders)
         {
@@ -226,15 +223,15 @@ public sealed unsafe class Audiodec : HleModule
         else
         {
             var head = GuestMemory.Span(es, 8);
-            consumed = d.Type == TYPE_MP3 ? AudioFrames.Mp3FrameLength(head)
-                     : d.Adts ? AudioFrames.AdtsFrameLength(head)
+            consumed = d.Type == TYPE_MP3 ? FrameDecoder.Mp3FrameLength(head)
+                     : d.Adts ? FrameDecoder.AdtsFrameLength(head)
                      // raw AAC carries no length: decode exactly one raw_data_block and report its size, like the
                      // hardware (the bytes after it are the next frame or stale data, not part of this one)
-                     : d.Codec?.RawFrameLength(GuestMemory.ReadSpan(es, (int)esMax)) ?? (int)esMax;
+                     : d.Codec?.RawFrameLength(GuestMemory.Ptr(es), (int)esMax) ?? (int)esMax;
             samples = 0;
             if (consumed <= 0) return ERR_API_FAIL;
             consumed = (int)Math.Min((uint)consumed, esMax);
-            samples = d.Codec?.Decode(GuestMemory.ReadSpan(es, consumed), d.Pcm, d.Channels) ?? (d.Type == TYPE_MP3 ? 1152 : 1024);
+            samples = d.Codec?.Decode(GuestMemory.Ptr(es), consumed, d.Pcm, d.Channels) ?? (d.Type == TYPE_MP3 ? 1152 : 1024);
             if (d.Codec == null) Array.Clear(d.Pcm, 0, samples * d.Channels);
         }
         return 0;

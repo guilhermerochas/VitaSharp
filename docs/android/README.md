@@ -3,9 +3,10 @@
 `src/VitaSharp.Android` is a .NET MAUI Android app (MauiReactor screens, a native game activity with a Vulkan
 SurfaceView) that builds into an installable APK. It has run on the **x86_64 Android emulator** (30/10/2026, results in
 [Emulator run](#emulator-run-30102026)): every screen, two games to their menus on the native x64 JIT, the surface,
-pause/resume, AAudio and the on-screen controls. It has **not run on a phone yet**: the ARM64 JIT, the Adreno/Mali
-drivers, libadrenotools and real controllers are still unverified (the checklist at the end). On-screen text is in
-Portuguese, like the desktop launcher.
+pause/resume, AAudio and the on-screen controls. It has also run on a **phone** (Redmi Note 14, Mali-G57, 30/10/2026:
+[Phone run](#phone-run-redmi-note-14-mali-g57-30102026)): the native ARM64 JIT, the Mali driver, AAudio, MediaCodec
+movies and six games. Adreno (and libadrenotools) and real controllers are still unverified (the checklist at the end).
+On-screen text is in Portuguese, like the desktop launcher.
 
 ## Building
 
@@ -37,7 +38,9 @@ Output: `src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-S
 arm64-v8a + x86_64). Size on 30/10/2026: 43,713,556 bytes (41.7 MiB) with libshaderc (38,974,327 without); with the
 MediaCodec/AAudio backends, libadrenotools and `extractNativeLibs` (native libraries stored compressed), without
 libshaderc: 39,253,246 (+278,919; libadrenotools and hooks are about 142 KB of it compressed); with both libshaderc
-builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`.
+builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes about 3 minutes with `-m:2`. Since the
+full AOT default (30/10/2026, [Runtime and AOT choice](#runtime-and-aot-choice-vitasharpandroidruntime)): 66,860,650
+bytes and about 5 minutes; `-p:VitaSharpAndroidRuntime=mono-jit` gives the old build.
 `-r android-arm64` (phones) or `-r android-x64` (the emulator) builds one ABI, into `bin/Release/net10.0-android/<rid>/`
 (about 2 minutes, for iterating).
 
@@ -51,7 +54,8 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
 - `Pages/` (MauiReactor components, no XAML) and `Ui/` (theme, the shared building blocks of the mockups:
   header, cards, rows, chips, progress bars, pickers). Fonts: Sora and Inter (SIL OFL 1.1, `Resources/Fonts`).
 - `Platforms/Android/Game/`: `GameActivity` (the in-game screen), `EmulationSession` (the Android counterpart of the
-  desktop `Runner`), `AndroidVulkanSurface` (`IPresentationSurface`), `OnScreenControlsView`.
+  desktop `Runner`), `AndroidVulkanSurface` (`IPresentationSurface`), `OnScreenControlsView`, `GamePerformance`
+  (thread placement, ADPF, display rate: [below](#cpu-cores-and-adpf)).
 - `Platforms/Android/Services/`: `LogcatSink`, `Saf` (Storage Access Framework picker); `Services/AppServices.cs`:
   data folder, settings, controller profiles, Keystore.
 - `Audio/AndroidAudioBackend.cs` (AAudio, AudioTrack), `Media/MediaCodecVideoDecoder.cs`,
@@ -62,18 +66,23 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
 - `src/VitaSharp.Android.Common`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
   settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`, `EnvironmentFile`), `Firmware/FirmwareSetup.cs`,
   `Gpu/GpuDriverScreen.cs` (Driver/Informações da GPU models), `Input/` (`OnScreenPad`, `AndroidGamepads`,
-  `AndroidKeyboard`, `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Storage/DataLayout.cs`.
+  `AndroidKeyboard`, `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Performance/` (`CpuTopology`, `ThreadPlacementPlanner`,
+  `FrameRateEstimator`, `FrameWorkMeter`; unit-tested: `AndroidPerformanceTests`), `Storage/DataLayout.cs`.
 - Icon: the adaptive launcher icon (`Platforms/Android/Resources/mipmap-*`) generated from `docs/assets/logo.svg` by
   `build/make-icons.ps1`.
 
 ## Runtime and CPU backends
 
-- **.NET for Android 10 runs on Mono** (the MAUI default; CoreCLR on Android is experimental in .NET 10 and not
-  used). The APK carries `libmonosgen-2.0.so` (JIT) and, in Release, profiled AOT images of the startup code
-  (`libaot-*.so`); everything else is JIT-compiled at run time. So `RuntimeFeature.IsDynamicCodeSupported` and
-  `IsDynamicCodeCompiled` are true: the **IL backend** (DynamicMethod/Reflection.Emit) is available, as on the
-  desktop. `UseInterpreter` is off, and the app does not use full AOT or Native AOT (either would remove the IL
-  backend; the native backend and the interpreter would remain).
+- **.NET for Android 10 runs on Mono** (the MAUI default). The APK carries `libmonosgen-2.0.so` with its JIT and,
+  in Release, AOT images of **every method of every assembly** (`libaot-*.so`, `VitaSharpAndroidRuntime=mono-aot`,
+  [below](#runtime-and-aot-choice-vitasharpandroidruntime)). The AOT mode is Mono's `Normal` one: the JIT stays and
+  compiles what the AOT images do not cover (the `[UnsafeAccessor]` stubs of the HLE bindings, some generic
+  instantiations, every DynamicMethod). So `RuntimeFeature.IsDynamicCodeSupported` and `IsDynamicCodeCompiled` stay
+  true: the **IL backend** (DynamicMethod/Reflection.Emit) is available, as on the desktop. `UseInterpreter` is off;
+  the app does not use Mono's AOT-only modes or Native AOT, which remove the JIT: `AndroidAotMode=Full` and Native AOT
+  have no Reflection.Emit at all (no IL backend, and Full cannot run the UnsafeAccessor stubs either), `Hybrid` runs
+  DynamicMethods in Mono's interpreter (the IL backend would work, interpreted); the native backend and the guest
+  interpreter work under all of them.
 - **Native ARM64 JIT**: it does not depend on Reflection.Emit (generated code is called through
   `delegate* unmanaged`, callouts are `[UnmanagedCallersOnly]`), so it works under Mono as under CoreCLR or Native
   AOT. Its code arena is the Android dual mapping of `ExecutableMemory` (memfd on API 30+, ASharedMemory on 26-29;
@@ -82,6 +91,184 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
   flags, each backend's availability and the selected chain to the log at startup; Desempenho shows the same.
 - Trimming: `TrimMode=partial` with `VitaSharp.Core` and `VitaSharp.Renderer.Vulkan` rooted (the HLE tables and
   Silk.NET are not trim-annotated). JSON uses source-generated contexts.
+
+## CPU cores and ADPF
+
+The game process places its hot threads itself (`Platforms/Android/Game/GamePerformance.cs`; the decisions are in
+`VitaSharp.Android.Common/Performance`, unit-tested: `AndroidPerformanceTests`). Not measured on a phone yet.
+
+- **Clusters** (`CpuTopology`): read at start from `/sys/devices/system/cpu/cpuN/cpu_capacity` and
+  `cpufreq/cpuinfo_max_freq`, cores grouped by (capacity, maximum frequency) and ordered slowest to fastest; capacity
+  ranks first when every core has one (it separates an A55 from an A76 even at the same clock). No core number is
+  assumed: the Helio G99 is 0-5 (A55) + 6-7 (A76), other SoCs are 4+4, 1+3+4, 2+3+3. One kind of core: nothing is
+  pinned.
+- **Placement** (`ThreadPlacementPlanner`, about once a second, `sched_setaffinity` on each thread's tid): the
+  emulator's threads register their tid and role in the core (`NativeThread.Register(name, role)`: guest threads, the
+  GPU worker, the JIT workers; the renderer's shader workers by name). Their CPU time over the last second (thread CPU
+  clocks) decides:
+  - fastest cluster: the **main guest thread** (the busiest guest thread; the first one until there are loads; it only
+    changes when another is 1.5x + 0.1 core busier, so the pinning does not flap), the **GPU worker**, then other guest
+    threads using at least 30% of a core while a fast core is left (4+4 phones);
+  - a **single fast core** (1+3+4): the main guest thread has it, the GPU worker goes to the mid cluster (to the slow
+    cores when there is none);
+  - every other core: the other guest threads (audio, file, job threads; moved at the next step if one becomes the
+    busiest) and the **JIT workers** (background compiles: the guest keeps running the interpreter/IL code meanwhile);
+  - **shader workers**: the other cores while the hot threads use more than (fast cores - 0.25) of the fast cluster,
+    every core once they leave half a fast core idle (hysteresis): when the GPU thread waits for a shader, or during a
+    load, the compile it waits for runs on a fast core; a background compile during gameplay does not take time from
+    the game;
+  - anything else (UI thread, runtime, driver threads) is left to the system.
+- **Timer slack**: guest threads and the GPU worker set a 1 µs timer slack (`PR_SET_TIMERSLACK`; Linux's default is
+  50 µs), so their short sleeps end on time: nothing spins on a phone (`HostTuning.AvoidBusyWaits`, below).
+- **ADPF** (API 31+, `PerformanceHintManager` through the Java API): one hint session for the hot threads (main guest
+  thread, GPU worker, any extra hot guest thread; `setThreads` on API 34+, a new session below). Each frame the
+  foreground guest process presents (`Display.Presented`) reports the CPU time of the busiest hot thread since the
+  previous frame (`FrameWorkMeter`: time blocked on vblank, pacing sleeps or the GPU is not work; never more than the
+  frame's wall time). The target is the game's frame time, 16.68 ms at 60 fps or 33.37 ms at 30 (`FrameRateEstimator`:
+  the smallest frame interval, in whole vblanks, of the last 60 frames that were either one vblank long or contained
+  a display wait longer than one vblank period, `VBlank.LongWaits`, which only `sceDisplayWaitVblankStartMulti` /
+  `sceDisplayWaitSetFrameBufMulti` with 2+ vblanks produce; a 60 fps game that takes 20 ms and then waits for the next
+  vblank also presents every 2 vblanks, but never waits that long, so it keeps the 16.7 ms target). Below API 31 or
+  without a session (`createHintSession` returns null on some devices) nothing is reported.
+- **Sustained performance mode** (`Window.setSustainedPerformanceMode`) is **off** by default: it holds the clocks at a
+  level the phone can keep for hours, which is below its peak, while ADPF already asks for what each frame needs.
+  `VITASHARP_ANDROID_SUSTAINED=1` turns it on where `PowerManager.isSustainedPerformanceModeSupported` (for long
+  sessions on a phone that throttles hard; the log says whether it is supported).
+- **Off switch**: `VITASHARP_ANDROID_AFFINITY=off` in `config/env.txt` disables both the placement and ADPF (timer slack,
+  no spinning and the display rate stay), to compare.
+- **Log** (also in logcat during gameplay), once the main thread is known, e.g.
+  `CPU clusters: 0-5 @2.0GHz, 6-7 @2.2GHz; pinned guest main 'main' to 6-7 + gpu to 6-7; other guest threads and JIT
+  workers to 0-5; shader workers to 0-5 (all cores while the fast ones are idle); ADPF session on (target 16.68 ms)`;
+  in the file: `ADPF: hint session for threads ...` (with the device's preferred update rate), `ADPF/placement: hot
+  threads ...` at each change of the hot set, `Game frame rate: 30 fps`.
+
+## Frame pacing
+
+- **Swapchain**: FIFO with VSync on (the default, Ajustes/Detalhes), 3 images on Android (`max(minImageCount, 3)`; the
+  desktop keeps `minImageCount + 1`, at least 3). The `Swapchain ... (N images)` log line shows what the driver gave.
+- **Display refresh rate** (API 30+): the game's frame rate (`FrameRateEstimator`: 60, or 30 for a 30 fps game) goes to
+  `Surface.setFrameRate` (compatibility DEFAULT), so a 90/120 Hz panel runs at a rate the frames divide evenly instead
+  of juddering; the first rate of a surface may change the display mode even when not seamless (API 31+
+  `CHANGE_FRAME_RATE_ALWAYS`), later changes only when seamless. Log: `Surface frame rate: 60 Hz (display at N Hz now)`.
+- **No busy waits** (`HostTuning.AvoidBusyWaits`, set by the game process): `PreciseSleep.Until` sleeps the whole wait
+  instead of spinning its last 0.5 ms (vblank waits, timed guest waits, the 30 µs syscall wake-up latency of blocking
+  waits), and the vblank callback notifier sleeps to the next vblank instead of waking every millisecond. The CPU pacing
+  (`CpuCore.Throttle`) already never spun and never sleeps while the guest is behind: it sleeps only when a thread is
+  more than 1 ms ahead of real time, and restarts its ledger when it falls more than 10 ms behind.
+- **Not used**: Swappy (AGDK frame pacing) is a native library to build and bundle, and `VK_GOOGLE_display_timing` would
+  need present-time bookkeeping in the renderer; FIFO with 3 images plus the matching display rate covers the judder
+  case. Both are options if the phone measurements show uneven frame times.
+
+**Measuring on/off** (Knightin'+, Devious Dungeon, F1 2011; same scene, phone cool, charger state the same): run each
+game twice, once with an empty `config/env.txt` and once with `VITASHARP_ANDROID_AFFINITY=off`, ~3 minutes each, and
+compare the average FPS Detalhes records for the session (`Session of ... ends after ..., N frames`), the FPS chip, and
+`adb logcat -s VitaSharp` for the `CPU clusters:` line (absent when off). Where the threads run:
+`adb shell ps -T -o TID,PSR,PCY,CMD -p $(adb shell pidof io.github.vitasharp:game)` (PSR = the core; the main guest
+thread and `GPU worker` should show 6 or 7 on the G99) and `adb shell cat /proc/<pid>/task/<tid>/status | grep
+Cpus_allowed_list`. Clocks during the run: `adb shell cat /sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq`
+(the policy number is the first core of the fast cluster); ADPF effects in `adb shell dumpsys power | grep -i hint`
+and Perfetto (`power.hint` / cpufreq tracks).
+
+### Runtime and AOT choice (`VitaSharpAndroidRuntime`)
+
+The roadmap's "Custo do Mono" item: everything managed (HLE modules, renderer, GXM/shader translation, audio, the
+JIT compilers themselves) ran on Mono's JIT, whose code is much weaker than CoreCLR's RyuJIT, and the .NET for
+Android Release default only AOT-compiles the methods of the MAUI startup profiles plus the app assembly
+(`profile-only`): `VitaSharp.Core.dll` (4.3 MB of IL) got a 384 KB AOT image, the renderer 19 KB. The csproj now
+selects the runtime with one property; **Release defaults to `mono-aot`**, Debug to `mono-jit`:
+
+```
+dotnet build src/VitaSharp.Android -c Release -m:2                                   # mono-aot
+dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-jit   # the old Release
+#   mono-jit | mono-aot | mono-aot-llvm | coreclr; anything else stops the build
+```
+
+| Value | What it sets | Runtime |
+|---|---|---|
+| `mono-jit` | nothing (SDK defaults: profiled AOT in Release, no AOT in Debug) | Mono JIT for everything outside the startup profiles |
+| `mono-aot` | `RunAOTCompilation=true`, `AndroidEnableProfiledAot=false`, `AndroidAotMode=Normal` | every method AOT-compiled by Mono's own backend, the JIT kept |
+| `mono-aot-llvm` | the same plus `EnableLLVM=true` | AOT through LLVM (`opt`/`llc` of the AOT cross pack), the JIT kept |
+| `coreclr` | `UseMonoRuntime=false` | CoreCLR, RyuJIT with tiering, partial ReadyToRun; warning XA1040 (experimental) |
+
+Mono's AOT task starts one compiler per logical CPU (plus `opt`/`llc` each with LLVM), which pinned the PC's 8 cores
+above 90%; the csproj sets `_DisableParallelAot=true` (one assembly at a time per ABI, two ABIs in parallel with
+`-m:2`) unless `-p:VitaSharpParallelAot=true`. The variant is in the app assembly's metadata and the startup log
+says which one ran: `Runtime: .NET 10.0.x (Mono), Arm64, android-arm64, build mono-aot`.
+
+Measured on 30/10/2026 (both ABIs, `-m:2`, only the app's `obj/Release` cleaned; the referenced projects already
+built; with libshaderc and libadrenotools):
+
+| Variant | Builds | App build | Signed APK | arm64 AOT images | `VitaSharp.Core` image | `Renderer.Vulkan` image |
+|---|---|---|---|---|---|---|
+| `mono-jit` | yes | 2 min 24 s | 44,156,522 | 13.6 MB, profile-only | 384,080 | 18,736 |
+| `mono-aot` (default) | yes | 4 min 46 s (3 min 41 s parallel) | 66,860,650 | 55.4 MB, all methods | 12,356,512 | 1,436,320 |
+| `mono-aot-llvm` | yes | 19 min 4 s | 68,417,130 | 51.1 MB, all methods | 9,407,576 | 1,139,272 |
+| `coreclr` | yes (XA1040) | 2 min 55 s | 77,141,717 | partial R2R inside the DLLs | (R2R: 4.36 MB vs 4.30 MB IL) | |
+| Native AOT (`-p:PublishAot=true`, publish) | **no** | 6 min 27 s to the link error | | | | |
+
+- **`mono-aot`**: `VitaSharp.Core` compiles 21,303 of 24,155 methods; the other 2,852 are the `[UnsafeAccessor]`
+  externs the HLE binder generates ("Method has zero rva"), tiny stubs the JIT builds on first call. The renderer:
+  1,208/1,208. Size: +22.7 MB APK (the AOT images of the framework, MAUI and Iced are most of it; the hot managed code
+  of the emulator also lives in CoreLib: collections, spans, `Math`, so the whole set is compiled, not only
+  VitaSharp's assemblies).
+- **`mono-aot-llvm`**: builds (NDK r30 present; the toolchain is the AOT cross pack's LLVM), 4x the build time,
+  +1.5 MB over `mono-aot`, smaller code for VitaSharp.Core (9.4 vs 12.4 MB). LLVM usually generates much better
+  loops and register use than Mono's own backend, but it is the riskier code generator: a candidate for the phone
+  A/B, not the default.
+- **`coreclr`**: builds and packs `libcoreclr.so` + `libclrjit.so` (the MAUI app included); RyuJIT is the best
+  managed code generator of the four once the hot methods reach tier 1, but .NET 10 marks the runtime experimental
+  (XA1040, "not intended for production"), the R2R of the release build is partial (VitaSharp.Core gains 54 KB of
+  precompiled code, so startup and the first minutes are JIT time) and the APK is the largest (debugger libraries
+  `libmscordaccore.so`/`libmscordbi.so` included). It is .NET 11's default, so it is the path forward: second
+  candidate for the phone A/B.
+- **Native AOT**: ILC compiles the whole app (MAUI, MauiReactor; only Silk.NET's loader IL3000/IL3002 warnings), but
+  the link fails with NDK r30: `ld.lld: duplicate symbol: __unw_init_local` (the runtime pack's libunwind against the
+  NDK's). Even fixed, it would be a dead end here: .NET 10 MAUI supports Native AOT only on iOS/Mac Catalyst
+  (Android is experimental even in .NET 11), `TrimMode` must be full (Silk.NET and the HLE tables are not
+  trim-annotated) and there is no Reflection.Emit, so the IL backend goes. Not offered by the switch.
+- **What each keeps of the CPU backends**: the native ARM64 JIT maps its arena with mmap/memfd and calls into it
+  through `delegate* unmanaged`, with `[UnmanagedCallersOnly]` callouts: no Reflection.Emit, so it works under all of
+  them (Mono's AOT compiles the native-to-managed wrappers of the callouts; under `Normal` the JIT can still build
+  any missing one). Mono `Normal` AOT keeps `mono_aot_only` off, so dynamic code is supported and compiled: the startup
+  line should stay `Dynamic code: supported True, compiled True` and `CPU backend selected: native (chain: native > il
+  > interp)`, as with `mono-jit`; CoreCLR reports the same. The desktop build is untouched (only the Android csproj
+  and `RuntimeReport`'s first line changed).
+
+**Speed on the phone: still to be measured** (the plan below). Until then `mono-aot` is the default because it moves
+all hot managed code out of the device's JIT with no runtime change, builds in under 5 minutes and keeps every
+backend; `mono-aot-llvm` and `coreclr` are one property away.
+
+#### Phone measurement plan (Redmi Note 14, one agent, serially)
+
+1. Build the four APKs for the phone only, each into its own folder (the debug keystore is the same, so `adb install
+   -r` keeps the data folder, firmware and games):
+   `dotnet build src/VitaSharp.Android -c Release -r android-arm64 -m:2 -p:VitaSharpAndroidRuntime=<v> -o <dir>\<v>`
+   for `mono-jit`, `mono-aot`, `mono-aot-llvm`, `coreclr`, deleting `src/VitaSharp.Android/obj/Release` before each
+   (the SDK's property cache does not track `EnableLLVM`; the variant attribute changes the app assembly, which
+   re-runs the AOT step, but a clean intermediate folder rules out stale images).
+2. Settings for every run: CPU automatic, default clock, GPU profile native, **VSync off** (Ajustes), no
+   `config/env.txt`, debug mode off; phone on the charger, screen brightness fixed, `adb shell dumpsys thermalservice`
+   at status 0 before each run (wait otherwise), the app killed between runs (`adb shell am force-stop
+   io.github.vitasharp`).
+3. Games and scenes, in this order: **Knightin'+** (title screen, then the first level, 3 minutes), **Devious
+   Dungeon** (title, 3 minutes), **F1 2011** (intro movie skipped, menus, 3 minutes; the heaviest HLE/GXM load).
+   Two runs per variant and game, alternating the variants (A B C D A B C D) so heat does not favour one.
+4. Capture: `adb logcat -c`, then `adb logcat -v monotonic -s VitaSharp VitaSharp-Guest > <v>_<game>_<n>.txt` during
+   the run; after it `adb pull /sdcard/Android/data/io.github.vitasharp/files/logs/last.log`. While it runs, every 30 s:
+   `adb shell cat /proc/$(adb shell pidof io.github.vitasharp:game)/stat` (fields 14-15, utime and stime in ticks).
+5. Lines to read:
+   - `Runtime: ... build <v>` (proves which APK ran), `Dynamic code: supported True, compiled True`,
+     `CPU backend native (NativeArm64Compiler): available` and `CPU backend selected: native (chain: native > il >
+     interp)`: must be identical for all four (else the run is invalid);
+   - `Game <TITLEID> ...` and `Renderer: ...` (their monotonic timestamps: start-up time of the game process);
+   - `Session of <TITLEID> ends after hh:mm:ss, N frames`: **average fps = N / seconds** (also Desempenho's "FPS
+     médio");
+   - the process CPU time from `/proc/<pid>/stat` divided by N: **CPU ms per frame** (the main A/B number: with VSync
+     off it shows the managed-code gain even where a game already reaches its frame rate).
+6. Compare with `mono-jit` as the baseline: fps and CPU ms/frame per game (mean of the two runs), plus game start-up
+   time and the installed size (`adb shell pm path` + `du`). Keep `mono-aot` as the default unless `mono-aot-llvm` or
+   `coreclr` is at least 10% better in CPU ms/frame on two of the three games with no crash or new log errors; then
+   switch the default in the csproj and record the numbers here.
 
 ## Process model and the game screen
 
@@ -165,21 +352,16 @@ phones.
   decodes AAC with FFmpeg, which the app does not carry. On Android `MediaExtractor` demuxes the MP4, H.264 goes
   through the same `IVideoDecoder` (csd-0/csd-1 in front of key frames) and AAC through a MediaCodec audio decoder, into
   the same NV21/16-bit queues as the desktop player (`MediaPlayerBase` in the core).
-- **SceAudiodec MP3/AAC and SceMp4** (used by the games' own movie players: Persona 4 Golden's AvPlayer on sceMp4 +
-  sceVideodec + sceAudiodec raw AAC in 0x200-byte ES slots, F1 2011's on sceMp4): the core's interfaces
-  (`IAudioFrameDecoder` / `AudioFrameDecoders.Backend`, `IMp4Demuxer` / `Mp4Demuxers.Backend`) have FFmpeg on the
-  desktop and, installed by `AndroidMediaBackends`, `MediaCodecAudioFrameBackend` and `MediaExtractorMp4Demuxer` in
-  the game process. MediaCodec decodes asynchronously, with its own start-up delay (Android's MP3 decoder drops 529
-  samples, AAC decoders may hold a frame) and buffer sizes; the core's `FrameAlignedAudioDecoder` turns it into
-  SceAudiodec's frame in, frame out with FFmpeg's counts (1152/576 samples per MP3 frame from its header, 1024 per AAC
-  frame, 2048 with SBR): missing start-up output is silence in front, so the stream is a constant few hundred samples
-  late but never short, and output beyond two frames is dropped. MediaCodec cannot report how long a raw AAC frame is
-  (FFmpeg measures it on a probe decoder), so raw frames get an ADTS header (from the AudioSpecificConfig of the init
-  parameters) covering the buffer the game hands over and the decoder runs in ADTS mode; inputEsSize then reports
-  that whole buffer. SceMp4 units from MediaExtractor match FFmpeg's (Annex B H.264 with csd-0/csd-1 before key
-  frames, raw AAC, 90 kHz), except DTS = PTS (MediaExtractor gives no decode times), a 30 fps fallback when the track
-  has no frame rate, and interleaving by timestamp rather than file position. The alignment, the ADTS header (checked
-  against FFmpeg) and the backend hooks are unit-tested on the desktop (`AudioFrameDecoderTests`).
+- **SceAudiodec MP3/AAC and SceMp4** (the games' own movie players: Persona 4 Golden's AvPlayer on sceMp4 +
+  sceVideodec + sceAudiodec raw AAC in 0x200-byte ES slots, F1 2011's on sceMp4; verified on the Redmi Note 14): the
+  core's `IMp4Demuxer` / `Mp4Demuxers.Backend` and `IAudioFrameDecoder` / `AudioFrameDecoders` have FFmpeg on the
+  desktop and, in the game process, `MediaExtractorDemuxer` and `MediaCodecAacDecoder` (`AacBackend`). MediaCodec
+  cannot say how long a raw AAC frame is, so SceMp4 records the length of every AAC unit it hands out
+  (`RawAudioFrameLengths`) and the decoder takes exactly that many bytes; each call returns one frame of PCM (the
+  decoder's frame size, silence only while it primes). MP3 (`Mp3Backend`, no game known to use it, not run on a
+  device) drives the same class with "audio/mpeg", the frame size taken from the first frame's header (1152/576
+  samples, FFmpeg's count) because Android's MP3 decoder drops its first 529 samples. `AudioFrameDecoderTests` checks
+  FFmpeg's per-frame counts through the interface (1152/576 MP3, 1024 AAC) and the SceMp4 hook.
 - **GPU drivers** (`AdrenoToolsDriverLoader`, see the [mobile GPU notes](../notes/mobile-gpu.md#custom-drivers-android)):
   a Turnip or Qualcomm package (zip with `meta.json`, the Skyline/yuzu format) installed from "Driver da GPU" goes to
   internal storage; the game process opens it through libadrenotools with the file-redirect, BCeNabler and turbo
@@ -195,14 +377,21 @@ at line breaks and at 4,000 bytes (liblog truncates near 4 KB). The console copy
 line). The file logs stay: `logs/app.log` (UI process, truncated at each start) and `logs/last.log` (the current or
 last game; the previous ones kept as `<time>_<TITLEID>.log`, 10 at most). "Modo de depuração" turns on debug level.
 
+**During gameplay** (from the game's first frame) only warnings and errors go to logcat: every entry is a system call
+into logd and a slot in a buffer the whole system shares, and info lines (guest `printf` output, thread creation,
+shader and pipeline reports) fire per event. The session's log file keeps every line at the usual level. Boot lines
+(runtime, renderer, swapchain, `env.txt`) still reach logcat, and a few one-off reports (the CPU placement line)
+always do. `VITASHARP_ANDROID_LOGCAT=info` (or `debug`) in `env.txt` keeps forwarding them during gameplay.
+
 **Session statistics** (`SessionReport` in the core, the same lines the desktop's `Runner` writes when a run stops):
-when the game ends, `EmulationSession` writes the whole end-of-run report (JIT and `CPU backend report`, busiest HLE
+when the game ends, `SessionStatistics` (from `EmulationSession`) writes the whole end-of-run report (JIT and `CPU backend report`, busiest HLE
 functions, threads, `PERF cycles`, the renderer's report with `PERF gpu` and `PERF mobile`, `AUDIO summary`,
 `PERF cpu`/`PERF thread`/`PERF allocated`). Android kills the game process more often than it lets it stop, so the
 performance part (`SessionReport.PeriodicLines`, headed `PERF periodic summary: frame N`) also goes to the log file
 every 30 s while the game runs and whenever it pauses (pause menu, home), through `Log.InfoFileOnly`: the file only,
 not logcat. `VITASHARP_SESSION_REPORT_SECONDS` (in `config/env.txt`) changes the period, 0 turns it off. This is
-what phone performance is measured from: `logs/last.log` (or the kept `<time>_<TITLEID>.log`).
+what phone performance is measured from: `logs/last.log` (or the kept `<time>_<TITLEID>.log`). The short `[perf]`
+lines `GameActivity` logs every 30 s (fps, JIT, audio) stay as they are; this report is the detailed one.
 
 ```
 adb logcat -s VitaSharp VitaSharp-Guest
@@ -327,6 +516,59 @@ Screenshots of the run are not committed (they show game content).
 proprietary driver behaviour and every quirk of the table, libadrenotools (custom drivers, BCeNabler, file redirect,
 turbo), `VK_EXT_rasterization_order_attachment_access`, tile memory savings, AAudio low-latency/exclusive streams and
 output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° rotation, thermal behaviour and speed.
+(The phone run below covered the JIT, the Mali driver, MediaCodec, AAudio shared streams, thermals and speed.)
+
+## Phone run: Redmi Note 14, Mali-G57 (30/10/2026)
+
+**Device:** Xiaomi Redmi Note 14 (24117RN76L, "tanzanite"), MediaTek MT6789 (Helio G99: 2x Cortex-A76 2.2 GHz + 6x
+A55 2.0 GHz), Mali-G57 MC2 (Vulkan 1.3, driver r54 `ArmProprietary 54.1.0`), 8 GB, Android 16 (HyperOS), arm64-v8a,
+2400x1080. Games and `.rif` licences in the app's own folder (`ux0/app`, `ux0/license`), no firmware (HLE).
+
+**First failure:** "Mali-G57 MC2 lacks shaderClipDistance (needed for the GXM far plane)": the renderer required clip
+distances, which Mali does not have. Fixed with a fragment-shader far-plane clip (`GpuQuirk.FarPlaneDiscard`); the
+device's full capability list and its quirks are in the [mobile GPU notes](../notes/mobile-gpu.md#real-device-mali-g57-mc2-30102026).
+
+**Driving the phone from the PC.** HyperOS refuses `adb shell input` (INJECT_EVENTS) unless "USB debugging (Security
+settings)" is on, a system setting this run did not change. Instead:
+
+- the launcher intent takes a title: `adb shell am start -n io.github.vitasharp/crc64ca1c02f6e48bb1c7.MainActivity
+  --es titleId PCSB01240` (`adb shell cmd package resolve-activity --brief io.github.vitasharp` prints the activity);
+- `VITASHARP_ANDROID_INPUT` in `config/env.txt` scripts the pad: `cross@20,start@31:0.5,lstick@40:1:0:2,tap@50:0.5:0.6`
+  (ScriptedPad, seconds since the game first read the pad; buttons, sticks, front/rear taps);
+- `VITASHARP_AUDIO_DUMP=<folder>` writes the guest's audio as WAVs (as the desktop's `--audio-dump`);
+- every 30 s the game log gets `[perf]` lines: fps, the CPU backends' statistics, the audio streams;
+- `build/android-device-test.ps1` (or `.sh`) does a whole run: pushes the game if it is not on the phone, runs it
+  with a pad script, collects `last.log`, screenshots, the audio WAVs and a summary, and removes the game again
+  (`-Keep` / `KEEP=1` keeps it). Only the app's files folder is touched.
+
+| Game | Result on the phone |
+|---|---|
+| Devious Dungeon (PCSB01240, Unity) | title, story, menus correct; 6-11 fps in the first 30 s (loading, JIT warm-up: the Unity main thread at 93 % of an A76), 46 fps the next 30 s, then 55-60 fps |
+| Knightin'+ (PCSE01444, Construct 2) | logos, title, story scroll correct; 27-30 fps (the game's 30) |
+| F1 2011 (PCSE00002) | was black (SceMp4 needed FFmpeg); now the intro movies play through MediaExtractor + MediaCodec (`c2.mtk.avc.decoder` hardware, `c2.android.aac.decoder`) with sound; about 20 fps in the menus. Movies show black frames: the game's movie player skips its picture draw when its decoder thread is late (CPU-bound; reproduced on the desktop with `--cpu-mhz=120`, see the GPU notes) |
+| Persona 4 Golden (PCSB00245) | CRIWARE logo, PSN prompt, opening movie (AvPlayer-style player on SceMp4/SceAvcdec/AAC), title and main menu; 26-30 fps (the game's 30) |
+| Killzone Mercenary (PCSC00045) | intro, main menu, into gameplay with correct 3D (BC/PVRTC-II transcoded to ASTC, 4X MSAA); menus 22-29 fps, the first gameplay seconds 1-3 fps (shader/pipeline compiles and transcodes on a first run) |
+| Uncharted: Golden Abyss (PCSA00029) | intro movie, title and main menu at 21-27 fps. Two bugs found and fixed: the title's background stayed black (its R32G32_SFLOAT surface fell back to RGBA8 because the Mali cannot blend 32-bit float formats; the renderer now keeps any renderable format and draws blended draws into it unblended), and the game screen said "O jogo terminou" during the game's LoadExec (launcher to `uncharted.self`). Open: a single dark, stale movie picture about every 5 s on the title background (not the decoder's "no picture" case; cause not found yet) |
+
+- **CPU:** `CPU backend selected: native` (NativeArm64Compiler), and it executes: Devious Dungeon 28k blocks (164k
+  guest instructions, about 160 µs per block to compile), Killzone 32k blocks, no rejections; HyperOS's SELinux allows
+  the dual-mapped code. The phone is CPU-bound everywhere: slow first minutes (compiling) and F1's 20 fps.
+- **Audio:** AAudio at 48 kHz, but only as a *normal shared* stream: the track lands on the speaker's primary mixer
+  thread, which has no FastMixer on this phone (`dumpsys media.audio_flinger`: flags 0x0, HAL period 1024 frames), so
+  the reported burst is 4096 frames and the latency about 180-230 ms; no underruns on the device side in any run.
+  Garbled sound in Devious Dungeon's first 90 s was the guest's own: its WAV repeats whole 512-frame grains (428
+  discontinuities, none on the desktop) only while the game ran at 6-46 fps, i.e. its mixer thread missed deadlines;
+  at 60 fps the sound is clean. F1's movie sound has the game's own silence grains for the same reason.
+- **Video:** SceAvcdec through the hardware decoder. MediaCodec is asynchronous (pictures come out one or more calls
+  late): Videodec repeats the previous picture rather than returning none, and drops older pictures when several
+  arrive at once; blocking for every picture made the movies slower than real time.
+- **On-screen controls:** drawn over the image and used by hand on the phone (the scripted pad drove the runs).
+- **Thermals:** no throttling: thermal status 0 after an hour of runs, skin 36.5 °C, battery 30 -> 34 °C (charging
+  over USB).
+
+**Fixed during the run:** `shaderClipDistance` required; colour surfaces whose format renders but cannot blend on the GPU (R32G32_SFLOAT on Mali) fell back to RGBA8 (Uncharted's black title background); "O jogo terminou" shown during a LoadExec (`Emulator.Execing`); SceMp4 and SceAudiodec AAC without FFmpeg (MediaExtractor,
+MediaCodec); `MediaFormat` csd buffers are heap buffers (`GetDirectBufferAddress` 0: a crash in the demuxer, latent in
+`AndroidMediaPlayer`); the asynchronous decoder behaviour above; the Vulkan error hint mentioned `vulkan-1.dll`.
 
 ## Before the first run: what the emulator/device step must verify
 
@@ -339,7 +581,8 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
 3. Game process: `surfaceCreated` → renderer → `LoadTitle` → frames on screen; landscape orientation and the
    swapchain extent/transform (the IDENTITY choice); home → back (detach/attach, `Suspend`/`Resume`, audio pause);
    rotation by 180°; leaving the game kills the `:game` process and the library shows the new play time.
-4. CPU: the log's `RuntimeReport` lines (Mono, dynamic code true); the native backend selected (x64 on the x86_64
+4. CPU: the log's `RuntimeReport` lines (Mono, `build mono-aot`, dynamic code supported and compiled true; the
+   full-AOT images load, no AOT-related crash at startup); the native backend selected (x64 on the x86_64
    emulator, ARM64 on a phone) and that SELinux lets the memfd/ashmem RX view execute; `--cpu`-equivalent choices from
    Detalhes.
 5. Input: on-screen buttons and sticks, front touch on the image, TRÁS rear touch, PS opens the pause menu; a
@@ -365,16 +608,8 @@ output changes, hardware MediaCodec decoders, Bluetooth/USB controllers, 180° r
    `MediaCodec: H.264 with <decoder>` and output-format lines; frames correct (no green/garbled chroma: the
    `getOutputImage` plane strides and the crop), the fallback to `c2.android.avc.decoder` when a hardware decoder fails
    (`MediaCodec: ... failed`), movie sound (AAC through MediaCodec) in sync; on the x86_64 emulator only the software
-   decoder exists. **SceAudiodec / SceMp4** (Persona 4 Golden's opening and attract movies, `p4g_boot`; F1 2011's
-   intro movies): the log's `Audiodec: AAC through mediacodec <decoder> (raw, ADTS-wrapped, ...)` and
-   `Mp4 (MediaExtractor) <file>: ...` lines; the decoder accepts a raw frame inside an ADTS header longer than the
-   frame (the stale slot bytes after the raw_data_block are skipped, not decoded as more frames: no `audiodec-mc-*`
-   warnings, movie sound clean and not turning to noise after a few seconds); every `sceAudiodecDecode` returns
-   4096 PCM bytes (1024 stereo samples), never 0, so P4G keeps its 48 kHz movie port (no black screen after the attract
-   movie); sound in sync with the picture (the start-up delay is a few hundred samples); an MP3 game, if one turns up
-   (1152/576 samples per frame); MediaExtractor's frame rate / duration / language for the info SceMp4 reports, and
-   B-frame streams with DTS = PTS; the temp copy SceMp4 writes through the game's file callbacks lands in a writable
-   `Path.GetTempPath()`.
+   decoder exists. **SceAudiodec MP3** (no game known yet): if one turns up, the log's `sceAudiodec: MP3 through
+   MediaCodec <decoder>` line, every `sceAudiodecDecode` returning a full 1152/576-sample frame and clean sound.
 9. **GPU drivers** on an Adreno phone: the APK has `lib/arm64-v8a/libadrenotools.so` and the four hooks (when
    `build/build-android-adrenotools.ps1` or `.sh` ran) and they are extracted to the native library directory
    (`extractNativeLibs`); install a Turnip package (K11MCH1/AdrenoToolsDrivers or Mesa Turnip releases) from "Driver da

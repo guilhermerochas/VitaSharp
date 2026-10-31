@@ -405,6 +405,19 @@ public sealed class Emulator : IDisposable
     public void PerformExec(Func<Gpu.IGpuBackend?>? backendFactory)
     {
         var (path, args, appDir) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
+        Execing = true;
+        try { ExecCore(backendFactory, path, args, appDir); }
+        finally { Execing = false; }
+    }
+
+    /// <summary>A LoadExec is being performed: the old process has stopped (<see cref="Running"/> is false, and
+    /// <see cref="ExecRequest"/> is already cleared while the new executable loads and its modules start), but the
+    /// program has not ended. Front-ends that watch for the program ending must not take this for it (the Android
+    /// game screen showed "O jogo terminou" and paused the emulation during Uncharted's exec).</summary>
+    public volatile bool Execing;
+
+    void ExecCore(Func<Gpu.IGpuBackend?>? backendFactory, string path, string[] args, string? appDir)
+    {
         if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn("LoadExec: some threads did not stop in time");
         bool alone = Vita.Processes.Count == 1;
         if (Parent == null) Gpu.ReplaceBackend(backendFactory); // the GPU is the system's: only the front-end's process replaces it

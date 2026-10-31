@@ -167,7 +167,7 @@ public sealed class GpuQueue : IDisposable
 
     void Run()
     {
-        NativeThread.Register("GPU worker");
+        NativeThread.Register("GPU worker", NativeThread.Role.Gpu);
         HostThreads.Apply(HostThreads.Role.Gpu);
         while (!_stopping)
         {

@@ -58,6 +58,9 @@ public sealed class EmulationSession : IDisposable
     public bool Paused { get; private set; }
     public string? DeviceName => _renderer?.DeviceName;
 
+    /// <summary>Thread placement, ADPF and the game's frame rate (for the display refresh rate).</summary>
+    public GamePerformance Performance { get; }
+
     public EmulationSession(GameEntry game, AndroidInput input, string rpcnPassword)
     {
         _game = game;
@@ -71,6 +74,7 @@ public sealed class EmulationSession : IDisposable
 
         CpuCore.InstructionsPerSecond = _settings.ClockHz;
         HostThreads.Enabled = true;
+        Performance = new GamePerformance(AppServices.AppContext);
         var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword);
         _emu = new Emulator(new EmulatorOptions
         {
@@ -89,11 +93,22 @@ public sealed class EmulationSession : IDisposable
         _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use
         _stats = new SessionStatistics(_emu, () => Paused);
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
+        // VITASHARP_AUDIO_DUMP=<folder, relative to the data folder>: per-port WAVs of what the guest output (--audio-dump)
+        if (System.Environment.GetEnvironmentVariable(EnvVars.AudioDump) is { Length: > 0 } dump)
+        {
+            string dir = Path.Combine(data.Root, dump);
+            VitaSharp.Core.Util.AudioDump.Enable(dir);
+            Log.Info($"Audio: guest output dumped to {dir}");
+        }
         // no FFmpeg in the app: H.264 (SceAvcdec, SceVideodec, movies) through MediaCodec, SceAvPlayer movies demuxed by
         // MediaExtractor with AAC through MediaCodec
         VitaSharp.Core.Media.VideoDecoders.Backend = new MediaCodecVideoBackend();
         VitaSharp.Core.Media.MediaPlayers.Backend = AndroidMediaPlayer.Open;
-        AndroidMediaBackends.InstallAudioAndMp4(); // SceAudiodec MP3/AAC through MediaCodec, SceMp4 through MediaExtractor
+        // SceMp4 (F1 2011's movies): MediaExtractor
+        VitaSharp.Core.Media.Mp4Demuxers.Backend = MediaExtractorDemuxer.Open;
+        // SceAudiodec AAC (movie sound): MediaCodec
+        VitaSharp.Core.Media.AudioFrameDecoders.AacBackend = MediaCodecAacDecoder.Create;
+        VitaSharp.Core.Media.AudioFrameDecoders.Mp3Backend = MediaCodecAacDecoder.CreateMp3;
         TrophyNotifications.Unlocked += OnTrophy;
 
         // a custom Adreno/Turnip driver (Driver da GPU) goes in before the first Vulkan call of the process
@@ -199,6 +214,7 @@ public sealed class EmulationSession : IDisposable
             _emu.Start();
             _emuStarted = true;
             _stats.Start();
+            Performance.Start();
         }
         catch (Exception e)
         {
@@ -244,10 +260,13 @@ public sealed class EmulationSession : IDisposable
 
     /// <summary>The game was started and its process has stopped by itself (the guest exited, a stack-protector
     /// failure or a crash terminated it): nothing more will be drawn, the activity offers to leave.</summary>
-    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null;
+    public bool Ended => _emuStarted && !_disposed && !_emu.Running && _emu.ExecRequest == null && !_emu.Execing;
 
     /// <summary>Frames the guest presented since the game started.</summary>
     public long Frames => VitaSharp.Core.Hle.Modules.Display.FramesPresented - _framesAtStart;
+
+    /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
+    public string AudioSummary => _audio?.Describe() ?? "no audio backend";
 
     /// <summary>Stops the game and records the session in the game's statistics.</summary>
     public void Dispose()
@@ -268,6 +287,7 @@ public sealed class EmulationSession : IDisposable
             EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
             if (_emuStarted) _stats.WriteFinal(); // the desktop Runner's end-of-run lines (SessionReport)
+            Performance.Dispose();
             _emu.Dispose();
         }
         catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }

@@ -33,6 +33,19 @@ public static class LogcatFormat
     /// <summary>Payload bytes per entry, below liblog's limit with room for the tag and the thread prefix.</summary>
     public const int MaxEntryBytes = 4000;
 
+    /// <summary>
+    /// The lowest level forwarded to logcat while a game runs (from its first frame on): warnings and errors only, unless
+    /// <c>VITASHARP_ANDROID_LOGCAT</c> (<paramref name="setting"/>) is <c>info</c>, or <c>debug</c>/<c>all</c> (then what
+    /// <see cref="Log.Level"/> lets through). Every logcat entry is a system call into logd and an entry in a buffer the
+    /// whole system shares; the session's log file still gets every line.
+    /// </summary>
+    public static LogLevel GameplayLevel(string? setting) => setting?.Trim().ToLowerInvariant() switch
+    {
+        "info" => LogLevel.Info,
+        "debug" or "all" or "trace" => LogLevel.Trace,
+        _ => LogLevel.Warn,
+    };
+
     public static LogcatPriority Priority(LogLevel level) => level switch
     {
         LogLevel.Trace => LogcatPriority.Verbose,

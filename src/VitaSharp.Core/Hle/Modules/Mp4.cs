@@ -189,6 +189,9 @@ public sealed class Mp4 : HleModule
             f.Buffer = Emu.Memory.Alloc(f.BufferSize, "mp4 unit");
         }
         u.Data.CopyTo(GuestMemory.Span(f.Buffer, u.Data.Length));
+        // a decoder without its own frame-length probe (Android's MediaCodec) finds the length of raw AAC frames here
+        if (AudioFrameDecoders.AacBackend != null && f.Demux.Streams[u.Stream] is { Video: false, Codec: AVCodecID.AV_CODEC_ID_AAC })
+            RawAudioFrameLengths.Record(u.Data);
         if (unit != 0)
         {
             GuestMemory.Fill(unit, 0, 0x38);
