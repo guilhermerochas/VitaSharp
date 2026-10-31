@@ -52,8 +52,9 @@
 
     <!--
       Runtime: Mono (the .NET for Android default) with its JIT, so RuntimeFeature.IsDynamicCodeSupported is true and the
-      IL backend exists next to the native ARM64 JIT. Release builds keep the default profiled AOT of startup code (the
-      JIT still compiles the rest); no full AOT, no Native AOT (docs/android/README.md, "Runtime and CPU backends").
+      IL backend exists next to the native ARM64 JIT. Release builds AOT-compile every method ahead of time with the JIT
+      kept for the rest (VitaSharpAndroidRuntime below); no Mono full-AOT-only mode, no Native AOT (docs/android/README.md,
+      "Runtime and CPU backends").
     -->
     <UseInterpreter>false</UseInterpreter>
     <!-- the emulator reflects over nothing at run time, but the core and Silk.NET are not trim-annotated: keep them -->
@@ -62,6 +63,50 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
   </PropertyGroup>
+
+  <!--
+    Runtime and AOT: -p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr (docs/android/README.md,
+    "Runtime and CPU backends"). Release defaults to mono-aot, Debug to mono-jit. Every choice keeps a JIT, so dynamic
+    code stays supported and compiled and the CPU chain is still native > il > interpreter.
+      mono-jit       Mono with its JIT; in Release the .NET for Android default profiled AOT (the startup methods of
+                     the MAUI profiles and the app assembly; VitaSharp.Core and the renderer are JIT-compiled on the
+                     device)
+      mono-aot       Mono, every method of every assembly AOT-compiled (AndroidAotMode=Normal: the JIT stays and
+                     compiles what AOT cannot cover: UnsafeAccessor stubs, some generic instantiations, DynamicMethods)
+      mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); much slower to build
+      coreclr        CoreCLR (RyuJIT, partial ReadyToRun), experimental in .NET 10 (warning XA1040)
+  -->
+  <PropertyGroup>
+    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">mono-aot</VitaSharpAndroidRuntime>
+    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == ''">mono-jit</VitaSharpAndroidRuntime>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'mono-aot' or '$(VitaSharpAndroidRuntime)' == 'mono-aot-llvm'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <AndroidAotMode>Normal</AndroidAotMode>
+  </PropertyGroup>
+  <!-- Mono's AOT task starts one compiler per logical CPU (and LLVM adds opt/llc to each), which pins every core of the
+       build machine: one assembly at a time per ABI unless -p:VitaSharpParallelAot=true -->
+  <PropertyGroup Condition="'$(VitaSharpParallelAot)' != 'true'">
+    <_DisableParallelAot Condition="'$(_DisableParallelAot)' == ''">true</_DisableParallelAot>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'mono-aot-llvm'">
+    <EnableLLVM>true</EnableLLVM>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'coreclr'">
+    <UseMonoRuntime>false</UseMonoRuntime>
+  </PropertyGroup>
+  <!-- the choice is logged at startup (RuntimeReport: "Runtime: ..., build mono-aot") so phone logs say what ran -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>VitaSharpAndroidRuntime</_Parameter1>
+      <_Parameter2>$(VitaSharpAndroidRuntime)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Target Name="_VitaSharpCheckAndroidRuntime" BeforeTargets="PrepareForBuild"
+      Condition="'$(VitaSharpAndroidRuntime)' != 'mono-jit' and '$(VitaSharpAndroidRuntime)' != 'mono-aot' and '$(VitaSharpAndroidRuntime)' != 'mono-aot-llvm' and '$(VitaSharpAndroidRuntime)' != 'coreclr'">
+    <Error Text="VitaSharpAndroidRuntime='$(VitaSharpAndroidRuntime)': use mono-jit, mono-aot, mono-aot-llvm or coreclr" />
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
