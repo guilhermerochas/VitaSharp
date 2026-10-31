@@ -27,6 +27,8 @@ public sealed unsafe partial class VulkanRenderer
         public DeviceMemory Memory;
         public nint Ptr;
         public ulong Size;
+        /// <summary>False: non-coherent cached memory, invalidated before the CPU reads it.</summary>
+        public bool Coherent = true;
         public uint Address, Width, Rows, HostStride, GuestStride, GuestBpp;
         public WritebackConvert Convert;
         /// <summary>The address space of the process whose scene rendered the target (the frame retires later, maybe
@@ -185,7 +187,7 @@ public sealed unsafe partial class VulkanRenderer
         if (wb == null)
         {
             wb = new RtWriteback { Size = size };
-            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback);
+            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateReadbackBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback, out wb.Coherent);
         }
         wb.GuestStride = rt.Stride * (uint)guestBpp;
         wb.Address = rt.Address + y * wb.GuestStride + x * (uint)guestBpp;
@@ -216,6 +218,7 @@ public sealed unsafe partial class VulkanRenderer
         foreach (var wb in f.Writebacks)
         {
             using var space = AddressSpace.Use(wb.Space);
+            if (!wb.Coherent) _core.InvalidateMapped(wb.Memory);
             var src = new ReadOnlySpan<byte>((void*)wb.Ptr, (int)wb.Size);
             for (uint y = 0; y < wb.Rows; y++)
             {
