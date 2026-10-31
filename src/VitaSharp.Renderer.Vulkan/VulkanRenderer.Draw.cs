@@ -812,6 +812,7 @@ public sealed unsafe partial class VulkanRenderer
                 // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
+            BeginCostQuery(cmd, d);
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -851,11 +852,13 @@ public sealed unsafe partial class VulkanRenderer
             {
                 bool visQuery = BeginVisibilityQuery(d, out uint query);
                 _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
-                if (visQuery) EndVisibilityQuery(query);
+                if (visQuery) { EndVisibilityQuery(query); CostNoteVisQuery(query); }
             }
+            EndCostQuery(cmd);
             if (singleFetch) EndSingleFetchPass();
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
+        if (CostOn) CostNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
     }

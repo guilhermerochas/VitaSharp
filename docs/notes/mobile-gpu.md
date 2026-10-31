@@ -234,3 +234,104 @@ r54 proprietary driver (`ArmProprietary 54.1.0`), Vulkan 1.3, Android 16. Capabi
   commands through the returned handle, the "Driver da GPU" screen, and BCeNabler on real blobs.
 - ASTC transcoding of BCn/PVRTC with a disk cache: implemented and checked on the Iris Xe; the speed and quality on a
   phone CPU/GPU are unmeasured ([mobile renderer notes](mobile-renderer.md)).
+
+## Mali cost estimator (`vitasharp-perf mali-cost`)
+
+Estimates what a GPU dump's frames cost on a Mali GPU, on the PC, without the phone. It lives in the developer tool
+`tools/VitaSharp.PerfTools` (exe `vitasharp-perf`, [README](../../tools/VitaSharp.PerfTools/README.md)), which is
+built with the solution but never packaged (`build/publish.*` publish VitaSharp.Desktop only). The renderer side
+(`VulkanRenderer.DrawCost.cs`) is off unless `VulkanRendererOptions.DrawCostSink` is set: the emulator and
+`replay-gpu` record nothing extra; with it the frames are the same apart from the occlusion queries. The dump replay
+loop the tool shares with `replay-gpu` is `GpuDumpPlayer` (VitaSharp.Renderer.Vulkan; `replay-gpu` is pixel-identical
+on the Tearaway dump before and after the move, 16/16 frames).
+
+```
+dotnet build tools/VitaSharp.PerfTools -c Release -m:2 -o <dir>
+<dir>/vitasharp-perf mali-cost <dump.vsgd> [--gpu Mali-G57] [--frames a-b] [--fp16-whatif] [--gpu-profile mali]
+    [--out <dir>] [--shader-cache <dir>] [--malioc <exe>] [--mhz 950] [--cores 2] [--gbps 8] [--scale 1]
+```
+
+- **malioc**: Arm's Mali Offline Compiler, part of Arm Performance Studio (free, no login: the installer is a direct
+  download from `https://artifacts.tools.arm.com/arm-performance-studio/<version>/Arm_Performance_Studio_<version>_windows_x86-64.exe`,
+  following the redirect; `7z x <installer> "mali_offline_compiler\*" -r` extracts just the compiler, nothing to
+  install). Found through `--malioc`, `VITASHARP_MALIOC`, `PATH`, or `%ProgramFiles%\Arm\Arm Performance Studio*\mali_offline_compiler`.
+- **Per draw** (`VulkanRenderer.DrawCost.cs`): a precise occlusion query around each draw (draws with a GXM visibility
+  test reuse theirs, made precise while the sink is set) gives the samples that passed depth/stencil; vertices are index
+  count x instances (an upper bound: no post-transform cache). The GLSL of both shaders is kept per (program hash, hint
+  key) as drawn (the variant actually used). Keep the default fresh `--shader-cache` (`<out>/shadercache`): shaders
+  loaded from an existing pack have no GLSL and are regenerated with the default hints, which may not be the variant drawn.
+- **malioc** (`Mali/MaliCost.cs`): `malioc -c <core> --vulkan --format json` on every shader, two processes at a time
+  (each with its own TEMP: malioc writes a fixed temp file name), cached in
+  `<shader-cache>/malioc/<core>/<hash>_<hint>[_variant]_<sha1 of the GLSL>.json`. A shader's cost is the bound unit
+  (max of arithmetic, load/store, varying, texture) of the longest path (the total when the path is unbounded); a
+  vertex shader adds its position and varying variants. `gl_ClipDistance` writes are removed first: Mali has no clip
+  distances (the device uses `FarPlaneDiscard`) and malioc 2026.3 crashes on them. The replay uses `--gpu-profile mali`
+  by default, so the fragment shaders are the device's.
+- **Estimate**: draw = fragments (samples / samples per pixel) x fragment cycles + vertices x vertex cycles, over
+  cores x clock; frame = the draws + tile load/store bytes (scene renderings, from the load/store counters; 4 bytes per
+  pixel for colour and for depth/stencil, MSAA samples not counted) over the bandwidth. Not modelled: hidden surface
+  removal of later-overdrawn fragments (depth-failed ones are already excluded), helper quads, tiler and rasteriser
+  limits, cache misses, DVFS, CPU/GPU overlap. `--scale` is the calibration factor.
+- **Output** (`<out>/mali_cost.txt` and the console): one line per frame (draws, vertices, fragments, vertex/fragment/
+  tile ms, Mali ms, the fp16 what-if), the average, the total tile bytes, the 10 most expensive draws of the worst frame
+  (draw number, share, shader hashes, the stage and unit that bound it, fragment cycles A/LS/V/T), and the shaders that
+  spill or run below 100% occupancy, weighted by their ms per frame.
+- **fp16 what-if** (`--fp16-whatif`; the real generator is unchanged): `half` recompiles each shader with mediump on
+  what the GXP holds in half registers: the translator's `unpackHalf2x16` temporaries, fragment inputs whose every use
+  is a copy into such a temporary (varyings the GXP loads as F16; varyings used as F32 texture coordinates stay highp)
+  and an F16/U8/C10 colour output. `allmp` (`precision mediump float` in the fragment shaders) is an upper bound only:
+  it would break the 32-bit values the register arrays carry.
+
+**Calibration run (31/10/2026, Tearaway dump `PCSF00476_20261030_111902.vsgd`, presents 1385-1515, mali profile,
+Mali-G57 MC2 defaults).** No phone measurement of this dump exists, so the numbers are not calibrated yet. The frames
+cost 3.0 ms on average (worst 8.6 ms, present 1466) against 0.44-0.52 ms of GPU time on the GTX 1650 (about 6x;
+Uncharted's title screen measured 33.7 ms on the phone against 4.2 ms on the desktop, 8x). Nearly all of it is
+fragment work: vertex 0.1-0.4 ms, fragments 1.2-5.7 ms, tile stores 4.5 MB per frame (0.3-2.6 ms at 8 GB/s). The top
+draws are full-screen layers (522240 samples = 960x544) bound by the **varying** unit: fragment shader
+`eb72b63ca2ea4b92` reads seven highp vec4 varyings (2.38 V cycles against 0.59 A). fp16 on half registers: 2.82 ms
+(6.7% less; that shader drops to 2.0 V cycles); every fragment float mediump: 2.29 ms (24.4% less, upper bound). Two
+vertex shaders run at 50% occupancy, none spills. Next: feed in the phone agent's Uncharted / F1 2011 / God of War
+dumps, compare with the GPU time measured on the phone and set `--scale`.
+
+## Vita3K Android comparison
+
+Read from Vita3K's source (master, 55239f9; read only, nothing copied) for its Mali/mobile handling:
+
+- **Shader precision**: the SPIR-V recompiler decorates `RelaxedPrecision` on everything narrower than 32 bits: loads
+  and stores of F16/U8/fixed registers, pixel-attribute (varying) inputs of those types, texture sample results and
+  samplers, colour outputs of half/8-bit formats, and the fract/LOD/bilinear helper maths. VitaSharp emits everything
+  highp (half registers go through `unpackHalf2x16`/`packHalf2x16` at 32 bits).
+- **BC textures without BC**: the Adreno BCeNabler patch where the driver hides BC (as VitaSharp); otherwise the
+  texture cache decodes BCn to RGBA8 on the CPU at upload. ASTC is used only for GXM's own ASTC textures, with no
+  transcoding to ASTC (VitaSharp already transcodes BC/PVRTC to ASTC 4x4).
+- **Render passes**: render passes (not dynamic rendering) everywhere; colour LOAD/STORE except a transient colour
+  (no colour surface: DONT_CARE); depth/stencil CLEAR unless the scene force-loads, DONT_CARE unless force-store (the
+  same idea as VitaSharp's tile-based ops). Framebuffer fetch is a subpass input with
+  `VK_EXT_rasterization_order_attachment_access` when present; shader interlock only in "high accuracy".
+- **Surface sync / flicker**: `disable-surface-sync` defaults to on (desktop and Android): rendered surfaces are not
+  copied back for CPU reads. With memory mapping, GXM sync objects are signalled at once unless "high accuracy" is on,
+  so the guest never waits for the GPU. "Texture viewport" (sampling a sub-rectangle of a surface instead of copying
+  it) is used unless high accuracy. Memory mapping defaults to `double-buffer` (Android hardware buffers / external
+  memory, API 26+).
+- **Per-vendor quirks**: Turnip detected by a Qualcomm driver major version below 100; stock Adreno draws the GUI in a
+  separate render pass (the blob drops render passes with ImGui under load); no storage usage on the swapchain on
+  Turnip (FSR); GPUs without scaled vertex formats convert attributes in the shader; RGB vertex formats padded to RGBA;
+  the device name kept as a copied string (some Mali drivers overwrite it); `adrenotools_set_turbo` behind "turbo
+  mode"; custom drivers through libadrenotools.
+- **Frame pacing and audio**: present mode mailbox > FIFO relaxed > FIFO (no Swappy, no ADPF); an optional FPS hack
+  and a resolution multiplier. Audio through SDL (a small device buffer) or cubeb at its minimum latency; the output
+  thread sleeps only half of each buffer's duration to stay ahead of the host device.
+
+**Ideas VitaSharp lacks** (for the phone agent to weigh; none implemented here):
+
+1. `RelaxedPrecision` / mediump for half registers, F16 varyings and half/8-bit colour outputs. The estimator puts it
+   at about 7% of Tearaway's Mali time with the conservative rule above, mostly varying bandwidth; texture results and
+   sampler precision (not in the what-if) would add to it.
+2. Signal GXM sync objects without waiting for the GPU (with an opt-out "accurate sync"), Vita3K's default: CPU/GPU
+   overlap matters more on a phone than on the desktop.
+3. A transient colour attachment (DONT_CARE load and store) for renderings without a colour surface, and dropping the
+   colour LOAD at scene start when the scene's first operation covers the whole surface (VitaSharp always loads colour).
+4. A resolution multiplier below 1 (Vita3K allows fractional ones): it cuts fragment and tile work, which the
+   estimator shows dominates on Mali.
+5. FIFO relaxed present mode where available, so a late frame tears instead of waiting a whole vblank.
+6. Vertex format fallbacks for scaled/RGB attributes in case a mobile driver lacks them (not seen on the Mali-G57).

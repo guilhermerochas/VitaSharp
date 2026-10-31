@@ -54,14 +54,10 @@ static class ReplayGpu
         return RunCore(path, header, options);
     }
 
-    static readonly string[] NotReplayedEnv = [EnvVars.Data, EnvVars.GpuDumpAt, EnvVars.DebugMode, EnvVars.Cpu, EnvVars.Lockstep];
 
     static void ApplyEnvironment(GpuDumpHeader header, string[] options)
     {
-        var set = new Dictionary<string, string>();
-        if (!options.Contains("--no-recorded-env"))
-            foreach (var (k, v) in header.Entries)
-                if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null) set[k[4..]] = v;
+        var set = options.Contains("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
         if (Opt(options, "--msaa") is { } msaa) set[EnvVars.Msaa] = msaa;
         if (Opt(options, "--gpu-profile") is { } gp) set[EnvVars.GpuProfile] = gp;
         if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
@@ -230,7 +226,6 @@ static class ReplayGpu
         {
             if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
             var wall = Stopwatch.StartNew();
-            long frameDraws = 0, draws = 0, skipped = 0, commands = 0, memBytes = 0, frames = 0;
             long firstMicros = -1;
             Task<DiagnosticCaptureResult>? trace = null;
             void MaybeRequestTrace()
@@ -245,44 +240,12 @@ static class ReplayGpu
             if (s.TraceFrame >= 0 && s.TraceFrame - 2 < renderer.PresentCount)
                 Log.Warn($"[replay] --trace-draws={s.TraceFrame}: the trace needs the frame before it in the dump (first replayable trace frame is {renderer.PresentCount + 2})");
             MaybeRequestTrace();
-            while (reader.Next())
+            var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
+                executeDraw: frameDraws => !(s.DrawLimit >= 0 && renderer.PresentCount + 1 == s.LimitFrame && frameDraws > s.DrawLimit),
+                presented: frameDraws =>
             {
-                if (closing?.IsSet == true) break;
-                switch (reader.Kind)
-                {
-                    case GpuDumpRecord.Memory:
-                        reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length)); // marks the pages written
-                        memBytes += reader.Data.Length;
-                        continue;
-                    case GpuDumpRecord.Idle:
-                        if (s.Idle) renderer.Idle();
-                        continue;
-                    case GpuDumpRecord.BackendState:
-                        if (s.ImportState) renderer.ImportDumpState(reader.Data);
-                        continue;
-                }
-                var cmd = reader.Command!;
-                commands++;
-                switch (cmd)
-                {
-                    case DrawCommand:
-                        frameDraws++;
-                        draws++;
-                        if (s.DrawLimit >= 0 && renderer.PresentCount + 1 == s.LimitFrame && frameDraws > s.DrawLimit) { skipped++; continue; }
-                        renderer.Execute(cmd);
-                        break;
-                    case SignalCommand sig:
-                        if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
-                        break;
-                    default:
-                        renderer.Execute(cmd);
-                        break;
-                }
-                if (cmd is not PresentCommand) continue;
-                frames++;
                 if (frameDraws > 0 && s.DrawLimit >= 0 && renderer.PresentCount == s.LimitFrame)
                     Log.Info($"[replay] frame {s.LimitFrame}: executed {Math.Min(frameDraws, s.DrawLimit)} of {frameDraws} draws (--draw-limit)");
-                frameDraws = 0;
                 if (s.Speed > 0)
                 {
                     // recorded pace: present N at its recorded time (relative to the first present)
@@ -291,9 +254,11 @@ static class ReplayGpu
                     double ahead = due - wall.Elapsed.TotalSeconds;
                     if (ahead > 0.001) Thread.Sleep(TimeSpan.FromSeconds(Math.Min(ahead, 1)));
                 }
-                if (renderer.PresentCount >= s.StopFrame) break;
+                if (renderer.PresentCount >= s.StopFrame) return false;
                 MaybeRequestTrace();
-            }
+                return true;
+            }, cancel: () => closing?.IsSet == true);
+            long frames = st.Frames;
             // retire every frame in flight: the last dumps are written when their frame completes
             renderer.Execute(new FinishCommand());
             if (trace != null)
@@ -303,8 +268,8 @@ static class ReplayGpu
             }
             else if (s.TraceFrame >= 0) Log.Warn($"[replay] frame {s.TraceFrame} was not traced (not in the dump?)");
             double sec = wall.Elapsed.TotalSeconds;
-            Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {commands} commands, {draws} draws ({skipped} skipped), " +
-                     $"{memBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
+            Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {st.Commands} commands, {st.Draws} draws ({st.Skipped} skipped), " +
+                     $"{st.MemoryBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
             if (renderer.Report() is { } rep) foreach (var line in rep.Split('\n')) if (line.Length > 0) Log.Info(line);
             return 0;
         }
