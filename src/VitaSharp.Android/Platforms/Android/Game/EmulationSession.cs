@@ -40,6 +40,7 @@ public sealed class EmulationSession : IDisposable
     readonly VulkanRendererOptions _rendererOptions;
     readonly AndroidAudioBackend? _audio;
     readonly Stopwatch _played = new();
+    readonly SessionStatistics _stats;
     VulkanRenderer? _renderer;
     Thread? _boot;
     long _framesAtStart;
@@ -89,6 +90,8 @@ public sealed class EmulationSession : IDisposable
             Failed?.Invoke($"O jogo parou com um erro na thread {t.Name}: {e.Message}");
         };
         _emu.Host.Input = input;
+        _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use
+        _stats = new SessionStatistics(_emu, () => Paused);
         _emu.Host.Audio = _audio = AndroidAudioBackend.TryCreate(AppServices.AppContext);
         // VITASHARP_AUDIO_DUMP=<folder, relative to the data folder>: per-port WAVs of what the guest output (--audio-dump)
         if (System.Environment.GetEnvironmentVariable(EnvVars.AudioDump) is { Length: > 0 } dump)
@@ -105,6 +108,7 @@ public sealed class EmulationSession : IDisposable
         VitaSharp.Core.Media.Mp4Demuxers.Backend = MediaExtractorDemuxer.Open;
         // SceAudiodec AAC (movie sound): MediaCodec
         VitaSharp.Core.Media.AudioFrameDecoders.AacBackend = MediaCodecAacDecoder.Create;
+        VitaSharp.Core.Media.AudioFrameDecoders.Mp3Backend = MediaCodecAacDecoder.CreateMp3;
         TrophyNotifications.Unlocked += OnTrophy;
 
         // a custom Adreno/Turnip driver (Driver da GPU) goes in before the first Vulkan call of the process
@@ -209,6 +213,7 @@ public sealed class EmulationSession : IDisposable
             _played.Start();
             _emu.Start();
             _emuStarted = true;
+            _stats.Start();
             Performance.Start();
         }
         catch (Exception e)
@@ -241,6 +246,7 @@ public sealed class EmulationSession : IDisposable
         Paused = true;
         _played.Stop();
         EmulationPause.Pause(reason);
+        _stats.WritePeriodic(); // the last callback Android guarantees before it may kill the process
         Log.Flush();
     }
 
@@ -271,6 +277,7 @@ public sealed class EmulationSession : IDisposable
             _disposed = true;
         }
         TrophyNotifications.Unlocked -= OnTrophy;
+        _stats.Stop();
         RecordStatistics();
         try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
@@ -279,6 +286,7 @@ public sealed class EmulationSession : IDisposable
             _emu.Stop();
             EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
+            if (_emuStarted) _stats.WriteFinal(); // the desktop Runner's end-of-run lines (SessionReport)
             Performance.Dispose();
             _emu.Dispose();
         }

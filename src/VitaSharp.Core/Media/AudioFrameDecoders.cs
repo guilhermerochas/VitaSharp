@@ -25,6 +25,20 @@ public static class AudioFrameDecoders
     public static IAudioFrameDecoder? CreateAac(int sampleRate, int channels, byte[]? audioSpecificConfig) =>
         (IAudioFrameDecoder?)FrameDecoder.Create(FFmpeg.AutoGen.AVCodecID.AV_CODEC_ID_AAC, sampleRate, channels, audioSpecificConfig)
         ?? AacBackend?.Invoke(sampleRate, channels, audioSpecificConfig);
+
+    /// <summary>(channels) -> an MP3 decoder when FFmpeg is not loaded; Android installs MediaCodec.</summary>
+    public static Func<int, IAudioFrameDecoder?>? Mp3Backend { get; set; }
+
+    public static IAudioFrameDecoder? CreateMp3(int channels) =>
+        (IAudioFrameDecoder?)FrameDecoder.Create(FFmpeg.AutoGen.AVCodecID.AV_CODEC_ID_MP3, 0, channels) ?? Mp3Backend?.Invoke(channels);
+
+    /// <summary>Samples per channel of the MPEG audio layer III frame at <paramref name="p"/> (1152 for MPEG-1, 576 for
+    /// MPEG-2/2.5, what FFmpeg returns per frame), or 0 when it is not one.</summary>
+    public static int Mp3FrameSamples(ReadOnlySpan<byte> p)
+    {
+        if (FrameDecoder.Mp3FrameLength(p) == 0) return 0;
+        return ((p[1] >> 3) & 3) == 3 ? 1152 : 576;
+    }
 }
 
 /// <summary>

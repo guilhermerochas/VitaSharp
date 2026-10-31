@@ -111,7 +111,7 @@ public sealed unsafe class Audiodec : HleModule
                 uint version = GuestMemory.R32(info + 8);
                 if (version is not (0 or 2 or 3)) return ERR_MP3_INVALID_VERSION;
                 d.Channels = Math.Clamp(ch, 1, 2);
-                d.Codec = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_MP3, 0, d.Channels);
+                d.Codec = AudioFrameDecoders.CreateMp3(d.Channels);
                 esMax = 1441;
                 pcmMax = (uint)(d.Channels * (version == 3 ? 2304 : 1152));
                 break;
