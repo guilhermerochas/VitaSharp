@@ -290,6 +290,52 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.BackEdgeBreak"/>: with LinkBreak set and a full pacing window left, a linked forward
+    /// exit chains on and the linked back edge returns (two blocks); without the option the first exit returns.
+    /// The pinned counters must also hand the dispatcher the right block and cycle totals.
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64LinkBreakOnBackEdges()
+    {
+        if (Arm64Runner.Native) return; // the switches change the trampoline (sandbox only)
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        // A: add r0,r0,#1; b B ; B: add r1,r1,#1; b A
+        uint[] prog = [0xE2800001, 0xEA000000, 0xE320F000, 0xE2811001, 0xEAFFFFFA];
+        prog.SelectMany(BitConverter.GetBytes).ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        try
+        {
+            foreach (bool backEdge in new[] { true, false })
+            {
+                Arm64Emitter.Opts = backEdge ? old | Arm64Emitter.A64Opt.BackEdgeBreak : old & ~Arm64Emitter.A64Opt.BackEdgeBreak;
+                using var sb = new Arm64Sandbox();
+                var a = BlockBuilder.Build(CodeBase, false);
+                var b = BlockBuilder.Build(CodeBase + 0xC, false);
+                var ca = NativeArm64Compiler.Instance.Compile(a, sb.Stubs)!;
+                var cbb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                var entries = new Dictionary<uint, nint> { [a.Start] = ca.NativeEntry, [b.Start] = cbb.NativeEntry };
+                *s = default; s->MemBase = GuestMemory.Base; s->R[15] = CodeBase;
+                for (int link = 0; link < 2; link++) // link A -> B, then B -> A
+                {
+                    s->CycleAcc = 0; s->CheckWindow = 1L << 40; s->LinkBreak = 0; s->NBlocks = 0; s->NInstr = 0;
+                    sb.Run(s, entries[s->R[15]]);
+                    Assert.Equal(1, s->NBlocks);
+                    *(nint*)s->LastExitSlot = entries[s->R[15]];
+                }
+                s->R[15] = CodeBase;
+                s->CycleAcc = 5; s->CheckWindow = 1L << 40; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
+                sb.Run(s, ca.NativeEntry);
+                Assert.Equal(backEdge ? 2 : 1, s->NBlocks);
+                Assert.Equal(5 + a.Cycles + (backEdge ? b.Cycles : 0), s->CycleAcc);
+                Assert.Equal(backEdge ? CodeBase : CodeBase + 0xC, s->R[15]);
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+    }
+
     [Arm64SandboxFact]
     public void Arm64CodeQualityTable()
     {
