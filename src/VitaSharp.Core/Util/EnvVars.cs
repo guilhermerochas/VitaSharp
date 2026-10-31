@@ -19,6 +19,9 @@ public static class EnvVars
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
     /// <summary>Android: folder (relative to the data folder) for per-port WAVs of the guest's audio (desktop: --audio-dump).</summary>
     public const string AudioDump = "VITASHARP_AUDIO_DUMP";
+    /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
+    /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
+    public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";
     public const string BtDraw = "VITASHARP_BT_DRAW";
     public const string Cpu = "VITASHARP_CPU";
     public const string CpuMhz = "VITASHARP_CPU_MHZ";
