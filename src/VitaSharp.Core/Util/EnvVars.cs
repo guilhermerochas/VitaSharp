@@ -59,6 +59,8 @@ public static class EnvVars
     public const string HuntNative = "VITASHARP_HUNT_NATIVE";
     public const string LleModules = "VITASHARP_LLE_MODULES";
     public const string Lockstep = "VITASHARP_LOCKSTEP";
+    /// <summary>replay-gpu --mali-cost: path of the Arm Mali Offline Compiler (malioc.exe) when it is not on PATH or in Arm Performance Studio's folder.</summary>
+    public const string Malioc = "VITASHARP_MALIOC";
     public const string Msaa = "VITASHARP_MSAA";
     public const string MsaaFetch = "VITASHARP_MSAA_FETCH";
     /// <summary>Default of --net=off|real (real internet for SceNet/SceHttp, off by default; see Hle/NetConfig.cs).</summary>

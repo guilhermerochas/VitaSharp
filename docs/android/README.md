@@ -705,8 +705,8 @@ the PC wherever the bug survives a GPU dump.
 it, pulls the dump and replays it with `replay-gpu --validation` and synchronization validation (needs the Khronos
 layer on the PC: not installed on this one). Replay aids: `VITASHARP_GPU_POISON=1` (new render targets magenta,
 depth/stencil discarded at a scene's end cleared to 0/0xFF, so tiler-only dependencies on undefined contents show on a
-desktop GPU; with `--gpu-profile=mali` for the tile-based paths), `VitaSharp.Desktop flicker <dir>` (frames that differ
-from both neighbours while the neighbours match; self-contained, to move into the analysis tools project), and work
+desktop GPU; with `--gpu-profile=mali` for the tile-based paths), `vitasharp-perf flicker <dir>` (frames that differ
+from both neighbours while the neighbours match; tools/VitaSharp.PerfTools), and work
 counters in the `PERF sync` line (draws, pipeline binds, descriptor sets and writes, uploads per frame: deterministic
 for a replay). The startup log also lists the GXM vertex formats the device cannot fetch (none on the Mali-G57).
 

@@ -54,14 +54,10 @@ static class ReplayGpu
         return RunCore(path, header, options);
     }
 
-    static readonly string[] NotReplayedEnv = [EnvVars.Data, EnvVars.GpuDumpAt, EnvVars.DebugMode, EnvVars.Cpu, EnvVars.Lockstep];
 
     static void ApplyEnvironment(GpuDumpHeader header, string[] options)
     {
-        var set = new Dictionary<string, string>();
-        if (!options.Contains("--no-recorded-env"))
-            foreach (var (k, v) in header.Entries)
-                if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null) set[k[4..]] = v;
+        var set = options.Contains("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
         if (Opt(options, "--msaa") is { } msaa) set[EnvVars.Msaa] = msaa;
         if (Opt(options, "--gpu-profile") is { } gp) set[EnvVars.GpuProfile] = gp;
         if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
@@ -230,7 +226,6 @@ static class ReplayGpu
         {
             if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
             var wall = Stopwatch.StartNew();
-            long frameDraws = 0, draws = 0, skipped = 0, commands = 0, memBytes = 0, frames = 0;
             long firstMicros = -1;
             Task<DiagnosticCaptureResult>? trace = null;
             void MaybeRequestTrace()
@@ -245,44 +240,12 @@ static class ReplayGpu
             if (s.TraceFrame >= 0 && s.TraceFrame - 2 < renderer.PresentCount)
                 Log.Warn($"[replay] --trace-draws={s.TraceFrame}: the trace needs the frame before it in the dump (first replayable trace frame is {renderer.PresentCount + 2})");
             MaybeRequestTrace();
-            while (reader.Next())
+            var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
+                executeDraw: frameDraws => !(s.DrawLimit >= 0 && renderer.PresentCount + 1 == s.LimitFrame && frameDraws > s.DrawLimit),
+                presented: frameDraws =>
             {
-                if (closing?.IsSet == true) break;
-                switch (reader.Kind)
-                {
-                    case GpuDumpRecord.Memory:
-                        reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length)); // marks the pages written
-                        memBytes += reader.Data.Length;
-                        continue;
-                    case GpuDumpRecord.Idle:
-                        if (s.Idle) renderer.Idle();
-                        continue;
-                    case GpuDumpRecord.BackendState:
-                        if (s.ImportState) renderer.ImportDumpState(reader.Data);
-                        continue;
-                }
-                var cmd = reader.Command!;
-                commands++;
-                switch (cmd)
-                {
-                    case DrawCommand:
-                        frameDraws++;
-                        draws++;
-                        if (s.DrawLimit >= 0 && renderer.PresentCount + 1 == s.LimitFrame && frameDraws > s.DrawLimit) { skipped++; continue; }
-                        renderer.Execute(cmd);
-                        break;
-                    case SignalCommand sig:
-                        if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
-                        break;
-                    default:
-                        renderer.Execute(cmd);
-                        break;
-                }
-                if (cmd is not PresentCommand) continue;
-                frames++;
                 if (frameDraws > 0 && s.DrawLimit >= 0 && renderer.PresentCount == s.LimitFrame)
                     Log.Info($"[replay] frame {s.LimitFrame}: executed {Math.Min(frameDraws, s.DrawLimit)} of {frameDraws} draws (--draw-limit)");
-                frameDraws = 0;
                 if (s.Speed > 0)
                 {
                     // recorded pace: present N at its recorded time (relative to the first present)
@@ -291,9 +254,11 @@ static class ReplayGpu
                     double ahead = due - wall.Elapsed.TotalSeconds;
                     if (ahead > 0.001) Thread.Sleep(TimeSpan.FromSeconds(Math.Min(ahead, 1)));
                 }
-                if (renderer.PresentCount >= s.StopFrame) break;
+                if (renderer.PresentCount >= s.StopFrame) return false;
                 MaybeRequestTrace();
-            }
+                return true;
+            }, cancel: () => closing?.IsSet == true);
+            long frames = st.Frames;
             // retire every frame in flight: the last dumps are written when their frame completes
             renderer.Execute(new FinishCommand());
             if (trace != null)
@@ -303,8 +268,8 @@ static class ReplayGpu
             }
             else if (s.TraceFrame >= 0) Log.Warn($"[replay] frame {s.TraceFrame} was not traced (not in the dump?)");
             double sec = wall.Elapsed.TotalSeconds;
-            Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {commands} commands, {draws} draws ({skipped} skipped), " +
-                     $"{memBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
+            Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {st.Commands} commands, {st.Draws} draws ({st.Skipped} skipped), " +
+                     $"{st.MemoryBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
             if (renderer.Report() is { } rep) foreach (var line in rep.Split('\n')) if (line.Length > 0) Log.Info(line);
             return 0;
         }
@@ -319,46 +284,6 @@ static class ReplayGpu
 
     /// <summary>Compares frame_N.png of the replay with the same frames of a reference run: compare.txt (one line per
     /// frame: identical pixels, pixels off by more than 8, mean and max channel difference) and diff_N.png (differences x8).</summary>
-    /// <summary>
-    /// <c>flicker &lt;dir&gt; [threshold]</c>: over consecutive frame_N.png (a replay, a test run or phone screenshots
-    /// converted to PNG), flags frame N when it differs strongly from both neighbours (mean channel difference above
-    /// <paramref name="threshold"/>, default 6) while the neighbours match each other (below a third of it): a
-    /// one-frame flash or a stale frame, not motion. Writes flicker.txt; bisect a flagged frame of a replay with
-    /// <c>--draw-limit=N@F --trace-draws=F</c>.
-    /// </summary>
-    internal static int Flicker(string dir, double threshold = 6)
-    {
-        var files = Directory.GetFiles(dir, "frame_*.png")
-            .Select(f => (Path: f, N: long.TryParse(Path.GetFileNameWithoutExtension(f)[6..], out long v) ? v : -1)).Where(x => x.N >= 0).OrderBy(x => x.N).ToArray();
-        static double Mean((byte[] Rgba, int W, int H) a, (byte[] Rgba, int W, int H) b)
-        {
-            if (a.W != b.W || a.H != b.H) return 255;
-            long sum = 0;
-            for (int i = 0; i < a.Rgba.Length; i += 4)
-                sum += Math.Abs(a.Rgba[i] - b.Rgba[i]) + Math.Abs(a.Rgba[i + 1] - b.Rgba[i + 1]) + Math.Abs(a.Rgba[i + 2] - b.Rgba[i + 2]);
-            return sum / (3.0 * a.Rgba.Length / 4);
-        }
-        var sb = new StringBuilder("# frame prev-diff next-diff neighbours-diff\n");
-        int flagged = 0;
-        var img = new (byte[] Rgba, int W, int H)[3];
-        for (int i = 1; i + 1 < files.Length; i++)
-        {
-            if (files[i + 1].N - files[i - 1].N != 2) continue; // only consecutive frames
-            img[0] = PngReader.Read(files[i - 1].Path); img[1] = PngReader.Read(files[i].Path); img[2] = PngReader.Read(files[i + 1].Path);
-            double prev = Mean(img[0], img[1]), next = Mean(img[1], img[2]), around = Mean(img[0], img[2]);
-            if (prev > threshold && next > threshold && around < threshold / 3)
-            {
-                flagged++;
-                sb.AppendLine($"frame_{files[i].N} {prev:F2} {next:F2} {around:F2}");
-            }
-        }
-        string summary = $"FLICKER {files.Length} frames in {dir}: {flagged} flagged (threshold {threshold})";
-        sb.Insert(0, "# " + summary + "\n");
-        File.WriteAllText(Path.Combine(dir, "flicker.txt"), sb.ToString());
-        Console.WriteLine(summary);
-        return flagged == 0 ? 0 : 1;
-    }
-
     internal static void Compare(string outDir, string refDir, string pattern = "frame_*.png")
     {
         var sb = new StringBuilder("# frame identical% off>8% meanAbs maxAbs\n");
@@ -403,67 +328,5 @@ static class ReplayGpu
         File.WriteAllText(Path.Combine(outDir, "compare.txt"), sb.ToString());
         Log.Info(summary);
         Console.WriteLine(summary);
-    }
-}
-
-/// <summary>Minimal PNG reader for 8-bit RGB/RGBA non-interlaced images (the frame dumps).</summary>
-static class PngReader
-{
-    public static (byte[] Rgba, int W, int H) Read(string path)
-    {
-        var data = File.ReadAllBytes(path);
-        int p = 8, w = 0, h = 0, colorType = 6;
-        using var idat = new MemoryStream();
-        while (p + 8 <= data.Length)
-        {
-            int len = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(p));
-            string type = Encoding.ASCII.GetString(data, p + 4, 4);
-            var body = data.AsSpan(p + 8, len);
-            if (type == "IHDR")
-            {
-                w = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(body);
-                h = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(body[4..]);
-                if (body[8] != 8 || body[12] != 0 || body[9] is not (2 or 6)) throw new NotSupportedException($"{path}: only 8-bit RGB/RGBA PNGs");
-                colorType = body[9];
-            }
-            else if (type == "IDAT") idat.Write(body);
-            else if (type == "IEND") break;
-            p += 12 + len;
-        }
-        int bpp = colorType == 6 ? 4 : 3, stride = w * bpp;
-        var raw = new byte[(stride + 1) * h];
-        idat.Position = 0;
-        using (var z = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress)) z.ReadExactly(raw);
-        var img = new byte[stride * h];
-        for (int y = 0; y < h; y++)
-        {
-            byte f = raw[y * (stride + 1)];
-            var src = raw.AsSpan(y * (stride + 1) + 1, stride);
-            var dst = img.AsSpan(y * stride, stride);
-            for (int x = 0; x < stride; x++)
-            {
-                int a = x >= bpp ? dst[x - bpp] : 0, b = y > 0 ? img[(y - 1) * stride + x] : 0, c = x >= bpp && y > 0 ? img[(y - 1) * stride + x - bpp] : 0;
-                int v = f switch
-                {
-                    0 => src[x],
-                    1 => src[x] + a,
-                    2 => src[x] + b,
-                    3 => src[x] + (a + b) / 2,
-                    4 => src[x] + Paeth(a, b, c),
-                    _ => throw new InvalidDataException($"{path}: bad PNG filter {f}"),
-                };
-                dst[x] = (byte)v;
-            }
-        }
-        if (bpp == 4) return (img, w, h);
-        var rgba = new byte[w * h * 4];
-        for (int i = 0, j = 0; i < img.Length; i += 3, j += 4) { rgba[j] = img[i]; rgba[j + 1] = img[i + 1]; rgba[j + 2] = img[i + 2]; rgba[j + 3] = 255; }
-        return (rgba, w, h);
-
-        static int Paeth(int a, int b, int c)
-        {
-            int p = a + b - c, pa = Math.Abs(p - a), pb = Math.Abs(p - b), pc = Math.Abs(p - c);
-            return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-        }
     }
 }

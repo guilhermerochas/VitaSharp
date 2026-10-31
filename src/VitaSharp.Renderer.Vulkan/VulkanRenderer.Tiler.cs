@@ -47,8 +47,9 @@ public sealed unsafe partial class VulkanRenderer
 
     static int LoadIndex(AttachmentLoadOp op) => op switch { AttachmentLoadOp.Load => 0, AttachmentLoadOp.Clear => 1, _ => 2 };
 
-    void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore)
+    void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default)
     {
+        CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area);
         if (color)
         {
             _colorLoads[LoadIndex(colorLoad)]++;
@@ -165,7 +166,7 @@ public sealed unsafe partial class VulkanRenderer
             PDepthAttachment = &depth,
             PStencilAttachment = &depth,
         };
-        CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore);
+        CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore, p.Area);
         var cmd = F.Cmd;
         var cbs = stackalloc CommandBuffer[_chain.Count];
         for (int i = 0; i < _chain.Count; i++) cbs[i] = _chain[i];

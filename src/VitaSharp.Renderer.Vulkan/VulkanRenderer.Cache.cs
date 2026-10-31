@@ -195,13 +195,13 @@ public sealed unsafe partial class VulkanRenderer
         // and so does the Adreno dynamic-indexing lowering (driver quirk)
         // and the far-plane clip without shaderClipDistance (Mali)
         ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32) | (ShaderGenerator.LowerDynamicIndexing ? 1ul << 33 : 0)
-                    | (ulong)ShaderGenerator.FarPlane << 34;
+                    | (ulong)ShaderGenerator.FarPlane << 34 | (ShaderGenerator.VertexStores ? 0 : 1ul << 36) | (ShaderGenerator.FragmentStores ? 0 : 1ul << 37);
         Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, gen };
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }
 
     // record: flags u8 (vertex, uses frag colour, writes depth, attribute fallback, bits 4-5 raw colour output size:
-    // 0 none, 1 = 8, 2 = 16, 3 = 32 bits, bits 6-7 TileWord1Use), input count u16,
+    // 0 none, 1 = 8, 2 = 16, 3 = 32 bits, bits 6-7 TileWord1Use), input count u16 (bit 15: writes memory),
     // inputs (reg u32, location i32, kind u16, components i32, location count i32, raw size i32, raw components i32),
     // then the SPIR-V. Every VertexInputInfo field must round-trip: BuildVertexInput derives the Vulkan vertex formats
     // from them, and a lost raw size turns a raw U8/U16 register-format fetch into a normalised/float one (garbage
@@ -216,7 +216,7 @@ public sealed unsafe partial class VulkanRenderer
         var buf = new byte[3 + n * InputRecordSize + spv.Length];
         buf[0] = (byte)((gen.IsVertex ? 1 : 0) | (gen.UsesFragColor ? 2 : 0) | (gen.WritesDepth ? 4 : 0) | (gen.AttributeFallback ? 8 : 0)
             | (gen.RawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 4 | ((int)gen.TileWord1 & 3) << 6);
-        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)n);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)(n | (gen.WritesMemory ? 0x8000 : 0)));
         int o = 3;
         foreach (var vi in gen.VertexInputs)
         {
@@ -242,6 +242,8 @@ public sealed unsafe partial class VulkanRenderer
         byte flags = data[0];
         if (((flags & 1) != 0) != vertex) return null;
         int n = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(1));
+        bool writesMemory = (n & 0x8000) != 0;
+        n &= 0x7FFF;
         int spvOffset = 3 + n * InputRecordSize;
         int spvLength = data.Length - spvOffset;
         if (spvLength < 20 || (spvLength & 3) != 0 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(spvOffset)) != 0x07230203) return null;
@@ -254,6 +256,7 @@ public sealed unsafe partial class VulkanRenderer
             AttributeFallback = (flags & 8) != 0,
             RawColorBits = ((flags >> 4) & 3) switch { 1 => 8, 2 => 16, 3 => 32, _ => 0 },
             TileWord1 = (TileWord1Use)((flags >> 6) & 3),
+            WritesMemory = writesMemory,
         };
         for (int i = 0; i < n; i++)
         {

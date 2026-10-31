@@ -41,6 +41,9 @@ public sealed class VulkanRendererOptions
     /// <summary>adreno|mali|desktop: behave as that device class (missing features, limits, driver quirks) to test
     /// the mobile paths on a desktop GPU (--gpu-profile; null = VITASHARP_GPU_PROFILE, else the real device).</summary>
     public string? GpuProfile;
+    /// <summary>Tooling (replay-gpu --mali-cost): receives every executed draw with its occlusion sample count once its
+    /// frame completed (VulkanRenderer.DrawCost.cs). Null = off.</summary>
+    public Action<IReadOnlyList<DrawCostRecord>>? DrawCostSink;
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -93,6 +96,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public long SubmitSeq;
         /// <summary>Occlusion queries of this frame's visibility tests.</summary>
         public VisibilityFrame? Visibility;
+        /// <summary>replay-gpu --mali-cost: per-draw occlusion queries of this submission.</summary>
+        public CostFrame? Cost;
         /// <summary>Secondary command buffers of multisampled renderings (reused every time the frame slot is recorded).</summary>
         public readonly List<CommandBuffer> Secondaries = new();
         public int SecondaryIndex;
@@ -138,6 +143,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Core.Gxm.Shader.ShaderGenerator.FarPlane = _core.Caps.Has(GpuQuirk.FarPlaneDiscard) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Discard
             : _core.Caps.Has(GpuFeature.ShaderClipDistance) ? Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.ClipDistance
             : Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Hardware;
+        // memory stores of GXM programs write the mirror of guest memory (VulkanRenderer.Mapped.cs) where allowed
+        Core.Gxm.Shader.ShaderGenerator.VertexStores = _core.VertexStores;
+        Core.Gxm.Shader.ShaderGenerator.FragmentStores = _core.FragmentStores;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
@@ -189,6 +197,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.BeginCommandBuffer(f.Cmd, in bi);
         f.Recording = true;
         ResetVisibility(f);
+        ResetCost(f);
         BeginGpuTime(f);
         _boundPipeline = default;
     }
@@ -255,6 +264,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (f.Nan is { Used: true }) CompleteNanFrame(f);
         using (FrameLedger.Time(FrameLedger.Cat.Writeback)) CompleteWritebacks(f);
         CompleteVisibility(f);
+        CompleteCost(f);
         foreach (var s in f.Signals) s();
         f.Signals.Clear();
     }
@@ -1226,7 +1236,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.DeviceWaitIdle(_dev);
         DestroyMirror();
         foreach (var fr in _frames) RetireFrame(fr, RetireCause.Dispose);
-        foreach (var fr in _frames) DestroyVisibility(fr);
+        foreach (var fr in _frames) { DestroyVisibility(fr); DestroyCost(fr); }
         DestroyWritebacks();
         DestroyReplay();
         DestroyNan();

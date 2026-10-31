@@ -182,8 +182,6 @@ public static class Program
             case "png-diff" when args.Length >= 3:
                 ReplayGpu.Compare(args[1], args[2], args.Length > 3 ? args[3] : "*.png");
                 return 0;
-            case "flicker" when args.Length >= 2:
-                return ReplayGpu.Flicker(args[1], args.Length > 2 ? double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) : 6);
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
             case "boot-shell":

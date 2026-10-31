@@ -56,7 +56,7 @@ public sealed unsafe partial class VulkanRenderer
         if (v.Used >= VisQueriesPerFrame) { Log.WarnOnce("visq-full", "[gpu] visibility queries per frame exhausted"); return false; }
         query = v.Used++;
         v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space));
-        var flags = d.VisIncrement && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
+        var flags = (d.VisIncrement || CostOn) && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
         _vk.CmdBeginQuery(Cmd, v.Pool, query, flags);
         return true;
     }

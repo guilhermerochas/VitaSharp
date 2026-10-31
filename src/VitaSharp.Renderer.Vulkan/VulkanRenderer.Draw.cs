@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
@@ -787,6 +787,8 @@ public sealed unsafe partial class VulkanRenderer
             uint addr = d.Streams[s];
             if (addr == 0) { vbufs[s] = _dummyBuffer; voffs[s] = 0; continue; }
             if (!instanced) addr += firstVertex * stream.Stride;
+            // vertices an earlier draw's program stored to memory are only in the mirror (VulkanRenderer.Mapped.cs)
+            if (GpuWrittenStream(addr, length) is >= 0 and var mirrorOff) { vbufs[s] = _mirror; voffs[s] = (ulong)mirrorOff; continue; }
             var (b, off) = UploadSpan(GuestMemory.ReadSpan(addr, (int)length), 4);
             vbufs[s] = b;
             voffs[s] = off;
@@ -794,8 +796,8 @@ public sealed unsafe partial class VulkanRenderer
 
         // ---- uniforms
         var bufInfos = stackalloc DescriptorBufferInfo[4];
-        bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs);
-        bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs);
+        bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
+        bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs, fs.Gen?.WritesMemory == true);
         var uSet = AllocSet(_uboLayout);
         bufInfos[0] = UniformInfo(d.VertexUniformSpan);
         bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
@@ -827,6 +829,7 @@ public sealed unsafe partial class VulkanRenderer
                 // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
+            BeginCostQuery(cmd, d);
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -868,11 +871,13 @@ public sealed unsafe partial class VulkanRenderer
                 bool visQuery = BeginVisibilityQuery(d, out uint query);
                 _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
                 _statDraws++;
-                if (visQuery) EndVisibilityQuery(query);
+                if (visQuery) { EndVisibilityQuery(query); CostNoteVisQuery(query); }
             }
+            EndCostQuery(cmd);
             if (singleFetch && !(FetchPassMerge && _core.RasterizationOrderColor)) EndSingleFetchPass();
         }
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
+        if (CostOn) CostNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
         if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
     }
