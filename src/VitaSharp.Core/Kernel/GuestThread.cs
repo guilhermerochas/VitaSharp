@@ -237,6 +237,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
                         }
                         throw new GuestFaultException("Unbalanced guest call return");
                     }
+#if VITASHARP_DEVELOPER
+                    if (Util.Developer.DevTrace.On) { DispatchHleTraced(s); break; }
+#endif
                     DispatchHle(s);
                     break;
                 case ExitReason.Yield:
@@ -331,6 +334,9 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
     {
         if (s->SvcImm == Kernel.TrapSvc) return false;
         _inGuest = false; // a blocking HLE call is not guest code (SuspendForVm waits for guest code only)
+#if VITASHARP_DEVELOPER
+        if (Util.Developer.DevTrace.On) DispatchHleTraced(s); else
+#endif
         DispatchHle(s);
         _inGuest = true;
         if (SuspendCount > 0 || ProcessSuspended || PausedHere) s->Exit = ExitReason.Handled;
@@ -343,8 +349,19 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
         return ((CpuCore.ISvcHandler)this).TryHandleSvc(s);
     }
 
+#if VITASHARP_DEVELOPER
+    /// <summary>Developer trace (VITASHARP_TRACE=1): a marker around one HLE call in VITASHARP_TRACE_HLE.</summary>
+    void DispatchHleTraced(CpuState* s)
+    {
+        bool traced = Util.Developer.DevTrace.BeginHle(_emu.Hle.GetFunction(s->SvcImm).Name);
+        try { DispatchHle(s); }
+        finally { if (traced) Util.Developer.DevTrace.End(); }
+    }
+#endif
+
     void DispatchHle(CpuState* s)
     {
+
         var f = _emu.Hle.GetFunction(s->SvcImm);
         f.CallCount++;
         long charged0 = Core.ChargedCycles;

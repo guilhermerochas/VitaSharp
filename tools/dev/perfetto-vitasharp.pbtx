@@ -1,0 +1,33 @@
+# Perfetto config of build/android-trace.* (text proto). duration_ms is set by the script.
+buffers { size_kb: 131072 fill_policy: RING_BUFFER }
+buffers { size_kb: 8192 fill_policy: RING_BUFFER }
+data_sources {
+  config {
+    name: "linux.ftrace"
+    target_buffer: 0
+    ftrace_config {
+      ftrace_events: "sched/sched_switch"
+      ftrace_events: "sched/sched_wakeup"
+      ftrace_events: "sched/sched_waking"
+      ftrace_events: "power/cpu_frequency"
+      ftrace_events: "power/cpu_idle"
+      ftrace_events: "power/gpu_frequency"
+      ftrace_events: "power/suspend_resume"
+      ftrace_events: "gpu_mem/gpu_mem_total"
+      ftrace_events: "task/task_newtask"
+      ftrace_events: "task/task_rename"
+      atrace_categories: "gfx"
+      atrace_categories: "view"
+      atrace_categories: "power"
+      atrace_apps: "io.github.vitasharp"
+      atrace_apps: "io.github.vitasharp:game"
+      buffer_size_kb: 16384
+      drain_period_ms: 250
+    }
+  }
+}
+data_sources { config { name: "linux.process_stats" target_buffer: 1 process_stats_config { scan_all_processes_on_start: true proc_stats_poll_ms: 1000 } } }
+data_sources { config { name: "linux.sys_stats" target_buffer: 1 sys_stats_config { cpufreq_period_ms: 100 } } }
+data_sources { config { name: "gpu.counters" target_buffer: 0 gpu_counter_config { counter_period_ns: 1000000 } } }
+data_sources { config { name: "gpu.renderstages" target_buffer: 0 } }
+data_sources { config { name: "android.power" target_buffer: 1 android_power_config { battery_poll_ms: 1000 collect_power_rails: true } } }

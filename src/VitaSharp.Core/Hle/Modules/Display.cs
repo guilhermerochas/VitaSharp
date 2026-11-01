@@ -62,6 +62,10 @@ public sealed class Display : HleModule
     [Hle("sceDisplaySetFrameBuf")]
     internal int SetFrameBuf(uint pParam, uint sync)
     {
+#if VITASHARP_DEVELOPER
+        Util.Developer.DevTrace.GuestFrame();
+#endif
+
         if (pParam == 0) { _base = 0; return 0; }
         uint size = GuestMemory.R32(pParam);
         if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
