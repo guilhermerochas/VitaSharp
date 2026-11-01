@@ -823,7 +823,7 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); if (!_core.RasterizationOrderColor || Environment.GetEnvironmentVariable("VITASHARP_X_FETCH_BARRIER") == "1") InputFetchBarrier(cmd); }
+            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); if (!_core.RasterizationOrderColor) InputFetchBarrier(cmd); }
             else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
             else
             {
