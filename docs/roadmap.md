@@ -65,6 +65,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `docs/android/README.md`, "Phone run")
 - [ ] Aparelho Adreno: driver da Qualcomm, libadrenotools (driver customizado, BCeNabler), controle Bluetooth, giro de
   180° (o que falta da lista no fim de `docs/android/README.md`)
+- [ ] Estimador de custo de GPU para Adreno, como o `vitasharp-perf mali-cost` da Mali: analisar os shaders traduzidos
+  numa Adreno (6xx/7xx) sem aparelho — compilar o Mesa no PC e usar o compilador `ir3` do Turnip pela linha de comando
+  (instruções, registradores, transbordo, ocupação por shader) ou o Adreno Offline Compiler da Qualcomm se for
+  encontrado — e juntar com a contagem de fragmentos/vértices do replay e o tráfego de tiles (a Adreno também desenha
+  em blocos, com GMEM), para estimar ms por desenho/quadro; o resultado é do Turnip (não do driver da Qualcomm), então
+  calibrar quando houver um aparelho Adreno ou pelo Samsung Remote Test Lab / Firebase Test Lab
 - [ ] AAudio de baixa latência no Redmi Note 14: o stream sai "normal shared" (a saída do alto-falante não tem
   FastMixer, rajada informada de 4096 quadros, ~200 ms de latência); ver se outro caminho (MMAP, sem
   `setBufferCapacityInFrames`, AudioTrack com `PERFORMANCE_MODE_LOW_LATENCY`) consegue a saída rápida
