@@ -8,6 +8,8 @@ public sealed unsafe partial class VulkanRenderer
 {
     SwapchainKHR _swapchain;
     Image[] _swapImages = [];
+    /// <summary>Render-done semaphores, one per swapchain image index (kept across swapchain recreation).</summary>
+    readonly List<Silk.NET.Vulkan.Semaphore> _swapDone = new();
     Extent2D _swapExtent;
     Format _swapFormat;
     bool _swapchainDirty;
@@ -85,6 +87,15 @@ public sealed unsafe partial class VulkanRenderer
         sw.GetSwapchainImages(_dev, _swapchain, ref ic, null);
         _swapImages = new Image[ic];
         fixed (Image* p = _swapImages) sw.GetSwapchainImages(_dev, _swapchain, ref ic, p);
+        // the semaphore a frame signals for its present belongs to the swapchain image, not to the frame in flight:
+        // per frame, a frame signalled it again while the presentation of an earlier image could still be waiting on it
+        // (validation: "may still be in use by VkSwapchainKHR")
+        var sci = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
+        while (_swapDone.Count < ic)
+        {
+            _vk.CreateSemaphore(_dev, in sci, null, out var s).Ok("vkCreateSemaphore");
+            _swapDone.Add(s);
+        }
         _swapExtent = extent;
         _swapFormat = chosen.Format;
         _swapchainDirty = false;
@@ -173,6 +184,10 @@ public sealed unsafe partial class VulkanRenderer
         blit.DstOffsets[0] = new Offset3D(dx, dy, 0);
         blit.DstOffsets[1] = new Offset3D(dx + dw, dy + dh, 1);
         _vk.CmdBlitImage(Cmd, src.Image, ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, in blit, Filter.Linear);
+        // later renderings and copies into the surface come after this read (write-after-read: an execution dependency;
+        // synchronization validation on the Mali-G57 caught the next frames' render passes storing into it unordered)
+        Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, 0, 0);
         DrawOverlay(dst);
         Barrier(dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0);
