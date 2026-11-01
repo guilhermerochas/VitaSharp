@@ -150,6 +150,9 @@ public sealed unsafe partial class VulkanRenderer
             LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store,
         };
         var depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
+#if VITASHARP_DEVELOPER
+        DevRenderingOps(ref p.DepthLoad, ref depthStore);
+#endif
         var depth = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo, ImageView = p.Depth, ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
@@ -185,7 +188,11 @@ public sealed unsafe partial class VulkanRenderer
             _vk.CmdEndRendering(cmd);
         }
         if (Poison && depthStore == AttachmentStoreOp.DontCare && _depth != null) PoisonDepth(cmd, _depth.Image);
+#if VITASHARP_DEVELOPER
+        DevAfterRendering(cmd);
+#endif
     }
+
 
     /// <summary>
     /// VITASHARP_GPU_POISON=1 (debugging, mainly for replay-gpu on a desktop GPU): what Vulkan leaves undefined gets a

@@ -205,7 +205,14 @@ public sealed class GpuQueue : IDisposable
             try
             {
                 _executing = cmd;
+#if VITASHARP_DEVELOPER
+                Util.Developer.DevTrace.GpuCommand(cmd is PresentCommand);
+#endif
                 lock (_backendLock) Backend?.Execute(cmd);
+#if VITASHARP_DEVELOPER
+                if (cmd is PresentCommand) Util.Developer.DevTrace.GpuPresented();
+#endif
+
             }
             catch (Exception e)
             {

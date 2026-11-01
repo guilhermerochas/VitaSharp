@@ -262,6 +262,9 @@ sealed unsafe class AAudioSink : IPcmSink
 
     public int Write(ReadOnlySpan<short> interleaved, long timeoutNanos)
     {
+#if VITASHARP_DEVELOPER
+        Core.Util.Developer.DevTrace.Begin("audio grain"); Core.Util.Developer.DevTrace.End();
+#endif
         if (_stream == 0) return PcmSinkStatus.Error;
         int frames = interleaved.Length / Channels;
         fixed (short* p = interleaved)
@@ -351,6 +354,9 @@ sealed class AudioTrackSink : IPcmSink
 
     public int Write(ReadOnlySpan<short> interleaved, long timeoutNanos)
     {
+#if VITASHARP_DEVELOPER
+        Core.Util.Developer.DevTrace.Begin("audio grain"); Core.Util.Developer.DevTrace.End();
+#endif
         if (_buf.Length < interleaved.Length) _buf = new short[interleaved.Length];
         interleaved.CopyTo(_buf);
         int n = _track.Write(_buf, 0, interleaved.Length, timeoutNanos == 0 ? WriteMode.NonBlocking : WriteMode.Blocking);

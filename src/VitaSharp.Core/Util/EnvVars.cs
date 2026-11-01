@@ -37,8 +37,9 @@ public static class EnvVars
     public const string DebugTex0 = "VITASHARP_DEBUG_TEX0";
     public const string DyldRelaunched = "VITASHARP_DYLD_RELAUNCHED";
     public const string FetchSplit = "VITASHARP_FETCH_SPLIT";
-    /// <summary>=1: consecutive programmable-blending draws of a one-sample scene share one fetch pass where the GPU orders
-    /// input attachment reads with the rasterization (VulkanRenderer.SingleFetch.cs; experimental: dark frames on Mali).</summary>
+    /// <summary>1/0: consecutive programmable-blending draws of a one-sample scene share one fetch pass (the default on
+    /// tile-based GPUs) or not (VulkanRenderer.SingleFetch.cs).</summary>
+
     public const string FetchPassMerge = "VITASHARP_FETCH_PASS_MERGE";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>=1: the Khronos validation layer when it can be found (Android: an APK built with
@@ -124,6 +125,18 @@ public static class EnvVars
     public const string Swz1 = "VITASHARP_SWZ1";
     public const string SyscallLatencyUs = "VITASHARP_SYSCALL_LATENCY_US";
     public const string TestTrace = "VITASHARP_TEST_TRACE";
+    /// <summary>=1 (developer builds, Android): Perfetto/ATrace markers (Core/Util/Developer/DevTrace.cs, build/android-trace.*).</summary>
+    public const string Trace = "VITASHARP_TRACE";
+    /// <summary>With <see cref="Trace"/>: one HLE call in N gets a marker (default 64, rounded up to a power of two).</summary>
+    public const string TraceHle = "VITASHARP_TRACE_HLE";
+    /// <summary>=1[:threshold] (developer APK): in-game flicker check of every presented frame (FlickerDetector).</summary>
+    public const string FlickerCheck = "VITASHARP_FLICKER_CHECK";
+    /// <summary>KIND@START:STOP (developer APK): the pause menu's capture (tempo or conteudo), started and stopped that many
+    /// seconds after the game starts.</summary>
+    public const string Capture = "VITASHARP_CAPTURE";
+
+
+
     public const string Texdirty = "VITASHARP_TEXDIRTY";
     /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
     public const string VertexCache = "VITASHARP_VERTEX_CACHE";

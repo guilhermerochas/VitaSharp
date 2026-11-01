@@ -149,7 +149,14 @@ public static unsafe class Jit
         if (b.Tier >= chain.Length) { b.JitState = 3; return; }
         var backend = chain[b.Tier];
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+#if VITASHARP_DEVELOPER
+        Util.Developer.DevTrace.Begin("jit compile");
         var cb = backend.Compile(b);
+        Util.Developer.DevTrace.End();
+#else
+        var cb = backend.Compile(b);
+#endif
+
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         var st = backend.Stats;
         Interlocked.Add(ref st.Ticks, dt);

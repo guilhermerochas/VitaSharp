@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
+    <!-- DeveloperGatingTests: the renderer of a normal build has none of the developer tooling -->
+    <ProjectReference Include="..\..\src\VitaSharp.Renderer.Vulkan\VitaSharp.Renderer.Vulkan.csproj" />
+
     <!-- the platform-neutral models of the Android app (no Android workload needed) -->
     <ProjectReference Include="..\..\src\VitaSharp.Android.Common\VitaSharp.Android.Common.csproj" />
     <!-- the HLE binder generator also binds the probe module of HleBinderTests -->

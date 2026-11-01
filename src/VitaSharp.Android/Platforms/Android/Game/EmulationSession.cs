@@ -130,7 +130,21 @@ public sealed class EmulationSession : IDisposable
             VSync = _settings.VSync,
             GpuProfile = _settings.GpuProfile.Length > 0 ? _settings.GpuProfile : null,
         };
+#if VITASHARP_DEVELOPER
+        // developer APK, VITASHARP_FLICKER_CHECK=1[:threshold] in env.txt: every presented frame is read back small and
+        // checked for one-frame flashes and dark/stale frames on the device (FLICKER lines in the log)
+        if (System.Environment.GetEnvironmentVariable(EnvVars.FlickerCheck) is { Length: > 0 } fc && fc != "0")
+        {
+            var det = new FlickerDetector(double.TryParse(fc.Split(':').ElementAtOrDefault(1), System.Globalization.CultureInfo.InvariantCulture, out var ft) ? ft : 6);
+            _rendererOptions.FrameSink = (n, px, w, h) =>
+            {
+                if (det.Add(n, px, w, h) is { } f) Log.Info($"FLICKER {det.Describe(f)}");
+                if (det.Frames % 600 == 0) Log.Info($"{det.Summary}");
+            };
+        }
+#endif
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
+
         _emu.ExecRequested += () => Task.Run(() =>
         {
             try
@@ -223,6 +237,19 @@ public sealed class EmulationSession : IDisposable
             _emu.Start();
             _emuStarted = true;
             ScheduleGpuDump();
+#if VITASHARP_DEVELOPER
+            // VITASHARP_CAPTURE=KIND@START:STOP (seconds after the game starts): the pause menu's capture, scripted
+            if (System.Environment.GetEnvironmentVariable(EnvVars.Capture) is { Length: > 0 } cap && cap.Split('@', ':') is [var kind, var a, var b]
+                && int.TryParse(a, out int startS) && int.TryParse(b, out int stopS) && stopS > startS)
+                Task.Run(async () =>
+                {
+                    await Task.Delay(startS * 1000);
+                    StartCapture(kind);
+                    await Task.Delay((stopS - startS) * 1000);
+                    StopCapture();
+                });
+#endif
+
             _stats.Start();
             Performance.Start();
         }
@@ -278,6 +305,100 @@ public sealed class EmulationSession : IDisposable
     /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
     public string AudioSummary => _audio?.Describe() ?? "no audio backend";
 
+#if VITASHARP_DEVELOPER
+    /// <summary>The capture the player started from the pause menu (developer APK), or null.</summary>
+    public string? CaptureDir { get; private set; }
+    string _captureKind = "";
+    DateTime _captureStart;
+    long _captureFrames0;
+    GpuDumpRecorder? _captureDump;
+    bool _captureAudio;
+
+    /// <summary>
+    /// "Gravar tempo" (kind tempo): the developer trace markers on (a Perfetto session started with build/android-trace.*
+    /// sees them), fps and the renderer's PERF lines at the stop. "Gravar conteúdo" (conteudo): a GPU dump of the
+    /// next frames (up to 600) for the bench and replay-gpu, with every guest memory range the GPU read (texture data
+    /// and descriptors, so the texture uploads), and the guest audio ports as WAVs (audio/). Output:
+    /// files/captures/TITLE_DATE_KIND/ with info.txt and the log; pulled with adb (tools/dev/README.md).
+
+    /// </summary>
+    public void StartCapture(string kind)
+    {
+        if (CaptureDir != null) return;
+        string dir = Path.Combine(AppServices.Data.Root, "captures", $"{_game.TitleId}_{DateTime.Now:yyyyMMdd_HHmmss}_{kind}");
+        Directory.CreateDirectory(dir);
+        (_captureKind, _captureStart, _captureFrames0) = (kind, DateTime.Now, Frames);
+        if (kind is "tempo" or "tudo") Core.Util.Developer.DevTrace.On = true;
+        // content: the guest audio ports as WAVs from now on (unless VITASHARP_AUDIO_DUMP already records them)
+        _captureAudio = kind is "conteudo" or "tudo" && !VitaSharp.Core.Util.AudioDump.Enabled;
+        if (_captureAudio) VitaSharp.Core.Util.AudioDump.Enable(Path.Combine(dir, "audio"));
+        _captureTiming = null;
+        CaptureDir = dir;
+        Log.Warn($"[capture] {kind} started: {dir}");
+        if (kind == "conteudo") StartCaptureDump(dir);
+        // everything: the dump slows the game, so the first 5 s are timing only, then the dump starts
+        if (kind == "tudo")
+            Task.Run(async () =>
+            {
+                await Task.Delay(5000);
+                if (CaptureDir != dir) return;
+                double s = (DateTime.Now - _captureStart).TotalSeconds;
+                long f = Frames - _captureFrames0;
+                _captureTiming = FormattableString.Invariant($"timing part (no dump): first {s:F1} s, {f} frames, {f / Math.Max(s, 0.001):F1} fps; ") + (_renderer?.Report() ?? "");
+                Log.Warn($"[capture] {_captureTiming.Split('\n')[0]}; GPU dump starts now");
+                StartCaptureDump(dir);
+            });
+    }
+
+    string? _captureTiming;
+
+    void StartCaptureDump(string dir)
+    {
+        _captureDump = GpuDumpRecorder.Start(new GpuDumpOptions
+        {
+            Path = Path.Combine(dir, $"{_game.TitleId}{GpuDumpFormat.Extension}"), Header = DumpHeader(),
+            StartAfterPresent = _renderer?.PresentCount ?? 0, MaxFrames = 600,
+            Finished = r => Log.Warn(r.Error != null ? $"[capture] dump failed: {r.Error}" : $"[capture] dump saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
+        });
+        Log.Warn($"[capture] GPU dump from present {_renderer?.PresentCount ?? 0} (up to 600 frames)");
+    }
+
+    public void StopCapture()
+    {
+        if (CaptureDir is not { } dir) return;
+        double secs = (DateTime.Now - _captureStart).TotalSeconds;
+        long frames = Frames - _captureFrames0;
+        _captureDump?.Stop();
+        _captureDump = null;
+        if (_captureAudio) VitaSharp.Core.Util.AudioDump.Disable();
+        _captureAudio = false;
+        Core.Util.Developer.DevTrace.On = false;
+        var info = new System.Text.StringBuilder();
+        info.AppendLine($"game: {_game.Title} ({_game.TitleId})");
+        info.AppendLine($"kind: {_captureKind}");
+        info.AppendLine($"start: {_captureStart:yyyy-MM-dd HH:mm:ss}, {secs:F1} s, {frames} frames, {frames / Math.Max(secs, 0.001):F1} fps");
+        info.AppendLine($"build: {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}");
+        info.AppendLine($"audio: {AudioSummary}");
+        info.AppendLine("scene: (write a note here)");
+        if (_captureTiming != null) info.AppendLine(_captureTiming).AppendLine("dump part (slowed by the recording): the rest; renderer report at the stop:");
+        info.AppendLine("contents: info.txt, log.txt" + (File.Exists(Path.Combine(dir, $"{_game.TitleId}{GpuDumpFormat.Extension}")) ? $", {_game.TitleId}{GpuDumpFormat.Extension} (GPU dump: commands, shaders, every guest range the GPU read incl. textures)" : "")
+            + (Directory.Exists(Path.Combine(dir, "audio")) ? ", audio/ (guest port WAVs)" : ""));
+
+        if (_renderer?.Report() is { } rep) info.AppendLine(rep);
+        File.WriteAllText(Path.Combine(dir, "info.txt"), info.ToString());
+        Log.Warn($"[capture] {_captureKind} stopped: {frames} frames in {secs:F1} s");
+        Log.Flush();
+        try
+        {
+            using var src = new FileStream(Path.Combine(AppServices.Data.Logs, "last.log"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var dst = File.Create(Path.Combine(dir, "log.txt"));
+            src.CopyTo(dst);
+        }
+        catch (IOException e) { Log.Warn($"[capture] log copy: {e.Message}"); }
+        CaptureDir = null;
+    }
+#endif
+
     /// <summary>
     /// VITASHARP_GPU_DUMP_AT=F1:F2[:file] in env.txt: records renderer presents F1..F2 into &lt;data&gt;/gpudumps (the
     /// desktop's --gpu-dump-at; docs/notes/gpu-dump.md), for <c>replay-gpu</c> on the PC. A LoadExec creates a new
@@ -295,6 +416,16 @@ public sealed class EmulationSession : IDisposable
         string dir = Path.Combine(AppServices.Data.Root, "gpudumps");
         Directory.CreateDirectory(dir);
         string path = parts.Length > 2 && parts[2].Length > 0 ? Path.Combine(dir, parts[2]) : Path.Combine(dir, $"{_game.TitleId}_{DateTime.Now:yyyyMMdd_HHmmss}{GpuDumpFormat.Extension}");
+        var rec = GpuDumpRecorder.Start(new GpuDumpOptions
+        {
+            Path = path, Header = DumpHeader(), StartAfterPresent = f1 - 1, MaxFrames = f2 - f1 + 1,
+            Finished = r => Log.Warn(r.Error != null ? $"[gpudump] failed: {r.Error}" : $"[gpudump] saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
+        });
+        if (rec != null) Log.Warn($"[gpudump] armed: {path} after present #{f1 - 1}, {f2 - f1 + 1} frames");
+    }
+
+    GpuDumpHeader DumpHeader()
+    {
         var header = new GpuDumpHeader();
         header["title-id"] = _emu.TitleId;
         header["title"] = _emu.Title;
@@ -311,13 +442,9 @@ public sealed class EmulationSession : IDisposable
         }
         foreach (System.Collections.DictionaryEntry e in System.Environment.GetEnvironmentVariables())
             if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase)) header["env." + k] = e.Value as string ?? "";
-        var rec = GpuDumpRecorder.Start(new GpuDumpOptions
-        {
-            Path = path, Header = header, StartAfterPresent = f1 - 1, MaxFrames = f2 - f1 + 1,
-            Finished = r => Log.Warn(r.Error != null ? $"[gpudump] failed: {r.Error}" : $"[gpudump] saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
-        });
-        if (rec != null) Log.Warn($"[gpudump] armed: {path} after present #{f1 - 1}, {f2 - f1 + 1} frames");
+        return header;
     }
+
 
     /// <summary>Stops the game and records the session in the game's statistics.</summary>
     public void Dispose()

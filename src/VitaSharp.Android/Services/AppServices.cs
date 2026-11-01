@@ -62,7 +62,12 @@ public static class AppServices
             if (Prefs.DebugMode) { Log.Level = LogLevel.Debug; DebugMode.Enable(); }
             InputProfiles = InputProfileStore.Load(Data.InputProfiles);
             Gamepads = new AndroidGamepads(InputProfiles);
+#if VITASHARP_DEVELOPER
+            Log.Info($"VitaSharp Dev (developer build) Android {(gameProcess ? "game" : "UI")} process, data in {Data.Root}");
+#else
             Log.Info($"VitaSharp Android {(gameProcess ? "game" : "UI")} process, data in {Data.Root}");
+#endif
+
             foreach (var line in RuntimeReport.Lines()) Log.Info(line);
             Initialized = true;
         }

@@ -422,6 +422,10 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         long fps = frames - _lastFrames;
         _lastFrames = frames;
         _fps.Text = _session.Paused ? "Pausado" : $"{fps} FPS";
+#if VITASHARP_DEVELOPER
+        if (_session.CaptureDir != null) _fps.Text = "● REC  " + _fps.Text;
+#endif
+
         // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
         if (++_fpsTicks % 30 == 0 && !_session.Paused)
         {
@@ -456,6 +460,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             _pad.RearTouch ? "Toque traseiro: ligado" : "Toque traseiro: desligado",
             _pad.Visible ? "Esconder controles na tela" : "Mostrar controles na tela",
             .. (_sensors?.CanRecenter == true ? new[] { "Recentralizar movimento" } : []),
+#if VITASHARP_DEVELOPER
+            .. (_session?.CaptureDir != null ? new[] { "Parar gravação" } : new[] { "Gravar tudo", "Gravar tempo", "Gravar conteúdo" }),
+#endif
             "Sair do jogo",
         ];
         var title = _session != null ? $"{_session.Game.Title}" : "VitaSharp";
@@ -468,7 +475,14 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
                     case 1: _pad.RearTouch = !_pad.RearTouch; break;
                     case 2: _pad.Visible = !_pad.Visible; break;
                     case var last when last == items.Length - 1: Leave(); return;
-                    case 3: _sensors?.Recenter(); break; // "Recentralizar movimento"
+                    case var i when items[i] == "Recentralizar movimento": _sensors?.Recenter(); break;
+#if VITASHARP_DEVELOPER
+                    case var i when items[i] == "Gravar tudo": _session?.StartCapture("tudo"); break;
+                    case var i when items[i] == "Gravar tempo": _session?.StartCapture("tempo"); break;
+
+                    case var i when items[i] == "Gravar conteúdo": _session?.StartCapture("conteudo"); break;
+                    case var i when items[i] == "Parar gravação": _session?.StopCapture(); break;
+#endif
                 }
                 _controls?.Invalidate();
             })!

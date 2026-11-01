@@ -42,6 +42,16 @@ public sealed class MainActivity : MauiAppCompatActivity
     /// </summary>
     void LaunchRequestedGame(Intent? intent)
     {
+#if VITASHARP_DEVELOPER
+        // developer APK: a "bench" extra runs the GPU bench (Developer/BenchActivity) instead
+        if (intent?.GetStringExtra(Developer.BenchActivity.ExtraBench) is { Length: > 0 } bench)
+        {
+            intent.RemoveExtra(Developer.BenchActivity.ExtraBench);
+            Developer.BenchActivity.Launch(this, bench);
+            return;
+        }
+#endif
+
         if (intent?.GetStringExtra(Game.GameActivity.ExtraTitleId) is not { Length: > 0 } titleId) return;
         intent.RemoveExtra(Game.GameActivity.ExtraTitleId);
         Core.Util.Log.Info($"Launch intent: starting {titleId}");

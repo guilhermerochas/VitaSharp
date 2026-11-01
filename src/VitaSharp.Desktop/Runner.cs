@@ -12,7 +12,10 @@ namespace VitaSharp.Desktop;
 /// <summary>Boots a title in a window (default) or headless (--headless, for automated testing).</summary>
 public static class Runner
 {
+    static FlickerDetector? _flicker;
+
     static string? Opt(string[] options, string name) =>
+
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
     /// <summary>--name=on|off (also 1/0, true/false, yes/no); null when absent or not recognised.</summary>
@@ -127,6 +130,13 @@ public static class Runner
             // --gpu-profile=adreno|mali|desktop: behave as that GPU class (test the mobile paths on a desktop GPU)
             GpuProfile = Opt(options, "--gpu-profile"),
         };
+        // --flicker-check[=threshold]: every presented frame is read back small and checked for one-frame flashes and
+        // stale frames (FlickerDetector; test scenarios turn it on): FLICKER lines in the log and the report
+        if (options.Any(o => o == "--flicker-check" || o.StartsWith("--flicker-check=")))
+        {
+            var det = _flicker = new FlickerDetector(double.TryParse(Opt(options, "--flicker-check"), System.Globalization.CultureInfo.InvariantCulture, out var ft) && ft > 0 ? ft : 6);
+            rendererOptions.FrameSink = (n, px, w, h) => { if (det.Add(n, px, w, h) is { } f) Log.Warn($"FLICKER {det.Describe(f)}"); };
+        }
         if (rendererOptions.ShaderOptimization is { } so && ShaderCompiler.ParseOptLevel(so) == null)
             Log.Warn($"--shaderc-opt={so} not recognised (use zero, size or perf): using the default");
 
@@ -431,6 +441,7 @@ public static class Runner
         emu.Stop();
         EmulationPause.Resume("run finished");
         Log.Info($"Run finished: {frames} frames in {wall.Elapsed.TotalSeconds:F1} s ({frames / Math.Max(wall.Elapsed.TotalSeconds, 0.001):F1} frames/s)");
+        if (_flicker is { } flick) Log.Info(flick.Summary + (flick.Flagged.Count > 0 ? ": frames " + string.Join(" ", flick.Flagged.Take(20).Select(x => x.Frame)) : ""));
         if (dumpDir != null && thumbs != null) WriteContactSheet(dumpDir, thumbs);
         return 0;
     }
