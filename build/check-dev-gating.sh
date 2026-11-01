@@ -9,7 +9,8 @@ pattern='GpuBenchState|GpuBenchSpec|BenchActivity|DevSceneBegin|DevTrace'
 dir="$target"
 tmp=""
 if [ -f "$target" ]; then tmp="$(mktemp -d)"; unzip -q -o "$target" -d "$tmp"; dir="$tmp"; fi
-hits="$(grep -rlaE "$pattern" "$dir" 2>/dev/null || true)"
+# .pdb files only name the source files (Developer/*.cs is compiled empty without the property)
+hits="$(grep -rlaE --exclude=*.pdb "$pattern" "$dir" 2>/dev/null || true)"
 [ -n "$tmp" ] && rm -rf "$tmp"
 if [ "$expect" = "--expect-dev" ]; then
   [ -n "$hits" ] && { echo "developer tooling present (expected): $(echo "$hits" | wc -l) files"; exit 0; }

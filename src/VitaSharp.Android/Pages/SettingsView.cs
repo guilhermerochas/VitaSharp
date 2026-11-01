@@ -103,7 +103,7 @@ public sealed class SettingsView : Screen<SettingsState>
                     Row("Compartilhar log", null, ShareLog)
 #if VITASHARP_DEVELOPER
                     , Divider(),
-                    Row("OpÃ§Ãµes de desenvolvedor", null, () => Navigation?.PushAsync<DeveloperPage>(), detail: "Bench da GPU (build de desenvolvedor)")
+                    Row("Opções de desenvolvedor", null, () => Navigation?.PushAsync<DeveloperPage>(), detail: "Bench da GPU (build de desenvolvedor)")
 #endif
                 ),
 

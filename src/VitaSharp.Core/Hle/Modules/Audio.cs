@@ -22,6 +22,10 @@ public sealed class Audio : HleModule
         public double NextDeadline;
         public short[] Buffer = [];
         public AudioDump.Writer? Dump;
+        /// <summary>The dump writer's name and the <see cref="AudioDump.Generation"/> it was opened for: a dump started
+        /// or stopped while the port is open (developer capture) reopens or closes it at the next grain.</summary>
+        public string DumpName = "";
+        public int DumpGen;
         public readonly object Lock = new();
     }
 
@@ -65,7 +69,9 @@ public sealed class Audio : HleModule
             var p = new Port { Type = type, Grain = len, Freq = freq <= 0 ? 48000 : freq, Channels = mode == 0 ? 1 : 2 };
             try { p.Stream = Emu.Host.Audio?.OpenStream(p.Freq, 2, len); } catch { p.Stream = null; }
             p.Stats = AudioDiagnostics.OpenPort($"port {id} {TypeName(type)}{(ext ? " (ext)" : "")}", p.Grain, p.Freq, p.Channels, p.Stream);
-            p.Dump = AudioDump.Open($"port{id}_{TypeName(type)}", p.Freq);
+            p.DumpName = $"port{id}_{TypeName(type)}";
+            p.Dump = AudioDump.Open(p.DumpName, p.Freq);
+            p.DumpGen = AudioDump.Generation;
             _ports[id] = p;
             return id;
         }
@@ -93,7 +99,14 @@ public sealed class Audio : HleModule
         if (p == null) return ERR_INVALID_PORT;
         lock (p.Lock)
         {
+            if (p.DumpGen != AudioDump.Generation)
+            {
+                p.Dump?.Dispose();
+                p.Dump = AudioDump.Open(p.DumpName, p.Freq);
+                p.DumpGen = AudioDump.Generation;
+            }
             if (p.Stream != null || p.Dump != null)
+
             {
                 int n = p.Grain * 2;
                 if (p.Buffer.Length != n) p.Buffer = new short[n];

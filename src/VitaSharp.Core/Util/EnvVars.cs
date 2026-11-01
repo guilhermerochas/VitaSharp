@@ -131,6 +131,10 @@ public static class EnvVars
     public const string TraceHle = "VITASHARP_TRACE_HLE";
     /// <summary>=1[:threshold] (developer APK): in-game flicker check of every presented frame (FlickerDetector).</summary>
     public const string FlickerCheck = "VITASHARP_FLICKER_CHECK";
+    /// <summary>KIND@START:STOP (developer APK): the pause menu's capture (tempo or conteudo), started and stopped that many
+    /// seconds after the game starts.</summary>
+    public const string Capture = "VITASHARP_CAPTURE";
+
 
 
     public const string Texdirty = "VITASHARP_TEXDIRTY";

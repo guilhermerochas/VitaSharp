@@ -192,7 +192,8 @@ public sealed unsafe partial class VulkanRenderer
         // first use by the GPU thread in this session: make sure the version-independent record knows how to rebuild it
         RecordShaderRecipe(program, hintKey, hints, d, colorFormat);
 #if VITASHARP_DEVELOPER
-        if (Developer.GpuBenchState.ShaderDir != null && DevShaderOverride(program, hintKey, hints, d, colorFormat) is { } dev) return dev;
+        if ((Developer.GpuBenchState.ShaderDir != null || Developer.GpuBenchState.FragmentDiscard) && DevShaderOverride(program, hintKey, hints, d, colorFormat) is { } dev) return dev;
+
 #endif
         if (_modules.TryGetValue(key, out var cached))
 

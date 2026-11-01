@@ -83,8 +83,15 @@ public sealed unsafe partial class VulkanRenderer
         var key = (program.Hash, hintKey);
         if (_devShaders.TryGetValue(key, out var e)) return e;
         string ext = program.IsVertex ? "vert" : "frag";
-        string dir = GpuBenchState.ShaderDir!;
+        if (GpuBenchState.FragmentDiscard && !program.IsVertex)
+        {
+            var g = ShaderGenerator.Generate(program, hints(d, colorFormat));
+            var code = _compiler.Compile("#version 450\nvoid main() { discard; }\n", false, out var derr) ?? throw new InvalidOperationException($"discard shader: {derr}");
+            return _devShaders[key] = new ModuleEntry(CreateShaderModule(code), g);
+        }
+        string dir = GpuBenchState.ShaderDir ?? "";
         string? file = null;
+
         foreach (var name in new[] { $"{program.Hash:X16}_{hintKey:X16}.{ext}", $"{program.Hash:X16}.{ext}" })
         {
             if (File.Exists(Path.Combine(dir, name + ".spv"))) { file = Path.Combine(dir, name + ".spv"); break; }

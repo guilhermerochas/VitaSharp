@@ -15,7 +15,9 @@ sealed class BenchCommand : IPerfCommand
 
     public void PrintUsage()
     {
-        Console.WriteLine("vitasharp-perf bench cut <dump.vsgd> --frame I [--name N] --root DIR   fixture DIR/fixtures/N.vsgd = dump up to frame I (0-based); --frame list prints the frames");
+        Console.WriteLine("vitasharp-perf bench cut <dump.vsgd> --frame I [--name N] [--select \"scenes=0,3;draws=A-B;vs=HEX|HEX;fs=HEX\"] --root DIR");
+        Console.WriteLine("    fixture DIR/fixtures/N.vsgd = dump up to frame I (0-based), only the selected draws timed; --frame list prints the frames");
+
         Console.WriteLine("vitasharp-perf bench run --root DIR --fixtures a,b [--variants base,v1] [--rounds 4] [--reps 3] [--param k=v;k=v] [--run ID]");
         Console.WriteLine("    one process per (fixture, variant, round), interleaved A/B/A/B, affinity 0x0F, below normal priority; prints the table");
         Console.WriteLine("vitasharp-perf bench shaders --root DIR --fixture a [--out DIR]   writes the fixture's translated GLSL (HASH_HINT.vert|frag) to edit as a variant");
@@ -65,7 +67,7 @@ sealed class BenchCommand : IPerfCommand
         string name = a.Get("--name") ?? $"{Path.GetFileNameWithoutExtension(dump)}_f{frame}";
         string outPath = Path.Combine(Root(a), "fixtures", name + Core.Gpu.GpuDumpFormat.Extension);
 #if VITASHARP_DEVELOPER
-        var (frames, bytes) = GpuBench.Cut(dump, outPath, frame, name);
+        var (frames, bytes) = GpuBench.Cut(dump, outPath, frame, name, a.Get("--select"));
         Console.WriteLine($"{outPath}: {frames} frames, {bytes / 1024} KiB (target frame {frame})");
         return 0;
 #else

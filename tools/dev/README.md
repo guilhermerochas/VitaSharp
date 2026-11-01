@@ -141,3 +141,68 @@ The trace records:
   cause.
 - **Audio.** `audio grain` slices should be evenly spaced. A gap longer than the device buffer is an underrun, and a
   click.
+
+## Element fixtures, picture check and flicker mode
+
+- **Selecting elements.** `bench cut DUMP --frame I --name N --select "scenes=0,3;draws=A-B;vs=HEX|HEX;fs=HEX"` stores
+  a selection in the fixture. Only those draws of the target frame run, so the time is that element's. The same keys
+  work as run parameters.
+  - The scenes that are not selected still begin and end: their load/store traffic stays in the frame.
+  - `fragment=discard` replaces every fragment shader with a discard, which leaves the selection's vertex-side cost.
+    Compare it with the normal run to split vertex from fragment cost.
+- **Picture check.** Every run saves the target frame's picture (`results/pictures/FIXTURE_VARIANT.png`). The table's
+  `picture` column says `same` or `DIFFERS (mean channel difference)` against the base variant. A variant that changes
+  the picture is not a valid optimisation, whatever its time: `depthload=dontcare` is the example, 32% faster on the
+  Uncharted title only because it shades the wrong fragments.
+- **Flicker mode.** `mode=flicker;loops=3;speed=real|max` replays every frame of a whole dump in a loop, reads each
+  presented frame back small and runs the flicker/dark-frame detector (`FlickerDetector`, the rule of
+  `vitasharp-perf flicker` on the whole picture and on a 4x4 grid).
+  - Flagged frames are saved with their neighbours under `results/RUN_flicker/`.
+  - `skipscene=K` and `drawlimit=N` bisect.
+  - In the game itself (developer APK), `VITASHARP_FLICKER_CHECK=1` in `env.txt` runs the same check on every
+    presented frame and writes FLICKER lines to the log. Desktop test scenarios run it by default (`--flicker-check`).
+
+| Fixture | From | Measures |
+|---|---|---|
+| `uc_title` | Uncharted, title (phone3 `uc3.vsgd`, frame 3) | the title's 8 scenes: lighting buffer s0 (draws 1-217) and fetch-pass scene s3 (220-264) |
+| `uc3` (whole dump) | Uncharted, title, 301 frames | flicker mode (a dark movie picture at frame 277 is in the dump itself) |
+| `f1_race` | F1 2011 race start (phone2 dump, frame 1) | 8 scenes, ~1,630 draws |
+
+The fixtures stay out of git. They are cut again from the scratch dumps with the commands above.
+
+## Captures from the pause menu (developer APK)
+
+**Recording, for the player:**
+1. In a game, press PS to open the pause menu and choose **Gravar tudo**.
+2. Play the scene. "● REC" shows next to the fps counter while it records.
+3. Open the menu again and choose **Parar gravação**. Write a line about what happened (or edit `scene:` in
+   `info.txt`).
+
+| Option | Records |
+|---|---|
+| **Gravar tudo** | <ul><li>The first 5 s are timing only: fps, the renderer's PERF lines and the trace markers, with no dump slowing the game. They are written to `info.txt` as the "timing part".</li><li>Then a GPU dump of up to 600 frames: commands, shaders, and every guest memory range the GPU read, so the textures as uploaded.</li><li>The guest audio ports as WAVs (`audio/`), from the start.</li><li>`log.txt` and `info.txt`.</li></ul> |
+| **Gravar tempo** | the timing part only, for the whole recording |
+| **Gravar conteúdo** | the dump and audio only |
+
+- Output: `files/captures/TITLE_DATE_KIND/`.
+- Scripted: `VITASHARP_CAPTURE=tudo@START:STOP` (seconds after the game starts) in `env.txt`.
+- Not in a capture yet:
+  - The device-side output audio (the guest ports are recorded).
+  - A texture-path bench (detile/convert/upload timings). The data is in the dump.
+  - simpleperf, which cannot run from inside the app. Use `adb shell simpleperf record --app io.github.vitasharp` on a
+    `<profileable>` build (docs/android/README.md, Phone run 2).
+
+**Analysing a capture:**
+```
+build/android-capture-analyze.sh [CAPTURE_NAME|LOCAL_FOLDER]      # no argument: the newest capture on the phone
+build/android-capture-analyze.ps1 [-Capture NAME|FOLDER] [-Desktop VitaSharp.Desktop.exe]
+```
+The script pulls the capture to `./captures/` and prints:
+- `info.txt`: the timing part, and the PERF lines at the stop;
+- the fps windows and capture lines of the log, and the HLE/thread lines;
+- `vitasharp-perf audio-check` over the port WAVs;
+- the flicker check over every frame of the dump, replayed on the PC;
+- the GPU ms per scene of the middle frame (PC GPU, so relative costs);
+- with `DESKTOP` / `-Desktop`, a Vulkan validation replay with synchronization validation.
+
+For phone GPU ms, cut fixtures from the dump (`bench cut`, element selections) and run `build/android-bench.*`.

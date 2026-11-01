@@ -19,9 +19,10 @@ public static class GpuBenchTable
         var o = new System.Text.StringBuilder();
         var rows = lines.Select(l => l.Split('\t')).Where(c => c.Length >= 6)
             .Select(c => (Fixture: c[0], Variant: c[1], Config: c[2], Frame: double.Parse(c[4], CultureInfo.InvariantCulture),
+                Image: c.Length > 6 ? double.Parse(c[6], CultureInfo.InvariantCulture) : -1,
                 Scenes: c[5].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray())).ToList();
         if (rows.Count == 0) return "";
-        o.AppendLine($"{"fixture",-22} {"variant",-14} {"config",-12} {"n",3} {"GPU ms",8} {"spread",7} {"delta",8} {"%",6}");
+        o.AppendLine($"{"fixture",-22} {"variant",-14} {"config",-12} {"n",3} {"GPU ms",8} {"spread",7} {"delta",8} {"%",6}  picture");
         foreach (var fg in rows.GroupBy(r => r.Fixture))
         {
             var groups = fg.GroupBy(r => (r.Variant, r.Config)).ToList();
@@ -35,7 +36,10 @@ public static class GpuBenchTable
                     : g.Key.Config.StartsWith("only") ? Median(fg.Where(r => r.Variant == g.Key.Variant && r.Config == "none" + g.Key.Config[4..]).Select(r => r.Frame).ToList())
                     : g.Key.Variant != baseVariant && baseMed.TryGetValue(g.Key.Config, out var b) ? b : null;
                 string delta = reference is { } rf && !double.IsNaN(rf) ? FormattableString.Invariant($"{med - rf,8:+0.000;-0.000} {(med - rf) / rf * 100,6:+0.0;-0.0}") : "";
-                o.AppendLine(FormattableString.Invariant($"{fg.Key,-22} {g.Key.Variant,-14} {g.Key.Config,-12} {v.Count,3} {med,8:F3} {v.Max() - v.Min(),7:F3} {delta}"));
+                double img = g.Max(r => r.Image);
+                string pic = g.Key.Variant == baseVariant ? "" : img < 0 ? "  ?" : img < 0.5 ? "  same" : FormattableString.Invariant($"  DIFFERS ({img:F1})");
+                o.AppendLine(FormattableString.Invariant($"{fg.Key,-22} {g.Key.Variant,-14} {g.Key.Config,-12} {v.Count,3} {med,8:F3} {v.Max() - v.Min(),7:F3} {delta,15}{pic}"));
+
                 if (scenes <= 0) continue;
                 int n = g.Max(r => r.Scenes.Length);
                 var sceneMed = Enumerable.Range(0, n).Select(i => (i, Median(g.Where(r => r.Scenes.Length > i).Select(r => r.Scenes[i]).ToList()))).OrderByDescending(x => x.Item2).Take(scenes);

@@ -78,6 +78,9 @@ public static class GpuBench
         public readonly List<Rep> Reps = new();
         public readonly List<string> Scenes = new();
         public double WallSeconds;
+        /// <summary>Mean channel difference of the target frame's picture against the base variant's (-1: no base yet).
+        /// A variant that changes the picture is not a valid optimisation, whatever its time.</summary>
+        public double ImageDiff = -1;
     }
 
     /// <summary>Header keys of a fixture.</summary>
@@ -103,7 +106,12 @@ public static class GpuBench
     {
         var wall = Stopwatch.StartNew();
         string path = spec.FixturePath;
-        Prepare(spec, log, out var header, out var ro);
+        var p = Prepare(spec, log, out var header, out var ro);
+        var select = Selection(p, header, log);
+
+        byte[]? picture = null;
+        int pw = 0, ph = 0;
+        ro.FrameSink = (_, px, w, h) => { picture = px; pw = w; ph = h; };
         long target = header.Long(KeyFrame, -1);
         if (target < 0) using (var r = new GpuDumpReader(path)) { while (r.Next()) if (r.Kind == GpuDumpRecord.Present) target++; }
         var res = new Result { Fixture = spec.FixtureName, Variant = spec.Variant };
@@ -125,7 +133,7 @@ public static class GpuBench
                 Func<int, int, bool>? keep = spec.Draw <= 0 ? null : spec.DrawMode == "only"
                     ? (draw, scene) => sceneOfDraw.Count < spec.Draw || scene != sceneOfDraw[spec.Draw - 1] || (alt && draw == spec.Draw)
                     : (draw, _) => !(alt && draw == spec.Draw);
-                var scenes = PlayTarget(path, renderer, target, rep == 0, keep, rep == 0 ? sceneOfDraw : null);
+                var scenes = PlayTarget(path, renderer, target, rep == 0, keep, rep == 0 ? sceneOfDraw : null, select);
                 if (rep == 0)
                 {
                     foreach (var s in scenes)
@@ -146,6 +154,7 @@ public static class GpuBench
         }
         finally { renderer.Dispose(); GpuBenchState.Reset(); }
         res.WallSeconds = wall.Elapsed.TotalSeconds;
+        if (picture != null) res.ImageDiff = ComparePicture(spec, picture, pw, ph, log);
         WriteResults(spec, res);
         log($"[bench] {spec.FixtureName} {spec.Variant}: {res.Reps.Count} timed reps in {res.WallSeconds:F1} s");
         return res;
@@ -155,7 +164,8 @@ public static class GpuBench
     /// Replays the fixture up to its target frame, executing the frames before it only on the first pass (later passes
     /// only restore the guest memory they wrote), then the target frame with scene timing. Returns its scenes.
     /// </summary>
-    static List<VulkanRenderer.BenchScene> PlayTarget(string path, VulkanRenderer renderer, long target, bool first, Func<int, int, bool>? keep, List<int>? sceneOfDraw)
+    static List<VulkanRenderer.BenchScene> PlayTarget(string path, VulkanRenderer renderer, long target, bool first, Func<int, int, bool>? keep, List<int>? sceneOfDraw,
+        Func<DrawCommand, int, int, bool>? select = null)
     {
         using var reader = new GpuDumpReader(path);
         long frame = 0;
@@ -195,6 +205,7 @@ public static class GpuBench
                         draws++;
                         sceneOfDraw?.Add(scene);
                         if (keep != null && !keep(draws, scene)) continue;
+                        if (select != null && !select((DrawCommand)cmd, draws, scene)) continue;
                     }
                     renderer.Execute(cmd);
                     break;
@@ -347,7 +358,56 @@ public static class GpuBench
         return det;
     }
 
+    /// <summary>
+    /// Element selection (a fixture's header bench.select from <c>bench cut --select</c>, then the run's parameters):
+    /// only the selected draws of the target frame run, so one part of a frame is timed on its own. scenes=0,3 (scene
+    /// indices), draws=A-B (1-based serials), vs=HEX / fs=HEX (vertex / fragment program hash prefixes, '|' for several),
+    /// fragment=discard (every fragment shader replaced by a discard: the vertex-side cost of the selection).
+    /// </summary>
+    static Func<DrawCommand, int, int, bool>? Selection(Dictionary<string, string> p, GpuDumpHeader header, Action<string> log)
+    {
+        var sel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (header["bench.select"] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+            if (part.IndexOf('=') is var eq and > 0) sel[part[..eq].Trim()] = part[(eq + 1)..].Trim();
+        foreach (var k in new[] { "scenes", "draws", "vs", "fs" })
+            if (p.TryGetValue(k, out var v)) sel[k] = v;
+        GpuBenchState.FragmentDiscard = p.GetValueOrDefault("fragment") == "discard";
+        if (sel.Count == 0) return null;
+        log("[bench] selection: " + string.Join(' ', sel.Select(kv => $"{kv.Key}={kv.Value}")));
+        HashSet<int>? scenes = sel.TryGetValue("scenes", out var sc) ? sc.Split(',').Select(int.Parse).ToHashSet() : null;
+        int d0 = 1, d1 = int.MaxValue;
+        if (sel.TryGetValue("draws", out var dr)) { var a = dr.Split('-'); d0 = int.Parse(a[0]); d1 = a.Length > 1 && a[1].Length > 0 ? int.Parse(a[1]) : d0; }
+        string[]? vs = sel.TryGetValue("vs", out var v1) ? v1.Split('|') : null, fs = sel.TryGetValue("fs", out var f1) ? f1.Split('|') : null;
+        static bool Match(string[]? prefixes, ulong hash) => prefixes == null || prefixes.Any(x => hash.ToString("X16").StartsWith(x, StringComparison.OrdinalIgnoreCase));
+        return (d, n, scene) => (scenes == null || scenes.Contains(scene)) && n >= d0 && n <= d1
+            && Match(vs, d.VertexProgram.Info.Program.Hash) && Match(fs, d.FragmentProgram.Info.Program.Hash);
+    }
+
+    /// <summary>The target frame's picture (results/pictures/FIXTURE_VARIANT.png, the last repetition's); its mean
+    /// channel difference against the base variant's picture (-1 when that is not there yet).</summary>
+    static double ComparePicture(GpuBenchSpec spec, byte[] px, int w, int h, Action<string> log)
+    {
+        string dir = Path.Combine(spec.Root, "results", "pictures");
+        Directory.CreateDirectory(dir);
+        string own = Path.Combine(dir, $"{spec.FixtureName}_{spec.Variant}.png"), basePic = Path.Combine(dir, $"{spec.FixtureName}_base.png");
+        Png.Write(own, px, w, h);
+        File.WriteAllBytes(Path.ChangeExtension(own, ".rgba"), px);
+        if (spec.Variant == "base") return 0;
+        string baseRaw = Path.ChangeExtension(basePic, ".rgba");
+        if (!File.Exists(baseRaw)) return -1;
+        var b = File.ReadAllBytes(baseRaw);
+        if (b.Length != px.Length) return 255;
+        long sum = 0;
+        for (int i = 0; i < px.Length; i += 4)
+            sum += Math.Abs(px[i] - b[i]) + Math.Abs(px[i + 1] - b[i + 1]) + Math.Abs(px[i + 2] - b[i + 2]);
+
+        double diff = sum / (px.Length / 4 * 3.0);
+        log(FormattableString.Invariant($"[bench] {spec.FixtureName} {spec.Variant}: picture differs from base by {diff:F2} (mean channel difference)"));
+        return diff;
+    }
+
     /// <summary>results/RUN.tsv: fixture, variant, config, rep, frame ms, scene ms (comma separated); appended.</summary>
+
 
     static void WriteResults(GpuBenchSpec spec, Result res)
     {
@@ -355,7 +415,7 @@ public static class GpuBench
         Directory.CreateDirectory(dir);
         var sb = new StringBuilder();
         foreach (var r in res.Reps)
-            sb.Append(CultureInfo.InvariantCulture, $"{res.Fixture}\t{res.Variant}\t{r.Config}\t{r.Index}\t{r.FrameMs:F4}\t{string.Join(',', r.SceneMs.Select(m => m.ToString("F4", CultureInfo.InvariantCulture)))}\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{res.Fixture}\t{res.Variant}\t{r.Config}\t{r.Index}\t{r.FrameMs:F4}\t{string.Join(',', r.SceneMs.Select(m => m.ToString("F4", CultureInfo.InvariantCulture)))}\t{res.ImageDiff:F3}\n");
         File.AppendAllText(Path.Combine(dir, spec.Run + ".tsv"), sb.ToString());
     }
 
@@ -365,7 +425,7 @@ public static class GpuBench
     /// targets carried by the dump's start), and the bench keys in the header. Chunks are copied as stored, so the
     /// last one may hold some records after the frame (the runner stops at the frame's present).
     /// </summary>
-    public static (long Frames, long Bytes) Cut(string dump, string output, long frame, string name)
+    public static (long Frames, long Bytes) Cut(string dump, string output, long frame, string name, string? select = null)
     {
         long end = -1, presents = 0;
         using (var r = new GpuDumpReader(dump))
@@ -377,6 +437,8 @@ public static class GpuBench
         header[KeyFrame] = frame.ToString(CultureInfo.InvariantCulture);
         header[KeyName] = name;
         header["bench.source"] = Path.GetFileName(dump);
+        if (select is { Length: > 0 }) header["bench.select"] = select;
+
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
         GpuDumpCodec.WriteFileHeader(outp, header);

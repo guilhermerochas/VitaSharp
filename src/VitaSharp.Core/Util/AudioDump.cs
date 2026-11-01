@@ -12,11 +12,23 @@ public static class AudioDump
 
     public static bool Enabled => _dir != null;
 
+    /// <summary>Changes when dumping starts or stops: open ports compare it at every grain and reopen their writer.</summary>
+    public static volatile int Generation;
+
     public static void Enable(string dir)
     {
         Directory.CreateDirectory(dir);
         _dir = dir;
+        Generation++;
     }
+
+    /// <summary>Stops dumping: open ports close their WAV at their next grain.</summary>
+    public static void Disable()
+    {
+        _dir = null;
+        Generation++;
+    }
+
 
     public sealed class Writer : IDisposable
     {

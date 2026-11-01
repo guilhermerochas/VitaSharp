@@ -19,6 +19,8 @@ public static class GpuBenchState
     public static AttachmentStoreOp? DepthStore;
     /// <summary>A full memory barrier after every tiled rendering.</summary>
     public static bool FullBarriers;
+    /// <summary>Every fragment shader replaced by a discard (the vertex-side cost of the selected draws).</summary>
+    public static bool FragmentDiscard;
 
     public static void Reset()
     {
@@ -27,6 +29,8 @@ public static class GpuBenchState
         DepthLoad = null;
         DepthStore = null;
         FullBarriers = false;
+        FragmentDiscard = false;
+
     }
 }
 #endif

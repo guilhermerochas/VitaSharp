@@ -7,13 +7,13 @@ namespace VitaSharp.Core.Util.Developer;
 /// <summary>
 /// Developer builds only: Perfetto/systrace markers through the NDK's ATrace (libandroid.so), switched on by
 /// VITASHARP_TRACE=1 (build/android-trace.* writes it to env.txt). Off — the default, and always off outside Android —
-/// every hook is one static readonly test. Markers: guest frames (sceDisplaySetFrameBuf, a counter and an instant
+/// every hook is one static test (the pause menu's "Gravar tempo" turns it on in a developer APK). Markers: guest frames (sceDisplaySetFrameBuf, a counter and an instant
 /// slice), the GPU worker's frame recording and vkQueueSubmit, sampled HLE calls (one in VITASHARP_TRACE_HLE, default
 /// 64, named after the function), native JIT compiles and audio output grains. See tools/dev/README.md.
 /// </summary>
 public static unsafe class DevTrace
 {
-    public static readonly bool On = OperatingSystem.IsAndroid() && Environment.GetEnvironmentVariable(EnvVars.Trace) is "1" or "on";
+    public static volatile bool On = OperatingSystem.IsAndroid() && Environment.GetEnvironmentVariable(EnvVars.Trace) is "1" or "on";
     /// <summary>HLE calls traced: one in (mask + 1).</summary>
     static readonly int HleMask = (int)Math.Max(1, System.Numerics.BitOperations.RoundUpToPowerOf2(
         uint.TryParse(Environment.GetEnvironmentVariable(EnvVars.TraceHle), out var n) && n > 0 ? n : 64)) - 1;

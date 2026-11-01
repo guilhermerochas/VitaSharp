@@ -12,7 +12,8 @@ if (Test-Path $Target -PathType Leaf) {
     [System.IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path $Target), $tmp)
     $dir = $tmp
 }
-$hits = @(Get-ChildItem $dir -Recurse -File | Where-Object {
+# .pdb files only name the source files (Developer/*.cs is compiled empty without the property)
+$hits = @(Get-ChildItem $dir -Recurse -File | Where-Object { $_.Extension -ne '.pdb' -and
     [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($_.FullName)) -match $pattern })
 if ($tmp) { Remove-Item -Recurse -Force $tmp }
 if ($ExpectDev) {
