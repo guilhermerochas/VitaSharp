@@ -804,6 +804,57 @@ Hill's Zone Select (15-22 fps) and Crazy Market's terms of service (16 fps); the
 were loads or CPU contention (60 and 30 fps at the end of the reruns); Tearaway's static-menu stall not rerun, Zero Time Dilemma's title at
 47-57 fps (was 60). The scenarios that start a new game need a data root without saves (they took Continue).
 
+## Phone run 4: validation on the phone, the Mali crash, dark frames (31/10/2026)
+
+Same Redmi Note 14, branch perf/android-phone-3 (main b8d2331, then a6e5928 with the JIT work), `mono-aot` builds.
+
+**Validation layer on the phone.** `-p:VitaSharpValidationLayer=<dir>/arm64-v8a/libVkLayer_khronos_validation.so` packages
+the Khronos layer (Android binaries from the Vulkan-ValidationLayers releases; 1.4.357.0 used) and `VITASHARP_VK_VALIDATION=1`
+in `env.txt` enables it (the loader finds layers in the app's own library directory); `=sync` adds synchronization
+validation through `VK_EXT_layer_settings`, without the per-VUID message limit. Messages go to the log once per kind
+(handles stripped). The games run at 3-11 fps with it. Found and fixed:
+- **The Mali crash** in `vkEndCommandBuffer` (F1 2011 between menu and race, about one load in three): a sync point
+  submits the frame early, and a barrier and writeback copies recorded right after went into the next frame's command
+  buffer before `vkBeginCommandBuffer`. The primary command buffer now begins the next frame first. F1 menu-to-race
+  loads afterwards: 3 of 3 reached the race (15.3-19.7 fps), no crash.
+- The present's render-done semaphore was per frame in flight (a frame could signal it while an earlier image's present
+  still waited on it): one per swapchain image now. The present blit's read of the display surface was not ordered
+  before later renderings into it (write-after-read): an execution barrier after the blit.
+- Sampled depth copies were used in `DEPTH_STENCIL_READ_ONLY_OPTIMAL` without the attachment usage; the dummy cube view
+  was made from an image that was not cube-compatible.
+- Still reported: F1's race samples rendered surfaces (the car liveries) through a `samplerCube` with a 2D view
+  (undefined in Vulkan; NVIDIA and the Mali show the livery). A dummy cube there turned the liveries white, so it stays.
+All five phone dumps replay pixel-identical on the PC against main (121/121 frames each).
+
+**Uncharted's dark frames are not the fetch-pass merge.** The title shows frames without its lighting layer (the lit
+stairs and the light shafts: luma 74 -> 63 in a screen recording) with the merge off too, main included: 7/191 and 9/179
+frames at 27 fps; 29-44 of about 260 with the merge on (35 fps). Not in PC replays of phone dumps (a new 300-frame dump
+of a merged run: 0 dark frames; the dump records what the GPU worker read, so its input is right), not reported by
+synchronization validation (at 10 fps, where the dark frames do not appear either), and unchanged with
+`VITASHARP_SCENE_BREAKS=strict`, `VITASHARP_ASYNC_PIPELINES=0`, `VITASHARP_ASYNC_SHADERS=0`, `VITASHARP_VERTEX_CACHE=0`,
+writebacks off, rasterization-order access off (the merge now also runs with by-region barriers, so desktops can replay
+that path), a barrier between merged draws, at most two draws per merged pass (5/235), visibility queries recorded
+inside the pass (they had ended it mid-draw: fixed), present semaphores and blit barrier fixed, or a BeginScene wait on
+the display buffer's sync object (tried, not kept). A phone-side fault that grows with the frame rate; the merge stays
+off by default until it is found. Next: read back the rendered lighting buffer (0x60A9FEC0, a 720x408 64-bit surface
+alternating with a 32-bit one at the same address every frame) on the phone each frame to see which pass loses it.
+
+**Audio references** (desktop guest dumps, same scenes, `vitasharp-perf audio-check`): F1 2011 race main port 326 s,
+2 gaps, **221 clicks** (phone 245: F1's clicks are its own sound, not an emulator defect); Devious Dungeon 147 s, 2 gaps,
+**0 clicks** (phone 204-270). Devious Dungeon's clicks are made by the guest: FMOD mixes through SceNgs on three threads
+pinned to one core (mixer 2.8-4.4 ms of CPU per frame on the phone) while the Unity main thread takes 20 ms per frame;
+the next step is the NGS voice-buffer timing when the mixer is late. God of War's desktop run wrote no WAV (it starts
+through a LoadExec; to retry).
+
+**JIT branch (perf/a64-regalloc 158aec2) on the phone:** `VITASHARP_NATIVE_VERIFY=1` 0 mismatches (Knightin'+ 18.0 M block
+runs, Devious Dungeon 11.2 M); Devious Dungeon town 49.3-49.8 fps against 47.2-48.4 with `VITASHARP_NATIVE_A64_NOOPT=cond,stub`.
+
+**Next steps, in order:**
+1. Uncharted's dark frames (above); then the merge on by default on Mali (27 -> 35 fps).
+2. Devious Dungeon's clicks (SceNgs timing with a late FMOD mixer); movie audio gaps (F1 45, Uncharted 40 against 1-2).
+3. F1 2011's race CPU (15-20 fps): simpleperf of the GPU worker and main thread, uniform copies, prepare/record split.
+4. Movie pacing (F1's first movie 5.6 s against 4.8 s): the guest player threads.
+
 ## Before the first run: what the emulator/device step must verify
 
 1. **Shader compiler**: `libshaderc_shared.so` (built from the NDK r30 sources, 42 `shaderc_*` exports, 16 KiB
