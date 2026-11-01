@@ -91,10 +91,18 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Linked static exits become direct branches patched into the code (<see cref="Runtime.PatchLinks"/>,
         /// set by the runtime that owns the code arena; with pinned counters only).</summary>
         PatchLinks = 512,
-        All = 1023,
+        /// <summary>Conditional instructions that fall through keep the dirty guest state cached across their region
+        /// (the frontend's <see cref="ArmFrontend.DeferRegions"/>): flags a later instruction supersedes are never
+        /// materialised, and only the slots the region writes are stored before its branch.</summary>
+        DeferRegions = 1024,
+        /// <summary>Exits end in tails shared by the block (one epilogue jump per block), the cold paths of patched exits
+        /// go after the block's code (a linked exit is accounting, checks and the B), and unreachable abort paths are
+        /// left out.</summary>
+        ExitStubs = 2048,
+        All = 4095,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -186,6 +194,9 @@ public sealed unsafe partial class Arm64Emitter
         _fastFpCheck = (opts & A64Opt.FastFpCheck) != 0;
         _dirtyReg = (opts & A64Opt.DirtyReg) != 0;
         _storeLit = (opts & A64Opt.StoreLiteral) != 0;
+        _stub = (opts & A64Opt.ExitStubs) != 0;
+        _abortUsed = _slotPathUsed = _tailZeroUsed = false;
+        _coldExits.Clear();
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
@@ -198,6 +209,9 @@ public sealed unsafe partial class Arm64Emitter
         _labels = new int[ir.Labels];
         for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.NewLabel();
         _abort = _a.NewLabel();
+        _tail = _a.NewLabel();
+        _tailZero = _a.NewLabel();
+        _slotPath = _a.NewLabel();
         _checkExit = ir.Callouts > 0;
         int tierUp = _a.NewLabel();
         if (tierUpCounter != 0)
@@ -215,19 +229,73 @@ public sealed unsafe partial class Arm64Emitter
             if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1])) { i++; continue; }
             Lower(insts[i], slotFor, ref exitIndex);
         }
-        _a.Bind(_abort);
-        EmitAccounting();
-        _a.StrX(ZR, State, OffLastExitSlot);
-        JumpTo(rt.Epilogue);
+        if (_abortUsed || !_stub)
+        {
+            _a.Bind(_abort);
+            EmitAccounting();
+            ExitZero();
+        }
         if (tierUpCounter != 0)
         {
             _a.Bind(tierUp);
-            _a.StrX(ZR, State, OffLastExitSlot);
+            if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
             _a.MovImm(X16, 1);
             _a.Str(X16, State, OffTierUp);
-            JumpTo(rt.Epilogue);
+            if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
         }
+        if (_stub) EmitSharedTails();
         return true;
+    }
+
+    // ------------------------------------------------------------------ shared exit tails (A64Opt.ExitStubs)
+
+    /// <summary><see cref="A64Opt.ExitStubs"/>: the block's exit paths end in tails shared by all its exits, and the
+    /// cold paths of patched exits (window full, link break, unlinked) are laid out after the block's code.</summary>
+    bool _stub, _abortUsed, _slotPathUsed, _tailZeroUsed;
+    int _tail, _tailZero, _slotPath;
+    readonly List<(int Label, nint Slot)> _coldExits = new();
+
+    /// <summary>Returns to the dispatcher with LastExitSlot = x16 (the exit's link slot).</summary>
+    void ExitSlot()
+    {
+        if (_stub) { _a.B(_tail); return; }
+        _a.StrX(X16, State, OffLastExitSlot);
+        JumpTo(_rt.Epilogue);
+    }
+
+    /// <summary>Returns to the dispatcher with no link slot (indirect exits, aborts, tier-up).</summary>
+    void ExitZero()
+    {
+        if (_stub) { _tailZeroUsed = true; _a.B(_tailZero); return; }
+        _a.StrX(ZR, State, OffLastExitSlot);
+        JumpTo(_rt.Epilogue);
+    }
+
+    void EmitSharedTails()
+    {
+        var a = _a;
+        foreach (var (label, slot) in _coldExits)
+        {
+            a.Bind(label);
+            a.LdrLit(X16, (ulong)slot);
+            a.B(_tail);
+        }
+        if (_slotPathUsed)
+        {
+            // unlinked patch site (or a target out of B range): the link slot, x16 = its address
+            a.Bind(_slotPath);
+            a.LdrX(X17, X16, 0);
+            a.Cbz(X17, _tail, true);
+            a.Br(X17);
+        }
+        if (_tailZeroUsed)
+        {
+            a.Bind(_tailZero);
+            a.Mov(X16, ZR, x: true);
+        }
+        a.Bind(_tail);
+        a.StrX(X16, State, OffLastExitSlot);
+        JumpTo(_rt.Epilogue);
     }
 
     /// <summary>Encodes the prepared code (position independent: <paramref name="address"/> is not needed).</summary>
@@ -573,6 +641,15 @@ public sealed unsafe partial class Arm64Emitter
                     PatchSites.Add(a.Count * 4);
                     a.Emit(UnlinkedSiteWord);
                     a.LdrLit(X16, (ulong)slot);
+                    if (_stub)
+                    {
+                        // linked, only the accounting, the checks and the patched B are on the hot path; the return
+                        // path goes after the block's code
+                        _slotPathUsed = true;
+                        a.B(_slotPath);
+                        _coldExits.Add((ret, slot));
+                        return;
+                    }
                     a.LdrX(X17, X16, 0);
                     a.Cbz(X17, ret2, true);
                     a.Br(X17);
@@ -589,11 +666,13 @@ public sealed unsafe partial class Arm64Emitter
                     a.LdrLit(X16, (ulong)slot);
                     EmitAccounting();
                     a.LdrX(X17, X16, 0);
+                    if (_stub) ret = _tail;                   // x16 is the slot: every return path is the shared tail
                     a.BCond(Cond.GE, ret);                     // CycleAcc >= CheckWindow
                     if (linkBreak) { LdState(X8, OffLinkBreak); a.Cbnz(X8, ret); }
                     if (_checkExit) { LdState(X8, OffExit); a.Cbnz(X8, ret); }
                     a.Cbz(X17, ret, true);
                     a.Br(X17);
+                    if (_stub) return;
                     a.Bind(ret);
                     a.StrX(X16, State, OffLastExitSlot);
                     JumpTo(_rt.Epilogue);
@@ -607,8 +686,7 @@ public sealed unsafe partial class Arm64Emitter
                 a.Br(X17);
                 a.Bind(ret);
                 a.LdrLit(X16, (ulong)slot);
-                a.StrX(X16, State, OffLastExitSlot);
-                JumpTo(_rt.Epilogue);
+                ExitSlot();
                 return;
             }
             case IrOp.ExitDynamic:
@@ -638,8 +716,7 @@ public sealed unsafe partial class Arm64Emitter
                     a.Br(X6);
                 }
                 a.Bind(ret);
-                a.StrX(ZR, State, OffLastExitSlot);
-                JumpTo(_rt.Epilogue);
+                ExitZero();
                 return;
             }
             default: throw new NotSupportedException($"IR op {x.Op}");
@@ -707,6 +784,7 @@ public sealed unsafe partial class Arm64Emitter
             a.Msr(SysReg.Fpcr, X16);
             _fpcrHost = false;
         }
+        _abortUsed = true;
         a.Cbnz(X0, _abort); // the abort path ends in the epilogue, which sets the host mode anyway
     }
 

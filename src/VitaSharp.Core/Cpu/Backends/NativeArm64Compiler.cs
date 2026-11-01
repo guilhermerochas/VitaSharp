@@ -31,7 +31,10 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     public long HotInstructions { get; set; } = 2_000;
 
     /// <summary>The frontend configured for this emitter (its SIMD coverage, no FZ tininess slow paths).</summary>
-    public static ArmFrontend NewFrontend() => new(Arm64Emitter.SupportsVec, tinyCheck: false);
+    public static ArmFrontend NewFrontend() => new(Arm64Emitter.SupportsVec, tinyCheck: false)
+    {
+        DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0,
+    };
 
     public CompiledBlock? Compile(Block b) => Compile(b, NativeRuntime.Instance.Arm64Stubs, hleCallouts: HleCallouts);
 
@@ -49,6 +52,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long t0 = Stopwatch.GetTimestamp();
         var fe = _frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
         fe.HleCallouts = hleCallouts;
+        fe.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
         var ir = fe.Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);

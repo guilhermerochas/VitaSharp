@@ -18,6 +18,55 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | Media instructions, VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS, VQMOVN inline on both backends; cheaper compilation (branch perf/jit-complete) | done, see "perf/jit-complete" below |
 | ARM64 code quality: pinned block counters, compare + branch fusion, STP/LDP state flushes, SIMD register cache, lazy FPCR (branch perf/arm64-jit) | done in the sandbox, falta medir no aparelho; see "perf/arm64-jit" below |
 
+## perf/a64-regalloc (2026-10-31): guest state across regions, exit stubs
+
+Branch `perf/a64-regalloc` (worktree `.claude/worktrees/a64ra`, from main b8d2331). Not merged, not pushed; x64 output
+unchanged (the frontend option is off for it). Two more `VITASHARP_NATIVE_A64_NOOPT` names:
+
+| Name | Change |
+|---|---|
+| `cond` | Conditional instructions that fall through (not the block's last, not a branch) keep the dirty cached guest state across their region (`ArmFrontend.DeferRegions` -> `IrBuilder.BeginCond(defer)`): slots the region leaves alone stay dirty on both paths, so flags a later instruction supersedes are never materialised (CSETs + STPs gone); slots the region writes get their old value stored before the branch (inserted when the region closes); a flush inside the region (core callout) hoists the pending stores there, exactly as before. |
+| `stub` | Exits end in tails shared by the block: one `str LastExitSlot; ldr; br epilogue` per block (plus `mov x16, xzr` for indirect exits, aborts, tier-up); a patched exit keeps only accounting, checks, the patch site and `ldr x16, =slot; b slotpath` in line, its window/link-break return goes after the block's code; the abort path is omitted when the block makes no handler call. No new instruction forms (B, CBZ X, ORR X already tested). |
+
+The sandbox now builds the device's patch-site layout (`PatchLinks`); tests link through the slots, so the unlinked
+site is executed (`B +1`, then the slot path): with `stub` that path has one more B, which is the +1.0 below. On the
+device a linked exit runs the patched B and never reaches it, so linked execution is unchanged by `stub`.
+
+`Arm64CodeQualityTable`, all on, host instructions per iteration (per guest instruction) and static words, before
+(main b8d2331 + the sandbox patch layout) -> after:
+
+| Block (guest) | before | `cond` + `stub` | words before -> after |
+|---|---|---|---|
+| ARM sum (4) | 32.9 (8.2) | 33.9 (8.5) | 62 -> 54 |
+| ARM add, cmp, blt (3) | 27.9 (9.3) | 28.9 (9.6) | 60 -> 52 |
+| ARM max, movgt region (5) | 40.0 (8.0) | 37.0 (7.4) (`cond` -4.0) | 72 -> 60 |
+| Thumb ldmia/stmia (4) | 62.9 (15.7) | 63.9 (16.0) | 104 -> 96 |
+| Thumb ldrb/strb (5) | 38.9 (7.8) | 39.9 (8.0) | 72 -> 64 |
+| NEON vmla (7) | 58.9 (8.4) | 59.9 (8.6) | 96 -> 88 |
+| Two VQSHL callouts (4) | 53.9 (13.5) | 54.9 (13.7) | 94 -> 90 |
+| VFP dot (6) | 50.9 (8.5) | 51.9 (8.7) | 114 -> 110 |
+
+Code size -4% to -17% on these blocks (each exit -4 words, the abort path -5 when unused, +3..7 shared per block).
+`Arm64DeferredRegionsMatchInterpreter` (600 random blocks of 4-28 ARM instructions: conditional data processing with
+and without S, conditional LDR/STR, conditional MRS/MSR APSR core callouts, VQSHL SIMD callouts, conditional branches;
+`cond` on and off against the interpreter): 0 differences, 52 blocks shorter, 13 longer (fewer STP pairs when the
+deferred stores are not adjacent).
+
+Not done: a fixed guest -> host register mapping across linked blocks. AArch64 has 10 callee-saved GPRs; x19/x20 hold
+state/memory base and x26-x28 the pinned counters, so at most 5 guest registers could be pinned, and only by giving up
+every callee-saved temp (temps live across callouts would then spill). Within a block the IR builder already keeps
+guest registers in temps (loads at first use, stores only at exits, callouts and, before `cond`, conditional regions).
+What a mapping would save per linked block is the entry loads and register stores (about 6 of ~29 host instructions on
+ARM sum); the flags need CSET + STP regardless (the accounting ADDS clobbers NZCV). Measure `cond`/`stub` on the phone
+first.
+
+### Device plan
+1. `VITASHARP_NATIVE_VERIFY=1` session, `--speed=0.25`, Knightin'+ and Devious Dungeon to gameplay: 0 mismatches
+   expected (the verifier covers both: `cond` changes the IR inside a block, `stub` the exit paths it runs through).
+2. fps A/B, Devious Dungeon town: default vs `VITASHARP_NATIVE_A64_NOOPT=cond,stub`, then each name alone; note the
+   PERF line's code bytes (stub) and busiest-thread ms/frame.
+3. On a difference or crash: bisect with `=cond` / `=stub`.
+
 ## perf/arm64-jit (2026-10-30): ARM64 code quality
 
 Branch `perf/arm64-jit` (worktree `.claude/worktrees/a64jit`, from main 4dbe06c, main 241ad19 merged). Not merged, not
