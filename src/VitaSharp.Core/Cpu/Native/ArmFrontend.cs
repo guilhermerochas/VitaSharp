@@ -36,6 +36,11 @@ public sealed unsafe partial class ArmFrontend
     readonly bool _reuseIr;
     IrBuilder? _reused;
 
+    /// <summary>Conditional instructions that fall through keep the cached dirty state across their region instead of
+    /// flushing it before the branch (<see cref="IrBuilder.BeginCond"/>; the ARM64 backend's
+    /// <see cref="Arm64Emitter.A64Opt.DeferRegions"/>, off for x64).</summary>
+    public bool DeferRegions;
+
     static readonly uint ExitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     static readonly uint SvcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
     static readonly uint SvcPcOffset = (uint)StateLayout.Of(nameof(CpuState.SvcPc));
@@ -75,7 +80,7 @@ public sealed unsafe partial class ArmFrontend
             if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop) { if (last) { _b.Exit(); terminated = true; } continue; }
 
             bool cond = (d.Flags & InstFlags.Conditional) != 0;
-            if (cond) _b.BeginCond(d.Cond);
+            if (cond) _b.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
             bool exitNow = Translate(d);
             if (d.EndsBlock || last || exitNow)
             {

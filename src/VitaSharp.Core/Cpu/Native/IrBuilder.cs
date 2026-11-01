@@ -24,6 +24,9 @@ public sealed unsafe class IrBuilder
     int _regionLabel = -1;
     readonly int[] _snapshot = new int[Slots];
     readonly bool[] _written = new bool[Slots];
+    // deferred region (BeginCond with defer): the dirty bits before it and the index of its CondBranch
+    readonly bool[] _dirtySnapshot = new bool[Slots];
+    int _deferBranch = -1;
 
     static readonly uint ThumbOffset = (uint)StateLayout.Of(nameof(CpuState.Thumb));
 
@@ -37,6 +40,7 @@ public sealed unsafe class IrBuilder
         Array.Clear(_dirty);
         Array.Clear(_written);
         _regionLabel = -1;
+        _deferBranch = -1;
         Block.StartPc = startPc;
         Block.Thumb = thumb;
         // at block entry R15 is the block address (the dispatcher looked the block up by it) and Thumb its state
@@ -90,14 +94,20 @@ public sealed unsafe class IrBuilder
     /// <summary>Stores every dirty slot (values stay cached, now clean).</summary>
     public void Flush()
     {
+        // inside a deferred region (a callout or an exit): the values from before it are stored before its branch
+        // instead, on both paths, as without deferral
+        if (_deferBranch >= 0)
+            for (int s = 0; s < Slots; s++)
+                if (_dirtySnapshot[s] && !_written[s])
+                {
+                    Block.Insts.Insert(_deferBranch++, Store(s, _snapshot[s]));
+                    _dirtySnapshot[s] = _dirty[s] = false;
+                }
         for (int s = 0; s < Slots; s++)
         {
             if (!_dirty[s]) continue;
             _dirty[s] = false;
-            int v = _val[s];
-            if (s < 16) Emit(new IrInst(IrOp.SetReg) { A = v, Imm = (uint)s });
-            else if (s == SlotThumb) Emit(new IrInst(IrOp.StoreState) { A = v, Imm = ThumbOffset });
-            else Emit(new IrInst(IrOp.SetFlag) { A = v, Imm = (uint)(s - SlotFlag0) });
+            Emit(Store(s, _val[s]));
         }
     }
 
@@ -116,8 +126,14 @@ public sealed unsafe class IrBuilder
 
     public int NewLabel() => Block.Labels++;
 
-    /// <summary>Starts a region that runs only when ARM condition <paramref name="cond"/> holds.</summary>
-    public void BeginCond(uint cond)
+    /// <summary>
+    /// Starts a region that runs only when ARM condition <paramref name="cond"/> holds. <paramref name="defer"/>: the
+    /// dirty state is not flushed before the branch; slots the region leaves alone stay dirty on both paths (so a flag
+    /// value a later instruction supersedes never reaches memory), and only slots the region writes are stored on the
+    /// skip path, inserted before the branch by <see cref="EndRegion"/>. For regions that fall through only (the
+    /// stores of a terminating region would be duplicated on both exits).
+    /// </summary>
+    public void BeginCond(uint cond, bool defer = false)
     {
         if (InRegion) throw new InvalidOperationException("nested region");
         // condition inputs are read (and possibly loaded) before the flush and the branch
@@ -132,10 +148,11 @@ public sealed unsafe class IrBuilder
             case 5: n = Flag(IrFlag.N); v = Flag(IrFlag.V); break;
             case 6: n = Flag(IrFlag.N); v = Flag(IrFlag.V); z = Flag(IrFlag.Z); break;
         }
-        Flush();
+        if (!defer) Flush();
         int label = NewLabel();
-        Emit(new IrInst(IrOp.CondBranch) { A = n, B = z, C = c, E = v, Imm = cond, Imm2 = (uint)label });
+        int at = Emit(new IrInst(IrOp.CondBranch) { A = n, B = z, C = c, E = v, Imm = cond, Imm2 = (uint)label });
         Enter(label);
+        if (defer) { _deferBranch = at; Array.Copy(_dirty, _dirtySnapshot, Slots); }
     }
 
     /// <summary>Starts a region that runs only when <c>(value != 0) == runIfNonZero</c>.</summary>
@@ -162,6 +179,7 @@ public sealed unsafe class IrBuilder
     public void EndRegion(bool terminated)
     {
         if (!InRegion) throw new InvalidOperationException("no region");
+        if (_deferBranch >= 0) { EndDeferred(terminated); return; }
         if (!terminated) Flush();
         int label = _regionLabel;
         _regionLabel = -1;
@@ -172,6 +190,38 @@ public sealed unsafe class IrBuilder
         }
         Emit(new IrInst(IrOp.Label) { Imm = (uint)label });
     }
+
+    /// <summary>Closes a deferred region (<see cref="BeginCond"/> with defer).</summary>
+    void EndDeferred(bool terminated)
+    {
+        int label = _regionLabel, branch = _deferBranch;
+        _regionLabel = -1;
+        _deferBranch = -1;
+        if (!terminated)
+        {
+            // region path: store what the region wrote; skip path: the old values of those slots, if dirty before
+            for (int s = 0; s < Slots; s++)
+                if (_written[s] && _dirty[s]) Emit(Store(s, _val[s]));
+            int k = branch;
+            for (int s = 0; s < Slots; s++)
+                if (_written[s] && _dirtySnapshot[s]) Block.Insts.Insert(k++, Store(s, _snapshot[s]));
+        }
+        for (int s = 0; s < Slots; s++)
+        {
+            // a terminating region ended in an exit (which flushed): only the skip path reaches the label
+            bool keep = terminated || !_written[s];
+            _val[s] = keep ? _snapshot[s] : -1;
+            _dirty[s] = keep && _dirtySnapshot[s];
+        }
+        Emit(new IrInst(IrOp.Label) { Imm = (uint)label });
+    }
+
+    static IrInst Store(int s, int v) => s switch
+    {
+        < 16 => new IrInst(IrOp.SetReg) { A = v, Imm = (uint)s },
+        SlotThumb => new IrInst(IrOp.StoreState) { A = v, Imm = ThumbOffset },
+        _ => new IrInst(IrOp.SetFlag) { A = v, Imm = (uint)(s - SlotFlag0) },
+    };
 
     // ------------------------------------------------------------------ exits / callouts
 

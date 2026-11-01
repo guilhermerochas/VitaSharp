@@ -94,7 +94,7 @@ public static class EnvVars
     /// hybrid suspend handles; callouts from that mode are allowed).</summary>
     public const string NativeGcTransition = "VITASHARP_NATIVE_GC_TRANSITION";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
-    /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
+    /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit, patch, cond, stub; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";
     public const string NativeNoinline = "VITASHARP_NATIVE_NOINLINE";
     public const string NativeNolink = "VITASHARP_NATIVE_NOLINK";
