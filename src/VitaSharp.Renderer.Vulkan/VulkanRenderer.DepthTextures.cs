@@ -50,7 +50,9 @@ public sealed unsafe partial class VulkanRenderer
                 DestroyAfterGpu(() => DestroyDepthTex(old));
             }
             t = new DepthTex { W = w, H = h };
-            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            // DEPTH_STENCIL_READ_ONLY_OPTIMAL (the layout it is sampled in) needs the attachment usage (validation on the Mali-G57)
+            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat,
+                ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.DepthStencilAttachmentBit,
                 ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit);
             _vk.DestroyImageView(_dev, t.View, null);
             // depth-only view: sampling returns depth in .r (replicated to all channels like an X8U24 fetch)

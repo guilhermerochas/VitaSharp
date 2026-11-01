@@ -73,7 +73,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         BeginFrameIfNeeded();
         (_dummyImage, _dummyView, _dummyMem) = CreateImage(MemCat.Other, 1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
-            ImageAspectFlags.ColorBit, layers: 6, cube: false);
+            ImageAspectFlags.ColorBit, layers: 6, cube: true); // cube-compatible: the dummy cube view below needs it
         _vk.DestroyImageView(_dev, _dummyView, null);
         _dummyView = CreateView(_dummyImage, Format.R8G8B8A8Unorm, ImageAspectFlags.ColorBit, 1, 1, false, default);
         _dummyCubeView = CreateView(_dummyImage, Format.R8G8B8A8Unorm, ImageAspectFlags.ColorBit, 1, 6, true, default);

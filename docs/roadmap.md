@@ -82,8 +82,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   falta o quadro do filme do Uncharted a cada volta (não apareceu em 8 s de gravação)
 - [ ] GPU da Mali sobrecarregada (Uncharted no título: 33,7 ms de GPU por quadro na Mali-G57 contra 4,2 ms no PC,
   31/10/2026, perf/android-phone-2: draws com blending programável seguidos dividindo um render pass de leitura
-  (`VITASHARP_FETCH_PASS_MERGE=1`: 5,4 → 1,6 renderings por cena, 25 → 36 fps, 28 → 24 ms de GPU) deixam 1 quadro
-  em 7 mais escuro na Mali (não no replay do PC); fica desligado até achar a causa; o resto continua aberto.
+  (`VITASHARP_FETCH_PASS_MERGE=1`: 5,4 → 1,6 renderings por cena, 27 → 35 fps, 28 → 22 ms de GPU); os quadros sem a
+  camada de luz no título aparecem também sem a junção (1 em 25 a 27 fps, main incluída; 1 em 7 com ela), nunca no
+  replay do PC: defeito do lado do celular (Phone run 4); a junção fica desligada até achar a causa; o resto continua aberto.
   8x mais que a diferença de força esperada): medir com os contadores da Mali (Arm Performance Studio / contadores
   via adb) onde vai o tempo (cálculo, texturas, leitura/gravação de tiles, vértices) e reduzir: shaders em 16 bits
   onde o Vita usa `half` (mediump na Mali), menos load/store de tiles entre etapas, MSAA/superfícies extras no perfil
@@ -163,8 +164,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - [ ] Custo por draw do worker da GPU no celular: F1 2011 na corrida ainda abaixo de 30 fps (cerca de 1.000 draws por
     quadro, o worker da GPU num núcleo A76 inteiro); dividir a preparação e a gravação dos comandos em duas threads,
     menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
-  - [ ] Crash do driver Mali em `vkEndCommandBuffer` (GPU worker, ponteiro nulo em `libGLES_mali.so`): de vez em quando
-    no F1 2011 entre o menu e a corrida, também nas versões anteriores; causa ainda não achada
+  - [x] Crash do driver Mali em `vkEndCommandBuffer` (GPU worker, ponteiro nulo em `libGLES_mali.so`) no F1 2011 entre o
+    menu e a corrida: comandos gravados num command buffer ainda não iniciado depois de um submit antecipado (camada de
+    validação no celular, `VITASHARP_VK_VALIDATION=1`/`sync`); o próximo quadro começa antes (31/10, perf/android-phone-3)
   - [ ] Som dos filmes do F1 2011 no celular: um quadro AAC de silêncio a cada quatro (o player do jogo recebe o áudio
     devagar pelo SceMp4/MediaExtractor + SceAudiodec/MediaCodec; no PC, com FFmpeg, sem buracos); imagem dos filmes já
     corrigida (31/10: fila de quadros do MediaCodec, pts da unidade, sem flashes pretos)
