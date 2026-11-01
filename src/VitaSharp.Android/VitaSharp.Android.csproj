@@ -41,6 +41,9 @@
     <AssemblyName>VitaSharp.Android</AssemblyName>
 
     <ApplicationTitle>VitaSharp</ApplicationTitle>
+    <!-- developer flavour (-p:VitaSharpDeveloper=true, Directory.Build.props): same package id, so install -r keeps the data -->
+    <ApplicationTitle Condition="'$(VitaSharpDeveloper)' == 'true'">VitaSharp Dev</ApplicationTitle>
+
     <ApplicationId>io.github.vitasharp</ApplicationId>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>

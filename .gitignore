@@ -518,3 +518,8 @@ third_party/android-adrenotools/
 # Vita firmware update packages (copyrighted, never commit)
 *.PUP
 *.pup
+
+# developer bench fixtures and results (game data: never committed, tools/dev/README.md)
+/bench/
+obj-dev/
+bin-dev/

@@ -633,6 +633,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         BeginFrameIfNeeded();
         EndRendering();
         EndTileWord1();
+#if VITASHARP_DEVELOPER
+        DevSceneBegin(b);
+#endif
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
@@ -684,6 +687,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         EndRendering(final: true);
         FlushChain(true); // renderings ended earlier and waiting to be merged: the scene ends with them
         EndTileWord1();
+#if VITASHARP_DEVELOPER
+        DevSceneEnd();
+#endif
         if (DebugMode.Enabled && _rt != null) NanScanScene(_rt);
         bool writeback = _rt != null && ScheduleWriteback(_rt);
         _sceneRegions.Clear();
@@ -1259,6 +1265,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         DestroyMsaa();
         DestroyTileWord1();
         DestroyGpuTime();
+#if VITASHARP_DEVELOPER
+        DevDestroy();
+#endif
+
         DestroyPipelines();
         DestroyTextures();
         foreach (var rt in _renderTargets.Values)

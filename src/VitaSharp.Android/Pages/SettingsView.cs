@@ -101,7 +101,12 @@ public sealed class SettingsView : Screen<SettingsState>
                     Row("Log do último jogo", null, Copy(System.IO.Path.Combine(AppServices.Data.Logs, "last.log")), detail: "logs/last.log"),
                     Divider(),
                     Row("Compartilhar log", null, ShareLog)
+#if VITASHARP_DEVELOPER
+                    , Divider(),
+                    Row("OpÃ§Ãµes de desenvolvedor", null, () => Navigation?.PushAsync<DeveloperPage>(), detail: "Bench da GPU (build de desenvolvedor)")
+#endif
                 ),
+
                 Note($"VitaSharp · {RuntimeReport.Runtime}")
             ));
     }
