@@ -133,6 +133,15 @@ public sealed unsafe partial class VulkanRenderer
     CommandBuffer PrimaryTouched()
     {
         _primaryTouches++;
+        // a command for a frame that was submitted in between (a sync point submits the frame early; per-scene
+        // writebacks and transfer callbacks record after it): the next frame's command buffer begins first. Recording
+        // into a buffer that was never begun was caught by the validation layer on the Mali-G57 (barriers and
+        // writeback copies), where the driver crashed in vkEndCommandBuffer about once in three F1 2011 race loads.
+        if (!F.Recording)
+        {
+            Log.WarnOnce("cmd-not-recording", $"[gpu] commands recorded after the frame was submitted: a new frame begins first ({new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name} <- {new System.Diagnostics.StackTrace(2, false).GetFrame(0)?.GetMethod()?.Name})");
+            BeginFrameIfNeeded();
+        }
         // ended renderings waiting to be merged with the next one are begun before anything else goes in
         if (_chain.Count > 0) FlushChain(false);
         return F.Cmd;

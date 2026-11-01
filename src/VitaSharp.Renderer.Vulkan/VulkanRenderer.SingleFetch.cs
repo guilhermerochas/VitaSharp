@@ -124,13 +124,16 @@ public sealed unsafe partial class VulkanRenderer
     readonly HashSet<uint> _singleFetchSsLogged = new();
 
     /// <summary>
-    /// The fetch pass stays open after its draw when the GPU orders input attachment reads with the rasterization
-    /// (VK_EXT/ARM_rasterization_order_attachment_access): the next programmable-blending draw of the same scene renders
-    /// in it too, instead of a store and a load of the whole surface and depth/stencil per draw (Uncharted's title had
-    /// about 18 such draws a frame: 45 renderings per frame instead of 8, most of its 28 ms of GPU time on a Mali-G57).
-    /// Any other recording ends it first (<see cref="Cmd"/>). Off by default (VITASHARP_FETCH_PASS_MERGE=1 turns it on): on
-    /// the Mali-G57 it brought Uncharted's title from 25 to 36 fps, but about one frame in seven came out 15% darker
-    /// (screenrecord + signalstats), a cause not found yet.
+    /// With VITASHARP_FETCH_PASS_MERGE=1 the fetch pass stays open after its draw: the next programmable-blending draw
+    /// of the same scene renders in it too, instead of a store and a load of the whole surface and depth/stencil per
+    /// draw (Uncharted's title had about 18 such draws a frame: 45 renderings per frame instead of 8, most of its 28 ms
+    /// of GPU time on a Mali-G57). Rasterization-order attachment access (VK_EXT/ARM_rasterization_order_attachment_access)
+    /// orders the draws' reads; without it a by-region barrier goes between them (so a desktop GPU runs this path too).
+    /// Any other recording ends it first (<see cref="Cmd"/>). Off by default: on the Mali-G57 it brings Uncharted's
+    /// title from 27 to 35 fps, and the title's frames without the lighting layer (about one in seven in a screen
+    /// recording) come with it. Those frames also appear without the merge (one in 25 at 27 fps, main included), never
+    /// in PC replays of phone dumps, and synchronization validation finds nothing: a phone-side bug that grows with the
+    /// frame rate, not this path (Phone run 4 in docs/android/README.md).
     /// </summary>
     bool _fetchPassOpen;
     RenderTarget? _fetchPassRt;

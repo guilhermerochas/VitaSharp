@@ -159,7 +159,24 @@ public sealed unsafe class VkCore : IDisposable
             EnabledLayerCount = (uint)layers.Count,
             PpEnabledLayerNames = layerPtrs,
         };
+        // VITASHARP_VK_VALIDATION=sync: synchronization validation too (VK_EXT_layer_settings, implemented by the layer;
+        // Android has no vk_layer_settings.txt or environment for it)
+        var layerName = (byte*)SilkMarshal.StringToPtr("VK_LAYER_KHRONOS_validation");
+        var syncName = (byte*)SilkMarshal.StringToPtr("validate_sync");
+        // no per-VUID limit: every hazard of one VUID (SYNC-HAZARD-WRITE-AFTER-READ) is reported, the log keeps one per kind
+        var limitName = (byte*)SilkMarshal.StringToPtr("enable_message_limit");
+        uint on = 1, off = 0;
+        var setting = stackalloc LayerSettingEXT[2]
+        {
+            new() { PLayerName = layerName, PSettingName = syncName, Type = LayerSettingTypeEXT.Bool32Ext, ValueCount = 1, PValues = &on },
+            new() { PLayerName = layerName, PSettingName = limitName, Type = LayerSettingTypeEXT.Bool32Ext, ValueCount = 1, PValues = &off },
+        };
+        var settings = new LayerSettingsCreateInfoEXT { SType = StructureType.LayerSettingsCreateInfoExt, SettingCount = 2, PSettings = setting };
+        if (layers.Count > 0 && Environment.GetEnvironmentVariable(EnvVars.VkValidation) == "sync") ci.PNext = &settings;
         Vk.CreateInstance(in ci, null, out Instance).Ok("vkCreateInstance");
+        SilkMarshal.Free((nint)layerName);
+        SilkMarshal.Free((nint)syncName);
+        SilkMarshal.Free((nint)limitName);
         SilkMarshal.Free((nint)appName);
         SilkMarshal.Free((nint)extPtrs);
         SilkMarshal.Free((nint)layerPtrs);
@@ -206,7 +223,10 @@ public sealed unsafe class VkCore : IDisposable
     static uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity, DebugUtilsMessageTypeFlagsEXT type, DebugUtilsMessengerCallbackDataEXT* data, void* user)
     {
         var msg = Marshal.PtrToStringAnsi((nint)data->PMessage) ?? "";
-        Log.WarnOnce("vk:" + msg[..Math.Min(msg.Length, 120)], $"[Vulkan] {msg}");
+        // once per kind of message: handles stripped (they differ per frame and command buffer), the rest kept
+        // (a synchronization hazard names the conflicting command after the first 120 characters)
+        var kind = System.Text.RegularExpressions.Regex.Replace(msg, "0x[0-9a-fA-F]+", "#");
+        Log.WarnOnce("vk:" + kind[..Math.Min(kind.Length, 400)], $"[Vulkan] {msg}");
         return Vk.False;
     }
 

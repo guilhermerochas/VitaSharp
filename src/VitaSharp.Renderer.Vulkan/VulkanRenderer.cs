@@ -68,7 +68,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public CommandPool Pool;
         public CommandBuffer Cmd;
         public Fence Fence;
-        public Silk.NET.Vulkan.Semaphore Acquire, RenderDone;
+        public Silk.NET.Vulkan.Semaphore Acquire;
         public readonly List<DescriptorPool> DescPools = new();
         public int DescPoolIndex;
         public Buffer Ring;
@@ -127,7 +127,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         _opt = options;
         _presentCount = Math.Max(0, options.FirstPresent);
-        _core = new VkCore(options.Surface, options.Validation, options.GpuProfile);
+        _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
         _vk = _core.Vk;
         _dev = _core.Device;
         _imagePool = new ImageMemoryPool(_core);
@@ -166,7 +166,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk.CreateFence(_dev, in fci, null, out f.Fence).Ok("vkCreateFence");
         var sci = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
         _vk.CreateSemaphore(_dev, in sci, null, out f.Acquire);
-        _vk.CreateSemaphore(_dev, in sci, null, out f.RenderDone);
         var (buf, mem, ptr) = _core.CreateHostBuffer(RingSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit
             | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit, MemCat.UploadRing);
         f.Ring = buf; f.RingMem = mem; f.RingPtr = (byte*)ptr;
@@ -221,7 +220,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var cmd = f.Cmd;
         var waitStage = PipelineStageFlags.TransferBit;
         var acquire = f.Acquire;
-        var done = f.RenderDone;
+        // one per swapchain image (VulkanRenderer.Swapchain.cs)
+        var done = present ? _swapDone[(int)swapIndex] : default;
         var si = new SubmitInfo
         {
             SType = StructureType.SubmitInfo,
@@ -1253,7 +1253,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.DestroyCommandPool(_dev, f.Pool, null);
             _vk.DestroyFence(_dev, f.Fence, null);
             _vk.DestroySemaphore(_dev, f.Acquire, null);
-            _vk.DestroySemaphore(_dev, f.RenderDone, null);
+            foreach (var s in _swapDone) _vk.DestroySemaphore(_dev, s, null);
+            _swapDone.Clear();
             foreach (var p in f.DescPools) _vk.DestroyDescriptorPool(_dev, p, null);
             _core.DestroyBuffer(f.Ring, f.RingMem);
             foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
