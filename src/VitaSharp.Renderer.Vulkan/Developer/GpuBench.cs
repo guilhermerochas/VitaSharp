@@ -90,51 +90,23 @@ public static class GpuBench
         ["msaafetch"] = EnvVars.MsaaFetch, ["scenebreaks"] = EnvVars.SceneBreaks, ["gpuquirks"] = EnvVars.GpuQuirks,
     };
 
+    /// <summary>A run of the spec's mode: mode=flicker (<see cref="Flicker"/>), else the timing bench (<see cref="Run"/>).</summary>
+    public static void Execute(GpuBenchSpec spec, Action<string> log)
+    {
+        if (spec.Params.GetValueOrDefault("mode") == "flicker") Flicker(spec, log);
+        else Run(spec, log);
+    }
+
     /// <param name="done">called with the renderer after the last repetition, before it is disposed</param>
+
     public static Result Run(GpuBenchSpec spec, Action<string> log, Action<VulkanRenderer>? done = null)
     {
         var wall = Stopwatch.StartNew();
         string path = spec.FixturePath;
-        if (!File.Exists(path)) throw new FileNotFoundException($"bench fixture {path} not found");
-        // the variant's params.txt, then the run's own parameters
-        var p = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        string paramsFile = Path.Combine(spec.VariantDir, "params.txt");
-        if (File.Exists(paramsFile))
-            foreach (var line in File.ReadAllLines(paramsFile))
-                if (line.Trim() is { Length: > 0 } l && !l.StartsWith('#') && l.IndexOf('=') is var eq and > 0) p[l[..eq].Trim()] = l[(eq + 1)..].Trim();
-        foreach (var (k, v) in spec.Params) p[k] = v;
-
-        GpuDumpHeader header;
-        using (var r = new GpuDumpReader(path)) header = r.Header;
-        var env = GpuDumpPlayer.RecordedEnvironment(header);
-        env[EnvVars.GpuProfile] = p.GetValueOrDefault("gpuprofile") ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile) ?? env.GetValueOrDefault(EnvVars.GpuProfile) ?? "";
-        foreach (var (k, v) in p)
-        {
-            if (EnvParams.TryGetValue(k, out var name)) env[name] = v;
-            else if (k.StartsWith("env.", StringComparison.OrdinalIgnoreCase)) env[k[4..]] = v;
-        }
-        foreach (var (k, v) in env) Environment.SetEnvironmentVariable(k, v.Length == 0 ? null : v);
-
-        GpuBenchState.Reset();
-        GpuBenchState.ShaderDir = Directory.Exists(spec.VariantDir) && Directory.EnumerateFiles(spec.VariantDir).Any(f => !f.EndsWith(".txt")) ? spec.VariantDir : null;
-        GpuBenchState.DepthLoad = p.GetValueOrDefault("depthload") switch { "clear" => AttachmentLoadOp.Clear, "dontcare" => AttachmentLoadOp.DontCare, _ => null };
-        GpuBenchState.DepthStore = p.GetValueOrDefault("depthstore") switch { "store" => AttachmentStoreOp.Store, "dontcare" => AttachmentStoreOp.DontCare, _ => null };
-        GpuBenchState.FullBarriers = p.GetValueOrDefault("barrier") == "full";
-        log($"[bench] {spec.FixtureName} variant {spec.Variant}: " + string.Join(' ', p.Select(kv => $"{kv.Key}={kv.Value}"))
-            + (GpuBenchState.ShaderDir != null ? $" shaders from {GpuBenchState.ShaderDir}" : "") + "; env " + string.Join(' ', env.Select(kv => $"{kv.Key}={kv.Value}")));
-
+        Prepare(spec, log, out var header, out var ro);
         long target = header.Long(KeyFrame, -1);
         if (target < 0) using (var r = new GpuDumpReader(path)) { while (r.Next()) if (r.Kind == GpuDumpRecord.Present) target++; }
         var res = new Result { Fixture = spec.FixtureName, Variant = spec.Variant };
-        var ro = new VulkanRendererOptions
-        {
-            ShaderCacheDir = Path.Combine(spec.Root, "shadercache"),
-            VSync = false,
-            AsyncShaders = false,
-            AsyncPipelines = false,
-            FirstPresent = header.Long("first-present"),
-            GpuProfile = env[EnvVars.GpuProfile] is { Length: > 0 } gp ? gp : null,
-        };
         using var memory = new GuestMemory();
         var renderer = new VulkanRenderer(ro);
         try
@@ -247,7 +219,136 @@ public static class GpuBench
         return renderer.DevReadSceneTimes();
     }
 
+    /// <summary>The run's parameters (the variant's params.txt, then the spec's), applied: renderer environment
+    /// switches, <see cref="GpuBenchState"/>, and the renderer options.</summary>
+    static Dictionary<string, string> Prepare(GpuBenchSpec spec, Action<string> log, out GpuDumpHeader header, out VulkanRendererOptions ro, bool async = false)
+    {
+        string path = spec.FixturePath;
+        if (!File.Exists(path)) throw new FileNotFoundException($"bench fixture {path} not found");
+        // the variant's params.txt, then the run's own parameters
+        var p = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string paramsFile = Path.Combine(spec.VariantDir, "params.txt");
+        if (File.Exists(paramsFile))
+            foreach (var line in File.ReadAllLines(paramsFile))
+                if (line.Trim() is { Length: > 0 } l && !l.StartsWith('#') && l.IndexOf('=') is var eq and > 0) p[l[..eq].Trim()] = l[(eq + 1)..].Trim();
+        foreach (var (k, v) in spec.Params) p[k] = v;
+
+        using (var r = new GpuDumpReader(path)) header = r.Header;
+        var env = GpuDumpPlayer.RecordedEnvironment(header);
+        env[EnvVars.GpuProfile] = p.GetValueOrDefault("gpuprofile") ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile) ?? env.GetValueOrDefault(EnvVars.GpuProfile) ?? "";
+        foreach (var (k, v) in p)
+        {
+            if (EnvParams.TryGetValue(k, out var name)) env[name] = v;
+            else if (k.StartsWith("env.", StringComparison.OrdinalIgnoreCase)) env[k[4..]] = v;
+        }
+        foreach (var (k, v) in env) Environment.SetEnvironmentVariable(k, v.Length == 0 ? null : v);
+
+        GpuBenchState.Reset();
+        GpuBenchState.ShaderDir = Directory.Exists(spec.VariantDir) && Directory.EnumerateFiles(spec.VariantDir).Any(f => !f.EndsWith(".txt")) ? spec.VariantDir : null;
+        GpuBenchState.DepthLoad = p.GetValueOrDefault("depthload") switch { "clear" => AttachmentLoadOp.Clear, "dontcare" => AttachmentLoadOp.DontCare, _ => null };
+        GpuBenchState.DepthStore = p.GetValueOrDefault("depthstore") switch { "store" => AttachmentStoreOp.Store, "dontcare" => AttachmentStoreOp.DontCare, _ => null };
+        GpuBenchState.FullBarriers = p.GetValueOrDefault("barrier") == "full";
+        log($"[bench] {spec.FixtureName} variant {spec.Variant}: " + string.Join(' ', p.Select(kv => $"{kv.Key}={kv.Value}"))
+            + (GpuBenchState.ShaderDir != null ? $" shaders from {GpuBenchState.ShaderDir}" : "") + "; env " + string.Join(' ', env.Select(kv => $"{kv.Key}={kv.Value}")));
+
+        ro = new VulkanRendererOptions
+        {
+            ShaderCacheDir = Path.Combine(spec.Root, "shadercache"),
+            VSync = false,
+            AsyncShaders = (p.GetValueOrDefault("async") ?? (async ? "1" : "0")) == "1",
+            AsyncPipelines = (p.GetValueOrDefault("async") ?? (async ? "1" : "0")) == "1",
+            FirstPresent = header.Long("first-present"),
+            GpuProfile = env[EnvVars.GpuProfile] is { Length: > 0 } gp ? gp : null,
+        };
+        return p;
+    }
+
+    /// <summary>
+    /// Flicker test (spec mode=flicker): replays every frame of the fixture (a whole GPU dump) in a loop, reads back each
+    /// presented frame as a small picture and runs <see cref="FlickerDetector"/> over them, to reproduce frames that only
+    /// go wrong on the device at speed. Parameters: loops (default 3), speed=real (the recorded present times) or max
+    /// (as fast as the GPU goes, default), threshold (6), skipscene=K (no draws in scene K of every frame), drawlimit=N
+    /// (only the first N draws of every frame), plus the render-state parameters of <see cref="Run"/>. Flagged frames are
+    /// saved with their neighbours to results/RUN_flicker/; one row per run goes to results/RUN.flicker.tsv.
+    /// </summary>
+    public static FlickerDetector Flicker(GpuBenchSpec spec, Action<string> log)
+    {
+        var wall = Stopwatch.StartNew();
+        string path = spec.FixturePath;
+        var p = Prepare(spec, log, out var header, out var ro, async: true);
+        int loops = int.Parse(p.GetValueOrDefault("loops") ?? "3", CultureInfo.InvariantCulture);
+        bool real = p.GetValueOrDefault("speed") == "real";
+        int skipScene = int.Parse(p.GetValueOrDefault("skipscene") ?? "-1", CultureInfo.InvariantCulture);
+        int drawLimit = int.Parse(p.GetValueOrDefault("drawlimit") ?? "0", CultureInfo.InvariantCulture);
+        var det = new FlickerDetector(double.Parse(p.GetValueOrDefault("threshold") ?? "6", CultureInfo.InvariantCulture));
+        string saveDir = Path.Combine(spec.Root, "results", spec.Run + "_flicker", $"{spec.FixtureName}_{spec.Variant}");
+        var recent = new Queue<(long, byte[])>();
+        int saved = 0;
+        ro.FrameSink = (frame, rgba, w, h) =>
+        {
+            recent.Enqueue((frame, rgba));
+            if (recent.Count > 3) recent.Dequeue();
+            if (det.Add(frame, rgba, w, h) is not { } flag) return;
+            log($"[bench] {det.Describe(flag)}");
+            if (saved++ >= 12) return;
+            Directory.CreateDirectory(saveDir);
+            foreach (var (n, px) in recent) Png.Write(Path.Combine(saveDir, $"f{flag.Frame}_{n}.png"), px, w, h);
+        };
+        long frames = 0;
+        using var memory = new GuestMemory();
+        var renderer = new VulkanRenderer(ro);
+        try
+        {
+            if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
+            for (int loop = 0; loop < loops; loop++)
+            {
+                using var reader = new GpuDumpReader(path);
+                var clock = Stopwatch.StartNew();
+                long t0 = -1;
+                int draws = 0, scene = -1;
+                while (reader.Next())
+                {
+                    switch (reader.Kind)
+                    {
+                        case GpuDumpRecord.Memory: reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length)); continue;
+                        case GpuDumpRecord.Idle: renderer.Idle(); continue;
+                        case GpuDumpRecord.BackendState: if (loop == 0) renderer.ImportDumpState(reader.Data); continue;
+                    }
+                    var cmd = reader.Command!;
+                    switch (cmd)
+                    {
+                        case BeginSceneCommand: scene++; break;
+                        case DrawCommand:
+                            draws++;
+                            if (scene == skipScene || (drawLimit > 0 && draws > drawLimit)) continue;
+                            break;
+                        case SignalCommand sig:
+                            if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
+                            continue;
+                        case PresentCommand when real:
+                            long us = reader.PresentInfo.Micros;
+                            if (t0 < 0) t0 = us;
+                            long ahead = (us - t0) - (long)(clock.Elapsed.TotalMilliseconds * 1000);
+                            if (ahead > 1000) Thread.Sleep((int)(ahead / 1000));
+                            break;
+                    }
+                    renderer.Execute(cmd);
+                    if (cmd is PresentCommand) { frames++; draws = 0; scene = -1; }
+                }
+            }
+            renderer.Execute(new FinishCommand());
+        }
+        finally { renderer.Dispose(); GpuBenchState.Reset(); }
+        double fps = frames / wall.Elapsed.TotalSeconds;
+        log(FormattableString.Invariant($"BENCH {spec.FixtureName} {spec.Variant} flicker: {det.Summary}; {frames} frames at {fps:F1} fps ({(real ? "recorded pace" : "max speed")})"));
+        Directory.CreateDirectory(Path.Combine(spec.Root, "results"));
+        File.AppendAllText(Path.Combine(spec.Root, "results", spec.Run + ".flicker.tsv"),
+            FormattableString.Invariant($"{spec.FixtureName}\t{spec.Variant}\t{(real ? "real" : "max")}\t{det.Frames}\t{det.Flagged.Count}\t{fps:F1}\t{string.Join(',', det.Flagged.Select(f => f.Frame))}\n"));
+        return det;
+    }
+
     /// <summary>results/RUN.tsv: fixture, variant, config, rep, frame ms, scene ms (comma separated); appended.</summary>
+
     static void WriteResults(GpuBenchSpec spec, Result res)
     {
         string dir = Path.Combine(spec.Root, "results");

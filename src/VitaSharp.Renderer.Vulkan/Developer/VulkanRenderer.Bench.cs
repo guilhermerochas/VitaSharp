@@ -134,6 +134,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     void DevDestroy()
+
     {
         foreach (var e in _devShaders.Values)
             if (e != null) _vk.DestroyShaderModule(_dev, e.Module, null);

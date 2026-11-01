@@ -130,7 +130,21 @@ public sealed class EmulationSession : IDisposable
             VSync = _settings.VSync,
             GpuProfile = _settings.GpuProfile.Length > 0 ? _settings.GpuProfile : null,
         };
+#if VITASHARP_DEVELOPER
+        // developer APK, VITASHARP_FLICKER_CHECK=1[:threshold] in env.txt: every presented frame is read back small and
+        // checked for one-frame flashes and dark/stale frames on the device (FLICKER lines in the log)
+        if (System.Environment.GetEnvironmentVariable(EnvVars.FlickerCheck) is { Length: > 0 } fc && fc != "0")
+        {
+            var det = new FlickerDetector(double.TryParse(fc.Split(':').ElementAtOrDefault(1), System.Globalization.CultureInfo.InvariantCulture, out var ft) ? ft : 6);
+            _rendererOptions.FrameSink = (n, px, w, h) =>
+            {
+                if (det.Add(n, px, w, h) is { } f) Log.Info($"FLICKER {det.Describe(f)}");
+                if (det.Frames % 600 == 0) Log.Info($"{det.Summary}");
+            };
+        }
+#endif
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
+
         _emu.ExecRequested += () => Task.Run(() =>
         {
             try

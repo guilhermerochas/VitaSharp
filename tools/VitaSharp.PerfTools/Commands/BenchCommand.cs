@@ -77,7 +77,7 @@ sealed class BenchCommand : IPerfCommand
     {
 #if VITASHARP_DEVELOPER
         var spec = GpuBenchSpec.Parse(a.Get("--child") ?? throw new PerfArgsException("--child SPEC"), Root(a));
-        GpuBench.Run(spec, Console.WriteLine);
+        GpuBench.Execute(spec, Console.WriteLine);
         Core.Util.Log.Flush();
         return 0;
 #else

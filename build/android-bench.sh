@@ -50,7 +50,14 @@ for ((r = 0; r < rounds; r++)); do
   done
 done
 mkdir -p "$bench/results"
-adb pull "$remote/results/$run.tsv" "$(lp "$bench/results/$run.tsv")" >/dev/null
+adb pull "$remote/results/$run.tsv" "$(lp "$bench/results/$run.tsv")" >/dev/null 2>&1 || true
+# flicker runs (PARAM=mode=flicker): one row per run, and the flagged frames' pictures
+if adb pull "$remote/results/$run.flicker.tsv" "$(lp "$bench/results/$run.flicker.tsv")" >/dev/null 2>&1; then
+  adb pull "$remote/results/${run}_flicker" "$(lp "$bench/results/")" >/dev/null 2>&1 || true
+  echo "fixture variant pace frames flagged fps frames-flagged"; cat "$bench/results/$run.flicker.tsv"
+  exit 0
+fi
+
 adb shell cat "$remote/results/errors.txt" 2>/dev/null | tail -n 5 || true
 echo "$rounds rounds in $(( $(date +%s) - start )) s; results $bench/results/$run.tsv"
 if [ -n "${PERF:-}" ]; then

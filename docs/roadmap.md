@@ -176,6 +176,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (.PUP) pelo seletor (30/10/2026: pasta específica do app como raiz de dados, VPK/PUP/driver pelo seletor do sistema,
   lidos no lugar; o motivo de não usar uma pasta do SAF como raiz está em `docs/android/README.md`)
 
+- [ ] Ferramentas de desenvolvedor (`-p:VitaSharpDeveloper=true`, `tools/dev/README.md`): bench da GPU com fixtures e
+  variantes em tempo de execução, teste de flicker no aparelho (replay e `VITASHARP_FLICKER_CHECK` no jogo), Perfetto,
+  snapshots de desenvolvedor e o gravador de voo (últimos N s com um botão)
+- [ ] Próxima fase, quando Uncharted e F1 estiverem sólidos no celular (fps nativo, sem flicker nem quadro escuro, som
+  correto, sem crash) e o gravador de voo funcionar: testar os outros jogos instalados no celular, os mais pesados
+  primeiro (ordem pelo ms/quadro de CPU+GPU no PC, dos logs de revalidação e `docs/compatibility.md`; provavelmente
+  Killzone Mercenary, Soul Sacrifice Delta, Gravity Rush, Unit 13, Resistance, CoD BO Declassified, God of War
+  Collection II, Tearaway, Persona 4, FFX HD, LBP, Ninja Gaiden Σ/Σ2). Para cada um: fps nativo, sem flicker, som
+  correto, sem crash, imagem igual à do PC
+  - [ ] Antes de cada rodada no celular, pegar no PC os erros que a NVIDIA tolera e a Mali não (como o do God of War):
+    replay de um dump de cada jogo com a camada de validação e o perfil `mali-strict` (alinhamento estrito de atributos
+    + poison); um teste automático (unitário ou de replay) que falha com uso inválido apontado pela validação
+    (atributos desalinhados, formato sem o recurso, flags de uso, tipo de view errado como o samplerCube sobre view 2D
+    do F1); corrigir de forma genérica e depois confirmar no celular com o bench de flicker e fps
+
 ## Controles
 
 - [ ] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e

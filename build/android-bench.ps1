@@ -54,7 +54,16 @@ for ($r = 0; $r -lt $Rounds; $r++) {
 $results = Join-Path $BenchDir 'results'
 New-Item -ItemType Directory -Force $results | Out-Null
 $tsv = Join-Path $results "$run.tsv"
-adb pull "$remote/results/$run.tsv" $tsv | Out-Null
+adb pull "$remote/results/$run.tsv" $tsv 2>$null | Out-Null
+# flicker runs (-Param mode=flicker): one row per run, and the flagged frames' pictures
+$ftsv = Join-Path $results "$run.flicker.tsv"
+adb pull "$remote/results/$run.flicker.tsv" $ftsv 2>$null | Out-Null
+if (Test-Path $ftsv) {
+    adb pull "$remote/results/${run}_flicker" $results 2>$null | Out-Null
+    Write-Host 'fixture variant pace frames flagged fps frames-flagged'; Get-Content $ftsv
+    exit 0
+}
+
 adb shell cat "$remote/results/errors.txt" 2>$null | Select-Object -Last 5
 Write-Host ("$Rounds rounds in {0:F0} s; results $tsv" -f $sw.Elapsed.TotalSeconds)
 if ($Perf) { & $Perf bench table $tsv --base $vs[0] --scenes $Scenes }

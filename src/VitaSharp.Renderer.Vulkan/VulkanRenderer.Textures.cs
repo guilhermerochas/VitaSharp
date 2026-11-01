@@ -443,9 +443,18 @@ public sealed unsafe partial class VulkanRenderer
         if (!DirtyPages.Enabled || rt.WrittenBack || rt.MemStamp == 0) return false;
         ulong rtEnd = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
         ulong start = Math.Max(addr, rt.Address), end = Math.Min(addr + bytes, rtEnd);
+        // whole pages only, and not the first one: a surface's first and last pages are shared with whatever lies next
+        // to it (Uncharted's 720x408 lighting buffer starts at 0x...EC0, under data the game writes every frame), and
+        // a write near a page's end also marks the following page (DirtyPages). Such writes say nothing about the
+        // surface's own memory; taking them as "overwritten" sampled the stale memory instead of the surface, now and
+        // then, depending on when the game's write landed (dark title frames on the phone)
+        const ulong page = 1UL << DirtyPages.PageShift;
+        start = (start + page - 1 & ~(page - 1)) + page;
+        end &= ~(page - 1);
         if (end <= start) return false;
         SweepDirtyPages();
         if (!DirtyPages.WrittenSince((uint)start, (uint)(end - start), rt.MemStamp)) return false;
+
         if (DebugMode.Enabled && _dbgOverlapSeen.Add((addr, rt.Address, int.MinValue)))
             Dbg($"memory at 0x{addr:X8} (texture or transfer source) lies in render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}, but was written after the target was last rendered: the memory is used");
         return true;

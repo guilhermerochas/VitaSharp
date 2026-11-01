@@ -42,6 +42,9 @@ static class TestScenario
         var args = (extraArgs ?? []).Concat(SplitArgs(values.GetValueOrDefault("args", ""))).ToList();
         if (!args.Any(a => a.StartsWith("--dump-frames"))) args.Add("--dump-frames=" + outDir);
         if (!args.Contains("--headless")) args.Add("--headless");
+        // every scenario reports one-frame flashes and stale frames (FLICKER lines in report.txt); --flicker-check=off disables it
+        if (!args.Any(a => a.StartsWith("--flicker-check"))) args.Add("--flicker-check");
+        args.Remove("--flicker-check=off");
         string log = Path.Combine(outDir, "log.txt");
         if (!args.Any(a => a.StartsWith("--log="))) args.Add("--log=" + log);
 
@@ -77,7 +80,8 @@ static class TestScenario
             int b = line.IndexOf("] [", StringComparison.Ordinal);
             string body = b >= 0 ? line[(b + 2)..] : line;
             bool interesting = body.StartsWith("[Warn") || body.StartsWith("[Error") || body.Contains("Unimplemented")
-                               || body.Contains("Run finished") || body.Contains("FPS per") || body.Contains("Contact sheet")
+                               || body.Contains("Run finished") || body.Contains("FLICKER") ||
+ body.Contains("FPS per") || body.Contains("Contact sheet")
                                || body.Contains("  thread '") || body.Contains("METRICS") || body.Contains("AUDIO") || body.Contains("PERF ") || body.Contains("ALLOC frames") || body.Contains("CPU backend") || body.Contains("SUSPECT") || body.Contains("Applied patch") || body.Contains("LoadExec") || body.Contains("[shadercache]");
             if (interesting && seen.Add(body)) sb.AppendLine(body);
         }

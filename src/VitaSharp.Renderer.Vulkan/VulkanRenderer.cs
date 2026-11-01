@@ -44,6 +44,12 @@ public sealed class VulkanRendererOptions
     /// <summary>Tooling (replay-gpu --mali-cost): receives every executed draw with its occlusion sample count once its
     /// frame completed (VulkanRenderer.DrawCost.cs). Null = off.</summary>
     public Action<IReadOnlyList<DrawCostRecord>>? DrawCostSink;
+    /// <summary>Every presented frame as a small RGBA picture (present number, pixels, <see cref="SinkWidth"/> x
+    /// <see cref="SinkHeight"/>), read back when its frame retires: the flicker check of test scenarios
+    /// (<c>--flicker-check</c>) and of the developer GPU bench. Null (the default): nothing is read back.</summary>
+    public Action<long, byte[], int, int>? FrameSink;
+    public const int SinkWidth = 96, SinkHeight = 54;
+
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -82,7 +88,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H)? Readback;
         public int DumpIndex;
         /// <summary>Readback holds a frame to dump (the buffer itself stays allocated and is reused by later dumps).</summary>
-        public bool DumpPending;
+        public bool DumpPending, DumpPng;
         /// <summary>Debug mode: replay ring slot this frame copies the presented image into, -1 = none (VulkanRenderer.Replay.cs).</summary>
         public int ReplaySlot = -1;
         /// <summary>Debug mode / VITASHARP_DEBUG_NAN: NaN/Inf scan results and draw hits of this frame (VulkanRenderer.NanCheck.cs).</summary>
@@ -233,7 +239,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             SignalSemaphoreCount = present ? 1u : 0u,
             PSignalSemaphores = &done,
         };
+#if VITASHARP_DEVELOPER
+        Core.Util.Developer.DevTrace.Begin("vkQueueSubmit");
         var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+        Core.Util.Developer.DevTrace.End();
+#else
+        var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+#endif
+
         if (submitResult == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkQueueSubmit"); } // stops background shader/pipeline work
         submitResult.Ok("vkQueueSubmit");
         f.Recording = false;
@@ -970,8 +983,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _drawSerial = 0;
         EndFrameStallStats();
         TrimAtFrameBoundary();
-        bool dump = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
-        if (dump) RecordReadback(src, frame.Width, frame.Height);
+        bool png = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
+        bool dump = png || _opt.FrameSink != null;
+        if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; }
         else F.DumpPending = false;
         if (DebugMode.Enabled) DebugPresent(src, frame);
         else
@@ -1076,12 +1090,40 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         return dst;
     }
 
+    /// <summary><see cref="VulkanRendererOptions.FrameSink"/>'s picture of a presented frame: 2x2 averages at a SinkWidth x SinkHeight grid of points, read
+    /// straight from the readback buffer (no full-size copy on the GPU worker).</summary>
+    void SinkFrame(Frame f, (Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H) rb, Action<long, byte[], int, int> sink)
+    {
+        int tw = VulkanRendererOptions.SinkWidth, th = VulkanRendererOptions.SinkHeight, w = (int)rb.W, h = (int)rb.H;
+        var dst = new byte[tw * th * 4];
+        byte* src = (byte*)rb.Ptr;
+        int ri = _readbackIsBgra ? 2 : 0, bi = _readbackIsBgra ? 0 : 2;
+        for (int y = 0; y < th; y++)
+            for (int x = 0; x < tw; x++)
+            {
+                int sx = Math.Min(w - 2, (x * w + w / 2) / tw), sy = Math.Min(h - 2, (y * h + h / 2) / th);
+                int r = 0, g = 0, b = 0;
+                for (int dy = 0; dy < 2; dy++)
+                    for (int dx = 0; dx < 2; dx++)
+                    {
+                        byte* p = src + ((sy + dy) * w + sx + dx) * 4;
+                        r += p[ri]; g += p[1]; b += p[bi];
+                    }
+                int d = (y * tw + x) * 4;
+                dst[d] = (byte)(r / 4); dst[d + 1] = (byte)(g / 4); dst[d + 2] = (byte)(b / 4); dst[d + 3] = 255;
+            }
+        sink(f.DumpIndex, dst, tw, th);
+    }
+
     void WriteDump(Frame f, (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H) rb)
     {
         if (!f.DumpPending) return;
+        if (_opt.FrameSink is { } sink) SinkFrame(f, rb, sink);
+        if (!f.DumpPng) { f.DumpPending = false; return; }
         try
         {
             Directory.CreateDirectory(_opt.DumpFramesDir!);
+
             // one reused CPU copy (dumps run on the GPU worker only): a fresh 2 MB array per dump went to the large object heap
             int bytes = (int)(rb.W * rb.H * 4);
             if (_dumpPixels?.Length != bytes) _dumpPixels = new byte[bytes];

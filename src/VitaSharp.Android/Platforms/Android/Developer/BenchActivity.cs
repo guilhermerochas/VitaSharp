@@ -37,6 +37,9 @@ public sealed class BenchActivity : Activity
         AppServices.Initialize(this, gameProcess: true);
         Window?.AddFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
         string text = Intent?.GetStringExtra(ExtraBench) ?? "";
+        // the replay is headless: say what the black screen is (it closes itself when the run ends)
+        SetContentView(new global::Android.Widget.TextView(this) { Text = $"VitaSharp Dev: bench da GPU rodando (fecha sozinho)\n\n{text.Replace(";", "\n")}", TextSize = 16 });
+
         var t = new Thread(() =>
         {
             try
@@ -44,7 +47,7 @@ public sealed class BenchActivity : Activity
                 Directory.CreateDirectory(Path.Combine(Root, "results"));
                 Log.OpenFile(Path.Combine(AppServices.Data.Logs, "bench.log"));
                 Log.Info($"VitaSharp Dev bench: {text}");
-                GpuBench.Run(GpuBenchSpec.Parse(text, Root), Log.Info);
+                GpuBench.Execute(GpuBenchSpec.Parse(text, Root), Log.Info);
             }
             catch (Exception e)
             {
