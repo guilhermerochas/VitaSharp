@@ -10,7 +10,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 - [ ] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel (threads, semáforos, mutexes, event flags, timers), estado dos módulos HLE (áudio, NGS, GXM,
-  arquivos abertos, câmera, rede simulada) e estado da GPU (imagens renderizadas, texturas, cache)
+  arquivos abertos, câmera, rede simulada) e estado da GPU (imagens renderizadas, texturas, cache). Decisão do
+  usuário (01/11/2026): estado dos módulos salvo **por módulo** (`ISnapshotState` explícito em cada um), não por um
+  serializador genérico com reflexão; pode ser gerado na compilação (source generator) a partir dos campos, com os
+  casos especiais escritos à mão (vídeo/MediaCodec, saídas de áudio, arquivos, GXM). Desenho e estimativa em
+  `docs/notes/dev-snapshots.md` (CPU/memória/threads ~2 dias; módulos de Uncharted/F1 3–5 dias; total 1–2 semanas);
+  fica para depois da prioridade de desempenho no Android
 - [ ] Formato versionado e tolerante a mudanças do emulador; aviso claro quando um estado antigo não puder ser carregado
 - [ ] Interface: slots por jogo com miniatura, atalhos (salvar/carregar rápido) e menu de pausa
 - [ ] Uso em diagnóstico: o jogador salva o estado no momento do problema e manda junto com a captura
