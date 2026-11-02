@@ -353,7 +353,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     public void Execute(GpuCommand command)
     {
         // out of GPU memory even after eviction (VulkanRenderer.Memory.cs): the command is skipped, not the renderer
-        try { ExecuteCommand(command); }
+        try { if (WorkerProf) ExecuteProfiled(command); else ExecuteCommand(command); }
         catch (VkOutOfMemoryException e) { OnOutOfMemory(command, e); }
     }
 

@@ -29,8 +29,10 @@ public sealed unsafe partial class VulkanRenderer
     {
         // 0/1: vertex/fragment uniform data, 2/3: vertex/fragment mapped memory (large buffers read in place)
         var ssbo = stackalloc DescriptorSetLayoutBinding[5];
-        ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
-        ssbo[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
+        // 0/1 are dynamic: the uniform data of every draw is at its own offset of the upload ring, and one set (per
+        // buffer and data length) serves every draw of the frame (VulkanRenderer.UniformSets.cs)
+        ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBufferDynamic, 1, ShaderStageFlags.VertexBit);
+        ssbo[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBufferDynamic, 1, ShaderStageFlags.FragmentBit);
         ssbo[2] = new DescriptorSetLayoutBinding(2, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
         ssbo[3] = new DescriptorSetLayoutBinding(3, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
         // 4: VITASHARP_DEBUG_NAN=draws only, the NaN draw buffer the instrumented fragment shaders write (NanCheck.cs)
@@ -94,7 +96,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         _statSets++;
         var f = F;
-        var sizes = stackalloc DescriptorPoolSize[3]; // outside the loop (CA2014)
+        var sizes = stackalloc DescriptorPoolSize[4]; // outside the loop (CA2014)
         while (true)
         {
             if (f.DescPoolIndex >= f.DescPools.Count)
@@ -102,7 +104,8 @@ public sealed unsafe partial class VulkanRenderer
                 sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 5 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
                 sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 16384); // two per framebuffer-fetch set
-                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 3, PPoolSizes = sizes };
+                sizes[3] = new DescriptorPoolSize(DescriptorType.StorageBufferDynamic, 2 * 8192);
+                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 4, PPoolSizes = sizes };
                 _vk.CreateDescriptorPool(_dev, in pci, null, out var pool).Ok("descriptor pool");
                 f.DescPools.Add(pool);
             }
@@ -676,12 +679,14 @@ public sealed unsafe partial class VulkanRenderer
         if (st.RegionClipMode == 1) return; // clip everything
         BeginFrameIfNeeded();
         long stall0 = _frameStallTicks;
+        ProfStart();
 
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
         TraceSnapshot(d);
         if (_traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (_drawRing != null) DrawRingDraw(d, vs, fs);
+        ProfMark(ProfPhase.Shader);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
@@ -712,6 +717,7 @@ public sealed unsafe partial class VulkanRenderer
         var fbSet = inputFetch ? BuildMsaaInputFetchSet(tw1) : singleFetch ? BuildSingleInputFetchSet()
             : fs.Gen!.UsesFragColor || tw1 ? BuildFramebufferFetchSet(tw1) : _emptyFbSet ??= BuildEmptyFbSet();
 
+        ProfMark(ProfPhase.Texture);
         // ---- pipeline
         bool hasColor = _rt != null;
         var blend = d.FragmentProgram.Blend;
@@ -760,6 +766,7 @@ public sealed unsafe partial class VulkanRenderer
             mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key, singleFetch);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (_frameStallTicks != stall0) NoteDrawStall(d, mask, tw1Key, fs.Gen!.UsesFragColor || tw1, _frameStallTicks - stall0);
+        ProfMark(ProfPhase.Pipeline);
         if (pipeline.Handle == 0) return;
 
         // ---- geometry upload
@@ -799,23 +806,17 @@ public sealed unsafe partial class VulkanRenderer
             voffs[s] = off;
         }
 
+        ProfMark(ProfPhase.Geometry);
         // ---- uniforms
         var bufInfos = stackalloc DescriptorBufferInfo[4];
         bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
         bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs, fs.Gen?.WritesMemory == true);
-        var uSet = AllocSet(_uboLayout);
         bufInfos[0] = UniformInfo(d.VertexUniformSpan);
         bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
-        var writes = stackalloc WriteDescriptorSet[4];
-        // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
-        uint nw = 0;
-        for (int i = 0; i < 4; i++)
-            if (bufInfos[i].Buffer.Handle != _dummyBuffer.Handle || ShaderGenerator.NanDraws)
-                writes[nw++] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
-        if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
-        _statDescWrites += nw;
-        if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
+        var dynOffsets = stackalloc uint[2] { (uint)bufInfos[0].Offset, (uint)bufInfos[1].Offset };
+        var uSet = UniformSet(bufInfos);
 
+        ProfMark(ProfPhase.Uniform);
         // ---- record
         // copySplit: one pass of this loop per piece, each after a new copy of the samples (the rendering ends for it)
         int passes = copySplit ? _fetchPieces.Count : 1;
@@ -845,7 +846,7 @@ public sealed unsafe partial class VulkanRenderer
                 _boundPipeline = pipeline;
             }
             sets[3] = fbSet;
-            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 2, dynOffsets);
             for (int s = 0; s < 16; s++)
                 if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
             if (vs.Bindings.Any(b => b.Binding == 16))
@@ -884,6 +885,7 @@ public sealed unsafe partial class VulkanRenderer
             EndCostQuery(cmd);
             if (singleFetch && !FetchPassMerge) EndSingleFetchPass();
         }
+        ProfMark(ProfPhase.Record);
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         if (CostOn) CostNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
@@ -1013,8 +1015,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
-        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(d.VertexUniforms, d.VertexUniformsOffset + k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
-        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(d.FragmentUniforms, d.FragmentUniformsOffset + k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        byte[] vu = d.VertexUniformSpan.ToArray(), fu = d.FragmentUniformSpan.ToArray();
+        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(vu, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");
         sb.Append($" msaa={(_ms ? ((int)_msSamples).ToString() + "x" : _ss ? "ss2x" : "off")}");
         if (_diagActive is { } capture)
