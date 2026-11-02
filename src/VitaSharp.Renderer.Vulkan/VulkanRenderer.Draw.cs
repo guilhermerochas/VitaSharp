@@ -811,8 +811,7 @@ public sealed unsafe partial class VulkanRenderer
         var bufInfos = stackalloc DescriptorBufferInfo[4];
         bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
         bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs, fs.Gen?.WritesMemory == true);
-        bufInfos[0] = UniformInfo(d.VertexUniformSpan);
-        bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
+        DrawUniformInfos(d, bufInfos);
         var dynOffsets = stackalloc uint[2] { (uint)bufInfos[0].Offset, (uint)bufInfos[1].Offset };
         var uSet = UniformSet(bufInfos);
 

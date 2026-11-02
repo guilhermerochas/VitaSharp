@@ -985,17 +985,17 @@ public sealed class Gxm : HleModule
         cmd.FragmentProgram = fp;
         cmd.State = state;
         // one zero-filled arena slice holds both stages' uniform blocks until the GPU worker executed the draw
-        int vBytes = vp.Info.UniformBytes, fBytes = fp.Info?.UniformBytes ?? 0, vAligned = (vBytes + 15) & ~15;
+        int vBytes = vp.Info.UniformBytes, fBytes = fp.Info?.UniformBytes ?? 0, vAligned = UniformArena.Align(vBytes);
         if (vBytes + fBytes > 0)
         {
             var chunk = cmd.UniformChunk = UniformArena.Rent(vAligned + fBytes, out int off);
-            cmd.VertexUniforms = cmd.FragmentUniforms = chunk.Data;
             cmd.VertexUniformsOffset = off;
             cmd.FragmentUniformsOffset = off + vAligned;
         }
-        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, cmd.VertexUniforms.AsSpan(cmd.VertexUniformsOffset, vBytes));
-        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, cmd.FragmentUniforms.AsSpan(cmd.FragmentUniformsOffset, fBytes)) : 0;
-        if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, cmd.VertexUniforms.AsSpan(cmd.VertexUniformsOffset, vBytes));
+        var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
+        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
+        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes)) : 0;
+        if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);
         cmd.PrimitiveType = (byte)(primType >> 26);

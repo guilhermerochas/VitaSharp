@@ -41,6 +41,20 @@ public sealed class GpuDumpReader : IDisposable
     }
 
     /// <summary>False at the end of the dump.</summary>
+    /// <summary>The draw's uniform blocks go into a <see cref="UniformArena"/> slice, as a live draw's (a renderer binds
+    /// them in place); the slice is given back when the next draw is read.</summary>
+    static void MoveUniformsToArena(DrawCommand d)
+    {
+        int v = d.VertexUniformsLength, f = d.FragmentUniformsLength, va = UniformArena.Align(v);
+        if (v + f == 0) return;
+        byte[] vu = d.VertexUniforms, fu = d.FragmentUniforms;
+        var c = d.UniformChunk = UniformArena.Rent(va + f, out int off);
+        vu.AsSpan(d.VertexUniformsOffset, v).CopyTo(c.Span.Slice(off));
+        fu.AsSpan(d.FragmentUniformsOffset, f).CopyTo(c.Span.Slice(off + va));
+        d.VertexUniformsOffset = off;
+        d.FragmentUniformsOffset = off + va;
+    }
+
     public bool Next()
     {
         while (true)
@@ -73,14 +87,16 @@ public sealed class GpuDumpReader : IDisposable
                 case GpuDumpRecord.Idle:
                     return true;
                 default:
+                    if (kind == GpuDumpRecord.Draw) _draw.ReleaseUniforms();
                     Command = _codec.ReadCommand(kind, _cur, _draw);
+                    if (kind == GpuDumpRecord.Draw) MoveUniformsToArena(_draw);
                     if (kind == GpuDumpRecord.Present) PresentInfo = GpuDumpCodec.ReadPresentInfo(_cur);
                     return true;
             }
         }
     }
 
-    public void Dispose() => _input.Dispose();
+    public void Dispose() { _draw.ReleaseUniforms(); _input.Dispose(); }
 
     /// <summary>Rewrites a dump with another Brotli quality (chunks are re-encoded, records are untouched).
     /// Returns (chunks, raw bytes, seconds spent compressing).</summary>
