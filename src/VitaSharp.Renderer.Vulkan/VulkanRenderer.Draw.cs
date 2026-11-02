@@ -848,7 +848,13 @@ public sealed unsafe partial class VulkanRenderer
                 _boundPipeline = pipeline;
             }
             sets[3] = fbSet;
-            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 2, dynOffsets);
+            // set 0 is bound for every draw (its dynamic offsets); sets 1-3 only from the first one that changed
+            uint setCount = 1;
+            for (uint i = 3; i >= 1; i--)
+                if (!_dyn.SetsBound || sets[i].Handle != _dyn.Sets[(int)i]) { setCount = i + 1; break; }
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
+            for (int i = 1; i < 4; i++) _dyn.Sets[i] = sets[i].Handle;
+            _dyn.SetsBound = true;
             for (int s = 0; s < 16; s++)
                 if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
             if (vs.Bindings.Any(b => b.Binding == 16))
@@ -1008,7 +1014,9 @@ public sealed unsafe partial class VulkanRenderer
     struct DynShadow
     {
         public nint Cmd;
-        public bool Valid, DepthTest, DepthWrite, Stencil, StencilSet, Bias, BiasSet;
+        public bool Valid, DepthTest, DepthWrite, Stencil, StencilSet, Bias, BiasSet, SetsBound;
+        /// <summary>Descriptor sets 1-3 bound by the last draw.</summary>
+        public SetHandles Sets;
         public Viewport Vp;
         public Rect2D Scissor;
         public PrimitiveTopology Topology;
@@ -1018,6 +1026,9 @@ public sealed unsafe partial class VulkanRenderer
         public StencilState Front, Back;
     }
     DynShadow _dyn;
+
+    [System.Runtime.CompilerServices.InlineArray(4)]
+    struct SetHandles { ulong _e; }
 
     static bool SameViewport(in Viewport a, in Viewport b) => a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height;
     static bool SameRect(in Rect2D a, in Rect2D b) => a.Offset.X == b.Offset.X && a.Offset.Y == b.Offset.Y && a.Extent.Width == b.Extent.Width && a.Extent.Height == b.Extent.Height;
