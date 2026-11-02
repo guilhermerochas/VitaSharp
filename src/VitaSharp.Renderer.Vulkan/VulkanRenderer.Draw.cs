@@ -838,6 +838,9 @@ public sealed unsafe partial class VulkanRenderer
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
             BeginCostQuery(cmd, d);
+            // dynamic state set by an earlier draw holds in this command buffer while only draw pipelines were bound
+            // (they all declare the same dynamic state); another pipeline or command buffer starts over
+            if (_boundPipeline.Handle == 0 || cmd.Handle != _dyn.Cmd) _dyn = new DynShadow { Cmd = cmd.Handle };
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -938,7 +941,7 @@ public sealed unsafe partial class VulkanRenderer
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
         if (SceneScale == 2) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
-        _vk.CmdSetViewport(cmd, 0, 1, in vpRect);
+        if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _vk.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
 
         Rect2D scissor;
         if (st.RegionClipMode == 2)
@@ -949,47 +952,77 @@ public sealed unsafe partial class VulkanRenderer
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
         if (SceneScale == 2) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
-        _vk.CmdSetScissor(cmd, 0, 1, in scissor);
+        if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _vk.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
         _vk.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
         // extended dynamic state, unless a driver quirk baked it into the pipeline (VulkanRenderer.StaticState.cs)
         bool staticEds = StaticEds;
+        bool valid = _dyn.Valid;
         if (!staticEds)
         {
-            _vk.CmdSetPrimitiveTopology(cmd, topology);
-            _vk.CmdSetCullMode(cmd, st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None });
-            _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
+            var cull = st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None };
+            if (!valid || topology != _dyn.Topology) { _vk.CmdSetPrimitiveTopology(cmd, topology); _dyn.Topology = topology; }
+            if (!valid || cull != _dyn.Cull) { _vk.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
+            if (!valid) _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
         }
-        _vk.CmdSetLineWidth(cmd, _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1);
+        float lineWidth = _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1;
+        if (!valid || lineWidth != _dyn.LineWidth) { _vk.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
 
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
         if (!staticEds)
         {
-            _vk.CmdSetDepthTestEnable(cmd, depthTest);
-            _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite);
-            _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc);
+            if (!valid || depthTest != _dyn.DepthTest) { _vk.CmdSetDepthTestEnable(cmd, depthTest); _dyn.DepthTest = depthTest; }
+            if (!valid || front.DepthWrite != _dyn.DepthWrite) { _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite); _dyn.DepthWrite = front.DepthWrite; }
+            if (!valid || front.DepthFunc != _dyn.DepthFunc) { _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc); _dyn.DepthFunc = front.DepthFunc; }
         }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
-        if (!staticEds) _vk.CmdSetStencilTestEnable(cmd, stencil);
+        if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _vk.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
         if (stencil)
         {
-            SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds);
-            SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil, !staticEds);
+            if (!valid || !_dyn.StencilSet || !SameStencil(front.Stencil, _dyn.Front)) { SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds); _dyn.Front = front.Stencil; }
+            if (!valid || !_dyn.StencilSet || !SameStencil(back.Stencil, _dyn.Back)) { SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil, !staticEds); _dyn.Back = back.Stencil; }
+            _dyn.StencilSet = true;
         }
+        _dyn.Valid = true;
         bool bias = front.DepthBiasFactor != 0 || front.DepthBiasUnits != 0;
         if (StaticBias)
         {
             // depth bias is enabled in every pipeline: no bias = zero constant and slope (exact)
-            if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
-            else _vk.CmdSetDepthBias(cmd, 0, 0, 0);
+            float bu = bias ? front.DepthBiasUnits : 0, bf = bias ? front.DepthBiasFactor : 0;
+            if (!valid || !_dyn.BiasSet || bu != _dyn.BiasUnits || bf != _dyn.BiasFactor) { _vk.CmdSetDepthBias(cmd, bu, 0, bf); _dyn.BiasUnits = bu; _dyn.BiasFactor = bf; _dyn.BiasSet = true; }
             return;
         }
-        _vk.CmdSetDepthBiasEnable(cmd, bias);
-        if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+        if (!valid || bias != _dyn.Bias) { _vk.CmdSetDepthBiasEnable(cmd, bias); _dyn.Bias = bias; }
+        if (bias && (!valid || !_dyn.BiasSet || front.DepthBiasUnits != _dyn.BiasUnits || front.DepthBiasFactor != _dyn.BiasFactor))
+        {
+            _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+            _dyn.BiasUnits = front.DepthBiasUnits; _dyn.BiasFactor = front.DepthBiasFactor; _dyn.BiasSet = true;
+        }
     }
+
+    /// <summary>The dynamic state last set in <see cref="Cmd"/> by a draw (calls that would set the same value again
+    /// are skipped: a draw set about 15 of them).</summary>
+    struct DynShadow
+    {
+        public nint Cmd;
+        public bool Valid, DepthTest, DepthWrite, Stencil, StencilSet, Bias, BiasSet;
+        public Viewport Vp;
+        public Rect2D Scissor;
+        public PrimitiveTopology Topology;
+        public CullModeFlags Cull;
+        public float LineWidth, BiasUnits, BiasFactor;
+        public byte DepthFunc;
+        public StencilState Front, Back;
+    }
+    DynShadow _dyn;
+
+    static bool SameViewport(in Viewport a, in Viewport b) => a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height;
+    static bool SameRect(in Rect2D a, in Rect2D b) => a.Offset.X == b.Offset.X && a.Offset.Y == b.Offset.Y && a.Extent.Width == b.Extent.Width && a.Extent.Height == b.Extent.Height;
+    static bool SameStencil(in StencilState a, in StencilState b) => a.Func == b.Func && a.StencilFail == b.StencilFail && a.DepthFail == b.DepthFail
+        && a.DepthPass == b.DepthPass && a.CompareMask == b.CompareMask && a.WriteMask == b.WriteMask && a.Ref == b.Ref;
 
     void TraceDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
