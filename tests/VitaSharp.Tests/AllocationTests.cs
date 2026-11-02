@@ -51,8 +51,8 @@ public sealed class AllocationTests
         for (int i = 0; i < 4000; i++)
         {
             var c = UniformArena.Rent(1000, out int off);
-            Assert.All(c.Data.AsSpan(off, 1000).ToArray(), b => Assert.Equal(0, b));
-            c.Data.AsSpan(off, 1000).Fill(0xAB);
+            Assert.All(c.Span.Slice(off, 1000).ToArray(), b => Assert.Equal(0, b));
+            c.Span.Slice(off, 1000).Fill(0xAB);
             chunks.Add((c, off));
         }
         // slices of one chunk never overlap

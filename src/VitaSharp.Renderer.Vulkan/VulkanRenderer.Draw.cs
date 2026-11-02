@@ -29,8 +29,10 @@ public sealed unsafe partial class VulkanRenderer
     {
         // 0/1: vertex/fragment uniform data, 2/3: vertex/fragment mapped memory (large buffers read in place)
         var ssbo = stackalloc DescriptorSetLayoutBinding[5];
-        ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
-        ssbo[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
+        // 0/1 are dynamic: the uniform data of every draw is at its own offset of the upload ring, and one set (per
+        // buffer and data length) serves every draw of the frame (VulkanRenderer.UniformSets.cs)
+        ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBufferDynamic, 1, ShaderStageFlags.VertexBit);
+        ssbo[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBufferDynamic, 1, ShaderStageFlags.FragmentBit);
         ssbo[2] = new DescriptorSetLayoutBinding(2, DescriptorType.StorageBuffer, 1, ShaderStageFlags.VertexBit);
         ssbo[3] = new DescriptorSetLayoutBinding(3, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
         // 4: VITASHARP_DEBUG_NAN=draws only, the NaN draw buffer the instrumented fragment shaders write (NanCheck.cs)
@@ -94,7 +96,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         _statSets++;
         var f = F;
-        var sizes = stackalloc DescriptorPoolSize[3]; // outside the loop (CA2014)
+        var sizes = stackalloc DescriptorPoolSize[4]; // outside the loop (CA2014)
         while (true)
         {
             if (f.DescPoolIndex >= f.DescPools.Count)
@@ -102,7 +104,8 @@ public sealed unsafe partial class VulkanRenderer
                 sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 5 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
                 sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 16384); // two per framebuffer-fetch set
-                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 3, PPoolSizes = sizes };
+                sizes[3] = new DescriptorPoolSize(DescriptorType.StorageBufferDynamic, 2 * 8192);
+                var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 4, PPoolSizes = sizes };
                 _vk.CreateDescriptorPool(_dev, in pci, null, out var pool).Ok("descriptor pool");
                 f.DescPools.Add(pool);
             }
@@ -676,12 +679,14 @@ public sealed unsafe partial class VulkanRenderer
         if (st.RegionClipMode == 1) return; // clip everything
         BeginFrameIfNeeded();
         long stall0 = _frameStallTicks;
+        ProfStart();
 
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
         TraceSnapshot(d);
         if (_traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (_drawRing != null) DrawRingDraw(d, vs, fs);
+        ProfMark(ProfPhase.Shader);
         if (vs.Failed || fs.Failed) return;
 
         // ---- textures (may need to leave the render pass)
@@ -712,6 +717,7 @@ public sealed unsafe partial class VulkanRenderer
         var fbSet = inputFetch ? BuildMsaaInputFetchSet(tw1) : singleFetch ? BuildSingleInputFetchSet()
             : fs.Gen!.UsesFragColor || tw1 ? BuildFramebufferFetchSet(tw1) : _emptyFbSet ??= BuildEmptyFbSet();
 
+        ProfMark(ProfPhase.Texture);
         // ---- pipeline
         bool hasColor = _rt != null;
         var blend = d.FragmentProgram.Blend;
@@ -760,6 +766,7 @@ public sealed unsafe partial class VulkanRenderer
             mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key, singleFetch);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (_frameStallTicks != stall0) NoteDrawStall(d, mask, tw1Key, fs.Gen!.UsesFragColor || tw1, _frameStallTicks - stall0);
+        ProfMark(ProfPhase.Pipeline);
         if (pipeline.Handle == 0) return;
 
         // ---- geometry upload
@@ -799,23 +806,16 @@ public sealed unsafe partial class VulkanRenderer
             voffs[s] = off;
         }
 
+        ProfMark(ProfPhase.Geometry);
         // ---- uniforms
         var bufInfos = stackalloc DescriptorBufferInfo[4];
         bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
         bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs, fs.Gen?.WritesMemory == true);
-        var uSet = AllocSet(_uboLayout);
-        bufInfos[0] = UniformInfo(d.VertexUniformSpan);
-        bufInfos[1] = UniformInfo(d.FragmentUniformSpan);
-        var writes = stackalloc WriteDescriptorSet[4];
-        // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
-        uint nw = 0;
-        for (int i = 0; i < 4; i++)
-            if (bufInfos[i].Buffer.Handle != _dummyBuffer.Handle || ShaderGenerator.NanDraws)
-                writes[nw++] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufInfos[i] };
-        if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
-        _statDescWrites += nw;
-        if (ShaderGenerator.NanDraws) NanBindDrawBuffer(uSet);
+        DrawUniformInfos(d, bufInfos);
+        var dynOffsets = stackalloc uint[2] { (uint)bufInfos[0].Offset, (uint)bufInfos[1].Offset };
+        var uSet = UniformSet(bufInfos);
 
+        ProfMark(ProfPhase.Uniform);
         // ---- record
         // copySplit: one pass of this loop per piece, each after a new copy of the samples (the rendering ends for it)
         int passes = copySplit ? _fetchPieces.Count : 1;
@@ -838,6 +838,9 @@ public sealed unsafe partial class VulkanRenderer
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
             BeginCostQuery(cmd, d);
+            // dynamic state set by an earlier draw holds in this command buffer while only draw pipelines were bound
+            // (they all declare the same dynamic state); another pipeline or command buffer starts over
+            if (_boundPipeline.Handle == 0 || cmd.Handle != _dyn.Cmd) _dyn = new DynShadow { Cmd = cmd.Handle };
             if (_boundPipeline.Handle != pipeline.Handle)
             {
                 _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
@@ -845,7 +848,13 @@ public sealed unsafe partial class VulkanRenderer
                 _boundPipeline = pipeline;
             }
             sets[3] = fbSet;
-            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, 4, sets, 0, null);
+            // set 0 is bound for every draw (its dynamic offsets); sets 1-3 only from the first one that changed
+            uint setCount = 1;
+            for (uint i = 3; i >= 1; i--)
+                if (!_dyn.SetsBound || sets[i].Handle != _dyn.Sets[(int)i]) { setCount = i + 1; break; }
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
+            for (int i = 1; i < 4; i++) _dyn.Sets[i] = sets[i].Handle;
+            _dyn.SetsBound = true;
             for (int s = 0; s < 16; s++)
                 if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
             if (vs.Bindings.Any(b => b.Binding == 16))
@@ -884,6 +893,7 @@ public sealed unsafe partial class VulkanRenderer
             EndCostQuery(cmd);
             if (singleFetch && !FetchPassMerge) EndSingleFetchPass();
         }
+        ProfMark(ProfPhase.Record);
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         if (CostOn) CostNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
@@ -937,7 +947,7 @@ public sealed unsafe partial class VulkanRenderer
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
         if (SceneScale == 2) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
-        _vk.CmdSetViewport(cmd, 0, 1, in vpRect);
+        if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _vk.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
 
         Rect2D scissor;
         if (st.RegionClipMode == 2)
@@ -948,47 +958,82 @@ public sealed unsafe partial class VulkanRenderer
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
         if (SceneScale == 2) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
-        _vk.CmdSetScissor(cmd, 0, 1, in scissor);
+        if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _vk.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
         _vk.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
         // extended dynamic state, unless a driver quirk baked it into the pipeline (VulkanRenderer.StaticState.cs)
         bool staticEds = StaticEds;
+        bool valid = _dyn.Valid;
         if (!staticEds)
         {
-            _vk.CmdSetPrimitiveTopology(cmd, topology);
-            _vk.CmdSetCullMode(cmd, st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None });
-            _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
+            var cull = st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None };
+            if (!valid || topology != _dyn.Topology) { _vk.CmdSetPrimitiveTopology(cmd, topology); _dyn.Topology = topology; }
+            if (!valid || cull != _dyn.Cull) { _vk.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
+            if (!valid) _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
         }
-        _vk.CmdSetLineWidth(cmd, _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1);
+        float lineWidth = _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1;
+        if (!valid || lineWidth != _dyn.LineWidth) { _vk.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
 
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
         if (!staticEds)
         {
-            _vk.CmdSetDepthTestEnable(cmd, depthTest);
-            _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite);
-            _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc);
+            if (!valid || depthTest != _dyn.DepthTest) { _vk.CmdSetDepthTestEnable(cmd, depthTest); _dyn.DepthTest = depthTest; }
+            if (!valid || front.DepthWrite != _dyn.DepthWrite) { _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite); _dyn.DepthWrite = front.DepthWrite; }
+            if (!valid || front.DepthFunc != _dyn.DepthFunc) { _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc); _dyn.DepthFunc = front.DepthFunc; }
         }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
-        if (!staticEds) _vk.CmdSetStencilTestEnable(cmd, stencil);
+        if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _vk.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
         if (stencil)
         {
-            SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds);
-            SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil, !staticEds);
+            if (!valid || !_dyn.StencilSet || !SameStencil(front.Stencil, _dyn.Front)) { SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds); _dyn.Front = front.Stencil; }
+            if (!valid || !_dyn.StencilSet || !SameStencil(back.Stencil, _dyn.Back)) { SetStencil(cmd, StencilFaceFlags.FaceBackBit, back.Stencil, !staticEds); _dyn.Back = back.Stencil; }
+            _dyn.StencilSet = true;
         }
+        _dyn.Valid = true;
         bool bias = front.DepthBiasFactor != 0 || front.DepthBiasUnits != 0;
         if (StaticBias)
         {
             // depth bias is enabled in every pipeline: no bias = zero constant and slope (exact)
-            if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
-            else _vk.CmdSetDepthBias(cmd, 0, 0, 0);
+            float bu = bias ? front.DepthBiasUnits : 0, bf = bias ? front.DepthBiasFactor : 0;
+            if (!valid || !_dyn.BiasSet || bu != _dyn.BiasUnits || bf != _dyn.BiasFactor) { _vk.CmdSetDepthBias(cmd, bu, 0, bf); _dyn.BiasUnits = bu; _dyn.BiasFactor = bf; _dyn.BiasSet = true; }
             return;
         }
-        _vk.CmdSetDepthBiasEnable(cmd, bias);
-        if (bias) _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+        if (!valid || bias != _dyn.Bias) { _vk.CmdSetDepthBiasEnable(cmd, bias); _dyn.Bias = bias; }
+        if (bias && (!valid || !_dyn.BiasSet || front.DepthBiasUnits != _dyn.BiasUnits || front.DepthBiasFactor != _dyn.BiasFactor))
+        {
+            _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+            _dyn.BiasUnits = front.DepthBiasUnits; _dyn.BiasFactor = front.DepthBiasFactor; _dyn.BiasSet = true;
+        }
     }
+
+    /// <summary>The dynamic state last set in <see cref="Cmd"/> by a draw (calls that would set the same value again
+    /// are skipped: a draw set about 15 of them).</summary>
+    struct DynShadow
+    {
+        public nint Cmd;
+        public bool Valid, DepthTest, DepthWrite, Stencil, StencilSet, Bias, BiasSet, SetsBound;
+        /// <summary>Descriptor sets 1-3 bound by the last draw.</summary>
+        public SetHandles Sets;
+        public Viewport Vp;
+        public Rect2D Scissor;
+        public PrimitiveTopology Topology;
+        public CullModeFlags Cull;
+        public float LineWidth, BiasUnits, BiasFactor;
+        public byte DepthFunc;
+        public StencilState Front, Back;
+    }
+    DynShadow _dyn;
+
+    [System.Runtime.CompilerServices.InlineArray(4)]
+    struct SetHandles { ulong _e; }
+
+    static bool SameViewport(in Viewport a, in Viewport b) => a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height;
+    static bool SameRect(in Rect2D a, in Rect2D b) => a.Offset.X == b.Offset.X && a.Offset.Y == b.Offset.Y && a.Extent.Width == b.Extent.Width && a.Extent.Height == b.Extent.Height;
+    static bool SameStencil(in StencilState a, in StencilState b) => a.Func == b.Func && a.StencilFail == b.StencilFail && a.DepthFail == b.DepthFail
+        && a.DepthPass == b.DepthPass && a.CompareMask == b.CompareMask && a.WriteMask == b.WriteMask && a.Ref == b.Ref;
 
     void TraceDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
@@ -1013,8 +1058,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
-        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(d.VertexUniforms, d.VertexUniformsOffset + k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
-        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(d.FragmentUniforms, d.FragmentUniformsOffset + k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        byte[] vu = d.VertexUniformSpan.ToArray(), fu = d.FragmentUniformSpan.ToArray();
+        if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(vu, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
+        if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");
         sb.Append($" msaa={(_ms ? ((int)_msSamples).ToString() + "x" : _ss ? "ss2x" : "off")}");
         if (_diagActive is { } capture)

@@ -155,6 +155,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
         CreateDummies();
+        CreateUniformHeap();
         if (options.Surface != null) CreateSwapchain();
         InitMemory();
     }
@@ -353,7 +354,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     public void Execute(GpuCommand command)
     {
         // out of GPU memory even after eviction (VulkanRenderer.Memory.cs): the command is skipped, not the renderer
-        try { ExecuteCommand(command); }
+        try { if (WorkerProf) ExecuteProfiled(command); else ExecuteCommand(command); }
         catch (VkOutOfMemoryException e) { OnOutOfMemory(command, e); }
     }
 
@@ -1303,6 +1304,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             foreach (var a in f.Deferred) a();
         }
         RunAfterGpu(long.MaxValue);
+        DestroyUniformHeap();
         DestroyRangeCache();
         DestroyPersistentSets();
         DestroyMsaa();

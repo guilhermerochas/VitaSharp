@@ -46,7 +46,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport() + MobileReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport() + MobileReport() + WorkerProfReport();
 
     public string TextureCacheReport()
     {

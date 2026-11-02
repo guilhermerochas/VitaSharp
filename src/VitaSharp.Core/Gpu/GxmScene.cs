@@ -171,8 +171,8 @@ public sealed class DrawCommand : GpuCommand
     public int VertexUniformsOffset, FragmentUniformsOffset;
     public int VertexUniformsLength, FragmentUniformsLength;
     public UniformChunk? UniformChunk;
-    public Span<byte> VertexUniformSpan => VertexUniforms.AsSpan(VertexUniformsOffset, VertexUniformsLength);
-    public Span<byte> FragmentUniformSpan => FragmentUniforms.AsSpan(FragmentUniformsOffset, FragmentUniformsLength);
+    public Span<byte> VertexUniformSpan => UniformChunk is { } c ? c.Span.Slice(VertexUniformsOffset, VertexUniformsLength) : VertexUniforms.AsSpan(VertexUniformsOffset, VertexUniformsLength);
+    public Span<byte> FragmentUniformSpan => UniformChunk is { } c ? c.Span.Slice(FragmentUniformsOffset, FragmentUniformsLength) : FragmentUniforms.AsSpan(FragmentUniformsOffset, FragmentUniformsLength);
 
     /// <summary>Gives the uniform slice back to the arena (GPU worker, after the backend executed the draw).</summary>
     public void ReleaseUniforms()
