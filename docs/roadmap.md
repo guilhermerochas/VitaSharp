@@ -57,6 +57,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Sistema do Vita (shell) não roda no Android (relato do usuário, 01/11/2026; log do celular
+  `20261101_204800_SYSTEM.log`, Redmi Note 14, firmware 3.74 instalado no app): a sessão abre, a GPU apresenta só
+  2 superfícies (0x6043E000 e 0x60240000) e 91 quadros em ~4 s, com apenas 7 shaders e 4 pipelines (no PC o shell
+  chega à tela inicial com bem mais); depois o usuário pausou e saiu. Avisos: `SceNetPsForSyscalls::sceNetSyscall*`
+  (Control, Socket, Ioctl, Close, GetIfList, Sendto, IcmConnect) não implementadas, várias `SceNpCommon`/
+  `SceNpManager` sem nome, `SceMotion::NID_A408BC69`, `SceNetCtl::NID_C61F3E96`, `SceHttp::NID_855D5254`; a thread
+  `SceDbUtilDcnClient` gasta 68 ms de código nativo por quadro. Comparar com o boot do shell no PC (mesmo firmware) para
+  ver onde o Android para (tela preta? qual processo/thread espera o quê) e se é algo do Android (sockets do sistema,
+  caminhos/armazenamento, processos múltiplos, `MediaCodec`, permissões); pedir uma gravação "Gravar tudo" do usuário
+  na tela travada
 - [x] App .NET MAUI com interface declarativa em C# (MauiReactor), seguindo os mockups em `docs/android/` (biblioteca
   e troféus, ajustes, firmware, conta PSN e rede, driver e informações da GPU, Sistema do Vita) (30/10/2026: gera o
   APK, `src/VitaSharp.Android`; ainda não rodou num aparelho nem no emulador)
