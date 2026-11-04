@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class Ngs : HleModule
 {
     const int OK = 0, ERROR = unchecked((int)0x804A0001), INVALID_ARG = unchecked((int)0x804A0002), INVALID_STATE = unchecked((int)0x804A0010),
-        INVALID_HANDLE = unchecked((int)0x804A000C);
+        INVALID_HANDLE = unchecked((int)0x804A000C), PATCH_NOT_AVAIL = unchecked((int)0x804A000E);
     const int AT9_END_OF_DATA = 0, AT9_SWAPPED = 1, AT9_DECODE_ERROR = 3, AT9_LOOPED = 4;
     const int PLAYER_END_OF_DATA = 0, PLAYER_SWAPPED = 1, PLAYER_LOOPED = 2;
 
@@ -400,8 +400,11 @@ public sealed partial class Ngs : HleModule
         if (!_voices.TryGetValue(voice, out var v) || outPatch.Address == 0 || outIndex is < 0 or >= 4) return INVALID_ARG;
         if (sub < 0 || sub >= v.Patches[outIndex].Length) return INVALID_ARG;
         var p = v.Patches[outIndex][sub];
+        // no routing on that output: SCE_NGS_ERROR_PATCH_NOT_AVAIL with a null handle (as in Vita3K). Games test the
+        // result, not the handle: FIFA 13 creates its crowd/commentary voices' routings only when this call fails, and
+        // with OK + 0 those voices were never connected to the mixer
         outPatch.Value = p is { Active: true } ? p.Handle : 0;
-        return OK;
+        return p is { Active: true } ? OK : PATCH_NOT_AVAIL;
     }
 
     /// <summary>Keeps every source voice before its destinations in the processing queue.</summary>
