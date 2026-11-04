@@ -19,7 +19,9 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Targets up to this many pixels are written back (luminance / histogram / small effect buffers).</summary>
     static readonly uint WritebackMaxPixels = uint.TryParse(Environment.GetEnvironmentVariable(EnvVars.WritebackMax), out var wb) ? wb : 512 * 512;
 
-    enum WritebackConvert : byte { None, SwapRb, Half4ToU2F10F10F10, Rgba8ToRgb8 }
+    /// <summary>ReverseBytes / LogicalToBgra: U8U8U8U8 RGBA / BGRA surfaces, whose images hold logical components (see
+    /// <see cref="Formats.LogicalOrderSwizzle"/>), stored in guest byte order (RGBA: A,B,G,R; BGRA: A,R,G,B).</summary>
+    enum WritebackConvert : byte { None, SwapRb, Half4ToU2F10F10F10, Rgba8ToRgb8, ReverseBytes, LogicalToBgra }
 
     sealed class RtWriteback
     {
@@ -43,6 +45,8 @@ public sealed unsafe partial class VulkanRenderer
     static WritebackConvert? WritebackConversion(uint colorFormat, Format hostFormat, int hostBpp, int guestBpp)
     {
         if (hostFormat == Format.B8G8R8A8Unorm) return WritebackConvert.SwapRb;
+        if (hostFormat == Format.R8G8B8A8Unorm && Formats.LogicalOrderSwizzle(colorFormat) is var s && s != 0)
+            return s == 2 ? WritebackConvert.ReverseBytes : WritebackConvert.LogicalToBgra;
         if (hostBpp == guestBpp) return WritebackConvert.None;
         return (colorFormat & 0xF1800000) switch
         {
@@ -218,6 +222,31 @@ public sealed unsafe partial class VulkanRenderer
         F.Writebacks.Add(wb);
     }
 
+    /// <summary>Logical R,G,B,A pixels (a logical-order surface image) to guest bytes: A,B,G,R (RGBA swizzle,
+    /// <paramref name="reverse"/>) or A,R,G,B (BGRA).</summary>
+    internal static void LogicalToMemoryOrder(ReadOnlySpan<byte> src, Span<byte> dst, bool reverse)
+    {
+        for (int i = 0; i + 3 < dst.Length; i += 4)
+        {
+            byte r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
+            dst[i] = a;
+            if (reverse) { dst[i + 1] = b; dst[i + 2] = g; dst[i + 3] = r; }
+            else { dst[i + 1] = r; dst[i + 2] = g; dst[i + 3] = b; }
+        }
+    }
+
+    /// <summary>The inverse of <see cref="LogicalToMemoryOrder"/>: guest bytes of an RGBA/BGRA surface to logical R,G,B,A.</summary>
+    internal static void MemoryToLogicalOrder(ReadOnlySpan<byte> src, Span<byte> dst, bool reverse)
+    {
+        for (int i = 0; i + 3 < dst.Length; i += 4)
+        {
+            byte a = src[i];
+            if (reverse) { dst[i] = src[i + 3]; dst[i + 1] = src[i + 2]; dst[i + 2] = src[i + 1]; }
+            else { dst[i] = src[i + 1]; dst[i + 1] = src[i + 2]; dst[i + 2] = src[i + 3]; }
+            dst[i + 3] = a;
+        }
+    }
+
     /// <summary>Runs after the frame's fence signalled: copies each target's rows into guest memory.</summary>
     void CompleteWritebacks(Frame f)
     {
@@ -244,6 +273,13 @@ public sealed unsafe partial class VulkanRenderer
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
                         FastCopy.Copy(row[..dst.Length], dst);
                         for (int i = 0; i + 3 < dst.Length; i += 4) (dst[i], dst[i + 2]) = (dst[i + 2], dst[i]);
+                        break;
+                    }
+                    case WritebackConvert.ReverseBytes:
+                    case WritebackConvert.LogicalToBgra:
+                    {
+                        var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
+                        LogicalToMemoryOrder(row[..dst.Length], dst, wb.Convert == WritebackConvert.ReverseBytes);
                         break;
                     }
                     case WritebackConvert.Half4ToU2F10F10F10:

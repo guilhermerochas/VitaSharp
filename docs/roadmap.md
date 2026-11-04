@@ -377,7 +377,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gravação de volta de qualquer alvo enquanto houvesse cena aberta. Corrigido (fix/user-bugs-2): a renderização é pausada
   (`PauseRendering`) e o alvo é gravado de volta antes da cópia, como entre cenas. Falta conferir ao vivo numa batalha
   (o replay não reexecuta transferências; o roteiro `Load Game` com o save no slot 0 só chega ao mapa)
-- [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
+- [x] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
   aparecem, mas a área de jogo no centro está toda preta, sem o cenário/blocos da fase (24 desenhos em 3 cenas por
@@ -394,6 +394,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   apresentação (blit cru da imagem) e o resto do caminho contam com o erro oposto. A correção certa é tratar a imagem
   de superfícies RGBA/BGRA de forma consistente em todos os pontos (amostragem, apresentação, writeback, regiões, cópias),
   ou gravar na ordem da memória; patch do experimento em `scratchpad/bugs2_gunvolt_swizzle.patch`
+  Corrigido (04/11/2026, fix/user-bugs-3): as imagens de superfícies U8U8U8U8 RGBA/BGRA continuam em ordem lógica
+  (o blending precisa do alfa no canal A), e todos os consumidores passaram a vê-las na ordem da memória: amostragem
+  (`RtSwizzle` compõe o swizzle da textura com `Formats.SurfaceMemoryOrder`, também nas regiões e cadeias de mips),
+  gravação de volta na memória (`WritebackConvert.ReverseBytes`/`LogicalToBgra`), recarga da memória
+  (`UploadSurfaceFromGuest`) e apresentação (o framebuffer RGBA 480x272 do Gunvolt passa por uma cópia em ordem de
+  memória, `VulkanRenderer.PresentOrder.cs`, antes do blit e do dump do quadro). A fase do "How to play" aparece com
+  as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
+  reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
+  um framebuffer da CPU
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
