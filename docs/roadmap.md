@@ -309,7 +309,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   thread `main` espera no `mutex Render 1`; a thread `Display Engine` fica rodando sem parar (pc 0x8102F2A0, lr
   0x00002E42, que parece inválido) logo depois de um `sceGxmWaitEvent(1, 0x2CC7, 0x1021, 0)` — provavelmente ela
   segura o mutex e fica em loop esperando um evento/notificação da GPU que o emulador não entrega (ou o lr
-  quebrado indica um retorno errado do HLE). Ver o que o `sceGxmWaitEvent` espera e o que a Display Engine lê no loop
+  quebrado indica um retorno errado do HLE). Ver o que o `sceGxmWaitEvent` espera e o que a Display Engine lê no loop.
+  Provavelmente corrigido (04/11/2026, fix/user-bugs, falta o usuário confirmar jogando): o `sceGxmWaitEvent` do
+  `libgxm_es4` é um `sceGpuSignalWait` de até 100 ms e o HLE voltava na hora, então a Display Engine girava sem
+  parar segurando o `Render 1`; agora dorme até uma notificação da GPU. Duas sessões de 8000 quadros (a 60 fps, logos,
+  aviso de dificuldade e a tela do título) passaram do quadro 4116 sem watchdog; no fim a Display Engine espera no
+  seu condvar
 - [ ] God Wars: Future Past (PCSB01073; no Vita3K trava no carregamento): o campo de batalha 3D não aparece, só o HUD
   sobre preto (31/10/2026, main 13ca113, captura F10 `diagnostics\PCSB01073_20261031_191141`, ~30 fps, 134 desenhos em
   6 cenas). O jogo (Unity, IL2CPP) desenha o 3D numa superfície fora da tela em 0x61CFF8E0 (960x544, endereço sem
