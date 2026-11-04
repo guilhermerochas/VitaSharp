@@ -456,6 +456,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
   a escreveria, e comparar uma rodada que passa com uma que para
 
+- [ ] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
+  principalmente do Messi, aparecem erradas (relato do usuário, 04/11/2026; captura F10
+  `diagnostics\PCSE00093_20261104_145125` e dump de GPU `gpudumps\PCSE00093_20261104_145113.vsgd`). Conferir no dump
+  quais texturas e formatos o corpo/rosto/uniforme usam e comparar com o esperado; ver se é o mesmo problema de ordem
+  dos canais RGBA/BGRA das superfícies do Gal Gunvolt, um formato/layout de textura (swizzle, compressão) ou o
+  conteúdo de uma superfície renderizada reaproveitada como textura
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
