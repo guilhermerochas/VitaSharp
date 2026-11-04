@@ -496,7 +496,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
   a escreveria, e comparar uma rodada que passa com uma que para
 
-- [ ] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
+- [x] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
   principalmente do Messi, aparecem erradas (relato do usuário, 04/11/2026; captura F10
   `diagnostics\PCSE00093_20261104_145125` e dump de GPU `gpudumps\PCSE00093_20261104_145113.vsgd`). Conferir no dump
   quais texturas e formatos o corpo/rosto/uniforme usam e comparar com o esperado; ver se é o mesmo problema de ordem
@@ -509,7 +509,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `TextureLayout.CubeFaceStride` empacotava todo cubo de um nível (regra criada para os cubos 32x32 do Unit 13 e do
   Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
   dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
-  diferença; falta conferir no jogo
+  diferença. Confirmado no jogo pelo usuário (04/11/2026): os uniformes estão certos
 - [x] Desktop: F11 entra em tela cheia mas não volta para a janela (relato do usuário, 04/11/2026, de novo depois da
   correção que restaura tamanho e posição em `WindowHost.ToggleFullscreen`). Corrigido (fix/system-apps-4): o modo é
   guardado no `WindowHost` (não se lê mais o `WindowState` do Silk.NET), a saída da tela cheia chama o GLFW direto
