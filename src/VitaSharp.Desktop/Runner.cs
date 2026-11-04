@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using VitaSharp.Core;
 using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle;
@@ -242,7 +242,7 @@ public static class Runner
         EmulationPause.Changed += OnPauseChanged;
         window.PauseToggled += () => EmulationPause.Toggle("pause key");
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
-        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag);
+        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
         window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
 
         window.Loaded += () =>
@@ -276,14 +276,16 @@ public static class Runner
         return 0;
     }
 
-    /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures.</summary>
-    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag)
+    /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
+    /// F11 toggles fullscreen (window runs).</summary>
+    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null)
     {
         if (script.TakeHostKeys() is not { } keys) return;
         foreach (var k in keys)
         {
             if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
             else if (k == "F10") diag.Capture("--input F10");
+            else if (k == "F11") window?.ToggleFullscreen();
         }
     }
 
@@ -381,6 +383,11 @@ public static class Runner
             VitaSharp.Core.Util.IoTiming.BytesPerSecond = ioMBps * 1e6; // 0 = instant reads
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
         if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
+        // --nav=<file>: screen-driven navigation script (NavScript), shots in --nav-out (default <dump dir>/nav)
+        NavScript? nav = Opt(options, "--nav") is { } navFile
+            ? new NavScript(navFile, options.Contains("--nav-live"), Opt(options, "--nav-out") ?? Path.Combine(dumpDir ?? Program.DataRoot, "nav"), ro)
+            : null;
+        if (nav != null) emu.Host.Input = nav;
         if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device")); // real audio device, as in the window mode
         if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
         if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
@@ -418,9 +425,10 @@ public static class Runner
         bool profileHle = options.Contains("--profile-hle");
         Sampler? sampler = options.Contains("--profile") || profileHle || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0, profileHle) : null;
         if (Opt(options, "--seconds") == null && frameLimit > 0) seconds = 1800; // frames decide; seconds is a safety timeout
+        if (Opt(options, "--seconds") == null && nav != null) seconds = 3600; // the script decides (quit)
         long fpsFrames = 0; double fpsAt = 0;
         var allocMarks = new List<AllocMark>();
-        while (!fatal.Wait(50) && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
+        while (!fatal.Wait(50) && nav?.Quit != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
             // scripted pause / F10 key steps (key@f300:P, key@f300+5:P): the guest polls no input while paused, so here
             if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag);

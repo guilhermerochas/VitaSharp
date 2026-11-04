@@ -425,6 +425,7 @@ public static class Program
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (F8 in the window starts/stops one)");
+        Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");
