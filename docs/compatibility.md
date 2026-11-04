@@ -59,7 +59,7 @@ point a scenario reaches is not the end of the game.
 | God of War Collection | PCSA00126 | In‑game | Combat, cutscenes and audio in God of War I and II; on Mali phones since 31/10/2026 (misaligned vertex attributes) | `gow_game` |
 | Gravity Rush | PCSF00024 | In‑game | Opening and first gameplay; a tap on the "Tap the Apple" title does not always advance | `gr_boot` |
 | Invizimals: The Resistance | PCSA00552 | Menus | Title and main menu; uses the webcam and motion sensors | `inv_boot` |
-| Jak and Daxter Collection | PCSA00080 | Menus | Logos, opening movie and the collection menu at 30 fps; starting Jak 1 execs `Jak1.self` (not checked further) | — |
+| Jak and Daxter Collection | PCSA00080 | Menus | Logos, opening movie and the collection menu at 30 fps; starting Jak 1 execs `Jak1.self` (not checked further); the menu's animated preview strip is garbled (MJPEG decode one frame ahead of the render thread, see the roadmap) | — |
 | Killzone: Mercenary | PCSC00045 | In‑game | Campaign at ~30 fps; open issues in the [roadmap](roadmap.md) (muzzle flash brightness, slowdowns in some areas) | `kzl_walk3`, `kz_skin` |
 | Knightin'+ | PCSE01444 | Menus | Title, save select, world map | `knightin_boot` |
 | LittleBigPlanet PS Vita | PCSA00017 | In‑game | Notebook intro with Sackboy walking | `lbp_boot` |

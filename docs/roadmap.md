@@ -284,6 +284,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   provavelmente o quadro do vídeo de prévia (o SceMp4/decoder passou a funcionar nesse jogo há pouco, e o decoder agora
   completa as linhas até múltiplo de 16 por causa do Shinobido 2): conferir largura/altura/pitch do quadro decodificado
   contra a textura YUV que o jogo amostra
+  Achados (04/11/2026, fix/user-bugs-3): não é o vídeo nem o preenchimento até múltiplo de 16 do Avcdec (o filme de
+  fundo é 960x544 RGBA e sai certo). A faixa é uma animação MJPEG: a cada quadro a `main` decodifica com
+  `sceJpegDecodeMJpeg` um JPEG de tamanho diferente (192..336 x 512..544, recortado no Jak) no mesmo buffer
+  0x63FBC400 e manda uma mensagem (msgpipe) para a `F3DPlaybackThread`, que monta a textura linear com o tamanho
+  que veio na mensagem. Aqui a `main` fica uma mensagem à frente: decodifica o JPEG N+1 antes de a thread de render
+  enviar o desenho do quadro N (o `sceGxmWaitEvent` da `main` acorda com a conclusão da cena anterior da GPU, que
+  chega depois de ela já ter mandado a mensagem N). Na hora do upload, 215 texturas tinham o tamanho de um quadro e
+  o conteúdo do seguinte (passo errado = listras). O dump F8 do usuário reproduz CERTO no `replay-gpu` (o gravador
+  pegou o conteúdo coerente), então é só temporização ao vivo. Testado sem efeito: esperar a GPU antes do decode,
+  6 ms de latência no decode, `VITASHARP_TEXDIRTY=0`, e o `sceGxmWaitEvent` esperando a GPU esvaziar antes do sinal
+  (a semântica do `libgxm_es4` já é "acorda no próximo sinal da GPU", ignorando os argumentos). No Vita a thread de
+  render está parada no `sceKernelReceiveMsgPipe` quando a `main` envia, e a cena dela termina antes do próximo
+  decode. Próximo passo: um modelo de tempo da thread de render/GPU (latência do `sceGxmFinish`/fila de display) ou
+  atrasar a saída do decodificador até a GPU consumir o que já foi enviado — mudança de temporização, não um ajuste local
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
