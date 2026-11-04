@@ -151,9 +151,18 @@ public static class Program
                 // loads at run time), each printed with its base so addresses like ScePaf+1E011E can be found
                 foreach (var mod in args.FirstOrDefault(a => a.StartsWith("--load="))?["--load=".Length..].Split(',') ?? [])
                     Console.WriteLine($"{mod}: base 0x{emu.LoadModule(mod).Segments.Values.Min(s => s.Address):X8}");
+                // --raw=<file>: write COUNT bytes from ADDR of the loaded image instead (for an external disassembler)
+                var rawOut = args.FirstOrDefault(a => a.StartsWith("--raw="))?["--raw=".Length..];
                 args = args.Where(a => !a.StartsWith("--")).ToArray();
                 uint addr = Convert.ToUInt32(args[2], 16) & ~1u;
                 int count = args.Length > 3 ? int.Parse(args[3]) : 40;
+                if (rawOut != null)
+                {
+                    var bytes = new byte[count];
+                    for (int i = 0; i < count; i++) bytes[i] = VitaSharp.Core.Memory.GuestMemory.Read<byte>(addr + (uint)i);
+                    File.WriteAllBytes(rawOut, bytes);
+                    return 0;
+                }
                 for (int i = 0; i < count; i++)
                 {
                     uint hw = VitaSharp.Core.Memory.GuestMemory.Read<ushort>(addr);
