@@ -252,7 +252,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `SceCameraCoreCameraDeviceThread` espera em `condvar SceCameraCoreCameraDeviceLoopStatusCond` e a outra está Dormant.
   Funções que faltam no caminho: `ScePhotoExport::NID_16B1028E`, `SceLibLocation::NID_EFC9BD25` / `NID_2311B24A`,
   `sceAppMgrMmsMount`, `_vshAppMgrRegisterPath`, `sceKernelCheckModelCapability`, e um `IO: unmapped path ''` logo
-  antes de criar as threads da câmera
+  antes de criar as threads da câmera. (04/11/2026: não deu para reproduzir — a instalação atual do firmware 3.74
+  em `%APPDATA%\VitaSharp\fs` não tem `vs0:app/NPXS10007`; precisa reinstalar/conferir o firmware e rodar com
+  `--camera=<webcam>`)
 
 ## Código
 
