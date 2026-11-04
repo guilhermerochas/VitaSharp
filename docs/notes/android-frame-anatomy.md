@@ -89,3 +89,43 @@ Display median / 1% low / mean frame ms / max frame ms; 30 s per run, interleave
    copies, and the memcpy/memset inside them. Then the JIT code (23.5 ms).
 3. **The GPU worker** (27–42 ms) comes next once the game thread is faster. Its texture-set build was cut in
    a73acbc; Silk.NET overhead is 4–5%.
+
+## Phone run, 4 November 2026 (evening): F1 HLE switches, game mode, Uncharted s4
+
+Display median / 1% low / mean frame ms from SurfaceFlinger, 30 s per run from the race grid (F1) or after the journal
+tap (Uncharted). Game-thread ms from /proc; HLE calls per frame from the `PERF hle calls` deltas (top 12).
+
+**F1 2011 race, perf B's switches** (main + perf B's tree, interleaved, 3 rounds; one base run was lost to a
+notification over the Quick Race screen):
+
+| Variant | Median fps | 1% low | Mean ms | Game thread ms/frame | GPU ms | HLE calls/frame |
+|---|---|---|---|---|---|---|
+| base (GUEST_CODE=0, QUEUE_LIGHT=0), 2 runs | 15/15 | 4.7 | 70.2 | 47.3 | 19.5 | 18,100 |
+| GUEST_CODE only | 20/20/15 | 7.2 | 55.1 | 37.6 | 16.7 | 3,400 |
+| QUEUE_LIGHT only | 20/15/15 | 5.8 | 62.5 | 44.6 | 19.2 | 16,500 |
+| both (the default) | 20/20/20 | 6.7 | 55.8 | 37.6 | 16.8 | 3,350 |
+
+The libgxm setters as guest code are the gain (about 10 ms of game thread per frame, mean frame 70 -> 55 ms);
+QUEUE_LIGHT adds little on its own and nothing on top. On main 1251dab one interleaved pair confirmed it before the
+phone was released (base 70.1 ms, 47.6 ms game thread, 17,700 HLE calls; both 57.7 ms, 38.5 ms game thread).
+
+The F1 navigation works now: the old F1 APK predated `VITASHARP_ANDROID_INPUT_LIVE` (its presses were never read).
+The script waits until the live file is consumed before each press and picks the press from the red highlight bar
+(profile list, main menu, Quick Race "Confirm"); the intros take cross+start.
+
+**Game mode.** `cmd game mode performance io.github.vitasharp` is accepted now (game_mode_config.xml). On Uncharted
+gameplay (3 rounds interleaved) it changes nothing measurable: standard 20 fps median, 45.5 ms mean, 1% low 10.0, GPU
+39.8 ms/frame; performance 20 fps, 46.4 ms, 9.3, 39.8 ms. The A76 clocks read 1.3-1.5 GHz in both modes. MIUI's
+game service does not raise the clocks for it.
+
+**Uncharted s4: the G-buffer reinterpretation is not its cost.** A measurement switch that refreshed the two
+1440x408 reinterpreted views only once (instead of the render target -> CDRAM mirror -> image copies every frame)
+left s4 at 17.8 ms vs 17.9 ms (uc_game bench, 4 rounds x 3 reps). A direct image -> image path (compute shader: an
+R32G32_UINT view of the surface into an R32_UINT storage view of each alias; pixel-identical on the ucg dump, 37/37
+frames) moved about 2 ms from s4 into s3 and left the frame at 42.2 vs 42.7 ms. Both were reverted. s4's
+non-fragment time is elsewhere (its vertex work, or the read-only depth fetch pass itself).
+
+**Save states on the phone** (main 1c0e516, scripted `savestate@T:1` / `loadstate@T:1` steps): Knightin'+ save
+select, Uncharted gameplay and the F1 race all came back to the saved point with working input and holding fps over
+60 s (Knightin'+ 30 fps locked; Uncharted 30 median; F1 30 median, 27 mean). Game stopped for 542/543/566 ms per save
+and 1011/933/968 ms per load (Uncharted/Knightin'+/F1).

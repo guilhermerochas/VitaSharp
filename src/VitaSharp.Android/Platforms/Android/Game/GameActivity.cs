@@ -140,7 +140,12 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         string? livePath = System.Environment.GetEnvironmentVariable(EnvVars.AndroidInputLive) is { Length: > 0 } lp ? lp : null;
         if (script != null || livePath != null)
         {
-            try { _input.Script = new ScriptedPad(script ?? "") { LivePath = livePath }; Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
+            try
+            {
+                _input.Script = new ScriptedPad(script ?? "") { LivePath = livePath };
+                _input.Script.StateRequested += (save, slot) => RunOnUiThread(() => ScriptedState(save, slot));
+                Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps");
+            }
             catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
         }
         _sensors = new GameSensors(this); // SceMotion from the phone's sensors, SceCamera from its cameras
