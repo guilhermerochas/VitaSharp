@@ -93,7 +93,7 @@ public sealed class CommonDialogState
 /// dialog asks the front-end's text entry when there is one (<see cref="HostServices.ImeDialog"/>), else it answers at
 /// once with --ime-text or the initial text.
 /// </summary>
-public sealed class CommonDialog : HleModule
+public sealed partial class CommonDialog : HleModule
 {
     const int StatusNone = CommonDialogState.StatusNone, StatusRunning = CommonDialogState.StatusRunning, StatusFinished = CommonDialogState.StatusFinished;
     const int ResultOk = CommonDialogState.ResultOk, ResultUserCanceled = CommonDialogState.ResultUserCanceled, ResultAborted = CommonDialogState.ResultAborted;

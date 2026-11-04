@@ -51,7 +51,7 @@ public static class VBlank
     public static long WaitNext() => WaitFor(Count + 1);
 }
 
-public sealed class Display : HleModule
+public sealed partial class Display : HleModule
 {
     const int ERR_INVALID_VALUE = unchecked((int)0x80290001), ERR_INVALID_ADDR = unchecked((int)0x80290002);
 
@@ -260,7 +260,7 @@ public sealed class Display : HleModule
     }
 }
 
-public sealed class Ctrl : HleModule
+public sealed partial class Ctrl : HleModule
 {
     uint _samplingMode;
     long _lastRead;
@@ -374,7 +374,7 @@ public sealed class Ctrl : HleModule
     const int ERR_INVALID_ARG = unchecked((int)0x80340001);
 
     /// <summary>SceCtrlRapidFireRule (0x18): Mask, Trigger, Target, Delay, Make, Break (u32 each).</summary>
-    sealed class RapidFireRule
+    sealed partial class RapidFireRule
     {
         public uint Mask, Trigger, Target, Delay, Make, Break;
         /// <summary>Vblank at which the trigger was first seen satisfied (-1 = not active).</summary>
@@ -476,7 +476,7 @@ public sealed class Hid : HleModule
     int sceHidRead(uint handle, uint reports, int nReports) => 0;
 }
 
-public sealed class Touch : HleModule
+public sealed partial class Touch : HleModule
 {
     const int ERR_INVALID_ARG = unchecked((int)0x80350001);
     const int MaxBuffers = 64;

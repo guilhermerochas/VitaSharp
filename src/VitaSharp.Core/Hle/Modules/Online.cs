@@ -59,7 +59,7 @@ public sealed partial class Net : HleModule
     // PSN account is signed in (a LAN with an IP address, see PsnAccount) and DISCONNECTED otherwise (cable unplugged,
     // the same event Vita3K sends); ad hoc callbacks always get DISCONNECTED (no ad hoc network).
     internal const int NETCTL_EVENT_DISCONNECTED = 1, NETCTL_EVENT_IPOBTAINED = 3;
-    sealed class NetCallback { public uint Func, Arg; public bool Notified; }
+    sealed partial class NetCallback { public uint Func, Arg; public bool Notified; }
     readonly Dictionary<int, NetCallback> _inetCallbacks = new(), _adhocCallbacks = new();
     int _nextCid;
 

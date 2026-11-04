@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// ux0:user/00/trophy/&lt;NPCOMMID&gt;.json (<see cref="TrophyUnlocks"/>, read by the launcher's trophy list) and announced
 /// through <see cref="TrophyNotifications"/> (the emulator window shows them).
 /// </summary>
-public sealed class NpTrophy : HleModule
+public sealed partial class NpTrophy : HleModule
 {
     const int ERR_NOT_INITIALIZED = unchecked((int)0x80551601), ERR_INVALID_ARGUMENT = unchecked((int)0x80551604),
         ERR_INSUFFICIENT_BUFFER = unchecked((int)0x80551605), ERR_INVALID_HANDLE = unchecked((int)0x80551608),

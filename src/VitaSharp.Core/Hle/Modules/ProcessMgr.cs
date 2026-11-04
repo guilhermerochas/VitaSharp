@@ -5,7 +5,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceProcessmgr, libc time hooks, module manager, misc process services and SceClib.</summary>
-public sealed class ProcessMgr : HleModule
+public sealed partial class ProcessMgr : HleModule
 {
     uint _stackChkGuard;
 

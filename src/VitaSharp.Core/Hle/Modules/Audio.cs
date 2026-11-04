@@ -7,7 +7,7 @@ using VitaSharp.Core.Memory;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceAudioOut: ports feed host audio streams; Output() blocks to pace the guest like the real hardware.</summary>
-public sealed class Audio : HleModule
+public sealed partial class Audio : HleModule
 {
     const int ERR_INVALID_PORT = unchecked((int)0x80260003), ERR_INVALID_POINTER = unchecked((int)0x80260004),
         ERR_PORT_FULL = unchecked((int)0x80260005), ERR_INVALID_SIZE = unchecked((int)0x80260006), ERR_INVALID_FORMAT = unchecked((int)0x80260007),
@@ -268,7 +268,7 @@ public sealed class Audio : HleModule
         IN_ERR_NOT_OPENED = unchecked((int)0x80260109), IN_ERR_INVALID_PARAMETER = unchecked((int)0x8026010B);
     const int InPortId = 0x80;
 
-    sealed class InPort
+    sealed partial class InPort
     {
         public int Type, Grain, Freq;
         public short MicGain = 0x1060;

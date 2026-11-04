@@ -10,7 +10,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceGxm: GPU command recording. Draws become <see cref="GpuCommand"/>s executed by the GPU worker.</summary>
-public sealed class Gxm : HleModule
+public sealed partial class Gxm : HleModule
 {
     const int ERR_UNINITIALIZED = unchecked((int)0x805B0000), ERR_ALREADY_INITIALIZED = unchecked((int)0x805B0001),
         ERR_INVALID_VALUE = unchecked((int)0x805B0003), ERR_INVALID_POINTER = unchecked((int)0x805B0004),
