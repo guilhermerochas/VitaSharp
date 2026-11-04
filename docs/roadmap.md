@@ -348,7 +348,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   parar segurando o `Render 1`; agora dorme até uma notificação da GPU. Duas sessões de 8000 quadros (a 60 fps, logos,
   aviso de dificuldade e a tela do título) passaram do quadro 4116 sem watchdog; no fim a Display Engine espera no
   seu condvar
-- [ ] God Wars: Future Past (PCSB01073; no Vita3K trava no carregamento): o campo de batalha 3D não aparece, só o HUD
+- [x] God Wars: Future Past (PCSB01073; no Vita3K trava no carregamento): o campo de batalha 3D não aparece, só o HUD
   sobre preto (31/10/2026, main 13ca113, captura F10 `diagnostics\PCSB01073_20261031_191141`, ~30 fps, 134 desenhos em
   6 cenas). O jogo (Unity, IL2CPP) desenha o 3D numa superfície fora da tela em 0x61CFF8E0 (960x544, endereço sem
   alinhamento de página), reduz para 240x136 e 120x68 (brilho) e depois compõe no framebuffer 0x60400000. O log
@@ -387,6 +387,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gravação de volta de qualquer alvo enquanto houvesse cena aberta. Corrigido (fix/user-bugs-2): a renderização é pausada
   (`PauseRendering`) e o alvo é gravado de volta antes da cópia, como entre cenas. Falta conferir ao vivo numa batalha
   (o replay não reexecuta transferências; o roteiro `Load Game` com o save no slot 0 só chega ao mapa)
+  Confirmado no jogo pelo usuário (04/11/2026): a batalha 3D aparece
 - [x] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
