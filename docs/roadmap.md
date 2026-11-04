@@ -510,11 +510,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
   dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
   diferença; falta conferir no jogo
-- [ ] Desktop: F11 entra em tela cheia mas não volta para a janela (relato do usuário, 04/11/2026, de novo depois da
-  correção que restaura tamanho e posição em `WindowHost.ToggleFullscreen`). O Silk.NET (GLFW) pode deixar a janela
-  presa ao monitor ao trocar `WindowState` de Fullscreen para Normal; conferir com o GLFW direto
-  (`glfwSetWindowMonitor(janela, NULL, x, y, w, h, GLFW_DONT_CARE)`), a recriação da swapchain do Vulkan e a tela
-  cheia exclusiva do driver
+- [x] Desktop: F11 entra em tela cheia mas não volta para a janela (relato do usuário, 04/11/2026, de novo depois da
+  correção que restaura tamanho e posição em `WindowHost.ToggleFullscreen`). Corrigido (fix/system-apps-4): o modo é
+  guardado no `WindowHost` (não se lê mais o `WindowState` do Silk.NET), a saída da tela cheia chama o GLFW direto
+  (`glfwSetWindowMonitor(janela, NULL, x, y, w, h, GLFW_DONT_CARE)`) e a repetição de tecla não alterna duas vezes.
+  Conferido com Sonic Mania e `--input=key@f200:F11,...` (F11 agora é tecla de host nos scripts): aberto em janela e
+  com `--fullscreen`, quatro alternâncias cada, o log mostra "monitor attached: False" ao sair e a swapchain volta a
+  960x544 a 60 fps
 - [ ] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump

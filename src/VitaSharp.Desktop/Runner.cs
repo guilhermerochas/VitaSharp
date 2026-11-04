@@ -242,7 +242,7 @@ public static class Runner
         EmulationPause.Changed += OnPauseChanged;
         window.PauseToggled += () => EmulationPause.Toggle("pause key");
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
-        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag);
+        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
         window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
 
         window.Loaded += () =>
@@ -276,14 +276,16 @@ public static class Runner
         return 0;
     }
 
-    /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures.</summary>
-    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag)
+    /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
+    /// F11 toggles fullscreen (window runs).</summary>
+    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null)
     {
         if (script.TakeHostKeys() is not { } keys) return;
         foreach (var k in keys)
         {
             if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
             else if (k == "F10") diag.Capture("--input F10");
+            else if (k == "F11") window?.ToggleFullscreen();
         }
     }
 
