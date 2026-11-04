@@ -17,7 +17,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// struct. Approximate: anti-aliasing (no hinting), the embolden/skew units, GetFontInfo's maxima, the vertical
 /// image origin and the shared-memory default fonts (opened from the same files).
 /// </summary>
-public sealed class Pvf : HleModule
+public sealed partial class Pvf : HleModule
 {
     internal const int ERR_NOMEMORY = unchecked((int)0x80460001), ERR_LIBID = unchecked((int)0x80460002),
         ERR_ARG = unchecked((int)0x80460003), ERR_NOFILE = unchecked((int)0x80460004), ERR_FILEOPEN = unchecked((int)0x80460005),

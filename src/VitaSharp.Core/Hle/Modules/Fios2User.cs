@@ -6,7 +6,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceFios2User: process path overlays used by the (LLE) libfios2 and applied to every sceIo path.</summary>
-public sealed class Fios2User : HleModule
+public sealed partial class Fios2User : HleModule
 {
     sealed record Overlay(int Id, byte Type, byte Order, string Dst, string Src);
 

@@ -4,7 +4,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceNpSignaling (P2P NAT traversal): contexts and options work locally, no peer ever connects.</summary>
-public sealed class NpSignaling : HleModule
+public sealed partial class NpSignaling : HleModule
 {
     const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
@@ -71,7 +71,7 @@ public sealed class NpSignaling : HleModule
 
 /// <summary>SceNpWebApi (PSN REST client): local handles/requests/filters work, sending fails while signed out and push
 /// callbacks never fire.</summary>
-public sealed class NpWebApi : HleModule
+public sealed partial class NpWebApi : HleModule
 {
     const int ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
@@ -176,7 +176,7 @@ public sealed class NpWebApi : HleModule
 
 /// <summary>SceNpWebApiCommonDialog: invitation and game custom data dialogs. Without an account they finish at once
 /// with SCE_COMMON_DIALOG_RESULT_ABORTED (only the leading result field is written: the layout is unconfirmed).</summary>
-public sealed class NpWebApiCommonDialog : HleModule
+public sealed partial class NpWebApiCommonDialog : HleModule
 {
     const int ERR_PARAM = unchecked((int)0x80020401), ERR_BUSY = unchecked((int)0x80020404);
     const int StatusNone = 0, StatusFinished = 2, ResultAborted = 2;
@@ -212,7 +212,7 @@ public sealed class NpWebApiCommonDialog : HleModule
 
 /// <summary>SceNpCommerce2 (in-game PS Store): contexts and requests are local; every *Start fails while signed out,
 /// so no result buffer ever exists and the parsers only reject their input.</summary>
-public sealed class NpCommerce2 : HleModule
+public sealed partial class NpCommerce2 : HleModule
 {
     const int ERR_NOT_INITIALIZED = NpManager.ERR_NOT_INITIALIZED, ERR_INVALID_ARGUMENT = NpManager.ERR_INVALID_ARGUMENT;
 
@@ -307,7 +307,7 @@ public sealed class NpCommerce2 : HleModule
 }
 
 /// <summary>SceNpDrmPackage: the running title was installed from a package.</summary>
-public sealed class NpDrmPackage : HleModule
+public sealed partial class NpDrmPackage : HleModule
 {
     [Hle] int sceNpDrmPackageIsGameExist() => 1;
 }

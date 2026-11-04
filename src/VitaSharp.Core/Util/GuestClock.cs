@@ -7,7 +7,7 @@ namespace VitaSharp.Core.Util;
 /// waits are skipped by moving the clock forward to the deadline instead of sleeping, so games still see one
 /// vblank period per frame while running as fast as the host allows (used by automated tests).
 /// </summary>
-public static class GuestClock
+public static partial class GuestClock
 {
     static readonly long Start = Stopwatch.GetTimestamp();
     static long _offset; // Stopwatch ticks added to real elapsed time

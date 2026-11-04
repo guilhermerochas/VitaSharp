@@ -183,7 +183,7 @@ public static class SceError
 }
 
 /// <summary>UID table shared by every kernel object kind (and by every process: <see cref="VitaSystem.Objects"/>).</summary>
-public sealed class ObjectTable
+public sealed partial class ObjectTable
 {
     readonly ConcurrentDictionary<int, KernelObject> _objects = new();
     int _next = 0x4001_0001;

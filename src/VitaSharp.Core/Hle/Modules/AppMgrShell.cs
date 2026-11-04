@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// os0:kd/bootimage.skprx): SceAppMgrAppStatus is 0x80 bytes filled from the kernel's application entry, a shell
 /// event is 0x40 bytes with its type first.
 /// </summary>
-public sealed class AppMgrShell : HleModule
+public sealed partial class AppMgrShell : HleModule
 {
     const int ERR_NOT_FOUND = unchecked((int)0x80802012), ERR_NULL = unchecked((int)0x80802016),
         ERR_NO_EVENT = unchecked((int)0x80802013), ERR_NAME = unchecked((int)0x8080201C);

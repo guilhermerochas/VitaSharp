@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// triggered here; the registrations are kept (and persisted in &lt;FsRoot&gt;/ux0/vitasharp/trigger/&lt;TITLEID&gt;.json)
 /// so the queries return what the app registered. Structures from psp2/triggerutil.h.
 /// </summary>
-public sealed class TriggerUtil : HleModule
+public sealed partial class TriggerUtil : HleModule
 {
     internal const int ERR_BUSY = unchecked((int)0x80103600), ERR_NOT_FOUND_USER = unchecked((int)0x80103611),
         ERR_NOT_FOUND_SYSTEM = unchecked((int)0x80103614), ERR_NOT_REGISTERED = unchecked((int)0x80103621),

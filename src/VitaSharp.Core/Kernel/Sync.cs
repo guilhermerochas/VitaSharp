@@ -125,7 +125,7 @@ public static class Wait
     }
 }
 
-public sealed class Semaphore : KernelObject
+public sealed partial class Semaphore : KernelObject
 {
     public override int UidClass => 2;
     public uint Attr;
@@ -191,7 +191,7 @@ public sealed class Semaphore : KernelObject
     }
 }
 
-public sealed class EventFlag : KernelObject
+public sealed partial class EventFlag : KernelObject
 {
     public override int UidClass => 3;
     public const uint WaitAnd = 0, WaitOr = 1, WaitClear = 2, WaitClearPat = 4;
@@ -270,7 +270,7 @@ public sealed class EventFlag : KernelObject
 }
 
 /// <summary>Mutex used both for SceKernelMutex and lightweight mutexes (whose work area mirrors the state).</summary>
-public sealed class Mutex : KernelObject
+public sealed partial class Mutex : KernelObject
 {
     public override int UidClass => IsLight ? 10 : 4;
     public const uint AttrRecursive = 0x02;
@@ -413,7 +413,7 @@ public sealed class Mutex : KernelObject
 
 /// <summary>Condition variable bound to a mutex (SceKernelCond and lightweight conds). Waiters queue in arrival order;
 /// a signal releases the first one, SignalTo a specific thread, SignalAll every waiter.</summary>
-public sealed class CondVar : KernelObject
+public sealed partial class CondVar : KernelObject
 {
     public override int UidClass => WorkArea != 0 ? 11 : 5;
     public uint Attr;
@@ -437,8 +437,11 @@ public sealed class CondVar : KernelObject
         int count;
         lock (this)
         {
-            count = Mutex.ReleaseAll(self);
+            // a wait reissued by a save state load released its mutex before the state was saved
+            count = self.CondReissueCount > 0 ? self.CondReissueCount : Mutex.ReleaseAll(self);
+            self.CondReissueCount = 0;
             if (count < 0) return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
+            self.CondWaitCount = count; // save states: the lock count the reissued wait gives back
             Waiters++;
             var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
             var w = node.Value;
@@ -512,7 +515,7 @@ public sealed class CondVar : KernelObject
     }
 }
 
-public sealed class MsgPipe : KernelObject
+public sealed partial class MsgPipe : KernelObject
 {
     public override int UidClass => 7;
     /// <summary>SCE_KERNEL_MSG_PIPE_MODE_*: ASAP (0, move what fits / what is there) or FULL (1, the whole size),
@@ -653,7 +656,7 @@ public sealed class MsgPipe : KernelObject
     }
 }
 
-public sealed class RwLock : KernelObject
+public sealed partial class RwLock : KernelObject
 {
     public override int UidClass => 12;
     public uint Attr;
@@ -766,7 +769,7 @@ public sealed class RwLock : KernelObject
     }
 }
 
-public sealed class Callback : KernelObject
+public sealed partial class Callback : KernelObject
 {
     public override int UidClass => 8;
     public GuestThread Owner = null!;
@@ -804,7 +807,7 @@ public static class EventBits
 /// Kernel timer: a microsecond counter on process time plus an optional (repeating) SET or PULSE event that
 /// sceKernelWaitEvent/PollEvent can wait for (result EVENT_TIMER). Only the first waiter waits for the event.
 /// </summary>
-public sealed class TimerObject : KernelObject
+public sealed partial class TimerObject : KernelObject
 {
     public override int UidClass => 6;
     public uint Attr;
@@ -980,7 +983,7 @@ public sealed class TimerObject : KernelObject
 /// every waiter whose pattern matches (consuming the bits with AUTO_RESET); Pulse does the same and then restores the
 /// previous pattern, so only threads already waiting see it.
 /// </summary>
-public sealed class SimpleEvent : KernelObject
+public sealed partial class SimpleEvent : KernelObject
 {
     public override int UidClass => 13;
     public uint Attr;
@@ -1123,7 +1126,7 @@ public sealed class SimpleEvent : KernelObject
 }
 
 /// <summary>Handler registered by sceKernelRegisterThreadEventHandler (thread start/exit notifications).</summary>
-public sealed class ThreadEventHandler : KernelObject
+public sealed partial class ThreadEventHandler : KernelObject
 {
     public override int UidClass => 9;
     public int ThreadMask;

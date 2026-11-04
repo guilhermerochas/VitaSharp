@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// queries answer coherently. Only one asynchronous request may be pending per process; its result is returned once by
 /// sceLiveAreaGetStatus.
 /// </summary>
-public sealed class LiveArea : HleModule
+public sealed partial class LiveArea : HleModule
 {
     internal const int ERR_PENDING = unchecked((int)0x80104001), ERR_INVALID_ARG = unchecked((int)0x80104002),
         ERR_PATH_NOT_RESOLVED = unchecked((int)0x80104003), ERR_PARSE = unchecked((int)0x80104004),

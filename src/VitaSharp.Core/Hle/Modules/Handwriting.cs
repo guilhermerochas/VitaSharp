@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// the spec: lifecycle calls succeed, recognition finds nothing, and nothing is ever written through a guest pointer
 /// (no struct layout is known). The preferred long-term route is LLE of the firmware module.
 /// </summary>
-public sealed class Handwriting : HleModule
+public sealed partial class Handwriting : HleModule
 {
     /// <summary>Work buffer size reported to the game (real value to confirm).</summary>
     internal const int BufferSize = 0x40000;

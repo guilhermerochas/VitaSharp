@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceAudiodecCtrl (0x28 bytes): size, handle, pEs, inputEsSize, maxEsSize, pPcm, outputPcmSize, maxPcmSize,
 /// wordLength, pInfo. SceAudiodecInfo starts with its size followed by the codec-specific fields.
 /// </summary>
-public sealed unsafe class Audiodec : HleModule
+public sealed unsafe partial class Audiodec : HleModule
 {
     const int ERR_API_FAIL = unchecked((int)0x807F0000), ERR_INVALID_TYPE = unchecked((int)0x807F0001),
         ERR_NOT_INITIALIZED = unchecked((int)0x807F0005), ERR_INVALID_PTR = unchecked((int)0x807F0008),
@@ -21,7 +21,7 @@ public sealed unsafe class Audiodec : HleModule
     const uint TYPE_AT9 = 0x1003, TYPE_MP3 = 0x1004, TYPE_AAC = 0x1005, TYPE_CELP = 0x1006;
     const uint CtrlSize = 0x28;
 
-    sealed class Decoder
+    sealed partial class Decoder
     {
         public uint Type;
         public int Channels;
@@ -73,7 +73,7 @@ public sealed unsafe class Audiodec : HleModule
         if (needsLibrary) lock (_libraries) if (!_libraries.Contains(codecType)) return ERR_NOT_INITIALIZED;
         uint info = GuestMemory.R32(ctrl + 36);
         if (info == 0) return ERR_INVALID_PTR;
-        var d = new Decoder { Type = codecType };
+        var d = new Decoder { Type = codecType, Info = GuestMemory.ReadSpan(info, 20).ToArray() };
         uint esMax, pcmMax;
         switch (codecType)
         {

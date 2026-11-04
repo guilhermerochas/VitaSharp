@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// needs the account fails with SCE_NP_ERROR_SIGNED_OUT. Service state callbacks are told the state from
 /// sceNpCheckCallback, and again whenever it changes.
 /// </summary>
-public sealed class NpManager : HleModule
+public sealed partial class NpManager : HleModule
 {
     internal const int ERR_ALREADY_INITIALIZED = unchecked((int)0x80550001), ERR_NOT_INITIALIZED = unchecked((int)0x80550002),
         ERR_INVALID_ARGUMENT = unchecked((int)0x80550003), ERR_UNKNOWN_PLATFORM_TYPE = unchecked((int)0x80550004),
@@ -54,7 +54,7 @@ public sealed class NpManager : HleModule
     internal bool NpInited { get { lock (_lock) return _npInited; } }
     internal string? CommunicationId { get { lock (_lock) return _commId; } }
 
-    sealed class AuthReq { public uint Cb, Arg; public bool Done, Aborted; public byte[]? Ticket; }
+    sealed partial class AuthReq { public uint Cb, Arg; public bool Done, Aborted; public byte[]? Ticket; }
     readonly Dictionary<int, AuthReq> _authReqs = new();
     readonly HashSet<int> _oauthReqs = new();
     int _nextReq = 1;
@@ -470,7 +470,7 @@ public static class NpIdUtil
 /// SceNpBasic additions, SceNpMessage, SceNpActivity and the party state (SceNpPartyGameUtil): offline there are no
 /// friends, messages or parties. (The older SceNpBasic/SceNpParty functions live in Online.cs, class Np.)
 /// </summary>
-public sealed class NpSocial : HleModule
+public sealed partial class NpSocial : HleModule
 {
     const int BASIC_INVALID_ARGUMENT = unchecked((int)0x80551D02),
         ERR_NOT_IN_PARTY = unchecked((int)0x80553402);

@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// result word). The service behaves as unavailable: Initialize fails, Finalize succeeds, everything else reports
 /// "not running". The game then hides the feature, as on a console without the Near application.
 /// </summary>
-public sealed class NearUtil : HleModule
+public sealed partial class NearUtil : HleModule
 {
     /// <summary>Reused generic codes until the real SceNearUtil codes are known (SCE_COMMON_DIALOG_ERROR_*).</summary>
     internal const int ERR_NOT_SUPPORTED = unchecked((int)0x80020405), ERR_NOT_RUNNING = unchecked((int)0x80020404);

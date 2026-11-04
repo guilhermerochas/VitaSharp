@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// measurement fails with SCE_LOCATION_ERROR_DISABLE_APPLICATION after filling the output with
 /// SCE_LOCATION_DATA_INVALID, and the confirmation dialog finishes at once with "disable".
 /// </summary>
-public sealed class Location : HleModule
+public sealed partial class Location : HleModule
 {
     internal const int ERR_INVALID_ADDRESS = unchecked((int)0x80101204), ERR_INVALID_HANDLE = unchecked((int)0x80101205),
         ERR_INVALID_LOCATION_METHOD = unchecked((int)0x80101208), ERR_INVALID_HEADING_METHOD = unchecked((int)0x80101209),
@@ -195,7 +195,7 @@ public sealed class Location : HleModule
 /// SceGps: low-level GPS receiver interface (3G models only). VitaSharp emulates a Wi-Fi model, so there is no
 /// device; the device structs have no known layout and are never written.
 /// </summary>
-public sealed class Gps : HleModule
+public sealed partial class Gps : HleModule
 {
     /// <summary>SCE_ERROR_ERRNO_ENODEV (the real "no receiver" code is unconfirmed).</summary>
     internal const int ERR_NO_DEVICE = unchecked((int)0x80010013);

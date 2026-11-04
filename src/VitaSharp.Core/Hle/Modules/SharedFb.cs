@@ -19,7 +19,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// render target; libpaf draws there), +0x24 stride, +0x28 width, +0x2C height, +0x30 colour format, +0x34 the
 /// shell's sync object, +0x48 vsync (Vita3K's SceSharedFb.cpp names +8 base2 and +0x34 curbuf).
 /// </summary>
-public sealed class SharedFb : HleModule
+public sealed partial class SharedFb : HleModule
 {
     /// <summary>Kernel errors (FW 3.74 appmgr): unknown framebuffer, missing argument, the client is not rendering this
     /// frame (Begin) or the client did not finish its frame (UpdateProcess), not a system program.</summary>

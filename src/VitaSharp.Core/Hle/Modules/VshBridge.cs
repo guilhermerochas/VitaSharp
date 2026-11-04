@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// these register a callback or set a hardware mode the emulator has no counterpart for; they succeed. Queries answer
 /// what such a unit answers.
 /// </summary>
-public sealed class VshBridge : HleModule
+public sealed partial class VshBridge : HleModule
 {
     // ---- unit identity (SceSblAIMgr through the bridge): a retail CEX handheld
     [Hle] int vshSblAimgrIsCEX() => 1;

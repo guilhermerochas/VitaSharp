@@ -5,7 +5,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceSysmodule, SceAppMgr, ScePower, SceModulemgr and other small system services.</summary>
-public sealed class SystemMisc : HleModule
+public sealed partial class SystemMisc : HleModule
 {
     readonly HashSet<uint> _loadedSysmodules = new();
     const int SYSMODULE_ERROR_INVALID_VALUE = unchecked((int)0x805A1000), SYSMODULE_ERROR_UNLOADED = unchecked((int)0x805A1001),

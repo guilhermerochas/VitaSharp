@@ -16,13 +16,13 @@ namespace VitaSharp.Core.Hle.Modules;
 ///  - GetNextUnit(h, unit[0x38]): +0 data, +8 size, +0x10 pts, +0x18 dts, +0x28 sync, +0x2C stream, +0x30 type
 /// Timestamps are 90 kHz ticks; PTSToTime/TimeToPTS convert to microseconds.
 /// </summary>
-public sealed class Mp4 : HleModule
+public sealed partial class Mp4 : HleModule
 {
     // error values are not documented; games only test for < 0 (end of stream ends playback)
     const int ERR_INVALID_HANDLE = unchecked((int)0x80630002), ERR_END_OF_STREAM = unchecked((int)0x80630010),
         ERR_NOT_FOUND = unchecked((int)0x80630005), ERR_INVALID_ARG = unchecked((int)0x80630001);
 
-    sealed class File
+    sealed partial class File
     {
         public IMp4Demuxer Demux = null!;
         public readonly HashSet<int> Enabled = new();
@@ -53,7 +53,7 @@ public sealed class Mp4 : HleModule
             Log.Warn($"sceMp4OpenFile: cannot open {path}");
             return 0;
         }
-        var f = new File { Demux = demux, TempPath = temp };
+        var f = new File { Demux = demux, TempPath = temp, HostPath = host };
         for (int i = 0; i < demux.Streams.Count; i++) f.Enabled.Add(i);
         lock (_files) { _files[_nextHandle] = f; return _nextHandle++; }
     }

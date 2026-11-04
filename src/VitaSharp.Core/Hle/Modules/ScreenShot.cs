@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceScreenShot: the game controls whether the system screenshot shortcut (PS + START) is allowed and which metadata and
 /// watermark the captures carry. VitaSharp has no system shortcut yet; the state is kept for a host screenshot feature.
 /// </summary>
-public sealed class ScreenShot : HleModule
+public sealed partial class ScreenShot : HleModule
 {
     internal const int ERR_INVALID_ARGUMENT = unchecked((int)0x80102F01), ERR_NO_MEMORY = unchecked((int)0x80102F02),
         ERR_FILE_NOT_FOUND = unchecked((int)0x80102F03), ERR_NOT_SUPPORTED_FORMAT = unchecked((int)0x80102F04),

@@ -14,7 +14,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// FFmpeg); there is no G.729 encoder, so encoding emits a zero 10-byte frame. Error codes are unknown:
 /// <see cref="SceError.INVALID_ARGUMENT"/> is used for null/unknown contexts.
 /// </summary>
-public sealed unsafe class G729 : HleModule
+public sealed unsafe partial class G729 : HleModule
 {
     internal const int ERR_INVALID_ARGUMENT = SceError.INVALID_ARGUMENT;
     internal const int ContextSize = 0x1000, FrameSamples = 80, FrameBytes = 10;

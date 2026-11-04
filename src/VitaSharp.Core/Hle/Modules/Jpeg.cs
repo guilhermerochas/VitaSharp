@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// decodeMode: bits 0-2 DHT mode (0 WITH_DHT, 1 WITHOUT_DHT = "standard": 4:2:0/4:2:2 only, pitch height aligned to 8,
 /// chroma pitch aligned to 16; 2/3 ANY_SAMPLING = "extended"), bits 4-6 downscale 1/2, 1/4, 1/8.
 /// </summary>
-public sealed class Jpeg : HleModule
+public sealed partial class Jpeg : HleModule
 {
     internal const int ERR_IMAGE_EMPTY = unchecked((int)0x80650003), ERR_BAD_MARKER_LENGTH = unchecked((int)0x80650004),
         ERR_BAD_DHT_COUNTS = unchecked((int)0x80650005), ERR_BAD_DHT_INDEX = unchecked((int)0x80650006),

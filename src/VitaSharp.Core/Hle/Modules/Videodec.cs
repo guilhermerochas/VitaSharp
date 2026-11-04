@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceAvcdecAu {pts, dts, es{p,size}} 24 bytes, SceAvcdecArrayPicture {numOfOutput, numOfElm, pPicture} and
 /// SceAvcdecPicture {size, frame (0x40 bytes, pPicture[2] at +0x38), info (pts at +0x58)} 100 bytes.
 /// </summary>
-public sealed class Videodec : HleModule
+public sealed partial class Videodec : HleModule
 {
     const int ERR_INVALID_PARAM = unchecked((int)0x80620002), ERR_INVALID_POINTER = unchecked((int)0x80620009);
     const uint TYPE_HW_AVCDEC = 0x1001;
@@ -375,11 +375,11 @@ public sealed class Videodec : HleModule
 }
 
 /// <summary>SceCodecEngine: memory the hardware codecs use inside "unmapped" memblocks owned by the game.</summary>
-public sealed class CodecEngine : HleModule
+public sealed partial class CodecEngine : HleModule
 {
     const int ERR_INVALID_VALUE = unchecked((int)0x80600009);
 
-    sealed class Block
+    sealed partial class Block
     {
         public uint Base, Size;
         public readonly SortedList<uint, uint> Free = new();

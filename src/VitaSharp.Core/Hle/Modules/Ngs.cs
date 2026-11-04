@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceNgs: the Vita's voice-graph audio engine. Voices (players, ATRAC9 decoders, busses) are patched together;
 /// sceNgsSystemUpdate renders one granule and the master buss output is read back by the game.
 /// </summary>
-public sealed class Ngs : HleModule
+public sealed partial class Ngs : HleModule
 {
     const int OK = 0, ERROR = unchecked((int)0x804A0001), INVALID_ARG = unchecked((int)0x804A0002), INVALID_STATE = unchecked((int)0x804A0010),
         INVALID_HANDLE = unchecked((int)0x804A000C);

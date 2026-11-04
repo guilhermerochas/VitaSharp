@@ -16,7 +16,7 @@ using VitaSharp.Core.Package;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>Game library: lists installed titles, installs new ones and launches the emulator for the selected game.</summary>
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     static readonly IBrush Accent = LauncherTheme.Accent;
     static readonly IBrush Muted = LauncherTheme.Muted;
@@ -331,6 +331,7 @@ public sealed class MainWindow : Window
         };
         play.Click += (_, _) => Launch(g);
         _details.Children.Add(play);
+        if (SaveStatesPanel(g, busy) is { } states) _details.Children.Add(states);
         if (busy && _runningGame == g)
         {
             var stop = new Button { Content = "Stop", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
