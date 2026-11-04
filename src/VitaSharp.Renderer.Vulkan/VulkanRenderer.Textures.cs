@@ -144,48 +144,52 @@ public sealed unsafe partial class VulkanRenderer
     }
     readonly TexSetCache _texSetV = new(), _texSetF = new();
 
+    /// <summary>The texture's view, or none when there is no GPU memory for it even after eviction (the draw samples the
+    /// dummy texture instead). Kept out of <see cref="BuildTextureSet"/>: a handler inside its loop forced the loop's
+    /// locals to memory.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    (ImageView, ImageLayout) ResolveTextureOrSkip(GxmTextureDesc desc, bool asCube)
+    {
+        try { return ResolveTexture(desc, asCube); }
+        catch (VkOutOfMemoryException e)
+        {
+            _oomTextures++;
+            LogOom($"[vram] out of GPU memory, texture 0x{desc.DataAddress:X8} {desc.Width}x{desc.Height} fmt 0x{desc.Format:X8} skipped for this draw (present {_presentCount}, draw {_drawSerial}): {e.Message}", force: _oomTextures <= 3);
+            return default;
+        }
+    }
+
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         bool vertexStage = layout.Handle == _texLayoutV.Handle;
         int units = vertexStage ? _texUnitsV : _texUnitsF;
         var infos = stackalloc DescriptorImageInfo[16];
         var writes = stackalloc WriteDescriptorSet[16];
-        for (int i = 0; i < units; i++)
+        // only the units the program samples are resolved and written: the others are never read by its shader (a set
+        // from a frame pool may leave them undefined). Visiting all 16 units per stage and draw (a descriptor built for
+        // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
+        // races on the phone.
+        uint mask = units >= 32 ? used : used & ((1u << units) - 1);
+        for (uint m = mask; m != 0; m &= m - 1)
         {
+            int i = System.Numerics.BitOperations.TrailingZeroCount(m);
             var desc = textures[i];
-            ImageView view = _dummyView;
-            Sampler sampler = _dummySampler;
-            ImageLayout layout2 = ImageLayout.ShaderReadOnlyOptimal;
             bool cubeType = desc.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
             // a 2D texture bound to a samplerCube (Resistance's window reflections): binding the 2D view there is
             // undefined in Vulkan (NVIDIA returned saturated red), so the texture is read as a cube whose six faces
             // are the 2D image
             bool asCube = !cubeType && (cubeSamplers & (1u << i)) != 0;
             if (asCube) cubeType = true;
-            if ((used & (1u << i)) != 0 && !desc.IsNull)
-            {
-                ImageView v;
-                ImageLayout l;
-                try { (v, l) = ResolveTexture(desc, asCube); }
-                catch (VkOutOfMemoryException e)
-                {
-                    // no memory for this texture even after eviction: the draw samples the dummy texture instead
-                    (v, l) = (default, default);
-                    _oomTextures++;
-                    LogOom($"[vram] out of GPU memory, texture 0x{desc.DataAddress:X8} {desc.Width}x{desc.Height} fmt 0x{desc.Format:X8} skipped for this draw (present {_presentCount}, draw {_drawSerial}): {e.Message}", force: _oomTextures <= 3);
-                }
-                if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
-                else if (cubeType) view = _dummyCubeView;
-                if (_drawRing != null) DrawRingTexture(layout.Handle == _texLayoutV.Handle, i, desc, v.Handle == 0);
-            }
-            else if (cubeType) view = _dummyCubeView;
-            infos[i] = new DescriptorImageInfo(sampler, view, layout2);
+            ref var info = ref infos[i];
+            info.Sampler = _dummySampler;
+            info.ImageView = cubeType ? _dummyCubeView : _dummyView;
+            info.ImageLayout = ImageLayout.ShaderReadOnlyOptimal;
+            if (desc.IsNull) continue;
+            var (v, l) = ResolveTextureOrSkip(desc, asCube);
+            if (v.Handle != 0) { info.ImageView = v; info.ImageLayout = l; info.Sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
+            if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
         }
         var cache = vertexStage ? _texSetV : _texSetF;
-        // only the units the program samples are written: the others are never read by its shader (a set from a frame
-        // pool may leave them undefined), and writing all 16 per stage was most of F1 2011's 15,000 descriptor writes
-        // per race frame on the phone's GPU worker
-        uint mask = units >= 32 ? used : used & ((1u << units) - 1);
         if (cache.Serial == _frameSerial && cache.Units == units && cache.Mask == mask && cache.Set.Handle != 0)
         {
             bool same = true;
@@ -480,9 +484,8 @@ public sealed unsafe partial class VulkanRenderer
     List<RenderTarget> TargetsContaining(uint addr)
     {
         _rtCandidates.Clear();
-        foreach (var rt in _renderTargets.Values)
-            if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
-                _rtCandidates.Add(rt);
+        foreach (ref readonly var r in RtRanges())
+            if (addr >= r.Lo && addr < r.Hi) _rtCandidates.Add(r.Rt);
         if (_rtCandidates.Count > 1) _rtCandidates.Sort(NewestSceneFirst);
         return _rtCandidates;
     }

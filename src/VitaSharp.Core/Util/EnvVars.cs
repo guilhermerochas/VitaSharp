@@ -11,6 +11,8 @@ public static class EnvVars
     /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>
     /// <summary>Android: scripted buttons/sticks for unattended device runs (ScriptedPad: "cross@12,start@20:0.5").</summary>
     public const string AndroidInput = "VITASHARP_ANDROID_INPUT";
+    /// <summary>Android: a file polled while the game runs; its ScriptedPad steps (T relative to when it is read) are added and the file deleted, so a PC script can react to the screen (adb push).</summary>
+    public const string AndroidInputLive = "VITASHARP_ANDROID_INPUT_LIVE";
     /// <summary>Android: =0 tries the hardware H.264 decoders first even for pictures up to 960x544 (default: Android's own first there), =1 always Android's own first.</summary>
     public const string MediaCodecSoftware = "VITASHARP_MEDIACODEC_SOFTWARE";
     /// <summary>Android: AAudio buffer capacity requested in frames (default 0 = AAudio's own; 8192 = the earlier request).</summary>

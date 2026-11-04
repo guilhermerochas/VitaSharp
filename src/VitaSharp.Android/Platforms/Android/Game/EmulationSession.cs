@@ -320,7 +320,6 @@ public sealed class EmulationSession : IDisposable
     /// next frames (up to 600) for the bench and replay-gpu, with every guest memory range the GPU read (texture data
     /// and descriptors, so the texture uploads), and the guest audio ports as WAVs (audio/). Output:
     /// files/captures/TITLE_DATE_KIND/ with info.txt and the log; pulled with adb (tools/dev/README.md).
-
     /// </summary>
     public void StartCapture(string kind)
     {

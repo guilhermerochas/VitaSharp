@@ -207,14 +207,34 @@ public sealed unsafe partial class VulkanRenderer
     RenderTarget? RenderTargetContaining(uint addr)
     {
         RenderTarget? best = null;
-        foreach (var rt in _renderTargets.Values)
+        foreach (ref readonly var r in RtRanges())
         {
-            uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
-            if (addr < rt.Address || addr >= rt.Address + bytes) continue;
-            if (best == null || rt.LastUsedFrame > best.LastUsedFrame) best = rt;
+            if (addr < r.Lo || addr >= r.Hi) continue;
+            if (best == null || r.Rt.LastUsedFrame > best.LastUsedFrame) best = r.Rt;
         }
         return best;
     }
+
+    /// <summary>The colour targets' memory ranges in <see cref="_renderTargets"/> order, rebuilt after the dictionary
+    /// changes: the texture lookups of every draw test each target, and a dictionary walk with the size computed per
+    /// target was a measurable part of the GPU worker on the phone.</summary>
+    ReadOnlySpan<RtRange> RtRanges()
+    {
+        if (_rtRangesValid) return _rtRanges.AsSpan(0, _rtRangeCount);
+        if (_rtRanges.Length < _renderTargets.Count) _rtRanges = new RtRange[Math.Max(16, _renderTargets.Count * 2)];
+        int n = 0;
+        foreach (var rt in _renderTargets.Values)
+            _rtRanges[n++] = new RtRange(rt.Address, rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height, rt);
+        _rtRangeCount = n;
+        _rtRangesValid = true;
+        return _rtRanges.AsSpan(0, n);
+    }
+
+    readonly record struct RtRange(uint Lo, uint Hi, RenderTarget Rt);
+    RtRange[] _rtRanges = [];
+    int _rtRangeCount;
+    /// <summary>Cleared wherever <see cref="_renderTargets"/> changes.</summary>
+    bool _rtRangesValid;
 
     DepthTarget? DepthTargetContaining(uint addr, out bool stencil)
     {

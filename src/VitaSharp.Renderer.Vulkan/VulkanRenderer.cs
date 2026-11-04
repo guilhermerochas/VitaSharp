@@ -527,6 +527,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var (k, old) in replaced)
         {
             _renderTargets.Remove(k);
+            _rtRangesValid = false;
             if (TraceVis) Log.Info($"[vis] render target 0x{c.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {c.Width}x{c.Height} fmt {c.ColorFormat:X8} present={_presentCount}");
             if (_traceDumpFrame == _presentCount + 1 && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
@@ -541,6 +542,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
+        _rtRangesValid = false;
         _fNewTargets++;
         if (DebugMode.Enabled) DbgRenderTarget(rt, format, replaced);
         return rt;

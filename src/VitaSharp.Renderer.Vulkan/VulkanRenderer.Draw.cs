@@ -650,18 +650,51 @@ public sealed unsafe partial class VulkanRenderer
 
     static (uint Min, uint Max) MinMaxIndex(uint addr, uint count, bool i32)
     {
-        uint max = 0, min = uint.MaxValue;
-        if (i32)
+        if (count == 0) return (0, 0);
+        return i32 ? MinMax(GuestMemory.ReadSpan<uint>(addr, (int)count)) : MinMax(GuestMemory.ReadSpan<ushort>(addr, (int)count));
+    }
+
+    /// <summary>Lowest and highest value, 128 bits at a time (the scalar loop was ~2% of the GPU worker on the phone).
+    /// Not generic: Mono's AOT compiler left a generic-math version to the JIT.</summary>
+    public static (uint Min, uint Max) MinMax(ReadOnlySpan<ushort> s)
+    {
+        uint min = ushort.MaxValue, max = 0;
+        int i = 0;
+        if (System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated && s.Length >= 16)
         {
-            var s = GuestMemory.ReadSpan<uint>(addr, (int)count);
-            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
+            var vmin = System.Runtime.Intrinsics.Vector128.Create(ushort.MaxValue);
+            var vmax = System.Runtime.Intrinsics.Vector128<ushort>.Zero;
+            for (; i <= s.Length - 8; i += 8)
+            {
+                var v = System.Runtime.Intrinsics.Vector128.Create(s.Slice(i, 8));
+                vmin = System.Runtime.Intrinsics.Vector128.Min(vmin, v);
+                vmax = System.Runtime.Intrinsics.Vector128.Max(vmax, v);
+            }
+            for (int k = 0; k < 8; k++) { min = Math.Min(min, vmin[k]); max = Math.Max(max, vmax[k]); }
         }
-        else
+        for (; i < s.Length; i++) { uint v = s[i]; if (v < min) min = v; if (v > max) max = v; }
+        return (min, max);
+    }
+
+    /// <inheritdoc cref="MinMax(ReadOnlySpan{ushort})"/>
+    public static (uint Min, uint Max) MinMax(ReadOnlySpan<uint> s)
+    {
+        uint min = uint.MaxValue, max = 0;
+        int i = 0;
+        if (System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated && s.Length >= 8)
         {
-            var s = GuestMemory.ReadSpan<ushort>(addr, (int)count);
-            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
+            var vmin = System.Runtime.Intrinsics.Vector128.Create(uint.MaxValue);
+            var vmax = System.Runtime.Intrinsics.Vector128<uint>.Zero;
+            for (; i <= s.Length - 4; i += 4)
+            {
+                var v = System.Runtime.Intrinsics.Vector128.Create(s.Slice(i, 4));
+                vmin = System.Runtime.Intrinsics.Vector128.Min(vmin, v);
+                vmax = System.Runtime.Intrinsics.Vector128.Max(vmax, v);
+            }
+            for (int k = 0; k < 4; k++) { min = Math.Min(min, vmin[k]); max = Math.Max(max, vmax[k]); }
         }
-        return (count == 0 ? 0 : min, max);
+        for (; i < s.Length; i++) { uint v = s[i]; if (v < min) min = v; if (v > max) max = v; }
+        return (min, max);
     }
 
     /// <summary>Draw number within the presented frame (debug: VITASHARP_DEBUG_TEX0=id paints it, the draw trace logs it).</summary>
