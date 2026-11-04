@@ -438,6 +438,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   idênticos). O pisca-pisca ao vivo (a faixa inteira some em quadros alternados) NÃO reproduziu headless, nem com as
   opções do usuário (`--async-shaders=on --shaderc-opt=zero`, modo de depuração): falta o usuário confirmar na
   janela com esta versão; se continuar, gravar um F8 (dump de GPU) durante o pisca-pisca
+  Ainda pisca (relato do usuário, 04/11/2026, depois da correção do tamanho da textura): o botão SKIP continua
+  piscando; validar ao vivo com o detector de flicker e uma captura F8 do usuário no momento
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
