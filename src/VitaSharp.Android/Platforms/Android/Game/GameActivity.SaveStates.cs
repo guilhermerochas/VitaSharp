@@ -4,6 +4,8 @@ using Android.OS;
 using Android.Views;
 using Android.Widget;
 using AView = Android.Views.View;
+using Color = Android.Graphics.Color;
+using ScrollView = Android.Widget.ScrollView;
 
 namespace VitaSharp.Android.Game;
 
@@ -60,6 +62,6 @@ public sealed partial class GameActivity
                 EnterImmersive();
             }))!
             .Create();
-        dialog.Show();
+        dialog!.Show();
     });
 }
