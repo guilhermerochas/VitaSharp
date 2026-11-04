@@ -17,7 +17,7 @@ public sealed class PkgReader : IDisposable
     static readonly byte[] PkgVita3 = FromHex("423ACA3A2BD5649F9686ABAD6FD8801F");
     static readonly byte[] PkgVita4 = FromHex("AF07FD59652527BAF13389668B17D9EA");
 
-    readonly FileStream _fs;
+    readonly Stream _fs;
     readonly byte[] _iv = new byte[16];
     readonly byte[] _key = new byte[16];
     readonly ulong _dataOffset;
@@ -28,9 +28,12 @@ public sealed class PkgReader : IDisposable
     public byte[] ParamSfo { get; }
     public IReadOnlyList<PkgEntry> Entries { get; }
 
-    public PkgReader(string path)
+    public PkgReader(string path) : this(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20)) { }
+
+    /// <summary>Reads the package from a seekable stream (e.g. an Android document); the reader owns it.</summary>
+    public PkgReader(Stream stream)
     {
-        _fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
+        _fs = stream;
         Span<byte> hdr = stackalloc byte[0x100];
         _fs.ReadExactly(hdr);
         if (U32BE(hdr, 0) != 0x7F504B47)

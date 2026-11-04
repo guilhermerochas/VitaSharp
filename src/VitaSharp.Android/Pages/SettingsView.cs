@@ -45,6 +45,14 @@ public sealed class SettingsView : Screen<SettingsState>
         var fw = State.Firmware;
         return PageBody("Ajustes",
             VStack(
+                SectionTitle("Jogos"),
+                Card(
+                    Row("Instalar jogo", null, () =>
+                    {
+                        LibraryView.InstallRequested = true;
+                        RootPage.Show(RootTab.Library);
+                    }, detail: ".vpk, ou .pkg com a licença (work.bin, .rif ou zRIF)")
+                ),
                 SectionTitle("Sistema"),
                 Card(
                     Row("Firmware", fw?.Summary ?? "…", () => Navigation?.PushAsync<FirmwarePage>(),

@@ -57,12 +57,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
-- [ ] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
+- [x] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
   um botão flutuante "+ Instalar VPK" no canto inferior direito da Biblioteca (`LibraryView.cs`, seletor do sistema
   pelo SAF), mas ele pode estar escondido/fora da tela (sobre a grade, atrás da barra de navegação, ou some durante
   a instalação) — conferir no Redmi Note 14 e deixar a ação visível e fácil de achar (também no menu/Ajustes e na
   tela vazia da Biblioteca). Além do VPK, aceitar `.pkg` + `work.bin`/`.rif` e licença em zRIF (o desktop já instala
-  `.pkg`; ver o item do zRIF em "Firmware e sistema") e mostrar progresso e erros claros
+  `.pkg`; ver o item do zRIF em "Firmware e sistema") e mostrar progresso e erros claros. Feito (04/11/2026, branch
+  fix/user-bugs, só compilado, falta o usuário testar no celular): "+ Instalar" no topo da Biblioteca, o botão
+  flutuante virou "+ Instalar jogo", um botão na Biblioteca vazia e "Jogos > Instalar jogo" em Ajustes; cada um
+  pergunta .vpk ou .pkg + licença (arquivo work.bin/.rif ou zRIF colado), com barra de progresso e o erro em
+  diálogo. O zRIF é decodificado no Core (`Package/Zrif.cs`, dicionário do pkg2zip) e o `PkgInstaller` confere o
+  content ID da licença contra o do `.pkg`; o `install <pkg> <rif|zRIF>` do CLI também aceita zRIF
 - [ ] Sistema do Vita (shell) não roda no Android (relato do usuário, 01/11/2026; log do celular
   `20261101_204800_SYSTEM.log`, Redmi Note 14, firmware 3.74 instalado no app): a sessão abre, a GPU apresenta só
   2 superfícies (0x6043E000 e 0x60240000) e 91 quadros em ~4 s, com apenas 7 shaders e 4 pipelines (no PC o shell
@@ -235,7 +240,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
   o content ID contra o `.pkg` e gravar o `.rif` em `ux0:license/<TITLEID>` e o `work.bin`; no CLI (`install <pkg>
-  <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android
+  <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android. Core, CLI e app Android feitos
+  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
