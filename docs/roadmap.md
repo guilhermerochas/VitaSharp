@@ -288,6 +288,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   provavelmente o quadro do vídeo de prévia (o SceMp4/decoder passou a funcionar nesse jogo há pouco, e o decoder agora
   completa as linhas até múltiplo de 16 por causa do Shinobido 2): conferir largura/altura/pitch do quadro decodificado
   contra a textura YUV que o jogo amostra
+  Achados (04/11/2026, fix/user-bugs-3): não é o vídeo nem o preenchimento até múltiplo de 16 do Avcdec (o filme de
+  fundo é 960x544 RGBA e sai certo). A faixa é uma animação MJPEG: a cada quadro a `main` decodifica com
+  `sceJpegDecodeMJpeg` um JPEG de tamanho diferente (192..336 x 512..544, recortado no Jak) no mesmo buffer
+  0x63FBC400 e manda uma mensagem (msgpipe) para a `F3DPlaybackThread`, que monta a textura linear com o tamanho
+  que veio na mensagem. Aqui a `main` fica uma mensagem à frente: decodifica o JPEG N+1 antes de a thread de render
+  enviar o desenho do quadro N (o `sceGxmWaitEvent` da `main` acorda com a conclusão da cena anterior da GPU, que
+  chega depois de ela já ter mandado a mensagem N). Na hora do upload, 215 texturas tinham o tamanho de um quadro e
+  o conteúdo do seguinte (passo errado = listras). O dump F8 do usuário reproduz CERTO no `replay-gpu` (o gravador
+  pegou o conteúdo coerente), então é só temporização ao vivo. Testado sem efeito: esperar a GPU antes do decode,
+  6 ms de latência no decode, `VITASHARP_TEXDIRTY=0`, e o `sceGxmWaitEvent` esperando a GPU esvaziar antes do sinal
+  (a semântica do `libgxm_es4` já é "acorda no próximo sinal da GPU", ignorando os argumentos). No Vita a thread de
+  render está parada no `sceKernelReceiveMsgPipe` quando a `main` envia, e a cena dela termina antes do próximo
+  decode. Próximo passo: um modelo de tempo da thread de render/GPU (latência do `sceGxmFinish`/fila de display) ou
+  atrasar a saída do decodificador até a GPU consumir o que já foi enviado — mudança de temporização, não um ajuste local
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
@@ -367,7 +381,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gravação de volta de qualquer alvo enquanto houvesse cena aberta. Corrigido (fix/user-bugs-2): a renderização é pausada
   (`PauseRendering`) e o alvo é gravado de volta antes da cópia, como entre cenas. Falta conferir ao vivo numa batalha
   (o replay não reexecuta transferências; o roteiro `Load Game` com o save no slot 0 só chega ao mapa)
-- [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
+- [x] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
   aparecem, mas a área de jogo no centro está toda preta, sem o cenário/blocos da fase (24 desenhos em 3 cenas por
@@ -384,6 +398,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   apresentação (blit cru da imagem) e o resto do caminho contam com o erro oposto. A correção certa é tratar a imagem
   de superfícies RGBA/BGRA de forma consistente em todos os pontos (amostragem, apresentação, writeback, regiões, cópias),
   ou gravar na ordem da memória; patch do experimento em `scratchpad/bugs2_gunvolt_swizzle.patch`
+  Corrigido (04/11/2026, fix/user-bugs-3): as imagens de superfícies U8U8U8U8 RGBA/BGRA continuam em ordem lógica
+  (o blending precisa do alfa no canal A), e todos os consumidores passaram a vê-las na ordem da memória: amostragem
+  (`RtSwizzle` compõe o swizzle da textura com `Formats.SurfaceMemoryOrder`, também nas regiões e cadeias de mips),
+  gravação de volta na memória (`WritebackConvert.ReverseBytes`/`LogicalToBgra`), recarga da memória
+  (`UploadSurfaceFromGuest`) e apresentação (o framebuffer RGBA 480x272 do Gunvolt passa por uma cópia em ordem de
+  memória, `VulkanRenderer.PresentOrder.cs`, antes do blit e do dump do quadro). A fase do "How to play" aparece com
+  as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
+  reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
+  um framebuffer da CPU
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -473,6 +496,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quais texturas e formatos o corpo/rosto/uniforme usam e comparar com o esperado; ver se é o mesmo problema de ordem
   dos canais RGBA/BGRA das superfícies do Gal Gunvolt, um formato/layout de textura (swizzle, compressão) ou o
   conteúdo de uma superfície renderizada reaproveitada como textura
+  Achados e correção (04/11/2026, fix/user-bugs-3): os brilhos ciano/verdes no uniforme vêm dos dois cubos de
+  reflexo 128x128 UBC3 de um nível (`t3`/`t4` do corpo, 0x6284E700/0x6280C700, contagem crua de mips 0): as faces
+  1-5 saíam com blocos de lixo. A memória do dump mostra 16 KB de dados e 6 KB de intervalo repetidos, ou seja,
+  faces a 22528 bytes (a cadeia 64x64..1x1 reservada e alinhamento de 2 KB, a regra do Vita3K); o
+  `TextureLayout.CubeFaceStride` empacotava todo cubo de um nível (regra criada para os cubos 32x32 do Unit 13 e do
+  Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
+  dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
+  diferença; falta conferir no jogo
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que

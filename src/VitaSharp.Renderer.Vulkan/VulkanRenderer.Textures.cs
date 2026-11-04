@@ -685,7 +685,12 @@ public sealed unsafe partial class VulkanRenderer
     static ComponentMapping RtSwizzle(RenderTarget rt, uint texFormat)
     {
         bool is8888 = rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm && (rt.ColorFormat & 0xF1800000) == 0;
-        return is8888 && GxmFormats.BaseOf(texFormat) == TexBase.U8U8U8U8 ? Formats.TextureSwizzle(texFormat) : default;
+        if (!is8888 || GxmFormats.BaseOf(texFormat) != TexBase.U8U8U8U8) return default;
+        // the texture swizzle is defined on memory; RGBA/BGRA surfaces hold logical components, seen here in memory
+        // order first (Gal Gunvolt renders its playfield into RGBA surfaces, samples them as RGBA textures and alpha
+        // tests .w: read reversed, the alpha test discarded the whole background)
+        var tex = Formats.TextureSwizzle(texFormat);
+        return Formats.LogicalOrderSwizzle(rt.ColorFormat) != 0 ? Formats.Compose(Formats.SurfaceMemoryOrder(rt.ColorFormat), tex) : tex;
     }
 
     sealed class RtRegion

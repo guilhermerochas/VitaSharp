@@ -184,6 +184,41 @@ public static class Formats
         _ => Format.R8G8B8A8Unorm,
     };
 
+    /// <summary>
+    /// The component swizzle (0 ABGR, 1 ARGB, 2 RGBA, 3 BGRA) of a U8U8U8U8 colour surface whose image holds the
+    /// program's output in logical order although guest memory does not: RGBA (memory bytes A,B,G,R) and BGRA (bytes
+    /// A,R,G,B) render into R8G8B8A8 images, so that blending finds alpha in the alpha channel. ABGR is already the
+    /// memory order and ARGB uses a B8G8R8A8 image (also the memory order). 0 for every other surface.
+    /// </summary>
+    public static uint LogicalOrderSwizzle(uint colorFormat) =>
+        (colorFormat & 0xF1800000) == 0 && ((colorFormat >> 20) & 3) is 2 or 3 ? (colorFormat >> 20) & 3 : 0;
+
+    /// <summary>
+    /// The view mapping that shows a logical-order surface image (<see cref="LogicalOrderSwizzle"/>) in the guest
+    /// memory's byte order (RGBA: bytes A,B,G,R; BGRA: bytes A,R,G,B), so that what is defined on memory (a texture
+    /// swizzle, the display) can be applied on top of it. Identity for every other surface.
+    /// </summary>
+    public static ComponentMapping SurfaceMemoryOrder(uint colorFormat) => LogicalOrderSwizzle(colorFormat) switch
+    {
+        2 => M(A, B, G, R),
+        3 => M(A, R, G, B),
+        _ => Identity,
+    };
+
+    /// <summary>The view mapping that applies <paramref name="outer"/> to the image as seen through <paramref name="inner"/>.</summary>
+    public static ComponentMapping Compose(ComponentMapping inner, ComponentMapping outer)
+    {
+        ComponentSwizzle Pick(ComponentSwizzle c, ComponentSwizzle own) => (c == I ? own : c) switch
+        {
+            R => inner.R == I ? R : inner.R,
+            G => inner.G == I ? G : inner.G,
+            B => inner.B == I ? B : inner.B,
+            A => inner.A == I ? A : inner.A,
+            var other => other,
+        };
+        return M(Pick(outer.R, R), Pick(outer.G, G), Pick(outer.B, B), Pick(outer.A, A));
+    }
+
     /// <summary>Swizzle applied when the colour surface is sampled/presented (the shader writes logical RGBA).</summary>
     public static ComponentMapping ColorSwizzle(uint colorFormat)
     {

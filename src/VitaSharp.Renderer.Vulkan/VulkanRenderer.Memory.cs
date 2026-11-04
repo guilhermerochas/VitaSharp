@@ -173,6 +173,7 @@ public sealed unsafe partial class VulkanRenderer
         DestroySceneStartCopyLater(rt, now);
         ForgetRenderTargetViews(rt, now);
         _mirroredRt.Remove(rt);
+        ForgetMemoryOrderCopy(rt);
         Release(() =>
         {
             _vk.DestroyImageView(_dev, rt.View, null);

@@ -30,6 +30,13 @@ public sealed class TextureLayoutTests
     }
 
     [Fact]
+    public void LargeSingleLevelFacesReserveTheChainAndAlign()
+    {
+        // FIFA 13's 128x128 UBC3 reflection cubes (raw mip count 0): 16384 + the 64x64..1x1 chain (5488) -> 22528
+        Assert.Equal(22528u, Ubc3(0, 1, 128, 16384));
+    }
+
+    [Fact]
     public void NoMipsFacesArePacked()
     {
         Assert.Equal(512u, Ubc1(0xF, 1, 32, 512));

@@ -605,7 +605,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (bpp == 4 && rt.Address != 0)
         {
             uint rowBytes = rt.Stride * 4;
-            var (buf, off) = UploadSpan(GuestMemory.ReadSpan(rt.Address, (int)(rowBytes * rt.Height)), 16);
+            var mem = GuestMemory.ReadSpan(rt.Address, (int)(rowBytes * rt.Height));
+            uint logical = rt.Format == Format.R8G8B8A8Unorm ? Formats.LogicalOrderSwizzle(rt.ColorFormat) : 0;
+            byte[]? reordered = null;
+            if (logical != 0)
+            {
+                // RGBA/BGRA surfaces hold logical components (Formats.LogicalOrderSwizzle): guest bytes are reordered
+                reordered = System.Buffers.ArrayPool<byte>.Shared.Rent(mem.Length);
+                MemoryToLogicalOrder(mem, reordered.AsSpan(0, mem.Length), logical == 2);
+                mem = reordered.AsSpan(0, mem.Length);
+            }
+            var (buf, off) = UploadSpan(mem, 16);
+            if (reordered != null) System.Buffers.ArrayPool<byte>.Shared.Return(reordered);
             var region = new BufferImageCopy
             {
                 BufferOffset = off,
@@ -989,6 +1000,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
+        src = PresentSource(src); // RGBA/BGRA surfaces: shown in guest memory byte order, as the display reads them
         _lastPresented = (src, frame); // shown again while the emulation is paused (VulkanRenderer.Pause.cs)
 
         RecordFrameSummary(frame);
