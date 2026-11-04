@@ -7,8 +7,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>
 /// Save states: contexts, render targets, sync objects, shader patchers and programs, by their guest handles.
 /// Programs are rebuilt from the guest's program binaries (restored memory); renderer objects (BackendData) are
-/// recreated by the new GPU backend on first use. Not supported yet: recorded command lists (deferred contexts) and a
-/// scene in progress or a display queue entry in flight (the save waits for those to finish).
+/// recreated by the new GPU backend on first use. Recorded command lists of deferred contexts are kept (their draws refer to programs by handle). Not
+/// supported yet: a command list being recorded, and a scene in progress or a display queue entry in flight (the save waits for those to finish).
 /// </summary>
 [GenerateSnapshot, SnapshotIgnoreFields("_contexts", "_renderTargets", "_patchers", "_vertexPrograms", "_fragmentPrograms",
     "_syncObjects", "_displayQueue", "_commandLists")]
@@ -16,7 +16,6 @@ public sealed partial class Gxm : ISnapshotState
 {
     string? ISnapshotState.CheckSnapshot()
     {
-        lock (_commandLists) if (_commandLists.Count > 0) return "host resource GXM command list (deferred context) not supported yet";
         if (_contexts.Values.Any(c => c.Recording != null)) return "host resource GXM command list recording not supported yet";
         return null;
     }
@@ -73,6 +72,40 @@ public sealed partial class Gxm : ISnapshotState
 
         w.Write(_contexts.Count);
         foreach (var c in _contexts.Values) WriteContext(w, c);
+
+        lock (_commandLists)
+        {
+            w.Write(_commandLists.Count);
+            foreach (var l in _commandLists.Values)
+            {
+                w.Write(l.Id); w.Write(l.Owner); w.Write(l.VdmStart); w.Write(l.VdmEnd); w.Write(l.LastUse);
+                w.Write(l.Draws.Length);
+                foreach (var d in l.Draws) WriteRecipe(w, d);
+            }
+        }
+    }
+
+    static void WriteRecipe(SnapshotWriter w, DrawRecipe d)
+    {
+        w.Write(d.Vp.Handle); w.Write(d.Fp.Handle); w.WriteStruct(d.State);
+        w.WriteArray(d.VUbs); w.WriteArray(d.FUbs); w.WriteArray(d.Streams); w.WriteArray(d.VTex); w.WriteArray(d.FTex);
+        w.Write(d.PrimType); w.Write(d.IndexType); w.Write(d.IndexData); w.Write(d.IndexCount); w.Write(d.InstanceCount);
+        w.Write(d.VisEnabled); w.Write(d.VisIncrement); w.Write(d.VisIndex); w.Write(d.ViewportSet); w.Write(d.RegionClipSet);
+    }
+
+    DrawRecipe ReadRecipe(SnapshotReader r)
+    {
+        uint vp = r.ReadUInt32(), fp = r.ReadUInt32();
+        var d = new DrawRecipe
+        {
+            Vp = _vertexPrograms.GetValueOrDefault(vp) ?? throw new SnapshotException($"GXM command list: vertex program 0x{vp:X8} is missing"),
+            Fp = _fragmentPrograms.GetValueOrDefault(fp) ?? throw new SnapshotException($"GXM command list: fragment program 0x{fp:X8} is missing"),
+            State = r.ReadStruct<DrawState>(),
+        };
+        ReadArray(r, d.VUbs); ReadArray(r, d.FUbs); ReadArray(r, d.Streams); ReadArray(r, d.VTex); ReadArray(r, d.FTex);
+        d.PrimType = r.ReadUInt32(); d.IndexType = r.ReadUInt32(); d.IndexData = r.ReadUInt32(); d.IndexCount = r.ReadUInt32(); d.InstanceCount = r.ReadUInt32();
+        d.VisEnabled = r.ReadBool(); d.VisIncrement = r.ReadBool(); d.VisIndex = r.ReadUInt32(); d.ViewportSet = r.ReadBool(); d.RegionClipSet = r.ReadBool();
+        return d;
     }
 
     void LoadExtra(SnapshotReader r)
@@ -145,6 +178,20 @@ public sealed partial class Gxm : ISnapshotState
         {
             var c = ReadContext(r);
             _contexts[c.Handle] = c;
+        }
+
+        lock (_commandLists)
+        {
+            _commandLists.Clear();
+            n = r.ReadInt32();
+            for (int i = 0; i < n; i++)
+            {
+                uint id = r.ReadUInt32(), owner = r.ReadUInt32(), vs = r.ReadUInt32(), ve = r.ReadUInt32();
+                long last = r.ReadInt64();
+                var draws = new DrawRecipe[r.ReadInt32()];
+                for (int k = 0; k < draws.Length; k++) draws[k] = ReadRecipe(r);
+                _commandLists[id] = new RecordedCommandList { Id = id, Owner = owner, Draws = draws, VdmStart = vs, VdmEnd = ve, LastUse = last };
+            }
         }
     }
 

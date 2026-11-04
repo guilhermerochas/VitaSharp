@@ -2,20 +2,14 @@ using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
 
-[GenerateSnapshot, SnapshotIgnoreFields("_recognizers", "_primitives", "_live", "_mine")]
-public sealed partial class SystemGesture : ISnapshotState
+/// <summary>Save states: touch primitives and gesture recognizers with their events and tracking (scratch lists
+/// excluded).</summary>
+[GenerateSnapshot, SnapshotIgnoreFields("_live", "_mine")]
+public sealed partial class SystemGesture
 {
-    string? ISnapshotState.CheckSnapshot()
-    {
-        if (_recognizers.Count > 0) return "host resource touch gesture recognizer not supported yet";
-        if (_primitives.Count > 0 || _live.Count > 0 || _mine.Count > 0) return "host resource touch gesture state not supported yet";
-        return null;
-    }
+    [GenerateSnapshot]
+    sealed partial class Primitive;
 
-    /// <summary>The saved state had none (the save is refused otherwise).</summary>
-    void LoadExtra(SnapshotReader r)
-    {
-        _recognizers.Clear();
-        _primitives.Clear(); _live.Clear(); _mine.Clear();
-    }
+    [GenerateSnapshot]
+    sealed partial class Recognizer;
 }

@@ -9,14 +9,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// history is lost: at most one superframe of the restored stream differs).
 /// </summary>
 [GenerateSnapshot, SnapshotIgnoreFields("_systems", "_racks", "_voices", "_patches")]
-public sealed partial class Ngs : ISnapshotState
+public sealed partial class Ngs
 {
-    string? ISnapshotState.CheckSnapshot()
-    {
-        foreach (var s in _systems.Values) if (s.UpdateDepth != 0) return "an NGS update is running";
-        return null;
-    }
-
     static void WriteFloats(SnapshotWriter w, float[]? a) => w.WriteArray(a);
 
     void SaveExtra(SnapshotWriter w)

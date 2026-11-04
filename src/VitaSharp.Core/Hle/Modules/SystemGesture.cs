@@ -18,7 +18,7 @@ public sealed partial class SystemGesture : HleModule
     const ulong TapMaxTime = 500_000, HoldTime = 500_000;  // Âµs
     const ulong MultiTapWindow = 350_000;
 
-    sealed class Primitive
+    sealed partial class Primitive
     {
         public ushort Id;
         public int Port;
@@ -35,7 +35,7 @@ public sealed partial class SystemGesture : HleModule
     readonly List<Primitive> _primitives = new();     // live + just ended
     ulong _now;
 
-    sealed class Recognizer
+    sealed partial class Recognizer
     {
         public uint Type;
         public int Port;

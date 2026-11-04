@@ -51,13 +51,13 @@ public static class SaveStates
         var sw = Stopwatch.StartNew();
         bool wasPaused = EmulationPause.IsPaused;
         string tmp = path + ".tmp";
-        var held = Hold(emu);
+        var held = new List<GuestThread>();
         try
         {
             while (true)
             {
                 if (EmulationPause.IsPaused) EmulationPause.Resume("save state");
-                string? why = WaitForSafePoint(emu, Math.Max(10, timeoutMs - (int)sw.ElapsedMilliseconds), out _);
+                string? why = HoldBetweenScenes(emu, held, sw, timeoutMs);
                 if (why != null) throw new SnapshotException($"not at a safe point: {why}");
                 EmulationPause.Pause("save state");
                 why = SafePointProblems(emu, out var kinds);
@@ -104,6 +104,32 @@ public static class SaveStates
                 foreach (var t in held) t.HoldForSave(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Holds the threads between two GPU scenes: the hold starts when no scene is open (a thread that opened one may
+    /// be waiting for held threads to finish it), and is released and tried again when a scene stays open. Returns
+    /// null once every thread is at a safe point (with the emulation still running), else why not.
+    /// </summary>
+    static string? HoldBetweenScenes(Emulator emu, List<GuestThread> held, Stopwatch sw, int timeoutMs)
+    {
+        string? why = null;
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            if (held.Count == 0)
+            {
+                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++) Thread.Sleep(1);
+                held.AddRange(Hold(emu));
+            }
+            why = WaitForSafePoint(emu, 300, out _);
+            if (why == null) return null;
+            if (emu.OpenSceneThread == null && !why.Contains("GPU scene", StringComparison.Ordinal)) continue;
+            // a scene stays open: let every thread run, then hold again between two scenes
+            foreach (var t in held) t.HoldForSave(false);
+            held.Clear();
+            Thread.Sleep(5);
+        }
+        return why ?? "timed out";
     }
 
     /// <summary>Holds every guest thread of <paramref name="emu"/> at its next safe point (module service threads run on).</summary>

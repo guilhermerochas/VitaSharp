@@ -108,7 +108,8 @@ only while one exists; with none open the module saves normally).
 | Ctrl, Display | Display.cs | hand-written | vblank notifier restarted when callbacks exist |
 | Fiber | Fiber.cs | hand-written | fibers with their register contexts, per-thread current fiber |
 | Fios2User | Fios2User.cs | hand-written | overlay table |
-| Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers; command lists refused |
+| Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers, recorded command lists; a list being recorded is refused |
+| SystemGesture | SystemGesture.cs | generated (nested) | touch primitives and recognizers |
 | Http | Http.cs | hand-written | templates/connections/requests; an exchange in flight or an epoll is refused |
 | IoFileMgr | IoFileMgr.cs | hand-written | files reopened by path at their offset, directory listings |
 | JpegEnc | JpegEnc.cs | hand-written | |
@@ -124,5 +125,4 @@ only while one exists; with none open the module saves normally).
 | Location | Location.cs | refused in use | location handles |
 | NetAdhocMatching, NpMatching2, Rudp | | refused in use | online sessions (network) |
 | Sas | Sas.cs | refused in use | SAS engine |
-| SystemGesture | SystemGesture.cs | refused in use | gesture recognizers |
 | TriggerUtil | TriggerUtil.cs | refused in use | scheduled trigger events |
