@@ -534,6 +534,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   termina (buffer sem próximo → Finalizing → Available) e é ligada de novo, enquanto o SndStream acha que é a
   mesma reprodução. Próximo: logar as transições da voz do stream de música e ver se ela acaba por falta de buffer
   (fila vazia por atraso nosso) — aí o defeito é o fim da voz, não o contador
+  Achados (04/11/2026, fix/user-bugs-3, sem correção ainda): reproduz com o save do usuário, aceitando os termos por
+  toque (`tap@f1100:0.196:0.713,tap@f1300:0.69:0.90` e depois cross a cada 150 quadros): 4264 avisos em 100 s. A
+  hipótese de fim de voz por buffer inválido na troca não se confirma: o único END_OF_DATA logado no swap é de um som
+  de um buffer só (`next -1`, legítimo). Os avisos alternam leituras: o contador cresce (0x700, 0xB00, 0xF00..., passos
+  de 0x400) e a leitura seguinte dá 0, ou seja, o SndStream lê a posição em dois lugares diferentes e um deles fica
+  sempre zerado. As primeiras leituras de `sceNgsVoiceGetStateData` antes do primeiro aviso são da voz 0x81759310,
+  módulo 1, 2048 bytes, tudo zero (+0/+4/+8 = 0) com a voz Active: provavelmente o SndStream lê o estado de um
+  módulo (ou de uma segunda voz do stream) cujo `GuestState` nunca é preenchido por nós. Próximo passo: logar
+  voz/módulo/tipo de módulo de todas as leituras com +8 = 0 junto com as não-zero, e ver qual módulo o firmware
+  preenche (Vita3K: estado do player x estado do módulo de saída)
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
