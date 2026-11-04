@@ -308,6 +308,42 @@ public sealed class Videodec : HleModule
                 break;
             }
         }
+        PadToMacroblocks(dst, pixelType & 0x38, pitch, bufH, w, h);
+    }
+
+    /// <summary>
+    /// The hardware decoder writes whole macroblock rows (a 960x540 movie fills 544 rows), FFmpeg returns the picture
+    /// cropped: the rows up to the next multiple of 16 (within the buffer) repeat the last row, as the encoder's
+    /// padding does. Games that sample the whole 16-aligned buffer showed the unwritten rows (Shinobido 2: a green line
+    /// under the movie, YUV 0,0,0).
+    /// </summary>
+    static void PadToMacroblocks(uint dst, uint layout, uint pitch, uint bufH, int w, int h)
+    {
+        int padded = Math.Min((h + 15) & ~15, (int)bufH);
+        if (h <= 0 || padded <= h) return;
+        void Repeat(uint plane, uint rowBytes, int lastRow, int from, int to, int bytes)
+        {
+            var last = GuestMemory.Span(plane + (uint)lastRow * rowBytes, bytes).ToArray();
+            for (int y = from; y < to; y++) last.CopyTo(GuestMemory.Span(plane + (uint)y * rowBytes, bytes));
+        }
+        switch (layout)
+        {
+            case PIXEL_YUV420_RASTER:
+            {
+                uint uOff = pitch * bufH, vOff = uOff + pitch / 2 * (bufH / 2);
+                Repeat(dst, pitch, h - 1, h, padded, w);
+                Repeat(dst + uOff, pitch / 2, h / 2 - 1, h / 2, padded / 2, w / 2);
+                Repeat(dst + vOff, pitch / 2, h / 2 - 1, h / 2, padded / 2, w / 2);
+                break;
+            }
+            case PIXEL_YUV420_PACKED_RASTER:
+                Repeat(dst, pitch, h - 1, h, padded, w);
+                Repeat(dst + pitch * bufH, pitch, h / 2 - 1, h / 2, padded / 2, w);
+                break;
+            default:
+                Repeat(dst, pitch * 4, h - 1, h, padded, w * 4);
+                break;
+        }
     }
 
     static void ToRgb(DecodedPicture p, uint dst, uint pitch, int w, int h, bool bgra, byte alpha, bool bt709, bool full)

@@ -57,12 +57,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
-- [ ] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
+- [x] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
   um botão flutuante "+ Instalar VPK" no canto inferior direito da Biblioteca (`LibraryView.cs`, seletor do sistema
   pelo SAF), mas ele pode estar escondido/fora da tela (sobre a grade, atrás da barra de navegação, ou some durante
   a instalação) — conferir no Redmi Note 14 e deixar a ação visível e fácil de achar (também no menu/Ajustes e na
   tela vazia da Biblioteca). Além do VPK, aceitar `.pkg` + `work.bin`/`.rif` e licença em zRIF (o desktop já instala
-  `.pkg`; ver o item do zRIF em "Firmware e sistema") e mostrar progresso e erros claros
+  `.pkg`; ver o item do zRIF em "Firmware e sistema") e mostrar progresso e erros claros. Feito (04/11/2026, branch
+  fix/user-bugs, só compilado, falta o usuário testar no celular): "+ Instalar" no topo da Biblioteca, o botão
+  flutuante virou "+ Instalar jogo", um botão na Biblioteca vazia e "Jogos > Instalar jogo" em Ajustes; cada um
+  pergunta .vpk ou .pkg + licença (arquivo work.bin/.rif ou zRIF colado), com barra de progresso e o erro em
+  diálogo. O zRIF é decodificado no Core (`Package/Zrif.cs`, dicionário do pkg2zip) e o `PkgInstaller` confere o
+  content ID da licença contra o do `.pkg`; o `install <pkg> <rif|zRIF>` do CLI também aceita zRIF
 - [ ] Sistema do Vita (shell) não roda no Android (relato do usuário, 01/11/2026; log do celular
   `20261101_204800_SYSTEM.log`, Redmi Note 14, firmware 3.74 instalado no app): a sessão abre, a GPU apresenta só
   2 superfícies (0x6043E000 e 0x60240000) e 91 quadros em ~4 s, com apenas 7 shaders e 4 pipelines (no PC o shell
@@ -235,7 +240,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
   o content ID contra o `.pkg` e gravar o `.rif` em `ux0:license/<TITLEID>` e o `work.bin`; no CLI (`install <pkg>
-  <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android
+  <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android. Core, CLI e app Android feitos
+  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
@@ -246,7 +252,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `SceCameraCoreCameraDeviceThread` espera em `condvar SceCameraCoreCameraDeviceLoopStatusCond` e a outra está Dormant.
   Funções que faltam no caminho: `ScePhotoExport::NID_16B1028E`, `SceLibLocation::NID_EFC9BD25` / `NID_2311B24A`,
   `sceAppMgrMmsMount`, `_vshAppMgrRegisterPath`, `sceKernelCheckModelCapability`, e um `IO: unmapped path ''` logo
-  antes de criar as threads da câmera
+  antes de criar as threads da câmera. (04/11/2026: não deu para reproduzir — a instalação atual do firmware 3.74
+  em `%APPDATA%\VitaSharp\fs` não tem `vs0:app/NPXS10007`; precisa reinstalar/conferir o firmware e rodar com
+  `--camera=<webcam>`)
 
 ## Código
 
@@ -272,17 +280,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
-- [ ] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
+- [x] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
   log `20261031_193541_PCSE00006`): implementar `SceDebugLed::sceKernelGetGPI` (NID 0x14F582CF), lida pela `main`
   em 0x81064351 — num Vita de varejo devolve 0 (as chaves de depuração só existem em kits); também ver os 4
-  underruns de áudio da sessão
-- [ ] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
+  underruns de áudio da sessão. Feito (04/11/2026, fix/user-bugs): `sceKernelGetGPI` devolve 0; 40 s a 30 fps
+  sem nenhum underrun (os 4 de antes não se repetiram com o PC livre)
+- [x] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
   por mais de 1 minuto (31/10/2026, main 13ca113, log `20261031_193411_PCSA00080`). A thread `avPlayer Controller` (o
   player do vídeo de abertura) chama `SceMp4::NID_D5B26179`, que não está implementada (o `Mp4.cs` já tem stubs para
   outros NIDs desconhecidos), logo depois de um `sceGxmWaitEvent` da `main`; o jogo provavelmente espera o filme
   começar/terminar. Descobrir o que a `D5B26179` faz (assinatura no `libSceMp4`/firmware, Vita3K) e implementar, e
   ver se o player do jogo precisa de mais funções do SceMp4/SceAvPlayer; também havia 2 underruns de áudio sem
-  nenhum quadro
+  nenhum quadro. Corrigido (04/11/2026, fix/user-bugs), três causas: (1) `D5B26179` é o GetStreamInfo no layout
+  interno do `libscemp4` (0x140 bytes: vídeo +0x10/+0x14 perfil/nível AVC, +0x20 tamanho máximo da unidade, +0x28
+  duração; áudio +8 taxa, +0xC bits por amostra, +0x1C canais; idioma +0x38), que o `sceMp4GetStreamInfo` só converte
+  para o de 0x158; (2) `sceGxmWaitEvent` do `libgxm_es4` é um `sceGpuSignalWait(…, 100 ms)` e não volta na hora (a
+  `main` chamava 67 milhões de vezes em 50 s); (3) o modo das msgpipes estava trocado (PSP: 0 = tudo; Vita: 0 = ASAP,
+  1 = FULL, 0x10 = não esperar), e a thread de render do jogo recebia com ASAP num buffer de 0x600 e esperava para
+  sempre mensagens de 12 bytes. Logos, filme de abertura, menu da coleção a 30 fps e o LoadExec do Jak 1; o Ninja
+  Gaiden Σ2 agora também mostra o filme de abertura (antes o player falhava e pulava)
 - [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
   13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
   Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável
@@ -295,7 +311,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   thread `main` espera no `mutex Render 1`; a thread `Display Engine` fica rodando sem parar (pc 0x8102F2A0, lr
   0x00002E42, que parece inválido) logo depois de um `sceGxmWaitEvent(1, 0x2CC7, 0x1021, 0)` — provavelmente ela
   segura o mutex e fica em loop esperando um evento/notificação da GPU que o emulador não entrega (ou o lr
-  quebrado indica um retorno errado do HLE). Ver o que o `sceGxmWaitEvent` espera e o que a Display Engine lê no loop
+  quebrado indica um retorno errado do HLE). Ver o que o `sceGxmWaitEvent` espera e o que a Display Engine lê no loop.
+  Provavelmente corrigido (04/11/2026, fix/user-bugs, falta o usuário confirmar jogando): o `sceGxmWaitEvent` do
+  `libgxm_es4` é um `sceGpuSignalWait` de até 100 ms e o HLE voltava na hora, então a Display Engine girava sem
+  parar segurando o `Render 1`; agora dorme até uma notificação da GPU. Duas sessões de 8000 quadros (a 60 fps, logos,
+  aviso de dificuldade e a tela do título) passaram do quadro 4116 sem watchdog; no fim a Display Engine espera no
+  seu condvar
 - [ ] God Wars: Future Past (PCSB01073; no Vita3K trava no carregamento): o campo de batalha 3D não aparece, só o HUD
   sobre preto (31/10/2026, main 13ca113, captura F10 `diagnostics\PCSB01073_20261031_191141`, ~30 fps, 134 desenhos em
   6 cenas). O jogo (Unity, IL2CPP) desenha o 3D numa superfície fora da tela em 0x61CFF8E0 (960x544, endereço sem
@@ -303,7 +324,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   avisa `transfer reads render target 0x604…/0x608…/0x600… while a scene is open: not written back` (uma cópia lê o
   framebuffer antes de a cena ser gravada na memória) e há 6 imports de variável não resolvidos de
   `Il2CppAssemblies` em `UnityPlayer_536_Release`. Ver se a composição lê a superfície 3D certa (endereço
-  desalinhado / região), se a cópia precisa forçar a gravação da cena e se os imports faltando importam
+  desalinhado / região), se a cópia precisa forçar a gravação da cena e se os imports faltando importam.
+  Achados (04/11/2026, só pela captura; o jogo precisa de um save numa batalha para reproduzir): o 3D é desenhado
+  (o clear do Unity, draw 5, pinta 0.10/0.22/0.20 e ~80 desenhos seguem), e o downscale (draw 99, scene 33653) lê o
+  `0x61CFF8E0` como textura 960x544 e sai com conteúdo (média ~0.39 no 240x136); mas a composição final (draw 103,
+  outra cena, mesmo `t0=0x61CFF8E0`) sai preta, e o dump do próprio alvo em `targets.txt` tem estatísticas lixo
+  (médias ~1e-315, como se a leitura não fosse do formato certo). Ou seja, a segunda leitura do alvo desalinhado já
+  não acha a imagem renderizada (cai na memória do guest, que nunca recebeu o writeback). Próximo passo: com um save
+  na batalha, `--trace-draws` + log de qual imagem o `ResolveTexture` escolhe para `0x61CFF8E0` em cada desenho
+  (área do renderer que os agentes de desempenho estão mexendo: Draw/Memory)
 - [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
@@ -316,7 +345,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~40 px do topo, largura toda, com o botão SKIP): ela aparece num quadro e some no seguinte. Provavelmente o jogo
   desenha essa faixa só uma vez em cada buffer e depois só redesenha o resto, contando que o conteúdo do buffer
   continua lá; ver se o emulador perde o conteúdo anterior do framebuffer (load op / imagem nova por quadro, troca de
-  buffer, escrita de volta na memória) quando a cena não cobre a tela inteira
+  buffer, escrita de volta na memória) quando a cena não cobre a tela inteira.
+  Achados (04/11/2026, fix/user-bugs): reproduz com o `croixleur_boot` (save do usuário) até f2700 e
+  `--gpu-dump-at=2600:2606`; no `replay-gpu` a faixa está nos quadros 2600-2601 (vêm dos alvos restaurados no começo
+  do dump) e some de 2602 em diante. Os 88 desenhos são os mesmos em todo quadro e nenhum desenha a faixa: ela fica
+  na memória de cada um dos 3 framebuffers (0x60280000/0x60480000/0x60680000) e sobrevive porque o desenho 7 (fs
+  A96C3889E4BBF59E, tela cheia) lê o próprio framebuffer como `t1` e o recompõe. Ou seja, o conteúdo de um
+  framebuffer tem que continuar o mesmo depois de 3 quadros (2 apresentações de outros buffers no meio); aqui ele se
+  perde (provável: a imagem do alvo é descartada/recriada a partir da memória do guest, que nunca recebeu o
+  writeback). Fica no renderer (Memory/Draw, área dos agentes de desempenho); o dump acima serve de teste
+  (`replay-gpu --compare`)
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
@@ -352,7 +390,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~1,1 ms por quadro (esperas de fence 0,18 ms/quadro). Ou seja, o jogo espera um sinal da "GPU" (fila de exibição,
   notificação ou sync do GXM) que o emulador entrega atrasado, e não é a GPU que está lenta. A
   `UnityGfxDeviceWorker` estava rodando. Conferir se não é só a CPU do PC disputada por um build em paralelo (havia
-  um agente compilando o APK naquela hora); se repetir com o PC livre, ver quem sinaliza essa espera
+  um agente compilando o APK naquela hora); se repetir com o PC livre, ver quem sinaliza essa espera. Achados
+  (04/11/2026, fix/user-bugs): o jogo não espera vblank nenhum — o callback da fila de exibição chama
+  `sceDisplaySetFrameBuf(…, 0)` (IMMEDIATE) e nada chama `sceDisplayWait*`; o único freio são os 2
+  `sceGxmNotificationWait` por quadro da `UnityGfxDeviceWorker`. Sem janela (teste) ele roda a 160-620 fps; com
+  janela, o ritmo vem de quando a apresentação do host libera o quadro e as notificações. Ou seja, os engasgos com
+  `guestGpuWait` alto são a espera das notificações atrás da apresentação do host. Ideia genérica a decidir com os
+  agentes de desempenho (mexe no ritmo de todos os jogos): no modo IMMEDIATE, no máximo uma troca de buffer por vblank
+  no `SetFrameBuf` (o painel não mostra mais que isso), em vez de depender da apresentação do host
 
 - [ ] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
@@ -360,14 +405,29 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   resto espera em semáforos/eventflags (`SlSemaphore_Platform`, `SlThreadGateBank`); a única função que falta é
   `ScePspnetAdhoc::sceNetAdhocInit` (NID 0x87805E13), chamada pela MainThread logo antes. Ver o que a MainThread e a
   `SumoPlatform` esperam (provavelmente rede/PSN ou conquistas) e a instrução `strex r1, r1, [r2]` (Rd = Rt) que
-  derruba o Vita3K
+  derruba o Vita3K. Achados (04/11/2026, fix/user-bugs): não é determinístico — numa rodada passou do quadro 24 e
+  seguiu a 30 fps (1029 quadros, 11750 desenhos, mas as imagens pretas), nas outras parou no 25/26. Parado, a
+  `MainThread` só faz `sceTouchPeek`+`sceTouchRead` (lr 0x81118615/0x81118AFD) e trava/destrava o lwmutex 0x81896328 a
+  cada ~16 ms, sem nenhuma outra função desde o quadro 23: espera em memória algo que outra thread deveria
+  marcar; a `SumoPlatform` faz `sceKernelDelayThread(1 s)` em loop no mesmo lwmutex e a `AchievementIssueThread`
+  também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
+  a escreveria, e comparar uma rodada que passa com uma que para
 
 - [ ] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
   cruza o plano próximo sem recorte). Captura F10 em `%APPDATA%\VitaSharp\diagnostics\PCSE00093_20261030_204939`
   (127 quadros em `replay/`, 109 desenhos em `draws.txt`; aviso de profundidade de cena MSAA lida como textura
-  X8U24 960x1088) (30/10/2026, main 4dbe06c)
+  X8U24 960x1088) (30/10/2026, main 4dbe06c). Reproduzido e isolado (04/11/2026, fix/user-bugs): com o save do
+  usuário, `--input=start@f1900:f8,cross@f2300:f8,cross@f2700:f8,lstick@f3100:0:1:f400,lstick@f3500:-1:0:f400` e
+  `--gpu-dump-at=3600:3603` o `replay-gpu` mostra a malha; `--draw-limit=79@3601` x `80@3601` dá o desenho 80 (corpo
+  do Messi: vs ACBE979868E05D6E, fs 4BBB4BC975F36384, 16524 índices, skinning com o buffer 1 de 8 KB de matrizes
+  3x4). Os índices dos ossos são U8 em +32 (`a[r20 f0x4]`, ex. 60/103) e os pesos U8N em +36 (`a[r16 f4x4]`, 0xAF+0x50
+  = 1,0), então não passam do buffer (aumentar o `MaxUbInFloat` para 16 KB só sumiu com os jogadores: descartado). O
+  shader multiplica os índices (`pa[5]`) por `sa[0].z` = 9,155553e-05 = 6/65535, o que sugere que o hardware entrega
+  esse atributo U8 cru em outro formato (16 bits normalizado?) e o endereço do osso sai errado; o desenho 81 (mesmo
+  layout) fica certo. Próximo: conferir no GXP o tipo do parâmetro `r20` (regformat/untyped) e como o Vita3K converte
+  esse atributo antes da multiplicação
 
 - [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
@@ -375,7 +435,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
   campo é acumulado (pode causar música repetindo ou cortando em outros jogos com SndStream). Também:
   `sce_scream_api.cpp(1385): Invalid parameter` na inicialização do som e `sceNetInit` chamado duas vezes (o
-  segundo recebe EBUSY, como no firmware; o jogo segue)
+  segundo recebe EBUSY, como no firmware; o jogo segue). Achados (04/11/2026): o campo que o SndStream acumula é o
+  +8 do estado do player ("amostras geradas desde o key on", `Ngs.cs`), e ele só volta a 0 no `Transition`
+  Available→Active (novo key on) ou no `sceNgsVoiceInit` com flag 2 — então o aviso aparece quando a voz do stream
+  termina (buffer sem próximo → Finalizing → Available) e é ligada de novo, enquanto o SndStream acha que é a
+  mesma reprodução. Próximo: logar as transições da voz do stream de música e ver se ela acaba por falta de buffer
+  (fila vazia por atraso nosso) — aí o defeito é o fim da voz, não o contador
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
@@ -387,13 +452,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em
   `scratchpad/phone2_shots/pc`, `review.md`): The Deer God (PCSB01070) sem limite de quadros (214-348 fps; antes 60);
   Shinobido 2 (PCSE00015) com uma linha verde embaixo do filme de abertura e `sceKernelGetCpuId` sem implementação
-  (31.410 chamadas); Call of Duty (PCSB00232) com o título em russo; Zero Time Dilemma com o menu do título a 47-57 fps
+  (31.410 chamadas) — corrigidos em 04/11/2026 (fix/user-bugs): o filme é 960x540 e o jogo amostra o buffer de 544
+  linhas; o decodificador do Vita escreve macroblocos inteiros e agora as linhas até o múltiplo de 16 repetem a última
+  (antes ficavam YUV 0,0,0 = verde), e `sceKernelGetCpuId` devolve o núcleo da afinidade (ou um fixo 0–2 por thread);
+  Call of Duty (PCSB00232) com o título em russo; Zero Time Dilemma com o menu do título a 47-57 fps
   (era 60); lentidões a confirmar com o PC ocioso (as rodadas dividiram a CPU com builds do APK): Soul Sacrifice no
   fogo/fumaça, Silent Hill na seleção de zona (15-22 fps), Skullgirls na abertura da luta, Crazy Market nos termos de
   uso (16 fps), Tearaway num menu parado (com o PC ocioso: confirmados Silent Hill e Crazy Market; Soul Sacrifice e
   Skullgirls eram carregamentos ou CPU dividida); NIDs sem implementação vistos uma vez: `SceNpManager` FFBFC540 (FIFA 13),
   `SceMp4` D5B26179 (Ninja Gaiden Σ2), `sceNpSnsFacebookInit` e `sceCoredumpRegisterCoredumpHandler` (Tearaway). Os
-  cenários de jogo novo precisam de uma raiz de dados sem saves (com save eles seguem pelo Continuar)
+  cenários de jogo novo precisam de uma raiz de dados sem saves (com save eles seguem pelo Continuar). O título em
+  russo do Call of Duty não é defeito (04/11/2026): o PCSB00232 instalado é a edição `DECLASSIFIEDEU02` (russo e
+  polonês; o `TITLE` padrão do param.sfo é "(рус)" e só há "(Polski)" como alternativa); o jogo lê o idioma 1 (inglês)
+  pelo `sceAppUtilSystemParamGetInt` e, sem inglês nessa edição, fica no russo, como faria no Vita
 - [ ] Filmes no celular ainda mais lentos que no PC (31/10/2026, perf/android-phone-2): o primeiro filme do F1 2011 leva
   5,6 s contra 4,8 s no PC (45 grãos de silêncio no som do filme; Uncharted 40 por volta do filme do título), já com o
   decodificador H.264 do próprio Android (o da MediaTek segurava quadros: 6,25 s, 75 lacunas). Os decodificadores não

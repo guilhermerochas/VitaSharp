@@ -228,6 +228,20 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void MsgPipeModeZeroIsAsap()
+    {
+        // SCE_KERNEL_MSG_PIPE_MODE_ASAP is 0 and FULL is 1 (the PSP had them the other way round): Jak and Daxter's
+        // renderer thread receives 12-byte messages with mode 0 into a 0x600-byte buffer
+        var pipe = new MsgPipe { BufferSize = 0x40 };
+        uint msg = Alloc(12), buf = Alloc(0x600), res = Alloc(4);
+        Assert.Equal(0, pipe.Send(msg, 12, MsgPipe.WaitAll, new Ptr<uint>(res), default, false));
+        Assert.Equal(0, pipe.Receive(buf, 0x600, 0, new Ptr<uint>(res), default, false));
+        Assert.Equal(12u, GuestMemory.R32(res));
+        // DONT_WAIT on an empty pipe fails at once instead of blocking
+        Assert.Equal(SceError.MPP_EMPTY, pipe.Receive(buf, 0x600, MsgPipe.DontWait, new Ptr<uint>(res), default, false));
+    }
+
+    [Fact]
     public void DeletedMsgPipeStaysForOpenHandles()
     {
         // a libipmi server opens its client's pipes by name; when the client deletes them (or its process ends) the

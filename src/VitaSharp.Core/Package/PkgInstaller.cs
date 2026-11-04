@@ -14,10 +14,32 @@ public static class PkgInstaller
         return rif.AsSpan(0x50, 16).ToArray();
     }
 
+    /// <summary>Reads a license given as a .rif/work.bin path or as a zRIF string.</summary>
+    public static byte[] ReadLicense(string licenseOrZrif)
+    {
+        if (File.Exists(licenseOrZrif)) return File.ReadAllBytes(licenseOrZrif);
+        if (Zrif.LooksLikeZrif(licenseOrZrif)) return Zrif.Decode(licenseOrZrif);
+        throw new FileNotFoundException($"License not found (not a file nor a zRIF): {licenseOrZrif}");
+    }
+
     public static InstalledTitle Install(string pkgPath, string licensePath, string ux0Root,
+                                         Action<string>? log = null, Action<double>? progress = null) =>
+        Install(pkgPath, ReadLicense(licensePath), ux0Root, log, progress);
+
+    /// <summary>Installs <paramref name="pkgPath"/> with the license bytes (.rif/work.bin contents or a decoded zRIF).</summary>
+    public static InstalledTitle Install(string pkgPath, byte[] license, string ux0Root,
+                                         Action<string>? log = null, Action<double>? progress = null) =>
+        Install(new FileStream(pkgPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20), license, ux0Root, log, progress);
+
+    /// <summary>Installs the package read from <paramref name="pkgStream"/> (seekable; disposed here).</summary>
+    public static InstalledTitle Install(Stream pkgStream, byte[] license, string ux0Root,
                                          Action<string>? log = null, Action<double>? progress = null)
     {
-        using var pkg = new PkgReader(pkgPath);
+        if (license.Length < 0x60) { pkgStream.Dispose(); throw new InvalidDataException("License file is too small"); }
+        using var pkg = new PkgReader(pkgStream);
+        string licContent = Zrif.ContentId(license);
+        if (licContent.Length == 36 && licContent != pkg.ContentId)
+            throw new InvalidDataException($"The license is for {licContent}, the package is {pkg.ContentId}");
         var sfo = new Sfo(pkg.ParamSfo);
         var type = pkg.ContentType;
         if (type == PkgContentType.App && sfo.Category == "gp") type = PkgContentType.Patch;
@@ -44,7 +66,7 @@ public static class PkgInstaller
         }
         log?.Invoke($"Extracted {pkg.Entries.Count} entries to {dest}");
 
-        byte[] klic = ReadKlicensee(licensePath);
+        byte[] klic = license.AsSpan(0x50, 16).ToArray();
         if (PfsDecryptor.HasPfs(dest))
         {
             var pfs = new PfsDecryptor(dest, klic) { Log = log };
@@ -53,9 +75,9 @@ public static class PkgInstaller
 
         var licDir = Path.Combine(ux0Root, "license", titleId);
         Directory.CreateDirectory(licDir);
-        File.Copy(licensePath, Path.Combine(licDir, pkg.ContentId + ".rif"), true);
+        File.WriteAllBytes(Path.Combine(licDir, pkg.ContentId + ".rif"), license);
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));
-        File.Copy(licensePath, Path.Combine(dest, "sce_sys", "package", "work.bin"), true);
+        File.WriteAllBytes(Path.Combine(dest, "sce_sys", "package", "work.bin"), license);
         if (type is PkgContentType.App or PkgContentType.Patch) AppMeta.Installed(ux0Root, titleId, log);
         progress?.Invoke(1.0);
         return new InstalledTitle(titleId, sfo.Title, dest, type);

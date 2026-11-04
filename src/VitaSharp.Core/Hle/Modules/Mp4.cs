@@ -112,33 +112,59 @@ public sealed class Mp4 : HleModule
     }
 
     [Hle]
-    int sceMp4GetStreamInfo(int h, int index, uint info)
+    int sceMp4GetStreamInfo(int h, int index, uint info) => WriteStreamInfo(h, index, info, compact: false);
+
+    /// <summary>
+    /// The same query in the library's own (compact) layout: libscemp4's GetStreamInfo builds this struct on its
+    /// stack and converts it to the 0x158 one, NID D5B26179 hands it to the caller as is (both run the same stream
+    /// lookup). Video fields are at the same offsets; audio has sample rate +8, bit rate +0xC and channels +0x1C
+    /// (+0x38/+0x3C/+0x4C in the 0x158 layout), and the language moves from +0x50 to +0x38.
+    /// </summary>
+    [Hle(Nid = 0xD5B26179)]
+    int Mp4_D5B26179(int h, int index, uint info) => WriteStreamInfo(h, index, info, compact: true);
+
+    int WriteStreamInfo(int h, int index, uint info, bool compact)
     {
         if (Get(h) is not { } f) return ERR_INVALID_HANDLE;
         if (index < 0 || index >= f.Demux.Streams.Count || info == 0) return ERR_INVALID_ARG;
         var s = f.Demux.Streams[index];
-        GuestMemory.Fill(info, 0, 0x158);
+        uint audio = compact ? 0u : 0x30u;
+        GuestMemory.Fill(info, 0, compact ? 0x40u : 0x158u);
         GuestMemory.W32(info, s.Video ? 0u : 1u);
         if (s.Video)
         {
             GuestMemory.W32(info + 4, s.Codec == AVCodecID.AV_CODEC_ID_H264 ? 1u : 0u);
             GuestMemory.W32(info + 8, (uint)s.Width);
             GuestMemory.W32(info + 12, (uint)s.Height);
-            uint fps1000 = (uint)Math.Round(s.FrameRate * 1000);
-            GuestMemory.W32(info + 0x10, fps1000 / 1000);
-            GuestMemory.W32(info + 0x14, fps1000 % 1000);
-            GuestMemory.W32(info + 0x20, 90000);
+            if (compact)
+            {
+                // the library's own fields: +0x10/+0x14 AVC profile/level bytes of the SPS (not known here: High,
+                // 3.1), +0x20 the largest unit the reader buffers (its default 1 MB), +0x28 the duration
+                GuestMemory.W32(info + 0x10, 100);
+                GuestMemory.W32(info + 0x14, 31);
+                GuestMemory.W32(info + 0x20, 0x100000);
+                GuestMemory.Write(info + 0x28, (ulong)s.Duration90k);
+            }
+            else
+            {
+                uint fps1000 = (uint)Math.Round(s.FrameRate * 1000);
+                GuestMemory.W32(info + 0x10, fps1000 / 1000);
+                GuestMemory.W32(info + 0x14, fps1000 % 1000);
+                GuestMemory.W32(info + 0x20, 90000);
+                GuestMemory.Write(info + 0x30, (ulong)s.Duration90k);
+            }
         }
         else
         {
             GuestMemory.W32(info + 4, s.Codec == AVCodecID.AV_CODEC_ID_AAC ? 2u : 0u);
-            GuestMemory.W32(info + 0x38, (uint)s.SampleRate);
-            GuestMemory.W32(info + 0x3C, (uint)s.BitRate);
-            GuestMemory.W32(info + 0x4C, (uint)s.Channels);
+            GuestMemory.W32(info + audio + 8, (uint)s.SampleRate);
+            // the compact layout has the sample entry's bits per sample here
+            GuestMemory.W32(info + audio + 0xC, compact ? 16u : (uint)s.BitRate);
+            GuestMemory.W32(info + audio + 0x1C, (uint)s.Channels);
+            if (!compact) GuestMemory.Write(info + 0x30, (ulong)s.Duration90k);
         }
-        GuestMemory.Write(info + 0x30, (ulong)s.Duration90k);
-        var lang = System.Text.Encoding.ASCII.GetBytes((s.Language + "\0\0\0\0")[..4]);
-        lang.CopyTo(GuestMemory.Span(info + 0x50, 4));
+        var lang = System.Text.Encoding.ASCII.GetBytes((s.Language + "\0\0\0\0")[..3] + "\0");
+        lang.CopyTo(GuestMemory.Span(info + (compact ? 0x38u : 0x50u), 4));
         return 0;
     }
 
