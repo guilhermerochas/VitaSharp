@@ -355,6 +355,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aparecem, mas a área de jogo no centro está toda preta, sem o cenário/blocos da fase (24 desenhos em 3 cenas por
   quadro, nenhum aviso além de formatos de textura novos). Confirmar com o usuário o sintoma exato e comparar com o
   Vita real (se a fase deveria ter fundo), e conferir a ampliação 480x272 → 960x544 (filtro, proporção)
+  Achados (04/11/2026, fix/user-bugs-2, pela captura): o fundo da fase existe — é o alvo 0x8E449BC0 512x256
+  (`targets/`), desenhado no 960x544 pelo desenho 9 (fs 4C0DA2DA0578DC65), que descarta o texel se `.w < 1`
+  (alpha test) e devolve `(w, z, y, x)`. O alvo é uma superfície U8U8U8U8 com swizzle RGBA (0x00200000) e é lido como
+  textura RGBA (0x0C002000). No hardware essa ida e volta é identidade (memória A,B,G,R; a textura RGBA lê do byte
+  mais alto), mas o renderer grava a saída do programa em ordem lógica numa imagem R8G8B8A8 (só ARGB usa B8G8R8A8,
+  que já é a ordem da memória) e aplica o swizzle da textura (definido sobre a memória) direto nela: o `.w` lido é o R
+  (máx. 0,66) e o alpha test descarta a fase inteira. Testado compor o swizzle da textura com a ordem de memória da
+  superfície em `RtSwizzle`: a fase volta, mas as cores do jogo todo invertem (vermelho no lugar de azul), porque a
+  apresentação (blit cru da imagem) e o resto do caminho contam com o erro oposto. A correção certa é tratar a imagem
+  de superfícies RGBA/BGRA de forma consistente em todos os pontos (amostragem, apresentação, writeback, regiões, cópias),
+  ou gravar na ordem da memória; patch do experimento em `scratchpad/bugs2_gunvolt_swizzle.patch`
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
