@@ -333,6 +333,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   não acha a imagem renderizada (cai na memória do guest, que nunca recebeu o writeback). Próximo passo: com um save
   na batalha, `--trace-draws` + log de qual imagem o `ResolveTexture` escolhe para `0x61CFF8E0` em cada desenho
   (área do renderer que os agentes de desempenho estão mexendo: Draw/Memory)
+  Mais achados (04/11/2026, fix/user-bugs-2, só pela mesma captura): o alvo 3D é lido três vezes no quadro, e as
+  três pelo mesmo caminho (draw ring `Krt@0x61CFF8E0`, sem scene-start): o downscale (99, sai certo), a composição com
+  o bloom (103) e um passe de tela cheia (113, fs 53F1421EAC9F9053, `out = tex4x4 * sa0.x + cena`, com `sa0.x` = 0,
+  substitui o RGB do framebuffer). Então o preto final vem da leitura da cena em 103/113, não do vertex shader (os UVs
+  passam direto; o `sa[4].x` = 0x178814A0 é o `_TexelSize` em F16 e só decide a inversão do v). A diferença entre 99
+  e 103/113 é só o alvo de destino (240x136 sem profundidade x o framebuffer 0x60400000 com ds 0x60C00000). Sem um
+  roteiro de entrada até a batalha não deu para reproduzir; próximo passo continua sendo um F8 (dump de GPU) do
+  usuário numa batalha, e então `replay-gpu --draw-limit` em 99/103/113 com `--debug-fs=9154143BA21F0658:t3`. Pista forte: no
+  `targets.txt` o alvo 3D termina o quadro todo zerado (min = max = 0; as médias ~1e-315 são só ruído do cálculo), ou
+  seja, a imagem é apagada depois do desenho 99. O único caminho que recarrega um alvo inteiro da memória do guest no meio
+  do quadro é `InvalidateTextures` (`CallbackCommand` com `WriteSize`: uma transferência na CPU que escreve na faixa
+  do alvo → `UploadSurfaceFromGuest`, com a memória nunca gravada de volta = preto). O log mostra transferências lendo os
+  framebuffers com uma cena aberta (`transfer reads render target ... while a scene is open`) logo antes de a textura
+  0x61CFF8E0 aparecer: conferir com `VITASHARP_TRACE_VIS`/um log temporário em `InvalidateTextures` se o destino de uma
+  transferência cai em [0x61CFF8E0, 0x61EFD8E0); se cair, a transferência tem de ir para a imagem na GPU (ou o alvo ser
+  gravado de volta antes), não recarregar o alvo inteiro da memória
 - [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
