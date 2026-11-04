@@ -165,6 +165,23 @@ public sealed class SysMem : HleModule
     [Hle] int sceKernelIsPSVitaTV() => 0;
     /// <summary>SceDebugLed: sets the development-kit GPO debug LEDs; retail units have none (Vita3K: no-op).</summary>
     [Hle] int sceKernelSetGPO(uint state) => 0;
+    /// <summary>SceDebugLed: reads the development-kit GPI switches; a retail unit has none and reads 0.</summary>
+    [Hle] uint sceKernelGetGPI() => 0;
+
+    /// <summary>
+    /// SceCpu: the core the calling thread runs on (the firmware reads MPIDR). Threads are not pinned to emulated
+    /// cores here, so a thread whose affinity names exactly one core reports that core, a system-software thread core
+    /// 3, and any other thread a stable core from its uid (games index per-core data with it, so it must stay in 0-2).
+    /// </summary>
+    [Hle]
+    int sceKernelGetCpuId()
+    {
+        if (GuestThread.Current is not { } t) return 0;
+        if (t.OnSystemCore) return 3;
+        int cores = (t.Affinity >> 16) & 7;
+        if (cores != 0 && (cores & (cores - 1)) == 0) return System.Numerics.BitOperations.TrailingZeroCount(cores);
+        return (int)((uint)t.Uid % 3);
+    }
     /// <summary>SceKernelSubbudgetInfo (0xC): +0 size, +4 total_size, +8 free_size. MAIN (0) follows
     /// sceKernelGetFreeMemorySize; CDLG (1, common dialog memory) size is a confirmar (reported as 0).</summary>
     [Hle]

@@ -47,6 +47,7 @@ point a scenario reaches is not the end of the game.
 | Game | Title ID | Status | Notes | Scenario |
 | --- | --- | --- | --- | --- |
 | 99Vidas | PCSE00914 | In‑game | Tutorial stage and first fights; Cross-Save through the local PSN services | `99vidas_boot` |
+| Army Corps of Hell | PCSE00006 | Menus | Logos and the intro at 30 fps, no audio underruns | — |
 | Blast 'Em Bunnies | PCSE00328 | In‑game | First level and tutorial | `bunnies_boot` |
 | Call of Duty: Black Ops Declassified | PCSB00232 | Menus | Logos and title screen | `cod_boot` |
 | Crazy Market | PCSE00291 | Menus | Logos and the terms of service (16 fps on that screen, to confirm) | `crazymarket` |
@@ -63,7 +64,7 @@ point a scenario reaches is not the end of the game.
 | Knightin'+ | PCSE01444 | Menus | Title, save select, world map | `knightin_boot` |
 | LittleBigPlanet PS Vita | PCSA00017 | In‑game | Notebook intro with Sackboy walking | `lbp_boot` |
 | Minecraft: PlayStation Vita Edition | PCSE00491 | Menus | Terms of use, main menu, new world options | `minecraft_boot` |
-| Shinobido 2: Revenge of Zen | PCSE00015 | Menus | Logos and the intro movie (a green line along its bottom edge) | `shinobido2` |
+| Shinobido 2: Revenge of Zen | PCSE00015 | Menus | Logos and the intro movie | `shinobido2` |
 | Ninja Gaiden Σ Plus | PCSB00097 | In‑game | Intro movie, menus, new game and the first fights | `ngs_boot` |
 | Ninja Gaiden Σ2 Plus | PCSE00233 | In‑game | Opening movie, title, new game, first fights of chapter 1 | `ngs2_boot` |
 | Persona 4 Golden | PCSB00245 | In‑game | New game up to the station scene (the scenario types a full name on the game's own letter grid); cannot start from the real shell yet (fixed-address executable) | `p4g_newgame` |

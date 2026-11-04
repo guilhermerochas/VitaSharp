@@ -278,10 +278,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
-- [ ] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
+- [x] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
   log `20261031_193541_PCSE00006`): implementar `SceDebugLed::sceKernelGetGPI` (NID 0x14F582CF), lida pela `main`
   em 0x81064351 — num Vita de varejo devolve 0 (as chaves de depuração só existem em kits); também ver os 4
-  underruns de áudio da sessão
+  underruns de áudio da sessão. Feito (04/11/2026, fix/user-bugs): `sceKernelGetGPI` devolve 0; 40 s a 30 fps
+  sem nenhum underrun (os 4 de antes não se repetiram com o PC livre)
 - [x] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
   por mais de 1 minuto (31/10/2026, main 13ca113, log `20261031_193411_PCSA00080`). A thread `avPlayer Controller` (o
   player do vídeo de abertura) chama `SceMp4::NID_D5B26179`, que não está implementada (o `Mp4.cs` já tem stubs para
@@ -400,7 +401,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em
   `scratchpad/phone2_shots/pc`, `review.md`): The Deer God (PCSB01070) sem limite de quadros (214-348 fps; antes 60);
   Shinobido 2 (PCSE00015) com uma linha verde embaixo do filme de abertura e `sceKernelGetCpuId` sem implementação
-  (31.410 chamadas); Call of Duty (PCSB00232) com o título em russo; Zero Time Dilemma com o menu do título a 47-57 fps
+  (31.410 chamadas) — corrigidos em 04/11/2026 (fix/user-bugs): o filme é 960x540 e o jogo amostra o buffer de 544
+  linhas; o decodificador do Vita escreve macroblocos inteiros e agora as linhas até o múltiplo de 16 repetem a última
+  (antes ficavam YUV 0,0,0 = verde), e `sceKernelGetCpuId` devolve o núcleo da afinidade (ou um fixo 0–2 por thread);
+  Call of Duty (PCSB00232) com o título em russo; Zero Time Dilemma com o menu do título a 47-57 fps
   (era 60); lentidões a confirmar com o PC ocioso (as rodadas dividiram a CPU com builds do APK): Soul Sacrifice no
   fogo/fumaça, Silent Hill na seleção de zona (15-22 fps), Skullgirls na abertura da luta, Crazy Market nos termos de
   uso (16 fps), Tearaway num menu parado (com o PC ocioso: confirmados Silent Hill e Crazy Market; Soul Sacrifice e
