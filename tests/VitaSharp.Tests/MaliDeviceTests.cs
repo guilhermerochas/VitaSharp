@@ -113,6 +113,18 @@ public class MaliDeviceTests
     }
 
     [Fact]
+    public void ScriptedPadRaisesStateSteps()
+    {
+        var pad = new ScriptedPad("savestate@0:2,cross@0:100,loadstate@50");
+        var got = new List<(bool, int)>();
+        pad.StateRequested += (save, slot) => got.Add((save, slot));
+        Assert.Equal(1, pad.Count); // only the button is a pad step
+        Assert.Equal(VitaButtons.Cross, pad.Apply(ControllerState.Neutral).Buttons);
+        pad.Apply(ControllerState.Neutral);
+        Assert.Equal([(true, 2)], got); // once, not on every poll; the load is not due yet
+    }
+
+    [Fact]
     public void ScriptedPadReadsLiveSteps()
     {
         string path = Path.Combine(Path.GetTempPath(), $"vs_live_{Environment.ProcessId}_{Guid.NewGuid():N}.txt");

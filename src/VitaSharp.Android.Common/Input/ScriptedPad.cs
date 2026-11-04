@@ -12,6 +12,8 @@ namespace VitaSharp.Android.Input;
 /// ltrigger, rtrigger), <c>lstick@T:x:y[:len]</c> / <c>rstick@...</c> (x, y in -1..1) and <c>tap@T:x:y[:len]</c> /
 /// <c>btap@...</c> (front/rear touch at normalised x, y). T and len are seconds since
 /// the game first polled the pad (len 0.25 s by default). Combined with the on-screen pad and controllers.
+/// <c>savestate@T:slot</c> / <c>loadstate@T:slot</c> raise <see cref="StateRequested"/> once (the pause menu's
+/// "Salvar estado" / "Carregar estado" for unattended save state checks).
 /// <see cref="LivePath"/> adds steps while the game runs.
 /// </summary>
 public sealed class ScriptedPad
@@ -19,6 +21,10 @@ public sealed class ScriptedPad
     sealed record Step(VitaButtons Button, int Stick, double Start, double Length, float X, float Y);
 
     List<Step> _steps = [];
+    List<(bool Save, int Slot, double At)> _states = [];
+
+    /// <summary>A <c>savestate</c>/<c>loadstate</c> step is due: (save, slot). Raised on the thread that polls the pad.</summary>
+    public event Action<bool, int>? StateRequested;
     Stopwatch? _clock;
     double _nextPoll;
 
@@ -27,9 +33,9 @@ public sealed class ScriptedPad
     /// screen (adb push) where the phone refuses <c>adb shell input</c>.</summary>
     public string? LivePath { get; init; }
 
-    public ScriptedPad(string script) => _steps = Parse(script, 0);
+    public ScriptedPad(string script) => _steps = Parse(script, 0, _states);
 
-    static List<Step> Parse(string script, double offset)
+    static List<Step> Parse(string script, double offset, List<(bool, int, double)> states)
     {
         var steps = new List<Step>();
         var inv = CultureInfo.InvariantCulture;
@@ -40,6 +46,11 @@ public sealed class ScriptedPad
             var p = at[1].Split(':');
             double start = offset + double.Parse(p[0], inv);
             string name = at[0].ToLowerInvariant();
+            if (name is "savestate" or "loadstate")
+            {
+                states.Add((name == "savestate", p.Length > 1 ? int.Parse(p[1], inv) : 1, start));
+                continue;
+            }
             if (name is "tap" or "btap")
             {
                 if (p.Length < 3) throw new FormatException($"bad tap step '{raw}'");
@@ -78,8 +89,10 @@ public sealed class ScriptedPad
             File.Delete(LivePath!);
             // copy on write: AddTouches may run on another thread
             var steps = new List<Step>(_steps);
-            steps.AddRange(Parse(text.Replace('\n', ',').Replace('\r', ','), t));
+            var states = new List<(bool, int, double)>(_states);
+            steps.AddRange(Parse(text.Replace('\n', ',').Replace('\r', ','), t, states));
             _steps = steps;
+            _states = states;
         }
         catch (Exception e) when (e is IOException or FormatException or UnauthorizedAccessException) { }
     }
@@ -90,6 +103,7 @@ public sealed class ScriptedPad
         _clock ??= Stopwatch.StartNew();
         double t = _clock.Elapsed.TotalSeconds;
         if (LivePath != null && t >= _nextPoll) PollLive(t);
+        if (_states.Count > 0) FireStates(t);
         foreach (var st in _steps)
         {
             if (t < st.Start || t >= st.Start + st.Length) continue;
@@ -99,6 +113,14 @@ public sealed class ScriptedPad
             else if (st.Stick == 2) { s.Rx = ax(st.X); s.Ry = ax(st.Y); }
         }
         return s;
+    }
+
+    void FireStates(double t)
+    {
+        var due = _states.FindAll(s => s.At <= t);
+        if (due.Count == 0) return;
+        _states = _states.FindAll(s => s.At > t);
+        foreach (var (save, slot, _) in due) StateRequested?.Invoke(save, slot);
     }
 
     /// <summary>Adds the touches of the tap steps active now (front: tap, rear: btap), each step its own contact.</summary>
