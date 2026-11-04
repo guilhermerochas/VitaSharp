@@ -1,17 +1,13 @@
+using VitaSharp.Core.Hle.Font;
 using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
 
-/// <summary>Save states: font libraries and the system fonts open in them with their size and style; a font the game
-/// opened from its own memory or file is refused for now.</summary>
+/// <summary>Save states: font libraries and their open fonts with size and style: system fonts by index, fonts the
+/// game opened from its memory or files with their file contents.</summary>
 [GenerateSnapshot, SnapshotIgnoreFields("GuestCallOverride", "SystemFontOverride", "_fonts", "_libs")]
-public sealed partial class Pvf : ISnapshotState
+public sealed partial class Pvf
 {
-    string? ISnapshotState.CheckSnapshot()
-    {
-        lock (_lock) return _fonts.Values.Any(f => f.SystemIndex < 0) ? "host resource PVF font opened from game data not supported yet" : null;
-    }
-
     void SaveExtra(SnapshotWriter w)
     {
         lock (_lock)
@@ -24,8 +20,9 @@ public sealed partial class Pvf : ISnapshotState
                 w.Write(l.Slots.Length);
                 foreach (var f in l.Slots)
                 {
-                    w.Write(f?.SystemIndex ?? -1);
+                    w.Write(f == null ? -2 : f.SystemIndex);
                     if (f == null) continue;
+                    if (f.SystemIndex < 0) { w.Write(f.Face.FileBytes.ToArray()); w.Write(f.Face.SubIndex); }
                     w.Write(f.CharH); w.Write(f.CharV); w.Write(f.Embolden); w.Write(f.SkewX); w.Write(f.SkewY);
                 }
             }
@@ -46,9 +43,11 @@ public sealed partial class Pvf : ISnapshotState
                 for (int s = 0; s < l.Slots.Length; s++)
                 {
                     int idx = r.ReadInt32();
-                    if (idx < 0) continue;
-                    var face = SystemFace(idx, out _) ?? throw new SnapshotException($"system font {SystemFonts[idx].File} cannot be read");
-                    var f = new OpenFont { Lib = l, Face = face, OwnsFace = false, Slot = s, SystemIndex = idx, Handle = l.FontTable + (uint)s * FontEntrySize };
+                    if (idx == -2) continue;
+                    var face = idx >= 0
+                        ? SystemFace(idx, out _) ?? throw new SnapshotException($"system font {SystemFonts[idx].File} cannot be read")
+                        : PvfFace.Open(r.ReadBytes() ?? [], r.ReadInt32()) ?? throw new SnapshotException("a game font cannot be read again");
+                    var f = new OpenFont { Lib = l, Face = face, OwnsFace = idx < 0, Slot = s, SystemIndex = idx, Handle = l.FontTable + (uint)s * FontEntrySize };
                     f.CharH = r.ReadSingle(); f.CharV = r.ReadSingle(); f.Embolden = r.ReadSingle(); f.SkewX = r.ReadSingle(); f.SkewY = r.ReadSingle();
                     l.Slots[s] = f;
                     _fonts[f.Handle] = f;

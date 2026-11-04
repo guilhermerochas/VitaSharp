@@ -42,7 +42,7 @@ public sealed partial class NpMatching2 : HleModule
     internal const ushort ServerId = 1;
     internal const uint WorldId = 1;
 
-    sealed class Context
+    sealed partial class Context
     {
         public bool Started;
         public uint CtxCb, CtxArg;

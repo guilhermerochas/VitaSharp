@@ -117,12 +117,14 @@ only while one exists; with none open the module saves normally).
 | Net | Online.cs | hand-written | callbacks kept; sockets/epolls/resolvers are dropped on load (the game sees a disconnect) |
 | Ngs | Ngs.cs | hand-written | systems, racks, voices, patches, decode positions; ATRAC9 decoders recreated |
 | NpManager, NpTrophy | Np.cs, NpTrophy.cs | hand-written | trophy sets read again by communication id |
-| Pgf, Pvf | Pgf.cs, Pvf.cs | hand-written | system fonts reopened; a font opened from game data is refused |
+| Pgf, Pvf | Pgf.cs, Pvf.cs | hand-written | system fonts reopened; PVF fonts from game data kept with their file; a PGF font from game data is refused |
 | Atrac | Atrac.cs | refused in use | ATRAC stream decoder |
 | Audioenc, Videoenc, Mp4Recorder | | refused in use | encoders / recorder |
-| G729, Voice | | refused in use | voice chat codecs and ports |
+| Voice | Voice.cs | generated (nested) | voice ports and buffered audio; the host stream reopens on demand |
+| G729 | G729.cs | refused in use | voice chat codec |
 | Ime | Ime.cs | refused in use | IME session events |
 | Location | Location.cs | refused in use | location handles |
-| NetAdhocMatching, NpMatching2, Rudp | | refused in use | online sessions (network) |
+| NpMatching2 | Multiplayer.cs | generated (nested) | matching contexts and callbacks |
+| NetAdhocMatching, Rudp | | refused in use | online sessions (network) |
 | Sas | Sas.cs | refused in use | SAS engine |
 | TriggerUtil | TriggerUtil.cs | refused in use | scheduled trigger events |

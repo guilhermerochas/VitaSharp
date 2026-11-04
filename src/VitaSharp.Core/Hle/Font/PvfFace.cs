@@ -56,7 +56,7 @@ internal sealed unsafe class PvfFace : IDisposable
     public static PvfFace? Open(byte[] data, int subIndex)
     {
         if (data.Length < 12) return null;
-        var f = new PvfFace(data);
+        var f = new PvfFace(data) { SubIndex = subIndex };
         int offset = stbtt_GetFontOffsetForIndex(f._data, subIndex);
         if (offset < 0 || offset >= data.Length || stbtt_InitFont(f._info, f._data, offset) == 0 || !f.ReadTables(offset))
         {
@@ -65,6 +65,10 @@ internal sealed unsafe class PvfFace : IDisposable
         }
         return f;
     }
+
+    /// <summary>The font file this face was read from and its face index (save states keep game fonts).</summary>
+    public ReadOnlySpan<byte> FileBytes => _data == null ? default : new ReadOnlySpan<byte>(_data, _length);
+    public int SubIndex { get; private init; }
 
     public void Dispose()
     {

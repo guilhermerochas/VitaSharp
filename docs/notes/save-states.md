@@ -56,3 +56,25 @@ saved position, a few pictures of drift), MP4 demuxers and AvPlayer media (reope
 (reopened at their offset), camera captures, system fonts. Dropped: network sockets (the game sees a disconnect).
 Not saved, the save is refused while one exists: see "refused in use" in the inventory. Saved data, trophies and
 registry values the game wrote are the user's (on disk) and are not rolled back.
+
+## Tested (desktop, 04/11/2026)
+
+Save, load ~10 s later, play on (headless runs with the scenario inputs). "Pass" = saved, loaded, no crash, the
+picture continues from the saved point, frame rate as before the load.
+
+| Game | Family | Result |
+|---|---|---|
+| Knightin'+ | Construct 2, no video | pass (save select, then the dungeon entered after the load) |
+| Uncharted: Golden Abyss | gameplay, NGS, fibers | pass (title and gameplay) |
+| F1 2011 | movies, NGS, race | pass (race; intro movie reopened by Mp4) |
+| Persona 4 Golden | movies | pass (title) |
+| LittleBigPlanet, Devious Dungeon | NGS audio | pass |
+| Killzone: Mercenary | AT9, touch gestures | pass (after SystemGesture state) |
+| Invizimals | camera / motion | pass (menu) |
+| The Deer God, Stardew Valley | Unity | pass |
+| Sonic Mania, Blast 'Em Bunnies, Jak and Daxter Collection | misc., AvPlayer (LLE) | pass |
+| Tearaway | deferred contexts | saves and loads, then the new renderer hits a Vulkan device loss on its first frame |
+| Minecraft, Gravity Rush | NP matching / voice ports, touch / motion, PVF game fonts | pass |
+
+Not exercised by an installed game: Atrac (ATRAC streams), Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
+NetAdhocMatching/Rudp (online), TriggerUtil, Ime (in-game keyboard), LoadExec after a load, the Vita shell (refused).

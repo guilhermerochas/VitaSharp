@@ -2,18 +2,15 @@ using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
 
-[GenerateSnapshot, SnapshotIgnoreFields("Clock", "MemBlockExists", "_ports")]
-public sealed partial class Voice : ISnapshotState
+/// <summary>Save states: voice ports with their buffered audio; a port's host output stream is opened again on demand.</summary>
+[GenerateSnapshot, SnapshotIgnoreFields("Clock", "MemBlockExists")]
+public sealed partial class Voice
 {
-    string? ISnapshotState.CheckSnapshot()
-    {
-        if (_ports.Any(p => p != null)) return "host resource voice chat port not supported yet";
-        return null;
-    }
+    [GenerateSnapshot, SnapshotIgnoreFields("Stream", "StreamTried")]
+    sealed partial class Port;
 
-    /// <summary>The saved state had none (the save is refused otherwise).</summary>
-    void LoadExtra(SnapshotReader r)
+    void BeforeSnapshotLoad()
     {
-        Array.Clear(_ports);
+        foreach (var p in _ports) { p?.Stream?.Dispose(); if (p != null) p.Stream = null; }
     }
 }

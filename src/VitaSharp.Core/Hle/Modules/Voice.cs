@@ -34,7 +34,7 @@ public sealed partial class Voice : HleModule
         3850 => (20, 40), 4650 => (24, 40), 5700 => (15, 20), 7300 => (19, 20), 12200 => (16, 10), _ => null,
     };
 
-    sealed class Port
+    sealed partial class Port
     {
         public uint Type;
         public ushort Threshold;
