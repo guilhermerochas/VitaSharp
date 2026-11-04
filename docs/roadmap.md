@@ -333,12 +333,46 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   não acha a imagem renderizada (cai na memória do guest, que nunca recebeu o writeback). Próximo passo: com um save
   na batalha, `--trace-draws` + log de qual imagem o `ResolveTexture` escolhe para `0x61CFF8E0` em cada desenho
   (área do renderer que os agentes de desempenho estão mexendo: Draw/Memory)
+  Mais achados (04/11/2026, fix/user-bugs-2, só pela mesma captura): o alvo 3D é lido três vezes no quadro, e as
+  três pelo mesmo caminho (draw ring `Krt@0x61CFF8E0`, sem scene-start): o downscale (99, sai certo), a composição com
+  o bloom (103) e um passe de tela cheia (113, fs 53F1421EAC9F9053, `out = tex4x4 * sa0.x + cena`, com `sa0.x` = 0,
+  substitui o RGB do framebuffer). Então o preto final vem da leitura da cena em 103/113, não do vertex shader (os UVs
+  passam direto; o `sa[4].x` = 0x178814A0 é o `_TexelSize` em F16 e só decide a inversão do v). A diferença entre 99
+  e 103/113 é só o alvo de destino (240x136 sem profundidade x o framebuffer 0x60400000 com ds 0x60C00000). Sem um
+  roteiro de entrada até a batalha não deu para reproduzir; próximo passo continua sendo um F8 (dump de GPU) do
+  usuário numa batalha, e então `replay-gpu --draw-limit` em 99/103/113 com `--debug-fs=9154143BA21F0658:t3`. Pista forte: no
+  `targets.txt` o alvo 3D termina o quadro todo zerado (min = max = 0; as médias ~1e-315 são só ruído do cálculo), ou
+  seja, a imagem é apagada depois do desenho 99. O único caminho que recarrega um alvo inteiro da memória do guest no meio
+  do quadro é `InvalidateTextures` (`CallbackCommand` com `WriteSize`: uma transferência na CPU que escreve na faixa
+  do alvo → `UploadSurfaceFromGuest`, com a memória nunca gravada de volta = preto). O log mostra transferências lendo os
+  framebuffers com uma cena aberta (`transfer reads render target ... while a scene is open`) logo antes de a textura
+  0x61CFF8E0 aparecer: conferir com `VITASHARP_TRACE_VIS`/um log temporário em `InvalidateTextures` se o destino de uma
+  transferência cai em [0x61CFF8E0, 0x61EFD8E0); se cair, a transferência tem de ir para a imagem na GPU (ou o alvo ser
+  gravado de volta antes), não recarregar o alvo inteiro da memória
+  Confirmado com o dump F8 do usuário numa batalha (`PCSB01073_20261104_135953`): em todo quadro uma transferência
+  escreve 0x61CFF8E0 inteiro (2088960 bytes) com a cena do framebuffer aberta, logo depois da composição (desenho 110) e
+  antes do passe final (118, que lê o alvo e substitui o RGB do framebuffer); o `InvalidateTextures` recarrega o alvo
+  da memória e o 118 lê lixo. A transferência lê o framebuffer cuja cena ainda está aberta, e `BeforeCallback` pulava a
+  gravação de volta de qualquer alvo enquanto houvesse cena aberta. Corrigido (fix/user-bugs-2): a renderização é pausada
+  (`PauseRendering`) e o alvo é gravado de volta antes da cópia, como entre cenas. Falta conferir ao vivo numa batalha
+  (o replay não reexecuta transferências; o roteiro `Load Game` com o save no slot 0 só chega ao mapa)
 - [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
   aparecem, mas a área de jogo no centro está toda preta, sem o cenário/blocos da fase (24 desenhos em 3 cenas por
   quadro, nenhum aviso além de formatos de textura novos). Confirmar com o usuário o sintoma exato e comparar com o
   Vita real (se a fase deveria ter fundo), e conferir a ampliação 480x272 → 960x544 (filtro, proporção)
+  Achados (04/11/2026, fix/user-bugs-2, pela captura): o fundo da fase existe — é o alvo 0x8E449BC0 512x256
+  (`targets/`), desenhado no 960x544 pelo desenho 9 (fs 4C0DA2DA0578DC65), que descarta o texel se `.w < 1`
+  (alpha test) e devolve `(w, z, y, x)`. O alvo é uma superfície U8U8U8U8 com swizzle RGBA (0x00200000) e é lido como
+  textura RGBA (0x0C002000). No hardware essa ida e volta é identidade (memória A,B,G,R; a textura RGBA lê do byte
+  mais alto), mas o renderer grava a saída do programa em ordem lógica numa imagem R8G8B8A8 (só ARGB usa B8G8R8A8,
+  que já é a ordem da memória) e aplica o swizzle da textura (definido sobre a memória) direto nela: o `.w` lido é o R
+  (máx. 0,66) e o alpha test descarta a fase inteira. Testado compor o swizzle da textura com a ordem de memória da
+  superfície em `RtSwizzle`: a fase volta, mas as cores do jogo todo invertem (vermelho no lugar de azul), porque a
+  apresentação (blit cru da imagem) e o resto do caminho contam com o erro oposto. A correção certa é tratar a imagem
+  de superfícies RGBA/BGRA de forma consistente em todos os pontos (amostragem, apresentação, writeback, regiões, cópias),
+  ou gravar na ordem da memória; patch do experimento em `scratchpad/bugs2_gunvolt_swizzle.patch`
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -355,6 +389,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   perde (provável: a imagem do alvo é descartada/recriada a partir da memória do guest, que nunca recebeu o
   writeback). Fica no renderer (Memory/Draw, área dos agentes de desempenho); o dump acima serve de teste
   (`replay-gpu --compare`)
+  Achados (04/11/2026, fix/user-bugs-2): a hipótese acima estava errada. A faixa é desenhada em todo quadro (desenho 12,
+  textura 0x621E8000 960x40 UBC3 swizzled-arbitrary; a de baixo é o desenho 15, 0x615C0000). Num bloco comprimido
+  swizzled-arbitrary os blocos seguem a ordem morton na grade potência de dois (240x10 blocos → 256x16), então a
+  textura ocupa 61120 bytes, mas `ComputeLayout` contava 38400: o cache de texturas e o dump de GPU cobriam só os
+  primeiros 2/3, e no replay o terço direito das faixas (e a ponta esquerda da caixa de diálogo, 720x216) saía preto.
+  Corrigido o tamanho (replay do `croixleur_boot` com as faixas inteiras de 2600 a 2606; replays de PCSF00476
+  idênticos). O pisca-pisca ao vivo (a faixa inteira some em quadros alternados) NÃO reproduziu headless, nem com as
+  opções do usuário (`--async-shaders=on --shaderc-opt=zero`, modo de depuração): falta o usuário confirmar na
+  janela com esta versão; se continuar, gravar um F8 (dump de GPU) durante o pisca-pisca
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
@@ -413,7 +456,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
   a escreveria, e comparar uma rodada que passa com uma que para
 
-- [ ] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
+- [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
   cruza o plano próximo sem recorte). Captura F10 em `%APPDATA%\VitaSharp\diagnostics\PCSE00093_20261030_204939`
@@ -427,7 +470,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   shader multiplica os índices (`pa[5]`) por `sa[0].z` = 9,155553e-05 = 6/65535, o que sugere que o hardware entrega
   esse atributo U8 cru em outro formato (16 bits normalizado?) e o endereço do osso sai errado; o desenho 81 (mesmo
   layout) fica certo. Próximo: conferir no GXP o tipo do parâmetro `r20` (regformat/untyped) e como o Vita3K converte
-  esse atributo antes da multiplicação
+  esse atributo antes da multiplicação.
+  Corrigido (04/11/2026, fix/user-bugs-2): os índices e o fator 6/65535 estavam certos (VPCK F32→S16N dá 3·índice,
+  48 bytes por osso). O GXP declara `Joint[180]` (60 ossos, buffer 1 de 2880 bytes), mas a malha do corpo usa ossos
+  até 255 (12 KB); um buffer que termina num array era lido só até 8 KB (`MaxUbInFloat`), então os ossos 171-255
+  liam o buffer 7 ou nada. Agora o limite desses buffers é 16 KB (`MaxUbArrayInFloat`, `GeneratorVersion` 20; a
+  tentativa anterior de 16 KB provavelmente sumiu com os jogadores por usar o cache de shaders antigo, com outros
+  offsets). Messi inteiro no treino; replays de Croixleur e PCSF00476 idênticos
 
 - [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:

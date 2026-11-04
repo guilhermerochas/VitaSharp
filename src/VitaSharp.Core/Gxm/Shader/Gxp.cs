@@ -260,13 +260,19 @@ public sealed class UniformBufferDesc
     public uint RegBlockSize;
     /// <summary>The buffer ends with an array (bone palettes, light tables). Hardware does no bounds checks on uniform
     /// buffer loads and shaders do index such arrays past their declared length (Uncharted declares
-    /// g_mSkinTransforms[96] and reads entry 147), so the buffer is read as far as the next buffer / mapped memory.</summary>
+    /// g_mSkinTransforms[96] and reads entry 147; FIFA 13 declares Joint[180], 60 bones, and reads bones up to 255),
+    /// so the buffer is read as far as the next buffer / mapped memory, up to
+    /// <see cref="ProgramInput.MaxUbArrayInFloat"/>.</summary>
     public bool EndsWithArray;
 }
 
 public sealed class ProgramInput
 {
     public const uint TextureBuffer = 15, LiteralBuffer = 16, ThreadBuffer = 18, DefaultUniformBuffer = 14, MaxUbInFloat = 2048;
+    /// <summary>Words read from a buffer that ends with an array: a palette indexed by a U8 bone index spans 256 3x4
+    /// matrices (12 KB). FIFA 13's player bodies index bones up to 255; at 8 KB bones 171-255 read the next buffer
+    /// (or nothing) and the skinned vertices were stretched across the screen.</summary>
+    public const uint MaxUbArrayInFloat = 4096;
     /// <summary>Debug (VITASHARP_UB_UNBOUNDED=1): size every indexed uniform buffer as unbounded (read up to the next buffer).</summary>
     static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable(EnvVars.UbUnbounded) == "1";
     public static bool UnboundedUbsActive => UnboundedUbs;
@@ -362,7 +368,7 @@ public sealed class ProgramInput
         foreach (var (idx, b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024) b.Size = MaxUbInFloat;
-            else if ((UnboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbInFloat);
+            else if ((UnboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbArrayInFloat);
             pi.UniformBuffers.Add(b);
         }
 

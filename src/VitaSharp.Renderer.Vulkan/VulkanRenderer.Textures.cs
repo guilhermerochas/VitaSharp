@@ -869,6 +869,12 @@ public sealed unsafe partial class VulkanRenderer
                 if (info.Convert == TexConvert.Pvrtc) { bw = Math.Max(bw, 2); bh = Math.Max(bh, 2); }
                 rowPitch = bw * (uint)info.BlockBytes;
                 bytes = rowPitch * bh;
+                // swizzled-arbitrary blocks are morton ordered in the power-of-two block grid (TextureDecoder): the
+                // level reaches the morton index of its last block. Croixleur Sigma's 960x40 UBC3 banners span 61120
+                // bytes, not 38400; the texture cache and GPU dumps covered only the first 38400 (the right third
+                // of the banner was lost in replays)
+                if (swizzled && !pow2 && info.Convert != TexConvert.Pvrtc)
+                    bytes = Math.Max(bytes, (TextureLayout.Morton(bw - 1, bh - 1, BitOperations.RoundUpToPowerOf2(bw), BitOperations.RoundUpToPowerOf2(bh)) + 1) * (uint)info.BlockBytes);
             }
             else if (type == GxmTextureDesc.TypeLinearStrided)
             {

@@ -149,8 +149,16 @@ public sealed unsafe partial class VulkanRenderer
             // data loaded there) is newer than the surface: the writeback would overwrite it
             if (!swept) { _sweptFrame = -1; swept = true; } // fold the stores made since this frame's sweep
             if (OverwrittenSinceRendered(rt, cb.ReadAddress, cb.ReadSize)) continue;
-            // a surface still being rendered (transfers come between scenes; never seen inside one)
-            if (_inScene) { Log.WarnOnce($"xfer-inscene-{rt.Address:X8}", $"[gpu] transfer reads render target 0x{rt.Address:X8} while a scene is open: not written back"); continue; }
+            // a transfer issued while a scene is open runs after the work submitted before it (its sync object waits for
+            // the scene): what was rendered so far is written back. God Wars (Unity) copies its framebuffer into the 3D
+            // target before its last full-screen pass with the framebuffer's scene still open; skipped, the copy read
+            // stale memory and the target was reloaded from it, so the battlefield was black.
+            if (_inScene)
+            {
+                if (_xferInScene++ < 20 || TraceSync)
+                    Log.Info($"[gpu] transfer reads render target 0x{rt.Address:X8} while the scene of 0x{_rt?.Address ?? 0:X8} is open: rendering paused for the writeback");
+                PauseRendering(rt);
+            }
             int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat), hostBpp = HostBytesPerPixel(rt.Format);
             if (WritebackConversion(rt.ColorFormat, rt.Format, hostBpp, guestBpp) is not { } conv)
             {
@@ -175,7 +183,7 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly List<RenderTarget> _xferTargets = new();
 
-    int _xferWritebacks;
+    int _xferWritebacks, _xferInScene;
 
     /// <summary>Copies one pixel rectangle of the target into a host buffer (into guest memory once the frame completed).</summary>
     void CopyOutRect(RenderTarget rt, uint x, uint y, uint w, uint h, int hostBpp, int guestBpp, WritebackConvert conv)
