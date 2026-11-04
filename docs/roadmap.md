@@ -413,7 +413,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
   a escreveria, e comparar uma rodada que passa com uma que para
 
-- [ ] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
+- [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
   cruza o plano próximo sem recorte). Captura F10 em `%APPDATA%\VitaSharp\diagnostics\PCSE00093_20261030_204939`
@@ -427,7 +427,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   shader multiplica os índices (`pa[5]`) por `sa[0].z` = 9,155553e-05 = 6/65535, o que sugere que o hardware entrega
   esse atributo U8 cru em outro formato (16 bits normalizado?) e o endereço do osso sai errado; o desenho 81 (mesmo
   layout) fica certo. Próximo: conferir no GXP o tipo do parâmetro `r20` (regformat/untyped) e como o Vita3K converte
-  esse atributo antes da multiplicação
+  esse atributo antes da multiplicação.
+  Corrigido (04/11/2026, fix/user-bugs-2): os índices e o fator 6/65535 estavam certos (VPCK F32→S16N dá 3·índice,
+  48 bytes por osso). O GXP declara `Joint[180]` (60 ossos, buffer 1 de 2880 bytes), mas a malha do corpo usa ossos
+  até 255 (12 KB); um buffer que termina num array era lido só até 8 KB (`MaxUbInFloat`), então os ossos 171-255
+  liam o buffer 7 ou nada. Agora o limite desses buffers é 16 KB (`MaxUbArrayInFloat`, `GeneratorVersion` 20; a
+  tentativa anterior de 16 KB provavelmente sumiu com os jogadores por usar o cache de shaders antigo, com outros
+  offsets). Messi inteiro no treino; replays de Croixleur e PCSF00476 idênticos
 
 - [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
