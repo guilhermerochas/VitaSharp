@@ -111,6 +111,12 @@ public static class EnvVars
     /// <summary>=off: ARM64 code leaves native code for every HLE call (SVC) instead of calling the HLE dispatch from it
     /// (Cpu/Native/ArmFrontend.HleCallouts).</summary>
     public const string NativeHleCallout = "VITASHARP_NATIVE_HLE_CALLOUT";
+    /// <summary>=off: the GPU queue releases its semaphore and pulses its progress monitor for every command, as before
+    /// (Gpu/GpuQueue.LightSignals; default: only a sleeping worker or a waiting thread is signalled).</summary>
+    public const string GpuQueueLight = "VITASHARP_GPU_QUEUE_LIGHT";
+    /// <summary>=0: the HLE functions that have a guest-code version (Hle/HleGuestCode: libgxm's precomputed-state
+    /// packing) are bound to their C# versions through SVC stubs, as before.</summary>
+    public const string HleGuestCode = "VITASHARP_HLE_GUEST_CODE";
     /// <summary>Mono only (Android): =on enters native code with the runtime's GC transition, as CoreCLR always does;
     /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's
     /// hybrid suspend handles; callouts from that mode are allowed).</summary>

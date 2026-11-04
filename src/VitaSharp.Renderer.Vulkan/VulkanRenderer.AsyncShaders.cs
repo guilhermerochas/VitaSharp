@@ -218,7 +218,8 @@ public sealed unsafe partial class VulkanRenderer
         // static-state pipelines (driver quirk) also depend on the draw's depth/stencil/cull state
         ulong staticKey = StaticStateKey(in st, Formats.Topology(d.PrimitiveType));
         if (staticKey != 0) sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(sig, (uint)staticKey), (uint)(staticKey >> 32));
-        if (!_seenDrawSignatures.TryAdd(sig, 0)) return;
+        // every draw lands here on the guest thread: the lock-free read first (TryAdd locks even when the key exists)
+        if (_seenDrawSignatures.ContainsKey(sig) || !_seenDrawSignatures.TryAdd(sig, 0)) return;
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
         var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
             ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,

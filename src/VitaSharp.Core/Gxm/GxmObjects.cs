@@ -108,7 +108,31 @@ public sealed class GxmContext
     public readonly uint[] Streams = new uint[16];
     public readonly GxmTextureDesc[] FragmentTextures = new GxmTextureDesc[16];
     public readonly GxmTextureDesc[] VertexTextures = new GxmTextureDesc[16];
-    public uint PrecomputedVertexState, PrecomputedFragmentState;
+    /// <summary>The bound precomputed states live in the context's own guest memory (its first two words; nothing else
+    /// of ours is stored there), so sceGxmSetPrecomputed*State can be guest code (Hle/HleGuestCode).</summary>
+    public const uint PrecomputedVertexStateOffset = 0, PrecomputedFragmentStateOffset = 4;
+    public uint PrecomputedVertexState
+    {
+        get => GuestMemory.R32(Handle + PrecomputedVertexStateOffset);
+        set => GuestMemory.W32(Handle + PrecomputedVertexStateOffset, value);
+    }
+    public uint PrecomputedFragmentState
+    {
+        get => GuestMemory.R32(Handle + PrecomputedFragmentStateOffset);
+        set => GuestMemory.W32(Handle + PrecomputedFragmentStateOffset, value);
+    }
+    /// <summary>Guest bytes of the cull mode and the front/back polygon modes (set by sceGxmSetCullMode and
+    /// sceGxmSet{Front,Back}PolygonMode, which may be guest code); <see cref="SyncGuestState"/> copies them into
+    /// <see cref="State"/> before a draw reads it. Zero is the default of all three.</summary>
+    public const uint CullModeOffset = 8, FrontPolygonModeOffset = 9, BackPolygonModeOffset = 10;
+
+    public void SyncGuestState()
+    {
+        uint w = GuestMemory.R32(Handle + CullModeOffset);
+        State.CullMode = (byte)w;
+        State.Front.PolygonMode = (byte)(w >> 8);
+        State.Back.PolygonMode = (byte)(w >> 16);
+    }
     /// <summary>Visibility test state (sceGxmSet*VisibilityTest*, sceGxmSetVisibilityBuffer).</summary>
     public bool VisFrontEnable, VisBackEnable, VisFrontIncrement = true, VisBackIncrement = true;
     public uint VisFrontIndex, VisBackIndex, VisBuffer, VisStride;

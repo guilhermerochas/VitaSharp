@@ -24,6 +24,8 @@ public sealed unsafe class UniformChunk
     public long BackendTag = -1;
     internal int Used, Outstanding;
     internal bool Retired, Dedicated;
+    /// <summary>On the free stack (guards against a second recycle: see UniformArena.Release).</summary>
+    internal bool InFree;
 
     internal UniformChunk(int size) { _data = new byte[size]; Size = size; }
     internal UniformChunk(nint ptr, int size, IUniformHeap heap, int id) { _ptr = ptr; Size = size; Heap = heap; HeapId = id; }
@@ -68,7 +70,7 @@ public static class UniformArena
         {
             _heap = heap;
             Alignment = Math.Max(16, (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)alignment));
-            if (_current != null) { _current.Retired = true; if (_current.Outstanding == 0) Recycle(_current); _current = null; }
+            if (_current != null) { Retire(_current); _current = null; }
         }
     }
 
@@ -84,7 +86,7 @@ public static class UniformArena
     }
 
     /// <summary>A zero-filled slice of <paramref name="bytes"/> bytes at <paramref name="offset"/> in the returned chunk.</summary>
-    public static UniformChunk Rent(int bytes, out int offset)
+    public static UniformChunk Rent(int bytes, out int offset, bool clear = true)
     {
         UniformChunk c;
         lock (Lock)
@@ -99,22 +101,22 @@ public static class UniformArena
             c = _current!;
             if (c == null || Align(c.Used) + bytes > c.Size)
             {
-                if (c != null) { c.Retired = true; if (c.Outstanding == 0) Recycle(c); }
+                if (c != null) { Retire(c); }
                 c = _current = NewChunk();
                 c.Retired = false;
                 c.Used = 0;
             }
             offset = Align(c.Used);
             c.Used = offset + bytes;
-            c.Outstanding++;
+            Interlocked.Increment(ref c.Outstanding);
         }
-        c.Span.Slice(offset, bytes).Clear();
+        if (clear) c.Span.Slice(offset, bytes).Clear(); // callers that fill the whole slice themselves skip it
         return c;
     }
 
     static UniformChunk NewChunk()
     {
-        if (Free.Count > 0) return Free.Pop();
+        if (Free.Count > 0) { var f = Free.Pop(); f.InFree = false; return f; }
         if (_heap is { } h && h.Alloc(out int id) is var p and not 0)
         {
             var hc = new UniformChunk(p, ChunkSize, h, id);
@@ -127,18 +129,31 @@ public static class UniformArena
     /// <summary>One more reference on the chunk (a recorded frame that reads it); given back with <see cref="Release"/>.</summary>
     public static void AddRef(UniformChunk c)
     {
-        lock (Lock) c.Outstanding++;
+        Interlocked.Increment(ref c.Outstanding); // the chunk is live (held by the caller): no recycle can race this
     }
 
+    /// <summary>The GPU worker releases a slice per executed draw: only the release that frees a retired chunk takes the
+    /// lock (the guest thread holds it in <see cref="Rent"/> for every draw). Recycling always happens under the lock,
+    /// after checking again that the chunk is retired, unreferenced and not already free.</summary>
     public static void Release(UniformChunk c)
     {
+        if (Interlocked.Decrement(ref c.Outstanding) != 0 || c.Dedicated || !Volatile.Read(ref c.Retired)) return;
         lock (Lock)
-            if (--c.Outstanding == 0 && c.Retired && !c.Dedicated) Recycle(c);
+            if (Volatile.Read(ref c.Outstanding) == 0 && c.Retired) Recycle(c);
+    }
+
+    /// <summary>A full chunk is no longer rented from (under the lock): free now, or by its last <see cref="Release"/>.</summary>
+    static void Retire(UniformChunk c)
+    {
+        Volatile.Write(ref c.Retired, true);
+        Interlocked.MemoryBarrier(); // pairs with the full fence of Release's decrement: one of the two sees the other
+        if (Volatile.Read(ref c.Outstanding) == 0) Recycle(c);
     }
 
     static void Recycle(UniformChunk c)
     {
+        if (c.InFree) return;
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
-        if (c.Heap != null || Free.Count < MaxFreeChunks) Free.Push(c);
+        if (c.Heap != null || Free.Count < MaxFreeChunks) { c.InFree = true; Free.Push(c); }
     }
 }

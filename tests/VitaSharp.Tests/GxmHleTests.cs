@@ -222,6 +222,119 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 0u, 0u)));
     }
 
+    /// <summary>The guest-code versions of libgxm's precomputed-state calls (Hle/HleGuestCode) return and store exactly
+    /// what their C# versions do, checks in the same order; the context setters store into the context's guest
+    /// words and bytes that GxmContext reads back.</summary>
+    [Fact]
+    public unsafe void GuestCodeMatchesHle()
+    {
+        if (!VitaSharp.Core.Hle.HleGuestCode.Enabled) return;
+        var gxm = new Gxm();
+        uint trap = fx.Memory.Alloc(0x10, "gctrap");
+        GuestMemory.W32(trap, 0xEF000000); // svc #0: where the routine returns to
+        uint state = fx.Memory.Alloc(0x40, "gcstate"), extra = fx.Memory.Alloc(0x100, "gcextra");
+
+        const uint FallbackIndex = 0x123; // the SVC a routine leaves to C# with
+        uint stack = fx.Memory.Alloc(0x100, "gcstack");
+        bool fellBack = false;
+        uint RunGuest(string name, params uint[] args)
+        {
+            uint nid = VitaSharp.Core.Hle.NidDatabase.LookupName(name).First(n => n.Library == "SceGxm").Nid;
+            uint code = VitaSharp.Core.Hle.HleGuestCode.AddressOf(nid, fx.Memory, _ => FallbackIndex);
+            Assert.NotEqual(0u, code);
+            using var core = new VitaSharp.Core.Cpu.CpuCore(new VitaSharp.Core.Cpu.BlockCache());
+            var s = core.State;
+            uint sp = stack + 0x80;
+            for (int i = 0; i < args.Length; i++) { if (i < 4) s->R[i] = args[i]; else GuestMemory.W32(sp + (uint)(i - 4) * 4, args[i]); }
+            s->R[13] = sp; s->R[14] = trap; s->R[15] = code; s->Thumb = 0;
+            Assert.Equal(VitaSharp.Core.Cpu.ExitReason.Svc, core.Run());
+            fellBack = s->SvcImm == FallbackIndex;
+            Assert.Equal(sp, s->R[13]);
+            if (fellBack) for (int i = 0; i < Math.Min(args.Length, 4); i++) Assert.Equal(args[i], s->R[i]); // the C# version's arguments
+            else Assert.Equal(0u, s->SvcImm);
+            return s->R[0];
+        }
+        void Reset(ushort buffers)
+        {
+            GuestMemory.Fill(extra, 0xEE, 0x100);
+            GuestMemory.W32(state + 4, extra);
+            GuestMemory.Write(state + 8, (ushort)0);
+            GuestMemory.Write(state + 10, buffers);
+            GuestMemory.W32(state + 12, extra);
+        }
+
+        foreach (var f in new[] { "sceGxmPrecomputedVertexStateSetUniformBuffer", "sceGxmPrecomputedFragmentStateSetUniformBuffer" })
+            foreach (var (st, idx, data) in new[] { (state, 2u, 0x81234560u), (state, 5u, 0x81234560u), (state, 13u, 0x81u), (state, 14u, 0u),
+                (state, 0xFFFFFFFFu, 1u), (0u, 1u, 1u), (state, 1u, 0u), (0u, 20u, 0u) })
+            {
+                Reset(3);
+                uint want = U(Call(gxm, f, st, idx, data));
+                var mem = GuestMemory.ReadSpan(extra, 0x100).ToArray();
+                Reset(3);
+                Assert.Equal(want, RunGuest(f, st, idx, data));
+                Assert.Equal(mem, GuestMemory.ReadSpan(extra, 0x100).ToArray());
+            }
+
+        foreach (var f in new[] { "sceGxmPrecomputedVertexStateGetDefaultUniformBuffer", "sceGxmPrecomputedFragmentStateGetDefaultUniformBuffer" })
+            foreach (ushort buffers in new ushort[] { 3, 14, 15 })
+            {
+                Reset(buffers);
+                GuestMemory.W32(extra + 56, 0x8EC00040);
+                Assert.Equal(U(Call(gxm, f, state)), RunGuest(f, state));
+            }
+
+        uint ctx = fx.Memory.Alloc(0x40, "gcctx");
+        GuestMemory.Fill(ctx, 0, 0x40);
+        var c = new VitaSharp.Core.Gxm.GxmContext { Handle = ctx };
+        RunGuest("sceGxmSetPrecomputedVertexState", ctx, 0x81000100);
+        RunGuest("sceGxmSetPrecomputedFragmentState", ctx, 0x81000200);
+        RunGuest("sceGxmSetPrecomputedFragmentState", 0, 0x81000300); // NULL context: ignored
+        Assert.Equal((0x81000100u, 0x81000200u), (c.PrecomputedVertexState, c.PrecomputedFragmentState));
+        RunGuest("sceGxmSetCullMode", ctx, 2);                // SCE_GXM_CULL_CCW
+        RunGuest("sceGxmSetFrontPolygonMode", ctx, 0x00008000); // SCE_GXM_POLYGON_MODE_LINE
+        RunGuest("sceGxmSetBackPolygonMode", ctx, 0x00010000);  // SCE_GXM_POLYGON_MODE_POINT
+        c.SyncGuestState();
+        Assert.Equal((2, 1, 2), ((int)c.State.CullMode, (int)c.State.Front.PolygonMode, (int)c.State.Back.PolygonMode));
+
+        uint tex = fx.Memory.Alloc(0x10, "gctex");
+        foreach (var f in new[] { "sceGxmTextureSetUAddrModeSafe", "sceGxmTextureSetVAddrModeSafe" })
+            foreach (var (type, mode) in new[] { (0x00000000u, 1u), (0x60000000u, 0xFFu), (0xC0000000u, 3u), (0x80000000u, 2u) })
+            {
+                GuestMemory.W32(tex, 0x12345678); GuestMemory.W32(tex + 4, type | 0x00ABCDEF);
+                uint want = U(Call(gxm, f, tex, mode)); uint w0 = GuestMemory.R32(tex);
+                GuestMemory.W32(tex, 0x12345678);
+                Assert.Equal(want, RunGuest(f, tex, mode));
+                Assert.False(fellBack);
+                Assert.Equal(w0, GuestMemory.R32(tex));
+                Assert.Equal(U(Call(gxm, f, 0u, mode)), RunGuest(f, 0u, mode));
+            }
+
+        // sceGxmSetUniformDataF: parameter (category@4 low nibble = 1 uniform, type@4 high nibble, components@5 low
+        // nibble, array size@8, resource index@12)
+        uint param = fx.Memory.Alloc(0x10, "gcparam"), src = fx.Memory.Alloc(0x40, "gcsrc"), ub = fx.Memory.Alloc(0x100, "gcub");
+        for (uint i = 0; i < 16; i++) GuestMemory.W32(src + i * 4, 0x3F800000 + i * 0x1111);
+        foreach (var (b4, comps, arraySize, offset, count, fast) in new[]
+        {
+            (0x01, 4, 1u, 0u, 4u, true), (0x01, 4, 1u, 2u, 2u, true), (0x01, 1, 8u, 3u, 5u, true), (0x01, 3, 1u, 0u, 0u, true),
+            (0x01, 3, 4u, 1u, 7u, false), (0x11, 4, 1u, 0u, 4u, false), (0x02, 4, 1u, 0u, 4u, false),
+        })
+        {
+            GuestMemory.Write(param + 4, (byte)b4); GuestMemory.Write(param + 5, (byte)comps);
+            GuestMemory.W32(param + 8, arraySize); GuestMemory.W32(param + 12, 5);
+            GuestMemory.Fill(ub, 0xEE, 0x100);
+            uint want = U(Call(gxm, "sceGxmSetUniformDataF", ub, param, offset, count, src));
+            var mem = GuestMemory.ReadSpan(ub, 0x100).ToArray();
+            GuestMemory.Fill(ub, 0xEE, 0x100);
+            uint got = RunGuest("sceGxmSetUniformDataF", ub, param, offset, count, src);
+            Assert.Equal(!fast && (b4 & 0xF) == 1, fellBack);
+            if (fellBack) continue; // the C# version runs
+            Assert.Equal(want, got);
+            Assert.Equal(mem, GuestMemory.ReadSpan(ub, 0x100).ToArray());
+        }
+        foreach (var (b, p, s) in new[] { (0u, param, src), (ub, 0u, src), (ub, param, 0u) })
+            Assert.Equal(U(Call(gxm, "sceGxmSetUniformDataF", b, p, 0u, 1u, s)), RunGuest("sceGxmSetUniformDataF", b, p, 0u, 1u, s));
+    }
+
     /// <summary>sceGxmDraw with a precomputed vertex/fragment state set reads the uniform buffers (including the
     /// default one, slot 14) and textures from the state, not from the context; with the state set back to NULL it
     /// reads the context again. WRC 4 fills each object's default uniform buffer inside its precomputed state and draws
@@ -229,7 +342,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ImmediateDrawUsesPrecomputedState()
     {
-        var c = new VitaSharp.Core.Gxm.GxmContext { Handle = 1 };
+        var c = new VitaSharp.Core.Gxm.GxmContext { Handle = fx.Memory.Alloc(0x40, "ctx") };
         c.VertexUniformBuffers[14] = 0x8100_0000;
         c.VertexUniformBuffers[0] = 0x8100_0100;
         c.FragmentUniformBuffers[14] = 0x8100_0200;

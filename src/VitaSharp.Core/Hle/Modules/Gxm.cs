@@ -773,7 +773,7 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
-    [Hle] void sceGxmSetCullMode(uint ctx, uint mode) { if (Ctx(ctx) is { } c) c.State.CullMode = (byte)mode; }
+    [Hle] void sceGxmSetCullMode(uint ctx, uint mode) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.CullModeOffset, (byte)mode); }
     [Hle] void sceGxmSetTwoSidedEnable(uint ctx, uint mode) { if (Ctx(ctx) is { } c) c.State.TwoSided = mode != 0; }
 
     [Hle] void sceGxmSetFrontDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Front.DepthFunc = (byte)(f >> 22); }
@@ -782,8 +782,8 @@ public sealed partial class Gxm : HleModule
     [Hle] void sceGxmSetBackDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.DepthWrite = e == 0; }
     [Hle] void sceGxmSetFrontFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.FragmentEnabled = e == 0; }
     [Hle] void sceGxmSetBackFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.FragmentEnabled = e == 0; }
-    [Hle] void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) c.State.Front.PolygonMode = (byte)(m >> 15); }
-    [Hle] void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) c.State.Back.PolygonMode = (byte)(m >> 15); }
+    [Hle] void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.FrontPolygonModeOffset, (byte)(m >> 15)); }
+    [Hle] void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.BackPolygonModeOffset, (byte)(m >> 15)); }
     /// <summary>SCE_GXM_WBUFFER_ENABLED = 0x4000 (not 1).</summary>
     [Hle]
     void sceGxmSetWBufferEnable(uint ctx, uint enable)
@@ -910,7 +910,12 @@ public sealed partial class Gxm : HleModule
     static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data)
     {
         if (info.UniformBytes == 0) return 0;
-        foreach (var slot in info.UniformSlots)
+        // the slice is not pre-cleared (most of a large "unknown size" block is never written): the bytes no copy
+        // covers are zeroed afterwards, so the contents are the same as with a zero-filled slice
+        var slots = info.UniformSlots;
+        Span<long> copied = slots.Count <= 32 ? stackalloc long[slots.Count] : new long[slots.Count];
+        int n = 0;
+        foreach (var slot in slots)
         {
             if (slot.Mapped) continue; // read in place by the renderer
             uint idx = Math.Min(slot.GuestIndex, 14);
@@ -923,9 +928,25 @@ public sealed partial class Gxm : HleModule
             // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
             if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
             FastCopy.Copy(GuestMemory.Span(addr, size), data.Slice(slot.ByteOffset, size));
+            copied[n++] = ((long)slot.ByteOffset << 32) | (uint)(slot.ByteOffset + size);
             UniformBytesCopied += size;
         }
+        ZeroUncovered(data, copied[..n]);
         return info.UniformBytes;
+    }
+
+    /// <summary>Clears the bytes of <paramref name="data"/> outside the copied ranges (start &lt;&lt; 32 | end).</summary>
+    static void ZeroUncovered(Span<byte> data, Span<long> ranges)
+    {
+        ranges.Sort();
+        int cursor = 0;
+        foreach (long r in ranges)
+        {
+            int start = (int)(r >> 32), end = (int)(uint)r;
+            if (start > cursor) data[cursor..start].Clear();
+            if (end > cursor) cursor = end;
+        }
+        if (cursor < data.Length) data[cursor..].Clear();
     }
 
     /// <summary>Debug (env VITASHARP_BT_DRAW=indexCount): logs a guest backtrace for every draw with that index count,
@@ -955,6 +976,7 @@ public sealed partial class Gxm : HleModule
         else if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         if (vp == null || fp == null) return ERR_NULL_PROGRAM;
         if (indexData == 0) return ERR_INVALID_POINTER;
+        c.SyncGuestState(); // cull/polygon modes written by guest code
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawBacktrace(vp, fp, indexData, indexCount);
         // visibility test (front state; the back state applies when only it is enabled)
         bool front = c.VisFrontEnable, back = c.VisBackEnable;
@@ -1000,9 +1022,11 @@ public sealed partial class Gxm : HleModule
         int vBytes = vp.Info.UniformBytes, fBytes = fp.Info?.UniformBytes ?? 0, vAligned = UniformArena.Align(vBytes);
         if (vBytes + fBytes > 0)
         {
-            var chunk = cmd.UniformChunk = UniformArena.Rent(vAligned + fBytes, out int off);
+            var chunk = cmd.UniformChunk = UniformArena.Rent(vAligned + fBytes, out int off, clear: false);
             cmd.VertexUniformsOffset = off;
             cmd.FragmentUniformsOffset = off + vAligned;
+            chunk.Span.Slice(off + vBytes, vAligned - vBytes).Clear(); // the alignment gap (CopyUniforms fills the rest)
+            if (fp.Info == null) chunk.Span.Slice(off + vAligned, fBytes).Clear();
         }
         var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
         cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
@@ -1105,6 +1129,8 @@ public sealed partial class Gxm : HleModule
             FragmentRing = GuestMemory.R32(p + 0x28), FragmentRingSize = GuestMemory.R32(p + 0x2C),
             SizeScratch = Emu.Memory.Alloc(16, "SceGxmDeferredContext size", MemoryRegion.User, 16),
         };
+        c.PrecomputedVertexState = c.PrecomputedFragmentState = 0; // they live in the (game-provided) host memory
+        GuestMemory.W32(h + GxmContext.CullModeOffset, 0);            // cull and polygon modes too
         _contexts[h] = c;
         outContext.Value = h;
         return 0;

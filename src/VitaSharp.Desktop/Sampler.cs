@@ -224,7 +224,10 @@ sealed class Sampler
             Log.Info($"PROFILE hle {f.Name}: {(double)calls / frames:F0} calls/frame, {charged / 1e6 / frames:F3} M cycles/frame");
         // host side of the HLE calls per guest thread: wall time inside the implementation (blocking included) and
         // the CPU the thread burned there (QueryThreadCycleTime), next to the thread's total CPU in the window
-        var cpuNow = _hostHle ? HostThreadCpu() : new();
+        var cpuNow = HostThreadCpu();
+        // host CPU per frame of the busiest threads in the window (no per-call timing: the clean before/after number)
+        Log.Info("PROFILE thread cpu ms/frame: " + string.Join(", ", cpuNow.Select(kv => (kv.Key, Ms: (kv.Value - _baseCpu.GetValueOrDefault(kv.Key)) / frames))
+            .OrderByDescending(x => x.Ms).Take(4).Select(x => $"{x.Key} {x.Ms:F2}")));
         double tms = System.Diagnostics.Stopwatch.Frequency / 1000.0;
         foreach (var t in _hostHle ? _emu.Kernel.Threads.OrderByDescending(t => t.Core.BlockCycles - _base?.GetValueOrDefault(t).Cycles ?? 0).Take(6) : [])
         {

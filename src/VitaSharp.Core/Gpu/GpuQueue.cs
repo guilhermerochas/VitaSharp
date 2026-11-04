@@ -63,11 +63,15 @@ public sealed class GpuQueue : IDisposable
 
     // Draw commands are recycled once the backend executed them (it copies what it needs during Execute); this keeps
     // the thousands of draws per frame from churning the garbage collector.
-    readonly ConcurrentBag<DrawCommand> _drawPool = new();
+    // A queue, not a ConcurrentBag: the worker adds and the guest thread takes, so every bag take was a steal (a lock on
+    // the worker's list) and every bag Count froze the whole bag (all its locks) once per executed draw.
+    readonly ConcurrentQueue<DrawCommand> _drawPool = new();
+    int _drawPoolCount;
 
     public DrawCommand RentDraw()
     {
-        if (!_drawPool.TryTake(out var d)) d = new DrawCommand();
+        if (_drawPool.TryDequeue(out var d)) Interlocked.Decrement(ref _drawPoolCount);
+        else d = new DrawCommand();
         d.Reset();
         d.Space = null;
         return d;
@@ -144,9 +148,20 @@ public sealed class GpuQueue : IDisposable
     {
         cmd.Sequence = Interlocked.Increment(ref _submitted);
         _queue.Enqueue(cmd);
-        _available.Release();
+        // wake the worker only when it sleeps: a Release per command took the semaphore's lock on both threads for
+        // every draw (the worker also took it back with Wait(0))
+        if (!LightSignals) _available.Release();
+        else if (Interlocked.CompareExchange(ref _workerSleeping, 0, 1) == 1) _available.Release();
         return cmd.Sequence;
     }
+
+    /// <summary>VITASHARP_GPU_QUEUE_LIGHT (default on): the submit/complete handshake signals only a sleeping side
+    /// instead of taking the semaphore's and the progress lock's monitor on every command.</summary>
+    static readonly bool LightSignals = Environment.GetEnvironmentVariable(EnvVars.GpuQueueLight) is not ("0" or "off");
+    /// <summary>1 while the worker waits for commands (set before its last look at the queue).</summary>
+    int _workerSleeping;
+    /// <summary>Threads inside <see cref="WaitFor"/> (the worker pulses the progress monitor only when there are any).</summary>
+    int _progressWaiters;
 
     public void WaitFor(long sequence, GuestWait site = GuestWait.Other)
     {
@@ -155,7 +170,11 @@ public sealed class GpuQueue : IDisposable
         using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_progress)
-            while (Completed < sequence && !_stopping) Monitor.Wait(_progress, 100);
+        {
+            Interlocked.Increment(ref _progressWaiters); // full fence before reading Completed (pairs with the worker's)
+            try { while (Completed < sequence && !_stopping) Monitor.Wait(_progress, 100); }
+            finally { Interlocked.Decrement(ref _progressWaiters); }
+        }
         CountGuestWait(site, t0);
     }
 
@@ -202,11 +221,24 @@ public sealed class GpuQueue : IDisposable
                     try { lock (_backendLock) Backend?.Idle(); } catch (Exception e) { Log.Error($"GPU backend idle failed: {e}"); }
                     GpuDumpRecorder.Current?.AfterIdle();
                     long ti = FrameLedger.Now();
-                    bool got = _available.Wait(50);
-                    FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
-                    if (!got || !_queue.TryDequeue(out cmd)) continue;
+                    if (LightSignals)
+                    {
+                        // announce the sleep, then look once more: a submit after the flag is set releases the semaphore
+                        // (a leftover count only makes a later wait return early)
+                        Interlocked.Exchange(ref _workerSleeping, 1);
+                        if (_queue.IsEmpty) _available.Wait(50);
+                        Interlocked.Exchange(ref _workerSleeping, 0);
+                        FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
+                        if (!_queue.TryDequeue(out cmd)) continue;
+                    }
+                    else
+                    {
+                        bool got = _available.Wait(50);
+                        FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
+                        if (!got || !_queue.TryDequeue(out cmd)) continue;
+                    }
                 }
-                else _available.Wait(0);
+                else if (!LightSignals) _available.Wait(0);
             }
             catch (ObjectDisposedException) { break; }
 
@@ -251,7 +283,7 @@ public sealed class GpuQueue : IDisposable
             {
                 case DrawCommand draw:
                     draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
-                    if (_drawPool.Count < 16384) _drawPool.Add(draw);
+                    if (Volatile.Read(ref _drawPoolCount) < 16384) { Interlocked.Increment(ref _drawPoolCount); _drawPool.Enqueue(draw); }
                     break;
                 case SignalCommand signal:
                     bool deferred = false;
@@ -273,12 +305,10 @@ public sealed class GpuQueue : IDisposable
                     break;
             }
 
-            lock (_progress)
-            {
-                _executing = null;
-                Interlocked.Exchange(ref _completed, cmd.Sequence);
-                Monitor.PulseAll(_progress);
-            }
+            _executing = null;
+            Interlocked.Exchange(ref _completed, cmd.Sequence); // full fence before reading the waiter count
+            if (!LightSignals || Volatile.Read(ref _progressWaiters) > 0)
+                lock (_progress) Monitor.PulseAll(_progress);
         }
     }
 
