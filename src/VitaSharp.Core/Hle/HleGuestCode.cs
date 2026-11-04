@@ -77,6 +77,70 @@ public static class HleGuestCode
         BxLr,
     ];
 
+    /// <summary>sceGxmTextureSet{U,V}AddrModeSafe(texture, mode) (Gxm.cs): a NULL texture is INVALID_POINTER, a linear
+    /// strided one is left alone (0), otherwise the 3-bit field at <paramref name="shift"/> of word 0 takes the mode.</summary>
+    static uint[] SetAddrModeSafe(int shift) =>
+    [
+        0xE3500000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r0, #0
+        0xE5902004,                                  // ldr r2, [r0, #4]
+        0xE1A02EA2,                                  // lsr r2, r2, #29   texture type
+        0xE3520006,                                  // cmp r2, #6        SCE_GXM_TEXTURE_LINEAR_STRIDED >> 29
+        0x03A00000,                                  // moveq r0, #0
+        0x012FFF1E,                                  // bxeq lr
+        0xE5902000,                                  // ldr r2, [r0]
+        shift == 6 ? 0xE3C22D07u : 0xE3C22038u,      // bic r2, r2, #(7 << shift)
+        0xE2011007,                                  // and r1, r1, #7
+        0xE1822001u | ((uint)shift << 7),            // orr r2, r2, r1, lsl #shift
+        0xE5802000,                                  // str r2, [r0]
+        0xE3A00000,                                  // mov r0, #0
+        BxLr,
+    ];
+
+    /// <summary>Placeholder for an SVC into the routine's own C# version (<see cref="AddressOf"/> fills the index in):
+    /// the cases a routine leaves to C#, entered with the caller's registers and stack.</summary>
+    const uint FallbackSvc = 0xEF00FFFF;
+
+    /// <summary>sceGxmSetUniformDataF(buffer, param, componentOffset, componentCount, source): the F32 parameters that
+    /// are a scalar array or a single vector (no per-element padding) copy componentCount words to
+    /// buffer + resourceIndex * 4 + componentOffset * 4; every other case (and the errors after the NULL checks'
+    /// INVALID_VALUE) is the C# version's.</summary>
+    static readonly uint[] SetUniformDataF =
+    [
+        0xE92D0030,                                  // push {r4, r5}
+        0xE59DC008,                                  // ldr r12, [sp, #8]   source (5th argument)
+        0xE3500000,                                  // cmp r0, #0
+        0x13510000,                                  // cmpne r1, #0
+        0x135C0000,                                  // cmpne r12, #0
+        0x08BD0030,                                  // popeq {r4, r5}
+        .. ReturnGxmError(EQ, ErrInvalidPointer),
+        0xE5D14004,                                  // ldrb r4, [r1, #4]
+        0xE204500F,                                  // and r5, r4, #15
+        0xE3550001,                                  // cmp r5, #1          a uniform
+        0x18BD0030,                                  // popne {r4, r5}
+        .. ReturnGxmError(NE, ErrInvalidValue),
+        0xE1B04224,                                  // lsrs r4, r4, #4     type: F32 is 0
+        0x1A00000F,                                  // bne fallback
+        0xE5915008,                                  // ldr r5, [r1, #8]    array size
+        0xE3550001,                                  // cmp r5, #1
+        0x15D15005,                                  // ldrbne r5, [r1, #5]
+        0x1205500F,                                  // andne r5, r5, #15   component count
+        0x13550001,                                  // cmpne r5, #1
+        0x1A000009,                                  // bne fallback
+        0xE591500C,                                  // ldr r5, [r1, #12]   resource index
+        0xE0800105,                                  // add r0, r0, r5, lsl #2
+        0xE0800102,                                  // add r0, r0, r2, lsl #2
+        0xE2533001,                                  // loop: subs r3, r3, #1
+        0x249C5004,                                  // ldrhs r5, [r12], #4
+        0x24805004,                                  // strhs r5, [r0], #4
+        0x2AFFFFFB,                                  // bhs loop
+        0xE3A00000,                                  // mov r0, #0
+        0xE8BD0030,                                  // pop {r4, r5}
+        BxLr,
+        0xE8BD0030,                                  // fallback: pop {r4, r5} (r0-r3 and sp are the caller's)
+        FallbackSvc,                                 // svc: the C# version
+        BxLr,
+    ];
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters).</summary>
     static readonly bool ContextModes = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode) != "precomputed";
@@ -96,6 +160,9 @@ public static class HleGuestCode
         ("sceGxmPrecomputedFragmentStateGetDefaultUniformBuffer", GetDefaultUniformBuffer),
         ("sceGxmSetPrecomputedVertexState", SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedVertexStateOffset)),
         ("sceGxmSetPrecomputedFragmentState", SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedFragmentStateOffset)),
+        ("sceGxmTextureSetUAddrModeSafe", SetAddrModeSafe(6)),
+        ("sceGxmTextureSetVAddrModeSafe", SetAddrModeSafe(3)),
+        ("sceGxmSetUniformDataF", SetUniformDataF),
         .. (ContextModes ? ContextModeRoutines : Array.Empty<(string, uint[])>()),
     ];
 
@@ -116,8 +183,11 @@ public static class HleGuestCode
     // the routines of each address space use (AddressSpace.Id): written once, on the first import that needs them
     static readonly Dictionary<(AddressSpace, int), uint[]> Placed = new();
 
-    /// <summary>Guest address (ARM) of the routine for <paramref name="nid"/> in the calling thread's address space, or 0.</summary>
-    public static uint AddressOf(uint nid, GuestMemory memory)
+    static uint NidOf(string name) => NidDatabase.LookupName(name).First(n => n.Library == "SceGxm").Nid;
+
+    /// <summary>Guest address (ARM) of the routine for <paramref name="nid"/> in the calling thread's address space, or 0.
+    /// <paramref name="svcIndexOf"/> gives the SVC number of a NID's C# version (for <see cref="FallbackSvc"/>).</summary>
+    public static uint AddressOf(uint nid, GuestMemory memory, Func<uint, uint> svcIndexOf)
     {
         if (!Enabled || !RoutineByNid.TryGetValue(nid, out int index) || AddressSpace.Current is not { } space) return 0;
         lock (Placed)
@@ -131,7 +201,11 @@ public static class HleGuestCode
                 for (int i = 0; i < Routines.Length; i++)
                 {
                     addrs[i] = at;
-                    foreach (uint w in Routines[i].Code) { GuestMemory.W32(at, w); at += 4; }
+                    foreach (uint w in Routines[i].Code)
+                    {
+                        GuestMemory.W32(at, w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(Routines[i].Name)) & 0xFFFFFF) : w);
+                        at += 4;
+                    }
                 }
                 Placed[(space, space.Id)] = addrs;
             }

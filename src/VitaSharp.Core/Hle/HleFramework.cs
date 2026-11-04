@@ -263,7 +263,7 @@ public sealed class HleRegistry : IImportResolver
 
     /// <summary>A guest-code implementation (<see cref="HleGuestCode"/>) of an implemented NID, placed in the calling
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>
-    public uint GetHleGuestCode(uint nid) => _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory) : 0;
+    public uint GetHleGuestCode(uint nid) => _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory, n => GetHleFunctionIndex(n, 0, "SceGxm")) : 0;
 
     public HleFunction GetFunction(uint index) => index < _functions.Count ? _functions[(int)index] : _functions[0];
 
