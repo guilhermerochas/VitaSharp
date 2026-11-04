@@ -396,7 +396,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   resto espera em semáforos/eventflags (`SlSemaphore_Platform`, `SlThreadGateBank`); a única função que falta é
   `ScePspnetAdhoc::sceNetAdhocInit` (NID 0x87805E13), chamada pela MainThread logo antes. Ver o que a MainThread e a
   `SumoPlatform` esperam (provavelmente rede/PSN ou conquistas) e a instrução `strex r1, r1, [r2]` (Rd = Rt) que
-  derruba o Vita3K
+  derruba o Vita3K. Achados (04/11/2026, fix/user-bugs): não é determinístico — numa rodada passou do quadro 24 e
+  seguiu a 30 fps (1029 quadros, 11750 desenhos, mas as imagens pretas), nas outras parou no 25/26. Parado, a
+  `MainThread` só faz `sceTouchPeek`+`sceTouchRead` (lr 0x81118615/0x81118AFD) e trava/destrava o lwmutex 0x81896328 a
+  cada ~16 ms, sem nenhuma outra função desde o quadro 23: espera em memória algo que outra thread deveria
+  marcar; a `SumoPlatform` faz `sceKernelDelayThread(1 s)` em loop no mesmo lwmutex e a `AchievementIssueThread`
+  também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
+  a escreveria, e comparar uma rodada que passa com uma que para
 
 - [ ] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
