@@ -63,6 +63,23 @@ it. The worker runs in parallel at 42 ms and becomes the limit as soon as the ga
   86 ms guest frames rounded up to 6–7 vblanks by FIFO presentation. A single 266 ms display gap coincided with
   the trace start.
 
+## Game/GPU pipeline switches (perf/serial eb4506d) on the phone
+
+Display median / 1% low / mean frame ms / max frame ms; 30 s per run, interleaved.
+
+| Variant | F1 race | Uncharted gameplay |
+|---|---|---|
+| base | 20 / 6.7-7.5 / 55.9 (3 runs) / 150-166 | 20 / 7.5-8.6 / 53.6 / 100-116 (anatomy runs) |
+| EARLY () | 20 / 9.1-9.8 / 55.2 (2) / 116 | 15 / 6.6 / 61.8 (1) / 166 |
+| EARLY + LAZY | 20 / 8.1-8.6 / 55.7 (2) / 133 | - (runs stuck in the pause menu) |
+| EARLY + LAZY + FIF4 | 20 / 7.8-9.3 / 58.2 (2) / 133 | 20 / 5.6-6.1 / 73.2 (3) / 166-200 |
+
+- No variant crosses a vblank step: F1 is game-thread-bound and Uncharted GPU-bound (above).
+- EARLY lowers F1's maximum frame time (116 vs 150-166 ms) and raises its 1% low. It is a candidate default once
+  the frame rate is above 20.
+- In Uncharted, EARLY and FIF4 made gameplay slower: the game waits on notifications instead.
+- The switches stay in the tree, off by default.
+
 ## What this points at
 
 1. **Uncharted: GPU time** (52.6 ms per frame at maximum clock). The fetch passes, the framebuffer-fetch copies
