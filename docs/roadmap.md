@@ -388,7 +388,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~1,1 ms por quadro (esperas de fence 0,18 ms/quadro). Ou seja, o jogo espera um sinal da "GPU" (fila de exibição,
   notificação ou sync do GXM) que o emulador entrega atrasado, e não é a GPU que está lenta. A
   `UnityGfxDeviceWorker` estava rodando. Conferir se não é só a CPU do PC disputada por um build em paralelo (havia
-  um agente compilando o APK naquela hora); se repetir com o PC livre, ver quem sinaliza essa espera
+  um agente compilando o APK naquela hora); se repetir com o PC livre, ver quem sinaliza essa espera. Achados
+  (04/11/2026, fix/user-bugs): o jogo não espera vblank nenhum — o callback da fila de exibição chama
+  `sceDisplaySetFrameBuf(…, 0)` (IMMEDIATE) e nada chama `sceDisplayWait*`; o único freio são os 2
+  `sceGxmNotificationWait` por quadro da `UnityGfxDeviceWorker`. Sem janela (teste) ele roda a 160-620 fps; com
+  janela, o ritmo vem de quando a apresentação do host libera o quadro e as notificações. Ou seja, os engasgos com
+  `guestGpuWait` alto são a espera das notificações atrás da apresentação do host. Ideia genérica a decidir com os
+  agentes de desempenho (mexe no ritmo de todos os jogos): no modo IMMEDIATE, no máximo uma troca de buffer por vblank
+  no `SetFrameBuf` (o painel não mostra mais que isso), em vez de depender da apresentação do host
 
 - [ ] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
@@ -426,7 +433,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
   campo é acumulado (pode causar música repetindo ou cortando em outros jogos com SndStream). Também:
   `sce_scream_api.cpp(1385): Invalid parameter` na inicialização do som e `sceNetInit` chamado duas vezes (o
-  segundo recebe EBUSY, como no firmware; o jogo segue)
+  segundo recebe EBUSY, como no firmware; o jogo segue). Achados (04/11/2026): o campo que o SndStream acumula é o
+  +8 do estado do player ("amostras geradas desde o key on", `Ngs.cs`), e ele só volta a 0 no `Transition`
+  Available→Active (novo key on) ou no `sceNgsVoiceInit` com flag 2 — então o aviso aparece quando a voz do stream
+  termina (buffer sem próximo → Finalizing → Available) e é ligada de novo, enquanto o SndStream acha que é a
+  mesma reprodução. Próximo: logar as transições da voz do stream de música e ver se ela acaba por falta de buffer
+  (fila vazia por atraso nosso) — aí o defeito é o fim da voz, não o contador
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
@@ -447,7 +459,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   uso (16 fps), Tearaway num menu parado (com o PC ocioso: confirmados Silent Hill e Crazy Market; Soul Sacrifice e
   Skullgirls eram carregamentos ou CPU dividida); NIDs sem implementação vistos uma vez: `SceNpManager` FFBFC540 (FIFA 13),
   `SceMp4` D5B26179 (Ninja Gaiden Σ2), `sceNpSnsFacebookInit` e `sceCoredumpRegisterCoredumpHandler` (Tearaway). Os
-  cenários de jogo novo precisam de uma raiz de dados sem saves (com save eles seguem pelo Continuar)
+  cenários de jogo novo precisam de uma raiz de dados sem saves (com save eles seguem pelo Continuar). O título em
+  russo do Call of Duty não é defeito (04/11/2026): o PCSB00232 instalado é a edição `DECLASSIFIEDEU02` (russo e
+  polonês; o `TITLE` padrão do param.sfo é "(рус)" e só há "(Polski)" como alternativa); o jogo lê o idioma 1 (inglês)
+  pelo `sceAppUtilSystemParamGetInt` e, sem inglês nessa edição, fica no russo, como faria no Vita
 - [ ] Filmes no celular ainda mais lentos que no PC (31/10/2026, perf/android-phone-2): o primeiro filme do F1 2011 leva
   5,6 s contra 4,8 s no PC (45 grãos de silêncio no som do filme; Uncharted 40 por volta do filme do título), já com o
   decodificador H.264 do próprio Android (o da MediaTek segurava quadros: 6,25 s, 75 lacunas). Os decodificadores não
