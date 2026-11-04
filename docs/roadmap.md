@@ -510,6 +510,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
   dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
   diferença; falta conferir no jogo
+- [ ] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
+  direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
+  04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
+  `gpudumps\PCSE00093_20261104_190442.vsgd`). Pistas: `TEXTURE SUSPECT 0x60E8F6C0 UBC3 32x64 SUSPECT-SEAMS`, a
+  profundidade 4X de uma cena multisample lida como textura (`samples are not stored`), formatos vistos pela primeira
+  vez (UBC2 128x128 8 mips tipo 0x40000000, U8U8U8U8 32x32 tipo 0x60000000). Áudio: NGS 24 vozes, granularidade 512,
+  48 kHz, sem underruns, então o problema é no conteúdo das vozes (mixagem/efeitos da torcida), não falta de buffer
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
