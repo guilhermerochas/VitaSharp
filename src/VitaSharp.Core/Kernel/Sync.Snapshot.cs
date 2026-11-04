@@ -24,14 +24,6 @@ public sealed partial class Mutex
     internal void Save(SnapshotWriter w) { w.Write(Attr); w.Write(InitCount); w.WriteKernelObject(Owner); w.Write(LockCount); w.Write(WorkArea); w.Write(_deleted); }
     internal void Load(SnapshotReader r) { Attr = r.ReadUInt32(); InitCount = r.ReadInt32(); OwnerUid = r.ReadInt32(); LockCount = r.ReadInt32(); WorkArea = r.ReadUInt32(); _deleted = r.ReadBool(); }
     internal void Resolve(ObjectTable t) => Owner = OwnerUid != 0 ? t.Get<GuestThread>(OwnerUid) : null;
-
-    /// <summary>A restored thread that was in a condition wait holds the mutex again until its reissued wait releases it.</summary>
-    internal void GiveBack(GuestThread t, int count)
-    {
-        if (count <= 0) return;
-        Owner = t;
-        LockCount = count;
-    }
 }
 
 public sealed partial class CondVar

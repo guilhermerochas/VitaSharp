@@ -167,6 +167,11 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
                 load.AppendLine($"        {e} = {v};");
             }
         }
+        // hand-written parts: their code (tokens, without comments and whitespace) is part of the layout
+        foreach (var hook in new[] { "SaveExtra", "LoadExtra", "BeforeSnapshotLoad", "AfterSnapshotLoad" })
+            foreach (var m in t.GetMembers(hook).OfType<IMethodSymbol>())
+                foreach (var r in m.DeclaringSyntaxReferences)
+                    foreach (var tok in r.GetSyntax().DescendantTokens()) schema.Append(tok.Text).Append(' ');
         schema.Append('}');
         if (!ok) return null;
         bool HasMethod(string n, int args) => t.GetMembers(n).OfType<IMethodSymbol>().Any(m => !m.IsStatic && m.Parameters.Length == args);

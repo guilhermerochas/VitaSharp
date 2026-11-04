@@ -161,7 +161,7 @@ static class KernelSnapshot
                 case RwLock l: l.Resolve(table); break;
                 case Callback c: c.Resolve(table); break;
             }
-        foreach (var (t, m, c) in condGiveBack) table.Get<Mutex>(m)?.GiveBack(t, c);
+        foreach (var (t, _, c) in condGiveBack) t.CondReissueCount = c;
         return live;
     }
 }

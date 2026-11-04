@@ -24,6 +24,10 @@ public sealed unsafe partial class GuestThread
     volatile int _hleSeq;
     /// <summary>The mutex lock count a condition wait released (given back to the thread when its wait is reissued).</summary>
     internal int CondWaitCount;
+    /// <summary>Set on a restored thread whose condition wait is reissued: the lock count it released before the save
+    /// (the reissued wait takes it back after the signal without releasing the mutex again, which another thread may
+    /// own by now).</summary>
+    internal int CondReissueCount;
 
     volatile bool _saveHold;
 
@@ -99,7 +103,7 @@ public sealed unsafe partial class GuestThread
         w.Write(SuspendCount);
         w.Write(OpenCount);
         w.Write(OwnerPid);
-        // a reissued condition wait gives the mutex back first
+        // a reissued condition wait takes back the lock count it released (CondReissueCount)
         var cond = kind == SafeKind.Reissue ? CurrentWaitSync as CondVar : null;
         w.Write(cond?.Mutex.Uid ?? 0);
         w.Write(cond != null ? CondWaitCount : 0);

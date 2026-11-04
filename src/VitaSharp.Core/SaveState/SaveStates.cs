@@ -263,7 +263,9 @@ public static class SaveStates
             if (wasPaused) EmulationPause.Resume("load state");
             WaitServiceThreads(emu);
             EmulationPause.Pause("load state");
+            long t0 = sw.ElapsedMilliseconds;
             StopThreads(emu);
+            Log.Info($"Load state: threads stopped in {sw.ElapsedMilliseconds - t0} ms");
             try { LoadCore(emu, sections, backendFactory); }
             catch (Exception e) when (e is not SnapshotException)
             {
@@ -313,7 +315,9 @@ public static class SaveStates
     static void LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
     {
         emu.Gpu.WaitIdle();
+        var t0 = Stopwatch.GetTimestamp();
         if (backendFactory != null) emu.Gpu.ReplaceBackend(backendFactory);
+        Log.Info($"Load state: GPU backend replaced in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
         emu.Code.Clear();
         AudioDiagnostics.ProcessEnded();
 
@@ -354,7 +358,10 @@ public static class SaveStates
             if (m is not ISnapshotState s) continue;
             string key = ModuleKey(m, used);
             if (!sections.TryGetValue(ModulePrefix + key, out var data)) throw new SnapshotException($"module {key} has no state in the save state");
-            s.LoadState(new SnapshotReader(data) { Objects = emu.Kernel.Objects });
+            var mr = new SnapshotReader(data) { Objects = emu.Kernel.Objects };
+            try { s.LoadState(mr); }
+            catch (SnapshotException e) { throw new SnapshotException($"module {key}: {e.Message}"); }
+            if (!mr.AtEnd) throw new SnapshotException($"module {key}: {mr.Remaining} bytes of its state were not read (layout mismatch)");
         }
         Scheduler.Reset();
         foreach (var t in restored) t.StartRestored();

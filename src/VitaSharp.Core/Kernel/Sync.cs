@@ -437,7 +437,9 @@ public sealed partial class CondVar : KernelObject
         int count;
         lock (this)
         {
-            count = Mutex.ReleaseAll(self);
+            // a wait reissued by a save state load released its mutex before the state was saved
+            count = self.CondReissueCount > 0 ? self.CondReissueCount : Mutex.ReleaseAll(self);
+            self.CondReissueCount = 0;
             if (count < 0) return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
             self.CondWaitCount = count; // save states: the lock count the reissued wait gives back
             Waiters++;

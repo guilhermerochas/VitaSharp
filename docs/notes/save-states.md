@@ -32,7 +32,8 @@ computes over every generated layout); otherwise the load is refused with the re
    - parked at depth 0: saved as is;
    - blocked in an HLE wait at depth 0 (`Wait.Until`, `Scheduler.Block`): saved as "about to issue the call" (PC =
      the SVC, registers as at the call); on load the call is issued again and blocks again, with its timeout
-     restarted. A condition wait gives its mutex back first (the lock count it released is saved);
+     restarted. A reissued condition wait does not release its mutex again (another thread may own it by
+     now): it waits for the signal and then takes back the lock count it had released, which is saved;
    - anything else (a nested callback, host work, a condition wait taking its mutex back, a frame in the GXM display
      queue): "not at a safe point", the save resumes for a moment and retries (3 s at most).
 3. The whole state is copied to memory (~0.1-0.2 s with the game stopped), the game resumes, the file is compressed

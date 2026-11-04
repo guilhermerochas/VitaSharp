@@ -1,14 +1,14 @@
 namespace VitaSharp.Core.SaveState;
 
 /// <summary>
-/// Which save states a build can load. The generated part hashes every [GenerateSnapshot] layout; hand-written
-/// layouts (kernel objects, memory, modules with their own ISnapshotState) are covered by <see cref="ManualVersion"/>,
-/// which must be raised whenever one of them changes what it writes.
+/// Which save states a build can load. The generated part hashes every [GenerateSnapshot] layout, including the code
+/// of the types' SaveExtra/LoadExtra hooks; the other hand-written layouts (kernel objects, memory, the container) are
+/// covered by <see cref="ManualVersion"/>, which must be raised whenever one of them changes what it writes.
 /// </summary>
 public static partial class SnapshotSchema
 {
     /// <summary>Version of the hand-written state layouts.</summary>
-    public const int ManualVersion = 1;
+    public const int ManualVersion = 2;
 
     public static string Hash => $"{ManualVersion}-{GeneratedHash}";
 
