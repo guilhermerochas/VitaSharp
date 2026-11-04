@@ -159,6 +159,41 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    /// <summary>VITASHARP_TEXLOOKUP=old: the texture lookups of main b29e26a, for A/B runs on the phone.</summary>
+    internal static readonly bool TexLookupOld = Environment.GetEnvironmentVariable(EnvVars.TexLookup)?.Trim() == "old";
+
+    /// <summary>The b29e26a loop (every unit visited, the handler inside the loop), kept for A/B runs.</summary>
+    void FillTextureInfosOld(DescriptorImageInfo* infos, GxmTextureDesc[] textures, uint used, uint cubeSamplers, int units, bool vertexStage)
+    {
+        for (int i = 0; i < units; i++)
+        {
+            var desc = textures[i];
+            ImageView view = _dummyView;
+            Sampler sampler = _dummySampler;
+            ImageLayout layout2 = ImageLayout.ShaderReadOnlyOptimal;
+            bool cubeType = desc.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
+            bool asCube = !cubeType && (cubeSamplers & (1u << i)) != 0;
+            if (asCube) cubeType = true;
+            if ((used & (1u << i)) != 0 && !desc.IsNull)
+            {
+                ImageView v;
+                ImageLayout l;
+                try { (v, l) = ResolveTexture(desc, asCube); }
+                catch (VkOutOfMemoryException e)
+                {
+                    (v, l) = (default, default);
+                    _oomTextures++;
+                    LogOom($"[vram] out of GPU memory, texture 0x{desc.DataAddress:X8} {desc.Width}x{desc.Height} fmt 0x{desc.Format:X8} skipped for this draw (present {_presentCount}, draw {_drawSerial}): {e.Message}", force: _oomTextures <= 3);
+                }
+                if (v.Handle != 0) { view = v; layout2 = l; sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
+                else if (cubeType) view = _dummyCubeView;
+                if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
+            }
+            else if (cubeType) view = _dummyCubeView;
+            infos[i] = new DescriptorImageInfo(sampler, view, layout2);
+        }
+    }
+
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         bool vertexStage = layout.Handle == _texLayoutV.Handle;
@@ -170,7 +205,8 @@ public sealed unsafe partial class VulkanRenderer
         // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
         // races on the phone.
         uint mask = units >= 32 ? used : used & ((1u << units) - 1);
-        for (uint m = mask; m != 0; m &= m - 1)
+        if (TexLookupOld) FillTextureInfosOld(infos, textures, used, cubeSamplers, units, vertexStage);
+        else for (uint m = mask; m != 0; m &= m - 1)
         {
             int i = System.Numerics.BitOperations.TrailingZeroCount(m);
             var desc = textures[i];
@@ -484,8 +520,15 @@ public sealed unsafe partial class VulkanRenderer
     List<RenderTarget> TargetsContaining(uint addr)
     {
         _rtCandidates.Clear();
-        foreach (ref readonly var r in RtRanges())
-            if (addr >= r.Lo && addr < r.Hi) _rtCandidates.Add(r.Rt);
+        if (TexLookupOld)
+        {
+            foreach (var rt in _renderTargets.Values)
+                if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
+                    _rtCandidates.Add(rt);
+        }
+        else
+            foreach (ref readonly var r in RtRanges())
+                if (addr >= r.Lo && addr < r.Hi) _rtCandidates.Add(r.Rt);
         if (_rtCandidates.Count > 1) _rtCandidates.Sort(NewestSceneFirst);
         return _rtCandidates;
     }

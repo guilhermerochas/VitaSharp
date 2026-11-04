@@ -651,7 +651,27 @@ public sealed unsafe partial class VulkanRenderer
     static (uint Min, uint Max) MinMaxIndex(uint addr, uint count, bool i32)
     {
         if (count == 0) return (0, 0);
+        if (MinMaxOld) return MinMaxIndexOld(addr, count, i32);
         return i32 ? MinMax(GuestMemory.ReadSpan<uint>(addr, (int)count)) : MinMax(GuestMemory.ReadSpan<ushort>(addr, (int)count));
+    }
+
+    /// <summary>VITASHARP_MINMAX=old: the scalar scan of main b29e26a, for A/B runs on the phone.</summary>
+    static readonly bool MinMaxOld = Environment.GetEnvironmentVariable(EnvVars.MinMaxScan)?.Trim() == "old";
+
+    static (uint Min, uint Max) MinMaxIndexOld(uint addr, uint count, bool i32)
+    {
+        uint max = 0, min = uint.MaxValue;
+        if (i32)
+        {
+            var s = GuestMemory.ReadSpan<uint>(addr, (int)count);
+            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
+        }
+        else
+        {
+            var s = GuestMemory.ReadSpan<ushort>(addr, (int)count);
+            foreach (var v in s) { if (v > max) max = v; if (v < min) min = v; }
+        }
+        return (min, max);
     }
 
     /// <summary>Lowest and highest value, 128 bits at a time (the scalar loop was ~2% of the GPU worker on the phone).
@@ -876,7 +896,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_boundPipeline.Handle == 0 || cmd.Handle != _dyn.Cmd) _dyn = new DynShadow { Cmd = cmd.Handle };
             if (_boundPipeline.Handle != pipeline.Handle)
             {
-                _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
+                _cmd.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
                 _statPipelineBinds++;
                 _boundPipeline = pipeline;
             }
@@ -885,17 +905,17 @@ public sealed unsafe partial class VulkanRenderer
             uint setCount = 1;
             for (uint i = 3; i >= 1; i--)
                 if (!_dyn.SetsBound || sets[i].Handle != _dyn.Sets[(int)i]) { setCount = i + 1; break; }
-            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
+            _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
             for (int i = 1; i < 4; i++) _dyn.Sets[i] = sets[i].Handle;
             _dyn.SetsBound = true;
             for (int s = 0; s < 16; s++)
-                if ((vs.StreamMask & (1u << s)) != 0) _vk.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
+                if ((vs.StreamMask & (1u << s)) != 0) _cmd.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
             if (vs.Bindings.Any(b => b.Binding == 16))
             {
                 var db = _dummyBuffer; ulong dz = 0;
-                _vk.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
+                _cmd.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
             }
-            _vk.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
+            _cmd.CmdBindIndexBuffer(cmd, ib, ibOff, d.Index32 ? IndexType.Uint32 : IndexType.Uint16);
             SetDynamicState(cmd, st, topology);
             // Programmable blending reads the attachment behind a barrier placed before the draw, but on hardware every
             // fragment reads what earlier primitives of the same draw wrote. Small draws (glyph quads of a text string
@@ -906,20 +926,20 @@ public sealed unsafe partial class VulkanRenderer
             // time per frame); only the multisampled copy path (VITASHARP_MSAA_FETCH=copy, a fallback) does that
             // (copySplit). The pieces of a singleFetch / copySplit draw were built when it was chosen (_fetchPieces).
             if (copySplit)
-                _vk.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, vertexOffset, 0);
+                _cmd.CmdDrawIndexed(cmd, _fetchPieces[piece].Count, 1, _fetchPieces[piece].First, vertexOffset, 0);
             else if ((singleFetch || inputFetch && FetchSplitDraw(d, topology)) && !_core.RasterizationOrderColor)
             {
                 for (int c = 0; c < _fetchPieces.Count; c++)
                 {
                     if (c > 0) InputFetchBarrier(cmd);
-                    _vk.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, vertexOffset, 0);
+                    _cmd.CmdDrawIndexed(cmd, _fetchPieces[c].Count, 1, _fetchPieces[c].First, vertexOffset, 0);
                 }
                 _statFetchSplitDraws++;
             }
             else
             {
                 bool visQuery = BeginVisibilityQuery(cmd, d, out uint query);
-                _vk.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
+                _cmd.CmdDrawIndexed(cmd, d.IndexCount, d.InstanceCount, 0, vertexOffset, 0);
                 _statDraws++;
                 if (visQuery) { EndVisibilityQuery(cmd, query); CostNoteVisQuery(query); }
             }
@@ -980,7 +1000,7 @@ public sealed unsafe partial class VulkanRenderer
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
         if (SceneScale == 2) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
-        if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _vk.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
+        if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _cmd.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
 
         Rect2D scissor;
         if (st.RegionClipMode == 2)
@@ -991,8 +1011,8 @@ public sealed unsafe partial class VulkanRenderer
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
         if (SceneScale == 2) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
-        if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _vk.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
-        _vk.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
+        if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _cmd.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
+        _cmd.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
         // extended dynamic state, unless a driver quirk baked it into the pipeline (VulkanRenderer.StaticState.cs)
         bool staticEds = StaticEds;
@@ -1000,25 +1020,25 @@ public sealed unsafe partial class VulkanRenderer
         if (!staticEds)
         {
             var cull = st.CullMode switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None };
-            if (!valid || topology != _dyn.Topology) { _vk.CmdSetPrimitiveTopology(cmd, topology); _dyn.Topology = topology; }
-            if (!valid || cull != _dyn.Cull) { _vk.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
-            if (!valid) _vk.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
+            if (!valid || topology != _dyn.Topology) { _cmd.CmdSetPrimitiveTopology(cmd, topology); _dyn.Topology = topology; }
+            if (!valid || cull != _dyn.Cull) { _cmd.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
+            if (!valid) _cmd.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
         }
         float lineWidth = _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1;
-        if (!valid || lineWidth != _dyn.LineWidth) { _vk.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
+        if (!valid || lineWidth != _dyn.LineWidth) { _cmd.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
 
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
         if (!staticEds)
         {
-            if (!valid || depthTest != _dyn.DepthTest) { _vk.CmdSetDepthTestEnable(cmd, depthTest); _dyn.DepthTest = depthTest; }
-            if (!valid || front.DepthWrite != _dyn.DepthWrite) { _vk.CmdSetDepthWriteEnable(cmd, front.DepthWrite); _dyn.DepthWrite = front.DepthWrite; }
-            if (!valid || front.DepthFunc != _dyn.DepthFunc) { _vk.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc); _dyn.DepthFunc = front.DepthFunc; }
+            if (!valid || depthTest != _dyn.DepthTest) { _cmd.CmdSetDepthTestEnable(cmd, depthTest); _dyn.DepthTest = depthTest; }
+            if (!valid || front.DepthWrite != _dyn.DepthWrite) { _cmd.CmdSetDepthWriteEnable(cmd, front.DepthWrite); _dyn.DepthWrite = front.DepthWrite; }
+            if (!valid || front.DepthFunc != _dyn.DepthFunc) { _cmd.CmdSetDepthCompareOp(cmd, (CompareOp)front.DepthFunc); _dyn.DepthFunc = front.DepthFunc; }
         }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
-        if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _vk.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
+        if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _cmd.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
         if (stencil)
         {
             if (!valid || !_dyn.StencilSet || !SameStencil(front.Stencil, _dyn.Front)) { SetStencil(cmd, StencilFaceFlags.FaceFrontBit, front.Stencil, !staticEds); _dyn.Front = front.Stencil; }
@@ -1031,13 +1051,13 @@ public sealed unsafe partial class VulkanRenderer
         {
             // depth bias is enabled in every pipeline: no bias = zero constant and slope (exact)
             float bu = bias ? front.DepthBiasUnits : 0, bf = bias ? front.DepthBiasFactor : 0;
-            if (!valid || !_dyn.BiasSet || bu != _dyn.BiasUnits || bf != _dyn.BiasFactor) { _vk.CmdSetDepthBias(cmd, bu, 0, bf); _dyn.BiasUnits = bu; _dyn.BiasFactor = bf; _dyn.BiasSet = true; }
+            if (!valid || !_dyn.BiasSet || bu != _dyn.BiasUnits || bf != _dyn.BiasFactor) { _cmd.CmdSetDepthBias(cmd, bu, 0, bf); _dyn.BiasUnits = bu; _dyn.BiasFactor = bf; _dyn.BiasSet = true; }
             return;
         }
-        if (!valid || bias != _dyn.Bias) { _vk.CmdSetDepthBiasEnable(cmd, bias); _dyn.Bias = bias; }
+        if (!valid || bias != _dyn.Bias) { _cmd.CmdSetDepthBiasEnable(cmd, bias); _dyn.Bias = bias; }
         if (bias && (!valid || !_dyn.BiasSet || front.DepthBiasUnits != _dyn.BiasUnits || front.DepthBiasFactor != _dyn.BiasFactor))
         {
-            _vk.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
+            _cmd.CmdSetDepthBias(cmd, front.DepthBiasUnits, 0, front.DepthBiasFactor);
             _dyn.BiasUnits = front.DepthBiasUnits; _dyn.BiasFactor = front.DepthBiasFactor; _dyn.BiasSet = true;
         }
     }
@@ -1134,9 +1154,9 @@ public sealed unsafe partial class VulkanRenderer
 
     void SetStencil(CommandBuffer cmd, StencilFaceFlags face, in StencilState s, bool ops = true)
     {
-        if (ops) _vk.CmdSetStencilOp(cmd, face, (StencilOp)s.StencilFail, (StencilOp)s.DepthPass, (StencilOp)s.DepthFail, (CompareOp)s.Func);
-        _vk.CmdSetStencilCompareMask(cmd, face, s.CompareMask);
-        _vk.CmdSetStencilWriteMask(cmd, face, s.WriteMask);
-        _vk.CmdSetStencilReference(cmd, face, s.Ref);
+        if (ops) _cmd.CmdSetStencilOp(cmd, face, (StencilOp)s.StencilFail, (StencilOp)s.DepthPass, (StencilOp)s.DepthFail, (CompareOp)s.Func);
+        _cmd.CmdSetStencilCompareMask(cmd, face, s.CompareMask);
+        _cmd.CmdSetStencilWriteMask(cmd, face, s.WriteMask);
+        _cmd.CmdSetStencilReference(cmd, face, s.Ref);
     }
 }

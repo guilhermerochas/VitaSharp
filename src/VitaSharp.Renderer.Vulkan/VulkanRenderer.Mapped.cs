@@ -207,6 +207,16 @@ public sealed unsafe partial class VulkanRenderer
     RenderTarget? RenderTargetContaining(uint addr)
     {
         RenderTarget? best = null;
+        if (TexLookupOld)
+        {
+            foreach (var rt in _renderTargets.Values)
+            {
+                uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
+                if (addr < rt.Address || addr >= rt.Address + bytes) continue;
+                if (best == null || rt.LastUsedFrame > best.LastUsedFrame) best = rt;
+            }
+            return best;
+        }
         foreach (ref readonly var r in RtRanges())
         {
             if (addr < r.Lo || addr >= r.Hi) continue;
