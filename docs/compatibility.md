@@ -54,7 +54,7 @@ point a scenario reaches is not the end of the game.
 | Croixleur Sigma | PCSG00537 | In‑game | Help pages, opening, title menu, character select with the 3D model, story dialogue over the 3D scene at ~30 fps (Japanese release: Circle confirms; Vita3K crashes generating its shaders) | `croixleur_boot` |
 | Devious Dungeon | PCSB01240 | In‑game | 60 fps; also starts from the real shell's LiveArea | `dd_boot` |
 | F1 2011 | PCSE00002 | In‑game | Races with HUD, menus and video (from an existing profile: with fresh data the scenario stops at the driver name keyboard) | `f1_drive` |
-| FIFA 13 | PCSE00093 | In‑game | Title screen, menus and Arena training with the players skinned correctly (Vita3K does not boot it) | `fifa13` |
+| FIFA 13 | PCSE00093 | In‑game | Title screen, menus and Arena training with the players skinned correctly (Vita3K does not boot it); the players' reflection cubes read with the right face spacing since 04/11/2026 (cyan/green blocks on the kits, to confirm in game) | `fifa13` |
 | Final Fantasy X HD Remaster | PCSE00293 | Menus | Launcher menu, then the game's opening scene with credits | `ffx_boot` |
 | God of War Collection | PCSA00126 | In‑game | Combat, cutscenes and audio in God of War I and II; on Mali phones since 31/10/2026 (misaligned vertex attributes) | `gow_game` |
 | Gravity Rush | PCSF00024 | In‑game | Opening and first gameplay; a tap on the "Tap the Apple" title does not always advance | `gr_boot` |

@@ -483,6 +483,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quais texturas e formatos o corpo/rosto/uniforme usam e comparar com o esperado; ver se é o mesmo problema de ordem
   dos canais RGBA/BGRA das superfícies do Gal Gunvolt, um formato/layout de textura (swizzle, compressão) ou o
   conteúdo de uma superfície renderizada reaproveitada como textura
+  Achados e correção (04/11/2026, fix/user-bugs-3): os brilhos ciano/verdes no uniforme vêm dos dois cubos de
+  reflexo 128x128 UBC3 de um nível (`t3`/`t4` do corpo, 0x6284E700/0x6280C700, contagem crua de mips 0): as faces
+  1-5 saíam com blocos de lixo. A memória do dump mostra 16 KB de dados e 6 KB de intervalo repetidos, ou seja,
+  faces a 22528 bytes (a cadeia 64x64..1x1 reservada e alinhamento de 2 KB, a regra do Vita3K); o
+  `TextureLayout.CubeFaceStride` empacotava todo cubo de um nível (regra criada para os cubos 32x32 do Unit 13 e do
+  Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
+  dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
+  diferença; falta conferir no jogo
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
