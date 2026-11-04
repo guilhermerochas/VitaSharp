@@ -15,9 +15,8 @@ namespace VitaSharp.Desktop;
 ///                                   ltrigger, rtrigger, psbutton (default 8 frames)
 ///   wait FRAMES                     presented frames
 ///   sleep SECONDS                   wall-clock seconds
-///   stable [SECONDS] [TIMEOUT] [PIXELS]  until the picture has not changed for SECONDS (default 1.5; give up after
-///                                   TIMEOUT, default 60, with a NAV warning); PIXELS of the 96x54 comparison picture may
-///                                   differ (default 2; the home screen's floating bubbles need ~150)
+///   stable [SECONDS] [TIMEOUT]      until the picture has not changed for SECONDS (default 1.5; give up after TIMEOUT,
+///                                   default 60, with a NAV warning)
 ///   shot NAME                       the next presented frame, full size, as &lt;out&gt;/NAME.png
 ///   log TEXT                        a NAV line in the log (marks a step of the sweep)
 ///   quit                            end the run
@@ -40,7 +39,6 @@ sealed class NavScript : IInputBackend
     byte[]? _lastPicture;
     DateTime _lastChange = DateTime.UtcNow;
     long _sinkFrames;
-    volatile int _noise = 2; // pixels of the 96x54 picture that may differ in a 'stable' picture
 
     public volatile bool Quit;
 
@@ -62,7 +60,7 @@ sealed class NavScript : IInputBackend
         lock (_lock)
         {
             _sinkFrames++;
-            if (_lastPicture != null && Similar(_lastPicture, px, _noise)) return;
+            if (_lastPicture != null && Similar(_lastPicture, px)) return;
             _lastPicture = (byte[])px.Clone();
             _lastChange = DateTime.UtcNow;
         }
@@ -70,13 +68,13 @@ sealed class NavScript : IInputBackend
 
     /// <summary>Same picture, allowing a little noise (a blinking cursor or a spinner of a few pixels still counts as a
     /// change; video noise does not exist in system apps).</summary>
-    static bool Similar(byte[] a, byte[] b, int noise)
+    static bool Similar(byte[] a, byte[] b)
     {
         if (a.Length != b.Length) return false;
         int diff = 0;
         for (int i = 0; i < a.Length; i += 4)
             if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 24) diff++;
-        return diff <= noise;
+        return diff <= 2;
     }
 
     IEnumerable<string> Lines()
@@ -155,7 +153,6 @@ sealed class NavScript : IInputBackend
                 Thread.Sleep(TimeSpan.FromSeconds(double.Parse(p[1], inv)));
                 break;
             case "stable":
-                _noise = p.Length > 3 ? int.Parse(p[3], inv) : 2;
                 Stable(p.Length > 1 ? double.Parse(p[1], inv) : 1.5, p.Length > 2 ? double.Parse(p[2], inv) : 60);
                 break;
             case "shot":

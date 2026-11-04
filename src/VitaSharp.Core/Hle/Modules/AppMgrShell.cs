@@ -217,13 +217,9 @@ public sealed partial class AppMgrShell : HleModule
         return parts.Length == 0 ? "" : parts[0] + ":" + string.Join('/', parts.Skip(1));
     }
 
-    /// <summary>(int flags, const char *name, const char *param): starts an application by title id (the shell starts
-    /// NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload"; Music's "Start [Content
-    /// Manager]" starts NPXS10026 with the same flags). A background application (param.sfo LAREA_TYPE 3: no LiveArea,
-    /// like NPXS10079 and NPXS10063) runs as its own process without taking the screen; any other is launched like one
-    /// from the home screen (the shell gets its created/launched events and brings it to the front). Started as a
-    /// background process, Content Manager opened the shell's shared framebuffer without ever drawing, and the shell's
-    /// frame loop waited for it: the whole system stopped presenting. Returns its application id.</summary>
+    /// <summary>(int flags, const char *name, const char *param): starts an application by title id in the background
+    /// (the shell starts NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload"). It runs
+    /// as its own process without taking the screen. Returns its application id.</summary>
     [Hle]
     int sceAppMgrLaunchAppByName(int flags, uint name, uint param)
     {
@@ -235,21 +231,11 @@ public sealed partial class AppMgrShell : HleModule
         foreach (var root in new[] { "vs0:app/", "ux0:app/" })
             if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
         if (dir == null) return unchecked((int)0x80800006);
-        bool background = IsBackgroundApplication(dir);
-        // a foreground application belongs to the shell (as one started from its home screen), not to the caller
-        var owner = background ? Emu : Emu.Vita.Shell ?? Emu;
-        var app = owner.SpawnProcess(dir, "eboot.bin", [], background: background);
+        var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
         // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
         if (param != 0) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = GuestMemory.ReadCString(param, 0x400);
-        Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): {(background ? "background" : "foreground")} process {app.Describe()}");
+        Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
         return app.AppId;
-    }
-
-    /// <summary>A background application: its param.sfo has LAREA_TYPE 3 (no LiveArea).</summary>
-    static bool IsBackgroundApplication(string dir)
-    {
-        try { return Package.Sfo.Load(Path.Combine(dir, "sce_sys", "param.sfo")).GetUInt("LAREA_TYPE") == 3; }
-        catch (Exception) { return true; } // unreadable: keep the old background behaviour
     }
 
     /// <summary>(void *request): requests from applications for the shell to show a notification. The shell polls it
