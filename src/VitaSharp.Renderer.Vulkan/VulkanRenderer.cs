@@ -49,6 +49,9 @@ public sealed class VulkanRendererOptions
     /// (<c>--flicker-check</c>) and of the developer GPU bench. Null (the default): nothing is read back.</summary>
     public Action<long, byte[], int, int>? FrameSink;
     public const int SinkWidth = 96, SinkHeight = 54;
+    /// <summary>Tooling (--nav shot): the next presented frame is also written full size to this PNG path; the
+    /// renderer clears it when it takes the request.</summary>
+    public string? ShotPath;
 
 }
 
@@ -91,6 +94,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public int DumpIndex;
         /// <summary>Readback holds a frame to dump (the buffer itself stays allocated and is reused by later dumps).</summary>
         public bool DumpPending, DumpPng;
+        /// <summary>Also write this frame to this PNG (<see cref="VulkanRendererOptions.ShotPath"/>).</summary>
+        public string? ShotPath;
         /// <summary>Debug mode: replay ring slot this frame copies the presented image into, -1 = none (VulkanRenderer.Replay.cs).</summary>
         public int ReplaySlot = -1;
         /// <summary>Debug mode / VITASHARP_DEBUG_NAN: NaN/Inf scan results and draw hits of this frame (VulkanRenderer.NanCheck.cs).</summary>
@@ -1013,8 +1018,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         EndFrameStallStats();
         TrimAtFrameBoundary();
         bool png = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
-        bool dump = png || _opt.FrameSink != null;
-        if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; }
+        string? shot = _opt.ShotPath != null ? Interlocked.Exchange(ref _opt.ShotPath, null) : null;
+        bool dump = png || shot != null || _opt.FrameSink != null;
+        if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; F.ShotPath = shot; }
         else F.DumpPending = false;
         if (DebugMode.Enabled) DebugPresent(src, frame);
         else
@@ -1148,10 +1154,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         if (!f.DumpPending) return;
         if (_opt.FrameSink is { } sink) SinkFrame(f, rb, sink);
-        if (!f.DumpPng) { f.DumpPending = false; return; }
+        if (!f.DumpPng && f.ShotPath == null) { f.DumpPending = false; return; }
         try
         {
-            Directory.CreateDirectory(_opt.DumpFramesDir!);
 
             // one reused CPU copy (dumps run on the GPU worker only): a fresh 2 MB array per dump went to the large object heap
             int bytes = (int)(rb.W * rb.H * 4);
@@ -1161,6 +1166,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (_readbackIsBgra)
                 for (int i = 0; i < pixels.Length; i += 4) (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
             for (int i = 3; i < pixels.Length; i += 4) pixels[i] = 255; // the display ignores alpha
+            if (f.ShotPath is { } shotPath)
+            {
+                f.ShotPath = null;
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(shotPath))!);
+                Png.Write(shotPath, pixels, (int)rb.W, (int)rb.H);
+            }
+            if (!f.DumpPng) { f.DumpPending = false; return; }
+            Directory.CreateDirectory(_opt.DumpFramesDir!);
             Png.Write(Path.Combine(_opt.DumpFramesDir!, $"frame_{f.DumpIndex:D6}.png"), pixels, (int)rb.W, (int)rb.H);
             if (_opt.Thumbnails is { } thumbs)
                 lock (thumbs) thumbs.Add((f.DumpIndex, Thumbnail(pixels, (int)rb.W, (int)rb.H, 240, 136)));
