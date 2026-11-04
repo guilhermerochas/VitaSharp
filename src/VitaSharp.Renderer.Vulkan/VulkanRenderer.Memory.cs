@@ -222,7 +222,7 @@ public sealed unsafe partial class VulkanRenderer
                 Release(() => _vk.DestroyFramebuffer(_dev, fb, null), now);
             }
         }
-        Release(() => { _vk.DestroyImageView(_dev, dt.View, null); if (dt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, dt.SampledView, null); _vk.DestroyImage(_dev, dt.Image, null); _imagePool.Free(dt.Mem); }, now);
+        Release(() => { _vk.DestroyImageView(_dev, dt.View, null); if (dt.SampledView.Handle != 0) _vk.DestroyImageView(_dev, dt.SampledView, null); if (dt.FeedbackView.Handle != 0) _vk.DestroyImageView(_dev, dt.FeedbackView, null); _vk.DestroyImage(_dev, dt.Image, null); _imagePool.Free(dt.Mem); }, now);
     }
 
     // =================================================================== eviction

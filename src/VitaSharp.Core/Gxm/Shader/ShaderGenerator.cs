@@ -198,7 +198,11 @@ public static class ShaderGenerator
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
     /// output must not be read from or written to persistent shader caches.
     /// </summary>
-    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive;
+    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive || UniformLoop;
+
+    /// <summary>VITASHARP_SHADER_UNIFORM_LOOP=1: register-resident uniforms are copied into SA by a loop (generator v19
+    /// output, for A/B runs; bypasses the persistent caches like the debug overrides).</summary>
+    static readonly bool UniformLoop = Environment.GetEnvironmentVariable(EnvVars.ShaderUniformLoop) == "1";
 
     const string PushConstants = """
 layout(push_constant) uniform RenderInfo {
@@ -321,7 +325,14 @@ float packC10(vec3 c) {
             if (count <= 0) continue;
             int start = (int)b.RegStartOffset;
             t.MaxSa = Math.Max(t.MaxSa, (start + count + 3) >> 2);
-            t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
+            // one statement per word: the loop's dynamic sa index kept the whole array in memory on Mali (stack
+            // spills per fragment); constant indices let the compiler keep the words in registers and drop the unused
+            // ones. Uncharted's gameplay lighting pass: 25 -> 15 ms on the Mali-G57 (bench, three programs).
+            if (UniformLoop)
+                t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
+            else
+                for (int k = 0; k < count; k += 4)
+                    t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = fetchMemory({bb.Base + j * 4});")));
         }
 
         // ---- program inputs

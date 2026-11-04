@@ -745,8 +745,14 @@ public sealed unsafe partial class VulkanRenderer
         // ---- textures (may need to leave the render pass)
         SetDrawArea(in st);
         if (UsesMissingTextureUnit(d.VertexProgram.Info.TexturesUsed, _texUnitsV, d.VertexProgram.Info.Program.Hash) || UsesMissingTextureUnit(d.FragmentProgram.Info.TexturesUsed, _texUnitsF, d.FragmentProgram.Info.Program.Hash)) return;
+        // a texture of the scene's own depth may be read in place when the draw can render in a read-only depth fetch
+        // pass (VulkanRenderer.SingleFetch.cs): decided before the textures are resolved
+        _feedbackUsed = false;
+        _feedbackAllowed = DepthFeedback && !st.Front.DepthWrite && SingleFetchPossible() && !_ss && SceneScale == 1
+            && fs.Gen!.RawColorBits == 0 && fs.Gen.TileWord1 == 0;
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
+        _feedbackAllowed = false;
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
         // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
         // the second output register word a one-word native colour leaves in the tile: the first program of the scene
@@ -757,8 +763,14 @@ public sealed unsafe partial class VulkanRenderer
         var topology = Formats.Topology(d.PrimitiveType);
         // a small programmable-blending draw in a one-sample scene: rendered in its own render pass that reads the
         // surface as an input attachment, piece by piece (FetchSplitDraw; VulkanRenderer.SingleFetch.cs)
+        // (any size with rasterization-order access, VITASHARP_FETCH_LARGE: no pieces needed)
         bool singleFetch = !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && SingleFetchPossible()
-            && FetchSplitDraw(d, topology);
+            && (FetchLarge || FetchSplitDraw(d, topology));
+        // a draw that renders in a fetch pass without reading the colour: it reads the scene's depth in place, or the
+        // scene's open fetch pass takes it instead of ending (VITASHARP_FETCH_PASS_JOIN)
+        bool passDraw = singleFetch || _feedbackUsed
+            || FetchPassJoin && !inputFetch && !tw1 && fs.Gen.RawColorBits == 0 && SingleFetchPossible()
+               && FetchPassContinues(_rtAttachFormat, st.Front.DepthWrite, false);
         // a small programmable-blending draw of a multisampled scene that reads copies of the samples
         // (VITASHARP_MSAA_FETCH=copy): drawn piece by piece, each piece reading a new copy (what the earlier pieces drew)
         bool copySplit = _ms && !inputFetch && !tw1 && fs.Gen.UsesFragColor && fs.Gen.RawColorBits == 0 && FetchSplitDraw(d, topology);
@@ -816,7 +828,7 @@ public sealed unsafe partial class VulkanRenderer
         byte tw1Key = !_tw1Active ? (byte)0 : tw1 && mask != 0 && (fs.Gen!.TileWord1 & TileWord1Use.Writes) != 0 ? (byte)2 : (byte)1;
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attachFormat, hasColor,
             blendOn, blend?.ColorFunc ?? 0, blend?.AlphaFunc ?? 0, blend?.ColorSrc ?? 1, blend?.ColorDst ?? 0, blend?.AlphaSrc ?? 1, blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key, singleFetch);
+            mask, TopologyClass(topology), Formats.Polygon(st.Front.PolygonMode), SceneSamples, StaticStateKey(in st, topology), tw1Key, passDraw);
         var pipeline = GetPipeline(key, vs, fs, topology);
         if (_frameStallTicks != stall0) NoteDrawStall(d, mask, tw1Key, fs.Gen!.UsesFragColor || tw1, _frameStallTicks - stall0);
         ProfMark(ProfPhase.Pipeline);
@@ -881,8 +893,14 @@ public sealed unsafe partial class VulkanRenderer
             _renderRaw = raw;
             if (raw) _rawFormat = attachFormat;
             CommandBuffer cmd;
-            if (singleFetch && FetchPassMerge && FetchPassContinues(attachFormat)) { cmd = F.Cmd; ContinueSingleFetchPass(); if (!_core.RasterizationOrderColor) InputFetchBarrier(cmd); }
-            else if (singleFetch) cmd = BeginSingleFetchPass(attachFormat);
+            if (passDraw && FetchPassMerge && FetchPassContinues(attachFormat, st.Front.DepthWrite, _feedbackUsed))
+            {
+                cmd = F.Cmd;
+                ContinueSingleFetchPass();
+                if (singleFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
+            }
+            // a pass begun without depth writes keeps its depth read-only, ready for draws that read it in place
+            else if (passDraw) cmd = BeginSingleFetchPass(attachFormat, DepthFeedback && !st.Front.DepthWrite);
             else
             {
                 BeginRendering();
@@ -944,7 +962,7 @@ public sealed unsafe partial class VulkanRenderer
                 if (visQuery) { EndVisibilityQuery(cmd, query); CostNoteVisQuery(query); }
             }
             EndCostQuery(cmd);
-            if (singleFetch && !FetchPassMerge) EndSingleFetchPass();
+            if (passDraw && !FetchPassMerge) EndSingleFetchPass();
         }
         ProfMark(ProfPhase.Record);
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);

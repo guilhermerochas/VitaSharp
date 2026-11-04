@@ -52,6 +52,6 @@ public class ProgramInputTests
     public void RegisterResidentBufferIsCopiedIntoSecondaryAttributes()
     {
         var gen = ShaderGenerator.Generate(Program(4, true, sa: 0, words: 1), new ShaderHints([], [], 0x01000000, false));
-        Assert.Contains("sa[w >> 2][w & 3] = fetchMemory(", gen.Glsl);
+        Assert.Contains("sa[0].x = fetchMemory(", gen.Glsl);
     }
 }
