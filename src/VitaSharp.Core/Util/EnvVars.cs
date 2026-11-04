@@ -171,4 +171,15 @@ public static class EnvVars
     public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
     /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
     public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
+    /// <summary>Developer builds: the GPU worker spends FACTOR times its real time on each command (busy wait), to
+    /// reproduce a phone's worker cost on a PC (default 1).</summary>
+    public const string GpuWorkerSlowdown = "VITASHARP_GPU_WORKER_SLOWDOWN";
+    /// <summary>1: a display queue entry's flip callback runs once the GPU worker recorded and submitted the frame, not
+    /// once the GPU finished it (the callback only flips; presents stay in GPU order). Default 0.</summary>
+    public const string DisplayEarlySignal = "VITASHARP_DISPLAY_EARLY_SIGNAL";
+    /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
+    public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";
+    /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target
+    /// writebacks (published when their frame retires, at the latest by the next flip). Default 0.</summary>
+    public const string LazyWritebackSync = "VITASHARP_LAZY_WRITEBACK_SYNC";
 }

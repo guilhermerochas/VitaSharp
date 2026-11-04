@@ -51,6 +51,9 @@ public sealed class PresentCommand : GpuCommand
 public sealed class SignalCommand : GpuCommand
 {
     public required Action Signal;
+    /// <summary>Fires once the worker executed every earlier command (recorded and submitted), without waiting for the
+    /// GPU to finish them: for sync points whose waiter reads no GPU result (the display queue's flip callback).</summary>
+    public bool Immediate;
 }
 
 public sealed class CallbackCommand : GpuCommand

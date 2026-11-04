@@ -148,13 +148,36 @@ public sealed class GpuQueue : IDisposable
         return cmd.Sequence;
     }
 
-    public void WaitFor(long sequence)
+    public void WaitFor(long sequence, GuestWait site = GuestWait.Other)
     {
         if (Completed >= sequence) return;
         using var blocked = Kernel.Scheduler.Block();
         using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_progress)
             while (Completed < sequence && !_stopping) Monitor.Wait(_progress, 100);
+        CountGuestWait(site, t0);
+    }
+
+    /// <summary>Where guest threads block on the GPU (PERF guest waits line).</summary>
+    public enum GuestWait { Notification, DisplayQueue, Finish, Throttle, Other }
+
+    static readonly long[] GuestWaitTicks = new long[5], GuestWaitCount = new long[5];
+
+    public static void CountGuestWait(GuestWait site, long t0)
+    {
+        Interlocked.Add(ref GuestWaitTicks[(int)site], System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+        Interlocked.Increment(ref GuestWaitCount[(int)site]);
+    }
+
+    /// <summary>PERF guest waits: blocked guest time per site, in ms per presented frame.</summary>
+    public static string GuestWaitReport(long frames)
+    {
+        frames = Math.Max(1, frames);
+        var sb = new System.Text.StringBuilder("PERF guest waits on the GPU (ms/frame, waits/frame):");
+        for (int i = 0; i < GuestWaitTicks.Length; i++)
+            sb.Append($" {(GuestWait)i} {Interlocked.Read(ref GuestWaitTicks[i]) * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames:F2} ({Interlocked.Read(ref GuestWaitCount[i]) / (double)frames:F2});");
+        return sb.ToString();
     }
 
     public void WaitIdle() => WaitFor(Submitted);
@@ -208,8 +231,12 @@ public sealed class GpuQueue : IDisposable
 #if VITASHARP_DEVELOPER
                 Util.Developer.DevTrace.GpuCommand(cmd is PresentCommand);
 #endif
+#if VITASHARP_DEVELOPER
+                long tx = WorkerSlowdown > 1 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+#endif
                 lock (_backendLock) Backend?.Execute(cmd);
 #if VITASHARP_DEVELOPER
+                if (tx != 0) SlowDown(tx);
                 if (cmd is PresentCommand) Util.Developer.DevTrace.GpuPresented();
 #endif
 
@@ -228,7 +255,9 @@ public sealed class GpuQueue : IDisposable
                     break;
                 case SignalCommand signal:
                     bool deferred = false;
-                    try { lock (_backendLock) deferred = Backend?.DeferSignal(signal.Signal) ?? false; }
+                    // an immediate signal still hands the backend an empty deferred one: the work recorded so far starts
+                    // on the GPU now (the guest will wait on later sync points for it), not at the next present
+                    try { lock (_backendLock) deferred = (Backend?.DeferSignal(signal.Immediate ? NoOp : signal.Signal) ?? false) && !signal.Immediate; }
                     catch (Exception e) { Log.Error($"GPU backend signal failed: {e}"); }
                     if (!deferred) signal.Signal();
                     break;
@@ -252,6 +281,18 @@ public sealed class GpuQueue : IDisposable
             }
         }
     }
+
+#if VITASHARP_DEVELOPER
+    /// <summary><see cref="EnvVars.GpuWorkerSlowdown"/>: phone-like worker cost on a PC.</summary>
+    static readonly double WorkerSlowdown = double.TryParse(Environment.GetEnvironmentVariable(EnvVars.GpuWorkerSlowdown),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ws) ? ws : 1;
+
+    static void SlowDown(long t0)
+    {
+        long until = t0 + (long)((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * WorkerSlowdown);
+        while (System.Diagnostics.Stopwatch.GetTimestamp() < until) Thread.SpinWait(20);
+    }
+#endif
 
     /// <summary>
     /// Writes a notification in GPU order: after all previously submitted work completed and its results (writebacks,
@@ -277,12 +318,16 @@ public sealed class GpuQueue : IDisposable
         }
     }
 
-    public Fence SubmitFence()
+    /// <param name="immediate">set once the worker reached it (<see cref="SignalCommand.Immediate"/>), not once the GPU
+    /// finished the work before it</param>
+    public Fence SubmitFence(bool immediate = false)
     {
         var f = new Fence();
-        Submit(new SignalCommand { Signal = f.Set });
+        Submit(new SignalCommand { Signal = f.Set, Immediate = immediate });
         return f;
     }
+
+    static readonly Action NoOp = static () => { };
 
     public void Dispose()
     {

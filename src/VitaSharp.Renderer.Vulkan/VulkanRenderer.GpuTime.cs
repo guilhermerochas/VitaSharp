@@ -26,7 +26,7 @@ public sealed unsafe partial class VulkanRenderer
         fixed (QueueFamilyProperties* p = fam) _vk.GetPhysicalDeviceQueueFamilyProperties(_core.Physical, ref n, p);
         if (!_core.Timestamps || _core.QueueFamily >= n || fam[_core.QueueFamily].TimestampValidBits == 0 || _core.Properties.Limits.TimestampPeriod <= 0) return false;
         _timePeriodNs = _core.Properties.Limits.TimestampPeriod;
-        var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = FramesInFlight * 2 };
+        var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = (uint)FramesInFlight * 2 };
         _timeOk = _vk.CreateQueryPool(_dev, in ci, null, out _timePool) == Result.Success;
         return _timeOk;
     }
