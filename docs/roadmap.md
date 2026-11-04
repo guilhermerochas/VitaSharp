@@ -523,7 +523,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `gpudumps\PCSE00093_20261104_190442.vsgd`). Pistas: `TEXTURE SUSPECT 0x60E8F6C0 UBC3 32x64 SUSPECT-SEAMS`, a
   profundidade 4X de uma cena multisample lida como textura (`samples are not stored`), formatos vistos pela primeira
   vez (UBC2 128x128 8 mips tipo 0x40000000, U8U8U8U8 32x32 tipo 0x60000000). Áudio: NGS 24 vozes, granularidade 512,
-  48 kHz, sem underruns, então o problema é no conteúdo das vozes (mixagem/efeitos da torcida), não falta de buffer
+  48 kHz, sem underruns, então o problema é no conteúdo das vozes (mixagem/efeitos da torcida), não falta de buffer.
+  **Áudio corrigido** (fix/system-apps-4): o EAAudioCore cria a rota (`sceNgsPatchCreateRouting`) de uma voz só
+  quando `sceNgsVoiceGetOutputPatch` falha (eboot 0x8140F8D4 / 0x8140C8E3); o HLE devolvia OK com handle 0, então
+  quatro vozes (uma submix na inicialização e as de stream do jogo) nunca chegavam ao mixer. Agora devolve
+  `SCE_NGS_ERROR_PATCH_NOT_AVAIL` (0x804A000E) com handle nulo, como o Vita3K; as rotas são criadas e os
+  `sceNgsPatchGetInfo(0)`/`SetVolumesMatrix(0)` com erro sumiram. Falta o usuário ouvir uma partida.
+  **Faixa cinza: sem causa no emulador encontrada.** No dump (quadro 13426, uma cena de 717 desenhos), `--draw-limit`
+  isola os desenhos 309-330 (vs 64BA7B40B8B8F6AA, fs F97686423E6187DF): é a malha do piso de concreto do estádio, com a
+  textura 0x638A8100 UBC1 256x256 (concreto com papel picado, decodificada limpa: noise 0,017) e o lightmap
+  0x63B9D400; o gramado (desenhado antes do 300) termina ali de verdade e nenhum desenho foi pulado. O granulado é o
+  papel picado da própria textura. O SUSPECT 0x60E8F6C0 é um elemento do HUD (desenho 700) e a profundidade lida
+  (desenhos 615/616, partículas aditivas) não muda a faixa. Sem referência do Vita (o Vita3K não abre o jogo) não dá
+  para dizer se a cor/iluminação está errada; precisa de uma foto/vídeo do console no mesmo estádio
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
