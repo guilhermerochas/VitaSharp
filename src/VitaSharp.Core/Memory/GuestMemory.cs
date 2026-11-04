@@ -31,7 +31,7 @@ public enum MemoryRegion
 /// </para>
 /// The static accessors read and write the current host thread's space (<see cref="AddressSpace.Current"/>).
 /// </summary>
-public sealed unsafe class GuestMemory : IDisposable
+public sealed unsafe partial class GuestMemory : IDisposable
 {
     public const uint PageSize = 0x1000;
     internal const ulong ReserveSize = 0x1_0001_0000; // 4 GiB + slack so 16-byte accesses at the top don't fault

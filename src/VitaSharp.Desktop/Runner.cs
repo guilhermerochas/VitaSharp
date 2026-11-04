@@ -14,7 +14,7 @@ public static class Runner
 {
     static FlickerDetector? _flicker;
 
-    static string? Opt(string[] options, string name) =>
+    internal static string? Opt(string[] options, string name) =>
 
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
@@ -402,6 +402,7 @@ public static class Runner
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
+        new SaveStateControl(emu, ro, () => NewHeadlessRenderer(ro, diag), null).StartScheduled(options);
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();

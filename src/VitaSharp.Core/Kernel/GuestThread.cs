@@ -20,7 +20,7 @@ public sealed class GuestThreadExitException(int status, bool delete) : Exceptio
 public sealed class GuestFaultException(string message) : Exception(message);
 
 /// <summary>A guest thread backed by a dedicated host thread (true parallelism across host cores).</summary>
-public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.ISvcHandler
+public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.ISvcHandler
 {
     public const uint KernelTlsSize = 0x800;
     public const int TlsThreadId = 1, TlsSpTop = 2, TlsSpBottom = 3, TlsVfpException = 4, TlsReserved6 = 6,
@@ -216,7 +216,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
         int depth = _callDepth;
         while (true)
         {
-            if (SuspendCount > 0 || ProcessSuspended || PausedHere) ParkWhileSuspended();
+            if (SuspendCount > 0 || ProcessSuspended || PausedHere || SaveHeld) ParkWhileSuspended();
             _inGuest = true;
             ExitReason exit;
             try { exit = Core.Run(); }
@@ -339,7 +339,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
 #endif
         DispatchHle(s);
         _inGuest = true;
-        if (SuspendCount > 0 || ProcessSuspended || PausedHere) s->Exit = ExitReason.Handled;
+        if (SuspendCount > 0 || ProcessSuspended || PausedHere || SaveHeld) s->Exit = ExitReason.Handled;
         return true;
     }
 
@@ -361,7 +361,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
 
     void DispatchHle(CpuState* s)
     {
-
+        _hleSeq++; // odd while inside an HLE call (save states: a thread that returns meanwhile is seen)
         var f = _emu.Hle.GetFunction(s->SvcImm);
         f.CallCount++;
         long charged0 = Core.ChargedCycles;
@@ -390,7 +390,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
             f.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
             if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
-            if (ContextReplaced) { ContextReplaced = false; return; }
+            if (ContextReplaced) { ContextReplaced = false; _hleSeq++; return; }
         }
         else
         {
@@ -400,6 +400,7 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
         }
         // The stub's next instruction is "bx lr": return directly.
         Arm.BxWritePc(s, s->R[14]);
+        _hleSeq++;
     }
 
     /// <summary>Calls a guest function on this (current) thread and returns R0. Re-entrant.</summary>
@@ -477,7 +478,14 @@ public sealed unsafe class GuestThread : KernelObject, IDisposable, Cpu.CpuCore.
     {
         using var blocked = Scheduler.Block();
         lock (_suspendLock)
-            while ((SuspendCount > 0 || ProcessSuspended || PausedHere) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+        {
+            _parkedDepth = _callDepth; // save states: parked at a block boundary at this call depth
+            try
+            {
+                while ((SuspendCount > 0 || ProcessSuspended || PausedHere || SaveHeld) && !Core.StopRequested) Monitor.Wait(_suspendLock, 50);
+            }
+            finally { _parkedDepth = -1; }
+        }
     }
 
     /// <summary>Wakes the thread if it is parked by a process suspension (the process resumed).</summary>
