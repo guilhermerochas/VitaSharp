@@ -308,6 +308,34 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   render está parada no `sceKernelReceiveMsgPipe` quando a `main` envia, e a cena dela termina antes do próximo
   decode. Próximo passo: um modelo de tempo da thread de render/GPU (latência do `sceGxmFinish`/fila de display) ou
   atrasar a saída do decodificador até a GPU consumir o que já foi enviado — mudança de temporização, não um ajuste local
+  Achados (04/11/2026, fix/system-apps-4), medidos com um log de cada decode e de cada upload da textura 0x63FBC400:
+  o upload sempre tem o **tamanho do decode anterior e o conteúdo do decode atual** (1 upload por decode; quando o
+  tamanho muda, listras; quando não muda, a imagem é a do quadro seguinte, invisível). Causa no jogo: a `main`
+  (prio 160) monta o quadro k, manda a mensagem k e espera (laço de `sceGxmWaitEvent` em 0x81007176-0x81007192) só
+  até a notificação `*(*(ctx+0x38)+0x24)` chegar a k-1 (escrita pelo EndScene da cena de display da
+  `F3DPlaybackThread`); aí decodifica o JPEG k+1 no mesmo buffer. Ou seja, o jogo foi feito para ficar uma mensagem à
+  frente e conta com a `F3DPlaybackThread` (prio 129) + a GPU consumirem a mensagem k no intervalo entre "notificação
+  k-1 escrita" e "fim do próximo decode". No Vita esse intervalo é longo: a notificação só sai quando a GPU termina a
+  cena de verdade (ms depois do EndScene) e o `sceJpegDecodeMJpeg` roda no codec (ms). Aqui a `F3DPlaybackThread`
+  recebe a mensagem k-1 depois que a `main` já decodificou k (o `ReceiveMsgPipe` dela volta com uma mensagem que já
+  estava no pipe: está uma mensagem atrás). Testado sem efeito (2 tentativas, timebox): esperar o GPU worker ficar em
+  dia antes de o decoder escrever (42/171 quadros com listras contra 39/171), e fila de display mais funda
+  (VS_DQ_CAP=3: 41/171). Medição: `tools/stripes.py` do scratchpad (razão entre gradiente vertical e horizontal na faixa
+  do meio > 2). Próximo passo: medir onde a `F3DPlaybackThread` perde o quadro (o intervalo entre o AddEntry e o
+  ReceiveMsgPipe varia de 0,4 a 25 ms conforme o trace), e modelar a latência da notificação de fim de cena (escrever
+  a notificação um tempo de GPU do Vita depois do EndScene) ou a duração do decode do codec, nessa ordem
+  Mais medições (04/11/2026, fix/system-apps-4, log de cada `sceGxmSetFragmentTexture` da textura 0x63FBC400, de cada
+  decode e das chamadas de msgpipe/AddEntry): a `F3DPlaybackThread` faz ~27 ms por quadro **dentro de
+  `sceGxmDisplayQueueAddEntry`** (a fila de display está sempre cheia: o callback do jogo faz SetFrameBuf +
+  `sceDisplayWaitSetFrameBufMulti(2)`, 30 Hz) e só chama `ReceiveMsgPipe` a cada dois quadros, recebendo duas mensagens
+  de 12 bytes de uma vez (o pipe é um fluxo de bytes, modo ASAP); desenha a primeira num quadro e a segunda no seguinte,
+  sem novo Receive. Na segunda, a `main` já decodificou o JPEG seguinte: tamanho de k, conteúdo de k+1. A `main` só
+  espera a notificação do quadro anterior ao que acabou de mandar (0x81007176), então o jogo permite essa folga de uma
+  mensagem. Testado sem efeito (as listras ficam em 32-42 de 123-171 quadros): fila de display com 3 ou 64 lugares
+  (VS_DQ_CAP), latência do decoder de 50 e 120 ns por pixel (9 e 22 ms para 336x544, antes de escrever a saída), esperar
+  o GPU worker antes do decode. Ou seja, nem o tempo da `main` nem a profundidade da fila mudam a fase; falta descobrir o
+  que no Vita impede a segunda mensagem de ficar para o quadro seguinte (o tempo do `sceGxmFinish` dentro da cena da
+  F3D, que espera a GPU inteira, é o próximo suspeito: no Vita ele não espera a cena de display anterior)
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado

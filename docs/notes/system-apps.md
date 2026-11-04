@@ -161,6 +161,29 @@ is at 0.5, 0.54 or, for Browser, Party, Calendar and near, at 0.75, 0.52).
 | NPXS10012 PS3 Remote Play | draws the registration guide | yes |
 | NPXS10015 Settings | **fixed** (fix/system-apps-3): the Settings menu | not tested |
 
+### Screen-driven sweeps (fix/system-apps-4)
+
+`--nav=<file>` (`src/VitaSharp.Desktop/NavScript.cs`) runs one command per line, each starting when the previous one
+finished: `tap X Y`, `swipe X0 Y0 X1 Y1`, `press BUTTON` (`psbutton` for PS), `wait FRAMES`, `stable [S] [TIMEOUT]
+[PIXELS]` (until the picture stops changing; the home screen's floating bubbles never settle, use `wait` there), `shot
+NAME` (full-size PNG into `--nav-out`), `log`, `quit`. `--nav-live` keeps polling the file for appended lines, so a
+session can be driven interactively (append commands, read the shots). Boot to the home screen: `wait 400`, `press
+cross` (health warning), `wait 300`, `swipe 0.95 0.08 0.3 0.7 30` (peel), `wait 600`; page 2 with `swipe 0.5 0.8 0.5 0.2
+20`. Example game script: `tests/nav/fifa13_match.nav`.
+
+Checked so far (scratch root, firmware 3.74):
+
+| App | Item | Result |
+|---|---|---|
+| NPXS10009 Music | open from the home screen | menu (Connect to Device, Artists, Albums, Songs, Genres, Shuffle Play) |
+| | Artists / Albums with an empty library | "There are no songs" + Start [Content Manager] (correct) |
+| | files copied by hand into ux0:music after the database exists | not listed (a Vita indexes them only on a database rebuild) |
+| | Start [Content Manager] | **bug, open**: the whole system stops presenting (watchdog STALL). Music calls `sceAppMgrLaunchAppByName(0x20000, NPXS10026)`; it was always started as a background process. WIP 2d36b4e launches non-background applications (param.sfo LAREA_TYPE != 3) as foreground processes of the shell: the shell gets its created/launched events but does not activate it and the system still stalls (shell, Music and Content Manager main threads Running) |
+
+The rest of the sweep (Settings sub-pages, Photos, Videos, Content Manager, Email, Calendar, Trophies, Browser, near,
+Party, Parental Controls, PS4 Link, PS3 Remote Play, Store, Friends, Messages, Camera; PS button and close twice each)
+is still to do: the work was re-prioritised to FIFA 13 and Jak and Daxter.
+
 ## Remaining
 
 - (Fixed) Music (NPXS10009) froze the system when started: the shell's SceShellSvc libipmi server asserted (BKPT in
