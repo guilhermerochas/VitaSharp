@@ -65,6 +65,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     readonly VkCore _core;
     readonly Vk _vk;
     readonly Device _dev;
+    /// <summary>The draw path's command recording (VITASHARP_VK_DIRECT, VkCmd.cs).</summary>
+    readonly VkCmd _cmd;
     readonly VulkanRendererOptions _opt;
     readonly ImageMemoryPool _imagePool;
     readonly ShaderCompiler _compiler;
@@ -136,6 +138,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
         _vk = _core.Vk;
         _dev = _core.Device;
+        _cmd = new VkCmd(_vk, _dev);
         _imagePool = new ImageMemoryPool(_core);
         // VITASHARP_DEBUG_NAN=draws: the instrumented SPIR-V stays out of the on-disk cache
         _compiler = new ShaderCompiler(Core.Gxm.Shader.ShaderGenerator.NanDraws ? null : options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
@@ -527,6 +530,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var (k, old) in replaced)
         {
             _renderTargets.Remove(k);
+            _rtRangesValid = false;
             if (TraceVis) Log.Info($"[vis] render target 0x{c.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {c.Width}x{c.Height} fmt {c.ColorFormat:X8} present={_presentCount}");
             if (_traceDumpFrame == _presentCount + 1 && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
@@ -541,6 +545,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
+        _rtRangesValid = false;
         _fNewTargets++;
         if (DebugMode.Enabled) DbgRenderTarget(rt, format, replaced);
         return rt;

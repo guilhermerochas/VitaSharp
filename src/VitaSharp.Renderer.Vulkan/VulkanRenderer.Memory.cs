@@ -329,6 +329,7 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     var rt = (RenderTarget)e.Value;
                     if (!_renderTargets.Remove(((uint, uint, uint, uint))e.Key)) continue;
+                    _rtRangesValid = false;
                     _evTargets++;
                     _evTargetBytes += (long)e.Bytes;
                     ReleaseRenderTarget(rt, now);

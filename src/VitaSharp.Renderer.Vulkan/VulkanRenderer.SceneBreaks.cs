@@ -139,7 +139,7 @@ public sealed unsafe partial class VulkanRenderer
         // writeback copies), where the driver crashed in vkEndCommandBuffer about once in three F1 2011 race loads.
         if (!F.Recording)
         {
-            Log.WarnOnce("cmd-not-recording", $"[gpu] commands recorded after the frame was submitted: a new frame begins first ({new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name} <- {new System.Diagnostics.StackTrace(2, false).GetFrame(0)?.GetMethod()?.Name})");
+            Log.WarnOnce("cmd-not-recording", $"[gpu] commands recorded after the frame was submitted: a new frame begins first ({CallerChain()})");
             BeginFrameIfNeeded();
         }
         // ended renderings waiting to be merged with the next one are begun before anything else goes in
@@ -148,6 +148,14 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     long _primaryTouches;
+
+    /// <summary>The two callers of PrimaryTouched, from the stack trace text (StackFrame.GetMethod is not trim-safe).</summary>
+    static string CallerChain()
+    {
+        var lines = new System.Diagnostics.StackTrace(2, false).ToString()
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return lines.Length == 0 ? "?" : string.Join(" <- ", lines.Take(2).Select(l => l.StartsWith("at ") ? l[3..] : l));
+    }
 
     static string TopReasons(Dictionary<string, long> d) =>
         d.Count == 0 ? "none" : string.Join(", ", d.OrderByDescending(kv => kv.Value).Take(6).Select(kv => $"{kv.Key} {kv.Value}"));

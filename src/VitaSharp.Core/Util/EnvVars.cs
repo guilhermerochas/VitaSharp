@@ -11,6 +11,16 @@ public static class EnvVars
     /// <summary>=0: BC/PVRTC textures are decoded to RGBA8 even on GPUs that sample ASTC (no ASTC transcoding).</summary>
     /// <summary>Android: scripted buttons/sticks for unattended device runs (ScriptedPad: "cross@12,start@20:0.5").</summary>
     public const string AndroidInput = "VITASHARP_ANDROID_INPUT";
+    /// <summary>Android: a file polled while the game runs; its ScriptedPad steps (T relative to when it is read) are added and the file deleted, so a PC script can react to the screen (adb push).</summary>
+    public const string AndroidInputLive = "VITASHARP_ANDROID_INPUT_LIVE";
+    /// <summary>A/B switch: =old builds the per-draw texture sets the way main b29e26a did (all 16 units visited, render
+    /// targets scanned through the dictionary); default new (only the sampled units, flat render-target range table).</summary>
+    public const string TexLookup = "VITASHARP_TEXLOOKUP";
+    /// <summary>A/B switch: =old scans draw indices for their min/max one at a time; default new (128-bit vectors).</summary>
+    public const string MinMaxScan = "VITASHARP_MINMAX";
+    /// <summary>A/B switch: =1 records the hot vkCmd* calls through device-level function pointers loaded once with
+    /// vkGetDeviceProcAddr (no Silk.NET dispatch, no GC transition); default 0 (Silk.NET).</summary>
+    public const string VkDirect = "VITASHARP_VK_DIRECT";
     /// <summary>Android: =0 tries the hardware H.264 decoders first even for pictures up to 960x544 (default: Android's own first there), =1 always Android's own first.</summary>
     public const string MediaCodecSoftware = "VITASHARP_MEDIACODEC_SOFTWARE";
     /// <summary>Android: AAudio buffer capacity requested in frames (default 0 = AAudio's own; 8192 = the earlier request).</summary>

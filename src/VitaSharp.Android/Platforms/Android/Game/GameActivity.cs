@@ -133,9 +133,11 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
         // a hardware/Bluetooth keyboard: the keyboard profile of input.json (the desktop's default mapping)
         _keyboard = new AndroidKeyboard(AppServices.InputProfiles);
         _input = new AndroidInput(_pad, AppServices.Gamepads, _keyboard);
-        if (System.Environment.GetEnvironmentVariable(EnvVars.AndroidInput) is { Length: > 0 } script)
+        string? script = System.Environment.GetEnvironmentVariable(EnvVars.AndroidInput) is { Length: > 0 } sc ? sc : null;
+        string? livePath = System.Environment.GetEnvironmentVariable(EnvVars.AndroidInputLive) is { Length: > 0 } lp ? lp : null;
+        if (script != null || livePath != null)
         {
-            try { _input.Script = new ScriptedPad(script); Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
+            try { _input.Script = new ScriptedPad(script ?? "") { LivePath = livePath }; Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps"); }
             catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
         }
         _sensors = new GameSensors(this); // SceMotion from the phone's sensors, SceCamera from its cameras
