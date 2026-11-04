@@ -57,6 +57,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
+  um botão flutuante "+ Instalar VPK" no canto inferior direito da Biblioteca (`LibraryView.cs`, seletor do sistema
+  pelo SAF), mas ele pode estar escondido/fora da tela (sobre a grade, atrás da barra de navegação, ou some durante
+  a instalação) — conferir no Redmi Note 14 e deixar a ação visível e fácil de achar (também no menu/Ajustes e na
+  tela vazia da Biblioteca). Além do VPK, aceitar `.pkg` + `work.bin`/`.rif` e licença em zRIF (o desktop já instala
+  `.pkg`; ver o item do zRIF em "Firmware e sistema") e mostrar progresso e erros claros
 - [ ] Sistema do Vita (shell) não roda no Android (relato do usuário, 01/11/2026; log do celular
   `20261101_204800_SYSTEM.log`, Redmi Note 14, firmware 3.74 instalado no app): a sessão abre, a GPU apresenta só
   2 superfícies (0x6043E000 e 0x60240000) e 91 quadros em ~4 s, com apenas 7 shaders e 4 pipelines (no PC o shell
