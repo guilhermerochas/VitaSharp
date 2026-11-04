@@ -250,6 +250,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+- [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
+  botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
+  retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
+  esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
+  `IO: unmapped path ''`). Entregar checklist por app em `docs/notes/system-apps.md` e roteiros (.ps1/.sh) para rodar de
+  novo como teste de regressão (branch fix/system-apps-4)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
@@ -504,6 +510,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Silent Hill). Agora só faces de um nível de até 32x32 ficam empacotadas; as maiores seguem a regra do Vita3K. O
   dump do usuário tem só um quadro e guarda apenas a memória que o renderer antigo leu, então o replay não mostra a
   diferença; falta conferir no jogo
+- [ ] Desktop: F11 entra em tela cheia mas não volta para a janela (relato do usuário, 04/11/2026, de novo depois da
+  correção que restaura tamanho e posição em `WindowHost.ToggleFullscreen`). O Silk.NET (GLFW) pode deixar a janela
+  presa ao monitor ao trocar `WindowState` de Fullscreen para Normal; conferir com o GLFW direto
+  (`glfwSetWindowMonitor(janela, NULL, x, y, w, h, GLFW_DONT_CARE)`), a recriação da swapchain do Vulkan e a tela
+  cheia exclusiva do driver
+- [ ] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
+  direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
+  04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
+  `gpudumps\PCSE00093_20261104_190442.vsgd`). Pistas: `TEXTURE SUSPECT 0x60E8F6C0 UBC3 32x64 SUSPECT-SEAMS`, a
+  profundidade 4X de uma cena multisample lida como textura (`samples are not stored`), formatos vistos pela primeira
+  vez (UBC2 128x128 8 mips tipo 0x40000000, U8U8U8U8 32x32 tipo 0x60000000). Áudio: NGS 24 vozes, granularidade 512,
+  48 kHz, sem underruns, então o problema é no conteúdo das vozes (mixagem/efeitos da torcida), não falta de buffer
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
@@ -538,6 +556,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   termina (buffer sem próximo → Finalizing → Available) e é ligada de novo, enquanto o SndStream acha que é a
   mesma reprodução. Próximo: logar as transições da voz do stream de música e ver se ela acaba por falta de buffer
   (fila vazia por atraso nosso) — aí o defeito é o fim da voz, não o contador
+  Achados (04/11/2026, fix/user-bugs-3, sem correção ainda): reproduz com o save do usuário, aceitando os termos por
+  toque (`tap@f1100:0.196:0.713,tap@f1300:0.69:0.90` e depois cross a cada 150 quadros): 4264 avisos em 100 s. A
+  hipótese de fim de voz por buffer inválido na troca não se confirma: o único END_OF_DATA logado no swap é de um som
+  de um buffer só (`next -1`, legítimo). Os avisos alternam leituras: o contador cresce (0x700, 0xB00, 0xF00..., passos
+  de 0x400) e a leitura seguinte dá 0, ou seja, o SndStream lê a posição em dois lugares diferentes e um deles fica
+  sempre zerado. As primeiras leituras de `sceNgsVoiceGetStateData` antes do primeiro aviso são da voz 0x81759310,
+  módulo 1, 2048 bytes, tudo zero (+0/+4/+8 = 0) com a voz Active: provavelmente o SndStream lê o estado de um
+  módulo (ou de uma segunda voz do stream) cujo `GuestState` nunca é preenchido por nós. Próximo passo: logar
+  voz/módulo/tipo de módulo de todas as leituras com +8 = 0 junto com as não-zero, e ver qual módulo o firmware
+  preenche (Vita3K: estado do player x estado do módulo de saída)
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
