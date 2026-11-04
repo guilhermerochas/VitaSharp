@@ -322,7 +322,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   avisa `transfer reads render target 0x604…/0x608…/0x600… while a scene is open: not written back` (uma cópia lê o
   framebuffer antes de a cena ser gravada na memória) e há 6 imports de variável não resolvidos de
   `Il2CppAssemblies` em `UnityPlayer_536_Release`. Ver se a composição lê a superfície 3D certa (endereço
-  desalinhado / região), se a cópia precisa forçar a gravação da cena e se os imports faltando importam
+  desalinhado / região), se a cópia precisa forçar a gravação da cena e se os imports faltando importam.
+  Achados (04/11/2026, só pela captura; o jogo precisa de um save numa batalha para reproduzir): o 3D é desenhado
+  (o clear do Unity, draw 5, pinta 0.10/0.22/0.20 e ~80 desenhos seguem), e o downscale (draw 99, scene 33653) lê o
+  `0x61CFF8E0` como textura 960x544 e sai com conteúdo (média ~0.39 no 240x136); mas a composição final (draw 103,
+  outra cena, mesmo `t0=0x61CFF8E0`) sai preta, e o dump do próprio alvo em `targets.txt` tem estatísticas lixo
+  (médias ~1e-315, como se a leitura não fosse do formato certo). Ou seja, a segunda leitura do alvo desalinhado já
+  não acha a imagem renderizada (cai na memória do guest, que nunca recebeu o writeback). Próximo passo: com um save
+  na batalha, `--trace-draws` + log de qual imagem o `ResolveTexture` escolhe para `0x61CFF8E0` em cada desenho
+  (área do renderer que os agentes de desempenho estão mexendo: Draw/Memory)
 - [ ] Gal Gunvolt (PCSG00704; no Vita3K trava ao iniciar): roda a 60 fps estáveis, mas "parece com problemas" (usuário,
   31/10/2026, main 13ca113, captura F10 `diagnostics\PCSG00704_20261031_175803`). O jogo desenha num framebuffer de
   480x272 (pitch 512) que o sistema amplia para a tela; na captura (tela "How to play") a moldura lateral e os sprites
@@ -386,7 +394,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
   cruza o plano próximo sem recorte). Captura F10 em `%APPDATA%\VitaSharp\diagnostics\PCSE00093_20261030_204939`
   (127 quadros em `replay/`, 109 desenhos em `draws.txt`; aviso de profundidade de cena MSAA lida como textura
-  X8U24 960x1088) (30/10/2026, main 4dbe06c)
+  X8U24 960x1088) (30/10/2026, main 4dbe06c). Reproduzido e isolado (04/11/2026, fix/user-bugs): com o save do
+  usuário, `--input=start@f1900:f8,cross@f2300:f8,cross@f2700:f8,lstick@f3100:0:1:f400,lstick@f3500:-1:0:f400` e
+  `--gpu-dump-at=3600:3603` o `replay-gpu` mostra a malha; `--draw-limit=79@3601` x `80@3601` dá o desenho 80 (corpo
+  do Messi: vs ACBE979868E05D6E, fs 4BBB4BC975F36384, 16524 índices, skinning com o buffer 1 de 8 KB de matrizes
+  3x4). Os índices dos ossos são U8 em +32 (`a[r20 f0x4]`, ex. 60/103) e os pesos U8N em +36 (`a[r16 f4x4]`, 0xAF+0x50
+  = 1,0), então não passam do buffer (aumentar o `MaxUbInFloat` para 16 KB só sumiu com os jogadores: descartado). O
+  shader multiplica os índices (`pa[5]`) por `sa[0].z` = 9,155553e-05 = 6/65535, o que sugere que o hardware entrega
+  esse atributo U8 cru em outro formato (16 bits normalizado?) e o endereço do osso sai errado; o desenho 81 (mesmo
+  layout) fica certo. Próximo: conferir no GXP o tipo do parâmetro `r20` (regformat/untyped) e como o Vita3K converte
+  esse atributo antes da multiplicação
 
 - [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
