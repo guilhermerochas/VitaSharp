@@ -282,13 +282,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   log `20261031_193541_PCSE00006`): implementar `SceDebugLed::sceKernelGetGPI` (NID 0x14F582CF), lida pela `main`
   em 0x81064351 — num Vita de varejo devolve 0 (as chaves de depuração só existem em kits); também ver os 4
   underruns de áudio da sessão
-- [ ] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
+- [x] Jak and Daxter Collection (PCSA00080; no Vita3K trava no boot): não carrega, fica no quadro 0 (nenhuma imagem)
   por mais de 1 minuto (31/10/2026, main 13ca113, log `20261031_193411_PCSA00080`). A thread `avPlayer Controller` (o
   player do vídeo de abertura) chama `SceMp4::NID_D5B26179`, que não está implementada (o `Mp4.cs` já tem stubs para
   outros NIDs desconhecidos), logo depois de um `sceGxmWaitEvent` da `main`; o jogo provavelmente espera o filme
   começar/terminar. Descobrir o que a `D5B26179` faz (assinatura no `libSceMp4`/firmware, Vita3K) e implementar, e
   ver se o player do jogo precisa de mais funções do SceMp4/SceAvPlayer; também havia 2 underruns de áudio sem
-  nenhum quadro
+  nenhum quadro. Corrigido (04/11/2026, fix/user-bugs), três causas: (1) `D5B26179` é o GetStreamInfo no layout
+  interno do `libscemp4` (0x140 bytes: vídeo +0x10/+0x14 perfil/nível AVC, +0x20 tamanho máximo da unidade, +0x28
+  duração; áudio +8 taxa, +0xC bits por amostra, +0x1C canais; idioma +0x38), que o `sceMp4GetStreamInfo` só converte
+  para o de 0x158; (2) `sceGxmWaitEvent` do `libgxm_es4` é um `sceGpuSignalWait(…, 100 ms)` e não volta na hora (a
+  `main` chamava 67 milhões de vezes em 50 s); (3) o modo das msgpipes estava trocado (PSP: 0 = tudo; Vita: 0 = ASAP,
+  1 = FULL, 0x10 = não esperar), e a thread de render do jogo recebia com ASAP num buffer de 0x600 e esperava para
+  sempre mensagens de 12 bytes. Logos, filme de abertura, menu da coleção a 30 fps e o LoadExec do Jak 1; o Ninja
+  Gaiden Σ2 agora também mostra o filme de abertura (antes o player falhava e pulava)
 - [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
   13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
   Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável

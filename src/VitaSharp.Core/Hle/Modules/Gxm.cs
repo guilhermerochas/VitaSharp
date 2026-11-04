@@ -169,12 +169,18 @@ public sealed class Gxm : HleModule
         return 0;
     }
 
-    /// <summary>Inferred: an internal libgxm/GLES driver event wait. Logged once so a game importing it reveals its
-    /// arguments; returns immediately.</summary>
+    /// <summary>
+    /// Sleeps until the GPU signals or 100 ms pass. libgxm_es4 ignores the arguments: it calls
+    /// sceGpuSignalWait(its TLS signal object, 100000 µs) and returns 0 on a signal or on the timeout. Games use it
+    /// in polling loops (wait for a notification or a flag another thread sets); returning at once made those
+    /// loops spin (Jak and Daxter: 67 million calls in 50 s from main). Our "GPU signal" is a notification write.
+    /// </summary>
     [Hle]
-    int sceGxmWaitEvent(uint a0, uint a1, uint a2, uint a3)
+    int sceGxmWaitEvent()
     {
-        Log.WarnOnce("gxm-waitevent", $"sceGxmWaitEvent(0x{a0:X8}, 0x{a1:X8}, 0x{a2:X8}, 0x{a3:X8})");
+        using var blocked = Scheduler.Block();
+        using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
+        lock (Gpu.NotificationLock) Monitor.Wait(Gpu.NotificationLock, 100);
         return 0;
     }
 

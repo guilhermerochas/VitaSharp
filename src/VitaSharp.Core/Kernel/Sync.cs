@@ -515,7 +515,10 @@ public sealed class CondVar : KernelObject
 public sealed class MsgPipe : KernelObject
 {
     public override int UidClass => 7;
-    public const uint WaitAll = 0, WaitAsap = 1;
+    /// <summary>SCE_KERNEL_MSG_PIPE_MODE_*: ASAP (0, move what fits / what is there) or FULL (1, the whole size),
+    /// plus DONT_WAIT (0x10, fail instead of blocking). Not the PSP's order (there 0 was \"all\"): Jak and Daxter's
+    /// renderer thread receives with mode 0 into a 0x600-byte buffer and waited forever for 12-byte messages.</summary>
+    public const uint WaitAsap = 0, WaitAll = 1, DontWait = 0x10;
     public uint Attr;
     public int BufferSize;
     /// <summary>UID of the thread that created the pipe (sceKernelGetMsgPipeCreatorId).</summary>
@@ -561,7 +564,8 @@ public sealed class MsgPipe : KernelObject
             if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
             int gen = _cancelled;
             int sent = 0;
-            bool asap = (mode & WaitAsap) != 0;
+            bool asap = (mode & WaitAll) == 0;
+            poll |= (mode & DontWait) != 0;
             SendWaiters++;
             try
             {
@@ -602,7 +606,8 @@ public sealed class MsgPipe : KernelObject
             if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
             int gen = _cancelled;
             int got = 0;
-            bool asap = (mode & WaitAsap) != 0;
+            bool asap = (mode & WaitAll) == 0;
+            poll |= (mode & DontWait) != 0;
             RecvWaiters++;
             try
             {
