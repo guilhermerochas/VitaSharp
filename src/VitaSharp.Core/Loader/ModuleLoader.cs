@@ -31,6 +31,9 @@ public interface IImportResolver
     uint GetHleFunctionIndex(uint nid, uint libNid, string libName);
     /// <summary>Guest address of an HLE-provided variable, or 0.</summary>
     uint GetHleVariable(uint nid);
+    /// <summary>Guest address of an HLE function implemented as guest code (Hle/HleGuestCode), or 0: the import then
+    /// jumps there instead of trapping.</summary>
+    uint GetHleGuestCode(uint nid) => 0;
 }
 
 /// <summary>
@@ -78,6 +81,13 @@ public sealed class Linker(IImportResolver hle)
         GuestMemory.W32(stub + 8, nid);
     }
 
+    void BindHle(uint stub, uint nid, uint libNid, string libName)
+    {
+        uint code = hle.GetHleGuestCode(nid);
+        if (code != 0) WriteJumpStub(stub, code);
+        else WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+    }
+
     public static void WriteJumpStub(uint stub, uint target)
     {
         GuestMemory.W32(stub, 0xE300C000 | ((target & 0xF000) << 4) | (target & 0xFFF));                 // movw r12, #lo
@@ -93,7 +103,7 @@ public sealed class Linker(IImportResolver hle)
             if (_funcExportsByLib.TryGetValue((libNid, nid), out target) || _funcExports.TryGetValue(nid, out target))
                 WriteJumpStub(stub, target);
             else
-                WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+                BindHle(stub, nid, libNid, libName);
             _funcBindings.Add((nid, libNid, libName, stub));
         }
         // reftable: relocations applied against the stub address
@@ -218,7 +228,7 @@ public sealed class Linker(IImportResolver hle)
                 if (_funcExportsByLib.TryGetValue((libNid, nid), out uint next) || _funcExports.TryGetValue(nid, out next))
                     WriteJumpStub(stub, next);
                 else
-                    WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+                    BindHle(stub, nid, libNid, libName);
                 InvalidateCode?.Invoke(stub, 12);
                 rebound++;
             }
