@@ -59,7 +59,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// Command buffers in flight. Sync points submit early (see DeferSignal), so a frame is often split into 2-3
     /// submissions; with only two slots, recording the next one regularly waited for the GPU (Slot fence waits).
     /// </summary>
-    const int FramesInFlight = 3;
+    static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 6) : 3;
     const ulong RingSize = 64ul << 20;
 
     readonly VkCore _core;
@@ -298,9 +298,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     bool ResultsPending()
     {
         foreach (var f in _frames)
-            if ((f.Recording || (f.Submitted && !f.Retired)) && HasPendingResults(f)) return true;
+            if ((f.Recording || (f.Submitted && !f.Retired)) && (LazyWritebackSync ? HasPendingSyncResults(f) : HasPendingResults(f))) return true;
         return false;
     }
+
+    /// <summary><see cref="EnvVars.LazyWritebackSync"/>: sync points wait for visibility results and earlier deferred
+    /// signals only; render-target writebacks are published when their frame retires (polls, the next flip).</summary>
+    static readonly bool LazyWritebackSync = Environment.GetEnvironmentVariable(EnvVars.LazyWritebackSync) == "1";
+
+    bool HasPendingSyncResults(Frame f) => f.Signals.Count > 0 || f.Visibility is { Used: > 0 };
 
     /// <summary>Sync points (notifications, display queue entries) wait for every result recorded before them.</summary>
     public bool DeferSignal(Action signal)
@@ -715,7 +721,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
-        if (e.Notifications.Length > 0 && (writeback || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
+        if (e.Notifications.Length > 0 && ((writeback && !LazyWritebackSync) || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
         if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;

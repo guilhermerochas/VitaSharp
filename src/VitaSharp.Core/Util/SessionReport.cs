@@ -102,6 +102,7 @@ public static class SessionReport
     static IEnumerable<string> GpuLines(Emulator emu)
     {
         if (emu.Gpu.Backend?.Report() is { } gpuReport) yield return gpuReport;
+        yield return VitaSharp.Core.Gpu.GpuQueue.GuestWaitReport(VitaSharp.Core.Hle.Modules.Display.FramesPresented);
         long hwPics = VitaSharp.Core.Media.FFmpegVideoDecoder.HardwarePictures, swPics = VitaSharp.Core.Media.FFmpegVideoDecoder.SoftwarePictures;
         if (hwPics + swPics > 0)
             yield return $"PERF video decode: {hwPics} pictures in hardware, {swPics} in software, {VitaSharp.Core.Media.FFmpegVideoDecoder.Fallbacks} hardware fallbacks, {VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms decoding ({VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / (hwPics + swPics):F2} ms/picture)";

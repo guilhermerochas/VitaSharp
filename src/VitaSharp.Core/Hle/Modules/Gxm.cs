@@ -584,8 +584,8 @@ public sealed class Gxm : HleModule
         };
         long seq = Gpu.Submit(new EndSceneCommand { Notifications = notifications });
         // keep the guest at most a few scenes ahead of the GPU worker
-        Gpu.WaitFor(seq - 4096);
-        if (Gpu.Pending > 20000) Gpu.WaitFor(seq - 2000);
+        Gpu.WaitFor(seq - 4096, GpuQueue.GuestWait.Throttle);
+        if (Gpu.Pending > 20000) Gpu.WaitFor(seq - 2000, GpuQueue.GuestWait.Throttle);
         return 0;
     }
 
@@ -613,7 +613,7 @@ public sealed class Gxm : HleModule
     [Hle] int sceGxmTransferFinish() { GpuFinish(); return 0; }
 
     /// <summary>Waits until every submitted GPU operation completed and its results are in guest memory.</summary>
-    void GpuFinish() => Gpu.WaitFor(Gpu.Submit(new FinishCommand()));
+    void GpuFinish() => Gpu.WaitFor(Gpu.Submit(new FinishCommand()), GpuQueue.GuestWait.Finish);
 
     [Hle]
     int sceGxmNotificationWait(uint notification)
@@ -624,14 +624,18 @@ public sealed class Gxm : HleModule
         {
             using var blocked = Scheduler.Block();
             using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (Gpu.NotificationLock)
             {
                 while (GuestMemory.R32(addr) != value && Emu.Running)
                     Monitor.Wait(Gpu.NotificationLock, 50);
             }
+            GpuQueue.CountGuestWait(GpuQueue.GuestWait.Notification, t0);
         }
         return 0;
     }
+
+    static readonly bool DisplayEarlySignal = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal) == "1";
 
     [Hle]
     int sceGxmDisplayQueueAddEntry(uint oldBuffer, uint newBuffer, uint callbackData)
@@ -645,7 +649,9 @@ public sealed class Gxm : HleModule
         // the queue has pendingCount-1 slots: when the render thread runs ahead it blocks here until the display thread
         // flips, and that wait must not hold an emulated core (it starved every lower-priority thread, e.g. God of
         // War's Bink audio thread, making the video audio port restart every 100 ms)
-        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence()));
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence(DisplayEarlySignal)));
+        GpuQueue.CountGuestWait(GpuQueue.GuestWait.DisplayQueue, t0);
         return 0;
     }
 
