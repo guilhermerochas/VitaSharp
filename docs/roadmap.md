@@ -355,6 +355,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   perde (provável: a imagem do alvo é descartada/recriada a partir da memória do guest, que nunca recebeu o
   writeback). Fica no renderer (Memory/Draw, área dos agentes de desempenho); o dump acima serve de teste
   (`replay-gpu --compare`)
+  Achados (04/11/2026, fix/user-bugs-2): a hipótese acima estava errada. A faixa é desenhada em todo quadro (desenho 12,
+  textura 0x621E8000 960x40 UBC3 swizzled-arbitrary; a de baixo é o desenho 15, 0x615C0000). Num bloco comprimido
+  swizzled-arbitrary os blocos seguem a ordem morton na grade potência de dois (240x10 blocos → 256x16), então a
+  textura ocupa 61120 bytes, mas `ComputeLayout` contava 38400: o cache de texturas e o dump de GPU cobriam só os
+  primeiros 2/3, e no replay o terço direito das faixas (e a ponta esquerda da caixa de diálogo, 720x216) saía preto.
+  Corrigido o tamanho (replay do `croixleur_boot` com as faixas inteiras de 2600 a 2606; replays de PCSF00476
+  idênticos). O pisca-pisca ao vivo (a faixa inteira some em quadros alternados) NÃO reproduziu headless, nem com as
+  opções do usuário (`--async-shaders=on --shaderc-opt=zero`, modo de depuração): falta o usuário confirmar na
+  janela com esta versão; se continuar, gravar um F8 (dump de GPU) durante o pisca-pisca
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
