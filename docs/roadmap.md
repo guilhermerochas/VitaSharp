@@ -343,7 +343,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~40 px do topo, largura toda, com o botão SKIP): ela aparece num quadro e some no seguinte. Provavelmente o jogo
   desenha essa faixa só uma vez em cada buffer e depois só redesenha o resto, contando que o conteúdo do buffer
   continua lá; ver se o emulador perde o conteúdo anterior do framebuffer (load op / imagem nova por quadro, troca de
-  buffer, escrita de volta na memória) quando a cena não cobre a tela inteira
+  buffer, escrita de volta na memória) quando a cena não cobre a tela inteira.
+  Achados (04/11/2026, fix/user-bugs): reproduz com o `croixleur_boot` (save do usuário) até f2700 e
+  `--gpu-dump-at=2600:2606`; no `replay-gpu` a faixa está nos quadros 2600-2601 (vêm dos alvos restaurados no começo
+  do dump) e some de 2602 em diante. Os 88 desenhos são os mesmos em todo quadro e nenhum desenha a faixa: ela fica
+  na memória de cada um dos 3 framebuffers (0x60280000/0x60480000/0x60680000) e sobrevive porque o desenho 7 (fs
+  A96C3889E4BBF59E, tela cheia) lê o próprio framebuffer como `t1` e o recompõe. Ou seja, o conteúdo de um
+  framebuffer tem que continuar o mesmo depois de 3 quadros (2 apresentações de outros buffers no meio); aqui ele se
+  perde (provável: a imagem do alvo é descartada/recriada a partir da memória do guest, que nunca recebeu o
+  writeback). Fica no renderer (Memory/Draw, área dos agentes de desempenho); o dump acima serve de teste
+  (`replay-gpu --compare`)
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
