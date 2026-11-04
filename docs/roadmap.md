@@ -277,6 +277,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
+  selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
+  04/11/2026, main d388b61; captura F10 `diagnostics\PCSA00080_20261104_162655`, dump de GPU
+  `gpudumps\PCSA00080_20261104_162658.vsgd`). Parece passo (stride/pitch) ou layout errado de uma textura — muito
+  provavelmente o quadro do vídeo de prévia (o SceMp4/decoder passou a funcionar nesse jogo há pouco, e o decoder agora
+  completa as linhas até múltiplo de 16 por causa do Shinobido 2): conferir largura/altura/pitch do quadro decodificado
+  contra a textura YUV que o jogo amostra
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
