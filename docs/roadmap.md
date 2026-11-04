@@ -57,6 +57,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Resolução interna reduzida (0.75 / 0.5, por jogo, desligada por padrão) para o Uncharted no Mali-G57 (GPU ~40 ms
+  por quadro em a92710b): precisa de trabalho no espaço de coordenadas. As cópias de região, as cópias de profundidade,
+  os writebacks e a reinterpretação do G-buffer pelo espelho da CDRAM (bytes no layout do convidado) usam pixels do
+  convidado; o caminho de supersample (2x) só aumenta a escala (04/11/2026)
 - [x] (bug) Instalar jogos no Android: o usuário não encontrou como instalar um VPK no app (04/11/2026). O código tem
   um botão flutuante "+ Instalar VPK" no canto inferior direito da Biblioteca (`LibraryView.cs`, seletor do sistema
   pelo SAF), mas ele pode estar escondido/fora da tela (sobre a grade, atrás da barra de navegação, ou some durante
@@ -246,6 +250,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+- [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
+  botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
+  retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
+  esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
+  `IO: unmapped path ''`). Entregar checklist por app em `docs/notes/system-apps.md` e roteiros (.ps1/.sh) para rodar de
+  novo como teste de regressão (branch fix/system-apps-4)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma

@@ -7,7 +7,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// are LDREX/STREX loops inside the library; here a compare-and-swap on the value (8/16-bit operations swap the
 /// containing aligned word). "XAndGet" returns the new value, "GetAndX" the old one; 8/16-bit results are sign-extended.
 /// </summary>
-public sealed class Atomic : HleModule
+public sealed partial class Atomic : HleModule
 {
     /// <summary>Sign-extends the low <paramref name="bytes"/> bytes of <paramref name="v"/>.</summary>
     internal static long Narrow(long v, int bytes) => bytes switch { 1 => (sbyte)v, 2 => (short)v, 4 => (int)v, _ => v };

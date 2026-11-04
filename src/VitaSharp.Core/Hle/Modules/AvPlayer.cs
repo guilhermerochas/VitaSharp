@@ -12,14 +12,14 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Structure layouts follow the shared PS4/Vita libSceAvPlayer ABI (init data 0x44 bytes, frame info 32 bytes,
 /// stream info 40 bytes).
 /// </summary>
-public sealed class AvPlayer : HleModule
+public sealed partial class AvPlayer : HleModule
 {
     const int ERR_ILLEGAL_ADDR = unchecked((int)0x806a0001), ERR_INVALID_ARGUMENT = unchecked((int)0x806a0002),
         ERR_NOT_ENOUGH_MEMORY = unchecked((int)0x806a0003);
     const int STATE_STOP = 1, STATE_READY = 2, STATE_PLAY = 3, STATE_PAUSE = 4, STATE_BUFFERING = 5;
     const int STREAM_VIDEO = 0, STREAM_AUDIO = 1;
 
-    sealed class Player
+    sealed partial class Player
     {
         public uint MemObject, Allocate, Deallocate, AllocateTexture, DeallocateTexture;
         public uint FileObject, FileOpen, FileClose, FileRead, FileSize;

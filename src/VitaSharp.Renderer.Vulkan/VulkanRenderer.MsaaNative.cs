@@ -82,7 +82,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <param name="TileWord1">the scene's tile-word attachment (VulkanRenderer.TileWord1.cs) is colour/input attachment 1</param>
     readonly record struct MsaaPassKey(Format Format, SampleCountFlags Samples, AttachmentLoadOp ColorLoad, AttachmentStoreOp ColorStore,
-        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve, bool TileWord1 = false);
+        AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, bool Resolve, bool TileWord1 = false, bool DepthReadOnly = false);
 
     /// <summary>Render passes of multisampled renderings (shared with the pipeline prewarm thread, hence the lock).</summary>
     readonly Dictionary<MsaaPassKey, RenderPass> _msRenderPasses = new();
@@ -105,8 +105,11 @@ public sealed unsafe partial class VulkanRenderer
             var att = stackalloc AttachmentDescription[4];
             att[0] = new AttachmentDescription(0, k.Format, k.Samples, k.ColorLoad, k.ColorStore, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
                 ImageLayout.General, ImageLayout.General);
+            // read-only depth (one-sample fetch passes whose draws sample it, VulkanRenderer.SingleFetch.cs): the image
+            // is moved to that layout by a barrier before the pass and back after it
+            var depthLayout = k.DepthReadOnly ? ImageLayout.DepthReadOnlyStencilAttachmentOptimal : ImageLayout.DepthStencilAttachmentOptimal;
             att[1] = new AttachmentDescription(0, _core.DepthFormat, k.Samples, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
-                ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal);
+                depthLayout, depthLayout);
             uint resolveIndex = k.TileWord1 ? 3u : 2u;
             att[resolveIndex] = new AttachmentDescription(0, k.Format, SampleCountFlags.Count1Bit, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store,
                 AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
@@ -114,7 +117,7 @@ public sealed unsafe partial class VulkanRenderer
                 att[2] = new AttachmentDescription(0, TileWord1Format, k.Samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
                     ImageLayout.General, ImageLayout.General);
             var colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(2, ImageLayout.General) };
-            var depth = new AttachmentReference(1, ImageLayout.DepthStencilAttachmentOptimal);
+            var depth = new AttachmentReference(1, depthLayout);
             var resolves = stackalloc AttachmentReference[2] { new(resolveIndex, ImageLayout.General), new(Vk.AttachmentUnused, ImageLayout.General) };
             uint colorCount = k.TileWord1 ? 2u : 1u;
             var sub = new SubpassDescription

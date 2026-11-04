@@ -51,6 +51,17 @@ public static class EnvVars
     /// tile-based GPUs) or not (VulkanRenderer.SingleFetch.cs).</summary>
 
     public const string FetchPassMerge = "VITASHARP_FETCH_PASS_MERGE";
+    /// <summary>1/0: with rasterization-order attachment access, programmable-blending draws of any size render in the
+    /// one-sample fetch pass instead of reading a copy of the surface (default on tile-based GPUs; VulkanRenderer.SingleFetch.cs).</summary>
+    public const string FetchLarge = "VITASHARP_FETCH_LARGE";
+    /// <summary>=1: generated shaders copy register-resident uniforms into SA with a loop, as generator v19 did (A/B runs).</summary>
+    public const string ShaderUniformLoop = "VITASHARP_SHADER_UNIFORM_LOOP";
+    /// <summary>1/0: other draws of the scene keep rendering in an open fetch pass instead of ending it (default on
+    /// tile-based GPUs; VulkanRenderer.SingleFetch.cs).</summary>
+    public const string FetchPassJoin = "VITASHARP_FETCH_PASS_JOIN";
+    /// <summary>1/0: draws that sample the depth buffer they test against read it in place, in a fetch pass whose depth
+    /// is read-only, instead of a copy that ends the pass (default on tile-based GPUs; VulkanRenderer.SingleFetch.cs).</summary>
+    public const string DepthFeedback = "VITASHARP_DEPTH_FEEDBACK";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>=1: the Khronos validation layer when it can be found (Android: an APK built with
     /// -p:VitaSharpValidationLayer=path/to/arm64-v8a/libVkLayer_khronos_validation.so); messages go to the log. =sync adds synchronization validation.</summary>

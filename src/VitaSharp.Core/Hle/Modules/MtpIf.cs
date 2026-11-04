@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// waits for a host with WaitConnect(port, 1 s) in a loop. With the port up but no host, the shell's SceMtpService
 /// IPC server stays up and Content Manager shows its connection choices. Nothing is ever transferred.
 /// </summary>
-public sealed class MtpIf : HleModule
+public sealed partial class MtpIf : HleModule
 {
     const int WAIT_TIMEOUT = unchecked((int)0x80028005); // SCE_KERNEL_ERROR_WAIT_TIMEOUT, what libmtp's device loop expects
     const int PortId = 1; // the USB MTP port handle libmtp keeps (any non-zero value)

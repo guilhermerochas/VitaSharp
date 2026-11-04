@@ -30,7 +30,7 @@ namespace VitaSharp.Android.Game;
     ScreenOrientation = ScreenOrientation.SensorLandscape, LaunchMode = LaunchMode.SingleTask, Exported = false,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize
         | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden | ConfigChanges.Navigation | ConfigChanges.UiMode | ConfigChanges.Density)]
-public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManager.IInputDeviceListener
+public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, InputManager.IInputDeviceListener
 {
     public const string ExtraTitleId = "titleId";
 
@@ -115,6 +115,9 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         base.OnCreate(savedInstanceState);
         AppServices.Initialize(this, gameProcess: true);
+        // Android game mode (game_mode_config.xml): set by the user or the OEM game service, logged for the record
+        if (OperatingSystem.IsAndroidVersionAtLeast(31) && GetSystemService(GameService) is GameManager gameManager)
+            VitaSharp.Core.Util.Log.Info($"Android game mode: {gameManager.GameMode} (1 standard, 2 performance, 3 battery, 4 custom)");
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
         if (Intent?.GetBooleanExtra(ExtraWakeScreen, false) == true) WakeScreen();
 
@@ -455,10 +458,13 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
     {
         if (_menuOpen) return;
         _menuOpen = true;
+        _session?.CaptureMenuThumbnail(); // the picture of a state saved from this menu (taken before the pause)
         _session?.Pause();
         string[] items =
         [
             "Continuar",
+            "Salvar estado",
+            "Carregar estado",
             _pad.RearTouch ? "Toque traseiro: ligado" : "Toque traseiro: desligado",
             _pad.Visible ? "Esconder controles na tela" : "Mostrar controles na tela",
             .. (_sensors?.CanRecenter == true ? new[] { "Recentralizar movimento" } : []),
@@ -474,8 +480,10 @@ public sealed class GameActivity : Activity, ISurfaceHolderCallback, InputManage
             {
                 switch (a.Which)
                 {
-                    case 1: _pad.RearTouch = !_pad.RearTouch; break;
-                    case 2: _pad.Visible = !_pad.Visible; break;
+                    case var i when items[i] == "Salvar estado": _menuOpen = false; ShowStateSlots(save: true); return;
+                    case var i when items[i] == "Carregar estado": _menuOpen = false; ShowStateSlots(save: false); return;
+                    case var i when items[i].StartsWith("Toque traseiro"): _pad.RearTouch = !_pad.RearTouch; break;
+                    case var i when items[i].EndsWith("controles na tela"): _pad.Visible = !_pad.Visible; break;
                     case var last when last == items.Length - 1: Leave(); return;
                     case var i when items[i] == "Recentralizar movimento": _sensors?.Recenter(); break;
 #if VITASHARP_DEVELOPER

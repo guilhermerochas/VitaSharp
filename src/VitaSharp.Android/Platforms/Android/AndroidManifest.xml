@@ -27,5 +27,7 @@
       android:supportsRtl="true">
     <!-- simpleperf / Perfetto CPU profiles of a release build from adb (API 29+); no debugger, no run-as -->
     <profileable android:shell="true" />
+    <!-- game mode support (performance / battery), read back by GameActivity -->
+    <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
   </application>
 </manifest>

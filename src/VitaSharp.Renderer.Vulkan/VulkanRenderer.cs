@@ -444,6 +444,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool TwoXAsFour;
         /// <summary>Depth-aspect view of a multisampled depth image, for unpacking its samples.</summary>
         public ImageView SampledView;
+        /// <summary>Created with the sampled usage (VITASHARP_DEPTH_FEEDBACK): it can be read in place.</summary>
+        public bool Sampleable;
+        /// <summary>Depth-aspect view (depth in every channel) for draws that read it in place (VulkanRenderer.SingleFetch.cs).</summary>
+        public ImageView FeedbackView;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -567,7 +571,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (_depthTargets.TryGetValue(key, out var dt)) { dt.LastTouchedFrame = FrameCount; return dt; }
         // multisampled depth is sampled when a forced-stored 4X depth surface is read as a texture (UnpackedDepthTexture)
         var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
-            | (samples != SampleCountFlags.Count1Bit ? ImageUsageFlags.SampledBit : 0);
+            | (samples != SampleCountFlags.Count1Bit || DepthFeedback ? ImageUsageFlags.SampledBit : 0);
         var (img, view, mem) = CreateImage(MemCat.Depth, w, h, _core.DepthFormat, usage,
             ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit, samples: samples);
         dt = new DepthTarget
@@ -576,6 +580,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             Address = addr, Width = w, Height = h, StrideBytes = (d?.StrideInSamples ?? w) * 4,
             StencilAddress = d?.StencilData ?? 0, StencilStrideBytes = d?.StrideInSamples ?? w,
             Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount,
+            Sampleable = (usage & ImageUsageFlags.SampledBit) != 0,
         };
         BeginFrameIfNeeded();
         Barrier(img, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,

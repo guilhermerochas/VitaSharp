@@ -14,7 +14,7 @@ public static class Runner
 {
     static FlickerDetector? _flicker;
 
-    static string? Opt(string[] options, string name) =>
+    internal static string? Opt(string[] options, string name) =>
 
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
@@ -217,6 +217,11 @@ public static class Runner
             diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU)" : "Modo de depuração desligado");
         };
         using var watchdog = new Watchdog(emu, () => renderer);
+        // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
+        var states = new SaveStateControl(emu, rendererOptions, () => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status);
+        window.SaveStateKey += slot => { if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
+        window.LoadStateKey += slot => states.LoadAsync(slot == 0 ? 0 : states.Slot);
+        states.StartScheduled(options);
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => renderer, options);
@@ -402,6 +407,7 @@ public static class Runner
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
+        new SaveStateControl(emu, ro, () => NewHeadlessRenderer(ro, diag), null).StartScheduled(options);
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();

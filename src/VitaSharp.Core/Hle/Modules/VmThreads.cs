@@ -4,7 +4,7 @@ using VitaSharp.Core.Memory;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>Thread suspension and context access used by managed runtimes (Mono/IL2CPP garbage collectors).</summary>
-public sealed unsafe class VmThreads : HleModule
+public sealed unsafe partial class VmThreads : HleModule
 {
     const int ERR_NOT_SUSPENDED = SceError.NOT_SUSPENDED, ERR_ILLEGAL_SIZE = SceError.ILLEGAL_SIZE;
 

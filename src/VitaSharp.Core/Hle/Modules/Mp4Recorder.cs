@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// encoder_size/av_mem/av_size/affinity/priority; SceMp4RecFrame (0x2C) size/pixelformat/stride/width/height/unk[16]/
 /// buffer(+0x24)/reserved; SceMp4RecTermParam (0x20C) size/discard/reserved[128]/metadata.
 /// </summary>
-public sealed class Mp4Recorder : HleModule
+public sealed partial class Mp4Recorder : HleModule
 {
     internal const int ERR_INVALID_ARGUMENT = SceError.INVALID_ARGUMENT;
     internal const uint PIXEL_A8B8G8R8 = 0x00, PIXEL_YUV420_PACKED = 0x20;

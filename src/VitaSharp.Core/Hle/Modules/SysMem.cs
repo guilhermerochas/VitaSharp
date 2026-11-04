@@ -12,7 +12,7 @@ public sealed class MemBlock : KernelObject
 }
 
 /// <summary>SceSysmem: memory blocks.</summary>
-public sealed class SysMem : HleModule
+public sealed partial class SysMem : HleModule
 {
     public const uint TypeUserRw = 0x0C20D060, TypeUserRwUncache = 0x0C208060, TypeUserCdramRw = 0x09408060,
         TypeUserMainPhyContRw = 0x0C80D060, TypeUserMainPhyContNcRw = 0x0D808060, TypeUserMainCdialogRw = 0x0CA0D060,

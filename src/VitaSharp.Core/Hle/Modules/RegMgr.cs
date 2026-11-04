@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// The values that also exist in SceAppUtil come from <see cref="AppUtil.SystemParamInt"/> so both agree; the writable
 /// keys persist in &lt;FsRoot&gt;/vd0/registry/vitasharp-regmgr.json.
 /// </summary>
-public sealed class RegMgr : HleModule
+public sealed partial class RegMgr : HleModule
 {
     internal const int ERR_INVALID = unchecked((int)0x800D0004), ERR_READ_ONLY = unchecked((int)0x800D0015);
     /// <summary>GetBin copies at most this much; SetStr/SetBin accept at most <see cref="MaxSetSize"/> bytes (FW 3.60).</summary>

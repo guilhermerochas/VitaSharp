@@ -62,7 +62,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Ends the scene's dynamic rendering and begins a render pass on the surface and depth/stencil (both
     /// loaded and stored) for one draw; returns the command buffer to record it into.</summary>
-    CommandBuffer BeginSingleFetchPass(Format format)
+    CommandBuffer BeginSingleFetchPass(Format format, bool depthReadOnly = false)
     {
         // (a supersampled scene's samples are filtered into the surface when rendering pauses for something else)
         EndRendering(resolve: !_ss);
@@ -81,11 +81,12 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit | AccessFlags.ShaderReadBit,
             AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit);
-        Barrier(depth.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
-            PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
-            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+        Barrier(depth.Image, ImageLayout.DepthStencilAttachmentOptimal, depthReadOnly ? ImageLayout.DepthReadOnlyStencilAttachmentOptimal : ImageLayout.DepthStencilAttachmentOptimal,
+            ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+            PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit | (depthReadOnly ? PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit : 0),
+            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit | (depthReadOnly ? AccessFlags.ShaderReadBit : 0));
         var pass = MsaaRenderPass(new MsaaPassKey(format, SampleCountFlags.Count1Bit, AttachmentLoadOp.Load, AttachmentStoreOp.Store,
-            AttachmentLoadOp.Load, AttachmentStoreOp.Store, false));
+            AttachmentLoadOp.Load, AttachmentStoreOp.Store, false, DepthReadOnly: depthReadOnly));
         var views = stackalloc ImageView[2] { SingleFetchView(), depth.View };
         var fci = new FramebufferCreateInfo
         {
@@ -117,6 +118,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_ss && _singleFetchSsLogged.Add(rt.Address))
             Log.Info($"[gpu] programmable blending in supersampled scene 0x{rt.Address:X8}: small draws render in a render pass that reads the {w}x{h} sample image as an input attachment");
         _fetchPassOpen = true;
+        _fetchPassDepthRo = depthReadOnly;
         (_fetchPassRt, _fetchPassDepth, _fetchPassFormat, _fetchPassScene, _fetchPassImage) = (rt, depth, format, _sceneSerial, image);
         return cmd;
     }
@@ -160,12 +162,73 @@ public sealed unsafe partial class VulkanRenderer
     bool FetchPassContinues(Format format) =>
         _fetchPassOpen && _fetchPassScene == _sceneSerial && _fetchPassRt == _rt && _fetchPassDepth == _depth && _fetchPassFormat == format && !_hoisting;
 
+    /// <summary>The open fetch pass takes a draw that writes depth (<paramref name="writesDepth"/>) or samples the
+    /// scene's depth in place (<paramref name="feedback"/>): a read-only depth pass takes no depth writes, a writable one
+    /// no in-place depth reads.</summary>
+    bool FetchPassContinues(Format format, bool writesDepth, bool feedback) =>
+        FetchPassContinues(format) && !(writesDepth && _fetchPassDepthRo) && !(feedback && !_fetchPassDepthRo);
+
+    /// <summary>The open fetch pass's depth/stencil is in DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL: its draws may
+    /// sample the depth while they test against it and write stencil.</summary>
+    bool _fetchPassDepthRo;
+
+    static readonly string? FetchLargeSetting = Environment.GetEnvironmentVariable(EnvVars.FetchLarge)?.Trim();
+    static readonly string? FetchPassJoinSetting = Environment.GetEnvironmentVariable(EnvVars.FetchPassJoin)?.Trim();
+    static readonly string? DepthFeedbackSetting = Environment.GetEnvironmentVariable(EnvVars.DepthFeedback)?.Trim();
+    static bool Switch(string? setting, bool dflt) => setting switch { "1" => true, "0" => false, _ => dflt };
+
+    /// <summary>
+    /// With rasterization-order attachment access every fragment of a draw reads what earlier fragments of the same
+    /// draw wrote, as on hardware, so a programmable-blending draw of any size renders in the fetch pass, whole. Without
+    /// it, large draws read a copy of the surface taken before the draw: a mid-scene break and a full-surface copy each
+    /// (Uncharted's gameplay lighting pass had two per frame).
+    /// </summary>
+    bool FetchLarge => _core.RasterizationOrderColor && Switch(FetchLargeSetting, TiledRenderings);
+
+    /// <summary>
+    /// Draws that do not read the colour keep rendering in an open fetch pass of their scene (pipelines made for its
+    /// render pass) instead of ending it, so a scene that mixes programmable-blending and ordinary draws stays one pass:
+    /// Uncharted's lighting pass alternates stencil-marking draws, light volumes and ordinary geometry.
+    /// </summary>
+    bool FetchPassJoin => Switch(FetchPassJoinSetting, TiledRenderings);
+
+    /// <summary>
+    /// Draws that sample the depth buffer they test against (deferred light volumes reading the scene depth) read the
+    /// depth image itself in a fetch pass whose depth is read-only (DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL: no depth
+    /// writes, stencil still written), instead of a copy of the depth that must end the pass and is taken again for
+    /// every draw (Uncharted: six depth copies and pass restarts per frame). The image holds exactly what the copy would.
+    /// </summary>
+    bool DepthFeedback => Switch(DepthFeedbackSetting, TiledRenderings);
+
+    /// <summary>Set before a draw's textures are resolved: the draw can render in a fetch pass with read-only depth
+    /// (one-sample scene at 1x, no depth write), so a texture of the scene's own depth may be the depth image itself.</summary>
+    bool _feedbackAllowed;
+    /// <summary>A texture of the current draw is the scene's depth image, read in place.</summary>
+    bool _feedbackUsed;
+    long _statDepthFeedback;
+
+    /// <summary>The depth image of <paramref name="dt"/> sampled in place (depth aspect, depth in every channel), or
+    /// null when this draw cannot (see <see cref="_feedbackAllowed"/>).</summary>
+    ImageView? DepthFeedbackView(DepthTarget dt, uint w, uint h)
+    {
+        if (!_feedbackAllowed || dt != _depth || dt.Samples != SampleCountFlags.Count1Bit || !dt.Sampleable || w != dt.Width || h != dt.Height) return null;
+        if (dt.FeedbackView.Handle == 0)
+            dt.FeedbackView = CreateView(dt.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false,
+                new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
+        if (_statDepthFeedback++ == 0)
+            Log.Info($"[gpu] depth 0x{dt.Address:X8} {dt.Width}x{dt.Height} sampled by draws that test against it: read in place in a read-only depth fetch pass");
+        _feedbackUsed = true;
+        return dt.FeedbackView;
+    }
+
     void EndSingleFetchPass()
     {
         _fetchPassOpen = false;
         var cmd = F.Cmd;
         _vk.CmdEndRenderPass(cmd);
         _boundPipeline = default;
+        var depthLayout = _fetchPassDepthRo ? ImageLayout.DepthReadOnlyStencilAttachmentOptimal : ImageLayout.DepthStencilAttachmentOptimal;
+        _fetchPassDepthRo = false;
         // the samples of a supersampled scene now hold rendering that is not filtered into the surface yet
         if (_ss) _ssUnresolved = true;
         // the next rendering (or a copy / sampling of the surface) comes after this pass's writes
@@ -174,8 +237,9 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit,
             AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit | AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
-        Barrier(_fetchPassDepth!.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
-            PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
+        Barrier(_fetchPassDepth!.Image, depthLayout, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+            PipelineStageFlags.LateFragmentTestsBit | (depthLayout != ImageLayout.DepthStencilAttachmentOptimal ? PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit : 0),
+            PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
     }
 }

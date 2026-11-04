@@ -81,3 +81,50 @@ player sees a hitch every 15 s. To measure once the snapshot exists.
 **Smallest useful recorder before snapshots:** the existing F10 bundle plus a rolling input log and the last N
 frames' GPU dump (`VITASHARP_GPU_DUMP_AT`'s recorder in ring mode), triggered by one button. It reproduces the
 GPU-side picture of a report but not CPU timing.
+
+## Module inventory (save states, 04/11/2026)
+
+Implemented as the user-facing save states (`src/VitaSharp.Core/SaveState`, design and use in
+`docs/notes/save-states.md`). Every one of the 82 `HleModule` classes has a `*.Snapshot.cs` part. Categories:
+**stateless** (no instance state), **generated** (`[GenerateSnapshot]` covers every field), **hand-written**
+(generated fields plus `SaveExtra`/`LoadExtra` for the graph or a host object recreated on load), **refused in use**
+(a host resource that is not recreated yet: the save is refused with "module X: host resource Y not supported yet"
+only while one exists; with none open the module saves normally).
+
+| Module | File | Category | Host resource / notes |
+|---|---|---|---|
+| AppMgr | AppMgr.cs | generated | |
+| AppMgrShell, Atomic, Gps, Hid, NpDrmPackage, NpScore, NpTus, Rtc, Security, SystemSoftware, Taihen, ThreadMgr, VmThreads, VshBridge | various | stateless | ThreadMgr's objects are kernel objects (saved by the kernel part) |
+| Ult | Ult.cs | stateless module, objects refused | libult objects are kernel objects of a private type: a save with any is refused (most games use libult LLE) |
+| AppUtil, DebugPerf, Handwriting, Jpeg, Json, LiveArea, MediaExport, MtpIf, NearUtil, NpCommerce2, NpSignaling, NpSocial, NpUtility, NpWebApi, NpWebApiCommonDialog, Np, ProcessMgr, RegMgrSystem, ScreenShot, Sensors, SharedFb, Ssl, SysMem, SystemMisc, SystemServicesVsh, SystemUtil, Touch, VoiceQoS | various | generated | LiveArea's frame cache and SystemServicesVsh's error table are caches (rebuilt) |
+| RegMgr | RegMgr.cs | generated | values the game wrote are user settings on disk (not rolled back) |
+| Audio | Audio.cs | hand-written | output ports reopened on the host with their pacing deadlines |
+| Audiodec | Audiodec.cs | hand-written | AT9/MP3/AAC decoders recreated from their creation info (inter-frame history lost) |
+| AvPlayer | AvPlayer.cs | hand-written | media reopened from its source and seeked to the saved playback time |
+| Camera | Camera.cs | hand-written | settings saved; a started camera reopens its host capture |
+| Clib | Clib.cs | hand-written | mspace heaps and the allocation index |
+| CodecEngine, Videodec | Videodec.cs | hand-written | H.264 decoders recreated empty (the movie restarts on a key frame) |
+| CommonDialog | CommonDialog.cs | hand-written | dialog slot and result; no save while a dialog is on screen |
+| Ctrl, Display | Display.cs | hand-written | vblank notifier restarted when callbacks exist |
+| Fiber | Fiber.cs | hand-written | fibers with their register contexts, per-thread current fiber |
+| Fios2User | Fios2User.cs | hand-written | overlay table |
+| Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers, recorded command lists; a list being recorded is refused |
+| SystemGesture | SystemGesture.cs | generated (nested) | touch primitives and recognizers |
+| Http | Http.cs | hand-written | templates/connections/requests; an exchange in flight or an epoll is refused |
+| IoFileMgr | IoFileMgr.cs | hand-written | files reopened by path at their offset, directory listings |
+| JpegEnc | JpegEnc.cs | hand-written | |
+| Mp4 | Mp4.cs | hand-written | movies reopened and seeked to the last unit read |
+| Net | Online.cs | hand-written | callbacks kept; sockets/epolls/resolvers are dropped on load (the game sees a disconnect) |
+| Ngs | Ngs.cs | hand-written | systems, racks, voices, patches, decode positions; ATRAC9 decoders recreated |
+| NpManager, NpTrophy | Np.cs, NpTrophy.cs | hand-written | trophy sets read again by communication id |
+| Pgf, Pvf | Pgf.cs, Pvf.cs | hand-written | system fonts reopened; PVF fonts from game data kept with their file; a PGF font from game data is refused |
+| Atrac | Atrac.cs | refused in use | ATRAC stream decoder |
+| Audioenc, Videoenc, Mp4Recorder | | refused in use | encoders / recorder |
+| Voice | Voice.cs | generated (nested) | voice ports and buffered audio; the host stream reopens on demand |
+| G729 | G729.cs | refused in use | voice chat codec |
+| Ime | Ime.cs | refused in use | IME session events |
+| Location | Location.cs | refused in use | location handles |
+| NpMatching2 | Multiplayer.cs | generated (nested) | matching contexts and callbacks |
+| NetAdhocMatching, Rudp | | refused in use | online sessions (network) |
+| Sas | Sas.cs | refused in use | SAS engine |
+| TriggerUtil | TriggerUtil.cs | refused in use | scheduled trigger events |

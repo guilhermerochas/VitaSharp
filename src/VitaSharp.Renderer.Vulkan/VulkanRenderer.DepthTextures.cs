@@ -40,6 +40,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
         if (dt.Samples != SampleCountFlags.Count1Bit) return UnpackedDepthTexture(dt, w, h);
+        if (DepthFeedbackView(dt, w, h) is { } inPlace) return (inPlace, ImageLayout.DepthReadOnlyStencilAttachmentOptimal);
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
         if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)

@@ -17,7 +17,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// (the real library streams them through a cache); user files opened in mode 0 are read through the game's I/O
 /// callbacks like the real library does. Without the firmware font files sceFontOpen fails with HANDLER_OPEN_FAILED.
 /// </summary>
-public sealed class Pgf : HleModule
+public sealed partial class Pgf : HleModule
 {
     internal const int ERR_OUT_OF_MEMORY = unchecked((int)0x80460001), ERR_INVALID_LIBID = unchecked((int)0x80460002),
         ERR_INVALID_PARAMETER = unchecked((int)0x80460003), ERR_HANDLER_OPEN_FAILED = unchecked((int)0x80460005),

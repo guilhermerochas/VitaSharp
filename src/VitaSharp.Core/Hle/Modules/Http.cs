@@ -27,7 +27,7 @@ public sealed partial class Http : HleModule
 
     enum Kind { Template, Connection, Request }
 
-    sealed class Settings
+    sealed partial class Settings
     {
         public uint ResolveTimeoutUs = 1_000_000, ConnectTimeoutUs = 30_000_000, SendTimeoutUs = 120_000_000, RecvTimeoutUs = 120_000_000;
         public int ResolveRetry = 5;
@@ -39,7 +39,7 @@ public sealed partial class Http : HleModule
         public Settings Clone() => (Settings)MemberwiseClone();
     }
 
-    sealed class Obj
+    sealed partial class Obj
     {
         public int Id, ParentId;
         public Kind Kind;
@@ -1088,7 +1088,7 @@ public sealed class CookieJar
 }
 
 /// <summary>SceSsl: library state and pool statistics. No TLS session or certificate exists offline.</summary>
-public sealed class Ssl : HleModule
+public sealed partial class Ssl : HleModule
 {
     const int ERR_BEFORE_INIT = unchecked((int)0x80435001), ERR_ALREADY_INITED = unchecked((int)0x80435020),
         ERR_INVALID_VALUE = unchecked((int)0x804351FE), ERR_NOT_FOUND = unchecked((int)0x80435025);

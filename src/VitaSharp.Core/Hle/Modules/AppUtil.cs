@@ -4,7 +4,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceAppUtil: system parameters, safe memory and save data slots (files under savedata0:).</summary>
-public sealed class AppUtil : HleModule
+public sealed partial class AppUtil : HleModule
 {
     internal const int ERR_PARAMETER = unchecked((int)0x80100600), ERR_NOT_INITIALIZED = unchecked((int)0x80100601),
         ERR_NOT_MOUNTED = unchecked((int)0x80100604), ERR_APPEVENT_PARSE_INVALID_DATA = unchecked((int)0x80100620),

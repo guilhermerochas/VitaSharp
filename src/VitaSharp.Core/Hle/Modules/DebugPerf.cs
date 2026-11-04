@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// HUD), SceDeci4pUserp (devkit host channel) and the libult support stubs SceUlobjMgr / SceUlobjDbg. On a retail console
 /// there is no profiler and no host: everything succeeds without effect and queries report "not capturing".
 /// </summary>
-public sealed class DebugPerf : HleModule
+public sealed partial class DebugPerf : HleModule
 {
     uint _captureFlagPtr;
 

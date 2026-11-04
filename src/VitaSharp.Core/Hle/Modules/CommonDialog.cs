@@ -32,7 +32,7 @@ public static class CommonDialogError
 /// The process-wide common dialog slot (the hardware model, like Vita3K's DialogState): Init of any family while
 /// another dialog has not been terminated returns BUSY; GetStatus of a family that is not the active one is NONE.
 /// </summary>
-public sealed class CommonDialogState
+public sealed partial class CommonDialogState
 {
     public const int StatusNone = 0, StatusRunning = 1, StatusFinished = 2;
     public const int ResultOk = 0, ResultUserCanceled = 1, ResultAborted = 2;
@@ -93,7 +93,7 @@ public sealed class CommonDialogState
 /// dialog asks the front-end's text entry when there is one (<see cref="HostServices.ImeDialog"/>), else it answers at
 /// once with --ime-text or the initial text.
 /// </summary>
-public sealed class CommonDialog : HleModule
+public sealed partial class CommonDialog : HleModule
 {
     const int StatusNone = CommonDialogState.StatusNone, StatusRunning = CommonDialogState.StatusRunning, StatusFinished = CommonDialogState.StatusFinished;
     const int ResultOk = CommonDialogState.ResultOk, ResultUserCanceled = CommonDialogState.ResultUserCanceled, ResultAborted = CommonDialogState.ResultAborted;

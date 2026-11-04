@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Mount functions register a short synthetic device ("am100:") in the VFS and write its name in the caller's 16-byte
 /// mount point buffer; save data functions share AppUtil's helpers. Older entries live in <see cref="SystemMisc"/>.
 /// </summary>
-public sealed class AppMgr : HleModule
+public sealed partial class AppMgr : HleModule
 {
     const int ERR_PARAM = unchecked((int)0x80802002), ERR_NOT_FOUND = unchecked((int)0x80802012),
         ERR_APP_PARAM_READ = unchecked((int)0x80802015), ERR_NULL_POINTER = unchecked((int)0x80802016),

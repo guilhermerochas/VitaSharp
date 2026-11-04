@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Vita: <see cref="SceError.ERROR"/> is used provisionally for "not initialized"/"bad id" and INVALID_ARGUMENT for
 /// null pointers.
 /// </summary>
-public sealed class VoiceQoS : HleModule
+public sealed partial class VoiceQoS : HleModule
 {
     internal const int ERR_GENERIC = SceError.ERROR, ERR_INVALID_ARGUMENT = SceError.INVALID_ARGUMENT;
 

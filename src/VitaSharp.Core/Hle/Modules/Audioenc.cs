@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceAudioencCtrl (0x2C): size, handle, pInputPcm, inputPcmSize, maxPcmSize, pOutputEs, outputEsSize, maxEsSize,
 /// wordLength, pInfo, pOptInfo. SceAudioencInfoCelp (0x10): size, excitationMode, samplingRate, bitRate.
 /// </summary>
-public sealed class Audioenc : HleModule
+public sealed partial class Audioenc : HleModule
 {
     internal const int ERR_INVALID_TYPE = unchecked((int)0x80860001), ERR_INVALID_INIT_PARAM = unchecked((int)0x80860002),
         ERR_ALREADY_INITIALIZED = unchecked((int)0x80860003), ERR_NOT_INITIALIZED = unchecked((int)0x80860005),

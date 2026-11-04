@@ -153,7 +153,7 @@ public sealed class HleFunction
 }
 
 /// <summary>Registry of HLE functions and variables; binds C# methods to guest calling conventions.</summary>
-public sealed class HleRegistry : IImportResolver
+public sealed partial class HleRegistry : IImportResolver
 {
     readonly Emulator _emu;
     readonly List<HleFunction> _functions = [new HleFunction { Nid = 0, Name = "<invalid>" }];
@@ -199,6 +199,7 @@ public sealed class HleRegistry : IImportResolver
             var invoker = b.Bind(module);
             foreach (var nid in nids)
             {
+                NoteModuleNid(module, nid);
                 _impls[nid] = invoker;
                 _implNames[nid] = name;
                 if (_indexByNid.TryGetValue(nid, out var idx)) _functions[idx].Invoke = invoker;

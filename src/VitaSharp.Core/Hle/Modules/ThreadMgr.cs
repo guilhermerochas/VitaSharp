@@ -7,7 +7,7 @@ using Semaphore = VitaSharp.Core.Kernel.Semaphore;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceThreadmgr + the thread/synchronisation parts of SceLibKernel.</summary>
-public sealed class ThreadMgr : HleModule
+public sealed partial class ThreadMgr : HleModule
 {
     const int SCE_KERNEL_THREAD_ID_SELF = 0;
 

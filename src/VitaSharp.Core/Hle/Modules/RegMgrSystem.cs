@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// following the emulator's options (language, enter button, date format) until the system software writes them.
 /// Registry callbacks are accepted and recorded; changes do not notify them yet.
 /// </summary>
-public sealed class RegMgrSystem : HleModule
+public sealed partial class RegMgrSystem : HleModule
 {
     /// <summary>SCE_REGMGR_ERROR_* (inferred from the SceRegMgrForGame errors: 0x800D0004 invalid key/argument).</summary>
     const int ERR_INVALID = unchecked((int)0x800D0004);

@@ -15,7 +15,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// only OPEN is delivered.
 /// There is no pre-edit (kana/hangul composition): preeditLength is always 0.
 /// </summary>
-public sealed class Ime : HleModule
+public sealed partial class Ime : HleModule
 {
     internal const int ERR_ALREADY_OPENED = unchecked((int)0x80100700), ERR_NOT_OPENED = unchecked((int)0x80100701),
         ERR_INVALID_POINTER = unchecked((int)0x80100702), ERR_INVALID_TEXT = unchecked((int)0x80100706),

@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Only words whose layout is assumed by analogy with SceAvcdec are touched: the handle at ctrl+0, the memory size at
 /// memInfo+0 / encoderInfo+0, width/height at query+0/+4. Nothing is written through picture/NAL structs.
 /// </summary>
-public sealed class Videoenc : HleModule
+public sealed partial class Videoenc : HleModule
 {
     internal const int ERR_INVALID_PARAM = unchecked((int)0x80620002), ERR_INVALID_POINTER = unchecked((int)0x80620009);
     /// <summary>Probable SCE_VIDEOENC_TYPE_HW_AVCENC (by analogy with TYPE_HW_AVCDEC = 0x1001); any type is accepted.</summary>
