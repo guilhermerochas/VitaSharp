@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// sceFiberRun and out of with sceFiberSwitch / sceFiberReturnToThread. The guest SceFiber object (128 bytes,
 /// 8-aligned) only carries identity here; the contexts live host-side, keyed by the object's address.
 /// </summary>
-public sealed unsafe class Fiber : HleModule
+public sealed unsafe partial class Fiber : HleModule
 {
     const int OK = 0;
     const int ERR_NULL = unchecked((int)0x80590001), ERR_ALIGNMENT = unchecked((int)0x80590002), ERR_RANGE = unchecked((int)0x80590003),

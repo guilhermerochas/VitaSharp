@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// (docs/hle/G1-media-libs.md), and the error codes are the PSP's 0x8042xxxx. sceSysmoduleLoadModule(SCE_SYSMODULE_SAS)
 /// prefers the real libsas.suprx by LLE when present; this HLE is the fallback.
 /// </summary>
-public sealed class Sas : HleModule
+public sealed partial class Sas : HleModule
 {
     internal const int ERR_INVALID_GRAIN = unchecked((int)0x80420001), ERR_INVALID_MAX_VOICES = unchecked((int)0x80420002),
         ERR_INVALID_OUTPUT_MODE = unchecked((int)0x80420003), ERR_BAD_ADDRESS = unchecked((int)0x80420005),

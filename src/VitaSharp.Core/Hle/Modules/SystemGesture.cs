@@ -6,7 +6,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceSystemGesture: turns raw SceTouchData (supplied by the game every frame) into primitive touch events and
 /// recognised gestures (tap, drag, tap-and-hold, pinch). Coordinates are touch-panel units (front 1920x1088).
 /// </summary>
-public sealed class SystemGesture : HleModule
+public sealed partial class SystemGesture : HleModule
 {
     const int ERR_INVALID_ARG = unchecked((int)0x80800001), ERR_NOT_INITIALIZED = unchecked((int)0x80800002);
     // SceSystemGestureType: one bit per recognizer kind; 0x10 = rotation (two-finger twist). PhyreEngine games

@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// without one. Fusion maths in <see cref="MotionFusion"/>, guest structures in <see cref="MotionDevice"/>. Also the
 /// camera shutter sound. SceCamera is in Camera.cs.
 /// </summary>
-public sealed class Sensors : HleModule
+public sealed partial class Sensors : HleModule
 {
     const int ERR_OUT_OF_BOUNDS = unchecked((int)0x80360205), ERR_NOT_SAMPLING = unchecked((int)0x80360206),
         ERR_ALREADY_SAMPLING = unchecked((int)0x80360207), ERR_NULL_PARAMETER = unchecked((int)0x80360209),

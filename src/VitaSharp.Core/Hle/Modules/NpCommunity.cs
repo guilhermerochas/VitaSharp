@@ -269,7 +269,7 @@ public sealed class NpCommunity(string name)
 /// (RPCS3 sceNp.cpp), structures the PS3 layout (SceNpScoreRankData 128 bytes; element sizes come from the caller's
 /// array sizes).
 /// </summary>
-public sealed class NpScore : HleModule
+public sealed partial class NpScore : HleModule
 {
     readonly NpCommunity _lib = new("NpScore");
     internal NpCommunity Lib => _lib;
@@ -580,7 +580,7 @@ public sealed class NpScore : HleModule
 /// oldVariable +96. SceNpTusDataStatus (488): ownerId +0, hasData +36, lastChangedDate +40, lastChangedAuthorId +48,
 /// data* +84, dataSize +88, info {infoSize +96, data[384] +104}. SceNpTusDataInfo (392): infoSize +0, data +8.
 /// </summary>
-public sealed class NpTus : HleModule
+public sealed partial class NpTus : HleModule
 {
     readonly NpCommunity _lib = new("NpTus");
     internal NpCommunity Lib => _lib;
@@ -982,7 +982,7 @@ public sealed class NpTus : HleModule
 
 /// <summary>SceNpUtility: Lookup and WordFilter (community model) and BandwidthTest. The lookup server has no other
 /// users and the word filter passes every comment.</summary>
-public sealed class NpUtility : HleModule
+public sealed partial class NpUtility : HleModule
 {
     readonly NpCommunity _lookup = new("NpLookup"), _filter = new("NpWordFilter");
     internal NpCommunity Lookup => _lookup;

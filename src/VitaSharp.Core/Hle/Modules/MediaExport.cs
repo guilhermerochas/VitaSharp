@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// numeric suffix when the name is taken; the Vita path of the copy is returned. Error codes are not documented:
 /// INVALID_ARGUMENT for bad arguments / unsupported data and ENOENT for a missing source.
 /// </summary>
-public sealed class MediaExport : HleModule
+public sealed partial class MediaExport : HleModule
 {
     internal const int ERR_INVALID = SceError.INVALID_ARGUMENT, ERR_NOENT = SceError.IO_ENOENT;
     /// <summary>sizeof(VideoExportInputParam) / sizeof(VideoExportOutputParam); both start with path[1024].</summary>

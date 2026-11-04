@@ -470,7 +470,7 @@ public static class NpIdUtil
 /// SceNpBasic additions, SceNpMessage, SceNpActivity and the party state (SceNpPartyGameUtil): offline there are no
 /// friends, messages or parties. (The older SceNpBasic/SceNpParty functions live in Online.cs, class Np.)
 /// </summary>
-public sealed class NpSocial : HleModule
+public sealed partial class NpSocial : HleModule
 {
     const int BASIC_INVALID_ARGUMENT = unchecked((int)0x80551D02),
         ERR_NOT_IN_PARTY = unchecked((int)0x80553402);

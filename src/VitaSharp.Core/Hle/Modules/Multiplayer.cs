@@ -18,7 +18,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// (RPCS3 sceNp2.h); Vita error codes 0x80550Cxx (client) / 0x80550Dxx (server) with the PS3 low byte (inferred
 /// from the client codes already in use).</para>
 /// </summary>
-public sealed class NpMatching2 : HleModule
+public sealed partial class NpMatching2 : HleModule
 {
     const int ERR_NOT_INITIALIZED = unchecked((int)0x80550c01), ERR_INVALID_ARGUMENT = unchecked((int)0x80550c03),
         ERR_CONTEXT_ALREADY_STARTED = unchecked((int)0x80550c07), ERR_CONTEXT_NOT_STARTED = unchecked((int)0x80550c08),
@@ -310,7 +310,7 @@ public sealed class NpMatching2 : HleModule
 }
 
 /// <summary>SceRudp (reliable UDP over the PSN signaling layer): contexts can be created but never reach a peer.</summary>
-public sealed class Rudp : HleModule
+public sealed partial class Rudp : HleModule
 {
     // Values in use since the first implementation; the PS3 cellRudp table disagrees for several of them (see
     // docs/hle/E1-net.md, to be confirmed). Codes added later follow the PS3 table.

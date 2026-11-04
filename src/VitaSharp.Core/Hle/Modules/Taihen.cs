@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// symbol name with sceSblDmac5HashTransform, then walks the module's export table found with taiGetModuleInfo).
 /// Hooks and injections are not supported.
 /// </summary>
-public sealed class Taihen : HleModule
+public sealed partial class Taihen : HleModule
 {
     const int TAI_ERROR_NOT_FOUND = unchecked((int)0x90010002);
     const int TAI_ERROR_INVALID_ARGS = unchecked((int)0x90010003);
@@ -78,7 +78,7 @@ public sealed class Taihen : HleModule
 }
 
 /// <summary>SceSblDmac5Mgr: the DMAC5 crypto engine (hash commands) and SceLibRng.</summary>
-public sealed class Security : HleModule
+public sealed partial class Security : HleModule
 {
     const int SCE_SBL_ERROR_INVALID_ARGUMENT = unchecked((int)0x800F0016);
 

@@ -170,6 +170,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         schema.Append('}');
         if (!ok) return null;
         bool HasMethod(string n, int args) => t.GetMembers(n).OfType<IMethodSymbol>().Any(m => !m.IsStatic && m.Parameters.Length == args);
+        if (HasMethod("BeforeSnapshotLoad", 0)) load.Insert(0, "        BeforeSnapshotLoad();\n");
         if (HasMethod("SaveExtra", 1)) save.AppendLine("        SaveExtra(w);");
         if (HasMethod("LoadExtra", 1)) load.AppendLine("        LoadExtra(r);");
         if (HasMethod("AfterSnapshotLoad", 0)) load.AppendLine("        AfterSnapshotLoad();");

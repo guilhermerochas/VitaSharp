@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Small SceShell-backed utilities with no shell behind them: SceNotificationUtil (logged), SceIncomingDialog (nobody
 /// answers: the dialog times out), SceClipboard (in-memory text) and SceGameUpdate (no update available).
 /// </summary>
-public sealed class SystemUtil : HleModule
+public sealed partial class SystemUtil : HleModule
 {
     readonly object _lock = new();
 

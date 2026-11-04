@@ -3,7 +3,7 @@ using VitaSharp.Core.Memory;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>SceRtc: ticks are microseconds since 0001-01-01 00:00:00 UTC.</summary>
-public sealed class Rtc : HleModule
+public sealed partial class Rtc : HleModule
 {
     const ulong UnixEpochTick = 62135596800000000UL;
 

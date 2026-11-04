@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Input YCbCr layout (as Vita3K): planar Y (inWidth x inHeight), then Cb and Cr of ceil(inWidth / 2) x
 /// ceil(inHeight / vdiv) each, contiguous and unpadded. SetValidRegion encodes the top-left part of that image.
 /// </summary>
-public sealed class JpegEnc : HleModule
+public sealed partial class JpegEnc : HleModule
 {
     internal const int ERR_IMAGE_SIZE = unchecked((int)0x80650200), ERR_INSUFFICIENT_BUFFER = unchecked((int)0x80650201),
         ERR_INVALID_COMPRATIO = unchecked((int)0x80650202), ERR_INVALID_PIXELFORMAT = unchecked((int)0x80650203),
@@ -26,7 +26,7 @@ public sealed class JpegEnc : HleModule
     /// size of its own context struct (0x20), kept here until the hardware value is known.</summary>
     internal const int ContextSize = 0x20;
 
-    sealed class Ctx
+    sealed partial class Ctx
     {
         public int Width, Height, PixelFormat, Ratio = DefaultRatio, HeaderMode = HEADER_JPEG, ValidWidth, ValidHeight, Option;
         public uint OutBuffer, OutSize;

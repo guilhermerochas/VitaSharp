@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// zero frames. IN_PCMAUDIO to OUT_PCMAUDIO/OUT_DEVICE is a real mix (volume, mute, s16 clamp).
 /// Processing has no thread of its own: it runs lazily on each port call from the elapsed guest time.
 /// </summary>
-public sealed class Voice : HleModule
+public sealed partial class Voice : HleModule
 {
     internal const int ERR_NOT_INITIALIZED = unchecked((int)0x804E0801), ERR_ALREADY_INITIALIZED = unchecked((int)0x804E0802),
         ERR_INVALID_PORT_ID = unchecked((int)0x804E0804), ERR_INVALID_ARGUMENT = unchecked((int)0x804E0805),

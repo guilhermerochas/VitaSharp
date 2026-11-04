@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// library and its contexts initialise and start normally, no hello is ever received (so the handler gets no event),
 /// and every operation aimed at a peer fails with UNKNOWN_TARGET — to the game, "searching and nobody showed up".
 /// </summary>
-public sealed class NetAdhocMatching : HleModule
+public sealed partial class NetAdhocMatching : HleModule
 {
     internal const int ERR_INVALID_MODE = unchecked((int)0x80413101), ERR_INVALID_PORT = unchecked((int)0x80413102),
         ERR_INVALID_MAXNUM = unchecked((int)0x80413103), ERR_RXBUF_TOO_SHORT = unchecked((int)0x80413104),

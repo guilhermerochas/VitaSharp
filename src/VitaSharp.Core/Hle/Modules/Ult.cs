@@ -22,7 +22,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// mutex recursion attribute is read from OptParam +0x10 bit 0 (inferred), and which error each misuse returns follows
 /// the libult paths that were inspected (STATE for relocking a non-recursive mutex, BUSY/AGAIN for the Try forms).
 /// </summary>
-public sealed class Ult : HleModule
+public sealed partial class Ult : HleModule
 {
     const int ERR_NULL = unchecked((int)0x80810001), ERR_ALIGNMENT = unchecked((int)0x80810002),
         ERR_RANGE = unchecked((int)0x80810003), ERR_INVALID = unchecked((int)0x80810004),

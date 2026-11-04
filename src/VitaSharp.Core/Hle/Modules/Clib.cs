@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceClib (SceLibKernel): mspace heaps, string/ctype helpers and the fortified (_chk) variants. The basic
 /// printf/mem/str functions live in <see cref="ProcessMgr"/>.
 /// </summary>
-public sealed class Clib : HleModule
+public sealed partial class Clib : HleModule
 {
     // ------------------------------------------------------------------ mspace heaps
     // An mspace manages a block the game hands over. Bookkeeping is host-side; the first bytes of the block are
@@ -18,7 +18,7 @@ public sealed class Clib : HleModule
 
     const uint HeaderBytes = 64, MinAlign = 16;
 
-    sealed class Heap
+    sealed partial class Heap
     {
         public uint Base, Size;
         public readonly SortedList<uint, uint> Free = new(); // start -> size

@@ -32,7 +32,7 @@ public static class CommonDialogError
 /// The process-wide common dialog slot (the hardware model, like Vita3K's DialogState): Init of any family while
 /// another dialog has not been terminated returns BUSY; GetStatus of a family that is not the active one is NONE.
 /// </summary>
-public sealed class CommonDialogState
+public sealed partial class CommonDialogState
 {
     public const int StatusNone = 0, StatusRunning = 1, StatusFinished = 2;
     public const int ResultOk = 0, ResultUserCanceled = 1, ResultAborted = 2;

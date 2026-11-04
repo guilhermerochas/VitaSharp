@@ -197,7 +197,7 @@ public sealed partial class Net : HleModule
 
 }
 
-public sealed class Np : HleModule
+public sealed partial class Np : HleModule
 {
 
     // NP initialisation, service state and auth live in NpManager (Np.cs); Lookup in NpUtility (NpCommunity.cs).

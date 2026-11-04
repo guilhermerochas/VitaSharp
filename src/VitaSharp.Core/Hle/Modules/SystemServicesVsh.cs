@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// USB host, HID keyboard, BD remote), process termination callbacks, the region string. Each follows the FW 3.74
 /// kernel module named in its comment (os0:kd/bootimage.skprx, os0:kd/*.skprx, os0:us/driver_us.suprx).
 /// </summary>
-public sealed class SystemServicesVsh : HleModule
+public sealed partial class SystemServicesVsh : HleModule
 {
     // ------------------------------------------------------------------ SceErrorUser (SceError, bootimage)
 

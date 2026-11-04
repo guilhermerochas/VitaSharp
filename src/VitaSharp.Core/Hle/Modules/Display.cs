@@ -456,7 +456,7 @@ public sealed partial class Ctrl : HleModule
 }
 
 /// <summary>SceHid: USB/Bluetooth keyboards and mice. None are attached, so enumeration finds no devices.</summary>
-public sealed class Hid : HleModule
+public sealed partial class Hid : HleModule
 {
     /// <summary>sceHid{Keyboard,Mouse}Enumerate(int *handles, int count): returns the number of devices written.</summary>
     [Hle("sceHidKeyboardEnumerate")]

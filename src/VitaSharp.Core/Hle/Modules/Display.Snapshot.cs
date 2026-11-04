@@ -28,3 +28,8 @@ public sealed partial class Ctrl
 public sealed partial class Touch
 {
 }
+
+[GenerateSnapshot]
+public sealed partial class Hid
+{
+}

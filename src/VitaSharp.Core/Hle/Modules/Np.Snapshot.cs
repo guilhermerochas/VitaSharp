@@ -8,3 +8,8 @@ public sealed partial class NpManager
     [GenerateSnapshot]
     sealed partial class AuthReq;
 }
+
+[GenerateSnapshot]
+public sealed partial class NpSocial
+{
+}

@@ -12,7 +12,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// Structs (psp2/atrac.h): SceAtracDecoderGroup 0xC, SceAtracContentInfo 0x34, SceAtracStreamInfo 0x10.
 /// Handles are (SCE_ATRAC_TYPE_AT9 &lt;&lt; 16) | slot.
 /// </summary>
-public sealed class Atrac : HleModule
+public sealed partial class Atrac : HleModule
 {
     internal const int ERR_INVALID_POINTER = unchecked((int)0x80630000), ERR_INVALID_SIZE = unchecked((int)0x80630001),
         ERR_INVALID_WORD_LENGTH = unchecked((int)0x80630002), ERR_INVALID_TYPE = unchecked((int)0x80630003),

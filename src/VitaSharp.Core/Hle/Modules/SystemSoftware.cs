@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// process/module queries, SceVshBridge, the hardware feature checks. They answer what a retail PS Vita
 /// (PCH-1000, no debug features) answers; anything the system software asks that is not known yet is logged once.
 /// </summary>
-public sealed class SystemSoftware : HleModule
+public sealed partial class SystemSoftware : HleModule
 {
     // ------------------------------------------------------------------ SceLibKernel / SceProcessmgr
 

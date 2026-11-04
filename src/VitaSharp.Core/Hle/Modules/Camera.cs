@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// latest host frame, scaled (centre crop) and converted to the requested format. Semantics follow psp2/camera.h and
 /// Vita3K's SceCamera ("from disasm" validation rules).
 /// </summary>
-public sealed class Camera : HleModule
+public sealed partial class Camera : HleModule
 {
     const int ERR_PARAM = unchecked((int)0x802E0000);
     const int ERR_ALREADY_OPEN = unchecked((int)0x802E0003);
@@ -72,7 +72,7 @@ public sealed class Camera : HleModule
     /// smaller one as padding added to the width.</summary>
     public static int StridePixels(int width, int pitch) => pitch <= 0 ? width : pitch >= width ? pitch : width + pitch;
 
-    sealed class Device
+    sealed partial class Device
     {
         public bool Open, Started;
         public int Priority, Format, Resolution, Framerate, Range, Pitch, BufferMode, Width, Height;
