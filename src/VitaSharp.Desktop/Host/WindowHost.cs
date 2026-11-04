@@ -47,6 +47,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? DebugModeToggled;
     /// <summary>F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
     public event Action? GpuDumpToggled;
+    /// <summary>Save states (window thread): F5 quick save, Shift+F5 save to the selected slot, F7 quick load, Shift+F7
+    /// load the selected slot, F6 next slot. The argument is the slot (0 = quick), or -1 for F6.</summary>
+    public event Action<int>? SaveStateKey, LoadStateKey;
     /// <summary>The pause hotkey (<see cref="VitaControl.PauseEmulation"/>: a key of the keyboard profile, P by default,
     /// or a controller binding / button combination) was pressed: pause or resume the emulation (window thread).</summary>
     public event Action? PauseToggled;
@@ -238,6 +241,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         if (key == Key.F10) { if (down) DiagnosticRequested?.Invoke(); return; }
         if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
         if (key == Key.F8) { if (down) GpuDumpToggled?.Invoke(); return; }
+        if (key is Key.F5 or Key.F6 or Key.F7 && TextCapture == null)
+        {
+            if (down) (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : IsShiftDown ? 1 : 0);
+            return;
+        }
         if (down && TextCapture is { } capture) { capture.OnKey(key); return; }
         // the pause hotkey never reaches the game; a held key toggles once (key repeat is ignored)
         if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key.ToString()))

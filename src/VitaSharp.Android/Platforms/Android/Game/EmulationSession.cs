@@ -31,7 +31,7 @@ namespace VitaSharp.Android.Game;
 /// GPU profile, VSync; play time and average FPS are added to the game's statistics when it ends.</item>
 /// </list>
 /// </summary>
-public sealed class EmulationSession : IDisposable
+public sealed partial class EmulationSession : IDisposable
 {
     readonly object _surfaceLock = new();
     readonly GameEntry _game;
