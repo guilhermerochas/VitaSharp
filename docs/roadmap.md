@@ -521,6 +521,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Conferido com Sonic Mania e `--input=key@f200:F11,...` (F11 agora é tecla de host nos scripts): aberto em janela e
   com `--fullscreen`, quatro alternâncias cada, o log mostra "monitor attached: False" ao sair e a swapchain volta a
   960x544 a 60 fps
+- [ ] MotorStorm RC (PCSA00034): trava na tela de termos (relato do usuário, 04/11/2026, main 5d4b998, log
+  `logs61104_201525_PCSA00034.log`). Roda a ~40 fps até o quadro 756 e então nenhum quadro novo (watchdog STALL).
+  No relatório do travamento a thread `main` está **Dormant com pc=0x00000000** (lr 0x8114669F): ela parou, não está
+  esperando nada, logo depois de uma série de chamadas de rede/PSN que falham (sceHttpInit 0x80431020, sceNetCtlInit
+  0x80412102, TUS/TSS/Commerce2, `sceNpSnsFacebookInit` sem implementação). Provável salto para um ponteiro nulo
+  (callback não registrado) ou saída da thread no caminho de erro; as threads de jobs ficam em loop de
+  `sceKernelWaitSema` com timeout
+- [ ] Akiba's Beat (PCSG00952, Unity): validar o jogo todo (pedido do usuário, 04/11/2026; sessão de 2,5 min, log
+  `logs61104_201229_PCSG00952.log`, main 5d4b998). No log: 60 fps quase o tempo todo, mas a imagem fica parada
+  ~10 s (quadro 4171, 20:14:05-20:14:16, `frozen: identical image for 600 presents`) e ~4 s de tela preta em 20:13:46
+  (talvez carregamento); 2,6 s de engasgo de shaders na primeira vez (91 desenhos em 14 quadros); 10 importações de
+  variável sem resolver do `Il2CppAssemblies` (também no God Wars); 1 underrun de áudio do CRI Atom. A captura
+  automática `PCSG00952_20261104_201246` é só a tela da Unity (falso positivo). Conferir com vídeos do Vita de
+  verdade se as paradas são carregamento normal ou travamento, e jogar além do começo
 - [ ] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
