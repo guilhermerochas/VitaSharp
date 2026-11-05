@@ -1219,11 +1219,15 @@ public sealed partial class Ngs : HleModule
             st.Push(pcm.AsSpan(0, Math.Max(count, 0) * 2), ratio);
             SetState(m, 12, GetState(m, 12) + sfBytes);
             SetState(m, 20, GetState(m, 20) + sfBytes);
-            int ch = Math.Max(1, (int)m.ParamI8(88));
-            SetState(m, 8, GetState(m, 8) + count * ch);
-            SetState(m, 16, GetState(m, 16) + count * ch);
         }
+        // samples generated count what this tick hands on (like the player module), not what was decoded ahead: a
+        // 1024-sample superframe decoded every other 512-sample tick left the counter still on alternate ticks, and
+        // Crazy Market's SndStream read the zero progress as its stream's position going back to 0
+        // (sndsi_UpdateVoicePositionOfStream: locationDelta < 0, thousands of warnings)
+        int produced = Math.Min(st.Available, g), ch = Math.Max(1, (int)m.ParamI8(88));
         v.Product = Emit(m, g);
+        SetState(m, 8, GetState(m, 8) + produced * ch);
+        SetState(m, 16, GetState(m, 16) + produced * ch);
         return finished;
     }
 
