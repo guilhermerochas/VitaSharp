@@ -33,7 +33,7 @@ public class ShaderRecipeTests : IDisposable
         foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true), FragmentHints() with { OutputRegisterFormat = 1 },
                      FragmentHints(fetch: true) with { OutputRegisterFormat = 5 }, FragmentHints() with { OutputRegisterFormat = 1, TileWord1 = true },
                      FragmentHints(fetch: true) with { OutputRegisterFormat = 1, TileWord1 = true },
-                     FragmentHints(fetch: true) with { FetchInputSingleSample = true } })
+                     FragmentHints(fetch: true) with { FetchInputSingleSample = true }, VertexHints() with { VaryingMask = 0x31 } })
         {
             var r = new ShaderRecipe(0x1122334455667788, h.Key(), h.Attributes.Length > 0, h);
             var back = ShaderRecipe.Decode(r.Encode());
@@ -48,6 +48,7 @@ public class ShaderRecipeTests : IDisposable
             Assert.Equal(h.OutputRegisterFormat, back.Hints.OutputRegisterFormat);
             Assert.Equal(h.TileWord1, back.Hints.TileWord1);
             Assert.Equal(h.FetchInputSingleSample, back.Hints.FetchInputSingleSample);
+            Assert.Equal(h.VaryingMask, back.Hints.VaryingMask);
             Assert.Equal(h.Key(), back.Hints.Key());
         }
     }
@@ -88,6 +89,21 @@ public class ShaderRecipeTests : IDisposable
         Assert.Equal(3, withFormat[0]);
         Assert.Equal(plain.Length + 4, withFormat.Length);
         Assert.Null(ShaderRecipe.Decode(withFormat.AsSpan(0, withFormat.Length - 1)));
+    }
+
+    [Fact]
+    public void VaryingMaskVariantsHaveTheirOwnKeyAndLeaveOthersUnchanged()
+    {
+        var h = VertexHints();
+        var masked = h with { VaryingMask = 0x31 };
+        Assert.NotEqual(h.Key(), masked.Key());
+        Assert.NotEqual(masked.Key(), (h with { VaryingMask = 0x11 }).Key());
+        var plain = new ShaderRecipe(1, h.Key(), true, h).Encode();
+        Assert.Equal(2, plain[0]); // records without a mask keep tag 2
+        var withMask = new ShaderRecipe(1, masked.Key(), true, masked).Encode();
+        Assert.Equal(4, withMask[0]);
+        Assert.Equal(plain.Length + 8, withMask.Length);
+        Assert.Null(ShaderRecipe.Decode(withMask.AsSpan(0, withMask.Length - 1)));
     }
 
     [Fact]

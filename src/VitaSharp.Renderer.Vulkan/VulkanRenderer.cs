@@ -649,6 +649,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D(rt.Width, rt.Height, 1),
             };
+            DevStampOp();
             // a scaled target: uploaded at guest size, then blitted down (VulkanRenderer.ResScale.cs)
             _vk.CmdCopyBufferToImage(Cmd, buf, UploadImageOf(rt), ImageLayout.General, 1, in region);
             NativeToScaled(rt);
@@ -658,6 +659,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // VITASHARP_GPU_POISON=1: a new surface the guest never wrote starts magenta (shows reads of undefined content)
             var clear = Poison ? new ClearColorValue(1, 0, 1, 1) : new ClearColorValue(0, 0, 0, 1);
             var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
+            DevStampOp();
             _vk.CmdClearColorImage(Cmd, rt.Image, ImageLayout.General, in clear, 1, in range);
         }
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -987,6 +989,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 SrcOffset = new Offset3D(0, (int)srcY, 0), DstOffset = new Offset3D(0, (int)dstY, 0),
                 Extent = new Extent3D(width, rows, 1),
             };
+            DevStampOp();
             _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, fb.Image, ImageLayout.General, 1, in copy);
             // the copy must finish before the target is rendered again
             Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,

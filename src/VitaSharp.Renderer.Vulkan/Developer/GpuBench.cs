@@ -121,6 +121,8 @@ public static class GpuBench
         {
             if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
             var sceneOfDraw = new List<int>();
+            // stamps=1: (scene, ordinal, label) -> the op's ms in each timed rep
+            var stamps = new SortedDictionary<(int, int), (string Label, List<double> Ms)>();
             if (spec.Draw > 0) spec.Warm = Math.Max(1, spec.Warm); // the first pass maps draws to scenes
             int total = spec.Warm + spec.Reps * (spec.Draw > 0 ? 2 : 1);
 
@@ -144,10 +146,28 @@ public static class GpuBench
                     foreach (var line in res.Scenes) log($"[bench]   {line}");
                 }
                 if (!timed) continue;
+                foreach (var (sc, ord, label, sms) in renderer.DevStampTimes)
+                {
+                    if (!stamps.TryGetValue((sc, ord), out var e)) stamps[(sc, ord)] = e = (label, new List<double>());
+                    e.Ms.Add(sms);
+                }
                 var ms = scenes.Select(s => s.Ms).ToArray();
                 var repRes = new Rep(config, rep - spec.Warm, ms.Sum(), ms);
                 res.Reps.Add(repRes);
                 log(FormattableString.Invariant($"BENCH {spec.FixtureName} {spec.Variant} {config} rep {repRes.Index}: frame {repRes.FrameMs:F3} ms; scenes {string.Join(' ', ms.Select(m => m.ToString("F3", CultureInfo.InvariantCulture)))}"));
+            }
+            if (stamps.Count > 0)
+            {
+                // results/RUN.stamps.tsv: fixture, variant, scene, ordinal, label, median ms (appended)
+                var st = new StringBuilder();
+                foreach (var ((sc, ord), (label, sms)) in stamps)
+                {
+                    double med = sms.OrderBy(x => x).ElementAt(sms.Count / 2);
+                    log(FormattableString.Invariant($"STAMP {spec.FixtureName} {spec.Variant} s{sc} #{ord} {label}: {med:F3} ms (median of {sms.Count})"));
+                    st.Append(CultureInfo.InvariantCulture, $"{spec.FixtureName}\t{spec.Variant}\t{sc}\t{ord}\t{label}\t{med:F4}\n");
+                }
+                Directory.CreateDirectory(Path.Combine(spec.Root, "results"));
+                File.AppendAllText(Path.Combine(spec.Root, "results", spec.Run + ".stamps.tsv"), st.ToString());
             }
             done?.Invoke(renderer);
 
@@ -259,6 +279,7 @@ public static class GpuBench
         GpuBenchState.DepthLoad = p.GetValueOrDefault("depthload") switch { "clear" => AttachmentLoadOp.Clear, "dontcare" => AttachmentLoadOp.DontCare, _ => null };
         GpuBenchState.DepthStore = p.GetValueOrDefault("depthstore") switch { "store" => AttachmentStoreOp.Store, "dontcare" => AttachmentStoreOp.DontCare, _ => null };
         GpuBenchState.FullBarriers = p.GetValueOrDefault("barrier") == "full";
+        GpuBenchState.Stamps = p.GetValueOrDefault("stamps") == "1";
         log($"[bench] {spec.FixtureName} variant {spec.Variant}: " + string.Join(' ', p.Select(kv => $"{kv.Key}={kv.Value}"))
             + (GpuBenchState.ShaderDir != null ? $" shaders from {GpuBenchState.ShaderDir}" : "") + "; env " + string.Join(' ', env.Select(kv => $"{kv.Key}={kv.Value}")));
 

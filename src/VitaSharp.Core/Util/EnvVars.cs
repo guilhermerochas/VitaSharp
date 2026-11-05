@@ -65,6 +65,9 @@ public static class EnvVars
     /// <summary>1/0: draws that sample the depth buffer they test against read it in place, in a fetch pass whose depth
     /// is read-only, instead of a copy that ends the pass (default on tile-based GPUs; VulkanRenderer.SingleFetch.cs).</summary>
     public const string DepthFeedback = "VITASHARP_DEPTH_FEEDBACK";
+    /// <summary>1/0: a vertex shader declares and writes only the varyings its draw's fragment program reads, instead
+    /// of all 13 (VulkanRenderer.Draw.cs, ShaderHints.VaryingMask).</summary>
+    public const string VaryingTrim = "VITASHARP_VARYING_TRIM";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>=1: the Khronos validation layer when it can be found (Android: an APK built with
     /// -p:VitaSharpValidationLayer=path/to/arm64-v8a/libVkLayer_khronos_validation.so); messages go to the log. =sync adds synchronization validation.</summary>

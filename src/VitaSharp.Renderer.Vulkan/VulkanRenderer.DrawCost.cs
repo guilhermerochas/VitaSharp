@@ -110,7 +110,7 @@ public sealed unsafe partial class VulkanRenderer
         c.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
         _costDrawFirst = -1; _costDrawCount = 0; _costVis = -1;
         if (!_costGlsl.ContainsKey((vs.ProgramHash, vs.HintKey, true)))
-            _costGlsl[(vs.ProgramHash, vs.HintKey, true)] = !string.IsNullOrEmpty(vs.Gen?.Glsl) ? vs.Gen!.Glsl : TryGenerate(d.VertexProgram.Info.Program, () => VertexHints(d, 0));
+            _costGlsl[(vs.ProgramHash, vs.HintKey, true)] = !string.IsNullOrEmpty(vs.Gen?.Glsl) ? vs.Gen!.Glsl : TryGenerate(d.VertexProgram.Info.Program, () => VertexHints(d, VertexVaryingMask(d)));
         if (!_costGlsl.ContainsKey((fs.ProgramHash, fs.HintKey, false)))
             _costGlsl[(fs.ProgramHash, fs.HintKey, false)] = !string.IsNullOrEmpty(fs.Gen?.Glsl) ? fs.Gen!.Glsl : TryGenerate(d.FragmentProgram.Info.Program, () => FragmentHints(d, _rt?.ColorFormat ?? 0));
     }

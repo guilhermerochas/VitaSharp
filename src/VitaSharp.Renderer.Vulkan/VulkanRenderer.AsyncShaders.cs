@@ -154,8 +154,9 @@ public sealed unsafe partial class VulkanRenderer
                 case DrawCommand d:
                     if (d.IndexCount == 0 || d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null || d.VertexProgram?.Info == null) return;
                     var vp = d.VertexProgram;
-                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0);
-                    if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, 0));
+                    uint vmask = VertexVaryingMask(d);
+                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: vmask);
+                    if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, vmask));
                     else PromoteRebuildJob(vp.Info.Program.Hash, vk);
                     var fp = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;

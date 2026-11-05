@@ -59,6 +59,9 @@ Timestamps around single draws inside a pass are meaningless on a tiler, so draw
   - `fetchmerge=0|1`: `VITASHARP_FETCH_PASS_MERGE`, the fetch-pass merge.
   - `fetchsplit`, `msaafetch`, `scenebreaks`, `gpuquirks`.
   - `gpuprofile=mali|...`.
+  - `stamps=1`: a GPU timestamp before every pass begin and copy of the timed frame; the log gets one
+    `STAMP fixture variant sN #k label: ms` line per interval (median over the reps), label = the op that starts it
+    (`start` = scene begin to the first op), to split a scene's time into its passes and copies.
   - `env.VITASHARP_X=...`: any other renderer switch.
 
   The renderer reads its environment switches once per process, so every run is a process of its own. The renderer
