@@ -38,6 +38,24 @@ public sealed class BoundedQueue<T>(int capacity)
         }
     }
 
+    /// <summary>Like <see cref="Take"/>, but gives up (false) once <paramref name="keepWaiting"/> turns false (checked
+    /// every 50 ms): a consumer thread of a process that is being ended must not wait for an item forever.</summary>
+    public bool TryTake(out T item, Func<bool> keepWaiting)
+    {
+        lock (_items)
+        {
+            while (_items.Count == 0)
+            {
+                if (_completed) throw new InvalidOperationException("The queue is empty and has been marked as complete with regards to additions.");
+                if (!keepWaiting()) { item = default!; return false; }
+                Monitor.Wait(_items, 50);
+            }
+            item = _items.Dequeue();
+            Monitor.PulseAll(_items);
+            return true;
+        }
+    }
+
     public void CompleteAdding()
     {
         lock (_items) { _completed = true; Monitor.PulseAll(_items); }
