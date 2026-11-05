@@ -444,6 +444,7 @@ public sealed partial class Ngs : HleModule
     {
         if (!_voices.TryGetValue(voice, out var v)) return INVALID_ARG;
         if (v.State == NgsVoiceState.Active) return INVALID_STATE;
+        TraceVoice(v, $"init flags {flags} preset 0x{preset:X8}");
         lock (v.Rack.System.Lock)
         {
             if (flags is 0 or 7) v.State = NgsVoiceState.Available;
@@ -602,6 +603,7 @@ public sealed partial class Ngs : HleModule
         if (mem != 0)
         {
             GuestMemory.Fill(mem, 0, size);
+            TraceStateRead(m);
             lock (m.Voice.Rack.System.Lock)
                 m.GuestState.AsSpan(0, (int)Math.Min(size, (uint)m.GuestState.Length)).CopyTo(GuestMemory.Span(mem, (int)size));
         }
@@ -650,7 +652,11 @@ public sealed partial class Ngs : HleModule
             if (to == NgsVoiceState.Active && from == NgsVoiceState.Available)
             {
                 m.Source.Reset();
-                Array.Clear(m.GuestState);
+                // key on restarts the position and the "since key on" counters (+0..+15); the running totals (+16
+                // samples, +20 bytes) keep counting across plays (Vita3K): FIFA 13's EAAudioCore measures each streamed
+                // segment as total bytes minus a base it keeps per stream, and a total reset to 0 read as a finished
+                // segment (the voice was killed and restarted 4-8 ticks into each commentary clip)
+                Array.Clear(m.GuestState, 0, Math.Min(16, m.GuestState.Length));
                 if (m.Kind == NgsModuleKind.Player)
                 {
                     var pl = PlayerLayout(m); SetState(m, 4, pl.StartBuffer >= 0 ? m.ParamI8(pl.StartBuffer) : 0); // start buffer
@@ -1083,6 +1089,7 @@ public sealed partial class Ngs : HleModule
         int sfBytes = cfg.SuperframeBytes, sfSamples = cfg.SuperframeSamples;
         bool finished = false;
         st.Compact();
+        if (Trace && m.ParamI16(8 + cur0 * 16 + 8) == -1) TraceRingWrites(v, m, m.Param32(8 + cur0 * 16), (int)m.Param32(8 + cur0 * 16 + 4), sfBytes);
         int guard = 0;
         while (st.Available < g && guard++ < 64)
         {
@@ -1143,6 +1150,7 @@ public sealed partial class Ngs : HleModule
             // at once by default; VITASHARP_AT9_ERROR_SILENCE=1 plays it as silence and counts it in the consumed
             // bytes/samples instead (which one the hardware does is not known yet: A/B switch)
             bool decoded = true;
+            DumpSuperframe(v, config, st.Staging);
             try
             {
                 st.At9.Decode(st.Staging, st.At9Out!);

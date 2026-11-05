@@ -72,6 +72,59 @@ public sealed partial class Ngs
         return sb.ToString();
     }
 
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly Dictionary<NgsModuleData, uint[]> _ringHashes = new();
+
+    /// <summary>Which superframes of a looping ring the game rewrote since the last tick, and where we were reading.</summary>
+    void TraceRingWrites(NgsVoice v, NgsModuleData m, uint buf, int bytes, int sfBytes)
+    {
+        if (!Trace || sfBytes <= 0 || bytes <= 0 || bytes > 1 << 16) return;
+        int n = bytes / sfBytes;
+        bool fresh = !_ringHashes.TryGetValue(m, out var h) || h.Length != n + 1 || h[n] != buf;
+        if (fresh) { h = new uint[n + 1]; h[n] = buf; _ringHashes[m] = h; }
+        var sb = fresh ? null : new System.Text.StringBuilder();
+        int runStart = -1, zeros = 0;
+        for (int i = 0; i <= n; i++)
+        {
+            bool changed = false;
+            if (i < n)
+            {
+                var span = GuestMemory.Span(buf + (uint)(i * sfBytes), sfBytes);
+                uint x = System.IO.Hashing.XxHash32.HashToUInt32(span);
+                changed = !fresh && x != h![i];
+                if (changed && !span.ContainsAnyExcept((byte)0)) zeros++;
+                h![i] = x;
+            }
+            if (changed && runStart < 0) runStart = i;
+            if (!changed && runStart >= 0) { sb!.Append($" {runStart}-{i - 1}"); runStart = -1; }
+        }
+        if (sb is { Length: > 0 })
+            Log.Info($"[ngs] voice 0x{v.Handle:X8} t{v.FrameCount} pos {GetState(m, 0)} (sf {GetState(m, 0) / sfBytes} of {n}) rewrote sf{sb}{(zeros > 0 ? $" ({zeros} zero)" : "")}");
+    }
+
+    void TraceStateRead(NgsModuleData m)
+    {
+        if (!Trace) return;
+        if (m.Source == null || m.GuestState.Length < 16)
+        {
+            Log.Info($"[ngs] voice 0x{m.Voice.Handle:X8} t{m.Voice.FrameCount} state read of module {m.Index} {m.Kind} ({m.GuestState.Length} bytes kept) by {CallerInfo()}");
+            return;
+        }
+        Log.Info($"[ngs] voice 0x{m.Voice.Handle:X8} t{m.Voice.FrameCount} state read module {m.Index} pos {GetState(m, 0)} buf {GetState(m, 4)} samples {GetState(m, 8)} bytes {GetState(m, 12)} by {CallerInfo()}");
+    }
+
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly Dictionary<uint, FileStream?> _rawDumps = new();
+
+    /// <summary>Appends a superframe as decoded to <c>ngs_voice_X_cfgC.at9raw</c> (compare with another decoder).</summary>
+    void DumpSuperframe(NgsVoice v, uint config, ReadOnlySpan<byte> sf)
+    {
+        if (!Trace || !AudioDump.Enabled) return;
+        if (!_rawDumps.TryGetValue(v.Handle, out var f))
+            _rawDumps[v.Handle] = f = AudioDump.OpenRaw($"ngs_voice_{v.Handle:X8}_cfg{config:X8}.at9raw");
+        if (f == null) return;
+        f.Write(sf);
+        f.Flush();
+    }
+
     void DumpVoice(NgsVoice v)
     {
         if (!Trace || !AudioDump.Enabled || v.Product == null || SourceModule(v) == null) return;
