@@ -273,7 +273,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         };
 #if VITASHARP_DEVELOPER
         Core.Util.Developer.DevTrace.Begin("vkQueueSubmit");
+        long qs0 = WorkerProf ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+        if (WorkerProf) _profQueueSubmitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - qs0;
         Core.Util.Developer.DevTrace.End();
 #else
         var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
@@ -284,7 +286,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         f.Recording = false;
         f.Submitted = true;
         f.SubmitSeq = ++_submitSeq;
+#if VITASHARP_DEVELOPER
+        long qp0 = WorkerProf ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         if (present) PresentSwapchain(swapIndex, done);
+        if (WorkerProf && present) _profQueuePresentTicks += System.Diagnostics.Stopwatch.GetTimestamp() - qp0;
+#else
+        if (present) PresentSwapchain(swapIndex, done);
+#endif
         _frameIndex = (_frameIndex + 1) % FramesInFlight;
         FrameCount++;
     }
@@ -718,16 +726,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void BeginScene(BeginSceneCommand b)
     {
+        ProfStart();
         PollRetire(); // publish finished frames' results without waiting (cheap fence status checks)
+        ProfMark(ProfPhase.BsPoll);
         BeginFrameIfNeeded();
+        ProfMark(ProfPhase.BsFrame);
         EndRendering();
         EndTileWord1();
+        ProfMark(ProfPhase.BsEnd);
 #if VITASHARP_DEVELOPER
         DevSceneBegin(b);
 #endif
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
+        ProfMark(ProfPhase.BsTarget);
         if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface
@@ -756,6 +769,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _depth = _msaaNoDownscale
             ? GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width * 2, _rt!.Width), rs), ScaleDim(Math.Max(b.Height * 2, _rt.Height), rs), scale: rs)
             : GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width, _rt?.Width ?? 0), rs) * SsScale, ScaleDim(Math.Max(b.Height, _rt?.Height ?? 0), rs) * SsScale, SceneSamples, rs);
+        ProfMark(ProfPhase.BsDepth);
         _sceneSerial++;
         _sceneRegions.Clear();
         if (_rt != null)
@@ -1028,8 +1042,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void Present(DisplayFrame frame)
     {
+        ProfStart();
         BeginFrameIfNeeded();
         EndRendering();
+        ProfMark(ProfPhase.PresBegin);
         var src = FindRenderTargetByAddress(frame.Address);
         Log.WarnOnce($"present{frame.Address:X}", $"[gpu] present 0x{frame.Address:X8} {frame.Width}x{frame.Height} pitch {frame.Pitch} fmt {frame.Format}: {(src != null ? "rendered surface" : "CPU framebuffer")}");
         if (src == null)
@@ -1084,6 +1100,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             return;
         }
         if (_diagRequest is { } pending && _diagActive == null && pending.ReadyToArm(_presentCount)) ArmCapture(pending);
+        ProfMark(ProfPhase.PresPrep);
 
         if (_traceDumpFrame == _presentCount && _traceDir != null)
         {
@@ -1113,14 +1130,20 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             if (AcquireSwapchain(out uint index))
             {
+                ProfMark(ProfPhase.PresAcquire);
                 BlitToSwapchain(src, frame.Width, frame.Height, index);
+                ProfMark(ProfPhase.PresBlit);
                 SubmitFrame(true, index);
+                ProfMark(ProfPhase.PresSubmit);
                 RetireFlippedFrame();
+                ProfMark(ProfPhase.PresRetire);
                 return;
             }
         }
         SubmitFrame(false, 0);
+        ProfMark(ProfPhase.PresSubmit);
         RetireFlippedFrame();
+        ProfMark(ProfPhase.PresRetire);
     }
 
     void RecordReadback(RenderTarget src, uint w, uint h)

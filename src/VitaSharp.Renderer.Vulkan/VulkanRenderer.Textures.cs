@@ -196,6 +196,7 @@ public sealed unsafe partial class VulkanRenderer
 
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
+        ProfMark(ProfPhase.TexPre);
         bool vertexStage = layout.Handle == _texLayoutV.Handle;
         int units = vertexStage ? _texUnitsV : _texUnitsF;
         var infos = stackalloc DescriptorImageInfo[16];
@@ -205,7 +206,7 @@ public sealed unsafe partial class VulkanRenderer
         // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
         // races on the phone.
         uint mask = units >= 32 ? used : used & ((1u << units) - 1);
-        if (TexSetReuse && !TexLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused) return reused;
+        if (TexSetReuse && !TexLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused) { ProfMark(ProfPhase.TexHit); return reused; }
         _reuseOk = TexSetReuse && !TexLookupOld && _drawRing == null;
         _reuseDeps = 0;
         if (TexLookupOld) FillTextureInfosOld(infos, textures, used, cubeSamplers, units, vertexStage);
@@ -229,6 +230,7 @@ public sealed unsafe partial class VulkanRenderer
             if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
             if (_reuseOk) NoteReuseSource(v);
         }
+        ProfMark(ProfPhase.TexResolve);
         var cache = vertexStage ? _texSetV : _texSetF;
         if (cache.Serial == _frameSerial && cache.Units == units && cache.Mask == mask && cache.Set.Handle != 0)
         {
@@ -254,6 +256,7 @@ public sealed unsafe partial class VulkanRenderer
             cache.Infos[i] = infos[i];
         }
         if (n > 0) _vk.UpdateDescriptorSets(_dev, n, writes, 0, null);
+        ProfMark(ProfPhase.TexAlloc);
         _statDescWrites += n;
         cache.Mask = mask;
         cache.Set = set;
