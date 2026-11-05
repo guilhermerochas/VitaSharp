@@ -129,3 +129,21 @@ non-fragment time is elsewhere (its vertex work, or the read-only depth fetch pa
 select, Uncharted gameplay and the F1 race all came back to the saved point with working input and holding fps over
 60 s (Knightin'+ 30 fps locked; Uncharted 30 median; F1 30 median, 27 mean). Game stopped for 542/543/566 ms per save
 and 1011/933/968 ms per load (Uncharted/Knightin'+/F1).
+
+## Internal resolution scale on the phone, 5 November 2026 (perf/res-scale)
+
+`VITASHARP_RES_SCALE` (VulkanRenderer.ResScale.cs), LLVM developer APK of perf/res-scale ec78348, VSync on. Uncharted
+gameplay after the journal tap, 30 s per run, 3 rounds interleaved (1.0, 0.75, 0.5). Every run was confirmed in
+gameplay by a screenshot first. Display numbers are from SurfaceFlinger; GPU is the `PERF gpu` delta.
+
+| Scale | Median fps | 1% low (3 runs) | Mean frame ms (3 runs) | GPU ms/frame (3 runs) |
+|---|---|---|---|---|
+| 1.0 | 30 | 10.2 / 10.0 / 10.0 | 41.5 / 42.6 / 44.8 | 39.9 / 40.1 / 40.7 |
+| 0.75 | 30 | 14.6 / 14.6 / 11.5 | 34.6 / 34.9 / 38.2 | 30.7 / 31.8 / 31.8 |
+| 0.5 | 30 | 16.7 / 13.6 / 12.8 | 33.4 / 35.0 / 34.8 | 23.4 / 23.3 / 23.3 |
+
+GPU time falls with the pixel count (-21% at 0.75, -42% at 0.5), and the mean frame drops from about 42.6 ms to
+34.9 ms (+22% mean fps), close to the game's own 30 fps (33.3 ms). At 0.5 the GPU is no longer the critical path:
+the GPU worker (about 26 ms of CPU per frame) and the game thread (about 21 ms) are, so 0.5 gains almost nothing
+over 0.75 in frame time, though the 1% low is a little better in two of three rounds. To go past 30 fps the CPU side
+has to shrink.
