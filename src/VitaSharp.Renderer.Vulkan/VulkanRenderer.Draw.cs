@@ -1014,6 +1014,7 @@ public sealed unsafe partial class VulkanRenderer
         if (data.Length == 0) return new DescriptorBufferInfo(_dummyBuffer, 0, 256);
         ulong align = Math.Max(_core.Properties.Limits.MinStorageBufferOffsetAlignment, 16);
         var (b, off) = UploadSpan(data, align);
+        _statUniformBytes += data.Length;
         return new DescriptorBufferInfo(b, off, (ulong)data.Length);
     }
 

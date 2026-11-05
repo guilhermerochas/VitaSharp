@@ -175,6 +175,10 @@ public static class EnvVars
     public const string Texdirty = "VITASHARP_TEXDIRTY";
     /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
     public const string VertexCache = "VITASHARP_VERTEX_CACHE";
+    /// <summary>1: vertex/index ranges below 16 KB are cached too, sub-allocated from large buffers (VulkanRenderer.VertexCache.cs).</summary>
+    public const string VertexCacheSmall = "VITASHARP_VERTEX_CACHE_SMALL";
+    /// <summary>Smallest range VITASHARP_VERTEX_CACHE_SMALL caches, in bytes (default 512).</summary>
+    public const string VertexCacheSmallMin = "VITASHARP_VERTEX_CACHE_SMALL_MIN";
     public const string TraceRt = "VITASHARP_TRACE_RT";
     /// <summary>Directory: draw traces (--trace-draws) also write each draw's uniform blocks there as raw files.</summary>
     public const string TraceUniforms = "VITASHARP_TRACE_UNIFORMS";

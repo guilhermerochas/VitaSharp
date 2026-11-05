@@ -188,6 +188,7 @@ public sealed unsafe partial class VulkanRenderer
     void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)
     {
         var (src, srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
+        _statMirrorCopyBytes += size;
         EndRendering();
         // shader stores into the mirror (other ranges) and the reads of earlier draws come before the copy
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
