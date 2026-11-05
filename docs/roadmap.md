@@ -262,17 +262,51 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
   o content ID contra o `.pkg` e gravar o `.rif` em `ux0:license/<TITLEID>` e o `work.bin`; no CLI (`install <pkg>
   <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android. Core, CLI e app Android feitos
-  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop
+  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop. Campo feito (567e200:
+  diálogo com o texto do zRIF ou o botão do arquivo). Validado 05/11/2026 só pela CLI com o `.pkg` real do usuário (WRC 4,
+  Downloads) e um zRIF gerado do `.rif` dele (zlib com o dicionário, janela 1 KB: começa com `KO5ifR1dQ+`): instalou os
+  1,5 GB numa pasta de teste e gravou um `.rif` idêntico ao do usuário (`fw_out/pkg_install/install_log.txt`). O diálogo
+  do launcher ainda não foi clicado (precisa da tela)
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+  Achados (05/11/2026, fix/user-bugs-6): a configuração inicial completa nos três caminhos ("Não tenho conta",
+  "Tenho conta" + "Definir depois" = configuração de uso experimental da PSN, "Usar" = tela de Sign-In; prints em
+  `fw_out/setup_*` do scratchpad); o "Definir depois" travava em "Aguarde" (pedido de sistema do SceNpManager, 4fbab47)
+  e depois mostrava "É preciso atualizar o software do sistema" (checagem de vínculo da conta, 82365bb).
+  Teclado na tela (IME): não é um travamento, é a tela a ~1 fps sem teclado. Reproduzido na tela de Sign-In da
+  configuração inicial (tocar no campo; `fw_out/ime_diag`, `ime_trace3`): o ime_plugin do shell abre e o **shell passa
+  a apresentar quadros próprios** (sceGxmDisplayQueueAddEntry a cada quadro, antes só UpdateProcessBegin/End); o
+  initialsetup NÃO é cliente do SceSharedFb (apresenta sozinho com sceDisplaySetFrameBufInternal), então no Vita o
+  teclado é o **plano de sobreposição do shell** que o display compõe por cima do plano do app (mesmo mecanismo das
+  notificações e do menu do botão PS sobre jogos). O VitaSharp descarta os quadros do shell quando ele não está em
+  primeiro plano (`Display.sceDisplaySetFrameBuf`: só o processo da frente apresenta), por isso o teclado nunca aparece.
+  A lentidão: a cada quadro a `SceShellMain` abre a cena (BeginScene), **depois** espera a superfície de display
+  (`ScePafDisplaySurfaceCond`, ~400 ms) e só então termina a cena; o `sceGxmBeginScene` do setup espera a cena do shell
+  fechar (arbitragem de cena entre processos no `GpuQueue`) e o worker da GPU segura os desenhos da cena aberta até o
+  EndScene (gate dos uniform buffers, 250 ms de timeout): `VITASHARP_UB_SCENE_END=0` sobe de 1 para 7 fps, o resto é a
+  arbitragem. Próximo passo: (1) compor o quadro do shell (A8B8G8R8 com alpha) por cima do quadro do processo da
+  frente quando o shell apresenta sem estar na frente (um segundo `DisplayFrame` no `PresentCommand`, blit com blend
+  no `VulkanRenderer.Present`); (2) não segurar a submissão do outro processo enquanto a cena aberta ainda não tem
+  desenhos, ou fechar a arbitragem só no primeiro desenho.
 - [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
   esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
   `IO: unmapped path ''`). Entregar checklist por app em `docs/notes/system-apps.md` e roteiros (.ps1/.sh) para rodar de
   novo como teste de regressão (branch fix/system-apps-4)
+  Estado (05/11/2026, fix/user-bugs-6): runner `build/sysapps-sweep.ps1/.sh` + `tests/nav/sysapps/{settings,music}.nav`;
+  checklist em docs/notes/system-apps.md. Validados: configuração inicial, Configurações (todas as páginas menos
+  Sistema/Formatar/Economia de energia e a segunda abertura: o roteiro precisa de ajuste), Música
+  (Artistas/Álbuns/Conectar; o `SQL Failed: DROP TRIGGER` sai em todo início antes de qualquer banco ser aberto e não
+  é visível; `unmapped path ''` é o ini_file_processor removendo um temporário sem nome, inofensivo), PS Store (erro
+  NW-2288-0 esperado), Navegador (favoritos; página fica em "Aguarde" sem rede), Troféus. **Aberto**: Amigos (NPXS10006)
+  tela preta depois de Iniciar (`fw_out/x_friends/log.txt`), regressão do que estava corrigido; miniatura preta no
+  LiveArea dos apps suspensos; e os apps que faltam varrer (Mensagens, Party, PS4 Link, Controle dos pais, Vídeos, Fotos
+  + câmera, Email, Calendário, Gerenciador de conteúdo, near, PS3 Remote Play). Câmera: o 3.74 não tem `vs0:app/NPXS10007`
+  (nem no Vita3K); a câmera é o modo do app Fotos (NPXS10004, `photocam_plugin.rco`); a webcam do PC funciona
+  (`camera-test 0`: Integrated Camera 640x480). Texto cortado no boot direto: não testado nesta rodada
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma

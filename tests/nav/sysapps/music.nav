@@ -1,0 +1,76 @@
+wait 600
+press cross
+wait 200
+swipe 0.93 0.12 0.3 0.7 30
+wait 400
+press cross
+wait 100
+swipe 0.5 0.8 0.5 0.2 20
+wait 90
+log open music 1
+tap 0.5 0.24
+wait 150
+press circle
+wait 60
+shot gate1
+tap 0.5 0.54
+wait 500
+shot menu1
+log connect
+tap 0.29 0.25
+wait 200
+shot connect
+press circle
+wait 120
+log artists
+tap 0.29 0.39
+wait 200
+shot artists
+press circle
+wait 120
+log albums
+tap 0.29 0.54
+wait 200
+shot albums
+press circle
+wait 120
+log songs
+tap 0.29 0.69
+wait 200
+shot songs
+press circle
+wait 120
+log genres
+tap 0.29 0.84
+wait 200
+shot genres
+press circle
+wait 120
+shot back
+press psbutton
+wait 300
+shot ps1
+swipe 0.97 0.04 0.3 0.7 30
+wait 300
+shot closed1
+log open music 2
+tap 0.5 0.24
+wait 150
+press circle
+wait 60
+shot gate2
+tap 0.5 0.54
+wait 500
+shot menu2
+press psbutton
+wait 300
+shot ps2
+tap 0.5 0.54
+wait 300
+shot resumed
+press psbutton
+wait 300
+swipe 0.97 0.04 0.3 0.7 30
+wait 300
+shot closed2
+quit

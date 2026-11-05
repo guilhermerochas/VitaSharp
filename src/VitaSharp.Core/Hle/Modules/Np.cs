@@ -335,6 +335,54 @@ public sealed partial class NpManager : HleModule
     [Hle] int sceNpGetPlatformType(uint npId) => NpIdUtil.GetPlatformType(npId);
     [Hle] int sceNpSetPlatformType(uint npId, int type) => NpIdUtil.SetPlatformType(npId, type);
 
+    // ---------------------------------------------------------------- system requests (SceNpManager, unnamed)
+    // The first-boot setup (initialsetup.self, FW 3.74) runs one when the user answers "Set Later" to "Do you want to use
+    // your account on your PlayStation Vita system?" (0x81049482 there): 27112D01() prepares, E41932D4(SceUID *req, 0)
+    // starts the request, a per-frame callback polls D1D191FB(req) until it is 2 (finished), then reads
+    // 96534006(req, int *result) (negative: the setup shows an error) and calls FAEA7A73(); EB16514C(req) aborts it. All
+    // were unimplemented, so the state never became 2 and the setup sat on "Please wait..." forever. The emulated
+    // console has no server to ask: a request finishes at once with result 0.
+    const int SYSREQ_FINISHED = 2;
+    int _sysReqNext = 1;
+
+    [Hle("sceNpManager_27112D01", Nid = 0x27112D01, Library = "SceNpManager")] int NpSysRequestPrepare() => 0;
+
+    [Hle("sceNpManager_E41932D4", Nid = 0xE41932D4, Library = "SceNpManager")]
+    int NpSysRequestStart(uint outReq, int arg)
+    {
+        if (outReq == 0) return ERR_INVALID_ARGUMENT;
+        GuestMemory.W32(outReq, (uint)_sysReqNext++);
+        return 0;
+    }
+
+    [Hle("sceNpManager_D1D191FB", Nid = 0xD1D191FB, Library = "SceNpManager")] int NpSysRequestState(int req) => SYSREQ_FINISHED;
+
+    [Hle("sceNpManager_96534006", Nid = 0x96534006, Library = "SceNpManager")]
+    int NpSysRequestResult(int req, uint result)
+    {
+        if (result != 0) GuestMemory.W32(result, 0);
+        return 0;
+    }
+
+    [Hle("sceNpManager_EB16514C", Nid = 0xEB16514C, Library = "SceNpManager")] int NpSysRequestAbort(int req) => 0;
+
+    [Hle("sceNpManager_FAEA7A73", Nid = 0xFAEA7A73, Library = "SceNpManager")] int NpSysRequestEnd() => 0;
+
+    // Right after that request the setup's account-bind job (SceBindLibJobQueue, initialsetup 0x810490FE) runs a check:
+    // h = D157DC12(3); 0F6AC47E(h, 0, 0, 3, int *value); 80036A44(h). A value other than 0 (or a negative return)
+    // makes the setup say "You must update the system software to link your account" (unimplemented, the value was
+    // whatever the stack held). The emulated system is up to date: the value is 0.
+    [Hle("sceNpManager_D157DC12", Nid = 0xD157DC12, Library = "SceNpManager")] int NpBindCheckOpen(int type) => _sysReqNext++;
+
+    [Hle("sceNpManager_0F6AC47E", Nid = 0x0F6AC47E, Library = "SceNpManager")]
+    int NpBindCheckGetValue(int handle, int a, int b, int c, uint value)
+    {
+        if (value != 0) GuestMemory.W32(value, 0);
+        return 0;
+    }
+
+    [Hle("sceNpManager_80036A44", Nid = 0x80036A44, Library = "SceNpManager")] int NpBindCheckClose(int handle) => 0;
+
     // ---------------------------------------------------------------- communication id text (SceNpCommon)
     // np_common.suprx FW 3.74 (the shell's trophy server names a title's folders this way): SceNpCommunicationId
     // (char data[9], term, uint8 num, dummy) <-> "NPWR12345_00".
