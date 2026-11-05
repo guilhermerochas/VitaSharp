@@ -125,6 +125,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void Release(Action destroy, bool now)
     {
+        _texEpoch++;
         if (now) destroy();
         else DestroyAfterGpu(destroy);
     }

@@ -143,6 +143,7 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append($"; uniform blocks {_statUniformBytes / wf / 1024:F0} KB/frame, guest memory into the CDRAM mirror {_statMirrorCopyBytes / wf / 1024:F0} KB/frame");
         sb.Append(RangeCacheReport());
         sb.Append(_cmd.RecorderReport());
+        sb.Append(TexSetReuseReport());
         return sb.ToString();
     }
 }

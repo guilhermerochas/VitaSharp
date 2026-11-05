@@ -87,12 +87,17 @@ internal sealed unsafe partial class VkCmd
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    void Commit()
+    void Commit(bool urgent = false)
     {
-        Volatile.Write(ref _head, _head + 1);
+        long head = _head + 1;
+        Volatile.Write(ref _head, head);
         _statOps++;
-        if (_sleeping) { _sleeping = false; _wake.Release(); }
+        // the recorder is woken in batches (a wake-up per command cost more than the command): when a rendering ends,
+        // when enough is queued, or by a drain
+        if (_sleeping && (urgent || head - Volatile.Read(ref _tail) >= WakeBatch)) { _sleeping = false; _wake.Release(); }
     }
+
+    const int WakeBatch = 48;
 
     /// <summary>Waits until the recorder replayed everything queued (the deferred buffers may then be used directly).</summary>
     public void Drain()
@@ -123,10 +128,11 @@ internal sealed unsafe partial class VkCmd
             int spins = 0;
             while (Volatile.Read(ref _head) == tail)
             {
-                if (++spins < 64) { Thread.SpinWait(32); continue; }
+                if (++spins < 4) { Thread.SpinWait(20); continue; }
                 _sleeping = true;
                 if (Volatile.Read(ref _head) != tail) { _sleeping = false; break; }
-                _wake.Wait(2);
+                _wake.Wait(50);
+                _sleeping = false;
                 spins = 0;
             }
             try { Exec(ref ring[tail & (RingSize - 1)]); }
@@ -262,7 +268,7 @@ internal sealed unsafe partial class VkCmd
     public void EndDeferredSecondary(CommandBuffer c)
     {
         Push(OpKind.End, c);
-        Commit();
+        Commit(urgent: true);
         _deferHandle = 0;
     }
 
