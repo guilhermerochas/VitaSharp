@@ -560,7 +560,7 @@ public sealed partial class Gxm : HleModule
         uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         WaitForDisplayRelease(fragmentSync);
-        _sceneGate?.End();
+        if (_sceneGate is { } stale) EndSceneGate(stale);
         _sceneGate = new SceneGate();
         Gpu.Submit(new BeginSceneCommand
         {
@@ -592,7 +592,7 @@ public sealed partial class Gxm : HleModule
             _ => [],
         };
         // the hardware gets the scene now: its draws' uniform buffers can be read from here on
-        _sceneGate?.End();
+        if (_sceneGate is { } ended) EndSceneGate(ended);
         _sceneGate = null;
         long seq = Gpu.Submit(new EndSceneCommand { Notifications = notifications });
         // keep the guest at most a few scenes ahead of the GPU worker
@@ -607,7 +607,7 @@ public sealed partial class Gxm : HleModule
     {
         if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
         // the vertex work so far goes to the hardware: the draws before the flush may read their buffers now
-        if (_sceneGate is { } gate) { gate.End(); _sceneGate = new SceneGate(); }
+        if (_sceneGate is { } gate) { EndSceneGate(gate); _sceneGate = new SceneGate(); }
         Gpu.Submit(new MidSceneFlushCommand());
         if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
@@ -690,6 +690,8 @@ public sealed partial class Gxm : HleModule
     {
         if (oldBuffer == 0 || newBuffer == 0) return ERR_INVALID_POINTER;
         if (_displayQueue == null) return ERR_UNINITIALIZED;
+        EndFrameGates();
+        if (UbAudit) AuditFrameEnd();
         uint size = Math.Max(_displayDataSize, 4);
         uint copy = Emu.Memory.Alloc(size, "gxm display data", MemoryRegion.User, 16);
         if (callbackData != 0) GuestMemory.Copy(copy, callbackData, _displayDataSize);
@@ -977,8 +979,133 @@ public sealed partial class Gxm : HleModule
     /// </summary>
     static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) != "0";
     static readonly bool UbAtSceneEnd = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) != "0";
+    /// <summary>VITASHARP_UB_SCENE_END=frame: the gates of a frame's scenes open at its display-queue entry (the flip),
+    /// not at each scene's end, for games that fill buffers after sceGxmEndScene (the hardware runs the scene later).</summary>
+    static readonly bool UbGateFrame = (Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) ?? "").Contains("frame");
     /// <summary>The open scene of the immediate context (null outside a scene).</summary>
     [VitaSharp.Core.SaveState.SnapshotIgnore] SceneGate? _sceneGate;
+    /// <summary>Frame mode: the gates of the scenes ended since the last display-queue entry.</summary>
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly List<SceneGate> _frameGates = [];
+
+    /// <summary>The guest ended or flushed a scene: opens its gate, or in frame mode keeps it closed until the flip.</summary>
+    void EndSceneGate(SceneGate gate)
+    {
+        if (UbAudit) AuditSceneEnd();
+        if (!UbGateFrame) { gate.End(); return; }
+        gate.MarkSceneEnded();
+        lock (_frameGates) _frameGates.Add(gate);
+    }
+
+    /// <summary>The frame's display-queue entry: every scene of the frame may be read by the hardware now.</summary>
+    void EndFrameGates()
+    {
+        if (!UbGateFrame) return;
+        lock (_frameGates)
+        {
+            foreach (var g in _frameGates) g.End();
+            _frameGates.Clear();
+        }
+    }
+
+    // ---- VITASHARP_UB_SCENE_END=audit: does the game still write a draw's vertex uniform buffers after the scene ended?
+    // Measured on the guest side, independent of how far behind the GPU worker is: every 4th draw's bound buffers are
+    // hashed at the draw call, at its scene's end (sceGxmEndScene / MidSceneFlush), at the frame's display-queue entry
+    // and at the next one (where a buffer reused for the next frame changes legitimately).
+    static readonly bool UbAudit = (Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) ?? "").Contains("audit");
+    sealed class UbAuditEntry((uint Addr, int Size)[] slots, ulong vs, uint atDraw)
+    {
+        public readonly (uint Addr, int Size)[] Slots = slots;
+        public readonly ulong Vs = vs;
+        public readonly uint AtDraw = atDraw;
+        public uint AtSceneEnd, AtFlip;
+    }
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly List<UbAuditEntry> _auditScene = [], _auditFrame = [];
+    [VitaSharp.Core.SaveState.SnapshotIgnore] List<UbAuditEntry> _auditPrev = [];
+    /// <summary>Per vertex program: sampled, changed between the draw and its scene's end, between the scene's end and the
+    /// frame's flip, between that flip and the next one.</summary>
+    static readonly Dictionary<ulong, long[]> _ubAuditStats = [];
+    static long _ubAuditTotal;
+    int _ubAuditSkip;
+
+    static (uint Addr, int Size)[] AuditSlots(GxmProgramInfo info, uint[] buffers, int dataLen)
+    {
+        var list = new List<(uint, int)>();
+        foreach (var slot in info.UniformSlots)
+        {
+            if (slot.Mapped || slot.GuestIndex >= 14) continue;
+            uint addr = buffers[slot.GuestIndex];
+            if (addr == 0) continue;
+            int size = Math.Min(SlotCopySize(slot, addr, buffers), dataLen - slot.ByteOffset);
+            if (size > 0) list.Add((addr, size));
+        }
+        return list.ToArray();
+    }
+
+    static uint AuditHash((uint Addr, int Size)[] slots)
+    {
+        uint h = 0;
+        foreach (var (a, n) in slots) h = h * 31 ^ System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(a, n));
+        return h;
+    }
+
+    /// <summary>Draw call of the immediate context.</summary>
+    void AuditDraw(GxmVertexProgram vp, uint[] vUbs, int vertexUniformsLength)
+    {
+        if (vertexUniformsLength == 0 || (++_ubAuditSkip & 3) != 0) return;
+        var slots = AuditSlots(vp.Info, vUbs, vertexUniformsLength);
+        if (slots.Length == 0) return;
+        lock (_auditScene) _auditScene.Add(new UbAuditEntry(slots, vp.Info.Program.Hash, AuditHash(slots)));
+    }
+
+    /// <summary>The scene ended or was flushed.</summary>
+    void AuditSceneEnd()
+    {
+        lock (_auditScene)
+        {
+            foreach (var e in _auditScene) e.AtSceneEnd = AuditHash(e.Slots);
+            _auditFrame.AddRange(_auditScene);
+            _auditScene.Clear();
+        }
+    }
+
+    /// <summary>The frame's display-queue entry.</summary>
+    void AuditFrameEnd()
+    {
+        List<UbAuditEntry> frame;
+        lock (_auditScene) { frame = [.. _auditFrame]; _auditFrame.Clear(); }
+        foreach (var e in frame) e.AtFlip = AuditHash(e.Slots);
+        lock (_ubAuditStats)
+        {
+            foreach (var e in _auditPrev)
+            {
+                if (!_ubAuditStats.TryGetValue(e.Vs, out var s)) _ubAuditStats[e.Vs] = s = new long[4];
+                s[0]++;
+                if (e.AtSceneEnd != e.AtDraw) s[1]++;
+                if (e.AtFlip != e.AtSceneEnd) s[2]++;
+                if (AuditHash(e.Slots) != e.AtFlip) s[3]++;
+            }
+            long before = _ubAuditTotal;
+            _ubAuditTotal += _auditPrev.Count;
+            if (before > 0 && BitOperations.Log2((ulong)before) != BitOperations.Log2((ulong)_ubAuditTotal) && _ubAuditTotal >= 4096) Log.Info(UbAuditReport()!);
+        }
+        _auditPrev = frame;
+    }
+
+    /// <summary>The audit's totals and the vertex programs whose buffers changed most after their scene (null when off).</summary>
+    public static string? UbAuditReport()
+    {
+        if (!UbAudit) return null;
+        lock (_ubAuditStats)
+        {
+            long[] t = new long[4];
+            foreach (var s in _ubAuditStats.Values) for (int i = 0; i < 4; i++) t[i] += s[i];
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[gpu] uniform audit: {t[0]} draws sampled (1 in 4): vertex uniform buffers rewritten between the draw and its scene's end {t[1]}, between the scene's end and the frame's flip {t[2]}, between that flip and the next {t[3]}");
+            foreach (var (vs, s) in _ubAuditStats.OrderByDescending(kv => kv.Value[2]).Take(6))
+                if (s[1] + s[2] + s[3] > 0) sb.Append($"\n  vs {vs:X16}: {s[0]} sampled, {s[1]} / {s[2]} / {s[3]}");
+            return sb.ToString();
+        }
+    }
 
     /// <summary>GPU worker, before the draw executes: copies the draw's bound (non-default) uniform buffers.</summary>
     static void CopyLateUniforms(DrawCommand d)
@@ -1143,6 +1270,7 @@ public sealed partial class Gxm : HleModule
         cmd.Gate = cmd.UniformsLate && UbAtSceneEnd ? _sceneGate : null;
         cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformsLate);
         cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformsLate) : 0;
+        if (UbAudit) AuditDraw(vp, vUbs, cmd.VertexUniformsLength);
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);

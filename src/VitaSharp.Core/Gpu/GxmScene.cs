@@ -169,14 +169,20 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
 /// </summary>
 public sealed class SceneGate
 {
-    volatile bool _ended;
+    volatile bool _ended, _sceneEnded;
     public bool Ended => _ended;
+    /// <summary>The guest ended (or flushed) the scene. With VITASHARP_UB_SCENE_END=frame the gate stays closed until the
+    /// frame's display-queue entry (<see cref="End"/>), the latest the hardware would have executed the scene.</summary>
+    public bool SceneEnded => _sceneEnded || _ended;
 
     public void End()
     {
         if (_ended) return;
-        lock (this) { _ended = true; Monitor.PulseAll(this); }
+        lock (this) { _ended = true; _sceneEnded = true; Monitor.PulseAll(this); }
     }
+
+    /// <summary>Frame mode: marks the scene's end without opening the gate.</summary>
+    public void MarkSceneEnded() => _sceneEnded = true;
 
     /// <summary>Waits up to <paramref name="timeoutMs"/> for <see cref="End"/>; false on a timeout.</summary>
     public bool Wait(int timeoutMs)

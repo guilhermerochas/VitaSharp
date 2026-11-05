@@ -195,8 +195,11 @@ public static class EnvVars
     /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     /// <summary>=0 (A/B): the late uniform copy happens when the GPU worker gets the draw, not after the guest ended the
-    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =check: waits, and logs how many held
-    /// draws had their buffers rewritten meanwhile.</summary>
+    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =frame: waits until the frame's display-queue
+    /// entry instead (the hardware runs a scene up to a frame later; experiment). =check (or =frame,check): also logs how
+    /// many held draws had their buffers rewritten before the scene's end, and between the scene's end and the flip.
+    /// =audit (combinable): samples draws and re-hashes their vertex uniform buffers at the scene's end, at the frame's
+    /// flip and at the next flip, per vertex program (does the game write them after sceGxmEndScene?).</summary>
     public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
     /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
     /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
