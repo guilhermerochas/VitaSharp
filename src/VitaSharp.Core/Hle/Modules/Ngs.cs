@@ -16,6 +16,7 @@ public sealed partial class Ngs : HleModule
         INVALID_HANDLE = unchecked((int)0x804A000C), PATCH_NOT_AVAIL = unchecked((int)0x804A000E);
     const int AT9_END_OF_DATA = 0, AT9_SWAPPED = 1, AT9_DECODE_ERROR = 3, AT9_LOOPED = 4;
     const int PLAYER_END_OF_DATA = 0, PLAYER_SWAPPED = 1, PLAYER_LOOPED = 2;
+    static readonly bool At9ErrorSilence = Environment.GetEnvironmentVariable(EnvVars.At9ErrorSilence) == "1";
 
     readonly ConcurrentDictionary<uint, NgsSystem> _systems = new();
     readonly ConcurrentDictionary<uint, NgsRack> _racks = new();
@@ -509,6 +510,7 @@ public sealed partial class Ngs : HleModule
         if (!_voices.TryGetValue(voice, out var v)) return INVALID_ARG;
         int errors;
         lock (v.Rack.System.Lock) errors = ParseParamsBlock(v, header, size);
+        TraceVoice(v, $"params block ({errors} errors)");
         numErrors.TrySet(errors);
         return errors == 0 ? OK : ERROR;
     }
@@ -541,6 +543,8 @@ public sealed partial class Ngs : HleModule
             if (m.Locked == null) return ERROR;
             m.Locked = null;
         }
+        if (m.Source != null) TraceVoice(m.Voice, "unlock params");
+        else if (Trace && m.ParamAddr != 0) Log.Info($"[ngs] voice 0x{m.Voice.Handle:X8} t{m.Voice.FrameCount} module {m.Index} {m.Kind} params: {Convert.ToHexString(GuestMemory.Span(m.ParamAddr, (int)m.ParamSize))}");
         return OK;
     }
 
@@ -684,6 +688,7 @@ public sealed partial class Ngs : HleModule
         {
             if (v.State != NgsVoiceState.Available) return ERROR;
             Transition(v, NgsVoiceState.Active);
+            TraceVoice(v, "play");
             if (!v.Paused && !s.Queue.Contains(v))
             {
                 s.Queue.Add(v);
@@ -696,6 +701,7 @@ public sealed partial class Ngs : HleModule
     void Stop(NgsVoice v)
     {
         if (v.State is not (NgsVoiceState.Active or NgsVoiceState.Finalizing)) return;
+        TraceVoice(v, "stop");
         Transition(v, NgsVoiceState.Available);
         v.Rack.System.Queue.Remove(v);
         v.Paused = false;
@@ -705,6 +711,7 @@ public sealed partial class Ngs : HleModule
     int sceNgsVoiceKill(uint voice)
     {
         if (!_voices.TryGetValue(voice, out var v)) return INVALID_ARG;
+        TraceVoice(v, $"kill from {CallerInfo()}");
         lock (v.Rack.System.Lock) Stop(v);
         return OK;
     }
@@ -713,6 +720,7 @@ public sealed partial class Ngs : HleModule
     int sceNgsVoiceKeyOff(uint voice)
     {
         if (!_voices.TryGetValue(voice, out var v)) return INVALID_ARG;
+        TraceVoice(v, $"key off from {CallerInfo()}");
         lock (v.Rack.System.Lock)
         {
             if (v.State == NgsVoiceState.Active) v.State = NgsVoiceState.Finalizing;
@@ -755,6 +763,7 @@ public sealed partial class Ngs : HleModule
 
     void InvokeCallback(NgsVoice v, uint callback, uint userData, uint moduleId, int reason, int reason2, uint ptr)
     {
+        TraceVoice(v, $"callback 0x{callback:X8} module 0x{moduleId:X4} reason {reason} {reason2} ptr 0x{ptr:X8}");
         if (callback == 0) return;
         var t = GuestThread.Current;
         if (t == null) return;
@@ -818,6 +827,7 @@ public sealed partial class Ngs : HleModule
                     v.KeyedOff = false;
                     Stop(v);
                 }
+                DumpVoice(v);
                 if (v.Product != null) Deliver(v, queue);
                 v.FrameCount++;
             }
@@ -1101,7 +1111,11 @@ public sealed partial class Ngs : HleModule
                     }
                     InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_SWAPPED, cur, m.Param32(8 + next * 16));
                 }
-                else InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_LOOPED, st.LoopCount, buf);
+                else
+                {
+                    if (Trace) Log.Info($"[ngs] voice 0x{v.Handle:X8} t{v.FrameCount} lap {st.LoopCount} ring hashes {RingHashes(buf, bytes)}");
+                    InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_LOOPED, st.LoopCount, buf);
+                }
                 continue;
             }
             // skip a RIFF header if the game hands us a whole .at9 file
@@ -1125,17 +1139,23 @@ public sealed partial class Ngs : HleModule
             if (discardStart > sampleIndex) { int skip = Math.Min(sfSamples, discardStart - sampleIndex); start += skip; count -= skip; }
             int samplesLeftAfter = Math.Max(0, (bytes - pos) / sfBytes - 1) * sfSamples;
             if (discardEnd > samplesLeftAfter) count -= Math.Min(count, discardEnd - samplesLeftAfter);
+            // a superframe that does not decode (FIFA 13 pads its looping stream rings with zero superframes) is skipped
+            // at once by default; VITASHARP_AT9_ERROR_SILENCE=1 plays it as silence and counts it in the consumed
+            // bytes/samples instead (which one the hardware does is not known yet: A/B switch)
+            bool decoded = true;
             try
             {
                 st.At9.Decode(st.Staging, st.At9Out!);
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                if (Trace) Log.Info($"[ngs] voice 0x{v.Handle:X8} ATRAC9 decode error at {pos} of 0x{buf:X8}: {e.Message} frame {Convert.ToHexString(st.Staging)}");
                 InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_DECODE_ERROR, GetState(m, 0), buf);
-                continue;
+                decoded = false;
+                if (!At9ErrorSilence) continue;
             }
-            var pcm = st.DecodeBuffer(Math.Max(count, 0) * 2); // reused scratch: one superframe per call
-            for (int i = 0; i < count; i++)
+            var pcm = st.DecodeBuffer(Math.Max(count, 0) * 2); // reused scratch: one superframe per call (zeroed)
+            for (int i = 0; decoded && i < count; i++)
             {
                 float l = st.At9Out![0][start + i] / 32768f;
                 pcm[i * 2] = l;

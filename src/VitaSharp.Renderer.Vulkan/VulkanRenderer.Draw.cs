@@ -1106,6 +1106,9 @@ public sealed unsafe partial class VulkanRenderer
     static bool SameStencil(in StencilState a, in StencilState b) => a.Func == b.Func && a.StencilFail == b.StencilFail && a.DepthFail == b.DepthFail
         && a.DepthPass == b.DepthPass && a.CompareMask == b.CompareMask && a.WriteMask == b.WriteMask && a.Ref == b.Ref;
 
+    /// <summary>VITASHARP_TRACE_UNIFORMS=&lt;dir&gt;: each traced draw's vertex and fragment uniform blocks as raw files.</summary>
+    static readonly string? TraceUniformsDir = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.TraceUniforms) is { Length: > 0 } tu ? tu : null;
+
     void TraceDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
         var st = d.State;
@@ -1130,6 +1133,12 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
         byte[] vu = d.VertexUniformSpan.ToArray(), fu = d.FragmentUniformSpan.ToArray();
+        if (TraceUniformsDir is { } tud)
+        {
+            Directory.CreateDirectory(tud);
+            File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_v.bin"), vu);
+            File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_f.bin"), fu);
+        }
         if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(vu, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");

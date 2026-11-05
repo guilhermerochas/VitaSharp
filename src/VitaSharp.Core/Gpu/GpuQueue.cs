@@ -40,6 +40,9 @@ public sealed class GpuQueue : IDisposable
         }
     }
 
+    /// <summary>Experiment hook (VITASHARP_UB_LATE): runs on the worker before a draw executes.</summary>
+    public static Action<DrawCommand>? LateUniformCopy;
+
     /// <summary>Pulsed whenever a notification value is written (guest waiters re-check).</summary>
     public static readonly object NotificationSync = new();
     public object NotificationLock => NotificationSync;
@@ -255,6 +258,7 @@ public sealed class GpuQueue : IDisposable
                 try { pre.Action(); }
                 catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
             }
+            if (cmd is DrawCommand lateDraw) LateUniformCopy?.Invoke(lateDraw);
             var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
             dump?.BeforeExecute(cmd);
             try
@@ -357,6 +361,27 @@ public sealed class GpuQueue : IDisposable
         return f;
     }
 
+    /// <summary>
+    /// GPU worker only (inside a <see cref="CallbackCommand"/>): holds the GPU until <paramref name="done"/> (checked
+    /// under <paramref name="monitor"/>, which the releasing thread pulses) or the timeout. The work recorded so far is
+    /// submitted and finished frames keep retiring meanwhile, so sync points queued before this one still fire (the
+    /// display queue waits on them before it flips). Returns false on the timeout.
+    /// </summary>
+    public bool WorkerWait(Func<bool> done, object monitor, int timeoutMs)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (true)
+        {
+            try { lock (_backendLock) Backend?.Idle(); }
+            catch (Exception e) { Log.WarnOnce("gpu-workerwait", $"GPU backend idle failed during a wait: {e.Message}"); }
+            lock (monitor)
+            {
+                if (done()) return true;
+                if (System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds > timeoutMs) return false;
+                Monitor.Wait(monitor, 2);
+            }
+        }
+    }
     static readonly Action NoOp = static () => { };
 
     public void Dispose()

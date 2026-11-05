@@ -74,6 +74,9 @@ public sealed class GxmFragmentProgram
 public sealed class GxmSyncObject
 {
     public required uint Handle;
+    /// <summary>Times the buffer was queued for display (the new buffer of sceGxmDisplayQueueAddEntry) and how many of
+    /// those displays are over (a later entry naming it as the old buffer flipped). Guarded by the object itself.</summary>
+    public long Queued, Released;
 }
 
 public sealed class GxmRenderTarget

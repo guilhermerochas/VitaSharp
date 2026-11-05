@@ -382,6 +382,7 @@ public sealed unsafe partial class VulkanRenderer
         uint addr = d.DataAddress;
         uint w = d.Width, h = d.Height;
         bool gamma = d.GammaMode != 0;
+        if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000) Log.Info($"[trace-tex] resolve-entry 0x{addr:X8} {w}x{h} type 0x{d.TextureType:X8} rt={RenderTargetContaining(addr) != null}");
         // a 2D texture sampled as a cube: only plain square textures (rendered surfaces keep the dummy cube)
         // _texSrc/_texSrcAddr: which path was taken, for the debug-mode draw ring (VulkanRenderer.DrawRing.cs)
         _texSrcAddr = 0;
@@ -539,6 +540,8 @@ public sealed unsafe partial class VulkanRenderer
     {
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         _textures.TryGetValue(key, out var tex);
+        if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
+            Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
         if (tex != null && tex.CheckedFrame == FrameCount && tex.SpaceId == SpaceIdOf(addr)) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
 
@@ -923,9 +926,14 @@ public sealed unsafe partial class VulkanRenderer
         return new TexLayout(levels, faceStride, faceStride * (faces - 1) + offset);
     }
 
+    /// <summary>VITASHARP_TRACE_TEX=&lt;hex address&gt;: logs each upload of the texture at that address (timing studies).</summary>
+    static readonly uint TraceTexAddr = Convert.ToUInt32(Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.TraceTex) is { Length: > 0 } tt ? tt : "0", 16);
+
     void UploadTexture(Texture tex, GxmTextureDesc d, TexFormatInfo info, TexLayout layout, uint w, uint h, uint mips, uint faces, Format format, uint baseLevel = 0)
     {
         using var ledger = FrameLedger.Time(FrameLedger.Cat.TextureUpload);
+        if (TraceTexAddr != 0 && d.DataAddress == TraceTexAddr)
+            Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms upload 0x{d.DataAddress:X8} {w}x{h} stride {d.StrideBytes} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(d.DataAddress, (int)Math.Min(w * 4, 4096u))):X8}");
         // reads guest memory only: recorded before the open rendering unless a draw of it already samples the texture
         using var outside = BeginOutside(tex.View);
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
