@@ -59,10 +59,26 @@ public sealed partial class AppMgrShell : HleModule
         return p == null && status != 0 ? ERR_NAME : Status(p, status);
     }
 
-    /// <summary>(SceUID appId, SceAppMgrAppStatus *status).</summary>
+    /// <summary>(SceUID appId, SceAppMgrAppStatus *status). An application still waiting for the shell's second launch
+    /// stage has its entry already: name, application id and, at +4, its launch flags (the shell's event 6 handler
+    /// tests bit 0x100000 there).</summary>
     [Hle]
     [Hle("_sceAppMgrGetStatusByAppId")]
-    int sceAppMgrGetStatusByAppId(int appId, uint status) => Status(Emu.Vita.ByAppId(appId), status);
+    int sceAppMgrGetStatusByAppId(int appId, uint status)
+    {
+        if (status != 0 && Emu.Vita.ByAppId(appId) == null && Emu.Vita.GetPendingLaunch(appId) is { } pl)
+        {
+            GuestMemory.Fill(status, 0, 0x80);
+            GuestMemory.W32(status + 4, (uint)pl.Flags);
+            GuestMemory.WriteCString(status + 0x0C, pl.TitleId, 0x20);
+            GuestMemory.W32(status + 0x30, (uint)appId);
+            GuestMemory.W32(status + 0x34, unchecked((uint)-1));
+            GuestMemory.W32(status + 0x44, (uint)appId);
+            GuestMemory.WriteCString(status + 0x50, pl.TitleId, 0x20);
+            return 0;
+        }
+        return Status(Emu.Vita.ByAppId(appId), status);
+    }
 
     /// <summary>(SceUID pid, SceAppMgrAppStatus *status).</summary>
     [Hle]
@@ -217,25 +233,99 @@ public sealed partial class AppMgrShell : HleModule
         return parts.Length == 0 ? "" : parts[0] + ":" + string.Join('/', parts.Skip(1));
     }
 
-    /// <summary>(int flags, const char *name, const char *param): starts an application by title id in the background
-    /// (the shell starts NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload"). It runs
-    /// as its own process without taking the screen. Returns its application id.</summary>
+    /// <summary>
+    /// (int flags, const char *name, const char *param): starts an application by title id. From the shell (it starts
+    /// NPXS10079, the background download service, with flags 0x20000 and "RemoteDownload") the application runs at
+    /// once as its own process without taking the screen. From any other application (Music's "Start [Content
+    /// Manager]" starts NPXS10026 with flags 0x20000) it is a request to the shell, as in the FW 3.74 kernel appmgr
+    /// (0x8100D89C): the application's entry is made with its flags and parameter and the shell gets event 6
+    /// {application id}; its handler decides and starts it with sceAppMgrLaunchAppByName2ndStage (or cancels it).
+    /// Started directly as a background process, Content Manager opened the shell's shared framebuffer without ever
+    /// being activated, and the shell's frame loop waited for it: the whole system stopped presenting.
+    /// </summary>
     [Hle]
     int sceAppMgrLaunchAppByName(int flags, uint name, uint param)
     {
         if (name == 0) return ERR_NULL;
         string tid = GuestMemory.ReadCString(name, 0x20);
         var running = Emu.Vita.Processes.FirstOrDefault(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase));
-        if (running != null) return running.AppId;
+        if (running != null) return Emu.IsShell ? running.AppId : 0;
         string? dir = null;
         foreach (var root in new[] { "vs0:app/", "ux0:app/" })
             if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
         if (dir == null) return unchecked((int)0x80800006);
+        string? launchParam = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
+        if (!Emu.IsShell && Emu.Vita.Shell != null)
+        {
+            var pl = Emu.Vita.AddPendingLaunch(Emu, tid, dir, flags, launchParam);
+            Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}) from {Emu.Describe()}: application id 0x{pl.App.Uid:X} waits for the shell");
+            Emu.Vita.PostShellEvent(Kernel.ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
+            return 0;
+        }
         var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
         // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
-        if (param != 0) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = GuestMemory.ReadCString(param, 0x400);
+        if (launchParam != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchParam;
         Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
         return app.AppId;
+    }
+
+    /// <summary>(SceUID appId, const char *path, int flags, int ?, launch parameters 0x80): the shell starting an
+    /// application another application asked for (event 6). The process takes the reserved application id and starts
+    /// as one launched from the home screen: the shell gets its created/launched events and activates it. path names
+    /// the executable (the shell passes it for some system applications; NULL takes the application's eboot.bin). The
+    /// launch parameters point at +0x28 to where the new application's status goes, as in LaunchAppByPath4.</summary>
+    [Hle]
+    int sceAppMgrLaunchAppByName2ndStage(int appId, uint path, int flags, int arg3, uint launchParam)
+    {
+        if (Emu.Vita.TakePendingLaunch(appId) is not { } pl) return ERR_NOT_FOUND;
+        string dir = pl.Dir, self = "eboot.bin";
+        if (path != 0 && Emu.Vfs.Resolve(GuestMemory.ReadCString(path, 0x100)) is { } host && File.Exists(host))
+        {
+            dir = Path.GetDirectoryName(host)!;
+            self = Path.GetFileName(host);
+        }
+        var app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App);
+        if (pl.Param != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = pl.Param;
+        Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {pl.TitleId} as {app.Describe()}");
+        if (launchParam != 0 && GuestMemory.R32(launchParam) >= 0x2C && GuestMemory.R32(launchParam + 0x28) is var status and not 0)
+            WriteStatus(app, status);
+        return 0;
+    }
+
+    /// <summary>(SceUID appId): the shell declines a launch another application asked for.</summary>
+    [Hle]
+    int sceAppMgrLaunchAppCancel(int appId)
+    {
+        if (Emu.Vita.TakePendingLaunch(appId) is not { } pl) return ERR_NOT_FOUND;
+        Log.Info($"sceAppMgrLaunchAppCancel(0x{appId:X}): {pl.TitleId} not started");
+        return 0;
+    }
+
+    /// <summary>(SceUID appId, char param[0x400]): the launch parameter of an application, without taking it (the
+    /// shell reads it for the launches applications ask for).</summary>
+    [Hle]
+    [Hle("_sceAppMgrPeekLaunchParamForShell")]
+    int sceAppMgrPeekLaunchParamForShell(int appId, uint param)
+    {
+        if (param == 0) return ERR_NULL;
+        string? p;
+        if (Emu.Vita.GetPendingLaunch(appId) is { } pl) p = pl.Param;
+        else if (Emu.Vita.ByAppId(appId) is { } e) p = e.Hle.Modules.OfType<AppMgr>().FirstOrDefault()?.LaunchParam;
+        else return ERR_NOT_FOUND;
+        GuestMemory.WriteCString(param, p ?? "", 0x400);
+        return 0;
+    }
+
+    /// <summary>(SceUID appId, const char *param): replaces an application's launch parameter.</summary>
+    [Hle]
+    [Hle("_sceAppMgrOverwriteLaunchParamForShell")]
+    int sceAppMgrOverwriteLaunchParamForShell(int appId, uint param)
+    {
+        string? p = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
+        if (Emu.Vita.GetPendingLaunch(appId) is { } pl) { pl.Param = p; return 0; }
+        if (Emu.Vita.ByAppId(appId)?.Hle.Modules.OfType<AppMgr>().FirstOrDefault() is not { } mgr) return ERR_NOT_FOUND;
+        mgr.LaunchParam = p;
+        return 0;
     }
 
     /// <summary>(void *request): requests from applications for the shell to show a notification. The shell polls it
