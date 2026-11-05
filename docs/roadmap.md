@@ -297,7 +297,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `IO: unmapped path ''`). Entregar checklist por app em `docs/notes/system-apps.md` e roteiros (.ps1/.sh) para rodar de
   novo como teste de regressão (branch fix/system-apps-4)
   Estado (05/11/2026, fix/user-bugs-6): runner `build/sysapps-sweep.ps1/.sh` + `tests/nav/sysapps/{settings,music}.nav`;
-  checklist em docs/notes/system-apps.md. Validados: configuração inicial, Configurações (todas as páginas), Música
+  checklist em docs/notes/system-apps.md. Validados: configuração inicial, Configurações (todas as páginas menos
+  Sistema/Formatar/Economia de energia e a segunda abertura: o roteiro precisa de ajuste), Música
   (Artistas/Álbuns/Conectar; o `SQL Failed: DROP TRIGGER` sai em todo início antes de qualquer banco ser aberto e não
   é visível; `unmapped path ''` é o ini_file_processor removendo um temporário sem nome, inofensivo), PS Store (erro
   NW-2288-0 esperado), Navegador (favoritos; página fica em "Aguarde" sem rede), Troféus. **Aberto**: Amigos (NPXS10006)
