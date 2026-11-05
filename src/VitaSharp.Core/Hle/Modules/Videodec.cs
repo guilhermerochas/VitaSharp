@@ -309,6 +309,12 @@ public sealed partial class Videodec : HleModule
             }
         }
         PadToMacroblocks(dst, pixelType & 0x38, pitch, bufH, w, h);
+        // kept for textures sampled after the next picture overwrote it (Gpu/DecoderOutputs.cs)
+        if (VitaSharp.Core.Gpu.DecoderOutputs.Enabled && bufH != 0)
+        {
+            uint bytes = (pixelType & 0x38) is PIXEL_YUV420_RASTER or PIXEL_YUV420_PACKED_RASTER ? pitch * bufH * 3 / 2 : pitch * 4 * bufH;
+            VitaSharp.Core.Gpu.DecoderOutputs.Record(dst, (uint)p.Width, (uint)p.Height, GuestMemory.ReadSpan(dst, (int)bytes), pitch, bufH);
+        }
     }
 
     /// <summary>

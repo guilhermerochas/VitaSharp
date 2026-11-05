@@ -640,7 +640,20 @@ public sealed unsafe partial class VulkanRenderer
         tex.LastUsedFrame = FrameCount;
         tex.DataStart = addr;
         tex.DataSize = total;
-        try { UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin); }
+        // a decoder output read with the size of the picture before the newest: the GPU would have read that picture,
+        // before the CPU decoded the next one over it (Gpu/DecoderOutputs.cs). Checked again on its next use.
+        var earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
+        if (earlier != null)
+        {
+            tex.Hash = 0;
+            tex.ForceCheck = true;
+            if (TraceTexAddr != 0 && addr == TraceTexAddr) Log.Info($"[trace-tex] 0x{addr:X8} {w}x{h} read from decoder picture {earlier.Seq}");
+        }
+        try
+        {
+            using var source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
+            UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
+        }
         catch (VkOutOfMemoryException)
         {
             // no upload buffer: the image keeps its old content, so the texture must be checked again

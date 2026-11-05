@@ -321,6 +321,7 @@ public sealed partial class Jpeg : HleModule
         if (format == FORMAT_NO_CSC)
         {
             WriteClamped(dst, osize, yuv, "YCbCr");
+            RecordPicture(dst, osize, yuv, pitch[0]);
         }
         else
         {
@@ -328,9 +329,14 @@ public sealed partial class Jpeg : HleModule
             var rgba = new byte[pitch[0].X * pitch[0].Y * 4];
             CscCore(yuv, rgba, pitch[0].X, cs, pitch, format == FORMAT_BGRA8888, false);
             WriteClamped(dst, osize, rgba, "RGBA");
+            RecordPicture(dst, osize, rgba, pitch[0]);
         }
         return (pitch[0].X << 16) | pitch[0].Y;
     }
+
+    /// <summary>Keeps the picture for textures sampled after the next decode overwrote it (Gpu/DecoderOutputs.cs).</summary>
+    static void RecordPicture(uint dst, uint size, byte[] data, Pitch luma)
+        => VitaSharp.Core.Gpu.DecoderOutputs.Record(dst, (uint)luma.X, (uint)luma.Y, data.AsSpan(0, (int)Math.Min((uint)data.Length, size)));
 
     static void WriteClamped(uint dst, uint size, byte[] data, string what)
     {
