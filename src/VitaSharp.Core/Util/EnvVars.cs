@@ -233,6 +233,9 @@ public static class EnvVars
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
+    /// <summary>1 (experiment): sceDisplaySetFrameBuf in IMMEDIATE mode flips at most once per vblank (a second flip in the
+    /// same vblank waits for the next one). Default off.</summary>
+    public const string DisplayImmediatePace = "VITASHARP_DISPLAY_IMMEDIATE_PACE";
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";

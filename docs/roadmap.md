@@ -667,6 +667,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Conferido com Sonic Mania e `--input=key@f200:F11,...` (F11 agora é tecla de host nos scripts): aberto em janela e
   com `--fullscreen`, quatro alternâncias cada, o log mostra "monitor attached: False" ao sair e a swapchain volta a
   960x544 a 60 fps
+  Implementado atrás de chave (05/11/2026, fix/bugs-games-4): `VITASHARP_DISPLAY_IMMEDIATE_PACE=1` faz um
+  `sceDisplaySetFrameBuf` IMMEDIATE esperar o próximo vblank quando já houve uma troca neste (contador "IMMEDIATE
+  flips held" no resumo da sessão). Medido sem janela (`deergod` 1800 quadros, `bugsB3_out/deer_pace` x
+  `deer_base`): sem a chave 162-170 fps; com a chave 60,0 fps cravados (1805 de 1855 trocas seguradas; as quedas no
+  fim da rodada foram outros emuladores entrando na CPU). Falta o teste que importa, na janela (engasgos com
+  `guestGpuWait` alto), que precisa da tela do usuário: rodar o jogo com a chave e comparar o F10/FrameLedger com o
+  de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
+  no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
+  Desligada por padrão até o usuário confirmar na janela.
   Confirmado pelo usuário (05/11/2026)
 - [x] MotorStorm RC (PCSA00034): trava na tela de termos (relato do usuário, 04/11/2026, main 5d4b998, log
   `logs61104_201525_PCSA00034.log`). Roda a ~40 fps até o quadro 756 e então nenhum quadro novo (watchdog STALL).

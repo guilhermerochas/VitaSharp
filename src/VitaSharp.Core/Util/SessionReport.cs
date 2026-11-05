@@ -107,6 +107,7 @@ public static class SessionReport
         if (hwPics + swPics > 0)
             yield return $"PERF video decode: {hwPics} pictures in hardware, {swPics} in software, {VitaSharp.Core.Media.FFmpegVideoDecoder.Fallbacks} hardware fallbacks, {VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms decoding ({VitaSharp.Core.Media.FFmpegVideoDecoder.DecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / (hwPics + swPics):F2} ms/picture)";
         yield return $"  GPU commands: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}; frames presented {VitaSharp.Core.Hle.Modules.Display.FramesPresented}";
+        if (VitaSharp.Core.Hle.Modules.Display.ImmediateFlipsPaced > 0) yield return $"  IMMEDIATE flips held to the next vblank (VITASHARP_DISPLAY_IMMEDIATE_PACE): {VitaSharp.Core.Hle.Modules.Display.ImmediateFlipsPaced}";
     }
 
     /// <summary>Debug mode: warnings by count and HLE error/unimplemented summaries (nothing otherwise).</summary>

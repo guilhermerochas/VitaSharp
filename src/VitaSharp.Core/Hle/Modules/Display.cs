@@ -58,6 +58,12 @@ public sealed partial class Display : HleModule
     uint _base, _pitch, _format, _width, _height;
     long _lastSetVcount;
     bool _shownBase;
+    /// <summary>VITASHARP_DISPLAY_IMMEDIATE_PACE=1: a SCE_DISPLAY_SETBUF_IMMEDIATE flip waits for the next vblank when one
+    /// was already set in this one (the panel shows at most one frame per vblank; experiment for games that flip
+    /// IMMEDIATE without any vblank wait, e.g. The Deer God, whose only brake is then the host's presentation).</summary>
+    static readonly bool ImmediateOnePerVblank = Environment.GetEnvironmentVariable(EnvVars.DisplayImmediatePace) is "1" or "on";
+    long _lastFlipVcount = -1;
+    public static long ImmediateFlipsPaced;
 
     [Hle("sceDisplaySetFrameBuf")]
     internal int SetFrameBuf(uint pParam, uint sync)
@@ -76,7 +82,12 @@ public sealed partial class Display : HleModule
         _height = GuestMemory.R32(pParam + 20);
         if (_base == 0) return 0;
         if (!_shownBase) { _shownBase = true; Log.Info($"Display: {Emu.Describe()} framebuffer 0x{_base:X8} {_width}x{_height} pitch {_pitch} format 0x{_format:X} in {Emu.Memory.FindBlock(_base)}"); }
-        _lastSetVcount = VBlank.Count;
+        if (sync == 0 && ImmediateOnePerVblank && _lastFlipVcount == VBlank.Count)
+        {
+            ImmediateFlipsPaced++;
+            using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + 1);
+        }
+        _lastSetVcount = _lastFlipVcount = VBlank.Count;
         // the display shows the foreground process (the shell, or the application it launched); a process in the
         // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
         // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
