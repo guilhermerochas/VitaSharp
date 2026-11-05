@@ -165,7 +165,7 @@ public sealed unsafe partial class VulkanRenderer
                 Log.DebugOnce($"mapped-{addr:X8}", $"[gpu] mapped 0x{addr:X8}: render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} {rt.Format}");
                 return addr - GuestMemory.CdramStart;
             }
-            if (DepthTargetContaining(addr, out bool stencil) is { } dt && MirrorDepthTarget(dt, stencil))
+            if (DepthTargetContaining(addr, out bool stencil) is { Scale: 1f } dt && MirrorDepthTarget(dt, stencil))
             {
                 Log.DebugOnce($"mapped-{addr:X8}", $"[gpu] mapped 0x{addr:X8}: {(stencil ? "stencil" : "depth")} surface of {dt.Width}x{dt.Height}");
                 return addr - GuestMemory.CdramStart;
@@ -284,6 +284,7 @@ public sealed unsafe partial class VulkanRenderer
         rt.LastTouchedFrame = FrameCount;
         if (_mirroredRt.TryGetValue(rt, out var v) && v == rt.Version) return true;
         _mirroredRt[rt] = rt.Version;
+        _mirroredRtScaled.Remove(rt); // (the scaled layout shares the memory: VulkanRenderer.ResScale.cs)
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         EndRendering();
@@ -297,7 +298,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(Math.Min(rt.Width, rt.Stride), rt.Height, 1),
         };
-        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, _mirror, 1, in region);
+        _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, _mirror, 1, in region); // guest size (VulkanRenderer.ResScale.cs)
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         return true;
@@ -327,10 +328,10 @@ public sealed unsafe partial class VulkanRenderer
         var region = new BufferImageCopy
         {
             BufferOffset = (stencil ? dt.StencilAddress : dt.Address) - GuestMemory.CdramStart,
-            BufferRowLength = stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4,
+            BufferRowLength = dt.Scale != 1f ? dt.Width : stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4, // scaled: packed rows (stencil textures only)
             BufferImageHeight = dt.Height,
             ImageSubresource = new ImageSubresourceLayers(stencil ? ImageAspectFlags.StencilBit : ImageAspectFlags.DepthBit, 0, 0, 1),
-            ImageExtent = new Extent3D(Math.Min(dt.Width, stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4), dt.Height, 1),
+            ImageExtent = new Extent3D(dt.Scale != 1f ? dt.Width : Math.Min(dt.Width, stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4), dt.Height, 1),
         };
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _mirror, 1, in region);
         Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,

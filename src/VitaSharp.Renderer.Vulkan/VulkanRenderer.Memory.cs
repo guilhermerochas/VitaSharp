@@ -171,6 +171,7 @@ public sealed unsafe partial class VulkanRenderer
         DestroySupersampleLater(rt, now);
         DestroyMsaaLater(rt, now);
         DestroySceneStartCopyLater(rt, now);
+        ReleaseNativeImage(rt, now);
         ForgetRenderTargetViews(rt, now);
         _mirroredRt.Remove(rt);
         ForgetMemoryOrderCopy(rt);

@@ -445,7 +445,7 @@ public sealed unsafe partial class VulkanRenderer
         var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         EndRendering();
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+        _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, buf, 1, in region);
         _traceSnaps.Add((_drawSerial + 10000, rt, buf, mem, ptr));
     }
 
@@ -472,7 +472,7 @@ public sealed unsafe partial class VulkanRenderer
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
-        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, buf, 1, in region);
+        _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, buf, 1, in region);
         _traceSnaps.Add((_drawSerial, rt, buf, mem, ptr));
         if (_depth != null && _core.DepthFormat == Format.D24UnormS8Uint)
         {
