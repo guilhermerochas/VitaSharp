@@ -16,6 +16,8 @@ reps="${4:-3}"
 bench="${BENCH_DIR:-$PWD/bench}"
 pkg=io.github.vitasharp
 remote="/sdcard/Android/data/$pkg/files/bench"
+"$(dirname "$0")/android-awake.sh" start   # the phone's screen is kept on until the end (build/android-awake.sh)
+trap '"$(dirname "$0")/android-awake.sh" stop' EXIT
 run="$(date +%Y%m%d_%H%M%S)"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 lp() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf "%s" "$1"; fi; }

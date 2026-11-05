@@ -14,6 +14,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
+& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 $files = "/sdcard/Android/data/$pkg/files"
 $trace = '/data/misc/perfetto-traces/vitasharp.perfetto-trace'
 $here = Split-Path -Parent $PSScriptRoot
@@ -28,6 +29,7 @@ $cfg = Join-Path $Out 'config.pbtx'
 [System.IO.File]::WriteAllText($cfg, "duration_ms: $($Seconds * 1000)`n" + [System.IO.File]::ReadAllText((Join-Path $here 'tools/dev/perfetto-vitasharp.pbtx')))
 $activity = (adb shell cmd package resolve-activity --brief $pkg | Select-Object -Last 1).Trim()
 adb shell am force-stop $pkg
+& "$PSScriptRoot\android-awake.ps1" reopen
 adb push (Join-Path $Out 'env.txt') "$files/config/env.txt" | Out-Null
 adb shell am start -n $activity --es titleId $TitleId | Out-Null
 Start-Sleep -Seconds $Delay
@@ -39,5 +41,7 @@ adb pull $trace $local | Out-Null
 adb pull "$files/logs/last.log" (Join-Path $Out 'last.log') 2>$null | Out-Null
 adb shell rm -f $trace "$files/config/env.txt"
 adb shell am force-stop $pkg
+& "$PSScriptRoot\android-awake.ps1" reopen
 Get-Item $local | Select-Object FullName, Length
 Write-Host "open $local at https://ui.perfetto.dev"
+& "$PSScriptRoot\android-awake.ps1" stop

@@ -10,6 +10,8 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 pkg=io.github.vitasharp
 remote="/sdcard/Android/data/$pkg/files/captures"
+"$(dirname "$0")/android-awake.sh" start   # the phone's screen is kept on until the end (build/android-awake.sh)
+trap '"$(dirname "$0")/android-awake.sh" stop' EXIT
 out="${OUT:-$PWD/captures}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 lp() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf "%s" "$1"; fi; }

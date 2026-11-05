@@ -14,6 +14,8 @@ seconds="${3:-300}"
 input="${4:-}"
 out="${OUT:-$PWD/android-gpu-dump/$title}"
 pkg=io.github.vitasharp
+"$(dirname "$0")/android-awake.sh" start   # the phone's screen is kept on until the end (build/android-awake.sh)
+trap '"$(dirname "$0")/android-awake.sh" stop' EXIT
 files="/sdcard/Android/data/$pkg/files"
 dump="$title.vsgd"
 mkdir -p "$out"
@@ -26,6 +28,7 @@ activity="$(adb shell cmd package resolve-activity --brief $pkg | tr -d '\r' | t
   if [ -n "${EXTRA_ENV:-}" ]; then echo "$EXTRA_ENV" | tr ';' '\n'; fi
 } > "$out/env.txt"
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 adb shell rm -rf "$files/gpudumps"
 adb push "$(lp "$out/env.txt")" "$files/config/env.txt" >/dev/null
 adb shell am start -n "$activity" --es titleId "$title" >/dev/null
@@ -37,6 +40,7 @@ done
 adb pull "$files/gpudumps/$dump" "$(lp "$out/$dump")" >/dev/null || echo "no dump recorded (frames $frames not reached in $seconds s?)" >&2
 adb pull "$files/logs/last.log" "$(lp "$out/last.log")" >/dev/null || true
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 adb shell rm -rf "$files/gpudumps" "$files/config/env.txt"
 [ -f "$out/$dump" ] || exit 1
 echo "dump: $out/$dump"

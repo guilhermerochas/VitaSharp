@@ -24,6 +24,7 @@ New-Item -ItemType Directory -Force (Join-Path $Out 'shots') | Out-Null
 
 adb get-state | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'no phone connected (adb get-state failed)' }
+& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 $activity = (adb shell cmd package resolve-activity --brief $pkg | Select-Object -Last 1).Trim()
 if (-not $activity -or $activity -notmatch '/') { throw "VitaSharp ($pkg) is not installed on the phone" }
 
@@ -49,6 +50,7 @@ $envLines += $ExtraEnv
 $envFile = Join-Path $Out 'env.txt'
 [IO.File]::WriteAllText($envFile, ($envLines -join "`n") + "`n")
 adb shell am force-stop $pkg | Out-Null
+& "$PSScriptRoot\android-awake.ps1" reopen
 adb shell rm -rf "$files/devtest_audio" | Out-Null
 adb push $envFile "$files/config/env.txt" | Out-Null
 adb shell am start -n $activity --es titleId $TitleId | Out-Null
@@ -64,6 +66,7 @@ $log = Join-Path $Out 'last.log'
 adb pull "$files/logs/last.log" $log | Out-Null
 adb pull "$files/devtest_audio" (Join-Path $Out 'audio') 2>$null | Out-Null
 adb shell am force-stop $pkg | Out-Null
+& "$PSScriptRoot\android-awake.ps1" reopen
 adb shell rm -rf "$files/devtest_audio" "$files/config/env.txt" | Out-Null
 if ($pushed -and -not $Keep) {
     adb shell rm -rf "$files/fs/ux0/app/$TitleId" "$files/fs/ux0/license/$TitleId" | Out-Null
@@ -82,3 +85,4 @@ if (Test-Path $log) {
     $lines += $errors | Select-Object -First 5
 }
 $lines | Tee-Object -FilePath (Join-Path $Out 'summary.txt')
+& "$PSScriptRoot\android-awake.ps1" stop

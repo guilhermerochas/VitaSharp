@@ -6,6 +6,7 @@
 param([string]$Capture = '', [string]$Out = (Join-Path (Get-Location) 'captures'), [string]$Perf = '', [string]$GpuProfile = 'mali', [string]$Desktop = '')
 $ErrorActionPreference = 'Stop'
 $remote = '/sdcard/Android/data/io.github.vitasharp/files/captures'
+& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 $here = Split-Path -Parent $PSScriptRoot
 function perf { if ($Perf) { & $Perf @args } else { dotnet run --project (Join-Path $here 'tools/VitaSharp.PerfTools') -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- @args } }
 if ($Capture -and (Test-Path $Capture -PathType Container)) { $dir = (Resolve-Path $Capture).Path }
@@ -47,3 +48,4 @@ if ($dump) {
             ForEach-Object { $_.Matches.Value } | Group-Object | Sort-Object Count -Descending | Select-Object -First 10 | ForEach-Object { "$($_.Count) $($_.Name)" }
     }
 }
+& "$PSScriptRoot\android-awake.ps1" stop

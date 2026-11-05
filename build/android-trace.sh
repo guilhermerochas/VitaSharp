@@ -14,6 +14,8 @@ delay="${3:-40}"
 input="${4:-}"
 out="${OUT:-$PWD/android-trace}"
 pkg=io.github.vitasharp
+"$(dirname "$0")/android-awake.sh" start   # the phone's screen is kept on until the end (build/android-awake.sh)
+trap '"$(dirname "$0")/android-awake.sh" stop' EXIT
 files="/sdcard/Android/data/$pkg/files"
 trace="/data/misc/perfetto-traces/vitasharp.perfetto-trace"
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,6 +33,7 @@ if [ -n "$(adb shell pidof $pkg:game | tr -d '\r')" ]; then echo "a game is runn
 
 activity="$(adb shell cmd package resolve-activity --brief $pkg | tr -d '\r' | tail -n 1)"
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 adb push "$(lp "$out/env.txt")" "$files/config/env.txt" >/dev/null
 adb shell am start -n "$activity" --es titleId "$title" >/dev/null
 sleep "$delay"
@@ -40,5 +43,6 @@ adb pull "$trace" "$(lp "$out/$title.perfetto-trace")" >/dev/null
 adb pull "$files/logs/last.log" "$(lp "$out/last.log")" >/dev/null || true
 adb shell rm -f "$trace" "$files/config/env.txt"
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 ls -la "$out/$title.perfetto-trace"
 echo "open $out/$title.perfetto-trace at https://ui.perfetto.dev"

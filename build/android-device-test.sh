@@ -26,6 +26,8 @@ mkdir -p "$out/shots"
 lp() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf "%s" "$1"; fi; }
 
 adb get-state >/dev/null
+"$(dirname "$0")/android-awake.sh" start   # the phone's screen is kept on until the end (build/android-awake.sh)
+trap '"$(dirname "$0")/android-awake.sh" stop' EXIT
 activity="$(adb shell cmd package resolve-activity --brief $pkg | tr -d '\r' | tail -n 1)"
 [ -n "$activity" ] || { echo "VitaSharp ($pkg) is not installed on the phone" >&2; exit 1; }
 
@@ -47,6 +49,7 @@ fi
   if [ -n "${EXTRA_ENV:-}" ]; then echo "$EXTRA_ENV" | tr ';' '\n'; fi
 } > "$out/env.txt"
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 adb shell rm -rf "$files/devtest_audio"
 adb push "$(lp "$out/env.txt")" "$files/config/env.txt" >/dev/null
 adb shell am start -n "$activity" --es titleId "$title" >/dev/null
@@ -59,6 +62,7 @@ done
 adb pull "$files/logs/last.log" "$(lp "$out/last.log")" >/dev/null || true
 adb pull "$files/devtest_audio" "$(lp "$out/audio")" >/dev/null 2>&1 || true
 adb shell am force-stop $pkg
+"$(dirname "$0")/android-awake.sh" reopen
 adb shell rm -rf "$files/devtest_audio" "$files/config/env.txt"
 if [ "$pushed" = 1 ] && [ "${KEEP:-0}" != 1 ]; then
   adb shell rm -rf "$files/fs/ux0/app/$title" "$files/fs/ux0/license/$title"
