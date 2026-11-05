@@ -193,6 +193,8 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "rerun" when args.Length >= 2:
+                return SessionCaptureControl.Rerun(args[1], args.Skip(2).ToArray());
             case "boot-shell":
                 // the PS Vita system software itself: vs0:vsh/shell/shell.self (home screen, LiveArea, system apps)
                 return Runner.Run(ResolveApp("vs0:vsh/shell"), args.Skip(1).Append("--self=shell.self").ToArray());
@@ -434,6 +436,8 @@ public static class Program
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (F8 in the window starts/stops one)");
+        Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (Ctrl+F8): keep the last S s / record guest frames A..B");
+        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");

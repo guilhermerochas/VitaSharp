@@ -31,6 +31,30 @@ public sealed unsafe partial class VulkanRenderer
         public bool Ready;
         public FrameMetrics Metrics;
         public FrameMetrics.Hit Hits;
+        /// <summary>Session capture: the present's timing (VulkanRendererOptions.PresentTap).</summary>
+        public VitaSharp.Core.Capture.PresentInfo Info;
+    }
+
+    /// <summary>The PresentCommand being executed (its guest flip, vblank and times), null otherwise.</summary>
+    PresentCommand? _presentCmd;
+    double _tapGpuNs;
+    long _tapLastPresent = -2;
+
+    /// <summary>Session capture: the present's numbers and the frame's timing, from the command and the frame summary.</summary>
+    VitaSharp.Core.Capture.PresentInfo TapInfo(uint srcW, uint srcH, long now)
+    {
+        var s = _frameRing[(_frameRingCount - 1 + FrameRingSize) % FrameRingSize];
+        var c = _presentCmd;
+        return new VitaSharp.Core.Capture.PresentInfo
+        {
+            Present = _presentCount, Flip = c?.Flip ?? -1, VBlank = c?.VBlank ?? 0, GuestUs = c?.GuestUs ?? 0,
+            FlipNs = c != null ? VitaSharp.Core.Capture.CaptureClock.FromTicks(c.HostTicks) : 0,
+            PresentNs = VitaSharp.Core.Capture.CaptureClock.FromTicks(now),
+            IntervalMs = s.IntervalMs, HitchMs = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? s.TopCauseMs : 0,
+            Hitch = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? FrameLedger.Names[s.TopCause] : "",
+            Draws = s.Draws, Scenes = s.Scenes, NewShaders = s.NewShaders, NewPipelines = s.NewPipelines,
+            Address = s.Address, SrcW = srcW, SrcH = srcH,
+        };
     }
 
     sealed class ReplayRing
@@ -143,7 +167,7 @@ public sealed unsafe partial class VulkanRenderer
     void DebugPresent(RenderTarget src, DisplayFrame frame)
     {
         // texture inspection (TEXTURE SUSPECT): one upload every 8 presents
-        if (_presentCount % 8 == 0) _inspectBudget = 1;
+        if (DebugMode.Enabled && _presentCount % 8 == 0) _inspectBudget = 1;
         var f = F;
         if (f.ReplaySlot >= 0) return;
         if (src.Format != _replayFormatChecked)
@@ -168,6 +192,7 @@ public sealed unsafe partial class VulkanRenderer
         ring.Entries[slot] = new ReplayEntry
         {
             Present = _presentCount, GuestFrame = DebugMode.Frame, Ticks = t0, W = dw, H = dh, SrcW = w, SrcH = h,
+            Info = _opt.PresentTap != null ? TapInfo(w, h, t0) : default,
         };
         // the previous copy out of the staging image must be done before the blit overwrites it
         Barrier(ring.Image, ring.ImageInitialized ? ImageLayout.General : ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -203,12 +228,27 @@ public sealed unsafe partial class VulkanRenderer
             InjectColour(px, (int)e.W, (int)e.H, inj.Kind);
             Log.Info($"[anomaly] test injection ({inj.Kind}) into present #{e.Present}");
         }
+        // session capture: the picture as presented, with its timing (GPU time: the command buffers retired since the
+        // previous tapped frame)
+        if (_opt.PresentTap is { } tap)
+        {
+            var info = e.Info;
+            if (info.Present == 0) info = TapInfo(e.SrcW, e.SrcH, e.Ticks);
+            // the first tapped frame (or one after a gap) has no previous one: the last command buffer's time
+            info.GpuMs = (float)(e.Present == _tapLastPresent + 1 ? (_gpuNs - _tapGpuNs) / 1e6 : _lastGpuMs);
+            _tapGpuNs = _gpuNs;
+            _tapLastPresent = e.Present;
+            try { tap.OnPresent(info, new ReadOnlySpan<byte>(px, (int)(e.W * e.H * 4)), (int)e.W, (int)e.H); }
+            catch (Exception x) { Log.WarnOnce("presenttap", $"[capture] present tap failed: {x.Message}"); }
+        }
+        // the metrics and the anomaly rules are debug mode's (the capture's analyzer measures offline)
+        if (!DebugMode.Enabled) return;
         var m = FrameMetrics.Measure(px, (int)e.W, (int)e.H, MeasureStep);
         e.Metrics = m;
         e.Hits = m.Hits;
         e.Ready = true;
-        if (e.Present % 300 == 0) Log.Info($"[frame-metrics] p{e.Present} {m}");
         _replayMeasured++;
+        if (e.Present % 300 == 0) Log.Info($"[frame-metrics] p{e.Present} {m}");
 
         foreach (var ev in _detector.Feed(e.Present, m))
         {

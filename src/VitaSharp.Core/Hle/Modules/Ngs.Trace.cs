@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class Ngs
 {
     static readonly bool Trace = Environment.GetEnvironmentVariable(EnvVars.NgsTrace) == "1";
-    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly Dictionary<uint, AudioDump.Writer?> _voiceDumps = new();
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly Dictionary<uint, (AudioDump.Writer? Writer, int Generation)> _voiceDumps = new();
     [VitaSharp.Core.SaveState.SnapshotIgnore] short[] _voiceDumpScratch = [];
 
     static NgsModuleData? SourceModule(NgsVoice v)
@@ -152,9 +152,12 @@ public sealed partial class Ngs
 
     void DumpVoice(NgsVoice v)
     {
-        if (!Trace || !AudioDump.Enabled || v.Product == null || SourceModule(v) == null) return;
-        if (!_voiceDumps.TryGetValue(v.Handle, out var w))
-            _voiceDumps[v.Handle] = w = AudioDump.Open($"ngs_voice_{v.Handle:X8}", v.Rack.System.SampleRate);
+        // per-voice WAVs: VITASHARP_NGS_TRACE with --audio-dump, or a session capture (AudioDump.VoiceDumps)
+        if (!(Trace || AudioDump.VoiceDumps) || !AudioDump.Enabled || v.Product == null || SourceModule(v) == null) return;
+        AudioDump.Writer? w;
+        if (!_voiceDumps.TryGetValue(v.Handle, out var e) || e.Generation != AudioDump.Generation)
+            _voiceDumps[v.Handle] = (w = AudioDump.Open($"ngs_voice_{v.Handle:X8}", v.Rack.System.SampleRate), AudioDump.Generation);
+        else w = e.Writer;
         if (w == null) return;
         int n = v.Rack.System.Granularity * 2;
         if (_voiceDumpScratch.Length < n) _voiceDumpScratch = new short[n];

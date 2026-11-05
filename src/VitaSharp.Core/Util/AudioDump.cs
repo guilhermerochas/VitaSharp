@@ -9,8 +9,13 @@ public static class AudioDump
 {
     static string? _dir;
     static int _seq;
+    static long _enabledNs;
+    static readonly List<(Writer W, string File, long OpenedNs)> Opened = new();
 
     public static bool Enabled => _dir != null;
+
+    /// <summary>Also write each NGS source voice to its own WAV (the session capture; VITASHARP_NGS_TRACE does it too).</summary>
+    public static bool VoiceDumps;
 
     /// <summary>Changes when dumping starts or stops: open ports compare it at every grain and reopen their writer.</summary>
     public static volatile int Generation;
@@ -18,15 +23,29 @@ public static class AudioDump
     public static void Enable(string dir)
     {
         Directory.CreateDirectory(dir);
+        lock (Opened) Opened.Clear();
+        _enabledNs = VitaSharp.Core.Capture.CaptureClock.NowNs;
         _dir = dir;
         Generation++;
     }
 
-    /// <summary>Stops dumping: open ports close their WAV at their next grain.</summary>
-    public static void Disable()
+    /// <summary>Stops dumping: every WAV is completed and closed now (a port writing later drops its grain and opens
+    /// no new file). Returns the files with the time each was opened, in ms after <see cref="Enable"/>.</summary>
+    public static List<(string File, double StartMs)> Disable()
     {
         _dir = null;
         Generation++;
+        var list = new List<(string, double)>();
+        lock (Opened)
+        {
+            foreach (var (w, file, ns) in Opened)
+            {
+                w.Dispose();
+                list.Add((file, (ns - _enabledNs) / 1e6));
+            }
+            Opened.Clear();
+        }
+        return list;
     }
 
 
@@ -35,6 +54,7 @@ public static class AudioDump
         readonly FileStream _fs;
         readonly int _rate;
         long _bytes;
+        bool _closed;
 
         internal Writer(string path, int rate)
         {
@@ -48,6 +68,7 @@ public static class AudioDump
         {
             lock (_fs)
             {
+                if (_closed) return;
                 _fs.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(stereo));
                 _bytes += stereo.Length * 2;
                 // keep the header valid while the emulator is still running (runs may end by timeout)
@@ -79,7 +100,13 @@ public static class AudioDump
 
         public void Dispose()
         {
-            lock (_fs) { Header(); _fs.Dispose(); }
+            lock (_fs)
+            {
+                if (_closed) return;
+                _closed = true;
+                Header();
+                _fs.Dispose();
+            }
         }
     }
 
@@ -98,7 +125,13 @@ public static class AudioDump
         if (_dir == null) return null;
         int n = Interlocked.Increment(ref _seq);
         string safe = string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
-        try { return new Writer(Path.Combine(_dir, $"{n:D2}_{safe}_{rate}.wav"), rate); }
+        try
+        {
+            string file = Path.Combine(_dir, $"{n:D2}_{safe}_{rate}.wav");
+            var w = new Writer(file, rate);
+            lock (Opened) Opened.Add((w, file, VitaSharp.Core.Capture.CaptureClock.NowNs));
+            return w;
+        }
         catch (Exception e) { Log.Warn($"Audio dump: {e.Message}"); return null; }
     }
 }

@@ -121,7 +121,10 @@ public sealed partial class Security : HleModule
         if (size > 0x40) return SCE_RNG_ERROR_INVALID_ARGUMENT;
         if (size == 0) return 0;
         if (output == 0) return SCE_RNG_ERROR_INVALID_ARGUMENT;
-        RandomNumberGenerator.Fill(GuestMemory.Span(output, (int)size));
+        var dst = GuestMemory.Span(output, (int)size);
+        // session capture: a re-run hands back the recorded numbers; a recording logs them (one static read when off)
+        if (VitaSharp.Core.Capture.CaptureHooks.Random is not { } hook || !hook.Replay(dst)) RandomNumberGenerator.Fill(dst);
+        VitaSharp.Core.Capture.CaptureHooks.Random?.Recorded(dst);
         return 0;
     }
 }

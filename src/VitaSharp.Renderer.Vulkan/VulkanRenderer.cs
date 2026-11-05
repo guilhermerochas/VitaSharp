@@ -49,6 +49,10 @@ public sealed class VulkanRendererOptions
     /// (<c>--flicker-check</c>) and of the developer GPU bench. Null (the default): nothing is read back.</summary>
     public Action<long, byte[], int, int>? FrameSink;
     public const int SinkWidth = 96, SinkHeight = 54;
+    /// <summary>Session capture ("Gravar tudo", Core/Capture/SessionCapture.cs): every presented frame, downscaled to
+    /// fit 480x272 on the GPU (the debug-mode replay ring's copy), with its present/flip timing, once its frame
+    /// retired. Read at every present, so it can be set and cleared while the game runs. Null (the default): off.</summary>
+    public volatile VitaSharp.Core.Capture.IPresentTap? PresentTap;
     /// <summary>Tooling (--nav shot): the next presented frame is also written full size to this PNG path; the
     /// renderer clears it when it takes the request.</summary>
     public string? ShotPath;
@@ -387,7 +391,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 if (TracingScenes) TraceLine($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={_drawSerial + 1})");
                 if (_inScene && _rt != null) CaptureSceneStart(_rt);
                 break;
-            case PresentCommand p: Present(p.Frame); break;
+            case PresentCommand p: _presentCmd = p; Present(p.Frame); _presentCmd = null; break;
             case CallbackCommand cb:
                 if (cb.WriteSize > 0) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
                 break;
@@ -1045,7 +1049,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         bool dump = png || shot != null || _opt.FrameSink != null;
         if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; F.ShotPath = shot; }
         else F.DumpPending = false;
-        if (DebugMode.Enabled) DebugPresent(src, frame);
+        if (DebugMode.Enabled || _opt.PresentTap != null) DebugPresent(src, frame);
         else
         {
             if (_replay != null) ReleaseReplay();

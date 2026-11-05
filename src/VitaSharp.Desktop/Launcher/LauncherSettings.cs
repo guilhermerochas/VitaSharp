@@ -23,6 +23,9 @@ public sealed class LauncherSettings
     public bool BackgroundShaderCompile { get; set; } = true;
     /// <summary>"Modo de depuração": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
     public bool DebugMode { get; set; }
+    /// <summary>"Pré-gravação": Ctrl+F8's session capture keeps the seconds before it was pressed (--capture-preroll,
+    /// docs/notes/session-capture.md).</summary>
+    public bool CapturePreRoll { get; set; }
     /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on, the default) or
     /// signed out (--psn=off). Signed in, sign-in checks pass and PSN server requests fail as unreachable.</summary>
     public bool PsnSignedIn { get; set; } = true;
@@ -97,6 +100,7 @@ public sealed class LauncherSettings
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
         if (DebugMode) yield return "--debug-mode";
+        if (CapturePreRoll) yield return "--capture-preroll";
         yield return TrophySound ? "--trophy-sound=on" : "--trophy-sound=off";
         yield return PsnSignedIn ? "--psn=on" : "--psn=off";
         if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";

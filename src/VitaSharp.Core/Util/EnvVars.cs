@@ -166,6 +166,12 @@ public static class EnvVars
     /// <summary>KIND@START:STOP (developer APK): the pause menu's capture (tempo or conteudo), started and stopped that many
     /// seconds after the game starts.</summary>
     public const string Capture = "VITASHARP_CAPTURE";
+    /// <summary>=SECONDS (0 = off): the session capture's pre-roll ("Pré-gravação", --capture-preroll) keeps the last
+    /// frames, timing and input in memory with a periodic save state, so a recording started after a glitch includes
+    /// it (docs/notes/session-capture.md).</summary>
+    public const string CapturePreRoll = "VITASHARP_CAPTURE_PREROLL";
+    /// <summary>=START:STOP (guest frames): records a session capture over those frames (--capture-at; tests).</summary>
+    public const string CaptureAt = "VITASHARP_CAPTURE_AT";
 
 
 
