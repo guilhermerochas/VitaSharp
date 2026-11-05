@@ -177,7 +177,9 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    public const string VideoHw = "VITASHARP_VIDEO_HW";
+    /// <summary>=0: buffers ending in an array are always read up to 16 KB, even by programs that only load them at
+    /// constant offsets (generator v20 layout, for A/B runs).</summary>
+    public const string UbArrayStatic = "VITASHARP_UB_ARRAY_STATIC";    public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";
     public const string VramEvict = "VITASHARP_VRAM_EVICT";
