@@ -427,6 +427,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
   um F10 ou dump de GPU numa troca de tela); (3) 19–30 fps, quase sempre 22–24 (Unity, alvo provável 30): medir com
   `--profile`/F10 se é CPU ou espera da GPU, como no The Deer God
+  Correção do item (3), falta o usuário medir na janela (05/11/2026, agente C, fix/bugs-games-5; achados do agente B
+  na fix/bugs-games-4: é Ren'Py, e `saveThreadProc`/`SDL_TimerThread` giram em `DelayThread(1000)`): o
+  `sceKernelDelayThread` dormia quase todo o prazo e **girava** (SpinWait) os últimos ~0,5 ms para acordar na hora, e
+  num laço de 1 ms isso é meio núcleo do host por thread. Agora só os atrasos de 5 ms ou mais giram no fim (limitadores
+  de quadro); os curtos só dormem no timer de alta resolução do Windows (atraso medido aqui: mediana 0,3 ms, p99
+  0,7 ms), e a thread retoma no prazo em tempo de guest como antes (`CpuCore.WokeAt`). `VITASHARP_DELAY_SPIN=1` volta
+  ao antigo (todos giram), `=0` nenhum gira. Medido sem janela em 2 núcleos (0x30, 1800 quadros, mesmo build,
+  `scratchpad/bugsC5_out/blind_nospin` x `blind_spin`): CPU do processo 35,7 → 25,0 ms/quadro, `saveThreadProc`
+  7,57 → 0,43 ms/quadro, `SDL_TimerThread` 5,63 → 0,42; `main` igual (13,5 x 13,1). O fps sem janela já era 30 nos
+  trechos de jogo nos dois (com quedas nos carregamentos nos dois, o PC estava dividido com outros agentes). Ritmo sem
+  regressão (mesmo build, `--profile`, novo x `DELAY_SPIN=1`): Devious Dungeon p50 16,68/16,68 ms, >25 ms 10 x 23;
+  F1 2011 (menus, 25-60 fps) p50 38,9/38,4, p99 64/76; Uncharted (menu) 59,9/59,3 fps, p90 17,6/18,4, >25 ms 3 x 25
+  (`bugsC5_out/dd_boot_*`, `f1_menu_*`, `uc_menu_*`). Ainda abertos: (1) o boot (~5 s até o 1º quadro, ~20 s em 2
+  núcleos) e (2) a troca de tela (f560-780, `bugsB3_out/blind_tr`)
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A

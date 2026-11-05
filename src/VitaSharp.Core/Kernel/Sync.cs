@@ -104,6 +104,14 @@ public static class Wait
         timeout.Value = (uint)Math.Max(0, left);
     }
 
+    /// <summary>Delays at least this long (microseconds) spin their last half millisecond to end on time (frame limiters
+    /// sleep the rest of a frame); shorter ones only sleep: they are polling loops (DelayThread(1 ms) around a mutex,
+    /// Ren'Py's timer and save threads), where the spin took half a host core per thread and the host timer's
+    /// ~0.3 ms overshoot does not matter (the thread still resumes at the deadline in guest time, CpuCore.WokeAt). The
+    /// spin then costs at most a tenth of a core. VITASHARP_DELAY_SPIN=1 spins on every delay (the old behaviour),
+    /// =0 on none.</summary>
+    static readonly ulong DelaySpinMinUs = Environment.GetEnvironmentVariable(EnvVars.DelaySpin) switch { "1" => 0, "0" => ulong.MaxValue, _ => 5000 };
+
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
     public static void Sleep(ulong microseconds)
     {
@@ -115,11 +123,12 @@ public static class Wait
         // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
         // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
         long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+        bool spin = microseconds >= DelaySpinMinUs;
         while (GuestClock.Ticks < end)
         {
             if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
             // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
-            GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice));
+            GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
         }
         self?.Core.WokeAt(end);
     }
