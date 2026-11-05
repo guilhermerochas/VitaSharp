@@ -46,8 +46,8 @@ VitaSharp.Desktop replay-gpu <dump.vsgd> [options]
 | `--out=<dir>` | output folder (default `<dump>_replay` next to the dump): `frame_N.png`, `sheet*.png`, `metrics.csv`, `log.txt` |
 | `--frame=N` | stop after frame N |
 | `--dump-every=K --dump-from=F` | which frames become PNGs (default: every frame) |
-| `--trace-draws=N` | full capture of frame N into `<out>/trace_N/` with the F10 writer: `draws.txt`, `shaders/`, `targets/` (+ `targets.txt`), `textures/`, `screenshot.png`. Needs frame N-1 in the dump |
-| `--draw-limit=N[@F]` | execute only the first N draws of frame F (default `--frame`); the rest of that frame's draws are skipped. Combine with `--trace-draws=F` to see the targets at that point (the presented image keeps older content where the skipped passes would have drawn) |
+| `--trace-draws=N` | full capture of the draws behind `frame_N.png` into `<out>/trace_N/` with the F10 writer: `draws.txt` (ids = the draw numbers of `--draw-limit`), `shaders/`, `targets/` (+ `targets.txt`, taken right after the frame's last scene), `textures/`, `screenshot.png` (the frame presented last at that point) |
+| `--draw-limit=N[@F]` | execute only the first N draws behind `frame_F.png` (default `--frame`); the rest of that frame's draws are skipped. Combine with `--trace-draws=F` to see the targets at that point (the presented image keeps older content where the skipped passes would have drawn) |
 | `--msaa=native\|ss\|off` | `VITASHARP_MSAA` |
 | `--debug-fs=<hash>:<expr>`, `--debug-tex0=<mode>` | `VITASHARP_DEBUG_FS`, `VITASHARP_DEBUG_TEX0` |
 | `--env=KEY=VALUE` | any other environment switch (repeatable) |
@@ -66,6 +66,16 @@ the same way.
 
 Bisecting a glitch: replay with `--compare` against the original frames; then `--msaa=off`/`ss`, a debug override,
 or `--draw-limit` with `--trace-draws` until the glitch disappears.
+
+**Which draws are "frame F"** (`frames_index.txt`, written with `--trace-draws`/`--draw-limit`): a present record lies
+in the stream where the renderer executed it (where the display queue flipped), and a game that runs ahead of its
+display (three buffers, two flips pending: FIFA 13, Jak and Daxter) flips a buffer one or two presents after it drew
+into it, so the draws between present #F-1 and #F are those of `frame_(F+2).png`. The replay therefore maps each
+present to the last scene that rendered into the buffer it shows (`GpuDumpFrameIndex`): frame F = the draws after the
+previous present's such scene up to the end of F's own, wherever the presents fall around them, and `--draw-limit`
+and `--trace-draws` act on those (the log says which draws of the dump they are and how far ahead they were issued).
+A present whose buffer no scene in the dump rendered (CPU framebuffer, or drawn before the dump starts) falls back to
+the draws between the previous present and it.
 
 ## What a dump contains
 

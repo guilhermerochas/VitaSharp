@@ -96,7 +96,11 @@ public sealed unsafe partial class VulkanRenderer
             uint s = _gpuWritten.Keys[i];
             var (e, stamp) = _gpuWritten.Values[i];
             if (e <= start || s >= end) continue;
-            if (DirtyPages.WrittenSince(s, e - s, stamp)) _gpuWritten.RemoveAt(i);
+            if (DirtyPages.WrittenSince(s, e - s, stamp))
+            {
+                if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: back to guest memory (before draw id={NextDrawId})");
+                _gpuWritten.RemoveAt(i);
+            }
         }
     }
 
@@ -115,6 +119,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         _gpuWritten[start] = (end, DirtyPages.Epoch);
         _mirrorWritesPending = true;
+        if (_diagActive != null) TraceLine($"[mirror] draw id={NextDrawId - 1} stores to 0x{start:X8}-0x{end:X8}: later streams there are read from the mirror");
     }
 
     /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
@@ -136,6 +141,9 @@ public sealed unsafe partial class VulkanRenderer
                 return addr - GuestMemory.CdramStart;
             }
         }
+        if (_diagActive != null)
+            foreach (var (s, (e, _)) in _gpuWritten)
+                if (s < addr + length && addr < e) TraceLine($"[mirror] draw id={NextDrawId - 1} stream 0x{addr:X8}+{length} overlaps the stored range 0x{s:X8}-0x{e:X8} but is not inside it: read from guest memory");
         return -1;
     }
 

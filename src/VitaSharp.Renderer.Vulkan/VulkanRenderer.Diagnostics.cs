@@ -71,6 +71,13 @@ public sealed unsafe partial class VulkanRenderer
     /// of the frame before the traced draws); a capture traces one frame and dumps the targets at its end.</summary>
     long _traceFrame = -1, _traceDumpFrame = -1;
     string? _traceDir;
+    /// <summary>A trace begun by <see cref="BeginDrawTrace"/>: every draw is traced until <see cref="EndDrawTrace"/>,
+    /// across presents (replay-gpu traces the draws that produce one presented frame, which a game that runs ahead
+    /// of its display queue issues one or two presents earlier).</summary>
+    bool _traceManual;
+    /// <summary>Draw number within a manual trace (the N of --draw-limit=N@F); <see cref="_drawSerial"/> otherwise.</summary>
+    int _traceDrawId;
+    int NextDrawId => (_traceManual ? _traceDrawId : _drawSerial) + 1;
 
     void InitTrace()
     {
@@ -86,6 +93,47 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="triggerPresent">the present that caused the capture (an anomaly), marked in replay.txt</param>
     public bool RequestDiagnosticCapture(string dir, Action<DiagnosticCaptureResult> done, int postFrames = 0, long triggerPresent = -1) =>
         Interlocked.CompareExchange(ref _diagRequest, new DiagRequest { Dir = dir, Done = done, PostFrames = Math.Max(0, postFrames), TriggerPresent = triggerPresent }, null) == null;
+
+    /// <summary>
+    /// Starts tracing every draw from now on into <paramref name="dir"/> (renderer thread; replay-gpu uses it for the
+    /// draws that produce one presented frame, wherever they lie between presents). <see cref="EndDrawTrace"/>
+    /// dumps the targets and completes it. False when a capture is already pending or active.
+    /// </summary>
+    /// <param name="title">first line of draws.txt (what the traced range is)</param>
+    /// <param name="present">the present the traced draws produce, reported in the result</param>
+    public bool BeginDrawTrace(string dir, string title, long present, Action<DiagnosticCaptureResult> done)
+    {
+        if (_diagActive != null || _diagRequest != null) return false;
+        var req = new DiagRequest { Dir = dir, Done = done };
+        try { Directory.CreateDirectory(dir); }
+        catch (Exception e) { done(new DiagnosticCaptureResult { Dir = dir, Error = e.Message }); return false; }
+        _diagActive = req;
+        req.Present = present;
+        req.T0 = Stopwatch.GetTimestamp();
+        _traceManual = true;
+        _traceFrame = _traceDumpFrame = -1;
+        _traceDir = dir;
+        _traceDrawId = 0;
+        _traceTextureFrame = _presentCount;
+        _tracedTextures.Clear();
+        _traceTextureStats = new StringBuilder();
+        req.Draws.AppendLine("# VitaSharp draw trace: " + title);
+        req.Draws.AppendLine("# [scene] begin = a GXM scene (render target, MSAA mode, depth); [draw] = one draw: vs/fs = GXP program hashes,");
+        req.Draws.AppendLine("# rt = colour surface address:format, tN = textures (address:format:size:type...), msaa = how the scene is rendered");
+        Log.Info($"[diag] draw trace begun at present #{_presentCount}: {title} -> {dir}");
+        return true;
+    }
+
+    /// <summary>Ends a <see cref="BeginDrawTrace"/> trace: the work recorded so far is submitted, the render targets are
+    /// dumped (with the last presented frame as the screenshot) and the result is delivered. Call it between scenes.</summary>
+    public void EndDrawTrace()
+    {
+        if (!_traceManual || _diagActive is not { } dc) return;
+        _traceManual = false;
+        EndRendering();
+        SubmitFrame(false, 0);
+        CompleteCapture(dc, _lastPresented?.Src, _lastPresented?.Frame ?? default);
+    }
 
     /// <summary>Withdraws a request the renderer has not started yet (no frame was presented since): true when withdrawn.</summary>
     public bool CancelDiagnosticCapture() => Interlocked.Exchange(ref _diagRequest, null) != null;
@@ -123,13 +171,13 @@ public sealed unsafe partial class VulkanRenderer
         Log.Info($"[diag] capture armed at present #{_presentCount}: tracing the next frame into {req.Dir}");
     }
 
-    void CompleteCapture(DiagRequest dc, RenderTarget src, DisplayFrame frame)
+    void CompleteCapture(DiagRequest dc, RenderTarget? src, DisplayFrame frame)
     {
         var res = new DiagnosticCaptureResult { Dir = dc.Dir, Present = dc.Present, FrameWidth = frame.Width, FrameHeight = frame.Height };
         try
         {
             string shot = Path.Combine(dc.Dir, "screenshot.png");
-            res.Targets = DumpAllTargets(Path.Combine(dc.Dir, "targets"), (src, frame.Width, frame.Height, shot));
+            res.Targets = DumpAllTargets(Path.Combine(dc.Dir, "targets"), src != null ? (src, frame.Width, frame.Height, shot) : null);
             res.Screenshot = File.Exists(shot);
             File.WriteAllText(Path.Combine(dc.Dir, "draws.txt"), dc.Draws.ToString());
             File.WriteAllText(Path.Combine(dc.Dir, "frames.txt"), RecentFrames(FrameRingSize));
@@ -148,6 +196,7 @@ public sealed unsafe partial class VulkanRenderer
             res.Textures = _tracedTextures.Count;
             res.Milliseconds = Stopwatch.GetElapsedTime(dc.T0).TotalMilliseconds;
             _diagActive = null;
+            _traceManual = false;
             InitTrace(); // back to normal rendering (or to a --trace-draws frame still ahead)
             _tracedTextures.Clear();
             Log.Info($"[diag] frame traced: {res.Draws} draws, {res.Targets} render targets, {res.Textures} textures ({res.Milliseconds:F0} ms)");

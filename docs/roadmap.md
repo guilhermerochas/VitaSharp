@@ -537,6 +537,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   funciona aqui; ver por que (escrita de volta/upload da memória do framebuffer?) antes de continuar. Depois de cada
   carga do estado há ~20-40 quadros pretos antes da imagem voltar (talvez ligado à tela preta no começo do gameplay).
   A câmera fixa não foi reproduzida.
+  Explicado e corrigido (05/11/2026, fix/bugs-games-3): o `--draw-limit` mudava, sim, a imagem — mas a do present F+2,
+  e o `limits.ps1` da rodada só gravava os quadros F e F+1. O registro de present fica na fila onde o renderer o
+  executou (depois do flip da fila de display), e um jogo que anda à frente da tela (3 buffers, 2 flips pendentes:
+  Jak, FIFA 13) só apresenta um buffer 1-2 presents depois de desenhá-lo. Agora o replay indexa o dump
+  (`GpuDumpFrameIndex`, `frames_index.txt`): cada present é mapeado para a última cena que desenhou no buffer mostrado,
+  e `--draw-limit=N@F`/`--trace-draws=F` agem sobre os desenhos por trás de `frame_F.png` (o trace cobre esses
+  desenhos mesmo quando atravessam um present; os ids do `draws.txt` são os N do `--draw-limit`). Prova:
+  `--draw-limit=0@1930` no `jak_flash.vsgd` muda só o `frame_001930.png` (antes: `0@1928` mudava o 1930);
+  `--draw-limit=0@13605` no dump do FIFA `PCSE00093_20261105_034029` muda só o 13605 (atraso 1 nesse dump, 2 em 10
+  presents); saídas em `scratchpad/bugsC3_out/new_lim0_1930`, `fifa_lim0` (compare.txt)
   Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
   a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
   `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
