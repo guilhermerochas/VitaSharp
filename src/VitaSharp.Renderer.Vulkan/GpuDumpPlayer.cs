@@ -30,11 +30,15 @@ public static class GpuDumpPlayer
         return set;
     }
 
-    /// <param name="executeDraw">called for each draw with its number in the frame (1-based); false skips it</param>
-    /// <param name="presented">called after each present with the frame's draw count; false stops the replay</param>
+    /// <param name="executeDraw">called for each draw with its number in the dump and in the present interval (both 1-based);
+    /// false skips it</param>
+    /// <param name="presented">called after each present with the interval's draw count; false stops the replay</param>
     /// <param name="cancel">checked before each record; true stops the replay</param>
+    /// <param name="beforeCommand">called before each command other than a draw, with the number of draws read so far</param>
+    /// <param name="afterCommand">called after each command other than a draw, with the number of draws read so far</param>
     public static GpuDumpPlayStats Play(GpuDumpReader reader, VulkanRenderer renderer, bool idle = true, bool importState = true,
-        Func<long, bool>? executeDraw = null, Func<long, bool>? presented = null, Func<bool>? cancel = null)
+        Func<long, long, bool>? executeDraw = null, Func<long, bool>? presented = null, Func<bool>? cancel = null,
+        Action<GpuCommand, long>? beforeCommand = null, Action<GpuCommand, long>? afterCommand = null)
     {
         var st = new GpuDumpPlayStats();
         long frameDraws = 0;
@@ -61,14 +65,18 @@ public static class GpuDumpPlayer
                 case DrawCommand:
                     frameDraws++;
                     st.Draws++;
-                    if (executeDraw?.Invoke(frameDraws) == false) { st.Skipped++; continue; }
+                    if (executeDraw?.Invoke(st.Draws, frameDraws) == false) { st.Skipped++; continue; }
                     renderer.Execute(cmd);
                     break;
                 case SignalCommand sig:
+                    beforeCommand?.Invoke(cmd, st.Draws);
                     if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
+                    afterCommand?.Invoke(cmd, st.Draws);
                     break;
                 default:
+                    beforeCommand?.Invoke(cmd, st.Draws);
                     renderer.Execute(cmd);
+                    afterCommand?.Invoke(cmd, st.Draws);
                     break;
             }
             if (cmd is not PresentCommand) continue;

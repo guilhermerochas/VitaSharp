@@ -726,6 +726,7 @@ public sealed unsafe partial class VulkanRenderer
     void Draw(DrawCommand d)
     {
         _drawSerial++;
+        if (_traceManual) _traceDrawId++;
         if (!_inScene || d.IndexCount == 0) return;
         if (d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null) return;
         var st = d.State;
@@ -737,7 +738,7 @@ public sealed unsafe partial class VulkanRenderer
         var vs = GetVertexShader(d);
         var fs = GetFragmentShader(d);
         TraceSnapshot(d);
-        if (_traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
+        if (_traceManual || _traceFrame == _presentCount || (_rt != null && TraceRtAddrs.Contains(_rt.Address))) TraceDraw(d, vs, fs);
         if (_drawRing != null) DrawRingDraw(d, vs, fs);
         ProfMark(ProfPhase.Shader);
         if (vs.Failed || fs.Failed) return;
@@ -865,7 +866,12 @@ public sealed unsafe partial class VulkanRenderer
             if (addr == 0) { vbufs[s] = _dummyBuffer; voffs[s] = 0; continue; }
             if (!instanced) addr += firstVertex * stream.Stride;
             // vertices an earlier draw's program stored to memory are only in the mirror (VulkanRenderer.Mapped.cs)
-            if (GpuWrittenStream(addr, length) is >= 0 and var mirrorOff) { vbufs[s] = _mirror; voffs[s] = (ulong)mirrorOff; continue; }
+            if (GpuWrittenStream(addr, length) is >= 0 and var mirrorOff)
+            {
+                vbufs[s] = _mirror; voffs[s] = (ulong)mirrorOff;
+                if (_diagActive != null) TraceLine($"[stream] id={NextDrawId - 1} s{s}=0x{addr:X8}+{length}: read from the mirror (a program stored there)");
+                continue;
+            }
             var (b, off) = UploadRange(addr, length);
             vbufs[s] = b;
             voffs[s] = off;
@@ -1111,15 +1117,20 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>VITASHARP_TRACE_UNIFORMS=&lt;dir&gt;: each traced draw's vertex and fragment uniform blocks as raw files.</summary>
     static readonly string? TraceUniformsDir = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.TraceUniforms) is { Length: > 0 } tu ? tu : null;
 
+    /// <summary>Stencil side for the draw trace: the function alone when the ops keep the buffer, else
+    /// func.sfail.dfail.dpass:ref/compareMask/writeMask (SceGxmStencilOp: 0 keep, 1 zero, 2 replace, 3 incr, 4 decr, 5 invert, 6 incr wrap, 7 decr wrap).</summary>
+    static string StencilText(in StencilState s) =>
+        s.StencilFail == 0 && s.DepthFail == 0 && s.DepthPass == 0 ? s.Func.ToString()
+        : $"{s.Func}.{s.StencilFail}.{s.DepthFail}.{s.DepthPass}:{s.Ref:X}/{s.CompareMask:X}/{s.WriteMask:X}";
+
     void TraceDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
         var st = d.State;
         var b = d.FragmentProgram.Blend;
         var sb = new System.Text.StringBuilder();
-        sb.Append($"[draw] id={_drawSerial} f={_presentCount} rt=0x{_rt?.Address ?? 0:X8}:{_rt?.ColorFormat ?? 0:X8} ds=0x{_depth?.Address ?? 0:X8}/{_depth?.Width ?? 0}x{_depth?.Height ?? 0} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
+        sb.Append($"[draw] id={NextDrawId - 1} f={_presentCount} rt=0x{_rt?.Address ?? 0:X8}:{_rt?.ColorFormat ?? 0:X8} ds=0x{_depth?.Address ?? 0:X8}/{_depth?.Width ?? 0}x{_depth?.Height ?? 0} vs={d.VertexProgram.Info.Program.Hash:X16} fs={d.FragmentProgram.Info.Program.Hash:X16} prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount}");
         if (d.VisAddress != 0) sb.Append($" vis=0x{d.VisAddress:X8}{(d.VisIncrement ? "+" : "=")}");
-        if (d.VisAddress != 0) sb.Append($" vis=0x{d.VisAddress:X8}{(d.VisIncrement ? "+" : "=")}");
-        sb.Append($" blend={(b is { } bb ? $"{bb.ColorMask:X}:{bb.ColorFunc}/{bb.ColorSrc}/{bb.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} cull={st.CullMode} twoSided={st.TwoSided} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} bias={st.Front.DepthBiasFactor}/{st.Front.DepthBiasUnits} st={st.Front.Stencil.Func}/{st.Back.Stencil.Func} vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
+        sb.Append($" blend={(b is { } bb ? $"{bb.ColorMask:X}:{bb.ColorFunc}/{bb.ColorSrc}/{bb.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} cull={st.CullMode} twoSided={st.TwoSided} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} bias={st.Front.DepthBiasFactor}/{st.Front.DepthBiasUnits} st={StencilText(st.Front.Stencil)}/{StencilText(st.Back.Stencil)} vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
         for (int i = 0; i < 16; i++)
             if ((d.FragmentProgram.Info.TexturesUsed & (1u << i)) != 0)
                 sb.Append($" t{i}=0x{d.FragmentTextures[i].DataAddress:X8}:{d.FragmentTextures[i].Format:X8}:{d.FragmentTextures[i].Width}x{d.FragmentTextures[i].Height}:T{d.FragmentTextures[i].TextureType >> 29}:S{d.FragmentTextures[i].StrideBytes}:G{d.FragmentTextures[i].GammaMode}:F{d.FragmentTextures[i].MagFilter}{d.FragmentTextures[i].MinFilter}{d.FragmentTextures[i].MipFilter}:B{d.FragmentTextures[i].LodBias}:L{d.FragmentTextures[i].LodMin}:M{d.FragmentTextures[i].MipCount}:A{d.FragmentTextures[i].UAddr}{d.FragmentTextures[i].VAddr}:W0={d.FragmentTextures[i].W0:X8}");
@@ -1158,6 +1169,13 @@ public sealed unsafe partial class VulkanRenderer
         if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength >= 16) sb.Append($" fu0=({BitConverter.ToSingle(d.FragmentUniformSpan)},{BitConverter.ToSingle(d.FragmentUniformSpan[4..])},{BitConverter.ToSingle(d.FragmentUniformSpan[8..])},{BitConverter.ToSingle(d.FragmentUniformSpan[12..])})");
         sb.Append($" msaa={(_ms ? ((int)_msSamples).ToString() + "x" : _ss ? "ss2x" : "off")}");
+        if (vs.Gen?.WritesMemory == true || fs.Gen?.WritesMemory == true)
+        {
+            // programs that store to memory (VLDST): the mapped slots they may write (VulkanRenderer.Mapped.cs)
+            sb.Append(vs.Gen?.WritesMemory == true ? " vsStore" : " fsStore");
+            var addrs = vs.Gen?.WritesMemory == true ? d.VertexUniformAddrs : d.FragmentUniformAddrs;
+            for (int i = 0; i < addrs.Length; i++) if (addrs[i] != 0) sb.Append($" ub{i}@0x{addrs[i]:X8}");
+        }
         if (_diagActive is { } capture)
         {
             // capture: the list goes to draws.txt, each program's GLSL once to shaders/ (shaders loaded from the

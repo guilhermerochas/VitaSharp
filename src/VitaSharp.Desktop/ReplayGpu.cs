@@ -24,8 +24,10 @@ static class ReplayGpu
         Console.WriteLine("    --out=<dir>            frames, sheets, log (default <dump>_replay next to the dump)");
         Console.WriteLine("    --frame=N              stop after frame N (renderer present number, as in frame_N.png)");
         Console.WriteLine("    --dump-every=K --dump-from=F   which frames to write as PNG (default every frame)");
-        Console.WriteLine("    --trace-draws=N        full capture of frame N into <out>/trace_N: draws.txt, shaders/, targets/, textures/");
-        Console.WriteLine("    --draw-limit=N[@F]     execute only the first N draws of frame F (default --frame), to bisect a bad draw");
+        Console.WriteLine("    --trace-draws=N        full capture of the draws behind frame_N.png into <out>/trace_N: draws.txt, shaders/, targets/, textures/");
+        Console.WriteLine("    --draw-limit=N[@F]     execute only the first N draws behind frame_F.png (default --frame), to bisect a bad draw");
+        Console.WriteLine("                           (frames_index.txt: which draws of the dump each present shows; games that run ahead of their");
+        Console.WriteLine("                           display queue issue them one or two presents earlier)");
         Console.WriteLine("    --msaa=native|ss|off   VITASHARP_MSAA; --debug-fs=<hash>:<expr> VITASHARP_DEBUG_FS; --debug-tex0=<mode>");
         Console.WriteLine("    --env=KEY=VALUE        any renderer/shader environment switch (repeatable); --no-recorded-env ignores the recorded ones");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
@@ -130,6 +132,8 @@ static class ReplayGpu
     sealed class Settings
     {
         public long StopFrame = long.MaxValue, TraceFrame = -1, LimitFrame = -1, DrawLimit = -1;
+        /// <summary>Which draws produce each present (built when --trace-draws or --draw-limit is given).</summary>
+        public GpuDumpFrameIndex? Index;
         public bool Idle = true, ImportState = true;
         public double Speed = 1; // 0 = as fast as possible
         public string Out = "";
@@ -161,6 +165,14 @@ static class ReplayGpu
         if (options.Contains("--debug-mode")) DebugMode.Enable();
         long firstPresent = header.Long("first-present");
         Log.Info($"[replay] {path}: {header["title-id"]} {header["title"]}, recorded with {header["build"]} on {header["gpu"]}, presents after #{firstPresent}");
+        if (s.TraceFrame >= 0 || s.DrawLimit >= 0)
+        {
+            // which draws of the dump each present shows: a game running ahead of its display queue draws a frame one
+            // or two presents before it is shown, and the limit / trace must act on the draws behind frame_F.png
+            s.Index = GpuDumpFrameIndex.Build(path);
+            File.WriteAllText(Path.Combine(s.Out, "frames_index.txt"), s.Index.Describe());
+            Log.Info($"[replay] frame index: {s.Index.Frames.Count} presents, draws ahead of their display: {s.Index.LagSummary()} ({s.Index.Seconds:F1} s) -> frames_index.txt");
+        }
 
         var thumbs = new List<(long Frame, byte[] Rgba)>();
         var ro = new VulkanRendererOptions
@@ -228,24 +240,43 @@ static class ReplayGpu
             var wall = Stopwatch.StartNew();
             long firstMicros = -1;
             Task<DiagnosticCaptureResult>? trace = null;
-            void MaybeRequestTrace()
+            // the draws behind the limited / traced present (GpuDumpFrameIndex): skipped past the limit, traced from
+            // their first scene's begin to their last scene's end, wherever the presents fall around them
+            var limit = s.DrawLimit >= 0 ? FrameDraws(s, s.LimitFrame, "--draw-limit") : null;
+            var traced = s.TraceFrame >= 0 ? FrameDraws(s, s.TraceFrame, "--trace-draws") : null;
+            long skipFrom = limit != null ? limit.FirstDraw + s.DrawLimit : long.MaxValue, skipTo = limit?.LastDraw ?? -1;
+            bool tracing = false;
+            void BeginTrace()
             {
-                // the capture arms at the next present and traces the frame that follows it
-                if (s.TraceFrame < 0 || trace != null || renderer.PresentCount != s.TraceFrame - 2) return;
+                if (traced == null || tracing || trace != null) return;
                 var tcs = new TaskCompletionSource<DiagnosticCaptureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-                string dir = Path.Combine(s.Out, $"trace_{s.TraceFrame}");
-                Directory.CreateDirectory(dir);
-                if (renderer.RequestDiagnosticCapture(dir, r => tcs.TrySetResult(r))) trace = tcs.Task;
+                string where = traced.Mapped ? $"issued between presents #{traced.ScenePresent} and #{traced.ScenePresent + 1}" : $"between presents #{s.TraceFrame - 1} and #{s.TraceFrame}";
+                string title = $"the {traced.Draws} draws behind present #{s.TraceFrame} (draws {traced.FirstDraw}-{traced.LastDraw} of the dump, {where})";
+                tracing = renderer.BeginDrawTrace(Path.Combine(s.Out, $"trace_{s.TraceFrame}"), title, s.TraceFrame, r => tcs.TrySetResult(r));
+                if (tracing) trace = tcs.Task;
             }
-            if (s.TraceFrame >= 0 && s.TraceFrame - 2 < renderer.PresentCount)
-                Log.Warn($"[replay] --trace-draws={s.TraceFrame}: the trace needs the frame before it in the dump (first replayable trace frame is {renderer.PresentCount + 2})");
-            MaybeRequestTrace();
+            void EndTrace()
+            {
+                if (!tracing) return;
+                renderer.EndDrawTrace();
+                tracing = false;
+            }
             var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
-                executeDraw: frameDraws => !(s.DrawLimit >= 0 && renderer.PresentCount + 1 == s.LimitFrame && frameDraws > s.DrawLimit),
+                executeDraw: (draw, _) =>
+                {
+                    if (traced != null && draw == traced.FirstDraw) BeginTrace(); // no scene begin before it (dump cut)
+                    return draw < skipFrom || draw > skipTo;
+                },
+                beforeCommand: (cmd, draws) =>
+                {
+                    if (traced != null && cmd is BeginSceneCommand && draws + 1 == traced.FirstDraw) BeginTrace();
+                },
+                afterCommand: (cmd, draws) =>
+                {
+                    if (tracing && traced != null && draws >= traced.LastDraw && cmd is EndSceneCommand or PresentCommand or FinishCommand) EndTrace();
+                },
                 presented: frameDraws =>
             {
-                if (frameDraws > 0 && s.DrawLimit >= 0 && renderer.PresentCount == s.LimitFrame)
-                    Log.Info($"[replay] frame {s.LimitFrame}: executed {Math.Min(frameDraws, s.DrawLimit)} of {frameDraws} draws (--draw-limit)");
                 if (s.Speed > 0)
                 {
                     // recorded pace: present N at its recorded time (relative to the first present)
@@ -255,18 +286,19 @@ static class ReplayGpu
                     if (ahead > 0.001) Thread.Sleep(TimeSpan.FromSeconds(Math.Min(ahead, 1)));
                 }
                 if (renderer.PresentCount >= s.StopFrame) return false;
-                MaybeRequestTrace();
                 return true;
             }, cancel: () => closing?.IsSet == true);
             long frames = st.Frames;
+            EndTrace(); // a trace still open (the dump ends inside the traced scene)
             // retire every frame in flight: the last dumps are written when their frame completes
             renderer.Execute(new FinishCommand());
+            if (limit != null) Log.Info($"[replay] present #{s.LimitFrame}: executed {Math.Min(limit.Draws, s.DrawLimit)} of {limit.Draws} draws behind it (--draw-limit: {st.Skipped} skipped)");
             if (trace != null)
             {
-                if (trace.Wait(120000)) Log.Info($"[replay] traced frame {s.TraceFrame}: {trace.Result.Draws} draws, {trace.Result.Targets} targets, {trace.Result.Textures} textures -> {trace.Result.Dir}");
+                if (trace.Wait(120000)) Log.Info($"[replay] traced present #{s.TraceFrame}: {trace.Result.Draws} draws, {trace.Result.Targets} targets, {trace.Result.Textures} textures -> {trace.Result.Dir}");
                 else Log.Warn("[replay] the trace did not complete");
             }
-            else if (s.TraceFrame >= 0) Log.Warn($"[replay] frame {s.TraceFrame} was not traced (not in the dump?)");
+            else if (s.TraceFrame >= 0) Log.Warn($"[replay] present #{s.TraceFrame} was not traced (its draws {traced?.FirstDraw}-{traced?.LastDraw} were not replayed: --frame too low, or not in the dump)");
             double sec = wall.Elapsed.TotalSeconds;
             Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {st.Commands} commands, {st.Draws} draws ({st.Skipped} skipped), " +
                      $"{st.MemoryBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
@@ -278,6 +310,28 @@ static class ReplayGpu
             _renderer = null;
             renderer.Dispose();
         }
+    }
+
+    /// <summary>The draws behind present <paramref name="present"/> (<see cref="GpuDumpFrameIndex"/>), logged; the draws
+    /// between the previous present and it when no scene rendered the shown buffer (a CPU framebuffer, or drawn before
+    /// the dump starts). Null when the present is not in the dump.</summary>
+    static GpuDumpFrameIndex.Frame? FrameDraws(Settings s, long present, string option)
+    {
+        var f = s.Index?[present];
+        if (f == null)
+        {
+            Log.Warn($"[replay] {option}: present #{present} is not in the dump (presents #{s.Index?.FirstPresent}-#{s.Index?.LastPresent})");
+            return null;
+        }
+        if (f.Mapped)
+        {
+            Log.Info($"[replay] {option}: present #{present} shows draws {f.FirstDraw}-{f.LastDraw} of the dump ({f.Draws} draws; the last scene into 0x{f.Address:X8} " +
+                     $"was issued between presents #{f.ScenePresent} and #{f.ScenePresent + 1}, {f.Lag} present(s) before it was shown)");
+            return f;
+        }
+        Log.Warn($"[replay] {option}: no scene in the dump rendered the buffer 0x{f.Address:X8} shown at present #{present} (drawn by the CPU, or before the dump " +
+                 $"starts): using the {Math.Max(0, f.IntervalLast - f.IntervalFirst + 1)} draws between presents #{present - 1} and #{present}");
+        return new GpuDumpFrameIndex.Frame { Present = f.Present, Address = f.Address, FirstDraw = f.IntervalFirst, LastDraw = f.IntervalLast, IntervalFirst = f.IntervalFirst, IntervalLast = f.IntervalLast };
     }
 
     // =========================================================== frame comparison

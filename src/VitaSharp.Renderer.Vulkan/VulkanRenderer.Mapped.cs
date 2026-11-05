@@ -86,17 +86,34 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.ShaderWriteBit, dstAccess | AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit);
     }
 
-    /// <summary>Drops the shader-written ranges overlapping [start, end) whose pages the CPU wrote since.</summary>
-    void ExpireGpuWritten(uint start, uint end)
+    /// <summary>
+    /// Drops the shader-written ranges overlapping [start, end) whose pages inside [start, end) the CPU wrote since.
+    /// Only the part being read counts: a stored range spans the program's whole mapped window (up to 1 MB from the
+    /// slot's address) and the game writes other data in that megabyte every frame. With <paramref name="innerPages"/>
+    /// (a vertex stream of three pages or more) the first and last pages do not count either, as they are shared
+    /// with whatever lies next to the stream: Jak and Daxter extrudes its stencil shadow volumes with a storing
+    /// program into a buffer that starts 1.7 KB after the volume's input vertices, which the CPU rewrites for the
+    /// frame after next while the GPU worker is still on this one; testing that shared page dropped the range, the
+    /// volume was drawn from the stale guest copy and the unbalanced stencil darkened everything below the horizon
+    /// for a frame. A CPU rewrite of the stream itself (memory reused) touches its inner pages and still drops it.
+    /// </summary>
+    void ExpireGpuWritten(uint start, uint end, bool innerPages = false)
     {
         if (_gpuWritten.Count == 0) return;
         SweepDirtyPages();
+        const uint page = 1u << DirtyPages.PageShift;
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
             var (e, stamp) = _gpuWritten.Values[i];
             if (e <= start || s >= end) continue;
-            if (DirtyPages.WrittenSince(s, e - s, stamp)) _gpuWritten.RemoveAt(i);
+            uint os = Math.Max(s, start), oe = Math.Min(e, end);
+            if (innerPages) { os = (os + page - 1 & ~(page - 1)) + page; oe &= ~(page - 1); }
+            if (oe > os && DirtyPages.WrittenSince(os, oe - os, stamp))
+            {
+                if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: back to guest memory (before draw id={NextDrawId})");
+                _gpuWritten.RemoveAt(i);
+            }
         }
     }
 
@@ -115,13 +132,14 @@ public sealed unsafe partial class VulkanRenderer
         }
         _gpuWritten[start] = (end, DirtyPages.Epoch);
         _mirrorWritesPending = true;
+        if (_diagActive != null) TraceLine($"[mirror] draw id={NextDrawId - 1} stores to 0x{start:X8}-0x{end:X8}: later streams there are read from the mirror");
     }
 
     /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
     long GpuWrittenStream(uint addr, uint length)
     {
         if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd) return -1;
-        ExpireGpuWritten(addr, addr + length);
+        ExpireGpuWritten(addr, addr + length, innerPages: length >= 3u << DirtyPages.PageShift);
         foreach (var (s, (e, _)) in _gpuWritten)
         {
             if (s > addr) break;
@@ -136,6 +154,9 @@ public sealed unsafe partial class VulkanRenderer
                 return addr - GuestMemory.CdramStart;
             }
         }
+        if (_diagActive != null)
+            foreach (var (s, (e, _)) in _gpuWritten)
+                if (s < addr + length && addr < e) TraceLine($"[mirror] draw id={NextDrawId - 1} stream 0x{addr:X8}+{length} overlaps the stored range 0x{s:X8}-0x{e:X8} but is not inside it: read from guest memory");
         return -1;
     }
 
