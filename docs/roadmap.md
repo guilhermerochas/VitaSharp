@@ -467,6 +467,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
+- [ ] Jak and Daxter Collection (PCSA00080), depois da correção do histórico do decodificador (main 84a12b1, teste do
+  usuário 05/11/2026): (1) a prévia ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o
+  mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
+  app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)` e o jogo
+  trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
