@@ -186,9 +186,6 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    /// <summary>=0: buffers ending in an array are always read up to 16 KB, even by programs that only load them at
-    /// constant offsets (generator v20 layout, for A/B runs).</summary>
-    public const string UbArrayStatic = "VITASHARP_UB_ARRAY_STATIC";
     /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
@@ -223,6 +220,9 @@ public static class EnvVars
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
+    /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
+    /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
+    public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
     /// <summary>1 (A/B): an ATRAC9 superframe that fails to decode plays as silence and counts as consumed (default: skipped).</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>

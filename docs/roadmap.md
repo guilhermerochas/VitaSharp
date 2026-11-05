@@ -57,6 +57,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
+  instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
+  saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.
+  Reescrever com representação intermediária e otimizações de verdade: registradores do Vita em registradores do
+  celular por bloco e entre blocos ligados (alocação global), flags NZCV preguiçosas no NZCV do ARM64, propagação de
+  constantes e eliminação de código morto, acesso à memória direto pela base fastmem, encadeamento de blocos sem
+  volta ao despachante, superblocos e ponto flutuante/NEON mapeado direto. Meta: jogos limitados pela CPU (F1 2011,
+  Devious Dungeon) com a thread do jogo pelo menos 1,5-2x mais rápida no celular; validar com o teste de corpus contra
+  o interpretador e o `VITASHARP_NATIVE_VERIFY` no celular
+- [ ] Comparar o desempenho com o Vita3K no mesmo celular (pedido do usuário, 04/11/2026): Minecraft (instalado nos
+  dois, mas não roda no Vita3K do celular, segundo o usuário) e Uncharted quando o usuário instalar no Vita3K; gameplay no mesmo ponto, resolução nativa e 0,5, fps mediano
+  e 1% mais baixo pelo contador do sistema, prints; só leitura, nada gravado na pasta do Vita3K
 - [ ] Resolução interna reduzida (0.75 / 0.5, por jogo, desligada por padrão) para o Uncharted no Mali-G57 (GPU ~40 ms
   por quadro em a92710b): precisa de trabalho no espaço de coordenadas. As cópias de região, as cópias de profundidade,
   os writebacks e a reinterpretação do G-buffer pelo espelho da CDRAM (bytes no layout do convidado) usam pixels do
@@ -200,11 +212,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - [ ] Custo por draw do worker da GPU no celular: F1 2011 na corrida ainda abaixo de 30 fps (cerca de 1.000 draws por
     quadro, o worker da GPU num núcleo A76 inteiro); dividir a preparação e a gravação dos comandos em duas threads,
     menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
-  - [ ] Custo por draw da thread do jogo no F1 2011 (`sceGxmDrawPrecomputed`, ~1.400 draws por quadro). 04/11
-    (perf/f1-uniform): a cópia dos uniforms caiu de 1.330 para 190 ns por draw (15,6 KB → 191 B: arrays no fim de
-    buffers só lidos com offsets constantes não leem mais 16 KB, `GeneratorVersion` 21). Medido e descartado: pular as
-    buscas do prefetch quando a assinatura do draw já foi vista (235 → 200 ns por draw, ~0,05 ms por quadro, dentro do
-    ruído). Restam o prefetch (~200 ns), o enfileiramento e as cópias de arrays de texturas/buffers (round 3)
   - [x] Crash do driver Mali em `vkEndCommandBuffer` (GPU worker, ponteiro nulo em `libGLES_mali.so`) no F1 2011 entre o
     menu e a corrida: comandos gravados num command buffer ainda não iniciado depois de um submit antecipado (camada de
     validação no celular, `VITASHARP_VK_VALIDATION=1`/`sync`); o próximo quadro começa antes (31/10, perf/android-phone-3)
