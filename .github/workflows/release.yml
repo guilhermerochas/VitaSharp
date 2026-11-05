@@ -2,6 +2,9 @@
 #   - push a tag v<version>:  git tag v0.1.0 && git push origin v0.1.0
 #   - or run it from the Actions tab (Run workflow) with a version; the tag v<version> is then created on the chosen
 #     branch's commit when the release is published.
+#   - automatic builds: every push to main whose CI run passed (tests and packages) publishes the packages of that run
+#     as the prerelease "VitaSharp <version>+<commit>" (tag build-<commit>) without building them again; only the
+#     newest KEEP_BUILDS automatic releases are kept.
 # A version with a suffix (0.2.0-alpha, 0.2.0-dev.1) or the "prerelease" checkbox makes a prerelease. The packages come
 # from the CI workflow (tests first, then the Native AOT packages of win-x64, linux-x64 and osx-arm64) built with the
 # version, which also becomes the app's version ("VitaSharp 0.1.0+<commit>" in the log).
@@ -10,6 +13,10 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -29,33 +36,65 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+env:
+  # automatic (build-*) releases kept on the Releases page; older ones and their tags are deleted
+  KEEP_BUILDS: 10
+
 jobs:
   prepare:
     name: Version
+    # automatic builds: only a CI run of a push to main that passed (a failed or cancelled run publishes nothing)
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      title: ${{ steps.version.outputs.title }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      automatic: ${{ steps.version.outputs.automatic }}
+      commit: ${{ steps.version.outputs.commit }}
+      source_version: ${{ steps.version.outputs.source_version }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0 # the v* tags: the base version of an automatic build, the tag check of manual runs
       - name: Work out the version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
           REF_NAME: ${{ github.ref_name }}
+          COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CI_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
         run: |
+          short="$(git rev-parse --short=7 "$COMMIT")"
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+            # the last v* release before this commit (0.0.0 before the first one) plus -build.g<commit>: a valid
+            # prerelease version that sorts below the next v* release
+            base="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$COMMIT" 2>/dev/null || true)"
+            base="${base#v}"; base="${base%%-*}"; [ -n "$base" ] || base=0.0.0
+            {
+              echo "version=$base-build.g$short"; echo "tag=build-$short"; echo "title=VitaSharp $base+$short"
+              echo "prerelease=true"; echo "automatic=true"; echo "commit=$COMMIT"
+              # the CI run named its packages VitaSharp-ci-<run number>-<rid>.<ext>
+              echo "source_version=ci-$CI_RUN_NUMBER"
+            } >> "$GITHUB_OUTPUT"
+            echo "Automatic build release build-$short (VitaSharp $base+$short) from CI run $CI_RUN_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "$GITHUB_EVENT_NAME" = push ]; then v="${REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
           if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::'$v' is not a release version: use 1.2.3 or 1.2.3-suffix (tag v1.2.3)"; exit 1
           fi
           pre=false
           if [[ "$v" == *-* ]] || [ "$INPUT_PRERELEASE" = true ]; then pre=true; fi
-          { echo "version=$v"; echo "tag=v$v"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$v"; echo "tag=v$v"; echo "title=VitaSharp $v"; echo "prerelease=$pre"; echo "automatic=false"
+            echo "commit=$COMMIT"; echo "source_version=$v"
+          } >> "$GITHUB_OUTPUT"
           echo "Release v$v (prerelease: $pre)" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
-        if: github.event_name == 'workflow_dispatch'
       - name: Check the tag (manual runs)
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -69,9 +108,11 @@ jobs:
             echo "::error::tag $TAG already exists on $existing, not on $GITHUB_SHA"; exit 1
           fi
 
+  # tags and manual runs build the packages with the release version; automatic builds reuse the CI run's packages
   build:
     name: Build
     needs: prepare
+    if: needs.prepare.outputs.automatic != 'true'
     uses: ./.github/workflows/ci.yml
     with:
       version: ${{ needs.prepare.outputs.version }}
@@ -79,22 +120,40 @@ jobs:
   release:
     name: Publish release
     needs: [prepare, build]
+    # the build job is skipped for automatic builds
+    if: always() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
+      actions: read # the artifacts of the CI run (automatic builds)
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
+      COMMIT: ${{ needs.prepare.outputs.commit }}
+      AUTOMATIC: ${{ needs.prepare.outputs.automatic }}
+      # the version in the packages' file names; packages named with another one are renamed to VERSION
+      SOURCE_VERSION: ${{ needs.prepare.outputs.source_version }}
+      CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           fetch-depth: 0 # the whole history and its tags, for the commit list since the previous release
 
       - uses: actions/download-artifact@v4
+        if: needs.prepare.outputs.automatic != 'true'
         with:
           pattern: VitaSharp-*-packages
           path: packages
+
+      - uses: actions/download-artifact@v4
+        if: needs.prepare.outputs.automatic == 'true'
+        with:
+          pattern: VitaSharp-*-packages
+          path: packages
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       # one artifact per platform, VitaSharp-aot-<rid>-packages (a future VitaSharp-<rid>-packages, such as the
       # Android APK, is collected the same way); every file must be VitaSharp-<version>-<rid>.<ext> or -setup.exe
@@ -107,6 +166,10 @@ jobs:
             for f in "$dir"*; do
               [ -f "$f" ] || continue
               base="$(basename "$f")"
+              # automatic builds: VitaSharp-ci-<n>-<rid>.<ext> of the CI run becomes VitaSharp-<version>-<rid>.<ext>
+              if [ "$SOURCE_VERSION" != "$VERSION" ] && [[ "$base" == "VitaSharp-$SOURCE_VERSION-"* ]]; then
+                base="VitaSharp-$VERSION-${base#"VitaSharp-$SOURCE_VERSION-"}"
+              fi
               case "${base#"$prefix"}" in
                 .zip|-setup.exe|.tar.gz|.AppImage|.app.zip|.dmg|.apk) ;;
                 *) echo "::error::unexpected file $base in $name (expected $prefix.<zip|tar.gz|AppImage|app.zip|dmg|apk> or $prefix-setup.exe)"; exit 1 ;;
@@ -146,14 +209,21 @@ jobs:
           mv ../SHA256SUMS.txt .
           cat SHA256SUMS.txt
 
-      # header (build/release-notes-header.md) + the commits since the previous v* tag
+      # header (build/release-notes-header.md) + the commits since the previous v* tag; automatic builds list the
+      # commits since the previous release of either kind (build-* or v*)
       - name: Release notes
         run: |
-          prev="$(git describe --tags --abbrev=0 --match 'v*' --exclude "$TAG" "$GITHUB_SHA" 2>/dev/null || true)"
-          if [ -n "$prev" ]; then range="$prev..$GITHUB_SHA"; else range="$GITHUB_SHA"; fi
+          if [ "$AUTOMATIC" = true ]; then match=(--match 'v*' --match 'build-*'); else match=(--match 'v*'); fi
+          prev="$(git describe --tags --abbrev=0 "${match[@]}" --exclude "$TAG" "$COMMIT" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then range="$prev..$COMMIT"; else range="$COMMIT"; fi
           count="$(git rev-list --no-merges --count "$range")"
           max=300
           {
+            if [ "$AUTOMATIC" = true ]; then
+              echo "Automatic build of \`main\` at $COMMIT, published when its [CI run]($CI_RUN_URL) passed (tests and packages)."
+              echo "Not a release: the \`v*\` releases are the versioned ones."
+              echo
+            fi
             cat build/release-notes-header.md
             echo
             if [ -n "$prev" ]; then echo "## Changes since $prev"; else echo "## Changes"; fi
@@ -170,15 +240,28 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
-      # a tag created here by the GITHUB_TOKEN does not start this workflow again
+      # a tag created here by the GITHUB_TOKEN does not start this workflow (or CI) again
       - name: Publish
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ env.TAG }}
-          target_commitish: ${{ github.sha }}
-          name: VitaSharp ${{ env.VERSION }}
+          target_commitish: ${{ env.COMMIT }}
+          name: ${{ needs.prepare.outputs.title }}
           body_path: release-notes.md
           prerelease: ${{ needs.prepare.outputs.prerelease }}
           make_latest: ${{ needs.prepare.outputs.prerelease == 'true' && 'false' || 'true' }}
           files: release/*
           fail_on_unmatched_files: true
+
+      # only the newest KEEP_BUILDS automatic releases stay; the v* releases are never touched
+      - name: Delete old automatic releases
+        if: needs.prepare.outputs.automatic == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            --jq "[.[] | select(.tagName | startswith(\"build-\"))] | sort_by(.createdAt) | reverse | .[$KEEP_BUILDS:] | .[].tagName" |
+          while read -r old; do
+            echo "deleting the automatic release $old"
+            gh release delete "$old" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done

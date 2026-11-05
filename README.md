@@ -596,8 +596,8 @@ The packages are not signed.
 
 ### Releases
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) publishes a GitHub Release. It never runs on ordinary
-pushes; start it one of two ways:
+[`.github/workflows/release.yml`](.github/workflows/release.yml) publishes a GitHub Release. Versioned releases start
+one of two ways:
 
 - push a version tag: `git tag v0.1.0` and `git push origin v0.1.0`;
 - or **Actions > Release > Run workflow**: pick the branch, type the version (`0.1.0`) and tick *prerelease* if
@@ -617,6 +617,13 @@ A version with a suffix (`0.2.0-alpha`, `0.2.0-dev.1`) or the *prerelease* box m
 become the "latest" release. No firmware is ever attached: the job fails if a `.PUP` file or a firmware partition
 (`os0`, `vs0`, `sa0`, `pd0`) shows up in the packages. Only the publishing job can write to the repository
 (`contents: write`); the builds are read-only.
+
+**Automatic builds.** Every push to `main` whose CI run passed (tests on the three systems and the three Native AOT
+packages) is also published, as a prerelease named `VitaSharp <last v* version, or 0.0.0>+<commit>` with the tag
+`build-<commit>`: the packages of that CI run renamed `VitaSharp-<version>-build.g<commit>-<rid>.<ext>` (nothing is
+built again), `SHA256SUMS.txt`, the same firmware check and notes with the commits since the previous release. They
+never become the "latest" release, and only the newest 10 are kept (`KEEP_BUILDS`; older ones and their tags are
+deleted); the `v*` releases are not touched. A failed or cancelled CI run publishes nothing.
 
 ## Architecture
 
