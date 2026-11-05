@@ -393,6 +393,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
   um F10 ou dump de GPU numa troca de tela); (3) 19–30 fps, quase sempre 22–24 (Unity, alvo provável 30): medir com
   `--profile`/F10 se é CPU ou espera da GPU, como no The Deer God
+  Achados (05/11/2026, fix/bugs-games-4, `bugsB3_out/blind_x`, 3600 quadros sem janela): não é Unity, é Ren'Py
+  (threads `renpy_audio`, `saveThreadProc`, `SDL_TimerThread`, `preloader`). Sem janela roda a 30,0 fps cravados
+  (DisplayQueue 22 ms/quadro = 2 vblanks por troca, alvo 30). O boot leva ~5 s até o primeiro quadro (watchdog
+  `STALL ... (frame 1)`), logo 100 quadros até o logo Man-Eater, título em f300, história em f700. CPU por quadro:
+  `main` 12,3 ms, mas `saveThreadProc` 7,3 ms e `SDL_TimerThread` 5,9 ms de CPU por quadro — threads auxiliares que
+  deveriam dormir e estão girando (polling); num PC com 4 núcleos para o emulador e a janela isso disputa CPU com a
+  `main` e explica os 22-24 fps. Próximo: trace HLE dessas threads (`bugsB3_queue4`: o que chamam em loop) e a troca
+  de tela quadro a quadro (`bugsB3_out/blind_tr`, f560-780)
+  Trace HLE (`bugsB3_out/blind_thr`, f1000-1003): as duas threads giram em `LockLwMutex/UnlockLwMutex/DelayThread(1000)`
+  (a SDL_TimerThread também lê `GetProcessTimeWide`). No desktop o `PreciseSleep.Until` gira (SpinWait) os últimos
+  ~500 us de cada espera e espera abaixo de 600 us inteira, então um DelayThread(1 ms) em loop ocupa meio núcleo do
+  host; candidato genérico: as esperas de guest dormirem no timer do host sem girar (a retomada já é no prazo em tempo
+  de guest, `CpuCore.WokeAt`). Passado para o agente C (não medido)
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
