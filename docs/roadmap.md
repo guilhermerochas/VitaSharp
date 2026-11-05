@@ -649,6 +649,31 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   os uniform buffers de novo antes de executar o draw, como o hardware que lê na execução) 31% dos draws do FIFA têm
   buffers alterados depois do draw, inclusive o da sombra. Em 2500 quadros de partida aqui as cunhas não apareceram
   nem com nem sem a chave, então não está validado; a chave custa ~25% de fps (cópia dupla)
+  **Narração corrigida** (05/11/2026, fix/bugs-audio, falta o usuário ouvir): eram dois defeitos no HLE do NGS.
+  (1) `sceNgsVoicePlay` zerava também os totais do estado (+16 amostras, +20 bytes); o EAAudioCore mede cada clipe
+  como bytes totais menos uma base que ele guarda por stream (eboot 0x8140D02A-0x8140D0E4), então o total zerado
+  parecia clipe terminado e a voz era morta 4-8 ticks depois de começar (29% das paradas da narração; agora 0-3%).
+  Como o Vita3K, só posição, buffer e contadores "desde o key on" voltam a 0. (2) O fim de cada clipe no anel é
+  preenchido com superframes zerados (não decodificam) e o jogo mata a voz quando os bytes consumidos chegam ao
+  tamanho do clipe, enchimento incluído; pulando-os na hora sem contar bytes, a voz tocava a volta anterior do anel
+  (a repetição). Agora um superframe que não decodifica toca como silêncio e conta bytes e amostras
+  (`VITASHARP_AT9_ERROR_SILENCE=0` pula, contando bytes). Medida (contador de superframes "stale" do
+  `VITASHARP_NGS_TRACE`: decodificados de novo de um lugar do anel que o jogo não reescreveu): reproduções da narração
+  com dado velho 33 → 2 em duas partidas de 8 min lado a lado (as 2 são o próprio jogo tocando de novo um clipe curto
+  que não reescreveu); `audrep.py` sem trechos repetidos nos WAVs da narração. O decodificador ATRAC9 bate com o
+  atrac9 do FFmpeg nos mesmos superframes (dump `.at9raw` do trace; SNR 106 dB, só a polaridade invertida).
+  **Abertura EA SPORTS**: o filme é `data/movies/bootflowintro_MARKER.vp6` (8 s, áudio do próprio jogo, sem voz NGS);
+  no nosso WAV ele é contínuo e na mesma velocidade do vídeo do Vita real `ZBF54pOUQ1k` (janelas de 0,1 s com o mesmo
+  deslocamento, sem repetição nem salto) e os logs do usuário não têm underrun; o "robótico"/engasgo não reproduz
+  aqui, falta o usuário ouvir de novo. **Torcida**: as vozes de torcida não têm dado velho nem buraco; sem defeito
+  medido (a diferença de graves para os vídeos do YouTube continua sem referência confiável).
+  **Cunhas das sombras** (05/11/2026, fix/bugs-audio, falta o usuário conferir): as duas sessões do usuário com
+  `VITASHARP_UB_LATE=1` (logs 20261104_235321/235540) não tiveram cunha em 1042 quadros dos dumps. Agora os uniform
+  buffers ligados pelo jogo (0-13) são copiados uma vez só, pelo worker da GPU logo antes de executar o draw; o
+  buffer padrão (14, anel reaproveitado) continua copiado na hora do draw; `VITASHARP_UB_LATE=0` volta ao antigo.
+  Sem custo medido (partida de 18,6 mil quadros lado a lado, metades trocadas: worker 4,95 x 5,28 ms/quadro, main
+  5,29 x 5,98). Nas janelas de 800 quadros gravadas aqui (`--vulkan --gpu-dump-at`) não há cunha nem com nem sem a
+  mudança (`specks.py`: 0 quadros com >= 8 blocos), então a prova continua sendo a partida do usuário
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
@@ -671,7 +696,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tentativa anterior de 16 KB provavelmente sumiu com os jogadores por usar o cache de shaders antigo, com outros
   offsets). Messi inteiro no treino; replays de Croixleur e PCSF00476 idênticos
 
-- [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
+- [x] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
   locationDelta < 0, voiceLocation = 0x0, previous = 0x700…` — a posição de leitura que a voz NGS informa volta a 0
   em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
@@ -693,12 +718,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   módulo (ou de uma segunda voz do stream) cujo `GuestState` nunca é preenchido por nós. Próximo passo: logar
   voz/módulo/tipo de módulo de todas as leituras com +8 = 0 junto com as não-zero, e ver qual módulo o firmware
   preenche (Vita3K: estado do player x estado do módulo de saída)
+  Corrigido (05/11/2026, fix/bugs-audio): a voz do stream é ATRAC9 (rack ScreamAtrac9, superframe de 4 quadros = 1024
+  amostras) e o módulo somava o superframe inteiro em "amostras geradas" (+8/+16) ao decodificá-lo; com ticks de 512
+  amostras o contador ficava parado em ticks alternados, e o SndStream (eboot 0x8109EB18-0x8109EBB8: amostras menos o
+  valor anterior, se > 0) devolvia posição 0 nesses ticks. Agora o contador soma o que cada tick entrega, como no
+  módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
+  Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
 - [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em

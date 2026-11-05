@@ -186,7 +186,7 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
+    /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
@@ -223,7 +223,7 @@ public static class EnvVars
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
-    /// <summary>1 (A/B): an ATRAC9 superframe that fails to decode plays as silence and counts as consumed (default: skipped).</summary>
+    /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";
