@@ -203,6 +203,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
         _displayTuning = GameDisplayTuning.Start(this, _view!, _session.Performance);
         _session.TrophyUnlocked += e => RunOnUiThread(() => ShowTrophy(e));
+        // "Gravar tudo": started, saving, saved (with the folder), failed
+        _session.CaptureStatus += s => RunOnUiThread(() => Toast.MakeText(this, s, ToastLength.Long)?.Show());
         // games ask for text through the IME dialog / SceIme: an Android text field with the system soft keyboard
         var ime = new AndroidImeDialog(this);
         _session.SetTextInput(ime, ime);
@@ -432,9 +434,11 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         long fps = frames - _lastFrames;
         _lastFrames = frames;
         _fps.Text = _session.Paused ? "Pausado" : $"{fps} FPS";
+        bool rec = _session.Capture.IsRecording;
 #if VITASHARP_DEVELOPER
-        if (_session.CaptureDir != null) _fps.Text = "● REC  " + _fps.Text;
+        rec |= _session.CaptureDir != null;
 #endif
+        if (rec) _fps.Text = "● REC  " + _fps.Text;
 
         // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
         if (++_fpsTicks % 30 == 0 && !_session.Paused)
@@ -473,8 +477,11 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             _pad.RearTouch ? "Toque traseiro: ligado" : "Toque traseiro: desligado",
             _pad.Visible ? "Esconder controles na tela" : "Mostrar controles na tela",
             .. (_sensors?.CanRecenter == true ? new[] { "Recentralizar movimento" } : []),
+            // "Gravar tudo" (every build): the session capture, docs/notes/session-capture.md
+            _session?.Capture.IsRecording == true ? "Parar gravação" : "Gravar tudo",
+            _session?.Capture.Armed == true ? "Pré-gravação: ligada" : "Pré-gravação: desligada",
 #if VITASHARP_DEVELOPER
-            .. (_session?.CaptureDir != null ? new[] { "Parar gravação" } : new[] { "Gravar tudo", "Gravar tempo", "Gravar conteúdo" }),
+            .. (_session?.CaptureDir != null ? new[] { "Parar gravação (desenvolvedor)" } : new[] { "Gravar tempo", "Gravar conteúdo" }),
 #endif
             "Sair do jogo",
         ];
@@ -491,12 +498,18 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
                     case var i when items[i].EndsWith("controles na tela"): _pad.Visible = !_pad.Visible; break;
                     case var last when last == items.Length - 1: Leave(); return;
                     case var i when items[i] == "Recentralizar movimento": _sensors?.Recenter(); break;
+                    case var i when items[i] == "Gravar tudo": _session?.Capture.Start("pause menu"); break;
+                    case var i when items[i] == "Parar gravação": _session?.Capture.Stop("pause menu"); break;
+                    case var i when items[i].StartsWith("Pré-gravação"):
+                        _session?.Capture.SetPreRoll(_session.Capture.Armed ? 0 : EmulationSession.PreRollSeconds);
+                        Toast.MakeText(this, _session?.Capture.Armed == true
+                            ? "Pré-gravação ligada: \"Gravar tudo\" inclui os últimos segundos antes de você apertar"
+                            : "Pré-gravação desligada", ToastLength.Short)?.Show();
+                        break;
 #if VITASHARP_DEVELOPER
-                    case var i when items[i] == "Gravar tudo": _session?.StartCapture("tudo"); break;
                     case var i when items[i] == "Gravar tempo": _session?.StartCapture("tempo"); break;
-
                     case var i when items[i] == "Gravar conteúdo": _session?.StartCapture("conteudo"); break;
-                    case var i when items[i] == "Parar gravação": _session?.StopCapture(); break;
+                    case var i when items[i] == "Parar gravação (desenvolvedor)": _session?.StopCapture(); break;
 #endif
                 }
                 _controls?.Invalidate();

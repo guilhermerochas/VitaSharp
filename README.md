@@ -310,10 +310,15 @@ controllers and prints their mapped input. Details in [`docs/notes/controller-co
 | `F10` | Capture a diagnostic: the next frame's draws, textures, render targets, screenshot and log, saved to `diagnostics/` (folder and `.zip`) |
 | `F9` | Toggle debug mode: a replay ring of the last frames, NaN/Inf and anomaly checks, automatic captures when something looks wrong |
 | `F8` | Start / stop a GPU dump (`gpudumps/*.vsgd`); `replay-gpu` reproduces it draw by draw without the game |
+| `Ctrl+F8` | Start / stop **Gravar tudo**: a save state, the input, the GPU dump, every presented frame with its timing, the audio and the log in one `captures/*.zip` (with the pre-roll, also the seconds before the key) |
 
 Every session writes `logs/last.log` (older sessions are kept by date and title), and a watchdog logs hangs and
-stalls. When reporting a bug, an F10 capture or a GPU dump of the problem is the most useful attachment. Details in
-[`docs/notes/debug-mode.md`](docs/notes/debug-mode.md) and [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md).
+stalls. When reporting a bug, a **Gravar tudo** capture (Ctrl+F8; on Android, the pause menu) is the most useful
+attachment: it is enough to reproduce the problem without playing again. Turn on **Pré-gravação** (Settings > Geral,
+or debug mode with F9) for glitches that pass before you can press the key. `vitasharp-perf capture <zip>` analyzes
+it and `VitaSharp.Desktop rerun <folder>` replays its input from its save state. Details in
+[`docs/notes/session-capture.md`](docs/notes/session-capture.md), [`docs/notes/debug-mode.md`](docs/notes/debug-mode.md)
+and [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md).
 
 ### Data folder
 
@@ -337,6 +342,8 @@ VitaSharp/
 ├── logs/          last.log of the most recent run, older sessions by date
 ├── diagnostics/   F10 and automatic captures
 ├── gpudumps/      F8 GPU dumps
+├── captures/      Gravar tudo (Ctrl+F8) recordings, folder and .zip; .preroll/ holds the pre-roll's save states
+├── savestates/    save states (F5 / F7), per title
 └── tests/         output of automated scenarios
 ```
 

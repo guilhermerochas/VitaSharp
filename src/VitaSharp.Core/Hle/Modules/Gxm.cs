@@ -560,6 +560,8 @@ public sealed partial class Gxm : HleModule
         uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         WaitForDisplayRelease(fragmentSync);
+        _sceneGate?.End();
+        _sceneGate = new SceneGate();
         Gpu.Submit(new BeginSceneCommand
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
@@ -589,6 +591,9 @@ public sealed partial class Gxm : HleModule
             (null, { } b) => [b],
             _ => [],
         };
+        // the hardware gets the scene now: its draws' uniform buffers can be read from here on
+        _sceneGate?.End();
+        _sceneGate = null;
         long seq = Gpu.Submit(new EndSceneCommand { Notifications = notifications });
         // keep the guest at most a few scenes ahead of the GPU worker
         Gpu.WaitFor(seq - 4096, GpuQueue.GuestWait.Throttle);
@@ -601,6 +606,8 @@ public sealed partial class Gxm : HleModule
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
         if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
+        // the vertex work so far goes to the hardware: the draws before the flush may read their buffers now
+        if (_sceneGate is { } gate) { gate.End(); _sceneGate = new SceneGate(); }
         Gpu.Submit(new MidSceneFlushCommand());
         if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
@@ -965,8 +972,13 @@ public sealed partial class Gxm : HleModule
     /// executes the draw; only the default uniform buffer (14) is copied at the draw call, because it is a ring the
     /// game fills right before each draw and reuses after it (a late read could see a later draw's data).
     /// VITASHARP_UB_LATE=0 copies everything at the draw call (A/B).
+    /// The worker runs a draw as soon as it is queued, often before the game is done with the palette, so it waits for
+    /// the scene's end first (<see cref="SceneGate"/>; VITASHARP_UB_SCENE_END=0 copies as soon as the worker gets the draw).
     /// </summary>
     static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) != "0";
+    static readonly bool UbAtSceneEnd = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) != "0";
+    /// <summary>The open scene of the immediate context (null outside a scene).</summary>
+    [VitaSharp.Core.SaveState.SnapshotIgnore] SceneGate? _sceneGate;
 
     /// <summary>GPU worker, before the draw executes: copies the draw's bound (non-default) uniform buffers.</summary>
     static void CopyLateUniforms(DrawCommand d)
@@ -1128,6 +1140,7 @@ public sealed partial class Gxm : HleModule
         }
         var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
         cmd.UniformsLate = UbLate && GpuQueue.LateUniformCopy != null;
+        cmd.Gate = cmd.UniformsLate && UbAtSceneEnd ? _sceneGate : null;
         cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformsLate);
         cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformsLate) : 0;
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));

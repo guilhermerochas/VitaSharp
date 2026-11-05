@@ -144,6 +144,25 @@ public sealed partial class EmulationSession : IDisposable
             };
         }
 #endif
+        // "Gravar tudo" (pause menu, every build): the session capture into files/captures (docs/notes/session-capture.md)
+        Capture = new Core.Capture.SessionCapture(_emu, new Core.Capture.SessionCaptureOptions
+        {
+            Root = Path.Combine(data.Root, "captures"),
+            Platform = "android",
+            SetPresentTap = tap => _rendererOptions.PresentTap = tap,
+            DumpHeader = DumpHeader,
+            LogFile = () => Path.Combine(AppServices.Data.Logs, "last.log"),
+            Info = () => $"build: android {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}\naudio: {AudioSummary}\nrenderer: {_renderer?.DeviceName}\nsettings: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, {_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}",
+            RunOptions = [$"--cpu-mhz={_settings.ClockHz / 1_000_000}"],
+            // a phone has less memory and slower cores than a PC
+            PreRollMaxBytes = 64L << 20, EncoderQueueFrames = 48, DumpMaxFrames = 1800,
+            StopHint = "menu de pausa para parar",
+            Status = s => CaptureStatus?.Invoke(s),
+        });
+        // VITASHARP_CAPTURE_PREROLL=SECONDS in env.txt, or the pause menu's "Pré-gravação"
+        if (double.TryParse(System.Environment.GetEnvironmentVariable(EnvVars.CapturePreRoll), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var preRoll))
+            Capture.SetPreRoll(preRoll);
+
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
 
         _emu.ExecRequested += () => Task.Run(() =>
@@ -306,6 +325,15 @@ public sealed partial class EmulationSession : IDisposable
     /// <summary>The audio device and every stream's buffering and underruns (periodic log line).</summary>
     public string AudioSummary => _audio?.Describe() ?? "no audio backend";
 
+    /// <summary>"Gravar tudo" messages for the player (any thread).</summary>
+    public event Action<string>? CaptureStatus;
+
+    /// <summary>"Gravar tudo": the session capture of this game run (pause menu).</summary>
+    public Core.Capture.SessionCapture Capture { get; }
+
+    /// <summary>Seconds of pre-roll when the player turns "Pré-gravação" on.</summary>
+    public const double PreRollSeconds = 10;
+
 #if VITASHARP_DEVELOPER
     /// <summary>The capture the player started from the pause menu (developer APK), or null.</summary>
     public string? CaptureDir { get; private set; }
@@ -459,6 +487,9 @@ public sealed partial class EmulationSession : IDisposable
         RecordStatistics();
         try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
+        // a recording still running is completed (its GPU dump while the GPU worker runs)
+        Capture.StopAndWait(60000);
+        Capture.Dispose();
         // a GPU dump still recording is completed while the GPU worker runs
         if (GpuDumpRecorder.Current is { } dump && dump.StopNow(15000) == null) Log.Warn("[gpudump] the recording did not finish in time");
         try

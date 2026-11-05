@@ -1162,6 +1162,19 @@ public sealed unsafe partial class VulkanRenderer
             Directory.CreateDirectory(tud);
             File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_v.bin"), vu);
             File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_f.bin"), fu);
+            // the indices and each vertex stream up to the highest index: lets a bad vertex be traced on the CPU
+            if (d.IndexAddress != 0 && d.IndexCount is > 0 and <= 1u << 20)
+            {
+                int isz = d.Index32 ? 4 : 2;
+                var ix = GuestMemory.ReadSpan(d.IndexAddress, (int)d.IndexCount * isz).ToArray();
+                File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_ix{isz * 8}.bin"), ix);
+                uint max = 0;
+                for (int k = 0; k < (int)d.IndexCount; k++) max = Math.Max(max, d.Index32 ? BitConverter.ToUInt32(ix, k * 4) : BitConverter.ToUInt16(ix, k * 2));
+                for (int si = 0; si < d.VertexProgram.Streams.Length && si < d.Streams.Length; si++)
+                    if (d.Streams[si] != 0 && max < 1u << 20)
+                        File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_s{si}_stride{d.VertexProgram.Streams[si].Stride}.bin"),
+                            GuestMemory.ReadSpan(d.Streams[si], (int)((max + 1) * d.VertexProgram.Streams[si].Stride)).ToArray());
+            }
         }
         if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(vu, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));

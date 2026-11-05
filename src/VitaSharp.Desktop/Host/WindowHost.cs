@@ -49,6 +49,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? DebugModeToggled;
     /// <summary>F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
     public event Action? GpuDumpToggled;
+    /// <summary>Ctrl+F8: starts or stops "Gravar tudo", the session capture (docs/notes/session-capture.md).</summary>
+    public event Action? SessionCaptureToggled;
+    bool _ctrlF8Down;
     /// <summary>Save states (window thread): F5 quick save, Shift+F5 save to the selected slot, F7 quick load, Shift+F7
     /// load the selected slot, F6 next slot. The argument is the slot (0 = quick), or -1 for F6.</summary>
     public event Action<int>? SaveStateKey, LoadStateKey;
@@ -248,7 +251,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         }
         if (key == Key.F10) { if (down) DiagnosticRequested?.Invoke(); return; }
         if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
-        if (key == Key.F8) { if (down) GpuDumpToggled?.Invoke(); return; }
+        if (key == Key.F8)
+        {
+            // Ctrl+F8: "Gravar tudo" (one toggle per press, whatever key repeat sends); F8 alone: the GPU dump
+            if (down && IsControlDown) { if (!_ctrlF8Down) SessionCaptureToggled?.Invoke(); _ctrlF8Down = true; }
+            else if (down) GpuDumpToggled?.Invoke();
+            else _ctrlF8Down = false;
+            return;
+        }
         if (key is Key.F5 or Key.F6 or Key.F7 && TextCapture == null)
         {
             if (down) (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : IsShiftDown ? 1 : 0);

@@ -28,6 +28,12 @@ public sealed unsafe partial class GuestThread
     /// (the reissued wait takes it back after the signal without releasing the mutex again, which another thread may
     /// own by now).</summary>
     internal int CondReissueCount;
+    /// <summary>A restored thread that was blocked in a wait when the state was saved (it issues that wait again).</summary>
+    internal bool ReissuesWait;
+
+    /// <summary>A restored thread's reissued wait is queued on its object again (or the wait already returned, or the
+    /// thread ended): signals sent from now on reach it, as they did in the saved session.</summary>
+    internal bool WaitReissued => !IsLive || _hleSeq >= 2 || (_hleSeq == 1 && (Status == ThreadStatus.Waiting || BlockedInHost));
 
     volatile bool _saveHold;
 
@@ -164,6 +170,7 @@ public sealed unsafe partial class GuestThread
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
         ReadCpu(r, Core.State);
         Status = kind is SafeKind.Dormant ? ThreadStatus.Dormant : ThreadStatus.Ready;
+        ReissuesWait = kind == SafeKind.Reissue;
     }
 
     internal static GuestThread ReadSnapshot(Emulator emu, SnapshotReader r, out SafeKind kind, out int condMutex, out int condCount)

@@ -292,7 +292,7 @@ public static class SaveStates
             long t0 = sw.ElapsedMilliseconds;
             StopThreads(emu);
             Log.Info($"Load state: threads stopped in {sw.ElapsedMilliseconds - t0} ms");
-            try { LoadCore(emu, sections, backendFactory); }
+            try { StartRestored(LoadCore(emu, sections, backendFactory)); }
             catch (Exception e) when (e is not SnapshotException)
             {
                 throw new SnapshotException($"loading the state failed ({e.Message}); restart the game");
@@ -338,7 +338,31 @@ public static class SaveStates
                 throw new SnapshotException($"thread '{t.Name}' did not stop (in {t.WaitingOn}); restart the game");
     }
 
-    static void LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
+    /// <summary>
+    /// Starts the restored threads. The ones saved inside a wait issue it again before the others run: in the saved
+    /// session they were queued on their object, so a signal sent right after the load (a condition variable keeps
+    /// none) must find them waiting. Started all at once, a running thread could signal first and the waiter then
+    /// waited forever (Jak 1: main on DMAPut, GOAL on DMADone in 2 of 4 loads).
+    /// </summary>
+    static void StartRestored(List<GuestThread> restored)
+    {
+        var waiting = restored.Where(t => t.ReissuesWait).ToList();
+        var running = restored.Where(t => !t.ReissuesWait).ToList();
+        bool order = waiting.Count > 0 && running.Count > 0;
+        if (order) foreach (var t in running) t.HoldForSave(true);
+        foreach (var t in restored) t.StartRestored();
+        if (!order) return;
+        // the emulation is paused here: let only the waiting threads run until their waits are queued
+        EmulationPause.Resume("load state: reissuing waits");
+        var until = Environment.TickCount64 + 2000;
+        while (waiting.Any(t => !t.WaitReissued) && Environment.TickCount64 < until) Thread.Sleep(1);
+        if (waiting.FirstOrDefault(t => !t.WaitReissued) is { } late)
+            Log.Warn($"Load state: thread '{late.Name}' did not issue its wait again in time");
+        EmulationPause.Pause("load state: reissuing waits");
+        foreach (var t in running) t.HoldForSave(false);
+    }
+
+    static List<GuestThread> LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
     {
         emu.Gpu.WaitIdle();
         var t0 = Stopwatch.GetTimestamp();
@@ -390,6 +414,6 @@ public static class SaveStates
             if (!mr.AtEnd) throw new SnapshotException($"module {key}: {mr.Remaining} bytes of its state were not read (layout mismatch)");
         }
         Scheduler.Reset();
-        foreach (var t in restored) t.StartRestored();
+        return restored;
     }
 }

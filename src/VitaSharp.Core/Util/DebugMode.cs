@@ -28,6 +28,10 @@ public static class DebugMode
         Log.DedupeWarnings = false;
     }
 
+    /// <summary>A session capture is recording: HLE error returns and unimplemented calls are counted (and logged,
+    /// rate-limited) as in debug mode, without its other checks.</summary>
+    public static bool CollectHleErrors;
+
     /// <summary>Guest frame number for log lines (frames presented by the display).</summary>
     public static long Frame => Hle.Modules.Display.FramesPresented;
 

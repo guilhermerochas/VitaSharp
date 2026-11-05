@@ -173,6 +173,12 @@ public static class EnvVars
     /// <summary>KIND@START:STOP (developer APK): the pause menu's capture (tempo or conteudo), started and stopped that many
     /// seconds after the game starts.</summary>
     public const string Capture = "VITASHARP_CAPTURE";
+    /// <summary>=SECONDS (0 = off): the session capture's pre-roll ("Pré-gravação", --capture-preroll) keeps the last
+    /// frames, timing and input in memory with a periodic save state, so a recording started after a glitch includes
+    /// it (docs/notes/session-capture.md).</summary>
+    public const string CapturePreRoll = "VITASHARP_CAPTURE_PREROLL";
+    /// <summary>=START:STOP (guest frames): records a session capture over those frames (--capture-at; tests).</summary>
+    public const string CaptureAt = "VITASHARP_CAPTURE_AT";
 
 
 
@@ -199,6 +205,10 @@ public static class EnvVars
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
     /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
+    /// <summary>=0 (A/B): the late uniform copy happens when the GPU worker gets the draw, not after the guest ended the
+    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =check: waits, and logs how many held
+    /// draws had their buffers rewritten meanwhile.</summary>
+    public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";

@@ -173,17 +173,43 @@ The trace records:
 
 The fixtures stay out of git. They are cut again from the scratch dumps with the commands above.
 
-## Captures from the pause menu (developer APK)
+## Gravar tudo: the session capture (every build, desktop and Android)
+
+One recording that is enough to diagnose a bug offline; details, formats, sizes and cost in
+[`docs/notes/session-capture.md`](../../docs/notes/session-capture.md).
+
+- **Desktop:** Ctrl+F8 starts and stops it (F8, F9, F10 unchanged). Scripted: `--capture-at=A:B` (guest frames) or
+  `VITASHARP_CAPTURE_AT`. Pre-roll: `--capture-preroll[=S]`, `VITASHARP_CAPTURE_PREROLL=S`, the launcher's
+  "Pré-gravação", or debug mode (F9).
+- **Android:** pause menu > **Gravar tudo** / **Parar gravação**, and **Pré-gravação: ligada/desligada**; or
+  `VITASHARP_CAPTURE_PREROLL=S` in `env.txt`. Output in `files/captures/TITLE_DATE_tudo/` and `.zip`.
+- A capture holds a save state at the start (`state_start.vss`; with the pre-roll also `state_preroll.vss`), the input
+  (`input.tsv`), the GPU dump (`gpu.vsgd`), every presented frame with its present/flip/vblank timing
+  (`frames.vsfr`, `timeline.tsv`), the audio ports, NGS voices and their mix, the log, the HLE errors and the thread
+  states.
+
+```
+vitasharp-perf capture <folder|zip> [--frames <dir>] [--compare <original>]   # report.txt + findings/*.png
+VitaSharp.Desktop rerun <folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]
+build/android-capture-analyze.sh [CAPTURE_NAME|FOLDER]       # pulls from the phone, runs vitasharp-perf capture
+```
+
+- The analyzer finds black frames and screens, one-frame flashes, out-of-order / repeated / skipped flips, swapped
+  pictures, frozen pictures and stalls. It places each one in the GPU dump (or the pre-roll) and next to the input.
+- The re-run loads the capture's state, plays the input back by guest clock and records itself into
+  `<folder>/reruns/`, with `compare.txt` against the original.
+
+## Developer captures from the pause menu (developer APK)
 
 **Recording, for the player:**
-1. In a game, press PS to open the pause menu and choose **Gravar tudo**.
+1. In a game, press PS to open the pause menu and choose **Gravar tempo** or **Gravar conteúdo**.
 2. Play the scene. "● REC" shows next to the fps counter while it records.
-3. Open the menu again and choose **Parar gravação**. Write a line about what happened (or edit `scene:` in
-   `info.txt`).
+3. Open the menu again and choose **Parar gravação (desenvolvedor)**. Write a line about what happened (or edit
+   `scene:` in `info.txt`).
 
 | Option | Records |
 |---|---|
-| **Gravar tudo** | <ul><li>The first 5 s are timing only: fps, the renderer's PERF lines and the trace markers, with no dump slowing the game. They are written to `info.txt` as the "timing part".</li><li>Then a GPU dump of up to 600 frames: commands, shaders, and every guest memory range the GPU read, so the textures as uploaded.</li><li>The guest audio ports as WAVs (`audio/`), from the start.</li><li>`log.txt` and `info.txt`.</li></ul> |
+| `VITASHARP_CAPTURE=tudo@START:STOP` (scripted only; the menu's **Gravar tudo** is now the session capture above) | <ul><li>The first 5 s are timing only: fps, the renderer's PERF lines and the trace markers, with no dump slowing the game. They are written to `info.txt` as the "timing part".</li><li>Then a GPU dump of up to 600 frames: commands, shaders, and every guest memory range the GPU read, so the textures as uploaded.</li><li>The guest audio ports as WAVs (`audio/`), from the start.</li><li>`log.txt` and `info.txt`.</li></ul> |
 | **Gravar tempo** | the timing part only, for the whole recording |
 | **Gravar conteúdo** | the dump and audio only |
 

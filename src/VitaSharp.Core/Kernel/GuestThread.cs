@@ -373,6 +373,8 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         bool dbg = DebugMode.Enabled;
         uint a0 = 0, a1 = 0, a2 = 0, a3 = 0, lr = 0;
         if (dbg) { a0 = s->R[0]; a1 = s->R[1]; a2 = s->R[2]; a3 = s->R[3]; lr = s->R[14]; RecordHle(f, a0, a1, a2, a3, lr); }
+        // a session capture counts the HLE error returns without the rest of debug mode
+        else if (DebugMode.CollectHleErrors) { a0 = s->R[0]; a1 = s->R[1]; a2 = s->R[2]; a3 = s->R[3]; lr = s->R[14]; }
         if (f.Invoke != null)
         {
             if (f.IsCallbackWait)
@@ -389,13 +391,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             else Invoke(f, s->SvcImm);
             f.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
+            else if (DebugMode.CollectHleErrors && s->R[0] is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, s->R[0], a0, a1, a2, a3, lr);
             if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             if (ContextReplaced) { ContextReplaced = false; _hleSeq++; return; }
         }
         else
         {
             if (!f.WarnedUnimplemented) { f.WarnedUnimplemented = true; Log.WarnOnce($"nid{f.Nid}", $"Unimplemented HLE function {f.Library}::{f.Name} (NID 0x{f.Nid:X8}) called from 0x{s->R[14]:X8}"); }
-            if (dbg) DebugMode.HleUnimplemented(Name, f.Library, f.Name, f.Nid, lr);
+            if (dbg || DebugMode.CollectHleErrors) DebugMode.HleUnimplemented(Name, f.Library, f.Name, f.Nid, lr);
             s->R[0] = 0;
         }
         // The stub's next instruction is "bx lr": return directly.
