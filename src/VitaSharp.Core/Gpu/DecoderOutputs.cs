@@ -11,7 +11,7 @@ namespace VitaSharp.Core.Gpu;
 /// at the address (not of the newest) belongs to that earlier picture: Jak and Daxter Collection's menu decodes MJPEG
 /// frames of varying width into one buffer and stays one frame ahead of its render thread, and reading the newest
 /// frame's pixels with the previous frame's width showed as horizontal stripes. A texture matching the newest
-/// picture (every movie player) reads memory as before. <see cref="EnvVars.DecoderHistory"/>=0 turns it off.
+/// picture reads memory as before when every earlier picture was drawn (every movie player). <see cref="EnvVars.DecoderHistory"/>=0 turns it off.
 /// </summary>
 public static class DecoderOutputs
 {
@@ -26,6 +26,8 @@ public static class DecoderOutputs
         public uint AltWidth, AltHeight;
         public required byte[] Data;
         public long Seq;
+        /// <summary>A texture upload read it (or a later picture).</summary>
+        public bool Taken;
 
         public bool Fits(uint w, uint h) => (w == Width && h == Height) || (AltWidth != 0 && w == AltWidth && h == AltHeight);
     }
@@ -69,9 +71,13 @@ public static class DecoderOutputs
     }
 
     /// <summary>
-    /// The earlier picture a texture of <paramref name="w"/> x <paramref name="h"/> at <paramref name="addr"/> reads,
-    /// or null when the texture is not a decoder output, fits the newest picture, or the memory no longer holds the
-    /// newest picture (something else wrote it since). The returned bytes must not be modified.
+    /// The picture a new upload of the texture at <paramref name="addr"/> (<paramref name="w"/> x <paramref name="h"/>)
+    /// reads, or null for memory as it is. Each upload takes the oldest picture of that size no upload has taken yet:
+    /// the pictures are drawn in the order they were decoded, also when the GPU worker runs one decode behind (two
+    /// pictures of the same size in a row: reading memory showed the newer one a frame early, and the preview
+    /// flickered). With no such picture: memory when the newest picture has that size, else the latest earlier picture
+    /// of that size. Memory is read whenever it no longer holds the newest picture (something else wrote it since). The
+    /// returned bytes must not be modified.
     /// </summary>
     public static Picture? EarlierFor(uint addr, uint w, uint h)
     {
@@ -79,13 +85,23 @@ public static class DecoderOutputs
         Picture newest, match;
         lock (Lock)
         {
-            if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list) || list.Count < 2) return null;
+            if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list)) return null;
             newest = list[^1];
-            if (newest.Fits(w, h)) return null;
-            Picture? found = null;
-            for (int i = list.Count - 2; i >= 0; i--)
-                if (list[i].Fits(w, h)) { found = list[i]; break; }
-            if (found == null) return null;
+            Picture? found = list.FirstOrDefault(p => !p.Taken && p.Fits(w, h));
+            if (found != null)
+            {
+                // every picture before it was drawn or skipped
+                foreach (var p in list) { if (p == found) break; p.Taken = true; }
+                found.Taken = true;
+                if (found == newest) return null;
+            }
+            else
+            {
+                if (newest.Fits(w, h)) return null;
+                for (int i = list.Count - 2; i >= 0 && found == null; i--)
+                    if (list[i].Fits(w, h)) found = list[i];
+                if (found == null) return null;
+            }
             // a copy: Record reuses the array of a picture leaving the history
             match = new Picture { Address = found.Address, Width = found.Width, Height = found.Height, Data = (byte[])found.Data.Clone(), Seq = found.Seq };
         }
