@@ -104,6 +104,19 @@ differs from the recording. The guest clock reads themselves are not recorded (t
 FIFA 13 menu capture from its pre-roll state matched 95% of the original's pictures (median difference 0) and showed
 the same findings.
 
+## Validation (desktop, headless, GTX 1650 laptop, 05/11/2026)
+
+| Game | Capture | What the analyzer found from the capture alone |
+|---|---|---|
+| FIFA 13 (PCSE00093), menus | `--capture-preroll=10 --capture-at=1500:1900`: 1359 frames, 959 of them pre-roll (16.8 s before the start) | the menu fade (black 0.34 s), a 88 ms `fileIo` stall on Cross, the stalls of the pre-roll save states (labelled as emulator actions); audio: port + NGS voice + mix. Re-run from the pre-roll state: 95% of the frames the same, median difference 0, same findings |
+| Jak 1 (PCSA00080), user's F5 state loaded after the collection's LoadExec, `--cpu-mhz=0` | `--capture-preroll=10 --capture-at=2150:2300`: 1400 frames, 1250 pre-roll (the pre-roll state is 49.5 s before the start, before the LoadExec) | `black-screen` for 5.7 s around the state load (found in the pre-roll, 25 s before the recording started), the LoadExec black transition, the two renderer replacements, guest-waits-for-GPU stalls in gameplay |
+
+Not covered yet: the black start of a *new* Jak 1 game (headless, Jak 1 stays at 0.4-2 fps on its title screen after
+the LoadExec, with or without a capture: an open Jak bug), the Croixleur Sigma SKIP flicker (only in a window), the
+Android build on a phone. The user's F5 state of Jak 1 hangs intermittently right after the load (main waits on
+`DMAPut`, F3DPlaybackThread on `F3DRecordingMessagePipe`): 2 of 3 runs with the pre-roll, 1 of 4 without in the bug
+agent's runs; the hang starts before the pre-roll's next save state.
+
 ## Analyzer
 
 ```
