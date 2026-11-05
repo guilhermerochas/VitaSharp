@@ -478,6 +478,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tinha visto que isso põe um buraco de 0,27 s num anel da torcida; buracos/emendas sem suavização no loop dão estalo.
   Comparar com `VITASHARP_AT9_ERROR_SILENCE=0`, e tratar o silêncio só nas vozes que terminam (narração) ou suavizar
   as emendas do loop
+- [ ] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
+  do usuário 05/11/2026 03:40, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`: o `specks.py` acha pontos em 5 de
+  266 quadros, ex. 13543 com 21 px em (338,71)). Então a causa não é (só) o uniform copiado cedo; olhar de novo a malha
+  de sombra projetada (vs DCBB621AC8070CB0) nesses quadros com `--draw-limit`
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
