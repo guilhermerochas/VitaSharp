@@ -431,6 +431,10 @@ public sealed class Emulator : IDisposable
             VitaSharp.Core.Kernel.Scheduler.Reset();
         }
         else Memory.FreeOwnedBy(Pid);
+        // the space now holds another executable: what was cached per use of it is stale (the HLE guest-code routines
+        // placed by the old image: Jak and Daxter Collection's menu left them where Jak1.self's code now is, and its
+        // sceGxm imports jumped into the middle of a Thumb function)
+        Space.Renew();
         Vita.Objects.RemoveOwnedBy(Pid);
         InitProcess();
         MainModule = null;
