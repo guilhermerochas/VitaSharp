@@ -44,6 +44,22 @@ public sealed unsafe partial class VulkanRenderer
         _devScenes.Add((_presentCount, b.Width, b.Height, b.Color?.Data ?? 0, q));
     }
 
+    readonly List<(int Scene, string Label, uint Query)> _devStamps = new();
+
+    /// <summary>The intervals of the last <see cref="DevReadSceneTimes"/> (bench stamps=1): per scene, "start" (scene
+    /// begin to the first stamp), then each stamped op to the next stamp or the scene end.</summary>
+    public readonly List<(int Scene, int Ord, string Label, double Ms)> DevStampTimes = new();
+
+    partial void DevStampOp(CommandBuffer cb, string label)
+    {
+        if (!GpuBenchState.Stamps || _devOpen < 0 || _devUsed + 1 > DevQueries) return;
+        if (cb.Handle == 0) cb = Cmd;
+        uint q = _devUsed++;
+        _vk.CmdResetQueryPool(cb, _devPool, q, 1);
+        _vk.CmdWriteTimestamp(cb, PipelineStageFlags.BottomOfPipeBit, _devPool, q);
+        _devStamps.Add((_devOpen, label, q));
+    }
+
     void DevSceneEnd()
     {
         if (_devOpen < 0) return;
@@ -66,7 +82,23 @@ public sealed unsafe partial class VulkanRenderer
                         ulong a = t[s.Query], b = t[s.Query + 1];
                         res.Add(new BenchScene(s.Present, i, s.W, s.H, s.Rt, b >= a ? (b - a) * _timePeriodNs / 1e6 : double.NaN));
                     }
+            DevStampTimes.Clear();
+            if (_devStamps.Count > 0 && res.Count == _devScenes.Count)
+                for (int i = 0; i < _devScenes.Count; i++)
+                {
+                    var own = _devStamps.Where(x => x.Scene == i).ToList();
+                    if (own.Count == 0) continue;
+                    ulong prev = t[_devScenes[i].Query];
+                    string label = "start";
+                    for (int k = 0; k <= own.Count; k++)
+                    {
+                        ulong at = k < own.Count ? t[own[k].Query] : t[_devScenes[i].Query + 1];
+                        DevStampTimes.Add((i, k, label, at >= prev ? (at - prev) * _timePeriodNs / 1e6 : double.NaN));
+                        if (k < own.Count) { prev = at; label = own[k].Label; }
+                    }
+                }
         }
+        _devStamps.Clear();
         _devScenes.Clear();
         _devUsed = 0;
         _devOpen = -1;

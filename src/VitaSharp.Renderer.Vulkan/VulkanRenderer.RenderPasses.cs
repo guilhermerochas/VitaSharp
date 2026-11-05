@@ -105,6 +105,7 @@ public sealed unsafe partial class VulkanRenderer
             SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = fb,
             RenderArea = new Rect2D(new Offset2D(0, 0), p.Area), ClearValueCount = 3, PClearValues = clears,
         };
+        DevStampOp(cmd, word ? "pass+word" : p.HasColor ? "pass" : "pass-depth");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.SecondaryCommandBuffers);
     }
 

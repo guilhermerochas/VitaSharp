@@ -45,6 +45,11 @@ public sealed unsafe partial class VulkanRenderer
     readonly long[] _colorLoads = new long[3], _depthLoads = new long[3], _colorStores = new long[2], _depthStores = new long[2];
     long _tileDeferred;
 
+    /// <summary>Developer builds: a GPU timestamp before a pass or copy of a timed bench frame (bench stamps=1,
+    /// Developer/VulkanRenderer.Bench.cs); <paramref name="cb"/> default = <see cref="Cmd"/>, which the caller records
+    /// into next anyway. Without VITASHARP_DEVELOPER the calls compile to nothing.</summary>
+    partial void DevStampOp(CommandBuffer cb = default, [System.Runtime.CompilerServices.CallerMemberName] string label = "");
+
     static int LoadIndex(AttachmentLoadOp op) => op switch { AttachmentLoadOp.Load => 0, AttachmentLoadOp.Clear => 1, _ => 2 };
 
     void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default)
@@ -183,6 +188,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         else
         {
+            DevStampOp(cmd, "rendering");
             _vk.CmdBeginRendering(cmd, in ri);
             _vk.CmdExecuteCommands(cmd, n, cbs);
             _vk.CmdEndRendering(cmd);

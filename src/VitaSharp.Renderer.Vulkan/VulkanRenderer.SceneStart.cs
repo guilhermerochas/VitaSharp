@@ -121,6 +121,7 @@ public sealed unsafe partial class VulkanRenderer
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             Extent = new Extent3D(rt.Width, rt.Height, 1),
         };
+        DevStampOp();
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, s.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(s.Image, ImageLayout.TransferDstOptimal, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,

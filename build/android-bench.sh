@@ -51,6 +51,8 @@ for ((r = 0; r < rounds; r++)); do
 done
 mkdir -p "$bench/results"
 adb pull "$remote/results/$run.tsv" "$(lp "$bench/results/$run.tsv")" >/dev/null 2>&1 || true
+# stamps=1 runs: the per-op intervals (results/RUN.stamps.tsv)
+adb pull "$remote/results/$run.stamps.tsv" "$(lp "$bench/results/$run.stamps.tsv")" >/dev/null 2>&1 || true
 # flicker runs (PARAM=mode=flicker): one row per run, and the flagged frames' pictures
 if adb pull "$remote/results/$run.flicker.tsv" "$(lp "$bench/results/$run.flicker.tsv")" >/dev/null 2>&1; then
   adb pull "$remote/results/${run}_flicker" "$(lp "$bench/results/")" >/dev/null 2>&1 || true

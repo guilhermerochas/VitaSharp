@@ -55,6 +55,8 @@ $results = Join-Path $BenchDir 'results'
 New-Item -ItemType Directory -Force $results | Out-Null
 $tsv = Join-Path $results "$run.tsv"
 adb pull "$remote/results/$run.tsv" $tsv 2>$null | Out-Null
+# stamps=1 runs: the per-op intervals (results/RUN.stamps.tsv)
+adb pull "$remote/results/$run.stamps.tsv" (Join-Path $results "$run.stamps.tsv") 2>$null | Out-Null
 # flicker runs (-Param mode=flicker): one row per run, and the flagged frames' pictures
 $ftsv = Join-Path $results "$run.flicker.tsv"
 adb pull "$remote/results/$run.flicker.tsv" $ftsv 2>$null | Out-Null

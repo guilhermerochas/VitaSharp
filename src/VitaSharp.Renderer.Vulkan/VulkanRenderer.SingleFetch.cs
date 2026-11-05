@@ -109,6 +109,7 @@ public sealed unsafe partial class VulkanRenderer
         CountOps(true, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, AttachmentLoadOp.Load, AttachmentStoreOp.Store);
         // the primary, after any ended renderings still waiting to be begun there (VulkanRenderer.SceneBreaks.cs)
         var cmd = Cmd;
+        DevStampOp(cmd, depthReadOnly ? "fetch-pass-depthro" : "fetch-pass");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         _boundPipeline = default;
         rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;

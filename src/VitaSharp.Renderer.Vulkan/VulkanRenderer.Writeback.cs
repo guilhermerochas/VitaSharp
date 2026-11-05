@@ -218,6 +218,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageOffset = new Offset3D((int)x, (int)y, 0),
             ImageExtent = new Extent3D(w, h, 1),
         };
+        DevStampOp();
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, wb.Buffer, 1, in region);
         F.Writebacks.Add(wb);
     }

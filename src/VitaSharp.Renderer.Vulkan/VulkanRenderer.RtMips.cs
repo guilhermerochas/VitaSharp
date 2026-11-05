@@ -94,6 +94,7 @@ public sealed unsafe partial class VulkanRenderer
                 DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 Extent = new Extent3D(w, h, 1),
             };
+            DevStampOp();
             _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, t.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         }
         if (uploadUpper)
@@ -111,6 +112,7 @@ public sealed unsafe partial class VulkanRenderer
                     ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, m, 0, 1),
                     ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
                 };
+                DevStampOp();
                 _vk.CmdCopyBufferToImage(Cmd, buf, t.Image, ImageLayout.TransferDstOptimal, 1, in region);
             }
         }

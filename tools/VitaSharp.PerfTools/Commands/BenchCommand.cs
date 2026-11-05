@@ -24,7 +24,7 @@ sealed class BenchCommand : IPerfCommand
         Console.WriteLine("vitasharp-perf bench table <results.tsv>... [--base base] [--scenes N]   median, spread and delta vs the base variant");
         Console.WriteLine("vitasharp-perf bench --child \"fixture=a;variant=v;reps=3;...\" --root DIR   one run in this process (what run starts)");
         Console.WriteLine("  parameters: reps warm draw drawmode=without|only depthload=clear|dontcare depthstore=store|dontcare barrier=full");
-        Console.WriteLine("              msaa=... fetchmerge=0|1 fetchsplit=0|1 msaafetch scenebreaks gpuquirks gpuprofile env.KEY=VALUE");
+        Console.WriteLine("              msaa=... fetchmerge=0|1 fetchsplit=0|1 msaafetch scenebreaks gpuquirks gpuprofile stamps=1 env.KEY=VALUE");
     }
 
     public int Run(PerfArgs a)

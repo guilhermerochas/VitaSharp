@@ -21,9 +21,12 @@ public static class GpuBenchState
     public static bool FullBarriers;
     /// <summary>Every fragment shader replaced by a discard (the vertex-side cost of the selected draws).</summary>
     public static bool FragmentDiscard;
+    /// <summary>A timestamp before every pass and copy of the timed frame (<see cref="VulkanRenderer.DevStampTimes"/>).</summary>
+    public static bool Stamps;
 
     public static void Reset()
     {
+        Stamps = false;
         Timing = false;
         ShaderDir = null;
         DepthLoad = null;
