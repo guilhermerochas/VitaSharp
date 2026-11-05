@@ -198,6 +198,9 @@ public static class EnvVars
     /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =check: waits, and logs how many held
     /// draws had their buffers rewritten meanwhile.</summary>
     public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
+    /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
+    /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
+    public const string TouchPeekUnread = "VITASHARP_TOUCH_PEEK_UNREAD";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";

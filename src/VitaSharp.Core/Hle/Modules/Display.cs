@@ -573,9 +573,22 @@ public sealed partial class Touch : HleModule
         return 1;
     }
 
+    /// <summary>Peek returns how many samples sceTouchRead has not consumed yet (0 when none: the newest sample is still
+    /// written, like Vita3K's memset + copy). Sonic & All-Stars Racing Transformed drains the panel with
+    /// "while (sceTouchPeek(port, &d, 1) > 0) { if (new timestamp) sceTouchRead(port, buf, 16); process; }" and never
+    /// leaves that loop when Peek always says 1 (the same hang Vita3K shows). VITASHARP_TOUCH_PEEK_UNREAD=0: always 1.</summary>
+    static readonly bool PeekUnread = Environment.GetEnvironmentVariable(EnvVars.TouchPeekUnread) != "0";
+
     [Hle("sceTouchPeek")]
     [Hle("sceTouchPeek2")]
-    int sceTouchPeek(int port, uint data, uint count) => Peek(port, data, count);
+    int sceTouchPeek(int port, uint data, uint count)
+    {
+        int r = Peek(port, data, count);
+        if (r <= 0 || !PeekUnread || port is < 0 or > 1) return r;
+        // a port the game never reads keeps the old behaviour (every peek sees a sample)
+        long lastRead = _lastRead[port];
+        return lastRead < 0 || VBlank.Count > lastRead ? r : 0;
+    }
 
     readonly long[] _lastRead = [-1, -1];
 
