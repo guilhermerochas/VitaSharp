@@ -120,7 +120,7 @@ public sealed partial class MainWindow : Window
 
         _emptyHint = new TextBlock
         {
-            Text = "No games installed yet.\nUse \"Add game ▾\": Install VPK… (or drop a .vpk here), Install PKG… (package + work.bin/.rif license) or Add game folder… (a decrypted game folder).",
+            Text = "No games installed yet.\nUse \"Add game ▾\": Install VPK… (or drop a .vpk here), Install PKG… (package + work.bin/.rif license or zRIF) or Add game folder… (a decrypted game folder).",
             Foreground = Muted, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24),
         };
@@ -579,14 +579,55 @@ public sealed partial class MainWindow : Window
         });
         var pkg = pkgs.FirstOrDefault()?.TryGetLocalPath();
         if (pkg == null) return;
-        var lics = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select the license for this package (work.bin or .rif)",
-            FileTypeFilter = [new FilePickerFileType("License") { Patterns = ["*.bin", "*.rif"] }, FilePickerFileTypes.All],
-        });
-        var lic = lics.FirstOrDefault()?.TryGetLocalPath();
+        var lic = await AskPkgLicense(pkg);
         if (lic == null) return;
         await InstallPkgFiles(pkg, lic);
+    }
+
+    /// <summary>The license of a package: a work.bin/.rif file chosen with the picker, or a zRIF pasted in the text
+    /// field (the text NoNpDrm and pkg2zip lists give). Returns the file path or the zRIF text; null when cancelled.</summary>
+    async Task<string?> AskPkgLicense(string pkg)
+    {
+        string? result = null;
+        var zrif = new TextBox { Watermark = "zRIF (KO5ifR1dQ+eHBlOi…)", AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MinHeight = 60 };
+        var error = new TextBlock { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
+        var file = new Button { Content = "Choose work.bin / .rif…" };
+        var install = new Button { Content = "Install", Background = Accent, Foreground = Brushes.White, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(install);
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = "License for " + Path.GetFileName(pkg), FontSize = 18, FontWeight = FontWeight.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "Paste the zRIF of this package, or choose its license file (work.bin or .rif).", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(zrif);
+        panel.Children.Add(file);
+        panel.Children.Add(error);
+        panel.Children.Add(buttons);
+        var dlg = new Window { Title = "VitaSharp", Width = 480, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
+        void Fail(string message) { error.Text = message; error.IsVisible = true; }
+        install.Click += (_, _) =>
+        {
+            string text = new string((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
+            if (text.Length == 0) { Fail("Paste a zRIF or choose the license file."); return; }
+            if (!Zrif.LooksLikeZrif(text)) { Fail("That is not a zRIF (it starts with KO5ifR1dQ+…)."); return; }
+            try { Zrif.Decode(text); }
+            catch (Exception e) { Fail("The zRIF could not be read: " + e.Message); return; }
+            result = text;
+            dlg.Close();
+        };
+        file.Click += async (_, _) =>
+        {
+            var lics = await dlg.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Select the license for this package (work.bin or .rif)",
+                FileTypeFilter = [new FilePickerFileType("License") { Patterns = ["*.bin", "*.rif"] }, FilePickerFileTypes.All],
+            });
+            if (lics.FirstOrDefault()?.TryGetLocalPath() is { } path) { result = path; dlg.Close(); }
+        };
+        cancel.Click += (_, _) => dlg.Close();
+        await dlg.ShowDialog(this);
+        return result;
     }
 
     async Task InstallPkgFiles(string pkg, string lic)
@@ -669,7 +710,7 @@ public sealed partial class MainWindow : Window
                 if (!await InstallVpkFile(a)) break;
         }
         else if (pkg != null && lic != null) await InstallPkgFiles(pkg, lic);
-        else if (pkg != null) SetStatus("Drop the .pkg together with its work.bin/.rif license, or use Install PKG…");
+        else if (pkg != null && await AskPkgLicense(pkg) is { } asked) await InstallPkgFiles(pkg, asked);
         else foreach (var dir in items.Where(Directory.Exists)) await AddFolderPath(dir);
     }
 
