@@ -41,6 +41,9 @@ public sealed class MidSceneFlushCommand : GpuCommand;
 public sealed class PresentCommand : GpuCommand
 {
     public required DisplayFrame Frame;
+    /// <summary>The shell's overlay plane, blended over <see cref="Frame"/> with its alpha (the on-screen keyboard over an
+    /// application that shows its own frames). Not part of GPU dumps.</summary>
+    public DisplayFrame? Overlay;
     /// <summary>The guest flip that queued it (frames presented by the display before it; -1 = a present of the
     /// emulator's own, e.g. the process coming back to the front), the vblank count, the guest clock and the host
     /// time (Stopwatch ticks) of that sceDisplaySetFrameBuf. Not part of GPU dumps.</summary>
