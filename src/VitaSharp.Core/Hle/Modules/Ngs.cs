@@ -732,13 +732,14 @@ public sealed partial class Ngs : HleModule
     {
         if (!_voices.TryGetValue(voice, out var v)) return INVALID_ARG;
         TraceVoice(v, $"key off from {CallerInfo()}");
+        // the voice finishes in the next sceNgsSystemUpdate, which calls its finished callback (Update): calling it here,
+        // on the caller's thread, deadlocked MotorStorm RC, whose audio thread keys voices off while holding the
+        // spinlock its finished callback takes
         lock (v.Rack.System.Lock)
         {
-            if (v.State == NgsVoiceState.Active) v.State = NgsVoiceState.Finalizing;
+            if (v.State is not (NgsVoiceState.Active or NgsVoiceState.Finalizing)) return OK;
+            v.State = NgsVoiceState.Finalizing;
             v.KeyedOff = true;
-            InvokeCallback(v, v.FinishedCallback, v.FinishedUserData, 0, 0, 0, 0);
-            v.KeyedOff = false;
-            Stop(v);
         }
         return OK;
     }
@@ -772,10 +773,23 @@ public sealed partial class Ngs : HleModule
 
     // =================================================================== update
 
+    readonly record struct PendingCallback(NgsVoice Voice, uint Callback, uint UserData, uint ModuleId, int Reason, int Reason2, uint Ptr);
+
+    // the callbacks of the sceNgsSystemUpdate running on this thread: called once it has left the system lock, so a
+    // callback that waits for a lock of the game held by a thread inside an NGS call (MotorStorm RC's audio thread
+    // holds its spinlock across sceNgsVoiceLockParams, and its finished callback takes that spinlock) cannot deadlock
+    [ThreadStatic] static List<PendingCallback>? t_deferred, t_spare;
+
     void InvokeCallback(NgsVoice v, uint callback, uint userData, uint moduleId, int reason, int reason2, uint ptr)
     {
         TraceVoice(v, $"callback 0x{callback:X8} module 0x{moduleId:X4} reason {reason} {reason2} ptr 0x{ptr:X8}");
         if (callback == 0) return;
+        if (t_deferred is { } deferred) { deferred.Add(new(v, callback, userData, moduleId, reason, reason2, ptr)); return; }
+        CallNow(v, callback, userData, moduleId, reason, reason2, ptr);
+    }
+
+    void CallNow(NgsVoice v, uint callback, uint userData, uint moduleId, int reason, int reason2, uint ptr)
+    {
         var t = GuestThread.Current;
         if (t == null) return;
         uint info = v.Rack.System.CallbackInfo;
@@ -794,22 +808,33 @@ public sealed partial class Ngs : HleModule
     {
         if (!_systems.TryGetValue(system, out var s)) return INVALID_HANDLE;
         WaitForGuestLock(s);
-        lock (s.Lock)
+        var outer = t_deferred;
+        var callbacks = t_spare ?? new List<PendingCallback>();
+        t_spare = null;
+        t_deferred = callbacks;
+        try
         {
-            // snapshot (voices may leave the queue while it runs) into a reused buffer; a nested update gets its own
-            int n = s.Queue.Count;
-            NgsVoice[] buf;
-            if (s.UpdateDepth == 0)
+            lock (s.Lock)
             {
-                if (s.UpdateSnapshot.Length < n) s.UpdateSnapshot = new NgsVoice[Math.Max(n, s.UpdateSnapshot.Length * 2)];
-                buf = s.UpdateSnapshot;
+                // snapshot (voices may leave the queue while it runs) into a reused buffer; a nested update gets its own
+                int n = s.Queue.Count;
+                NgsVoice[] buf;
+                if (s.UpdateDepth == 0)
+                {
+                    if (s.UpdateSnapshot.Length < n) s.UpdateSnapshot = new NgsVoice[Math.Max(n, s.UpdateSnapshot.Length * 2)];
+                    buf = s.UpdateSnapshot;
+                }
+                else buf = new NgsVoice[n];
+                s.Queue.CopyTo(buf);
+                s.UpdateDepth++;
+                try { Update(new ReadOnlySpan<NgsVoice>(buf, 0, n)); }
+                finally { s.UpdateDepth--; }
             }
-            else buf = new NgsVoice[n];
-            s.Queue.CopyTo(buf);
-            s.UpdateDepth++;
-            try { Update(new ReadOnlySpan<NgsVoice>(buf, 0, n)); }
-            finally { s.UpdateDepth--; }
         }
+        finally { t_deferred = outer; }
+        foreach (var c in callbacks) CallNow(c.Voice, c.Callback, c.UserData, c.ModuleId, c.Reason, c.Reason2, c.Ptr);
+        callbacks.Clear();
+        t_spare = callbacks;
         return OK;
     }
 
@@ -820,6 +845,14 @@ public sealed partial class Ngs : HleModule
             foreach (var v in queue)
             {
                 v.Product = null;
+                if (v.KeyedOff && v.State == NgsVoiceState.Finalizing)
+                {
+                    // keyed off since the last update (sceNgsVoiceKeyOff): it ends here
+                    InvokeCallback(v, v.FinishedCallback, v.FinishedUserData, 0, 0, 0, 0);
+                    v.KeyedOff = false;
+                    Stop(v);
+                    continue;
+                }
                 bool finished = false;
                 uint finishedModule = 0;
                 foreach (var m in v.Modules)

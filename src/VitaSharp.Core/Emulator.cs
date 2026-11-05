@@ -145,7 +145,7 @@ public sealed class Emulator : IDisposable
     /// <summary>A further process of the same system (<see cref="SpawnProcess"/>): shares the guest memory's shared regions
     /// (CDRAM, kernel), GPU, host devices and kernel object table of <paramref name="parent"/>, with its own address
     /// space, kernel state, HLE modules and mounts.</summary>
-    Emulator(Emulator parent)
+    Emulator(Emulator parent, AppObject? reservedApp = null)
     {
         Parent = parent;
         Options = parent.Options;
@@ -162,7 +162,7 @@ public sealed class Emulator : IDisposable
         TraceHleExclude = parent.TraceHleExclude;
         BacktraceHle = parent.BacktraceHle;
         Pid = Vita.Register(this);
-        AppId = Vita.RegisterApp(this);
+        AppId = reservedApp != null ? Vita.ClaimApp(reservedApp, this) : Vita.RegisterApp(this);
         Vfs = new Vfs(Options.FsRoot);
         InitProcess();
     }
@@ -257,10 +257,11 @@ public sealed class Emulator : IDisposable
     /// (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can such an executable not be placed:
     /// then it ends and <paramref name="cannotPlace"/> runs instead.
     /// </summary>
-    public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false)
+    public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
+        AppObject? reservedApp = null)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
-        var child = new Emulator(this) { _background = background };
+        var child = new Emulator(this, reservedApp) { _background = background };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
         if (!ReferenceEquals(child.Space, Space)) child.Space.Label = child.Describe();
@@ -430,6 +431,10 @@ public sealed class Emulator : IDisposable
             VitaSharp.Core.Kernel.Scheduler.Reset();
         }
         else Memory.FreeOwnedBy(Pid);
+        // the space now holds another executable: what was cached per use of it is stale (the HLE guest-code routines
+        // placed by the old image: Jak and Daxter Collection's menu left them where Jak1.self's code now is, and its
+        // sceGxm imports jumped into the middle of a Thumb function)
+        Space.Renew();
         Vita.Objects.RemoveOwnedBy(Pid);
         InitProcess();
         MainModule = null;

@@ -225,8 +225,10 @@ public sealed partial class NpCommerce2 : HleModule
     [Hle] int sceNpCommerce2Init() { lock (_lock) _inited = true; return 0; }
     [Hle] int sceNpCommerce2Term() { lock (_lock) { _inited = false; _ctx.Clear(); _reqs.Clear(); } return 0; }
 
+    // two arguments (MotorStorm RC: r0 = version 2, r1 = &ctxId, r2 left over from the previous call); reading the
+    // id pointer from the stack wrote the new id over a live object of the caller (its vtable became 1)
     [Hle]
-    int sceNpCommerce2CreateCtx(uint version, uint npId, uint handler, uint arg, Ptr<uint> ctxId)
+    int sceNpCommerce2CreateCtx(uint version, Ptr<uint> ctxId)
     {
         lock (_lock)
         {

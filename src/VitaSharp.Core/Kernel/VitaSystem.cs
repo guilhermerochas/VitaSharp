@@ -66,14 +66,34 @@ public static class ShellEvents
     public const int AppLaunched = 0xA;
     /// <summary>An application process ended: +4 pid, +0x14 application id (the shell's handler reads the id there).</summary>
     public const int AppEnded = 4;
+    /// <summary>An application asked for another one to start (sceAppMgrLaunchAppByName): +4 and +8 its application
+    /// id (kernel appmgr 0x8101410C); the shell answers with sceAppMgrLaunchAppByName2ndStage or LaunchAppCancel.</summary>
+    public const int LaunchRequest = 6;
     /// <summary>Bring up the LiveArea of the running application +4 (the PS button while it is in front).</summary>
     public const int ShowLiveArea = 0x10;
 }
 
-/// <summary>SceAppMgr's record of the application a process runs (its UID is the application id the shell uses).</summary>
-public sealed class AppObject(Emulator process) : KernelObject
+/// <summary>SceAppMgr's record of the application a process runs (its UID is the application id the shell uses). An
+/// application another application asked for has its record before its process (<see cref="PendingLaunch"/>).</summary>
+public sealed class AppObject(Emulator? process) : KernelObject
 {
-    public Emulator Process { get; } = process;
+    public Emulator? Process { get; internal set; } = process;
+}
+
+/// <summary>
+/// An application one application asked to start (sceAppMgrLaunchAppByName: Music's "Start [Content Manager]"). In
+/// the FW 3.74 kernel appmgr (0x8100D89C) the call creates the application's entry, with its launch flags and
+/// parameter, and posts shell event 6 {application id}; the shell's handler (shell.self 0x8127D402) reads its status
+/// and launch parameter (sceAppMgrPeekLaunchParamForShell) and either starts it with
+/// sceAppMgrLaunchAppByName2ndStage or drops it with sceAppMgrLaunchAppCancel. The process exists only after the
+/// second stage.
+/// </summary>
+public sealed class PendingLaunch
+{
+    public required AppObject App;
+    public required string TitleId, Dir;
+    public int Flags;
+    public string? Param;
 }
 
 /// <summary>
@@ -124,6 +144,35 @@ public sealed class VitaSystem
     }
 
     public Emulator? ByAppId(int appId) => Objects.Get<AppObject>(appId)?.Process;
+
+    readonly Dictionary<int, PendingLaunch> _pendingLaunches = new();
+
+    /// <summary>Reserves the application id of a launch another application asked for (<see cref="PendingLaunch"/>).</summary>
+    public PendingLaunch AddPendingLaunch(Emulator caller, string titleId, string dir, int flags, string? param)
+    {
+        int uid;
+        var app = new AppObject(null);
+        using (ProcessScope.Enter(caller)) uid = Objects.Register(app);
+        var pl = new PendingLaunch { App = app, TitleId = titleId, Dir = dir, Flags = flags, Param = param };
+        lock (_pendingLaunches) _pendingLaunches[uid] = pl;
+        return pl;
+    }
+
+    public PendingLaunch? GetPendingLaunch(int appId) { lock (_pendingLaunches) return _pendingLaunches.GetValueOrDefault(appId); }
+
+    /// <summary>Takes a pending launch out (its second stage, or its cancellation).</summary>
+    public PendingLaunch? TakePendingLaunch(int appId)
+    {
+        lock (_pendingLaunches) return _pendingLaunches.Remove(appId, out var pl) ? pl : null;
+    }
+
+    /// <summary>Gives a process the application record reserved for it.</summary>
+    internal int ClaimApp(AppObject app, Emulator e)
+    {
+        app.Process = e;
+        app.OwnerPid = e.Pid;
+        return app.Uid;
+    }
 
     /// <summary>The process that declared itself the shell (sceAppMgrDeclareShellProcess2).</summary>
     public Emulator? Shell => Processes.FirstOrDefault(p => p.IsShell);

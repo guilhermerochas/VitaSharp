@@ -42,6 +42,32 @@ public readonly struct Texels : IDisposable
 /// <summary>Turns guest texture memory (any GXM layout) into tightly packed rows ready for vkCmdCopyBufferToImage.</summary>
 public static class TextureDecoder
 {
+    [ThreadStatic] static uint t_srcAddr;
+    [ThreadStatic] static byte[]? t_srcData;
+
+    /// <summary>Until disposed, reads of [addr, addr + data.Length) on this thread come from <paramref name="data"/>
+    /// instead of guest memory (an earlier decoder picture, Gpu/DecoderOutputs.cs).</summary>
+    public static SourceScope UseSource(uint addr, byte[] data)
+    {
+        t_srcAddr = addr;
+        t_srcData = data;
+        return default;
+    }
+
+    public readonly struct SourceScope : IDisposable
+    {
+        public void Dispose() => t_srcData = null;
+    }
+
+    static ReadOnlySpan<byte> Mem(uint addr, int length)
+    {
+        if (t_srcData is { } d && addr - t_srcAddr <= (uint)d.Length && (ulong)(addr - t_srcAddr) + (uint)length <= (uint)d.Length)
+            return d.AsSpan((int)(addr - t_srcAddr), length);
+        return GuestMemory.ReadSpan(addr, length);
+    }
+
+    static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
+
     /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied.</summary>
     public static Texels Decode(GxmTextureDesc d, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch, out uint outW, out uint outH)
     {
@@ -58,7 +84,7 @@ public static class TextureDecoder
                 var bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
-                return Pvrtc.Decode(GuestMemory.ReadSpan(addr, (int)(nx * ny * 8)), w, h, two, ii);
+                return Pvrtc.Decode(Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
             }
             if (info.Convert == TexConvert.AstcFromPvrtc)
             {
@@ -66,7 +92,7 @@ public static class TextureDecoder
                 var bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
-                return AstcTranscoder.FromPvrtc(bf, GuestMemory.ReadSpan(addr, (int)(nx * ny * 8)), w, h, two, ii);
+                return AstcTranscoder.FromPvrtc(bf, Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
             }
             uint bw = (w + 3) / 4, bh = (h + 3) / 4;
             int bb = info.BlockBytes;
@@ -75,7 +101,7 @@ public static class TextureDecoder
             if (!swizzled)
             {
                 for (uint y = 0; y < bh; y++)
-                    GuestMemory.ReadSpan(addr + y * rowPitch, (int)(bw * bb)).CopyTo(o[(int)(y * bw * bb)..]);
+                    Mem(addr + y * rowPitch, (int)(bw * bb)).CopyTo(o[(int)(y * bw * bb)..]);
             }
             else
             {
@@ -84,7 +110,7 @@ public static class TextureDecoder
                     for (uint x = 0; x < bw; x++)
                     {
                         uint idx = TextureLayout.Morton(x, y, pw, ph);
-                        GuestMemory.ReadSpan(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
+                        Mem(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
                     }
             }
             if (info.Convert == TexConvert.BcSoftware)
@@ -171,7 +197,7 @@ public static class TextureDecoder
                 {
                     uint idx = swizzled ? TextureLayout.Morton(x, y, BitOperations.RoundUpToPowerOf2(w), BitOperations.RoundUpToPowerOf2(h))
                         : tiled ? TextureLayout.Tiled(x, y, w) : y * rowPitch * 2 + x;
-                    byte b = GuestMemory.Read<byte>(addr + idx / 2);
+                    byte b = Mem8(addr + idx / 2);
                     dst[(int)(y * w + x)] = (byte)((idx & 1) != 0 ? b >> 4 : b & 0xF);
                 }
             return result;
@@ -181,23 +207,23 @@ public static class TextureDecoder
             uint pw = BitOperations.RoundUpToPowerOf2(w), ph = BitOperations.RoundUpToPowerOf2(h);
             if (pw == w && ph == h)
             {
-                TextureLayout.SwizzledToLinear(dst, GuestMemory.ReadSpan(addr, (int)(w * h * bpp)), w, h, bpp);
+                TextureLayout.SwizzledToLinear(dst, Mem(addr, (int)(w * h * bpp)), w, h, bpp);
                 return result;
             }
             for (uint y = 0; y < h; y++)
                 for (uint x = 0; x < w; x++)
-                    GuestMemory.ReadSpan(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
+                    Mem(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
             return result;
         }
         if (tiled)
         {
             uint tw = (w + 31) & ~31u, th = (h + 31) & ~31u;
-            TextureLayout.TiledToLinear(dst, GuestMemory.ReadSpan(addr, (int)(tw * th * bpp)), w, h, bpp);
+            TextureLayout.TiledToLinear(dst, Mem(addr, (int)(tw * th * bpp)), w, h, bpp);
             return result;
         }
         int row = (int)(w * bpp);
         for (uint y = 0; y < h; y++)
-            GuestMemory.ReadSpan(addr + y * rowPitch, row).CopyTo(dst.Slice((int)(y * row), row));
+            Mem(addr + y * rowPitch, row).CopyTo(dst.Slice((int)(y * row), row));
         return result;
     }
 
@@ -319,19 +345,19 @@ public static class TextureDecoder
         for (uint y = 0; y < h; y++)
             for (uint x = 0; x < w; x++)
             {
-                int Y = GuestMemory.Read<byte>(addr + y * pitch + x);
+                int Y = Mem8(addr + y * pitch + x);
                 int U, V;
                 if (threePlane)
                 {
                     uint cp = pitch / 2, cs = cp * (h / 2);
-                    U = GuestMemory.Read<byte>(addr + ySize + (yvu ? cs : 0) + (y / 2) * cp + x / 2);
-                    V = GuestMemory.Read<byte>(addr + ySize + (yvu ? 0 : cs) + (y / 2) * cp + x / 2);
+                    U = Mem8(addr + ySize + (yvu ? cs : 0) + (y / 2) * cp + x / 2);
+                    V = Mem8(addr + ySize + (yvu ? 0 : cs) + (y / 2) * cp + x / 2);
                 }
                 else
                 {
                     uint c = addr + ySize + (y / 2) * pitch + (x & ~1u);
-                    U = GuestMemory.Read<byte>(c + (yvu ? 1u : 0u));
-                    V = GuestMemory.Read<byte>(c + (yvu ? 0u : 1u));
+                    U = Mem8(c + (yvu ? 1u : 0u));
+                    V = Mem8(c + (yvu ? 0u : 1u));
                 }
                 YuvToRgb(Y, U, V, dst.Slice((int)((y * w + x) * 4), 4), full);
             }
@@ -347,7 +373,7 @@ public static class TextureDecoder
             for (uint x = 0; x < w; x += 2)
             {
                 uint p = addr + y * pitch + x * 2;
-                int y0 = GuestMemory.Read<byte>(p), u = GuestMemory.Read<byte>(p + 1), y1 = GuestMemory.Read<byte>(p + 2), v = GuestMemory.Read<byte>(p + 3);
+                int y0 = Mem8(p), u = Mem8(p + 1), y1 = Mem8(p + 2), v = Mem8(p + 3);
                 YuvToRgb(y0, u, v, dst.Slice((int)((y * w + x) * 4), 4));
                 if (x + 1 < w) YuvToRgb(y1, u, v, dst.Slice((int)((y * w + x + 1) * 4), 4));
             }
