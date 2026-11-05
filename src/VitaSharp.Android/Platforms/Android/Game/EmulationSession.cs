@@ -70,7 +70,7 @@ public sealed partial class EmulationSession : IDisposable
         SessionLog.Open(data.Logs, game.TitleId);
         foreach (var line in RuntimeReport.Lines()) Log.Info(line);
         Log.Info($"Game {game.TitleId} '{game.Title}' {game.Version}: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, " +
-                 $"{_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}");
+                 $"{_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}" + (_settings.ResScale.Length > 0 ? $", resolution scale {_settings.ResScale}" : ""));
 
         CpuCore.InstructionsPerSecond = _settings.ClockHz;
         HostThreads.Enabled = true;
@@ -129,6 +129,7 @@ public sealed partial class EmulationSession : IDisposable
             ShaderCacheDir = data.ShaderCache,
             VSync = _settings.VSync,
             GpuProfile = _settings.GpuProfile.Length > 0 ? _settings.GpuProfile : null,
+            ResScale = _settings.ResScaleValue, // per-game internal resolution (0: VITASHARP_RES_SCALE in env.txt, else native)
         };
 #if VITASHARP_DEVELOPER
         // developer APK, VITASHARP_FLICKER_CHECK=1[:threshold] in env.txt: every presented frame is read back small and

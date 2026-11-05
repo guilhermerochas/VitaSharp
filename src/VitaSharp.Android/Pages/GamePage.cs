@@ -100,13 +100,16 @@ public sealed class GamePage : Screen<GameState, GameProps>
                         Row("Perfil da GPU", ValueText(SettingsChoices.GpuProfiles, s.GpuProfile, SettingsChoices.LabelOf(SettingsChoices.GpuProfiles, eff.GpuProfile)),
                             () => Pick("Perfil da GPU", SettingsChoices.GpuProfiles, app.GpuProfile, v => s.GpuProfile = v)),
                         Divider(),
+                        Row("Resolução interna", ValueText(SettingsChoices.ResScales, s.ResScale, SettingsChoices.LabelOf(SettingsChoices.ResScales, eff.ResScale)),
+                            () => Pick("Resolução interna", SettingsChoices.ResScales, "", v => s.ResScale = v)),
+                        Divider(),
                         ToggleRow("VSync", eff.VSync, v => Save(x => x.VSync = v == app.VSync ? null : v)),
                         Divider(),
                         ToggleRow("Mostrar FPS", eff.ShowFps, v => Save(x => x.ShowFps = v == app.ShowFps ? null : v)),
                         s.HasOverrides ? Divider() : null,
                         s.HasOverrides ? Row("Voltar ao padrão de Ajustes", null, () => Save(x =>
                         {
-                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null;
+                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null;
                         })) : null
                     ),
                     SectionTitle("Saves"),

@@ -134,6 +134,8 @@ public static class EnvVars
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
     public const string Replay = "VITASHARP_REPLAY";
+    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
+    public const string ResScale = "VITASHARP_RES_SCALE";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";

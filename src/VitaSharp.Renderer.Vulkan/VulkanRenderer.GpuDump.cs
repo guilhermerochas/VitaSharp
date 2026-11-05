@@ -18,6 +18,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Reads back every colour render target (GPU worker, at a frame boundary; waits for the GPU).</summary>
     public byte[]? ExportDumpState()
     {
+        if (ResScale != 1f) { Log.Warn("[gpudump] render targets are not carried in dumps taken at a resolution scale (VITASHARP_RES_SCALE)"); return null; }
         if (F.Recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
         _vk.DeviceWaitIdle(_dev);
         var targets = _renderTargets.Values.OrderBy(t => t.LastScene).ThenBy(t => t.LastUsedFrame).ToList();
@@ -96,11 +97,12 @@ public sealed unsafe partial class VulkanRenderer
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D(w, h, 1),
             };
-            _vk.CmdCopyBufferToImage(Cmd, buf, rt.Image, ImageLayout.General, 1, in region);
+            rt.Version++;
+            _vk.CmdCopyBufferToImage(Cmd, buf, UploadImageOf(rt), ImageLayout.General, 1, in region);
+            NativeToScaled(rt); // a scaled target: recorded at guest size (VulkanRenderer.ResScale.cs)
             Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
                 AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
-            rt.Version++;
             rt.Dirty = true;
             imported++;
         }

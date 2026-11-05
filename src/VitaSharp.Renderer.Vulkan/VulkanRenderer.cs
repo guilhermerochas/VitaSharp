@@ -52,6 +52,8 @@ public sealed class VulkanRendererOptions
     /// <summary>Tooling (--nav shot): the next presented frame is also written full size to this PNG path; the
     /// renderer clears it when it takes the request.</summary>
     public string? ShotPath;
+    /// <summary>Internal resolution scale of render targets (0.5, 0.75; per game on Android): 0 = VITASHARP_RES_SCALE, else native (VulkanRenderer.ResScale.cs).</summary>
+    public float ResScale;
 
 }
 
@@ -139,6 +141,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     public VulkanRenderer(VulkanRendererOptions options)
     {
         _opt = options;
+        ResScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : EnvResScale;
         _presentCount = Math.Max(0, options.FirstPresent);
         _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
         _vk = _core.Vk;
@@ -423,6 +426,16 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         /// <summary>The <see cref="Version"/> whose content is also in guest memory (loaded from it, or written back
         /// losslessly): such a target can be evicted and recreated from memory.</summary>
         public long InMemoryVersion = -1;
+        /// <summary>Internal resolution scale of the image (VulkanRenderer.ResScale.cs): the image is
+        /// <see cref="ImgW"/> x <see cref="ImgH"/>, guest coordinates stay in <see cref="Width"/> x <see cref="Height"/>.</summary>
+        public float Scale = 1f;
+        public uint ImgW => Scale == 1f ? Width : ScaleDim(Width, Scale);
+        public uint ImgH => Scale == 1f ? Height : ScaleDim(Height, Scale);
+        /// <summary>Native-size copy of a scaled image for transfers in guest pixels (writeback, mirror, dumps).</summary>
+        public Image NativeImage;
+        public ImageView NativeView;
+        public ImageMemoryPool.Allocation NativeMem;
+        public long NativeVersion = -1;
     }
 
     sealed class DepthTarget
@@ -453,6 +466,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool Sampleable;
         /// <summary>Depth-aspect view (depth in every channel) for draws that read it in place (VulkanRenderer.SingleFetch.cs).</summary>
         public ImageView FeedbackView;
+        /// <summary>Internal resolution scale (VulkanRenderer.ResScale.cs): <see cref="Width"/>/<see cref="Height"/>
+        /// are the image's size, guest size times this.</summary>
+        public float Scale = 1f;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -552,11 +568,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _mirroredRt.Remove(old);
         }        var format = SurfaceFormat(c.ColorFormat);
         format = RenderableFormat(format);
+        float scale = TargetScale(c.Width, c.Height, format); // internal resolution (VulkanRenderer.ResScale.cs)
         // input attachment: programmable-blending draws of one-sample scenes read it in a render pass (VulkanRenderer.SingleFetch.cs)
-        var (img, view, mem) = CreateImage(MemCat.RenderTarget, c.Width, c.Height, format,
+        var (img, view, mem) = CreateImage(MemCat.RenderTarget, ScaleDim(c.Width, scale), ScaleDim(c.Height, scale), format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
             ImageAspectFlags.ColorBit, mutable: true);
-        rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount };
+        rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount, Scale = scale };
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
@@ -569,7 +586,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// <summary>Destroys a render target and what was derived from it once the GPU is done with them.</summary>
     void DestroyLater(RenderTarget rt) => ReleaseRenderTarget(rt, now: false);
 
-    DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h, SampleCountFlags samples = SampleCountFlags.Count1Bit)
+    /// <param name="w">image size (guest size times <paramref name="scale"/>)</param>
+    DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h, SampleCountFlags samples = SampleCountFlags.Count1Bit, float scale = 1f)
     {
         uint addr = d?.DepthData ?? 0;
         var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
@@ -586,6 +604,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             StencilAddress = d?.StencilData ?? 0, StencilStrideBytes = d?.StrideInSamples ?? w,
             Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount,
             Sampleable = (usage & ImageUsageFlags.SampledBit) != 0,
+            Scale = scale,
         };
         BeginFrameIfNeeded();
         Barrier(img, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
@@ -630,7 +649,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Extent3D(rt.Width, rt.Height, 1),
             };
-            _vk.CmdCopyBufferToImage(Cmd, buf, rt.Image, ImageLayout.General, 1, in region);
+            // a scaled target: uploaded at guest size, then blitted down (VulkanRenderer.ResScale.cs)
+            _vk.CmdCopyBufferToImage(Cmd, buf, UploadImageOf(rt), ImageLayout.General, 1, in region);
+            NativeToScaled(rt);
         }
         else
         {
@@ -708,9 +729,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (_msaaNoDownscale) { surfW = Math.Max(surfW / 2, 1); surfH = Math.Max(surfH / 2, 1); }
         _sceneW = Math.Min(b.Width, surfW);
         _sceneH = Math.Min(b.Height, surfH);
+        // a scaled colour target has a depth image of the same scale (VulkanRenderer.ResScale.cs)
+        float rs = RtScale;
         _depth = _msaaNoDownscale
-            ? GetDepthTarget(b.Depth, Math.Max(b.Width * 2, _rt!.Width), Math.Max(b.Height * 2, _rt.Height))
-            : GetDepthTarget(b.Depth, Math.Max(b.Width, _rt?.Width ?? 0) * SsScale, Math.Max(b.Height, _rt?.Height ?? 0) * SsScale, SceneSamples);
+            ? GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width * 2, _rt!.Width), rs), ScaleDim(Math.Max(b.Height * 2, _rt.Height), rs), scale: rs)
+            : GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width, _rt?.Width ?? 0), rs) * SsScale, ScaleDim(Math.Max(b.Height, _rt?.Height ?? 0), rs) * SsScale, SceneSamples, rs);
         _sceneSerial++;
         _sceneRegions.Clear();
         if (_rt != null)
@@ -840,7 +863,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             var ri = new RenderingInfo
             {
                 SType = StructureType.RenderingInfo,
-                RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale)),
+                RenderArea = new Rect2D(new Offset2D(0, 0), SceneArea),
                 LayerCount = 1,
                 ColorAttachmentCount = _rt != null ? word ? 2u : 1u : 0u,
                 PColorAttachments = colors,
@@ -964,7 +987,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 SrcOffset = new Offset3D(0, (int)srcY, 0), DstOffset = new Offset3D(0, (int)dstY, 0),
                 Extent = new Extent3D(width, rows, 1),
             };
-            _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, fb.Image, ImageLayout.General, 1, in copy);
+            _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, fb.Image, ImageLayout.General, 1, in copy);
             // the copy must finish before the target is rendered again
             Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
                 AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
@@ -1095,7 +1118,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
         };
-        _vk.CmdCopyImageToBuffer(Cmd, src.Image, ImageLayout.General, r.Buf, 1, in region);
+        _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(src), ImageLayout.General, r.Buf, 1, in region); // guest size (VulkanRenderer.ResScale.cs)
         f.DumpIndex = (int)_presentCount;
         f.DumpPending = true;
         _readbackIsBgra = src.Format == Format.B8G8R8A8Unorm;
@@ -1199,12 +1222,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             bool half = rt.Format == Format.R16G16B16A16Sfloat;
             bool raw64 = rt.Format == Format.R32G32Sfloat; // dumped as its first 32-bit word per pixel (packed data)
-            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (half || raw64 ? 8u : 4u), BufferUsageFlags.TransferDstBit, MemCat.Readback);
+            var (buf, mem, ptr) = _core.CreateHostBuffer(rt.ImgW * rt.ImgH * (half || raw64 ? 8u : 4u), BufferUsageFlags.TransferDstBit, MemCat.Readback);
             var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
             _vk.AllocateCommandBuffers(_dev, in ai, out var cmd);
             var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
             _vk.BeginCommandBuffer(cmd, in bi);
-            var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
+            var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.ImgW, rt.ImgH, 1) };
             // single-channel 16-bit targets (shadow maps, depth packed into U16 colour) are dumped as grey, 8 bits of 16
             bool r16 = rt.Format == Format.R16Unorm;
             if (half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm || r16)
@@ -1215,31 +1238,31 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.QueueWaitIdle(_core.Queue);
             if (r16)
             {
-                var grey = new ReadOnlySpan<ushort>((void*)ptr, (int)(rt.Width * rt.Height)).ToArray();
+                var grey = new ReadOnlySpan<ushort>((void*)ptr, (int)(rt.ImgW * rt.ImgH)).ToArray();
                 var dst = new Span<byte>((void*)ptr, grey.Length * 4);
                 for (int i = 0; i < grey.Length; i++) { byte g = (byte)(grey[i] >> 8); dst[i * 4] = dst[i * 4 + 1] = dst[i * 4 + 2] = g; dst[i * 4 + 3] = 255; }
             }
             else if (!(half || raw64 || Formats.ColorBytesPerPixel(rt.ColorFormat) == 4 || rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm))
-                new Span<byte>((void*)ptr, (int)(rt.Width * rt.Height * 4)).Clear(); // not read back: dumped black, not as stale memory
+                new Span<byte>((void*)ptr, (int)(rt.ImgW * rt.ImgH * 4)).Clear(); // not read back: dumped black, not as stale memory
             stats.AppendLine(TargetStats(rt, ptr));
             byte[] px;
             if (half)
             {
                 // HDR target: clamp to 0..1 for viewing
-                var h = new ReadOnlySpan<Half>((void*)ptr, (int)(rt.Width * rt.Height * 4));
+                var h = new ReadOnlySpan<Half>((void*)ptr, (int)(rt.ImgW * rt.ImgH * 4));
                 px = new byte[h.Length];
                 for (int i = 0; i < h.Length; i++) px[i] = (byte)Math.Clamp((int)((float)h[i] * 255f + 0.5f), 0, 255);
             }
             else if (raw64)
             {
-                var wds = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.Width * rt.Height * 2));
-                px = new byte[rt.Width * rt.Height * 4];
+                var wds = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.ImgW * rt.ImgH * 2));
+                px = new byte[rt.ImgW * rt.ImgH * 4];
                 for (int i = 0; i < px.Length / 4; i++) BitConverter.TryWriteBytes(px.AsSpan(i * 4), wds[i * 2]);
             }
             else if (rt.Format == Format.B10G11R11UfloatPack32)
             {
                 // packed unsigned floats (R 11 bits, G 11 bits, B 10 bits): decode for viewing, clamped to 0..1
-                var w = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.Width * rt.Height));
+                var w = new ReadOnlySpan<uint>((void*)ptr, (int)(rt.ImgW * rt.ImgH));
                 px = new byte[w.Length * 4];
                 for (int i = 0; i < w.Length; i++)
                 {
@@ -1250,12 +1273,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                     px[i * 4 + 3] = 255;
                 }
             }
-            else px = new ReadOnlySpan<byte>((void*)ptr, (int)(rt.Width * rt.Height * 4)).ToArray();
+            else px = new ReadOnlySpan<byte>((void*)ptr, (int)(rt.ImgW * rt.ImgH * 4)).ToArray();
             if (rt.Format == Format.B8G8R8A8Unorm) for (int i = 0; i < px.Length; i += 4) (px[i], px[i + 2]) = (px[i + 2], px[i]);
             var opaque = (byte[])px.Clone();
             for (int i = 3; i < opaque.Length; i += 4) opaque[i] = 255;
-            if (shot is { } s && s.Src == rt) WriteScreenshot(s.Path, opaque, rt.Width, Math.Min(s.W, rt.Width), Math.Min(s.H, rt.Height));
-            Png.Write(Path.Combine(dir, replaced.Contains(rt) ? $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}_{rt.ColorFormat:X8}.png" : $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.Width, (int)rt.Height);
+            if (shot is { } s && s.Src == rt) WriteScreenshot(s.Path, opaque, rt.ImgW, Math.Min(s.W, rt.ImgW), Math.Min(s.H, rt.ImgH));
+            Png.Write(Path.Combine(dir, replaced.Contains(rt) ? $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}_{rt.ColorFormat:X8}.png" : $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.ImgW, (int)rt.ImgH);
             _core.DestroyBuffer(buf, mem);
         }
         File.WriteAllText(Path.Combine(dir, "targets.txt"), stats.ToString());
@@ -1285,7 +1308,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// back, the mean of the guest copy so the writeback can be verified against the GPU image.</summary>
     string TargetStats(RenderTarget rt, nint ptr)
     {
-        int n = (int)(rt.Width * rt.Height);
+        int n = (int)(rt.ImgW * rt.ImgH);
         bool half = rt.Format == Format.R16G16B16A16Sfloat;
         Span<float> min = stackalloc float[4], max = stackalloc float[4];
         Span<double> sum = stackalloc double[4];

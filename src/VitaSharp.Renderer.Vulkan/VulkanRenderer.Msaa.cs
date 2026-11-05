@@ -47,7 +47,25 @@ public sealed unsafe partial class VulkanRenderer
     readonly HashSet<uint> _msaaNoDownscaleLogged = new();
 
     /// <summary>Render-area scale of the current scene: supersampled and MSAA-without-downscale scenes render at 2x.</summary>
-    uint SceneScale => _ss || _msaaNoDownscale ? 2u : 1u;
+    /// Scaled targets multiply it by their scale (VulkanRenderer.ResScale.cs).
+    float SceneScale => (_ss || _msaaNoDownscale ? 2f : 1f) * RtScale;
+
+    /// <summary>The scene's render area in attachment pixels (<see cref="_sceneW"/> x <see cref="_sceneH"/> at <see cref="SceneScale"/>).</summary>
+    Extent2D SceneArea
+    {
+        get
+        {
+            float s = SceneScale;
+            uint w = ScaledLen(_sceneW, s), h = ScaledLen(_sceneH, s);
+            if (_rt != null && _rt.Scale != 1f)
+            {
+                uint k = _ss ? 2u : 1u;
+                w = Math.Min(w, _rt.ImgW * k);
+                h = Math.Min(h, _rt.ImgH * k);
+            }
+            return new Extent2D(w, h);
+        }
+    }
 
     readonly Dictionary<Format, bool> _ssFormatOk = new();
 
@@ -63,7 +81,7 @@ public sealed unsafe partial class VulkanRenderer
     SupersampleImage GetSupersampleImage(RenderTarget rt)
     {
         if (_ssImages.TryGetValue(rt, out var ss)) return ss;
-        ss = new SupersampleImage { Width = rt.Width * 2, Height = rt.Height * 2 };
+        ss = new SupersampleImage { Width = rt.ImgW * 2, Height = rt.ImgH * 2 };
         // input attachment: small programmable-blending draws read it in a render pass (VulkanRenderer.SingleFetch.cs)
         (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
@@ -106,7 +124,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(ss.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
-        Blit(rt.Image, rt.Width, rt.Height, ss.Image, ss.Width, ss.Height, Filter.Nearest);
+        Blit(rt.Image, rt.ImgW, rt.ImgH, ss.Image, ss.Width, ss.Height, Filter.Nearest);
         Barrier(ss.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
             AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
@@ -121,7 +139,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,
             PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit | AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferWriteBit);
-        Blit(ss.Image, ss.Width, ss.Height, rt.Image, rt.Width, rt.Height, Filter.Linear);
+        Blit(ss.Image, ss.Width, ss.Height, rt.Image, rt.ImgW, rt.ImgH, Filter.Linear);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit | PipelineStageFlags.ColorAttachmentOutputBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit | AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);

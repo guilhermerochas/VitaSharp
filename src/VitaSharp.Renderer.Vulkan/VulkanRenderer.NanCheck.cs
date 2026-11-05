@@ -246,9 +246,9 @@ void main() {
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Compute, _nanPipeline);
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Compute, _nanPipelineLayout, 0, 1, &set, 0, null);
         bool half = rt.Format is not (Format.R32Sfloat or Format.R32G32Sfloat);
-        var pc = new NanPush { Slot = (uint)slot, W = rt.Width, H = rt.Height, Huge = half ? 65000f : 1e30f };
+        var pc = new NanPush { Slot = (uint)slot, W = rt.ImgW, H = rt.ImgH, Huge = half ? 65000f : 1e30f };
         _vk.CmdPushConstants(cmd, _nanPipelineLayout, ShaderStageFlags.ComputeBit, 0, (uint)sizeof(NanPush), &pc);
-        _vk.CmdDispatch(cmd, (rt.Width + 15) / 16, (rt.Height + 15) / 16, 1);
+        _vk.CmdDispatch(cmd, (rt.ImgW + 15) / 16, (rt.ImgH + 15) / 16, 1);
         // later writes to the surface wait for the read (execution dependency only)
         _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit | PipelineStageFlags.ComputeShaderBit,
             0, 0, null, 0, null, 0, null);

@@ -129,6 +129,8 @@ public static class Runner
             ShaderWorkers = int.TryParse(Opt(options, "--shader-workers"), out var shaderWorkers) && shaderWorkers > 0 ? shaderWorkers : 0,
             // --gpu-profile=adreno|mali|desktop: behave as that GPU class (test the mobile paths on a desktop GPU)
             GpuProfile = Opt(options, "--gpu-profile"),
+            // --res-scale=0.75|0.5: internal resolution below native (VITASHARP_RES_SCALE; VulkanRenderer.ResScale.cs)
+            ResScale = float.TryParse(Opt(options, "--res-scale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var resScale) ? resScale : 0,
         };
         // --flicker-check[=threshold]: every presented frame is read back small and checked for one-frame flashes and
         // stale frames (FlickerDetector; test scenarios turn it on): FLICKER lines in the log and the report

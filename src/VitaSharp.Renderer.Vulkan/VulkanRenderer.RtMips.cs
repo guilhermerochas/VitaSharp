@@ -94,7 +94,7 @@ public sealed unsafe partial class VulkanRenderer
                 DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
                 Extent = new Extent3D(w, h, 1),
             };
-            _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, t.Image, ImageLayout.TransferDstOptimal, 1, in copy);
+            _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, t.Image, ImageLayout.TransferDstOptimal, 1, in copy); // guest size (VulkanRenderer.ResScale.cs)
         }
         if (uploadUpper)
         {

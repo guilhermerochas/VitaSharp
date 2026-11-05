@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core;
+using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
@@ -454,6 +454,7 @@ public static class Program
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
         Console.WriteLine("               --host-prio=on|off  guest threads and GPU worker above normal host priority (default on)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
+        Console.WriteLine("               --res-scale=0.75|0.5  render targets below native resolution (faster on GPU-bound games, softer)");
         Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");

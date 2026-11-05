@@ -74,7 +74,7 @@ public sealed unsafe partial class VulkanRenderer
         _tilePass = new TilePass
         {
             Color = colorView, Word = wordView, ColorFormat = colorFormat, HasColor = _rt != null, Depth = _depth!.View, DepthLoad = depthLoad, DepthClear = depthClear,
-            Area = new Extent2D(_sceneW * SceneScale, _sceneH * SceneScale),
+            Area = SceneArea,
         };
         // merge: the renderings ended since the primary was last touched continue on the same attachments
         if (_chain.Count > 0 && !(_chainScene == _sceneSerial && SameAttachments(in _chainPass, in _tilePass))) FlushChain(false);

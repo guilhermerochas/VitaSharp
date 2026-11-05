@@ -222,9 +222,9 @@ public sealed unsafe partial class VulkanRenderer
             if (m.Samples == samples) return m;
             DestroyMsaaLater(rt);
         }
-        m = new MsaaImage { Samples = samples, Width = rt.Width, Height = rt.Height };
+        m = new MsaaImage { Samples = samples, Width = rt.ImgW, Height = rt.ImgH };
         ImageView view;
-        (m.Image, view, m.Mem) = CreateImage(MemCat.Msaa, rt.Width, rt.Height, rt.Format, MsaaImageUsage, ImageAspectFlags.ColorBit, mutable: true, samples: samples);
+        (m.Image, view, m.Mem) = CreateImage(MemCat.Msaa, rt.ImgW, rt.ImgH, rt.Format, MsaaImageUsage, ImageAspectFlags.ColorBit, mutable: true, samples: samples);
         m.Views[rt.Format] = view;
         _msImages[rt] = m;
         if (samples == SampleCountFlags.Count2Bit) _ms2xImages++;
@@ -314,7 +314,7 @@ public sealed unsafe partial class VulkanRenderer
             Depth = _depth.View,
             DepthLoad = _depthNeedsClear ? AttachmentLoadOp.Clear : AttachmentLoadOp.Load,
             DepthClear = new ClearValue(depthStencil: new ClearDepthStencilValue(Math.Clamp(bg?.BackgroundDepth ?? 1f, 0f, 1f), bg?.BackgroundStencil ?? 0)),
-            Area = new Extent2D(_sceneW, _sceneH),
+            Area = SceneArea,
             Word = _tw1Active ? _tw1!.View : default,
             WordImage = _tw1Active ? _tw1!.Image : default,
         };
@@ -448,7 +448,7 @@ public sealed unsafe partial class VulkanRenderer
         var ri = new RenderingInfo
         {
             SType = StructureType.RenderingInfo,
-            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW, _sceneH)),
+            RenderArea = new Rect2D(new Offset2D(0, 0), SceneArea),
             LayerCount = 1,
             ColorAttachmentCount = 1,
             PColorAttachments = &color,
@@ -576,8 +576,9 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         _vk.UpdateDescriptorSets(_dev, 1, &w, 0, null);
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline);
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
-        var vp = new Viewport(0, 0, _sceneW, _sceneH, 0, 1);
-        var sc = new Rect2D(new Offset2D(0, 0), new Extent2D(_sceneW, _sceneH));
+        var area = SceneArea;
+        var vp = new Viewport(0, 0, area.Width, area.Height, 0, 1);
+        var sc = new Rect2D(new Offset2D(0, 0), area);
         _vk.CmdSetViewport(cmd, 0, 1, in vp);
         _vk.CmdSetScissor(cmd, 0, 1, in sc);
         _vk.CmdDraw(cmd, 3, 1, 0, 0);
@@ -663,16 +664,16 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         if (_msNeedsLoad) BeginRendering();
         EndRendering(resolve: false); // stores the samples (the scene goes on); the next rendering resolves
         var m = GetMsaaImage(rt, _msSamples);
-        var key = (rt.Width, rt.Height, _rtAttachFormat, _msSamples);
+        var key = (rt.ImgW, rt.ImgH, _rtAttachFormat, _msSamples);
         if (!_msFetchCopies.TryGetValue(key, out var copy))
         {
-            copy = CreateImage(MemCat.Region, rt.Width, rt.Height, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, samples: _msSamples);
+            copy = CreateImage(MemCat.Region, rt.ImgW, rt.ImgH, _rtAttachFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, samples: _msSamples);
             _msFetchCopies[key] = copy;
             Barrier(copy.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             Log.Info($"[gpu] programmable blending in multisampled scene 0x{rt.Address:X8}: shaders read the {_msSamples} samples{(_core.SampleRateShading ? " per sample" : " (sample 0: no sampleRateShading)")}");
         }
         _statMsFetchCopies++;
-        if (FetchRegion(1, rt.Width, rt.Height) is not (var offset, var extent))
+        if (FetchRegion(RtScale, rt.ImgW, rt.ImgH) is not (var offset, var extent))
             return BuildFetchSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, copy.View, ImageLayout.General);
         Barrier(m.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
@@ -700,12 +701,12 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// (<paramref name="scale"/> = image pixels per render-target pixel): shaders fetch only at their own fragment, so
     /// only the draw's region clip within the scene area needs copying. Null when the draw covers no pixel.
     /// </summary>
-    (Offset3D, Extent3D)? FetchRegion(uint scale, uint imageW, uint imageH)
+    (Offset3D, Extent3D)? FetchRegion(float scale, uint imageW, uint imageH)
     {
         long x0 = Math.Clamp(_drawMinX, 0, _sceneW), y0 = Math.Clamp(_drawMinY, 0, _sceneH);
         long x1 = Math.Clamp((long)_drawMaxX + 1, x0, _sceneW), y1 = Math.Clamp((long)_drawMaxY + 1, y0, _sceneH);
-        x0 = Math.Min(x0 * scale, imageW); y0 = Math.Min(y0 * scale, imageH);
-        x1 = Math.Min(x1 * scale, imageW); y1 = Math.Min(y1 * scale, imageH);
+        x0 = Math.Min(ScaledLo(x0, scale), imageW); y0 = Math.Min(ScaledLo(y0, scale), imageH);
+        x1 = Math.Min(ScaledHi(x1, scale), imageW); y1 = Math.Min(ScaledHi(y1, scale), imageH);
         _statFetchFullPixels += (long)imageW * imageH;
         if (x1 <= x0 || y1 <= y0) return null;
         _statFetchPixels += (x1 - x0) * (y1 - y0);

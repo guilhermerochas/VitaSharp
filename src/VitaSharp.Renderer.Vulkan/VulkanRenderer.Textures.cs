@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
@@ -46,7 +46,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>One-line texture cache report: how much guest memory was re-hashed per frame and how much was skipped.</summary>
-    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport() + MobileReport() + WorkerProfReport();
+    public string? Report() => TextureCacheReport() + "\n" + GpuTimeReport() + "\n" + SyncReport() + ReplayReport() + DrawRingReport() + NanReport() + "\n" + VramReport() + ResScaleReport() + MobileReport() + WorkerProfReport();
 
     public string TextureCacheReport()
     {
@@ -309,7 +309,7 @@ public sealed unsafe partial class VulkanRenderer
         EndRendering(resolve: !_ss);
         var ss = _ss ? GetSupersampleImage(_rt) : null;
         if (ss != null && _ssFetchLogged.Add(_rt.Address)) Log.Info($"[gpu] programmable blending in supersampled scene 0x{_rt.Address:X8}: shaders read the {ss.Width}x{ss.Height} sample image");
-        uint w = ss?.Width ?? _rt.Width, h = ss?.Height ?? _rt.Height;
+        uint w = ss?.Width ?? _rt.ImgW, h = ss?.Height ?? _rt.ImgH;
         if (_fbCopy.Handle == 0 || _fbCopyW != w || _fbCopyH != h || _fbCopyFormat != _rtAttachFormat)
         {
             // games alternate between targets of different sizes: keep the copies per size/format instead of recreating
@@ -743,7 +743,8 @@ public sealed unsafe partial class VulkanRenderer
             r = new RtRegion();
             var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
             if (gamma) viewFormat = Formats.Srgb(viewFormat);
-            (r.Image, r.View, r.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            // at the target's internal resolution (VulkanRenderer.ResScale.cs)
+            (r.Image, r.View, r.Mem) = CreateImage(MemCat.Region, ScaleDim(w, rt.Scale), ScaleDim(h, rt.Scale), rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mutable: true);
             _vk.DestroyImageView(_dev, r.View, null);
             r.View = CreateView(r.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, RtSwizzle(rt, texFormat));
@@ -768,12 +769,18 @@ public sealed unsafe partial class VulkanRenderer
         SyncRenderTargetForRead(rt);
         Barrier(r.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
+        uint sx = x, sy = y, sw = w, sh = h;
+        if (rt.Scale != 1f)
+        {
+            sx = Math.Min((uint)MathF.Round(x * rt.Scale), rt.ImgW); sy = Math.Min((uint)MathF.Round(y * rt.Scale), rt.ImgH);
+            sw = ScaleDim(w, rt.Scale); sh = ScaleDim(h, rt.Scale);
+        }
         var copy = new ImageCopy
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            SrcOffset = new Offset3D((int)x, (int)y, 0),
+            SrcOffset = new Offset3D((int)sx, (int)sy, 0),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            Extent = new Extent3D(Math.Min(w, rt.Width - x), Math.Min(h, rt.Height - y), 1),
+            Extent = new Extent3D(Math.Min(sw, rt.ImgW - sx), Math.Min(sh, rt.ImgH - sy), 1),
         };
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, r.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
@@ -789,6 +796,7 @@ public sealed unsafe partial class VulkanRenderer
         public RenderTarget? Source;
         public long Version = -1;
         public long LastUsedFrame;
+        public uint W, H;
     }
 
     readonly Dictionary<(uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma), RtAlias> _rtAliases = new();
@@ -815,13 +823,23 @@ public sealed unsafe partial class VulkanRenderer
         if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb)) format = srgb;
         if (!_core.SupportsSampled(format)) return null;
         EnsureMirror();
-        if (!MirrorRenderTarget(rt)) return null;
+        // a scaled target is reinterpreted at its internal resolution: its image goes into the mirror with packed
+        // scaled rows and the texture reads the matching scaled rectangle (VulkanRenderer.ResScale.cs)
+        var geo = ScaledReinterpretGeometry(rt, addr, w, h, texRow, (uint)rtBpp, texBpp);
+        if (geo is not null ? !MirrorRenderTargetScaled(rt) : !MirrorRenderTarget(rt)) return null;
+        uint aw = geo?.W ?? w, ah = geo?.H ?? h;
 
         var key = (addr, d.Format, w, h, texRow, gamma);
+        if (_rtAliases.TryGetValue(key, out var stale) && (stale.W != aw || stale.H != ah))
+        {
+            _rtAliases.Remove(key);
+            var (si, sv, sm) = (stale.Image, stale.View, stale.Mem);
+            DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, sv, null); _vk.DestroyImage(_dev, si, null); _imagePool.Free(sm); });
+        }
         if (!_rtAliases.TryGetValue(key, out var a))
         {
-            a = new RtAlias();
-            (a.Image, a.View, a.Mem) = CreateImage(MemCat.Region, w, h, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            a = new RtAlias { W = aw, H = ah };
+            (a.Image, a.View, a.Mem) = CreateImage(MemCat.Region, aw, ah, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 swizzle: Formats.TextureSwizzle(d.Format));
             _rtAliases[key] = a;
             Log.WarnOnce($"rtalias-{addr:X8}-{d.Format:X8}", $"[gpu] texture 0x{addr:X8} {w}x{h} fmt 0x{d.Format:X8} reinterprets render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}");
@@ -841,11 +859,11 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var region = new BufferImageCopy
         {
-            BufferOffset = addr - GuestMemory.CdramStart,
-            BufferRowLength = texRow / texBpp,
+            BufferOffset = geo?.Offset ?? addr - GuestMemory.CdramStart,
+            BufferRowLength = geo?.RowTexels ?? texRow / texBpp,
             BufferImageHeight = 0,
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            ImageExtent = new Extent3D(w, h, 1),
+            ImageExtent = new Extent3D(geo?.CopyW ?? w, geo?.CopyH ?? h, 1),
         };
         _vk.CmdCopyBufferToImage(Cmd, _mirror, a.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(a.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,

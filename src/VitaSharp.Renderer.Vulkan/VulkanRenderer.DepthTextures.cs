@@ -41,6 +41,7 @@ public sealed unsafe partial class VulkanRenderer
         dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
         if (dt.Samples != SampleCountFlags.Count1Bit) return UnpackedDepthTexture(dt, w, h);
         if (DepthFeedbackView(dt, w, h) is { } inPlace) return (inPlace, ImageLayout.DepthReadOnlyStencilAttachmentOptimal);
+        if (dt.Scale != 1f) { w = ScaleDim(w, dt.Scale); h = ScaleDim(h, dt.Scale); } // image pixels (VulkanRenderer.ResScale.cs)
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
         if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
@@ -272,6 +273,7 @@ void main() {
     {
         dt.LastTouchedFrame = FrameCount;
         uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
+        if (dt.Scale != 1f) { w = Math.Min(ScaleDim(d.Width, dt.Scale), dt.Width); h = Math.Min(ScaleDim(d.Height, dt.Scale), dt.Height); } // VulkanRenderer.ResScale.cs
         uint swz = d.Format & GxmFormats.TextureSwizzleMask;
         if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)
         {
@@ -305,7 +307,7 @@ void main() {
         var region = new BufferImageCopy
         {
             BufferOffset = dt.StencilAddress - GuestMemory.CdramStart,
-            BufferRowLength = dt.StencilStrideBytes,
+            BufferRowLength = dt.Scale != 1f ? dt.Width : dt.StencilStrideBytes,
             BufferImageHeight = dt.Height,
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
