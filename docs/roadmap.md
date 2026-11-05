@@ -477,11 +477,38 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Suspeita forte: a correção da narração (7732c69) toca os superframes ATRAC9 zerados como silêncio, e o agente B já
   tinha visto que isso põe um buraco de 0,27 s num anel da torcida; buracos/emendas sem suavização no loop dão estalo.
   Comparar com `VITASHARP_AT9_ERROR_SILENCE=0`, e tratar o silêncio só nas vozes que terminam (narração) ou suavizar
-  as emendas do loop
+  as emendas do loop.
+  Achados (05/11/2026, fix/bugs-audio-2, sem causa no emulador; o log citado não existe, a sessão é o `logs\last.log`):
+  três partidas de 10 min (`tests/nav/fifa13_match.nav`, `VITASHARP_NGS_TRACE=1` + `--audio-dump`), duas com o padrão
+  e uma com `VITASHARP_AT9_ERROR_SILENCE=0`. As vozes de torcida (anéis ATRAC9 de 6720 bytes, superframes de 40 bytes
+  = 1 quadro de 256 amostras, mono) não têm buraco nem degrau: o fim de cada clipe já chega em silêncio antes dos 3-7
+  superframes zerados (16-37 ms) e do kill+play do próximo clipe (0 quedas de >30 dB em 2,5 ms nos WAVs das vozes nem
+  no mix, nenhuma emenda na fase de 256/512/1024 amostras; os 0,27 s de buraco são de um clipe no fim da partida, já
+  em silêncio). O decodificador bate com o FFmpeg também na configuração da torcida (E00470FE: 102,8 dB). Com
+  `=0` os estalos do mix não caem (0,4/s contra 0,2-0,4/s; são transientes do próprio conteúdo, o YouTube do Vita
+  real `R3WhJ9u_MB4` dá 0,5/s pelo mesmo critério) e as reproduções com dado velho voltam (plays com >2 superframes
+  velhos: 62 contra 4 e 9), então a 7732c69 fica. A saída do host (OpenAL) não descarta grãos (Submit bloqueia).
+  Falta ouvir: um F10 com áudio no momento do estalo diria se ele está no que o jogo gera (dump) ou depois (host).
+  Ferramentas no scratchpad `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
 - [ ] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
   do usuário 05/11/2026 03:40, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`: o `specks.py` acha pontos em 5 de
   266 quadros, ex. 13543 com 21 px em (338,71)). Então a causa não é (só) o uniform copiado cedo; olhar de novo a malha
-  de sombra projetada (vs DCBB621AC8070CB0) nesses quadros com `--draw-limit`
+  de sombra projetada (vs DCBB621AC8070CB0) nesses quadros com `--draw-limit`.
+  Achados (05/11/2026, fix/bugs-audio-2): **o dump novo não tem cunha.** Os 5 quadros do `specks.py` são falsos
+  positivos: 13543/13547 estão na vinheta de transição do replay (o "ponto" é a sombra normal do jogador sob a
+  vinheta) e 13711 tem 1 px; com o critério de cunha (>= 8 blocos) dá 0 de 266. No dump antigo (205631) a cunha do
+  present 11182 é o desenho 12 de `--draw-limit=N@11180` (atenção: `--draw-limit=N@F`/`--trace-draws=F` mexem no
+  present F+2 neste jogo). Com `VITASHARP_TRACE_UNIFORMS` (agora grava também índices e streams) e um modelo do
+  vs DCBB621AC8070CB0 na CPU (`bugsB2_tools/shadowvs.py`): a paleta de ossos (buffer 1) daquele desenho só estava
+  escrita até o osso 61; os ossos 62-147 vinham zerados, e todo vértice deles caiu na origem do mundo projetada
+  (647,262), exatamente a ponta da cunha. Ou seja, o jogo ainda estava escrevendo a paleta quando ela foi copiada.
+  A 318be32 passou a cópia para o worker, mas o worker executa o desenho assim que ele entra na fila, muitas vezes
+  antes do sceGxmEndScene (o hardware só lê na execução da cena). **Correção** (falta o usuário conferir): o worker
+  segura o desenho com cópia tardia até o fim da cena (sceGxmEndScene ou sceGxmMidSceneFlush; `SceneGate`), a não
+  ser que uma thread do jogo espere por ele (WaitFor) ou passem 250 ms; `VITASHARP_UB_SCENE_END=0` volta ao antigo,
+  `=check` conta os desenhos segurados cuja memória mudou na espera. Aqui, com o PC dividido entre agentes, o worker
+  fica atrás do jogo: só 8192 desenhos foram segurados numa partida e nenhum teve a paleta reescrita, por isso as
+  cunhas não reproduzem aqui; na máquina livre do usuário o worker anda junto com o jogo
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
@@ -751,7 +778,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
-  Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC
+  Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.
+  Conferido de novo (05/11/2026, fix/bugs-audio-2, no mesmo dump): 0 quedas de >30 dB em 2,5 ms (`drops.py`) e nenhuma
+  emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
+  eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
 - [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em
