@@ -368,6 +368,21 @@ public sealed partial class NpManager : HleModule
 
     [Hle("sceNpManager_FAEA7A73", Nid = 0xFAEA7A73, Library = "SceNpManager")] int NpSysRequestEnd() => 0;
 
+    // Right after that request the setup's account-bind job (SceBindLibJobQueue, initialsetup 0x810490FE) runs a check:
+    // h = D157DC12(3); 0F6AC47E(h, 0, 0, 3, int *value); 80036A44(h). A value other than 0 (or a negative return)
+    // makes the setup say "You must update the system software to link your account" (unimplemented, the value was
+    // whatever the stack held). The emulated system is up to date: the value is 0.
+    [Hle("sceNpManager_D157DC12", Nid = 0xD157DC12, Library = "SceNpManager")] int NpBindCheckOpen(int type) => _sysReqNext++;
+
+    [Hle("sceNpManager_0F6AC47E", Nid = 0x0F6AC47E, Library = "SceNpManager")]
+    int NpBindCheckGetValue(int handle, int a, int b, int c, uint value)
+    {
+        if (value != 0) GuestMemory.W32(value, 0);
+        return 0;
+    }
+
+    [Hle("sceNpManager_80036A44", Nid = 0x80036A44, Library = "SceNpManager")] int NpBindCheckClose(int handle) => 0;
+
     // ---------------------------------------------------------------- communication id text (SceNpCommon)
     // np_common.suprx FW 3.74 (the shell's trophy server names a title's folders this way): SceNpCommunicationId
     // (char data[9], term, uint8 num, dummy) <-> "NPWR12345_00".
