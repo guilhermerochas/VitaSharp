@@ -571,6 +571,49 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
   app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)` e o jogo
   trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`
+- [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
+  Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
+  acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
+  volume de sombra por stencil (z-fail: faces da frente INCR_WRAP, de trás DECR_WRAP, 4008 índices, sem cor) e o 875 um
+  quadrado de tela cheia que multiplica o framebuffer onde o stencil != 0. Os vértices do volume são gravados pelo
+  desenho 873 (programa de vértice com VLDST, `vsStore ub1@0x60606400`) e lidos como stream pelo 874; o renderer lê
+  esses streams do espelho da CDRAM (`_gpuWritten`), mas descartava a faixa gravada se a CPU tivesse escrito em
+  qualquer página da **janela de 1 MB** do slot desde a gravação — e a entrada do volume (ub0, 0x60605D40) fica na
+  mesma página que a saída, reescrita pela CPU para o quadro k+2 enquanto o worker ainda está no k: a faixa caía
+  para a cópia do guest (que nunca recebe o que a GPU grava), o volume saía de lixo e o stencil desbalanceado
+  escurecia tudo abaixo do horizonte (traço `[mirror] ... written by the CPU since: back to guest memory (before draw
+  id=875)` em `bugsC3_out/tr1928/trace_1928/draws.txt`). Correção (`ExpireGpuWritten`): só contam as páginas da parte
+  lida e, para streams de 3+ páginas, só as páginas internas (as da ponta são compartilhadas com os dados vizinhos);
+  streams pequenos e leituras mapeadas continuam caindo para o guest a qualquer escrita da CPU nas suas páginas
+  (uma primeira tentativa só com "páginas internas" para tudo deixava malhas escritas pela CPU dentro da janela
+  lendo o espelho velho: triângulos pretos no mar, `bugsC3_out/diff1954.png`). Prova: dump gravado com a correção
+  (`bugsC3_out/jak_fix.vsgd`, 601 presents) reproduz sem a faixa (`tileflick.py`: 0 quadros com a faixa; o dump antigo
+  dá a faixa em quadros alternados 1926-1930 em todo replay), o traço de 1928 mostra `[stream] id=866
+  s0=0x60605800+16044: read from the mirror`, e 3 execuções ao vivo do estado do usuário (`jak1_live_main/_fix/_final`,
+  619-643 quadros cada) sem a faixa (ela já era intermitente ao vivo: 5/618 na rodada anterior, 0 nas 3 de hoje, por
+  isso a prova fica no dump). Novas linhas de traço (`--trace-draws`/F10): `st=` com ops/ref/máscaras do stencil,
+  `vsStore ub<i>@addr` nos programas que gravam memória, `[stream]`/`[mirror]` com a origem de cada stream lido do
+  espelho e as faixas descartadas. `replay-gpu --compare` dos 16 dumps do usuário + `jak_fix` contra a main
+  (`scratchpad/bugsC3_cmp`, a cada 10 quadros): 14 idênticos; só mudam os do Jak 1 com sombras (`PCSA00080_20261105_015823` 24/71 quadros,
+  `_020221` 1/54, `jak_fix` 41/61), todos pela correção: some a faixa/cunha escura nas rochas e aparece a sombra
+  do Jak (`diff_001760.png`, `diff_001850.png`, `jak_fix_new/frame_002120.png`).
+  Ainda aberto (Jak 1): (a) **céu preto por um quadro** (1 em 643 ao vivo, `jak1_live_final` quadro 1950; reproduz no
+  replay de `jak_final.vsgd`): os desenhos do céu (24-40, vs 79BC61BE4C9F8178, 3-4 vértices em RAM, 4 buffers em
+  rodízio 0x8DAC4080/0x8DC44080/0x8DDC4080/0x8DF44080) têm os mesmos uniforms e texturas, mas os vértices lidos no
+  1950 (x=2510) são os do uso seguinte do mesmo buffer (1954; a sequência é -338, 152, ?, 1135, 1621 por quadro): a
+  CPU (GOAL) já tinha reescrito o anel de vértices quando o worker leu o stream. Os cenários dos agentes rodam com
+  `--cpu-mhz=0` (CPU sem ritmo), o que deixa o GOAL muito à frente; conferir com o ritmo padrão e, se persistir, ver
+  o que o jogo espera para reusar o anel (notificação/`sceGxmNotificationWait`) — é a mesma classe do `ub-late`, mas
+  para streams em RAM; (b) **quadros pretos depois de carregar o estado**: 30-48 presents pretos (`METRICS black`
+  1782..1811 na main, 1735..1782 no build de hoje) entre o `Load state: GPU backend replaced` e a primeira imagem; não
+  é compilação assíncrona (nunca pula desenhos); próximo passo: `--gpu-dump-at` desde o primeiro present pós-carga e
+  ver se os desenhos existem (jogo esperando) ou se só o present falha; (c) **mar com buracos pretos por um quadro**
+  (replay `jak_fix.vsgd` present 2112, `bugsC3_out/flash2112.png`): nesse quadro o jogo emitiu 52 desenhos a menos
+  (1302 x 1354 no 2111), então vem do lado do jogo/CPU, não do renderer; (d) **20 fps** reproduz nos 3 testes (20,0
+  fps, `--cpu-mhz=0`, 4 núcleos): CPU do jogo (`process cpu 70 ms/quadro` no log do usuário), fora do escopo deste
+  item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
+  coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
+  da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
