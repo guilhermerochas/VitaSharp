@@ -16,7 +16,7 @@ public sealed partial class Ngs : HleModule
         INVALID_HANDLE = unchecked((int)0x804A000C), PATCH_NOT_AVAIL = unchecked((int)0x804A000E);
     const int AT9_END_OF_DATA = 0, AT9_SWAPPED = 1, AT9_DECODE_ERROR = 3, AT9_LOOPED = 4;
     const int PLAYER_END_OF_DATA = 0, PLAYER_SWAPPED = 1, PLAYER_LOOPED = 2;
-    static readonly bool At9ErrorSilence = Environment.GetEnvironmentVariable(EnvVars.At9ErrorSilence) == "1";
+    static readonly bool At9ErrorSilence = Environment.GetEnvironmentVariable(EnvVars.At9ErrorSilence) != "0";
 
     readonly ConcurrentDictionary<uint, NgsSystem> _systems = new();
     readonly ConcurrentDictionary<uint, NgsRack> _racks = new();
@@ -599,7 +599,11 @@ public sealed partial class Ngs : HleModule
     int sceNgsVoiceGetStateData(uint voice, uint module, uint mem, uint size)
     {
         var m = Module(voice, module);
-        if (m == null) return INVALID_ARG;
+        if (m == null)
+        {
+            if (Trace) Log.Info($"[ngs] state read of voice 0x{voice:X8} module {module} failed (unknown voice or module) by {CallerInfo()}");
+            return INVALID_ARG;
+        }
         if (mem != 0)
         {
             GuestMemory.Fill(mem, 0, size);
@@ -707,6 +711,7 @@ public sealed partial class Ngs : HleModule
     void Stop(NgsVoice v)
     {
         if (v.State is not (NgsVoiceState.Active or NgsVoiceState.Finalizing)) return;
+        TraceStaleSummary(v);
         TraceVoice(v, "stop");
         Transition(v, NgsVoiceState.Available);
         v.Rack.System.Queue.Remove(v);
@@ -1146,11 +1151,15 @@ public sealed partial class Ngs : HleModule
             if (discardStart > sampleIndex) { int skip = Math.Min(sfSamples, discardStart - sampleIndex); start += skip; count -= skip; }
             int samplesLeftAfter = Math.Max(0, (bytes - pos) / sfBytes - 1) * sfSamples;
             if (discardEnd > samplesLeftAfter) count -= Math.Min(count, discardEnd - samplesLeftAfter);
-            // a superframe that does not decode (FIFA 13 pads its looping stream rings with zero superframes) is skipped
-            // at once by default; VITASHARP_AT9_ERROR_SILENCE=1 plays it as silence and counts it in the consumed
-            // bytes/samples instead (which one the hardware does is not known yet: A/B switch)
+            // a superframe that does not decode plays as a superframe of silence and counts as consumed (bytes and
+            // samples). FIFA 13 pads the end of each streamed commentary clip in its ring with zero superframes and
+            // kills the voice once the consumed bytes reach the clip's size, padding included: the padding is the time
+            // the game needs to notice. Skipped at once, the voice ran past it into the previous lap's data before the
+            // kill, and without counting its bytes it played that stale data for a whole lap (the commentary repeated
+            // what it had just said). VITASHARP_AT9_ERROR_SILENCE=0 skips it instead (no samples, bytes counted; A/B)
             bool decoded = true;
             DumpSuperframe(v, config, st.Staging);
+            if (Trace && take == sfBytes) TraceStale(m, buf, pos / sfBytes, st.Staging);
             try
             {
                 st.At9.Decode(st.Staging, st.At9Out!);
@@ -1160,7 +1169,12 @@ public sealed partial class Ngs : HleModule
                 if (Trace) Log.Info($"[ngs] voice 0x{v.Handle:X8} ATRAC9 decode error at {pos} of 0x{buf:X8}: {e.Message} frame {Convert.ToHexString(st.Staging)}");
                 InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_DECODE_ERROR, GetState(m, 0), buf);
                 decoded = false;
-                if (!At9ErrorSilence) continue;
+                if (!At9ErrorSilence)
+                {
+                    SetState(m, 12, GetState(m, 12) + sfBytes);
+                    SetState(m, 20, GetState(m, 20) + sfBytes);
+                    continue;
+                }
             }
             var pcm = st.DecodeBuffer(Math.Max(count, 0) * 2); // reused scratch: one superframe per call (zeroed)
             for (int i = 0; decoded && i < count; i++)

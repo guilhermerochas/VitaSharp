@@ -218,7 +218,7 @@ public static class EnvVars
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
-    /// <summary>1 (A/B): an ATRAC9 superframe that fails to decode plays as silence and counts as consumed (default: skipped).</summary>
+    /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";

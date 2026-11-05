@@ -125,6 +125,31 @@ public sealed partial class Ngs
         f.Flush();
     }
 
+    sealed class StaleStats { public uint Buf; public uint[] Hash = []; public int Decoded, Stale, Run, Longest, Zero; }
+    [VitaSharp.Core.SaveState.SnapshotIgnore] readonly Dictionary<NgsModuleData, StaleStats> _stale = new();
+
+    /// <summary>Counts superframes decoded again from a ring slot the game did not rewrite since the last decode there
+    /// (stale data played twice), per voice play; summarised at stop.</summary>
+    void TraceStale(NgsModuleData m, uint buf, int index, ReadOnlySpan<byte> sf)
+    {
+        if (!Trace || index < 0 || index > 4096) return;
+        if (!_stale.TryGetValue(m, out var s)) _stale[m] = s = new StaleStats();
+        if (s.Buf != buf) { s.Buf = buf; s.Hash = new uint[4097]; }
+        uint h = System.IO.Hashing.XxHash32.HashToUInt32(sf) | 1;
+        s.Decoded++;
+        if (!sf.ContainsAnyExcept((byte)0)) { s.Zero++; s.Run = 0; }
+        else if (s.Hash[index] == h) { s.Stale++; s.Run++; s.Longest = Math.Max(s.Longest, s.Run); }
+        else s.Run = 0;
+        s.Hash[index] = h;
+    }
+
+    void TraceStaleSummary(NgsVoice v)
+    {
+        if (!Trace || SourceModule(v) is not { } m || !_stale.TryGetValue(m, out var s) || s.Decoded == 0) return;
+        Log.Info($"[ngs] voice 0x{v.Handle:X8} t{v.FrameCount} stale superframes {s.Stale} of {s.Decoded} (longest run {s.Longest}, zero {s.Zero})");
+        s.Decoded = s.Stale = s.Run = s.Longest = s.Zero = 0;
+    }
+
     void DumpVoice(NgsVoice v)
     {
         if (!Trace || !AudioDump.Enabled || v.Product == null || SourceModule(v) == null) return;
