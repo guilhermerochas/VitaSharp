@@ -276,104 +276,13 @@ public sealed class ProgramInput
     /// <summary>Debug (VITASHARP_UB_UNBOUNDED=1): size every indexed uniform buffer as unbounded (read up to the next buffer).</summary>
     static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable(EnvVars.UbUnbounded) == "1";
     public static bool UnboundedUbsActive => UnboundedUbs;
-    /// <summary>VITASHARP_UB_ARRAY_STATIC=0: buffers ending in an array are always read up to
-    /// <see cref="MaxUbArrayInFloat"/> (generator v20 layout, for A/B runs; bypasses the persistent caches).</summary>
-    static readonly bool StaticArraySizing = Environment.GetEnvironmentVariable(EnvVars.UbArrayStatic) != "0";
-    public static bool StaticArraySizingOff => !StaticArraySizing;
-
-    /// <summary>How a program's memory loads (VLDST) reach uniform buffers 0-13 through their base registers: the
-    /// buffers loaded with a run-time offset (<c>Dynamic</c>, bit per buffer), the end in bytes of the furthest
-    /// constant-offset load of each buffer, and whether some load's base is not a buffer base register (a copied or
-    /// computed pointer: see <see cref="BaseEscapes"/> for which buffers it may point into).</summary>
-    public readonly record struct LoadScan(uint Dynamic, uint[] EndBytes, bool Unknown);
-
-    /// <summary>Scans the primary and secondary programs for uniform buffer loads (operands decoded as
-    /// <see cref="UsseTranslator"/>'s Vldst does). A load is constant when its base is the buffer's base register (the
-    /// SA word the driver fills from the program's uniform buffer info) and both offsets are immediates.</summary>
-    public static LoadScan ScanLoads(GxpProgram program)
-    {
-        var ends = new uint[DefaultUniformBuffer];
-        uint dynamic = 0;
-        bool unknown = false;
-        // SA word -> (buffer, byte offset of the base the driver writes); -1 buffer: literal/texture/thread buffer
-        var bases = new Dictionary<int, (int Buffer, int BaseBytes)>();
-        uint baseOffset = program.ContainerByIndex(19)?.BaseSaOffset ?? 0;
-        foreach (var info in program.UniformBuffers)
-            bases[(int)(baseOffset + info.LdstBaseOffset)] = (info.ResideBuffer < DefaultUniformBuffer ? info.ResideBuffer : -1, info.LdstBaseValue);
-        void Scan(int start, int count, bool secondary)
-        {
-            for (int n = 0; n < count; n++)
-            {
-                var i = UsseDecoder.Decode(program.ReadInstruction(start, n));
-                if (i.Op != UsseOp.VLDST || i['o'] != 1) continue; // loads only (stores go through mapped slots)
-                int typeSize = i['f'] switch { 0 => 4, 1 => 2, 2 => 1, _ => 0 };
-                int bytes = typeSize * ((int)i['k'] + 1);
-                // src0: ext ? (0 Output : SecAttr) : (0 Temp : PrimAttr); a secondary program's registers are all SA
-                bool ext0 = i.Bit('r');
-                uint bank0 = i['h'];
-                int num0 = (int)i['w'];
-                bool sa0 = secondary ? !(!ext0 && bank0 == 0 && num0 >= 124) : ext0 && bank0 != 0;
-                if (!sa0 || !bases.TryGetValue(num0, out var b)) { unknown = true; continue; }
-                if (b.Buffer < 0) continue;
-                // src1/src2 immediates: ext bank 2
-                bool imm1 = i.Bit('b') && i['q'] == 2, imm2 = i.Bit('a') && i['u'] == 2;
-                if (!imm1 || !imm2) { dynamic |= 1u << b.Buffer; continue; }
-                long end = b.BaseBytes + (long)i['x'] * typeSize + (i.Bit('m') ? 0 : 4) + i['z'] + bytes;
-                if (end > ends[b.Buffer]) ends[b.Buffer] = (uint)Math.Min(end, uint.MaxValue);
-            }
-        }
-        if (program.SecondaryInstrCount > 0) Scan(program.SecondaryProgramStart, program.SecondaryInstrCount, true);
-        if (program.PrimaryInstrCount > 0) Scan(program.PrimaryProgramStart, (int)program.PrimaryInstrCount, false);
-        return new LoadScan(dynamic, ends, unknown);
-    }
-
-    /// <summary>SA words used by each program other than as a load's base (null: any word, or the analysis failed),
-    /// by program hash: a translation pass, run once per program that has a buffer ending in an array.</summary>
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, HashSet<int>?> SaUseCache = new();
-
-    /// <summary>Whether a load may reach buffer <paramref name="index"/> at a run-time offset through its base
-    /// register: the register is read (or written) by an instruction other than as the base of a load, so a computed
-    /// address may derive from it, or the base itself moved. F1 2011's skinning programs compute
-    /// the bone address from the default buffer's base and a vertex attribute, while buffer 0 (per-object constants
-    /// ending in a short array) is only loaded at constant offsets of its own base.</summary>
-    static bool BaseEscapes(GxpProgram program, uint index)
-    {
-        var used = SaUseCache.GetOrAdd(program.Hash, static (_, p) =>
-        {
-            try
-            {
-                var t = new UsseTranslator(p) { SaUse = new HashSet<int>() };
-                if (p.SecondaryInstrCount > 0) t.TranslateProgram(ReadCode(p, p.SecondaryProgramStart, p.SecondaryInstrCount), true);
-                if (p.PrimaryInstrCount > 0) t.TranslateProgram(ReadCode(p, p.PrimaryProgramStart, (int)p.PrimaryInstrCount), false);
-                return t.SaDynamic ? null : t.SaUse;
-            }
-            catch (Exception) { return null; }
-        }, program);
-        if (used == null) return true;
-        uint baseOffset = program.ContainerByIndex(19)?.BaseSaOffset ?? 0;
-        foreach (var info in program.UniformBuffers)
-            if (info.ResideBuffer == index && used.Contains((int)(baseOffset + info.LdstBaseOffset))) return true;
-        return false;
-    }
-
-    static ulong[] ReadCode(GxpProgram p, int start, int count)
-    {
-        var code = new ulong[Math.Max(0, count)];
-        for (int i = 0; i < code.Length; i++) code[i] = p.ReadInstruction(start, i);
-        return code;
-    }
 
     public List<ProgramInputItem> Inputs { get; } = new();
     public List<SamplerDesc> Samplers { get; } = new();
     public List<UniformBufferDesc> UniformBuffers { get; } = new();
 
     /// <summary>Port of Vita3K shader::get_program_input.</summary>
-    public static ProgramInput From(GxpProgram program) => From(program, StaticArraySizing);
-
-    /// <param name="staticArraySizing">false: every trailing array read up to <paramref name="arrayWords"/> (the
-    /// generator v20 layout with <see cref="MaxUbArrayInFloat"/>, v19 with <see cref="MaxUbInFloat"/>), which GPU
-    /// dumps recorded before v21 carry.</param>
-    public static ProgramInput From(GxpProgram program, bool staticArraySizing, uint arrayWords = MaxUbArrayInFloat)
+    public static ProgramInput From(GxpProgram program)
     {
         var pi = new ProgramInput();
         var ubs = new SortedDictionary<uint, UniformBufferDesc>();
@@ -456,21 +365,10 @@ public sealed class ProgramInput
             }
         }
 
-        LoadScan? access = staticArraySizing ? ScanLoads(program) : null;
         foreach (var (idx, b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024) b.Size = MaxUbInFloat;
-            else if (UnboundedUbs && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, arrayWords);
-            else if (b.EndsWithArray && idx < DefaultUniformBuffer)
-            {
-                // the trailing array is read past its declared length only by a load with a run-time offset; when every
-                // load of the buffer has a constant offset from its base register, and no instruction reads or writes
-                // that register otherwise (a computed address, a moved base), the furthest load bounds what is read
-                if (access is not { } a || ((a.Dynamic >> (int)idx) & 1) != 0 || BaseEscapes(program, idx))
-                    b.Size = Math.Max(b.Size, arrayWords);
-                else
-                    b.Size = Math.Max(b.Size, Math.Min((a.EndBytes[idx] + 3) / 4, arrayWords));
-            }
+            else if ((UnboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer) b.Size = Math.Max(b.Size, MaxUbArrayInFloat);
             pi.UniformBuffers.Add(b);
         }
 

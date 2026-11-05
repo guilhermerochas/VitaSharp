@@ -212,11 +212,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - [ ] Custo por draw do worker da GPU no celular: F1 2011 na corrida ainda abaixo de 30 fps (cerca de 1.000 draws por
     quadro, o worker da GPU num núcleo A76 inteiro); dividir a preparação e a gravação dos comandos em duas threads,
     menos atualizações de descriptors por draw (31/10: conjuntos de texturas repetidos já são reaproveitados)
-  - [ ] Custo por draw da thread do jogo no F1 2011 (`sceGxmDrawPrecomputed`, ~1.400 draws por quadro). 04/11
-    (perf/f1-uniform): a cópia dos uniforms caiu de 1.330 para 190 ns por draw (15,6 KB → 191 B: arrays no fim de
-    buffers só lidos com offsets constantes não leem mais 16 KB, `GeneratorVersion` 21). Medido e descartado: pular as
-    buscas do prefetch quando a assinatura do draw já foi vista (235 → 200 ns por draw, ~0,05 ms por quadro, dentro do
-    ruído). Restam o prefetch (~200 ns), o enfileiramento e as cópias de arrays de texturas/buffers (round 3)
   - [x] Crash do driver Mali em `vkEndCommandBuffer` (GPU worker, ponteiro nulo em `libGLES_mali.so`) no F1 2011 entre o
     menu e a corrida: comandos gravados num command buffer ainda não iniciado depois de um submit antecipado (camada de
     validação no celular, `VITASHARP_VK_VALIDATION=1`/`sync`); o próximo quadro começa antes (31/10, perf/android-phone-3)

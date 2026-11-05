@@ -184,9 +184,6 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    /// <summary>=0: buffers ending in an array are always read up to 16 KB, even by programs that only load them at
-    /// constant offsets (generator v20 layout, for A/B runs).</summary>
-    public const string UbArrayStatic = "VITASHARP_UB_ARRAY_STATIC";
     /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     public const string VideoHw = "VITASHARP_VIDEO_HW";

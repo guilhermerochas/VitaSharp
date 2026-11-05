@@ -76,13 +76,6 @@ public sealed partial class UsseTranslator
 
     public int MaxTemp, MaxPa, MaxSa, MaxOut;
 
-    /// <summary>Analysis (<see cref="ProgramInput.ScanLoads"/>): when set, collects the SA words the instructions read or
-    /// write other than as the base register of a memory load; <see cref="SaDynamic"/>: an SA word was addressed through
-    /// an index register (any word may be used).</summary>
-    public HashSet<int>? SaUse { get; init; }
-    public bool SaDynamic { get; private set; }
-    bool _loadBase; // translating the base operand of a VLDST
-
     // data type of the last write to each register word (program order, statically addressed words only). Bit-copy
     // moves carry the source word's type, so a word VPCK'd to U8 stays U8 when moved to the output registers.
     readonly Dictionary<(Bank, int), DataType> _wordType = new();
@@ -188,7 +181,6 @@ public sealed partial class UsseTranslator
     string Word(Bank b, int w)
     {
         Track(b, w);
-        if (b == Bank.SecAttr && !_loadBase) SaUse?.Add(w);
         return $"{BankName(b)}[{w >> 2}].{Comps[w & 3]}";
     }
 
@@ -196,7 +188,6 @@ public sealed partial class UsseTranslator
     string WordDyn(Bank b, string idx)
     {
         Track(b, 255);
-        if (b == Bank.SecAttr && SaUse != null) SaDynamic = true;
         if (ShaderGenerator.LowerDynamicIndexing)
         {
             // Adreno quirk: no dynamic vector component index, a switch helper instead (ShaderGenerator.DynHelpers)
@@ -218,7 +209,6 @@ public sealed partial class UsseTranslator
         if (dynBase != null && ShaderGenerator.LowerDynamicIndexing)
         {
             Track(b, 255);
-            if (b == Bank.SecAttr && SaUse != null) SaDynamic = true;
             DynBanks.Add(BankName(b));
             Line($"dynW_{BankName(b)}({dynBase} + {rel}, {value});");
             return;

@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Text;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;
-using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Gpu;
 
@@ -534,20 +533,7 @@ public sealed class GpuDumpCodec
                 var data = r.BytesSpan(r.VarInt()).ToArray();
                 var p = new GxpProgram(data, address);
                 var (slots, bytes) = ShaderGenerator.UniformLayout(p);
-                var info = new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed(), CubeSamplers = p.CubeSamplers() };
-                Put(_infos, id, info);
-                // v20 (trailing arrays up to 16 KB) and v19 (up to 8 KB) layouts, when they differ from the current one
-                var legacy = new List<(List<UniformBufferSlot> Slots, int Bytes)>();
-                foreach (uint words in (uint[])[ProgramInput.MaxUbArrayInFloat, ProgramInput.MaxUbInFloat])
-                {
-                    var l = ShaderGenerator.UniformLayout(p, false, words);
-                    if (l.Bytes != bytes && !legacy.Exists(o => o.Bytes == l.Bytes)) legacy.Add(l);
-                }
-                if (legacy.Count > 0)
-                {
-                    _legacyLayouts[info] = legacy;
-                    Log.Info($"[gpudump] program {p.Hash:X16}: uniform layout {bytes} bytes (v19/v20: {string.Join("/", legacy.Select(l => l.Bytes))}); older blocks are moved");
-                }
+                Put(_infos, id, new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed(), CubeSamplers = p.CubeSamplers() });
                 break;
             }
             case GpuDumpRecord.VertexProgram:
@@ -575,29 +561,6 @@ public sealed class GpuDumpCodec
             }
             default: throw new InvalidDataException($"not a program record: {kind}");
         }
-    }
-
-    /// <summary>Generator v20 and v19 uniform layouts of the programs whose current layout differs (v21: trailing
-    /// arrays sized by <see cref="ProgramInput.ScanLoads"/>): dumps recorded before carry uniform blocks in them.</summary>
-    readonly Dictionary<GxmProgramInfo, List<(List<UniformBufferSlot> Slots, int Bytes)>> _legacyLayouts = new();
-
-    /// <summary>A uniform block recorded in an older layout of its program (told apart by its length), moved into
-    /// the current one (each buffer cut or zero-extended to its current size); any other block is returned as is.</summary>
-    byte[] Relayout(GxmProgramInfo? info, byte[] data)
-    {
-        if (info == null || data.Length == info.UniformBytes || !_legacyLayouts.TryGetValue(info, out var layouts)) return data;
-        int found = layouts.FindIndex(l => l.Bytes == data.Length);
-        if (found < 0) return data;
-        var legacy = layouts[found];
-        var result = new byte[info.UniformBytes];
-        foreach (var s in info.UniformSlots)
-        {
-            var old = legacy.Slots.Find(o => o.GuestIndex == s.GuestIndex);
-            if (old == null || old.Mapped != s.Mapped) continue;
-            int n = Math.Min(s.ByteSize, old.ByteSize);
-            data.AsSpan(old.ByteOffset, n).CopyTo(result.AsSpan(s.ByteOffset, n));
-        }
-        return result;
     }
 
     static void Put<T>(List<T> list, int id, T value)
@@ -653,10 +616,10 @@ public sealed class GpuDumpCodec
         s.RegionClipMode = r.U8(); s.ClipMinX = r.I32(); s.ClipMinY = r.I32(); s.ClipMaxX = r.I32(); s.ClipMaxY = r.I32();
         s.WBuffer = r.Bool(); s.WClampEnabled = r.Bool(); s.WClampValue = r.F32();
         d.State = s;
-        d.VertexUniforms = Relayout(d.VertexProgram.Info, _uniforms.Read(r));
+        d.VertexUniforms = _uniforms.Read(r);
         d.VertexUniformsOffset = 0;
         d.VertexUniformsLength = d.VertexUniforms.Length;
-        d.FragmentUniforms = Relayout(d.FragmentProgram.Info, _uniforms.Read(r));
+        d.FragmentUniforms = _uniforms.Read(r);
         d.FragmentUniformsOffset = 0;
         d.FragmentUniformsLength = d.FragmentUniforms.Length;
         ReadWords(r, d.VertexUniformAddrs);
