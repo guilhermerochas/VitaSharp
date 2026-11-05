@@ -614,9 +614,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `--cpu-mhz=0` (CPU sem ritmo), o que deixa o GOAL muito à frente; conferir com o ritmo padrão e, se persistir, ver
   o que o jogo espera para reusar o anel (notificação/`sceGxmNotificationWait`) — é a mesma classe do `ub-late`, mas
   para streams em RAM; (b) **quadros pretos depois de carregar o estado**: 30-48 presents pretos (`METRICS black`
-  1782..1811 na main, 1735..1782 no build de hoje) entre o `Load state: GPU backend replaced` e a primeira imagem; não
-  é compilação assíncrona (nunca pula desenhos); próximo passo: `--gpu-dump-at` desde o primeiro present pós-carga e
-  ver se os desenhos existem (jogo esperando) ou se só o present falha; (c) **mar com buracos pretos por um quadro**
+  1782..1811 na main, 1735..1782 no build de hoje) entre o `Load state: GPU backend replaced` e a primeira imagem.
+  Não é o renderer: no replay de `jak_final.vsgd` (`frames_index.txt`) cada um desses presents tem a cena inteira
+  (~1450 desenhos, 1752-1782) e o último desenho é um quadrado de tela cheia opaco sem textura (vs 96859A639870B7F2,
+  fs 687E44699E752BD2) que cobre tudo de preto; `--draw-limit=1462@1770` (sem ele) mostra o Jak e o cenário certos
+  (`scratchpad/bugsC3_out/blk_lim1462/frame_001770.png`), e no 1783 o jogo para de emiti-lo (corte seco, sem fade).
+  É o "blackout" do próprio jogo depois de carregar a área; falta saber se a duração é a do Vita (ver um vídeo do
+  Vita/Vita3K) ou se o salto do relógio na carga (`guest clock +15832 ms` no resume) a estende; (c) **mar com buracos pretos por um quadro**
   (replay `jak_fix.vsgd` present 2112, `bugsC3_out/flash2112.png`): nesse quadro o jogo emitiu 52 desenhos a menos
   (1302 x 1354 no 2111), então vem do lado do jogo/CPU, não do renderer; (d) **20 fps** reproduz nos 3 testes (20,0
   fps, `--cpu-mhz=0`, 4 núcleos): CPU do jogo (`process cpu 70 ms/quadro` no log do usuário), fora do escopo deste
