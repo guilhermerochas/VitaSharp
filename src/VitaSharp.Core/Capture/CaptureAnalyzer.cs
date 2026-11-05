@@ -83,8 +83,9 @@ public static class CaptureAnalyzer
             int pre = stats.Count - live.Count;
             var iv = stats.Skip(1).Select((s, i) => (s.F.Info.PresentNs - stats[i].F.Info.PresentNs) / 1e6).Where(v => v > 0).OrderBy(v => v).ToList();
             double med = iv.Count > 0 ? iv[iv.Count / 2] : 0;
+            int restarts = stats.Skip(1).Select((s, i) => s.F.Info.Present < stats[i].F.Info.Present ? 1 : 0).Sum();
             double span = (stats[^1].F.Info.PresentNs - stats[0].F.Info.PresentNs) / 1e9;
-            sb.AppendLine(FormattableString.Invariant($"frames: {stats.Count} presented ({pre} in the pre-roll, before the recording start), {span:F1} s, median interval {med:F1} ms ({(med > 0 ? 1000 / med : 0):F1} fps), presents {stats[0].F.Info.Present}-{stats[^1].F.Info.Present}, flips {stats[0].F.Info.Flip}-{stats[^1].F.Info.Flip}"));
+            sb.AppendLine(FormattableString.Invariant($"frames: {stats.Count} presented ({pre} in the pre-roll, before the recording start), {span:F1} s, median interval {med:F1} ms ({(med > 0 ? 1000 / med : 0):F1} fps), presents {stats[0].F.Info.Present}-{stats[^1].F.Info.Present}{(restarts > 0 ? $" (the renderer restarted {restarts} times: LoadExec or state loads; present numbers count again from 1)" : "")}, flips {stats[0].F.Info.Flip}-{stats[^1].F.Info.Flip}"));
             sb.AppendLine(dumpPresents.Count > 0
                 ? $"GPU dump: {dumpPresents.Count} frames, presents {dumpPresents.Keys.Min()}-{dumpPresents.Keys.Max()}"
                 : "GPU dump: none");
@@ -103,7 +104,8 @@ public static class CaptureAnalyzer
             var s = stats[f.Index];
             var p = s.F.Info;
             double atS = (p.PresentNs - startNs) / 1e9;
-            string where = dumpPresents.TryGetValue(p.Present, out int dk) ? $"GPU dump frame {dk} (replay-gpu --frame={dk})"
+            // present numbers restart with a new renderer (LoadExec, state load): pre-roll frames never match the dump
+            string where = !s.F.PreRoll && dumpPresents.TryGetValue(p.Present, out int dk) ? $"GPU dump frame {dk} (replay-gpu --frame={dk})"
                 : s.F.PreRoll ? "pre-roll, before the GPU dump: re-run from state_preroll.vss to reproduce it"
                 : dumpPresents.Count > 0 && p.Present > dumpPresents.Keys.Max() ? "after the GPU dump ended"
                 : "not in the GPU dump";
@@ -343,7 +345,12 @@ public static class CaptureAnalyzer
             double d = iv[i - 1];
             if (d < limit) continue;
             var p = st[i].F.Info;
-            string cause = string.IsNullOrEmpty(p.Hitch) ? "no stall cause recorded on the GPU worker (the guest itself was slow, or the host)" : FormattableString.Invariant($"{p.Hitch} {p.HitchMs:F1} ms");
+            bool restarted = p.Present < st[i - 1].F.Info.Present;
+            // a cause longer than the interval is a ledger total carried over a renderer change, not this frame's
+            string cause = restarted ? "the renderer was replaced here (LoadExec or a state load): boot of the new process or the load itself"
+                : string.IsNullOrEmpty(p.Hitch) || p.HitchMs > d + 50 ? "no stall cause recorded on the GPU worker (the guest itself was slow, or the host)"
+                : p.Hitch == "guestGpuWait" ? FormattableString.Invariant($"the guest waited for the GPU {p.HitchMs:F1} ms (GPU work or the renderer's thread was slow)")
+                : FormattableString.Invariant($"{p.Hitch} {p.HitchMs:F1} ms");
             findings.Add(new Finding("stall", i, 1, FormattableString.Invariant($"{d:F0} ms between presents (median {med:F1} ms); GPU {p.GpuMs:F1} ms, {p.Draws} draws, new shaders {p.NewShaders}, new pipelines {p.NewPipelines}; cause: {cause}")));
         }
     }
