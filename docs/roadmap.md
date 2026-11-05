@@ -336,6 +336,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   o GPU worker antes do decode. Ou seja, nem o tempo da `main` nem a profundidade da fila mudam a fase; falta descobrir o
   que no Vita impede a segunda mensagem de ficar para o quadro seguinte (o tempo do `sceGxmFinish` dentro da cena da
   F3D, que espera a GPU inteira, é o próximo suspeito: no Vita ele não espera a cena de display anterior)
+  Achados (04/11/2026, fix/user-bugs-5; trace `VITASHARP_TRACE_TEX=63FBC400` = decode JPEG e leitura da textura no
+  renderer com horário, `--vulkan` obrigatório no `run --headless` para haver renderer): a `F3DPlaybackThread` faz
+  Receive a cada dois quadros desde o boot (mensagens de 24 bytes do logo, f0-f3), não só no menu: a `main` manda a
+  mensagem 0 e logo a 1 (a espera da notificação k-1 já está satisfeita), e a 3 chega 12 ms depois do EndScene da
+  cena 1, enquanto a F3D ainda está no AddEntry (o `displayQueueMaxPendingCount` do jogo é **1**). Com o atraso de
+  uma mensagem estabelecido no começo, ele nunca se desfaz (as duas threads andam a 30 Hz). Testado sem efeito (42/171
+  e 42/172): (a) a espera do sync object de fragmento no BeginScene, do lado da GPU (a cena só roda depois que o
+  display soltou o buffer, como no Vita3K; `VITASHARP_DISPLAY_SYNC=1`, as esperas são de ~31 ms) e (b) a fila de
+  display com no máximo `pendingCount` entradas em voo (`VITASHARP_DISPLAY_QUEUE_STRICT=1`; antes `pending=1` deixava
+  passar 2). Os dois ficam como chaves A/B desligadas. O que falta para separar as hipóteses: o tempo real de GPU do
+  Vita (aqui a notificação da cena 1 sai em <1 ms) e do decoder; um vídeo do Vita do menu confirmaria se a faixa está
+  limpa no console
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
@@ -589,6 +601,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   papel picado da própria textura. O SUSPECT 0x60E8F6C0 é um elemento do HUD (desenho 700) e a profundidade lida
   (desenhos 615/616, partículas aditivas) não muda a faixa. Sem referência do Vita (o Vita3K não abre o jogo) não dá
   para dizer se a cor/iluminação está errada; precisa de uma foto/vídeo do console no mesmo estádio
+  Reaberto (04/11/2026, usuário em fe012ec): o áudio continua errado (narração repete o que acabou de dizer e picota;
+  torcida não está boa) e há "pontos" no gramado. Achados (fix/user-bugs-5, `VITASHARP_NGS_TRACE=1` + `--audio-dump`:
+  um WAV por voz NGS, linhas `[ngs]` com play/kill (com quem chamou), callbacks, tabela de buffers e hash do anel a cada
+  volta): as vozes de torcida/narração são ATRAC9 tocando um anel em loop infinito (6720 ou 13440 bytes) que o
+  EAAudioCore reabastece pela posição informada; o fim de cada anel tem superframes zerados (900 de 900 erros de decode
+  são zeros), que o HLE pulava sem gastar tempo nem contar em bytes consumidos. Em várias voltas o jogo não reescreve
+  nada do anel (hash igual) e a voz repete o mesmo conteúdo (repetições a cada 0,90 s / 2,99 s nos WAVs,
+  `tools/audrep.py` do scratchpad), e há kill+play seguidos a cada 4-8 ticks (192 bytes) pela mesma função do jogo
+  (lr 0x8140D0E5). Tocar o superframe ruim como silêncio contando bytes (como o Vita3K soma os contadores) não mudou a
+  contagem de voltas sem reescrita; fica em `VITASHARP_AT9_ERROR_SILENCE=1` (A/B). Os módulos EQ/envelope vêm todos
+  zerados, o Mixer da voz vem com ganho 1,0/1,0 (o HLE ignora o Mixer). O espectro do nosso mix tem ~20 dB a mais
+  abaixo de 250 Hz que dois vídeos do Vita no YouTube (bMYfYTF_BHc, PZYkqAFhvFI), mas eles podem ter sido gravados do
+  alto-falante. **Pontos no gramado**: no dump F8 do usuário (`PCSE00093_20261104_205631.vsgd`) há cunhas/triângulos
+  escuros de 1 quadro saindo de um jogador (presents 11158, 11182, 11190), desenhados pela malha de sombra projetada
+  dos jogadores (vs DCBB621AC8070CB0, 3285 vértices, paleta de ossos no buffer 1 de 16 KB): um vértice vai longe. O
+  replay reproduz (o dado ruim está nos uniforms copiados na hora do draw). Com `VITASHARP_UB_LATE=1` (o worker copia
+  os uniform buffers de novo antes de executar o draw, como o hardware que lê na execução) 31% dos draws do FIFA têm
+  buffers alterados depois do draw, inclusive o da sombra. Em 2500 quadros de partida aqui as cunhas não apareceram
+  nem com nem sem a chave, então não está validado; a chave custa ~25% de fps (cópia dupla)
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que

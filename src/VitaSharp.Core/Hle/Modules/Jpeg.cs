@@ -299,6 +299,8 @@ public sealed partial class Jpeg : HleModule
 
     /// <summary>Decodes into the pitch layout; returns (pitch[0].x &lt;&lt; 16) | pitch[0].y. Writes are clamped to the
     /// buffer sizes the caller gave.</summary>
+    static readonly uint TraceTexAddr = Convert.ToUInt32(Environment.GetEnvironmentVariable(EnvVars.TraceTex) is { Length: > 0 } tt ? tt : "0", 16);
+
     int Decode(uint jpeg, uint isize, int mode, uint dst, uint osize, int format, uint temp, uint tempSize, bool limitSize)
     {
         if (jpeg == 0 || isize == 0 || dst == 0) return ERR_INVALID_POINTER;
@@ -314,6 +316,7 @@ public sealed partial class Jpeg : HleModule
         var pitch = PitchInfo(img.Info.Width, img.Info.Height, DownscaleRatio(mode), cs, standard);
         if (limitSize && IsUnsupportedImageSize(pitch[0].X, pitch[0].Y)) return ERR_UNSUPPORT_IMAGE_SIZE;
         var yuv = BuildPitched(img, pitch, DownscaleRatio(mode), standard);
+        if (TraceTexAddr != 0 && dst == TraceTexAddr) Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms jpeg decode into 0x{dst:X8} {pitch[0].X}x{pitch[0].Y}");
 
         if (format == FORMAT_NO_CSC)
         {

@@ -34,8 +34,10 @@ public sealed partial class Gxm : HleModule
     bool _initialized;
     uint _notificationRegion, _parameterBufferSize;
     uint _displayCallback, _displayDataSize;
-    BoundedQueue<(uint Data, GpuQueue.Fence Done)>? _displayQueue;
+    BoundedQueue<(uint Data, GpuQueue.Fence Done, GxmSyncObject? Old, long OldDisplays)>? _displayQueue;
     int _displayPending;
+    /// <summary>displayQueueMaxPendingCount (capped at 3): entries queued or flipping at once.</summary>
+    int _displayMaxInFlight = 2;
     readonly object _displayLock = new();
     GuestThread? _displayThread;
 
@@ -64,8 +66,10 @@ public sealed partial class Gxm : HleModule
         _displayDataSize = GuestMemory.R32(pParams + 12);
         _notificationRegion = Emu.Memory.Alloc(1 << 20, "SceGxmNotificationRegion", MemoryRegion.User);
         GuestMemory.Fill(_notificationRegion, 0, 1 << 20);
-        int capacity = (int)Math.Max(Math.Min(pendingMax, 3u) - 1, 1u);
-        _displayQueue = new BoundedQueue<(uint, GpuQueue.Fence)>(capacity);
+        _displayMaxInFlight = (int)Math.Clamp(pendingMax, 1u, 3u);
+        int capacity = Math.Max(_displayMaxInFlight - 1, 1);
+        _displayQueue = new BoundedQueue<(uint, GpuQueue.Fence, GxmSyncObject?, long)>(capacity);
+        if (UbLate) GpuQueue.LateUniformCopy = LateCopyUniforms;
         var t = K.CreateThread("SceGxmDisplayQueue", 0, 64, 0x4000, 0, 0);
         t.HostBody = DisplayQueueThread;
         _displayThread = t;
@@ -79,13 +83,13 @@ public sealed partial class Gxm : HleModule
     {
         while (true)
         {
-            (uint data, GpuQueue.Fence done) entry;
+            (uint data, GpuQueue.Fence done, GxmSyncObject? old, long oldDisplays) entry;
             using (Scheduler.Block()) // blocked on the queue: do not hold an emulated core
             {
                 try { entry = _displayQueue!.Take(); }
                 catch (InvalidOperationException) { break; } // queue completed
             }
-            var (data, done) = entry;
+            var (data, done, oldSync, oldDisplays) = entry;
             // the hardware calls back once the frame's rendering completed and its results are in memory
             using (Scheduler.Block()) done.Wait(() => Emu.Running);
             if (!Emu.Running && Emu.MainModule != null && K.MainThread?.Status == ThreadStatus.Dormant) break;
@@ -98,6 +102,8 @@ public sealed partial class Gxm : HleModule
             finally
             {
                 Emu.Memory.Free(data);
+                // the flip is done: the old buffer is off screen, and scenes waiting to render into it may run
+                if (oldSync != null) lock (oldSync) { if (oldSync.Released < oldDisplays) oldSync.Released = oldDisplays; Monitor.PulseAll(oldSync); }
                 lock (_displayLock)
                 {
                     _displayPending--;
@@ -553,6 +559,7 @@ public sealed partial class Gxm : HleModule
         uint xMax = validRegion != 0 ? GuestMemory.R32(validRegion) : rt.Width - 1u;
         uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
+        WaitForDisplayRelease(fragmentSync);
         Gpu.Submit(new BeginSceneCommand
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
@@ -635,6 +642,40 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
+    /// <summary>VITASHARP_DISPLAY_SYNC=0 turns off the fragment sync object wait below (A/B).</summary>
+    static readonly bool DisplaySync = Environment.GetEnvironmentVariable(EnvVars.DisplaySync) is "1" or "trace"; // "trace" also logs the waits
+
+    /// <summary>
+    /// The fragment sync object of sceGxmBeginScene: on the hardware the GPU does not render a scene into a colour
+    /// buffer while the display queue still shows it (or has it queued); the scene starts once the flip away from that
+    /// buffer happened. The wait is GPU-side, as on the Vita: the worker holds the scene (and everything after it, in
+    /// GPU order) until the display thread released the buffer, so the scene's notifications are written no earlier than
+    /// on the hardware. The guest thread does not block. Without it the notifications of a scene came a whole display
+    /// period early (Jak and Daxter Collection's menu decoded the next MJPEG frame into a texture still to be drawn).
+    /// </summary>
+    static readonly bool TraceDisplaySync = Environment.GetEnvironmentVariable(EnvVars.DisplaySync) == "trace";
+    static long _syncWaits;
+
+    void WaitForDisplayRelease(uint fragmentSync)
+    {
+        if (!DisplaySync || fragmentSync == 0 || !_syncObjects.TryGetValue(fragmentSync, out var s)) return;
+        long target;
+        lock (s) { target = s.Queued; if (s.Released >= target) return; }
+        Gpu.Submit(new CallbackCommand
+        {
+            Action = () =>
+            {
+                // a flip takes a few vblanks; a buffer that never leaves the screen must not hang the GPU
+                long w0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                bool ok = Gpu.WorkerWait(() => s.Released >= target || !Emu.Running, s, 250);
+                if (TraceDisplaySync && ++_syncWaits % 30 == 1) Log.Info($"[display-sync] wait {_syncWaits}: sync 0x{s.Handle:X8} {System.Diagnostics.Stopwatch.GetElapsedTime(w0).TotalMilliseconds:F1} ms");
+                if (!ok)
+                    Log.WarnOnce("gxm-sync-timeout", $"sceGxmBeginScene: sync object 0x{s.Handle:X8} still displayed after 250 ms (display {s.Released}/{target}); rendering anyway");
+            },
+        });
+    }
+    static readonly bool DisplayQueueStrict = Environment.GetEnvironmentVariable(EnvVars.DisplayQueueStrict) == "1";
+
     static readonly bool DisplayEarlySignal = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal) == "1";
 
     [Hle]
@@ -645,12 +686,25 @@ public sealed partial class Gxm : HleModule
         uint size = Math.Max(_displayDataSize, 4);
         uint copy = Emu.Memory.Alloc(size, "gxm display data", MemoryRegion.User, 16);
         if (callbackData != 0) GuestMemory.Copy(copy, callbackData, _displayDataSize);
-        lock (_displayLock) _displayPending++;
+        // VITASHARP_DISPLAY_QUEUE_STRICT=1 (A/B): at most displayQueueMaxPendingCount entries queued or being flipped, as
+        // in Vita3K; by default a pending count of 1 still allows one queued entry plus the one the display thread holds
+        long tq = System.Diagnostics.Stopwatch.GetTimestamp();
+        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait))
+            lock (_displayLock)
+            {
+                while (DisplayQueueStrict && _displayPending >= _displayMaxInFlight && Emu.Running) Monitor.Wait(_displayLock, 50);
+                _displayPending++;
+            }
+        GpuQueue.CountGuestWait(GpuQueue.GuestWait.DisplayQueue, tq);
         // the queue has pendingCount-1 slots: when the render thread runs ahead it blocks here until the display thread
         // flips, and that wait must not hold an emulated core (it starved every lower-priority thread, e.g. God of
         // War's Bink audio thread, making the video audio port restart every 100 ms)
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence(DisplayEarlySignal)));
+        GxmSyncObject? oldSync = DisplaySync ? _syncObjects.GetValueOrDefault(oldBuffer) : null;
+        long oldDisplays = 0;
+        if (oldSync != null) lock (oldSync) oldDisplays = oldSync.Queued;
+        if (DisplaySync && _syncObjects.GetValueOrDefault(newBuffer) is { } newSync) lock (newSync) newSync.Queued++;
+        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence(DisplayEarlySignal), oldSync, oldDisplays));
         GpuQueue.CountGuestWait(GpuQueue.GuestWait.DisplayQueue, t0);
         return 0;
     }
@@ -903,6 +957,39 @@ public sealed partial class Gxm : HleModule
         return b.Address + b.Size - addr;
     }
 
+    /// <summary>Experiment (VITASHARP_UB_LATE=1): the GPU worker copies the draw's uniform buffers again just before it
+    /// executes the draw (the hardware reads them when the GPU runs the scene, not at the draw call) and counts the draws
+    /// whose buffers changed in between.</summary>
+    static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) == "1";
+    static long _ubLateChanged, _ubLateDraws;
+    [SaveState.SnapshotIgnore] static byte[] _ubLateScratch = new byte[64 * 1024];
+
+    static void LateCopyUniforms(DrawCommand d)
+    {
+        var info = d.VertexProgram.Info;
+        _ubLateDraws++;
+        bool changed = false;
+        if (d.UniformChunk != null && d.VertexUniformsLength > 0)
+        {
+            var span = d.VertexUniformSpan;
+            if (_ubLateScratch.Length < span.Length) _ubLateScratch = new byte[span.Length * 2];
+            var before = _ubLateScratch.AsSpan(0, span.Length);
+            span.CopyTo(before);
+            CopyUniforms(info, d.VertexUniformAddrs, span);
+            changed = !before.SequenceEqual(span);
+        }
+        if (d.UniformChunk != null && d.FragmentUniformsLength > 0 && d.FragmentProgram.Info is { } fi)
+        {
+            var span = d.FragmentUniformSpan;
+            if (_ubLateScratch.Length < span.Length) _ubLateScratch = new byte[span.Length * 2];
+            var before = _ubLateScratch.AsSpan(0, span.Length);
+            span.CopyTo(before);
+            CopyUniforms(fi, d.FragmentUniformAddrs, span);
+            changed |= !before.SequenceEqual(span);
+        }
+        if (changed && ++_ubLateChanged % 200 == 1)
+            Log.Info($"[ub-late] {_ubLateChanged} of {_ubLateDraws} draws had uniform buffers changed after the draw call (vs {d.VertexProgram.Info.Program.Hash:X16})");
+    }
     /// <summary>Profiling: bytes of uniform buffers copied into draw commands (racy, one counter for all threads).</summary>
     public static long UniformBytesCopied;
 

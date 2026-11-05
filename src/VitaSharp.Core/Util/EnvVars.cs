@@ -33,6 +33,9 @@ public static class EnvVars
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
     /// <summary>Android: folder (relative to the data folder) for per-port WAVs of the guest's audio (desktop: --audio-dump).</summary>
     public const string AudioDump = "VITASHARP_AUDIO_DUMP";
+    /// <summary>=1: logs every NGS source voice event (play, key off, buffer callbacks, player/ATRAC9 buffer table
+    /// changes) with the reported play position; with --audio-dump each source voice's output also gets its own WAV.</summary>
+    public const string NgsTrace = "VITASHARP_NGS_TRACE";
     /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
     /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
     public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";
@@ -168,6 +171,10 @@ public static class EnvVars
     /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
     public const string VertexCache = "VITASHARP_VERTEX_CACHE";
     public const string TraceRt = "VITASHARP_TRACE_RT";
+    /// <summary>Directory: draw traces (--trace-draws) also write each draw's uniform blocks there as raw files.</summary>
+    public const string TraceUniforms = "VITASHARP_TRACE_UNIFORMS";
+    /// <summary>Hex guest address: texture uploads of it (renderer) and JPEG decodes into it are logged with host times.</summary>
+    public const string TraceTex = "VITASHARP_TRACE_TEX";
     public const string TraceSnap = "VITASHARP_TRACE_SNAP";
     public const string TraceSync = "VITASHARP_TRACE_SYNC";
     public const string TraceVis = "VITASHARP_TRACE_VIS";
@@ -177,6 +184,8 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
+    /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
+    public const string UbLate = "VITASHARP_UB_LATE";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";
@@ -204,6 +213,13 @@ public static class EnvVars
     /// <summary>1: a display queue entry's flip callback runs once the GPU worker recorded and submitted the frame, not
     /// once the GPU finished it (the callback only flips; presents stay in GPU order). Default 0.</summary>
     public const string DisplayEarlySignal = "VITASHARP_DISPLAY_EARLY_SIGNAL";
+    /// <summary>1 (A/B): a scene's GPU work waits until the display released its colour buffer (fragment sync object);
+    /// trace also logs the waits. Default off.</summary>
+    public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
+    /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
+    public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
+    /// <summary>1 (A/B): an ATRAC9 superframe that fails to decode plays as silence and counts as consumed (default: skipped).</summary>
+    public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";
     /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target
