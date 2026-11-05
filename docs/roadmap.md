@@ -472,6 +472,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
+- [ ] FIFA 13: estalos no som da torcida (relato do usuário, 05/11/2026 03:36, main 5a3bcb4, log
+  `logs61105_033621_PCSE00093.log`, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`). Sem underruns (1 em 261 s).
+  Suspeita forte: a correção da narração (7732c69) toca os superframes ATRAC9 zerados como silêncio, e o agente B já
+  tinha visto que isso põe um buraco de 0,27 s num anel da torcida; buracos/emendas sem suavização no loop dão estalo.
+  Comparar com `VITASHARP_AT9_ERROR_SILENCE=0`, e tratar o silêncio só nas vozes que terminam (narração) ou suavizar
+  as emendas do loop
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
