@@ -770,6 +770,7 @@ public sealed unsafe partial class VulkanRenderer
             && fs.Gen!.RawColorBits == 0 && fs.Gen.TileWord1 == 0;
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
+        ProfMark(ProfPhase.TexSets);
         _feedbackAllowed = false;
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
         // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
@@ -927,6 +928,7 @@ public sealed unsafe partial class VulkanRenderer
                 // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
+            ProfMark(ProfPhase.Begin);
             BeginCostQuery(cmd, d);
             // dynamic state set by an earlier draw holds in this command buffer while only draw pipelines were bound
             // (they all declare the same dynamic state); another pipeline or command buffer starts over
