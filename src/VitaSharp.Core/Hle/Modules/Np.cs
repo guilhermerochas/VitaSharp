@@ -335,6 +335,39 @@ public sealed partial class NpManager : HleModule
     [Hle] int sceNpGetPlatformType(uint npId) => NpIdUtil.GetPlatformType(npId);
     [Hle] int sceNpSetPlatformType(uint npId, int type) => NpIdUtil.SetPlatformType(npId, type);
 
+    // ---------------------------------------------------------------- system requests (SceNpManager, unnamed)
+    // The first-boot setup (initialsetup.self, FW 3.74) runs one when the user answers "Set Later" to "Do you want to use
+    // your account on your PlayStation Vita system?" (0x81049482 there): 27112D01() prepares, E41932D4(SceUID *req, 0)
+    // starts the request, a per-frame callback polls D1D191FB(req) until it is 2 (finished), then reads
+    // 96534006(req, int *result) (negative: the setup shows an error) and calls FAEA7A73(); EB16514C(req) aborts it. All
+    // were unimplemented, so the state never became 2 and the setup sat on "Please wait..." forever. The emulated
+    // console has no server to ask: a request finishes at once with result 0.
+    const int SYSREQ_FINISHED = 2;
+    int _sysReqNext = 1;
+
+    [Hle("sceNpManager_27112D01", Nid = 0x27112D01, Library = "SceNpManager")] int NpSysRequestPrepare() => 0;
+
+    [Hle("sceNpManager_E41932D4", Nid = 0xE41932D4, Library = "SceNpManager")]
+    int NpSysRequestStart(uint outReq, int arg)
+    {
+        if (outReq == 0) return ERR_INVALID_ARGUMENT;
+        GuestMemory.W32(outReq, (uint)_sysReqNext++);
+        return 0;
+    }
+
+    [Hle("sceNpManager_D1D191FB", Nid = 0xD1D191FB, Library = "SceNpManager")] int NpSysRequestState(int req) => SYSREQ_FINISHED;
+
+    [Hle("sceNpManager_96534006", Nid = 0x96534006, Library = "SceNpManager")]
+    int NpSysRequestResult(int req, uint result)
+    {
+        if (result != 0) GuestMemory.W32(result, 0);
+        return 0;
+    }
+
+    [Hle("sceNpManager_EB16514C", Nid = 0xEB16514C, Library = "SceNpManager")] int NpSysRequestAbort(int req) => 0;
+
+    [Hle("sceNpManager_FAEA7A73", Nid = 0xFAEA7A73, Library = "SceNpManager")] int NpSysRequestEnd() => 0;
+
     // ---------------------------------------------------------------- communication id text (SceNpCommon)
     // np_common.suprx FW 3.74 (the shell's trophy server names a title's folders this way): SceNpCommunicationId
     // (char data[9], term, uint8 num, dummy) <-> "NPWR12345_00".
