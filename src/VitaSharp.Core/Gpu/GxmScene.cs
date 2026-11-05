@@ -163,6 +163,40 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
 }
 
 /// <summary>
+/// Opened by sceGxmBeginScene and closed by sceGxmEndScene or sceGxmMidSceneFlush: the points where the hardware gets
+/// the scene's vertex work, and so the earliest the GPU reads its draws' uniform buffers. Games may fill a buffer after
+/// the draw call that uses it, until then.
+/// </summary>
+public sealed class SceneGate
+{
+    volatile bool _ended;
+    public bool Ended => _ended;
+
+    public void End()
+    {
+        if (_ended) return;
+        lock (this) { _ended = true; Monitor.PulseAll(this); }
+    }
+
+    /// <summary>Waits up to <paramref name="timeoutMs"/> for <see cref="End"/>; false on a timeout.</summary>
+    public bool Wait(int timeoutMs)
+    {
+        if (_ended) return true;
+        lock (this)
+        {
+            long until = Environment.TickCount64 + timeoutMs;
+            while (!_ended)
+            {
+                long left = until - Environment.TickCount64;
+                if (left <= 0) return false;
+                Monitor.Wait(this, (int)Math.Min(left, 20));
+            }
+        }
+        return true;
+    }
+}
+
+/// <summary>
 /// One draw call. Instances are pooled by <see cref="GpuQueue"/> (thousands per frame); the uniform data lives in a
 /// shared arena slice, so readers must use the uniform spans, never the arrays directly.
 /// </summary>
@@ -193,12 +227,16 @@ public sealed class DrawCommand : GpuCommand
     /// <summary>The bound uniform buffers (0-13) are still to be copied from guest memory, by the GPU worker right
     /// before it executes the draw (live draws only; replayed draws carry their recorded data).</summary>
     public bool UniformsLate;
+    /// <summary>With <see cref="UniformsLate"/>: the scene the draw belongs to. The worker copies the bound buffers only
+    /// once the guest ended (or flushed) that scene, the earliest point the hardware reads them.</summary>
+    public SceneGate? Gate;
 
     /// <summary>Clears per-draw state before the command is reused.</summary>
     public void Reset()
     {
         VertexUniformsLength = FragmentUniformsLength = 0;
         UniformsLate = false;
+        Gate = null;
         VisAddress = 0;
         VisIncrement = false;
         InstanceCount = 1;

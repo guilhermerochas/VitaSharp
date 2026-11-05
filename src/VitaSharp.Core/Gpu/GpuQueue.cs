@@ -166,9 +166,53 @@ public sealed class GpuQueue : IDisposable
     /// <summary>Threads inside <see cref="WaitFor"/> (the worker pulses the progress monitor only when there are any).</summary>
     int _progressWaiters;
 
+    /// <summary>VITASHARP_UB_SCENE_END=check: also counts the held draws whose bound uniform buffers changed between the
+    /// worker getting the draw and the scene's end (what an early copy would have read wrong).</summary>
+    static readonly bool GateCheck = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) == "check";
+    long _gateHeld, _gateChanged;
+
+    static uint CopyAndHash(DrawCommand d)
+    {
+        LateUniformCopy?.Invoke(d);
+        return System.IO.Hashing.XxHash32.HashToUInt32(d.VertexUniformSpan) ^ System.IO.Hashing.XxHash32.HashToUInt32(d.FragmentUniformSpan) * 31;
+    }
+
+    /// <summary>The highest command sequence a guest thread waits for (<see cref="WaitFor"/>).</summary>
+    long _maxWaited;
+    /// <summary>Scene gates given up on (a guest waited for a draw of its still open scene, or the timeout).</summary>
+    public static long SceneGateReleases;
+
+    /// <summary>Worker: holds <paramref name="d"/>, whose bound uniform buffers are read late, until the guest ends its
+    /// scene. Not when a guest thread waits for this draw or a later command (it would wait for itself), nor longer than
+    /// 250 ms.</summary>
+    void WaitSceneGate(DrawCommand d, SceneGate gate)
+    {
+        long ti = FrameLedger.Now();
+        uint before = GateCheck ? CopyAndHash(d) : 0;
+        bool ended = false;
+        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence && !(ended = gate.Wait(10)); i++) { }
+        FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
+        if (GateCheck)
+        {
+            long held = ++_gateHeld;
+            if (CopyAndHash(d) != before) _gateChanged++;
+            if ((held & (held - 1)) == 0 || held % 20000 == 0)
+                Log.Info($"[gpu] scene gate: {held} draws held until their scene ended, {_gateChanged} of them had uniform buffers rewritten meanwhile");
+        }
+        if (!ended && !gate.Ended)
+        {
+            gate.End();
+            if (Interlocked.Increment(ref SceneGateReleases) == 1)
+                Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+        }
+    }
+
     public void WaitFor(long sequence, GuestWait site = GuestWait.Other)
     {
         if (Completed >= sequence) return;
+        // a guest waiting for a draw of a scene it has not ended: the worker must not hold that draw back
+        for (long m = Interlocked.Read(ref _maxWaited); m < sequence; m = Interlocked.Read(ref _maxWaited))
+            if (Interlocked.CompareExchange(ref _maxWaited, sequence, m) == m) break;
         using var blocked = Kernel.Scheduler.Block();
         using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -258,7 +302,11 @@ public sealed class GpuQueue : IDisposable
                 try { pre.Action(); }
                 catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
             }
-            if (cmd is DrawCommand lateDraw) LateUniformCopy?.Invoke(lateDraw);
+            if (cmd is DrawCommand lateDraw)
+            {
+                if (lateDraw.Gate is { Ended: false } gate) WaitSceneGate(lateDraw, gate);
+                LateUniformCopy?.Invoke(lateDraw);
+            }
             var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
             dump?.BeforeExecute(cmd);
             try
