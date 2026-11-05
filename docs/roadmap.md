@@ -566,11 +566,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
   `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
-- [ ] Jak and Daxter Collection (PCSA00080), depois da correção do histórico do decodificador (main 84a12b1, teste do
-  usuário 05/11/2026): (1) a prévia ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o
-  mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
-  app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)` e o jogo
-  trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`
+- [x] Jak and Daxter Collection (PCSA00080), teste do usuário 05/11/2026 (main 84a12b1): ao escolher o Jak 1,
+  `LoadExec app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)`
+  e o jogo trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`.
+  Corrigido na main pela 5378b1a (o LoadExec renova o espaço de endereços; a thread saltava para código HLE antigo).
+  Prova: a sessão seguinte do usuário (`logs61105_015542_PCSA00080.log`, main 57c57b1) passa do LoadExec e chega ao
+  gameplay do Jak 1; as 3 execuções do agente C dia 3 (`scratchpad/bugsC3_out/jak1_live_main/_fix/_final.log`, uma
+  com o build da main) fazem o `LoadExec app0:Jak1.self` a partir do menu, a F3DPlaybackThread roda e não há
+  `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `scratchpad/bugsC_jak` (dia 1)
+- [ ] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
+  textura 0x63FBC400) ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o mesmo
+  tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1). A 57c57b1 (quadros tirados na ordem de
+  decodificação, 0/506 idas e voltas) é posterior ao relato; com o build do agente C dia 3 (`jak_menu`): 1 ida-e-volta
+  em 527 quadros (1351→1352→1353, `scratchpad/bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
+  usuário confirmar olhando para a direita na main atual
 - [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
   Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
   acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
