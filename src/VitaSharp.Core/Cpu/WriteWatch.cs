@@ -24,4 +24,16 @@ public static unsafe class WriteWatch
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     internal static void ReadHit(uint addr, int size) => OnRead?.Invoke(addr, size);
+
+    /// <summary>A copy or fill done by the emulator itself (sceClibMemcpy/Memset, file reads into guest memory, ...)
+    /// that touched [Lo, Lo + Span): reported once, after the write, as the first watched word (size = the whole
+    /// length, so the log line tells an HLE write from a CPU store).</summary>
+    public static void HitRange(uint addr, uint len)
+    {
+        if (!Enabled || Span == 0 || OnHit == null) return;
+        ulong end = (ulong)addr + len, lo = Lo, hi = lo + Span;
+        if (addr >= hi || end <= lo) return;
+        uint a = Math.Max(addr, Lo);
+        OnHit(a, (int)Math.Min(len, int.MaxValue), Memory.GuestMemory.R32(a & ~3u));
+    }
 }

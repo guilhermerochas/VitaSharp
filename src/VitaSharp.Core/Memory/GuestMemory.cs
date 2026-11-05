@@ -283,12 +283,14 @@ public sealed unsafe partial class GuestMemory : IDisposable
         byte* b = Base;
         Buffer.MemoryCopy(b + src, b + dst, len, len);
         DirtyPages.MarkRange(dst, len);
+        if (Cpu.WriteWatch.Enabled) Cpu.WriteWatch.HitRange(dst, len);
     }
 
     public static void Fill(uint dst, byte value, uint len)
     {
         new Span<byte>(Base + dst, (int)len).Fill(value);
         DirtyPages.MarkRange(dst, len);
+        if (Cpu.WriteWatch.Enabled) Cpu.WriteWatch.HitRange(dst, len);
     }
 
     // ---------------- allocation
