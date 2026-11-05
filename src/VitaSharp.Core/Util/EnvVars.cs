@@ -184,7 +184,7 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
+    /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";

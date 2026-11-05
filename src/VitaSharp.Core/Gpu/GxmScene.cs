@@ -186,11 +186,15 @@ public sealed class DrawCommand : GpuCommand
     }
     /// <summary>Guest addresses of the uniform buffers (index 0-14) bound for this draw.</summary>
     public readonly uint[] VertexUniformAddrs = new uint[15], FragmentUniformAddrs = new uint[15];
+    /// <summary>The bound uniform buffers (0-13) are still to be copied from guest memory, by the GPU worker right
+    /// before it executes the draw (live draws only; replayed draws carry their recorded data).</summary>
+    public bool UniformsLate;
 
     /// <summary>Clears per-draw state before the command is reused.</summary>
     public void Reset()
     {
         VertexUniformsLength = FragmentUniformsLength = 0;
+        UniformsLate = false;
         VisAddress = 0;
         VisIncrement = false;
         InstanceCount = 1;
