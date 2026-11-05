@@ -146,33 +146,51 @@ public sealed partial class AppUtil : HleModule
         catch (IOException) { return 0; }
     }
 
-    byte[] LoadSafeMemory()
+    // The process's safe memory, read from its file once (the file is this process's alone while it runs).
+    byte[]? _safeMem;
+    string? _safeMemPath;
+    readonly object _safeMemLock = new();
+
+    byte[] SafeMemory(out string path)
     {
-        var p = SavePath("sce_sys/safemem.dat");
+        path = SavePath("sce_sys/safemem.dat");
+        if (_safeMem != null && _safeMemPath == path) return _safeMem;
         var data = new byte[SafeMemorySize];
-        if (File.Exists(p)) File.ReadAllBytes(p).AsSpan(0, Math.Min(SafeMemorySize, (int)new FileInfo(p).Length)).CopyTo(data);
-        return data;
+        if (File.Exists(path)) File.ReadAllBytes(path).AsSpan(0, Math.Min(SafeMemorySize, (int)new FileInfo(path).Length)).CopyTo(data);
+        _safeMemPath = path;
+        return _safeMem = data;
     }
 
     [Hle]
     internal int sceAppUtilLoadSafeMemory(uint buf, uint size, long offset)
     {
         if (buf == 0 || offset + size > SafeMemorySize) return ERR_PARAMETER;
-        var p = SavePath("sce_sys/safemem.dat");
-        if (!File.Exists(p)) { GuestMemory.Fill(buf, 0, size); return 0; }
-        LoadSafeMemory().AsSpan((int)offset, (int)size).CopyTo(GuestMemory.Span(buf, (int)size));
+        lock (_safeMemLock)
+        {
+            var data = SafeMemory(out var p);
+            if (!File.Exists(p)) { GuestMemory.Fill(buf, 0, size); return 0; }
+            data.AsSpan((int)offset, (int)size).CopyTo(GuestMemory.Span(buf, (int)size));
+        }
         return (int)size;
     }
 
+    /// <summary>Writes the file only when the content changes: Friends (NPXS10006) clears its 64 KiB 4 bytes at a time
+    /// at its first start (16384 calls), and a file rewrite per call (~11 ms each) kept it on a black screen for
+    /// minutes.</summary>
     [Hle]
     internal int sceAppUtilSaveSafeMemory(uint buf, uint size, long offset)
     {
         if (buf == 0 || offset + size > SafeMemorySize) return ERR_PARAMETER;
-        var data = LoadSafeMemory();
-        GuestMemory.Span(buf, (int)size).CopyTo(data.AsSpan((int)offset));
-        var p = SavePath("sce_sys/safemem.dat");
-        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-        File.WriteAllBytes(p, data);
+        lock (_safeMemLock)
+        {
+            var data = SafeMemory(out var p);
+            var src = GuestMemory.Span(buf, (int)size);
+            var dst = data.AsSpan((int)offset, (int)size);
+            if (src.SequenceEqual(dst) && (File.Exists(p) || !src.ContainsAnyExcept((byte)0))) return (int)size;
+            src.CopyTo(dst);
+            Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+            File.WriteAllBytes(p, data);
+        }
         return (int)size;
     }
 
