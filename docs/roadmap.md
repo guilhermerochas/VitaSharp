@@ -57,6 +57,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
+  padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
+  uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
+  jogo pausado: continuar, salvar/carregar estado (slots com miniatura), configurações do jogo, recentralizar,
+  gravações de desenvolvedor, sair; navegável por toque e pelo controle físico
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
   instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
   saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.
@@ -467,6 +472,95 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
+- [ ] FIFA 13: estalos no som da torcida (relato do usuário, 05/11/2026 03:36, main 5a3bcb4, log
+  `logs61105_033621_PCSE00093.log`, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`). Sem underruns (1 em 261 s).
+  Suspeita forte: a correção da narração (7732c69) toca os superframes ATRAC9 zerados como silêncio, e o agente B já
+  tinha visto que isso põe um buraco de 0,27 s num anel da torcida; buracos/emendas sem suavização no loop dão estalo.
+  Comparar com `VITASHARP_AT9_ERROR_SILENCE=0`, e tratar o silêncio só nas vozes que terminam (narração) ou suavizar
+  as emendas do loop.
+  Achados (05/11/2026, fix/bugs-audio-2, sem causa no emulador; o log citado não existe, a sessão é o `logs\last.log`):
+  três partidas de 10 min (`tests/nav/fifa13_match.nav`, `VITASHARP_NGS_TRACE=1` + `--audio-dump`), duas com o padrão
+  e uma com `VITASHARP_AT9_ERROR_SILENCE=0`. As vozes de torcida (anéis ATRAC9 de 6720 bytes, superframes de 40 bytes
+  = 1 quadro de 256 amostras, mono) não têm buraco nem degrau: o fim de cada clipe já chega em silêncio antes dos 3-7
+  superframes zerados (16-37 ms) e do kill+play do próximo clipe (0 quedas de >30 dB em 2,5 ms nos WAVs das vozes nem
+  no mix, nenhuma emenda na fase de 256/512/1024 amostras; os 0,27 s de buraco são de um clipe no fim da partida, já
+  em silêncio). O decodificador bate com o FFmpeg também na configuração da torcida (E00470FE: 102,8 dB). Com
+  `=0` os estalos do mix não caem (0,4/s contra 0,2-0,4/s; são transientes do próprio conteúdo, o YouTube do Vita
+  real `R3WhJ9u_MB4` dá 0,5/s pelo mesmo critério) e as reproduções com dado velho voltam (plays com >2 superframes
+  velhos: 62 contra 4 e 9), então a 7732c69 fica. A saída do host (OpenAL) não descarta grãos (Submit bloqueia).
+  Falta ouvir: um F10 com áudio no momento do estalo diria se ele está no que o jogo gera (dump) ou depois (host).
+  Ferramentas no scratchpad `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
+- [ ] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
+  do usuário 05/11/2026 03:40, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`: o `specks.py` acha pontos em 5 de
+  266 quadros, ex. 13543 com 21 px em (338,71)). Então a causa não é (só) o uniform copiado cedo; olhar de novo a malha
+  de sombra projetada (vs DCBB621AC8070CB0) nesses quadros com `--draw-limit`.
+  Achados (05/11/2026, fix/bugs-audio-2): **o dump novo não tem cunha.** Os 5 quadros do `specks.py` são falsos
+  positivos: 13543/13547 estão na vinheta de transição do replay (o "ponto" é a sombra normal do jogador sob a
+  vinheta) e 13711 tem 1 px; com o critério de cunha (>= 8 blocos) dá 0 de 266. No dump antigo (205631) a cunha do
+  present 11182 é o desenho 12 de `--draw-limit=N@11180` (atenção: `--draw-limit=N@F`/`--trace-draws=F` mexem no
+  present F+2 neste jogo). Com `VITASHARP_TRACE_UNIFORMS` (agora grava também índices e streams) e um modelo do
+  vs DCBB621AC8070CB0 na CPU (`bugsB2_tools/shadowvs.py`): a paleta de ossos (buffer 1) daquele desenho só estava
+  escrita até o osso 61; os ossos 62-147 vinham zerados, e todo vértice deles caiu na origem do mundo projetada
+  (647,262), exatamente a ponta da cunha. Ou seja, o jogo ainda estava escrevendo a paleta quando ela foi copiada.
+  A 318be32 passou a cópia para o worker, mas o worker executa o desenho assim que ele entra na fila, muitas vezes
+  antes do sceGxmEndScene (o hardware só lê na execução da cena). **Correção** (falta o usuário conferir): o worker
+  segura o desenho com cópia tardia até o fim da cena (sceGxmEndScene ou sceGxmMidSceneFlush; `SceneGate`), a não
+  ser que uma thread do jogo espere por ele (WaitFor) ou passem 250 ms; `VITASHARP_UB_SCENE_END=0` volta ao antigo,
+  `=check` conta os desenhos segurados cuja memória mudou na espera. Aqui, com o PC dividido entre agentes, o worker
+  fica atrás do jogo: só 8192 desenhos foram segurados numa partida e nenhum teve a paleta reescrita, por isso as
+  cunhas não reproduzem aqui; na máquina livre do usuário o worker anda junto com o jogo
+- [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
+  Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
+  isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
+  usuário 015823/020221 não têm esse flicker e mostram a câmera fixa (intermitente). Ferramenta: depois de LoadExec ou
+  de carregar um estado o renderer novo recomeça a contagem de presents em 0, então `--gpu-dump-at`/`--dump-from`/
+  `--trace-draws` pegam os quadros errados (sugestão: `ro.FirstPresent = Display.FramesPresented`). A tela de título do
+  Jak 1 fica a 0,4-2 fps nos testes dos agentes (sem janela e na janela, CPU sem limite, 8 núcleos), e o usuário vê só
+  ~10 s lentos e depois 20 fps; causa não achada. Save state do Jak 1: em 2 de 4 carregamentos o jogo trava (main em
+  DMAPut, GOAL em DMADone, F3DPlaybackThread no msgpipe, fila da GPU vazia). Croixleur: o ícone do SKIP é ligado e
+  desligado pela lógica do jogo a cada quadro (cor do uniform 1/0), a fila da tela pede 2 vblanks por troca e isso é
+  respeitado; próximo passo é logar `sceKernelGetProcessTimeWide` por quadro e `--watch` na origem da cor. Akiba's
+  Beat: as telas pretas longas são carregamentos (no Vita 8-18 s, com ícone animado; aqui a imagem congela ~10 s)
+- [ ] Achados do agente de bug C, dia 2 (05/11/2026, branch fix/bugs-games-2; dados em
+  `scratchpad/bugsC2_*`). Corrigidos: (1) o renderer criado depois de um LoadExec ou de carregar um estado segue a
+  contagem de presents do jogo (`FirstPresent = Display.FramesPresented`): o `--gpu-dump-at=1740:2340` do Jak 1
+  depois do LoadExec e do estado gravou os presents 1740-2340 e os frame_N.png mantêm os números; (2) o travamento
+  ao carregar estado do Jak 1 (main em DMAPut, GOAL em DMADone): as threads salvas dentro de uma espera reemitem a
+  espera antes das outras rodarem (uma variável de condição não guarda sinal, e uma thread que rodava sinalizava antes
+  do waiter voltar à fila). 9 de 9 cargas do estado do usuário numa rodada voltaram ao gameplay (antes 2 de 4
+  travavam). Ainda aberto:
+  Jak 1, flicker de um quadro: com o estado do usuário aparece num quadro (live 1930) uma faixa escura translúcida
+  sobre tudo abaixo de uma linha horizontal (~y 75, largura toda); 5 quadros com flash em 618 (`tileflick.py`). O dump
+  `bugsC2_out\jak_flash.vsgd` reproduz no replay, mas em outros quadros (1926/1928/1930: depende de tempo) e igual com
+  `VITASHARP_UB_LATE=0` (não é a cópia tardia dos uniforms). O `--draw-limit` não muda nada nesse dump (nem com 0
+  desenhos, em 1928-2000): a imagem apresentada não vem dos desenhos reproduzidos, então a bisseção por desenho não
+  funciona aqui; ver por que (escrita de volta/upload da memória do framebuffer?) antes de continuar. Depois de cada
+  carga do estado há ~20-40 quadros pretos antes da imagem voltar (talvez ligado à tela preta no começo do gameplay).
+  A câmera fixa não foi reproduzida.
+  Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
+  a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
+  `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
+  sem aviso.
+  Croixleur: o pisca do SKIP reproduz sem janela: o símbolo do quadrado dentro do botão aparece num quadro e some no
+  seguinte, alternando exatamente a cada quadro apresentado (2700-2783). Não é o relógio: o
+  `sceKernelGetProcessTimeWide` da main avança ~33,4 ms por quadro, e um quadro de 109 ms (2739) não mudou a fase.
+  As chamadas da main (ctrl/touch peek, tempo) têm os mesmos argumentos nos quadros com e sem o símbolo. Próximo:
+  achar o desenho do símbolo com `--trace-draws` em dois quadros seguidos e `--watch` na origem da cor/visibilidade.
+  O trace `--trace-hle-frames=A:B:all` mostra os valores de retorno (linhas `->`).
+  Sonic & All-Stars Racing Transformed: trava em 3 de 3 boots (quadros 23-25, main 9482b0f); com
+  `--trace-hle-frames=18:40:all` (mais lento) passou do ponto. Na trava a `AchievementRegisterThread` já terminou,
+  enquanto na rodada boa ela ainda fazia 51 `sceNpTrophyGetTrophyInfo` no quadro 22: comparar a ordem
+  registro de conquistas x `MainThread`. Blind Men, Zero Time Dilemma, The Deer God e Silent Hill: não testados
+  nesta rodada.
+- [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
+  a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
+  queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
+  `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
+- [ ] Jak and Daxter Collection (PCSA00080), depois da correção do histórico do decodificador (main 84a12b1, teste do
+  usuário 05/11/2026): (1) a prévia ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o
+  mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
+  app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)` e o jogo
+  trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -573,13 +667,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Conferido com Sonic Mania e `--input=key@f200:F11,...` (F11 agora é tecla de host nos scripts): aberto em janela e
   com `--fullscreen`, quatro alternâncias cada, o log mostra "monitor attached: False" ao sair e a swapchain volta a
   960x544 a 60 fps
-- [ ] MotorStorm RC (PCSA00034): trava na tela de termos (relato do usuário, 04/11/2026, main 5d4b998, log
+  Confirmado pelo usuário (05/11/2026)
+- [x] MotorStorm RC (PCSA00034): trava na tela de termos (relato do usuário, 04/11/2026, main 5d4b998, log
   `logs61104_201525_PCSA00034.log`). Roda a ~40 fps até o quadro 756 e então nenhum quadro novo (watchdog STALL).
   No relatório do travamento a thread `main` está **Dormant com pc=0x00000000** (lr 0x8114669F): ela parou, não está
   esperando nada, logo depois de uma série de chamadas de rede/PSN que falham (sceHttpInit 0x80431020, sceNetCtlInit
   0x80412102, TUS/TSS/Commerce2, `sceNpSnsFacebookInit` sem implementação). Provável salto para um ponteiro nulo
   (callback não registrado) ou saída da thread no caminho de erro; as threads de jobs ficam em loop de
   `sceKernelWaitSema` com timeout
+  Corrigido (05/11/2026: `sceNpCommerce2CreateCtx` com 2 argumentos e o key off do NGS terminando a voz na próxima
+  atualização, com os callbacks fora da trava) e confirmado no jogo pelo usuário
 - [ ] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
   56354517, 5EF67445, 6ACA1D57, 71A78083, 79F9DB75, AA0340C3, F9A1DE92, importadas pelo `UnityPlayer_536/537_Release`;
   Akiba's Beat e God Wars, 04/11/2026, pedido do usuário). O aviso sai no boot (`Emulator.cs` ~522), antes de o jogo
@@ -632,6 +729,31 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   os uniform buffers de novo antes de executar o draw, como o hardware que lê na execução) 31% dos draws do FIFA têm
   buffers alterados depois do draw, inclusive o da sombra. Em 2500 quadros de partida aqui as cunhas não apareceram
   nem com nem sem a chave, então não está validado; a chave custa ~25% de fps (cópia dupla)
+  **Narração corrigida** (05/11/2026, fix/bugs-audio, falta o usuário ouvir): eram dois defeitos no HLE do NGS.
+  (1) `sceNgsVoicePlay` zerava também os totais do estado (+16 amostras, +20 bytes); o EAAudioCore mede cada clipe
+  como bytes totais menos uma base que ele guarda por stream (eboot 0x8140D02A-0x8140D0E4), então o total zerado
+  parecia clipe terminado e a voz era morta 4-8 ticks depois de começar (29% das paradas da narração; agora 0-3%).
+  Como o Vita3K, só posição, buffer e contadores "desde o key on" voltam a 0. (2) O fim de cada clipe no anel é
+  preenchido com superframes zerados (não decodificam) e o jogo mata a voz quando os bytes consumidos chegam ao
+  tamanho do clipe, enchimento incluído; pulando-os na hora sem contar bytes, a voz tocava a volta anterior do anel
+  (a repetição). Agora um superframe que não decodifica toca como silêncio e conta bytes e amostras
+  (`VITASHARP_AT9_ERROR_SILENCE=0` pula, contando bytes). Medida (contador de superframes "stale" do
+  `VITASHARP_NGS_TRACE`: decodificados de novo de um lugar do anel que o jogo não reescreveu): reproduções da narração
+  com dado velho 33 → 2 em duas partidas de 8 min lado a lado (as 2 são o próprio jogo tocando de novo um clipe curto
+  que não reescreveu); `audrep.py` sem trechos repetidos nos WAVs da narração. O decodificador ATRAC9 bate com o
+  atrac9 do FFmpeg nos mesmos superframes (dump `.at9raw` do trace; SNR 106 dB, só a polaridade invertida).
+  **Abertura EA SPORTS**: o filme é `data/movies/bootflowintro_MARKER.vp6` (8 s, áudio do próprio jogo, sem voz NGS);
+  no nosso WAV ele é contínuo e na mesma velocidade do vídeo do Vita real `ZBF54pOUQ1k` (janelas de 0,1 s com o mesmo
+  deslocamento, sem repetição nem salto) e os logs do usuário não têm underrun; o "robótico"/engasgo não reproduz
+  aqui, falta o usuário ouvir de novo. **Torcida**: as vozes de torcida não têm dado velho nem buraco; sem defeito
+  medido (a diferença de graves para os vídeos do YouTube continua sem referência confiável).
+  **Cunhas das sombras** (05/11/2026, fix/bugs-audio, falta o usuário conferir): as duas sessões do usuário com
+  `VITASHARP_UB_LATE=1` (logs 20261104_235321/235540) não tiveram cunha em 1042 quadros dos dumps. Agora os uniform
+  buffers ligados pelo jogo (0-13) são copiados uma vez só, pelo worker da GPU logo antes de executar o draw; o
+  buffer padrão (14, anel reaproveitado) continua copiado na hora do draw; `VITASHARP_UB_LATE=0` volta ao antigo.
+  Sem custo medido (partida de 18,6 mil quadros lado a lado, metades trocadas: worker 4,95 x 5,28 ms/quadro, main
+  5,29 x 5,98). Nas janelas de 800 quadros gravadas aqui (`--vulkan --gpu-dump-at`) não há cunha nem com nem sem a
+  mudança (`specks.py`: 0 quadros com >= 8 blocos), então a prova continua sendo a partida do usuário
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que
@@ -654,7 +776,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tentativa anterior de 16 KB provavelmente sumiu com os jogadores por usar o cache de shaders antigo, com outros
   offsets). Messi inteiro no treino; replays de Croixleur e PCSF00476 idênticos
 
-- [ ] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
+- [x] Crazy Market (PCSE00291, joga normalmente; 30/10/2026, main 4dbe06c, log `20261030_204008_PCSE00291`): a
   biblioteca de som do jogo (SCREAM/SndStream 7.6.9) avisa 3456 vezes `sndsi_UpdateVoicePositionOfStream:
   locationDelta < 0, voiceLocation = 0x0, previous = 0x700…` — a posição de leitura que a voz NGS informa volta a 0
   em vez de avançar (estado do player em `sceNgsVoiceGetStateData`, `Ngs.cs`); conferir com o firmware/Vita3K qual
@@ -676,12 +798,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   módulo (ou de uma segunda voz do stream) cujo `GuestState` nunca é preenchido por nós. Próximo passo: logar
   voz/módulo/tipo de módulo de todas as leituras com +8 = 0 junto com as não-zero, e ver qual módulo o firmware
   preenche (Vita3K: estado do player x estado do módulo de saída)
+  Corrigido (05/11/2026, fix/bugs-audio): a voz do stream é ATRAC9 (rack ScreamAtrac9, superframe de 4 quadros = 1024
+  amostras) e o módulo somava o superframe inteiro em "amostras geradas" (+8/+16) ao decodificá-lo; com ticks de 512
+  amostras o contador ficava parado em ticks alternados, e o SndStream (eboot 0x8109EB18-0x8109EBB8: amostras menos o
+  valor anterior, se > 0) devolvia posição 0 nesses ticks. Agora o contador soma o que cada tick entrega, como no
+  módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
+  Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.
+  Conferido de novo (05/11/2026, fix/bugs-audio-2, no mesmo dump): 0 quedas de >30 dB em 2,5 ms (`drops.py`) e nenhuma
+  emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
+  eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
 - [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em

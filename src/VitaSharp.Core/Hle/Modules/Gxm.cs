@@ -69,7 +69,7 @@ public sealed partial class Gxm : HleModule
         _displayMaxInFlight = (int)Math.Clamp(pendingMax, 1u, 3u);
         int capacity = Math.Max(_displayMaxInFlight - 1, 1);
         _displayQueue = new BoundedQueue<(uint, GpuQueue.Fence, GxmSyncObject?, long)>(capacity);
-        if (UbLate) GpuQueue.LateUniformCopy = LateCopyUniforms;
+        if (UbLate) GpuQueue.LateUniformCopy = CopyLateUniforms;
         var t = K.CreateThread("SceGxmDisplayQueue", 0, 64, 0x4000, 0, 0);
         t.HostBody = DisplayQueueThread;
         _displayThread = t;
@@ -560,6 +560,8 @@ public sealed partial class Gxm : HleModule
         uint yMax = validRegion != 0 ? GuestMemory.R32(validRegion + 4) : rt.Height - 1u;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         WaitForDisplayRelease(fragmentSync);
+        _sceneGate?.End();
+        _sceneGate = new SceneGate();
         Gpu.Submit(new BeginSceneCommand
         {
             Width = rt.Width, Height = rt.Height, Multisample = rt.MultisampleMode,
@@ -589,6 +591,9 @@ public sealed partial class Gxm : HleModule
             (null, { } b) => [b],
             _ => [],
         };
+        // the hardware gets the scene now: its draws' uniform buffers can be read from here on
+        _sceneGate?.End();
+        _sceneGate = null;
         long seq = Gpu.Submit(new EndSceneCommand { Notifications = notifications });
         // keep the guest at most a few scenes ahead of the GPU worker
         Gpu.WaitFor(seq - 4096, GpuQueue.GuestWait.Throttle);
@@ -601,6 +606,8 @@ public sealed partial class Gxm : HleModule
     int sceGxmMidSceneFlush(uint ctx, uint flags, uint vertexSync, uint vertexNotification)
     {
         if (Ctx(ctx) is { Deferred: true }) return ERR_INVALID_VALUE;
+        // the vertex work so far goes to the hardware: the draws before the flush may read their buffers now
+        if (_sceneGate is { } gate) { gate.End(); _sceneGate = new SceneGate(); }
         Gpu.Submit(new MidSceneFlushCommand());
         if (ReadNotification(vertexNotification) is { } n && n.Item1 != 0) Gpu.Notify(n.Item1, n.Item2);
         return 0;
@@ -957,44 +964,48 @@ public sealed partial class Gxm : HleModule
         return b.Address + b.Size - addr;
     }
 
-    /// <summary>Experiment (VITASHARP_UB_LATE=1): the GPU worker copies the draw's uniform buffers again just before it
-    /// executes the draw (the hardware reads them when the GPU runs the scene, not at the draw call) and counts the draws
-    /// whose buffers changed in between.</summary>
-    static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) == "1";
-    static long _ubLateChanged, _ubLateDraws;
-    [SaveState.SnapshotIgnore] static byte[] _ubLateScratch = new byte[64 * 1024];
+    /// <summary>
+    /// The hardware reads a draw's uniform buffers when the GPU runs the scene (after sceGxmEndScene), not at the draw
+    /// call, and games may still fill a buffer after issuing the draw: FIFA 13 writes a player's shadow bone palette
+    /// (buffer 1) late, so a copy taken at the draw call sometimes held a half-written palette and a vertex shot out as
+    /// a one-frame dark wedge. So the buffers the game binds (0-13) are copied once, by the GPU worker just before it
+    /// executes the draw; only the default uniform buffer (14) is copied at the draw call, because it is a ring the
+    /// game fills right before each draw and reuses after it (a late read could see a later draw's data).
+    /// VITASHARP_UB_LATE=0 copies everything at the draw call (A/B).
+    /// The worker runs a draw as soon as it is queued, often before the game is done with the palette, so it waits for
+    /// the scene's end first (<see cref="SceneGate"/>; VITASHARP_UB_SCENE_END=0 copies as soon as the worker gets the draw).
+    /// </summary>
+    static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) != "0";
+    static readonly bool UbAtSceneEnd = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) != "0";
+    /// <summary>The open scene of the immediate context (null outside a scene).</summary>
+    [VitaSharp.Core.SaveState.SnapshotIgnore] SceneGate? _sceneGate;
 
-    static void LateCopyUniforms(DrawCommand d)
+    /// <summary>GPU worker, before the draw executes: copies the draw's bound (non-default) uniform buffers.</summary>
+    static void CopyLateUniforms(DrawCommand d)
     {
-        var info = d.VertexProgram.Info;
-        _ubLateDraws++;
-        bool changed = false;
-        if (d.UniformChunk != null && d.VertexUniformsLength > 0)
-        {
-            var span = d.VertexUniformSpan;
-            if (_ubLateScratch.Length < span.Length) _ubLateScratch = new byte[span.Length * 2];
-            var before = _ubLateScratch.AsSpan(0, span.Length);
-            span.CopyTo(before);
-            CopyUniforms(info, d.VertexUniformAddrs, span);
-            changed = !before.SequenceEqual(span);
-        }
-        if (d.UniformChunk != null && d.FragmentUniformsLength > 0 && d.FragmentProgram.Info is { } fi)
-        {
-            var span = d.FragmentUniformSpan;
-            if (_ubLateScratch.Length < span.Length) _ubLateScratch = new byte[span.Length * 2];
-            var before = _ubLateScratch.AsSpan(0, span.Length);
-            span.CopyTo(before);
-            CopyUniforms(fi, d.FragmentUniformAddrs, span);
-            changed |= !before.SequenceEqual(span);
-        }
-        if (changed && ++_ubLateChanged % 200 == 1)
-            Log.Info($"[ub-late] {_ubLateChanged} of {_ubLateDraws} draws had uniform buffers changed after the draw call (vs {d.VertexProgram.Info.Program.Hash:X16})");
+        if (!d.UniformsLate || d.UniformChunk == null) return;
+        if (d.VertexUniformsLength > 0) CopySlots(d.VertexProgram.Info, d.VertexUniformAddrs, d.VertexUniformSpan);
+        if (d.FragmentUniformsLength > 0 && d.FragmentProgram.Info is { } fi) CopySlots(fi, d.FragmentUniformAddrs, d.FragmentUniformSpan);
     }
+
+    /// <summary>Bytes of a uniform slot copied from <paramref name="addr"/>: the slot size, cut at the next bound buffer
+    /// and, for large "unknown size" buffers, at the end of the allocation.</summary>
+    static int SlotCopySize(UniformBufferSlot slot, uint addr, uint[] buffers)
+    {
+        int size = slot.ByteSize;
+        // large "unknown size" buffers: don't run past the next buffer
+        foreach (var other in buffers)
+            if (other > addr && other - addr < size) size = (int)(other - addr);
+        // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
+        if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
+        return size;
+    }
+
     /// <summary>Profiling: bytes of uniform buffers copied into draw commands (racy, one counter for all threads).</summary>
     public static long UniformBytesCopied;
 
     /// <summary>Gathers the draw's uniform buffers into <paramref name="data"/> (zero-filled, UniformBytes long); returns the byte count.</summary>
-    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data)
+    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data, bool deferBound = false)
     {
         if (info.UniformBytes == 0) return 0;
         // the slice is not pre-cleared (most of a large "unknown size" block is never written): the bytes no copy
@@ -1005,21 +1016,33 @@ public sealed partial class Gxm : HleModule
         foreach (var slot in slots)
         {
             if (slot.Mapped) continue; // read in place by the renderer
+            if (deferBound && slot.GuestIndex < 14) continue; // copied by the GPU worker (CopyLateUniforms)
             uint idx = Math.Min(slot.GuestIndex, 14);
             uint addr = buffers[idx];
             if (addr == 0) continue;
-            int size = slot.ByteSize;
-            // large "unknown size" buffers: don't run past the next buffer
-            foreach (var other in buffers)
-                if (other > addr && other - addr < size) size = (int)(other - addr);
-            // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
-            if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
-            FastCopy.Copy(GuestMemory.Span(addr, size), data.Slice(slot.ByteOffset, size));
+            int size = SlotCopySize(slot, addr, buffers);
+            FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
             copied[n++] = ((long)slot.ByteOffset << 32) | (uint)(slot.ByteOffset + size);
             UniformBytesCopied += size;
         }
         ZeroUncovered(data, copied[..n]);
         return info.UniformBytes;
+    }
+
+    /// <summary>Copies the bound buffers' slots (index 0-13) of a draw whose CopyUniforms deferred them; their bytes
+    /// are already zero (ZeroUncovered), so a slot without a buffer stays zero.</summary>
+    static void CopySlots(GxmProgramInfo info, uint[] buffers, Span<byte> data)
+    {
+        foreach (var slot in info.UniformSlots)
+        {
+            if (slot.Mapped || slot.GuestIndex >= 14) continue;
+            uint addr = buffers[slot.GuestIndex];
+            if (addr == 0) continue;
+            int size = Math.Min(SlotCopySize(slot, addr, buffers), data.Length - slot.ByteOffset);
+            if (size <= 0) continue;
+            FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
+            UniformBytesCopied += size;
+        }
     }
 
     /// <summary>Clears the bytes of <paramref name="data"/> outside the copied ranges (start &lt;&lt; 32 | end).</summary>
@@ -1116,8 +1139,10 @@ public sealed partial class Gxm : HleModule
             if (fp.Info == null) chunk.Span.Slice(off + vAligned, fBytes).Clear();
         }
         var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
-        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
-        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes)) : 0;
+        cmd.UniformsLate = UbLate && GpuQueue.LateUniformCopy != null;
+        cmd.Gate = cmd.UniformsLate && UbAtSceneEnd ? _sceneGate : null;
+        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformsLate);
+        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformsLate) : 0;
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
         fUbs.AsSpan(0, Math.Min(fUbs.Length, 15)).CopyTo(cmd.FragmentUniformAddrs);

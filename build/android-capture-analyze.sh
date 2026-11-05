@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Analyses a capture recorded with the pause menu of the developer APK ("Gravar tudo/tempo/conteúdo"): pulls it from the
-# phone (or takes a local folder) and prints one summary: fps and the timing part, the PERF lines, the busiest HLE
+# Analyses a capture recorded with the pause menu ("Gravar tudo" in every build, docs/notes/session-capture.md; "Gravar tempo/conteúdo" in the developer APK): pulls it from the
+# phone (or takes a local folder) and prints one summary: for "Gravar tudo", the report of vitasharp-perf capture; fps and the timing part, the PERF lines, the busiest HLE
 # functions and threads the log reports, the audio check of every guest port WAV, and, from a replay of the GPU dump on
 # this PC, the flicker check over every frame and the GPU ms per scene of one frame (tools/dev/README.md, "Captures").
 # Usage: build/android-capture-analyze.sh [CAPTURE_NAME|LOCAL_FOLDER]   (same as .ps1; no argument = newest on the phone)
@@ -16,13 +16,18 @@ lp() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf 
 perf() { if [ -n "${PERF:-}" ]; then "$PERF" "$@"; else dotnet run --project "$(lp "$here/tools/VitaSharp.PerfTools")" -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- "$@"; fi; }
 arg="${1:-}"
 if [ -n "$arg" ] && [ -d "$arg" ]; then dir="$(cd "$arg" && pwd)"; else
-  name="${arg:-$(adb shell ls -t "$remote" | tr -d '\r' | head -n 1)}"
+  name="${arg:-$(adb shell ls -t "$remote" | tr -d '\r' | grep -v '\.zip$' | head -n 1)}"
   mkdir -p "$out"
   adb pull "$remote/$name" "$(lp "$out/")" >/dev/null
   dir="$out/$name"
 fi
 echo "== $dir"
-cat "$dir/info.txt" | grep -v '^$' | head -n 12
+if [ -f "$dir/session.txt" ]; then
+  echo "== Gravar tudo: vitasharp-perf capture (black frames, flashes, presentation order, stalls, audio; with the GPU dump and the input)"
+  perf capture "$(lp "$dir")" || true
+else
+  cat "$dir/info.txt" | grep -v '^$' | head -n 12
+fi
 echo "== fps (log, 30 s windows) and capture lines"
 grep -h "\[perf\] [0-9]\|\[capture\]" "$dir/log.txt" | sed 's/^\[[^]]*\] \[[^]]*\] \[[^]]*\] //' | tail -n 12 || true
 echo "== PERF lines"

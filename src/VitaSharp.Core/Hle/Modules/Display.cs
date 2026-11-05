@@ -82,8 +82,13 @@ public sealed partial class Display : HleModule
         // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
         // layers over it (SceSharedFb), so the shell's frames stay on screen.
         if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu))) return 0;
-        Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format) });
-        PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = System.Diagnostics.Stopwatch.GetTimestamp();
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        Emu.Gpu.Submit(new PresentCommand
+        {
+            Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Flip = FramesPresented, VBlank = _lastSetVcount, GuestUs = GuestClock.Microseconds, HostTicks = now,
+        });
+        PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = now;
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;
         Presented?.Invoke();

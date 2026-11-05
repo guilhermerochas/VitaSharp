@@ -1162,7 +1162,7 @@ ponteiros. Erros da família Commerce2 no Vita: **a confirmar**. Use `SCE_NP_ERR
 | --- | --- | --- | --- |
 | `sceNpCommerce2Init` | `0xC73F209A` | `int (void)` | `_inited = true`; 0 |
 | `sceNpCommerce2Term` | `0xB99958AE` | `int (void)` | limpa; 0 |
-| `sceNpCommerce2CreateCtx` | `0x123E55F4` | `int (SceUInt32 version, const SceNpId *npId, SceNpCommerce2Handler handler, void *arg, SceUInt32 *ctxId)` | `!_inited` → 0x80550002; `ctxId == 0` → 0x80550003; novo ID; 0. Handler nunca chamado |
+| `sceNpCommerce2CreateCtx` | `0x123E55F4` | `int (SceUInt32 version, SceUInt32 *ctxId)` (2 argumentos: conferido na chamada do MotorStorm RC, que deixa r2 com lixo) | `!_inited` → 0x80550002; `ctxId == 0` → 0x80550003; novo ID; 0 |
 | `sceNpCommerce2DestroyCtx` | `0x6CD27BD0` | `int (SceUInt32 ctxId)` | remove o ctx e as reqs dele; 0 |
 | `sceNpCommerce2CreateSessionCreateReq` | `0xFDB39774` | `int (SceUInt32 ctxId, SceUInt32 *reqId)` | ctx válido → novo ID em `*reqId`; 0 |
 | `sceNpCommerce2CreateSessionStart` | `0xBBDDF866` | `int (SceUInt32 reqId)` | `SCE_NP_ERROR_SIGNED_OUT` |

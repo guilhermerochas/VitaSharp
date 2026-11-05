@@ -431,6 +431,10 @@ public sealed class Emulator : IDisposable
             VitaSharp.Core.Kernel.Scheduler.Reset();
         }
         else Memory.FreeOwnedBy(Pid);
+        // the space now holds another executable: what was cached per use of it is stale (the HLE guest-code routines
+        // placed by the old image: Jak and Daxter Collection's menu left them where Jak1.self's code now is, and its
+        // sceGxm imports jumped into the middle of a Thumb function)
+        Space.Renew();
         Vita.Objects.RemoveOwnedBy(Pid);
         InitProcess();
         MainModule = null;
@@ -516,13 +520,55 @@ public sealed class Emulator : IDisposable
         // from libpaf, SceCommonGuiDialog's class tables...) are bound when that module loads; only the others are missing
         var firmware = IsSystemProgram ? Firmware.FirmwareLibraries.For(Options.FsRoot) : null;
         int later = 0;
+        lock (_pendingVariables) _pendingVariables.Clear();
+        var waiting = new SortedSet<string>();
         foreach (uint nid in Linker.UnresolvedVariables())
         {
-            string source = Linker.VariableImportSource(nid), lib = source.Split(' ')[0];
+            string source = Linker.VariableImportSource(nid), lib = LibraryOf(source);
             if (firmware?.Provider(lib) != null) { later++; continue; }
-            Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"}) from {source}");
+            // a library no loaded module exports yet: the program may load its provider itself (Unity's
+            // UnityPlayer imports variables of app0:Media/Modules/Il2CppAssemblies.suprx, loaded ~0.6 s later);
+            // LoadModule reports what is still missing once a module exporting that library has loaded
+            if (!Kernel.Modules.Values.Any(m => m.Exports.Any(e => e.Library == lib)))
+            {
+                lock (_pendingVariables) _pendingVariables.Add(nid);
+                waiting.Add(lib);
+                continue;
+            }
+            WarnUnresolvedVariable(nid, source);
         }
         if (later > 0) Log.Info($"{later} variable imports wait for firmware modules the program loads itself (libpaf, common_gui_dialog...)");
+        if (waiting.Count > 0)
+            Log.Info($"{_pendingVariables.Count} variable imports wait for a module exporting {string.Join(", ", waiting)}");
+    }
+
+    /// <summary>Variable imports from libraries no module exported when the executable loaded (see LoadTitle).</summary>
+    readonly HashSet<uint> _pendingVariables = new();
+
+    static string LibraryOf(string source) => source.Split(' ')[0];
+
+    static void WarnUnresolvedVariable(uint nid, string source) =>
+        Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"}) from {source}");
+
+    /// <summary>After <paramref name="m"/> loaded: the waiting variable imports it resolved are done, and the ones from a
+    /// library it exports that it did not resolve are reported.</summary>
+    void CheckPendingVariables(LoadedModule m)
+    {
+        lock (_pendingVariables)
+        {
+            if (_pendingVariables.Count == 0) return;
+            var unresolved = Linker.UnresolvedVariables().ToHashSet();
+            int resolved = 0;
+            foreach (uint nid in _pendingVariables.ToArray())
+            {
+                string source = Linker.VariableImportSource(nid);
+                if (!unresolved.Contains(nid)) { _pendingVariables.Remove(nid); resolved++; continue; }
+                if (!m.Exports.Any(e => e.Library == LibraryOf(source))) continue;
+                _pendingVariables.Remove(nid);
+                WarnUnresolvedVariable(nid, source);
+            }
+            if (resolved > 0) Log.Info($"{m.Name}: {resolved} waiting variable imports bound");
+        }
     }
 
     /// <summary>The running executable is part of the system software (vs0:app/NPXS*, vs0:vsh/shell/shell.self...):
@@ -683,6 +729,7 @@ public sealed class Emulator : IDisposable
         Kernel.Modules[m.Uid] = m;
         Code.Invalidate(0, uint.MaxValue);
         Log.Info($"Loaded module {m.Name} ({vitaPath}) start=0x{m.StartEntry:X8} imports={m.Imports.Sum(i => i.FuncNids.Length)}");
+        CheckPendingVariables(m);
         return m;
     }
 

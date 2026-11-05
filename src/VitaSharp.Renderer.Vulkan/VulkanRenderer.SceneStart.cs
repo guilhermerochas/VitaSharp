@@ -95,12 +95,12 @@ public sealed unsafe partial class VulkanRenderer
 
     void CreateSceneStartCopy(RenderTarget rt)
     {
-        var (img, view, mem) = CreateImage(MemCat.Region, rt.Width, rt.Height, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
+        var (img, view, mem) = CreateImage(MemCat.Region, rt.ImgW, rt.ImgH, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
             ImageAspectFlags.ColorBit, mutable: true);
         var shadow = new RenderTarget
         {
             Address = rt.Address, Width = rt.Width, Height = rt.Height, ColorFormat = rt.ColorFormat, Stride = rt.Stride, Format = rt.Format,
-            Image = img, View = view, Version = 0,
+            Image = img, View = view, Version = 0, Scale = rt.Scale,
         };
         _sceneStartCopies[rt] = new SceneStartCopy { Shadow = shadow, Mem = mem };
     }
@@ -119,7 +119,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            Extent = new Extent3D(rt.Width, rt.Height, 1),
+            Extent = new Extent3D(rt.ImgW, rt.ImgH, 1),
         };
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, s.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(s.Image, ImageLayout.TransferDstOptimal, ImageLayout.General, ImageAspectFlags.ColorBit,

@@ -74,7 +74,7 @@ public sealed unsafe partial class VulkanRenderer
         var rt = _rt!;
         var samples = SceneSamples;
         // the scene's render area in attachment pixels (scenes without downscale render at 2x into the sample surface)
-        uint w = rt.Width, h = rt.Height;
+        uint w = rt.ImgW, h = rt.ImgH;
         EndRendering(resolve: false); // the next rendering has the attachment
         if (!_tw1Images.TryGetValue((w, h, samples), out var img))
         {

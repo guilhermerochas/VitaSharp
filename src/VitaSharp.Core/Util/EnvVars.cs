@@ -134,6 +134,8 @@ public static class EnvVars
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
     public const string Replay = "VITASHARP_REPLAY";
+    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
+    public const string ResScale = "VITASHARP_RES_SCALE";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
@@ -164,6 +166,12 @@ public static class EnvVars
     /// <summary>KIND@START:STOP (developer APK): the pause menu's capture (tempo or conteudo), started and stopped that many
     /// seconds after the game starts.</summary>
     public const string Capture = "VITASHARP_CAPTURE";
+    /// <summary>=SECONDS (0 = off): the session capture's pre-roll ("Pré-gravação", --capture-preroll) keeps the last
+    /// frames, timing and input in memory with a periodic save state, so a recording started after a glitch includes
+    /// it (docs/notes/session-capture.md).</summary>
+    public const string CapturePreRoll = "VITASHARP_CAPTURE_PREROLL";
+    /// <summary>=START:STOP (guest frames): records a session capture over those frames (--capture-at; tests).</summary>
+    public const string CaptureAt = "VITASHARP_CAPTURE_AT";
 
 
 
@@ -184,8 +192,12 @@ public static class EnvVars
     public const string TscaleVblank = "VITASHARP_TSCALE_VBLANK";
     public const string TscaleWait = "VITASHARP_TSCALE_WAIT";
     public const string UbUnbounded = "VITASHARP_UB_UNBOUNDED";
-    /// <summary>=1 (experiment): the GPU worker re-reads each draw's uniform buffers just before executing it.</summary>
+    /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
+    /// <summary>=0 (A/B): the late uniform copy happens when the GPU worker gets the draw, not after the guest ended the
+    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =check: waits, and logs how many held
+    /// draws had their buffers rewritten meanwhile.</summary>
+    public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";
@@ -221,7 +233,7 @@ public static class EnvVars
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
-    /// <summary>1 (A/B): an ATRAC9 superframe that fails to decode plays as silence and counts as consumed (default: skipped).</summary>
+    /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";

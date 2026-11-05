@@ -1017,7 +1017,8 @@ public sealed unsafe partial class VulkanRenderer
         else vpRect = new Viewport(0, 0, w, h, 0, 1);
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
-        if (SceneScale == 2) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
+        float scale = SceneScale; // 2x surfaces, internal resolution (VulkanRenderer.ResScale.cs)
+        if (scale != 1f) { vpRect.X *= scale; vpRect.Y *= scale; vpRect.Width *= scale; vpRect.Height *= scale; }
         if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _cmd.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
 
         Rect2D scissor;
@@ -1028,7 +1029,8 @@ public sealed unsafe partial class VulkanRenderer
             scissor = new Rect2D(new Offset2D(x0, y0), new Extent2D((uint)(x1 - x0), (uint)(y1 - y0)));
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
-        if (SceneScale == 2) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
+        if (scale == 2f) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
+        else if (scale != 1f) scissor = ScaleScissor(scissor, scale);
         if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _cmd.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
         _cmd.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
@@ -1042,7 +1044,7 @@ public sealed unsafe partial class VulkanRenderer
             if (!valid || cull != _dyn.Cull) { _cmd.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
             if (!valid) _cmd.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
         }
-        float lineWidth = _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1;
+        float lineWidth = _core.WideLines ? Math.Max(1f, Math.Max(1, (int)st.Front.PointLineWidth) * scale) : 1;
         if (!valid || lineWidth != _dyn.LineWidth) { _cmd.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
 
         var front = st.Front;
@@ -1138,6 +1140,19 @@ public sealed unsafe partial class VulkanRenderer
             Directory.CreateDirectory(tud);
             File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_v.bin"), vu);
             File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_f.bin"), fu);
+            // the indices and each vertex stream up to the highest index: lets a bad vertex be traced on the CPU
+            if (d.IndexAddress != 0 && d.IndexCount is > 0 and <= 1u << 20)
+            {
+                int isz = d.Index32 ? 4 : 2;
+                var ix = GuestMemory.ReadSpan(d.IndexAddress, (int)d.IndexCount * isz).ToArray();
+                File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_ix{isz * 8}.bin"), ix);
+                uint max = 0;
+                for (int k = 0; k < (int)d.IndexCount; k++) max = Math.Max(max, d.Index32 ? BitConverter.ToUInt32(ix, k * 4) : BitConverter.ToUInt16(ix, k * 2));
+                for (int si = 0; si < d.VertexProgram.Streams.Length && si < d.Streams.Length; si++)
+                    if (d.Streams[si] != 0 && max < 1u << 20)
+                        File.WriteAllBytes(Path.Combine(tud, $"f{_presentCount}_d{_drawSerial}_s{si}_stride{d.VertexProgram.Streams[si].Stride}.bin"),
+                            GuestMemory.ReadSpan(d.Streams[si], (int)((max + 1) * d.VertexProgram.Streams[si].Stride)).ToArray());
+            }
         }
         if (d.VertexUniformsLength > 0) sb.Append(" vuf=" + string.Join(",", Enumerable.Range(0, Math.Min(d.VertexUniformsLength / 4, 48)).Select(k => BitConverter.ToSingle(vu, k * 4).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));
         if (d.FragmentUniformsLength > 0) sb.Append(" fuh=" + string.Join(",", Enumerable.Range(0, Math.Min(d.FragmentUniformsLength / 2, 24)).Select(k => ((float)BitConverter.ToHalf(fu, k * 2)).ToString("G4", System.Globalization.CultureInfo.InvariantCulture))));

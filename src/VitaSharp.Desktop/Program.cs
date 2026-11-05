@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core;
+using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
@@ -193,6 +193,8 @@ public static class Program
                 return 0;
             case "replay-gpu" when args.Length >= 2:
                 return ReplayGpu.Run(args[1], args.Skip(2).ToArray());
+            case "rerun" when args.Length >= 2:
+                return SessionCaptureControl.Rerun(args[1], args.Skip(2).ToArray());
             case "boot-shell":
                 // the PS Vita system software itself: vs0:vsh/shell/shell.self (home screen, LiveArea, system apps)
                 return Runner.Run(ResolveApp("vs0:vsh/shell"), args.Skip(1).Append("--self=shell.self").ToArray());
@@ -434,6 +436,8 @@ public static class Program
         Console.WriteLine("  test <scenario.txt> [options]        run an automated scenario (frames, contact sheet, report); run options given here win over the scenario's args=");
         ReplayGpu.PrintUsage();
         Console.WriteLine("  run options: --gpu-dump-at=F1:F2[:file]  record frames F1..F2 as a GPU dump (F8 in the window starts/stops one)");
+        Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (Ctrl+F8): keep the last S s / record guest frames A..B");
+        Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
@@ -454,6 +458,7 @@ public static class Program
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");
         Console.WriteLine("               --host-prio=on|off  guest threads and GPU worker above normal host priority (default on)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
+        Console.WriteLine("               --res-scale=0.75|0.5  render targets below native resolution (faster on GPU-bound games, softer)");
         Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default on: sign-in checks pass)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");

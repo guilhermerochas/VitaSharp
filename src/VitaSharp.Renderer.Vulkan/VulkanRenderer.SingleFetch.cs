@@ -74,7 +74,8 @@ public sealed unsafe partial class VulkanRenderer
         var rt = _rt!;
         var depth = _depth!;
         var image = SingleFetchImage();
-        uint w = _sceneW * SceneScale, h = _sceneH * SceneScale;
+        var area = SceneArea;
+        uint w = area.Width, h = area.Height;
         // the earlier renderings' writes come before this pass's loads, input attachment reads and writes
         Barrier(image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit | PipelineStageFlags.FragmentShaderBit,
