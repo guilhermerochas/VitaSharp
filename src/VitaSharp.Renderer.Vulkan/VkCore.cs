@@ -125,6 +125,13 @@ public sealed unsafe class VkCore : IDisposable
             foreach (var l in props)
                 if (Marshal.PtrToStringAnsi((nint)l.LayerName) == "VK_LAYER_KHRONOS_validation") layers.Add("VK_LAYER_KHRONOS_validation");
             if (layers.Count > 0) exts.Add(ExtDebugUtils.ExtensionName);
+            else
+            {
+                // asked for, not installed: say so loudly instead of silently running without it
+                string msg = "Vulkan validation was requested (--validation / VITASHARP_VK_VALIDATION) but the VK_LAYER_KHRONOS_validation layer is not installed: running WITHOUT validation. " + ValidationInstallHint();
+                Log.Warn(msg);
+                Console.Error.WriteLine("warning: " + msg);
+            }
         }
         // MoltenVK (macOS) and other non-conformant implementations are only enumerated by loaders >= 1.3.216 when
         // the application opts in with VK_KHR_portability_enumeration
@@ -194,6 +201,14 @@ public sealed unsafe class VkCore : IDisposable
             du.CreateDebugUtilsMessenger(Instance, in mci, null, out _messenger);
         }
     }
+
+    /// <summary>How to get VK_LAYER_KHRONOS_validation on this platform (the loader finds it through the registry / the
+    /// standard layer folders, or VK_LAYER_PATH / VK_ADD_LAYER_PATH pointing at the folder with its .json manifest).</summary>
+    public static string ValidationInstallHint() =>
+        OperatingSystem.IsAndroid() ? "The layer must be packaged with the app (libVkLayer_khronos_validation.so in the APK) or installed system-wide."
+        : OperatingSystem.IsMacOS() ? "Install the LunarG Vulkan SDK (https://vulkan.lunarg.com/sdk/home); it registers the layer for the loader."
+        : OperatingSystem.IsLinux() ? "Install the validation layers package (e.g. `sudo apt install vulkan-validationlayers`) or the LunarG Vulkan SDK."
+        : "Install the LunarG Vulkan SDK (https://vulkan.lunarg.com/sdk/home), or unpack a Vulkan-ValidationLayers release (https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases) and set VK_ADD_LAYER_PATH to the folder with VkLayer_khronos_validation.json.";
 
     const string PortabilityEnumeration = "VK_KHR_portability_enumeration";
     const string PortabilitySubset = "VK_KHR_portability_subset";
