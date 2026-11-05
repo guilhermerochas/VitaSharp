@@ -41,6 +41,10 @@ public sealed class MidSceneFlushCommand : GpuCommand;
 public sealed class PresentCommand : GpuCommand
 {
     public required DisplayFrame Frame;
+    /// <summary>The guest flip that queued it (frames presented by the display before it; -1 = a present of the
+    /// emulator's own, e.g. the process coming back to the front), the vblank count, the guest clock and the host
+    /// time (Stopwatch ticks) of that sceDisplaySetFrameBuf. Not part of GPU dumps.</summary>
+    public long Flip = -1, VBlank, GuestUs, HostTicks;
 }
 
 /// <summary>Arbitrary work that must happen in GPU order (transfers done on the CPU, sync pointsâ€¦).</summary>

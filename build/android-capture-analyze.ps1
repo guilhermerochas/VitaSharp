@@ -1,5 +1,5 @@
-# Analyses a capture recorded with the pause menu of the developer APK ("Gravar tudo/tempo/conteúdo"): pulls it from the
-# phone (or takes a local folder) and prints one summary: fps and the timing part, the PERF lines, the busiest HLE
+# Analyses a capture recorded with the pause menu ("Gravar tudo" in every build, docs/notes/session-capture.md; "Gravar tempo/conteúdo" in the developer APK): pulls it from the
+# phone (or takes a local folder) and prints one summary: for "Gravar tudo", the report of vitasharp-perf capture; fps and the timing part, the PERF lines, the busiest HLE
 # functions and threads the log reports, the audio check of every guest port WAV, and, from a replay of the GPU dump on
 # this PC, the flicker check over every frame and the GPU ms per scene of one frame (tools/dev/README.md, "Captures").
 # Usage: build/android-capture-analyze.ps1 [CAPTURE_NAME|LOCAL_FOLDER] [-Out DIR] [-Perf EXE] [-GpuProfile mali] [-Desktop EXE]
@@ -10,13 +10,16 @@ $here = Split-Path -Parent $PSScriptRoot
 function perf { if ($Perf) { & $Perf @args } else { dotnet run --project (Join-Path $here 'tools/VitaSharp.PerfTools') -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- @args } }
 if ($Capture -and (Test-Path $Capture -PathType Container)) { $dir = (Resolve-Path $Capture).Path }
 else {
-    $name = if ($Capture) { $Capture } else { (adb shell ls -t $remote | Select-Object -First 1).Trim() }
+    $name = if ($Capture) { $Capture } else { (adb shell ls -t $remote | Where-Object { $_.Trim() -notlike '*.zip' } | Select-Object -First 1).Trim() }
     New-Item -ItemType Directory -Force $Out | Out-Null
     adb pull "$remote/$name" $Out | Out-Null
     $dir = Join-Path $Out $name
 }
 Write-Host "== $dir"
-Get-Content (Join-Path $dir 'info.txt') | Where-Object { $_ } | Select-Object -First 12
+if (Test-Path (Join-Path $dir 'session.txt')) {
+    Write-Host '== Gravar tudo: vitasharp-perf capture (black frames, flashes, presentation order, stalls, audio; with the GPU dump and the input)'
+    perf capture $dir
+} else { Get-Content (Join-Path $dir 'info.txt') | Where-Object { $_ } | Select-Object -First 12 }
 Write-Host '== fps (log, 30 s windows) and capture lines'
 Select-String -Path (Join-Path $dir 'log.txt') -Pattern '\[perf\] [0-9]|\[capture\]' | Select-Object -Last 12 | ForEach-Object { $_.Line }
 Write-Host '== PERF lines'

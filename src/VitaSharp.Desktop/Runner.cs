@@ -159,11 +159,13 @@ public static class Runner
         // short feedback in the title bar (diagnostic captures), shown for a few seconds instead of the FPS line
         string? status = null;
         long statusUntil = 0;
+        SessionCaptureControl? capture = null;
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
             string rate = EmulationPause.IsPaused ? PauseBadge.Text(window.PauseKeyLabel) : $"{fps:F0} FPS";
-            try { window.Title = st != null ? $"VitaSharp | {st}" : $"VitaSharp | {emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
+            string rec = capture?.Capture.IsRecording == true ? "● REC | " : "";
+            try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
         var titleTimer = new System.Threading.Timer(_ =>
         {
@@ -207,21 +209,29 @@ public static class Runner
                 if (pkg?.Trophies.Count > 1)
                     trophyToast.Enqueue(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent(set.CommId, pkg.Title, pkg.Trophies[1], pkg.TrophyIcon(pkg.Trophies[1].Id)));
             });
-        window.DiagnosticRequested += () => diag.Capture("F10");
+        // Ctrl+F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
+        capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
+        capture.Capture.Options.RecordingChanged = _ => ShowTitle();
+        window.SessionCaptureToggled += () => capture.Capture.Toggle("Ctrl+F8");
+        window.DiagnosticRequested += () => { capture.Capture.NoteKey("F10"); diag.Capture("F10"); };
         // F8: GPU dump recording (docs/notes/gpu-dump.md)
-        window.GpuDumpToggled += () => GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo);
+        window.GpuDumpToggled += () => { capture.Capture.NoteKey("F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
         window.DebugModeToggled += () =>
         {
             if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
-            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU)" : "Modo de depuração desligado");
+            capture.Capture.NoteKey("F9");
+            capture.UpdatePreRoll();
+            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU, Ctrl+F8 grava tudo com os últimos 10 s)" : "Modo de depuração desligado");
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
         var states = new SaveStateControl(emu, rendererOptions, () => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status);
-        window.SaveStateKey += slot => { if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
-        window.LoadStateKey += slot => states.LoadAsync(slot == 0 ? 0 : states.Slot);
+        window.SaveStateKey += slot => { capture.Capture.NoteKey(slot < 0 ? "F6" : "F5"); if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
+        window.LoadStateKey += slot => { capture.Capture.NoteKey("F7"); states.LoadAsync(slot == 0 ? 0 : states.Slot); };
         states.StartScheduled(options);
+        capture.StartScheduled(options);
+        var playback = SessionCaptureControl.Playback.Install(emu, rendererOptions, () => renderer, options);
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => renderer, options);
@@ -240,7 +250,7 @@ public static class Runner
             ShowTitle();
         }
         EmulationPause.Changed += OnPauseChanged;
-        window.PauseToggled += () => EmulationPause.Toggle("pause key");
+        window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
         if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
         window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
@@ -266,6 +276,7 @@ public static class Runner
         window.Closing += () => emu.Stop();
         emu.Fatal += (t, e) => Log.Error($"Fatal error in thread {t.Name}: {e.Message}");
         window.Run();
+        capture.Dispose(); // completes a running recording (its GPU dump first)
         GpuDumpControl.StopAtExit();
         titleTimer.Dispose();
         EmulationPause.Changed -= OnPauseChanged;
@@ -415,6 +426,11 @@ public static class Runner
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
         new SaveStateControl(emu, ro, () => NewHeadlessRenderer(ro, diag), null).StartScheduled(options);
+        // "Gravar tudo" in a headless run: --capture-at=A:B, --capture-preroll, and the re-run's --capture-playback
+        using var capture = new SessionCaptureControl(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, options, s => Log.Info($"[capture] {s}"), null);
+        capture.StartScheduled(options);
+        var playback = SessionCaptureControl.Playback.Install(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, options);
+        if (playback != null && emu.Gpu.Backend == null) emu.Gpu.Backend = NewHeadlessRenderer(ro, diag); // the re-run records its frames
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
         emu.Start();
@@ -428,7 +444,7 @@ public static class Runner
         if (Opt(options, "--seconds") == null && nav != null) seconds = 3600; // the script decides (quit)
         long fpsFrames = 0; double fpsAt = 0;
         var allocMarks = new List<AllocMark>();
-        while (!fatal.Wait(50) && nav?.Quit != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
+        while (!fatal.Wait(50) && nav?.Quit != true && playback?.Done != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
             // scripted pause / F10 key steps (key@f300:P, key@f300+5:P): the guest polls no input while paused, so here
             if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag);
@@ -446,6 +462,7 @@ public static class Runner
                 catch (Exception e) { Log.Error($"LoadExec failed: {e}"); break; }
             }
         }
+        capture.Capture.StopAndWait(); // a recording still running at the end (its GPU dump needs the worker)
         GpuDumpControl.StopAtExit();
         diag.WaitIdle();
         sampler?.Report();

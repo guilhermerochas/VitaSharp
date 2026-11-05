@@ -203,11 +203,16 @@ public sealed class SettingsDialog : Window
                    "P pausa e retoma a emulação (tecla em Controles > Atalhos do emulador; um controle pode usar uma combinação de botões). " +
                    "F10 captura um diagnóstico (quadro, texturas, captura de tela e log) em um .zip na pasta de diagnósticos. " +
                    "F9 liga ou desliga o modo de depuração no meio do jogo. " +
+                   "Ctrl+F8 inicia e para \"Gravar tudo\": estado salvo, controles, imagens, tempos, áudio e dump da GPU em um .zip na pasta captures, para reproduzir o problema sem o jogo. " +
                    "Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.",
         });
         var debugMode = new CheckBox { Content = "Modo de depuração (gera logs detalhados para diagnóstico)", IsChecked = settings.DebugMode };
         general.Children.Add(WithHint(debugMode, "Registra no log o primeiro uso de shaders, alvos e formatos, erros de HLE e travamentos, " +
                                                  "e salva um diagnóstico automático quando a imagem parece corrompida. Pode custar alguns por cento de desempenho."));
+        var preRoll = new CheckBox { Content = "Pré-gravação (Ctrl+F8 inclui os segundos antes de apertar)", IsChecked = settings.CapturePreRoll };
+        general.Children.Add(WithHint(preRoll, "Guarda na memória as últimas imagens, tempos e controles, com um estado salvo a cada 30 s, para que " +
+                                               "\"Gravar tudo\" (Ctrl+F8) pegue um defeito que já passou. Cada estado pausa o jogo por um instante. " +
+                                               "Com o modo de depuração ligado, a pré-gravação já fica ligada."));
         var openDiag = new Button { Content = "Abrir pasta de diagnósticos", HorizontalAlignment = HorizontalAlignment.Left };
         openDiag.Click += (_, _) =>
         {
@@ -275,6 +280,7 @@ public sealed class SettingsDialog : Window
             settings.FastShaderCompile = fastShaders.IsChecked == true;
             settings.BackgroundShaderCompile = asyncShaders.IsChecked == true;
             settings.DebugMode = debugMode.IsChecked == true;
+            settings.CapturePreRoll = preRoll.IsChecked == true;
             settings.HleModules = (hleModules.Text ?? "").Trim();
             settings.View = view.SelectedIndex == 1 ? LauncherSettings.ViewHome : LauncherSettings.ViewList;
             if (themes.Count > 0 && theme.SelectedIndex >= 0) settings.Theme = themes[theme.SelectedIndex].Id == VitaSharp.Core.Shell.ShellTheme.DefaultId ? "" : themes[theme.SelectedIndex].Id;
