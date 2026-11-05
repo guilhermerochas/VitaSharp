@@ -472,6 +472,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
+- [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
+  a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
+  queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
+  `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
 - [ ] Jak and Daxter Collection (PCSA00080), depois da correção do histórico do decodificador (main 84a12b1, teste do
   usuário 05/11/2026): (1) a prévia ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o
   mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
