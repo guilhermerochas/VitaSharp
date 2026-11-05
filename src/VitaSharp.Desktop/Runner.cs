@@ -220,7 +220,7 @@ public static class Runner
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
-        var states = new SaveStateControl(emu, rendererOptions, () => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status);
+        var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status);
         window.SaveStateKey += slot => { if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
         window.LoadStateKey += slot => states.LoadAsync(slot == 0 ? 0 : states.Slot);
         states.StartScheduled(options);
@@ -261,7 +261,7 @@ public static class Runner
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
         emu.ExecRequested += () => Task.Run(() =>
         {
-            try { emu.PerformExec(() => { var r = new VulkanRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }); }
+            try { emu.PerformExec(() => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }); }
             catch (Exception e) { Log.Error($"LoadExec failed: {e}"); fatal.Set(); }
         });
         window.Resized += () => renderer?.NotifyResized();
@@ -345,9 +345,17 @@ public static class Runner
         };
     }
 
+    /// <summary>A renderer made after a LoadExec or a state load keeps counting the guest's presents (frame_N.png,
+    /// --dump-from, --trace-draws and --gpu-dump-at use the run's frame numbers, not ones that restart at 0).</summary>
+    static VulkanRenderer NewRenderer(VulkanRendererOptions ro)
+    {
+        ro.FirstPresent = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+        return new VulkanRenderer(ro);
+    }
+
     static VulkanRenderer NewHeadlessRenderer(VulkanRendererOptions ro, Diagnostics diag)
     {
-        var r = new VulkanRenderer(ro);
+        var r = NewRenderer(ro);
         r.AnomalyDetected += diag.OnAnomaly;
         return r;
     }

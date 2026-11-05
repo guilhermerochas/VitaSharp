@@ -494,6 +494,37 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   desligado pela lógica do jogo a cada quadro (cor do uniform 1/0), a fila da tela pede 2 vblanks por troca e isso é
   respeitado; próximo passo é logar `sceKernelGetProcessTimeWide` por quadro e `--watch` na origem da cor. Akiba's
   Beat: as telas pretas longas são carregamentos (no Vita 8-18 s, com ícone animado; aqui a imagem congela ~10 s)
+- [ ] Achados do agente de bug C, dia 2 (05/11/2026, branch fix/bugs-games-2; dados em
+  `scratchpad/bugsC2_*`). Corrigidos: (1) o renderer criado depois de um LoadExec ou de carregar um estado segue a
+  contagem de presents do jogo (`FirstPresent = Display.FramesPresented`): o `--gpu-dump-at=1740:2340` do Jak 1
+  depois do LoadExec e do estado gravou os presents 1740-2340 e os frame_N.png mantêm os números; (2) o travamento
+  ao carregar estado do Jak 1 (main em DMAPut, GOAL em DMADone): as threads salvas dentro de uma espera reemitem a
+  espera antes das outras rodarem (uma variável de condição não guarda sinal, e uma thread que rodava sinalizava antes
+  do waiter voltar à fila). 9 de 9 cargas do estado do usuário numa rodada voltaram ao gameplay (antes 2 de 4
+  travavam). Ainda aberto:
+  Jak 1, flicker de um quadro: com o estado do usuário aparece num quadro (live 1930) uma faixa escura translúcida
+  sobre tudo abaixo de uma linha horizontal (~y 75, largura toda); 5 quadros com flash em 618 (`tileflick.py`). O dump
+  `bugsC2_out\jak_flash.vsgd` reproduz no replay, mas em outros quadros (1926/1928/1930: depende de tempo) e igual com
+  `VITASHARP_UB_LATE=0` (não é a cópia tardia dos uniforms). O `--draw-limit` não muda nada nesse dump (nem com 0
+  desenhos, em 1928-2000): a imagem apresentada não vem dos desenhos reproduzidos, então a bisseção por desenho não
+  funciona aqui; ver por que (escrita de volta/upload da memória do framebuffer?) antes de continuar. Depois de cada
+  carga do estado há ~20-40 quadros pretos antes da imagem voltar (talvez ligado à tela preta no começo do gameplay).
+  A câmera fixa não foi reproduzida.
+  Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
+  a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
+  `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
+  sem aviso.
+  Croixleur: o pisca do SKIP reproduz sem janela: o símbolo do quadrado dentro do botão aparece num quadro e some no
+  seguinte, alternando exatamente a cada quadro apresentado (2700-2783). Não é o relógio: o
+  `sceKernelGetProcessTimeWide` da main avança ~33,4 ms por quadro, e um quadro de 109 ms (2739) não mudou a fase.
+  As chamadas da main (ctrl/touch peek, tempo) têm os mesmos argumentos nos quadros com e sem o símbolo. Próximo:
+  achar o desenho do símbolo com `--trace-draws` em dois quadros seguidos e `--watch` na origem da cor/visibilidade.
+  O trace `--trace-hle-frames=A:B:all` mostra os valores de retorno (linhas `->`).
+  Sonic & All-Stars Racing Transformed: trava em 3 de 3 boots (quadros 23-25, main 9482b0f); com
+  `--trace-hle-frames=18:40:all` (mais lento) passou do ponto. Na trava a `AchievementRegisterThread` já terminou,
+  enquanto na rodada boa ela ainda fazia 51 `sceNpTrophyGetTrophyInfo` no quadro 22: comparar a ordem
+  registro de conquistas x `MainThread`. Blind Men, Zero Time Dilemma, The Deer God e Silent Hill: não testados
+  nesta rodada.
 - [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
