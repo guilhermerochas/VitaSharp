@@ -106,6 +106,8 @@ public sealed unsafe partial class VulkanRenderer
                 // volatile: the ring is cheaper than re-caching it every frame
                 _statSmallUploadBytes += length;
                 e.Stamp = DirtyPages.Epoch;
+                e.Chunk = -1; // its cached copy is stale from now on
+
                 return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
             }
         }

@@ -84,12 +84,14 @@ public sealed unsafe partial class VulkanRenderer
         _costOpen = c.Used++;
         if (_costDrawFirst < 0) _costDrawFirst = (int)_costOpen;
         _costDrawCount++;
+        if (_cmd.Deferring) _cmd.Drain();
         _vk.CmdBeginQuery(cmd, c.Pool, _costOpen, _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0);
     }
 
     void EndCostQuery(CommandBuffer cmd)
     {
         if (_costOpen == uint.MaxValue) return;
+        if (_cmd.Deferring) _cmd.Drain();
         _vk.CmdEndQuery(cmd, CostOf(F).Pool, _costOpen);
         _costOpen = uint.MaxValue;
     }

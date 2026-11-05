@@ -922,7 +922,8 @@ public sealed unsafe partial class VulkanRenderer
             else
             {
                 BeginRendering();
-                cmd = Cmd;
+                // the open tiled secondary without draining the recorder thread (the Cmd property drains for direct use)
+                cmd = !_hoisting && _msCmd.Handle == 0 && _tileCmd.Handle != 0 ? _tileCmd : Cmd;
                 // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }

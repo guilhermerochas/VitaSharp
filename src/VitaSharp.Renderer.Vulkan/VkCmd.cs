@@ -13,7 +13,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// Otherwise (the default) they are Silk.NET's. Setup code always uses Silk.NET. Same signatures as the Silk.NET
 /// overloads the draw path uses, with Silk.NET's blittable structs.
 /// </summary>
-internal sealed unsafe class VkCmd
+internal sealed unsafe partial class VkCmd
 {
     /// <summary>VITASHARP_VK_DIRECT=1: the direct function pointers (A/B against Silk.NET on the phone).</summary>
     internal static readonly bool DirectRequested = Environment.GetEnvironmentVariable(EnvVars.VkDirect)?.Trim() == "1";
@@ -81,89 +81,89 @@ internal sealed unsafe class VkCmd
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdBindPipeline(CommandBuffer c, PipelineBindPoint bp, Pipeline p)
-    { if (_direct) _bindPipeline(c, bp, p); else _vk.CmdBindPipeline(c, bp, p); }
+    { if (c.Handle == _deferHandle) { DeferCmdBindPipeline(c, bp, p); return; } if (_direct) _bindPipeline(c, bp, p); else _vk.CmdBindPipeline(c, bp, p); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdBindDescriptorSets(CommandBuffer c, PipelineBindPoint bp, PipelineLayout l, uint first, uint count, DescriptorSet* sets, uint dynCount, uint* dyn)
-    { if (_direct) _bindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn); else _vk.CmdBindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn); }
+    { if (c.Handle == _deferHandle) { DeferCmdBindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn); return; } if (_direct) _bindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn); else _vk.CmdBindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdBindVertexBuffers(CommandBuffer c, uint first, uint count, Buffer* b, ulong* o)
-    { if (_direct) _bindVertexBuffers(c, first, count, b, o); else _vk.CmdBindVertexBuffers(c, first, count, b, o); }
+    { if (c.Handle == _deferHandle) { DeferCmdBindVertexBuffers(c, first, count, b, o); return; } if (_direct) _bindVertexBuffers(c, first, count, b, o); else _vk.CmdBindVertexBuffers(c, first, count, b, o); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdBindIndexBuffer(CommandBuffer c, Buffer b, ulong o, IndexType t)
-    { if (_direct) _bindIndexBuffer(c, b, o, t); else _vk.CmdBindIndexBuffer(c, b, o, t); }
+    { if (c.Handle == _deferHandle) { DeferCmdBindIndexBuffer(c, b, o, t); return; } if (_direct) _bindIndexBuffer(c, b, o, t); else _vk.CmdBindIndexBuffer(c, b, o, t); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdDrawIndexed(CommandBuffer c, uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance)
-    { if (_direct) _drawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); else _vk.CmdDrawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); }
+    { if (c.Handle == _deferHandle) { DeferCmdDrawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); return; } if (_direct) _drawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); else _vk.CmdDrawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdPushConstants(CommandBuffer c, PipelineLayout l, ShaderStageFlags s, uint offset, uint size, void* data)
-    { if (_direct) _pushConstants(c, l, s, offset, size, data); else _vk.CmdPushConstants(c, l, s, offset, size, data); }
+    { if (c.Handle == _deferHandle) { DeferCmdPushConstants(c, l, s, offset, size, data); return; } if (_direct) _pushConstants(c, l, s, offset, size, data); else _vk.CmdPushConstants(c, l, s, offset, size, data); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetViewport(CommandBuffer c, uint first, uint count, in Viewport v)
-    { if (_direct) { fixed (Viewport* p = &v) _setViewport(c, first, count, p); } else _vk.CmdSetViewport(c, first, count, in v); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetViewport(c, first, count, v); return; } if (_direct) { fixed (Viewport* p = &v) _setViewport(c, first, count, p); } else _vk.CmdSetViewport(c, first, count, in v); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetScissor(CommandBuffer c, uint first, uint count, in Rect2D r)
-    { if (_direct) { fixed (Rect2D* p = &r) _setScissor(c, first, count, p); } else _vk.CmdSetScissor(c, first, count, in r); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetScissor(c, first, count, r); return; } if (_direct) { fixed (Rect2D* p = &r) _setScissor(c, first, count, p); } else _vk.CmdSetScissor(c, first, count, in r); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetPrimitiveTopology(CommandBuffer c, PrimitiveTopology t)
-    { if (_direct) _setPrimitiveTopology(c, t); else _vk.CmdSetPrimitiveTopology(c, t); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetPrimitiveTopology(c, t); return; } if (_direct) _setPrimitiveTopology(c, t); else _vk.CmdSetPrimitiveTopology(c, t); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetCullMode(CommandBuffer c, CullModeFlags m)
-    { if (_direct) _setCullMode(c, m); else _vk.CmdSetCullMode(c, m); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetCullMode(c, m); return; } if (_direct) _setCullMode(c, m); else _vk.CmdSetCullMode(c, m); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetFrontFace(CommandBuffer c, FrontFace f)
-    { if (_direct) _setFrontFace(c, f); else _vk.CmdSetFrontFace(c, f); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetFrontFace(c, f); return; } if (_direct) _setFrontFace(c, f); else _vk.CmdSetFrontFace(c, f); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetLineWidth(CommandBuffer c, float w)
-    { if (_direct) _setLineWidth(c, w); else _vk.CmdSetLineWidth(c, w); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetLineWidth(c, w); return; } if (_direct) _setLineWidth(c, w); else _vk.CmdSetLineWidth(c, w); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetDepthTestEnable(CommandBuffer c, Bool32 e)
-    { if (_direct) _setDepthTestEnable(c, e); else _vk.CmdSetDepthTestEnable(c, e); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetDepthTestEnable(c, e); return; } if (_direct) _setDepthTestEnable(c, e); else _vk.CmdSetDepthTestEnable(c, e); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetDepthWriteEnable(CommandBuffer c, Bool32 e)
-    { if (_direct) _setDepthWriteEnable(c, e); else _vk.CmdSetDepthWriteEnable(c, e); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetDepthWriteEnable(c, e); return; } if (_direct) _setDepthWriteEnable(c, e); else _vk.CmdSetDepthWriteEnable(c, e); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetStencilTestEnable(CommandBuffer c, Bool32 e)
-    { if (_direct) _setStencilTestEnable(c, e); else _vk.CmdSetStencilTestEnable(c, e); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetStencilTestEnable(c, e); return; } if (_direct) _setStencilTestEnable(c, e); else _vk.CmdSetStencilTestEnable(c, e); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetDepthBiasEnable(CommandBuffer c, Bool32 e)
-    { if (_direct) _setDepthBiasEnable(c, e); else _vk.CmdSetDepthBiasEnable(c, e); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetDepthBiasEnable(c, e); return; } if (_direct) _setDepthBiasEnable(c, e); else _vk.CmdSetDepthBiasEnable(c, e); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetDepthCompareOp(CommandBuffer c, CompareOp op)
-    { if (_direct) _setDepthCompareOp(c, op); else _vk.CmdSetDepthCompareOp(c, op); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetDepthCompareOp(c, op); return; } if (_direct) _setDepthCompareOp(c, op); else _vk.CmdSetDepthCompareOp(c, op); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetDepthBias(CommandBuffer c, float constant, float clamp, float slope)
-    { if (_direct) _setDepthBias(c, constant, clamp, slope); else _vk.CmdSetDepthBias(c, constant, clamp, slope); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetDepthBias(c, constant, clamp, slope); return; } if (_direct) _setDepthBias(c, constant, clamp, slope); else _vk.CmdSetDepthBias(c, constant, clamp, slope); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetStencilOp(CommandBuffer c, StencilFaceFlags f, StencilOp fail, StencilOp pass, StencilOp depthFail, CompareOp op)
-    { if (_direct) _setStencilOp(c, f, fail, pass, depthFail, op); else _vk.CmdSetStencilOp(c, f, fail, pass, depthFail, op); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetStencilOp(c, f, fail, pass, depthFail, op); return; } if (_direct) _setStencilOp(c, f, fail, pass, depthFail, op); else _vk.CmdSetStencilOp(c, f, fail, pass, depthFail, op); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetStencilCompareMask(CommandBuffer c, StencilFaceFlags f, uint m)
-    { if (_direct) _setStencilCompareMask(c, f, m); else _vk.CmdSetStencilCompareMask(c, f, m); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetStencilCompareMask(c, f, m); return; } if (_direct) _setStencilCompareMask(c, f, m); else _vk.CmdSetStencilCompareMask(c, f, m); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetStencilWriteMask(CommandBuffer c, StencilFaceFlags f, uint m)
-    { if (_direct) _setStencilWriteMask(c, f, m); else _vk.CmdSetStencilWriteMask(c, f, m); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetStencilWriteMask(c, f, m); return; } if (_direct) _setStencilWriteMask(c, f, m); else _vk.CmdSetStencilWriteMask(c, f, m); }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CmdSetStencilReference(CommandBuffer c, StencilFaceFlags f, uint r)
-    { if (_direct) _setStencilReference(c, f, r); else _vk.CmdSetStencilReference(c, f, r); }
+    { if (c.Handle == _deferHandle) { DeferCmdSetStencilReference(c, f, r); return; } if (_direct) _setStencilReference(c, f, r); else _vk.CmdSetStencilReference(c, f, r); }
 }
