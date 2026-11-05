@@ -180,6 +180,8 @@ public sealed unsafe partial class VulkanRenderer
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
         };
         blit.SrcOffsets[0] = new Offset3D(0, 0, 0);
+        // a target at a lower internal resolution is scaled up from its image (VulkanRenderer.ResScale.cs)
+        if (src.Scale != 1f) { w = Math.Min(ScaleDim(w, src.Scale), src.ImgW); h = Math.Min(ScaleDim(h, src.Scale), src.ImgH); }
         blit.SrcOffsets[1] = new Offset3D((int)w, (int)h, 1);
         blit.DstOffsets[0] = new Offset3D(dx, dy, 0);
         blit.DstOffsets[1] = new Offset3D(dx + dw, dy + dh, 1);

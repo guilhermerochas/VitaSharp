@@ -27,15 +27,15 @@ public sealed unsafe partial class VulkanRenderer
     RenderTarget PresentSource(RenderTarget src)
     {
         if (src.Format != Format.R8G8B8A8Unorm || Formats.LogicalOrderSwizzle(src.ColorFormat) == 0) return src;
-        if (!_memoryOrderCopies.TryGetValue(src, out var c) || c.Target.Width != src.Width || c.Target.Height != src.Height
+        if (!_memoryOrderCopies.TryGetValue(src, out var c) || c.Target.Width != src.Width || c.Target.Height != src.Height || c.Target.Scale != src.Scale
             || c.SourceImage.Handle != src.Image.Handle || c.ColorFormat != src.ColorFormat)
         {
             if (c != null) ReleaseMemoryOrderCopy(c);
-            var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.Width, src.Height, Format.R8G8B8A8Unorm,
+            var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit, ImageAspectFlags.ColorBit);
             c = new MemoryOrderCopy
             {
-                Target = new RenderTarget { Address = src.Address, Width = src.Width, Height = src.Height, Stride = src.Stride, Image = img, View = view, Mem = mem, Format = Format.R8G8B8A8Unorm },
+                Target = new RenderTarget { Address = src.Address, Width = src.Width, Height = src.Height, Stride = src.Stride, Image = img, View = view, Mem = mem, Format = Format.R8G8B8A8Unorm, Scale = src.Scale },
                 SourceView = CreateView(src.Image, Format.R8G8B8A8Unorm, ImageAspectFlags.ColorBit, 1, 1, false, Formats.SurfaceMemoryOrder(src.ColorFormat)),
                 SourceImage = src.Image,
                 ColorFormat = src.ColorFormat,
@@ -76,7 +76,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(dst.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, 0, AccessFlags.ColorAttachmentWriteBit);
         var pass = MemoryOrderPass();
-        var area = new Extent2D(dst.Width, dst.Height);
+        var area = new Extent2D(dst.ImgW, dst.ImgH);
         var rbi = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = TransientFramebuffer(pass, area, dst.View),
@@ -89,13 +89,14 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, MemoryOrderPipeline());
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
-        var vp = new Viewport(0, 0, dst.Width, dst.Height, 0, 1);
+        var vp = new Viewport(0, 0, dst.ImgW, dst.ImgH, 0, 1);
         var sc = new Rect2D(new Offset2D(0, 0), area);
         _vk.CmdSetViewport(cmd, 0, 1, in vp);
         _vk.CmdSetScissor(cmd, 0, 1, in sc);
         _vk.CmdDraw(cmd, 3, 1, 0, 0);
         _vk.CmdEndRenderPass(cmd);
         _boundPipeline = default;
+        dst.Version++; // (its native-size copy follows it: VulkanRenderer.ResScale.cs)
         // the copy is read by the swapchain blit / frame readback; the source is rendered again after this read
         Barrier(dst.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit,

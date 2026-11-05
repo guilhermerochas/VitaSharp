@@ -198,7 +198,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(ring.Image, ring.ImageInitialized ? ImageLayout.General : ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
         ring.ImageInitialized = true;
-        Blit(src.Image, w, h, ring.Image, dw, dh, Filter.Linear);
+        Blit(src.Image, Math.Min(ScaleDim(w, src.Scale), src.ImgW), Math.Min(ScaleDim(h, src.Scale), src.ImgH), ring.Image, dw, dh, Filter.Linear); // (VulkanRenderer.ResScale.cs)
         Barrier(ring.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
         var region = new BufferImageCopy

@@ -59,6 +59,9 @@ public sealed class GameSettings
     public string? GpuProfile { get; set; }
     public bool? VSync { get; set; }
     public bool? ShowFps { get; set; }
+    /// <summary>"Resolução interna": render-target scale below native, "0.75" or "0.5" (null = native; per game only,
+    /// VulkanRenderer.ResScale.cs). Lower is faster on GPU-bound games, and softer.</summary>
+    public string? ResScale { get; set; }
 
     /// <summary>Total time played, in seconds.</summary>
     public long PlaySeconds { get; set; }
@@ -67,7 +70,7 @@ public sealed class GameSettings
     public double AverageFps { get; set; }
 
     [JsonIgnore]
-    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null;
+    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null || ResScale != null;
 
     public static GameSettings Load(string path) => SettingsFile.Load(path, PrefsJson.Default.GameSettings) ?? new();
     public void Save(string path) => SettingsFile.Save(path, this, PrefsJson.Default.GameSettings);
@@ -83,7 +86,7 @@ public sealed class GameSettings
 }
 
 /// <summary>What a game runs with: the game's settings over the global ones, validated.</summary>
-public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps)
+public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps, string ResScale = "")
 {
     public static EffectiveSettings Resolve(AppPreferences app, GameSettings? game)
     {
@@ -92,8 +95,12 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
         int mhz = game?.CpuMhz ?? app.CpuMhz;
         if (mhz is not (0 or 444)) mhz = 0;
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
-        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps);
+        string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
+        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res);
     }
+
+    /// <summary>VulkanRendererOptions.ResScale for <see cref="ResScale"/> (0 = native).</summary>
+    public float ResScaleValue => float.TryParse(ResScale, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
 
     /// <summary>CpuCore.InstructionsPerSecond for <see cref="CpuMhz"/>.</summary>
     public long ClockHz => CpuMhz > 0 ? CpuMhz * 1_000_000L : CpuCore.DefaultClockHz;
@@ -114,6 +121,13 @@ public static class SettingsChoices
         new("desktop", "Sem contornos de driver"),
         new("adreno", "Simular Adreno"),
         new("mali", "Simular Mali"),
+    ];
+
+    public static IReadOnlyList<Choice> ResScales { get; } =
+    [
+        new("", "Nativa (960x544)"),
+        new("0.75", "75% (mais rápido)"),
+        new("0.5", "50% (o mais rápido, mais suave)"),
     ];
 
     /// <summary>The label of <paramref name="value"/> in <paramref name="choices"/>, or the value itself.</summary>

@@ -1017,7 +1017,8 @@ public sealed unsafe partial class VulkanRenderer
         else vpRect = new Viewport(0, 0, w, h, 0, 1);
         if (vpRect.Height == 0) vpRect.Height = 1;
         if (vpRect.Width == 0) vpRect.Width = 1;
-        if (SceneScale == 2) { vpRect.X *= 2; vpRect.Y *= 2; vpRect.Width *= 2; vpRect.Height *= 2; }
+        float scale = SceneScale; // 2x surfaces, internal resolution (VulkanRenderer.ResScale.cs)
+        if (scale != 1f) { vpRect.X *= scale; vpRect.Y *= scale; vpRect.Width *= scale; vpRect.Height *= scale; }
         if (!_dyn.Valid || !SameViewport(vpRect, _dyn.Vp)) { _cmd.CmdSetViewport(cmd, 0, 1, in vpRect); _dyn.Vp = vpRect; }
 
         Rect2D scissor;
@@ -1028,7 +1029,8 @@ public sealed unsafe partial class VulkanRenderer
             scissor = new Rect2D(new Offset2D(x0, y0), new Extent2D((uint)(x1 - x0), (uint)(y1 - y0)));
         }
         else scissor = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h));
-        if (SceneScale == 2) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
+        if (scale == 2f) scissor = new Rect2D(new Offset2D(scissor.Offset.X * 2, scissor.Offset.Y * 2), new Extent2D(scissor.Extent.Width * 2, scissor.Extent.Height * 2));
+        else if (scale != 1f) scissor = ScaleScissor(scissor, scale);
         if (!_dyn.Valid || !SameRect(scissor, _dyn.Scissor)) { _cmd.CmdSetScissor(cmd, 0, 1, in scissor); _dyn.Scissor = scissor; }
         _cmd.CmdPushConstants(cmd, _pipelineLayout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, (uint)sizeof(PushConstants), &pc);
 
@@ -1042,7 +1044,7 @@ public sealed unsafe partial class VulkanRenderer
             if (!valid || cull != _dyn.Cull) { _cmd.CmdSetCullMode(cmd, cull); _dyn.Cull = cull; }
             if (!valid) _cmd.CmdSetFrontFace(cmd, FrontFace.CounterClockwise);
         }
-        float lineWidth = _core.WideLines ? Math.Max(1, (int)st.Front.PointLineWidth) * SceneScale : 1;
+        float lineWidth = _core.WideLines ? Math.Max(1f, Math.Max(1, (int)st.Front.PointLineWidth) * scale) : 1;
         if (!valid || lineWidth != _dyn.LineWidth) { _cmd.CmdSetLineWidth(cmd, lineWidth); _dyn.LineWidth = lineWidth; }
 
         var front = st.Front;

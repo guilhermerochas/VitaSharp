@@ -110,6 +110,15 @@ public static class AudioDump
         }
     }
 
+    /// <summary>A raw byte stream next to the WAVs (e.g. the ATRAC9 superframes an NGS voice decoded), or null when off.</summary>
+    public static FileStream? OpenRaw(string name)
+    {
+        if (_dir == null) return null;
+        string safe = string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c == '.' ? c : '_'));
+        try { return new FileStream(Path.Combine(_dir, safe), FileMode.Create, FileAccess.Write, FileShare.Read); }
+        catch (Exception e) { Log.Warn($"Audio dump: {e.Message}"); return null; }
+    }
+
     /// <summary>A writer for a newly opened port, or null when dumping is off.</summary>
     public static Writer? Open(string name, int rate)
     {
