@@ -472,6 +472,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
+- [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
+  Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
+  isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
+  usuário 015823/020221 não têm esse flicker e mostram a câmera fixa (intermitente). Ferramenta: depois de LoadExec ou
+  de carregar um estado o renderer novo recomeça a contagem de presents em 0, então `--gpu-dump-at`/`--dump-from`/
+  `--trace-draws` pegam os quadros errados (sugestão: `ro.FirstPresent = Display.FramesPresented`). A tela de título do
+  Jak 1 fica a 0,4-2 fps nos testes dos agentes (sem janela e na janela, CPU sem limite, 8 núcleos), e o usuário vê só
+  ~10 s lentos e depois 20 fps; causa não achada. Save state do Jak 1: em 2 de 4 carregamentos o jogo trava (main em
+  DMAPut, GOAL em DMADone, F3DPlaybackThread no msgpipe, fila da GPU vazia). Croixleur: o ícone do SKIP é ligado e
+  desligado pela lógica do jogo a cada quadro (cor do uniform 1/0), a fila da tela pede 2 vblanks por troca e isso é
+  respeitado; próximo passo é logar `sceKernelGetProcessTimeWide` por quadro e `--watch` na origem da cor. Akiba's
+  Beat: as telas pretas longas são carregamentos (no Vita 8-18 s, com ícone animado; aqui a imagem congela ~10 s)
 - [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
