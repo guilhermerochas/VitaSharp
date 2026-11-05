@@ -540,7 +540,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
   a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
   `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
-  sem aviso.
+  sem aviso. Corrigido (05/11/2026, fix/bugs-games-4): aviso no log e no console ("running WITHOUT validation") com
+  a instrução de instalação por plataforma (LunarG SDK, pacote da distro ou release do Vulkan-ValidationLayers +
+  `VK_ADD_LAYER_PATH`); README atualizado. Conferido com `replay-gpu --validation` neste PC.
   Croixleur: o pisca do SKIP reproduz sem janela: o símbolo do quadrado dentro do botão aparece num quadro e some no
   seguinte, alternando exatamente a cada quadro apresentado (2700-2783). Não é o relógio: o
   `sceKernelGetProcessTimeWide` da main avança ~33,4 ms por quadro, e um quadro de 109 ms (2739) não mudou a fase.
@@ -688,6 +690,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   atualização, com os callbacks fora da trava) e confirmado no jogo pelo usuário
 - [ ] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
   56354517, 5EF67445, 6ACA1D57, 71A78083, 79F9DB75, AA0340C3, F9A1DE92, importadas pelo `UnityPlayer_536/537_Release`;
+  Corrigido (05/11/2026, fix/bugs-games-4): não era uma variável. O loop em 0x81118608-0x81118AEE é a leitura do
+  painel de toque: `while (sceTouchPeek(porta, &d, 1) > 0) { se o timestamp mudou, sceTouchRead(porta, buf, 16);
+  processa; }`, e só sai quando o Peek devolve 0 — o nosso devolvia sempre 1 (o Vita3K também, por isso trava lá).
+  Agora o Peek devolve 0 quando não há amostra mais nova que o último `sceTouchRead` da porta (o buffer continua
+  preenchido com a amostra mais nova; portas que o jogo nunca lê seguem como antes). `VITASHARP_TOUCH_PEEK_UNREAD=0`
+  volta ao antigo. Prova: 3 de 3 boots passam do quadro 25 (logos SEGA/Sumo/CRIWARE e a tela legal; 400 quadros a
+  30 fps, `scratchpad/bugsB3_out/sonic_fix1..3`), e com a chave desligada o mesmo build trava no quadro 23
+  (`bugsB3_out/sonic_ab0`); na rodada boa de antes a thread nem entrava nesse loop (ordem das threads). O cenário
+  `sasrt` inteiro (2400 quadros) agora passa pelos logos, o filme de abertura, o título "PRESS START", o aviso de
+  autosave e a criação do save (`bugsB3_out/sonic_full/sheet.png`); falta o usuário jogar uma corrida
   Akiba's Beat e God Wars, 04/11/2026, pedido do usuário). O aviso sai no boot (`Emulator.cs` ~522), antes de o jogo
   carregar `app0:/Media/Modules/Il2CppAssemblies.suprx` (~0,6 s depois); o `ModuleLoader.RegisterExports` aplica as
   relocações pendentes quando o módulo exporta a variável. Confirmar que o Il2CppAssemblies exporta as 10 e que as
