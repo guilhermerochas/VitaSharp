@@ -147,3 +147,51 @@ GPU time falls with the pixel count (-21% at 0.75, -42% at 0.5), and the mean fr
 the GPU worker (about 26 ms of CPU per frame) and the game thread (about 21 ms) are, so 0.5 gains almost nothing
 over 0.75 in frame time, though the 1% low is a little better in two of three rounds. To go past 30 fps the CPU side
 has to shrink.
+
+## Uncharted at 0.75: the GPU worker's CPU time, 5 November 2026 (perf/uc-cpu)
+
+LLVM developer APK of perf/uc-cpu, `VITASHARP_RES_SCALE=0.75`, `VITASHARP_WORKER_PROF=1`, Uncharted gameplay after the
+journal tap, 30 s per run, a screenshot confirming gameplay before each. Worker phases are deltas of the cumulative
+`PERF worker` lines over the measured window (~880 presents). The phone warmed through the session: the same base
+configuration measured 33.9 ms mean frame at the start and 37.7–38.5 ms later, so single runs differ by ±2 ms.
+Profiling with `VITASHARP_TRACE=1` inflates the worker a lot (the first profile showed 4–6 MB/frame of uploads and
+4 ms of Geometry; without it, 2 ms): measure the worker without the trace markers.
+
+**Where the worker's time goes** (base, cool phone; ms per presented frame):
+
+| | ms |
+|---|---|
+| Execute (GPU worker inside the renderer, fence waits excluded) | 25.3 |
+| Draws (~540 per frame) | 19.3 |
+| — texture sets (`BuildTextureSet`, both stages) | 6.1 |
+| — recording (bind/dynamic state/draw calls) | 5.8 |
+| — geometry (index min/max, vertex and index uploads) | 2.2 |
+| — shader lookup 1.4, pipeline 1.1, uniforms 0.9, rendering begin 1.1, the rest of the texture phase 0.3 | |
+| Present (submit, readback setup) | 3.0 |
+| BeginScene (frame start: retire, pool resets, writeback conversion; render target lookups) | 2.1 |
+| EndScene | 0.9 |
+
+The worker thread's CPU is 23 ms/frame, the game thread's 20 ms, the GPU 30 ms: at 0.75 Uncharted is at the edge of
+both. Display: 30 fps median, mean 33.9–38.5 ms depending on heat.
+
+**Switches tried** (all off by default, kept in the tree):
+
+| Switch | What it does | Result |
+|---|---|---|
+| `VITASHARP_VARYING_TRIM=1` (perf/uc-gpu-4) | vertex shaders write only the varyings the fragment program reads | GPU 30.8/30.6/30.9 ms vs base 29.9/30.4/30.9: no gain |
+| `VITASHARP_VERTEX_CACHE_SMALL=1` | vertex/index ranges below 16 KB cached in sub-allocated chunks | ~1.5 MB/frame fewer copies, Geometry unchanged (~2 ms): no gain |
+| `VITASHARP_REC_THREAD=1` | tiled renderings' vkCmd* calls replayed by a second thread | Record 8.6 → 5.6 ms on the worker, but the recorder thread itself costs ~12 ms of CPU and the worker drains it ~15 times a frame; frame mean 38.5 → 37.0 ms in one hot pair: within noise |
+| `VITASHARP_TEXSET_REUSE=1` | a stage with the same texture descriptors as an earlier one in the frame reuses its set | ~88% of stages reused, texture sets 6.1 → 5.3 ms: the per-unit resolution is not most of that phase |
+
+All of them are pixel-identical on the desktop dumps (UC, FIFA 13, Croixleur, God Wars; mali profile).
+
+**Next steps, ranked:**
+1. Profile inside `BuildTextureSet` and `Present`: with 88% of the sets reused, 5.3 ms remain in the texture-set
+   phase, so the cost is elsewhere in it (descriptor allocation/update for the misses, scene-break hoisting of region
+   copies triggered from texture resolution, NoteSampled bookkeeping). Present costs 3 ms of the worker.
+2. BeginScene's frame start (writeback conversion ~1.2–1.4 ms/frame on the CPU, retire, pool resets) can move to
+   another thread: the writeback conversion runs on retired data only.
+3. The recorder thread only pays if its own cost drops: call the driver through `VITASHARP_VK_DIRECT` function
+   pointers on it, and merge scene chains so it is drained less often; otherwise remove it.
+4. The game thread (~20 ms): 57% JIT code, ~22% HLE/core (sceKernelGetTLSAddr ~2,000 and sceKernelGetThreadId
+   ~1,700 calls per frame are candidates for inlining in the JIT).
