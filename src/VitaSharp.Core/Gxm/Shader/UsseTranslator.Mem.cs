@@ -188,7 +188,9 @@ public sealed partial class UsseTranslator
             int storeOff = isStore ? RepeatOffset(src2, r, RepeatMode.Slmsi) : 0;
             int s0off = isStore ? RepeatOffset(src0, r, RepeatMode.Slmsi) : 0;
             int s1off = isStore ? RepeatOffset(Operand.Make(3), r, RepeatMode.Slmsi) : 0;
+            _loadBase = true;
             var b0 = Load(src0, 1, s0off);
+            _loadBase = false;
             var b1 = Load(src1, 1, s1off);
             string addr = $"int({b1})";
             int regIndexBase = thread ? 0x1000000 : 0x10000;

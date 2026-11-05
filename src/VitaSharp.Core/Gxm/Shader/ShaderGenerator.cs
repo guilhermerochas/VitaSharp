@@ -198,7 +198,7 @@ public static class ShaderGenerator
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
     /// output must not be read from or written to persistent shader caches.
     /// </summary>
-    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive || UniformLoop;
+    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive || ProgramInput.StaticArraySizingOff || UniformLoop;
 
     /// <summary>VITASHARP_SHADER_UNIFORM_LOOP=1: register-resident uniforms are copied into SA by a loop (generator v19
     /// output, for A/B runs; bypasses the persistent caches like the debug overrides).</summary>
@@ -238,6 +238,9 @@ float packC10(vec3 c) {
     public const uint MappedFlag = 0x40000000;
 
     public static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(GxpProgram program) => UniformLayout(ProgramInput.From(program));
+    /// <summary>The layout with or without <see cref="ProgramInput.ScanLoads"/>-sized trailing arrays (GPU dumps of v20).</summary>
+    public static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(GxpProgram program, bool staticArraySizing,
+        uint arrayWords = ProgramInput.MaxUbArrayInFloat) => UniformLayout(ProgramInput.From(program, staticArraySizing, arrayWords));
 
     static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(ProgramInput input)
     {
