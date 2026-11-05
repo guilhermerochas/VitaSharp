@@ -154,7 +154,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         else _pad.PsPressed += OnPsPressed;
         _isSystem = system;
 
-        var root = new FrameLayout(this);
+        var root = _root = new FrameLayout(this);
         root.SetBackgroundColor(Color.Black);
         _view = new SurfaceView(this);
         _view.Holder?.AddCallback(this);
@@ -277,7 +277,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         base.OnWindowFocusChanged(hasFocus);
         if (hasFocus) EnterImmersive();
-        // a dialog (pause menu, IME text entry) took the key events: the key-up of a key held now would never come
+        // a dialog (IME text entry, the fatal message) took the key events: the key-up of a key held now would never come
         // back here, and the game would see it held after the dialog closes
         else _keyboard?.ReleaseAll();
     }
@@ -349,7 +349,9 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     public override bool DispatchKeyEvent(KeyEvent? e)
     {
-        if (e != null && e.Action is KeyEventActions.Down or KeyEventActions.Up && e.RepeatCount == 0
+        // the pause menu takes a controller's keys (focus, press, back) instead of the paused game
+        if (e != null && MenuVisible && AppServices.Gamepads.IsConnected(e.DeviceId) && MenuControllerKey(e)) return true;
+        if (e != null && !MenuVisible && e.Action is KeyEventActions.Down or KeyEventActions.Up && e.RepeatCount == 0
             && AppServices.Gamepads.OnKey(e.DeviceId, (int)e.KeyCode, e.Action == KeyEventActions.Down))
         {
             // the PS/Home button of a controller in a game without the shell: the pause menu, like the on-screen PS
@@ -370,6 +372,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     bool OnKeyboardKey(Keycode keyCode, KeyEvent? e, bool down)
     {
         if (_keyboard == null || e == null || (e.Source & InputSourceType.Keyboard) != InputSourceType.Keyboard) return false;
+        // the pause menu is open: arrows and Enter move and press its buttons (Android's focus), Escape goes back
+        if (MenuVisible) return false;
         // a controller's own keys (and their auto-repeats, which DispatchKeyEvent leaves to us) are not keyboard keys
         if (AppServices.Gamepads.IsConnected(e.DeviceId)) return false;
         var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
@@ -381,7 +385,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
-        if (e != null && (e.Source & InputSourceType.Joystick) == InputSourceType.Joystick && e.Action == MotionEventActions.Move
+        // the pause menu: sticks and hats are left to Android, which turns them into D-pad keys that move the focus
+        if (e != null && !MenuVisible && (e.Source & InputSourceType.Joystick) == InputSourceType.Joystick && e.Action == MotionEventActions.Move
             && AppServices.Gamepads.OnMotion(e.DeviceId, axis => e.GetAxisValue((Axis)axis)))
             return true;
         return base.OnGenericMotionEvent(e);
@@ -458,69 +463,6 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _toast.Visibility = ViewStates.Visible;
         _toast.PostDelayed(() => _toast.Visibility = ViewStates.Gone, 5000);
         _session?.PlayTrophySound();
-    }
-
-    void OnPsPressed() => RunOnUiThread(OpenMenu);
-
-    /// <summary>The pause menu (pausa.html, reduced): continue, rear touch, on-screen controls, leave.</summary>
-    void OpenMenu()
-    {
-        if (_menuOpen) return;
-        _menuOpen = true;
-        _session?.CaptureMenuThumbnail(); // the picture of a state saved from this menu (taken before the pause)
-        _session?.Pause();
-        string[] items =
-        [
-            "Continuar",
-            "Salvar estado",
-            "Carregar estado",
-            _pad.RearTouch ? "Toque traseiro: ligado" : "Toque traseiro: desligado",
-            _pad.Visible ? "Esconder controles na tela" : "Mostrar controles na tela",
-            .. (_sensors?.CanRecenter == true ? new[] { "Recentralizar movimento" } : []),
-            // "Gravar tudo" (every build): the session capture, docs/notes/session-capture.md
-            _session?.Capture.IsRecording == true ? "Parar gravação" : "Gravar tudo",
-            _session?.Capture.Armed == true ? "Pré-gravação: ligada" : "Pré-gravação: desligada",
-#if VITASHARP_DEVELOPER
-            .. (_session?.CaptureDir != null ? new[] { "Parar gravação (desenvolvedor)" } : new[] { "Gravar tempo", "Gravar conteúdo" }),
-#endif
-            "Sair do jogo",
-        ];
-        var title = _session != null ? $"{_session.Game.Title}" : "VitaSharp";
-        new AlertDialog.Builder(this)
-            .SetTitle(title)!
-            .SetItems(items, (_, a) =>
-            {
-                switch (a.Which)
-                {
-                    case var i when items[i] == "Salvar estado": _menuOpen = false; ShowStateSlots(save: true); return;
-                    case var i when items[i] == "Carregar estado": _menuOpen = false; ShowStateSlots(save: false); return;
-                    case var i when items[i].StartsWith("Toque traseiro"): _pad.RearTouch = !_pad.RearTouch; break;
-                    case var i when items[i].EndsWith("controles na tela"): _pad.Visible = !_pad.Visible; break;
-                    case var last when last == items.Length - 1: Leave(); return;
-                    case var i when items[i] == "Recentralizar movimento": _sensors?.Recenter(); break;
-                    case var i when items[i] == "Gravar tudo": _session?.Capture.Start("pause menu"); break;
-                    case var i when items[i] == "Parar gravação": _session?.Capture.Stop("pause menu"); break;
-                    case var i when items[i].StartsWith("Pré-gravação"):
-                        _session?.Capture.SetPreRoll(_session.Capture.Armed ? 0 : EmulationSession.PreRollSeconds);
-                        Toast.MakeText(this, _session?.Capture.Armed == true
-                            ? "Pré-gravação ligada: \"Gravar tudo\" inclui os últimos segundos antes de você apertar"
-                            : "Pré-gravação desligada", ToastLength.Short)?.Show();
-                        break;
-#if VITASHARP_DEVELOPER
-                    case var i when items[i] == "Gravar tempo": _session?.StartCapture("tempo"); break;
-                    case var i when items[i] == "Gravar conteúdo": _session?.StartCapture("conteudo"); break;
-                    case var i when items[i] == "Parar gravação (desenvolvedor)": _session?.StopCapture(); break;
-#endif
-                }
-                _controls?.Invalidate();
-            })!
-            .SetOnDismissListener(new DismissListener(() =>
-            {
-                _menuOpen = false;
-                if (!IsFinishing) _session?.Resume();
-                EnterImmersive();
-            }))!
-            .Show();
     }
 
     /// <summary>Leaves the game: the statistics are written first, since the screens re-read them as soon as this
