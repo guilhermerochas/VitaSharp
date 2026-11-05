@@ -201,6 +201,9 @@ public static class EnvVars
     /// =audit (combinable): samples draws and re-hashes their vertex uniform buffers at the scene's end, at the frame's
     /// flip and at the next flip, per vertex program (does the game write them after sceGxmEndScene?).</summary>
     public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
+    /// <summary>=all (A/B): a uniform buffer's copy stops at any bound buffer address after it, also at indices the
+    /// program does not read (default: only the program's own buffers bound the copy).</summary>
+    public const string UbClamp = "VITASHARP_UB_CLAMP";
     /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
     /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
     public const string TouchPeekUnread = "VITASHARP_TOUCH_PEEK_UNREAD";

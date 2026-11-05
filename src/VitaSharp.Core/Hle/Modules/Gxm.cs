@@ -1035,7 +1035,7 @@ public sealed partial class Gxm : HleModule
             if (slot.Mapped || slot.GuestIndex >= 14) continue;
             uint addr = buffers[slot.GuestIndex];
             if (addr == 0) continue;
-            int size = Math.Min(SlotCopySize(slot, addr, buffers), dataLen - slot.ByteOffset);
+            int size = Math.Min(SlotCopySize(info, slot, addr, buffers), dataLen - slot.ByteOffset);
             if (size > 0) list.Add((addr, size));
         }
         return list.ToArray();
@@ -1100,7 +1100,7 @@ public sealed partial class Gxm : HleModule
             long[] t = new long[4];
             foreach (var s in _ubAuditStats.Values) for (int i = 0; i < 4; i++) t[i] += s[i];
             var sb = new System.Text.StringBuilder();
-            sb.Append($"[gpu] uniform audit: {t[0]} draws sampled (1 in 4): vertex uniform buffers rewritten between the draw and its scene's end {t[1]}, between the scene's end and the frame's flip {t[2]}, between that flip and the next {t[3]}");
+            sb.Append($"[gpu] uniform audit: {t[0]} draws sampled (1 in 4): vertex uniform buffers rewritten between the draw and its scene's end {t[1]}, between the scene's end and the frame's flip {t[2]}, between that flip and the next {t[3]}; slot copies the old clamp (any bound index) would have cut short {UbClampSaved} ({UbClampSavedBytes / 1024} KB)");
             foreach (var (vs, s) in _ubAuditStats.OrderByDescending(kv => kv.Value[2]).Take(6))
                 if (s[1] + s[2] + s[3] > 0) sb.Append($"\n  vs {vs:X16}: {s[0]} sampled, {s[1]} / {s[2]} / {s[3]}");
             return sb.ToString();
@@ -1117,12 +1117,37 @@ public sealed partial class Gxm : HleModule
 
     /// <summary>Bytes of a uniform slot copied from <paramref name="addr"/>: the slot size, cut at the next bound buffer
     /// and, for large "unknown size" buffers, at the end of the allocation.</summary>
-    static int SlotCopySize(UniformBufferSlot slot, uint addr, uint[] buffers)
+    /// <summary>VITASHARP_UB_CLAMP=all (A/B): a slot's copy also stops at buffers bound at indices the program does not
+    /// read (left over from earlier draws), as before. Croixleur's SKIP symbol lost its colour in every other frame.</summary>
+    static readonly bool UbClampAll = Environment.GetEnvironmentVariable(EnvVars.UbClamp) == "all";
+    /// <summary>VITASHARP_UB_SCENE_END=audit: slot copies the old rule (any bound index) would have cut short, and the bytes.</summary>
+    static long UbClampSaved, UbClampSavedBytes;
+
+    static int SlotCopySize(GxmProgramInfo info, UniformBufferSlot slot, uint addr, uint[] buffers)
     {
         int size = slot.ByteSize;
-        // large "unknown size" buffers: don't run past the next buffer
-        foreach (var other in buffers)
-            if (other > addr && other - addr < size) size = (int)(other - addr);
+        // large "unknown size" buffers: don't run past the next buffer the program reads (an index it does not use keeps
+        // whatever an earlier draw bound there, which says nothing about this buffer's end)
+        if (UbClampAll)
+        {
+            foreach (var other in buffers)
+                if (other > addr && other - addr < size) size = (int)(other - addr);
+        }
+        else
+        {
+            foreach (var s in info.UniformSlots)
+            {
+                uint other = buffers[Math.Min(s.GuestIndex, 14)];
+                if (other > addr && other - addr < size) size = (int)(other - addr);
+            }
+            if (UbAudit)
+            {
+                int old = slot.ByteSize;
+                foreach (var other in buffers)
+                    if (other > addr && other - addr < old) old = (int)(other - addr);
+                if (old < size) { Interlocked.Increment(ref UbClampSaved); Interlocked.Add(ref UbClampSavedBytes, size - old); }
+            }
+        }
         // ...nor past the end of the allocation (unbounded buffers may sit at the end of a block)
         if (size >= ProgramInput.MaxUbInFloat * 4) size = (int)Math.Min((uint)size, BlockBytesLeft(addr));
         return size;
@@ -1147,7 +1172,7 @@ public sealed partial class Gxm : HleModule
             uint idx = Math.Min(slot.GuestIndex, 14);
             uint addr = buffers[idx];
             if (addr == 0) continue;
-            int size = SlotCopySize(slot, addr, buffers);
+            int size = SlotCopySize(info, slot, addr, buffers);
             FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
             copied[n++] = ((long)slot.ByteOffset << 32) | (uint)(slot.ByteOffset + size);
             UniformBytesCopied += size;
@@ -1165,7 +1190,7 @@ public sealed partial class Gxm : HleModule
             if (slot.Mapped || slot.GuestIndex >= 14) continue;
             uint addr = buffers[slot.GuestIndex];
             if (addr == 0) continue;
-            int size = Math.Min(SlotCopySize(slot, addr, buffers), data.Length - slot.ByteOffset);
+            int size = Math.Min(SlotCopySize(info, slot, addr, buffers), data.Length - slot.ByteOffset);
             if (size <= 0) continue;
             FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
             UniformBytesCopied += size;

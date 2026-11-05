@@ -522,6 +522,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `=check` conta os desenhos segurados cuja memória mudou na espera. Aqui, com o PC dividido entre agentes, o worker
   fica atrás do jogo: só 8192 desenhos foram segurados numa partida e nenhum teve a paleta reescrita, por isso as
   cunhas não reproduzem aqui; na máquina livre do usuário o worker anda junto com o jogo
+  Achados (05/11/2026, fix/bugs-games-4): o usuário ainda vê cunhas com a main 2f47304 (que tem o SceneGate), e o
+  dump novo dele (`PCSE00093_20261105_122101.vsgd`) não as tem. Hipótese testada: o jogo escreve a paleta DEPOIS do
+  `sceGxmEndScene`. Instrumentos novos: `VITASHARP_UB_SCENE_END=frame` (os gates das cenas só abrem no
+  `sceGxmDisplayQueueAddEntry` do quadro; experimento, desligado) e `=audit` (no lado do guest, independente do
+  worker: 1 em 4 desenhos tem os buffers de uniforms de vértice hasheados no desenho, no fim da cena, na troca e na
+  troca seguinte). Partidas aqui (`bugsB3_out/fifa_g_check`, `fifa_g_frame`, 760-820 mil amostras): o hash muda
+  entre o fim da cena e a troca em 11% (modo normal) a 17% (`=frame`) das amostras, 36-52% nos programas de pele
+  (47F553B335AE94C0, 6F43641D442F7C86, DCBB621AC8070CB0). Mas esses números NÃO provam escrita atrasada da paleta: o
+  bloco hasheado é o que a cópia lê, e uma paleta que termina em array é lida até 16 KB (até o próximo buffer), o que
+  cobre as paletas dos desenhos SEGUINTES do mesmo anel (100% das amostras desses programas "mudam" entre o desenho
+  e o fim da cena). O worker aqui fica sempre atrás do jogo, então nenhum modo mostra cunha (`specks.py` 0 de 1501
+  quadros nos dois). Achado ao lado (Croixleur, abaixo): o corte da cópia "no próximo buffer ligado" olhava também
+  índices que o programa não lê (endereços velhos de desenhos anteriores) e zerava o resto do bloco; numa paleta de
+  16 KB num anel isso zera ossos — o mesmo sintoma das cunhas. Corrigido junto com o Croixleur; o audit conta quantas
+  cópias o corte antigo encurtava: numa partida do FIFA
+  com a correção, 147.600 cortes evitados (contados em cada cálculo de tamanho, inclusive o do audit) e 200 MB a mais lidos (`bugsB3_out/fifa_clamp`; a
+  partida e a sombra seguem certas no t05). Próximo: o usuário jogar uma partida com a correção; se
+  ainda houver cunhas, gravar tudo (Ctrl+F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
@@ -562,6 +580,27 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   As chamadas da main (ctrl/touch peek, tempo) têm os mesmos argumentos nos quadros com e sem o símbolo. Próximo:
   achar o desenho do símbolo com `--trace-draws` em dois quadros seguidos e `--watch` na origem da cor/visibilidade.
   O trace `--trace-hle-frames=A:B:all` mostra os valores de retorno (linhas `->`).
+  Achados (05/11/2026, fix/bugs-games-4): o símbolo é o desenho 14 de cada quadro (textura 28x28 UBC3 0x608B1600, vs
+  7C9AC5F71551EBCC) e a ÚNICA diferença entre dois quadros seguidos (traces 2711-2715 do dump do usuário
+  `PCSG00537_20261104_200307.vsgd`, campos normalizados) é a cor nos uniforms de vértice: (1,1,1,1) num quadro e
+  (0,0,0,0) no outro. O jogo usa dois anéis de uniforms alternados por quadro (0x8D926000 / 0x8DAF6000; o desenho 14
+  lê `vub0=` 0x8D926570 / 0x8DAF6570, cor em +0x40) e a cor segue a paridade do anel: ímpar = 1, par = 0, em 2711-2715.
+  Hipótese A: o jogo só escreve a cor num dos anéis (dado velho no outro); hipótese B: a lógica alterna de propósito
+  (50% por cintilação a 60 Hz). Vídeo do Vita real (`fNZ7oTLZivM`, 60 fps, diálogo em 83-84 s, recorte do SKIP em
+  `bugsB3_croix/yt/d_skip.png`): o símbolo fica aceso nos 60 quadros, sem piscar (os quadros do vídeo vêm em pares
+  idênticos: 30 fps de origem). `--watch` na cor do anel par (8DAF65B0:10, quadros 2700-2740) não viu NENHUMA escrita
+  da CPU, e as cópias por `sceClibMemcpy` (HLE) não passavam pelo watch — corrigido (o watch agora vê cópias/fills
+  da HLE); repetir o watch nos dois anéis desde o quadro 2200 é o próximo passo (fila `bugsB3_queue1b`).
+  Corrigido (05/11/2026, fix/bugs-games-4): os endereços do dump do usuário não valem numa rodada local (o anel ímpar
+  aqui é 0x8DAF7570). Com `--trace-draws` local em 2691/2692 e `--watch` + trace HLE da main, a cor (1,1,1,1) é escrita
+  ANTES do `sceGxmDraw` nos dois anéis, mas a cópia do quadro par saía (0,0,0,0) mesmo com `VITASHARP_UB_LATE=0`. A
+  causa é o corte da cópia de um buffer de uniforms "no próximo buffer ligado" (`SlotCopySize`): ele olhava os 15
+  índices, inclusive os que o programa não lê e que guardam endereços de desenhos anteriores; num dos anéis um desses
+  endereços caía dentro dos 80 bytes do bloco e a cópia parava antes da cor (o resto fica zerado). Agora só os buffers
+  que o próprio programa lê limitam a cópia; `VITASHARP_UB_CLAMP=all` volta ao antigo. Prova (`skipsym.py`, recorte do
+  símbolo em 2700-2763): com a correção 63 de 63 quadros acesos (`bugsB3_out/croix_fix`), com `=all` 32 de 64
+  (`croix_clampall`), como antes (`croix_def`); `=frame` e `UB_LATE=0` não mudavam nada (`croix_frame`, `croix_late0`).
+  O audit conta 365 cópias que o corte antigo encurtava nessa rodada
   Sonic & All-Stars Racing Transformed: trava em 3 de 3 boots (quadros 23-25, main 9482b0f); com
   `--trace-hle-frames=18:40:all` (mais lento) passou do ponto. Na trava a `AchievementRegisterThread` já terminou,
   enquanto na rodada boa ela ainda fazia 51 `sceNpTrophyGetTrophyInfo` no quadro 22: comparar a ordem
@@ -646,6 +685,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `guestGpuWait` alto são a espera das notificações atrás da apresentação do host. Ideia genérica a decidir com os
   agentes de desempenho (mexe no ritmo de todos os jogos): no modo IMMEDIATE, no máximo uma troca de buffer por vblank
   no `SetFrameBuf` (o painel não mostra mais que isso), em vez de depender da apresentação do host
+  Implementado atrás de chave (05/11/2026, fix/bugs-games-4): `VITASHARP_DISPLAY_IMMEDIATE_PACE=1` faz um
+  `sceDisplaySetFrameBuf` IMMEDIATE esperar o próximo vblank quando já houve uma troca neste (contador "IMMEDIATE
+  flips held" no resumo da sessão). Medido sem janela (`deergod` 1800 quadros, `bugsB3_out/deer_pace` x
+  `deer_base`): sem a chave 162-170 fps; com a chave 60,0 fps cravados (1805 de 1855 trocas seguradas; as quedas no
+  fim da rodada foram outros emuladores entrando na CPU). Falta o teste que importa, na janela (engasgos com
+  `guestGpuWait` alto), que precisa da tela do usuário: rodar o jogo com a chave e comparar o F10/FrameLedger com o
+  de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
+  no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
+  Desligada por padrão até o usuário confirmar na janela.
 
 - [ ] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
@@ -660,6 +708,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   marcar; a `SumoPlatform` faz `sceKernelDelayThread(1 s)` em loop no mesmo lwmutex e a `AchievementIssueThread`
   também gira. Próximo: `--watch` na variável que a `MainThread` testa no loop (perto de 0x81118AFD) para ver quem
   a escreveria, e comparar uma rodada que passa com uma que para
+  Corrigido (05/11/2026, fix/bugs-games-4): não era uma variável. O loop em 0x81118608-0x81118AEE é a leitura do
+  painel de toque: `while (sceTouchPeek(porta, &d, 1) > 0) { se o timestamp mudou, sceTouchRead(porta, buf, 16);
+  processa; }`, e só sai quando o Peek devolve 0 — o nosso devolvia sempre 1 (o Vita3K também, por isso trava lá).
+  Agora o Peek devolve 0 quando não há amostra mais nova que o último `sceTouchRead` da porta (o buffer continua
+  preenchido com a amostra mais nova; portas que o jogo nunca lê seguem como antes). `VITASHARP_TOUCH_PEEK_UNREAD=0`
+  volta ao antigo. Prova: 3 de 3 boots passam do quadro 25 (logos SEGA/Sumo/CRIWARE e a tela legal; 400 quadros a
+  30 fps, `scratchpad/bugsB3_out/sonic_fix1..3`), e com a chave desligada o mesmo build trava no quadro 23
+  (`bugsB3_out/sonic_ab0`); na rodada boa de antes a thread nem entrava nesse loop (ordem das threads). O cenário
+  `sasrt` inteiro (2400 quadros) agora passa pelos logos, o filme de abertura, o título "PRESS START", o aviso de
+  autosave e a criação do save (`bugsB3_out/sonic_full/sheet.png`); falta o usuário jogar uma corrida
 
 - [x] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
   principalmente do Messi, aparecem erradas (relato do usuário, 04/11/2026; captura F10
@@ -682,15 +740,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Conferido com Sonic Mania e `--input=key@f200:F11,...` (F11 agora é tecla de host nos scripts): aberto em janela e
   com `--fullscreen`, quatro alternâncias cada, o log mostra "monitor attached: False" ao sair e a swapchain volta a
   960x544 a 60 fps
-  Implementado atrás de chave (05/11/2026, fix/bugs-games-4): `VITASHARP_DISPLAY_IMMEDIATE_PACE=1` faz um
-  `sceDisplaySetFrameBuf` IMMEDIATE esperar o próximo vblank quando já houve uma troca neste (contador "IMMEDIATE
-  flips held" no resumo da sessão). Medido sem janela (`deergod` 1800 quadros, `bugsB3_out/deer_pace` x
-  `deer_base`): sem a chave 162-170 fps; com a chave 60,0 fps cravados (1805 de 1855 trocas seguradas; as quedas no
-  fim da rodada foram outros emuladores entrando na CPU). Falta o teste que importa, na janela (engasgos com
-  `guestGpuWait` alto), que precisa da tela do usuário: rodar o jogo com a chave e comparar o F10/FrameLedger com o
-  de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
-  no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
-  Desligada por padrão até o usuário confirmar na janela.
   Confirmado pelo usuário (05/11/2026)
 - [x] MotorStorm RC (PCSA00034): trava na tela de termos (relato do usuário, 04/11/2026, main 5d4b998, log
   `logs61104_201525_PCSA00034.log`). Roda a ~40 fps até o quadro 756 e então nenhum quadro novo (watchdog STALL).
@@ -703,16 +752,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   atualização, com os callbacks fora da trava) e confirmado no jogo pelo usuário
 - [ ] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
   56354517, 5EF67445, 6ACA1D57, 71A78083, 79F9DB75, AA0340C3, F9A1DE92, importadas pelo `UnityPlayer_536/537_Release`;
-  Corrigido (05/11/2026, fix/bugs-games-4): não era uma variável. O loop em 0x81118608-0x81118AEE é a leitura do
-  painel de toque: `while (sceTouchPeek(porta, &d, 1) > 0) { se o timestamp mudou, sceTouchRead(porta, buf, 16);
-  processa; }`, e só sai quando o Peek devolve 0 — o nosso devolvia sempre 1 (o Vita3K também, por isso trava lá).
-  Agora o Peek devolve 0 quando não há amostra mais nova que o último `sceTouchRead` da porta (o buffer continua
-  preenchido com a amostra mais nova; portas que o jogo nunca lê seguem como antes). `VITASHARP_TOUCH_PEEK_UNREAD=0`
-  volta ao antigo. Prova: 3 de 3 boots passam do quadro 25 (logos SEGA/Sumo/CRIWARE e a tela legal; 400 quadros a
-  30 fps, `scratchpad/bugsB3_out/sonic_fix1..3`), e com a chave desligada o mesmo build trava no quadro 23
-  (`bugsB3_out/sonic_ab0`); na rodada boa de antes a thread nem entrava nesse loop (ordem das threads). O cenário
-  `sasrt` inteiro (2400 quadros) agora passa pelos logos, o filme de abertura, o título "PRESS START", o aviso de
-  autosave e a criação do save (`bugsB3_out/sonic_full/sheet.png`); falta o usuário jogar uma corrida
   Akiba's Beat e God Wars, 04/11/2026, pedido do usuário). O aviso sai no boot (`Emulator.cs` ~522), antes de o jogo
   carregar `app0:/Media/Modules/Il2CppAssemblies.suprx` (~0,6 s depois); o `ModuleLoader.RegisterExports` aplica as
   relocações pendentes quando o módulo exporta a variável. Confirmar que o Il2CppAssemblies exporta as 10 e que as
@@ -839,6 +878,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
+  Achados (05/11/2026, fix/bugs-games-4, `shadertest <app> --warnings` lista os avisos por programa): os 40 são as 10
+  variantes (m/o/msaa/...) de 4 materiais, `HemiRimBump`, `HemiRimBumpB`, `HemiRimBumpHDR` e `toon` (iluminação de
+  borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se
+  multiplica a borda, o efeito de rim light some) e comparar com um vídeo do Vita real
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
@@ -871,7 +914,3 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   são o gargalo (AAC 5 ms, H.264 12,8 ms por chamada, MediaExtractor 0,4 ms); falta ver as threads do player do jogo
   (simpleperf). Comparar também os dumps de áudio de F1 (menu e corrida) e God of War com o PC (`vitasharp-perf
   audio-check`): 245 e 157 estalos no celular
-  Achados (05/11/2026, fix/bugs-games-4, `shadertest <app> --warnings` lista os avisos por programa): os 40 são as 10
-  variantes (m/o/msaa/...) de 4 materiais, `HemiRimBump`, `HemiRimBumpB`, `HemiRimBumpHDR` e `toon` (iluminação de
-  borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se
-  multiplica a borda, o efeito de rim light some) e comparar com um vídeo do Vita real
