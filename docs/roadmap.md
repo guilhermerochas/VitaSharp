@@ -1390,7 +1390,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado gravado). `replay-gpu --compare` contra a main: os 18 dumps do usuário idênticos; no da gravação só mudam
   5873/5875 (claros) e um canto de sombra no 5893. Jogo rodando (`rerun` da gravação a partir do estado, cópia em
   `bugsC15_jak/cap_*`): main 25 quadros seguidos alternando (presents 154-178), com a correção 5 (169-173, logo depois
-  de carregar o estado) e depois estável. Ainda aberto: esses 5 quadros iniciais.
+  de carregar o estado) e depois estável. **Os 5 quadros iniciais (fix/bugs-games-16)**: corrida, não o estado: logo
+  depois de carregar, o worker da GPU fica vários quadros atrás e a CPU já reescreveu (dados de quadros seguintes)
+  páginas da faixa gravada pela GPU antes de o worker chegar ao desenho do volume; como a conferência via "escrito
+  desde a gravação" sem limite, essas escritas futuras derrubavam a faixa (7-9 quadros alternando por rodada, número
+  variando; VITASHARP_DISPLAY_QUEUE_STRICT=1 só diminuía). Corrigido: quando há programa que grava na memória, o guest
+  faz uma varredura das páginas sujas ao fechar cada cena (`SceneGate.SweepEpoch`) e o worker só conta as escritas da
+  CPU até o fim da cena do desenho que lê (`DirtyPages.WrittenBetween`); a faixa gravada leva o carimbo do fim da cena
+  que gravou. Replay não muda (os comandos do dump não têm cena). `rerun` da gravação: antes 9 e 7 quadros alternando
+  (`scratchpad/bugsC16_jak/rr1`, `rr2`), com a correção 0 e 0 (`rf1`, `rf2`; só um achado de 1 célula no 209, o mesmo
+  tipo do 220/237 de antes), 20 fps iguais.
   Achado à parte (gravação 18:34, cutscene, preto no present 2155, prioridade menor): não é o espelho (nenhum
   programa grava na memória nessa cena); os desenhos do céu e do cenário saem pretos porque a textura 32x32 em
   0x630F2B40 (amostrada pelo céu, vs 79BC61BE4C9F8178) foi lida já reescrita pela CPU ((255,0,0) contra (255,3,33)

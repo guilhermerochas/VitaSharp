@@ -50,6 +50,16 @@ public sealed class GpuQueue : IDisposable
 
     /// <summary>Experiment hook (VITASHARP_UB_LATE): runs on the worker before a draw executes.</summary>
     public static Action<DrawCommand>? LateUniformCopy;
+    /// <summary>
+    /// Set by the backend once a program stored to memory (it keeps such ranges in its mirror): from then on the guest
+    /// takes a dirty-page sweep when it ends a scene (<see cref="SceneGate.SweepEpoch"/>), so the worker can tell the
+    /// guest writes made before a draw's scene ended from the ones made after, while it is still behind.
+    /// </summary>
+    public static volatile bool SceneEndSweeps;
+    /// <summary>GPU worker: the scene-end sweep of the draw being executed (<see cref="SceneGate.ReadBound"/>),
+    /// <see cref="uint.MaxValue"/> for other commands or when unknown.</summary>
+    public static uint ReadBound { get => _readBoundPlus1 - 1; set => _readBoundPlus1 = value + 1; }
+    [ThreadStatic] static uint _readBoundPlus1; // 0 (a thread's default): no bound
 
     /// <summary>Pulsed whenever a notification value is written (guest waiters re-check).</summary>
     public static readonly object NotificationSync = new();
@@ -454,10 +464,12 @@ public sealed class GpuQueue : IDisposable
             try { pre.Action(); }
             catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
         }
+        ReadBound = uint.MaxValue;
         if (cmd is DrawCommand lateDraw)
         {
             if (lateDraw.Gate is { Ended: false } gate) WaitSceneGate(lateDraw, gate);
             LateUniformCopy?.Invoke(lateDraw);
+            if (lateDraw.Scene is { } scene) ReadBound = scene.ReadBound;
         }
         var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
         dump?.BeforeExecute(cmd);

@@ -84,11 +84,16 @@ public static unsafe class DirtyPages
     /// </summary>
     public static uint Sweep()
     {
-        uint e = ++_epoch;
-        if (!Enabled || GuestMemory.Instance is not { } mem) return e;
-        foreach (var space in mem.Spaces) SweepTable(space.Base - TableBytes, e);
-        return e;
+        // the GPU worker sweeps, and a submitting guest thread at a scene's end (SceneGate.SweepEpoch)
+        lock (_sweepLock)
+        {
+            uint e = ++_epoch;
+            if (!Enabled || GuestMemory.Instance is not { } mem) return e;
+            foreach (var space in mem.Spaces) SweepTable(space.Base - TableBytes, e);
+            return e;
+        }
     }
+    static readonly object _sweepLock = new();
 
     static void SweepTable(byte* t, uint e)
     {
@@ -124,6 +129,21 @@ public static unsafe class DirtyPages
     /// True when a page of [addr, addr + length) may have been written after the sweep <paramref name="stamp"/> was
     /// taken from (see the class remarks for the one-sweep grace). Always true when tracking is off.
     /// </summary>
+    /// <summary>
+    /// Like <see cref="WrittenSince"/>, but only the writes swept no later than sweep <paramref name="upto"/> count:
+    /// the writes the guest made before a point it marked with a sweep (a scene's end), not the ones it made after
+    /// while the GPU worker is still behind. <see cref="uint.MaxValue"/>: no bound (<see cref="WrittenSince"/>).
+    /// </summary>
+    public static bool WrittenBetween(uint addr, uint length, uint stamp, uint upto)
+    {
+        if (upto == uint.MaxValue) return WrittenSince(addr, length, stamp);
+        if (!Enabled || stamp == 0) return true;
+        if (length == 0 || upto < stamp) return false;
+        ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
+        int first = (int)(addr >> PageShift), count = (int)(last >> PageShift) - first + 1;
+        return _version.AsSpan(first, count).IndexOfAnyInRange(stamp, upto) >= 0;
+    }
+
     public static bool WrittenSince(uint addr, uint length, uint stamp)
     {
         if (!Enabled) return true;

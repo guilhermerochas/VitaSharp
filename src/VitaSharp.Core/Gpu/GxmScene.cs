@@ -184,6 +184,20 @@ public sealed class SceneGate
     /// frame's display-queue entry (<see cref="End"/>), the latest the hardware would have executed the scene.</summary>
     public bool SceneEnded => _sceneEnded || _ended;
 
+    /// <summary>With <see cref="GpuQueue.SceneEndSweeps"/>: the dirty-page sweep taken when the guest ended (or flushed)
+    /// the scene (0: none). The guest's memory writes up to there are the ones the scene's draws may see.</summary>
+    public volatile uint SweepEpoch;
+
+    /// <summary>Takes the scene-end sweep (<see cref="SweepEpoch"/>) when the renderer asked for it. Before the scene
+    /// is marked ended, so the worker sees the epoch with the end.</summary>
+    public void TakeSweep()
+    {
+        if (GpuQueue.SceneEndSweeps && SweepEpoch == 0) SweepEpoch = Memory.DirtyPages.Sweep();
+    }
+
+    /// <summary>The scene-end sweep once the scene ended, else <see cref="uint.MaxValue"/> (no bound yet).</summary>
+    public uint ReadBound => SceneEnded && SweepEpoch is var e and not 0 ? e : uint.MaxValue;
+
     public void End()
     {
         if (_ended) return;
@@ -245,6 +259,8 @@ public sealed class DrawCommand : GpuCommand
     /// <summary>With <see cref="UniformsLate"/>: the scene the draw belongs to. The worker copies the bound buffers only
     /// once the guest ended (or flushed) that scene, the earliest point the hardware reads them.</summary>
     public SceneGate? Gate;
+    /// <summary>The scene the draw belongs to (its end bounds the guest writes the draw sees: <see cref="SceneGate.ReadBound"/>).</summary>
+    public SceneGate? Scene;
 
     /// <summary>Clears per-draw state before the command is reused.</summary>
     public void Reset()
@@ -252,6 +268,7 @@ public sealed class DrawCommand : GpuCommand
         VertexUniformsLength = FragmentUniformsLength = 0;
         UniformsLate = false;
         Gate = null;
+        Scene = null;
         VisAddress = 0;
         VisIncrement = false;
         InstanceCount = 1;
