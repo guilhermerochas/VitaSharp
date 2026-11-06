@@ -691,7 +691,12 @@ public sealed class Emulator : IDisposable
                 if (Kernel.Modules.Values.Any(x => string.Equals(x.Path, provider.VitaPath, StringComparison.OrdinalIgnoreCase))) continue;
                 // a library VitaSharp emulates in HLE (even partly: NP, AppUtil, Http...) stays on HLE, so every
                 // process sees the same emulated services; only libraries the HLE knows nothing of come from the firmware
-                if (Hle.ImplementsLibrary(lib) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                // Except for a firmware module that uses only functions of such a library the HLE does not have (the
+                // library's internals): liblocation_internal / liblocation_extension call nothing of SceLibLocation
+                // but its internal context functions, so near (NPXS10000) gets the real liblocation (an IPC client of
+                // the shell's location provider) instead of HLE stubs that returned NULL and stopped its first page.
+                bool firmwareNeedsInternals = m.Path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) && nids.Length > 0 && nids.All(n => !Hle.Implements(n));
+                if ((Hle.ImplementsLibrary(lib) && !firmwareNeedsInternals) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;
