@@ -48,6 +48,7 @@ public partial class NoPersonalPathsTests
                 string rel = Path.GetRelativePath(root!, f);
                 string sep = Path.DirectorySeparatorChar.ToString();
                 if (!exts.Contains(Path.GetExtension(f)) || rel.Contains(sep + "bin" + sep) || rel.Contains(sep + "obj" + sep)
+                    || rel.Contains(sep + "obj-dev" + sep) // the developer APK's intermediates (VitaSharp.Android, git-ignored)
                     || f.EndsWith(nameof(NoPersonalPathsTests) + ".cs"))
                 {
                     continue;
