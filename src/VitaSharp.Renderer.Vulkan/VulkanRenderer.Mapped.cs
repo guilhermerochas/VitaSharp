@@ -96,6 +96,9 @@ public sealed unsafe partial class VulkanRenderer
     /// frame after next while the GPU worker is still on this one; testing that shared page dropped the range, the
     /// volume was drawn from the stale guest copy and the unbalanced stencil darkened everything below the horizon
     /// for a frame. A CPU rewrite of the stream itself (memory reused) touches its inner pages and still drops it.
+    /// Only the pages the CPU wrote leave a range, not the whole range: the game double-buffers its volumes in two
+    /// windows next to each other (the stored ranges of two frames merge into one), and a CPU write in the window of the
+    /// other frame dropped the volume this frame had just extruded, so every other frame was dark for seconds.
     /// </summary>
     void ExpireGpuWritten(uint start, uint end, bool innerPages = false)
     {
@@ -111,8 +114,19 @@ public sealed unsafe partial class VulkanRenderer
             if (innerPages) { os = (os + page - 1 & ~(page - 1)) + page; oe &= ~(page - 1); }
             if (oe > os && DirtyPages.WrittenSince(os, oe - os, stamp))
             {
-                if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: back to guest memory (before draw id={NextDrawId})");
+                if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: its written pages go back to guest memory (before draw id={NextDrawId})");
                 _gpuWritten.RemoveAt(i);
+                // only the pages the CPU wrote: the rest of the range keeps what the GPU stored there
+                uint keep = s;
+                for (uint p = os & ~(page - 1); p < oe; p += page)
+                {
+                    uint ps = Math.Max(p, os), pe = Math.Min(p + page, oe);
+                    if (!DirtyPages.WrittenSince(ps, pe - ps, stamp)) continue;
+                    if (_diagActive != null) TraceLine($"[mirror]   CPU-written 0x{ps:X8}-0x{pe:X8}");
+                    if (ps > keep) _gpuWritten[keep] = (ps, stamp);
+                    keep = pe;
+                }
+                if (e > keep) _gpuWritten[keep] = (e, stamp);
             }
         }
     }
@@ -121,6 +135,11 @@ public sealed unsafe partial class VulkanRenderer
     void NoteGpuWritten(uint start, uint end)
     {
         if (_gpuWritten.Count >= 4096) _gpuWritten.Clear(); // runaway bookkeeping: back to guest copies
+        // the merged range gets a new stamp: the CPU writes since the older ranges were stored count first
+        uint lo = start, hi = end;
+        foreach (var (s, (e, _)) in _gpuWritten)
+            if (e >= start && s <= end) { lo = Math.Min(lo, s); hi = Math.Max(hi, e); }
+        if (lo < start || hi > end) ExpireGpuWritten(lo, hi);
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
