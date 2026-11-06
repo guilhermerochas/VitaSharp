@@ -277,7 +277,7 @@ public static class Runner
             renderer = new VulkanRenderer(rendererOptions);
             renderer.AnomalyDetected += diag.OnAnomaly;
             emu.Gpu.Backend = renderer;
-            emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
+            emu.LoadTitle(appPath, BootSelf(options));
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
@@ -398,6 +398,25 @@ public static class Runner
         };
     }
 
+    /// <summary>The executable to boot: --self, else the one a --load-state state was saved in (a program a LoadExec
+    /// started, booted directly: Jak1.self of the Jak and Daxter Collection), else eboot.bin.</summary>
+    static string BootSelf(string[] options)
+    {
+        if (Opt(options, "--self") is { } self) return self;
+        if (Opt(options, "--load-state") is { } ls)
+        {
+            int at = ls.LastIndexOf('@');
+            if (at > 1 && long.TryParse(ls[(at + 1)..].TrimStart('f'), out _)) ls = ls[..at];
+            if (VitaSharp.Core.SaveState.SaveStates.ProgramOf(ls) is { } p && p.StartsWith("app0:", StringComparison.OrdinalIgnoreCase))
+            {
+                string exe = p[5..].TrimStart('/');
+                if (!exe.Equals("eboot.bin", StringComparison.OrdinalIgnoreCase)) Log.Info($"--load-state: the state was saved in {p}: booting it");
+                return exe;
+            }
+        }
+        return "eboot.bin";
+    }
+
     /// <summary>A renderer made after a LoadExec or a state load keeps counting the guest's presents (frame_N.png,
     /// --dump-from, --trace-draws and --gpu-dump-at use the run's frame numbers, not ones that restart at 0).</summary>
     static VulkanRenderer NewRenderer(VulkanRendererOptions ro)
@@ -484,7 +503,7 @@ public static class Runner
         var playback = SessionCaptureControl.Playback.Install(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, options);
         if (playback != null && emu.Gpu.Backend == null) emu.Gpu.Backend = NewHeadlessRenderer(ro, diag); // the re-run records its frames
         var wall = Stopwatch.StartNew();
-        emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
+        emu.LoadTitle(appPath, BootSelf(options));
         emu.Start();
         if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
         var hostKeyScript = emu.Host.Input is ScriptedInput { HasHostKeySteps: true } ps ? ps : null;

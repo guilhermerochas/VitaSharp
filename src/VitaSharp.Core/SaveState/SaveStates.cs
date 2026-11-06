@@ -266,6 +266,74 @@ public static class SaveStates
     }
 
     /// <summary>
+    /// The executable the state was saved in: its main module ("app0:Jak1.self" after the Jak and Daxter Collection's
+    /// LoadExec), the first module of its kernel object table (the program loads it before anything else). Read from
+    /// the sections before the memory, so it is quick. Null when the file cannot be read.
+    /// </summary>
+    public static string? ProgramOf(string path)
+    {
+        try
+        {
+            using var file = File.OpenRead(path);
+            using var reader = new SaveStateReader(file);
+            while (reader.Next(out var name, out _))
+            {
+                if (name != ObjectsSection) continue;
+                var r = new SnapshotReader(reader.ReadAll());
+                r.ReadInt32();
+                int n = r.ReadInt32();
+                (int Uid, string Path)? first = null;
+                for (int i = 0; i < n; i++)
+                {
+                    string kind = r.ReadStringNotNull();
+                    int uid = r.ReadInt32();
+                    r.ReadStringNotNull();
+                    r.ReadInt32(); r.ReadInt32();
+                    var b = r.ReadBlock();
+                    if (kind == KernelSnapshot.Module && (first == null || uid < first.Value.Uid)) first = (uid, b.ReadStringNotNull());
+                }
+                return first?.Path;
+            }
+        }
+        catch (Exception e) when (e is SnapshotException or IOException) { }
+        return null;
+    }
+
+    /// <summary>
+    /// When the state in <paramref name="path"/> was saved in another executable of the running game than the one
+    /// running now (the program a LoadExec started: Jak 1 of the Jak and Daxter Collection, saved and then loaded after
+    /// the game was opened again, which boots the collection's menu), performs that LoadExec first and waits until the
+    /// new program has presented <paramref name="frames"/> frames (its modules and service threads exist, as for a
+    /// load at start). Returns false when nothing had to be done; throws <see cref="SnapshotException"/> when the
+    /// program did not come up in time.
+    /// </summary>
+    public static bool SwitchProgramFor(Emulator emu, string path, Action<string>? status = null, int frames = 120, int timeoutMs = 60_000)
+    {
+        if (ProgramOf(path) is not { } program || emu.MainModule == null
+            || string.Equals(program, emu.MainModule.Path, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!program.StartsWith("app0:", StringComparison.OrdinalIgnoreCase))
+            throw new SnapshotException($"the state was saved in {program}, which cannot be started here");
+        CheckSystem(emu);
+        if (SaveStateFile.Incompatibility(SaveStateFile.ReadHeader(path), emu.TitleId) is { } why) throw new SaveStateIncompatibleException(why);
+        Log.Info($"Load state: the state was saved in {program}, {emu.MainModule.Path} is running: LoadExec {program} first");
+        status?.Invoke($"Abrindo {program[5..].TrimStart('/')} para carregar o estado...");
+        emu.RequestExec(program, []);
+        var until = Environment.TickCount64 + timeoutMs;
+        while (emu.ExecRequest != null || emu.Execing || !emu.Running || emu.MainModule == null)
+        {
+            if (Environment.TickCount64 > until) throw new SnapshotException($"{program} did not start in time");
+            Thread.Sleep(10);
+        }
+        long start = Hle.Modules.Display.FramesPresented;
+        while (Hle.Modules.Display.FramesPresented < start + frames)
+        {
+            if (Environment.TickCount64 > until) throw new SnapshotException($"{program} did not present {frames} frames in time");
+            Thread.Sleep(10);
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Loads the state in <paramref name="path"/> into the running game. Every guest thread is stopped and replaced by
     /// the saved ones; <paramref name="backendFactory"/> (when given) makes the GPU backend that replaces the current
     /// one, whose caches belong to the old state. Incompatible states are refused before anything changes
