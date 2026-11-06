@@ -304,6 +304,14 @@ public sealed partial class AppMgr : HleModule
     [Hle("_sceAppMgrIsCameraActive")]
     int sceAppMgrIsCameraActive() => 0;
 
+    /// <summary>(void) -> bool: the unit runs in development mode (a QA/test kit). The callers (NPXS10083/10084,
+    /// libcdlg, np_message) branch on non-zero; a retail unit answers 0, like vshSblSsIsDevelopmentMode.</summary>
+    [Hle] int sceAppMgrIsDevelopmentMode() => 0;
+
+    /// <summary>(void) -> bool: a "game budget" application is present. Callers
+    /// (NPXS10003 and other system apps) test non-zero; none ever runs here.</summary>
+    [Hle] int sceAppMgrIsGameBudgetAppPresent() => 0;
+
     [Hle] int sceAppMgrPhotoMount(uint param) => AppUtil.MountPhoto();
     [Hle] int sceAppMgrPhotoUmount() => AppUtil.UmountPhoto() == 0 ? 0 : ERR_NOT_FOUND;
 

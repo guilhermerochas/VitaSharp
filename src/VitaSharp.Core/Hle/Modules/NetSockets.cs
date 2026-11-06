@@ -54,6 +54,8 @@ public sealed partial class Net
 
     readonly object _netLock = new();
     bool _netInited;
+    /// <summary>sceNetInit was called (and not sceNetTerm).</summary>
+    internal bool Initialized { get { lock (_netLock) return _netInited; } }
     uint _errnoLoc;
     int _nextSock = 1, _nextEpoll = 1, _nextResolver = 1, _nextDump = 1;
     readonly Dictionary<int, NetSocket> _sockets = new();

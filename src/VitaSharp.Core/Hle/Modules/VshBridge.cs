@@ -33,6 +33,10 @@ public sealed partial class VshBridge : HleModule
     /// </summary>
     [Hle] int vshKernelCheckModelCapability(int capability) => capability is 2 or 7 or 10 ? 1 : 0;
 
+    /// <summary>(int capability): the same sysroot capability word through SceSysmem for user modules (the PS Vita TV
+    /// teleport client asks for 10 and fails with 0x8010840A unless the answer is 1).</summary>
+    [Hle] int sceKernelCheckModelCapability(int capability) => vshKernelCheckModelCapability(capability);
+
     /// <summary>(int event): the shell tells SceSysroot it is up (event 0, vitasdk vshbridge.h); nothing waits on it here.</summary>
     [Hle] int vshKernelSendSysEvent(int ev) => 0;
 
@@ -52,6 +56,10 @@ public sealed partial class VshBridge : HleModule
     // ---- QA / DRM / syscon flags of a retail unit
     /// <summary>Retail units keep no core dumps (no QA flag); the shell then skips its core-file housekeeping.</summary>
     [Hle] int vshSblQafMgrIsAllowKeepCoreFile() => 0;
+    /// <summary>The "near" (location sharing) test servers are a QA flag: off (NPXS10000 and near_profile ask).</summary>
+    [Hle] int vshSblQafMgrIsAllowNearTest() => 0;
+    /// <summary>Changing the liblocation model is a QA flag: off (the shell skips its location debug settings).</summary>
+    [Hle] int vshSblQafMgrIsAllowLiblocationChangeModel() => 0;
     /// <summary>Account binding is strict on a retail unit (the shell compares with 1).</summary>
     [Hle] int vshNpDrmIsLooseAccountBind() => 0;
     /// <summary>No memory-card emulation hardware (a PCH-1000 has the physical card slot).</summary>
@@ -83,6 +91,14 @@ public sealed partial class VshBridge : HleModule
     // ---- QA flags (SceSblQafMgr): none set on a retail unit
     [Hle] int sceSblQafMgrIsAllowRemoteSysmoduleLoad() => 0;
     [Hle] int sceSblQafMgrIsAllowNpTest() => 0;
+    /// <summary>np_common compares it with 1 to use the NP full-test environment: off on a retail unit.</summary>
+    [Hle] int sceSblQafMgrIsAllowNpFullTest() => 0;
+    /// <summary>The settings app shows its debug menus (all, limited or minimum) only with these QA flags: off.</summary>
+    [Hle] int sceSblQafMgrIsAllowAllDebugMenuDisplay() => 0;
+    [Hle] int sceSblQafMgrIsAllowLimitedDebugMenuDisplay() => 0;
+    [Hle] int sceSblQafMgrIsAllowMinimumDebugMenuDisplay() => 0;
+    /// <summary>Installing a non-QA (unsigned/internal) update file is a QA flag: off.</summary>
+    [Hle] int sceSblQafMgrIsAllowNonQAPup() => 0;
     [Hle] int sceSblQafMgrIsAllowScreenShotAlways() => 0;
 
     /// <summary>(int *mode): the product mode of the security processor; 0 = production.</summary>
