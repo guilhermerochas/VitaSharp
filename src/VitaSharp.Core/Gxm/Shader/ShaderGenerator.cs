@@ -134,7 +134,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 20;
+    public const int GeneratorVersion = 21;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -165,14 +165,16 @@ public static class ShaderGenerator
     /// <summary>What a fragment program reads from global register G16 (the primitive's facing, see UsseTranslator.Core).</summary>
     public enum FaceRegisterMode { Front, Back, Zero }
 
-    /// <summary>Debug (VITASHARP_G16=front|back, default zero as before): the value of G16. Zero Time Dilemma's two-sided
-    /// lighting points at a front-facing flag (front), not yet checked against hardware (docs/roadmap.md). It changes the
-    /// generated GLSL without being part of the shader cache key: use it with a scratch shader cache.</summary>
+    /// <summary>The value of G16: non-zero on front faces (default). Zero Time Dilemma's two-sided lighting negates the
+    /// normal when it is zero; with front faces set the characters' shading matches a real Vita (the cell scene of the
+    /// opening, docs/roadmap.md), with 0 (as before) every lit face was shaded as a back face, flat and bright.
+    /// Debug: VITASHARP_G16=zero|back. It changes the generated GLSL without being part of the shader cache key: use the
+    /// switch with a scratch shader cache.</summary>
     public static readonly FaceRegisterMode FaceRegister = Environment.GetEnvironmentVariable(EnvVars.G16) switch
     {
-        "front" => FaceRegisterMode.Front,
+        "zero" => FaceRegisterMode.Zero,
         "back" => FaceRegisterMode.Back,
-        _ => FaceRegisterMode.Zero,
+        _ => FaceRegisterMode.Front,
     };
 
     /// <summary>How the GXM far plane (z &lt;= w after the depth transform) is clipped; GXM does not clip at the near plane.</summary>

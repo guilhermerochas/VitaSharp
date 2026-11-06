@@ -1495,7 +1495,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   valor anterior, se > 0) devolvia posição 0 nesses ticks. Agora o contador soma o que cada tick entrega, como no
   módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
-- [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
+- [x] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
   Achados (05/11/2026, fix/bugs-games-4, `shadertest <app> --warnings` lista os avisos por programa): os 40 são as 10
   variantes (m/o/msaa/...) de 4 materiais, `HemiRimBump`, `HemiRimBumpB`, `HemiRimBumpHDR` e `toon` (iluminação de
   borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se
@@ -1516,6 +1516,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Agente C dia 9: não feito (o dia foi para o Injustice, o áudio do Jak e o crash de load state). Cenário pronto
   `scratchpad/bugsC9_scn/ztd_scout.txt` (Cross a cada 60 quadros de f2250 a f4200, quadros a cada 50): no vídeo, depois
   do "Coincide" (f2180 aqui) vem a cena das celas com os personagens 3D, que deve usar os shaders toon/HemiRimBump
+  **Corrigido** (agente C dia 10, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): o G16 agora
+  é `gl_FrontFacing` por padrão (`VITASHARP_G16=zero|back` para depurar; `GeneratorVersion` 21, os caches se
+  refazem). Dump da cena das celas (`scratchpad/bugsC9_out/ztd_cells.vsgd`, presents 3150-3152, com os avisos de G16)
+  reproduzido com zero/front/back e comparado ao vídeo do Vita (1:23): zero e back são iguais, personagens claros e
+  chapados (camisa do Sigma RGB 134/128/127, cabelo 203/186/172); front dá a sombra do Vita (camisa 100/95/95, cabelo
+  165/141/128; Vita 110/104/99 e 155/137/122). No jogo com o padrão novo (`scratchpad/bugsC9_proof/ztd_g16front_sheet.png`
+  x `ztd_g16zero_sheet.png`): sombreado como no vídeo e a máscara do Zero com a textura suja do Vita (antes branca)
+  `replay-gpu --compare` nos 18 dumps: só os 2 do Tearaway mudam (ele também lê o G16: as bordas das folhas de papel
+  de dois lados ficam escuras e somem uns pontos verdes na borda; média até 2,5/255, `bugsC9_proof/tearaway_g16_before_after_diff.png`);
+  os outros 16 idênticos. Falta conferir o Tearaway com um vídeo do Vita
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
