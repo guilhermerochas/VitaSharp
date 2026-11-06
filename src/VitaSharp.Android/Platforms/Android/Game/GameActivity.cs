@@ -184,6 +184,9 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         if (OperatingSystem.IsAndroidVersionAtLeast(33))
             OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(0, new BackCallback(OpenMenu));
 
+#if VITASHARP_DEVELOPER
+        Developer.UiScript.Start(this, ".game");
+#endif
         _ = StartSessionAsync(game);
     }
 
@@ -350,7 +353,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     public override bool DispatchKeyEvent(KeyEvent? e)
     {
         // the pause menu takes a controller's keys (focus, press, back) instead of the paused game
-        if (e != null && MenuVisible && AppServices.Gamepads.IsConnected(e.DeviceId) && MenuControllerKey(e)) return true;
+        if (e != null && MenuVisible && (AppServices.Gamepads.IsConnected(e.DeviceId) || (e.Source & InputSourceType.Gamepad) == InputSourceType.Gamepad) && MenuControllerKey(e)) return true;
         if (e != null && !MenuVisible && e.Action is KeyEventActions.Down or KeyEventActions.Up && e.RepeatCount == 0
             && AppServices.Gamepads.OnKey(e.DeviceId, (int)e.KeyCode, e.Action == KeyEventActions.Down))
         {
