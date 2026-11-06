@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
-﻿using System.Text;
+﻿using VitaSharp.Core.Util;
+using System.Text;
 using UcArm = UnicornEngine.Const.Arm;
 using Decoder = VitaSharp.Core.Cpu.Decoder;
 using UnicornEngine;

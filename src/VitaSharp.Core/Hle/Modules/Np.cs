@@ -225,8 +225,21 @@ public sealed partial class NpManager : HleModule
     [Hle("sceNpManager_DDF30B0E", Nid = 0xDDF30B0E, Library = "SceNpManager")] int sceNpManagerSysGetAccountIds(uint a, uint b, uint c) => ERR_SIGNED_OUT;
     [Hle("sceNpManager_ED12AF16", Nid = 0xED12AF16, Library = "SceNpManager")] int sceNpManagerSysGetAccountDetails(uint a, uint b, uint c, uint d) => ERR_SIGNED_OUT;
 
-    // the cached account parameters: layout unconfirmed (Vita3K unimplemented), so the cache is reported unavailable
-    [Hle] int sceNpManagerGetCachedParam(uint param) => param == 0 ? MGR_INVALID_ARGUMENT : ERR_SIGNED_OUT;
+    /// <summary>
+    /// (SceNpManagerCacheParam *param, 0xA4 bytes): np_manager.suprx (FW 3.74) fetches the 0x148-byte account record of
+    /// NID_E45E4003 and copies its +0 (0x24 bytes, the SceNpId) to param+0 and its +0x38 (0x80 bytes, the avatar URL)
+    /// to param+0x24; the record's error is returned as is, otherwise 0. The emulated account's record holds its NpId
+    /// (as sceNpManagerGetNpId) and no avatar URL; without an account it is all zero, as for the system.
+    /// </summary>
+    [Hle]
+    int sceNpManagerGetCachedParam(uint param)
+    {
+        if (param == 0) return MGR_INVALID_ARGUMENT;
+        GuestMemory.Fill(param, 0, 0xA4);
+        var acct = PsnAccount.Current;
+        if (acct.SignedIn) WriteNpId(param, acct.OnlineId);
+        return 0;
+    }
 
     [Hle] int sceNpAuthCreateOAuthRequest() { lock (_oauthReqs) { int id = _nextReq++; _oauthReqs.Add(id); return id; } }
     [Hle] int sceNpAuthDeleteOAuthRequest(int reqId) { lock (_oauthReqs) return _oauthReqs.Remove(reqId) ? 0 : MGR_INVALID_ARGUMENT; }

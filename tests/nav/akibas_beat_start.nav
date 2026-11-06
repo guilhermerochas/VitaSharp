@@ -1,0 +1,107 @@
+# Akiba's Beat (PCSG00952, Japanese: Circle confirms): boot, opening movie, title, New Game settings, the event movie
+# skipped, then the first minutes of the first delusion dungeon (walk, camera, attacks, the first battle and its tutorials, pause); every step waits for
+# the screen; run with VITASHARP_DISPLAY_IMMEDIATE_PACE=1 (Unity flips immediately: unpaced headless it runs at ~460 fps)
+# run: VitaSharp.Desktop --data=<root> run PCSG00952 --headless --nav=tests/nav/akibas_beat_start.nav --nav-out=<dir>
+log boot
+sleep 12
+stable 2 90
+shot 01_unity
+sleep 40
+shot 02_opening
+press start
+sleep 5
+shot 03_title
+press circle
+sleep 3
+shot 04_menu
+press circle
+sleep 4
+shot 05_newgame
+press start
+sleep 3
+shot 06_confirm
+press up
+sleep 1
+press circle
+log loading, then the opening events: each one is skipped (Start, "Yes" is above "No")
+sleep 45
+shot 07_event
+press start
+sleep 3
+shot 08_skip
+press up
+sleep 1
+press circle
+sleep 15
+shot 09_dungeon
+sleep 3
+shot 10_dungeon
+log gameplay: walk, turn, camera, the three attacks, pause
+lstick 0 -1 120
+shot 11_walk
+lstick 1 0 40
+lstick 0 -1 120
+shot 12_walk
+rstick 1 0 60
+shot 13_camera
+press square
+wait 15
+shot 14_square
+press triangle
+wait 15
+shot 15_triangle
+press circle
+wait 15
+shot 16_circle
+lstick 0 -1 240
+shot 17_walk
+log the first enemy: the encounter opens a battle with tutorial boxes (Circle closes each)
+sleep 4
+shot 18_battle
+press circle
+sleep 2
+press circle
+sleep 2
+press circle
+sleep 2
+press circle
+sleep 2
+shot 19_tutorials
+press square
+wait 15
+press square
+wait 15
+press square
+wait 15
+shot 20_attack
+lstick -1 0 60
+press square
+wait 15
+press triangle
+wait 15
+shot 21_attack
+press circle
+sleep 2
+press circle
+sleep 2
+lstick 1 0 60
+press square
+wait 15
+press square
+wait 15
+sleep 5
+shot 22_battle
+press start
+sleep 2
+shot 23_pause
+press start
+sleep 2
+press circle
+sleep 2
+press square
+wait 15
+press square
+wait 15
+sleep 10
+shot 24_later
+quit

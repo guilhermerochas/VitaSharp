@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
-﻿using System.Diagnostics;
+﻿using VitaSharp.Core.Util;
+using System.Diagnostics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Kernel;

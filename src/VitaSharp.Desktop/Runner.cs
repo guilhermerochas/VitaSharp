@@ -143,6 +143,8 @@ public static class Runner
             Log.Warn($"--shaderc-opt={so} not recognised (use zero, size or perf): using the default");
 
         if (headless) return RunHeadless(emu, appPath, options, rendererOptions, fatal);
+        // --dump-frames in a window too (the windowed path's frames, e.g. a VITASHARP_HIDDEN_WINDOW=1 check)
+        if (options.Any(o => o.StartsWith("--dump-frames")) && ApplyFrameDumpOptions(options, rendererOptions) is { } windowDumpDir) Log.Info($"Frame dumps: {windowDumpDir}");
 
         using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
         // a hidden test window (VITASHARP_HIDDEN_WINDOW=1) stays silent too: the PC may be in use
@@ -460,21 +462,33 @@ public static class Runner
         return r;
     }
 
+    /// <summary>
+    /// --dump-frames[=dir] (PNG of every --dump-every'th present from --dump-from; the folder's old PNGs are deleted),
+    /// --trace-draws=frame and --no-inspect, for a headless run and a window alike. Returns the dump folder, or null.
+    /// </summary>
+    static string? ApplyFrameDumpOptions(string[] options, VulkanRendererOptions ro)
+    {
+        var dumpOpt = options.FirstOrDefault(o => o.StartsWith("--dump-frames"));
+        ro.DumpEvery = int.TryParse(Opt(options, "--dump-every"), out var de) ? de : 60;
+        ro.DumpFrom = long.TryParse(Opt(options, "--dump-from"), out var dfr) ? dfr : 0;
+        ro.TraceDrawsFrame = long.TryParse(Opt(options, "--trace-draws"), out var tdf) ? tdf : -1;
+        if (dumpOpt == null) return null;
+        var dir = dumpOpt.Contains('=') ? dumpOpt[(dumpOpt.IndexOf('=') + 1)..] : Path.Combine(Program.DataRoot, "frames");
+        if (Directory.Exists(dir)) foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
+        ro.DumpFramesDir = dir;
+        ro.InspectTextures = !options.Contains("--no-inspect");
+        return dir;
+    }
+
     static int RunHeadless(Emulator emu, string appPath, string[] options, VulkanRendererOptions ro, ManualResetEventSlim fatal)
     {
         var diag = new Diagnostics(emu, () => emu.Gpu.Backend as VulkanRenderer, options);
-        var dumpOpt = options.FirstOrDefault(o => o.StartsWith("--dump-frames"));
         string? dumpDir = null;
         List<(long Frame, byte[] Rgba)>? thumbs = null;
-        if (dumpOpt != null || options.Contains("--vulkan") || Opt(options, "--trace-draws") != null)
+        if (options.Any(o => o.StartsWith("--dump-frames")) || options.Contains("--vulkan") || Opt(options, "--trace-draws") != null)
         {
-            var dir = dumpOpt?.Contains('=') == true ? dumpOpt[(dumpOpt.IndexOf('=') + 1)..] : Path.Combine(Program.DataRoot, "frames");
-            if (dumpOpt != null && Directory.Exists(dir)) foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
-            ro.DumpFramesDir = dumpOpt != null ? dir : null;
-            ro.DumpEvery = int.TryParse(Opt(options, "--dump-every"), out var de) ? de : 60;
-            ro.DumpFrom = long.TryParse(Opt(options, "--dump-from"), out var dfr) ? dfr : 0;
-            ro.TraceDrawsFrame = long.TryParse(Opt(options, "--trace-draws"), out var tdf) ? tdf : -1;
-            if (dumpOpt != null) { dumpDir = dir; ro.Thumbnails = thumbs = new(); ro.InspectTextures = !options.Contains("--no-inspect"); }
+            dumpDir = ApplyFrameDumpOptions(options, ro);
+            if (dumpDir != null) ro.Thumbnails = thumbs = new();
             emu.Gpu.Backend = NewHeadlessRenderer(ro, diag);
         }
         // turbo: no vblank/audio pacing, guest time jumps one frame per frame (automated tests)
