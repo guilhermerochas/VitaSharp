@@ -331,6 +331,14 @@ public sealed partial class AppMgr : HleModule
     /// 24 steady frames of SceMotion NID_A408BC69); applications read it back through appmgr. Acknowledged.</summary>
     [Hle] int sceAppMgrSetRecommendedScreenOrientationForShell(int orientation) => 0;
 
+    /// <summary>The voice-chat bookkeeping of the system apps (Party): one app declares itself the system chat app and
+    /// asks appmgr to duck the other audio while it talks. No chat ever starts here (no PSN party): acknowledged.</summary>
+    [Hle] int sceAppMgrDeclareSystemChatApp(int a) => 0;
+    [Hle] int sceAppMgrEnableDuckingOnSystemChat(int enable) => 0;
+
+    /// <summary>(int state): whether the info bar shows above a common dialog; the shell draws its own bar.</summary>
+    [Hle] int sceAppMgrSetInfobarStateForCommonDialog(int state) => 0;
+
     /// <summary>(int appId): which application's frames the shell composes behind its own (-1: none). The emulator
     /// composes the foreground process itself.</summary>
     [Hle] int sceAppMgrSetBackRenderPortOwner(int appId) => 0;

@@ -23,6 +23,8 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblUtMgrHasComTestFlag() => 0;
     [Hle] int vshSysconIsIduMode() => 0;
     [Hle] int vshSysconHasWWAN() => 0;
+    /// <summary>A store demo (show mode) unit: no.</summary>
+    [Hle] int vshSysconIsShowMode() => 0;
     [Hle] int vshMotionNoiseFilterIsAvailable() => 0;
 
     /// <summary>(SceKernelPscode *pscode): the unit's 8-byte product code through the bridge (ksceSblAimgrGetPscode):
