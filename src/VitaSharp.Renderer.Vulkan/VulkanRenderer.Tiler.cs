@@ -85,18 +85,6 @@ public sealed unsafe partial class VulkanRenderer
         if (_chain.Count > 0 && !(_chainScene == _sceneSerial && SameAttachments(in _chainPass, in _tilePass))) FlushChain(false);
         if (_chain.Count > 0) _statMerged++;
         else { _chainStartSerial = _renderingSerial; ResetDrawn(); }
-        if (_cmd.RecorderOn)
-        {
-            // VITASHARP_REC_THREAD: the recorder thread begins, records and ends it (VkCmd.Recorder.cs)
-            var rcb = AllocRecSecondary();
-            uint colorCount = _tilePass.HasColor ? wordView.Handle != 0 ? 2u : 1u : 0u;
-            var rp = UseRenderPasses ? SingleCompatPass(_tilePass.HasColor ? colorFormat : Format.Undefined, wordView.Handle != 0) : default;
-            _cmd.BeginDeferredSecondary(rcb, rp, colorCount, colorFormat, TileWord1Format, _core.DepthFormat);
-            _tileCmd = rcb;
-            _boundPipeline = default;
-            _tileDeferred++;
-            return;
-        }
         var cb = AllocSecondary();
         var fmt = stackalloc Format[2] { colorFormat, TileWord1Format };
         var rii = new CommandBufferInheritanceRenderingInfo
@@ -128,29 +116,13 @@ public sealed unsafe partial class VulkanRenderer
     void EndTiledRendering(bool final)
     {
         var cb = _tileCmd;
-        if (_cmd.RecorderOn) _cmd.EndDeferredSecondary(cb);
-        else _vk.EndCommandBuffer(cb).Ok("vkEndCommandBuffer(tiled secondary)");
+        _vk.EndCommandBuffer(cb).Ok("vkEndCommandBuffer(tiled secondary)");
         _tileCmd = default;
         _boundPipeline = default;
         if (_chain.Count == 0) { _chainPass = _tilePass; _chainScene = _sceneSerial; }
         _chain.Add(cb);
         // not begun yet: the next rendering may continue it (merge) unless something is recorded into the primary first
         if (final || StrictSceneBreaks) FlushChain(final);
-    }
-
-    /// <summary>A secondary from the frame's recorder pool (allocated while the recorder is idle: the pool is its own).</summary>
-    CommandBuffer AllocRecSecondary()
-    {
-        var f = F;
-        if (f.RecIndex >= f.RecSecondaries.Count)
-        {
-            _cmd.Drain();
-            var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = f.RecPool, Level = CommandBufferLevel.Secondary, CommandBufferCount = 16 };
-            var cbs = stackalloc CommandBuffer[16];
-            _vk.AllocateCommandBuffers(_dev, in ai, cbs).Ok("vkAllocateCommandBuffers(recorder)");
-            for (int i = 0; i < 16; i++) f.RecSecondaries.Add(cbs[i]);
-        }
-        return f.RecSecondaries[f.RecIndex++];
     }
 
     /// <summary>Ended renderings not yet begun in the primary (same attachments; the first one's load ops).</summary>
@@ -204,7 +176,6 @@ public sealed unsafe partial class VulkanRenderer
         };
         CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore, p.Area);
         var cmd = F.Cmd;
-        _cmd.Drain(); // secondaries the recorder thread records must be finished before they are executed
         var cbs = stackalloc CommandBuffer[_chain.Count];
         for (int i = 0; i < _chain.Count; i++) cbs[i] = _chain[i];
         uint n = (uint)_chain.Count;

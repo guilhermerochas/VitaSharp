@@ -139,8 +139,6 @@ public static class EnvVars
     public const string Replay = "VITASHARP_REPLAY";
     /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";
-    /// <summary>1: draw commands of tiled renderings are recorded into their secondary command buffers on a second thread (VkCmd.Recorder.cs).</summary>
-    public const string RecThread = "VITASHARP_REC_THREAD";
     /// <summary>1: a stage binding the same texture descriptors as an earlier one in the frame reuses its descriptor set (VulkanRenderer.TexSetReuse.cs).</summary>
     public const string TexSetReuse = "VITASHARP_TEXSET_REUSE";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,

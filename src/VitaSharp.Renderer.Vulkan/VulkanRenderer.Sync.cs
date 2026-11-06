@@ -142,7 +142,6 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append($"; work per frame ({_workFrames} frames): {_statDraws / wf:F0} draws, {_statPipelineBinds / wf:F0} pipeline binds, {_statSets / wf:F0} descriptor sets, {_statDescWrites / wf:F0} descriptor writes, {_uploadBytes / wf / 1024:F0} KB uploaded; one-sample fetch draws {_statSingleFetchDraws + _statFetchPassMerged} ({_statFetchPassMerged} in an open fetch pass)");
         sb.Append($"; uniform blocks {_statUniformBytes / wf / 1024:F0} KB/frame, guest memory into the CDRAM mirror {_statMirrorCopyBytes / wf / 1024:F0} KB/frame");
         sb.Append(RangeCacheReport());
-        sb.Append(_cmd.RecorderReport());
         sb.Append(TexSetReuseReport());
         return sb.ToString();
     }

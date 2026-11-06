@@ -650,7 +650,8 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// become visible to its input attachment reads (the render pass's by-region self-dependency).</summary>
     void InputFetchBarrier(CommandBuffer cmd)
     {
-        _cmd.CmdInputFetchBarrier(cmd); // (queued when the recorder thread owns cmd)
+        var mb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = AccessFlags.ColorAttachmentWriteBit, DstAccessMask = AccessFlags.InputAttachmentReadBit };
+        _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.FragmentShaderBit, DependencyFlags.ByRegionBit, 1, in mb, 0, null, 0, null);
     }
 
     /// <summary>Programmable blending in a multisampled scene: the shaders read a copy of the samples, per sample.</summary>

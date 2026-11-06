@@ -120,10 +120,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         /// <summary>Secondary command buffers of multisampled renderings (reused every time the frame slot is recorded).</summary>
         public readonly List<CommandBuffer> Secondaries = new();
         public int SecondaryIndex;
-        /// <summary>VITASHARP_REC_THREAD: secondaries the recorder thread records (their own pool: pools are externally synchronised).</summary>
-        public CommandPool RecPool;
-        public readonly List<CommandBuffer> RecSecondaries = new();
-        public int RecIndex;
         /// <summary>First of this frame's two timestamp queries (-1 = none), and whether they were written.</summary>
         public int TimeQuery = -1;
         public bool TimePending;
@@ -141,15 +137,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         {
             // an open one-sample fetch pass (VulkanRenderer.SingleFetch.cs) ends before anything else is recorded
             if (_fetchPassOpen) EndSingleFetchPass();
-            if (_hoisting) return F.Cmd;
-            if (_msCmd.Handle != 0) return _msCmd;
-            if (_tileCmd.Handle != 0)
-            {
-                // a direct recording into a secondary the recorder thread owns waits for it first (VkCmd.Recorder.cs)
-                if (_cmd.Deferring) _cmd.Drain();
-                return _tileCmd;
-            }
-            return PrimaryTouched();
+            return _hoisting ? F.Cmd : _msCmd.Handle != 0 ? _msCmd : _tileCmd.Handle != 0 ? _tileCmd : PrimaryTouched();
         }
     }
     public long FrameCount { get; private set; }
@@ -163,7 +151,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _vk = _core.Vk;
         _dev = _core.Device;
         _cmd = new VkCmd(_vk, _dev);
-        if (VkCmd.RecorderRequested) _cmd.StartRecorder();
         _imagePool = new ImageMemoryPool(_core);
         // VITASHARP_DEBUG_NAN=draws: the instrumented SPIR-V stays out of the on-disk cache
         _compiler = new ShaderCompiler(Core.Gxm.Shader.ShaderGenerator.NanDraws ? null : options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
@@ -195,7 +182,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var f = new Frame();
         var pci = new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _core.QueueFamily, Flags = CommandPoolCreateFlags.TransientBit };
         _vk.CreateCommandPool(_dev, in pci, null, out f.Pool).Ok("vkCreateCommandPool");
-        if (VkCmd.RecorderRequested) _vk.CreateCommandPool(_dev, in pci, null, out f.RecPool).Ok("vkCreateCommandPool(recorder)");
         var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = f.Pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
         _vk.AllocateCommandBuffers(_dev, in ai, out f.Cmd).Ok("vkAllocateCommandBuffers");
         var fci = new FenceCreateInfo { SType = StructureType.FenceCreateInfo, Flags = FenceCreateFlags.SignaledBit };
@@ -226,7 +212,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var p in f.DescPools) _vk.ResetDescriptorPool(_dev, p, 0);
         f.DescPoolIndex = 0;
         f.SecondaryIndex = 0;
-        if (f.RecPool.Handle != 0) { _cmd.Drain(); _vk.ResetCommandPool(_dev, f.RecPool, 0); f.RecIndex = 0; }
         _frameSerial++; // the frame's descriptor pools were reset: per-frame cached sets are gone
         _vk.ResetCommandPool(_dev, f.Pool, 0);
         var bi = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo, Flags = CommandBufferUsageFlags.OneTimeSubmitBit };
@@ -253,7 +238,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         FlushChain(false);
         if (f.Nan is { Used: true }) NanBeforeSubmit(f);
         EndGpuTime(f);
-        _cmd.Drain(); // the recorder thread finished every secondary the primary executes
         _vk.EndCommandBuffer(f.Cmd);
         var cmd = f.Cmd;
         var waitStage = PipelineStageFlags.TransferBit;
@@ -1404,7 +1388,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (f.Submitted && f.Readback is { } rb) WriteDump(f, rb);
             if (f.Readback is { } rbuf) _core.DestroyBuffer(rbuf.Buf, rbuf.Mem);
             _vk.DestroyCommandPool(_dev, f.Pool, null);
-            if (f.RecPool.Handle != 0) _vk.DestroyCommandPool(_dev, f.RecPool, null);
             _vk.DestroyFence(_dev, f.Fence, null);
             _vk.DestroySemaphore(_dev, f.Acquire, null);
             foreach (var s in _swapDone) _vk.DestroySemaphore(_dev, s, null);

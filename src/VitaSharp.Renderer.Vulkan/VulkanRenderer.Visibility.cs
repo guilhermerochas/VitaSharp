@@ -57,11 +57,11 @@ public sealed unsafe partial class VulkanRenderer
         query = v.Used++;
         v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space));
         var flags = (d.VisIncrement || CostOn) && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
-        _cmd.CmdBeginQuery(cmd, v.Pool, query, flags);
+        _vk.CmdBeginQuery(cmd, v.Pool, query, flags);
         return true;
     }
 
-    void EndVisibilityQuery(CommandBuffer cmd, uint query) => _cmd.CmdEndQuery(cmd, Vis(F).Pool, query);
+    void EndVisibilityQuery(CommandBuffer cmd, uint query) => _vk.CmdEndQuery(cmd, Vis(F).Pool, query);
 
     /// <summary>Runs after the frame's fence signalled: writes the results into guest memory.</summary>
     void CompleteVisibility(Frame f)
