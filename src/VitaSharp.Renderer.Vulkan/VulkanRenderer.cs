@@ -415,8 +415,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void ExecuteCommand(GpuCommand command)
     {
+        if (GpuQueue.InterleaveScenes && command.Pid != 0) SwitchSceneProcess(command);
         switch (command)
         {
+            case ProcessEndedCommand pe: EndProcessScene(pe); break;
             case BeginSceneCommand b: BeginScene(b); break;
             case DrawCommand d: Draw(d); break;
             case EndSceneCommand e: EndScene(e); break;
@@ -628,7 +630,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     DepthTarget GetDepthTarget(DepthSurfaceInfo? d, uint w, uint h, SampleCountFlags samples = SampleCountFlags.Count1Bit, float scale = 1f)
     {
         uint addr = d?.DepthData ?? 0;
-        var key = (addr != 0 ? addr : d?.StencilData ?? 0, w, h, samples);
+        uint keyAddr = addr != 0 ? addr : d?.StencilData ?? 0;
+        // a scene without depth/stencil surfaces keeps them in tile memory: interleaved processes' scenes of one size
+        // must not share that image (VulkanRenderer.SceneContexts.cs)
+        if (keyAddr == 0 && GpuQueue.InterleaveScenes) keyAddr = (uint)_scenePid;
+        var key = (keyAddr, w, h, samples);
         if (_depthTargets.TryGetValue(key, out var dt)) { dt.LastTouchedFrame = FrameCount; return dt; }
         // multisampled depth is sampled when a forced-stored 4X depth surface is read as a texture (UnpackedDepthTexture)
         var usage = ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit
@@ -780,7 +786,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ? GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width * 2, _rt!.Width), rs), ScaleDim(Math.Max(b.Height * 2, _rt.Height), rs), scale: rs)
             : GetDepthTarget(b.Depth, ScaleDim(Math.Max(b.Width, _rt?.Width ?? 0), rs) * SsScale, ScaleDim(Math.Max(b.Height, _rt?.Height ?? 0), rs) * SsScale, SceneSamples, rs);
         ProfMark(ProfPhase.BsDepth);
-        _sceneSerial++;
+        _sceneSerial = ++_sceneSerialNext;
         _sceneRegions.Clear();
         if (_rt != null)
         {

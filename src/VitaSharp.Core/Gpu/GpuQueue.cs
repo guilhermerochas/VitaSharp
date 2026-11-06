@@ -77,6 +77,7 @@ public sealed class GpuQueue : IDisposable
         else d = new DrawCommand();
         d.Reset();
         d.Space = null;
+        d.Pid = 0;
         return d;
     }
 
@@ -94,11 +95,106 @@ public sealed class GpuQueue : IDisposable
 
     /// <summary>True while process <paramref name="pid"/> has a scene open (its threads are not parked then: see
     /// <see cref="Kernel.GuestThread"/> suspension).</summary>
-    public bool HasOpenScene(int pid) => pid != 0 && Volatile.Read(ref _sceneOwner) == pid;
+    public bool HasOpenScene(int pid) => pid != 0 && (InterleaveScenes ? _openScenes.ContainsKey(pid) : Volatile.Read(ref _sceneOwner) == pid);
+
+    /// <summary>
+    /// VITASHARP_GPU_SCENE_INTERLEAVE=1: processes never wait for each other's scenes. As on the Vita (each process has
+    /// its own GXM context and the GPU interleaves them), every process may have a scene open: the backend records each
+    /// process's scene into renderings of its own, suspending the open scene of one process while another's commands
+    /// run (<see cref="GpuCommand.Pid"/>). Off: a scene is one process's at a time (the others' submissions wait).
+    /// </summary>
+    public static readonly bool InterleaveScenes = Environment.GetEnvironmentVariable(EnvVars.GpuSceneInterleave) == "1";
+
+    /// <summary>Processes with a scene open (<see cref="InterleaveScenes"/>).</summary>
+    readonly ConcurrentDictionary<int, byte> _openScenes = new();
+
+    // ---- held draws (InterleaveScenes with a second process): a draw whose uniform buffers are read at its scene's end
+    // (SceneGate) is not waited for on the worker, which would hold up every other process's work behind it (the shell
+    // keeps its scenes open while it waits for the vblank). The worker puts it, and the process's commands after it,
+    // aside in the process's lane and goes on with the other processes' commands; the lane runs once the scene ended, the
+    // process waits for one of its commands, or after 250 ms. The renderer keeps each process's scene apart
+    // (GpuCommand.Pid), so the order between processes does not matter; within a process it is kept.
+
+    bool HoldsScenes => InterleaveScenes && SharedByProcesses;
+
+    sealed class HeldLane
+    {
+        public readonly Queue<GpuCommand> Commands = new();
+        /// <summary>When the draw at the head started waiting.</summary>
+        public long Since;
+    }
+
+    /// <summary>Worker only: the lanes of processes with held commands.</summary>
+    readonly Dictionary<int, HeldLane> _held = new();
+    /// <summary>The sequence of the first held command of each process with a lane (read by waiting threads).</summary>
+    readonly ConcurrentDictionary<int, long> _heldHead = new();
+    /// <summary>The highest command sequence a thread of each process waits for; pid 0 = host threads.</summary>
+    readonly ConcurrentDictionary<int, long> _maxWaitedByPid = new();
+    /// <summary>The last command the worker took from the queue (run or held).</summary>
+    long _processed;
+    readonly List<int> _drained = new();
+
+    bool WaitedFor(int pid, long sequence) =>
+        _maxWaitedByPid.TryGetValue(pid, out long w) && w >= sequence || _maxWaitedByPid.TryGetValue(0, out long h) && h >= sequence;
+
+    static void EndGateEarly(SceneGate gate)
+    {
+        gate.End();
+        if (Interlocked.Increment(ref SceneGateReleases) == 1)
+            Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+    }
+
+    /// <summary>Worker: runs what the lanes may run now (see above).</summary>
+    void ReleaseHeld()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp(), timeout = System.Diagnostics.Stopwatch.Frequency / 4;
+        foreach (var (pid, lane) in _held)
+        {
+            while (lane.Commands.TryPeek(out var c))
+            {
+                if (c is DrawCommand { Gate: { Ended: false } g })
+                {
+                    if (!WaitedFor(pid, c.Sequence) && now - lane.Since < timeout && !_stopping) break;
+                    EndGateEarly(g);
+                }
+                lane.Commands.Dequeue();
+                ExecuteOne(c);
+                lane.Since = now;
+            }
+            if (lane.Commands.Count == 0) _drained.Add(pid);
+        }
+        foreach (int pid in _drained) { _held.Remove(pid); _heldHead.TryRemove(pid, out _); }
+        _drained.Clear();
+        Processed(Interlocked.Read(ref _processed));
+    }
+
+    /// <summary>Worker: the queue was taken up to <paramref name="sequence"/>; everything before the first held command
+    /// is complete.</summary>
+    void Processed(long sequence)
+    {
+        Interlocked.Exchange(ref _processed, sequence);
+        long done = sequence;
+        foreach (var (pid, lane) in _held)
+            if (lane.Commands.TryPeek(out var c))
+            {
+                _heldHead[pid] = c.Sequence;
+                if (c.Sequence - 1 < done) done = c.Sequence - 1;
+            }
+        if (done > Interlocked.Read(ref _completed)) Interlocked.Exchange(ref _completed, done); // full fence before reading the waiter count
+        else Interlocked.MemoryBarrier();
+        if (!LightSignals || Volatile.Read(ref _progressWaiters) > 0)
+            lock (_progress) Monitor.PulseAll(_progress);
+    }
 
     /// <summary>A process that ends with a scene open gives the GPU back.</summary>
     public void ReleaseScene(int pid)
     {
+        if (InterleaveScenes)
+        {
+            // the backend drops the scene the process left open (its suspended renderings name surfaces of its memory)
+            if (_openScenes.TryRemove(pid, out _)) Enqueue(new ProcessEndedCommand { Pid = pid, Space = AddressSpace.Current });
+            return;
+        }
         lock (_sceneLock)
         {
             if (_sceneOwner != pid) return;
@@ -112,6 +208,13 @@ public sealed class GpuQueue : IDisposable
     long SubmitArbitrated(GpuCommand cmd)
     {
         int pid = Kernel.ProcessScope.CurrentPid;
+        cmd.Pid = pid;
+        if (InterleaveScenes)
+        {
+            if (pid != 0 && cmd is BeginSceneCommand) _openScenes[pid] = 0;
+            else if (pid != 0 && cmd is EndSceneCommand) _openScenes.TryRemove(pid, out _);
+            return Enqueue(cmd);
+        }
         lock (_sceneLock)
         {
             if (pid != 0 && _sceneOwner != 0 && _sceneOwner != pid)
@@ -225,17 +328,24 @@ public sealed class GpuQueue : IDisposable
         // a guest waiting for a draw of a scene it has not ended: the worker must not hold that draw back
         for (long m = Interlocked.Read(ref _maxWaited); m < sequence; m = Interlocked.Read(ref _maxWaited))
             if (Interlocked.CompareExchange(ref _maxWaited, sequence, m) == m) break;
+        int pid = HoldsScenes ? Kernel.ProcessScope.CurrentPid : -1;
+        if (pid >= 0) _maxWaitedByPid.AddOrUpdate(pid, sequence, (_, w) => Math.Max(w, sequence));
         using var blocked = Kernel.Scheduler.Block();
         using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_progress)
         {
             Interlocked.Increment(ref _progressWaiters); // full fence before reading Completed (pairs with the worker's)
-            try { while (Completed < sequence && !_stopping) Monitor.Wait(_progress, 100); }
+            try { while (!Done(sequence, pid) && !_stopping) Monitor.Wait(_progress, pid >= 0 ? 10 : 100); }
             finally { Interlocked.Decrement(ref _progressWaiters); }
         }
         CountGuestWait(site, t0);
     }
+
+    /// <summary>Command <paramref name="sequence"/> and every earlier one complete, as seen by process
+    /// <paramref name="pid"/> (-1: the whole queue): another process's held commands do not count.</summary>
+    bool Done(long sequence, int pid) =>
+        Completed >= sequence || pid > 0 && Interlocked.Read(ref _processed) >= sequence && !(_heldHead.TryGetValue(pid, out long h) && h <= sequence);
 
     /// <summary>Where guest threads block on the GPU (PERF guest waits line).</summary>
     public enum GuestWait { Notification, DisplayQueue, Finish, Throttle, Other }
@@ -275,6 +385,7 @@ public sealed class GpuQueue : IDisposable
             GpuCommand? cmd;
             try
             {
+                if (_held.Count > 0) ReleaseHeld();
                 if (!_queue.TryDequeue(out cmd))
                 {
                     try { lock (_backendLock) Backend?.Idle(); } catch (Exception e) { Log.Error($"GPU backend idle failed: {e}"); }
@@ -285,14 +396,14 @@ public sealed class GpuQueue : IDisposable
                         // announce the sleep, then look once more: a submit after the flag is set releases the semaphore
                         // (a leftover count only makes a later wait return early)
                         Interlocked.Exchange(ref _workerSleeping, 1);
-                        if (_queue.IsEmpty) _available.Wait(50);
+                        if (_queue.IsEmpty) _available.Wait(_held.Count > 0 ? 2 : 50);
                         Interlocked.Exchange(ref _workerSleeping, 0);
                         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
                         if (!_queue.TryDequeue(out cmd)) continue;
                     }
                     else
                     {
-                        bool got = _available.Wait(50);
+                        bool got = _available.Wait(_held.Count > 0 ? 2 : 50);
                         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
                         if (!got || !_queue.TryDequeue(out cmd)) continue;
                     }
@@ -301,79 +412,96 @@ public sealed class GpuQueue : IDisposable
             }
             catch (ObjectDisposedException) { break; }
 
-            // the command's guest addresses are its process's: the worker reads and writes that address space until the
-            // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)
-            AddressSpace.MakeCurrent(cmd.Space);
-            if (cmd is CallbackCommand pre)
+            if (HoldsScenes && cmd.Pid != 0)
             {
-                // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
-                // rendered surface needs its pixels in memory first
-                if (pre.ReadSize > 0)
-                    try { lock (_backendLock) Backend?.BeforeCallback(pre); }
-                    catch (Exception e) { Log.WarnOnce("gpu-beforecallback", $"GPU backend failed to prepare a transfer source: {e}"); }
-                try { pre.Action(); }
-                catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
+                // the worker holds a process's draws until its scene ends while other processes' work goes on
+                if (_held.Count > 0) ReleaseHeld(); // a scene that ended before this command was queued comes first
+                if (_held.TryGetValue(cmd.Pid, out var lane) || cmd is DrawCommand { Gate.Ended: false } && !WaitedFor(cmd.Pid, cmd.Sequence))
+                {
+                    if (lane == null) _held[cmd.Pid] = lane = new HeldLane { Since = System.Diagnostics.Stopwatch.GetTimestamp() };
+                    lane.Commands.Enqueue(cmd);
+                    Processed(cmd.Sequence);
+                    continue;
+                }
             }
-            if (cmd is DrawCommand lateDraw)
-            {
-                if (lateDraw.Gate is { Ended: false } gate) WaitSceneGate(lateDraw, gate);
-                LateUniformCopy?.Invoke(lateDraw);
-            }
-            var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
-            dump?.BeforeExecute(cmd);
-            try
-            {
-                _executing = cmd;
-#if VITASHARP_DEVELOPER
-                Util.Developer.DevTrace.GpuCommand(cmd is PresentCommand);
-#endif
-#if VITASHARP_DEVELOPER
-                long tx = WorkerSlowdown > 1 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-#endif
-                lock (_backendLock) Backend?.Execute(cmd);
-#if VITASHARP_DEVELOPER
-                if (tx != 0) SlowDown(tx);
-                if (cmd is PresentCommand) Util.Developer.DevTrace.GpuPresented();
-#endif
-
-            }
-            catch (Exception e)
-            {
-                Log.WarnOnce("gpu-" + cmd.GetType().Name + e.GetType().Name, $"GPU backend failed on {cmd.GetType().Name}: {e}");
-            }
-            if (dump != null) lock (_backendLock) dump.AfterExecute(cmd, Backend);
-
-            switch (cmd)
-            {
-                case DrawCommand draw:
-                    draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
-                    if (Volatile.Read(ref _drawPoolCount) < 16384) { Interlocked.Increment(ref _drawPoolCount); _drawPool.Enqueue(draw); }
-                    break;
-                case SignalCommand signal:
-                    bool deferred = false;
-                    // an immediate signal still hands the backend an empty deferred one: the work recorded so far starts
-                    // on the GPU now (the guest will wait on later sync points for it), not at the next present
-                    try { lock (_backendLock) deferred = (Backend?.DeferSignal(signal.Immediate ? NoOp : signal.Signal) ?? false) && !signal.Immediate; }
-                    catch (Exception e) { Log.Error($"GPU backend signal failed: {e}"); }
-                    if (!deferred) signal.Signal();
-                    break;
-                case EndSceneCommand end:
-                    if (end.Notifications.Length > 0 && !end.NotificationsDeferred)
-                    {
-                        lock (NotificationLock)
-                        {
-                            foreach (var (addr, value) in end.Notifications) GuestMemory.W32(addr, value);
-                            Monitor.PulseAll(NotificationLock);
-                        }
-                    }
-                    break;
-            }
-
-            _executing = null;
-            Interlocked.Exchange(ref _completed, cmd.Sequence); // full fence before reading the waiter count
-            if (!LightSignals || Volatile.Read(ref _progressWaiters) > 0)
-                lock (_progress) Monitor.PulseAll(_progress);
+            if (HoldsScenes && cmd is DrawCommand { Gate: { Ended: false } waited }) EndGateEarly(waited); // its process waits for it
+            ExecuteOne(cmd);
+            Processed(cmd.Sequence);
         }
+    }
+
+    /// <summary>Runs one command on the backend (in its process's address space) and retires it.</summary>
+    void ExecuteOne(GpuCommand cmd)
+    {
+        // the command's guest addresses are its process's: the worker reads and writes that address space until the
+        // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)
+        AddressSpace.MakeCurrent(cmd.Space);
+        if (cmd is CallbackCommand pre)
+        {
+            // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
+            // rendered surface needs its pixels in memory first
+            if (pre.ReadSize > 0)
+                try { lock (_backendLock) Backend?.BeforeCallback(pre); }
+                catch (Exception e) { Log.WarnOnce("gpu-beforecallback", $"GPU backend failed to prepare a transfer source: {e}"); }
+            try { pre.Action(); }
+            catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
+        }
+        if (cmd is DrawCommand lateDraw)
+        {
+            if (lateDraw.Gate is { Ended: false } gate) WaitSceneGate(lateDraw, gate);
+            LateUniformCopy?.Invoke(lateDraw);
+        }
+        var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
+        dump?.BeforeExecute(cmd);
+        try
+        {
+            _executing = cmd;
+#if VITASHARP_DEVELOPER
+            Util.Developer.DevTrace.GpuCommand(cmd is PresentCommand);
+#endif
+#if VITASHARP_DEVELOPER
+            long tx = WorkerSlowdown > 1 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+#endif
+            lock (_backendLock) Backend?.Execute(cmd);
+#if VITASHARP_DEVELOPER
+            if (tx != 0) SlowDown(tx);
+            if (cmd is PresentCommand) Util.Developer.DevTrace.GpuPresented();
+#endif
+
+        }
+        catch (Exception e)
+        {
+            Log.WarnOnce("gpu-" + cmd.GetType().Name + e.GetType().Name, $"GPU backend failed on {cmd.GetType().Name}: {e}");
+        }
+        if (dump != null) lock (_backendLock) dump.AfterExecute(cmd, Backend);
+
+        switch (cmd)
+        {
+            case DrawCommand draw:
+                draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
+                if (Volatile.Read(ref _drawPoolCount) < 16384) { Interlocked.Increment(ref _drawPoolCount); _drawPool.Enqueue(draw); }
+                break;
+            case SignalCommand signal:
+                bool deferred = false;
+                // an immediate signal still hands the backend an empty deferred one: the work recorded so far starts
+                // on the GPU now (the guest will wait on later sync points for it), not at the next present
+                try { lock (_backendLock) deferred = (Backend?.DeferSignal(signal.Immediate ? NoOp : signal.Signal) ?? false) && !signal.Immediate; }
+                catch (Exception e) { Log.Error($"GPU backend signal failed: {e}"); }
+                if (!deferred) signal.Signal();
+                break;
+            case EndSceneCommand end:
+                if (end.Notifications.Length > 0 && !end.NotificationsDeferred)
+                {
+                    lock (NotificationLock)
+                    {
+                        foreach (var (addr, value) in end.Notifications) GuestMemory.W32(addr, value);
+                        Monitor.PulseAll(NotificationLock);
+                    }
+                }
+                break;
+        }
+
+        _executing = null;
     }
 
 #if VITASHARP_DEVELOPER

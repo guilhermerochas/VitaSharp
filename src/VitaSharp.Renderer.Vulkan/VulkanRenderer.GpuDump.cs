@@ -80,7 +80,7 @@ public sealed unsafe partial class VulkanRenderer
             uint bpp = r.U32();
             int offset = r.Skip((int)(w * h * bpp));
             var rt = GetRenderTarget(new ColorSurfaceInfo(addr, w, h, stride, colorFormat, 0, false, 0));
-            rt.LastScene = ++_sceneSerial; // the recorded order: the newest target wins where targets overlap
+            rt.LastScene = _sceneSerial = ++_sceneSerialNext; // the recorded order: the newest target wins where targets overlap
             rt.LastUsedFrame = FrameCount;
             if (rt.Format != format || (uint)HostBytesPerPixel(rt.Format) != bpp)
             {
