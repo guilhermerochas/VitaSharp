@@ -30,7 +30,7 @@ translates them, the GPU runs them, and the game waits for that GPU work before 
 
 | Technique | Where | Why here | Cost in C# | In VitaSharp |
 |---|---|---|---|---|
-| Run the guest ahead of the host GPU: the guest sees a "GPU done" signal as soon as its commands are queued, real completion is enforced only when the guest reads GPU results | Dolphin ("Sync GPU thread" off, dual core mode), PCSX2/AetherSX2 (MTGS: the EE thread queues GS packets and does not wait), PPSSPP (display lists run without the CPU waiting for them unless it reads GPU results) | the trace: GPU idle 52% while the game waits for it; on a Vita a scene takes a few ms, on this GPU 45 ms | small: existing switches `VITASHARP_DISPLAY_EARLY_SIGNAL` (flip callback after submit) and `VITASHARP_LAZY_WRITEBACK_SYNC` (notifications wait for visibility results only) from perf/serial | being measured in Killzone now (see the frame anatomy note); earlier: F1 max frame 150 -> 116 ms, Uncharted slower |
+| Run the guest ahead of the host GPU: the guest sees a "GPU done" signal as soon as its commands are queued, real completion is enforced only when the guest reads GPU results | Dolphin ("Sync GPU thread" off, dual core mode), PCSX2/AetherSX2 (MTGS: the EE thread queues GS packets and does not wait), PPSSPP (display lists run without the CPU waiting for them unless it reads GPU results) | the trace: GPU idle 52% while the game waits for it; on a Vita a scene takes a few ms, on this GPU 45 ms | small: existing switches `VITASHARP_DISPLAY_EARLY_SIGNAL` (flip callback after submit) and `VITASHARP_LAZY_WRITEBACK_SYNC` (notifications wait for visibility results only) from perf/serial | Killzone, interleaved with base (78.2 ms mean, 12 fps median, two runs): EARLY 64.0 / 74.8 ms, median 15 / 15 fps; EARLY + LAZY 75.7 ms, 15 fps; LAZY alone 77.9 ms, 12 fps. EARLY is the first switch that moved the median (12 -> 15) in this scene; two runs only, Uncharted was slower with it in perf/serial: candidate, off by default |
 | Frames in flight / triple buffering on the host side | Ryujinx and the yuzu forks (several frames queued before the swapchain), Dolphin | lets the worker record frame N+1 while the GPU runs N | already there: `VITASHARP_FRAMES_IN_FLIGHT` (default 3) | default kept; the limit is the guest waits, not the slots |
 | Present on its own thread | Ryujinx (presentation thread), Skyline (`PresentationEngine` thread), Dolphin (`Presenter`) | `vkQueuePresent` blocks the worker 3-4 ms per frame | done before: `VITASHARP_PRESENT_THREAD` | Killzone: worse in 3 of 4 runs (85-86 vs 70-83 ms): stays off |
 
@@ -57,8 +57,9 @@ translates them, the GPU runs them, and the game waits for that GPU work before 
 
 ## Next steps, in order of expected gain
 
-1. Pipelining (section 1, first row): measure `DISPLAY_EARLY_SIGNAL` / `LAZY_WRITEBACK_SYNC` in Killzone; if the game
-   only waits for completion to recycle memory it does not read, a correct "signal at submit, fence at read" scheme
-   (Dolphin/PCSX2 style) would let the GPU run while the game builds the next frame.
+1. Pipelining (section 1, first row): `DISPLAY_EARLY_SIGNAL` helps Killzone in two runs (median 12 -> 15 fps); repeat
+   it in 3 cool pairs and in Uncharted/F1. Beyond it, a "signal at submit, fence at read" scheme (Dolphin/PCSX2 style:
+   GXM notifications released when the worker submits, the real fence waited only where the guest reads GPU output:
+   writebacks, visibility results, mapped surfaces) would let the GPU run while the game builds the next frame.
 2. Per-game quality options on Android (resolution scale, MSAA), native by default.
 3. RENDER_AREA_TRIM on by default once a longer live series confirms the bench.

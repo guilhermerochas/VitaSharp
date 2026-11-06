@@ -307,7 +307,10 @@ from 33.9 to 49.5 ms between sessions (phone temperature).
 | `VITASHARP_RENDER_AREA_TRIM=1` (new) | 75.7/15/48.3, 75.0/15/48.1, 83.4/12/50.2 | live: within the noise. Bench: s4 9.4-14.3 -> 7.2-9.2 ms in all three sessions (frame -0.8 to -11.7 ms, noisy) |
 | `VITASHARP_RES_SCALE=0.75` | 63.1/15/34.9, 64.5/15/-, 61.7/15/34.5; with TRIM 60.6/15/33.9 | GPU -30% |
 | `VITASHARP_MSAA=off` | 61.5/15/34.5 | GPU -30%; edges alias (`and8_tools/shots/msaa_cmp.png`: base left, off right) |
+| `VITASHARP_DISPLAY_EARLY_SIGNAL=1` | 64.0/15/43.8, 74.8/15/54.4 (base next to it: 77.5/12/48.9, 78.9/12/49.0) | the flip callback runs at submit: the median moves to 15 fps in both runs; with `VITASHARP_LAZY_WRITEBACK_SYNC=1` 75.7/15/54.0, LAZY alone 77.9/12/44.9 |
 
+- The Perfetto trace of this scene (android-perf-references.md) shows the GPU in flight only 48% of the time and the
+  game thread waiting on it: the frame is a serial chain (game -> worker -> GPU -> game), which is why EARLY helps.
 - At 0.75 or without MSAA the GPU drops to ~34.5 ms but the frame stays at ~62 ms (median 15 fps): the CPU side is
   next (game thread + its GPU waits, the three JobSched threads, the worker). Neither quality switch reaches 30 fps
   alone; they are candidates for a per-game quality option on Android (native by default), not a default.
