@@ -1,3 +1,4 @@
+using VitaSharp.Core;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
@@ -56,6 +57,17 @@ public sealed partial class EmulationSession
     {
         try
         {
+            // a state of another executable of the game (saved after a LoadExec: Jak 1 of the Jak and Daxter
+            // Collection, God of War of its collection) while the game's menu runs: that one is started first (as on
+            // the desktop). The LoadExec and its first frames need the emulation running, the pause menu paused it.
+            if (SaveStates.ProgramOf(StatePath(slot)) is { } program && _emu.MainModule is { } main
+                && !string.Equals(program, main.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                bool paused = EmulationPause.IsPaused;
+                if (paused) EmulationPause.Resume("load state: LoadExec");
+                try { SaveStates.SwitchProgramFor(_emu, StatePath(slot), s => CaptureStatus?.Invoke(s)); }
+                finally { if (paused) EmulationPause.Pause("load state: LoadExec"); }
+            }
             SaveStates.Load(_emu, StatePath(slot), () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
             return $"Estado do slot {slot} carregado";
         }
