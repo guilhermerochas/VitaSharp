@@ -48,9 +48,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
   sem janela; não houve teste com janela); o teclado do sistema (ImeDialog) aberto num save: o Sakatsuku
   (`st_game2`, 7000 quadros) não chegou ao teclado, e o Invizimals não foi testado
-- [ ] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
+- [x] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
   (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
   não investigada (`scratchpad/ss1_jak1/stdout.txt`)
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 
 ## Desempenho (PC)
 
@@ -534,6 +535,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
+  carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
+  corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
 - [x] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
   prioridade máxima; gravação `captures\PCSE00271_20261106_020056_tudo`): nenhum quadro apresentado (watchdog STALL
   no frame 1). As threads `AsyncIOSystem` e `NRSMovieFileAsyncServer` chamam `sceKernelWaitEvent(0x0 / 0xFFFFFFFF,
@@ -609,7 +613,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - SceVshBridge::vshSblQafMgrIsAllowNearTest (0xD0D4EB67)
   - SceWlan::sceWlanGetConfiguration (0x70AF9BD6)
 
-- [ ] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
+- [x] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
   selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
   04/11/2026, main d388b61; captura F10 `diagnostics\PCSA00080_20261104_162655`, dump de GPU
   `gpudumps\PCSA00080_20261104_162658.vsgd`). Parece passo (stride/pitch) ou layout errado de uma textura — muito
@@ -670,6 +674,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   passar 2). Os dois ficam como chaves A/B desligadas. O que falta para separar as hipóteses: o tempo real de GPU do
   Vita (aqui a notificação da cena 1 sai em <1 ms) e do decoder; um vídeo do Vita do menu confirmaria se a faixa está
   limpa no console
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
@@ -966,10 +971,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   enquanto na rodada boa ela ainda fazia 51 `sceNpTrophyGetTrophyInfo` no quadro 22: comparar a ordem
   registro de conquistas x `MainThread`. Blind Men, Zero Time Dilemma, The Deer God e Silent Hill: não testados
   nesta rodada.
-- [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
+- [x] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
   `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [x] Jak and Daxter Collection (PCSA00080), teste do usuário 05/11/2026 (main 84a12b1): ao escolher o Jak 1,
   `LoadExec app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)`
   e o jogo trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`.
@@ -978,12 +984,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gameplay do Jak 1; as 3 execuções do agente C dia 3 (`scratchpad/bugsC3_out/jak1_live_main/_fix/_final.log`, uma
   com o build da main) fazem o `LoadExec app0:Jak1.self` a partir do menu, a F3DPlaybackThread roda e não há
   `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `scratchpad/bugsC_jak` (dia 1)
-- [ ] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
+- [x] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
   textura 0x63FBC400) ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o mesmo
   tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1). A 57c57b1 (quadros tirados na ordem de
   decodificação, 0/506 idas e voltas) é posterior ao relato; com o build do agente C dia 3 (`jak_menu`): 1 ida-e-volta
   em 527 quadros (1351→1352→1353, `scratchpad/bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
   usuário confirmar olhando para a direita na main atual
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
   Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
   acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
@@ -1031,7 +1038,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
   coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
   da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
-- [ ] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
+- [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
   para concluir com uma rodada, e o fps é o mesmo (20). (b) **Blackout depois de carregar o estado**: 31 presents
@@ -1067,7 +1074,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   e o callback (lr 0x810411B3) lê o 3 de outro lugar; provavelmente o tempo medido do quadro, que inclui a espera na
   fila cheia, então uma vez em 3 se mantém. No Vita o Jak 1 roda a 30. Próximo: `--watch-read` no callback para achar
   a variável do intervalo e quem a escreve
-- [ ] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+- [x] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
   (a) **Tela de título lenta: corrigido o grosso** (0,4-2,5 fps → 10-12 fps, alocação 19-55 MB → 0,2 MB/quadro). Cada
   quadro tem ~6300 desenhos com 16 KB de uniforms de vértice (27 MB/quadro): passava do heap de uniforms (48 MB), o
   `UniformArena` não guardava nenhum bloco gerenciado de reserva (o limite de 16 contava os 48 do heap) e alocava 1 MB
@@ -1091,7 +1099,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   vem do jogo em cada `sceGxmDisplayQueueAddEntry`. Não achei quem o escreve (o endereço do dia 5, 0x86A92F00, não
   é o desta sessão; o trace de HLE não mostrou o AddEntry). Provável: o jogo escolhe 3 vblanks porque o quadro dele
   passa de 33 ms (item a: pacing)
-- [ ] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `scratchpad/bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+- [x] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `scratchpad/bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
   (a) **Tela de título: custo de HLE corrigido** (commit "HLE cost: libgxm accessors..."): 14,4 → 18,8 fps, F3D
   11,7 → 3,8 M ciclos de HLE/quadro (`bugsC8_out/jak_t_ref` x `jak_t_new`). (b) **Os 20 fps do gameplay são o
   nativo**: a palavra +4 dos dados do `AddEntry` é o campo [obj+0x98] do device F3D, gravado uma vez na inicialização
@@ -1111,6 +1120,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cheia com cor (0,0,0,0) e blend ADD 1-srcA/srcA (desenho 1450 do present 9600) que some no quadro seguinte ao X
   (present 9646, pad 0x4000 em 9645), e depois a câmera fica parada com o Jak andando: os dois combinam com o relógio
   de vsync parado do item (c); falta o usuário confirmar no mesmo trecho com o build novo
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
