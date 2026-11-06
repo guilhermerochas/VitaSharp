@@ -182,6 +182,33 @@ public sealed partial class Http : HleModule
         }
     }
 
+    // libhttp's option setters without public names (FW 3.74): both need the library initialised.
+    int _globalOption16;
+
+    /// <summary>(int value): sets the library-wide option 0x16 (an int; the shell sets 1 at start).</summary>
+    [Hle("sceHttp_855D5254", Nid = 0x855D5254, Library = "SceHttp")]
+    int sceHttpSetGlobalOption16(int value)
+    {
+        lock (_lock)
+        {
+            if (!_inited) return ERR_BEFORE_INIT;
+            _globalOption16 = value;
+            return 0;
+        }
+    }
+
+    /// <summary>(int id, bool enable): sets the one-byte option 0xE of a template, connection or request (Sign Up).
+    /// Nothing in the offline model depends on it.</summary>
+    [Hle("sceHttp_F30073EC", Nid = 0xF30073EC, Library = "SceHttp")]
+    int sceHttpSetOptionE(int id, int enable)
+    {
+        lock (_lock)
+        {
+            if (!_inited) return ERR_BEFORE_INIT;
+            return _objs.ContainsKey(id) ? 0 : ERR_INVALID_ID;
+        }
+    }
+
     /// <summary>SceHttpMemoryPoolStats: +0 poolSize, +4 maxInuseSize, +8 currentInuseSize, +C reserved.</summary>
     [Hle]
     int sceHttpGetMemoryPoolStats(uint stats)
@@ -1118,6 +1145,12 @@ public sealed partial class Ssl : HleModule
         GuestMemory.W32(stats, _poolSize);
         return 0;
     }
+
+    /// <summary>(int, int index, void *buf, uint size, ...): the WebKit process asks libssl for the certificate
+    /// authorities (size first with a NULL buffer, then the data). The real libssl serves them from
+    /// vs0:data/external/cert/CA_LIST.cer; that list is not decoded here, and with no TLS session ever made offline the
+    /// request ends with SceSsl's not-found error (the page then fails on the network, as it does anyway).</summary>
+    [Hle] int sceSslInternalGetCertificateAuthority(int a0, int index, uint buf, uint size) => ERR_NOT_FOUND;
 
     [Hle] uint sceSslGetSubjectName(uint cert) => 0;
     [Hle] uint sceSslGetIssuerName(uint cert) => 0;

@@ -23,7 +23,47 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblUtMgrHasComTestFlag() => 0;
     [Hle] int vshSysconIsIduMode() => 0;
     [Hle] int vshSysconHasWWAN() => 0;
+    /// <summary>A store demo (show mode) unit: no.</summary>
+    [Hle] int vshSysconIsShowMode() => 0;
     [Hle] int vshMotionNoiseFilterIsAvailable() => 0;
+
+    /// <summary>(SceKernelPscode *pscode): the unit's 8-byte product code through the bridge (ksceSblAimgrGetPscode):
+    /// company 1 (SCE), product 0x104 (CEX, North America: the region the registry manager reports, UC2), sub code
+    /// 0x10 (PCH-1000), factory 0. Settings reads it for System Information.</summary>
+    [Hle]
+    int _vshSblAimgrGetPscode(uint pscode)
+    {
+        if (pscode == 0) return unchecked((int)0x80010016); // EINVAL: nothing to copy the code to
+        GuestMemory.Write(pscode, (ushort)1);
+        GuestMemory.Write(pscode + 2, (ushort)0x104);
+        GuestMemory.Write(pscode + 4, (ushort)0x10);
+        GuestMemory.Write(pscode + 6, (ushort)0);
+        return 0;
+    }
+
+    /// <summary>(const char *path, int flags, const void *param 8 bytes): the shell registers an application path
+    /// with appmgr (a path of 0x40 characters or more: 0x8002710B, like the bridge). Nothing to track here.</summary>
+    [Hle]
+    int _vshAppMgrRegisterPath(uint path, int flags, uint param)
+    {
+        if (path != 0 && GuestMemory.ReadCString(path, 0x41).Length >= 0x40) return unchecked((int)0x8002710B);
+        return 0;
+    }
+
+    /// <summary>(const SceSblSsAppKeyParam *in 0x24, SceSblSsAppKey *out 0x24): a key the security processor derives
+    /// from the console's secrets and the request (the Browser and WebKit key their local storage with it). The
+    /// unit's secrets do not exist here: the key is derived the same way every time from the request (SHA-256 over
+    /// it), so what was stored with it can be read back; the first word (the request kind) is echoed.</summary>
+    [Hle]
+    int _vshSblSsGenerateAppKey(uint input, uint output)
+    {
+        if (input == 0 || output == 0) return unchecked((int)0x80010016);
+        var req = GuestMemory.Span(input, 0x24).ToArray();
+        var key = System.Security.Cryptography.SHA256.HashData([.. req, .. "VitaSharp app key"u8]);
+        GuestMemory.W32(output, BitConverter.ToUInt32(req, 0));
+        key.CopyTo(GuestMemory.Span(output + 4, 0x20));
+        return 0;
+    }
 
     /// <summary>
     /// (int capability): bit <paramref name="capability"/> of the model capability word SceSysroot keeps (sysroot +0x84,
@@ -58,6 +98,8 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblQafMgrIsAllowKeepCoreFile() => 0;
     /// <summary>The "near" (location sharing) test servers are a QA flag: off (NPXS10000 and near_profile ask).</summary>
     [Hle] int vshSblQafMgrIsAllowNearTest() => 0;
+    /// <summary>Debugging system applications is a QA flag: off (Content Manager asks at start).</summary>
+    [Hle] int vshSblQafMgrIsAllowSystemAppDebug() => 0;
     /// <summary>Changing the liblocation model is a QA flag: off (the shell skips its location debug settings).</summary>
     [Hle] int vshSblQafMgrIsAllowLiblocationChangeModel() => 0;
     /// <summary>Account binding is strict on a retail unit (the shell compares with 1).</summary>

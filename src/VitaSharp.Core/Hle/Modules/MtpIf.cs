@@ -72,6 +72,11 @@ public sealed partial class MtpIf : HleModule
         return unchecked((int)0x80243008); // SCE_UDCD_ERROR_WAIT_TIMEOUT
     }
 
+    /// <summary>(void): the MTP service resets the controller when it starts (bootimage SceUdcd: only the system
+    /// software may, then the current driver is stopped). With the controller already deactivated there is nothing to
+    /// stop.</summary>
+    [Hle("sceUdcd_F1A3690B", Nid = 0xF1A3690B, Library = "SceUdcd")] int sceUdcdResetCurrent() => 0;
+
     [Hle] int sceUdcdRegisterCallback(uint callback, int mask) => 0;
     [Hle] int sceUdcdUnregisterCallback(uint callback) => 0;
 }

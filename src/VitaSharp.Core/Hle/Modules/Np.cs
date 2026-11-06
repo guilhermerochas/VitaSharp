@@ -170,6 +170,61 @@ public sealed partial class NpManager : HleModule
         return 0;
     }
 
+    // ---- system-software NIDs of np_manager.suprx (FW 3.74), no public names. np_manager is an IPC client of the
+    // shell's SceNpManagerIpc service; these are its account-side requests, which only the system software makes. The
+    // system itself has no PSN account (its registry's /CONFIG/NP/account_id is empty, Settings offers "Sign up"), so
+    // the account requests end like the service's signed-out answer; the library's own checks come first.
+    const int MGR_NOT_INITIALIZED = unchecked((int)0x80550502);
+    uint _sysHandlers;
+    bool _sysInited;
+
+    /// <summary>(const void *handlers): the shell (which hosts the service) gives np_manager its handler table, as
+    /// libnetctl's NID_C61F3E96; only kept.</summary>
+    [Hle("sceNpManager_77DE17D4", Nid = 0x77DE17D4, Library = "SceNpManager")]
+    int sceNpManagerSetServiceHandlers(uint handlers)
+    {
+        if (handlers == 0) return MGR_INVALID_ARGUMENT;
+        _sysHandlers = handlers;
+        return 0;
+    }
+
+    /// <summary>(uint poolSize, 0 = 0x1000): the system-side library initialisation (its own heap); a second call
+    /// fails with ALREADY_INITIALIZED.</summary>
+    [Hle("sceNpManager_C89E0B94", Nid = 0xC89E0B94, Library = "SceNpManager")]
+    int sceNpManagerInitForSystem(uint poolSize)
+    {
+        lock (_lock)
+        {
+            if (_sysInited) return ERR_ALREADY_INITIALIZED;
+            _sysInited = true;
+            return 0;
+        }
+    }
+
+    /// <summary>(int mode): np_manager connects to the service over IPMI (errors map to 0x80550581/0x80550582). The
+    /// HLE service is always there.</summary>
+    [Hle("sceNpManager_29C9B8A5", Nid = 0x29C9B8A5, Library = "SceNpManager")] int sceNpManagerConnectService(int mode) => 0;
+
+    /// <summary>Requests 0xA0000 (int *out: NID_B24FC028), 0xA0005 (32 bytes: NID_CFAEB050), 0xB0015 (0x148 bytes:
+    /// NID_E45E4003): the system user's account record, which is empty without an account (all zero: no account id,
+    /// not signed in). Messages reads NID_B24FC028 and offers "Sign up" on 0 (an error leaves it waiting); the daily
+    /// checker, the console-information sender and the activity poster skip their PSN work.</summary>
+    [Hle("sceNpManager_B24FC028", Nid = 0xB24FC028, Library = "SceNpManager")] int sceNpManagerSysGetAccountInt(uint p) => ZeroRecord(p, 4);
+    [Hle("sceNpManager_CFAEB050", Nid = 0xCFAEB050, Library = "SceNpManager")] int sceNpManagerSysGetAccountData(uint p) => ZeroRecord(p, 0x20);
+    [Hle("sceNpManager_E45E4003", Nid = 0xE45E4003, Library = "SceNpManager")] int sceNpManagerSysGetAccountInfo(uint p) => ZeroRecord(p, 0x148);
+
+    static int ZeroRecord(uint p, uint size)
+    {
+        if (p == 0) return MGR_INVALID_ARGUMENT;
+        GuestMemory.Fill(p, 0, size);
+        return 0;
+    }
+
+    /// <summary>(void *a, void *b, void *c[, void *d]): account details with optional outputs (NULL ones go to a scratch
+    /// buffer): NID_DDF30B0E (trophy server job), NID_ED12AF16 (Sign Up). Signed out, like the requests above.</summary>
+    [Hle("sceNpManager_DDF30B0E", Nid = 0xDDF30B0E, Library = "SceNpManager")] int sceNpManagerSysGetAccountIds(uint a, uint b, uint c) => ERR_SIGNED_OUT;
+    [Hle("sceNpManager_ED12AF16", Nid = 0xED12AF16, Library = "SceNpManager")] int sceNpManagerSysGetAccountDetails(uint a, uint b, uint c, uint d) => ERR_SIGNED_OUT;
+
     // the cached account parameters: layout unconfirmed (Vita3K unimplemented), so the cache is reported unavailable
     [Hle] int sceNpManagerGetCachedParam(uint param) => param == 0 ? MGR_INVALID_ARGUMENT : ERR_SIGNED_OUT;
 
@@ -383,6 +438,15 @@ public sealed partial class NpManager : HleModule
 
     [Hle("sceNpManager_80036A44", Nid = 0x80036A44, Library = "SceNpManager")] int NpBindCheckClose(int handle) => 0;
 
+    /// <summary>(char env[16]): the NP environment np_common keeps (set from the registry's /CONFIG/NP/env at start:
+    /// "np", the production servers); copied with strncpy, always 0.</summary>
+    [Hle]
+    int sceNpCommonGetNpEnviroment(uint env)
+    {
+        if (env != 0) { GuestMemory.Fill(env, 0, 16); GuestMemory.WriteCString(env, "np", 16); }
+        return 0;
+    }
+
     // ---------------------------------------------------------------- communication id text (SceNpCommon)
     // np_common.suprx FW 3.74 (the shell's trophy server names a title's folders this way): SceNpCommunicationId
     // (char data[9], term, uint8 num, dummy) <-> "NPWR12345_00".
@@ -526,6 +590,13 @@ public sealed partial class NpSocial : HleModule
     // ---------------------------------------------------------------- SceNpBasic: no friends, nothing blocked
 
     int FriendQuery(uint friendId, uint outPtr) => friendId == 0 || outPtr == 0 ? BASIC_INVALID_ARGUMENT : PsnAccount.Current.ServerError;
+
+    /// <summary>np_basic.suprx's system-side pair (FW 3.74) that near uses for a place's metadata: NID_6F1B58F9
+    /// (const void *query, void *out, uint size) asks the server, which cannot be reached; NID_B414E768 ends the
+    /// request and clears the library's request slot.</summary>
+    [Hle("sceNpBasic_6F1B58F9", Nid = 0x6F1B58F9, Library = "SceNpBasic")]
+    int sceNpBasicSysGetMetadata(uint query, uint outBuf, uint size) => query == 0 || outBuf == 0 ? BASIC_INVALID_ARGUMENT : PsnAccount.Current.ServerError;
+    [Hle("sceNpBasic_B414E768", Nid = 0xB414E768, Library = "SceNpBasic")] int sceNpBasicSysEndRequest(uint p) => 0;
     [Hle] int sceNpBasicGetFriendOnlineStatus(uint friendId, uint status) => FriendQuery(friendId, status);
     [Hle] int sceNpBasicGetFriendContextState(uint friendId, uint state) => FriendQuery(friendId, state);
     [Hle] int sceNpBasicGetGamePresenceOfFriend(uint friendId, uint presence) => FriendQuery(friendId, presence);

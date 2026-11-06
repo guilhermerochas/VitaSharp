@@ -101,6 +101,24 @@ public sealed partial class NpWebApi : HleModule
         return 0;
     }
 
+    // ---- system-software NIDs of np_webapi.suprx (FW 3.74): the shell and Messages set the library up for
+    // themselves. The library's argument checks (0x80552902), then the same local objects as above.
+    const int ERR_WEBAPI_ARG = unchecked((int)0x80552902);
+
+    /// <summary>(const SceNpTitleId *titleId, const SceNpTitleSecret *secret, ...): the title id the system
+    /// software's requests carry ("NPXS19999_00" for the shell): both are required.</summary>
+    [Hle("sceNpWebApi_4699EF17", Nid = 0x4699EF17, Library = "SceNpWebApi")]
+    int sceNpWebApiSetNpTitleIdForSystem(uint titleId, uint secret) => titleId == 0 || secret == 0 ? ERR_WEBAPI_ARG : sceNpWebApiSetNpTitleId(titleId, secret);
+
+    /// <summary>(uint poolSize, const void *param, ...): a library context with its own pool (0 is refused); its id.</summary>
+    [Hle("sceNpWebApi_E8FBA9B8", Nid = 0xE8FBA9B8, Library = "SceNpWebApi")]
+    int sceNpWebApiCreateContextForSystem(uint poolSize, uint param) => poolSize == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    /// <summary>(void *obj): hands an object to the library's internal manager when the library is set up (else 0).
+    /// Nothing is ever sent, so there is nothing to keep.</summary>
+    [Hle("sceNpWebApi_E83CE7F1", Nid = 0xE83CE7F1, Library = "SceNpWebApi")]
+    int sceNpWebApiRegisterForSystem(uint obj) => 0;
+
     [Hle] int sceNpWebApiCreateHandle(int libCtxId) => NewId();
     [Hle] int sceNpWebApiDeleteHandle(int libCtxId, int handleId) => 0;
     [Hle] int sceNpWebApiAbortHandle(int libCtxId, int handleId) => 0;
@@ -221,6 +239,43 @@ public sealed partial class NpCommerce2 : HleModule
     uint _nextId = 1;
     readonly HashSet<uint> _ctx = new();
     readonly Dictionary<uint, uint> _reqs = new(); // request -> ctx
+
+    // ---- np_commerce2.suprx's system-side NIDs (FW 3.74), used by Sign Up (NPXS10018) for its PSN store session:
+    // settings, a session object with a callback and a work buffer, then requests to the store servers. Their errors are
+    // the library's own (0x80550F01 not initialised, 0x80550F03 invalid argument, 0x80550F96 out of range). The
+    // settings and objects are local and work; every request that needs the store fails like an unreachable server.
+    const int ERR_SYS_INVALID = unchecked((int)0x80550F03), ERR_SYS_RANGE = unchecked((int)0x80550F96);
+
+    /// <summary>Settings (id, value, size...): NID_25C58D33 (ptr, n), NID_AA090F5E / NID_BC89C4D3 (id 2 / 3..5, ptr, 7),
+    /// NID_8ECAE666 (0, index &lt; 9, 7).</summary>
+    [Hle("sceNpCommerce2_25C58D33", Nid = 0x25C58D33, Library = "SceNpCommerce2")] int sceNpCommerce2SysSetParam0(uint p, int n) => 0;
+    [Hle("sceNpCommerce2_AA090F5E", Nid = 0xAA090F5E, Library = "SceNpCommerce2")] int sceNpCommerce2SysSetParam1(int id, uint p, int size) => 0;
+    [Hle("sceNpCommerce2_BC89C4D3", Nid = 0xBC89C4D3, Library = "SceNpCommerce2")] int sceNpCommerce2SysSetParam2(int id, uint p, int size) => 0;
+    [Hle("sceNpCommerce2_8ECAE666", Nid = 0x8ECAE666, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSetParam3(int id, uint index, int size) => index >= 9 ? ERR_SYS_RANGE : 0;
+
+    uint NewSysObject(uint outId)
+    {
+        if (outId == 0) return unchecked((uint)ERR_SYS_INVALID);
+        lock (_lock) GuestMemory.W32(outId, _nextId++);
+        return 0;
+    }
+
+    /// <summary>(int, uint *id): a session object. (int, void *callback): its callback. (int, void *buf, uint size,
+    /// uint *id): a work object over the caller's buffer.</summary>
+    [Hle("sceNpCommerce2_749C8571", Nid = 0x749C8571, Library = "SceNpCommerce2")] int sceNpCommerce2SysCreateSession(int a, uint outId) => (int)NewSysObject(outId);
+    [Hle("sceNpCommerce2_D09A38DA", Nid = 0xD09A38DA, Library = "SceNpCommerce2")] int sceNpCommerce2SysSetCallback(int a, uint cb) => 0;
+    [Hle("sceNpCommerce2_45ACE466", Nid = 0x45ACE466, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysCreateWork(int a, uint buf, uint size, uint outId) => buf == 0 || size == 0 ? ERR_SYS_INVALID : (int)NewSysObject(outId);
+
+    /// <summary>The requests to the store (NID_86405E79 start, NID_4C406B2A, NID_5AB115CE, NID_5D8B5B59, NID_BFDC7B9F,
+    /// NID_C7B04A45): the servers cannot be reached.</summary>
+    [Hle("sceNpCommerce2_86405E79", Nid = 0x86405E79, Library = "SceNpCommerce2")] int sceNpCommerce2SysStart(uint a, uint b) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_4C406B2A", Nid = 0x4C406B2A, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest1(uint a, uint b) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_5AB115CE", Nid = 0x5AB115CE, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest2(uint a, uint b) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_5D8B5B59", Nid = 0x5D8B5B59, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest3(uint a, uint b) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_BFDC7B9F", Nid = 0xBFDC7B9F, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest4(uint a, uint b) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_C7B04A45", Nid = 0xC7B04A45, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest5(uint a, uint b) => PsnAccount.Current.ServerError;
 
     [Hle] int sceNpCommerce2Init() { lock (_lock) _inited = true; return 0; }
     [Hle] int sceNpCommerce2Term() { lock (_lock) { _inited = false; _ctx.Clear(); _reqs.Clear(); } return 0; }
