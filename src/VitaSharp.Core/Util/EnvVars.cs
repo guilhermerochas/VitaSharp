@@ -141,6 +141,9 @@ public static class EnvVars
     public const string ResScale = "VITASHARP_RES_SCALE";
     /// <summary>1: a stage binding the same texture descriptors as an earlier one in the frame reuses its descriptor set (VulkanRenderer.TexSetReuse.cs).</summary>
     public const string TexSetReuse = "VITASHARP_TEXSET_REUSE";
+    /// <summary>1: reused texture sets live in a pool of their own and survive the frame's pool resets (a stage bound in an
+    /// earlier submit reuses its set after a per-frame check of its memory textures; implies TexSetReuse).</summary>
+    public const string TexSetPersist = "VITASHARP_TEXSET_PERSIST";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";

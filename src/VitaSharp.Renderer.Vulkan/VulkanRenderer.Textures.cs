@@ -141,6 +141,8 @@ public sealed unsafe partial class VulkanRenderer
         public long Serial = -1;
         public int Units;
         public uint Mask;
+        /// <summary>The set came from the persistent texture-set pool (VITASHARP_TEXSET_PERSIST): it may be kept across submits.</summary>
+        public bool Kept;
     }
     readonly TexSetCache _texSetV = new(), _texSetF = new();
 
@@ -209,6 +211,7 @@ public sealed unsafe partial class VulkanRenderer
         if (TexSetReuse && !TexLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused) { ProfMark(ProfPhase.TexHit); return reused; }
         _reuseOk = TexSetReuse && !TexLookupOld && _drawRing == null;
         _reuseDeps = 0;
+        _reuseMem = 0;
         if (TexLookupOld) FillTextureInfosOld(infos, textures, used, cubeSamplers, units, vertexStage);
         else for (uint m = mask; m != 0; m &= m - 1)
         {
@@ -228,7 +231,7 @@ public sealed unsafe partial class VulkanRenderer
             var (v, l) = ResolveTextureOrSkip(desc, asCube);
             if (v.Handle != 0) { info.ImageView = v; info.ImageLayout = l; info.Sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
             if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
-            if (_reuseOk) NoteReuseSource(v);
+            if (_reuseOk) NoteReuseSource(i, v);
         }
         ProfMark(ProfPhase.TexResolve);
         var cache = vertexStage ? _texSetV : _texSetF;
@@ -241,9 +244,16 @@ public sealed unsafe partial class VulkanRenderer
                 ref var c = ref cache.Infos[i];
                 same = c.Sampler.Handle == infos[i].Sampler.Handle && c.ImageView.Handle == infos[i].ImageView.Handle && c.ImageLayout == infos[i].ImageLayout;
             }
-            if (same) { StoreReusedSet(vertexStage, textures, mask, cubeSamplers, units, cache.Set, infos); return cache.Set; }
+            if (same)
+            {
+                if (TexSetPersist && !cache.Kept) _reuseOk = false; // a frame-pool set: gone at the next pool reset
+                StoreReusedSet(vertexStage, textures, mask, cubeSamplers, units, cache.Set, infos);
+                return cache.Set;
+            }
         }
-        var set = AllocSet(layout);
+        // a set that will be kept across submits comes from the persistent texture-set pool (VulkanRenderer.TexSetReuse.cs)
+        bool kept = TexSetPersist && _reuseOk;
+        var set = kept ? AllocKeptTexSet(layout) : AllocSet(layout);
         uint n = 0;
         for (int i = 0; i < units; i++)
         {
@@ -260,6 +270,7 @@ public sealed unsafe partial class VulkanRenderer
         _statDescWrites += n;
         cache.Mask = mask;
         cache.Set = set;
+        cache.Kept = kept;
         cache.Serial = _frameSerial;
         cache.Units = units;
         StoreReusedSet(vertexStage, textures, mask, cubeSamplers, units, set, infos);
@@ -396,6 +407,7 @@ public sealed unsafe partial class VulkanRenderer
         // _texSrc/_texSrcAddr: which path was taken, for the debug-mode draw ring (VulkanRenderer.DrawRing.cs)
         _texSrcAddr = 0;
         _texSrcRt = null;
+        _texSrcTex = null;
         if (asCube && (w != h || RenderTargetContaining(addr) != null)) { _texSrc = TexSource.None; return (default, default); }
         if (asCube) { _texSrc = TexSource.MemoryCube; return ResolveMemoryTexture(d, addr, w, h, gamma, asCube); }
         // LOD min on a texture whose base level is a rendered surface: the sampler never reads level 0, it reads the
@@ -468,7 +480,7 @@ public sealed unsafe partial class VulkanRenderer
             var sw = RtSwizzle(rt, d.Format);
             if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
-                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; _texEpoch++; DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
+                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; BumpTexEpoch(1); DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
                 if (gamma) viewFormat = Formats.Srgb(viewFormat);
                 rt.SampledView = CreateView(rt.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, sw);
@@ -551,6 +563,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         _textures.TryGetValue(key, out var tex);
+        _texSrcTex = tex;
         if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
@@ -639,6 +652,7 @@ public sealed unsafe partial class VulkanRenderer
             (tex.Image, tex.View, tex.Mem) = CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips - lodMin, faces, cube: cube, swizzle: swizzle);
             _textures[key] = tex;
+            _texSrcTex = tex;
             _fNewTextures++;
             if (DebugMode.Enabled) DbgTextureFormat(d, w, h);
         }
@@ -845,7 +859,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_rtAliases.TryGetValue(key, out var stale) && (stale.W != aw || stale.H != ah))
         {
             _rtAliases.Remove(key);
-            _texEpoch++;
+            BumpTexEpoch(2);
             var (si, sv, sm) = (stale.Image, stale.View, stale.Mem);
             DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, sv, null); _vk.DestroyImage(_dev, si, null); _imagePool.Free(sm); });
         }

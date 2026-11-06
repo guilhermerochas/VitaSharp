@@ -1401,6 +1401,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         DestroyUniformHeap();
         DestroyRangeCache();
         DestroyPersistentSets();
+        DestroyTexSetPool();
         DestroyMsaa();
         DestroyTileWord1();
         DestroyGpuTime();
