@@ -85,6 +85,7 @@ public sealed unsafe partial class VulkanRenderer
     public void Idle()
     {
         if (VitaSharp.Core.EmulationPause.IsPaused) PresentWhilePaused();
+        else if (_splashPixels != null || _splashRt != null) PresentBootSplash(); // VulkanRenderer.BootSplash.cs
         // keep latency low when the guest stops producing work (loading screens etc.)
         bool resultsRecorded = F.Recording && HasPendingResults(F);
         if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))

@@ -116,6 +116,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool DumpPending, DumpPng;
         /// <summary>Also write this frame to this PNG (<see cref="VulkanRendererOptions.ShotPath"/>).</summary>
         public string? ShotPath;
+        /// <summary>Readback holds a frame presented under the boot picture: checked for content (VulkanRenderer.BootSplash.cs).</summary>
+        public bool SplashCheck;
         /// <summary>Debug mode: replay ring slot this frame copies the presented image into, -1 = none (VulkanRenderer.Replay.cs).</summary>
         public int ReplaySlot = -1;
         /// <summary>Debug mode / VITASHARP_DEBUG_NAN: NaN/Inf scan results and draw hits of this frame (VulkanRenderer.NanCheck.cs).</summary>
@@ -1119,6 +1121,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         bool dump = png || shot != null || _opt.FrameSink != null;
         if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; F.ShotPath = shot; }
         else F.DumpPending = false;
+        F.SplashCheck = false;
+        if (SplashWaiting) // the boot picture stays until a frame with content: this one is read back and checked
+        {
+            if (!dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = false; F.ShotPath = null; }
+            F.SplashCheck = true;
+        }
         if (DebugMode.Enabled || _opt.PresentTap != null) DebugPresent(src, frame);
         else
         {
@@ -1151,7 +1159,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             WriteTraceSnapshots(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
             return;
         }
-        PresentOut(src, frame);
+        if (SplashWaiting && SplashImage() is { } splash) PresentOut(splash.Rt, splash.Frame); // VulkanRenderer.BootSplash.cs
+        else PresentOut(src, frame);
     }
 
     /// <summary>Shows <paramref name="src"/> on the swapchain (or just submits the frame when there is none).</summary>
@@ -1258,6 +1267,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     void WriteDump(Frame f, (Buffer Buf, DeviceMemory Mem, nint Ptr, uint W, uint H) rb)
     {
         if (!f.DumpPending) return;
+        if (f.SplashCheck) { f.SplashCheck = false; CheckSplashFrame(f.DumpIndex, rb.Ptr, rb.W, rb.H); }
         if (_opt.FrameSink is { } sink) SinkFrame(f, rb, sink);
         if (!f.DumpPng && f.ShotPath == null) { f.DumpPending = false; return; }
         try
@@ -1480,6 +1490,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.DestroyImage(_dev, d.Image, null);
         }
         DestroyOverlay();
+        if (_splashRt is { } splash) { _vk.DestroyImageView(_dev, splash.View, null); _vk.DestroyImage(_dev, splash.Image, null); }
         _imagePool.Dispose();
         _compiler.Dispose();
         if (_opt.KeepDevice && _opt.Surface != null && !_deviceLost)

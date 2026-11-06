@@ -287,6 +287,8 @@ public static class Runner
             // state loads and LoadExec make a new renderer for this window: on this thread, like the first one
             emu.Gpu.ReplaceOn = window.RunOnWindowThread;
             emu.LoadTitle(appPath, BootSelf(options));
+            // the system's start-up picture (the app's sce_sys/pic0.png) until the game's first frame; system apps have none
+            if (!emu.TitleId.StartsWith("NPXS", StringComparison.Ordinal)) ShowBootSplash(renderer, emu.AppPath);
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
@@ -432,6 +434,23 @@ public static class Runner
     {
         ro.FirstPresent = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
         return new VulkanRenderer(ro);
+    }
+
+    /// <summary>The Vita shows an application's sce_sys/pic0.png (an indexed PNG) while its process loads: handed to the
+    /// renderer, which shows it until the guest's first present (VulkanRenderer.BootSplash.cs).</summary>
+    static void ShowBootSplash(VulkanRenderer r, string appDir)
+    {
+        var path = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(appDir, "sce_sys/pic0.png");
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var decoded = SkiaSharp.SKBitmap.Decode(path);
+            if (decoded == null) return;
+            using var rgba = decoded.Copy(SkiaSharp.SKColorType.Rgba8888);
+            if (rgba == null) return;
+            r.SetBootSplash(rgba.Bytes, rgba.Width, rgba.Height);
+        }
+        catch (Exception e) { Log.Warn($"Boot picture {path}: {e.Message}"); }
     }
 
     static VulkanRenderer NewHeadlessRenderer(VulkanRendererOptions ro, Diagnostics diag)

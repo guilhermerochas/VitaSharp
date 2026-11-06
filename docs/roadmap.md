@@ -941,6 +941,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `shown for 1,0 s`), mas isso só cobre 1 s: o Vita segue com o pic0 depois desse quadro preto. Falta saber a regra
   do sistema (o pic0 fica até o 1º quadro não preto? até o jogo terminar de carregar? é o SceShell que o desenha?) com
   o firmware LLE ou outro vídeo de jogo cujo 1º quadro seja preto
+  **Feito** (agente C dia 11, 06/11/2026, fix/bugs-games-10; validado por log, falta o usuário ver na janela): no
+  vídeo do Vita (`9vleIQnJ8dI`, 0:18-0:22) o pic0 fica ~4 s e passa direto para o logo, sem preto (ffmpeg
+  blackdetect: nenhum trecho preto ali), embora o jogo apresente quadros pretos antes (aqui os presents 1-83 são todos
+  0,0,0 e o logo entra com fade a partir do 84). Regra adotada: o pic0 fica até o 1º quadro do jogo que não é preto
+  (algum canal > 16), no máximo 60 s; enquanto isso cada quadro do jogo é lido de volta e conferido e a janela mostra o
+  pic0 no lugar dele (`VulkanRenderer.BootSplash.cs`; só na janela, apps do sistema NPXS não têm). Blind Men: `shown for
+  21,7 s, until the game's first frame that is not black (present 84)`; Devious Dungeon 6,6 s (present 2), Killzone
+  4,1 s (present 11, os 10 primeiros são pretos), Tearaway 1,9 s (present 1) (`scratchpad/bugsC10_out/blind3`,
+  `splash_PCSB01240`, `splash_PCSC00045`, `splash_PCSF00476`). Não conferido em vídeo do Vita se outros jogos com
+  quadros pretos no início (Killzone) também seguram o pic0 por cima deles
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
