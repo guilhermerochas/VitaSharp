@@ -209,6 +209,11 @@ public sealed partial class NpManager : HleModule
     /// HLE service is always there.</summary>
     [Hle("sceNpManager_29C9B8A5", Nid = 0x29C9B8A5, Library = "SceNpManager")] int sceNpManagerConnectService(int mode) => 0;
 
+    /// <summary>(): the shell's trophy server (SceNpTrophyServerJob, shell 812D09A3/812D1813) and the trophy app ask it
+    /// before syncing a set with the network: &lt; 0 fails, 0 skips the sync (returns success), &gt; 0 goes on to
+    /// connect. VitaSharp has no trophy network service, so the sync is always skipped.</summary>
+    [Hle("sceNpManager_A775A452", Nid = 0xA775A452, Library = "SceNpManager")] int sceNpManagerSysTrophySyncAllowed() => 0;
+
     /// <summary>Requests 0xA0000 (int *out: NID_B24FC028), 0xA0005 (32 bytes: NID_CFAEB050), 0xB0015 (0x148 bytes:
     /// NID_E45E4003): the system user's account record, which is empty without an account (all zero: no account id,
     /// not signed in). Messages reads NID_B24FC028 and offers "Sign up" on 0 (an error leaves it waiting); the daily
