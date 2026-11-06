@@ -165,8 +165,9 @@ public static class Runner
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            string rate = EmulationPause.IsPaused ? PauseBadge.Text(window.PauseKeyLabel) : $"{fps:F0} FPS";
+            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? "salvando estado..." : $"{fps:F0} FPS";
             string rec = capture?.Capture.IsRecording == true ? "● REC | " : "";
+            if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = "Salvando a gravação... não feche a janela";
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
         var titleTimer = new System.Threading.Timer(_ =>
@@ -243,7 +244,7 @@ public static class Runner
         void ShowPauseBadge(VulkanRenderer? r)
         {
             if (r == null) return;
-            var badge = EmulationPause.IsPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
+            var badge = EmulationPause.IsUserPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
             if (badge is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height); else r.SetStatusOverlay(null, 0, 0);
         }
         void OnPauseChanged(bool paused)
@@ -255,7 +256,7 @@ public static class Runner
         window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
         if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
-        window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
+        window.Resized += () => { if (EmulationPause.IsUserPaused) ShowPauseBadge(renderer); };
         // the mouse mode (F4 cycles giroscópio / analógico direito / analógico esquerdo / desligado): a notice in the
         // top-left corner for 3 s and in the title bar
         int mouseNotice = 0;
@@ -288,6 +289,32 @@ public static class Runner
         });
         window.Resized += () => renderer?.NotifyResized();
         window.Closing += () => emu.Stop();
+        // closing the window (X, Alt+F4, the launcher's Stop) while "Gravar tudo" records or saves: the window stays open
+        // until the recording is complete, with the game still running, then closes itself
+        bool closeAfterSave = false;
+        int closeNow = 0;
+        window.CloseVeto = () =>
+        {
+            var c = capture.Capture;
+            if (Volatile.Read(ref closeNow) == 1 || (!c.IsRecording && c.Idle.IsSet)) return false;
+            if (!closeAfterSave)
+            {
+                closeAfterSave = true;
+                Log.Info("[capture] window closing with a recording running or being saved: the window closes when it is saved");
+                Console.WriteLine("Salvando a gravação (Gravar tudo) antes de fechar...");
+                new Thread(() =>
+                {
+                    // a recording still starting refuses Stop: retry until it stops, then wait for the save
+                    while (c.IsRecording && !c.Stop("window closed")) Thread.Sleep(250);
+                    c.Idle.Wait();
+                    Console.WriteLine(c.LastZip is { } z ? $"Gravação salva: {z}" : "Gravação salva (veja o log)");
+                    Volatile.Write(ref closeNow, 1);
+                }) { IsBackground = true, Name = "capture close" }.Start();
+            }
+            ShowTitle();
+            return true;
+        };
+        window.Tick += () => { if (Volatile.Read(ref closeNow) == 1 && closeAfterSave) { closeAfterSave = false; window.Close(); } };
         emu.Fatal += (t, e) => Log.Error($"Fatal error in thread {t.Name}: {e.Message}");
         window.Run();
         capture.Dispose(); // completes a running recording (its GPU dump first)

@@ -209,9 +209,18 @@ public static class EnvVars
     /// <summary>=0 (A/B): the GPU worker does not re-read uniform buffers written after the draw call (default: re-read).</summary>
     public const string UbLate = "VITASHARP_UB_LATE";
     /// <summary>=0 (A/B): the late uniform copy happens when the GPU worker gets the draw, not after the guest ended the
-    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =check: waits, and logs how many held
-    /// draws had their buffers rewritten meanwhile.</summary>
+    /// draw's scene (default: waits for sceGxmEndScene / sceGxmMidSceneFlush). =frame: waits until the frame's display-queue
+    /// entry instead (the hardware runs a scene up to a frame later; experiment). =check (or =frame,check): also logs how
+    /// many held draws had their buffers rewritten before the scene's end, and between the scene's end and the flip.
+    /// =audit (combinable): samples draws and re-hashes their vertex uniform buffers at the scene's end, at the frame's
+    /// flip and at the next flip, per vertex program (does the game write them after sceGxmEndScene?).</summary>
     public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
+    /// <summary>=all (A/B): a uniform buffer's copy stops at any bound buffer address after it, also at indices the
+    /// program does not read (default: only the program's own buffers bound the copy).</summary>
+    public const string UbClamp = "VITASHARP_UB_CLAMP";
+    /// <summary>=0 (A/B): sceTouchPeek always reports 1 sample, instead of 0 when sceTouchRead already consumed the newest
+    /// one (Sonic & All-Stars Racing Transformed hangs draining the panel otherwise).</summary>
+    public const string TouchPeekUnread = "VITASHARP_TOUCH_PEEK_UNREAD";
     public const string VideoHw = "VITASHARP_VIDEO_HW";
     public const string VisForce = "VITASHARP_VIS_FORCE";
     public const string VramBudgetMb = "VITASHARP_VRAM_BUDGET_MB";
@@ -244,6 +253,9 @@ public static class EnvVars
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
+    /// <summary>1 (experiment): sceDisplaySetFrameBuf in IMMEDIATE mode flips at most once per vblank (a second flip in the
+    /// same vblank waits for the next one). Default off.</summary>
+    public const string DisplayImmediatePace = "VITASHARP_DISPLAY_IMMEDIATE_PACE";
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";

@@ -14,6 +14,7 @@ static class ShaderTest
         string outDir = Path.Combine(Program.DataRoot, "shadertest");
         Directory.CreateDirectory(outDir);
         bool dumpAll = args.Contains("--dump");
+        bool perShader = args.Contains("--warnings"); // each program's warnings by name (which shaders read an unsupported bank, ...)
         // --lower-dynamic-indexing: translate as for Qualcomm's proprietary driver (GpuQuirk.DynamicIndexLowering)
         ShaderGenerator.LowerDynamicIndexing = args.Contains("--lower-dynamic-indexing");
         // --far-plane=discard|hardware: translate as for a device without shaderClipDistance (Mali, GpuQuirk.FarPlaneDiscard)
@@ -64,6 +65,7 @@ static class ShaderTest
                     continue;
                 }
                 foreach (var w in gen.Warnings) warnings[w] = warnings.GetValueOrDefault(w) + 1;
+                if (perShader) foreach (var w in gen.Warnings.Distinct()) Console.WriteLine($"{name} ({Path.GetFileName(file)}): warning: {w}");
                 var spv = compiler.Compile(gen.Glsl, gen.IsVertex, out var err);
                 if (spv == null)
                 {

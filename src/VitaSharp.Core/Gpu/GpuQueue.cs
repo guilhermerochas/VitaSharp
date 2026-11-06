@@ -168,8 +168,8 @@ public sealed class GpuQueue : IDisposable
 
     /// <summary>VITASHARP_UB_SCENE_END=check: also counts the held draws whose bound uniform buffers changed between the
     /// worker getting the draw and the scene's end (what an early copy would have read wrong).</summary>
-    static readonly bool GateCheck = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) == "check";
-    long _gateHeld, _gateChanged;
+    static readonly bool GateCheck = (Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) ?? "").Contains("check");
+    long _gateHeld, _gateChanged, _gateChangedAfterScene;
 
     static uint CopyAndHash(DrawCommand d)
     {
@@ -188,16 +188,20 @@ public sealed class GpuQueue : IDisposable
     void WaitSceneGate(DrawCommand d, SceneGate gate)
     {
         long ti = FrameLedger.Now();
-        uint before = GateCheck ? CopyAndHash(d) : 0;
-        bool ended = false;
-        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence && !(ended = gate.Wait(10)); i++) { }
+        uint before = GateCheck ? CopyAndHash(d) : 0, atSceneEnd = before;
+        bool ended = false, sceneSeen = gate.SceneEnded;
+        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence && !(ended = gate.Wait(10)); i++)
+            if (GateCheck && !sceneSeen && gate.SceneEnded) { sceneSeen = true; atSceneEnd = CopyAndHash(d); }
         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
         if (GateCheck)
         {
             long held = ++_gateHeld;
-            if (CopyAndHash(d) != before) _gateChanged++;
+            uint after = CopyAndHash(d);
+            if (!sceneSeen) atSceneEnd = after;
+            if (atSceneEnd != before) _gateChanged++;
+            if (after != atSceneEnd) _gateChangedAfterScene++;
             if ((held & (held - 1)) == 0 || held % 20000 == 0)
-                Log.Info($"[gpu] scene gate: {held} draws held until their scene ended, {_gateChanged} of them had uniform buffers rewritten meanwhile");
+                Log.Info($"[gpu] scene gate: {held} draws held, {_gateChanged} had uniform buffers rewritten before their scene ended, {_gateChangedAfterScene} between the scene's end and the frame's end (=frame mode only)");
         }
         if (!ended && !gate.Ended)
         {

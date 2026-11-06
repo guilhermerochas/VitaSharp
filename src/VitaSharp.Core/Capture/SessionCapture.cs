@@ -511,7 +511,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     }
 
     /// <summary>End of the session: a running recording is completed (waits for it).</summary>
-    public void StopAndWait(int timeoutMs = 120000)
+    public void StopAndWait(int timeoutMs = 300000)
     {
         if (_rec != null) Stop("session end");
         Idle.Wait(timeoutMs);
@@ -524,17 +524,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         long cpuMs = (long)Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds - r.ProcessCpuMs0;
         Log.Info($"[capture] stopping ({reason}) at guest frame {r.StopFlip}");
         _o.Status?.Invoke("Salvando a gravação...");
-        if (r.Dump is { } dump)
-        {
-            // a running game stops the dump at its next present; a stopped or paused one presents no more frames
-            if (_emu.Running && !EmulationPause.IsPaused) dump.Stop();
-            else if (dump.StopNow(15000) is { } res) { r.DumpResult ??= res; r.DumpDone.Set(); }
-        }
-        List<(string File, double StartMs)> wavs = r.OwnsAudio ? AudioDump.Disable() : [];
-        if (r.OwnsAudio) AudioDump.VoiceDumps = false;
+        // the GPU dump ends at the game's next present when one comes soon; it never waits on the guest for long (a
+        // hung game presents nothing): after 2 s the worker completes the file from the commands it already received
+        r.Dump?.Stop();
+        List<(string File, double StartMs)> wavs = [];
+        Step(r, "audio dump", () => { if (r.OwnsAudio) { wavs = AudioDump.Disable(); AudioDump.VoiceDumps = false; } });
         DebugMode.CollectHleErrors = false;
         if (ReferenceEquals(CaptureHooks.Random, this)) CaptureHooks.Random = null;
-        WriteText(r.Dir, "threads_stop.txt", _o.Threads);
+        Step(r, "threads_stop.txt", () => WriteText(r.Dir, "threads_stop.txt", _o.Threads));
         var closed = new ManualResetEventSlim();
         lock (_lock)
         {
@@ -544,45 +541,56 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             if (_preRollSeconds <= 0) StopRunning();
         }
         _o.RecordingChanged?.Invoke(false);
-        if (!closed.Wait(30000)) r.Notes.Add("the frame encoder did not finish in 30 s: frames.vsfr may be incomplete");
-        if (!r.DumpDone.Wait(_emu.Running ? 180000 : 20000))
+        if (!closed.Wait(30000)) r.Notes.Add("error: the frame encoder did not finish in 30 s: frames.vsfr may be incomplete");
+        Step(r, "gpu dump", () =>
         {
-            // no present came (the game hung or ended): complete the file from what was recorded
-            if (r.Dump?.StopNow(15000) is { } res) r.DumpResult ??= res;
-            else r.Notes.Add("the GPU dump did not finish");
-        }
+            if (r.Dump == null || r.DumpDone.Wait(2000)) return;
+            if (r.Dump.StopNow(15000) is { } res) { r.DumpResult ??= res; r.Notes.Add("the GPU dump ended without a present (the game presented no frame in 2 s): it has the commands received until the stop"); }
+            else r.Notes.Add("error: the GPU dump did not finish in 15 s");
+        });
 
         string dir = r.Dir;
         List<InputEvent> input;
         lock (_lock) input = r.Input.ToList();
-        using (var w = new StreamWriter(Path.Combine(dir, "input.tsv")))
+        Step(r, "input.tsv", () =>
         {
+            using var w = new StreamWriter(Path.Combine(dir, "input.tsv"));
             w.WriteLine(InputEvent.Header);
             foreach (var e in input) w.WriteLine(e.ToString());
-        }
-        WriteTimeline(r);
-        File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)"));
+        });
+        Step(r, "timeline.tsv", () => WriteTimeline(r));
+        Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)")));
         if (wavs.Count > 0)
         {
-            File.WriteAllLines(Path.Combine(dir, "audio", "files.txt"), wavs.Select(x => FormattableString.Invariant($"{Path.GetFileName(x.File)}\t{x.StartMs:F1}")).Prepend("# file\tstartMs (after the recording start)"));
-            try { CaptureAudio.Mix(wavs, Path.Combine(dir, "audio_mix.wav")); }
-            catch (Exception e) when (e is IOException or InvalidDataException) { r.Notes.Add($"audio mix: {e.Message}"); }
+            Step(r, "audio/files.txt", () => File.WriteAllLines(Path.Combine(dir, "audio", "files.txt"), wavs.Select(x => FormattableString.Invariant($"{Path.GetFileName(x.File)}	{x.StartMs:F1}")).Prepend("# file	startMs (after the recording start)")));
+            Step(r, "audio_mix.wav", () => CaptureAudio.Mix(wavs, Path.Combine(dir, "audio_mix.wav")));
         }
-        WriteSession(r, cpuMs);
         Log.Info($"[capture] saved {dir}: {r.Frames.Count} frames ({r.FrameBytes / 1048576.0:F1} MB of pictures), {input.Count} input events" +
                  (r.DumpResult is { } d ? $", GPU dump {d.Frames} frames {d.FileBytes / 1048576.0:F1} MB" : ""));
         Log.Flush();
-        CopyLog(Path.Combine(dir, "log.txt"));
-        try { CaptureAnalyzer.Analyze(dir, quiet: true); }
-        catch (Exception e) { Log.Warn($"[capture] analysis failed: {e.Message}"); }
+        Step(r, "log.txt", () => CopyLog(Path.Combine(dir, "log.txt")));
+        Step(r, "report.txt (analysis)", () => CaptureAnalyzer.Analyze(dir, quiet: true));
+        // last before the zip, so it lists every step that failed
+        Step(r, "session.txt", () => WriteSession(r, cpuMs));
         string? zip = null;
         if (_o.Zip)
         {
             zip = dir + ".zip";
-            ZipFolder(dir, zip);
-            LastZip = zip;
+            try { ZipFolder(dir, zip); LastZip = zip; }
+            catch (Exception e) { Log.Warn($"[capture] zip failed: {e.Message}"); zip = null; }
         }
         _o.Status?.Invoke($"Gravação salva: {zip ?? dir}");
+    }
+
+    /// <summary>One step of the save: a failure is logged and becomes an "error:" line of session.txt; the rest goes on.</summary>
+    static void Step(Recording r, string what, Action a)
+    {
+        try { a(); }
+        catch (Exception e)
+        {
+            Log.Warn($"[capture] {what} failed: {e}");
+            lock (r.Notes) r.Notes.Add($"error: {what}: {e.GetType().Name}: {e.Message}");
+        }
     }
 
     void WriteTimeline(Recording r)

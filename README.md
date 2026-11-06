@@ -215,7 +215,7 @@ Common `run` options:
 | `--dump-frames`, `--dump-every <n>` | Save rendered frames to disk |
 | `--audio-dump <dir>` | Write what the game sends to each audio port (after port volume) as one WAV per port, independent of the audio device |
 | `--trace-hle`, `--trace-hle-only <a+b>` | Log system calls |
-| `--validation` | Enable the Vulkan validation layers |
+| `--validation` | Enable the Vulkan validation layer (`VK_LAYER_KHRONOS_validation`; `VITASHARP_VK_VALIDATION=sync` adds synchronization validation). The layer is not part of the GPU driver: install the [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (Windows/macOS), the `vulkan-validationlayers` package (Linux), or unpack a [Vulkan-ValidationLayers release](https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases) and set `VK_ADD_LAYER_PATH` to the folder with `VkLayer_khronos_validation.json`. When the layer is missing the run goes on without it and says so in the log and on the console |
 | `--debug-mode` | Start in debug mode (same as F9, see [Diagnostics](#diagnostics)) |
 | `--gpu-profile=adreno\|mali\|desktop` | Emulate a mobile GPU's limits and driver quirks on a desktop GPU |
 | `--lle-modules=<libs>`, `--hle-modules=<libs>` | Firmware libraries to load LLE instead of HLE, or to keep on HLE (see [Firmware](#firmware-optional)) |

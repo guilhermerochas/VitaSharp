@@ -1166,6 +1166,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         sb.Append($" vu={d.VertexUniformsLength} fu={d.FragmentUniformsLength}");
         foreach (var s in d.FragmentProgram.Info.UniformSlots) sb.Append($" fub{s.GuestIndex}=0x{d.FragmentUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
+        foreach (var s in d.VertexProgram.Info.UniformSlots) sb.Append($" vub{s.GuestIndex}=0x{d.VertexUniformAddrs[Math.Min(s.GuestIndex, 14)]:X8}+{s.ByteSize}");
         byte[] vu = d.VertexUniformSpan.ToArray(), fu = d.FragmentUniformSpan.ToArray();
         if (TraceUniformsDir is { } tud)
         {

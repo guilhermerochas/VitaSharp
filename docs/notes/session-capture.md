@@ -28,6 +28,25 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 >
 > Outras mensagens: *"Aguarde: a gravação anterior ainda está sendo salva"*, *"Falha ao iniciar a gravação: ..."*,
 > *"Falha ao salvar a gravação: ..."*. F8 (dump da GPU), F9 (modo de depuração) e F10 (diagnóstico) continuam iguais.
+>
+> A gravação termina sempre, mesmo com o jogo travado. Fechar a janela (X, Alt+F4, *Stop* no launcher) ou sair do
+> jogo no Android com uma gravação ligada ou ainda sendo salva não perde nada: a janela fica aberta com *"Salvando a
+> gravação... não feche a janela"* (no Android, um aviso na tela) e fecha sozinha quando o `.zip` está pronto. No
+> launcher, um segundo clique em *"Forçar parada"* encerra o jogo na hora (aí a gravação se perde).
+
+## Stopping never waits on the game
+
+The save (`SessionCapture.StopCore`) depends on nothing of the guest: the GPU dump ends at the game's next present
+if one comes within 2 s, else the GPU worker completes the file from the commands it already received (a note in
+`session.txt`). Every file is its own step: one that fails is logged and becomes an `error:` line of `session.txt`
+(written last, before the zip), and the rest is still written. A game hung before the recording (no present at all
+while recording) still gives the state, both thread lists, `log.txt`, `hle_errors.txt`, `input.tsv`, the timeline,
+the audio and the zip. Before 05/11/2026 the dump waited up to 180 s for a present while the session's end waited
+120 s, so a hung game's recording stopped after `threads_stop.txt` (no `session.txt`, log or zip).
+
+The start's save state pauses the game for a moment with an internal pause (`EmulationPause.Pause(..., internal:
+true)`): the window shows *"salvando estado..."* instead of the *"Pausado"* badge, which is only for the player's own
+pause, and the pause is always released, also when the state cannot be taken (a game hung outside a safe point).
 
 ## What a capture holds
 

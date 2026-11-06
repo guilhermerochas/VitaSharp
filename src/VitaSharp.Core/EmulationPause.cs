@@ -22,20 +22,37 @@ public static class EmulationPause
 {
     static readonly object Lock = new();
     static volatile bool _paused;
+    /// <summary>The pause is the emulator's own (a save state being taken or loaded), not the player's.</summary>
+    static volatile bool _internal;
     static long _pausedSince, _pausedTotal; // host Stopwatch ticks
     static long _guestAtPause, _framesAtPause;
 
     public static bool IsPaused => _paused;
+    /// <summary>Paused by the player (pause key, menu, --start-paused): the front-ends show the "Pausado" badge only
+    /// then, not while a save state stops the game for a moment.</summary>
+    public static bool IsUserPaused => _paused && !_internal;
 
     /// <summary>Raised after every change (true = paused), on the thread that made it. Handlers must not block.</summary>
     public static event Action<bool>? Changed;
 
-    /// <summary>Stops the emulation. False when it was already paused.</summary>
-    public static bool Pause(string reason = "")
+    /// <summary>Stops the emulation. False when it was already paused (a player's pause during an internal one makes it
+    /// the player's). <paramref name="internal"/>: the emulator's own short pause (save states).</summary>
+    public static bool Pause(string reason = "", bool @internal = false)
     {
+        bool promoted = false;
+        lock (Lock)
+        {
+            if (_paused)
+            {
+                if (!@internal && _internal) { _internal = false; promoted = true; }
+                if (!promoted) return false;
+            }
+        }
+        if (promoted) { Raise(true); return false; }
         lock (Lock)
         {
             if (_paused) return false;
+            _internal = @internal;
             GuestClock.Freeze();
             _pausedSince = Stopwatch.GetTimestamp();
             _guestAtPause = GuestClock.Ticks;
@@ -64,6 +81,7 @@ public static class EmulationPause
             frames = Hle.Modules.Display.FramesPresented - _framesAtPause;
             GuestClock.Thaw();
             _paused = false;
+            _internal = false;
             Monitor.PulseAll(Lock);
         }
         GuestThread.WakeAll();

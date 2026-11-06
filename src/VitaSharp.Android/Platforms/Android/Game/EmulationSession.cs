@@ -488,7 +488,7 @@ public sealed partial class EmulationSession : IDisposable
         try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
         // a recording still running is completed (its GPU dump while the GPU worker runs)
-        Capture.StopAndWait(60000);
+        Capture.StopAndWait(300000);
         Capture.Dispose();
         // a GPU dump still recording is completed while the GPU worker runs
         if (GpuDumpRecorder.Current is { } dump && dump.StopNow(15000) == null) Log.Warn("[gpudump] the recording did not finish in time");
