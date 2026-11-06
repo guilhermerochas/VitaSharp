@@ -165,7 +165,7 @@ public static class Runner
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            string rate = EmulationPause.IsPaused ? PauseBadge.Text(window.PauseKeyLabel) : $"{fps:F0} FPS";
+            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? "salvando estado..." : $"{fps:F0} FPS";
             string rec = capture?.Capture.IsRecording == true ? "● REC | " : "";
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
@@ -243,7 +243,7 @@ public static class Runner
         void ShowPauseBadge(VulkanRenderer? r)
         {
             if (r == null) return;
-            var badge = EmulationPause.IsPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
+            var badge = EmulationPause.IsUserPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
             if (badge is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height); else r.SetStatusOverlay(null, 0, 0);
         }
         void OnPauseChanged(bool paused)
@@ -255,7 +255,7 @@ public static class Runner
         window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
         if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
-        window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
+        window.Resized += () => { if (EmulationPause.IsUserPaused) ShowPauseBadge(renderer); };
 
         window.Loaded += () =>
         {

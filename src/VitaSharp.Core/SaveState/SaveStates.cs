@@ -59,7 +59,7 @@ public static class SaveStates
                 if (EmulationPause.IsPaused) EmulationPause.Resume("save state");
                 string? why = HoldBetweenScenes(emu, held, sw, timeoutMs);
                 if (why != null) throw new SnapshotException($"not at a safe point: {why}");
-                EmulationPause.Pause("save state");
+                EmulationPause.Pause("save state", @internal: true);
                 why = SafePointProblems(emu, out var kinds);
                 if (why == null)
                 {
@@ -98,11 +98,10 @@ public static class SaveStates
         finally
         {
             try { File.Delete(tmp); } catch (IOException) { }
-            if (held.Count > 0)
-            {
-                if (wasPaused) EmulationPause.Pause("save state"); else EmulationPause.Resume("save state");
-                foreach (var t in held) t.HoldForSave(false);
-            }
+            // always back to how the player left it, also when the state could not be taken (a hung game): the
+            // internal pause never stays
+            if (wasPaused) EmulationPause.Pause("save state"); else EmulationPause.Resume("save state");
+            foreach (var t in held) t.HoldForSave(false);
         }
     }
 
@@ -288,7 +287,7 @@ public static class SaveStates
             // module service threads finish what they are doing with the emulation running, then everything stops
             if (wasPaused) EmulationPause.Resume("load state");
             WaitServiceThreads(emu);
-            EmulationPause.Pause("load state");
+            EmulationPause.Pause("load state", @internal: true);
             long t0 = sw.ElapsedMilliseconds;
             StopThreads(emu);
             Log.Info($"Load state: threads stopped in {sw.ElapsedMilliseconds - t0} ms");
@@ -306,7 +305,7 @@ public static class SaveStates
         finally
         {
             foreach (var t in held) t.HoldForSave(false);
-            if (!wasPaused) EmulationPause.Resume("load state");
+            if (!wasPaused) EmulationPause.Resume("load state"); else EmulationPause.Pause("load state");
         }
         Loaded?.Invoke(emu);
     }
@@ -358,7 +357,7 @@ public static class SaveStates
         while (waiting.Any(t => !t.WaitReissued) && Environment.TickCount64 < until) Thread.Sleep(1);
         if (waiting.FirstOrDefault(t => !t.WaitReissued) is { } late)
             Log.Warn($"Load state: thread '{late.Name}' did not issue its wait again in time");
-        EmulationPause.Pause("load state: reissuing waits");
+        EmulationPause.Pause("load state: reissuing waits", @internal: true);
         foreach (var t in running) t.HoldForSave(false);
     }
 
