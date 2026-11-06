@@ -349,12 +349,17 @@ public sealed unsafe partial class VulkanRenderer
 
     bool _deviceLostReported;
 
+    /// <summary>Raised once when the GPU driver reports VK_ERROR_DEVICE_LOST (a driver reset, TDR): the front end tells
+    /// the user; the renderer keeps returning instead of crashing, but draws nothing more. Argument: the Vulkan call.</summary>
+    public event Action<string>? DeviceLost;
+
     void ReportDeviceLost(string where)
     {
         if (_deviceLostReported) return;
         _deviceLostReported = true;
         Log.Error($"[gpu] VULKAN DEVICE LOST in {where} at present #{_presentCount} (guest frame {DebugMode.Frame})\n{DebugState()}\nlast frames:\n{RecentFrames(20)}");
         Log.Flush();
+        try { DeviceLost?.Invoke(where); } catch (Exception e) { Log.Warn($"[gpu] device lost notice failed: {e.Message}"); }
     }
 
     // ================================================================ debug mode: first-use logging

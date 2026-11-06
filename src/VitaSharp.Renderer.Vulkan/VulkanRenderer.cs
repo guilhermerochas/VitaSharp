@@ -58,7 +58,14 @@ public sealed class VulkanRendererOptions
     public string? ShotPath;
     /// <summary>Internal resolution scale of render targets (0.5, 0.75; per game on Android): 0 = VITASHARP_RES_SCALE, else native (VulkanRenderer.ResScale.cs).</summary>
     public float ResScale;
+    /// <summary>A renderer disposed to be replaced on the same surface (state load, LoadExec) hands its Vulkan instance,
+    /// device, surface and swapchain to the next one instead of destroying them; the next one recreates the swapchain
+    /// from it like a resize. Destroying and recreating all of it for the window each load crashed the process on the
+    /// NVIDIA driver (native heap corruption, an access violation in vkQueuePresentKHR, then a TDR as it died).</summary>
+    public bool KeepDevice;
+    internal DeviceHandoff? Handoff;
 
+    internal sealed record DeviceHandoff(VkCore Core, Silk.NET.Vulkan.SwapchainKHR Swapchain, IPresentationSurface Surface);
 }
 
 /// <summary>GXM command executor on Vulkan 1.3 (dynamic rendering + extended dynamic state).</summary>
@@ -154,7 +161,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _opt = options;
         ResScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : EnvResScale;
         _presentCount = Math.Max(0, options.FirstPresent);
-        _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
+        if (options.Handoff is { } h && ReferenceEquals(h.Surface, options.Surface))
+        {
+            _core = h.Core;
+            _swapchain = h.Swapchain; // the old swapchain of CreateSwapchain
+            Log.Info("Vulkan device kept from the previous renderer");
+        }
+        else
+        {
+            options.Handoff?.Core.Dispose();
+            _core = new VkCore(options.Surface, options.Validation || Environment.GetEnvironmentVariable(EnvVars.VkValidation) is "1" or "sync", options.GpuProfile);
+        }
+        options.Handoff = null;
         _vk = _core.Vk;
         _dev = _core.Device;
         _cmd = new VkCmd(_vk, _dev);
@@ -1462,9 +1480,19 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.DestroyImage(_dev, d.Image, null);
         }
         DestroyOverlay();
-        DestroySwapchain();
         _imagePool.Dispose();
         _compiler.Dispose();
+        if (_opt.KeepDevice && _opt.Surface != null && !_deviceLost)
+        {
+            // the next renderer takes the device (VulkanRendererOptions.KeepDevice); a lost one is made again
+            _core.Reclaim = null;
+            _core.DescribeMemory = null;
+            _vk.DeviceWaitIdle(_dev);
+            _opt.Handoff = new VulkanRendererOptions.DeviceHandoff(_core, _swapchain, _opt.Surface);
+            _swapchain = default;
+            return;
+        }
+        DestroySwapchain();
         _core.Dispose();
     }
 }

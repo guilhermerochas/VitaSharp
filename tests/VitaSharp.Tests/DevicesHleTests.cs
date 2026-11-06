@@ -284,4 +284,47 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         m.Source.Reset();
         Assert.True((bool)Invoke(n, "ProcessPlayer", voice, m, 256)!);
     }
+
+    [Fact]
+    public void NgsEnvelopeReleasesAfterKeyOff()
+    {
+        // Jak 1's Scream voices: a flat envelope (amplitude 1) with a release; a key off must fade the voice out over
+        // uReleaseMsecs and end it then (SDK: "processing continues until the voice finishes"), not cut it at once
+        var n = new Ngs();
+        var sys = new VitaSharp.Core.Hle.Audio.NgsSystem { Handle = 0x1000, Granularity = 256, SampleRate = 48000 };
+        var rack = new VitaSharp.Core.Hle.Audio.NgsRack { System = sys, ChannelsPerVoice = 2 };
+        var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
+        uint prm = fx.Memory.Alloc(0x48, "ngs envelope params");
+        GuestMemory.Fill(prm, 0, 0x48);
+        GuestMemory.W32(prm, 0x01015CE3); GuestMemory.W32(prm + 4, 0x48);
+        float[] amp = [0f, 1f, 1f, 1f];
+        uint[] ms = [0, 0, 1000, 0];
+        for (uint i = 0; i < 4; i++)
+        {
+            GuestMemory.W32(prm + 8 + i * 12, ms[i]);
+            GuestMemory.W32(prm + 12 + i * 12, BitConverter.SingleToUInt32Bits(amp[i]));
+            GuestMemory.W32(prm + 16 + i * 12, 1);
+        }
+        GuestMemory.W32(prm + 56, 10); GuestMemory.W32(prm + 60, 4); GuestMemory.W32(prm + 64, 3); GuestMemory.W32(prm + 68, 0xFFFFFFFF);
+        var m = new VitaSharp.Core.Hle.Audio.NgsModuleData
+        {
+            Voice = voice, Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Envelope, ParamAddr = prm, ParamSize = 0x48, GuestState = new byte[20],
+        };
+        voice.Modules = [m];
+        object? Static(string name, params object[] args) =>
+            typeof(Ngs).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args);
+        float[] Ones() { var b = new float[512]; Array.Fill(b, 1f); return b; }
+        Static("ResetEnvelope", m);
+        voice.Product = Ones();
+        Assert.False((bool)Invoke(n, "ProcessEnvelope", voice, m, 256)!);
+        Assert.All(voice.Product, x => Assert.Equal(1f, x));                      // attack 0 ms to 1, held
+
+        Assert.True((bool)Static("StartRelease", m)!);
+        voice.Product = Ones();
+        Assert.False((bool)Invoke(n, "ProcessEnvelope", voice, m, 256)!);          // 10 ms = 480 samples: not done yet
+        Assert.True(voice.Product[0] > 0.99f && voice.Product[510] < 0.5f && voice.Product[510] > 0.4f);
+        voice.Product = Ones();
+        Assert.True((bool)Invoke(n, "ProcessEnvelope", voice, m, 256)!);           // ends in the second granule
+        Assert.Equal(0f, voice.Product[511]);
+    }
 }

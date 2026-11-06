@@ -28,15 +28,23 @@ public sealed class GpuQueue : IDisposable
     /// renderer is never destroyed while the worker is still using it (crashed on LoadExec in windowed mode).</summary>
     readonly object _backendLock = new();
 
+    /// <summary>Runs a backend swap (the old one's Dispose and the factory) on the thread that owns the presentation
+    /// surface and waits for it (desktop: the window thread); null = on the caller.</summary>
+    public Action<Action>? ReplaceOn;
+
     public void ReplaceBackend(Func<IGpuBackend?>? factory)
     {
         WaitIdle();
         lock (_backendLock)
         {
-            var old = Backend;
-            Backend = null;
-            old?.Dispose();
-            if (factory != null) Backend = factory();
+            void Swap()
+            {
+                var old = Backend;
+                Backend = null;
+                old?.Dispose();
+                if (factory != null) Backend = factory();
+            }
+            if (ReplaceOn is { } on) on(Swap); else Swap();
         }
     }
 

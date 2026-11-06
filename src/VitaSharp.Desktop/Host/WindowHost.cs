@@ -138,6 +138,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             Title = title,
             VSync = false,
             WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal,
+            IsVisible = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.HiddenWindow) != "1",
         };
         _window = Window.Create(opts);
         _windowedSize = opts.Size;
@@ -152,6 +153,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
         _window.Update += _ =>
         {
+            DrainWindowWork();
             Tick?.Invoke();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (now - _lastHotkeyPoll >= System.Diagnostics.Stopwatch.Frequency / 100)
@@ -285,8 +287,43 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         catch (Exception e) { Log.Warn($"Window: could not set the window icon: {e.Message}"); }
     }
 
-    public void Run() => _window.Run();
+    public void Run()
+    {
+        _windowThread = Environment.CurrentManagedThreadId;
+        try { _window.Run(); }
+        finally { _windowThread = -1; DrainWindowWork(); }
+    }
+
     public void Close() => _window.Close();
+
+    int _windowThread = -1;
+    readonly System.Collections.Concurrent.ConcurrentQueue<(Action Work, ManualResetEventSlim Done)> _windowWork = new();
+
+    /// <summary>
+    /// Runs <paramref name="work"/> on the window thread and waits for it (exceptions are rethrown here); at once when
+    /// called there or once the window loop has ended. The GPU backend is replaced through this: a Vulkan instance,
+    /// device and swapchain for this window made and destroyed on another thread corrupted the native heap on the
+    /// NVIDIA driver (state loads: c0000374, then a TDR as the process died).
+    /// </summary>
+    public void RunOnWindowThread(Action work)
+    {
+        if (_windowThread == -1 || _windowThread == Environment.CurrentManagedThreadId) { work(); return; }
+        Exception? error = null;
+        using var done = new ManualResetEventSlim();
+        _windowWork.Enqueue((() => { try { work(); } catch (Exception e) { error = e; } }, done));
+        while (!done.Wait(50))
+            if (_windowThread == -1) DrainWindowWork(); // the loop ended meanwhile
+        if (error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+    }
+
+    void DrainWindowWork()
+    {
+        while (_windowWork.TryDequeue(out var w))
+        {
+            w.Work();
+            w.Done.Set();
+        }
+    }
 
     // ---------------------------------------------------------------- IPresentationSurface
 

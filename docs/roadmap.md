@@ -620,11 +620,44 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura, reaproveitamento de descritores), gravar tela e contar quadros com `flick.sh`/`tileflick.py` contra um
   vídeo do Vita real e corrigir de forma genérica. Validação de verdade no Killzone em gameplay (regra do Android) e
   depois Uncharted, F1 2011, God of War e Devious Dungeon sem nenhum quadro piscando. Com o agente de Android
-- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+- [x] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
   e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
   derrube o processo; validar 10 loads seguidos. Com o agente de bugs C
+  **Corrigido** (agente C dia 10, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): cada load
+  destruía e recriava a instância Vulkan, o device, a surface e o swapchain da janela, numa thread de trabalho. No
+  driver NVIDIA isso corrompia o heap nativo (c0000374 no vkCreateInstance seguinte, 2 de 2 execuções no 1º load) e,
+  com a destruição na thread da janela, ainda dava c0000005 em coreclr.dll dentro do vkQueuePresentKHR logo depois de
+  um load (1 em ~25); o TDR (LiveKernelEvent 141) vem **depois** da queda, do processo morrendo com trabalho na GPU.
+  Agora o renderer novo herda instância, device, surface e swapchain (o swapchain é recriado a partir do antigo, como
+  num resize; `VulkanRendererOptions.KeepDevice`, só na janela), a troca roda na thread da janela, e um device
+  perdido vira aviso no título (`A GPU parou de responder...`) e um device novo no próximo load. Com janela oculta
+  (chave de teste nova `VITASHARP_HIDDEN_WINDOW=1`, sem som): Tearaway 12 loads, FIFA 13 10, Uncharted 10 (+1 LoadExec),
+  sem queda nem TDR, 30/60 fps depois (`scratchpad/bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
+  `scratchpad/bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
+  em menus/cenas (sem gameplay roteirizado); device lost não foi provocado de verdade
+- [x] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; regressão completada no dia 10).
+  O envelope era passthrough e `sceNgsVoiceKeyOff` parava a voz no update seguinte; o SDK diz que depois do key off
+  "o processamento continua até a voz terminar" (release). O Jak 1 usa racks Scream com envelope (pontos 0→1 em 0 ms,
+  sustain 1 ou 0,5625, release de 23 ms a 12 s) e dá key off com o som ainda alto: cada som era cortado no meio da onda.
+  Feito: pontos, sustain no último ponto, loop, release linear (curva CURVED aproximada como linear) e a voz termina com
+  o release; `VITASHARP_NGS_ENVELOPE=0` volta ao passthrough. Jak 1 gameplay (`jak_g2`): cortes bruscos (som alto→0) nas
+  vozes 152 → 2, 143 vozes terminam pelo release, 20 fps iguais, 0 HLE-ERR (`scratchpad/bugsC9_out/jak_a2` x `jak_e1`,
+  WAVs por voz em `audio/`; `bugsC9_tools/asum.py`). Regressão de ritmo feita: DD 59,9/59,9, F1 59,9/59,9, UC 59,8/59,9,
+  KZ 29,9 (ref. não rodou); **faltam KZ ref, FIFA e GoW** (`bugsC9_tools/regress.ps1`, com --audio-dump: conferir que
+  nenhum som some por voz presa em Finalizing durante o release). Os "clicks" do analisador de captura no Jak (~41 por
+  ocorrência) são outra coisa: um som de ruído agudo (energia em 10-14 kHz, idêntico em todas as vozes e execuções,
+  provável passo/impacto do próprio banco de sons); o decodificador ADPCM bate com o do Vita3K e os bancos decodificados
+  fora não têm saltos (`adec.py`); não identifiquei o banco exato (o dump por endereço de buffer reaproveitado ficou
+  velho). O clipping de 0,12% da gravação do usuário não reproduz aqui (0,002% no gameplay do `jak_g2`)
+  Agente C dia 10 (06/11/2026): **regressão completa, fica ligado por padrão** (mesmo build, `VITASHARP_NGS_ENVELOPE=0`
+  como referência, `bugsC9_tools/regress.ps1`): Killzone 29,9/29,9 fps (p99 35,0/36,7 ms), FIFA 13 59,6/59,5, God of War
+  59,8/59,8 (`scratchpad/bugsC9_out/r_kz_on_nd`, `r_kz_off_nd`, `r_fifa_on`/`off`, `r_gow_on`/`off`). Nenhum som
+  some: a mistura gravada (`--audio-dump`) tem o mesmo RMS (KZ -23,4/-23,5, FIFA -23,1/-23,1, GoW -25,1/-25,2 dBFS) e, em
+  FIFA e GoW, 0-1 de 133-150 meios-segundos diferem mais de 6 dB; com o modo de depuração, nenhum erro novo de NGS
+  (`sceNgsVoicePlay` numa voz ainda em release seria o sintoma; `bugsC9_tools/onoff.py`). Não ouvi (sem som no PC
+  do usuário); a medida é por RMS
 - [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
   carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
   corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
@@ -867,6 +900,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
   imagens 1280x720 por cima; `bugsC8_out/blind_tr601/trace_601`). Resta o (1), o boot
   Confirmado no jogo pelo usuário (06/11/2026): ok (a troca de tela preta é igual à do Vita)
+  Agente C dia 10 (06/11/2026), o preto do boot: o Vita mostra o `sce_sys/pic0.png` do jogo (idêntico ao quadro do
+  vídeo `9vleIQnJ8dI`) até o logo da Ratalaika; aqui o jogo apresenta um 1º quadro preto com 1 s (uma textura
+  960x540 U8U8U8U8 preta em tela cheia: o SDL do Ren'Py limpando a tela; não há presplash nos arquivos do jogo) e o
+  2º só 19 s depois (PC dividido; ~5 s ocioso). Feito e **não commitado**: mostrar o pic0 na janela até o 1º present
+  do jogo (`scratchpad/bugsC9_proof/bootsplash_pic0.patch`; validado só por log: `Boot picture: 960x544 shown`,
+  `shown for 1,0 s`), mas isso só cobre 1 s: o Vita segue com o pic0 depois desse quadro preto. Falta saber a regra
+  do sistema (o pic0 fica até o 1º quadro não preto? até o jogo terminar de carregar? é o SceShell que o desenha?) com
+  o firmware LLE ou outro vídeo de jogo cujo 1º quadro seja preto
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -1524,7 +1565,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   valor anterior, se > 0) devolvia posição 0 nesses ticks. Agora o contador soma o que cada tick entrega, como no
   módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
-- [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
+- [x] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
   Achados (05/11/2026, fix/bugs-games-4, `shadertest <app> --warnings` lista os avisos por programa): os 40 são as 10
   variantes (m/o/msaa/...) de 4 materiais, `HemiRimBump`, `HemiRimBumpB`, `HemiRimBumpHDR` e `toon` (iluminação de
   borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se
@@ -1542,6 +1583,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `shadertest` com `front`: nenhum aviso de G16, 105/105 compilam). Não validado: a cena de abertura gravada não usa esses programas (dump `bugsC8_out/ztd_scene.vsgd`, f2180-2182: replays com
   front/back/zero idênticos, 9 shaders, nenhum com G16). Falta uma cena com eles (provável: salas de fuga 3D) para
   comparar com o vídeo do Vita (`zwPJR5er054`, `scratchpad/bugsC8_yt/ztd.webm`, 10 primeiros minutos)
+  Agente C dia 9: não feito (o dia foi para o Injustice, o áudio do Jak e o crash de load state). Cenário pronto
+  `scratchpad/bugsC9_scn/ztd_scout.txt` (Cross a cada 60 quadros de f2250 a f4200, quadros a cada 50): no vídeo, depois
+  do "Coincide" (f2180 aqui) vem a cena das celas com os personagens 3D, que deve usar os shaders toon/HemiRimBump
+  **Corrigido** (agente C dia 10, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): o G16 agora
+  é `gl_FrontFacing` por padrão (`VITASHARP_G16=zero|back` para depurar; `GeneratorVersion` 21, os caches se
+  refazem). Dump da cena das celas (`scratchpad/bugsC9_out/ztd_cells.vsgd`, presents 3150-3152, com os avisos de G16)
+  reproduzido com zero/front/back e comparado ao vídeo do Vita (1:23): zero e back são iguais, personagens claros e
+  chapados (camisa do Sigma RGB 134/128/127, cabelo 203/186/172); front dá a sombra do Vita (camisa 100/95/95, cabelo
+  165/141/128; Vita 110/104/99 e 155/137/122). No jogo com o padrão novo (`scratchpad/bugsC9_proof/ztd_g16front_sheet.png`
+  x `ztd_g16zero_sheet.png`): sombreado como no vídeo e a máscara do Zero com a textura suja do Vita (antes branca)
+  `replay-gpu --compare` nos 18 dumps: só os 2 do Tearaway mudam (ele também lê o G16: as bordas das folhas de papel
+  de dois lados ficam escuras e somem uns pontos verdes na borda; média até 2,5/255, `bugsC9_proof/tearaway_g16_before_after_diff.png`);
+  os outros 16 idênticos. Falta conferir o Tearaway com um vídeo do Vita
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)

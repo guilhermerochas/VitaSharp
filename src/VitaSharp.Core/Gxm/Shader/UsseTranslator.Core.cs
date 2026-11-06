@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 
@@ -315,7 +315,7 @@ public sealed partial class UsseTranslator
         {
             // G16 in a fragment program: the facing of the primitive. The two-sided lighting of Zero Time Dilemma's
             // HemiRimBump/toon materials tests its low 16 bits (VTST G16 != 0) and negates the normal when it is zero,
-            // which points at non-zero on front faces; VITASHARP_G16 (debug) supplies it, 0 by default.
+            // which points at non-zero on front faces (checked against a real Vita); VITASHARP_G16=zero|back (debug) overrides it.
             string face = ShaderGenerator.FaceRegister == ShaderGenerator.FaceRegisterMode.Back ? "!gl_FrontFacing" : "gl_FrontFacing";
             string c = kind switch
             {
