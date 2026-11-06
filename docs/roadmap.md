@@ -543,6 +543,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `sceKernelGetMsgPipeCreatorId` por nome entrou (validado no PS4 Link: SceShellSvc e SceDbUtilDcn resolvem o pid do
   shell, mais o `sceAppMgrIsPidShellAndCrashed` que o cliente passa a consultar); o resto do patch (ScePhotoExport real,
   LaunchAppByUri como pedido ao shell, flags de serviço) e o despacho do NPXS10036 não foram mexidos (orçamento).
+  06/11/2026 (fix/bugs-games-13): o `sceAppMgrLaunchAppByUri/2` como pedido ao shell e as flags de serviço entraram (o
+  "psnreg:" do PS4 Link abre o Sign Up; "avmedia_service:" inicia o NPXS10036 com 0x600000, `bugsC13_out/cam1`). Com o
+  ScePhotoExport real (patch `scratchpad/bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
+  save the image": o NPXS10036 carrega libpaf, sqlite, dbutil, dbrecovery_utility e meta_gen e fica no laço do
+  SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento).
   **Vídeo**: o crash do emulador
   (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
   guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
@@ -839,6 +844,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     (NPXS10018) abre com "An error has occurred. (NW-8941-2)" em vez de "Create / Use an Existing Account" que o
     checklist do `docs/notes/system-apps.md` espera (`bugsC12_out/base_messages/signup.png` e `s_messages/signup.png`);
     o NID_86405E79 do Commerce2 devolve 0x80431063 (servidor inalcançável) logo antes
+    (06/11/2026, fix/bugs-games-13: o mesmo NW-8941-2 aparece pelo PS4 Link agora que o "psnreg:" abre o Sign Up,
+    `bugsC13_out/signup1/sheet.png`. No traço HLE do SceSignup a única chamada com erro antes do aviso é esse
+    NID_86405E79 = 0x80431063: o emulador diz rede conectada e conta local, e o servidor não responde, que é o que o
+    Vita mostra com rede mas sem os servidores. "Create / Use an Existing Account" só viria com o servidor respondendo
+    (ou num Vita sem rede, que pararia antes na checagem da conexão); não mudei, é decisão de modelo de rede, não defeito)
   Kernel (rodada 2): com a rede do kernel respondendo, o Settings passou a abrir e fechar sua conexão IPMI com o
   SceMtpService do shell, e o servidor caía em `[SceIpmi] INTERNAL ASSERTION FAILURE (0x80028101)`: o cliente apaga seus
   semáforos antes de o servidor fechar os handles que abriu por nome, e aqui o Delete tirava o objeto da tabela na hora
