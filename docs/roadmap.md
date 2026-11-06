@@ -561,10 +561,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
   sentido com rede/PSN/hardware ausente devolvem o erro que o Vita devolve nesse caso. Jogos:
   - SceNpManager::NID_FFBFC540 (0xFFBFC540) (PCSE00093)
-  - ScePspnetAdhoc::sceNetAdhocInit (0x87805E13) (PCSE00056)
+    Achados (06/11/2026): no np_manager.suprx do firmware é um getter igual ao sceNpManagerGetNpId (NULL ->
+    0x80550503; senão IPC 0xB0025 ao serviço SceNpManagerIpc do shell com 64 bytes de saída). O FIFA 13 chama logo
+    depois do GetNpId (objeto+0x28) com objeto+0x4C; retorno != 0 leva ao estado "-npo" (NP offline), 0 ao "+npo".
+    O conteúdo dos 64 bytes não foi identificado (o tratador 0xB0025 fica no shell, atrás do servidor IPMI em C++);
+    hoje o "não implementado" devolve 0 com o buffer intocado, que é o caminho que o jogo já usa
+  - ScePspnetAdhoc::sceNetAdhocInit (0x87805E13) (PCSE00056) — feita (feat/hle-unimplemented)
   Sistema do Vita (shell e apps):
-  - SceAppMgr::sceAppMgrIsDevelopmentMode (0x7D4F8F83)
-  - SceAppMgr::sceAppMgrIsGameBudgetAppPresent (0xE134F5A0)
+  - SceAppMgr::sceAppMgrIsDevelopmentMode (0x7D4F8F83) — feita (feat/hle-unimplemented)
+  - SceAppMgr::sceAppMgrIsGameBudgetAppPresent (0xE134F5A0) — feita (feat/hle-unimplemented)
   - SceAppMgr::sceAppMgrSetRecommendedScreenOrientationActivated (0x75876896)
   - SceAppMgrUser::sceAppMgrCheckRifGD (0x6E5CBCA2)
   - SceAppMgrUser::sceAppMgrMmsMount (0xF4730BA8)
@@ -605,14 +610,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - SceNpWebApi::NID_E83CE7F1 (0xE83CE7F1)
   - SceNpWebApi::NID_E8FBA9B8 (0xE8FBA9B8)
   - ScePhotoExport::NID_16B1028E (0x16B1028E)
-  - SceSblQafMgr::sceSblQafMgrIsAllowNpFullTest (0x72168C6E)
+  - SceSblQafMgr::sceSblQafMgrIsAllowNpFullTest (0x72168C6E) — feita (feat/hle-unimplemented)
   - SceSslInternal::sceSslInternalGetCertificateAuthority (0x064DFC99)
-  - SceSysmem::sceKernelCheckModelCapability (0x0144FBD9)
+  - SceSysmem::sceKernelCheckModelCapability (0x0144FBD9) — feita (feat/hle-unimplemented)
   - SceTriggerUtil::NID_28EF51DA (0x28EF51DA)
   - SceVshBridge::_vshAppMgrRegisterPath (0x179965E7)
   - SceVshBridge::_vshSblSsGenerateAppKey (0x82F2FBA8)
-  - SceVshBridge::vshSblQafMgrIsAllowLiblocationChangeModel (0x58E1DE33)
-  - SceVshBridge::vshSblQafMgrIsAllowNearTest (0xD0D4EB67)
+  - SceVshBridge::vshSblQafMgrIsAllowLiblocationChangeModel (0x58E1DE33) — feita (feat/hle-unimplemented)
+  - SceVshBridge::vshSblQafMgrIsAllowNearTest (0xD0D4EB67) — feita (feat/hle-unimplemented)
   - SceWlan::sceWlanGetConfiguration (0x70AF9BD6)
   Mais 37 achadas depois (06/11/2026, mesmos logs, sessões novas do Sistema do Vita):
   - SceAppMgrUser::sceAppMgrSetBgmProxyApp (0xC42F41E9)
@@ -645,10 +650,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - SceNpCommon::sceNpCommonGetNpEnviroment (0xAD6403E0)
   - SceNpManager::NID_29C9B8A5 (0x29C9B8A5)
   - SceNpManager::NID_ED12AF16 (0xED12AF16)
-  - SceSblQafMgr::sceSblQafMgrIsAllowAllDebugMenuDisplay (0x66843305)
-  - SceSblQafMgr::sceSblQafMgrIsAllowLimitedDebugMenuDisplay (0xC456212D)
-  - SceSblQafMgr::sceSblQafMgrIsAllowMinimumDebugMenuDisplay (0xA156BBD2)
-  - SceSblQafMgr::sceSblQafMgrIsAllowNonQAPup (0xB5621615)
+  - SceSblQafMgr::sceSblQafMgrIsAllowAllDebugMenuDisplay (0x66843305) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowLimitedDebugMenuDisplay (0xC456212D) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowMinimumDebugMenuDisplay (0xA156BBD2) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowNonQAPup (0xB5621615) — feita (feat/hle-unimplemented)
   - SceUdcd::NID_F1A3690B (0xF1A3690B)
   - SceVshBridge::_vshSblAimgrGetPscode (0x1AF2CFC9)
   - SceWlan::sceWlanSetConfiguration (0xDBE8AEF2)
