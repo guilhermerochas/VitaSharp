@@ -254,7 +254,7 @@ public sealed unsafe partial class VulkanRenderer
     /// content exists only on the GPU (unless it has been idle for <paramref name="lostIdle"/> frames).</summary>
     bool RenderTargetEvictable(RenderTarget rt, long minAge, long lostIdle)
     {
-        if (rt == _rt || rt == _cpuFramebuffer) return false;
+        if (rt == _rt || rt == _cpuFramebuffer || InSuspendedScene(rt)) return false;
         long age = FrameCount - rt.LastTouchedFrame;
         if (age < minAge) return false;
         // content in guest memory: written back (lossless) and not rendered since, or loaded from memory
@@ -293,7 +293,7 @@ public sealed unsafe partial class VulkanRenderer
                 if (RenderTargetEvictable(rt, Math.Max(minAge, rtIdle), lostIdle))
                     c.Add(new Candidate(rt.LastTouchedFrame, RenderTargetBytes(rt), 6, k, rt));
             foreach (var (k, dt) in _depthTargets)
-                if (dt != _depth && FrameCount - dt.LastTouchedFrame >= Math.Max(minAge, lostIdle))
+                if (dt != _depth && !InSuspendedScene(dt) && FrameCount - dt.LastTouchedFrame >= Math.Max(minAge, lostIdle))
                     c.Add(new Candidate(dt.LastTouchedFrame, dt.Mem.Size, 7, k, dt));
         }
         if (c.Count == 0) return 0;

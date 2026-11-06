@@ -47,8 +47,10 @@ public sealed partial class Videoenc : HleModule
 
     [Hle] int sceVideoencInitLibrary(uint codecType, uint initInfo) => InitLibrary(codecType);
     [Hle] int sceVideoencInitLibraryInternal(uint codecType, uint initInfo) => InitLibrary(codecType);
-    [Hle] int sceVideoencInitLibraryWithUnmapMem(uint codecType, uint initInfo, uint memInfo) => memInfo == 0 ? ERR_INVALID_POINTER : InitLibrary(codecType);
-    [Hle] int sceVideoencInitLibraryWithUnmapMemInternal(uint codecType, uint initInfo, uint memInfo) => memInfo == 0 ? ERR_INVALID_POINTER : InitLibrary(codecType);
+    /// <summary>The camera (NPXS10004) calls it as (type, memInfo {+0xC address, +0x10 size in its unmap block}, 0,
+    /// initInfo); games as (type, initInfo, memInfo). Either memory pointer is enough.</summary>
+    [Hle] int sceVideoencInitLibraryWithUnmapMem(uint codecType, uint a1, uint a2, uint a3) => a1 == 0 && a2 == 0 ? ERR_INVALID_POINTER : InitLibrary(codecType);
+    [Hle] int sceVideoencInitLibraryWithUnmapMemInternal(uint codecType, uint a1, uint a2, uint a3) => a1 == 0 && a2 == 0 ? ERR_INVALID_POINTER : InitLibrary(codecType);
 
     /// <summary>Writes the library memory size at memInfo+0 (layout as in sceVideodecQueryMemSize).</summary>
     int QueryMemSize(uint codecType, uint memInfo)
@@ -59,8 +61,10 @@ public sealed partial class Videoenc : HleModule
         return 0;
     }
 
-    [Hle] int sceVideoencQueryMemSize(uint codecType, uint initInfo, uint memInfo) => QueryMemSize(codecType, memInfo);
-    [Hle] int sceVideoencQueryMemSizeInternal(uint codecType, uint initInfo, uint memInfo) => QueryMemSize(codecType, memInfo);
+    /// <summary>The camera calls it as (type, 0, initInfo, memInfo) and allocates memInfo+0 bytes for the library; games as
+    /// (type, initInfo, memInfo).</summary>
+    [Hle] int sceVideoencQueryMemSize(uint codecType, uint a1, uint a2, uint a3) => QueryMemSize(codecType, a1 == 0 && a3 != 0 ? a3 : a2);
+    [Hle] int sceVideoencQueryMemSizeInternal(uint codecType, uint a1, uint a2, uint a3) => QueryMemSize(codecType, a1 == 0 && a3 != 0 ? a3 : a2);
 
     [Hle]
     int sceVideoencTermLibrary(uint codecType)
@@ -88,6 +92,10 @@ public sealed partial class Videoenc : HleModule
         if (query == 0 || info == 0) return ERR_INVALID_POINTER;
         if (!ValidQuery(query, out uint w, out uint h)) return ERR_INVALID_PARAM;
         GuestMemory.W32(info, GuestMemory.AlignUp(Math.Max(w * h * 3 / 2 * 3, 1), 0x40000));
+        // the camera reads two more sizes after it (a second buffer it allocates in its unmap block, and the stream
+        // buffer size it passes on); estimates as well
+        GuestMemory.W32(info + 4, 0x40000);
+        GuestMemory.W32(info + 8, GuestMemory.AlignUp(Math.Max(w * h, 1), 0x1000));
         return 0;
     }
 
@@ -172,6 +180,7 @@ public sealed partial class Videoenc : HleModule
         if (input == 0) return ERR_INVALID_POINTER;
         e.Frames++;
         e.Stopped = false;
+        NoPicture(output);
         return 0;
     }
 
@@ -183,13 +192,22 @@ public sealed partial class Videoenc : HleModule
         var e = Find(ctrl, out int err, out _);
         if (e == null) return err;
         e.Stopped = true;
+        NoPicture(output);
         return 0;
     }
 
-    /// <summary>The NAL queue is always empty. The "no data" code and the NAL struct layout are unconfirmed, so the
-    /// struct is left untouched and 0 is returned.</summary>
+    /// <summary>The output picture of Encode / EncodeStop: +0 is nonzero when a picture was produced (the camera then
+    /// reads its NAL count at +0x34 and takes each with sceAvcencGetNalUnit). Without an encoder none is: +0 = 0
+    /// (left untouched, the camera read garbage NAL entries and jumped through a null function pointer).</summary>
+    static void NoPicture(uint output)
+    {
+        if (output != 0) GuestMemory.W32(output, 0);
+    }
+
+    /// <summary>(ctrl, index, SceAvcencNalUnit *nal {+0 address, +4 size, +8 type}) as the camera calls it. No NAL unit
+    /// is ever produced (no encoder), so none is described.</summary>
     [Hle]
-    int sceAvcencGetNalUnit(uint ctrl, uint nal)
+    int sceAvcencGetNalUnit(uint ctrl, uint index, uint nal)
     {
         if (Find(ctrl, out int err, out _) == null) return err;
         if (nal == 0) return ERR_INVALID_POINTER;

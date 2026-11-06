@@ -123,6 +123,10 @@ public static class EnvVars
     /// <summary>=off: the GPU queue releases its semaphore and pulses its progress monitor for every command, as before
     /// (Gpu/GpuQueue.LightSignals; default: only a sleeping worker or a waiting thread is signalled).</summary>
     public const string GpuQueueLight = "VITASHARP_GPU_QUEUE_LIGHT";
+    /// <summary>=0: one process's GPU scene at a time (the others' submissions wait); default: processes sharing the GPU
+    /// (the shell and an application) keep a scene open each and the backend interleaves their renderings
+    /// (Gpu/GpuQueue.InterleaveScenes).</summary>
+    public const string GpuSceneInterleave = "VITASHARP_GPU_SCENE_INTERLEAVE";
     /// <summary>=0: the HLE functions that have a guest-code version (Hle/HleGuestCode: libgxm's precomputed-state
     /// packing) are bound to their C# versions through SVC stubs, as before.</summary>
     public const string HleGuestCode = "VITASHARP_HLE_GUEST_CODE";

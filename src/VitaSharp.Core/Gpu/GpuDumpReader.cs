@@ -84,6 +84,9 @@ public sealed class GpuDumpReader : IDisposable
                 case GpuDumpRecord.ProgramInfo or GpuDumpRecord.VertexProgram or GpuDumpRecord.FragmentProgram:
                     _codec.ReadDefinition(kind, _cur);
                     continue;
+                case GpuDumpRecord.Process:
+                    _codec.ReadPid = _cur.VarInt();
+                    continue;
                 case GpuDumpRecord.Idle:
                     return true;
                 default:

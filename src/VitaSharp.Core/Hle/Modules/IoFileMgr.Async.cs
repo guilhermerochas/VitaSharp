@@ -30,6 +30,43 @@ public sealed class IoAsyncOp : KernelObject
             Monitor.PulseAll(this);
         }
     }
+
+    /// <summary>sceKernelPollEvent on the opid: the completion bit once the request finished, EVENT_COND before.</summary>
+    public int PollEvent(uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData)
+    {
+        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        lock (this)
+        {
+            if ((Pattern & waitPattern) == 0) return SceError.EVENT_COND;
+            resultPattern.TrySet(Pattern & waitPattern);
+            userData.TrySet(UserData);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// sceKernelWaitEvent on the opid, as libpaf's file reader waits for each sceIoReadAsync before sceIoComplete (the
+    /// shell copying a pic0.png into ur0:temp/appmeta for a game's LiveArea). Requests run to completion when they are
+    /// submitted, so the wait normally returns at once; otherwise it waits for <see cref="Finish"/> or the timeout
+    /// (microseconds).
+    /// </summary>
+    public int WaitEvent(uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData, Ptr<uint> timeout)
+    {
+        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        lock (this)
+        {
+            long deadline = timeout.IsNull ? long.MaxValue : Environment.TickCount64 + Math.Max(1, timeout.Value / 1000);
+            while ((Pattern & waitPattern) == 0)
+            {
+                long left = deadline - Environment.TickCount64;
+                if (left <= 0) { if (!timeout.IsNull) timeout.Value = 0; return SceError.WAIT_TIMEOUT; }
+                Monitor.Wait(this, (int)Math.Min(left, 100));
+            }
+            resultPattern.TrySet(Pattern & waitPattern);
+            userData.TrySet(UserData);
+            return 0;
+        }
+    }
 }
 
 /// <summary>
