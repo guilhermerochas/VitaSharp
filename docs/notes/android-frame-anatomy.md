@@ -174,7 +174,7 @@ Profiling with `VITASHARP_TRACE=1` inflates the worker a lot (the first profile 
 The worker thread's CPU is 23 ms/frame, the game thread's 20 ms, the GPU 30 ms: at 0.75 Uncharted is at the edge of
 both. Display: 30 fps median, mean 33.9–38.5 ms depending on heat.
 
-**Switches tried** (all off by default, kept in the tree):
+**Switches tried** (all off by default; the recorder thread was removed later, see below):
 
 | Switch | What it does | Result |
 |---|---|---|
@@ -195,3 +195,44 @@ All of them are pixel-identical on the desktop dumps (UC, FIFA 13, Croixleur, Go
    pointers on it, and merge scene chains so it is drained less often; otherwise remove it.
 4. The game thread (~20 ms): 57% JIT code, ~22% HLE/core (sceKernelGetTLSAddr ~2,000 and sceKernelGetThreadId
    ~1,700 calls per frame are candidates for inlining in the JIT).
+
+## Uncharted at 0.75: sub-phase profile and the second round of switches, 5 November 2026 (perf/uc-cpu)
+
+Same setup (LLVM developer APK, `VITASHARP_RES_SCALE=0.75`, `VITASHARP_WORKER_PROF=1`, gameplay after the journal tap
+confirmed by a screenshot, 30 s per run). One APK carried every variant behind `config/env.txt`; 3 rounds, each base
+run next to the variants. The phone warmed through the session (base 33.8 -> 38.5 -> 41.0 ms), so compare within a
+round.
+
+**Inside the worker** (base, ms per presented frame, sub-phases of `VITASHARP_WORKER_PROF`):
+
+| Phase | ms | Notes |
+|---|---|---|
+| texture sets: resolving the units (`ResolveTextureOrSkip` per unit) | 4.7-5.8 | most of the ~6 ms phase; allocation + descriptor writes 0.9-1.0, the lookup itself ~0.1 |
+| Present: `vkQueuePresent` | 2.6-3.6 | of 3.3-4.4 ms in Present; the driver blocks in the present call. Acquire, blit and retire are small |
+| BeginScene | 1.8-1.9 | retire poll 0.75-0.8 of it |
+
+**Results** (mean frame ms; the median is 30 fps in every run; worker = GPU worker thread CPU ms/frame):
+
+| Variant | Round 1 | Round 2 | Round 3 | Notes |
+|---|---|---|---|---|
+| base | 33.8 (1% low 14.6) | 38.5 (12.0) | 41.0 (7.8) | worker Execute 24.3 / 32.4 / 32.0 |
+| `VITASHARP_TEXSET_PERSIST=1` | 35.4 (6.1: one 1 s stall during JIT and a level load) | 37.4 (14.0) | 36.3 (14.0) | Execute 23.8 / 28.9 / 28.6; unit resolution 3.0-3.4 ms instead of 4.7-5.8 |
+| `VITASHARP_WRITEBACK_THREAD=1` | 34.7 | 38.8 | 38.4 | BeginScene 1.8 -> 1.1 ms, nothing in the frame |
+| `VITASHARP_NATIVE_HLE_INLINE=1` | 36.0 | 39.1 | 38.1 | game thread ~2 ms lighter when hot (21.4 vs 23.4, 21.3 vs 25.8), nothing in the frame |
+| `VITASHARP_REC_THREAD=1` | 39.5 | - | - | the recorder thread costs 12 ms of CPU, and the worker 26.9 vs 21.6 ms |
+
+- **TEXSET_PERSIST** (reused texture sets in a pool of their own that outlives the frame's pool resets; a set from an
+  earlier submit is used after a once-per-frame check of its memory textures) is the only one with a real gain: worker
+  Execute -3.5 ms, mean frame -1.1 and -4.7 ms in the hot rounds, 1% low 14 vs 12 / 7.8. Pixel-identical on the six
+  desktop dumps (UC x2, God Wars, FIFA 13, Croixleur, PCSF00476; mali profile). **It stays off by default**: the
+  rerun with a cool phone (3 short alternating pairs) could not be done before the phone tests were paused.
+- WRITEBACK_THREAD, NATIVE_HLE_INLINE and REC_THREAD were removed (no gain; REC_THREAD worse).
+- At 0.75 the game sits at its own 30 fps cap (33.3 ms) when cool, and the GPU is at 30-31 ms. CPU savings show up
+  mostly in the 1% low and in the hot runs, not in the median.
+
+**Next steps:**
+1. Rerun base vs TEXSET_PERSIST with the phone cool (3 short pairs). If the gain holds, propose it as the default.
+2. `vkQueuePresent` blocks the worker for 2.6-3.6 ms a frame. Present from a thread of its own, behind a switch, so
+   the worker records the next frame meanwhile. The queue then needs a lock shared with `vkQueueSubmit`.
+3. Unit resolution is still 3 ms with PERSIST: the memory-texture checks of sets that are not reused, and the region
+   and render-target lookups per unit.
