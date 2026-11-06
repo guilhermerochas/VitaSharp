@@ -426,7 +426,13 @@ public sealed class Emulator : IDisposable
 
     void ExecCore(Func<Gpu.IGpuBackend?>? backendFactory, string path, string[] args, string? appDir)
     {
-        if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn("LoadExec: some threads did not stop in time");
+        if (!Kernel.WaitAllThreadsExit(10_000))
+        {
+            Log.Warn("LoadExec: some threads did not stop in time");
+            using (AddressSpace.Use(Space))
+                foreach (var t in Kernel.Threads.ToList())
+                    if (!t.WaitForExit(0)) Log.Warn($"  still running (core {t.HasCore}, blocked in host {t.BlockedInHost}, in guest code {t.InGuestCode}): {t.Describe()}");
+        }
         bool alone = Vita.Processes.Count == 1;
         if (Parent == null) Gpu.ReplaceBackend(backendFactory); // the GPU is the system's: only the front-end's process replaces it
         if (alone) VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
