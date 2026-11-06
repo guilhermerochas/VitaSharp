@@ -73,8 +73,9 @@ picture continues from the saved point, frame rate as before the load.
 | Invizimals | camera / motion | pass (menu) |
 | The Deer God, Stardew Valley | Unity | pass |
 | Sonic Mania, Blast 'Em Bunnies, Jak and Daxter Collection | misc., AvPlayer (LLE) | pass |
-| Tearaway | deferred contexts | saves and loads, then the new renderer hits a Vulkan device loss on its first frame |
+| Tearaway | deferred contexts | pass (06/11/2026: loaded twice in a row in debug mode, Gravar tudo pre-roll states around the loads, moves with the stick after them; no device loss in 3 headless loads) |
 | Minecraft, Gravity Rush | NP matching / voice ports, touch / motion, PVF game fonts | pass |
+| Jak and Daxter Collection, God of War Collection | LoadExec after a load | pass (06/11/2026: state in the collection menu, loaded, then Jak 1 to PRESS START / God of War 1 to its menu at 30 fps) |
 
 Not exercised by an installed game: Atrac (ATRAC streams), Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
-NetAdhocMatching/Rudp (online), TriggerUtil, Ime (in-game keyboard), LoadExec after a load, the Vita shell (refused).
+NetAdhocMatching/Rudp (online), TriggerUtil, Ime (in-game keyboard), the Vita shell (refused).
