@@ -6,7 +6,7 @@ namespace VitaSharp.Desktop;
 /// <summary>
 /// Automated test scenario: a text file of key=value lines
 ///   title=PCSC00045            title id (or folder)
-///   data=C:\path\to\data       optional data root (default: the normal one)
+///   data=%APPDATA%\VitaSharp   optional data root (default: the normal one); environment variables are expanded
 ///   args=--turbo --frames=4000 --dump-every=200 --input=tap@f600:0.36:0.84,...
 /// Runs headless and writes into &lt;data&gt;/tests/&lt;scenario name&gt;/: the dumped frames, sheet.png (all frames on one
 /// image) and report.txt (run speed plus every distinct warning, error and unimplemented call).
@@ -22,7 +22,8 @@ static class TestScenario
             var l = line.Trim();
             if (l.Length == 0 || l.StartsWith('#')) continue;
             int eq = l.IndexOf('=');
-            if (eq > 0) values[l[..eq].Trim()] = l[(eq + 1)..].Trim();
+            // %APPDATA%, %USERPROFILE% and other environment variables are expanded: scenarios never name a user's folder
+            if (eq > 0) values[l[..eq].Trim()] = Environment.ExpandEnvironmentVariables(l[(eq + 1)..].Trim());
         }
         if (!values.TryGetValue("title", out var title)) { Console.Error.WriteLine("scenario needs title="); return 1; }
         // --data=<folder> on the command line wins over the scenario's data= (scenarios name Windows folders; on

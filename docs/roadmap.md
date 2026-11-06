@@ -8,6 +8,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
+- [ ] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
+  jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
+  salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
+  escolhido (se já houver estado, pedir confirmação para **sobrescrever**, mostrando o print antigo e o atual),
+  carregar (com o print grande antes de confirmar), apagar, e o salvamento/carregamento rápido de sempre. Atalhos no
+  desktop (abrir a tela, anterior/próximo slot com o slot e o print aparecendo num aviso na tela, como o F2/F1/F3 do
+  PCSX2) e navegação por controle, teclado e toque; estados de outra versão aparecem marcados como incompatíveis
+  (não carregam). O launcher continua listando os estados do jogo com os mesmos prints. Base: os slots, prints e o
+  menu de pausa do Android que já existem (`SaveStateControl`, `GameActivity.SaveStates`/`PauseMenu`)
+
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
   decisão do usuário de 01/11/2026) e a GPU (o renderer é recriado e reconstrói os caches da memória do jogo). Feito
@@ -529,11 +539,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
-- [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
-  chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
-  membros, usings, comentários, `var`; regras num `.editorconfig` com analisadores. Cuidados: o GLSL gerado vem de
-  strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest) e fazer num momento sem
-  outros branches abertos (o diff toca quase todos os arquivos)
+- [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
+  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
+  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
+  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
+  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
+  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
+  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
+  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
+  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
+  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
+  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
+  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
+  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
+  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
+  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
+  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Bugs em aberto
 
