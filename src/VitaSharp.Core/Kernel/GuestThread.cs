@@ -270,7 +270,8 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             foreach (var n in names) if (Name.Contains(n, StringComparison.Ordinal)) { match = true; break; }
             if (!match) return false;
         }
-        bool trace = _emu.TraceHle;
+        // --trace-hle-only narrows --trace-hle instead of being overridden by it
+        bool trace = _emu.TraceHle && _emu.TraceHleOnly == null;
         if (!trace && _emu.TraceHleOnly is { } only)
             foreach (var p in only) if (f.Name.StartsWith(p, StringComparison.Ordinal)) { trace = true; break; }
         if (!trace && _emu.TraceHleFrames is { } win)

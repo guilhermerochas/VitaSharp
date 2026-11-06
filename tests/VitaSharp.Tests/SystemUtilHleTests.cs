@@ -44,7 +44,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00229142u, buf));
         Assert.Equal((uint)AppUtil.SystemParamInt(2), GuestMemory.R32(buf));
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00100591u, buf));
-        Assert.Equal((uint)AppUtil.SystemParamInt(6), GuestMemory.R32(buf));
+        Assert.Equal((uint)VitaSharp.Core.Firmware.SystemTimeZone.Host, GuestMemory.R32(buf)); // a time zone id
 
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetStr", 0x00598438u, buf, 64));
         Assert.Equal(AppUtil.UserName, GuestMemory.ReadCString(buf));
@@ -57,6 +57,26 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0xAA, GuestMemory.Span(buf + 16, 1)[0]);
     }
 
+    /// <summary>Games see the system settings the system software wrote (initial setup, Settings), not the host's.</summary>
+    [Fact]
+    public void SystemParamsFollowTheSystemRegistry()
+    {
+        var reg = VitaSharp.Core.Firmware.Registry.For(_root);
+        reg.Define("/CONFIG/SYSTEM/language", VitaSharp.Core.Firmware.Registry.KeyType.Int, 4);
+        reg.Define("/CONFIG/DATE/time_zone", VitaSharp.Core.Firmware.Registry.KeyType.Int, 4);
+        Assert.Equal(AppUtil.SystemParamInt(1), AppUtil.SystemParamInt(1, reg)); // not written: the default
+        int other = AppUtil.SystemParamInt(1) == 1 ? 17 : 1;
+        Assert.True(reg.SetInt("/CONFIG/SYSTEM/", "language", other));
+        Assert.True(reg.SetInt("/CONFIG/DATE/", "time_zone", 104)); // UTC+09:00 Tokyo
+        Assert.Equal(other, AppUtil.SystemParamInt(1, reg));
+        Assert.Equal(540, AppUtil.SystemParamInt(6, reg));
+        uint buf = fx.Memory.Alloc(0x10, "reg");
+        var r = NewRegMgr();
+        Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00037502u, buf));
+        Assert.Equal((uint)other, GuestMemory.R32(buf));
+        Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00100591u, buf));
+        Assert.Equal(104u, GuestMemory.R32(buf));
+    }
     [Fact]
     public void RegMgrErrors()
     {

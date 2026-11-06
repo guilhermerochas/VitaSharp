@@ -147,6 +147,17 @@ public sealed class Registry
 
     public byte[]? Get(string category, string name) => Get(Normalize(category, name));
 
+    /// <summary>The value the system software wrote to an int key (path); false while the key has its default.</summary>
+    public bool TryGetWrittenInt(string path, out int value)
+    {
+        lock (_lock)
+        {
+            bool ok = _written.TryGetValue(path, out var w) && w.Length >= 4;
+            value = ok ? BitConverter.ToInt32(w!) : 0;
+            return ok;
+        }
+    }
+
     public bool TryGetInt(string category, string name, out int value)
     {
         value = 0;

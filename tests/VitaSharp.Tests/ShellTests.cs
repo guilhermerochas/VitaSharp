@@ -162,6 +162,21 @@ public class ShellTests
     public void SystemLanguageFollowsHost(string culture, int lang) =>
         Assert.Equal(lang, VitaSharp.Core.Firmware.SystemLanguage.FromCulture(new System.Globalization.CultureInfo(culture)));
 
+    /// <summary>A fresh system's time zone follows the host: the firmware's zone of the same city, else of the same offset.</summary>
+    [Theory]
+    [InlineData("E. South America Standard Time", 22)]
+    [InlineData("America/Sao_Paulo", 22)]
+    [InlineData("Tokyo Standard Time", 104)]
+    [InlineData("Eastern Standard Time", 12)]
+    [InlineData("GMT Standard Time", 29)]
+    [InlineData("Argentina Standard Time", 23)]
+    [InlineData("Pacific/Kiritimati", 109)]
+    public void SystemTimeZoneFollowsHost(string tz, int id)
+    {
+        Assert.Equal(id, VitaSharp.Core.Firmware.SystemTimeZone.FromTimeZone(TimeZoneInfo.FindSystemTimeZoneById(tz)));
+        Assert.Equal(-180, VitaSharp.Core.Firmware.SystemTimeZone.OffsetMinutes(22));
+    }
+
     // ------------------------------------------------------------------ layout
 
     [Fact]

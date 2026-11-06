@@ -570,7 +570,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   "psnreg:" do PS4 Link abre o Sign Up; "avmedia_service:" inicia o NPXS10036 com 0x600000, `bugsC13_out/cam1`). Com o
   ScePhotoExport real (patch `scratchpad/bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
   save the image": o NPXS10036 carrega libpaf, sqlite, dbutil, dbrecovery_utility e meta_gen e fica no laço do
-  SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento).
+  SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento). fix/bugs-games-14: não retomado (orçamento semanal no fim).
   **Vídeo**: o crash do emulador
   (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
   guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
@@ -609,6 +609,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   serve) para aparecer. Validado numa cópia (`scratchpad/bugsC13_out/mc1` grava a assinatura do Minecraft rodando direto,
   `tro14/t2.png` Troféus com "Minecraft 7%, 0 0 0 5" e `tro15/sheet.png` lista, detalhes e reabertura sem reinstalar).
   Estranho: durante a migração o shell mostra o aviso "You have earned a trophy!" para cada troféu dado (5 no Minecraft).
+  **Aviso na migração (aberto, fix/bugs-games-14)**: reproduzido numa cópia (`scratchpad/bugsC14_out/tro1/t1.png`,
+  "Montando / Você conquistou um troféu!" ao abrir Troféus). O servidor (shell.self, SceNpTrophyServerJob) faz por
+  desbloqueio, dentro da própria chamada síncrona da ponte: `sceAppMgrAppParamGetInt(pid, 1/5/0xD)` e
+  `sceAppMgrGetStatusById(pid)` (lr 812CB04D, wrapper 812CB034, a3 = NPCOMMID). O callback de fim do UnlockTrophyJob
+  (814287F4) chama 81229A58, que só segue se 812CB034 (o GetStatusById) der >= 0; tentativa: devolver "não achado" a
+  essas consultas durante os desbloqueios da ponte (patch `scratchpad/bugsC14_trophy_silent_wip.patch`, fora do git):
+  as 5 consultas falharam e o aviso apareceu igual (`tro4/t1.png`), então o aviso não sai desse caminho. Próximo passo:
+  achar quem empurra o aviso (strings "JobPushNotification"/"notificationPush"/"sys-notify" do shell; talvez o cliente
+  np_trophy do processo ou a UI do shell ao receber o evento do servidor) e ver se há um modo de "sync" sem aviso
+  (o servidor tem DebugUnlockTrophyJob ao lado de UnlockTrophyJob).
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
   (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync

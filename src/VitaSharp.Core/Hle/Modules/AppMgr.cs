@@ -511,11 +511,12 @@ public sealed partial class AppMgr : HleModule
     int sceAppMgrSystemParamDateTimeGetConf(uint conf)
     {
         if (conf == 0) return unchecked((int)0x80801001);
-        GuestMemory.W32(conf + 0x00, (uint)AppUtil.SystemParamInt(4));
-        GuestMemory.W32(conf + 0x04, (uint)AppUtil.SystemParamInt(5));
+        var reg = AppUtil.SystemRegistry(Emu);
+        GuestMemory.W32(conf + 0x00, (uint)AppUtil.SystemParamInt(4, reg));
+        GuestMemory.W32(conf + 0x04, (uint)AppUtil.SystemParamInt(5, reg));
         GuestMemory.W32(conf + 0x08, 0);
-        GuestMemory.W32(conf + 0x0C, (uint)AppUtil.SystemParamInt(6));
-        GuestMemory.W32(conf + 0x10, (uint)AppUtil.SystemParamInt(7));
+        GuestMemory.W32(conf + 0x0C, (uint)AppUtil.SystemParamInt(6, reg));
+        GuestMemory.W32(conf + 0x10, (uint)AppUtil.SystemParamInt(7, reg));
         return 0;
     }
 

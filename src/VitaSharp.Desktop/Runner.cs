@@ -18,6 +18,15 @@ public static class Runner
 
         options.FirstOrDefault(o => o.StartsWith(name + "="))?[(name.Length + 1)..];
 
+    /// <summary>A trace filter: --name=value, or --name value as the HLE docs write it (without this the filter was
+    /// silently ignored).</summary>
+    internal static string? TraceOpt(string[] options, string name)
+    {
+        if (Opt(options, name) is { } v) return v;
+        int i = Array.IndexOf(options, name);
+        return i >= 0 && i + 1 < options.Length && !options[i + 1].StartsWith("--", StringComparison.Ordinal) ? options[i + 1] : null;
+    }
+
     /// <summary>--name=on|off (also 1/0, true/false, yes/no); null when absent or not recognised.</summary>
     static bool? OnOff(string[] options, string name)
     {
@@ -516,9 +525,9 @@ public static class Runner
         if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
         if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
         emu.BacktraceHle = Opt(options, "--bt");
-        if (Opt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');
-        if (Opt(options, "--trace-hle-threads") is { } tht) emu.TraceHleThreads = tht.Split('+');
-        if (Opt(options, "--trace-hle-frames") is { } thf)
+        if (TraceOpt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');
+        if (TraceOpt(options, "--trace-hle-threads") is { } tht) emu.TraceHleThreads = tht.Split('+');
+        if (TraceOpt(options, "--trace-hle-frames") is { } thf)
         {
             var p = thf.Split(':');
             emu.TraceHleFrames = (long.Parse(p[0]), long.Parse(p[1]));
