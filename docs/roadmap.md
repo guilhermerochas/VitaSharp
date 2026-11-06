@@ -628,6 +628,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   velhos: 62 contra 4 e 9), então a 7732c69 fica. A saída do host (OpenAL) não descarta grãos (Submit bloqueia).
   Falta ouvir: um F10 com áudio no momento do estalo diria se ele está no que o jogo gera (dump) ou depois (host).
   Ferramentas no scratchpad `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
+- [ ] FIFA 13: "a voz da torcida está estranha" (relato do usuário, 05/11/2026 22:22, main da8372d, gravação
+  `captures\PCSE00093_20261105_222244_tudo`, 10 s de partida). Achados (fix/bugs-games-7), sem causa no emulador:
+  com o `state_start.vss` (60 s, `VITASHARP_NGS_TRACE=1` + `--audio-dump`, `scratchpad/bugsB7_out/state0`) a torcida
+  são 4 vozes ATRAC9 estéreo (E00974FE: um laço fixo de 3,77 s em 0x89A41DB0 e três anéis de 13440 bytes que o jogo
+  regrava) e 2 mono (E00470FE, ronco grave); a narração são 2 vozes mono (E00270FE/E00370FE). O decodificador bate
+  com o FFmpeg também em estéreo (107,6 dB), **mas com a polaridade invertida** nos dois canais (inaudível sozinho;
+  só importaria somado a um som correlacionado que não venha do ATRAC9). Rota (log novo do trace: cada play mostra
+  as saídas até o master): Atrac9 -> Mixer -> (Mixer) -> Master, só saída 0, sem reverb; EQ/Envelope/Distortion/
+  Generator com parâmetros zerados (o jogo não os usa), Mixer com 1,0/1,0; volumes e matriz iguais ao Vita3K. Nenhum
+  superframe velho, nenhum corte (os 39 erros de decodificação são o enchimento zerado do fim das falas), nenhum
+  clipping (pico do mix -5,5 dBFS). Diferença medida contra o Vita real (YouTube `bMYfYTF_BHc` 300-420 s, além do
+  `R3WhJ9u_MB4`): no Vita a torcida quase não tem graves (abaixo de ~400 Hz fica 30-40 dB abaixo da faixa 600-2000 Hz);
+  aqui o grave vem forte das próprias vozes (as mono E00470FE têm o máximo abaixo de 200 Hz, e o anel 0x89A416C0
+  -12 dB). Como o jogo não configura EQ, a hipótese que sobra é o que o hardware faz com um módulo EQ/filtro de
+  parâmetros zerados e não contornado (passa direto aqui e no Vita3K). Próximo: o usuário dizer o que soa estranho
+  (tom, eco, grave, repetição) ou um vídeo do mesmo momento; comparar a mesma cena do Vita3K não dá (não abre o jogo)
 - [ ] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
   do usuário 05/11/2026 03:40, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`: o `specks.py` acha pontos em 5 de
   266 quadros, ex. 13543 com 21 px em (338,71)). Então a causa não é (só) o uniform copiado cedo; olhar de novo a malha
@@ -671,6 +687,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   por quadro), e nenhum dos dois tem retângulo (specks.py ao vivo: 1 quadro com >= 8 blocos, sombras normais). Ou o
   defeito não caiu nessa janela, ou ele não aparece na imagem lida para a gravação; falta um print ou o horário do
   retângulo
+  05/11/2026 22:22 (main da8372d, com a b6949d7): o usuário não viu mais os triângulos na partida. Parece resolvido,
+  falta mais uma partida
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
