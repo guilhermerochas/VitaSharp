@@ -663,6 +663,53 @@ public sealed partial class MsgPipe : KernelObject
     {
         lock (this) { _deleted = true; Monitor.PulseAll(this); }
     }
+
+    // ---- sceKernelWaitEvent / PollEvent on a message pipe (SCE_KERNEL_EVENT_*): IN while data can be received, OUT
+    // while there is room to send, DELETE once deleted, and OPEN / CLOSE when a handle was opened or closed by name
+    // (latched until a wait reports them). The Browser's web engine (SceWebKitProcess) creates its IPC pipe and waits
+    // for OPEN | DELETE until the Browser opens it; the wait failed with UNKNOWN_EVENT_ID and its IPC thread ended.
+    public const uint EventIn = 0x1, EventOut = 0x2, EventOpen = 0x100, EventClose = 0x200;
+    /// <summary>The message pipe's own "can receive" / "can send" bits: the web engine's IPC loop waits for 0x10218
+    /// (received data | CLOSE | ERROR | DELETE).</summary>
+    public const uint EventReceivable = 0x10000, EventSendable = 0x20000;
+    uint _latched;
+
+    uint Pattern => (_data.Count > 0 ? EventIn | EventReceivable : 0) | (_data.Count < BufferSize ? EventOut | EventSendable : 0)
+        | (_deleted ? EventBits.Delete : 0) | _latched;
+
+    /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>).</summary>
+    public void Signal(uint ev)
+    {
+        lock (this) { _latched |= ev; Monitor.PulseAll(this); }
+    }
+
+    int TakeEvent(uint waitPattern, Ptr<uint> result)
+    {
+        uint hit = Pattern & waitPattern;
+        result.TrySet(hit);
+        if (hit == 0) return SceError.EVENT_COND;
+        _latched &= ~hit;
+        return SceError.OK;
+    }
+
+    public int PollEvent(uint waitPattern, Ptr<uint> result)
+    {
+        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        lock (this) return TakeEvent(waitPattern, result);
+    }
+
+    public int WaitEvent(uint waitPattern, Ptr<uint> result, Ptr<uint> timeout)
+    {
+        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        lock (this)
+        {
+            int gen = _cancelled;
+            int r = Wait.Until(this, (p: this, waitPattern, gen), static t => (t.p.Pattern & t.waitPattern) != 0, timeout,
+                static t => t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+            if (r != SceError.OK) { result.TrySet(r == SceError.WAIT_TIMEOUT ? 0 : EventBits.Error); return r; }
+            return TakeEvent(waitPattern, result);
+        }
+    }
 }
 
 public sealed partial class RwLock : KernelObject

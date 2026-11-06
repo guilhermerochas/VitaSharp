@@ -453,6 +453,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   liblocation e liblocation_internal/extension (LLE) e o stub já devolve 0: a tela preta tem outra causa (não
   investigada). Configurações > Sistema/Formatar/Economia: não rodado. A primeira descida da tela de bloqueio no boot às
   vezes falha (`br1`: ficou na tela de bloqueio o tempo todo; `br2` igual roteiro, passou).
+  Rodada fix/system-apps-7 (06/11/2026, provas em `fw7_out/` do scratchpad): **Navegador** corrigido (f1d8488): ele
+  mesmo inicia o motor web com `sceAppMgrLaunchAppByName2` quando `sceAppMgrGetStatusByName("NPXS10083")` falha com
+  0x80802012 (o HLE devolvia 0x8080201C e ele desistia); mais NID_BEF71602 (funções exportadas por NID) e
+  `sceKernelWaitEvent` em message pipes (o IPC entre os dois processos). Sem rede: "Cannot display the page
+  (C2-14921-7)", OK, PS, continuar, fechar e reabrir funcionam (`br8/sheet.png`). As 8 NIDs de ScePsp2Compat eram
+  só imports do eboot do NPXS10083, resolvidos quando ele carrega o módulo. **near** corrigido (064c1dc):
+  liblocation_internal/extension só chamam funções internas do SceLibLocation, então o liblocation real (cliente
+  IPC do shell) é carregado; mostra as páginas de introdução e "Sign up for PSN" (`near4/sheet.png`). Configurações >
+  Sistema/Formatar/Economia de energia: rodado, OK (`st1/sheet.png`). Dica da tela inicial: não é bug, são dicas em
+  sequência que avançam quando fechadas no X (o `press cross` dos roteiros não fecha). A descida da tela de bloqueio
+  não falhou em ~12 boots desta rodada. **Teclado (IME): sem ganho, revertido**: medido no `GpuQueue` (por processo)
+  com o teclado aberto: o shell abre ~53 cenas/s e cada uma fica aberta ~19 ms (espera o vblank com a cena aberta),
+  98% do tempo; o setup espera 5 s a cada 5 s e faz ~13 cenas por quadro, cada uma esperando uma cena do shell (6-7
+  fps). Tentado (1) revezamento (quem espera um BeginScene ganha a próxima cena): 6 fps, e numa execução o servidor
+  IME do shell assertou (UNKNOWN_SEMA_ID); (2) dar os botões ao shell enquanto a região de toque 2 dele está ativa:
+  o círculo continua sem fechar o teclado (o setup também lê os botões; o caminho do círculo não foi achado). O
+  próximo passo continua sendo gravar as cenas de processos diferentes em render passes separados (suspender a cena
+  aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
+  shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
+  tem a barra, e de Mensagens são iguais: não é isso).
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma

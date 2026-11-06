@@ -214,6 +214,9 @@ public sealed partial class HleRegistry : IImportResolver
 
     /// <summary>True when VitaSharp's HLE implements at least one function of <paramref name="library"/> (by the
     /// NID database's library of each implemented NID).</summary>
+    /// <summary>The HLE has function <paramref name="nid"/>.</summary>
+    public bool Implements(uint nid) => _impls.ContainsKey(nid);
+
     public bool ImplementsLibrary(string library)
     {
         _implementedLibraries ??= _impls.Keys.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);

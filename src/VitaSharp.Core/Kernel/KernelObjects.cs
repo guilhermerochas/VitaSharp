@@ -66,6 +66,7 @@ public static class KernelInfo
         var o = objects.All<T>().FirstOrDefault(x => x.Name == name && (filter == null || filter(x)));
         if (o == null) return SceError.UID_CANNOT_FIND_BY_NAME;
         Interlocked.Increment(ref o.OpenCount);
+        if (o is MsgPipe pipe) pipe.Signal(MsgPipe.EventOpen);
         return o.Uid;
     }
 
@@ -76,6 +77,7 @@ public static class KernelInfo
         if (o == null || (filter != null && !filter(o))) return unknownError;
         int c;
         while ((c = Volatile.Read(ref o.OpenCount)) > 0 && Interlocked.CompareExchange(ref o.OpenCount, c - 1, c) != c) { }
+        if (o is MsgPipe closed) closed.Signal(MsgPipe.EventClose);
         // the last handle to a deleted pipe: the object goes away now
         if (o is MsgPipe { IsDeleted: true } && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
         return SceError.OK;

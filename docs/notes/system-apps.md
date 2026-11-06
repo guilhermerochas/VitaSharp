@@ -216,9 +216,27 @@ Every script: 0 crashes; "stalls" are the known 5-7 s watchdog STALLs at boot wh
 | NPXS10072 Email (`email.nav`) | Email Accounts, Add Email Account (Gmail / Yahoo / Other), Other's form (Name, Email Address, Password), back, PS, Continue, close | OK |
 | NPXS10091 Calendar (`calendar.nav`) | Start shows the **lock screen** (see below) right after it starts NPXS10092 Calendar BG, which ends; the second start shows "An error has occurred (NW-2288-0)" with "Initial Setup" | open: lock screen; NW-2288-0 is a network error (expected without network) |
 | NPXS10026 Content Manager (`cm.nav`) | Manage Content on Memory Card (categories), Copy Content -> "Connecting... Please wait" -> Cancel -> device chooser (PS3 / PC / Online Storage), PC -> USB / Wi-Fi, back, PS, Continue, close | OK |
-| NPXS10000 near (`near.nav`) | **black screen after Start** (both builds, main too: `fw5_out/near_cmp.png`); its main thread runs the paf loop, nothing is drawn; just before, `SceLibLocation` NID_EFC9BD25 / NID_2311B24A (unimplemented) and `vshSblQafMgrIsAllowNearTest` are called | open |
+| NPXS10000 near (`near.nav`) | (fixed in fix/system-apps-7, see below) **black screen after Start** (both builds, main too: `fw5_out/near_cmp.png`); its main thread runs the paf loop, nothing is drawn; just before, `SceLibLocation` NID_EFC9BD25 / NID_2311B24A (unimplemented) and `vshSblQafMgrIsAllowNearTest` are called | open |
 | NPXS10012 PS3 Remote Play (`ps3rp.nav`) | first page, Next -> registration number field, Back, PS, Continue, close; Cross-Controller on the LiveArea not opened | OK |
-| NPXS10003 Browser (`browser.nav`) | Bookmarks, PlayStation.com -> "Please wait..." for ever: the Browser makes **no network call at all** (no SceNet / SceHttp function in its process, `fw5_out/browser_tr`) and never loads the web engine (`vs0:data/external/webcore/SceWebKitModule.suprx`, `ScePsp2Compat.suprx`); `sceGxmGetDisplayQueueThreadIdInternal` is unimplemented on that path. Not a network timeout: the WebKit side never starts | open |
+| NPXS10003 Browser (`browser.nav`) | (fixed in fix/system-apps-7, see below) Bookmarks, PlayStation.com -> "Please wait..." for ever: the Browser makes **no network call at all** (no SceNet / SceHttp function in its process, `fw5_out/browser_tr`) and never loads the web engine (`vs0:data/external/webcore/SceWebKitModule.suprx`, `ScePsp2Compat.suprx`); `sceGxmGetDisplayQueueThreadIdInternal` is unimplemented on that path. Not a network timeout: the WebKit side never starts | open |
+
+Round fix/system-apps-7 (06/11/2026): **Browser fixed** (f1d8488): it starts its web engine itself with
+`sceAppMgrLaunchAppByName2("NPXS10083", "Parent_app_id:...,CONNECTION_POSTFIX:<pid>,...", {0x40, flags 0x20000, +0xC
+callback})` once `sceAppMgrGetStatusByName("NPXS10083")` fails with 0x80802012 (it gave up on the old 0x8080201C);
+the callback ("SceWebCoreProcessWatcher") is notified when the engine runs. SceWebKitProcess loads
+vita_jsextobj / jx_web_filtering / ScePsp2Compat / SceWebKitModule from vs0:data/external/webcore (SceHafnium.suprx is
+not in 3.74 and is optional), gets plugin functions with SceLibKernel NID_BEF71602, and talks to the Browser over two
+message pipes (SceWebKitProcess<pid> / SceWebUIProcess<pid>) with `sceKernelWaitEvent` on the pipes (0x108 = OPEN |
+DELETE, then 0x10218 = data to receive | CLOSE | ERROR | DELETE). Without network the page ends in "Cannot display the
+page (C2-14921-7)" (`sceNetResolverStartNtoa` fails); the engine process ends with the Browser. **near fixed**
+(064c1dc): liblocation_internal / _extension call only SceLibLocation internals, so the real liblocation (IPC client of
+the shell's location provider) is loaded for it; near shows its intro pages, then "Sign up for PSN".
+`settings_tail.nav` ran: System (System Information 3.74, memory card), Format (Clear Learning Dictionary, Format
+Memory Card, Restore...), Power Save Settings (standby time list), PS, close: OK (`fw7_out/st1/sheet.png`). The home
+screen hints are a sequence (home screen, then "put many applications on your home screen"...): each one closed with
+its X (0.146 0.2) is replaced by the next after the following close (`fw7_out/br8/sheet.png` closed1 / closed2);
+`press cross` does not close them, so scripts that never tap the X see the first one again. `home_help` stays 0 (its
+text points to Welcome Park, which is pd0 factory data VitaSharp does not have).
 
 Found in this round (not fixed):
 
