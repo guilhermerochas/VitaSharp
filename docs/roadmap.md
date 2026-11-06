@@ -522,6 +522,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
+  prioridade máxima; gravação `captures\PCSE00271_20261106_020056_tudo`): nenhum quadro apresentado (watchdog STALL
+  no frame 1). As threads `AsyncIOSystem` e `NRSMovieFileAsyncServer` chamam `sceKernelWaitEvent(0x0 / 0xFFFFFFFF,
+  0x1000000, ...)` (lr 0x8107DF21) em laço e recebem 0x80028201 (UNKNOWN_EVENT_ID) 692.895 vezes em 15 s; a `main`
+  fica esperando o IO assíncrono. Provável: a criação do objeto de evento antes falhou ou não existe no emulador;
+  a `Scaleform Render Thread` nunca iniciou (Dormant, pc 0). Com o agente de bugs C
 - [ ] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
   selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
   04/11/2026, main d388b61; captura F10 `diagnostics\PCSA00080_20261104_162655`, dump de GPU
