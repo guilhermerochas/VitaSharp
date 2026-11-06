@@ -520,7 +520,7 @@ public sealed partial class MainWindow : Window
                     Dispatcher.UIThread.Post(() =>
                     {
                         _progress.Value = p.Fraction;
-                        SetStatus($"Installing {name}… {p.Fraction:P0}");
+                        SetStatus($"Installing {name}… {p.Describe()}");
                     });
                 },
                 // runs on the install thread: show the dialog on the UI thread and wait for the answer
@@ -644,22 +644,43 @@ public sealed partial class MainWindow : Window
 
     async Task InstallPkgFiles(string pkg, string lic)
     {
-        SetStatus($"Installing {Path.GetFileName(pkg)}…");
+        if (_installCts != null) return;
+        string name = Path.GetFileName(pkg);
+        var cts = new CancellationTokenSource();
+        _installCts = cts;
+        SetInstalling(true);
+        SetStatus($"Installing {name}…");
         _logPanel.IsVisible = true;
         try
         {
             var t = await Task.Run(() => PkgInstaller.Install(pkg, lic, Program.Ux0,
                 msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
-                p => Dispatcher.UIThread.Post(() => SetStatus($"Installing {Path.GetFileName(pkg)}… {p.Fraction:P0}"))));
+                p => Dispatcher.UIThread.Post(() =>
+                {
+                    if (_installCts != cts) return; // a late report after the install finished
+                    _progress.Value = p.Fraction;
+                    SetStatus($"Installing {name}… {p.Describe()}");
+                }), cts.Token), cts.Token);
             AppendLog($"Installed {t.TitleId} \"{t.Title}\"");
             Refresh();
             _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == t.TitleId);
             SetStatus($"Installed {t.Title}.");
         }
+        catch (OperationCanceledException)
+        {
+            AppendLog("Install cancelled.");
+            SetStatus($"Install of {name} cancelled.");
+        }
         catch (Exception e)
         {
             AppendLog("Install failed: " + e.Message);
             SetStatus("Install failed: " + e.Message);
+        }
+        finally
+        {
+            _installCts = null;
+            cts.Dispose();
+            SetInstalling(false);
         }
     }
 
