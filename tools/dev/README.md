@@ -178,7 +178,7 @@ The fixtures stay out of git. They are cut again from the scratch dumps with the
 One recording that is enough to diagnose a bug offline; details, formats, sizes and cost in
 [`docs/notes/session-capture.md`](../../docs/notes/session-capture.md).
 
-- **Desktop:** Ctrl+F8 starts and stops it (F8, F9, F10 unchanged). Scripted: `--capture-at=A:B` (guest frames) or
+- **Desktop:** F8 starts and stops it (Ctrl+F8 records only a GPU dump; F9, F10 unchanged). Scripted: `--capture-at=A:B` (guest frames) or
   `VITASHARP_CAPTURE_AT`. Pre-roll: `--capture-preroll[=S]`, `VITASHARP_CAPTURE_PREROLL=S`, the launcher's
   "Pré-gravação", or debug mode (F9).
 - **Android:** pause menu > **Gravar tudo** / **Parar gravação**, and **Pré-gravação: ligada/desligada**; or

@@ -309,7 +309,7 @@ happened with `mono-aot` and in the earlier phone runs, so it is a driver issue,
 - **Gravar tudo** (pause menu, every build): records a save state, the input, the GPU dump, every presented frame
   with its timing, the audio and the log into `files/captures/TITLE_DATE_tudo/` and a `.zip`, until **Parar
   gravação**; "● REC" shows by the fps counter. **Pré-gravação: ligada** keeps the seconds before the start (a save
-  state every 30 s). Same Core code as the desktop's Ctrl+F8: `docs/notes/session-capture.md`; analysis with
+  state every 30 s). Same Core code as the desktop's F8: `docs/notes/session-capture.md`; analysis with
   `build/android-capture-analyze.*`.
 - **Hardware keyboard** (`AndroidKeyboard`, USB or Bluetooth): `GameActivity.OnKeyDown`/`OnKeyUp` hand the key codes
   of keyboard events that are not a connected controller's to the keyboard profile of `input.json`, the desktop's

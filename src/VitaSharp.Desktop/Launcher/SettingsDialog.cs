@@ -203,15 +203,16 @@ public sealed class SettingsDialog : Window
                    "P pausa e retoma a emulação (tecla em Controles > Atalhos do emulador; um controle pode usar uma combinação de botões). " +
                    "F10 captura um diagnóstico (quadro, texturas, captura de tela e log) em um .zip na pasta de diagnósticos. " +
                    "F9 liga ou desliga o modo de depuração no meio do jogo. " +
-                   "Ctrl+F8 inicia e para \"Gravar tudo\": estado salvo, controles, imagens, tempos, áudio e dump da GPU em um .zip na pasta captures, para reproduzir o problema sem o jogo. " +
+                   "F8 inicia e para \"Gravar tudo\": estado salvo, controles, imagens, tempos, áudio e dump da GPU em um .zip na pasta captures, para reproduzir o problema sem o jogo. " +
+                   "Ctrl+F8 grava só o dump da GPU na pasta gpudumps. " +
                    "Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro.",
         });
         var debugMode = new CheckBox { Content = "Modo de depuração (gera logs detalhados para diagnóstico)", IsChecked = settings.DebugMode };
         general.Children.Add(WithHint(debugMode, "Registra no log o primeiro uso de shaders, alvos e formatos, erros de HLE e travamentos, " +
                                                  "e salva um diagnóstico automático quando a imagem parece corrompida. Pode custar alguns por cento de desempenho."));
-        var preRoll = new CheckBox { Content = "Pré-gravação (Ctrl+F8 inclui os segundos antes de apertar)", IsChecked = settings.CapturePreRoll };
+        var preRoll = new CheckBox { Content = "Pré-gravação (F8 inclui os segundos antes de apertar)", IsChecked = settings.CapturePreRoll };
         general.Children.Add(WithHint(preRoll, "Guarda na memória as últimas imagens, tempos e controles, com um estado salvo a cada 30 s, para que " +
-                                               "\"Gravar tudo\" (Ctrl+F8) pegue um defeito que já passou. Cada estado pausa o jogo por um instante. " +
+                                               "\"Gravar tudo\" (F8) pegue um defeito que já passou. Cada estado pausa o jogo por um instante. " +
                                                "Com o modo de depuração ligado, a pré-gravação já fica ligada."));
         var openDiag = new Button { Content = "Abrir pasta de diagnósticos", HorizontalAlignment = HorizontalAlignment.Left };
         openDiag.Click += (_, _) =>

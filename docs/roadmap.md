@@ -664,7 +664,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cópias o corte antigo encurtava: numa partida do FIFA
   com a correção, 147.600 cortes evitados (contados em cada cálculo de tamanho, inclusive o do audit) e 200 MB a mais lidos (`bugsB3_out/fifa_clamp`; a
   partida e a sombra seguem certas no t05). Próximo: o usuário jogar uma partida com a correção; se
-  ainda houver cunhas, gravar tudo (Ctrl+F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
+  ainda houver cunhas, gravar tudo (F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
   Relato novo (main a19cdbe, com o 479b54f): "retângulos pretos abaixo dos jogadores", gravação completa
   `PCSE00093_20261105_211112_tudo`. Os 442 quadros ao vivo (frames.vsfr, extraídos com `vitasharp-perf capture
   --frames`) são iguais ao replay do gpu.vsgd nos 389 presents em comum (pixels 50+ níveis mais escuros ao vivo: 0-1
