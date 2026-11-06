@@ -538,7 +538,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de novo; a câmera mostra "Could not save the image (C1-11213-8)" e chama sceErrorHistoryPostError (`cam8`, `cam9`
   com a correção do IO assíncrono abaixo: igual). Próximo passo: ver no NPXS10036 (eboot 91 KB) o despacho do servidor e
   por que responde zero (estado de inicialização? evento que falta?). As pastas padrão do Vita (ux0:picture, ux0:video;
-  photo0 hoje é `<fs>/photo0`, não ux0:picture) ainda não foram tratadas. **Vídeo**: o crash do emulador
+  photo0 hoje é `<fs>/photo0`, não ux0:picture) ainda não foram tratadas. 06/11/2026 (fix/bugs-games-12): das duas
+  correções de kernel do patch, o zumbi de semáforo/event flag já estava na main (e9e70ca) e o
+  `sceKernelGetMsgPipeCreatorId` por nome entrou (validado no PS4 Link: SceShellSvc e SceDbUtilDcn resolvem o pid do
+  shell, mais o `sceAppMgrIsPidShellAndCrashed` que o cliente passa a consultar); o resto do patch (ScePhotoExport real,
+  LaunchAppByUri como pedido ao shell, flags de serviço) e o despacho do NPXS10036 não foram mexidos (orçamento).
+  **Vídeo**: o crash do emulador
   (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
   guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
   repetido; o Videoenc aceita as assinaturas que a câmera usa e o encode diz "sem quadro". A gravação ainda derruba o
@@ -556,6 +561,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   0x8002058e`, BKPT em SceTrophy+394CE: o método síncrono +0x10 do cliente IPMI devolveu 0x8002058E na segunda
   abertura do app, depois de near/Email/Calendário) não se repetiu em 9 aberturas (`tro2`-`tro5`: abrir/fechar 6 vezes,
   com o Email suspenso); a gravação do usuário começa depois do crash.
+  Plano da migração (06/11/2026, fix/bugs-games-12, não implementado por orçamento): fazer a ponte rodar no processo
+  do app Troféus (NPXS10008, cliente do mesmo servidor) quando ele abre: para cada `ux0:user/00/trophy/<NPCOMMID>.json`
+  sem título no servidor, achar o app em `ux0:app/*/sce_sys/trophy/<NPCOMMID>`, fazer o
+  `sceAppMgrTrophyMount(300, pid do Troféus)` apontar para ele enquanto a ponte cria o contexto (sem assinatura, como os
+  jogos que passam NULL), instala e dá os troféus do JSON. A dúvida a testar primeiro: se o servidor aceita um contexto
+  de outro título vindo de um programa do sistema (ele pode amarrar o contexto ao title id do pid). Validar com uma
+  cópia do `ux0:user` e do `ur0` (como em `bugsC12_data`), nunca no %APPDATA%.
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
   (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync
