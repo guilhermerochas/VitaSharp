@@ -251,9 +251,6 @@ public static class EnvVars
     /// <summary>Android: =off turns off both the pinning of the hot threads (guest main thread, GPU worker) to the
     /// fast cores and the Performance Hint (ADPF) session, to compare with them on (docs/android/README.md).</summary>
     public const string AndroidAffinity = "VITASHARP_ANDROID_AFFINITY";
-    /// <summary>Android: =wall reports each frame's wall time to the ADPF hint session instead of the busiest hot thread's
-    /// CPU time (default cpu).</summary>
-    public const string AndroidAdpfWork = "VITASHARP_ANDROID_ADPF_WORK";
     /// <summary>Android: =info, =debug or =all keeps forwarding info/debug lines to logcat while a game runs (by
     /// default only warnings and errors reach logcat once the first frame is shown; the log file keeps everything).</summary>
     public const string AndroidLogcat = "VITASHARP_ANDROID_LOGCAT";
@@ -283,9 +280,9 @@ public static class EnvVars
     public const string DelaySpin = "VITASHARP_DELAY_SPIN";
     /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
-    /// <summary>Vulkan command-buffer slots in flight (2-8, default 3; each holds a host upload ring, see UploadRingMb).</summary>
+    /// <summary>Vulkan command-buffer slots in flight (2-8, default 3, 8 on Android; each holds a host upload ring, see UploadRingMb).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";
-    /// <summary>Size of each command-buffer slot's host upload ring in MB (8-64, default 64; uploads past it go to
+    /// <summary>Size of each command-buffer slot's host upload ring in MB (8-64, default 64, 16 on Android; uploads past it go to
     /// overflow chunks).</summary>
     public const string UploadRingMb = "VITASHARP_UPLOAD_RING_MB";
     /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target

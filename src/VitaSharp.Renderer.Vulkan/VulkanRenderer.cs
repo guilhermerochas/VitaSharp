@@ -77,10 +77,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// Small submissions (a sync point's early submit) still take a slot, so the slots can hold far less than a frame of
     /// GPU work: Dolphin's Vulkan backend keeps 8 command buffers for the same reason.
     /// </summary>
-    static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 8) : 3;
-    /// <summary>Host upload ring per slot (<see cref="EnvVars.UploadRingMb"/>, 8-64 MB, default 64); past it uploads
+    static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 8) : DefaultFramesInFlight;
+    /// <summary>Android: 8 slots of 16 MB (Killzone on a Mali phone: median 12-15 -> 20 fps, 5 of 5 runs; the slots
+    /// with an early sync-point submission each held less than a frame of GPU work). Desktop: 3 of 64 MB.</summary>
+    static int DefaultFramesInFlight => OperatingSystem.IsAndroid() ? 8 : 3;
+    /// <summary>Host upload ring per slot (<see cref="EnvVars.UploadRingMb"/>, 8-64 MB, default 64, 16 on Android); past it uploads
     /// use overflow chunks, so more slots can use smaller rings.</summary>
-    static readonly ulong RingSize = (ulong)(int.TryParse(Environment.GetEnvironmentVariable(EnvVars.UploadRingMb), out var rmb) ? Math.Clamp(rmb, 8, 64) : 64) << 20;
+    static readonly ulong RingSize = (ulong)(int.TryParse(Environment.GetEnvironmentVariable(EnvVars.UploadRingMb), out var rmb) ? Math.Clamp(rmb, 8, 64) : OperatingSystem.IsAndroid() ? 16 : 64) << 20;
     /// <summary>Uploads past a full ring are carved from chunks of this size: a buffer per upload (Jak 1's title screen,
     /// ~27 MB of uniform blocks a frame past the uniform heap, thousands of draws) cost a vkAllocateMemory each.</summary>
     const ulong OverflowChunkSize = 16ul << 20;
