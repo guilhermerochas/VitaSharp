@@ -226,6 +226,39 @@ public sealed class VitaSystem
         }
     }
 
+    // ---- the shell's touch regions (sceTouchSetRegion / ActivateRegion, regions above 0): while one is active over an
+    // application in front, the shell's overlay takes the contacts on the panel (its on-screen keyboard)
+    readonly Dictionary<(int Port, int Region), (ushort X0, ushort Y0, ushort X1, ushort Y1, bool Active)> _shellTouchRegions = new();
+
+    public void SetShellTouchRegion(int port, int region, ushort x0, ushort y0, ushort x1, ushort y1)
+    {
+        lock (_shellTouchRegions)
+        {
+            bool active = _shellTouchRegions.TryGetValue((port, region), out var r) && r.Active;
+            _shellTouchRegions[(port, region)] = (x0, y0, x1, y1, active);
+        }
+    }
+
+    public void ActivateShellTouchRegion(int port, int region, bool enable)
+    {
+        lock (_shellTouchRegions)
+        {
+            var r = _shellTouchRegions.TryGetValue((port, region), out var old) ? old : default;
+            _shellTouchRegions[(port, region)] = r with { Active = enable };
+        }
+    }
+
+    /// <summary>True when the touches of <paramref name="port"/> go to the shell instead of the application in front:
+    /// the shell has an active touch region there (its overlay plane is up).</summary>
+    public bool TouchClaimedByShell(int port)
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == port && r.Active) return true;
+        return false;
+    }
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
 
