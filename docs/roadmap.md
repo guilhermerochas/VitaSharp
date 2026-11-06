@@ -8,27 +8,38 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
-- [ ] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
-  objetos do kernel (threads, semáforos, mutexes, event flags, timers), estado dos módulos HLE (áudio, NGS, GXM,
-  arquivos abertos, câmera, rede simulada) e estado da GPU (imagens renderizadas, texturas, cache). Decisão do
-  usuário (01/11/2026): estado dos módulos salvo **por módulo** (`ISnapshotState` explícito em cada um), não por um
-  serializador genérico com reflexão; pode ser gerado na compilação (source generator) a partir dos campos, com os
-  casos especiais escritos à mão (vídeo/MediaCodec, saídas de áudio, arquivos, GXM). Desenho e estimativa em
-  `docs/notes/dev-snapshots.md` (CPU/memória/threads ~2 dias; módulos de Uncharted/F1 3–5 dias; total 1–2 semanas);
-  fica para depois da prioridade de desempenho no Android
-- [ ] Formato versionado e tolerante a mudanças do emulador; aviso claro quando um estado antigo não puder ser carregado
-  Conferido (05/11/2026, agente C): um estado de outro esquema não derruba nada. `--load-state` registra `Load state:
-  the save state was written by an incompatible VitaSharp build (<versão>); its emulator state layout differs from this
-  build's` e o jogo segue do boot (`scratchpad/bugsC5_out/jak1_paced.log`, estado da 57c57b1 na main a19cdbe); pelo código (não
-  visto na janela), F7 mostra "Não foi possível carregar o estado: <motivo>" na barra de título; o launcher desabilita o slot com o
-  motivo na dica; no Android o motivo vai num aviso (toast). Falta: o motivo está em inglês e a barra de título some
-  em 6 s; e o formato não é tolerante: qualquer campo novo num objeto salvo (ex. 9482b0f) invalida todos os estados
-  Aviso corrigido (agente C dia 6, fix/bugs-games-6): em português ("Este estado foi salvo por outra versão do
-  VitaSharp (1.0.0+57c57b1) e não pode ser carregado", idem para formato e jogo diferentes), sem o prefixo repetido, e
-  os erros de estado ficam 15 s na barra de título (os avisos curtos continuam 6 s). Visto no `--load-state` sem janela
-  (`scratchpad/bugsC6_out/ss_old/log.txt`); a barra de título não foi vista na janela
-- [ ] Interface: slots por jogo com miniatura, atalhos (salvar/carregar rápido) e menu de pausa
-- [ ] Uso em diagnóstico: o jogador salva o estado no momento do problema e manda junto com a captura
+- [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
+  objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
+  decisão do usuário de 01/11/2026) e a GPU (o renderer é recriado e reconstrói os caches da memória do jogo). Feito
+  (8efb2d5..3b45916, desenho em `docs/notes/save-states.md`, inventário em `docs/notes/dev-snapshots.md`). Validado
+  no desktop em 04/11/2026 com 16 jogos (tabela "Tested" em `save-states.md`) e no celular (Knightin'+, Uncharted,
+  F1: `docs/notes/android-frame-anatomy.md`, main 1c0e516). 06/11/2026 (feat/savestate-tolerant): Tearaway salva e
+  carrega (antes a carga era recusada com a cena da GPU aberta e o salvamento com uma command list sendo gravada),
+  carregado duas vezes seguidas no modo de depuração, 30 fps e o boneco anda com o direcional depois das cargas, sem
+  device lost (`scratchpad/ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
+  carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`scratchpad/ss1_jak1`); God of War Collection: estado no
+  menu, carregado, God of War 1 até o menu do jogo a 30 fps (`scratchpad/ss1_gow1`)
+- [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
+  (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
+  ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
+  título, dica do slot no launcher e aviso no Android (agente C dia 6, `scratchpad/bugsC6_out/ss_old/log.txt`).
+  Visto na janela (06/11/2026): o estado do Jak 1 da 57c57b1 com `--load-state` mostra o aviso na barra de título de
+  8,2 s a 24,1 s e o jogo segue a 30 fps (`scratchpad/ss1_oldstate/titles.txt`, `window_0.png`)
+- [x] Interface: F5/F7 (rápido), F6 escolhe o slot 1-9, Shift+F5/F7 no slot; o launcher lista os estados do jogo com
+  miniatura e abre o jogo carregando um; Android: "Salvar estado"/"Carregar estado" no menu de pausa, 6 slots com
+  miniatura e data (24a3c6f; carga e salvamento por passos no celular em 9c288d7)
+- [x] Uso em diagnóstico: o Gravar tudo (F8) leva o estado do início (`state_start.vss`) e o da pré-gravação
+  (`state_preroll.vss`), e `rerun` recomeça dele com a entrada gravada (FIFA 13: 95% dos quadros iguais, mediana da
+  diferença 0; `docs/notes/session-capture.md`)
+- [ ] Sem teste por falta de um jogo instalado que use: Atrac, Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
+  NetAdhocMatching/Rudp, TriggerUtil e o `sceIme` (teclado do jogo sem o diálogo do sistema); esses módulos recusam o
+  salvamento só enquanto estão em uso. Sob o shell do Vita (vários processos) o salvamento é recusado
+- [ ] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
+  sem janela; não houve teste com janela); o teclado do sistema (ImeDialog) aberto num save: o Sakatsuku
+  (`st_game2`, 7000 quadros) não chegou ao teclado, e o Invizimals não foi testado
+- [ ] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
+  (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
+  não investigada (`scratchpad/ss1_jak1/stdout.txt`)
 
 ## Desempenho (PC)
 
