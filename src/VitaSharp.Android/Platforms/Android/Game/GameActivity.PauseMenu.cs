@@ -145,7 +145,7 @@ public sealed partial class GameActivity
 #endif
         columns.AddView(Grid(tiles, 3), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 2) { LeftMargin = Dp(10) });
         card.AddView(columns, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(16) });
-        resume.RequestFocus();
+        FocusFirst(resume);
     }
 
     /// <summary>The save state slots: a picture and the date of each slot; saving or loading runs off the UI thread and
@@ -181,7 +181,7 @@ public sealed partial class GameActivity
             slots.Add(v);
         }
         card.AddView(Grid(slots, 3), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
-        (first ?? card.GetChildAt(0))?.RequestFocus();
+        FocusFirst(first ?? card.GetChildAt(0));
     }
 
     /// <summary>The in-game settings: what can change while the game runs (the rest is in the game's page of the app).</summary>
@@ -208,7 +208,7 @@ public sealed partial class GameActivity
         if (_sensors?.CanRecenter == true)
             Add(ActionRow("Recentralizar movimento", "A posição atual do celular vira a posição de repouso", () => { _sensors?.Recenter(); Toast.MakeText(this, "Movimento recentralizado", ToastLength.Short)?.Show(); }));
         card.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
-        first?.RequestFocus();
+        FocusFirst(first);
     }
 
 #if VITASHARP_DEVELOPER
@@ -230,7 +230,7 @@ public sealed partial class GameActivity
             list.AddView(ActionRow("Gravar conteúdo", "Quadros, dump de GPU e áudio", () => { session.StartCapture("conteudo"); CloseMenu(); }));
         }
         card.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
-        first.RequestFocus();
+        FocusFirst(first);
     }
 #endif
 
@@ -271,6 +271,15 @@ public sealed partial class GameActivity
             case Keycode.DpadUp: case Keycode.DpadDown: case Keycode.DpadLeft: case Keycode.DpadRight: return false;
             default: return true; // nothing else reaches the paused game
         }
+    }
+
+    /// <summary>The view a page focuses first: focused now (outside touch mode) and the default focus that a
+    /// controller's first D-pad press restores when the menu was opened by touch (ViewRootImpl.leaveTouchMode).</summary>
+    static void FocusFirst(AView? v)
+    {
+        if (v == null) return;
+        v.FocusedByDefault = true;
+        v.RequestFocus();
     }
 
     // ------------------------------------------------------------------ building blocks (Ui/Screen.cs, in Android views)
