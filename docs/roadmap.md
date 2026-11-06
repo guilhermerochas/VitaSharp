@@ -537,6 +537,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+  1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
+  voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
+  e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
+  derrube o processo; validar 10 loads seguidos. Com o agente de bugs C
 - [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
   carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
   corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
