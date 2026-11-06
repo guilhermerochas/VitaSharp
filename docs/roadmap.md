@@ -1418,6 +1418,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
   no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
   Desligada por padrão até o usuário confirmar na janela.
+  Medido na janela oculta (agente C dia 11, 06/11/2026, fix/bugs-games-10, `VITASHARP_HIDDEN_WINDOW=1`, 150 s, Cross a
+  cada 200 quadros; `scratchpad/bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas
+  quedas (41, 46) e a parada da troca de cena (watchdog `STALL` 5 s, quadro 2752); com a chave, 59-60 fps, uma queda
+  (45) e a mesma parada (6 s, quadro 2754). Os engasgos do relato (12-16 fps por ~5 s) não aparecem em nenhum dos dois
+  com o PC ocioso, então não há ganho medido para ligar por padrão. Com a chave na janela, Devious Dungeon 60, F1 2011
+  25 no menu / 60 depois, Uncharted 60 e Killzone 30 (title) como antes (`reg_dd/f1/uc/kz`, com a main eb950c1).
+  Mantida desligada; falta a janela de verdade do usuário (vsync do monitor)
 
 - [x] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
@@ -1494,6 +1501,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   variável sem resolver do `Il2CppAssemblies` (também no God Wars); 1 underrun de áudio do CRI Atom. A captura
   automática `PCSG00952_20261104_201246` é só a tela da Unity (falso positivo). Conferir com vídeos do Vita de
   verdade se as paradas são carregamento normal ou travamento, e jogar além do começo
+  Agente C dia 11 (06/11/2026, fix/bugs-games-10, sem janela com `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`, senão a Unity
+  roda a 400-600 fps e o roteiro em quadros fica rápido demais): boot, logos (Acquire, Unity, CRIWARE, Live2D), aviso
+  de auto-save, filme de abertura, título e a tela New Game com o diálogo de confirmação, como no vídeo do Vita
+  `ju9W3ZiWABU` (lá também há ~10 s de preto antes do filme e um carregamento preto longo depois do New Game, então as
+  telas pretas do relato podem ser normais). 300 s a 58 fps, 0 underruns, nenhuma imagem parada, 2-3 desenhos
+  esperando shader (80 ms) só na 1ª vez. Não passou do diálogo: a versão japonesa confirma com Círculo e o "はい" fica
+  acima de "戻る" (selecionado); o Start do roteiro chega cedo ou tarde conforme o boot (roteiros `bugsC10_scn/akiba*.txt`;
+  usar `--nav` esperando a tela). Falta o jogo em si
 - [x] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
@@ -1655,6 +1670,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
   Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.
+  Agente C dia 11 (06/11/2026, fix/bugs-games-10, `mania_boot` com `--audio-dump`, 62 s, 35,6 s com som): nas emendas
+  dos grains de 1024 amostras não há salto além do conteúdo (9 de 1506 emendas com salto > 8x a mediana em volta,
+  contra 2 no meio dos grains; nenhum grain repetido, 1 grain mudo depois de som); um detector de segunda diferença
+  marca 10/s, espalhados e não alinhados aos grains: são ataques da própria música (síntese com bordas retas). Depois
+  de passar o dump por Opus 128k (como o YouTube) caem para 2,5/s; o vídeo do Vita `w5qGSkE4IqM` dá 0,8/s, mas em
+  outro trecho com outra música, então não compara. Conclusão: não é do emulador na saída do jogo; fica a conversão
+  44,1→48 kHz do OpenAL, fora do dump, para o usuário ouvir
   Conferido de novo (05/11/2026, fix/bugs-audio-2, no mesmo dump): 0 quedas de >30 dB em 2,5 ms (`drops.py`) e nenhuma
   emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
   eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
