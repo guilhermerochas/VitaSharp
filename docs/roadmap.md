@@ -575,7 +575,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   sem queda nem TDR, 30/60 fps depois (`scratchpad/bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
   `scratchpad/bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
   em menus/cenas (sem gameplay roteirizado); device lost não foi provocado de verdade
-- [ ] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; **regressão incompleta**).
+- [x] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; regressão completada no dia 10).
   O envelope era passthrough e `sceNgsVoiceKeyOff` parava a voz no update seguinte; o SDK diz que depois do key off
   "o processamento continua até a voz terminar" (release). O Jak 1 usa racks Scream com envelope (pontos 0→1 em 0 ms,
   sustain 1 ou 0,5625, release de 23 ms a 12 s) e dá key off com o som ainda alto: cada som era cortado no meio da onda.
@@ -589,6 +589,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   provável passo/impacto do próprio banco de sons); o decodificador ADPCM bate com o do Vita3K e os bancos decodificados
   fora não têm saltos (`adec.py`); não identifiquei o banco exato (o dump por endereço de buffer reaproveitado ficou
   velho). O clipping de 0,12% da gravação do usuário não reproduz aqui (0,002% no gameplay do `jak_g2`)
+  Agente C dia 10 (06/11/2026): **regressão completa, fica ligado por padrão** (mesmo build, `VITASHARP_NGS_ENVELOPE=0`
+  como referência, `bugsC9_tools/regress.ps1`): Killzone 29,9/29,9 fps (p99 35,0/36,7 ms), FIFA 13 59,6/59,5, God of War
+  59,8/59,8 (`scratchpad/bugsC9_out/r_kz_on_nd`, `r_kz_off_nd`, `r_fifa_on`/`off`, `r_gow_on`/`off`). Nenhum som
+  some: a mistura gravada (`--audio-dump`) tem o mesmo RMS (KZ -23,4/-23,5, FIFA -23,1/-23,1, GoW -25,1/-25,2 dBFS) e, em
+  FIFA e GoW, 0-1 de 133-150 meios-segundos diferem mais de 6 dB; com o modo de depuração, nenhum erro novo de NGS
+  (`sceNgsVoicePlay` numa voz ainda em release seria o sintoma; `bugsC9_tools/onoff.py`). Não ouvi (sem som no PC
+  do usuário); a medida é por RMS
 - [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
   carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
   corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
