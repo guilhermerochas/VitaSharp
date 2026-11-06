@@ -8,6 +8,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
+- [ ] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
+  jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
+  salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
+  escolhido (se já houver estado, pedir confirmação para **sobrescrever**, mostrando o print antigo e o atual),
+  carregar (com o print grande antes de confirmar), apagar, e o salvamento/carregamento rápido de sempre. Atalhos no
+  desktop (abrir a tela, anterior/próximo slot com o slot e o print aparecendo num aviso na tela, como o F2/F1/F3 do
+  PCSX2) e navegação por controle, teclado e toque; estados de outra versão aparecem marcados como incompatíveis
+  (não carregam). O launcher continua listando os estados do jogo com os mesmos prints. Base: os slots, prints e o
+  menu de pausa do Android que já existem (`SaveStateControl`, `GameActivity.SaveStates`/`PauseMenu`)
+
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
   decisão do usuário de 01/11/2026) e a GPU (o renderer é recriado e reconstrói os caches da memória do jogo). Feito
