@@ -46,6 +46,17 @@ public static class SaveStates
     /// </summary>
     public static SaveStateHeader Save(Emulator emu, string path, byte[]? thumbnailPng = null, int timeoutMs = 3000)
     {
+        lock (Gate) return SaveLocked(emu, path, thumbnailPng, timeoutMs);
+    }
+
+    /// <summary>One save or load at a time: the Gravar tudo pre-roll saves every 30 s on its own thread, and one that ran
+    /// during a load (Tearaway in debug mode) resumed the emulation the load had paused, so the load failed half done
+    /// ("the guest clock is restored only while the emulation is paused") and the pre-roll state was taken from
+    /// threads being replaced.</summary>
+    static readonly object Gate = new();
+
+    static SaveStateHeader SaveLocked(Emulator emu, string path, byte[]? thumbnailPng, int timeoutMs)
+    {
         CheckSystem(emu);
         CheckModules(emu);
         var sw = Stopwatch.StartNew();
@@ -263,6 +274,12 @@ public static class SaveStates
     /// </summary>
     public static void Load(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory = null)
     {
+        lock (Gate) LoadLocked(emu, path, backendFactory);
+        Loaded?.Invoke(emu);
+    }
+
+    static void LoadLocked(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory)
+    {
         CheckSystem(emu);
         var sw = Stopwatch.StartNew();
         SaveStateHeader header;
@@ -307,7 +324,6 @@ public static class SaveStates
             foreach (var t in held) t.HoldForSave(false);
             if (!wasPaused) EmulationPause.Resume("load state"); else EmulationPause.Pause("load state");
         }
-        Loaded?.Invoke(emu);
     }
 
     /// <summary>
