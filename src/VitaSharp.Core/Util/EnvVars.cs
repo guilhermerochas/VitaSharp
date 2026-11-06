@@ -146,6 +146,8 @@ public static class EnvVars
     /// <summary>1: reused texture sets live in a pool of their own and survive the frame's pool resets (a stage bound in an
     /// earlier submit reuses its set after a per-frame check of its memory textures; implies TexSetReuse).</summary>
     public const string TexSetPersist = "VITASHARP_TEXSET_PERSIST";
+    /// <summary>1: vkQueuePresentKHR runs on a thread of its own, off the GPU worker (VulkanRenderer.PresentThread.cs).</summary>
+    public const string PresentThread = "VITASHARP_PRESENT_THREAD";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";

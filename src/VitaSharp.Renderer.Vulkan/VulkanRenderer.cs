@@ -258,11 +258,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 #if VITASHARP_DEVELOPER
         Core.Util.Developer.DevTrace.Begin("vkQueueSubmit");
         long qs0 = WorkerProf ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-        var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+        Result submitResult;
+        lock (_queueLock) submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
         if (WorkerProf) _profQueueSubmitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - qs0;
         Core.Util.Developer.DevTrace.End();
 #else
-        var submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence);
+        Result submitResult;
+        lock (_queueLock) submitResult = _vk.QueueSubmit(_core.Queue, 1, in si, f.Fence); // the present thread shares the queue
 #endif
 
         if (submitResult == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkQueueSubmit"); } // stops background shader/pipeline work
@@ -1096,6 +1098,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (_traceSnaps.Count > 0 && _opt.ShaderCacheDir != null)
         {
             SubmitFrame(false, 0);
+            DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             WriteTraceSnapshots(Path.Combine(_opt.ShaderCacheDir, "trace", "targets"));
             return;
@@ -1240,6 +1243,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// presented region of that target (which may be the CPU framebuffer, not a render target) as a screenshot.</summary>
     int DumpAllTargets(string dir, (RenderTarget Src, uint W, uint H, string Path)? shot = null)
     {
+        DrainPresent();
         _vk.DeviceWaitIdle(_dev);
         Directory.CreateDirectory(dir);
         var stats = new System.Text.StringBuilder();
@@ -1377,6 +1381,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         StopShaderWorkers();
         CloseTitleCaches();
+        StopPresentThread();
         _vk.DeviceWaitIdle(_dev);
         DestroyMirror();
         foreach (var fr in _frames) RetireFrame(fr, RetireCause.Dispose);
