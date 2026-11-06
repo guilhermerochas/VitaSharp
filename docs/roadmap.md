@@ -692,7 +692,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   1 = FULL, 0x10 = não esperar), e a thread de render do jogo recebia com ASAP num buffer de 0x600 e esperava para
   sempre mensagens de 12 bytes. Logos, filme de abertura, menu da coleção a 30 fps e o LoadExec do Jak 1; o Ninja
   Gaiden Σ2 agora também mostra o filme de abertura (antes o player falhava e pulava)
-- [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
+- [x] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
   13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
   Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável
   render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
@@ -728,6 +728,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   pretos opacos (todos os texels 0,0,0,255 em `trace_603/textures`, não alfa 0,14): o Ren'Py faz o dissolve entre
   dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
   imagens 1280x720 por cima; `bugsC8_out/blind_tr601/trace_601`). Resta o (1), o boot
+  Confirmado no jogo pelo usuário (06/11/2026): ok (a troca de tela preta é igual à do Vita)
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
