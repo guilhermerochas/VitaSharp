@@ -54,6 +54,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
+- [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
+  (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
+  Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.
+  Onde atua: no intervalo de vblank que o jogo pede (`sceDisplayWaitSetFrameBufMulti`/`WaitVblankStartMulti`,
+  `sceDisplaySetFrameBuf` IMMEDIATE, a fila de display do GXM e o ritmo do vblank emulado), nunca no código do jogo.
+  Cuidados: jogos cuja lógica anda por quadro ficam mais rápidos ou mais lentos (avisar na descrição da opção); o
+  modo Sem limite também solta o ritmo do vblank; o áudio continua no tempo real. Guardar no perfil do jogo (como o
+  modo do mouse), no launcher do desktop (página/ajustes do jogo) e no app Android (ajustes do jogo e menu de pausa),
+  com o modo atual no overlay de FPS
+
 - [ ] Reflexão o mínimo possível (desktop e Android; ajuda o Native AOT, o Mono AOT e o tempo de início). Hoje
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
   `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o
