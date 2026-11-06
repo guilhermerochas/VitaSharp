@@ -838,6 +838,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
   imagens 1280x720 por cima; `bugsC8_out/blind_tr601/trace_601`). Resta o (1), o boot
   Confirmado no jogo pelo usuário (06/11/2026): ok (a troca de tela preta é igual à do Vita)
+  Agente C dia 10 (06/11/2026), o preto do boot: o Vita mostra o `sce_sys/pic0.png` do jogo (idêntico ao quadro do
+  vídeo `9vleIQnJ8dI`) até o logo da Ratalaika; aqui o jogo apresenta um 1º quadro preto com 1 s (uma textura
+  960x540 U8U8U8U8 preta em tela cheia: o SDL do Ren'Py limpando a tela; não há presplash nos arquivos do jogo) e o
+  2º só 19 s depois (PC dividido; ~5 s ocioso). Feito e **não commitado**: mostrar o pic0 na janela até o 1º present
+  do jogo (`scratchpad/bugsC9_proof/bootsplash_pic0.patch`; validado só por log: `Boot picture: 960x544 shown`,
+  `shown for 1,0 s`), mas isso só cobre 1 s: o Vita segue com o pic0 depois desse quadro preto. Falta saber a regra
+  do sistema (o pic0 fica até o 1º quadro não preto? até o jogo terminar de carregar? é o SceShell que o desenha?) com
+  o firmware LLE ou outro vídeo de jogo cujo 1º quadro seja preto
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
