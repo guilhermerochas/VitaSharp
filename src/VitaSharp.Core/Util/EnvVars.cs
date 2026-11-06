@@ -79,6 +79,7 @@ public static class EnvVars
     public const string FirmwareDir = "VITASHARP_FIRMWARE_DIR";
     public const string Ffmpeg = "VITASHARP_FFMPEG";
     public const string FuzzIter = "VITASHARP_FUZZ_ITER";
+    public const string G16 = "VITASHARP_G16";
     public const string GeneratorVersionSalt = "VITASHARP_GENERATOR_VERSION_SALT";
     public const string GlfwPlatform = "VITASHARP_GLFW_PLATFORM";
     public const string GpuDumpAt = "VITASHARP_GPU_DUMP_AT";

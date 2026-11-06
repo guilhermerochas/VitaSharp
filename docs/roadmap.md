@@ -635,6 +635,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   até o 1º quadro com o PC ocioso (`bugsC6_out/blind_fade2/log.txt`; ~2,2 s em `main` entre o `Preload` e o thread
   `preloader`, o init do Python do Ren'Py); com a CPU dividida passa de 30 s (watchdog STALL em `blind_fade`); falta
   o tempo do Vita real para comparar
+  Agente C dia 8 (06/11/2026, fix/bugs-games-8): **(2) não é defeito, o Vita real faz igual.** No vídeo do Vita
+  (`9vleIQnJ8dI`, "Blind Men (PS Vita Gameplay)", Start no menu aos ~82 s; `scratchpad/bugsC8_yt/trans.png`, 10 qps) o
+  menu some de uma vez, fica ~0,7 s preto e a cena entra em fade, como aqui. As duas texturas 32x32 são sólidos
+  pretos opacos (todos os texels 0,0,0,255 em `trace_603/textures`, não alfa 0,14): o Ren'Py faz o dissolve entre
+  dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
+  imagens 1280x720 por cima; `bugsC8_out/blind_tr601/trace_601`). Resta o (1), o boot
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -997,6 +1003,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   vem do jogo em cada `sceGxmDisplayQueueAddEntry`. Não achei quem o escreve (o endereço do dia 5, 0x86A92F00, não
   é o desta sessão; o trace de HLE não mostrou o AddEntry). Provável: o jogo escolhe 3 vblanks porque o quadro dele
   passa de 33 ms (item a: pacing)
+- [ ] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `scratchpad/bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
+  (a) **Tela de título: custo de HLE corrigido** (commit "HLE cost: libgxm accessors..."): 14,4 → 18,8 fps, F3D
+  11,7 → 3,8 M ciclos de HLE/quadro (`bugsC8_out/jak_t_ref` x `jak_t_new`). (b) **Os 20 fps do gameplay são o
+  nativo**: a palavra +4 dos dados do `AddEntry` é o campo [obj+0x98] do device F3D, gravado uma vez na inicialização
+  a partir da config (Jak1.self 0x8103DD82, = 2); o callback da fila (0x81041126), com 3 buffers, chama
+  `sceDisplayWaitSetFrameBufMulti(2+1)` antes do `SetFrameBuf` (igual ao Vita3K: último setbuf + n). No vídeo de
+  captura direta Vita x PS3 (`TyUuSltNINs`, 60-100 s, `bugsC8_yt/jakcmp.*`) a metade do Vita tem o padrão "2 quadros
+  novos a cada 3" (20 fps) o tempo todo e a do PS3 30. A gravação do usuário `PCSA00080_20261106_002008_tudo` também:
+  vblank +3 em todo quadro, GPU 3,6 ms. (c) **Corrigido: callbacks em `sceKernelDelayThreadCB`.** O Jak registra um
+  callback de vblank numa thread que fica em `DelayThreadCB(0xFFFFFFFF)`; o callback chama o handler de vsync do GOAL
+  (0x8100C4B2), que conta os vblanks do jogo (0x816B3B88). O nosso DelayThreadCB só rodava callbacks na volta, ou seja
+  nunca: o contador ficava em 0xFFFFFFFF (`--peek`, `bugsC8_out/jak_cb3`) e o que anda por vsync parava: o Daxter
+  parado e o logo da Naughty Dog que não aparecia (agora f1900-2190 o Daxter anda e o logo entra com o Jak, e vem a
+  abertura do título: `bugsC3_data/tests/jak_boot/sheet*.png`; contador +90 em 30 quadros). Gameplay com a correção:
+  20,0 fps, câmera segue o Jak (`bugsC3_data/tests/jak_g2/sheet_2.png`). (d) Gravação do usuário: o rerun não roda
+  (estado depois do LoadExec: `module (app0:Jak1.self) is not loaded the same way`, com ou sem `--self=Jak1.self`;
+  passado ao agente de save state). No `gpu.vsgd` (replay igual ao ao vivo) os 116 quadros pretos são um quad de tela
+  cheia com cor (0,0,0,0) e blend ADD 1-srcA/srcA (desenho 1450 do present 9600) que some no quadro seguinte ao X
+  (present 9646, pad 0x4000 em 9645), e depois a câmera fica parada com o Jak andando: os dois combinam com o relógio
+  de vsync parado do item (c); falta o usuário confirmar no mesmo trecho com o build novo
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -1278,6 +1304,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   predicado guarda uma cópia de registradores (`VMOV r1 = pa0`) antes da iluminação (`07a17b44508ff793.frag`): com
   G16 = 0 o jogo sempre segue um dos lados. Próximo: um dump de GPU numa cena com esses shaders e forçar outros valores
   para ver qual lado é o certo
+  Agente C dia 8 (06/11/2026): o lado do predicado é **iluminação de dois lados**: `pa0 = -r1` (normal negada) e
+  `if (!p0) r1 = pa0`, ou seja com G16 = 0 a normal é sempre invertida; o G16 parece ser "face da frente" (não zero na
+  frente). Feita a chave de depuração `VITASHARP_G16=front|back` (padrão continua 0; GLSL idêntico sem ela;
+  `shadertest` com `front`: nenhum aviso de G16, 105/105 compilam). Não validado: a cena de abertura gravada não usa esses programas (dump `bugsC8_out/ztd_scene.vsgd`, f2180-2182: replays com
+  front/back/zero idênticos, 9 shaders, nenhum com G16). Falta uma cena com eles (provável: salas de fuga 3D) para
+  comparar com o vídeo do Vita (`zwPJR5er054`, `scratchpad/bugsC8_yt/ztd.webm`, 10 primeiros minutos)
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
