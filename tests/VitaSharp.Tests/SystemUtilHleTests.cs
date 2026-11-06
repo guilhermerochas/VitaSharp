@@ -44,7 +44,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00229142u, buf));
         Assert.Equal((uint)AppUtil.SystemParamInt(2), GuestMemory.R32(buf));
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00100591u, buf));
-        Assert.Equal((uint)AppUtil.SystemParamInt(6), GuestMemory.R32(buf));
+        Assert.Equal((uint)VitaSharp.Core.Firmware.SystemTimeZone.Host, GuestMemory.R32(buf)); // a time zone id
 
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetStr", 0x00598438u, buf, 64));
         Assert.Equal(AppUtil.UserName, GuestMemory.ReadCString(buf));

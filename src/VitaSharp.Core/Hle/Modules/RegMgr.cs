@@ -34,7 +34,7 @@ public sealed partial class RegMgr : HleModule
         Id(0x00037502, "/CONFIG/SYSTEM/language", () => AppUtil.SystemParamInt(1)),
         Id(0x00088776, "/CONFIG/DATE/date_format", () => AppUtil.SystemParamInt(4)),
         Id(0x00668503, "/CONFIG/DATE/time_format", () => AppUtil.SystemParamInt(5)),
-        Id(0x00100591, "/CONFIG/DATE/time_zone", () => AppUtil.SystemParamInt(6)),
+        Id(0x00100591, "/CONFIG/DATE/time_zone", () => Firmware.SystemTimeZone.Host), // a time zone id, not an offset
         Id(0x00760538, "/CONFIG/DATE/summer_time", () => AppUtil.SystemParamInt(7)),
         Id(0x007F9315, "/CONFIG/DATE/is_summer_time", () => AppUtil.SystemParamInt(7)),
         S(0x00186122, "/CONFIG/SECURITY/PARENTAL/passcode", "0000"),
