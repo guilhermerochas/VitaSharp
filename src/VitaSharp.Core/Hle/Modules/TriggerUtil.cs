@@ -147,6 +147,18 @@ public sealed partial class TriggerUtil : HleModule
         return 0;
     }
 
+    /// <summary>(int kind 0..3, int *out, ...): a per-kind state word near asks for before scheduling its updates
+    /// (trigger_util.suprx FW 3.74: kind 4 or more 0x80103605, NULL 0x80103604, then the request to the shell's
+    /// trigger service). No trigger ever fires here, so the state is 0.</summary>
+    [Hle("sceTriggerUtil_28EF51DA", Nid = 0x28EF51DA, Library = "SceTriggerUtil")]
+    int sceTriggerUtilGetKindState(int kind, uint outState)
+    {
+        if ((uint)kind >= 4) return unchecked((int)0x80103605);
+        if (outState == 0) return unchecked((int)0x80103604);
+        GuestMemory.W32(outState, 0);
+        return 0;
+    }
+
     /// <summary>The app was never started by a trigger.</summary>
     [Hle]
     int sceTriggerUtilGetAutoStartStatus(uint status, int a2, int a3)

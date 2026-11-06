@@ -1,4 +1,5 @@
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
 
@@ -37,6 +38,16 @@ public sealed partial class SystemServicesVsh : HleModule
     /// <summary>(int format): how the error history records errors; nothing is recorded here.</summary>
     [Hle] int sceErrorHistorySetDefaultFormat(int format) => 0;
 
+    /// <summary>(const char *message, const char *titleId, int, const void *info): an application adds the error it
+    /// just showed to the system's error history (the Browser's "Cannot display the page.", Calendar's network error).
+    /// The history is not kept; the entry goes to the log.</summary>
+    [Hle]
+    int sceErrorHistoryPostError(uint message, uint titleId, int a2, uint info)
+    {
+        Log.Info($"error history: {(titleId != 0 ? GuestMemory.ReadCString(titleId, 16) : "?")}: {(message != 0 ? GuestMemory.ReadCString(message, 256) : "")}");
+        return 0;
+    }
+
     // ------------------------------------------------------------------ SceThreadmgr / SceProcessmgr
 
     /// <summary>The low 32 bits of the system time in microseconds (the kernel-named import the shell uses for its boot
@@ -58,6 +69,36 @@ public sealed partial class SystemServicesVsh : HleModule
     [Hle] int sceBtRegisterCallback(int cb, int a, int b, int c) => 0;
     /// <summary>The shell retries while this returns 0x802F1501 (stack not up); the emulated stack is up.</summary>
     [Hle] int sceBtGetConfiguration() => 0;
+    /// <summary>(int config): Settings switches Bluetooth on or off; the emulated stack is up, so it is accepted.</summary>
+    [Hle] int sceBtSetConfiguration(int config) => 0;
+    /// <summary>(int index, int, void *info, int size): the record of a paired device; none was ever paired, so the
+    /// stack reports the slot empty (SceBt's "no such device" error).</summary>
+    [Hle] int sceBtGetRegisteredInfo(int index, int a1, uint info, int size) => unchecked((int)0x802F0109);
+
+    // SceWlan (bootimage SceWlanBt): the Wi-Fi configuration word; no Wi-Fi chip, the word is kept.
+    int _wlanConfig;
+    [Hle] int sceWlanGetConfiguration() => _wlanConfig;
+    [Hle] int sceWlanSetConfiguration(int config) { _wlanConfig = config; return 0; }
+
+    /// <summary>(int type 0..1, int enable): routes keyboard input to the caller (Sign Up's text fields); no keyboard.</summary>
+    [Hle] int sceHidKeyboardSetIntercept(int type, int enable) => (uint)type > 1 ? unchecked((int)0x80010016) : 0;
+    [Hle] int sceHidKeyboardUnregisterEnumHintCallback(int cb) => 0;
+    [Hle] int sceHidKeyboardUnregisterReadHintCallback(int cb) => 0;
+
+    /// <summary>(int what, int flags): the WebKit process stops further module loads of the given kinds (its sandbox).
+    /// Modules are loaded only on request here: accepted.</summary>
+    [Hle] int sceKernelInhibitLoadingModule(int what, int flags) => 0;
+
+    /// <summary>(char name[0x30], u64 aid): the name of the fixed license file (the one a game card or a shared license
+    /// uses), the same for every account: "6488b73b912a753a492e2714e9b38bc7.rif" (Vita3K, NoNpDrm).</summary>
+    [Hle]
+    int _sceNpDrmGetFixedRifName(uint name)
+    {
+        if (name == 0) return unchecked((int)0x80870001);
+        GuestMemory.Fill(name, 0, 0x30);
+        GuestMemory.WriteCString(name, "6488b73b912a753a492e2714e9b38bc7.rif", 0x30);
+        return 0;
+    }
     /// <summary>(SceUID cb, int): USB host attach/detach events; nothing is ever plugged in.</summary>
     [Hle] int sceUsbdRegisterCallback(int cb, int a) => 0;
     /// <summary>(SceUID cb): HID keyboard enumeration / input hints; no keyboard is attached.</summary>

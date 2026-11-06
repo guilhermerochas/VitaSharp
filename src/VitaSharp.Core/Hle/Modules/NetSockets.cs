@@ -671,7 +671,7 @@ public sealed partial class Net
     void sceNetCtlTerm()
     {
         _netctlInited = false;
-        lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); }
+        lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); _sysCallbacks1.Clear(); _sysCallbacks2.Clear(); }
     }
 
     [Hle]
@@ -704,6 +704,126 @@ public sealed partial class Net
         GuestMemory.Fill(ifstat + 4, 0, 0x3C);
         GuestMemory.Write(ifstat + 0x18, _netctlResetTick);
         return 0;
+    }
+
+    // The system-software side of libnetctl (vs0:sys/external/libnetctl.suprx, FW 3.74), NIDs without public names.
+    // The library checks its own initialisation and the pointers, then asks the shell's netctl service over IPC; the
+    // answers below follow the HLE connection model above (a LAN with an IP address, no ad hoc network).
+
+    const int NETCTL_INVALID_ARG = unchecked((int)0x80412186), NETCTL_SSID_TOO_LONG = unchecked((int)0x80412190),
+        NETCTL_TOO_MANY_SSIDS = unchecked((int)0x80412191);
+    uint _netctlServiceTable;
+    readonly Dictionary<int, NetCallback> _sysCallbacks1 = new(), _sysCallbacks2 = new();
+
+    /// <summary>(const void *handlers): the shell, which hosts the netctl service, gives libnetctl its own handler
+    /// table so that its calls skip the IPC. HLE answers those calls itself: the table is only kept.</summary>
+    [Hle("sceNetCtl_C61F3E96", Nid = 0xC61F3E96, Library = "SceNetCtl")]
+    int sceNetCtlSetServiceHandlers(uint table)
+    {
+        if (table == 0) return ERR_NETCTL_INVALID_ADDR;
+        _netctlServiceTable = table;
+        return 0;
+    }
+
+    /// <summary>(int code, SceNetCtlInfo *info): the same IPC request (0x2000B) as sceNetCtlInetGetInfo.</summary>
+    [Hle("sceNetCtl_C33D7374", Nid = 0xC33D7374, Library = "SceNetCtl")]
+    int sceNetCtlInetGetInfoSys(int code, uint info)
+    {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
+        if (info == 0) return ERR_NETCTL_INVALID_ADDR;
+        return sceNetCtlInetGetInfo(code, info);
+    }
+
+    /// <summary>libnetctl keeps six callback lists (8 slots each, the slot index is the id). The infrastructure and ad
+    /// hoc ones are above; NID_AC326DB7 and NID_713394C0 register into two more that only the system software uses, for
+    /// events of the shell's service that never happen here (the connection state does not change).</summary>
+    int RegisterSysCallback(int list, uint func, uint arg, uint cid)
+    {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
+        if (func == 0 || cid == 0) return ERR_NETCTL_INVALID_ADDR;
+        lock (_inetCallbacks)
+        {
+            var t = list == 0 ? _sysCallbacks1 : _sysCallbacks2;
+            for (int i = 0; i < 8; i++)
+                if (!t.ContainsKey(i))
+                {
+                    t[i] = new NetCallback { Func = func, Arg = arg, Notified = true };
+                    GuestMemory.W32(cid, (uint)i);
+                    return 0;
+                }
+            return ERR_NETCTL_CALLBACK_MAX;
+        }
+    }
+
+    [Hle("sceNetCtl_AC326DB7", Nid = 0xAC326DB7, Library = "SceNetCtl")]
+    int sceNetCtlRegisterCallbackSys1(uint func, uint arg, uint cid) => RegisterSysCallback(0, func, arg, cid);
+    [Hle("sceNetCtl_713394C0", Nid = 0x713394C0, Library = "SceNetCtl")]
+    int sceNetCtlRegisterCallbackSys2(uint func, uint arg, uint cid) => RegisterSysCallback(1, func, arg, cid);
+
+    int NetCtlOut(uint p, uint value)
+    {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
+        if (p == 0) return ERR_NETCTL_INVALID_ADDR;
+        GuestMemory.W32(p, value);
+        return 0;
+    }
+
+    /// <summary>(int *state): the service's raw infrastructure state (IPC 0x2000E, handler slot 2), which
+    /// sceNetCtlInetGetState maps 0,1-2,3,4,5 to 0,1,2,3,2: IP obtained is raw 4.</summary>
+    [Hle("sceNetCtl_E8E8DF18", Nid = 0xE8E8DF18, Library = "SceNetCtl")]
+    int sceNetCtlInetGetRawState(uint state) => NetCtlOut(state, 4);
+
+    /// <summary>(int *state): the raw ad hoc state (IPC 0x20022, handler slot 5): 0, no ad hoc network.</summary>
+    [Hle("sceNetCtl_0CC36330", Nid = 0x0CC36330, Library = "SceNetCtl")]
+    int sceNetCtlAdhocGetRawState(uint state) => NetCtlOut(state, 0);
+
+    /// <summary>(int *state): IPC 0x20018 (handler slot 17): a service state the shell reports as 1..3; 1 while that
+    /// part of the service is idle, which it always is here (Settings reads it before its Wi-Fi pages).</summary>
+    [Hle("sceNetCtl_147B054C", Nid = 0x147B054C, Library = "SceNetCtl")]
+    int sceNetCtlGetServiceState(uint state) => NetCtlOut(state, 1);
+
+    /// <summary>(int a, int b): IPC 0x20034 with two ints and no output (Email and the Browser call it at start with
+    /// two uids); the service refuses negative values.</summary>
+    [Hle("sceNetCtl_777FE4C2", Nid = 0x777FE4C2, Library = "SceNetCtl")]
+    int sceNetCtlNotifyApp(int a, int b)
+    {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
+        return (a | b) < 0 ? NETCTL_INVALID_ARG : 0;
+    }
+
+    /// <summary>(void): IPC 0x2002B without arguments (initial setup).</summary>
+    [Hle("sceNetCtl_719DD1DA", Nid = 0x719DD1DA, Library = "SceNetCtl")]
+    int sceNetCtlSysRequest2B() => _netctlInited ? 0 : NETCTL_NOT_INITIALIZED;
+
+    /// <summary>(const char *ssids[], int count, const void *param 0x38): Settings hands the service up to 10 SSIDs
+    /// (32 characters each) with an optional parameter block. The library's checks, then nothing to scan.</summary>
+    [Hle("sceNetCtl_6A56FC3A", Nid = 0x6A56FC3A, Library = "SceNetCtl")]
+    int sceNetCtlSetSsidList(uint ssids, int count, uint param)
+    {
+        if (!_netctlInited) return NETCTL_NOT_INITIALIZED;
+        if (ssids == 0 && count != 0) return ERR_NETCTL_INVALID_ADDR;
+        if ((uint)count > 10) return NETCTL_TOO_MANY_SSIDS;
+        for (int i = 0; i < count; i++)
+        {
+            uint p = GuestMemory.R32(ssids + (uint)i * 4);
+            if (p != 0 && GuestMemory.ReadCString(p, 0x22).Length >= 0x21) return NETCTL_SSID_TOO_LONG;
+        }
+        return 0;
+    }
+
+    /// <summary>(int kind 1..7) / (int kind 1..3): no IPC: libnetctl turns the kind into a SceShellSvc feature bit
+    /// (9, 1, 3, 5, 7, 11, 13 / 19, 15, 17) and passes it to SceShellSvc NID_1FAB9A1E (the real libshellsvc, loaded
+    /// for the system software); other kinds return 0 without a call.</summary>
+    [Hle("sceNetCtl_AB1462C5", Nid = 0xAB1462C5, Library = "SceNetCtl")]
+    int sceNetCtlShellFeature(int kind) => ShellSvcFeature(kind is >= 1 and <= 7 ? new[] { 9, 1, 3, 5, 7, 11, 13 }[kind - 1] : 0);
+    [Hle("sceNetCtl_BC0563A0", Nid = 0xBC0563A0, Library = "SceNetCtl")]
+    int sceNetCtlShellFeature2(int kind) => ShellSvcFeature(kind is >= 1 and <= 3 ? new[] { 19, 15, 17 }[kind - 1] : 0);
+
+    int ShellSvcFeature(int bit)
+    {
+        if (bit == 0) return 0;
+        if (!Emu.Linker.TryGetFunctionExport(0x1FAB9A1E, out uint fn) || Kernel.GuestThread.Current is not { } t) return 0;
+        return (int)t.CallGuest(fn, (uint)bit);
     }
 
     /// <summary>Wi-Fi console: no cellular download limit.</summary>
