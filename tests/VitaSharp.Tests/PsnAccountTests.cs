@@ -180,6 +180,16 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(np, "sceNpManagerGetCachedParam", cached)); // no account: an all-zero record
         Assert.Equal(0u, GuestMemory.R32(cached));
         Assert.Equal(0u, GuestMemory.R32(cached + 0xA0));
+        // the system account ids (NID_DDF30B0E, the shell's trophy server writes the account id to TRPUSER.DAT): zero
+        uint info = Alloc(0x48, 0xCC), npId = Alloc(0x28, 0xCC), accountId = Alloc(12, 0xCC);
+        Assert.Equal(0, Call(np, "sceNpManagerSysGetAccountIds", info, npId, accountId));
+        Assert.Equal(0u, GuestMemory.R32(info + 0x40));
+        Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(info + 0x44));
+        Assert.Equal(0u, GuestMemory.R32(npId + 0x20));
+        Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(npId + 0x24));
+        Assert.Equal(0u, GuestMemory.R32(accountId + 4));
+        Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(accountId + 8));
+        Assert.Equal(0, Call(np, "sceNpManagerSysGetAccountIds", 0u, 0u, accountId));
         Assert.Equal(NP_SIGNED_OUT, Call(np, "sceNpAuthGetTicket", 1, Alloc(16), 16u));
         Assert.Equal(NpCommunity.NO_LOGIN, NpCommunity.OfflineResult);
     });
