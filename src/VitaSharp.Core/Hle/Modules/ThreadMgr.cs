@@ -282,11 +282,13 @@ public sealed partial class ThreadMgr : HleModule
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
         if ((++_getThreadInfoCalls & 0x3FFFFF) == 0) // debug: games poll this to join threads; show what they wait for
             Log.Info($"sceKernelGetThreadInfo polled {_getThreadInfoCalls} times, now '{t.Name}' ({t.Status}, wait {t.WaitingOn}) from {Self.Name}");
+        if (info == 0) return SceError.ILLEGAL_ADDR;
         uint size = GuestMemory.R32(info);
+        // a size larger than SceKernelThreadInfo (0x80) is refused like the other Get*Info calls (Vita3K): a larger
+        // one (Injustice's render thread) made the copy below throw and kill the thread, or overrun the guest struct
+        if (size > 0x80) return SceError.NO_MEMORY;
         // SceKernelThreadInfo built on the stack (games poll this every frame to join threads)
-        int len = (int)Math.Max(size, 0x80);
-        Span<byte> buf = len <= 512 ? stackalloc byte[512] : new byte[len];
-        buf = buf[..len];
+        Span<byte> buf = stackalloc byte[0x80];
         buf.Clear();
         int o = 0;
         void U32(Span<byte> b, uint v) { System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(b[o..], v); o += 4; }
@@ -1134,7 +1136,7 @@ public sealed partial class ThreadMgr : HleModule
         if (namePtr == 0) return SceError.ILLEGAL_ADDR;
         string name = GuestMemory.ReadCString(namePtr, 256);
         if ((attr & EventBits.AttrOpenable) != 0 && System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
-        if ((attr & ~(EventBits.AttrAutoReset | EventBits.AttrThPrio | EventBits.AttrOpenable)) != 0) return SceError.ILLEGAL_ATTR;
+        if ((attr & ~(EventBits.AttrAutoReset | EventBits.AttrThPrio | EventBits.AttrOpenable | EventBits.AttrNotifyCbWakeupOnly)) != 0) return SceError.ILLEGAL_ATTR;
         if ((initPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
         return K.Objects.Register(new SimpleEvent { Name = name, Attr = attr, Pattern = initPattern | EventBits.Create });
     }
