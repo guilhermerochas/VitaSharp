@@ -539,15 +539,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
-- [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing
-  (https://git.ryujinx.app/projects/Ryubing/src/branch/master/docs/coding-guidelines/coding-style.md; pedido do usuário,
-  06/11/2026, substitui o guia do Google), que segue o estilo do dotnet/runtime: chaves Allman, 4 espaços, campos
-  privados `_camelCase`, estáticos `s_`, `readonly` quando possível, visibilidade sempre explícita, sem `this.`, `usings`
-  no topo fora do namespace (System primeiro), `var` só quando o tipo é óbvio, palavras-chave da linguagem (`int`, não
-  `Int32`), constantes em PascalCase, `nameof`. Ler o guia inteiro antes de começar (a página bloqueia acesso automático:
-  abrir no navegador ou pegar a cópia do repositório) e levar as regras para um `.editorconfig` com analisadores.
-  Cuidados: o GLSL gerado vem de strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o
-  shadertest) e fazer num momento sem outros branches abertos (o diff toca quase todos os arquivos)
+- [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
+  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
+  `C:/Users/guisa/Ryubing/docs/coding-guidelines/coding-style.md` e `C:/Users/guisa/Ryubing/.editorconfig`. Regras
+  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
+  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
+  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
+  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
+  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
+  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
+  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
+  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
+  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
+  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
+  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
+  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
+  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Bugs em aberto
 
