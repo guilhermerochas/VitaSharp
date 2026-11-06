@@ -787,13 +787,33 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     sceAppMgrSetInfobarStateForCommonDialog (0xD6758B4E) (varredura dos apps do sistema) — feitas (feat/hle-unimplemented-2)
   - SceVshBridge::vshSysconIsShowMode (0xFF244636) — feita (feat/hle-unimplemented-2)
   - SceNpManager::NID_351A74C2, NID_997CD5A7; SceNpWebApi::NID_159396F0, NID_19062C5A, NID_1BDB76C0, NID_83E94928,
-    NID_A11FBA1A (Messages), NID_BED99F66; SceProcessmgr::sceKernelCDialogSessionClose (0xDB4CC1D0) (varredura)
+    NID_A11FBA1A (Messages), NID_BED99F66; SceProcessmgr::sceKernelCDialogSessionClose (0xDB4CC1D0) (varredura) —
+    feitas (fix/bugs-games-12; comportamento do np_manager/np_webapi FW 3.74: tabela de 4 callbacks com 0x80550504,
+    argumentos 0x80552902, ids locais; o CDialogSessionClose roda no diálogo "Sign up" do PS4 Link)
   - Alcançadas agora que a rede do kernel e o pscode respondem: SceNetInternal::NID_235DE96C, NID_7493FB0C,
     NID_DE8DD55E (PS3 Remote Play, PS4 Link); SceRegMgrService::sceRegMgrSrvCnvRegionPsCode (0x94D008D2) e 15 NIDs de
     SceNpCommerce2 (145137BE, 1A53A505, 1BFF9C73, 2DC2A0F9, 34194245, 4329A980, 499732CA, 4D00AA32, 624B7A50, 64E27331,
-    71ADF5A6, 7E3C9196, 9B444B7C, C1542070, C737A929) (PS4 Link)
-  - SceCoredump::sceCoredumpRegisterCoredumpHandler (0x031DC61E) (PCSF00476)
-  - SceNpSnsFacebook::sceNpSnsFacebookInit (0x80557AA0) (PCSF00476)
+    71ADF5A6, 7E3C9196, 9B444B7C, C1542070, C737A929) (PS4 Link) — feitas (fix/bugs-games-12). SceNetInternal do
+    libnet: 235DE96C = a interface IfNames[i] (lo0, eth0..., wlan0...) existe? (só lo0; -1 = a lista do kernel),
+    DE8DD55E/7493FB0C = ler/gravar a configuração 0x18 da pilha (controle 0x10000018/0x20000018); validadas no PS3
+    Remote Play (pergunta eth0/wlan0, chega à tela de registro) e no PS4 Link (`scratchpad/bugsC12_out/s_ps3rp`,
+    `s_ps4link2`, 0 não implementadas). CnvRegionPsCode = código de produto por região (0x103 J1, 0x104 US ... 0x10D
+    CN; só o shell, os outros ENOSYS), como o SceRegistryMgr. Os 15 do SceNpCommerce2 seguem os wrappers do
+    np_commerce2 (argumentos 0x80550F03; pedidos ao servidor = servidor inalcançável; leitores de resultado rejeitam,
+    não há resultado). CnvRegionPsCode e os 15 do Commerce2 não foram alcançados nesta rodada (o "Sign Up" do PS4 Link
+    não abre o NPXS10018: sceAppMgrLaunchAppByUri ainda não lança, ver Câmera)
+  - SceCoredump::sceCoredumpRegisterCoredumpHandler (0x031DC61E) (PCSF00476) — feita (fix/bugs-games-12; NULL
+    0x800A0000, segundo registro 0x800A0002; o Tearaway registra no Init e chega ao menu, `bugsC12_out/s_tear/t2.png`)
+  - SceNpSnsFacebook::sceNpSnsFacebookInit (0x80557AA0) (PCSF00476) — feita (fix/bugs-games-12, com Term e os
+    pedidos: sem conta do Facebook os tokens nunca existem)
+  - SceNpCommon::NID_0624AE44 (PS4 Link, módulo de atividade) — feita (fix/bugs-games-12): a versão do sistema em
+    texto ("3.74", snprintf "%d.%02d" do BCD de sceKernelGetSystemSwVersion), devolve o tamanho
+  - SceAppMgr::sceAppMgrIsPidShellAndCrashed (0xC648EA9B) — feita (fix/bugs-games-12): o cliente libipmi do
+    SceDbUtilDcn consulta a cada 0,5 s com o pid do servidor (agora que sceKernelGetMsgPipeCreatorId aceita nome); 0
+  - Estranho (06/11/2026, não é destas funções: igual no build da main `user_test_build`): no Mensagens, o Sign Up
+    (NPXS10018) abre com "An error has occurred. (NW-8941-2)" em vez de "Create / Use an Existing Account" que o
+    checklist do `docs/notes/system-apps.md` espera (`bugsC12_out/base_messages/signup.png` e `s_messages/signup.png`);
+    o NID_86405E79 do Commerce2 devolve 0x80431063 (servidor inalcançável) logo antes
   Kernel (rodada 2): com a rede do kernel respondendo, o Settings passou a abrir e fechar sua conexão IPMI com o
   SceMtpService do shell, e o servidor caía em `[SceIpmi] INTERNAL ASSERTION FAILURE (0x80028101)`: o cliente apaga seus
   semáforos antes de o servidor fechar os handles que abriu por nome, e aqui o Delete tirava o objeto da tabela na hora

@@ -229,4 +229,22 @@ public sealed partial class RegMgrSystem : HleModule
     /// it was corrupted, and the region lookup failed; the Browser then freed a bad pointer and asserted.</summary>
     [Hle]
     int sceRegMgrSrvGetRegion() => 2;
+
+    /// <summary>(int region): the product code (SceSblAimgr pscode +2: 0x103 J1, 0x104 US ... 0x10D CN) of a region-table
+    /// index, returned directly, as SceRegistryMgr (FW 3.74): 0 is the unit's own code (a North American unit: 0x104,
+    /// as _vshSblAimgrGetPscode); 11 is the unit's code only on a test/tool/DEX unit (0x100-0x102); 12 and anything
+    /// past 13 are out of range (0x800D0018). Only the shell process may ask (others: ENOSYS 0x80010058).</summary>
+    [Hle]
+    int sceRegMgrSrvCnvRegionPsCode(int region)
+    {
+        if (!Emu.IsShell) return unchecked((int)0x80010058);
+        const int OwnCode = 0x104, OutOfRange = unchecked((int)0x800D0018);
+        return region switch
+        {
+            0 => OwnCode,
+            1 => 0x103, 2 => 0x104, 3 => 0x109, 4 => 0x107, 5 => 0x105, 6 => 0x106,
+            7 => 0x10A, 8 => 0x10B, 9 => 0x10C, 10 => 0x108, 13 => 0x10D,
+            _ => OutOfRange, // 11 included: a retail unit
+        };
+    }
 }

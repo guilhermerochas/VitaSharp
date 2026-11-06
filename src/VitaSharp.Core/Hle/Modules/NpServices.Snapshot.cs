@@ -26,3 +26,8 @@ public sealed partial class NpWebApi
 public sealed partial class NpWebApiCommonDialog
 {
 }
+
+[GenerateSnapshot]
+public sealed partial class NpSnsFacebook
+{
+}

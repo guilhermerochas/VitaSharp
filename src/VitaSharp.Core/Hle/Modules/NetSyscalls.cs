@@ -112,6 +112,12 @@ public sealed partial class Net
             case 0x20000019 when size >= 0xC: return 0;
             case 0x20000003 when size >= 8: return 0;
             case 0x20000020 when size >= 4: return 0;
+            case 0x10000018 when size >= 8: // { int value; int flags }: read setting 0x18 (bit 0 of flags picks the slot)
+                lock (_netLock) GuestMemory.W32(data, (uint)((GuestMemory.R32(data + 4) & 1) == 0 ? _ctl18a : _ctl18b));
+                return 0;
+            case 0x20000018 when size >= 8:
+                lock (_netLock) SetCtl18((int)GuestMemory.R32(data + 4) & 1, (int)GuestMemory.R32(data));
+                return 0;
             default:
                 Log.WarnOnce($"netctl{cmd:X}", $"sceNetSyscallControl: command 0x{cmd:X} (size {size}) not modelled");
                 return -22;
@@ -124,4 +130,47 @@ public sealed partial class Net
 
     /// <summary>SceNetInternal's user-side version (libnet): the same, with SceNet error codes and errno.</summary>
     [Hle] int sceNetInternalIcmConnect(int s, int flags) => CheckSock(s);
+
+    /// <summary>The stack setting 0x18 (control 0x10000018 reads it, 0x20000018 writes it), two slots by flag bit 0.</summary>
+    int _ctl18a, _ctl18b;
+    void SetCtl18(int slot, int v) { if (slot == 0) _ctl18a = v; else _ctl18b = v; }
+
+    /// <summary>libnet's interface names, the index NID_235DE96C takes.</summary>
+    static readonly string[] IfNames = ["lo0", "eth0", "eth1", "eth2", "wlan0", "wlan1", "wlan2", "bt0", "phone0", "pppoe0"];
+
+    /// <summary>libnet.suprx (FW 3.74) NID_235DE96C (int ifIndex, SceNetIfEntry *entry, int count): with ifIndex -1, the
+    /// kernel's interface list itself (count entries, the number back). Otherwise whether interface IfNames[ifIndex]
+    /// exists (1) or not (0), its 0x140-byte record copied to entry when one is given (then count must be 1: else
+    /// EINVAL). Only lo0 exists on a unit without a Wi-Fi chip, so PS3 Remote Play and PS4 Link see no wlan0.</summary>
+    [Hle("sceNetInternal_235DE96C", Nid = 0x235DE96C, Library = "SceNetInternal")]
+    int sceNetInternalGetIfEntry(int ifIndex, uint entry, int count)
+    {
+        if (!_netInited) return NetErr(ENOTINIT);
+        if (ifIndex == -1) { int r = sceNetSyscallGetIfList(entry, count); return r < 0 ? NetErr(unchecked((int)0x80410100) | -r) : r; }
+        if (!(entry == 0 && count == 0) && (entry == 0 || count != 1)) return NetErr(EINVAL);
+        if ((uint)ifIndex >= IfNames.Length) return 0; // libnet compares against "" (errno EINVAL): never found
+        if (IfNames[ifIndex] != "lo0") return 0;
+        if (entry != 0) sceNetSyscallGetIfList(entry, 1);
+        return 1;
+    }
+
+    /// <summary>NID_DE8DD55E (int *value, int flag) / NID_7493FB0C (int value, int flag): get / set the stack setting
+    /// 0x18 through the control syscall; flag must be 0 or 1 (EINVAL), the getter needs its pointer.</summary>
+    [Hle("sceNetInternal_DE8DD55E", Nid = 0xDE8DD55E, Library = "SceNetInternal")]
+    int sceNetInternalGetSetting18(uint value, int flag)
+    {
+        if (!_netInited) return NetErr(ENOTINIT);
+        if (value == 0 || (flag & ~1) != 0) return NetErr(EINVAL);
+        lock (_netLock) GuestMemory.W32(value, (uint)(flag == 0 ? _ctl18a : _ctl18b));
+        return 0;
+    }
+
+    [Hle("sceNetInternal_7493FB0C", Nid = 0x7493FB0C, Library = "SceNetInternal")]
+    int sceNetInternalSetSetting18(int value, int flag)
+    {
+        if (!_netInited) return NetErr(ENOTINIT);
+        if ((flag & ~1) != 0) return NetErr(EINVAL);
+        lock (_netLock) SetCtl18(flag, value);
+        return 0;
+    }
 }
