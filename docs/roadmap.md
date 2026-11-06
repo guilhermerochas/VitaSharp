@@ -432,7 +432,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
   demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
   arbitragem) ou liberar o gate quando outro processo espera a cena.
-- [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
+- [x] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
   esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
@@ -497,6 +497,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
   tem a barra, e de Mensagens são iguais: não é isso).
+  Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
+  Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
