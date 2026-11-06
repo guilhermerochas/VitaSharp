@@ -744,9 +744,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   FIFA e GoW, 0-1 de 133-150 meios-segundos diferem mais de 6 dB; com o modo de depuração, nenhum erro novo de NGS
   (`sceNgsVoicePlay` numa voz ainda em release seria o sintoma; `bugsC9_tools/onoff.py`). Não ouvi (sem som no PC
   do usuário); a medida é por RMS
-- [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
+- [x] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
   carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
   corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
+  Confirmado pelo usuário (06/11/2026): save state, câmera e tela travada do Jak 1 corrigidos. Aberto à parte: o fundo
+  piscando quando abre o menu de pausa (gravação `PCSA00080_20261106_183708_tudo`, com o agente de bugs C)
 - [x] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
   prioridade máxima; gravação `captures\PCSE00271_20261106_020056_tudo`): nenhum quadro apresentado (watchdog STALL
   no frame 1). As threads `AsyncIOSystem` e `NRSMovieFileAsyncServer` chamam `sceKernelWaitEvent(0x0 / 0xFFFFFFFF,
