@@ -138,6 +138,11 @@ public sealed partial class AppMgr : HleModule
         };
     }
 
+    /// <summary>(ScePID pid): 1 when pid is the shell's process and it crashed. libipmi clients (SceDbUtilDcnClient...)
+    /// poll it with their server's process (sceKernelGetMsgPipeCreatorId of the server pipe) to drop a dead connection.
+    /// A shell that crashes ends the VitaSharp session, so a running caller never sees one: 0.</summary>
+    [Hle] int sceAppMgrIsPidShellAndCrashed(int pid) => 0;
+
     [Hle] int _sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint, uint opt) => sceAppMgrTrophyMountById(id, titleId, mountPoint);
 
     [Hle]
