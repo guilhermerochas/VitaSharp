@@ -23,6 +23,8 @@ public sealed partial class AppMgrShell : HleModule
     /// type byte and +0x74 its flags. libipmi only lets a process create an IPC server when +0x74 bit 0 is set or
     /// the type is 2: the shell's.
     /// </summary>
+    const int ServiceLaunchFlag = 0x200000;
+
     internal static void WriteStatus(Emulator p, uint st)
     {
         GuestMemory.Fill(st, 0, 0x80);
@@ -38,6 +40,9 @@ public sealed partial class AppMgrShell : HleModule
             GuestMemory.Write(st + 0x71, (byte)2);
             GuestMemory.W32(st + 0x74, 1);
         }
+        // a system service the shell started for a request (flags 0x200000: "avmedia_service:" starts NPXS10036
+        // AvMediaService with 0x600000) serves IPC like the shell (its SceAvMediaSrv)
+        else if ((p.LaunchFlags & ServiceLaunchFlag) != 0) GuestMemory.W32(st + 0x74, 1);
     }
 
     int Status(Emulator? p, uint st)
@@ -333,7 +338,17 @@ public sealed partial class AppMgrShell : HleModule
             dir = Path.GetDirectoryName(host)!;
             self = Path.GetFileName(host);
         }
+        // a request by URI names no application: the shell passes its path
+        if (dir.Length == 0) return ERR_NOT_FOUND;
+        // the same service asked for again while it runs (the camera retries "avmedia_service:" every second until its
+        // server answers): the running one serves it
+        if ((flags & ServiceLaunchFlag) != 0 && Emu.Vita.Processes.FirstOrDefault(p => string.Equals(p.TitleId, Path.GetFileName(Path.TrimEndingDirectorySeparator(dir)), StringComparison.OrdinalIgnoreCase)) is { } running)
+        {
+            Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {running.Describe()} already runs");
+            return 0;
+        }
         var app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App);
+        app.LaunchFlags = flags; // before its code runs (the process loads on a task)
         if (pl.Param != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = pl.Param;
         Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {pl.TitleId} as {app.Describe()}");
         if (launchParam != 0 && GuestMemory.R32(launchParam) >= 0x2C && GuestMemory.R32(launchParam + 0x28) is var status and not 0)

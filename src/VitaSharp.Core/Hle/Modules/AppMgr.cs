@@ -469,21 +469,32 @@ public sealed partial class AppMgr : HleModule
         return 0;
     }
 
-    [Hle]
-    int sceAppMgrLaunchAppByUri(int flags, uint uri)
+    /// <summary>
+    /// (int flags, const char *uri): a request to the shell, as in the FW 3.74 kernel appmgr (0x8100DCF4 / 0x8100DDA0,
+    /// URI up to 0x822 characters): an application entry is made with the flags plus 0x100000 ("by URI") and the URI
+    /// as its launch parameter, and the shell gets event 6 {application id}. Its handler (shell.self 0x8127D402) reads
+    /// the URI with sceAppMgrPeekLaunchParamForShell and dispatches it by scheme ("avmedia_service:", "psnst:",
+    /// "settings_dlg:"...), then starts the application (second stage, with its path) or cancels the entry.
+    /// libScePhotoExport asks for "avmedia_service:" before it talks to the shell's SceAvMediaSrv.
+    /// </summary>
+    int LaunchByUri(string fn, int flags, uint uri)
     {
         if (uri == 0) return ERR_PARAM;
-        Log.Info($"sceAppMgrLaunchAppByUri(0x{flags:X}, {GuestMemory.ReadCString(uri, 0x822)}): not launched");
+        string u = GuestMemory.ReadCString(uri, 0x823);
+        if (u.Length > 0x822) return unchecked((int)0x8002710B);
+        if (Emu.Vita.Shell == null) { Log.Info($"{fn}({u}): no shell, not launched"); return 0; }
+        var pl = Emu.Vita.AddPendingLaunch(Emu, "", "", flags | 0x100000, u);
+        Log.Info($"{fn}(0x{flags:X}, {u}) from {Emu.Describe()}: request 0x{pl.App.Uid:X} for the shell");
+        Emu.Vita.PostShellEvent(Kernel.ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
         return 0;
     }
 
+    [Hle] int sceAppMgrLaunchAppByUri(int flags, uint uri) => LaunchByUri(nameof(sceAppMgrLaunchAppByUri), flags, uri);
+
+    /// <summary>(const char *uri, SceAppMgrLaunchParam *param): the flags are param+4 (0x40 bytes, optional).</summary>
     [Hle]
-    int sceAppMgrLaunchAppByUri2(uint uri, uint param)
-    {
-        if (uri == 0) return ERR_PARAM;
-        Log.Info($"sceAppMgrLaunchAppByUri2({GuestMemory.ReadCString(uri, 0x822)}): not launched");
-        return 0;
-    }
+    int sceAppMgrLaunchAppByUri2(uint uri, uint param) =>
+        LaunchByUri(nameof(sceAppMgrLaunchAppByUri2), param != 0 ? (int)GuestMemory.R32(param + 4) : 0, uri);
 
     // ------------------------------------------------------------------ system parameters, paths, processes
 
