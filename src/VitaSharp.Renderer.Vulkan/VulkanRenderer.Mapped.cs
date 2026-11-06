@@ -1,4 +1,5 @@
 using Silk.NET.Vulkan;
+using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Memory;
@@ -112,7 +113,7 @@ public sealed unsafe partial class VulkanRenderer
             if (e <= start || s >= end) continue;
             uint os = Math.Max(s, start), oe = Math.Min(e, end);
             if (innerPages) { os = (os + page - 1 & ~(page - 1)) + page; oe &= ~(page - 1); }
-            if (oe > os && DirtyPages.WrittenSince(os, oe - os, stamp))
+            if (oe > os && DirtyPages.WrittenBetween(os, oe - os, stamp, GpuQueue.ReadBound))
             {
                 if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: its written pages go back to guest memory (before draw id={NextDrawId})");
                 _gpuWritten.RemoveAt(i);
@@ -121,7 +122,7 @@ public sealed unsafe partial class VulkanRenderer
                 for (uint p = os & ~(page - 1); p < oe; p += page)
                 {
                     uint ps = Math.Max(p, os), pe = Math.Min(p + page, oe);
-                    if (!DirtyPages.WrittenSince(ps, pe - ps, stamp)) continue;
+                    if (!DirtyPages.WrittenBetween(ps, pe - ps, stamp, GpuQueue.ReadBound)) continue;
                     if (_diagActive != null) TraceLine($"[mirror]   CPU-written 0x{ps:X8}-0x{pe:X8}");
                     if (ps > keep) _gpuWritten[keep] = (ps, stamp);
                     keep = pe;
@@ -149,7 +150,11 @@ public sealed unsafe partial class VulkanRenderer
             end = Math.Max(end, e);
             _gpuWritten.RemoveAt(i);
         }
-        _gpuWritten[start] = (end, DirtyPages.Epoch);
+        // stamped with the storing draw's scene end when known: the guest writes after it (the worker being behind)
+        // are later than the store; before the first such scene, the sweep now
+        uint bound = GpuQueue.ReadBound;
+        _gpuWritten[start] = (end, bound != uint.MaxValue ? bound + 1 : DirtyPages.Epoch);
+        GpuQueue.SceneEndSweeps = true;
         _mirrorWritesPending = true;
         if (_diagActive != null) TraceLine($"[mirror] draw id={NextDrawId - 1} stores to 0x{start:X8}-0x{end:X8}: later streams there are read from the mirror");
     }

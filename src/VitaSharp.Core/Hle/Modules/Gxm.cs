@@ -999,6 +999,7 @@ public sealed partial class Gxm : HleModule
     /// <summary>The guest ended or flushed a scene: opens its gate, or in frame mode keeps it closed until the flip.</summary>
     void EndSceneGate(SceneGate gate)
     {
+        gate.TakeSweep();
         if (UbAudit) AuditSceneEnd();
         if (!UbGateFrame) { gate.End(); return; }
         gate.MarkSceneEnded();
@@ -1302,6 +1303,7 @@ public sealed partial class Gxm : HleModule
         var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
         cmd.UniformsLate = UbLate && GpuQueue.LateUniformCopy != null;
         cmd.Gate = cmd.UniformsLate && UbAtSceneEnd ? _sceneGate : null;
+        cmd.Scene = _sceneGate;
         cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformsLate);
         cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformsLate) : 0;
         if (UbAudit) AuditDraw(vp, vUbs, cmd.VertexUniformsLength);

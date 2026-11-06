@@ -619,6 +619,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   achar quem empurra o aviso (strings "JobPushNotification"/"notificationPush"/"sys-notify" do shell; talvez o cliente
   np_trophy do processo ou a UI do shell ao receber o evento do servidor) e ver se há um modo de "sync" sem aviso
   (o servidor tem DebugUnlockTrophyJob ao lado de UnlockTrophyJob).
+  **Tentativa DebugUnlock (fix/bugs-games-16, não resolvida)**: o cliente do IPC 0x90036 é o export np_trophy
+  `C1406504(handle, pedido, ctx, {tipo, id}, out)` (8100A258 -> 8100EB04 -> stub 8101010C; tipo 3 = troféu 0..127, 2 =
+  grupo, 1 = todos). O servidor (812C74FC) busca o handle (tabela +0x14, falta = 0x80551608), o contexto (+0x64, falta =
+  0x80551609) e o pedido (+0x84, falta = 0x8055169B): o "pedido" é o id que D70DAFA7 devolve (0x6000x); com ele a chamada
+  passa das três buscas e falha com 0x80551609 em `812D7E20` (exige contexto[+0x20] == 1). Criar o contexto com
+  options=1 não muda nada; falta achar quem põe contexto[+0x20] = 1 (talvez um contexto de depuração/sistema).
+  Rodadas em `scratchpad/bugsC16_out/tro2..tro5` (log "silent unlock"). `SceNpManager::NID_A775A452` (pergunta do
+  servidor antes de sincronizar com a rede) agora devolve 0 (sem sincronizar): `tro5/log.txt` sem funções faltando.
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
   (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync
@@ -1382,7 +1390,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado gravado). `replay-gpu --compare` contra a main: os 18 dumps do usuário idênticos; no da gravação só mudam
   5873/5875 (claros) e um canto de sombra no 5893. Jogo rodando (`rerun` da gravação a partir do estado, cópia em
   `bugsC15_jak/cap_*`): main 25 quadros seguidos alternando (presents 154-178), com a correção 5 (169-173, logo depois
-  de carregar o estado) e depois estável. Ainda aberto: esses 5 quadros iniciais.
+  de carregar o estado) e depois estável. **Os 5 quadros iniciais (fix/bugs-games-16)**: corrida, não o estado: logo
+  depois de carregar, o worker da GPU fica vários quadros atrás e a CPU já reescreveu (dados de quadros seguintes)
+  páginas da faixa gravada pela GPU antes de o worker chegar ao desenho do volume; como a conferência via "escrito
+  desde a gravação" sem limite, essas escritas futuras derrubavam a faixa (7-9 quadros alternando por rodada, número
+  variando; VITASHARP_DISPLAY_QUEUE_STRICT=1 só diminuía). Corrigido: quando há programa que grava na memória, o guest
+  faz uma varredura das páginas sujas ao fechar cada cena (`SceneGate.SweepEpoch`) e o worker só conta as escritas da
+  CPU até o fim da cena do desenho que lê (`DirtyPages.WrittenBetween`); a faixa gravada leva o carimbo do fim da cena
+  que gravou. Replay não muda (os comandos do dump não têm cena). `rerun` da gravação: antes 9 e 7 quadros alternando
+  (`scratchpad/bugsC16_jak/rr1`, `rr2`), com a correção 0 e 0 (`rf1`, `rf2`; só um achado de 1 célula no 209, o mesmo
+  tipo do 220/237 de antes), 20 fps iguais.
   Achado à parte (gravação 18:34, cutscene, preto no present 2155, prioridade menor): não é o espelho (nenhum
   programa grava na memória nessa cena); os desenhos do céu e do cenário saem pretos porque a textura 32x32 em
   0x630F2B40 (amostrada pelo céu, vs 79BC61BE4C9F8178) foi lida já reescrita pela CPU ((255,0,0) contra (255,3,33)
