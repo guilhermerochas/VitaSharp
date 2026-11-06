@@ -70,6 +70,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// </summary>
     static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 6) : 3;
     const ulong RingSize = 64ul << 20;
+    /// <summary>Uploads past a full ring are carved from chunks of this size: a buffer per upload (Jak 1's title screen,
+    /// ~27 MB of uniform blocks a frame past the uniform heap, thousands of draws) cost a vkAllocateMemory each.</summary>
+    const ulong OverflowChunkSize = 16ul << 20;
 
     readonly VkCore _core;
     readonly Vk _vk;
@@ -93,6 +96,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public byte* RingPtr;
         public ulong RingOffset;
         public readonly List<(Buffer, DeviceMemory)> Overflow = new();
+        /// <summary>The overflow chunk uploads are carved from once the ring is full (freed with <see cref="Overflow"/>).</summary>
+        public Buffer OverflowChunk;
+        public nint OverflowPtr;
+        public ulong OverflowOffset = OverflowChunkSize;
         public readonly List<Action> Deferred = new();
         public bool Recording;
         public bool Submitted;
@@ -209,6 +216,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
         f.Overflow.Clear();
         f.RingOffset = 0;
+        (f.OverflowChunk, f.OverflowPtr, f.OverflowOffset) = (default, 0, OverflowChunkSize);
         foreach (var p in f.DescPools) _vk.ResetDescriptorPool(_dev, p, 0);
         f.DescPoolIndex = 0;
         f.SecondaryIndex = 0;
@@ -365,9 +373,25 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             f.RingOffset = off + size;
             return (f.Ring, off, (nint)(f.RingPtr + off));
         }
+        _statOverflowBytes += (long)size;
+        if (size <= OverflowChunkSize / 4)
+        {
+            off = (f.OverflowOffset + align - 1) & ~(align - 1);
+            if (off + size > OverflowChunkSize)
+            {
+                var (cb, cm, cp) = _core.CreateHostBuffer(OverflowChunkSize, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit
+                    | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
+                f.Overflow.Add((cb, cm));
+                (f.OverflowChunk, f.OverflowPtr, off) = (cb, cp, 0);
+                _statOverflowChunks++;
+            }
+            f.OverflowOffset = off + size;
+            return (f.OverflowChunk, off, f.OverflowPtr + (nint)off);
+        }
         var (b, m, p) = _core.CreateHostBuffer(Math.Max(size, 1), BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit
             | BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferSrcBit, MemCat.UploadRing);
         f.Overflow.Add((b, m));
+        _statOverflowChunks++;
         return (b, 0, p);
     }
 
