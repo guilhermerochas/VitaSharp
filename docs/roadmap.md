@@ -1487,13 +1487,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `sceKernelWaitSema` com timeout
   Corrigido (05/11/2026: `sceNpCommerce2CreateCtx` com 2 argumentos e o key off do NGS terminando a voz na próxima
   atualização, com os callbacks fora da trava) e confirmado no jogo pelo usuário
-- [ ] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
+- [x] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
   56354517, 5EF67445, 6ACA1D57, 71A78083, 79F9DB75, AA0340C3, F9A1DE92, importadas pelo `UnityPlayer_536/537_Release`;
   Akiba's Beat e God Wars, 04/11/2026, pedido do usuário). O aviso sai no boot (`Emulator.cs` ~522), antes de o jogo
   carregar `app0:/Media/Modules/Il2CppAssemblies.suprx` (~0,6 s depois); o `ModuleLoader.RegisterExports` aplica as
   relocações pendentes quando o módulo exporta a variável. Confirmar que o Il2CppAssemblies exporta as 10 e que as
   relocações foram aplicadas; se faltar alguma, implementar; e só avisar das que continuarem sem resolver depois que
   o módulo de origem carregar (hoje o aviso aparece em todo jogo Unity mesmo quando tudo é resolvido)
+  Feito no 40e2fb5 (05/11/2026) e conferido em 06/11/2026 (fix/bugs-games-11): o Akiba's Beat loga `10 variable imports
+  wait for a module exporting Il2CppAssemblies` no boot e, 0,3 s depois, `Il2CppAssemblies: 10 waiting variable imports
+  bound`, sem aviso; o jogo roda até a primeira batalha (log `scratchpad/bugsC11_out/akiba4/log.txt`)
 - [ ] Akiba's Beat (PCSG00952, Unity): validar o jogo todo (pedido do usuário, 04/11/2026; sessão de 2,5 min, log
   `logs61104_201229_PCSG00952.log`, main 5d4b998). No log: 60 fps quase o tempo todo, mas a imagem fica parada
   ~10 s (quadro 4171, 20:14:05-20:14:16, `frozen: identical image for 600 presents`) e ~4 s de tela preta em 20:13:46
@@ -1509,6 +1512,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   esperando shader (80 ms) só na 1ª vez. Não passou do diálogo: a versão japonesa confirma com Círculo e o "はい" fica
   acima de "戻る" (selecionado); o Start do roteiro chega cedo ou tarde conforme o boot (roteiros `bugsC10_scn/akiba*.txt`;
   usar `--nav` esperando a tela). Falta o jogo em si
+  Agente C dia 12 (06/11/2026, fix/bugs-games-11): roteiro `tests/nav/akibas_beat_start.nav` (com
+  `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`; o `--nav` ganhou `lstick`/`rstick`): título, New Game, "はい", o filme de evento
+  pulado (Start, "はい") e o primeiro calabouço: andar, virar, câmera, os ataques, o encontro com o primeiro inimigo
+  ("Encounter"), a batalha com a 1ª caixa de tutorial e o passo "aproxime-se e afaste-se" (analógico à esquerda e à
+  direita), pausa e volta. Os ataques ainda não aparecem: o tutorial pede o movimento antes (próximo passo do roteiro). 60 fps estáveis, 0 underruns, nenhuma imagem parada; avisos só de
+  formatos de textura vistos pela 1ª vez e um `scene without colour surface`. Provas: `scratchpad/bugsC11_out/akiba5_sheet.png`,
+  `akiba4_sheet.png`. Sem o pace, a Unity (flips IMMEDIATE) roda a ~460 fps sem janela: esperas em quadros não servem
 - [x] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
@@ -1681,7 +1691,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
   eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
-- [ ] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
+- [x] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
+  Feito (06/11/2026, fix/bugs-games-11): desmontado do np_manager.suprx 3.74, copia do registro de 0x148 bytes do
+  NID_E45E4003 o SceNpId (+0, 0x24) e a URL do avatar (+0x38, 0x80) para um SceNpManagerCacheParam de 0xA4 bytes e
+  devolve 0; o HLE dá o NpId da conta emulada (sem URL) ou tudo zero sem conta. O 99Vidas chama 4 vezes no boot e
+  recebe "VitaSharp" (`--peek`, log `scratchpad/bugsC11_out/np_99vidas_peek/log.txt`) e segue para a abertura
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em
   `scratchpad/phone2_shots/pc`, `review.md`): The Deer God (PCSB01070) sem limite de quadros (214-348 fps; antes 60);
   Shinobido 2 (PCSE00015) com uma linha verde embaixo do filme de abertura e `sceKernelGetCpuId` sem implementação
