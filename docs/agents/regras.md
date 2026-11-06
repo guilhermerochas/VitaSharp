@@ -64,6 +64,10 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
 
 - **Um agente por vez** no celular; só quem o lead disser que é o dono usa adb. Os outros esperam a vez.
 - `export MSYS_NO_PATHCONV=1` no Git Bash.
+- **Desempenho no Android: qualquer estratégia de otimização vale, só não pode trocar de linguagem** (pedido do
+  usuário, 06/11/2026): o código continua em C# (nada de reescrever partes em C/C++/Rust ou outra linguagem); dentro
+  disso, faça o que for preciso e seja eficaz (mudar arquitetura, threads, caminhos da GPU, caches, JIT, formatos).
+  Bibliotecas nativas de terceiros que já usamos (shaderc, adrenotools, driver) continuam valendo.
 - **O teste de validação de verdade no Android é o Killzone: Mercenary (PCSC00045)** em gameplay real (pedido do
   usuário, 06/11/2026): toda mudança do Android (desempenho, renderizador, entrada, menus, save state) só conta como
   validada depois de rodar no Killzone no celular, com print do gameplay e fps. Uncharted e os outros jogos são extras.
