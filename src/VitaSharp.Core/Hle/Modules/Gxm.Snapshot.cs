@@ -7,19 +7,13 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>
 /// Save states: contexts, render targets, sync objects, shader patchers and programs, by their guest handles.
 /// Programs are rebuilt from the guest's program binaries (restored memory); renderer objects (BackendData) are
-/// recreated by the new GPU backend on first use. Recorded command lists of deferred contexts are kept (their draws refer to programs by handle). Not
-/// supported yet: a command list being recorded, and a scene in progress or a display queue entry in flight (the save waits for those to finish).
+/// recreated by the new GPU backend on first use. Recorded command lists of deferred contexts are kept (their draws refer to programs by handle), and so is
+/// a list being recorded. A scene in progress or a display queue entry in flight is not saved: the save waits for those to finish.
 /// </summary>
 [GenerateSnapshot, SnapshotIgnoreFields("_contexts", "_renderTargets", "_patchers", "_vertexPrograms", "_fragmentPrograms",
     "_syncObjects", "_displayQueue", "_commandLists")]
 public sealed partial class Gxm : ISnapshotState
 {
-    string? ISnapshotState.CheckSnapshot()
-    {
-        if (_contexts.Values.Any(c => c.Recording != null)) return "host resource GXM command list recording not supported yet";
-        return null;
-    }
-
     void SaveExtra(SnapshotWriter w)
     {
         lock (_displayLock)
@@ -221,6 +215,9 @@ public sealed partial class Gxm : ISnapshotState
         w.Write(c.Deferred); w.Write(c.InCommandList); w.Write(c.ViewportSet); w.Write(c.RegionClipSet);
         w.Write(c.VdmCallback); w.Write(c.VertexCallback); w.Write(c.FragmentCallback); w.Write(c.CallbackData);
         w.Write(c.VdmBuffer); w.Write(c.VdmBufferSize); w.Write(c.VdmUsed); w.Write(c.VdmListStart); w.Write(c.SizeScratch);
+        // a command list being recorded (Tearaway records on its deferred contexts all the time): its draws so far
+        w.Write(c.Recording?.Count ?? -1);
+        if (c.Recording != null) foreach (var d in c.Recording) WriteRecipe(w, d);
     }
 
     GxmContext ReadContext(SnapshotReader r)
@@ -243,6 +240,12 @@ public sealed partial class Gxm : ISnapshotState
         c.Deferred = r.ReadBool(); c.InCommandList = r.ReadBool(); c.ViewportSet = r.ReadBool(); c.RegionClipSet = r.ReadBool();
         c.VdmCallback = r.ReadUInt32(); c.VertexCallback = r.ReadUInt32(); c.FragmentCallback = r.ReadUInt32(); c.CallbackData = r.ReadUInt32();
         c.VdmBuffer = r.ReadUInt32(); c.VdmBufferSize = r.ReadUInt32(); c.VdmUsed = r.ReadUInt32(); c.VdmListStart = r.ReadUInt32(); c.SizeScratch = r.ReadUInt32();
+        int recording = r.ReadInt32();
+        if (recording >= 0)
+        {
+            c.Recording = new List<DrawRecipe>(recording);
+            for (int i = 0; i < recording; i++) c.Recording.Add(ReadRecipe(r));
+        }
         return c;
     }
 }
