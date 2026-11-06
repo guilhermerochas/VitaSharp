@@ -153,6 +153,10 @@ public static class EnvVars
     public const string TexSetPersist = "VITASHARP_TEXSET_PERSIST";
     /// <summary>1: vkQueuePresentKHR runs on a thread of its own, off the GPU worker (VulkanRenderer.PresentThread.cs).</summary>
     public const string PresentThread = "VITASHARP_PRESENT_THREAD";
+    /// <summary>1: a deferred single-sampled scene rendering is begun over the tiles its draws can write (the union of
+    /// their region clips and viewports) instead of the whole surface, so a tiler loads and stores only those tiles
+    /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs).</summary>
+    public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";

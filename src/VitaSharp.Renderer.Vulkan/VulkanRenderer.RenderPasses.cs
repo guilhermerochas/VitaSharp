@@ -90,7 +90,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Begins a scene rendering as a render pass in the primary (its draws are in secondaries).</summary>
-    void BeginSingleRenderPass(CommandBuffer cmd, in TilePass p, AttachmentStoreOp depthStore)
+    void BeginSingleRenderPass(CommandBuffer cmd, in TilePass p, AttachmentStoreOp depthStore, Rect2D area)
     {
         var colorFormat = p.HasColor ? p.ColorFormat : Format.Undefined;
         bool word = p.HasColor && p.Word.Handle != 0;
@@ -103,7 +103,7 @@ public sealed unsafe partial class VulkanRenderer
         var rbi = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = fb,
-            RenderArea = new Rect2D(new Offset2D(0, 0), p.Area), ClearValueCount = 3, PClearValues = clears,
+            RenderArea = area, ClearValueCount = 3, PClearValues = clears,
         };
         DevStampOp(cmd, word ? "pass+word" : p.HasColor ? "pass" : "pass-depth");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.SecondaryCommandBuffers);
