@@ -537,8 +537,10 @@ public sealed partial class Touch : HleModule
         // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
         // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
         Span<TouchPoint> touches = stackalloc TouchPoint[8];
-        // only the foreground process is touched
-        int reports = _sampling[port] != 0 && Emu.IsForeground && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        // only the foreground process is touched, except where the shell claims the panel over it (its on-screen
+        // keyboard's touch region): those contacts are the shell's
+        bool touched = Emu.Vita.TouchClaimedByShell(port) ? Emu.IsShell : Emu.IsForeground;
+        int reports = _sampling[port] != 0 && touched && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
         Span<byte> ids = stackalloc byte[8];
         lock (_ids)
         {
@@ -629,9 +631,27 @@ public sealed partial class Touch : HleModule
     [Hle("sceTouchReadRegionExt")]
     int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchRead(port, data, count);
 
-    [Hle] int sceTouchSetRegion() => 0;
+    /// <summary>(port, region, rect: u16 x0, y0, x1, y1 in panel coordinates, attr). The shell's ime_plugin sets region 2
+    /// to the whole front panel and activates it while its on-screen keyboard is up (over an application in front):
+    /// those touches are the shell's then (<see cref="Kernel.VitaSystem.TouchClaimedByShell"/>).</summary>
+    [Hle]
+    int sceTouchSetRegion(int port, int region, uint rect, int attr)
+    {
+        if (port is < 0 or > 1 || region is < 0 or > 0xFF) return ERR_INVALID_ARG;
+        if (Emu.IsShell && rect != 0)
+            Emu.Vita.SetShellTouchRegion(port, region, GuestMemory.Read<ushort>(rect), GuestMemory.Read<ushort>(rect + 2),
+                GuestMemory.Read<ushort>(rect + 4), GuestMemory.Read<ushort>(rect + 6));
+        return 0;
+    }
     [Hle] int sceTouchSetRegionAttr() => 0;
-    [Hle] int sceTouchActivateRegion() => 0;
+    /// <summary>(port, region, enable, attr). Region 0 is the whole panel of the process.</summary>
+    [Hle]
+    int sceTouchActivateRegion(int port, int region, int enable, int attr)
+    {
+        if (port is < 0 or > 1 || region is < 0 or > 0xFF) return ERR_INVALID_ARG;
+        if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0);
+        return 0;
+    }
     [Hle] int sceTouchClearRegion() => 0;
     [Hle] int sceTouchEnableIdleTimerCancelSetting(int port, int enable) => 0; // no idle timer
 

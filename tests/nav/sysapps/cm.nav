@@ -57,9 +57,7 @@ log close
 swipe 0.97 0.04 0.3 0.7 30
 wait 300
 shot closed1
-# the shell shows its lock screen when the ended app's end event arrives (see the checklist): unlock it, close the hint
-swipe 0.93 0.12 0.3 0.7 30
-wait 200
+# back on the home screen: close its first-run hint (it comes back after a close)
 tap 0.146 0.2
 wait 100
 shot home2

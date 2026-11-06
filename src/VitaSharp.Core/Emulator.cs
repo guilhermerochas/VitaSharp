@@ -298,7 +298,7 @@ public sealed class Emulator : IDisposable
 
     readonly List<Emulator> _children = new();
     int _terminated, _exitStatus;
-    bool _background;
+    bool _background, _endedInFront;
 
     /// <summary>Ends this process (exit, crash, or killed by the shell): stops its threads, then frees its memory and kernel
     /// objects and gives the display back. The threads are joined on a host thread, so this can be called from one of them.</summary>
@@ -309,7 +309,8 @@ public sealed class Emulator : IDisposable
         Log.Info($"Process {Describe()} {why}");
         Running = false;
         // the screen goes back to the parent (the shell) at once, not after the threads are gone (that can take seconds)
-        if (Parent is { } parent && ReferenceEquals(Vita.Foreground, this)) Vita.SetForeground(parent);
+        _endedInFront = ReferenceEquals(Vita.Foreground, this);
+        if (Parent is { } parent && _endedInFront) Vita.SetForeground(parent);
         Kernel.StopAllThreads();
         foreach (var c in _children.ToArray()) c.Terminate("ended with its parent");
         Task.Run(() =>
@@ -331,7 +332,7 @@ public sealed class Emulator : IDisposable
         // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
         // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
         // start it again on every end
-        if (Vita.Shell is { } shell && shell != this && !_background) Vita.PostShellEvent(ShellEvents.AppEnded, Pid, 0, 0, 0, AppId);
+        if (Vita.Shell is { } shell && shell != this && !_background) Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, TitleId);
         Vita.Unregister(this);
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
