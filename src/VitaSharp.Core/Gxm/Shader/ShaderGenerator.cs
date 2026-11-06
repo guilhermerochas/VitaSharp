@@ -162,6 +162,19 @@ public static class ShaderGenerator
     /// </summary>
     public static bool LowerDynamicIndexing;
 
+    /// <summary>What a fragment program reads from global register G16 (the primitive's facing, see UsseTranslator.Core).</summary>
+    public enum FaceRegisterMode { Front, Back, Zero }
+
+    /// <summary>Debug (VITASHARP_G16=front|back, default zero as before): the value of G16. Zero Time Dilemma's two-sided
+    /// lighting points at a front-facing flag (front), not yet checked against hardware (docs/roadmap.md). It changes the
+    /// generated GLSL without being part of the shader cache key: use it with a scratch shader cache.</summary>
+    public static readonly FaceRegisterMode FaceRegister = Environment.GetEnvironmentVariable(EnvVars.G16) switch
+    {
+        "front" => FaceRegisterMode.Front,
+        "back" => FaceRegisterMode.Back,
+        _ => FaceRegisterMode.Zero,
+    };
+
     /// <summary>How the GXM far plane (z &lt;= w after the depth transform) is clipped; GXM does not clip at the near plane.</summary>
     public enum FarPlaneClip
     {
