@@ -1052,6 +1052,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         SyncRenderTargetForRead(src);
         src.LastUsedFrame = src.LastTouchedFrame = FrameCount;
         src = PresentSource(src); // RGBA/BGRA surfaces: shown in guest memory byte order, as the display reads them
+        if (_presentCmd?.Overlay is { } overlay) src = ComposeShellOverlay(src, overlay); // VulkanRenderer.ShellOverlay.cs
         _lastPresented = (src, frame); // shown again while the emulation is paused (VulkanRenderer.Pause.cs)
 
         RecordFrameSummary(frame);

@@ -86,7 +86,9 @@ public sealed partial class Gxm : HleModule
             (uint data, GpuQueue.Fence done, GxmSyncObject? old, long oldDisplays) entry;
             using (Scheduler.Block()) // blocked on the queue: do not hold an emulated core
             {
-                try { entry = _displayQueue!.Take(); }
+                // a process ended by the shell never calls sceGxmTerminate: its threads are asked to stop instead, and
+                // this one waiting for an entry kept the process (its end event to the shell) 10 s past the shell's close
+                try { if (!_displayQueue!.TryTake(out entry, () => !self.Core.StopRequested)) break; }
                 catch (InvalidOperationException) { break; } // queue completed
             }
             var (data, done, oldSync, oldDisplays) = entry;

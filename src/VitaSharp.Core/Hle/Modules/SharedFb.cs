@@ -259,6 +259,19 @@ public sealed partial class SharedFb : HleModule
         lock (fbs) return fbs.All.Any(f => f.Compositor && f.CreatorPid == shell.Pid && f.Clients.Contains(fg.Pid));
     }
 
+    /// <summary>The shell whose framebuffer <paramref name="client"/> draws into (it composites it), or null.</summary>
+    internal static Emulator? ComposerOf(Emulator client)
+    {
+        var fbs = client.Vita.SharedFbs;
+        int creator;
+        lock (fbs)
+        {
+            if (fbs.All.FirstOrDefault(f => f.Compositor && f.Clients.Contains(client.Pid)) is not { } fb) return null;
+            creator = fb.CreatorPid;
+        }
+        return client.Vita.ByPid(creator);
+    }
+
     /// <summary>The shared framebuffers of one system (one per index).</summary>
     public sealed class Registry
     {

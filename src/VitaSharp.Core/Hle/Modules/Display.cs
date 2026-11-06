@@ -66,7 +66,7 @@ public sealed partial class Display : HleModule
         Util.Developer.DevTrace.GuestFrame();
 #endif
 
-        if (pParam == 0) { _base = 0; return 0; }
+        if (pParam == 0) { _base = 0; if (Emu.IsShell) Emu.Vita.SetShellOverlay(null, VBlank.Count); return 0; }
         uint size = GuestMemory.R32(pParam);
         if (size is not (0x18 or 0x1C)) return ERR_INVALID_VALUE; // SceDisplayFrameBuf or SceDisplayFrameBufExt
         _base = GuestMemory.R32(pParam + 4);
@@ -74,18 +74,25 @@ public sealed partial class Display : HleModule
         _format = GuestMemory.R32(pParam + 12);
         _width = GuestMemory.R32(pParam + 16);
         _height = GuestMemory.R32(pParam + 20);
-        if (_base == 0) return 0;
+        if (_base == 0) { if (Emu.IsShell) Emu.Vita.SetShellOverlay(null, VBlank.Count); return 0; }
         if (!_shownBase) { _shownBase = true; Log.Info($"Display: {Emu.Describe()} framebuffer 0x{_base:X8} {_width}x{_height} pitch {_pitch} format 0x{_format:X} in {Emu.Memory.FindBlock(_base)}"); }
         _lastSetVcount = VBlank.Count;
         // the display shows the foreground process (the shell, or the application it launched); a process in the
         // background keeps flipping its buffers, and what it last set comes back on screen when it is in front again.
         // A system program in front draws into the shell's shared framebuffer: the shell shows that frame with its own
         // layers over it (SceSharedFb), so the shell's frames stay on screen.
-        if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu))) return 0;
+        // The shell showing a frame of its own while an application in front shows its own frames is the shell's overlay
+        // plane (its on-screen keyboard, notifications): blended over that application's frames (VitaSystem.ShellOverlay).
+        if (!Emu.IsForeground && !(Emu.IsShell && SharedFb.ComposesForeground(Emu)))
+        {
+            if (Emu.IsShell) Emu.Vita.SetShellOverlay(Current, _lastSetVcount);
+            return 0;
+        }
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         Emu.Gpu.Submit(new PresentCommand
         {
             Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
+            Overlay = Emu.IsShell ? null : Emu.Vita.ShellOverlay(_lastSetVcount),
             Flip = FramesPresented, VBlank = _lastSetVcount, GuestUs = GuestClock.Microseconds, HostTicks = now,
         });
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = now;

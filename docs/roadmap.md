@@ -290,6 +290,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   frente quando o shell apresenta sem estar na frente (um segundo `DisplayFrame` no `PresentCommand`, blit com blend
   no `VulkanRenderer.Present`); (2) não segurar a submissão do outro processo enquanto a cena aberta ainda não tem
   desenhos, ou fechar a arbitragem só no primeiro desenho.
+  Rodada fix/system-apps-5 (05/11/2026): (1) feito (efecbd5, `VulkanRenderer.ShellOverlay.cs`): o teclado aparece por
+  cima da tela de Sign-In com a página visível em volta (`fw5_out/ime_new/kb2.png`; antes sem teclado,
+  `fw5_out/ime_base/kb2.png`). Continua a ~1 fps (0,6-1,0 fps medido; antes 0,8) e **as teclas não digitam**. Tentado
+  sem ganho (revertido; patch `fw5_all_wip.patch` no scratchpad): (a) segurar o BeginScene de cada processo até o
+  comando seguinte dele (a arbitragem começa no primeiro desenho): a `SceShellMain` desenha **antes** de esperar a
+  `ScePafDisplaySurfaceCond`, então nada muda; (b) a espera da thread da display queue pela cerca contar como espera
+  do guest (libera o gate dos uniforms para desenhos anteriores a ela): sem efeito; (c) rotear o toque para o shell
+  enquanto a região de toque 2 dele está ativa (com o teclado aberto o ime_plugin faz `sceTouchSetRegion(0, 2,
+  {0,0,1920,1088})` + `sceTouchActivateRegion(0, 2, 1, 4)` a cada quadro): o roteamento liga, mas durante os toques
+  (10 s cada a 1 fps) nem o shell nem o setup chamam `sceTouchPeek*` com o dedo no painel; não validado.
+  `VITASHARP_UB_SCENE_END=0` sobe para ~6 fps (`fw5_out/ime_ub0`). No fim de cada execução a `SceShellMain` espera a
+  `ScePafDisplaySurfaceCond` e o `SceInitialSetupMain` está dentro do `sceGxmBeginScene` (lr 0x83C763F9: liberação do
+  buffer de display ou arbitragem). Próximo passo: contar no worker da GPU, por processo, quanto tempo cada cena fica
+  aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
+  demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
+  arbitragem) ou liberar o gate quando outro processo espera a cena.
 - [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
@@ -307,6 +323,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   + câmera, Email, Calendário, Gerenciador de conteúdo, near, PS3 Remote Play). Câmera: o 3.74 não tem `vs0:app/NPXS10007`
   (nem no Vita3K); a câmera é o modo do app Fotos (NPXS10004, `photocam_plugin.rco`); a webcam do PC funciona
   (`camera-test 0`: Integrated Camera 640x480). Texto cortado no boot direto: não testado nesta rodada
+  Rodada fix/system-apps-5 (05/11/2026): roteiros para todos os apps que faltavam (`tests/nav/sysapps/*.nav`, um
+  gerador só) e checklist em docs/notes/system-apps.md; 0 crash. Corrigidos: Amigos (ac4507b, safe memory), miniatura
+  preta no LiveArea (44180e7), fechar pelo LiveArea levava 10 s (03cbb63). Validados: Mensagens, Party, PS4 Link,
+  Controle dos pais, Vídeos, Fotos (câmera com `--camera=0` mostra a webcam), Email, Gerenciador de conteúdo, PS3 Remote
+  Play, Configurações (segunda abertura). **Abertos**: tela de bloqueio depois que um app termina (evento 4 do shell,
+  veja o checklist); near preto (SceLibLocation NID_EFC9BD25/2311B24A); Calendário cai na tela de bloqueio quando o
+  Calendar BG termina; Navegador em "Aguarde" não é rede: não faz chamada de rede nenhuma e nunca carrega o motor web
+  (`vs0:data/external/webcore`); barra de status ausente sobre Mensagens/Amigos/Party; Configurações > Sistema/
+  Formatar/Economia de energia ainda não abertas (`settings_tail.nav` escrito, rodar de novo). Texto cortado no boot
+  direto: não reproduzido (`run NPXS10015` mostra o texto inteiro). Botão PS no PC: não testado (precisa da janela)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma

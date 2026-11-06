@@ -314,7 +314,13 @@ public sealed class Emulator : IDisposable
         foreach (var c in _children.ToArray()) c.Terminate("ended with its parent");
         Task.Run(() =>
         {
-            if (!Kernel.WaitAllThreadsExit(10_000)) Log.Warn($"{Describe()}: some threads did not stop in time");
+            if (!Kernel.WaitAllThreadsExit(10_000))
+            {
+                Log.Warn($"{Describe()}: some threads did not stop in time");
+                using (AddressSpace.Use(Space))
+                    foreach (var t in Kernel.Threads.ToList())
+                        if (!t.WaitForExit(0)) Log.Warn($"  still running: {t.Describe()}");
+            }
             Release();
         });
     }

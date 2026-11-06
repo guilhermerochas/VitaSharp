@@ -372,14 +372,22 @@ public sealed partial class AppMgrShell : HleModule
         uint dBase = GuestMemory.R32(dst + 4), dPitch = GuestMemory.R32(dst + 8), dFmt = GuestMemory.R32(dst + 12);
         uint dW = GuestMemory.R32(dst + 16), dH = GuestMemory.R32(dst + 20);
         if (dBase == 0 || dW == 0 || dH == 0 || dPitch < dW) return ERR_NULL;
-        if (p.Hle.Modules.OfType<Display>().FirstOrDefault()?.Current is not { } src) return ERR_NOT_FOUND;
+        // a system program that draws into the shell's shared framebuffer has no framebuffer of its own: what it shows is
+        // the shell's frame (the shell captures it with appId -5 right after the PS button, while it is still in front)
+        var srcProcess = p;
+        if (p.Hle.Modules.OfType<Display>().FirstOrDefault()?.Current is not { } src)
+        {
+            if (SharedFb.ComposerOf(p) is not { } shell || shell.Hle.Modules.OfType<Display>().FirstOrDefault()?.Current is not { } composed)
+                return ERR_NOT_FOUND;
+            (srcProcess, src) = (shell, composed);
+        }
         uint w = scale ? dW : Math.Min(dW, src.Width), h = scale ? dH : Math.Min(dH, src.Height);
         // the framebuffer is in the application's address space (the GPU writes a rendered surface back there before the
         // callback), the thumbnail in the caller's
         var callerSpace = Emu.Space;
         long seq = Emu.Gpu.Submit(new Gpu.CallbackCommand
         {
-            Space = p.Space,
+            Space = srcProcess.Space,
             ReadAddress = src.Address, ReadSize = src.Pitch * src.Height * 4,
             WriteAddress = dBase, WriteSize = dPitch * dH * 4,
             Action = () =>

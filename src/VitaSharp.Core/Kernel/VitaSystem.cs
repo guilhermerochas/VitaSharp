@@ -193,6 +193,38 @@ public sealed class VitaSystem
     /// programs it composites.</summary>
     public Hle.Modules.SharedFb.Registry SharedFbs { get; } = new();
 
+    // ---- the shell's overlay plane: while another process is in front, a frame the shell shows (the on-screen keyboard
+    // of its ime_plugin, notifications) is a plane the display blends over that process's frame with the shell frame's
+    // alpha. The shell shows such frames only while it has something to overlay; a frame older than this many vblanks
+    // is no longer on screen.
+    const long ShellOverlayVBlanks = 60;
+    Gpu.DisplayFrame? _shellOverlay;
+    long _shellOverlayVBlank;
+
+    /// <summary>The shell showed <paramref name="frame"/> (null: no framebuffer) while not in front.</summary>
+    public void SetShellOverlay(Gpu.DisplayFrame? frame, long vblank)
+    {
+        lock (_lock)
+        {
+            if (_shellOverlay == null && frame != null) Log.Info($"Shell overlay plane on: 0x{frame.Value.Address:X8} {frame.Value.Width}x{frame.Value.Height}");
+            _shellOverlay = frame;
+            _shellOverlayVBlank = vblank;
+        }
+    }
+
+    /// <summary>The shell frame to blend over the frame the process in front shows now, if any.</summary>
+    public Gpu.DisplayFrame? ShellOverlay(long vblank)
+    {
+        lock (_lock)
+        {
+            if (_shellOverlay == null) return null;
+            if (vblank - _shellOverlayVBlank <= ShellOverlayVBlanks && _foreground is { IsShell: false }) return _shellOverlay;
+            _shellOverlay = null;
+            Log.Info("Shell overlay plane off");
+            return null;
+        }
+    }
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
 
