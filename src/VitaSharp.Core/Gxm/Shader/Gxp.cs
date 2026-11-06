@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
-﻿using System.Buffers.Binary;
+﻿using VitaSharp.Core.Util;
+using System.Buffers.Binary;
 using System.Text;
 
 namespace VitaSharp.Core.Gxm.Shader;
