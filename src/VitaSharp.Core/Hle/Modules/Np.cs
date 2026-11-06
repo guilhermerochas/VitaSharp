@@ -71,6 +71,10 @@ public sealed partial class NpManager : HleModule
             uint id = config != 0 ? GuestMemory.R32(config) : 0;
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
         }
+        // its signature: a trophy context created without an id uses this one (np_trophy NID_96DF1B76)
+        uint sign = config != 0 ? GuestMemory.R32(config + 8) : 0;
+        if (_commId != null && sign != 0)
+            TrophyUnlocks.SaveSignature(Emu.Options.FsRoot, _commId, GuestMemory.ReadSpan(sign, TrophyUnlocks.SignatureSize).ToArray());
         var acct = PsnAccount.Current;
         Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, {(acct.LocalServices ? "local PSN services" : "servers unreachable")}" : "signed out of PSN")})");
         return 0;

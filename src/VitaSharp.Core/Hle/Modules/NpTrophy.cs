@@ -67,6 +67,8 @@ public sealed partial class NpTrophy : HleModule
         string? id = commId != 0 ? $"{GuestMemory.ReadCString(commId, 9)}_{GuestMemory.Read<byte>(commId + 10):D2}" : DefaultCommId();
         var set = id != null ? Load(id) : null;
         if (set == null) return ERR_TRP_NOT_FOUND;
+        // the signature the shell's trophy server checks: kept for installing the set there later
+        if (commSign != 0) TrophyUnlocks.SaveSignature(Emu.Options.FsRoot, set.CommId, GuestMemory.ReadSpan(commSign, TrophyUnlocks.SignatureSize).ToArray());
         lock (_contexts)
         {
             ctx.Value = _nextContext;

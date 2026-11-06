@@ -147,6 +147,35 @@ public static class TrophyUnlocks
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Trophy: could not save {path}: {e.Message}"); }
     }
 
+    /// <summary>The set's SceNpCommunicationSignature (0xA0 bytes) as the title passed it (sceNpTrophyCreateContext or
+    /// sceNpInit): ux0:user/00/trophy/&lt;NPCOMMID&gt;.sig. The shell's trophy server checks it when a context is created,
+    /// so installing the set there later (<see cref="TrophyServerBridge.InstallStoredTitles"/>) needs it.</summary>
+    public static string SignaturePathFor(string fsRoot, string commId) => Path.ChangeExtension(PathFor(fsRoot, commId), ".sig");
+
+    public const int SignatureSize = 0xA0;
+
+    public static void SaveSignature(string fsRoot, string commId, byte[] sign)
+    {
+        string path = SignaturePathFor(fsRoot, commId);
+        try
+        {
+            if (File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(sign)) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, sign);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Trophy: could not save {path}: {e.Message}"); }
+    }
+
+    public static byte[]? LoadSignature(string fsRoot, string commId)
+    {
+        try
+        {
+            string path = SignaturePathFor(fsRoot, commId);
+            return File.Exists(path) && File.ReadAllBytes(path) is { Length: SignatureSize } b ? b : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
     /// <summary>SceRtcTick (µs since 0001-01-01 UTC) to a UTC date.</summary>
     public static DateTime TickToUtc(ulong tick) => tick >= (ulong)(DateTime.MaxValue.Ticks / 10) ? DateTime.MaxValue : new DateTime((long)tick * 10, DateTimeKind.Utc);
 }

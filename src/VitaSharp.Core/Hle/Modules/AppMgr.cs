@@ -114,6 +114,7 @@ public sealed partial class AppMgr : HleModule
     {
         // the application of process pid (-1: the caller), read only for its trophy configuration: the shell's trophy
         // server (FW 3.74) installs a set from trophy_sys0:sce_sys/trophy/<NPCOMMID>/TROPHY.TRP
+        300 when pid > 0 && Emu.Vita.TrophyApps.TryGetValue(pid, out var app) => TrophyMount("trophy_sys0", app, mountPoint),
         300 => (pid > 0 ? Emu.Vita.ByPid(pid) ?? Emu : Emu).Vfs.Resolve("app0:sce_sys/trophy") is { } conf && Directory.Exists(conf)
             ? TrophyMount("trophy_sys0", Path.GetDirectoryName(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(conf))), mountPoint)
             : mountPoint == 0 ? ERR_NULL_POINTER : ERR_NOT_FOUND,

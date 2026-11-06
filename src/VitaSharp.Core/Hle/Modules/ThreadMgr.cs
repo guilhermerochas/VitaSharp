@@ -785,7 +785,21 @@ public sealed partial class ThreadMgr : HleModule
         var pipe = K.Objects.All<MsgPipe>().FirstOrDefault(x => x.Name == name && !x.IsDeleted);
         return pipe?.OwnerPid ?? SceError.UNKNOWN_MSG_PIPE_ID;
     }
-    [Hle] int sceKernelOpenMsgPipe(uint name) => KernelInfo.OpenByName<MsgPipe>(K.Objects, name, p => !p.IsDeleted);
+    [Hle]
+    int sceKernelOpenMsgPipe(uint name)
+    {
+        // a system program connecting to the shell's trophy server (Trophy Collection) first gets the titles only
+        // VitaSharp's store knows installed there (games started without the shell)
+        if (!_trophyClient && Emu.IsSystemProgram && !Emu.IsShell && name != 0
+            && GuestMemory.ReadCString(name, 32) == VitaSharp.Core.Hle.Np.TrophyServerBridge.ServerPipe)
+        {
+            _trophyClient = true;
+            new VitaSharp.Core.Hle.Np.TrophyServerBridge(Emu).InstallStoredTitles();
+        }
+        return KernelInfo.OpenByName<MsgPipe>(K.Objects, name, p => !p.IsDeleted);
+    }
+
+    bool _trophyClient;
     [Hle] int sceKernelCloseMsgPipe(int uid) => KernelInfo.CloseHandle<MsgPipe>(K.Objects, uid, SceError.UNKNOWN_MSG_PIPE_ID);
 
     /// <summary>SceKernelMppInfo (0x3C): +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads.</summary>

@@ -19,27 +19,32 @@ namespace VitaSharp.Core.Hle.Np;
 internal sealed class TrophyServerBridge(Emulator emu)
 {
     const string ClientModule = "vs0:sys/external/np_trophy.suprx";
-    const uint NidInit = 0x34516838, NidCreateContext = 0xC49FD33F, NidCreateHandle = 0x4EBC6977, NidUnlock = 0xB397AA24;
+    const uint NidInit = 0x34516838, NidCreateContext = 0xC49FD33F, NidDestroyContext = 0x56F5CBA5, NidDestroyHandle = 0xFF142071, NidTerm = 0xBFE0F28F, NidCreateHandle = 0x4EBC6977, NidUnlock = 0xB397AA24;
     // the internal exports the trophy setup dialog uses to install a set (names unknown)
     const uint NidOpenInstall = 0xD70DAFA7, NidInstall = 0x62E37599, NidInstallProgress = 0x0AC3CEA8, NidCloseInstall = 0x97D19AB6,
         NidOpenInstallHandle = 0x17FB1D9E, NidCloseInstallHandle = 0xFD34F7CF, NidCommit = 0x2B0CC831, NidCommit3 = 0x3AC04020, NidCommit4 = 0x10182F1B;
     const int AlreadyUnlocked = unchecked((int)0x8055160F);
 
     bool _tried, _ready;
-    uint _init, _createContext, _createHandle, _unlock, _openInstall, _install, _installProgress, _closeInstall,
+    uint _init, _createContext, _destroyContext, _createHandle, _unlock, _openInstall, _install, _installProgress, _closeInstall,
         _openInstallHandle, _closeInstallHandle, _commit, _commit3, _commit4, _scratch;
     int _handle;
     readonly Dictionary<string, int> _contexts = new();
 
-    /// <summary>The shell's trophy server is up (its libipmi server pipe exists) and this is an application.</summary>
-    bool ServerRunning => !emu.IsSystemProgram && emu.Vita.Shell != null
-                          && emu.Vita.Objects.All<MsgPipe>().Any(p => p.Name == "SceNpTrophyServerMP");
+    /// <summary>The libipmi server pipe of the shell's trophy server.</summary>
+    internal const string ServerPipe = "SceNpTrophyServerMP";
 
-    bool Attach()
+    /// <summary>The shell's trophy server is up (its libipmi server pipe exists) and this process is one of its possible
+    /// clients: an application, or (<paramref name="system"/>) a system program other than the shell.</summary>
+    bool ServerRunning(bool system) => (system ? emu.IsSystemProgram : !emu.IsSystemProgram)
+                                       && emu.Vita.Shell != null && !ReferenceEquals(emu, emu.Vita.Shell)
+                                       && emu.Vita.Objects.All<MsgPipe>().Any(p => p.Name == ServerPipe);
+
+    bool Attach(bool system = false)
     {
         if (_tried) return _ready;
         _tried = true;
-        if (!ServerRunning || GuestThread.Current is not { } thread) return false;
+        if (!ServerRunning(system) || GuestThread.Current is not { } thread) return false;
         var host = emu.Vfs.Resolve(ClientModule);
         if (host == null || !File.Exists(host)) return false;
         try
@@ -62,6 +67,7 @@ internal sealed class TrophyServerBridge(Emulator emu)
             (_openInstall, _install, _installProgress, _closeInstall) = (Export(NidOpenInstall), Export(NidInstall), Export(NidInstallProgress), Export(NidCloseInstall));
             (_openInstallHandle, _closeInstallHandle) = (Export(NidOpenInstallHandle), Export(NidCloseInstallHandle));
             (_commit, _commit3, _commit4) = (Export(NidCommit), Export(NidCommit3), Export(NidCommit4));
+            _destroyContext = Export(NidDestroyContext);
             if (new[] { _init, _createContext, _createHandle, _unlock, _openInstall, _install, _installProgress, _closeInstall,
                     _openInstallHandle, _closeInstallHandle, _commit, _commit3, _commit4 }.Contains(0u))
             {
@@ -94,6 +100,17 @@ internal sealed class TrophyServerBridge(Emulator emu)
         uint id = commIdAddr != 0 ? _scratch + 0x10 : 0, sign = signAddr != 0 ? _scratch + 0x20 : 0;
         if (id != 0) GuestMemory.Copy(id, commIdAddr, 0x10);
         if (sign != 0) GuestMemory.Copy(sign, signAddr, 0xA0);
+        // without both, the signature the title gave before (sceNpInit or an earlier context): np_trophy takes an
+        // explicit id only with a signature, and the server checks it
+        if ((id == 0 || sign == 0) && TrophyUnlocks.LoadSignature(emu.Options.FsRoot, commId) is { } stored)
+        {
+            (id, sign) = (_scratch + 0x10, _scratch + 0x20);
+            // SceNpCommunicationId: data[9] "NPWR01234", term, num, dummy
+            GuestMemory.Fill(id, 0, 0x10);
+            GuestMemory.WriteCString(id, commId[..9], 10);
+            GuestMemory.Write(id + 10, byte.Parse(commId[10..]));
+            stored.CopyTo(GuestMemory.Span(sign, TrophyUnlocks.SignatureSize));
+        }
         int r = (int)thread.CallGuest(_createContext, _scratch, id, sign, 0, 0, 0);
         if (r < 0) { Log.Warn($"trophy server bridge: context for {commId} = 0x{r:X8}"); return; }
         int ctx = (int)GuestMemory.R32(_scratch);
@@ -102,6 +119,55 @@ internal sealed class TrophyServerBridge(Emulator emu)
         int n = 0;
         foreach (int t in unlocked) if (Unlock(thread, ctx, t)) n++;
         Log.Info($"Trophy server bridge: {commId} installed in the trophy server ({n} unlocked trophies given)");
+    }
+
+    /// <summary>
+    /// A system program (Trophy Collection, NPXS10008) is about to talk to the trophy server: the titles that only have
+    /// VitaSharp's store (ux0:user/00/trophy/&lt;NPCOMMID&gt;.json, games started without the shell) and no data in the server
+    /// (ur0:user/00/trophy/data/&lt;NPCOMMID&gt;) are installed there from this process, each with its unlocked trophies, so
+    /// the program lists them. The server reads each set's TROPHY.TRP through sceAppMgrTrophyMount(300, pid of this
+    /// process), which points at the installed application that ships the set while its context is created, and checks
+    /// the title's signature: only the sets whose signature VitaSharp kept (the title ran once since) can be installed.
+    /// </summary>
+    public void InstallStoredTitles()
+    {
+        string root = emu.Options.FsRoot;
+        string store = Path.Combine(root, "ux0", "user", "00", "trophy"), data = Path.Combine(root, "ur0", "user", "00", "trophy", "data");
+        if (!Directory.Exists(store)) return;
+        var pending = Directory.GetFiles(store, "*.json").Select(Path.GetFileNameWithoutExtension)
+            .Where(id => id is { Length: 12 } && id[9] == '_' && !File.Exists(Path.Combine(data, id, "TRPTITLE.DAT"))
+                         && TrophyUnlocks.LoadSignature(root, id) != null)
+            .Select(id => (Id: id!, App: AppWithSet(root, id!))).Where(t => t.App != null).ToList();
+        if (pending.Count == 0 || !Attach(system: true) || GuestThread.Current is not { } thread) return;
+        foreach (var (id, app) in pending)
+        {
+            var pkg = TrophyPackage.Load(Path.Combine(app!, "sce_sys", "trophy", id, "TROPHY.TRP"), id);
+            if (pkg == null) continue;
+            var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(root, id)).Keys
+                .Where(i => pkg.Trophies.FirstOrDefault(t => t.Id == i) is { } t && t.Grade != TrophyGrade.Platinum).Order().ToList();
+            emu.Vita.TrophyApps[emu.Pid] = app!;
+            try { ContextCreated(id, 0, 0, unlocked); }
+            finally { emu.Vita.TrophyApps.TryRemove(emu.Pid, out _); }
+            // the program only needed the install: its contexts go (the server keeps a few per client)
+            int ctx;
+            lock (_contexts) if (!_contexts.Remove(id, out ctx)) continue;
+            if (_destroyContext != 0) thread.CallGuest(_destroyContext, (uint)ctx);
+        }
+        // and its connection: the program's own one is refused while this process has another
+        // ("Could not restore the trophy information")
+        if (Export(NidDestroyHandle) is var dh and not 0) thread.CallGuest(dh, (uint)_handle);
+        if (Export(NidTerm) is var term and not 0) thread.CallGuest(term);
+    }
+
+    uint Export(uint nid) => emu.Linker.TryGetFunctionExport(nid, out uint a) ? a : 0;
+
+    /// <summary>The installed application (ux0:app/&lt;title id&gt;) that ships trophy set <paramref name="commId"/>.</summary>
+    static string? AppWithSet(string root, string commId)
+    {
+        var apps = Path.Combine(root, "ux0", "app");
+        if (!Directory.Exists(apps)) return null;
+        return Directory.EnumerateDirectories(apps).Order(StringComparer.Ordinal)
+            .FirstOrDefault(a => File.Exists(Path.Combine(a, "sce_sys", "trophy", commId, "TROPHY.TRP")));
     }
 
     /// <summary>The application unlocked <paramref name="trophyId"/> of <paramref name="commId"/>.</summary>

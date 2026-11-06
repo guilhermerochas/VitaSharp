@@ -551,7 +551,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
   crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
   (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
-- [ ] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
+- [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).
   Jogos abertos direto pelo launcher nunca passam pelo servidor do shell, então o app mostra "There are no trophies"
@@ -568,6 +568,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   jogos que passam NULL), instala e dá os troféus do JSON. A dúvida a testar primeiro: se o servidor aceita um contexto
   de outro título vindo de um programa do sistema (ele pode amarrar o contexto ao title id do pid). Validar com uma
   cópia do `ux0:user` e do `ur0` (como em `bugsC12_data`), nunca no %APPDATA%.
+  Migração feita (06/11/2026, fix/bugs-games-13): quando um programa do sistema que não é o shell abre o pipe
+  `SceNpTrophyServerMP` (o Troféus), a ponte roda no processo dele antes: para cada JSON sem
+  `ur0:user/00/trophy/data/<NPCOMMID>/TRPTITLE.DAT`, com o app em `ux0:app` e com a assinatura guardada, o
+  `sceAppMgrTrophyMount(300, pid)` aponta para o app, a ponte cria o contexto, instala, dá os troféus do JSON, apaga o
+  contexto e no fim fecha a própria conexão (com ela aberta o Troféus mostrava "Could not restore the trophy
+  information (NP-10219-3)": o servidor recusa a segunda conexão do mesmo processo). Resposta da dúvida: o servidor
+  aceita o contexto de outro título vindo do Troféus, mas **confere a assinatura** (SceNpCommunicationSignature, 0xA0
+  bytes, magic 0xB9DDE13B; sem ela o np_trophy dá 0x80551604, com zeros o servidor dá 0x8055160B). Ela não pode ser
+  inventada: o HLE agora guarda a que o jogo passa (sceNpTrophyCreateContext ou sceNpInit) em
+  `ux0:user/00/trophy/<NPCOMMID>.sig`, então os jogos jogados antes desta versão precisam abrir uma vez (pelo launcher
+  serve) para aparecer. Validado numa cópia (`scratchpad/bugsC13_out/mc1` grava a assinatura do Minecraft rodando direto,
+  `tro14/t2.png` Troféus com "Minecraft 7%, 0 0 0 5" e `tro15/sheet.png` lista, detalhes e reabertura sem reinstalar).
+  Estranho: durante a migração o shell mostra o aviso "You have earned a trophy!" para cada troféu dado (5 no Minecraft).
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
   (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync
