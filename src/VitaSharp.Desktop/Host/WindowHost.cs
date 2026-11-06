@@ -42,6 +42,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     public event Action? Loaded;
     public event Action? Closing;
+    /// <summary>Asked on the window thread when the user closes the window (X, Alt+F4, WM_CLOSE from the launcher): true
+    /// keeps it open (a "Gravar tudo" recording is still being saved); the owner calls <see cref="Close"/> later.</summary>
+    public Func<bool>? CloseVeto;
     public event Action? Resized;
     /// <summary>F10: "Capturar diagnóstico" (raised on the window thread; the handler must not block).</summary>
     public event Action? DiagnosticRequested;
@@ -118,7 +121,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _windowedSize = opts.Size;
         _fullscreen = fullscreen;
         _window.Load += OnLoad;
-        _window.Closing += () => Closing?.Invoke();
+        _window.Closing += () =>
+        {
+            if (CloseVeto?.Invoke() == true) { _window.IsClosing = false; return; }
+            Closing?.Invoke();
+        };
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
         // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
         _window.Update += _ =>

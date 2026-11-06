@@ -528,6 +528,22 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     void Leave()
     {
         _session?.RecordStatistics();
+        // a "Gravar tudo" recording running or being saved is completed first, with a notice on screen
+        if (_session?.Capture is { } c && (c.IsRecording || !c.Idle.IsSet))
+        {
+            var saving = new AlertDialog.Builder(this)
+                .SetTitle("VitaSharp")!
+                .SetMessage("Salvando a gravação... não feche o app")!
+                .SetCancelable(false)!
+                .Show();
+            new System.Threading.Thread(() =>
+            {
+                while (c.IsRecording && !c.Stop("leaving the game")) System.Threading.Thread.Sleep(250);
+                c.Idle.Wait();
+                RunOnUiThread(() => { saving?.Dismiss(); Finish(); });
+            }) { IsBackground = true, Name = "capture leave" }.Start();
+            return;
+        }
         Finish();
     }
 

@@ -335,7 +335,18 @@ public sealed partial class MainWindow : Window
         if (busy && _runningGame == g)
         {
             var stop = new Button { Content = "Stop", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-            stop.Click += (_, _) => { try { _running?.Kill(true); } catch (InvalidOperationException) { } };
+            // first click: close the game's window (a "Gravar tudo" recording is saved before it closes); a second click
+            // forces the stop
+            bool asked = false;
+            stop.Click += (_, _) =>
+            {
+                try
+                {
+                    if (!asked && _running?.CloseMainWindow() == true) { asked = true; stop.Content = "Forçar parada"; SetStatus("Fechando o jogo (uma gravação em andamento é salva antes)..."); }
+                    else _running?.Kill(true);
+                }
+                catch (InvalidOperationException) { }
+            };
             _details.Children.Add(stop);
         }
         var folder = new Button { Content = "Open game folder", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
@@ -464,7 +475,8 @@ public sealed partial class MainWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        try { _running?.Kill(true); } catch (InvalidOperationException) { }
+        // the game closes its own window: a "Gravar tudo" recording is completed first (killing it lost the recording)
+        try { if (_running?.CloseMainWindow() != true) _running?.Kill(true); } catch (InvalidOperationException) { }
         _installCts?.Cancel();
         _shell?.Dispose();
         base.OnClosing(e);
