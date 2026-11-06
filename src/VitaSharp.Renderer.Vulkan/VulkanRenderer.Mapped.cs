@@ -209,6 +209,7 @@ public sealed unsafe partial class VulkanRenderer
     void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)
     {
         var (src, srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
+        _statMirrorCopyBytes += size;
         EndRendering();
         // shader stores into the mirror (other ranges) and the reads of earlier draws come before the copy
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
@@ -319,6 +320,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(Math.Min(rt.Width, rt.Stride), rt.Height, 1),
         };
+        DevStampOp();
         _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, _mirror, 1, in region); // guest size (VulkanRenderer.ResScale.cs)
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -354,6 +356,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageSubresource = new ImageSubresourceLayers(stencil ? ImageAspectFlags.StencilBit : ImageAspectFlags.DepthBit, 0, 0, 1),
             ImageExtent = new Extent3D(dt.Scale != 1f ? dt.Width : Math.Min(dt.Width, stencil ? dt.StencilStrideBytes : dt.StrideBytes / 4), dt.Height, 1),
         };
+        DevStampOp();
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _mirror, 1, in region);
         Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,

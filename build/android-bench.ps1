@@ -18,6 +18,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
 $remote = "/sdcard/Android/data/$pkg/files/bench"
+& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 $run = Get-Date -Format 'yyyyMMdd_HHmmss'
 $here = Split-Path -Parent $PSScriptRoot
 $fx = @($Fixtures.Split(',') | Where-Object { $_ })
@@ -55,6 +56,8 @@ $results = Join-Path $BenchDir 'results'
 New-Item -ItemType Directory -Force $results | Out-Null
 $tsv = Join-Path $results "$run.tsv"
 adb pull "$remote/results/$run.tsv" $tsv 2>$null | Out-Null
+# stamps=1 runs: the per-op intervals (results/RUN.stamps.tsv)
+adb pull "$remote/results/$run.stamps.tsv" (Join-Path $results "$run.stamps.tsv") 2>$null | Out-Null
 # flicker runs (-Param mode=flicker): one row per run, and the flagged frames' pictures
 $ftsv = Join-Path $results "$run.flicker.tsv"
 adb pull "$remote/results/$run.flicker.tsv" $ftsv 2>$null | Out-Null
@@ -68,3 +71,4 @@ adb shell cat "$remote/results/errors.txt" 2>$null | Select-Object -Last 5
 Write-Host ("$Rounds rounds in {0:F0} s; results $tsv" -f $sw.Elapsed.TotalSeconds)
 if ($Perf) { & $Perf bench table $tsv --base $vs[0] --scenes $Scenes }
 else { dotnet run --project (Join-Path $here 'tools/VitaSharp.PerfTools') -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- bench table $tsv --base $vs[0] --scenes $Scenes }
+& "$PSScriptRoot\android-awake.ps1" stop

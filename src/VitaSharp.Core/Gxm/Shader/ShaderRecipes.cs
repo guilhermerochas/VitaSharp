@@ -12,15 +12,16 @@ namespace VitaSharp.Core.Gxm.Shader;
 public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex, ShaderHints Hints)
 {
     // tag 3 = tag 2 + the output register format (written only when it is set, so other records stay byte-identical)
-    const byte Tag = 2, TagOutputFormat = 3;
+    // tag 4 = tag 2 + the output register format (0 when unset) + the varying mask (vertex shaders with a mask)
+    const byte Tag = 2, TagOutputFormat = 3, TagVaryingMask = 4;
 
     public byte[] Encode()
     {
         var h = Hints;
-        bool outFmt = h.OutputRegisterFormat != 0;
-        var buf = new byte[1 + 1 + 16 + 1 + h.TextureFormats.Length * 4 + 2 + h.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0)];
+        bool mask = h.VaryingMask != 0, outFmt = h.OutputRegisterFormat != 0 || mask;
+        var buf = new byte[1 + 1 + 16 + 1 + h.TextureFormats.Length * 4 + 2 + h.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0) + (mask ? 4 : 0)];
         var s = buf.AsSpan();
-        s[0] = outFmt ? TagOutputFormat : Tag;
+        s[0] = mask ? TagVaryingMask : outFmt ? TagOutputFormat : Tag;
         s[1] = Vertex ? (byte)1 : (byte)0;
         BinaryPrimitives.WriteUInt64LittleEndian(s[2..], ProgramHash);
         BinaryPrimitives.WriteUInt64LittleEndian(s[10..], HintKey);
@@ -40,14 +41,15 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
         // the latter two are unchanged)
         s[o++] = (byte)((h.FetchInputAttachment ? 1 : 0) | (h.TileWord1 ? 2 : 0) | (h.FetchInputSingleSample ? 4 : 0));
         if (outFmt) BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.OutputRegisterFormat);
+        if (mask) BinaryPrimitives.WriteUInt32LittleEndian(s[(o + 4)..], h.VaryingMask);
         return buf;
     }
 
     /// <summary>Null when the record is malformed or its hints no longer produce the recorded key.</summary>
     public static ShaderRecipe? Decode(ReadOnlySpan<byte> s)
     {
-        if (s.Length < 19 || s[0] is not (Tag or TagOutputFormat) || s[1] > 1) return null;
-        int extra = s[0] == TagOutputFormat ? 4 : 0;
+        if (s.Length < 19 || s[0] is not (Tag or TagOutputFormat or TagVaryingMask) || s[1] > 1) return null;
+        int extra = s[0] switch { TagOutputFormat => 4, TagVaryingMask => 8, _ => 0 };
         ulong program = BinaryPrimitives.ReadUInt64LittleEndian(s[2..]), hintKey = BinaryPrimitives.ReadUInt64LittleEndian(s[10..]);
         int o = 18;
         int nt = s[o++];
@@ -66,8 +68,10 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
         uint color = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]); o += 4;
         if (s[o] > 7) return null;
         uint outputFormat = extra != 0 ? BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 1)..]) : 0;
-        if (extra != 0 && outputFormat == 0) return null;
-        var hints = new ShaderHints(tex, attrs, color, (s[o] & 1) != 0, outputFormat, (s[o] & 2) != 0, (s[o] & 4) != 0);
+        if (extra == 4 && outputFormat == 0) return null;
+        uint varyingMask = extra == 8 ? BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 5)..]) : 0;
+        if (extra == 8 && varyingMask == 0) return null;
+        var hints = new ShaderHints(tex, attrs, color, (s[o] & 1) != 0, outputFormat, (s[o] & 2) != 0, (s[o] & 4) != 0, varyingMask);
         // the key is the identity used by every cache: a record whose hints disagree with it is useless
         return hints.Key() == hintKey ? new ShaderRecipe(program, hintKey, s[1] != 0, hints) : null;
     }

@@ -123,8 +123,10 @@ public sealed unsafe partial class VulkanRenderer
         else _afterGpu.Add((seq, destroy));
     }
 
-    void Release(Action destroy, bool now)
+    void Release(Action destroy, bool now, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
     {
+        BumpTexEpoch(0);
+        _releaseSites[site] = _releaseSites.GetValueOrDefault(site) + 1;
         if (now) destroy();
         else DestroyAfterGpu(destroy);
     }

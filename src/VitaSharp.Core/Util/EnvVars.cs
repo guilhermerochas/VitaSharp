@@ -65,6 +65,9 @@ public static class EnvVars
     /// <summary>1/0: draws that sample the depth buffer they test against read it in place, in a fetch pass whose depth
     /// is read-only, instead of a copy that ends the pass (default on tile-based GPUs; VulkanRenderer.SingleFetch.cs).</summary>
     public const string DepthFeedback = "VITASHARP_DEPTH_FEEDBACK";
+    /// <summary>1/0: a vertex shader declares and writes only the varyings its draw's fragment program reads, instead
+    /// of all 13 (VulkanRenderer.Draw.cs, ShaderHints.VaryingMask).</summary>
+    public const string VaryingTrim = "VITASHARP_VARYING_TRIM";
     public const string FirmwarePup = "VITASHARP_FIRMWARE_PUP";
     /// <summary>=1: the Khronos validation layer when it can be found (Android: an APK built with
     /// -p:VitaSharpValidationLayer=path/to/arm64-v8a/libVkLayer_khronos_validation.so); messages go to the log. =sync adds synchronization validation.</summary>
@@ -136,6 +139,11 @@ public static class EnvVars
     public const string Replay = "VITASHARP_REPLAY";
     /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";
+    /// <summary>1: a stage binding the same texture descriptors as an earlier one in the frame reuses its descriptor set (VulkanRenderer.TexSetReuse.cs).</summary>
+    public const string TexSetReuse = "VITASHARP_TEXSET_REUSE";
+    /// <summary>1: reused texture sets live in a pool of their own and survive the frame's pool resets (a stage bound in an
+    /// earlier submit reuses its set after a per-frame check of its memory textures; implies TexSetReuse).</summary>
+    public const string TexSetPersist = "VITASHARP_TEXSET_PERSIST";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
@@ -178,6 +186,10 @@ public static class EnvVars
     public const string Texdirty = "VITASHARP_TEXDIRTY";
     /// <summary>=0: vertex and index data are uploaded for every draw (no cached copies of unchanged ranges).</summary>
     public const string VertexCache = "VITASHARP_VERTEX_CACHE";
+    /// <summary>1: vertex/index ranges below 16 KB are cached too, sub-allocated from large buffers (VulkanRenderer.VertexCache.cs).</summary>
+    public const string VertexCacheSmall = "VITASHARP_VERTEX_CACHE_SMALL";
+    /// <summary>Smallest range VITASHARP_VERTEX_CACHE_SMALL caches, in bytes (default 512).</summary>
+    public const string VertexCacheSmallMin = "VITASHARP_VERTEX_CACHE_SMALL_MIN";
     public const string TraceRt = "VITASHARP_TRACE_RT";
     /// <summary>Directory: draw traces (--trace-draws) also write each draw's uniform blocks there as raw files.</summary>
     public const string TraceUniforms = "VITASHARP_TRACE_UNIFORMS";

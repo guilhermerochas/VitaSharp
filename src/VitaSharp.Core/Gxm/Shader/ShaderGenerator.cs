@@ -16,9 +16,14 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// <param name="FetchInputSingleSample">with <see cref="FetchInputAttachment"/>: the attachment is single-sampled (a
 /// one-sample scene whose programmable-blending draw renders in a render pass, VulkanRenderer.SingleFetch.cs), read
 /// as a plain subpassInput</param>
+/// <param name="VaryingMask">vertex shaders: the varying locations (bits 1-13) the draw's fragment program reads
+/// (<see cref="ShaderGenerator.FragmentVaryingMask"/>); only those are declared and written. 0 = all of them</param>
 public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
-    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false, bool FetchInputSingleSample = false)
+    bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false, bool FetchInputSingleSample = false,
+    uint VaryingMask = 0)
 {
+    /// <summary>Mixed into the key, then <see cref="VaryingMask"/>, when the mask is set (other keys are unchanged).</summary>
+    public const uint VaryingMaskKey = 0x56415259;
     /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
     public const uint FetchInputKey = 0x46494E50;
     /// <summary>Mixed into the key of <see cref="FetchInputSingleSample"/> variants (other keys are unchanged).</summary>
@@ -43,7 +48,8 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
         if (OutputRegisterFormat != 0) h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
         if (FetchInputAttachment) h = Fnv.Mix(h, FetchInputKey);
         if (FetchInputSingleSample) h = Fnv.Mix(h, FetchInputSingleKey);
-        return TileWord1 ? Fnv.Mix(h, TileWord1Key) : h;
+        if (TileWord1) h = Fnv.Mix(h, TileWord1Key);
+        return VaryingMask != 0 ? Fnv.Mix(Fnv.Mix(h, VaryingMaskKey), VaryingMask) : h;
     }
 
     public static class Fnv
@@ -448,7 +454,7 @@ float packC10(vec3 c) {
         if (program.PrimaryInstrCount > 0)
             t.TranslateProgram(ReadCode(program, program.PrimaryProgramStart, (int)program.PrimaryInstrCount), false);
 
-        if (vertex) EmitVertexFinalize(program, t, decl);
+        if (vertex) EmitVertexFinalize(program, t, decl, hints.VaryingMask);
         else EmitFragmentFinalize(program, hints, t, decl, result);
         if (!vertex && FarPlane == FarPlaneClip.Discard)
         {
@@ -1090,8 +1096,39 @@ float packC10(vec3 c) {
 
     static int CopyCount(byte info) => ((info & 1) != 0 ? 2 : 0) + ((info & 2) != 0 ? 1 : 0) + ((info & 4) != 0 ? 1 : 0);
 
-    static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl)
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GxpProgram, System.Runtime.CompilerServices.StrongBox<uint>> VaryingMasks = new();
+
+    /// <summary>
+    /// The varying locations (bit n = location n, 1-13: colour 0/1, fog, texture coordinates 0-9) a fragment program
+    /// declares as inputs: the ones <see cref="EmitFragmentInputs"/> reads (its input descriptors and the coordinates
+    /// of its non-dependent texture reads). 0 when it reads something outside 1-13 (the vertex shader then declares
+    /// everything, as without a mask).
+    /// </summary>
+    public static uint FragmentVaryingMask(GxpProgram program) => VaryingMasks.GetValue(program, p =>
     {
+        uint mask = 0;
+        bool other = false;
+        foreach (var d in p.FragmentAttributeDescriptors())
+        {
+            uint id = d.AttributeInfo & 0x4000F000;
+            if (id != 0xF000 && (id & 0x40000000) == 0 && id != 0xD000)
+            {
+                int loc = id switch { 0xC000 => 3, 0xA000 => 1, 0xB000 => 2, _ => 4 + (int)(id / 0x1000) };
+                if (loc is >= 1 and <= 13) mask |= 1u << loc; else other = true;
+            }
+            uint tc = d.AttributeInfo & 0x40F;
+            if (tc != 0xF && tc != 0x400)
+            {
+                if (tc <= 9) mask |= 1u << (4 + (int)tc); else other = true;
+            }
+        }
+        // (bit 0 marks "computed": a program without varyings still gets a non-zero mask)
+        return new System.Runtime.CompilerServices.StrongBox<uint>(other ? 0 : mask | 1);
+    }).Value;
+
+    static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl, uint varyingMask)
+    {
+        bool Declared(int loc) => varyingMask == 0 || (varyingMask & (1u << loc)) != 0;
         int outputs = program.VertexOutputs(out var coordInfos);
         var list = new List<(int Flag, string Name, int Count, int Loc)>
         {
@@ -1103,9 +1140,11 @@ float packC10(vec3 c) {
         for (int i = 0; i < 10; i++) list.Add((GxpProgram.OutTexcoord0 << i, $"v_TexCoord{i}", CopyCount(coordInfos[i]), 4 + i));
         list.Add((GxpProgram.OutPsize, "gl_PointSize", 1, -2));
 
-        // declare every varying location so any fragment program links
+        // declare every varying location so any fragment program links (with a mask: the ones the draw's fragment
+        // program reads; the others would only cost the vertex shader stores and, on tilers, memory per vertex)
         for (int loc = 1; loc <= 13; loc++)
         {
+            if (!Declared(loc)) continue;
             string name = loc switch { 1 => "v_Color0", 2 => "v_Color1", 3 => "v_Fog", _ => $"v_TexCoord{loc - 4}" };
             decl.AppendLine($"layout(location = {loc}) out vec4 {name};");
         }
@@ -1145,7 +1184,7 @@ float packC10(vec3 c) {
             {
                 t.Line($"gl_PointSize = {t.Load(o, 1).E};");
             }
-            else
+            else if (Declared(loc))
             {
                 t.Line($"{name} = {t.Load(o, 0xF).E};");
                 written.Add(name);
@@ -1155,7 +1194,7 @@ float packC10(vec3 c) {
         for (int loc = 1; loc <= 13; loc++)
         {
             string name = loc switch { 1 => "v_Color0", 2 => "v_Color1", 3 => "v_Fog", _ => $"v_TexCoord{loc - 4}" };
-            if (!written.Contains(name)) t.Line($"{name} = vec4(0.0);");
+            if (Declared(loc) && !written.Contains(name)) t.Line($"{name} = vec4(0.0);");
         }
     }
 }

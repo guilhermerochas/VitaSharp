@@ -165,7 +165,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, GxmVertexStream[]? streams, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
-        bool fetchSingle = false)
+        bool fetchSingle = false, uint varyingMask = 0)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
@@ -175,8 +175,23 @@ public sealed unsafe partial class VulkanRenderer
         if (outputFormat != 0) h = ShaderHints.Fnv.Mix(h, ShaderHints.OutputFormatKey ^ outputFormat);
         if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
         if (fetchSingle) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputSingleKey);
-        return tileWord1 ? ShaderHints.Fnv.Mix(h, ShaderHints.TileWord1Key) : h;
+        if (tileWord1) h = ShaderHints.Fnv.Mix(h, ShaderHints.TileWord1Key);
+        return varyingMask != 0 ? ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(h, ShaderHints.VaryingMaskKey), varyingMask) : h;
     }
+
+    static readonly string? VaryingTrimSetting = Environment.GetEnvironmentVariable(EnvVars.VaryingTrim)?.Trim();
+
+    /// <summary>
+    /// VITASHARP_VARYING_TRIM=1: the vertex shader variant for this draw declares and writes only the varyings its
+    /// fragment program reads (<see cref="ShaderHints.VaryingMask"/>). Without it every vertex shader writes all 13
+    /// vec4 varyings, most of them zero: on a tile-based GPU (Mali IDVS) each one is a store per vertex and memory the
+    /// tiler keeps for the fragment phase (Uncharted's scene vertex shaders: about 20 load/store cycles per vertex, 4 of
+    /// their 13 varyings used). One vertex variant per fragment-input set; the pipelines are per pair already.
+    /// </summary>
+    static readonly bool VaryingTrim = Switch(VaryingTrimSetting, false);
+
+    /// <summary>The <see cref="ShaderHints.VaryingMask"/> of the draw's vertex shader (0: all varyings).</summary>
+    static uint VertexVaryingMask(DrawCommand d) => VaryingTrim ? ShaderGenerator.FragmentVaryingMask(d.FragmentProgram.Info.Program) : 0;
 
     static uint[] TextureFormats(GxmTextureDesc[] tex, uint used)
     {
@@ -266,8 +281,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // hints are only built when a shader really has to be translated (static: no per-draw closure allocation)
-    static ShaderHints VertexHints(DrawCommand d, uint _) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
-        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, AttributeFormatKey(a, d.VertexProgram.Streams))).ToArray(), 0);
+    /// <param name="varyingMask">the draw's <see cref="VertexVaryingMask"/> (the colour-format slot of the hints delegate)</param>
+    static ShaderHints VertexHints(DrawCommand d, uint varyingMask) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
+        d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, AttributeFormatKey(a, d.VertexProgram.Streams))).ToArray(), 0,
+        VaryingMask: varyingMask);
 
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
@@ -328,9 +345,10 @@ public sealed unsafe partial class VulkanRenderer
     {
         var vp = d.VertexProgram;
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
-        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0);
+        uint mask = VertexVaryingMask(d);
+        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: mask);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
-        var me = GetModule(vp.Info.Program, hk, VertexHints, d, 0);
+        var me = GetModule(vp.Info.Program, hk, VertexHints, d, mask);
         e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk, Vp = vp };
         if (me.Gen != null) BuildVertexInput(vp, me.Gen, e);
         _vsCache[(vp, hk)] = e;
@@ -753,6 +771,7 @@ public sealed unsafe partial class VulkanRenderer
             && fs.Gen!.RawColorBits == 0 && fs.Gen.TileWord1 == 0;
         var vSet = BuildTextureSet(_texLayoutV, d.VertexTextures, d.VertexProgram.Info.TexturesUsed, d.VertexProgram.Info.CubeSamplers);
         var fSet = BuildTextureSet(_texLayoutF, d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, d.FragmentProgram.Info.CubeSamplers);
+        ProfMark(ProfPhase.TexSets);
         _feedbackAllowed = false;
         // programmable blending in a multisampled render pass reads the attachment itself (input attachment);
         // raw integer outputs (integer attachment view) and VITASHARP_MSAA_FETCH=copy use a copy of the samples
@@ -914,6 +933,7 @@ public sealed unsafe partial class VulkanRenderer
                 // with rasterization-order attachment access the reads are ordered without barriers (and need no split)
                 if (inputFetch && !_core.RasterizationOrderColor) InputFetchBarrier(cmd);
             }
+            ProfMark(ProfPhase.Begin);
             BeginCostQuery(cmd, d);
             // dynamic state set by an earlier draw holds in this command buffer while only draw pipelines were bound
             // (they all declare the same dynamic state); another pipeline or command buffer starts over
@@ -1002,6 +1022,7 @@ public sealed unsafe partial class VulkanRenderer
         if (data.Length == 0) return new DescriptorBufferInfo(_dummyBuffer, 0, 256);
         ulong align = Math.Max(_core.Properties.Limits.MinStorageBufferOffsetAlignment, 16);
         var (b, off) = UploadSpan(data, align);
+        _statUniformBytes += data.Length;
         return new DescriptorBufferInfo(b, off, (ulong)data.Length);
     }
 
@@ -1184,7 +1205,7 @@ public sealed unsafe partial class VulkanRenderer
             TraceLine(sb.ToString());
             var dir = Path.Combine(capture.Dir, "shaders");
             Directory.CreateDirectory(dir);
-            WriteTraceGlsl(capture, dir, d.VertexProgram.Info.Program, vs.HintKey, vs.Gen, () => VertexHints(d, 0));
+            WriteTraceGlsl(capture, dir, d.VertexProgram.Info.Program, vs.HintKey, vs.Gen, () => VertexHints(d, VertexVaryingMask(d)));
             uint colorFormat = _rt?.ColorFormat ?? 0;
             WriteTraceGlsl(capture, dir, d.FragmentProgram.Info.Program, fs.HintKey, fs.Gen, () => FragmentHints(d, colorFormat));
             return;

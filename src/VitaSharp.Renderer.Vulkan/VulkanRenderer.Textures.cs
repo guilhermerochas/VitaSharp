@@ -141,6 +141,8 @@ public sealed unsafe partial class VulkanRenderer
         public long Serial = -1;
         public int Units;
         public uint Mask;
+        /// <summary>The set came from the persistent texture-set pool (VITASHARP_TEXSET_PERSIST): it may be kept across submits.</summary>
+        public bool Kept;
     }
     readonly TexSetCache _texSetV = new(), _texSetF = new();
 
@@ -196,6 +198,7 @@ public sealed unsafe partial class VulkanRenderer
 
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
+        ProfMark(ProfPhase.TexPre);
         bool vertexStage = layout.Handle == _texLayoutV.Handle;
         int units = vertexStage ? _texUnitsV : _texUnitsF;
         var infos = stackalloc DescriptorImageInfo[16];
@@ -205,6 +208,10 @@ public sealed unsafe partial class VulkanRenderer
         // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
         // races on the phone.
         uint mask = units >= 32 ? used : used & ((1u << units) - 1);
+        if (TexSetReuse && !TexLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused) { ProfMark(ProfPhase.TexHit); return reused; }
+        _reuseOk = TexSetReuse && !TexLookupOld && _drawRing == null;
+        _reuseDeps = 0;
+        _reuseMem = 0;
         if (TexLookupOld) FillTextureInfosOld(infos, textures, used, cubeSamplers, units, vertexStage);
         else for (uint m = mask; m != 0; m &= m - 1)
         {
@@ -224,7 +231,9 @@ public sealed unsafe partial class VulkanRenderer
             var (v, l) = ResolveTextureOrSkip(desc, asCube);
             if (v.Handle != 0) { info.ImageView = v; info.ImageLayout = l; info.Sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
             if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
+            if (_reuseOk) NoteReuseSource(i, v);
         }
+        ProfMark(ProfPhase.TexResolve);
         var cache = vertexStage ? _texSetV : _texSetF;
         if (cache.Serial == _frameSerial && cache.Units == units && cache.Mask == mask && cache.Set.Handle != 0)
         {
@@ -235,9 +244,16 @@ public sealed unsafe partial class VulkanRenderer
                 ref var c = ref cache.Infos[i];
                 same = c.Sampler.Handle == infos[i].Sampler.Handle && c.ImageView.Handle == infos[i].ImageView.Handle && c.ImageLayout == infos[i].ImageLayout;
             }
-            if (same) return cache.Set;
+            if (same)
+            {
+                if (TexSetPersist && !cache.Kept) _reuseOk = false; // a frame-pool set: gone at the next pool reset
+                StoreReusedSet(vertexStage, textures, mask, cubeSamplers, units, cache.Set, infos);
+                return cache.Set;
+            }
         }
-        var set = AllocSet(layout);
+        // a set that will be kept across submits comes from the persistent texture-set pool (VulkanRenderer.TexSetReuse.cs)
+        bool kept = TexSetPersist && _reuseOk;
+        var set = kept ? AllocKeptTexSet(layout) : AllocSet(layout);
         uint n = 0;
         for (int i = 0; i < units; i++)
         {
@@ -250,11 +266,14 @@ public sealed unsafe partial class VulkanRenderer
             cache.Infos[i] = infos[i];
         }
         if (n > 0) _vk.UpdateDescriptorSets(_dev, n, writes, 0, null);
+        ProfMark(ProfPhase.TexAlloc);
         _statDescWrites += n;
         cache.Mask = mask;
         cache.Set = set;
+        cache.Kept = kept;
         cache.Serial = _frameSerial;
         cache.Units = units;
+        StoreReusedSet(vertexStage, textures, mask, cubeSamplers, units, set, infos);
         return set;
     }
 
@@ -366,6 +385,7 @@ public sealed unsafe partial class VulkanRenderer
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             SrcOffset = offset, DstOffset = offset, Extent = extent,
         };
+        DevStampOp();
         _vk.CmdCopyImage(Cmd, src, ImageLayout.General, _fbCopy, ImageLayout.General, 1, in copy);
         Barrier(_fbCopy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -386,6 +406,8 @@ public sealed unsafe partial class VulkanRenderer
         // a 2D texture sampled as a cube: only plain square textures (rendered surfaces keep the dummy cube)
         // _texSrc/_texSrcAddr: which path was taken, for the debug-mode draw ring (VulkanRenderer.DrawRing.cs)
         _texSrcAddr = 0;
+        _texSrcRt = null;
+        _texSrcTex = null;
         if (asCube && (w != h || RenderTargetContaining(addr) != null)) { _texSrc = TexSource.None; return (default, default); }
         if (asCube) { _texSrc = TexSource.MemoryCube; return ResolveMemoryTexture(d, addr, w, h, gamma, asCube); }
         // LOD min on a texture whose base level is a rendered surface: the sampler never reads level 0, it reads the
@@ -432,6 +454,7 @@ public sealed unsafe partial class VulkanRenderer
             // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
             if (target == _rt && _inScene && SamplesOwnTiles(x0, y0, w, h)) rt = SceneStartSource(target);
             _texSrcAddr = target.Address;
+            _texSrcRt = target;
             var sceneStart = rt != target ? TexSource.SceneStart : 0;
             if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias) { _texSrc = TexSource.Reinterpret | sceneStart; return (alias, ImageLayout.ShaderReadOnlyOptimal); }
             if (d.TextureType == GxmTextureDesc.TypeLinear && texRow == rowBytes && x0 + w <= rt.Width && y0 + h <= rt.Height
@@ -457,7 +480,7 @@ public sealed unsafe partial class VulkanRenderer
             var sw = RtSwizzle(rt, d.Format);
             if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
-                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
+                if (rt.SampledView.Handle != 0) { var old = rt.SampledView; BumpTexEpoch(1); DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
                 if (gamma) viewFormat = Formats.Srgb(viewFormat);
                 rt.SampledView = CreateView(rt.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, sw);
@@ -540,6 +563,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         _textures.TryGetValue(key, out var tex);
+        _texSrcTex = tex;
         if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
@@ -628,6 +652,7 @@ public sealed unsafe partial class VulkanRenderer
             (tex.Image, tex.View, tex.Mem) = CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips - lodMin, faces, cube: cube, swizzle: swizzle);
             _textures[key] = tex;
+            _texSrcTex = tex;
             _fNewTextures++;
             if (DebugMode.Enabled) DbgTextureFormat(d, w, h);
         }
@@ -782,6 +807,7 @@ public sealed unsafe partial class VulkanRenderer
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             Extent = new Extent3D(Math.Min(sw, rt.ImgW - sx), Math.Min(sh, rt.ImgH - sy), 1),
         };
+        DevStampOp();
         _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, r.Image, ImageLayout.TransferDstOptimal, 1, in copy);
         Barrier(r.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -833,6 +859,7 @@ public sealed unsafe partial class VulkanRenderer
         if (_rtAliases.TryGetValue(key, out var stale) && (stale.W != aw || stale.H != ah))
         {
             _rtAliases.Remove(key);
+            BumpTexEpoch(2);
             var (si, sv, sm) = (stale.Image, stale.View, stale.Mem);
             DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, sv, null); _vk.DestroyImage(_dev, si, null); _imagePool.Free(sm); });
         }
@@ -865,6 +892,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(geo?.CopyW ?? w, geo?.CopyH ?? h, 1),
         };
+        DevStampOp();
         _vk.CmdCopyBufferToImage(Cmd, _mirror, a.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(a.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -987,6 +1015,7 @@ public sealed unsafe partial class VulkanRenderer
                     ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
                 };
                 // every region may live in a different overflow buffer: submit one copy per region
+                DevStampOp();
                 _vk.CmdCopyBufferToImage(Cmd, buf, tex.Image, ImageLayout.TransferDstOptimal, 1, in r);
             }
         }

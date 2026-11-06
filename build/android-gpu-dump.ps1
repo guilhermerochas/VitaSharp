@@ -17,6 +17,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
+& "$PSScriptRoot\android-awake.ps1" start   # the phone's screen is kept on until the end (build/android-awake.ps1)
 $files = "/sdcard/Android/data/$pkg/files"
 $dump = "$TitleId.vsgd"
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -27,6 +28,7 @@ if ($Pad) { $envLines += "VITASHARP_ANDROID_INPUT=$Pad" }
 $envLines += $ExtraEnv
 Set-Content -Path (Join-Path $Out 'env.txt') -Value $envLines -Encoding ascii
 adb shell am force-stop $pkg
+& "$PSScriptRoot\android-awake.ps1" reopen
 adb shell rm -rf "$files/gpudumps"
 adb push (Join-Path $Out 'env.txt') "$files/config/env.txt" | Out-Null
 adb shell am start -n $activity --es titleId $TitleId | Out-Null
@@ -39,6 +41,7 @@ for ($t = 0; $t -lt $Seconds; $t += 5) {
 adb pull "$files/gpudumps/$dump" (Join-Path $Out $dump) | Out-Null
 adb pull "$files/logs/last.log" (Join-Path $Out 'last.log') | Out-Null
 adb shell am force-stop $pkg
+& "$PSScriptRoot\android-awake.ps1" reopen
 adb shell rm -rf "$files/gpudumps" "$files/config/env.txt"
 $dumpPath = Join-Path $Out $dump
 if (-not (Test-Path $dumpPath)) { throw "no dump recorded (frames $Frames not reached in $Seconds s?)" }
@@ -56,3 +59,4 @@ if ($Desktop) {
     "validation messages: $(@($ids).Count)"
     $ids | Group-Object | Sort-Object Count -Descending | Select-Object -First 10 | ForEach-Object { "{0,7} {1}" -f $_.Count, $_.Name }
 }
+& "$PSScriptRoot\android-awake.ps1" stop

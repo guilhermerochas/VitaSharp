@@ -19,8 +19,7 @@ public sealed class AwakeActivity : Activity
         base.OnCreate(savedInstanceState);
         if (Close()) return;
         Window?.AddFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
-        SetTurnScreenOn(true);
-        SetShowWhenLocked(true);
+        if (OperatingSystem.IsAndroidVersionAtLeast(27)) { SetTurnScreenOn(true); SetShowWhenLocked(true); } // CA1416: API 27
         SetContentView(new global::Android.Widget.TextView(this) { Text = "VitaSharp Dev: tela mantida ligada", TextSize = 16 });
     }
 
