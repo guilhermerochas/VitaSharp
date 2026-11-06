@@ -539,11 +539,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
-- [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
-  chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
-  membros, usings, comentários, `var`; regras num `.editorconfig` com analisadores. Cuidados: o GLSL gerado vem de
-  strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest) e fazer num momento sem
-  outros branches abertos (o diff toca quase todos os arquivos)
+- [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing
+  (https://git.ryujinx.app/projects/Ryubing/src/branch/master/docs/coding-guidelines/coding-style.md; pedido do usuário,
+  06/11/2026, substitui o guia do Google), que segue o estilo do dotnet/runtime: chaves Allman, 4 espaços, campos
+  privados `_camelCase`, estáticos `s_`, `readonly` quando possível, visibilidade sempre explícita, sem `this.`, `usings`
+  no topo fora do namespace (System primeiro), `var` só quando o tipo é óbvio, palavras-chave da linguagem (`int`, não
+  `Int32`), constantes em PascalCase, `nameof`. Ler o guia inteiro antes de começar (a página bloqueia acesso automático:
+  abrir no navegador ou pegar a cópia do repositório) e levar as regras para um `.editorconfig` com analisadores.
+  Cuidados: o GLSL gerado vem de strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o
+  shadertest) e fazer num momento sem outros branches abertos (o diff toca quase todos os arquivos)
 
 ## Bugs em aberto
 
