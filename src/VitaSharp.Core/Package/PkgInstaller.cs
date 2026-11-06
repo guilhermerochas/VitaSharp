@@ -185,6 +185,6 @@ public static class PkgInstaller
                         $"read {readTime.TotalSeconds:N1} s ({Rate(readTime)}), AES-CTR {ctrTime.TotalSeconds:N1} s ({Rate(ctrTime)}), " +
                         $"PFS {pfsTime.TotalSeconds:N1} s ({Rate(pfsTime)}), write {writer.WriteTime.TotalSeconds:N1} s ({Rate(writer.WriteTime)})");
         }
-        reporter.Flush();
+        reporter.Finish();
     }
 }

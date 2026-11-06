@@ -30,7 +30,7 @@ internal sealed class InstallProgressReporter(Action<InstallProgress>? sink, lon
 {
     static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(100);
     readonly Stopwatch _clock = Stopwatch.StartNew();
-    TimeSpan _last = TimeSpan.MinValue;
+    TimeSpan? _last;
     long _done;
 
     public long Done => Interlocked.Read(ref _done);
@@ -41,11 +41,18 @@ internal sealed class InstallProgressReporter(Action<InstallProgress>? sink, lon
         long done = Interlocked.Add(ref _done, bytes);
         if (sink == null) return;
         var now = _clock.Elapsed;
-        if (now - _last < Interval) return;
+        if (_last is { } last && now - last < Interval) return;
         _last = now;
         sink(new InstallProgress(done, total, entry, now));
     }
 
     /// <summary>Reports now, whatever the interval (start and end of the install).</summary>
     public void Flush(string? entry = null) => sink?.Invoke(new InstallProgress(Done, total, entry, _clock.Elapsed));
+
+    /// <summary>Reports the install as complete (the bytes written can be fewer than the total: trimmed padding).</summary>
+    public void Finish()
+    {
+        Interlocked.Exchange(ref _done, total);
+        Flush();
+    }
 }
