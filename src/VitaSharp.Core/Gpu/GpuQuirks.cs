@@ -375,17 +375,19 @@ public static class GpuQuirkTable
             MaxPushConstantsSize = Math.Min(real.MaxPushConstantsSize, 128),
             FramebufferSampleCounts = real.FramebufferSampleCounts & (1 | 2 | 4),
         },
+        // Mali-G57 MC2 on the r54 driver (Redmi Note 14, VulkanCapabilityReport): per-stage descriptor limits 8388608,
+        // 7 descriptor sets, 256 B push constants, framebuffer samples 1/4/8. The older Bifrost-era caps (16 texture
+        // units per stage, 4 sets) made the profile skip draws the real device renders (Uncharted's Drake)
         GpuProfile.Mali => real with
         {
-            MaxPushConstantsSize = Math.Min(real.MaxPushConstantsSize, 128),
-            MaxBoundDescriptorSets = Math.Min(real.MaxBoundDescriptorSets, 4),
-            MaxPerStageDescriptorSamplers = Math.Min(real.MaxPerStageDescriptorSamplers, 16),
-            MaxPerStageDescriptorSampledImages = Math.Min(real.MaxPerStageDescriptorSampledImages, 16),
-            MaxPerStageDescriptorInputAttachments = Math.Min(real.MaxPerStageDescriptorInputAttachments, 8),
-            MaxPerStageResources = Math.Min(real.MaxPerStageResources, 44),
-            MaxDescriptorSetSamplers = Math.Min(real.MaxDescriptorSetSamplers, 768),
-            // Mali framebuffers: 1x and 4x only
-            FramebufferSampleCounts = real.FramebufferSampleCounts & (1 | 4),
+            MaxPushConstantsSize = Math.Min(real.MaxPushConstantsSize, 256),
+            MaxBoundDescriptorSets = Math.Min(real.MaxBoundDescriptorSets, 7),
+            MaxPerStageDescriptorSamplers = Math.Min(real.MaxPerStageDescriptorSamplers, 8388608),
+            MaxPerStageDescriptorSampledImages = Math.Min(real.MaxPerStageDescriptorSampledImages, 8388608),
+            MaxPerStageDescriptorInputAttachments = Math.Min(real.MaxPerStageDescriptorInputAttachments, 8388608),
+            MaxPerStageResources = Math.Min(real.MaxPerStageResources, 8388608),
+            // Mali framebuffers: no 2x
+            FramebufferSampleCounts = real.FramebufferSampleCounts & (1 | 4 | 8),
         },
         _ => real,
     };

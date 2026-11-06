@@ -170,6 +170,8 @@ public static class Runner
             if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = "Salvando a gravação... não feche a janela";
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
+        // errors stay longer than the short confirmations (a refused save state was gone before it could be read)
+        void ShowStatus(string s, int ms) { Volatile.Write(ref status, s); Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + ms); ShowTitle(); }
         var titleTimer = new System.Threading.Timer(_ =>
         {
             long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
@@ -180,7 +182,7 @@ public static class Runner
         }, null, 1000, 1000);
         var diag = new Diagnostics(emu, () => renderer, options)
         {
-            Status = s => { Volatile.Write(ref status, s); Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + 6000); ShowTitle(); },
+            Status = s => ShowStatus(s, 6000),
             HostInfo = () => $"Window: framebuffer {window.FramebufferSize.Width}x{window.FramebufferSize.Height}, scale option {Opt(options, "--scale") ?? "1"}, fullscreen at start {options.Contains("--fullscreen")}",
         };
         // trophy unlocks: a card in the top-right corner of the window (renderer overlay) and a notice in the title bar,
@@ -229,7 +231,7 @@ public static class Runner
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
-        var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status);
+        var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status, s => ShowStatus(s, 15000));
         window.SaveStateKey += slot => { capture.Capture.NoteKey(slot < 0 ? "F6" : "F5"); if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
         window.LoadStateKey += slot => { capture.Capture.NoteKey("F7"); states.LoadAsync(slot == 0 ? 0 : states.Slot); };
         states.StartScheduled(options);

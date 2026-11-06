@@ -62,7 +62,7 @@ public sealed partial class EmulationSession
         catch (Exception e) when (e is SnapshotException or IOException)
         {
             Log.Warn($"Load state: {e.Message}");
-            return $"Não foi possível carregar o estado: {e.Message}";
+            return e is SaveStateIncompatibleException ? e.Message : $"Não foi possível carregar o estado: {e.Message}";
         }
     }
 }

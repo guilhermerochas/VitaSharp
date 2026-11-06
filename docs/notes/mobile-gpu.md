@@ -44,7 +44,7 @@ are queried so the log and info.txt say what the device has, and are never enabl
 | `VK_EXT_rasterization_order_attachment_access` / `VK_ARM_...` | programmable blending in MSAA render passes | input attachment + by-region barrier per draw, small draws split per triangle (as before). With it: the subpass and pipelines declare rasterization-order colour access, no barriers, no splitting. Not present on the GTX 1650 / Iris Xe: **untested** |
 | `VK_EXT_memory_budget` | eviction under memory pressure, VRAM logs | pressure = renderer bytes / 80% of the largest device heap; 50% on mobile/unified-memory devices (`ConservativeMemoryBudget`: Android kills apps before the heap is full) |
 | `maxPushConstantsSize` | 32 bytes of push constants | 128 is the Vulkan minimum: always fits |
-| per-stage samplers / sampled images, `maxDescriptorSetSamplers` | 16 vertex + 16 fragment texture units + 2 framebuffer-fetch samplers | fewer units bound (Mali Bifrost: 16 per stage = 16 vertex, 14 fragment); a draw whose program samples a missing unit is skipped with a warning |
+| per-stage samplers / sampled images, `maxDescriptorSetSamplers` | 16 vertex + 16 fragment texture units + 2 framebuffer-fetch samplers | fewer units bound (the Mali-G57 reports 8388608 per stage, so it binds all of them); a draw whose program samples a missing unit is skipped with a warning |
 | `maxBoundDescriptorSets` | 4 sets | 4 is the Vulkan minimum: always fits |
 | `geometryShader`, `logicOp`, 16-bit storage, `shaderInt16` | not used (GXM has no logic op; the generator packs halves with `packHalf2x16`) | - |
 | `depthClamp` | GXM does not clip at the near plane | the near plane clips (as before) |

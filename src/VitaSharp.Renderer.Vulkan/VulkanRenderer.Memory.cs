@@ -388,6 +388,7 @@ public sealed unsafe partial class VulkanRenderer
                 f.Deferred.Clear();
                 foreach (var (b, m) in f.Overflow) _core.DestroyBuffer(b, m);
                 f.Overflow.Clear();
+                (f.OverflowChunk, f.OverflowPtr, f.OverflowOffset) = (default, 0, OverflowChunkSize);
             }
             // 2. evict least recently used caches; level 1 takes everything the recording frame does not use
             ulong freed = level == 0

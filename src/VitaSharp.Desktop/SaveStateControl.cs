@@ -12,7 +12,7 @@ namespace VitaSharp.Desktop;
 /// test steps --save-state=fN[,fN...] and --load-state-at=fN[,fN...] (loads the last state this run saved).
 /// States live in &lt;data&gt;/savestates/&lt;TITLEID&gt;/ with a small picture of the screen.
 /// </summary>
-sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuBackend?> backendFactory, Action<string>? status)
+sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuBackend?> backendFactory, Action<string>? status, Action<string>? error = null)
 {
     int _slot = 1;
     string? _lastSaved;
@@ -53,7 +53,7 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         catch (SnapshotException e)
         {
             Log.Warn($"Save state: {e.Message}");
-            status?.Invoke($"Não foi possível salvar o estado: {e.Message}");
+            (error ?? status)?.Invoke($"Não foi possível salvar o estado: {e.Message}");
             return false;
         }
     }
@@ -70,7 +70,7 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         catch (Exception e) when (e is SnapshotException or IOException)
         {
             Log.Warn($"Load state: {e.Message}");
-            status?.Invoke($"Não foi possível carregar o estado: {e.Message}");
+            (error ?? status)?.Invoke(e is SaveStateIncompatibleException ? e.Message : $"Não foi possível carregar o estado: {e.Message}");
             return false;
         }
     }

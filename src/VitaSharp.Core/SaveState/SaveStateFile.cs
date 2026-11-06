@@ -88,16 +88,25 @@ public static class SaveStateFile
         return ReadHeader(f);
     }
 
-    /// <summary>Why a state with this header cannot be loaded into the running build and title, or null.</summary>
+    /// <summary>Why a state with this header cannot be loaded into the running build and title, or null. Shown to the
+    /// user as is (title bar, launcher tooltip, Android notice), so in Portuguese like the rest of the UI.</summary>
     public static string? Incompatibility(SaveStateHeader h, string titleId)
     {
         if (h.FormatVersion != FormatVersion)
-            return $"the save state uses format {h.FormatVersion} (VitaSharp {h.EmulatorVersion}); this build reads format {FormatVersion}";
+            return $"Este estado foi salvo por outra versão do VitaSharp ({ShortVersion(h.EmulatorVersion)}) e não pode ser carregado (formato {h.FormatVersion}; esta versão lê o formato {FormatVersion})";
         if (h.Schema != SnapshotSchema.Hash)
-            return $"the save state was written by an incompatible VitaSharp build ({h.EmulatorVersion}); its emulator state layout differs from this build's";
+            return $"Este estado foi salvo por outra versão do VitaSharp ({ShortVersion(h.EmulatorVersion)}) e não pode ser carregado";
         if (!string.Equals(h.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
-            return $"the save state belongs to {h.TitleId} ({h.Title}), not to the running game {titleId}";
+            return $"Este estado é de outro jogo ({h.TitleId} {h.Title}) e não pode ser carregado em {titleId}";
         return null;
+    }
+
+    /// <summary>"1.0.0+60d6517ede5e..." as "1.0.0+60d6517": the build's commit, short enough for a title bar.</summary>
+    static string ShortVersion(string? v)
+    {
+        if (string.IsNullOrEmpty(v)) return "versão desconhecida";
+        int plus = v.IndexOf('+');
+        return plus >= 0 && v.Length > plus + 8 ? v[..(plus + 8)] : v;
     }
 }
 
@@ -143,7 +152,7 @@ public sealed class SaveStateReader : IDisposable
     {
         Header = SaveStateFile.ReadHeader(input);
         if (Header.FormatVersion != SaveStateFile.FormatVersion)
-            throw new SnapshotException(SaveStateFile.Incompatibility(Header, Header.TitleId)!);
+            throw new SaveStateIncompatibleException(SaveStateFile.Incompatibility(Header, Header.TitleId)!);
         _z = new BrotliStream(input, CompressionMode.Decompress, leaveOpen: true);
     }
 

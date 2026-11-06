@@ -42,6 +42,10 @@ public sealed class SnapshotIgnoreFieldsAttribute(params string[] names) : Attri
 /// <summary>A save or load that cannot be done; the message is meant for the user.</summary>
 public class SnapshotException(string message) : Exception(message);
 
+/// <summary>A save state of another VitaSharp build, format or game (<see cref="SaveStateFile.Incompatibility"/>): its
+/// message is a complete sentence for the user.</summary>
+public sealed class SaveStateIncompatibleException(string message) : SnapshotException(message);
+
 /// <summary>Thrown while a state is written when some transient work is in flight (a frame in a queue): the save
 /// resumes the emulation for a moment and tries again.</summary>
 public sealed class SnapshotRetryException(string message) : SnapshotException(message);

@@ -175,9 +175,10 @@ public sealed class GpuQuirkTests
         Assert.True(c.Has(GpuQuirk.FarPlaneDiscard));
         Assert.False(c.Has(GpuFeature.TextureCompressionBC));
         Assert.False(c.Has(GpuFeature.FillModeNonSolid));
-        Assert.Equal(16u, c.Limits.MaxPerStageDescriptorSamplers);
-        Assert.Equal(4u, c.Limits.MaxBoundDescriptorSets);
-        Assert.Equal(1u | 4, c.Limits.FramebufferSampleCounts);
+        // the real device's limits: no texture-unit cap (Nvidia's own limits win), 7 sets, no 2x framebuffers
+        Assert.Equal(1048576u, c.Limits.MaxPerStageDescriptorSamplers);
+        Assert.Equal(7u, c.Limits.MaxBoundDescriptorSets);
+        Assert.Equal(1u | 4 | 8, c.Limits.FramebufferSampleCounts);
         Assert.True(c.Has(GpuQuirk.Msaa2xAs4x));
         Assert.False(c.Has(GpuQuirk.StaticExtendedDynamicState));
     }

@@ -52,7 +52,11 @@ public sealed unsafe class UniformChunk
 public static class UniformArena
 {
     public const int ChunkSize = 1 << 20;
-    const int MaxFreeChunks = 16; // spare managed chunks kept after a burst of queued work (16 MB)
+    // spare managed chunks kept after a burst of queued work (64 MB). Counted apart from the heap's chunks: with the
+    // 48 heap chunks on the same stack the old bound of 16 kept none, so a game past the heap (Jak 1's title screen,
+    // ~27 MB of uniforms a frame) allocated a new 1 MB array per chunk, ~20 MB a frame and a gen 2 GC almost every frame
+    const int MaxFreeChunks = 64;
+    static int _freeManaged;
     static readonly object Lock = new();
     static readonly Stack<UniformChunk> Free = new();
     static readonly List<UniformChunk> HeapChunks = new();
@@ -82,6 +86,7 @@ public static class UniformArena
             if (_heap == heap) _heap = null;
             foreach (var c in HeapChunks) if (c.Heap == heap) c.Detach();
             HeapChunks.RemoveAll(c => c.Heap == null);
+            _freeManaged = Free.Count(c => c.Heap == null);
         }
     }
 
@@ -116,7 +121,7 @@ public static class UniformArena
 
     static UniformChunk NewChunk()
     {
-        if (Free.Count > 0) { var f = Free.Pop(); f.InFree = false; return f; }
+        if (Free.Count > 0) { var f = Free.Pop(); f.InFree = false; if (f.Heap == null) _freeManaged--; return f; }
         if (_heap is { } h && h.Alloc(out int id) is var p and not 0)
         {
             var hc = new UniformChunk(p, ChunkSize, h, id);
@@ -154,6 +159,7 @@ public static class UniformArena
     {
         if (c.InFree) return;
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
-        if (c.Heap != null || Free.Count < MaxFreeChunks) { c.InFree = true; Free.Push(c); }
+        if (c.Heap != null) { c.InFree = true; Free.Push(c); }
+        else if (_freeManaged < MaxFreeChunks) { c.InFree = true; Free.Push(c); _freeManaged++; }
     }
 }
