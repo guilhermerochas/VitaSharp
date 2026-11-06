@@ -59,14 +59,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     (usar `[InterpolatedStringHandler]`/checar o nível antes), LINQ e lambdas que alocam por quadro, `ToString()` de
     enums em logs; medir com o contador de alocações (`PERF allocated`) e zerar o que for por quadro
   - [ ] Backend IL do JIT (único uso real de `Reflection.Emit`): manter só onde não há JIT nativo e documentar
-- [ ] Instalação de `.pkg` + `work.bin` muito lenta no build Native AOT do desktop (relato do usuário, 31/10/2026: a
-  "transferência de arquivos" demora demais): medir a vazão em MB/s do `PkgInstaller` no pacote AOT contra o build
-  JIT do mesmo commit, por etapa (leitura do `.pkg`, descriptografia AES-CTR com a klicensee, PFS/arquivos,
-  gravação em `ux0:app`). O AES-CTR (`AesUtil.Ctr`) já cifra em lotes de 64 KB com o AES do sistema, mas monta os
-  contadores bloco a bloco num laço e faz o XOR à parte (`XorInPlace`; ver se está vetorizado no AOT); o `Extract`
-  lê em blocos de 1 MB sem sobrepor leitura, decifra e gravação. Corrigir com base na medição: contadores e XOR
-  vetorizados (ou CTR inteiro com `Vector128`/AES-NI), leitura/decifra/gravação em paralelo, sem cópias extras e com
-  barra de progresso; meta: perto da velocidade do disco
+- [x] Instalação de `.pkg` + `work.bin` muito lenta no build Native AOT do desktop (relato do usuário, 31/10/2026).
+  Medido com o WRC 4 (1,5 GB, 195 arquivos PFS): o AOT não tinha caminho lento próprio (CPU 2,7-3,8 s no AOT, 4,7 s
+  no JIT); o tempo era E/S. O pacote era extraído ainda cifrado em PFS e cada arquivo era relido e regravado no
+  lugar setor a setor (32 KB por leitura/gravação com seek): 3 passadas no disco, 10-56 s no AOT conforme a carga e
+  o cache (a fase PFS sozinha 8-30 s). Agora files.db/unicv.db são lidos antes, cada arquivo é casado com sua
+  tabela pelo 1º setor e lido, decifrado (CTR + PFS) e gravado uma vez em blocos de 4 MB, com a gravação numa
+  thread própria (pré-alocada, sem buffer) enquanto o próximo bloco é lido; threads abaixo do normal. AOT depois:
+  1,7-6,8 s (leitura ~3,1 GB/s, AES-CTR ~4 GB/s, PFS ~8,5 GB/s; a gravação, 240-1160 MB/s, é o limite). Arquivos
+  instalados idênticos (SHA-256 dos 207 arquivos). VPK no mesmo pipeline; progresso com MB/s e tempo restante no
+  launcher e no Android, no máximo a cada 100 ms
 - [ ] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
