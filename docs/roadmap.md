@@ -23,6 +23,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   visto na janela), F7 mostra "Não foi possível carregar o estado: <motivo>" na barra de título; o launcher desabilita o slot com o
   motivo na dica; no Android o motivo vai num aviso (toast). Falta: o motivo está em inglês e a barra de título some
   em 6 s; e o formato não é tolerante: qualquer campo novo num objeto salvo (ex. 9482b0f) invalida todos os estados
+  Aviso corrigido (agente C dia 6, fix/bugs-games-6): em português ("Este estado foi salvo por outra versão do
+  VitaSharp (1.0.0+57c57b1) e não pode ser carregado", idem para formato e jogo diferentes), sem o prefixo repetido, e
+  os erros de estado ficam 15 s na barra de título (os avisos curtos continuam 6 s). Visto no `--load-state` sem janela
+  (`scratchpad/bugsC6_out/ss_old/log.txt`); a barra de título não foi vista na janela
 - [ ] Interface: slots por jogo com miniatura, atalhos (salvar/carregar rápido) e menu de pausa
 - [ ] Uso em diagnóstico: o jogador salva o estado no momento do problema e manda junto com a captura
 
@@ -84,6 +88,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   os limites reais no log do celular e ajustar o perfil). Não tem relação com o pisca das plantas (a grama não usa
   essas unidades e não pisca no replay). (2) Um de três replays com `--gpu-profile=desktop` deu `ErrorDeviceLost` no
   vkQueueSubmit; os outros dois passaram (PC dividido com outros agentes; não reproduz)
+  Agente C dia 6 (05/11/2026, fix/bugs-games-6): (1) **corrigido** o perfil: agora usa os limites que o Mali-G57 r54
+  reporta (8388608 por estágio, 7 sets, 256 B de push constants, 1/4/8 amostras); replay com `--gpu-profile=mali`: 0
+  desenhos pulados (eram 3040), diferença média máxima contra o desktop 0,110 (era 2,339), Drake inteiro
+  (`scratchpad/bugsC6_out/mali_drake_4037.png`: main mali / novo mali / desktop); desktop 151/151 quadros idênticos à
+  main. (2) DeviceLost: 0 em 5 replays com `--gpu-profile=desktop` (2 builds, 3 com cache de shaders vazio,
+  `bugsC6_out/plants_ref_desk`, `plants_new_desk`, `plants_dl3..5`); o da rodada anterior foi no 1º present, depois
+  de 1335 ms de compilação de shaders no mesmo quadro, com a CPU dividida (provável TDR do driver); não reproduz
 - [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
@@ -531,6 +542,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   F1 2011 (menus, 25-60 fps) p50 38,9/38,4, p99 64/76; Uncharted (menu) 59,9/59,3 fps, p90 17,6/18,4, >25 ms 3 x 25
   (`bugsC5_out/dd_boot_*`, `f1_menu_*`, `uc_menu_*`). Ainda abertos: (1) o boot (~5 s até o 1º quadro, ~20 s em 2
   núcleos) e (2) a troca de tela (f560-780, `bugsB3_out/blind_tr`)
+  Agente C dia 6 (05/11/2026): (2) a troca de tela é a transição do Ren'Py: o menu some de uma vez (602 → 603), 16
+  quadros pretos (~0,5 s) e um fade-in da cena nova (619-640, sem defeito de textura sem janela,
+  `scratchpad/bugsC6_out/blind_tr_4.png`). O preto é o fade-out que deveria mostrar o menu escurecendo: no dump
+  `bugsC6_out/blind_fade2.vsgd` (presents 598-604, trace `blind_fade2_tr/trace_603`) o jogo desenha uma textura 32x32
+  (0x612656F0/0x612666F0, preta com alfa médio 0,14) em dois alvos 960x540 (0x62CE6950, 0x62EE4950) e depois compõe os
+  dois (fs 1EB8007BE57CDB61, blend 1/1/5): os dois saem pretos, e o menu (que está em 0x60E6C680) não entra na
+  composição. Falta ver de onde a textura 32x32 deveria vir (cópia do menu? textura enviada pela CPU?). (1) Boot: 5 s
+  até o 1º quadro com o PC ocioso (`bugsC6_out/blind_fade2/log.txt`; ~2,2 s em `main` entre o `Preload` e o thread
+  `preloader`, o init do Python do Ren'Py); com a CPU dividida passa de 30 s (watchdog STALL em `blind_fade`); falta
+  o tempo do Vita real para comparar
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -801,6 +822,30 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   e o callback (lr 0x810411B3) lê o 3 de outro lugar; provavelmente o tempo medido do quadro, que inclui a espera na
   fila cheia, então uma vez em 3 se mantém. No Vita o Jak 1 roda a 30. Próximo: `--watch-read` no callback para achar
   a variável do intervalo e quem a escreve
+- [ ] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
+  (a) **Tela de título lenta: corrigido o grosso** (0,4-2,5 fps → 10-12 fps, alocação 19-55 MB → 0,2 MB/quadro). Cada
+  quadro tem ~6300 desenhos com 16 KB de uniforms de vértice (27 MB/quadro): passava do heap de uniforms (48 MB), o
+  `UniformArena` não guardava nenhum bloco gerenciado de reserva (o limite de 16 contava os 48 do heap) e alocava 1 MB
+  novo por bloco (GC gen 2 quase todo quadro); o anel de upload de 64 MB estourava e cada upload seguinte criava um
+  buffer próprio (vkAllocateMemory), e os anéis de vértices de 16 KB+ reescritos pela CPU ganhavam um buffer novo por
+  reescrita (dotnet-trace no replay: CreateHostBuffer 752 ms e DestroyBuffer 994 ms de 3,4 s). Agora: blocos de
+  overflow de 16 MB, faixas voláteis pelo anel, reservas gerenciadas contadas à parte (`bugsC6_out/jak1_2x.log` x
+  `jak1_2x_new.log` x `jak1_2x_new2.log`). O que sobra (10-12 fps, `jak1_prof_new.log`): `pacing` 58 ms/quadro, a CPU
+  emulada no modelo de ciclos: F3DPlaybackThread 9,1 M ciclos de guest + 11,8 M de HLE cobrados por quadro (9568
+  `sceGxmSetVertexStream`, 5177 `sceGxmDraw` e `ReserveVertexDefaultUniformBuffer`), mais que um quadro a 30 fps;
+  ver se o custo cobrado por chamada de HLE do GXM é realista (modelo de tempo, fora do escopo). (b) **Logo da
+  Naughty Dog não aparece**: não é a entrada (sem o 3º Cross, f1600, é igual: `bugsC3_data/tests/jak1_2x/sheet_2.png`,
+  `sheet_3.png`); no dump do trecho preto (`bugsC6_out/jak_black.vsgd`, presents 1940-1944, trace em `jak_black_tr`)
+  o jogo emite 19 desenhos por quadro, incluindo malhas 3D (5901, 14568, 3300 vértices) com texturas pequenas (4x4 a
+  256x64), mas o alvo já está todo preto depois do desenho 9 (`--draw-limit=2/9/16@1942`, `jak_black_l*`): a cena
+  sai preta, provavelmente um fade/cor do próprio jogo que não avança, como o Daxter parado (quadros idênticos
+  1840-1904). Nos quadros do Daxter parado o ISO só faz `DelayThread(1000)` (nenhuma leitura de arquivo,
+  `bugsC3_data/tests/jak1_hle/log.txt`). Próximo: ver de onde o GOAL tira o tempo das animações (relógio/vblank) nesse
+  trecho. (c) **De onde vem o 3**: o callback da fila de display (0x81041126 no Jak1.self) lê o intervalo da palavra +4
+  dos dados do callback (`ldr r0,[r4,#4]`, compara com 2 e 3) e chama `sceDisplayWaitSetFrameBufMulti(r0)`: o valor
+  vem do jogo em cada `sceGxmDisplayQueueAddEntry`. Não achei quem o escreve (o endereço do dia 5, 0x86A92F00, não
+  é o desta sessão; o trace de HLE não mostrou o AddEntry). Provável: o jogo escolhe 3 vblanks porque o quadro dele
+  passa de 33 ms (item a: pacing)
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -1045,6 +1090,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   módulo player. 6200 quadros com o save do usuário: 6283 avisos antes, 0 depois
 
 - [ ] Zero Time Dilemma (PCSE00781; no Vita3K trava no boot): 40 dos 105 shaders de fragmento leem o registrador global G16 (banco especial com o bit 0x40), que o tradutor USSE não conhece e troca por 0 (aviso `load from unsupported bank Global register 16`; 31/10/2026, branch fix/ztd, `shadertest PCSE00781`). As cenas parecem corretas, mas falta descobrir o que é o G16 (o Vita3K também não trata o banco GLOBAL). O jogo agora passa do boot (sceGxmColorSurfaceInit com data NULL) e roda as cenas da história a 30 fps; também aparecem `scene without colour surface` e um render target 1024x1024 amostrado enquanto é desenhado perto do quadro 6200
+  Agente C dia 6 (05/11/2026): **menu do título sem regressão**: 59,8 fps, p50 16,68 ms, 6 de 299 intervalos acima de
+  17,5 ms com o PC ocioso (`scratchpad/bugsC6_out/ztd_menu.log`, `bugsC3_data/tests/ztd_menu/sheet.png`); os 47-57 eram
+  CPU dividida. G16: `shadertest --warnings` ainda dá 40x `load from unsupported bank Global register 16`; em todos os
+  40 o G16 só aparece num `VTST` contra os 16 bits de baixo de um uniform (`p0 = G16 != sa[8].y & 0xFFFF`) e o
+  predicado guarda uma cópia de registradores (`VMOV r1 = pa0`) antes da iluminação (`07a17b44508ff793.frag`): com
+  G16 = 0 o jogo sempre segue um dos lados. Próximo: um dump de GPU numa cena com esses shaders e forçar outros valores
+  para ver qual lado é o certo
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
