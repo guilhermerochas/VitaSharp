@@ -158,7 +158,7 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
         uint country = Alloc(4, 0xCC), lang = Alloc(4, 0xCC);
         Assert.Equal(0, Call(np, "sceNpManagerGetAccountRegion", country, lang));
         Assert.Equal("us", GuestMemory.ReadCString(country, 4));
-        Assert.Equal(1u, GuestMemory.R32(lang)); // English (US), the system language
+        Assert.Equal((uint)VitaSharp.Core.Firmware.SystemLanguage.Host, GuestMemory.R32(lang)); // the system language
 
         // a server request: the ticket never arrives
         Assert.Equal(HTTP_NETWORK, Call(np, "sceNpAuthGetTicket", 1, Alloc(16), 16u));
