@@ -7,7 +7,7 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Desktop;
 
 /// <summary>
-/// Recording side of the GPU dump (see docs/notes/gpu-dump.md): F8 in the game window starts and stops a recording,
+/// Recording side of the GPU dump (see docs/notes/gpu-dump.md): Ctrl+F8 in the game window starts and stops a recording,
 /// <c>--gpu-dump-at=F1:F2[:file]</c> (or VITASHARP_GPU_DUMP_AT) records frames F1..F2 of a run. Dumps go to
 /// &lt;DataRoot&gt;/gpudumps/&lt;TITLEID&gt;_&lt;yyyyMMdd_HHmmss&gt;.vsgd unless a file is given.
 /// </summary>
@@ -15,7 +15,7 @@ static class GpuDumpControl
 {
     public static string Root => Path.Combine(Program.DataRoot, "gpudumps");
 
-    /// <summary>Frames recorded by F8 before the recording stops by itself (~60 s at 30 fps).</summary>
+    /// <summary>Frames recorded by Ctrl+F8 before the recording stops by itself (~60 s at 30 fps).</summary>
     const long InteractiveMaxFrames = 1800;
 
     static string NewPath(Emulator emu)
@@ -56,13 +56,13 @@ static class GpuDumpControl
         return h;
     }
 
-    /// <summary>F8: starts a recording at the next present, or stops the running one at the next present.</summary>
+    /// <summary>Ctrl+F8: starts a recording at the next present, or stops the running one at the next present.</summary>
     public static void Toggle(Emulator emu, Func<VulkanRenderer?> renderer, string[] options, Action<string>? status, Func<string>? hostInfo)
     {
         if (GpuDumpRecorder.Current is { } active)
         {
             active.Stop();
-            Log.Info($"[gpudump] F8: stopping after {active.FramesRecorded} frames");
+            Log.Info($"[gpudump] Ctrl+F8: stopping after {active.FramesRecorded} frames");
             status?.Invoke("Salvando dump da GPU...");
             return;
         }
@@ -79,7 +79,7 @@ static class GpuDumpControl
             Header = BuildHeader(emu, renderer, options, hostInfo),
             StartAfterPresent = startAfter,
             MaxFrames = frames,
-            Started = _ => status?.Invoke("Gravando dump da GPU (F8 para parar)"),
+            Started = _ => status?.Invoke("Gravando dump da GPU (Ctrl+F8 para parar)"),
             Finished = r => status?.Invoke(r.Error != null ? $"Falha ao gravar o dump da GPU: {r.Error}"
                 : $"Dump da GPU salvo: {r.Path} ({r.Frames} quadros, {r.FileBytes / 1048576.0:F0} MB)"),
         };

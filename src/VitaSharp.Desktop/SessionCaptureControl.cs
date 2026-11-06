@@ -8,7 +8,7 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Desktop;
 
 /// <summary>
-/// "Gravar tudo" on the desktop (docs/notes/session-capture.md): Ctrl+F8 starts and stops a session capture into
+/// "Gravar tudo" on the desktop (docs/notes/session-capture.md): F8 starts and stops a session capture into
 /// &lt;data&gt;/captures/&lt;TITLEID&gt;_&lt;date&gt;_tudo/ (+ .zip). The pre-roll is armed by --capture-preroll[=SECONDS]
 /// (launcher "Pré-gravação"), VITASHARP_CAPTURE_PREROLL, or debug mode (F9 / --debug-mode: 10 s). --capture-at=A:B
 /// records guest frames A..B (tests). The re-run side: <c>rerun DIR</c> and --capture-playback.

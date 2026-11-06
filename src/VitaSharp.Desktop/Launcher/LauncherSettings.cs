@@ -23,7 +23,7 @@ public sealed class LauncherSettings
     public bool BackgroundShaderCompile { get; set; } = true;
     /// <summary>"Modo de depuração": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
     public bool DebugMode { get; set; }
-    /// <summary>"Pré-gravação": Ctrl+F8's session capture keeps the seconds before it was pressed (--capture-preroll,
+    /// <summary>"Pré-gravação": F8's session capture keeps the seconds before it was pressed (--capture-preroll,
     /// docs/notes/session-capture.md).</summary>
     public bool CapturePreRoll { get; set; }
     /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on, the default) or

@@ -44,8 +44,8 @@ public sealed class SessionCaptureOptions
     public int EncoderQueueFrames = 120;
     /// <summary>Recording parts (a re-run records without a state or a GPU dump).</summary>
     public bool StartState = true, GpuDump = true, Zip = true;
-    /// <summary>Hotkey name in the messages ("Ctrl+F8"; Android: the pause menu).</summary>
-    public string StopHint = "Ctrl+F8 para parar";
+    /// <summary>Hotkey name in the messages ("F8"; Android: the pause menu).</summary>
+    public string StopHint = "F8 para parar";
 }
 
 /// <summary>
@@ -388,7 +388,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     // ------------------------------------------------------------------ start / stop
 
-    /// <summary>Ctrl+F8 / the pause menu: starts a recording, or stops the running one. Never blocks.</summary>
+    /// <summary>F8 / the pause menu: starts a recording, or stops the running one. Never blocks.</summary>
     public void Toggle(string reason = "hotkey")
     {
         if (_rec != null) Stop(reason); else Start(reason);
@@ -488,7 +488,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 MaxFrames = _o.DumpMaxFrames,
                 Finished = res => { r.DumpResult = res; r.DumpDone.Set(); },
             });
-            if (r.Dump == null) { r.DumpDone.Set(); r.Notes.Add("no GPU dump: another GPU dump (F8) was recording"); }
+            if (r.Dump == null) { r.DumpDone.Set(); r.Notes.Add("no GPU dump: another GPU dump (Ctrl+F8) was recording"); }
         }
     }
 

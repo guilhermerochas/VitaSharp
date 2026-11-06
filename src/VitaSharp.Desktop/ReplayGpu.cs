@@ -20,7 +20,7 @@ static class ReplayGpu
 
     public static void PrintUsage()
     {
-        Console.WriteLine("  replay-gpu <dump.vsgd> [options]     replay a GPU dump (F8 / --gpu-dump-at=F1:F2) without the game");
+        Console.WriteLine("  replay-gpu <dump.vsgd> [options]     replay a GPU dump (Ctrl+F8 / --gpu-dump-at=F1:F2) without the game");
         Console.WriteLine("    --out=<dir>            frames, sheets, log (default <dump>_replay next to the dump)");
         Console.WriteLine("    --frame=N              stop after frame N (renderer present number, as in frame_N.png)");
         Console.WriteLine("    --dump-every=K --dump-from=F   which frames to write as PNG (default every frame)");

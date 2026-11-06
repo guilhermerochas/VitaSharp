@@ -50,9 +50,27 @@ public sealed partial class Ngs
         if (m == null) return;
         Log.Info($"[ngs] voice 0x{v.Handle:X8} {v.Rack.Type} t{v.FrameCount} {what}: {DescribeSource(m)}");
         if (what != "play") return;
+        TraceRoute(v, "  ", 0);
         foreach (var md in v.Modules)
             if (md.Source == null && md.ParamAddr != 0)
                 Log.Info($"[ngs]   module {md.Index} {md.Kind}{(md.Bypassed ? " (bypassed)" : "")}: {Convert.ToHexString(GuestMemory.Span(md.ParamAddr, (int)md.ParamSize))}");
+    }
+
+    /// <summary>The voice's output patches and, down to the master, each destination's (its rack, modules and volumes).</summary>
+    static void TraceRoute(NgsVoice v, string indent, int depth)
+    {
+        if (depth > 6) return;
+        for (int o = 0; o < v.Patches.Length; o++)
+            foreach (var p in v.Patches[o])
+            {
+                if (p is not { Active: true }) continue;
+                var d = p.Dest;
+                Log.Info($"[ngs] {indent}output {o} -> voice 0x{d.Handle:X8} {d.Rack.Type} ({d.Rack.ChannelsPerVoice} ch, {d.State}{(d.Paused ? ", paused" : "")}) input {p.DestIndex} volume {p.Volume[0, 0]:F3} {p.Volume[0, 1]:F3} {p.Volume[1, 0]:F3} {p.Volume[1, 1]:F3}");
+                foreach (var md in d.Modules)
+                    if (md.ParamAddr != 0 && md.ParamSize > 0 && d.Rack.Type != NgsBuss.Atrac9)
+                        Log.Info($"[ngs] {indent}  dest module {md.Index} {md.Kind}{(md.Bypassed ? " (bypassed)" : "")}: {Convert.ToHexString(GuestMemory.Span(md.ParamAddr, (int)md.ParamSize))}");
+                TraceRoute(d, indent + "  ", depth + 1);
+            }
     }
 
     static unsafe string CallerInfo()
