@@ -180,9 +180,30 @@ Checked so far (scratch root, firmware 3.74):
 | | files copied by hand into ux0:music after the database exists | not listed (a Vita indexes them only on a database rebuild) |
 | | Start [Content Manager] | **bug, open**: the whole system stops presenting (watchdog STALL). Music calls `sceAppMgrLaunchAppByName(0x20000, NPXS10026)`; it was always started as a background process. WIP 2d36b4e launches non-background applications (param.sfo LAREA_TYPE != 3) as foreground processes of the shell: the shell gets its created/launched events but does not activate it and the system still stalls (shell, Music and Content Manager main threads Running) |
 
-The rest of the sweep (Settings sub-pages, Photos, Videos, Content Manager, Email, Calendar, Trophies, Browser, near,
-Party, Parental Controls, PS4 Link, PS3 Remote Play, Store, Friends, Messages, Camera; PS button and close twice each)
-is still to do: the work was re-prioritised to FIFA 13 and Jak and Daxter.
+### Sweep checklist (fix/user-bugs-6, 05/11/2026, firmware 3.74, scratch root after the initial setup "No, I don't")
+
+Runner: `build/sysapps-sweep.ps1 -Data <root>` / `build/sysapps-sweep.sh --data=<root>` boots the shell headless once per
+`tests/nav/sysapps/*.nav` and reports OK / CRASH / STALL / HANG per script (shots and logs under `tests/output/sysapps-sweep`).
+First-run hints: the home screen and every first LiveArea show a "Hint" dialog; `press cross` (home) and `press circle`
+(LiveArea) close it, and the scripts do that before tapping Start. Music's screens never settle (background animation):
+use `wait`, not `stable`, there. Home page 1 bubbles: Store 0.50/0.24, Browser 0.73/0.24, Trophies 0.14/0.52, Friends
+0.38/0.52, Messages 0.61/0.52, Party 0.85/0.52, PS4 Link 0.26/0.81, Parental 0.73/0.81; page 2 (swipe 0.5 0.8 -> 0.5 0.2):
+Videos 0.26/0.24, Music 0.50/0.24, Photos 0.74/0.24, Email 0.15/0.53, Calendar 0.38/0.53, Content Manager 0.61/0.53, near
+0.85/0.53, PS3 Remote Play 0.26/0.81, Settings 0.73/0.81. LiveArea close: swipe 0.97 0.04 -> 0.3 0.7.
+
+| App | Checked (every screen reached, back/close, PS button) | Result |
+|---|---|---|
+| initial setup (NPXS10062) | all three account paths to "setup completed", parental note, shell home screen | OK (fixed twice, see roadmap) |
+| NPXS10015 Settings (`settings.nav`) | System Update (Wi-Fi/PC), Network (Wi-Fi, connection test, status), PSN (Sign In, Profile, Account, Auto-update), Devices (Bluetooth, keyboard), Notifications, Theme & Background (Theme, Start Screen, Backgrounds), Location Data, Security (Screen Lock), Date & Time (4 pages), Language (System, Input), Accessibility (Zoom); back from each; PS button (LiveArea with Continue), close | OK, no crash/stall (64 shots in `fw_out/settings`). Not reached: System, Format, Power Save (the script's second scroll swipe did not move the list) and the second open (after the close the lock screen came up instead of Settings: script to fix) |
+| NPXS10009 Music (`music.nav`) | menu, Artists, Albums (both "There are no songs" + Start [Content Manager], which starts NPXS10026), Connect to Device (PS3/PC chooser), back; PS button, Continue, close | OK; `AVCH ... SQL Failed: DROP TRIGGER` is logged at every start **before any database file is opened** (right after `sceIoDevctl("ux0:", 0x80000001)`), the app goes on; an MP3 copied by hand into ux0:music is not listed (the DB is only rebuilt from Content Manager imports) |
+| NPXS10002 PS Store | Start, every tap: "An error has occurred (NW-2288-0)", OK -> "You must sign in", Sign In -> same error; PS, close | OK (no network: expected) |
+| NPXS10003 Browser | Bookmarks (History, PlayStation.com, Trend Micro); a bookmark -> "Please wait..." spinner that never ends (no network: a real unit shows a connection error); PS, close | OK, spinner noted |
+| NPXS10008 Trophy Collection | "There are no trophies" with the shell's status bar on top (the shared-framebuffer composition works here); PS, close | OK |
+| NPXS10006 Friends | **black screen after Start** (the process is a SharedFb client and in front, nothing is drawn, not even the status bar; `fw_out/x_friends`) | **open** (was "You must sign in" on fix/system-apps-3) |
+| Messages, Party, PS4 Link, Parental, Videos, Photos (+ camera), Email, Calendar, Content Manager, near, PS3 Remote Play | not reached in this round (the exploration chain was stopped at Friends) | to do |
+
+Also seen: the LiveArea thumbnail of a suspended system app (Store, Browser, Trophies) is black (games show their screen);
+a 6 s watchdog STALL at the initialsetup launch and at the shell's first home screen when two emulators boot at once.
 
 ## Remaining
 

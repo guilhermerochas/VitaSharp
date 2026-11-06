@@ -262,17 +262,51 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
   o content ID contra o `.pkg` e gravar o `.rif` em `ux0:license/<TITLEID>` e o `work.bin`; no CLI (`install <pkg>
   <rif|zRIF>`), no launcher (campo de texto na instalação) e no app Android. Core, CLI e app Android feitos
-  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop
+  (04/11/2026, `Package/Zrif.cs`, fix/user-bugs); falta o campo de zRIF no launcher do desktop. Campo feito (567e200:
+  diálogo com o texto do zRIF ou o botão do arquivo). Validado 05/11/2026 só pela CLI com o `.pkg` real do usuário (WRC 4,
+  Downloads) e um zRIF gerado do `.rif` dele (zlib com o dicionário, janela 1 KB: começa com `KO5ifR1dQ+`): instalou os
+  1,5 GB numa pasta de teste e gravou um `.rif` idêntico ao do usuário (`fw_out/pkg_install/install_log.txt`). O diálogo
+  do launcher ainda não foi clicado (precisa da tela)
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
   movimento, sockets do sistema)
+  Achados (05/11/2026, fix/user-bugs-6): a configuração inicial completa nos três caminhos ("Não tenho conta",
+  "Tenho conta" + "Definir depois" = configuração de uso experimental da PSN, "Usar" = tela de Sign-In; prints em
+  `fw_out/setup_*` do scratchpad); o "Definir depois" travava em "Aguarde" (pedido de sistema do SceNpManager, 4fbab47)
+  e depois mostrava "É preciso atualizar o software do sistema" (checagem de vínculo da conta, 82365bb).
+  Teclado na tela (IME): não é um travamento, é a tela a ~1 fps sem teclado. Reproduzido na tela de Sign-In da
+  configuração inicial (tocar no campo; `fw_out/ime_diag`, `ime_trace3`): o ime_plugin do shell abre e o **shell passa
+  a apresentar quadros próprios** (sceGxmDisplayQueueAddEntry a cada quadro, antes só UpdateProcessBegin/End); o
+  initialsetup NÃO é cliente do SceSharedFb (apresenta sozinho com sceDisplaySetFrameBufInternal), então no Vita o
+  teclado é o **plano de sobreposição do shell** que o display compõe por cima do plano do app (mesmo mecanismo das
+  notificações e do menu do botão PS sobre jogos). O VitaSharp descarta os quadros do shell quando ele não está em
+  primeiro plano (`Display.sceDisplaySetFrameBuf`: só o processo da frente apresenta), por isso o teclado nunca aparece.
+  A lentidão: a cada quadro a `SceShellMain` abre a cena (BeginScene), **depois** espera a superfície de display
+  (`ScePafDisplaySurfaceCond`, ~400 ms) e só então termina a cena; o `sceGxmBeginScene` do setup espera a cena do shell
+  fechar (arbitragem de cena entre processos no `GpuQueue`) e o worker da GPU segura os desenhos da cena aberta até o
+  EndScene (gate dos uniform buffers, 250 ms de timeout): `VITASHARP_UB_SCENE_END=0` sobe de 1 para 7 fps, o resto é a
+  arbitragem. Próximo passo: (1) compor o quadro do shell (A8B8G8R8 com alpha) por cima do quadro do processo da
+  frente quando o shell apresenta sem estar na frente (um segundo `DisplayFrame` no `PresentCommand`, blit com blend
+  no `VulkanRenderer.Present`); (2) não segurar a submissão do outro processo enquanto a cena aberta ainda não tem
+  desenhos, ou fechar a arbitragem só no primeiro desenho.
 - [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
   esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
   `IO: unmapped path ''`). Entregar checklist por app em `docs/notes/system-apps.md` e roteiros (.ps1/.sh) para rodar de
   novo como teste de regressão (branch fix/system-apps-4)
+  Estado (05/11/2026, fix/user-bugs-6): runner `build/sysapps-sweep.ps1/.sh` + `tests/nav/sysapps/{settings,music}.nav`;
+  checklist em docs/notes/system-apps.md. Validados: configuração inicial, Configurações (todas as páginas menos
+  Sistema/Formatar/Economia de energia e a segunda abertura: o roteiro precisa de ajuste), Música
+  (Artistas/Álbuns/Conectar; o `SQL Failed: DROP TRIGGER` sai em todo início antes de qualquer banco ser aberto e não
+  é visível; `unmapped path ''` é o ini_file_processor removendo um temporário sem nome, inofensivo), PS Store (erro
+  NW-2288-0 esperado), Navegador (favoritos; página fica em "Aguarde" sem rede), Troféus. **Aberto**: Amigos (NPXS10006)
+  tela preta depois de Iniciar (`fw_out/x_friends/log.txt`), regressão do que estava corrigido; miniatura preta no
+  LiveArea dos apps suspensos; e os apps que faltam varrer (Mensagens, Party, PS4 Link, Controle dos pais, Vídeos, Fotos
+  + câmera, Email, Calendário, Gerenciador de conteúdo, near, PS3 Remote Play). Câmera: o 3.74 não tem `vs0:app/NPXS10007`
+  (nem no Vita3K); a câmera é o modo do app Fotos (NPXS10004, `photocam_plugin.rco`); a webcam do PC funciona
+  (`camera-test 0`: Integrated Camera 640x480). Texto cortado no boot direto: não testado nesta rodada
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
@@ -568,6 +602,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   funciona aqui; ver por que (escrita de volta/upload da memória do framebuffer?) antes de continuar. Depois de cada
   carga do estado há ~20-40 quadros pretos antes da imagem voltar (talvez ligado à tela preta no começo do gameplay).
   A câmera fixa não foi reproduzida.
+  Explicado e corrigido (05/11/2026, fix/bugs-games-3): o `--draw-limit` mudava, sim, a imagem — mas a do present F+2,
+  e o `limits.ps1` da rodada só gravava os quadros F e F+1. O registro de present fica na fila onde o renderer o
+  executou (depois do flip da fila de display), e um jogo que anda à frente da tela (3 buffers, 2 flips pendentes:
+  Jak, FIFA 13) só apresenta um buffer 1-2 presents depois de desenhá-lo. Agora o replay indexa o dump
+  (`GpuDumpFrameIndex`, `frames_index.txt`): cada present é mapeado para a última cena que desenhou no buffer mostrado,
+  e `--draw-limit=N@F`/`--trace-draws=F` agem sobre os desenhos por trás de `frame_F.png` (o trace cobre esses
+  desenhos mesmo quando atravessam um present; os ids do `draws.txt` são os N do `--draw-limit`). Prova:
+  `--draw-limit=0@1930` no `jak_flash.vsgd` muda só o `frame_001930.png` (antes: `0@1928` mudava o 1930);
+  `--draw-limit=0@13605` no dump do FIFA `PCSE00093_20261105_034029` muda só o 13605 (atraso 1 nesse dump, 2 em 10
+  presents); saídas em `scratchpad/bugsC3_out/new_lim0_1930`, `fifa_lim0` (compare.txt)
   Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
   a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
   `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
@@ -610,11 +654,67 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
   `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
-- [ ] Jak and Daxter Collection (PCSA00080), depois da correção do histórico do decodificador (main 84a12b1, teste do
-  usuário 05/11/2026): (1) a prévia ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o
-  mesmo tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1); (2) ao escolher o Jak 1, `LoadExec
-  app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)` e o jogo
-  trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`
+- [x] Jak and Daxter Collection (PCSA00080), teste do usuário 05/11/2026 (main 84a12b1): ao escolher o Jak 1,
+  `LoadExec app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)`
+  e o jogo trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`.
+  Corrigido na main pela 5378b1a (o LoadExec renova o espaço de endereços; a thread saltava para código HLE antigo).
+  Prova: a sessão seguinte do usuário (`logs61105_015542_PCSA00080.log`, main 57c57b1) passa do LoadExec e chega ao
+  gameplay do Jak 1; as 3 execuções do agente C dia 3 (`scratchpad/bugsC3_out/jak1_live_main/_fix/_final.log`, uma
+  com o build da main) fazem o `LoadExec app0:Jak1.self` a partir do menu, a F3DPlaybackThread roda e não há
+  `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `scratchpad/bugsC_jak` (dia 1)
+- [ ] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
+  textura 0x63FBC400) ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o mesmo
+  tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1). A 57c57b1 (quadros tirados na ordem de
+  decodificação, 0/506 idas e voltas) é posterior ao relato; com o build do agente C dia 3 (`jak_menu`): 1 ida-e-volta
+  em 527 quadros (1351→1352→1353, `scratchpad/bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
+  usuário confirmar olhando para a direita na main atual
+- [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
+  Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
+  acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
+  volume de sombra por stencil (z-fail: faces da frente INCR_WRAP, de trás DECR_WRAP, 4008 índices, sem cor) e o 875 um
+  quadrado de tela cheia que multiplica o framebuffer onde o stencil != 0. Os vértices do volume são gravados pelo
+  desenho 873 (programa de vértice com VLDST, `vsStore ub1@0x60606400`) e lidos como stream pelo 874; o renderer lê
+  esses streams do espelho da CDRAM (`_gpuWritten`), mas descartava a faixa gravada se a CPU tivesse escrito em
+  qualquer página da **janela de 1 MB** do slot desde a gravação — e a entrada do volume (ub0, 0x60605D40) fica na
+  mesma página que a saída, reescrita pela CPU para o quadro k+2 enquanto o worker ainda está no k: a faixa caía
+  para a cópia do guest (que nunca recebe o que a GPU grava), o volume saía de lixo e o stencil desbalanceado
+  escurecia tudo abaixo do horizonte (traço `[mirror] ... written by the CPU since: back to guest memory (before draw
+  id=875)` em `bugsC3_out/tr1928/trace_1928/draws.txt`). Correção (`ExpireGpuWritten`): só contam as páginas da parte
+  lida e, para streams de 3+ páginas, só as páginas internas (as da ponta são compartilhadas com os dados vizinhos);
+  streams pequenos e leituras mapeadas continuam caindo para o guest a qualquer escrita da CPU nas suas páginas
+  (uma primeira tentativa só com "páginas internas" para tudo deixava malhas escritas pela CPU dentro da janela
+  lendo o espelho velho: triângulos pretos no mar, `bugsC3_out/diff1954.png`). Prova: dump gravado com a correção
+  (`bugsC3_out/jak_fix.vsgd`, 601 presents) reproduz sem a faixa (`tileflick.py`: 0 quadros com a faixa; o dump antigo
+  dá a faixa em quadros alternados 1926-1930 em todo replay), o traço de 1928 mostra `[stream] id=866
+  s0=0x60605800+16044: read from the mirror`, e 3 execuções ao vivo do estado do usuário (`jak1_live_main/_fix/_final`,
+  619-643 quadros cada) sem a faixa (ela já era intermitente ao vivo: 5/618 na rodada anterior, 0 nas 3 de hoje, por
+  isso a prova fica no dump). Novas linhas de traço (`--trace-draws`/F10): `st=` com ops/ref/máscaras do stencil,
+  `vsStore ub<i>@addr` nos programas que gravam memória, `[stream]`/`[mirror]` com a origem de cada stream lido do
+  espelho e as faixas descartadas. `replay-gpu --compare` dos 16 dumps do usuário + `jak_fix` contra a main
+  (`scratchpad/bugsC3_cmp`, a cada 10 quadros): 14 idênticos; só mudam os do Jak 1 com sombras (`PCSA00080_20261105_015823` 24/71 quadros,
+  `_020221` 1/54, `jak_fix` 41/61), todos pela correção: some a faixa/cunha escura nas rochas e aparece a sombra
+  do Jak (`diff_001760.png`, `diff_001850.png`, `jak_fix_new/frame_002120.png`).
+  Ainda aberto (Jak 1): (a) **céu preto por um quadro** (1 em 643 ao vivo, `jak1_live_final` quadro 1950; reproduz no
+  replay de `jak_final.vsgd`): os desenhos do céu (24-40, vs 79BC61BE4C9F8178, 3-4 vértices em RAM, 4 buffers em
+  rodízio 0x8DAC4080/0x8DC44080/0x8DDC4080/0x8DF44080) têm os mesmos uniforms e texturas, mas os vértices lidos no
+  1950 (x=2510) são os do uso seguinte do mesmo buffer (1954; a sequência é -338, 152, ?, 1135, 1621 por quadro): a
+  CPU (GOAL) já tinha reescrito o anel de vértices quando o worker leu o stream. Os cenários dos agentes rodam com
+  `--cpu-mhz=0` (CPU sem ritmo), o que deixa o GOAL muito à frente; conferir com o ritmo padrão e, se persistir, ver
+  o que o jogo espera para reusar o anel (notificação/`sceGxmNotificationWait`) — é a mesma classe do `ub-late`, mas
+  para streams em RAM; (b) **quadros pretos depois de carregar o estado**: 30-48 presents pretos (`METRICS black`
+  1782..1811 na main, 1735..1782 no build de hoje) entre o `Load state: GPU backend replaced` e a primeira imagem.
+  Não é o renderer: no replay de `jak_final.vsgd` (`frames_index.txt`) cada um desses presents tem a cena inteira
+  (~1450 desenhos, 1752-1782) e o último desenho é um quadrado de tela cheia opaco sem textura (vs 96859A639870B7F2,
+  fs 687E44699E752BD2) que cobre tudo de preto; `--draw-limit=1462@1770` (sem ele) mostra o Jak e o cenário certos
+  (`scratchpad/bugsC3_out/blk_lim1462/frame_001770.png`), e no 1783 o jogo para de emiti-lo (corte seco, sem fade).
+  É o "blackout" do próprio jogo depois de carregar a área; falta saber se a duração é a do Vita (ver um vídeo do
+  Vita/Vita3K) ou se o salto do relógio na carga (`guest clock +15832 ms` no resume) a estende; (c) **mar com buracos pretos por um quadro**
+  (replay `jak_fix.vsgd` present 2112, `bugsC3_out/flash2112.png`): nesse quadro o jogo emitiu 52 desenhos a menos
+  (1302 x 1354 no 2111), então vem do lado do jogo/CPU, não do renderer; (d) **20 fps** reproduz nos 3 testes (20,0
+  fps, `--cpu-mhz=0`, 4 núcleos): CPU do jogo (`process cpu 70 ms/quadro` no log do usuário), fora do escopo deste
+  item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
+  coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
+  da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os

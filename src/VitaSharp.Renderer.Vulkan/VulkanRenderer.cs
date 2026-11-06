@@ -388,7 +388,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             case EndSceneCommand e: EndScene(e); break;
             case FinishCommand: Finish(); break;
             case MidSceneFlushCommand:
-                if (TracingScenes) TraceLine($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={_drawSerial + 1})");
+                if (TracingScenes) TraceLine($"[scene] mid-scene flush rt=0x{_rt?.Address ?? 0:X8} (next draw id={NextDrawId})");
                 if (_inScene && _rt != null) CaptureSceneStart(_rt);
                 break;
             case PresentCommand p: _presentCmd = p; Present(p.Frame); _presentCmd = null; break;
@@ -567,7 +567,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _renderTargets.Remove(k);
             _rtRangesValid = false;
             if (TraceVis) Log.Info($"[vis] render target 0x{c.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {c.Width}x{c.Height} fmt {c.ColorFormat:X8} present={_presentCount}");
-            if (_traceDumpFrame == _presentCount + 1 && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
+            if ((_traceManual || _traceDumpFrame == _presentCount + 1) && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
             _mirroredRt.Remove(old);
         }        var format = SurfaceFormat(c.ColorFormat);
@@ -710,7 +710,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _scene = b;
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
-        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={_drawSerial + 1})");
+        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface
         ChooseMsaaPath(b);
