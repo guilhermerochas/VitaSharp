@@ -311,6 +311,23 @@ public sealed partial class UsseTranslator
 
         int count = BitOperations.PopCount((uint)destMask);
         bool indexed = op.Bank is Bank.Indexed1 or Bank.Indexed2;
+        if (op.Bank == Bank.Global && op.Num == 16 && !_program.IsVertex && ShaderGenerator.FaceRegister != ShaderGenerator.FaceRegisterMode.Zero)
+        {
+            // G16 in a fragment program: the facing of the primitive. The two-sided lighting of Zero Time Dilemma's
+            // HemiRimBump/toon materials tests its low 16 bits (VTST G16 != 0) and negates the normal when it is zero,
+            // which points at non-zero on front faces; VITASHARP_G16 (debug) supplies it, 0 by default.
+            string face = ShaderGenerator.FaceRegister == ShaderGenerator.FaceRegisterMode.Back ? "!gl_FrontFacing" : "gl_FrontFacing";
+            string c = kind switch
+            {
+                'f' => $"({face} ? uintBitsToFloat(0x3C003C00u) : 0.0)", // half 1.0 in both halves, a normal float32
+                'i' => $"({face} ? 1 : 0)",
+                _ => $"({face} ? 1u : 0u)",
+            };
+            var cs = new List<string>();
+            for (int i = 0; i < 4; i++)
+                if ((destMask & (1 << i)) != 0) cs.Add(op.Swizzle[i] >= Sw.Zero ? ConstOf(op.Swizzle[i], kind) : c);
+            return ApplyModifiers(Compose(cs, kind), op.Flags);
+        }
         if (op.Bank == Bank.Immediate || (!indexed && BankName(op.Bank) == ""))
         {
             if (op.Bank != Bank.Immediate) Warnings.Add($"load from unsupported bank {op.Bank} register {op.Num}");

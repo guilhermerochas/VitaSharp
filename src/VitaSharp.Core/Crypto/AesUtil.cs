@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace VitaSharp.Core.Crypto;
@@ -50,25 +52,30 @@ public static class AesUtil
 
         public void Transform(Span<byte> data, Span<byte> counter)
         {
+            // the 128-bit big-endian counter as two 64-bit halves: one add per block instead of a byte loop
+            ulong hi = BinaryPrimitives.ReadUInt64BigEndian(counter), lo = BinaryPrimitives.ReadUInt64BigEndian(counter[8..]);
+            var ctrs = MemoryMarshal.Cast<byte, ulong>(_ctrs.AsSpan());
+            ulong hiBe = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(hi) : hi;
             while (data.Length > 0)
             {
                 int n = Math.Min(data.Length, _ks.Length);
                 int blocks = (n + 15) / 16;
                 for (int b = 0; b < blocks; b++)
                 {
-                    counter.CopyTo(_ctrs.AsSpan(b * 16, 16));
-                    Increment(counter);
+                    ctrs[2 * b] = hiBe;
+                    ctrs[2 * b + 1] = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(lo) : lo;
+                    if (++lo == 0)
+                    {
+                        hi++;
+                        hiBe = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(hi) : hi;
+                    }
                 }
                 _aes.EncryptEcb(_ctrs.AsSpan(0, blocks * 16), _ks.AsSpan(0, blocks * 16), PaddingMode.None);
                 XorInPlace(data[..n], _ks.AsSpan(0, n));
                 data = data[n..];
             }
-        }
-
-        static void Increment(Span<byte> c)
-        {
-            for (int i = 15; i >= 0; i--)
-                if (++c[i] != 0) break;
+            BinaryPrimitives.WriteUInt64BigEndian(counter, hi);
+            BinaryPrimitives.WriteUInt64BigEndian(counter[8..], lo);
         }
 
         public void Dispose() => _aes.Dispose();

@@ -1,4 +1,4 @@
 # Killzone Mercenary: boot to the connection dialog, turbo
 title=PCSC00045
-data=C:\Users\guisa\VitaSharp\.vitadata
+data=%USERPROFILE%\VitaSharp\.vitadata
 args=--turbo --frames=3000 --dump-every=150

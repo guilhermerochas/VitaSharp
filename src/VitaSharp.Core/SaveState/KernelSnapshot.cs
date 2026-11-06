@@ -12,7 +12,7 @@ namespace VitaSharp.Core.SaveState;
 /// </summary>
 static class KernelSnapshot
 {
-    const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
+    internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
         Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module";
 
@@ -79,7 +79,7 @@ static class KernelSnapshot
         var objects = new List<KernelObject>(n);
         var live = new List<GuestThread>();
         var condGiveBack = new List<(GuestThread T, int Mutex, int Count)>();
-        var modulesSeen = new HashSet<int>();
+        var modulesSeen = new HashSet<ModuleObject>();
         var hostKept = new HashSet<GuestThread>();
         for (int i = 0; i < n; i++)
         {
@@ -130,10 +130,13 @@ static class KernelSnapshot
                 {
                     string path = b.ReadStringNotNull();
                     uint seg0 = b.ReadUInt32();
-                    var mo = current.OfType<ModuleObject>().FirstOrDefault(x => x.Uid == uid);
-                    if (mo == null || mo.Module.Path != path || (mo.Module.Segments.TryGetValue(0, out var s0) ? s0.Address : 0) != seg0)
-                        throw new SnapshotException($"module {name} ({path}) is not loaded the same way in this session; restart the game and load the state again");
-                    modulesSeen.Add(uid);
+                    // found by file and address, not by UID: a session that booted the program directly (or reached
+                    // it through a LoadExec at another moment) numbered its objects differently; the module takes
+                    // the saved UID, which the game's memory and the HLE state hold
+                    var mo = current.OfType<ModuleObject>().FirstOrDefault(x => !modulesSeen.Contains(x) && x.Module.Path == path
+                        && (x.Module.Segments.TryGetValue(0, out var s0) ? s0.Address : 0) == seg0)
+                        ?? throw new SnapshotException($"module {name} ({path}) is not loaded the same way in this session; restart the game and load the state again");
+                    modulesSeen.Add(mo);
                     o = mo;
                     break;
                 }
@@ -145,7 +148,7 @@ static class KernelSnapshot
             objects.Add(o);
         }
         foreach (var mo in current.OfType<ModuleObject>())
-            if (!modulesSeen.Contains(mo.Uid))
+            if (!modulesSeen.Contains(mo))
                 throw new SnapshotException($"module {mo.Module.Name} was loaded in this session after the state was saved; restart the game and load the state again");
 
         // the old threads ended; their records and every other old object go (a module may still hold an old thread
@@ -153,6 +156,13 @@ static class KernelSnapshot
         table.Clear();
         foreach (var o in objects) table.Put(o);
         table.NextUid = next;
+        // the kernel's module list follows the UIDs the modules took
+        emu.Kernel.Modules.Clear();
+        foreach (var mo in modulesSeen)
+        {
+            mo.Module.Uid = mo.Uid;
+            emu.Kernel.Modules[mo.Uid] = mo.Module;
+        }
         foreach (var o in objects)
             switch (o)
             {

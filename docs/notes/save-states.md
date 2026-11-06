@@ -49,6 +49,15 @@ module service threads kept and given their saved UIDs), modules, guest clock (e
 threads start. The loaded modules must be the saved ones at the same addresses: a game that loads modules late
 refuses a state from a different point with a message (restart the game and load again).
 
+A state saved after a LoadExec (Jak 1 or God of War 1 started from their collection's menu) loads in a new session:
+the executable it was saved in is its first module record (`SaveStates.ProgramOf`, read from the sections before the
+memory). `--load-state` (the launcher's state list, `rerun` of a Gravar tudo capture) boots that executable directly
+(`--self` still wins); F7 or a slot load while another executable of the game runs performs the LoadExec first and
+loads once the new program presented 120 frames. The modules are matched by file and segment address, not by UID,
+and take the saved UIDs (a direct boot numbers the kernel objects differently from the session that did the LoadExec).
+The LoadExec's arguments are not passed again: the saved memory and registers replace whatever the boot set up.
+Android does not do the LoadExec step yet (its load from the pause menu refuses such a state with the module message).
+
 ## Host resources
 
 Recreated on load: audio ports, AT9/MP3/AAC and H.264 decoders (empty; movies restart on the key frame before the
@@ -76,6 +85,7 @@ picture continues from the saved point, frame rate as before the load.
 | Tearaway | deferred contexts | pass (06/11/2026: loaded twice in a row in debug mode, Gravar tudo pre-roll states around the loads, moves with the stick after them; no device loss in 3 headless loads) |
 | Minecraft, Gravity Rush | NP matching / voice ports, touch / motion, PVF game fonts | pass |
 | Jak and Daxter Collection, God of War Collection | LoadExec after a load | pass (06/11/2026: state in the collection menu, loaded, then Jak 1 to PRESS START / God of War 1 to its menu at 30 fps) |
+| Jak and Daxter Collection, God of War Collection, Uncharted | state saved after a LoadExec, loaded in a new session | pass (06/11/2026: Jak 1 / God of War 1 gameplay and Uncharted's title (its eboot.bin LoadExecs uncharted.self) with `--load-state` (boots the saved executable) and from the collection's menu (LoadExec first, as F7), 20 / 30 / 60 fps as when saved; rerun of a Gravar tudo capture of Jak 1: 98% of the frames as recorded) |
 
 Not exercised by an installed game: Atrac (ATRAC streams), Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
 NetAdhocMatching/Rudp (online), TriggerUtil, Ime (in-game keyboard), the Vita shell (refused).

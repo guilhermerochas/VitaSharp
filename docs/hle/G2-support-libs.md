@@ -77,7 +77,7 @@ protótipo não existe no vita-headers ele está marcado **(inferido)**; valores
   variáveis são re-relocadas. Ou seja: carregar um módulo de firmware **depois** do jogo já funciona sem mudanças
   no Linker.
 - O `Vfs` já monta `vs0:` em `<FsRoot>/vs0` (`src/VitaSharp.Core/Io/Vfs.cs`, linha 17). No Desktop,
-  `FsRoot = <DataRoot>/fs`, então hoje seria `C:\Users\guisa\VitaSharp\.vitadata\fs\vs0\`.
+  `FsRoot = <DataRoot>/fs`, então hoje seria `%USERPROFILE%\VitaSharp\.vitadata\fs\vs0\`.
 
 ### Opção (a) — LLE a partir de dump de firmware do usuário
 

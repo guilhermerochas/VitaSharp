@@ -132,6 +132,14 @@ public sealed class HleFunction
         if (n.StartsWith("sceKernelLockLwMutex") || n.StartsWith("sceKernelUnlockLwMutex") || n.StartsWith("sceKernelTryLockLwMutex")
             || n.StartsWith("sceClib"))
             return 50;
+        // libgxm accessors and state setters: a texture control-word field read or written (GetType, SetLodBias,
+        // Set{U,V}AddrMode, Set{Min,Mip}Filter...), a pointer stored in the context with a dirty bit (SetVertexStream,
+        // SetFragmentTexture, Set*Program) or a ring-buffer pointer bumped (Reserve*DefaultUniformBuffer). On the Vita
+        // these are a few tens of instructions; the command-buffer work happens in sceGxmDraw, which keeps the 200 below.
+        // At 200 each, Jak 1's ~50,000 such calls per frame cost 10 M cycles (22 ms at 444 MHz) of a 33 ms frame.
+        if (n.StartsWith("sceGxmTextureGet") || n.StartsWith("sceGxmTextureSet") || n.StartsWith("sceGxmSet")
+            || n.StartsWith("sceGxmReserve") || (n.StartsWith("sceGxmPrecomputed") && (n.Contains("Get") || n.Contains("Set"))))
+            return 50;
         if (n.StartsWith("sceGxm")
             || n.StartsWith("sceNgs") || n.StartsWith("sceKernelGetProcessTime") || n.StartsWith("sceRtc") || n.StartsWith("sceFiber")
             || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")

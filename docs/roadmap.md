@@ -8,6 +8,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
+- [ ] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
+  jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
+  salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
+  escolhido (se já houver estado, pedir confirmação para **sobrescrever**, mostrando o print antigo e o atual),
+  carregar (com o print grande antes de confirmar), apagar, e o salvamento/carregamento rápido de sempre. Atalhos no
+  desktop (abrir a tela, anterior/próximo slot com o slot e o print aparecendo num aviso na tela, como o F2/F1/F3 do
+  PCSX2) e navegação por controle, teclado e toque; estados de outra versão aparecem marcados como incompatíveis
+  (não carregam). O launcher continua listando os estados do jogo com os mesmos prints. Base: os slots, prints e o
+  menu de pausa do Android que já existem (`SaveStateControl`, `GameActivity.SaveStates`/`PauseMenu`)
+
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
   decisão do usuário de 01/11/2026) e a GPU (o renderer é recriado e reconstrói os caches da memória do jogo). Feito
@@ -19,6 +29,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   device lost (`scratchpad/ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
   carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`scratchpad/ss1_jak1`); God of War Collection: estado no
   menu, carregado, God of War 1 até o menu do jogo a 30 fps (`scratchpad/ss1_gow1`)
+- [x] Estado salvo depois de um LoadExec carrega numa sessão nova (06/11/2026, fix/savestate-loadexec): o programa do
+  estado é o primeiro módulo dele (`SaveStates.ProgramOf`); `--load-state` (launcher, `rerun` do Gravar tudo) boota esse
+  self direto; F7/slot com outro self rodando faz o LoadExec antes e carrega após 120 quadros; os módulos são achados
+  por arquivo e endereço e ficam com os UIDs salvos. Junto: `sceGxmDisplayQueueAddEntry` com a fila cheia não espera
+  para sempre quando a thread é parada (o LoadExec pedido pelo host esperava 10 s e seguia com a thread antiga viva).
+  Validado: Jak 1 e God of War 1 em gameplay salvos, carregados em sessão nova pelos dois caminhos, 20 e 30 fps como
+  ao salvar (`scratchpad/ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
+  LoadExec) a 59 fps (`ss2_ucB`); o rerun da gravação do usuário `PCSA00080_20261106_002008_tudo` (build da época
+  0d298b4 + estas mudanças, o esquema da main mudou depois) carrega e 98% dos quadros saem iguais
+  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui); o Android ainda
+  não faz o passo do LoadExec ao carregar um estado de outro self
 - [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
   (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
   ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
@@ -37,11 +58,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
   sem janela; não houve teste com janela); o teclado do sistema (ImeDialog) aberto num save: o Sakatsuku
   (`st_game2`, 7000 quadros) não chegou ao teclado, e o Invizimals não foi testado
-- [ ] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
+- [x] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
   (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
   não investigada (`scratchpad/ss1_jak1/stdout.txt`)
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 
 ## Desempenho (PC)
+
+- [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
+  (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
+  Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.
+  Onde atua: no intervalo de vblank que o jogo pede (`sceDisplayWaitSetFrameBufMulti`/`WaitVblankStartMulti`,
+  `sceDisplaySetFrameBuf` IMMEDIATE, a fila de display do GXM e o ritmo do vblank emulado), nunca no código do jogo.
+  Cuidados: jogos cuja lógica anda por quadro ficam mais rápidos ou mais lentos (avisar na descrição da opção); o
+  modo Sem limite também solta o ritmo do vblank; o áudio continua no tempo real. Guardar no perfil do jogo (como o
+  modo do mouse), no launcher do desktop (página/ajustes do jogo) e no app Android (ajustes do jogo e menu de pausa),
+  com o modo atual no overlay de FPS
 
 - [ ] Reflexão o mínimo possível (desktop e Android; ajuda o Native AOT, o Mono AOT e o tempo de início). Hoje
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
@@ -59,14 +91,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     (usar `[InterpolatedStringHandler]`/checar o nível antes), LINQ e lambdas que alocam por quadro, `ToString()` de
     enums em logs; medir com o contador de alocações (`PERF allocated`) e zerar o que for por quadro
   - [ ] Backend IL do JIT (único uso real de `Reflection.Emit`): manter só onde não há JIT nativo e documentar
-- [ ] Instalação de `.pkg` + `work.bin` muito lenta no build Native AOT do desktop (relato do usuário, 31/10/2026: a
-  "transferência de arquivos" demora demais): medir a vazão em MB/s do `PkgInstaller` no pacote AOT contra o build
-  JIT do mesmo commit, por etapa (leitura do `.pkg`, descriptografia AES-CTR com a klicensee, PFS/arquivos,
-  gravação em `ux0:app`). O AES-CTR (`AesUtil.Ctr`) já cifra em lotes de 64 KB com o AES do sistema, mas monta os
-  contadores bloco a bloco num laço e faz o XOR à parte (`XorInPlace`; ver se está vetorizado no AOT); o `Extract`
-  lê em blocos de 1 MB sem sobrepor leitura, decifra e gravação. Corrigir com base na medição: contadores e XOR
-  vetorizados (ou CTR inteiro com `Vector128`/AES-NI), leitura/decifra/gravação em paralelo, sem cópias extras e com
-  barra de progresso; meta: perto da velocidade do disco
+- [x] Instalação de `.pkg` + `work.bin` muito lenta no build Native AOT do desktop (relato do usuário, 31/10/2026).
+  Medido com o WRC 4 (1,5 GB, 195 arquivos PFS): o AOT não tinha caminho lento próprio (CPU 2,7-3,8 s no AOT, 4,7 s
+  no JIT); o tempo era E/S. O pacote era extraído ainda cifrado em PFS e cada arquivo era relido e regravado no
+  lugar setor a setor (32 KB por leitura/gravação com seek): 3 passadas no disco, 10-56 s no AOT conforme a carga e
+  o cache (a fase PFS sozinha 8-30 s). Agora files.db/unicv.db são lidos antes, cada arquivo é casado com sua
+  tabela pelo 1º setor e lido, decifrado (CTR + PFS) e gravado uma vez em blocos de 4 MB, com a gravação numa
+  thread própria (pré-alocada, sem buffer) enquanto o próximo bloco é lido; threads abaixo do normal. AOT depois:
+  1,7-6,8 s (leitura ~3,1 GB/s, AES-CTR ~4 GB/s, PFS ~8,5 GB/s; a gravação, 240-1160 MB/s, é o limite). Arquivos
+  instalados idênticos (SHA-256 dos 207 arquivos). VPK no mesmo pipeline; progresso com MB/s e tempo restante no
+  launcher e no Android, no máximo a cada 100 ms
 - [ ] Engasgos da primeira vez: montar os pipelines que faltam com `VK_EXT_graphics_pipeline_library` (ligação
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
@@ -408,7 +442,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
   demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
   arbitragem) ou liberar o gate quando outro processo espera a cena.
-- [ ] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
+- [x] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
   esperados. Primeiro caso: Música → Artistas mostra erro (log do usuário 18:55, `AVCH ... SQL Failed: DROP TRIGGER`,
@@ -473,6 +507,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
   tem a barra, e de Mensagens são iguais: não é isso).
+  Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
+  Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
@@ -503,15 +539,152 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
-- [ ] Refatorar o projeto para o guia de estilo C# do Google (https://google.github.io/styleguide/csharpguide.html), exceto as
-  chaves (ficam na linha de baixo, padrão do C#) e a indentação (mantém 4 espaços e ~120 colunas): nomes, ordem dos
-  membros, usings, comentários, `var`; regras num `.editorconfig` com analisadores. Cuidados: o GLSL gerado vem de
-  strings literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest) e fazer num momento sem
-  outros branches abertos (o diff toca quase todos os arquivos)
+- [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
+  substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
+  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
+  ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
+  thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
+  sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo
+  uma linha em branco; sem espaços sobrando; `var` só com o tipo escrito à direita (`new`/cast) e `new()` só com o tipo
+  à esquerda; palavras-chave (`int`, `int.Parse`); constantes e métodos (inclusive funções locais) em PascalCase;
+  `nameof`; campos no topo do tipo; labels de `goto` um nível a menos; `if` de uma instrução nunca na mesma linha, chaves
+  em todos os blocos se algum tiver; tipos privados/internos `static` ou `sealed`; XML docs em interfaces e no que for
+  complexo; números mágicos viram constantes nomeadas. A regra 16 (caracteres não ASCII como escape Unicode) conflita
+  com os textos em português da interface (launcher, Android, mensagens): decidir com o usuário antes (proposta: vale
+  para o código, os textos de interface ficam em arquivos de recurso/strings). Cuidados: o GLSL gerado vem de strings
+  literais do C# (o conteúdo delas tem que ficar idêntico, conferir com o shadertest e `replay-gpu --compare`), a regra
+  9 deixa arquivos com estilo próprio como estão até serem convertidos, e fazer num momento sem outros branches abertos
+  (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Bugs em aberto
 
-- [ ] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
+- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+  1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
+  voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
+  e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
+  derrube o processo; validar 10 loads seguidos. Com o agente de bugs C
+- [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
+  carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
+  corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
+- [x] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
+  prioridade máxima; gravação `captures\PCSE00271_20261106_020056_tudo`): nenhum quadro apresentado (watchdog STALL
+  no frame 1). As threads `AsyncIOSystem` e `NRSMovieFileAsyncServer` chamam `sceKernelWaitEvent(0x0 / 0xFFFFFFFF,
+  0x1000000, ...)` (lr 0x8107DF21) em laço e recebem 0x80028201 (UNKNOWN_EVENT_ID) 692.895 vezes em 15 s; a `main`
+  fica esperando o IO assíncrono. Provável: a criação do objeto de evento antes falhou ou não existe no emulador;
+  a `Scaleform Render Thread` nunca iniciou (Dormant, pc 0). Com o agente de bugs C
+  **Corrigido** (agente C dia 9, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): (1) o jogo cria
+  os eventos do pool de threads e do IO assíncrono do motor NRS com `sceKernelCreateSimpleEvent("InName", 0x900)` e
+  o emulador recusava o bit 0x800 (`SCE_KERNEL_ATTR_NOTIFY_CB_WAKEUP_ONLY`) com ILLEGAL_ATTR: o uid guardado era o
+  código de erro e as threads giravam no `sceKernelWaitEvent`; agora é aceito (como no Vita3K). (2) Em seguida a
+  `RenderingThread` morria numa exceção do host em `sceKernelGetThreadInfo` (tamanho da estrutura acima de 0x80, ao
+  esperar o fim da `Scaleform Render Thread`, que roda e termina normalmente); agora devolve NO_MEMORY como os outros
+  `Get*Info` e o Vita3K. O jogo passa pelos avisos, abertura, menu principal, pergunta do tutorial e a luta do
+  tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`scratchpad/bugsC3_data/tests/inj_menu/sheet.png`,
+  `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
+  Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
+- [ ] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
+  06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 90 funções). Cada uma com o
+  comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
+  sentido com rede/PSN/hardware ausente devolvem o erro que o Vita devolve nesse caso. Jogos:
+  - SceNpManager::NID_FFBFC540 (0xFFBFC540) (PCSE00093)
+    Achados (06/11/2026): no np_manager.suprx do firmware é um getter igual ao sceNpManagerGetNpId (NULL ->
+    0x80550503; senão IPC 0xB0025 ao serviço SceNpManagerIpc do shell com 64 bytes de saída). O FIFA 13 chama logo
+    depois do GetNpId (objeto+0x28) com objeto+0x4C; retorno != 0 leva ao estado "-npo" (NP offline), 0 ao "+npo".
+    O conteúdo dos 64 bytes não foi identificado (o tratador 0xB0025 fica no shell, atrás do servidor IPMI em C++);
+    hoje o "não implementado" devolve 0 com o buffer intocado, que é o caminho que o jogo já usa
+  - ScePspnetAdhoc::sceNetAdhocInit (0x87805E13) (PCSE00056) — feita (feat/hle-unimplemented)
+  Sistema do Vita (shell e apps):
+  - SceAppMgr::sceAppMgrIsDevelopmentMode (0x7D4F8F83) — feita (feat/hle-unimplemented)
+  - SceAppMgr::sceAppMgrIsGameBudgetAppPresent (0xE134F5A0) — feita (feat/hle-unimplemented)
+  - SceAppMgr::sceAppMgrSetRecommendedScreenOrientationActivated (0x75876896)
+  - SceAppMgrUser::sceAppMgrCheckRifGD (0x6E5CBCA2)
+  - SceAppMgrUser::sceAppMgrMmsMount (0xF4730BA8)
+  - SceAppMgrUser::sceAppMgrSetBackRenderPortOwner (0x7149016E)
+  - SceCodecEngineUser::NID_9A5E7B2F (0x9A5E7B2F)
+  - SceCodecEngineUser::NID_9AD7E66F (0x9AD7E66F)
+  - SceErrorUser::sceErrorHistoryPostError (0xBC416CFA)
+  - SceHttp::NID_855D5254 (0x855D5254)
+  - SceModulemgr::sceKernelInhibitLoadingModule (0x6CED1F63)
+  - SceMotion::NID_A408BC69 (0xA408BC69)
+  - SceMotionDev::sceMotionDevGetCurrentMagnCalibData (0xAAB4B41F)
+  - SceMotionDev::sceMotionDevGetDeviceInfo (0x1F1EFEFB)
+  - SceMotionDev::sceMotionDevGetGyroCalibData (0x74555D91)
+  - SceMotionDev::sceMotionDevGetMeasMode (0xEA95D3C9)
+  - SceMotionDev::sceMotionDevReadForMagnCalib (0xCC4FDA6A)
+  - SceNetCtl::NID_777FE4C2 (0x777FE4C2)
+  - SceNetCtl::NID_AC326DB7 (0xAC326DB7)
+  - SceNetCtl::NID_C33D7374 (0xC33D7374)
+  - SceNetCtl::NID_C61F3E96 (0xC61F3E96)
+  - SceNetInternal::sceNetInternalIcmConnect (0x93F2FF08)
+  - SceNetPsForSyscalls::sceNetSyscallClose (0x1EBC2E28)
+  - SceNetPsForSyscalls::sceNetSyscallControl (0xEA0C1B71)
+  - SceNetPsForSyscalls::sceNetSyscallGetIfList (0x878274CE)
+  - SceNetPsForSyscalls::sceNetSyscallIcmConnect (0x8C3FBC87)
+  - SceNetPsForSyscalls::sceNetSyscallIoctl (0x310F0725)
+  - SceNetPsForSyscalls::sceNetSyscallSendto (0x39796C01)
+  - SceNetPsForSyscalls::sceNetSyscallSocket (0x81A120BE)
+  - SceNpBasic::NID_6F1B58F9 (0x6F1B58F9)
+  - SceNpBasic::NID_B414E768 (0xB414E768)
+  - SceNpDrm::_sceNpDrmGetFixedRifName (0xE935B0FC)
+  - SceNpManager::NID_77DE17D4 (0x77DE17D4)
+  - SceNpManager::NID_B24FC028 (0xB24FC028)
+  - SceNpManager::NID_C89E0B94 (0xC89E0B94)
+  - SceNpManager::NID_CFAEB050 (0xCFAEB050)
+  - SceNpManager::NID_DDF30B0E (0xDDF30B0E)
+  - SceNpManager::NID_E45E4003 (0xE45E4003)
+  - SceNpWebApi::NID_4699EF17 (0x4699EF17)
+  - SceNpWebApi::NID_E83CE7F1 (0xE83CE7F1)
+  - SceNpWebApi::NID_E8FBA9B8 (0xE8FBA9B8)
+  - ScePhotoExport::NID_16B1028E (0x16B1028E)
+  - SceSblQafMgr::sceSblQafMgrIsAllowNpFullTest (0x72168C6E) — feita (feat/hle-unimplemented)
+  - SceSslInternal::sceSslInternalGetCertificateAuthority (0x064DFC99)
+  - SceSysmem::sceKernelCheckModelCapability (0x0144FBD9) — feita (feat/hle-unimplemented)
+  - SceTriggerUtil::NID_28EF51DA (0x28EF51DA)
+  - SceVshBridge::_vshAppMgrRegisterPath (0x179965E7)
+  - SceVshBridge::_vshSblSsGenerateAppKey (0x82F2FBA8)
+  - SceVshBridge::vshSblQafMgrIsAllowLiblocationChangeModel (0x58E1DE33) — feita (feat/hle-unimplemented)
+  - SceVshBridge::vshSblQafMgrIsAllowNearTest (0xD0D4EB67) — feita (feat/hle-unimplemented)
+  - SceWlan::sceWlanGetConfiguration (0x70AF9BD6)
+  Mais 37 achadas depois (06/11/2026, mesmos logs, sessões novas do Sistema do Vita):
+  - SceAppMgrUser::sceAppMgrSetBgmProxyApp (0xC42F41E9)
+  - SceBt::sceBtGetRegisteredInfo (0xB6C9A094)
+  - SceBt::sceBtSetConfiguration (0x9B1F2964)
+  - SceHid::sceHidKeyboardSetIntercept (0x5D727742)
+  - SceHid::sceHidKeyboardUnregisterEnumHintCallback (0x8068D61E)
+  - SceHid::sceHidKeyboardUnregisterReadHintCallback (0xF73C5FBA)
+  - SceHttp::NID_F30073EC (0xF30073EC)
+  - SceNetCtl::NID_0CC36330 (0x0CC36330)
+  - SceNetCtl::NID_147B054C (0x147B054C)
+  - SceNetCtl::NID_6A56FC3A (0x6A56FC3A)
+  - SceNetCtl::NID_713394C0 (0x713394C0)
+  - SceNetCtl::NID_AB1462C5 (0xAB1462C5)
+  - SceNetCtl::NID_BC0563A0 (0xBC0563A0)
+  - SceNetCtl::NID_E8E8DF18 (0xE8E8DF18)
+  - SceNpCommerce2::NID_25C58D33 (0x25C58D33)
+  - SceNpCommerce2::NID_45ACE466 (0x45ACE466)
+  - SceNpCommerce2::NID_4C406B2A (0x4C406B2A)
+  - SceNpCommerce2::NID_5AB115CE (0x5AB115CE)
+  - SceNpCommerce2::NID_5D8B5B59 (0x5D8B5B59)
+  - SceNpCommerce2::NID_749C8571 (0x749C8571)
+  - SceNpCommerce2::NID_86405E79 (0x86405E79)
+  - SceNpCommerce2::NID_8ECAE666 (0x8ECAE666)
+  - SceNpCommerce2::NID_AA090F5E (0xAA090F5E)
+  - SceNpCommerce2::NID_BC89C4D3 (0xBC89C4D3)
+  - SceNpCommerce2::NID_BFDC7B9F (0xBFDC7B9F)
+  - SceNpCommerce2::NID_C7B04A45 (0xC7B04A45)
+  - SceNpCommerce2::NID_D09A38DA (0xD09A38DA)
+  - SceNpCommon::sceNpCommonGetNpEnviroment (0xAD6403E0)
+  - SceNpManager::NID_29C9B8A5 (0x29C9B8A5)
+  - SceNpManager::NID_ED12AF16 (0xED12AF16)
+  - SceSblQafMgr::sceSblQafMgrIsAllowAllDebugMenuDisplay (0x66843305) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowLimitedDebugMenuDisplay (0xC456212D) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowMinimumDebugMenuDisplay (0xA156BBD2) — feita (feat/hle-unimplemented)
+  - SceSblQafMgr::sceSblQafMgrIsAllowNonQAPup (0xB5621615) — feita (feat/hle-unimplemented)
+  - SceUdcd::NID_F1A3690B (0xF1A3690B)
+  - SceVshBridge::_vshSblAimgrGetPscode (0x1AF2CFC9)
+  - SceWlan::sceWlanSetConfiguration (0xDBE8AEF2)
+
+- [x] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
   selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
   04/11/2026, main d388b61; captura F10 `diagnostics\PCSA00080_20261104_162655`, dump de GPU
   `gpudumps\PCSA00080_20261104_162658.vsgd`). Parece passo (stride/pitch) ou layout errado de uma textura — muito
@@ -572,6 +745,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   passar 2). Os dois ficam como chaves A/B desligadas. O que falta para separar as hipóteses: o tempo real de GPU do
   Vita (aqui a notificação da cena 1 sai em <1 ms) e do decoder; um vídeo do Vita do menu confirmaria se a faixa está
   limpa no console
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
   usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
   para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
@@ -594,7 +768,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   1 = FULL, 0x10 = não esperar), e a thread de render do jogo recebia com ASAP num buffer de 0x600 e esperava para
   sempre mensagens de 12 bytes. Logos, filme de abertura, menu da coleção a 30 fps e o LoadExec do Jak 1; o Ninja
   Gaiden Σ2 agora também mostra o filme de abertura (antes o player falhava e pulava)
-- [ ] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
+- [x] Blind Men (PCSB01421; no Vita3K tela preta): roda e é jogável, sem funções faltando nem erros (31/10/2026, main
   13ca113, log `20261031_193014_PCSB01421`), mas: (1) demora para começar (carregamento inicial longo; comparar com o
   Vita real); (2) nas trocas de tela aparece por ~0,5 s uma imagem preta com pequenos problemas de textura (provável
   render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
@@ -624,6 +798,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   até o 1º quadro com o PC ocioso (`bugsC6_out/blind_fade2/log.txt`; ~2,2 s em `main` entre o `Preload` e o thread
   `preloader`, o init do Python do Ren'Py); com a CPU dividida passa de 30 s (watchdog STALL em `blind_fade`); falta
   o tempo do Vita real para comparar
+  Agente C dia 8 (06/11/2026, fix/bugs-games-8): **(2) não é defeito, o Vita real faz igual.** No vídeo do Vita
+  (`9vleIQnJ8dI`, "Blind Men (PS Vita Gameplay)", Start no menu aos ~82 s; `scratchpad/bugsC8_yt/trans.png`, 10 qps) o
+  menu some de uma vez, fica ~0,7 s preto e a cena entra em fade, como aqui. As duas texturas 32x32 são sólidos
+  pretos opacos (todos os texels 0,0,0,255 em `trace_603/textures`, não alfa 0,14): o Ren'Py faz o dissolve entre
+  dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
+  imagens 1280x720 por cima; `bugsC8_out/blind_tr601/trace_601`). Resta o (1), o boot
+  Confirmado no jogo pelo usuário (06/11/2026): ok (a troca de tela preta é igual à do Vita)
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -861,10 +1042,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   enquanto na rodada boa ela ainda fazia 51 `sceNpTrophyGetTrophyInfo` no quadro 22: comparar a ordem
   registro de conquistas x `MainThread`. Blind Men, Zero Time Dilemma, The Deer God e Silent Hill: não testados
   nesta rodada.
-- [ ] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
+- [x] Jak 1 (Jak and Daxter Collection, PCSA00080) no gameplay (teste do usuário na janela, 05/11/2026, main 57c57b1):
   a câmera fica fixa num trecho e não se move, e a tela fica preta no começo do gameplay; 20 fps (Vita: 30), uma
   queda de ~10 s para 0-1 fps; `sceKernelWaitLwCond` com timeout 18461 vezes. Dumps F8
   `gpudumps\PCSA00080_20261105_015823.vsgd` e `..._020221.vsgd`, log `logs61105_015542_PCSA00080.log`
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [x] Jak and Daxter Collection (PCSA00080), teste do usuário 05/11/2026 (main 84a12b1): ao escolher o Jak 1,
   `LoadExec app0:Jak1.self` e então `F3DPlaybackThread` cai com `Undefined instruction 0xEE002000 at 0x81256204 (ARM)`
   e o jogo trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`.
@@ -873,12 +1055,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gameplay do Jak 1; as 3 execuções do agente C dia 3 (`scratchpad/bugsC3_out/jak1_live_main/_fix/_final.log`, uma
   com o build da main) fazem o `LoadExec app0:Jak1.self` a partir do menu, a F3DPlaybackThread roda e não há
   `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `scratchpad/bugsC_jak` (dia 1)
-- [ ] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
+- [x] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
   textura 0x63FBC400) ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o mesmo
   tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1). A 57c57b1 (quadros tirados na ordem de
   decodificação, 0/506 idas e voltas) é posterior ao relato; com o build do agente C dia 3 (`jak_menu`): 1 ida-e-volta
   em 527 quadros (1351→1352→1353, `scratchpad/bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
   usuário confirmar olhando para a direita na main atual
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 - [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
   Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
   acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
@@ -926,7 +1109,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
   coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
   da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
-- [ ] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
+- [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
   para concluir com uma rodada, e o fps é o mesmo (20). (b) **Blackout depois de carregar o estado**: 31 presents
@@ -962,7 +1145,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   e o callback (lr 0x810411B3) lê o 3 de outro lugar; provavelmente o tempo medido do quadro, que inclui a espera na
   fila cheia, então uma vez em 3 se mantém. No Vita o Jak 1 roda a 30. Próximo: `--watch-read` no callback para achar
   a variável do intervalo e quem a escreve
-- [ ] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+- [x] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
   (a) **Tela de título lenta: corrigido o grosso** (0,4-2,5 fps → 10-12 fps, alocação 19-55 MB → 0,2 MB/quadro). Cada
   quadro tem ~6300 desenhos com 16 KB de uniforms de vértice (27 MB/quadro): passava do heap de uniforms (48 MB), o
   `UniformArena` não guardava nenhum bloco gerenciado de reserva (o limite de 16 contava os 48 do heap) e alocava 1 MB
@@ -986,7 +1170,29 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   vem do jogo em cada `sceGxmDisplayQueueAddEntry`. Não achei quem o escreve (o endereço do dia 5, 0x86A92F00, não
   é o desta sessão; o trace de HLE não mostrou o AddEntry). Provável: o jogo escolhe 3 vblanks porque o quadro dele
   passa de 33 ms (item a: pacing)
-- [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+- [x] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `scratchpad/bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
+  (a) **Tela de título: custo de HLE corrigido** (commit "HLE cost: libgxm accessors..."): 14,4 → 18,8 fps, F3D
+  11,7 → 3,8 M ciclos de HLE/quadro (`bugsC8_out/jak_t_ref` x `jak_t_new`). (b) **Os 20 fps do gameplay são o
+  nativo**: a palavra +4 dos dados do `AddEntry` é o campo [obj+0x98] do device F3D, gravado uma vez na inicialização
+  a partir da config (Jak1.self 0x8103DD82, = 2); o callback da fila (0x81041126), com 3 buffers, chama
+  `sceDisplayWaitSetFrameBufMulti(2+1)` antes do `SetFrameBuf` (igual ao Vita3K: último setbuf + n). No vídeo de
+  captura direta Vita x PS3 (`TyUuSltNINs`, 60-100 s, `bugsC8_yt/jakcmp.*`) a metade do Vita tem o padrão "2 quadros
+  novos a cada 3" (20 fps) o tempo todo e a do PS3 30. A gravação do usuário `PCSA00080_20261106_002008_tudo` também:
+  vblank +3 em todo quadro, GPU 3,6 ms. (c) **Corrigido: callbacks em `sceKernelDelayThreadCB`.** O Jak registra um
+  callback de vblank numa thread que fica em `DelayThreadCB(0xFFFFFFFF)`; o callback chama o handler de vsync do GOAL
+  (0x8100C4B2), que conta os vblanks do jogo (0x816B3B88). O nosso DelayThreadCB só rodava callbacks na volta, ou seja
+  nunca: o contador ficava em 0xFFFFFFFF (`--peek`, `bugsC8_out/jak_cb3`) e o que anda por vsync parava: o Daxter
+  parado e o logo da Naughty Dog que não aparecia (agora f1900-2190 o Daxter anda e o logo entra com o Jak, e vem a
+  abertura do título: `bugsC3_data/tests/jak_boot/sheet*.png`; contador +90 em 30 quadros). Gameplay com a correção:
+  20,0 fps, câmera segue o Jak (`bugsC3_data/tests/jak_g2/sheet_2.png`). (d) Gravação do usuário: o rerun não roda
+  (estado depois do LoadExec: `module (app0:Jak1.self) is not loaded the same way`, com ou sem `--self=Jak1.self`;
+  passado ao agente de save state). No `gpu.vsgd` (replay igual ao ao vivo) os 116 quadros pretos são um quad de tela
+  cheia com cor (0,0,0,0) e blend ADD 1-srcA/srcA (desenho 1450 do present 9600) que some no quadro seguinte ao X
+  (present 9646, pad 0x4000 em 9645), e depois a câmera fica parada com o Jak andando: os dois combinam com o relógio
+  de vsync parado do item (c); falta o usuário confirmar no mesmo trecho com o build novo
+  Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+- [x] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
   ~40 px do topo, largura toda, com o botão SKIP): ela aparece num quadro e some no seguinte. Provavelmente o jogo
@@ -1013,6 +1219,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   janela com esta versão; se continuar, gravar um F8 (dump de GPU) durante o pisca-pisca
   Ainda pisca (relato do usuário, 04/11/2026, depois da correção do tamanho da textura): o botão SKIP continua
   piscando; validar ao vivo com o detector de flicker e uma captura F8 do usuário no momento
+  Confirmado pelo usuário (06/11/2026): o SKIP não pisca mais (b6949d7)
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
@@ -1267,6 +1474,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   predicado guarda uma cópia de registradores (`VMOV r1 = pa0`) antes da iluminação (`07a17b44508ff793.frag`): com
   G16 = 0 o jogo sempre segue um dos lados. Próximo: um dump de GPU numa cena com esses shaders e forçar outros valores
   para ver qual lado é o certo
+  Agente C dia 8 (06/11/2026): o lado do predicado é **iluminação de dois lados**: `pa0 = -r1` (normal negada) e
+  `if (!p0) r1 = pa0`, ou seja com G16 = 0 a normal é sempre invertida; o G16 parece ser "face da frente" (não zero na
+  frente). Feita a chave de depuração `VITASHARP_G16=front|back` (padrão continua 0; GLSL idêntico sem ela;
+  `shadertest` com `front`: nenhum aviso de G16, 105/105 compilam). Não validado: a cena de abertura gravada não usa esses programas (dump `bugsC8_out/ztd_scene.vsgd`, f2180-2182: replays com
+  front/back/zero idênticos, 9 shaders, nenhum com G16). Falta uma cena com eles (provável: salas de fuga 3D) para
+  comparar com o vídeo do Vita (`zwPJR5er054`, `scratchpad/bugsC8_yt/ztd.webm`, 10 primeiros minutos)
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)

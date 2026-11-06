@@ -489,7 +489,7 @@ are process/thread CPU time per presented frame from the PERF lines.
 
 fps is mostly capped (vsync/pacing at 30/60) or GPU-bound, so the gain shows as CPU time. Killzone's long walk: no
 deaths/limbo (no black frames after gameplay starts; player alive at frame 10,500, see
-`C:\Users\guisa\VitaSharp\.vitadata\tests\nj_b3_kzl_walk3_native\sheet_35.png`), 0 crashes.
+`%USERPROFILE%\VitaSharp\.vitadata\tests\nj_b3_kzl_walk3_native\sheet_35.png`), 0 crashes.
 Remaining Killzone/Uncharted cost is NEON callouts (~470-480M executed per run: three-same forms outside the inline
 subset, two-register misc, scalar-by-element, VEXT, shifts) — next step 1.
 

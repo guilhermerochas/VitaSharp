@@ -23,6 +23,24 @@ public sealed class BoundedQueue<T>(int capacity)
         }
     }
 
+    /// <summary>Like <see cref="Add"/>, but gives up (false) once <paramref name="keepWaiting"/> turns false (checked
+    /// every 50 ms): a producer thread of a process that is being stopped must not wait for room forever.</summary>
+    public bool TryAdd(T item, Func<bool> keepWaiting)
+    {
+        lock (_items)
+        {
+            while (_items.Count >= capacity && !_completed)
+            {
+                if (!keepWaiting()) return false;
+                Monitor.Wait(_items, 50);
+            }
+            if (_completed) throw new InvalidOperationException("The queue has been marked as complete with regards to additions.");
+            _items.Enqueue(item);
+            Monitor.PulseAll(_items);
+            return true;
+        }
+    }
+
     public T Take()
     {
         lock (_items)

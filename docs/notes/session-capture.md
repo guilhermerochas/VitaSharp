@@ -130,6 +130,12 @@ the same findings.
 | FIFA 13 (PCSE00093), menus | `--capture-preroll=10 --capture-at=1500:1900`: 1359 frames, 959 of them pre-roll (16.8 s before the start) | the menu fade (black 0.34 s), a 88 ms `fileIo` stall on Cross, the stalls of the pre-roll save states (labelled as emulator actions); audio: port + NGS voice + mix. Re-run from the pre-roll state: 95% of the frames the same, median difference 0, same findings |
 | Jak 1 (PCSA00080), user's F5 state loaded after the collection's LoadExec, `--cpu-mhz=0` | `--capture-preroll=10 --capture-at=2150:2300`: 1400 frames, 1250 pre-roll (the pre-roll state is 49.5 s before the start, before the LoadExec) | `black-screen` for 5.7 s around the state load (found in the pre-roll, 25 s before the recording started), the LoadExec black transition, the two renderer replacements, guest-waits-for-GPU stalls in gameplay |
 
+**Validated by the user in a window (06/11/2026, build 0d298b4):** F8 on a game that never presented a frame
+(Injustice, PCSE00271, hung at boot) gave a complete capture: `session.txt`, `state_start.vss`, threads at start and
+stop, `hle_errors.txt` (it named the cause: `sceKernelWaitEvent` = 0x80028201 692,895 times), log, input, timeline,
+an empty frames file and a 0-frame GPU dump, and the zip. F8 on Jak 1 gameplay (35 s) gave the full set with a
+682-frame GPU dump and 53 audio files. The hung-game and window-close finalization (d6cd59c) counts as done.
+
 Not covered yet: the black start of a *new* Jak 1 game (headless, Jak 1 stays at 0.4-2 fps on its title screen after
 the LoadExec, with or without a capture: an open Jak bug), the Croixleur Sigma SKIP flicker (only in a window), the
 Android build on a phone. The user's F5 state of Jak 1 hangs intermittently right after the load (main waits on

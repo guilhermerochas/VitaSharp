@@ -19,6 +19,8 @@ public sealed class LibraryState
     public bool Loading { get; set; } = true;
     public string? Installing { get; set; }
     public double InstallProgress { get; set; }
+    /// <summary>"42% · 80 MB/s · 0:12 restantes" under the install bar.</summary>
+    public string InstallDetail { get; set; } = "";
     public FirmwareStatus? Firmware { get; set; }
 }
 
@@ -167,7 +169,8 @@ public sealed class LibraryView : Screen<LibraryState>
         Card(
             VStack(
                 Label($"Instalando {State.Installing}").FontFamily(Fonts.InterSemiBold).FontSize(14),
-                ProgressBar().Progress(State.InstallProgress).Margin(0, 8, 0, 0)
+                ProgressBar().Progress(State.InstallProgress).Margin(0, 8, 0, 0),
+                Label(State.InstallDetail).FontSize(12).Margin(0, 6, 0, 0)
             ).Padding(16)
         ).Margin(20, 12, 20, 0);
 
@@ -271,13 +274,13 @@ public sealed class LibraryView : Screen<LibraryState>
         }
         if (license == null) return;
 
-        SetState(s => { s.Installing = pkg.DisplayName; s.InstallProgress = 0; });
+        SetState(s => { s.Installing = pkg.DisplayName; s.InstallProgress = 0; s.InstallDetail = ""; });
         await Run("Instalar PKG", async () =>
         {
             try
             {
                 var t = await Task.Run(() => PkgInstaller.Install(pkg.OpenSeekable(ImportCache), license, AppServices.Data.Ux0,
-                    m => Log.Info($"PKG: {m}"), f => SetState(s => s.InstallProgress = f)));
+                    m => Log.Info($"PKG: {m}"), ShowProgress));
                 await Alert("Instalar PKG", $"{t.TitleId} · {t.Title} ({t.Type})\n\nInstalado.");
             }
             finally
@@ -288,11 +291,17 @@ public sealed class LibraryView : Screen<LibraryState>
         });
     }
 
+    void ShowProgress(InstallProgress p) => SetState(s =>
+    {
+        s.InstallProgress = p.Fraction;
+        s.InstallDetail = p.Describe("restantes");
+    });
+
     async Task InstallVpk()
     {
         var doc = await Saf.PickAsync("application/zip", "application/octet-stream", "application/vnd.android.package-archive");
         if (doc == null) return;
-        SetState(s => { s.Installing = doc.DisplayName; s.InstallProgress = 0; });
+        SetState(s => { s.Installing = doc.DisplayName; s.InstallProgress = 0; s.InstallDetail = ""; });
         await Run("Instalar VPK", async () =>
         {
             try
@@ -302,7 +311,7 @@ public sealed class LibraryView : Screen<LibraryState>
                     using var stream = doc.OpenSeekable(ImportCache);
                     return VpkInstaller.Install(stream, AppServices.Data.Ux0, new VpkInstallOptions
                     {
-                        Progress = p => SetState(s => s.InstallProgress = p.Fraction),
+                        Progress = ShowProgress,
                         Log = m => Log.Info($"VPK: {m}"),
                     });
                 });

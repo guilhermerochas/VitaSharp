@@ -718,7 +718,11 @@ public sealed partial class Gxm : HleModule
         long oldDisplays = 0;
         if (oldSync != null) lock (oldSync) oldDisplays = oldSync.Queued;
         if (DisplaySync && _syncObjects.GetValueOrDefault(newBuffer) is { } newSync) lock (newSync) newSync.Queued++;
-        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) _displayQueue.Add((copy, Gpu.SubmitFence(DisplayEarlySignal), oldSync, oldDisplays));
+        // a full queue waits for the display thread; when the process is being stopped (a LoadExec the host started, the
+        // shell ending it) that thread has already ended and nobody takes the entry: the wait ends with the thread's stop
+        var item = (copy, Gpu.SubmitFence(DisplayEarlySignal), oldSync, oldDisplays);
+        using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait))
+            _displayQueue.TryAdd(item, () => GuestThread.Current?.Core.StopRequested != true);
         GpuQueue.CountGuestWait(GpuQueue.GuestWait.DisplayQueue, t0);
         return 0;
     }

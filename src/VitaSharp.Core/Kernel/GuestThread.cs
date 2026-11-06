@@ -463,6 +463,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     // ---- VM suspension (sceKernelSuspendThreadForVM / ForMono)
     public volatile int SuspendCount;
     volatile bool _inGuest;
+    internal bool InGuestCode => _inGuest;
     readonly object _suspendLock = new();
 
     public void SuspendForVm()
