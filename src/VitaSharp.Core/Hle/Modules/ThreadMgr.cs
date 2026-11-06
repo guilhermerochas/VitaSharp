@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core.Kernel;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
@@ -472,7 +472,7 @@ public sealed partial class ThreadMgr : HleModule
         var s = Obj<Semaphore>(uid);
         if (s == null) return SceError.UNKNOWN_SEMA_ID;
         s.Delete();
-        K.Objects.Remove(uid);
+        K.Objects.Delete(s);
         return 0;
     }
 
@@ -517,7 +517,7 @@ public sealed partial class ThreadMgr : HleModule
         var e = Obj<EventFlag>(uid);
         if (e == null) return SceError.UNKNOWN_EVF_ID;
         e.Delete();
-        K.Objects.Remove(uid);
+        K.Objects.Delete(e);
         return 0;
     }
 
@@ -562,7 +562,7 @@ public sealed partial class ThreadMgr : HleModule
         return uid;
     }
 
-    [Hle] int sceKernelDeleteMutex(int uid) { var m = Obj<Mutex>(uid); if (m == null) return SceError.UNKNOWN_MUTEX_ID; m.Delete(); K.Objects.Remove(uid); return 0; }
+    [Hle] int sceKernelDeleteMutex(int uid) { var m = Obj<Mutex>(uid); if (m == null) return SceError.UNKNOWN_MUTEX_ID; m.Delete(); K.Objects.Delete(m); return 0; }
     [Hle]
     [Hle("sceKernelOpenMutex_089")]
     int sceKernelOpenMutex(uint name) => KernelInfo.OpenByName<Mutex>(K.Objects, name, static m => !m.IsLight);
@@ -1147,7 +1147,7 @@ public sealed partial class ThreadMgr : HleModule
         var e = Event(uid);
         if (e == null) return SceError.UNKNOWN_EVENT_ID;
         e.Delete();
-        K.Objects.Remove(uid);
+        K.Objects.Delete(e);
         return 0;
     }
 

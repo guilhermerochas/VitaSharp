@@ -20,6 +20,11 @@ public abstract class KernelObject
 
     /// <summary>Handles handed out by sceKernelOpen* and not yet closed (the Open returns the creator's UID).</summary>
     public int OpenCount;
+
+    /// <summary>Deleted (by its creator, or with its creator's process) while handles opened by name were still open: the
+    /// object stays, reference counted as on the Vita, until the last of those handles is closed, and can no longer be
+    /// opened. libipmi servers close the semaphores and event flags of a client that already deleted them.</summary>
+    public volatile bool Orphaned;
 }
 
 /// <summary>Helpers shared by the sceKernelGet*Info functions.</summary>
@@ -63,7 +68,7 @@ public static class KernelInfo
         if (namePtr == 0) return SceError.ILLEGAL_ADDR;
         string name = Memory.GuestMemory.ReadCString(namePtr, 256);
         if (System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
-        var o = objects.All<T>().FirstOrDefault(x => x.Name == name && (filter == null || filter(x)));
+        var o = objects.All<T>().FirstOrDefault(x => x.Name == name && !x.Orphaned && (filter == null || filter(x)));
         if (o == null) return SceError.UID_CANNOT_FIND_BY_NAME;
         Interlocked.Increment(ref o.OpenCount);
         if (o is MsgPipe pipe) pipe.Signal(MsgPipe.EventOpen);
@@ -80,6 +85,7 @@ public static class KernelInfo
         if (o is MsgPipe closed) closed.Signal(MsgPipe.EventClose);
         // the last handle to a deleted pipe: the object goes away now
         if (o is MsgPipe { IsDeleted: true } && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
+        else if (o.Orphaned && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
         return SceError.OK;
     }
 }
@@ -211,6 +217,12 @@ public sealed partial class ObjectTable
         _objects.TryRemove(pipe.Uid, out _);
         return false;
     }
+    /// <summary>sceKernelDelete* of a semaphore, event flag or mutex: gone now, or orphaned while opened handles remain.</summary>
+    public void Delete(KernelObject o)
+    {
+        if (Volatile.Read(ref o.OpenCount) > 0) { o.Orphaned = true; return; }
+        _objects.TryRemove(o.Uid, out _);
+    }
     public IEnumerable<T> All<T>() where T : KernelObject => _objects.Values.OfType<T>();
     /// <summary>The objects of one kind that process <paramref name="pid"/> created.</summary>
     public IEnumerable<T> Owned<T>(int pid) where T : KernelObject => _objects.Values.OfType<T>().Where(o => o.OwnerPid == pid);
@@ -225,6 +237,7 @@ public sealed partial class ObjectTable
             // a message pipe another process still holds a handle to stays until that handle is closed: its
             // operations fail with MPP_DELETED (a libipmi server sees its client gone)
             if (o is MsgPipe pipe) { if (!Delete(pipe)) n++; continue; }
+            if (Volatile.Read(ref o.OpenCount) > 0) { o.Orphaned = true; continue; }
             if (_objects.TryRemove(uid, out _)) n++;
         }
         return n;
