@@ -25,14 +25,24 @@ function Reopen {
     if ($out -match 'Error|does not exist') { Write-Host "AwakeActivity not available (developer APK needed): $($out.Trim())" }
 }
 
-# one check: returns 'device' (awake), 'asleep' (reopened the activity), or the adb state (offline, unauthorized, absent)
+# adb output, or nothing when the call takes more than 20 s (adb can hang while the phone drops off the USB)
+function AdbTimed([string[]]$Argv) {
+    $job = Start-Job -ScriptBlock { param($a) & adb @a 2>$null } -ArgumentList (, $Argv)
+    $out = if (Wait-Job $job -Timeout 20) { Receive-Job $job } else { $null }
+    Remove-Job $job -Force
+    return $out
+}
+
+# one check: returns 'device' (awake), 'asleep' (reopened the activity), or the adb state (offline, unauthorized, absent,
+# unresponsive: an adb call that hangs while the phone drops off the USB is cut after 20 s, so the loop keeps alerting)
 function Check {
-    $line = (& adb devices 2>$null) | Where-Object { $_ -match '^\S+\s+\S+$' -and $_ -notmatch '^List' }
+    $line = (AdbTimed @('devices')) | Where-Object { $_ -match '^\S+\s+\S+$' -and $_ -notmatch '^List' }
     if ($Serial) { $line = $line | Where-Object { $_ -match "^$Serial\s" } }
     $state = if ($line) { ((($line | Select-Object -First 1) -split '\s+')[1]) } else { 'absent' }
     if ($state -ne 'device') { return $state }
-    $w = (& adb @adbArgs shell dumpsys power 2>$null | Select-String -Pattern 'mWakefulness=(\w+)' | Select-Object -First 1)
-    $wake = if ($w) { $w.Matches[0].Groups[1].Value } else { '?' }
+    $w = (AdbTimed ($adbArgs + @('shell', 'dumpsys', 'power')) | Select-String -Pattern 'mWakefulness=(\w+)' | Select-Object -First 1)
+    if (-not $w) { return 'unresponsive' }
+    $wake = $w.Matches[0].Groups[1].Value
     if ($wake -eq 'Awake') { return 'device' }
     Reopen
     return 'asleep'

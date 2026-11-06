@@ -31,20 +31,23 @@ reopen() {
   case "$out" in *Error*|*"does not exist"*) echo "AwakeActivity not available (developer APK needed): $out" ;; esac
 }
 
-# one check: prints 'device' (awake), 'asleep' (reopened the activity), or the adb state (offline, unauthorized, absent)
+# one check: prints 'device' (awake), 'asleep' (reopened the activity), or the adb state (offline, unauthorized, absent,
+# unresponsive: an adb call that hangs while the phone drops off the USB is cut after 20 s, so the loop keeps alerting)
 check() {
   local state wake
-  if [ -n "${SERIAL:-}" ]; then state=$(adb devices 2>/dev/null | awk -v s="$SERIAL" '$1==s{print $2}')
-  else state=$(adb devices 2>/dev/null | awk 'NR>1 && NF==2{print $2; exit}'); fi
+  if [ -n "${SERIAL:-}" ]; then state=$(timeout 20 adb devices 2>/dev/null | awk -v s="$SERIAL" '$1==s{print $2}')
+  else state=$(timeout 20 adb devices 2>/dev/null | awk 'NR>1 && NF==2{print $2; exit}'); fi
   state=${state:-absent}
   if [ "$state" != "device" ]; then echo "$state"; return; fi
-  wake=$(adb_ shell dumpsys power 2>/dev/null | tr -d '\r' | grep -m1 -o 'mWakefulness=[A-Za-z]*' | cut -d= -f2)
+  wake=$(timeout 20 "$0" dumpsys-power 2>/dev/null | tr -d '\r' | grep -m1 -o 'mWakefulness=[A-Za-z]*' | cut -d= -f2)
+  if [ -z "$wake" ]; then echo unresponsive; return; fi
   if [ "$wake" = "Awake" ]; then echo device; return; fi
   reopen
   echo asleep
 }
 
 case "$action" in
+  dumpsys-power) adb_ shell dumpsys power ;;   # internal: check runs it under timeout
   check) s=$(check); echo "phone: $s"; [ "$s" = device ] || alert ;;
   reopen) reopen ;;
   start)

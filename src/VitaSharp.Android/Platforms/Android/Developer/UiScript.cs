@@ -2,6 +2,7 @@
 using Android.App;
 using Android.OS;
 using Android.Views;
+using AView = Android.Views.View;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Android.Developer;
@@ -89,7 +90,12 @@ public static class UiScript
             // (ViewRootImpl.ensureTouchMode); a D-pad press that only did that is consumed, as on a device
             if (activity.Window?.DecorView is { IsInTouchMode: true } decor)
             {
-                var target = activity.CurrentFocus ?? decor.GetFocusables(FocusSearchDirection.Forward)?.FirstOrDefault();
+                // GetFocusables in touch mode lists only the views focusable in touch mode (none in the pause menu):
+                // the views a key can focus are all the focusable ones, and leaving touch mode restores the default
+                // focus (View.FocusedByDefault) before the first one (ViewRootImpl.leaveTouchMode)
+                var all = new List<AView>();
+                decor.AddFocusables(all, FocusSearchDirection.Forward, FocusablesFlags.All);
+                var target = activity.CurrentFocus ?? all.FirstOrDefault(v => v.FocusedByDefault) ?? all.FirstOrDefault();
                 target?.RequestFocusFromTouch();
                 if (dir != null && target != null && activity.CurrentFocus == target) return null;
             }

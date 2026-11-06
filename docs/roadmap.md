@@ -38,8 +38,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ao salvar (`scratchpad/ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
   LoadExec) a 59 fps (`ss2_ucB`); o rerun da gravação do usuário `PCSA00080_20261106_002008_tudo` (build da época
   0d298b4 + estas mudanças, o esquema da main mudou depois) carrega e 98% dos quadros saem iguais
-  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui); o Android ainda
-  não faz o passo do LoadExec ao carregar um estado de outro self
+  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui). Android
+  (06/11/2026, perf/android-8, ba51978): o Carregar estado do menu de pausa faz o mesmo `SwitchProgramFor` (a emulação
+  volta a rodar durante o LoadExec, o menu a tinha pausado). Validado no celular: estado salvo no GOW1 da coleção do
+  God of War, jogo reaberto no menu da coleção, slot carregado pelo menu: o log mostra `LoadExec app0:GOW1.self` e a
+  carga, o jogo segue do ponto salvo e responde (`scratchpad/and8_tools/shots/g4_loadpage.jpg`, `g6_loaded.jpg`,
+  `g7_after.jpg`); Killzone (sem LoadExec) salvo e carregado no gameplay pelo mesmo caminho em todas as corridas de
+  medida. O Jak and Daxter Collection não está no celular
 - [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
   (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
   ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
@@ -112,6 +117,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Killzone no Android a 30 fps (pedido do usuário, 06/11/2026; perf/android-8): hoje 12-15 fps de mediana,
+  68-83 ms por quadro, GPU 42-51 ms (`docs/notes/android-frame-anatomy.md`, seção Killzone). O rastro Perfetto mostra
+  a GPU ocupada só 48% do tempo: a cadeia jogo -> worker -> GPU -> jogo é serial (`docs/notes/android-perf-references.md`).
+  Próximos, por ganho esperado: (1) `VITASHARP_DISPLAY_EARLY_SIGNAL=1` levou a mediana de 12 a 15 fps em duas corridas
+  (64,0/74,8 ms contra 77,5/78,9): repetir em 3 pares frios e no Uncharted/F1 antes de ligar; depois, notificações GXM
+  liberadas no submit com a cerca real só onde o jogo lê a GPU (writebacks, visibilidade), como Dolphin/PCSX2;
+  (2) opção de qualidade por jogo no Android (escala interna, MSAA), padrão nativo: 0,75 ou MSAA desligado levam a
+  GPU a ~34,5 ms e o quadro a ~62 ms; (3) `VITASHARP_RENDER_AREA_TRIM=1` (db2d72d): -2 a -5 ms de GPU na cena de
+  pós-processamento no bench, pixel-idêntico em 21 dumps; ligar quando uma série ao vivo mais longa confirmar.
+  `VITASHARP_PRESENT_THREAD` piorou (85-86 ms) e `VITASHARP_TEXSET_PERSIST` não mudou o quadro: ficam desligados
+
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `scratchpad/and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
   chave do Android muda). Replay do mesmo dump no PC (agente C, 05/11/2026, build da main a19cdbe + a correção do
@@ -174,6 +190,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `captures/PCSA00029_20261105_232641_tudo.zip` no celular). Estranho: a gravação derruba o Uncharted de ~26 para
   12-14 fps (gravador 10,7 ms/quadro no worker + 13,3 ms de compressão); o session.txt diz "the GPU dump ended without
   a present" sempre que se para com o jogo pausado (o menu pausa antes do stop)
+  Validado no celular (06/11/2026, perf/android-8, APK LLVM dev da main 4a8bb94, no Killzone e no God of War): as
+  páginas de slots cabem na tela, a miniatura tem cantos retos, a página principal por toque
+  (`scratchpad/and8_tools/shots/m1_main.jpg`, `m3_save_slots.jpg`, `g4_loadpage.jpg`). O foco por D-pad/A continua
+  sem validação: as teclas injetadas pelo gancho não tiram a janela do modo de toque neste celular (nenhuma view
+  recebe o foco, `dumpsys activity top`), e não havia controle físico (nem o botão PS). Corrigido sem validar
+  (ae93ac8): o primeiro botão de cada página é o foco padrão (`FocusedByDefault`); sem isso, a primeira seta de um
+  controle real focaria o primeiro focável da árvore, o próprio quadro do menu. Falta: validar com um controle
 - [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
@@ -633,6 +656,29 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   vídeo do Vita real e corrigir de forma genérica. Validação de verdade no Killzone em gameplay (regra do Android) e
   depois Uncharted, F1 2011, God of War e Devious Dungeon sem nenhum quadro piscando. Com o agente de Android
 - [x] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+  Não reproduz no build da main (06/11/2026, perf/android-8, APK LLVM dev de 4a8bb94): Uncharted no início do
+  Prologue (Drake parado, a cena das plantas), 12 s de gravação de tela: 0 quadros com flash (`tileflick.py`, blocos de
+  16 px) em 196 quadros distintos a 0,75 e 1 em 179 a 1,0 (no canto dos controles na tela); as maiores mudanças de
+  bloco são a animação do Drake, a grama muda continuamente. Killzone no gameplay (escadas do início), parado e
+  andando: nenhuma alternância (o brilho da região só muda com o movimento da câmera). Provas:
+  `scratchpad/and8_runs/flick_base.mp4`, `flick_s100.mp4`, `flick_kz_base.mp4`, `flick_kz_walk2.mp4`. Pausado a pedido
+  do usuário (desempenho primeiro): falta saber de qual jogo/cena/APK é o relato para bissecar
+- [ ] Android: um segundo load state logo depois do primeiro congela o jogo (06/11/2026, perf/android-8, APK LLVM dev
+  db2d72d, Killzone PCSC00045, `VITASHARP_RES_SCALE=0.75;VITASHARP_RENDER_AREA_TRIM=1`). O roteiro mandou um só
+  `loadstate@0:1` (`VITASHARP_ANDROID_INPUT_LIVE`); o log tem duas cargas: 15:57:41 "Estado do slot 1 carregado" e,
+  11 s depois, "Não foi possível carregar o estado: thread 'PadThread' did not stop (in ); restart the game"; daí em
+  diante 0 fps, o processo vivo (`scratchpad/and8_runs/log_RS75b.txt`, print `and8_tools/shots/kz_RS75b.jpg`). Duas
+  coisas: (1) por que o passo do roteiro rodou duas vezes (o ScriptedPad relido depois da carga?); (2) uma carga que
+  falha no meio deixa o jogo parado em vez de voltar ao estado de antes. Em 25 corridas com uma carga só, nenhuma
+  falhou. Parecido com o item abaixo (desktop). Com o agente de bugs
+- [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
+  (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
+  (`scratchpad/and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
+  carga, abort na thread `Shader worker 1`: `* Assertion at sgen-los.c:381, condition '!section->free_chunk_map [i]'
+  not met` (`crash_M2_shader.txt`). Duas vezes em ~28 cargas, sempre logo depois de carregar: o heap de objetos
+  grandes do GC corrompido, provável escrita fora do lugar durante/depois da carga (buffers do renderer recriado,
+  memória do guest, spans sobre arrays). Com o agente de bugs
+- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
   e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
