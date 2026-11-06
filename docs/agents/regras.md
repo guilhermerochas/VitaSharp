@@ -58,6 +58,9 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
 
 - **Um agente por vez** no celular; só quem o lead disser que é o dono usa adb. Os outros esperam a vez.
 - `export MSYS_NO_PATHCONV=1` no Git Bash.
+- **O teste de validação de verdade no Android é o Killzone: Mercenary (PCSC00045)** em gameplay real (pedido do
+  usuário, 06/11/2026): toda mudança do Android (desempenho, renderizador, entrada, menus, save state) só conta como
+  validada depois de rodar no Killzone no celular, com print do gameplay e fps. Uncharted e os outros jogos são extras.
 - **A tela fica acesa o tempo todo** em que você tem o celular: a **primeira** coisa ao conectar é ligar o vigia
   (reabre a AwakeActivity do build de desenvolvedor **só quando** `dumpsys power` mostra `mWakefulness` diferente de
   `Awake`, a cada 30 s). Ele fica ligado durante o trabalho no PC e os builds, até a limpeza final. Depois de cada
