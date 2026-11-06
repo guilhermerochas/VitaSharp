@@ -11,10 +11,13 @@ public partial class SourceEncodingTests
     [GeneratedRegex("Ã[\u0080-¿]|â€|Â[ -¿]|ðŸ")]
     private static partial Regex DoubleEncoded();
 
-    static string? RepoRoot()
+    // The test output may live outside the repository (builds go to a temporary folder with -o), so the search also
+    // starts from this source file's own path.
+    static string? RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string source = "")
     {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln"))) return d.FullName;
+        foreach (var start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "" })
+            for (var d = start.Length > 0 ? new DirectoryInfo(start) : null; d != null; d = d.Parent)
+                if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln"))) return d.FullName;
         return null;
     }
 
