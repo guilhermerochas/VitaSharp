@@ -105,6 +105,8 @@ public sealed class HleFunction
     public long CallCount;
     /// <summary>The "unimplemented" warning was issued (skips building its key on every later call).</summary>
     public bool WarnedUnimplemented;
+    /// <summary>An exception of the function was logged (GuestThread.InvokeGuarded).</summary>
+    public bool ExceptionLogged;
     /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
     public long ChargedCycles;
     /// <summary>--profile: guest threads record the HLE function they are in (GuestThread.CurrentHle).</summary>

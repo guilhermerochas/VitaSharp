@@ -636,8 +636,8 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         var v = new Videoenc();
         uint s = fx.Memory.Alloc(0x1000, "videoenc"), ctrl = s, query = s + 0x40, info = s + 0x80, pic = s + 0x100;
         Assert.Equal(0, Call(v, "sceVideoencInitLibrary", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200));
-        Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceVideoencInitLibraryWithUnmapMem", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, 0u));
-        Assert.Equal(0, Call(v, "sceVideoencQueryMemSize", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, info));
+        Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceVideoencInitLibraryWithUnmapMem", Videoenc.TYPE_HW_AVCENC_GUESS, 0u, 0u, 0u));
+        Assert.Equal(0, Call(v, "sceVideoencQueryMemSize", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, info, 0u));
         Assert.Equal(0x40000u, GuestMemory.R32(info));
         GuestMemory.W32(query, 640);
         GuestMemory.W32(query + 4, 368);
@@ -654,7 +654,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(v, "sceAvcencEncode", ctrl, pic, pic + 0x40));
         Assert.Equal(2, v.FramesOf(h));
         GuestMemory.Fill(pic, 0xAB, 0x40);
-        Assert.Equal(0, Call(v, "sceAvcencGetNalUnit", ctrl, pic));
+        Assert.Equal(0, Call(v, "sceAvcencGetNalUnit", ctrl, 0u, pic));
         Assert.Equal(0xABABABABu, GuestMemory.R32(pic)); // NAL struct untouched (layout unconfirmed)
         Assert.Equal(0, Call(v, "sceAvcencEncodeFlush", ctrl));
         Assert.Equal(0, Call(v, "sceAvcencEncodeStop", ctrl, 0u));
@@ -759,8 +759,9 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(Block + 0x80000, b); // best alignment that fits: 512 KiB
         uint c = (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x40000u, 0x100u)!;
         Assert.Equal(Block + 0x40000, c);
-        Assert.Equal(0x80600009u, (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x100u, 0x100u)!); // full
+        Assert.Equal(0u, (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x100u, 0x100u)!); // full: 0, callers test for it
         Assert.Equal(0, Call(ce, "sceCodecEngineFreeMemoryFromUnmapMemBlock", uid, b));
+        Assert.Equal(unchecked((int)0x80600009), Call(ce, "sceCodecEngineFreeMemoryFromUnmapMemBlock", uid, b)); // twice: refused, no exception
         Assert.Equal(b, (uint)Invoke(ce, "sceCodecEngineAllocMemoryFromUnmapMemBlock", uid, 0x80000u, 0x80000u)!);
         Assert.Equal(0, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
     }
