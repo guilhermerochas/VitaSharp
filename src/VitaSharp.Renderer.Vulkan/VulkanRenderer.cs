@@ -74,9 +74,13 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// <summary>
     /// Command buffers in flight. Sync points submit early (see DeferSignal), so a frame is often split into 2-3
     /// submissions; with only two slots, recording the next one regularly waited for the GPU (Slot fence waits).
+    /// Small submissions (a sync point's early submit) still take a slot, so the slots can hold far less than a frame of
+    /// GPU work: Dolphin's Vulkan backend keeps 8 command buffers for the same reason.
     /// </summary>
-    static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 6) : 3;
-    const ulong RingSize = 64ul << 20;
+    static readonly int FramesInFlight = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FramesInFlight), out var fif) ? Math.Clamp(fif, 2, 8) : 3;
+    /// <summary>Host upload ring per slot (<see cref="EnvVars.UploadRingMb"/>, 8-64 MB, default 64); past it uploads
+    /// use overflow chunks, so more slots can use smaller rings.</summary>
+    static readonly ulong RingSize = (ulong)(int.TryParse(Environment.GetEnvironmentVariable(EnvVars.UploadRingMb), out var rmb) ? Math.Clamp(rmb, 8, 64) : 64) << 20;
     /// <summary>Uploads past a full ring are carved from chunks of this size: a buffer per upload (Jak 1's title screen,
     /// ~27 MB of uniform blocks a frame past the uniform heap, thousands of draws) cost a vkAllocateMemory each.</summary>
     const ulong OverflowChunkSize = 16ul << 20;
