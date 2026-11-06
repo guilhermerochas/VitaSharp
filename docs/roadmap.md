@@ -928,7 +928,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
   Desligada por padrão até o usuário confirmar na janela.
 
-- [ ] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
+- [x] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
   `MainThread`, a `AchievementIssueThread`, a `SumoPlatform` e o `CRI Server Manager` ficam rodando (polling), o
   resto espera em semáforos/eventflags (`SlSemaphore_Platform`, `SlThreadGateBank`); a única função que falta é
@@ -956,6 +956,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado preso (382 quadros a 30 fps depois da carga, `bugsB3_out/sonic_st1`; com `VITASHARP_TOUCH_PEEK_UNREAD=0`
   continua parado, `sonic_st0`), e o boot limpo passa em 3 de 3 (`sonic_boot1..3`, 351-378 quadros a 30 fps). As
   gravações saíam incompletas por causa do Gravar tudo (corrigido, ver docs/notes/session-capture.md)
+  Confirmado no jogo pelo usuário (05/11/2026, main da8372d): abre e funciona
 
 - [x] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
   principalmente do Messi, aparecem erradas (relato do usuário, 04/11/2026; captura F10
