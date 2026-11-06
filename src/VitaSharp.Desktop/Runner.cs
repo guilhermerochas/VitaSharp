@@ -145,7 +145,8 @@ public static class Runner
         if (headless) return RunHeadless(emu, appPath, options, rendererOptions, fatal);
 
         using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
-        using var audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device"));
+        // a hidden test window (VITASHARP_HIDDEN_WINDOW=1) stays silent too: the PC may be in use
+        using var audio = Environment.GetEnvironmentVariable(EnvVars.HiddenWindow) == "1" ? null : OpenAlAudio.TryCreate(Opt(options, "--audio-device"));
         // scripted input also works in a window (automated checks of the windowed path: swapchain, LoadExec)
         var scripted = Opt(options, "--input") is { } windowScript ? new ScriptedInput(windowScript) : null;
         emu.Host.Input = scripted ?? (IInputBackend)window;
@@ -231,7 +232,7 @@ public static class Runner
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
-        var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }, diag.Status, s => ShowStatus(s, 15000));
+        var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; }, diag.Status, s => ShowStatus(s, 15000));
         window.SaveStateKey += slot => { capture.Capture.NoteKey(slot < 0 ? "F6" : "F5"); if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
         window.LoadStateKey += slot => { capture.Capture.NoteKey("F7"); states.LoadAsync(slot == 0 ? 0 : states.Slot); };
         states.StartScheduled(options);
@@ -240,6 +241,10 @@ public static class Runner
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
         GpuDumpControl.StartScheduled(emu, () => renderer, options);
+
+        // the GPU driver reset (TDR) or lost the device: the game stops drawing, the process stays up and says so; a state load
+        // or a restart makes a new device
+        void OnDeviceLost(string where) => ShowStatus("A GPU parou de responder (driver reiniciado): carregue um estado (F7) ou reinicie o jogo", 600_000);
 
         // pause hotkey (Controles > "Pausar emulação": P by default, or a controller combination): freezes every guest
         // process, the guest clock and the audio; the window keeps the last frame with a "Pausado" badge
@@ -274,9 +279,13 @@ public static class Runner
         window.Loaded += () =>
         {
             rendererOptions.Surface = window;
+            rendererOptions.KeepDevice = true; // state loads and LoadExec keep the window's Vulkan device
             renderer = new VulkanRenderer(rendererOptions);
             renderer.AnomalyDetected += diag.OnAnomaly;
+            renderer.DeviceLost += OnDeviceLost;
             emu.Gpu.Backend = renderer;
+            // state loads and LoadExec make a new renderer for this window: on this thread, like the first one
+            emu.Gpu.ReplaceOn = window.RunOnWindowThread;
             emu.LoadTitle(appPath, BootSelf(options));
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
@@ -286,7 +295,7 @@ public static class Runner
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
         emu.ExecRequested += () => Task.Run(() =>
         {
-            try { emu.PerformExec(() => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; ShowPauseBadge(r); return renderer = r; }); }
+            try { emu.PerformExec(() => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; }); }
             catch (Exception e) { Log.Error($"LoadExec failed: {e}"); fatal.Set(); }
         });
         window.Resized += () => renderer?.NotifyResized();

@@ -43,6 +43,10 @@ public static class EnvVars
     /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
     /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
     public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";
+    /// <summary>Tests: =1 opens the game window hidden (no focus, nothing on screen) while it keeps its Vulkan surface and
+    /// swapchain, so the windowed path (presents, renderer swaps on state loads) runs on a PC that is in use; no audio
+    /// output either.</summary>
+    public const string HiddenWindow = "VITASHARP_HIDDEN_WINDOW";
     public const string BtDraw = "VITASHARP_BT_DRAW";
     public const string Cpu = "VITASHARP_CPU";
     public const string CpuMhz = "VITASHARP_CPU_MHZ";

@@ -558,13 +558,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+- [x] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
   e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
   derrube o processo; validar 10 loads seguidos. Com o agente de bugs C
-  Agente C dia 9: não começado (só o log copiado em `scratchpad/bugsC9_ss`); o usuário parou o dia. Próximo:
-  reproduzir sem janela com save + load-state repetidos no PCSF00476 e no Uncharted/FIFA
+  **Corrigido** (agente C dia 10, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): cada load
+  destruía e recriava a instância Vulkan, o device, a surface e o swapchain da janela, numa thread de trabalho. No
+  driver NVIDIA isso corrompia o heap nativo (c0000374 no vkCreateInstance seguinte, 2 de 2 execuções no 1º load) e,
+  com a destruição na thread da janela, ainda dava c0000005 em coreclr.dll dentro do vkQueuePresentKHR logo depois de
+  um load (1 em ~25); o TDR (LiveKernelEvent 141) vem **depois** da queda, do processo morrendo com trabalho na GPU.
+  Agora o renderer novo herda instância, device, surface e swapchain (o swapchain é recriado a partir do antigo, como
+  num resize; `VulkanRendererOptions.KeepDevice`, só na janela), a troca roda na thread da janela, e um device
+  perdido vira aviso no título (`A GPU parou de responder...`) e um device novo no próximo load. Com janela oculta
+  (chave de teste nova `VITASHARP_HIDDEN_WINDOW=1`, sem som): Tearaway 12 loads, FIFA 13 10, Uncharted 10 (+1 LoadExec),
+  sem queda nem TDR, 30/60 fps depois (`scratchpad/bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
+  `scratchpad/bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
+  em menus/cenas (sem gameplay roteirizado); device lost não foi provocado de verdade
 - [ ] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; **regressão incompleta**).
   O envelope era passthrough e `sceNgsVoiceKeyOff` parava a voz no update seguinte; o SDK diz que depois do key off
   "o processamento continua até a voz terminar" (release). O Jak 1 usa racks Scream com envelope (pontos 0→1 em 0 ms,
