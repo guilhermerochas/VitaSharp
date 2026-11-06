@@ -20,6 +20,10 @@ log bookmark
 tap 0.5 0.37
 wait 900
 shot bookmark
+# no network: the web engine (NPXS10083) answers with "Cannot display the page" (C2-14921-7); OK closes it
+tap 0.5 0.82
+wait 120
+shot error_ok
 press circle
 wait 300
 log back

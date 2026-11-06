@@ -258,7 +258,7 @@ public sealed class Emulator : IDisposable
     /// then it ends and <paramref name="cannotPlace"/> runs instead.
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
-        AppObject? reservedApp = null)
+        AppObject? reservedApp = null, Action<Emulator>? started = null)
     {
         Gpu.SharedByProcesses = true; // from now on GPU scenes are arbitrated between the processes
         var child = new Emulator(this, reservedApp) { _background = background };
@@ -278,6 +278,7 @@ public sealed class Emulator : IDisposable
                 // the launch finished: event 0xA {application id}; the shell then activates it
                 if (Vita.Shell != null && !background) Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
                 if (activate) Vita.SetForeground(child);
+                started?.Invoke(child);
             }
             catch (InvalidOperationException e) when (e.Message.Contains("cannot map fixed segment"))
             {
@@ -343,7 +344,11 @@ public sealed class Emulator : IDisposable
         Code.Clear();
         Memory.ReleaseSpace(Space);
         Log.Info($"Process {Describe()} released: {objects} kernel objects, {bytes / 1024} KB of memory");
+        Released?.Invoke();
     }
+
+    /// <summary>The process is gone (its memory and kernel objects released).</summary>
+    public event Action? Released;
 
     /// <summary>The process is suspended: its threads stop at their next safe point (see <see cref="GuestThread"/>).</summary>
     public volatile bool Suspended;

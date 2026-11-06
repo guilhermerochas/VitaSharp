@@ -74,6 +74,12 @@ public sealed class Linker(IImportResolver hle)
         lock (_lock) return _funcExports.TryGetValue(nid, out addr);
     }
 
+    /// <summary>The function <paramref name="nid"/> of library <paramref name="libNid"/> a loaded module exports.</summary>
+    public bool TryGetFunctionExport(uint libNid, uint nid, out uint addr)
+    {
+        lock (_lock) return _funcExportsByLib.TryGetValue((libNid, nid), out addr);
+    }
+
     public static void WriteHleStub(uint stub, uint svcIndex, uint nid)
     {
         GuestMemory.W32(stub, 0xEF000000 | (svcIndex & 0xFFFFFF)); // svc #index

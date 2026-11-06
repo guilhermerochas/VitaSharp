@@ -48,15 +48,19 @@ public sealed partial class AppMgrShell : HleModule
         return 0;
     }
 
-    /// <summary>(const char *name, SceAppMgrAppStatus *status): name is a title id, NULL for the calling process.</summary>
+    /// <summary>(const char *name, SceAppMgrAppStatus *status): name is a title id, NULL for the calling process. As in
+    /// the FW 3.74 kernel appmgr (0x8101065C): only a system program may name another application (0x8080201C
+    /// otherwise), a NULL status is 0x80802016 and an application that is not running 0x80802012. The Browser tells
+    /// "not running" (it then starts its web engine) from other failures by that last code.</summary>
     [Hle]
     [Hle("_sceAppMgrGetStatusByName")]
     int sceAppMgrGetStatusByName(uint name, uint status)
     {
+        if (name != 0 && !Emu.IsSystemProgram) return ERR_NAME;
+        if (status == 0) return ERR_NULL;
         if (name == 0) return Status(Emu, status);
         string tid = GuestMemory.ReadCString(name, 0x20);
-        var p = Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase));
-        return p == null && status != 0 ? ERR_NAME : Status(p, status);
+        return Status(Emu.Vita.Processes.FirstOrDefault(e => string.Equals(e.TitleId, tid, StringComparison.OrdinalIgnoreCase)), status);
     }
 
     /// <summary>(SceUID appId, SceAppMgrAppStatus *status). An application still waiting for the shell's second launch
@@ -77,7 +81,9 @@ public sealed partial class AppMgrShell : HleModule
             GuestMemory.WriteCString(status + 0x50, pl.TitleId, 0x20);
             return 0;
         }
-        return Status(Emu.Vita.ByAppId(appId), status);
+        // the kernel's pseudo ids (as in GetAppIdByAppId): -2 the caller's own application, -4 the one in front. The
+        // Browser passes its own id to its web engine this way ("Parent_app_id:" was -1)
+        return Status(appId switch { -2 => Emu, -4 => Emu.Vita.Foreground, _ => Emu.Vita.ByAppId(appId) }, status);
     }
 
     /// <summary>(SceUID pid, SceAppMgrAppStatus *status).</summary>
@@ -267,6 +273,49 @@ public sealed partial class AppMgrShell : HleModule
         if (launchParam != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchParam;
         Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
         return app.AppId;
+    }
+
+    /// <summary>
+    /// (const char *name, const char *param, SceAppMgrLaunchParam *launchParam): a system program starts a helper
+    /// application by title id itself, without the shell (FW 3.74 kernel appmgr 0x8100D5E4: only system programs,
+    /// 0x8080201F otherwise; the 0x40-byte launch parameters must have +0x20..+0x3F zero, 0x80802002 otherwise; +4 the
+    /// launch flags, +0xC a callback of the caller; the kernel starts the application directly, 0x8100BD48, and returns
+    /// 0 or the error). The Browser starts its web engine process this way (NPXS10083 SceWebKitProcess, flags 0x20000,
+    /// param "Parent_app_id:..."), with a callback its "SceWebCoreProcessWatcher" uses to find the new process
+    /// (sceAppMgrGetStatusByName) once it is running; without it the Browser waited for ever ("Please wait...").
+    /// The callback is notified when the application has started and again when it is gone.
+    /// </summary>
+    [Hle]
+    int sceAppMgrLaunchAppByName2(uint name, uint param, uint launchParam)
+    {
+        if (!Emu.IsSystemProgram) return ERR_NOT_SHELL;
+        if (name == 0) return ERR_NULL;
+        int flags = 0, callback = 0;
+        if (launchParam != 0)
+        {
+            for (uint i = 0x20; i < 0x40; i++)
+                if (GuestMemory.Read<byte>(launchParam + i) != 0) return unchecked((int)0x80802002);
+            flags = (int)GuestMemory.R32(launchParam + 4);
+            callback = (int)GuestMemory.R32(launchParam + 0xC);
+        }
+        string tid = GuestMemory.ReadCString(name, 0x20);
+        var objects = Emu.Kernel.Objects;
+        void Notify() => objects.Get<Kernel.Callback>(callback)?.Notify(0);
+        if (Emu.Vita.Processes.Any(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase)))
+        {
+            Notify();
+            return 0;
+        }
+        string? dir = null;
+        foreach (var root in new[] { "vs0:app/", "ux0:app/" })
+            if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
+        if (dir == null) return unchecked((int)0x80800006);
+        string? launchString = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
+        var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true, started: _ => Notify());
+        app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchString ?? "";
+        app.Released += Notify;
+        Log.Info($"sceAppMgrLaunchAppByName2({tid}, flags 0x{flags:X}, \"{launchString}\") from {Emu.Describe()}: {app.Describe()}");
+        return 0;
     }
 
     /// <summary>(SceUID appId, const char *path, int flags, int ?, launch parameters 0x80): the shell starting an
