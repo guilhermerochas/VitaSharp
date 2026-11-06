@@ -98,12 +98,12 @@ public sealed class GpuQueue : IDisposable
     public bool HasOpenScene(int pid) => pid != 0 && (InterleaveScenes ? _openScenes.ContainsKey(pid) : Volatile.Read(ref _sceneOwner) == pid);
 
     /// <summary>
-    /// VITASHARP_GPU_SCENE_INTERLEAVE=1: processes never wait for each other's scenes. As on the Vita (each process has
+    /// Processes never wait for each other's scenes (VITASHARP_GPU_SCENE_INTERLEAVE=0: the old arbitration). As on the Vita (each process has
     /// its own GXM context and the GPU interleaves them), every process may have a scene open: the backend records each
     /// process's scene into renderings of its own, suspending the open scene of one process while another's commands
     /// run (<see cref="GpuCommand.Pid"/>). Off: a scene is one process's at a time (the others' submissions wait).
     /// </summary>
-    public static readonly bool InterleaveScenes = Environment.GetEnvironmentVariable(EnvVars.GpuSceneInterleave) == "1";
+    public static readonly bool InterleaveScenes = Environment.GetEnvironmentVariable(EnvVars.GpuSceneInterleave) != "0";
 
     /// <summary>Processes with a scene open (<see cref="InterleaveScenes"/>).</summary>
     readonly ConcurrentDictionary<int, byte> _openScenes = new();
