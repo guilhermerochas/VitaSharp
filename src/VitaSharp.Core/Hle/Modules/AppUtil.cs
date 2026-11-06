@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core.Memory;
+using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -92,12 +92,36 @@ public sealed partial class AppUtil : HleModule
     internal int sceAppUtilSystemParamGetInt(uint id, Ptr<int> value)
     {
         if (value.Address == 0) return ERR_PARAMETER;
-        value.Value = SystemParamInt(id);
+        value.Value = SystemParamInt(id, AppUtil.SystemRegistry(Emu));
         return id is >= 1 and <= 7 ? 0 : ERR_PARAMETER;
     }
 
-    /// <summary>Integer system parameters (SCE_SYSTEM_PARAM_ID_*), shared with SceRegMgr so both agree.</summary>
-    internal static int SystemParamInt(uint id) => id switch
+    /// <summary>Integer system parameters (SCE_SYSTEM_PARAM_ID_*), shared with SceRegMgr so both agree: what the
+    /// system software wrote to the system registry (the initial setup, Settings) when <paramref name="reg"/> has
+    /// it, else the default a fresh system starts with (the host's language and time zone).</summary>
+    internal static int SystemParamInt(uint id, Firmware.Registry? reg = null)
+    {
+        if (reg != null && SystemParamKey(id) is { } path && reg.TryGetWrittenInt(path, out int v))
+            return id == 6 ? Firmware.SystemTimeZone.OffsetMinutes(v) ?? DefaultSystemParamInt(6) : v;
+        return DefaultSystemParamInt(id);
+    }
+
+    /// <summary>The system registry of the emulator's file-system root (null without an emulator: unit tests).</summary>
+    internal static Firmware.Registry? SystemRegistry(Emulator? emu) => emu == null ? null : Firmware.Registry.For(emu.Options.FsRoot);
+
+    /// <summary>The system registry key behind an integer system parameter.</summary>
+    internal static string? SystemParamKey(uint id) => id switch
+    {
+        1 => "/CONFIG/SYSTEM/language",
+        2 => "/CONFIG/SYSTEM/button_assign", // 0 circle, 1 cross (SceSystemParamEnterButtonAssign)
+        4 => "/CONFIG/DATE/date_format",
+        5 => "/CONFIG/DATE/time_format",
+        6 => "/CONFIG/DATE/time_zone", // a firmware time zone id
+        7 => "/CONFIG/DATE/summer_time",
+        _ => null,
+    };
+
+    static int DefaultSystemParamInt(uint id) => id switch
     {
         1 => Firmware.SystemLanguage.Host, // language: the host's UI language, else English (US)
         2 => 1,  // enter button: cross

@@ -100,11 +100,12 @@ public sealed partial class NpTrophy : HleModule
             return null;
         }
         // texts in the system language when the set has that translation (TROP_<lang>.SFM)
-        var pkg = TrophyPackage.Load(trp, commId, AppUtil.SystemParamInt(1));
+        int lang = AppUtil.SystemParamInt(1, AppUtil.SystemRegistry(Emu));
+        var pkg = TrophyPackage.Load(trp, commId, lang);
         if (pkg == null) return null;
         var set = new TrophySet(pkg) { SavePath = TrophyUnlocks.PathFor(Emu.Options.FsRoot, commId) };
         set.Unlocked = TrophyUnlocks.Load(set.SavePath);
-        Log.Info($"Trophy set {commId} \"{set.Title}\": {set.Trophies.Count} trophies, {set.Unlocked.Count} unlocked");
+        Log.Info($"Trophy set {commId} \"{set.Title}\": {set.Trophies.Count} trophies, {set.Unlocked.Count} unlocked, system language {lang}");
         return set;
     }
 

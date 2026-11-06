@@ -150,6 +150,8 @@ public sealed partial class RegMgr : HleModule
     internal object? Value(uint id, out Key? key)
     {
         if (!Table.TryGetValue(id, out key)) return null;
+        // the keys that follow the system settings: what the system software wrote to the system registry
+        if (key.Type == KeyType.Int && !key.Writable && Firmware.Registry.For(FsRoot).TryGetWrittenInt(key.Path, out int sys)) return sys;
         lock (_lock) return Written().TryGetValue(id, out var v) ? v : key.Default();
     }
 

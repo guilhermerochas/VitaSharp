@@ -170,7 +170,7 @@ public sealed partial class NpManager : HleModule
         if (countryCode == 0 || languageCode == 0) return MGR_INVALID_ARGUMENT;
         if (!PsnAccount.Current.SignedIn) return ERR_SIGNED_OUT;
         GuestMemory.W32(countryCode, 0x00007375); // "us"
-        GuestMemory.W32(languageCode, (uint)AppUtil.SystemParamInt(1));
+        GuestMemory.W32(languageCode, (uint)AppUtil.SystemParamInt(1, AppUtil.SystemRegistry(Emu)));
         return 0;
     }
 
