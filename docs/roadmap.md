@@ -648,8 +648,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   falha no meio deixa o jogo parado em vez de voltar ao estado de antes. Em 25 corridas com uma carga só, nenhuma
   falhou. Parecido com o item abaixo (desktop). Com o agente de bugs
 - [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
-  (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"; uma vez em
-  ~25 cargas (`scratchpad/and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`). Com o agente de bugs
+  (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
+  (`scratchpad/and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
+  carga, abort na thread `Shader worker 1`: `* Assertion at sgen-los.c:381, condition '!section->free_chunk_map [i]'
+  not met` (`crash_M2_shader.txt`). Duas vezes em ~28 cargas, sempre logo depois de carregar: o heap de objetos
+  grandes do GC corrompido, provável escrita fora do lugar durante/depois da carga (buffers do renderer recriado,
+  memória do guest, spans sobre arrays). Com o agente de bugs
 - [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)

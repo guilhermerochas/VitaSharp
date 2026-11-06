@@ -305,7 +305,7 @@ from 33.9 to 49.5 ms between sessions (phone temperature).
 | `VITASHARP_TEXSET_PERSIST=1` | 79.6/12/50.0, 68.3/15/40.7, 67.9/15/40.9, 75.8/15/49.1 | unit resolution 7.0-7.7 vs 8.2-9.0 ms; same frame time |
 | `VITASHARP_PRESENT_THREAD=1` | 74.2/15/41.9, 85.3/12/50.0, 86.1/12/50.3, 85.8/12/49.5 | Present 0.5-0.7 ms on the worker, but the frame is 5-10 ms slower in three of four runs: stays off |
 | `VITASHARP_RENDER_AREA_TRIM=1` (new) | 75.7/15/48.3, 75.0/15/48.1, 83.4/12/50.2 | live: within the noise. Bench: s4 9.4-14.3 -> 7.2-9.2 ms in all three sessions (frame -0.8 to -11.7 ms, noisy) |
-| `VITASHARP_RES_SCALE=0.75` | 63.1/15/34.9, 64.5/15/-, 61.7/15/34.5 | GPU -30% |
+| `VITASHARP_RES_SCALE=0.75` | 63.1/15/34.9, 64.5/15/-, 61.7/15/34.5; with TRIM 60.6/15/33.9 | GPU -30% |
 | `VITASHARP_MSAA=off` | 61.5/15/34.5 | GPU -30%; edges alias (`and8_tools/shots/msaa_cmp.png`: base left, off right) |
 
 - At 0.75 or without MSAA the GPU drops to ~34.5 ms but the frame stays at ~62 ms (median 15 fps): the CPU side is
