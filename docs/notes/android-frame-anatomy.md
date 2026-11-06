@@ -270,3 +270,50 @@ base median 40.6 mean 40.7 ms, PERSIST median 40.4 mean 41.9 ms.
   error or visual problem in two runs. Off by default.
 - Next: measure both where the GPU worker limits (native resolution scenes are GPU-bound too on the Mali-G57; a
   CPU-heavy game such as F1 2011 or a cutscene-free area at 0.5), and look at the stalls behind the 1% low.
+
+## Killzone: Mercenary gameplay, the Android reference scene, 6 November 2026 (perf/android-8)
+
+LLVM developer APKs of perf/android-8 (main 4a8bb94 and later commits), VSync on, native resolution unless noted,
+`VITASHARP_WORKER_PROF=1`. Scene: the first gameplay of the campaign (the staircase, player standing), reached by
+loading a save state taken there (slot 1) at the Valor card, then 60 s in gameplay before a 30 s measurement
+(screenshot of every run). Before each run the app was closed and the battery had to be at 36.0 C or less (at most
+4 min of waiting; it read 35.6-38.8 C). Display numbers are from SurfaceFlinger, GPU is the `PERF gpu` delta, thread
+CPU from /proc. Runs on which the phone dropped off the USB, the state did not load or the game froze are left out.
+
+**Where the frame goes** (base, 8 valid runs): display median 12-15 fps, mean 67.8-83.0 ms, 1% low 3.7-5.1 fps.
+
+| Line | ms per frame | Notes |
+|---|---|---|
+| **GPU** | **41.7-50.9** | two levels: runs sit near 42 or near 50 ms (heat/clock, the scene does not change) |
+| GPU worker thread CPU | 28-34 | Execute 33-38: texture-unit resolution 8.2-9.0, recording 7-8, geometry 3.6-4.9, Present 3.3-4.1 (`vkQueuePresent` ~3) |
+| Game thread (`killzone_vita`) | 20-26 | waits on the GPU 13-16 ms per guest frame (display queue 7-9 in 2 waits, notifications 6-7) |
+| JobSched_000-002 | 37-44 (three threads) | `sceKernelDelayThread` ~770 calls per frame, LwMutex lock/unlock ~610 each, `sceKernelGetTLSAddr` ~620 |
+| Worker queue | idle 13-15, frame-slot fence waits 12-16 | the worker waits for both the game and the GPU |
+
+GPU work per frame: 6 scenes, ~32 renderings (5.4 per scene), each loading and storing colour and depth; mid-scene
+breaks: RenderTargetRegion ~14, MirrorDepthTarget ~7 (stencil sampled as a texture), BeginSingleFetchPass 2 per
+frame; 2 MSAA 4x scenes. The GPU bench of a dump of this scene (`kz_game` fixture, frame present 529, `stamps=1`)
+splits the frame: s1, the main MSAA 4x scene, 15.5-22 ms; s4, ~25 post-processing passes of ~0.35 ms each into
+regions of one surface, 9.4-14.3 ms; s5 3.6-6.4 ms; the other three 5-6 ms together. The bench frame itself varied
+from 33.9 to 49.5 ms between sessions (phone temperature).
+
+**Switches** (mean frame ms, median fps, GPU ms; in run order):
+
+| Variant | Runs | Notes |
+|---|---|---|
+| base | 79.2/12/49.8, 78.3/12/50.3, 67.8/15/41.7, 78.0/12/50.0, 69.7/15/42.2, 83.0/12/50.9, 76.9/12/49.2 | |
+| `VITASHARP_TEXSET_PERSIST=1` | 79.6/12/50.0, 68.3/15/40.7, 67.9/15/40.9, 75.8/15/49.1 | unit resolution 7.0-7.7 vs 8.2-9.0 ms; same frame time |
+| `VITASHARP_PRESENT_THREAD=1` | 74.2/15/41.9, 85.3/12/50.0, 86.1/12/50.3, 85.8/12/49.5 | Present 0.5-0.7 ms on the worker, but the frame is 5-10 ms slower in three of four runs: stays off |
+| `VITASHARP_RENDER_AREA_TRIM=1` (new) | 75.7/15/48.3, 75.0/15/48.1, 83.4/12/50.2 | live: within the noise. Bench: s4 9.4-14.3 -> 7.2-9.2 ms in all three sessions (frame -0.8 to -11.7 ms, noisy) |
+| `VITASHARP_RES_SCALE=0.75` | 63.1/15/34.9, 64.5/15/-, 61.7/15/34.5 | GPU -30% |
+| `VITASHARP_MSAA=off` | 61.5/15/34.5 | GPU -30%; edges alias (`and8_tools/shots/msaa_cmp.png`: base left, off right) |
+
+- At 0.75 or without MSAA the GPU drops to ~34.5 ms but the frame stays at ~62 ms (median 15 fps): the CPU side is
+  next (game thread + its GPU waits, the three JobSched threads, the worker). Neither quality switch reaches 30 fps
+  alone; they are candidates for a per-game quality option on Android (native by default), not a default.
+- `VITASHARP_SHADERC_OPT=perf` (optimised SPIR-V) changes nothing on the Mali in the bench (35.6 vs 33.9 ms, same
+  picture); `VITASHARP_MSAA=off` in the bench: s1 15.5 -> 12.1 ms but s4/s5 slower, frame +3 ms (the bench replays a
+  frame whose MSAA scenes are set up differently from the live game; the live runs are the reference here).
+- RENDER_AREA_TRIM (VulkanRenderer.Tiler.cs `ChainRenderArea`) is pixel-identical on 21 desktop replays (the user's
+  dumps, the Uncharted plants dump at 0.75, the Killzone dump; native and mali profiles). It stays off until a
+  longer live series shows the bench gain in the frame time.

@@ -38,8 +38,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ao salvar (`scratchpad/ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
   LoadExec) a 59 fps (`ss2_ucB`); o rerun da gravação do usuário `PCSA00080_20261106_002008_tudo` (build da época
   0d298b4 + estas mudanças, o esquema da main mudou depois) carrega e 98% dos quadros saem iguais
-  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui); o Android ainda
-  não faz o passo do LoadExec ao carregar um estado de outro self
+  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui). Android
+  (06/11/2026, perf/android-8, ba51978): o Carregar estado do menu de pausa faz o mesmo `SwitchProgramFor` (a emulação
+  volta a rodar durante o LoadExec, o menu a tinha pausado). Validado no celular: estado salvo no GOW1 da coleção do
+  God of War, jogo reaberto no menu da coleção, slot carregado pelo menu: o log mostra `LoadExec app0:GOW1.self` e a
+  carga, o jogo segue do ponto salvo e responde (`scratchpad/and8_tools/shots/g4_loadpage.jpg`, `g6_loaded.jpg`,
+  `g7_after.jpg`); Killzone (sem LoadExec) salvo e carregado no gameplay pelo mesmo caminho em todas as corridas de
+  medida. O Jak and Daxter Collection não está no celular
 - [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
   (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
   ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
@@ -174,6 +179,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `captures/PCSA00029_20261105_232641_tudo.zip` no celular). Estranho: a gravação derruba o Uncharted de ~26 para
   12-14 fps (gravador 10,7 ms/quadro no worker + 13,3 ms de compressão); o session.txt diz "the GPU dump ended without
   a present" sempre que se para com o jogo pausado (o menu pausa antes do stop)
+  Validado no celular (06/11/2026, perf/android-8, APK LLVM dev da main 4a8bb94, no Killzone e no God of War): as
+  páginas de slots cabem na tela, a miniatura tem cantos retos, a página principal por toque
+  (`scratchpad/and8_tools/shots/m1_main.jpg`, `m3_save_slots.jpg`, `g4_loadpage.jpg`). O foco por D-pad/A continua
+  sem validação: as teclas injetadas pelo gancho não tiram a janela do modo de toque neste celular (nenhuma view
+  recebe o foco, `dumpsys activity top`), e não havia controle físico (nem o botão PS). Corrigido sem validar
+  (ae93ac8): o primeiro botão de cada página é o foco padrão (`FocusedByDefault`); sem isso, a primeira seta de um
+  controle real focaria o primeiro focável da árvore, o próprio quadro do menu. Falta: validar com um controle
 - [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
@@ -620,6 +632,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   textura, reaproveitamento de descritores), gravar tela e contar quadros com `flick.sh`/`tileflick.py` contra um
   vídeo do Vita real e corrigir de forma genérica. Validação de verdade no Killzone em gameplay (regra do Android) e
   depois Uncharted, F1 2011, God of War e Devious Dungeon sem nenhum quadro piscando. Com o agente de Android
+  Não reproduz no build da main (06/11/2026, perf/android-8, APK LLVM dev de 4a8bb94): Uncharted no início do
+  Prologue (Drake parado, a cena das plantas), 12 s de gravação de tela: 0 quadros com flash (`tileflick.py`, blocos de
+  16 px) em 196 quadros distintos a 0,75 e 1 em 179 a 1,0 (no canto dos controles na tela); as maiores mudanças de
+  bloco são a animação do Drake, a grama muda continuamente. Killzone no gameplay (escadas do início), parado e
+  andando: nenhuma alternância (o brilho da região só muda com o movimento da câmera). Provas:
+  `scratchpad/and8_runs/flick_base.mp4`, `flick_s100.mp4`, `flick_kz_base.mp4`, `flick_kz_walk2.mp4`. Pausado a pedido
+  do usuário (desempenho primeiro): falta saber de qual jogo/cena/APK é o relato para bissecar
+- [ ] Android: um segundo load state logo depois do primeiro congela o jogo (06/11/2026, perf/android-8, APK LLVM dev
+  db2d72d, Killzone PCSC00045, `VITASHARP_RES_SCALE=0.75;VITASHARP_RENDER_AREA_TRIM=1`). O roteiro mandou um só
+  `loadstate@0:1` (`VITASHARP_ANDROID_INPUT_LIVE`); o log tem duas cargas: 15:57:41 "Estado do slot 1 carregado" e,
+  11 s depois, "Não foi possível carregar o estado: thread 'PadThread' did not stop (in ); restart the game"; daí em
+  diante 0 fps, o processo vivo (`scratchpad/and8_runs/log_RS75b.txt`, print `and8_tools/shots/kz_RS75b.jpg`). Duas
+  coisas: (1) por que o passo do roteiro rodou duas vezes (o ScriptedPad relido depois da carga?); (2) uma carga que
+  falha no meio deixa o jogo parado em vez de voltar ao estado de antes. Em 25 corridas com uma carga só, nenhuma
+  falhou. Parecido com o item abaixo (desktop). Com o agente de bugs
+- [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
+  (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"; uma vez em
+  ~25 cargas (`scratchpad/and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`). Com o agente de bugs
 - [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
