@@ -206,11 +206,19 @@ public sealed partial class NpManager : HleModule
     [Hle("sceNpManager_29C9B8A5", Nid = 0x29C9B8A5, Library = "SceNpManager")] int sceNpManagerConnectService(int mode) => 0;
 
     /// <summary>Requests 0xA0000 (int *out: NID_B24FC028), 0xA0005 (32 bytes: NID_CFAEB050), 0xB0015 (0x148 bytes:
-    /// NID_E45E4003): account data of the signed-in user. The daily checker, the console-information sender, the
-    /// activity poster and Sign Up skip their PSN work on the signed-out error.</summary>
-    [Hle("sceNpManager_B24FC028", Nid = 0xB24FC028, Library = "SceNpManager")] int sceNpManagerSysGetAccountInt(uint p) => ERR_SIGNED_OUT;
-    [Hle("sceNpManager_CFAEB050", Nid = 0xCFAEB050, Library = "SceNpManager")] int sceNpManagerSysGetAccountData(uint p) => ERR_SIGNED_OUT;
-    [Hle("sceNpManager_E45E4003", Nid = 0xE45E4003, Library = "SceNpManager")] int sceNpManagerSysGetAccountInfo(uint p) => ERR_SIGNED_OUT;
+    /// NID_E45E4003): the system user's account record, which is empty without an account (all zero: no account id,
+    /// not signed in). Messages reads NID_B24FC028 and offers "Sign up" on 0 (an error leaves it waiting); the daily
+    /// checker, the console-information sender and the activity poster skip their PSN work.</summary>
+    [Hle("sceNpManager_B24FC028", Nid = 0xB24FC028, Library = "SceNpManager")] int sceNpManagerSysGetAccountInt(uint p) => ZeroRecord(p, 4);
+    [Hle("sceNpManager_CFAEB050", Nid = 0xCFAEB050, Library = "SceNpManager")] int sceNpManagerSysGetAccountData(uint p) => ZeroRecord(p, 0x20);
+    [Hle("sceNpManager_E45E4003", Nid = 0xE45E4003, Library = "SceNpManager")] int sceNpManagerSysGetAccountInfo(uint p) => ZeroRecord(p, 0x148);
+
+    static int ZeroRecord(uint p, uint size)
+    {
+        if (p == 0) return MGR_INVALID_ARGUMENT;
+        GuestMemory.Fill(p, 0, size);
+        return 0;
+    }
 
     /// <summary>(void *a, void *b, void *c[, void *d]): account details with optional outputs (NULL ones go to a scratch
     /// buffer): NID_DDF30B0E (trophy server job), NID_ED12AF16 (Sign Up). Signed out, like the requests above.</summary>

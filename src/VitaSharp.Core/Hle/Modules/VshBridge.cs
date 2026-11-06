@@ -96,6 +96,8 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblQafMgrIsAllowKeepCoreFile() => 0;
     /// <summary>The "near" (location sharing) test servers are a QA flag: off (NPXS10000 and near_profile ask).</summary>
     [Hle] int vshSblQafMgrIsAllowNearTest() => 0;
+    /// <summary>Debugging system applications is a QA flag: off (Content Manager asks at start).</summary>
+    [Hle] int vshSblQafMgrIsAllowSystemAppDebug() => 0;
     /// <summary>Changing the liblocation model is a QA flag: off (the shell skips its location debug settings).</summary>
     [Hle] int vshSblQafMgrIsAllowLiblocationChangeModel() => 0;
     /// <summary>Account binding is strict on a retail unit (the shell compares with 1).</summary>

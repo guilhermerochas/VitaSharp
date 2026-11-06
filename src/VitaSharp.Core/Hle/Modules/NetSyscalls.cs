@@ -98,7 +98,7 @@ public sealed partial class Net
     /// <summary>(int s, int cmd, void *data, int size): SceNetPs control requests (s &lt; 0: the stack itself). 0x22:
     /// read and clear the 0x44-byte traffic counters (none on the loopback-only stack); 0x14: an int; 0x10000002: the
     /// state of an entry of a three-slot table looked up by the id in data[0] (empty here: -EIO, as the kernel);
-    /// 0x200000xx: settings the stack takes. Unknown commands or short buffers: -EINVAL, the kernel's default.</summary>
+    /// 0x20000003/0x12/0x19/0x20: settings the stack takes (the shell's network setup). Unknown commands or short buffers: -EINVAL, the kernel's default.</summary>
     [Hle]
     int sceNetSyscallControl(int s, int cmd, uint data, int size)
     {
@@ -110,6 +110,8 @@ public sealed partial class Net
             case 0x10000002 when size >= 0x20: return -5;
             case 0x20000012 when size >= 0x200: return 0;
             case 0x20000019 when size >= 0xC: return 0;
+            case 0x20000003 when size >= 8: return 0;
+            case 0x20000020 when size >= 4: return 0;
             default:
                 Log.WarnOnce($"netctl{cmd:X}", $"sceNetSyscallControl: command 0x{cmd:X} (size {size}) not modelled");
                 return -22;

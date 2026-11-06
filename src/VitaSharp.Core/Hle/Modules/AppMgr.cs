@@ -327,6 +327,10 @@ public sealed partial class AppMgr : HleModule
     /// orientation applies; the handheld screen does not rotate, so it is only acknowledged.</summary>
     [Hle] int sceAppMgrSetRecommendedScreenOrientationActivated(int activated) => 0;
 
+    /// <summary>(int orientation 1/2): the shell reports the orientation it settled on from the accelerometer (after
+    /// 24 steady frames of SceMotion NID_A408BC69); applications read it back through appmgr. Acknowledged.</summary>
+    [Hle] int sceAppMgrSetRecommendedScreenOrientationForShell(int orientation) => 0;
+
     /// <summary>(int appId): which application's frames the shell composes behind its own (-1: none). The emulator
     /// composes the foreground process itself.</summary>
     [Hle] int sceAppMgrSetBackRenderPortOwner(int appId) => 0;
