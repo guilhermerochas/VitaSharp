@@ -542,6 +542,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
   e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
   derrube o processo; validar 10 loads seguidos. Com o agente de bugs C
+  Agente C dia 9: não começado (só o log copiado em `scratchpad/bugsC9_ss`); o usuário parou o dia. Próximo:
+  reproduzir sem janela com save + load-state repetidos no PCSF00476 e no Uncharted/FIFA
+- [ ] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; **regressão incompleta**).
+  O envelope era passthrough e `sceNgsVoiceKeyOff` parava a voz no update seguinte; o SDK diz que depois do key off
+  "o processamento continua até a voz terminar" (release). O Jak 1 usa racks Scream com envelope (pontos 0→1 em 0 ms,
+  sustain 1 ou 0,5625, release de 23 ms a 12 s) e dá key off com o som ainda alto: cada som era cortado no meio da onda.
+  Feito: pontos, sustain no último ponto, loop, release linear (curva CURVED aproximada como linear) e a voz termina com
+  o release; `VITASHARP_NGS_ENVELOPE=0` volta ao passthrough. Jak 1 gameplay (`jak_g2`): cortes bruscos (som alto→0) nas
+  vozes 152 → 2, 143 vozes terminam pelo release, 20 fps iguais, 0 HLE-ERR (`scratchpad/bugsC9_out/jak_a2` x `jak_e1`,
+  WAVs por voz em `audio/`; `bugsC9_tools/asum.py`). Regressão de ritmo feita: DD 59,9/59,9, F1 59,9/59,9, UC 59,8/59,9,
+  KZ 29,9 (ref. não rodou); **faltam KZ ref, FIFA e GoW** (`bugsC9_tools/regress.ps1`, com --audio-dump: conferir que
+  nenhum som some por voz presa em Finalizing durante o release). Os "clicks" do analisador de captura no Jak (~41 por
+  ocorrência) são outra coisa: um som de ruído agudo (energia em 10-14 kHz, idêntico em todas as vozes e execuções,
+  provável passo/impacto do próprio banco de sons); o decodificador ADPCM bate com o do Vita3K e os bancos decodificados
+  fora não têm saltos (`adec.py`); não identifiquei o banco exato (o dump por endereço de buffer reaproveitado ficou
+  velho). O clipping de 0,12% da gravação do usuário não reproduz aqui (0,002% no gameplay do `jak_g2`)
 - [ ] Jak and Daxter Collection (PCSA00080): validar o save state no gameplay do Jak 1 (salvar, fechar, abrir e
   carregar com F7/lista do launcher; estados salvos depois do LoadExec) quando o usuário puder jogar com a câmera
   corrigida (f3259f6, DelayThreadCB). Pedido do usuário (06/11/2026): é o único item do Jak que fica aberto
@@ -1454,6 +1470,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `shadertest` com `front`: nenhum aviso de G16, 105/105 compilam). Não validado: a cena de abertura gravada não usa esses programas (dump `bugsC8_out/ztd_scene.vsgd`, f2180-2182: replays com
   front/back/zero idênticos, 9 shaders, nenhum com G16). Falta uma cena com eles (provável: salas de fuga 3D) para
   comparar com o vídeo do Vita (`zwPJR5er054`, `scratchpad/bugsC8_yt/ztd.webm`, 10 primeiros minutos)
+  Agente C dia 9: não feito (o dia foi para o Injustice, o áudio do Jak e o crash de load state). Cenário pronto
+  `scratchpad/bugsC9_scn/ztd_scout.txt` (Cross a cada 60 quadros de f2250 a f4200, quadros a cada 50): no vídeo, depois
+  do "Coincide" (f2180 aqui) vem a cena das celas com os personagens 3D, que deve usar os shaders toon/HemiRimBump
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
