@@ -534,7 +534,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
+- [x] Injustice: Gods Among Us Ultimate Edition (PCSE00271) não roda (relato do usuário, 06/11/2026, main 0d298b4,
   prioridade máxima; gravação `captures\PCSE00271_20261106_020056_tudo`): nenhum quadro apresentado (watchdog STALL
   no frame 1). As threads `AsyncIOSystem` e `NRSMovieFileAsyncServer` chamam `sceKernelWaitEvent(0x0 / 0xFFFFFFFF,
   0x1000000, ...)` (lr 0x8107DF21) em laço e recebem 0x80028201 (UNKNOWN_EVENT_ID) 692.895 vezes em 15 s; a `main`
@@ -549,6 +549,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `Get*Info` e o Vita3K. O jogo passa pelos avisos, abertura, menu principal, pergunta do tutorial e a luta do
   tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`scratchpad/bugsC3_data/tests/inj_menu/sheet.png`,
   `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
+  Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
 - [ ] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
   06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 53 funções). Cada uma com o
   comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
