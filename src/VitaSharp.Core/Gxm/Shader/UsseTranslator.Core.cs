@@ -315,8 +315,14 @@ public sealed partial class UsseTranslator
         {
             // G16 in a fragment program: the facing of the primitive. The two-sided lighting of Zero Time Dilemma's
             // HemiRimBump/toon materials tests its low 16 bits (VTST G16 != 0) and negates the normal when it is zero,
-            // which points at non-zero on front faces (checked against a real Vita); VITASHARP_G16=zero|back (debug) overrides it.
-            string face = ShaderGenerator.FaceRegister == ShaderGenerator.FaceRegisterMode.Back ? "!gl_FrontFacing" : "gl_FrontFacing";
+            // which points at non-zero on front faces (checked against a real Vita, with culling on). In draws without
+            // culling it reads 0: Tearaway's two-sided paper matches the Vita that way (ShaderGenerator.FaceRegister).
+            string face = ShaderGenerator.FaceRegister switch
+            {
+                ShaderGenerator.FaceRegisterMode.Back => "!gl_FrontFacing",
+                ShaderGenerator.FaceRegisterMode.FrontAlways => "gl_FrontFacing",
+                _ => "(gl_FrontFacing && rinfo.face_cull > 0.5)",
+            };
             string c = kind switch
             {
                 'f' => $"({face} ? uintBitsToFloat(0x3C003C00u) : 0.0)", // half 1.0 in both halves, a normal float32

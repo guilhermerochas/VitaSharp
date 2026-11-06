@@ -23,6 +23,8 @@ public sealed unsafe partial class VulkanRenderer
         public float ViewportFlag, ScreenWidth, ScreenHeight, ZOffset, ZScale, ResMultiplier, DrawId;
         /// <summary>Samples of the framebuffer-fetch copy: above 1 the shaders read the multisampled binding.</summary>
         public float FbSamples;
+        /// <summary>1 when the draw culls one winding (GXM cull CW/CCW): fragment programs see G16 (the facing) only then (UsseTranslator.Core).</summary>
+        public float FaceCull;
     }
 
     void CreateLayouts()
@@ -1031,7 +1033,7 @@ public sealed unsafe partial class VulkanRenderer
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
         var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial,
-            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1 };
+            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1, FaceCull = st.CullMode != 0 ? 1 : 0 };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;

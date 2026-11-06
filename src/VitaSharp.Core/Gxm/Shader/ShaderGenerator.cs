@@ -134,7 +134,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 21;
+    public const int GeneratorVersion = 22;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -163,15 +163,18 @@ public static class ShaderGenerator
     public static bool LowerDynamicIndexing;
 
     /// <summary>What a fragment program reads from global register G16 (the primitive's facing, see UsseTranslator.Core).</summary>
-    public enum FaceRegisterMode { Front, Back, Zero }
+    public enum FaceRegisterMode { Front, FrontAlways, Back, Zero }
 
-    /// <summary>The value of G16: non-zero on front faces (default). Zero Time Dilemma's two-sided lighting negates the
-    /// normal when it is zero; with front faces set the characters' shading matches a real Vita (the cell scene of the
-    /// opening, docs/roadmap.md), with 0 (as before) every lit face was shaded as a back face, flat and bright.
-    /// Debug: VITASHARP_G16=zero|back. It changes the generated GLSL without being part of the shader cache key: use the
-    /// switch with a scratch shader cache.</summary>
+    /// <summary>The value of G16 (default Front): non-zero on front faces of draws that cull (GXM cull CW/CCW), 0 in
+    /// draws without culling. Zero Time Dilemma (cull CW) negates the normal of its two-sided lighting when it is zero:
+    /// with front faces set the characters' shading matches a real Vita, with 0 every face was lit as a back face.
+    /// Tearaway's paper (cull none) picks its second set of colours when it is zero: the sun's rays get the Vita's dark
+    /// torn edges with 0 and a green outline with the facing (docs/roadmap.md). Debug: VITASHARP_G16=front-always (the
+    /// facing in every draw)|zero|back. It changes the generated GLSL without being part of the shader cache key: use
+    /// the switch with a scratch shader cache.</summary>
     public static readonly FaceRegisterMode FaceRegister = Environment.GetEnvironmentVariable(EnvVars.G16) switch
     {
+        "front-always" => FaceRegisterMode.FrontAlways,
         "zero" => FaceRegisterMode.Zero,
         "back" => FaceRegisterMode.Back,
         _ => FaceRegisterMode.Front,
@@ -235,6 +238,7 @@ layout(push_constant) uniform RenderInfo {
     float res_multiplier;
     float draw_id;
     float fb_samples;
+    float face_cull;
 } rinfo;
 """;
 

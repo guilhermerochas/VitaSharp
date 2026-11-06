@@ -1596,6 +1596,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `replay-gpu --compare` nos 18 dumps: só os 2 do Tearaway mudam (ele também lê o G16: as bordas das folhas de papel
   de dois lados ficam escuras e somem uns pontos verdes na borda; média até 2,5/255, `bugsC9_proof/tearaway_g16_before_after_diff.png`);
   os outros 16 idênticos. Falta conferir o Tearaway com um vídeo do Vita
+  Conferido (agente C dia 11, 06/11/2026, fix/bugs-games-10): com o G16 = face da frente em todo desenho, o Tearaway
+  **regrediu**: na abertura (o sol de papel, dump `PCSF00476_20261030_112014`, quadro 3690) os raios ganham um contorno
+  verde fino, e no vídeo do Vita (`etxceok4M44`, 3:06) as bordas rasgadas dos raios são marrom-escuras, como com G16 = 0.
+  Os dois shaders do papel (`10FF2379F841F16E`, `E3209025AAF95916`) testam `G16 != 0` (literal) e com 0 pegam o segundo
+  par de cores (TexCoord6/7); os desenhos do papel são cull=0 (sem culling), os do ZTD cull=1 (CW). Agora o G16 é a face
+  da frente só em desenhos com culling e 0 sem culling (push constant `face_cull`; `GeneratorVersion` 22;
+  `VITASHARP_G16=front-always` volta ao comportamento anterior). Tearaway = G16 0 de antes (61 quadros idênticos), ZTD
+  igual ao 288f6ed (3 quadros idênticos, diferente do zero). Prova `scratchpad/bugsC10_proof/tearaway_g16_vita_vs_main_vs_new.png`.
+  A regra do hardware é uma hipótese que bate com os dois jogos (o que é G16 com cull CCW não foi visto). Sobra: no
+  close-up do quadro 3795 o G16 = 0 deixa uns pontos verdes na borda de uma folha (como antes do 11f18ce), sem vídeo do
+  Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
