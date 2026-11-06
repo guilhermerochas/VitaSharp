@@ -528,6 +528,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   0x1000000, ...)` (lr 0x8107DF21) em laço e recebem 0x80028201 (UNKNOWN_EVENT_ID) 692.895 vezes em 15 s; a `main`
   fica esperando o IO assíncrono. Provável: a criação do objeto de evento antes falhou ou não existe no emulador;
   a `Scaleform Render Thread` nunca iniciou (Dormant, pc 0). Com o agente de bugs C
+  **Corrigido** (agente C dia 9, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): (1) o jogo cria
+  os eventos do pool de threads e do IO assíncrono do motor NRS com `sceKernelCreateSimpleEvent("InName", 0x900)` e
+  o emulador recusava o bit 0x800 (`SCE_KERNEL_ATTR_NOTIFY_CB_WAKEUP_ONLY`) com ILLEGAL_ATTR: o uid guardado era o
+  código de erro e as threads giravam no `sceKernelWaitEvent`; agora é aceito (como no Vita3K). (2) Em seguida a
+  `RenderingThread` morria numa exceção do host em `sceKernelGetThreadInfo` (tamanho da estrutura acima de 0x80, ao
+  esperar o fim da `Scaleform Render Thread`, que roda e termina normalmente); agora devolve NO_MEMORY como os outros
+  `Get*Info` e o Vita3K. O jogo passa pelos avisos, abertura, menu principal, pergunta do tutorial e a luta do
+  tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`scratchpad/bugsC3_data/tests/inj_menu/sheet.png`,
+  `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
 - [ ] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
   selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
   04/11/2026, main d388b61; captura F10 `diagnostics\PCSA00080_20261104_162655`, dump de GPU
