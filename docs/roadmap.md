@@ -574,6 +574,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   com a correção, 147.600 cortes evitados (contados em cada cálculo de tamanho, inclusive o do audit) e 200 MB a mais lidos (`bugsB3_out/fifa_clamp`; a
   partida e a sombra seguem certas no t05). Próximo: o usuário jogar uma partida com a correção; se
   ainda houver cunhas, gravar tudo (Ctrl+F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
+  Relato novo (main a19cdbe, com o 479b54f): "retângulos pretos abaixo dos jogadores", gravação completa
+  `PCSE00093_20261105_211112_tudo`. Os 442 quadros ao vivo (frames.vsfr, extraídos com `vitasharp-perf capture
+  --frames`) são iguais ao replay do gpu.vsgd nos 389 presents em comum (pixels 50+ níveis mais escuros ao vivo: 0-1
+  por quadro), e nenhum dos dois tem retângulo (specks.py ao vivo: 1 quadro com >= 8 blocos, sombras normais). Ou o
+  defeito não caiu nessa janela, ou ele não aparece na imagem lida para a gravação; falta um print ou o horário do
+  retângulo
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
@@ -818,6 +824,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (`bugsB3_out/sonic_ab0`); na rodada boa de antes a thread nem entrava nesse loop (ordem das threads). O cenário
   `sasrt` inteiro (2400 quadros) agora passa pelos logos, o filme de abertura, o título "PRESS START", o aviso de
   autosave e a criação do save (`bugsB3_out/sonic_full/sheet.png`); falta o usuário jogar uma corrida
+  O usuário ainda travava com a main sem o 63c125a e mandou dois "Gravar tudo" incompletos (`PCSE00056_20261105_204517`
+  e `_204848`, estado no quadro 23-25 já travado). Com o build da branch o `state_start.vss` dele destrava a partir do
+  estado preso (382 quadros a 30 fps depois da carga, `bugsB3_out/sonic_st1`; com `VITASHARP_TOUCH_PEEK_UNREAD=0`
+  continua parado, `sonic_st0`), e o boot limpo passa em 3 de 3 (`sonic_boot1..3`, 351-378 quadros a 30 fps). As
+  gravações saíam incompletas por causa do Gravar tudo (corrigido, ver docs/notes/session-capture.md)
 
 - [x] FIFA 13 (PCSE00093): depois da correção da malha esticada (ossos lidos até 16 KB), as texturas dos jogadores,
   principalmente do Messi, aparecem erradas (relato do usuário, 04/11/2026; captura F10
