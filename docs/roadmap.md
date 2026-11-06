@@ -95,6 +95,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   main. (2) DeviceLost: 0 em 5 replays com `--gpu-profile=desktop` (2 builds, 3 com cache de shaders vazio,
   `bugsC6_out/plants_ref_desk`, `plants_new_desk`, `plants_dl3..5`); o da rodada anterior foi no 1º present, depois
   de 1335 ms de compilação de shaders no mesmo quadro, com a CPU dividida (provável TDR do driver); não reproduz
+  Conferido (06/11/2026, perf/android-7): o replay com `--gpu-profile=mali` no build de baabc78 (fix/bugs-games-6) já
+  mostra o Drake inteiro; o da main ainda o quebra (`scratchpad/and7_runs/drake_mali_cmp.png`, esquerda main, direita
+  baabc78). A bisseção do pisca no celular não foi feita (testes no celular parados pelo usuário); preparado:
+  `scratchpad/and7_tools/flick.sh` (screenrecord do aparelho, quadros distintos, `tileflick.py` por variante do env.txt)
+  e o vídeo do Vita `scratchpad/and7_yt/uc_vita.mp4` (o Prologue começa por volta de 70 s)
 - [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
@@ -110,6 +115,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   às 20:55 sem a correção dos acentos). O Redmi recusa `adb shell input` (INJECT_EVENTS): para dirigir o menu e as
   telas sem o usuário há agora `VITASHARP_ANDROID_UI_INPUT` (build dev, `Developer/UiScript.cs`, commit 96ac1d5).
   A validação no celular foi interrompida a pedido do usuário antes dos prints do menu
+  Validado no celular (06/11/2026, perf/android-7, APK LLVM dev, por toque com `VITASHARP_ANDROID_UI_INPUT`):
+  página principal, Salvar estado (salvou no slot 2 com miniatura), Carregar estado (carregou o slot 2 em 3 s),
+  Ajustes, Desenvolvedor, Recentralizar (aviso "Movimento recentralizado"), Gravar tudo / Parar gravação, Sair do
+  jogo (`scratchpad/and7_tools/shots/pm_main.png`, `pm_a.jpg`, `st_a.jpg`, `st_b.jpg`, `rec_a.jpg`). Achado e corrigido (79925c5, ainda
+  não validado no aparelho): os interruptores de Ajustes eram um texto minúsculo "LIG/DESL" (Switch do Theme.Black),
+  as páginas de slots passavam da altura da tela, a miniatura era uma pílula, o aviso de "Salvando a gravação" era um
+  AlertDialog antigo. O gancho UI_INPUT por Instrumentation era recusado (INJECT_EVENTS) também na própria janela:
+  agora despacha direto na activity (99911c2). Pelo controle: B volta/fecha; D-pad e A não fizeram nada no gancho
+  (nenhuma view com foco em modo de toque) — a correção do gancho (sai do modo de toque) não foi testada no aparelho;
+  falta também o PS de um controle real. Gravar tudo no Android: sair pelo menu durante a gravação espera o save com
+  aviso e o zip fica completo (31 arquivos, 194 MB: estado, dump de GPU de 288 quadros, quadros, áudio, report;
+  `captures/PCSA00029_20261105_232641_tudo.zip` no celular). Estranho: a gravação derruba o Uncharted de ~26 para
+  12-14 fps (gravador 10,7 ms/quadro no worker + 13,3 ms de compressão); o session.txt diz "the GPU dump ended without
+  a present" sempre que se para com o jogo pausado (o menu pausa antes do stop)
 - [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
@@ -117,6 +136,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   glifos (á à â ã ç é ê í ó ô õ ú, conferido no cmap). Varredura do repositório inteiro: só esse arquivo e três
   comentários do Core; `SourceEncodingTests` falha se a sequência voltar (src, tests, build). As outras telas,
   diálogos, o overlay de FPS/REC e o texto dos jogos (PVF) ainda não foram vistos no celular
+  Validado no celular (06/11/2026, perf/android-7): Biblioteca ("Jogáveis", "Todos · 8", "Jogável"), Ajustes
+  ("licença", "Padrão", "Automático"), diálogo da CPU, Desempenho, Controles, página do jogo, menu de pausa e
+  overlay ("Pausado", "● REC") com os acentos certos (`scratchpad/and7_tools/shots/lib3.png`, `app_ajustes.png`, `app3.jpg`, `app3b.jpg`,
+  `pm_main.png`). Texto dos jogos (PVF) não conferido
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
   instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
   saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.

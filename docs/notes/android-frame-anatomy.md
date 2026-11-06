@@ -236,3 +236,37 @@ round.
    the worker records the next frame meanwhile. The queue then needs a lock shared with `vkQueueSubmit`.
 3. Unit resolution is still 3 ms with PERSIST: the memory-texture checks of sets that are not reused, and the region
    and render-target lookups per unit.
+
+## Uncharted at 0.75 with the phone cool: TEXSET_PERSIST and PRESENT_THREAD, 6 November 2026 (perf/android-7)
+
+LLVM developer APK of perf/android-7 (main da8372d + `VITASHARP_PRESENT_THREAD`), every variant behind `config/env.txt`,
+`VITASHARP_RES_SCALE=0.75` and `VITASHARP_WORKER_PROF=1`; the Prologue's first gameplay scene after the journal tap
+(screenshot of every run). Before each run the app was closed and the battery had to be at 35.0 C or less (it rose to
+36-37 C during a run), then 20 s more in gameplay before the 30 s measurement. The series was stopped by the user after
+five valid runs (one more run, base, failed its navigation: title menu at 60 fps, discarded).
+
+| Run | Variant | Frame mean ms (median fps) | 1% low | GPU worker CPU ms | Execute | vkQueuePresent / Present | GPU ms |
+|---|---|---|---|---|---|---|---|
+| sB1 | base | 40.6 (30) | 4.1 | 26.4 | 33.7 | 5.6 / 6.7 | 30.5 |
+| sP1 | `VITASHARP_TEXSET_PERSIST=1` | 39.7 (30) | 4.4 | 25.6 | 31.1 | 4.7 / 5.8 | 30.7 |
+| sT1 | `VITASHARP_PRESENT_THREAD=1` | 40.1 (30) | 4.4 | 26.8 | 28.4 | - / 0.73 | 30.8 |
+| sP2 | `VITASHARP_TEXSET_PERSIST=1` | 39.5 (30) | 4.6 | 25.0 | 30.7 | 4.8 / 5.8 | 30.7 |
+| sT2 | `VITASHARP_PRESENT_THREAD=1` | 39.5 (30) | 4.7 | 27.0 | 28.7 | - / 0.75 | 30.4 |
+
+An earlier series the same evening with the main APK, without the cool-down or the settle time (battery 34.0 -> 37.5 C),
+gave base 38.7 / 41.4 / 42.9 ms and PERSIST 40.4 / 45.6 ms (one PERSIST run failed its navigation): the frame time
+followed the temperature, not the variant. The three base/PERSIST pairs (40.6/39.7 cool, 38.7/40.4 and 42.9/45.6 warm):
+base median 40.6 mean 40.7 ms, PERSIST median 40.4 mean 41.9 ms.
+
+- **The scene is GPU-bound at 0.75**: ~30.5 ms of GPU per frame in every run, the median at the game's 30 fps and the
+  mean (~40 ms) set by stalls of 100-450 ms (1% low ~4-5 fps: shader and streaming hitches right after the level
+  starts). Worker savings do not reach the frame time here.
+- **TEXSET_PERSIST**: the unit resolution drops 5.2-5.4 -> 2.8-2.9 ms and Execute about 2.6-3 ms (as on 5 November),
+  pixel-identical on 38 desktop replays (the 18 dumps of the user's gpudumps folder and the Uncharted plants dump,
+  native and mali profiles: `and7_cmp/summary.txt` in the agent's scratchpad). No frame-time gain in this scene; it
+  stays off by default until a CPU-bound scene shows one.
+- **PRESENT_THREAD** (`VulkanRenderer.PresentThread.cs`): the worker's Present phase drops from 5.6-6.7 ms to 0.73 ms and
+  Execute from 33.7 to 28.4-28.7 ms; the driver's blocking moved to the present thread. Same frame time (GPU-bound), no
+  error or visual problem in two runs. Off by default.
+- Next: measure both where the GPU worker limits (native resolution scenes are GPU-bound too on the Mali-G57; a
+  CPU-heavy game such as F1 2011 or a cutscene-free area at 0.5), and look at the stalls behind the 1% low.
