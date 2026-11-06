@@ -29,11 +29,6 @@ public sealed record VpkInstallResult(VpkContentInfo Content, bool Installed, bo
     public string InstallPath => Content.DestinationPath;
 }
 
-public readonly record struct VpkProgress(long BytesDone, long BytesTotal, string? CurrentEntry)
-{
-    public double Fraction => BytesTotal <= 0 ? 0 : (double)BytesDone / BytesTotal;
-}
-
 public sealed class VpkInstallOptions
 {
     /// <summary>
@@ -41,7 +36,8 @@ public sealed class VpkInstallOptions
     /// false to skip this content. When null, existing content is replaced.
     /// </summary>
     public Func<VpkContentInfo, bool>? ConfirmOverwrite { get; init; }
-    public Action<VpkProgress>? Progress { get; init; }
+    /// <summary>Called on the installing threads, at most every 100 ms.</summary>
+    public Action<InstallProgress>? Progress { get; init; }
     public Action<string>? Log { get; init; }
     /// <summary>Optional NoNpDrm license (work.bin / .rif) for encrypted content that does not ship sce_sys/package/work.bin.</summary>
     public string? LicensePath { get; init; }
@@ -187,9 +183,26 @@ public static class VpkInstaller
         }
 
         var entriesOf = plan.ToDictionary(p => p.info, p => EntriesUnder(zip, p.info.ArchivePrefix));
-        long total = entriesOf.Values.SelectMany(x => x).Sum(e => e.Length), done = 0;
-        options.Progress?.Invoke(new VpkProgress(0, total, null));
+        long total = entriesOf.Values.SelectMany(x => x).Sum(e => e.Length);
+        var reporter = new InstallProgressReporter(options.Progress, total);
+        reporter.Flush();
 
+        var thread = Thread.CurrentThread;
+        var priority = thread.Priority;
+        thread.Priority = ThreadPriority.BelowNormal; // inflating; the writer thread is below normal too
+        try
+        {
+            InstallPlan(plan, entriesOf, ux0Root, options, reporter, results, cancellationToken);
+        }
+        finally { thread.Priority = priority; }
+        reporter.Finish();
+        return results;
+    }
+
+    static void InstallPlan(List<(VpkContentInfo info, bool replace)> plan, Dictionary<VpkContentInfo, List<ZipArchiveEntry>> entriesOf,
+                            string ux0Root, VpkInstallOptions options, InstallProgressReporter reporter,
+                            List<VpkInstallResult> results, CancellationToken cancellationToken)
+    {
         foreach (var (info, replace) in plan)
         {
             var tmpRoot = Path.Combine(ux0Root, ".vpk-tmp");
@@ -197,7 +210,7 @@ public static class VpkInstaller
             Directory.CreateDirectory(tmp);
             try
             {
-                done = Extract(entriesOf[info], info.ArchivePrefix, tmp, done, total, options, cancellationToken);
+                Extract(entriesOf[info], info.ArchivePrefix, tmp, reporter, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 PrepareLicense(info, tmp, ux0Root, options);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -211,8 +224,6 @@ public static class VpkInstaller
                 TryDeleteIfEmpty(tmpRoot);
             }
         }
-        options.Progress?.Invoke(new VpkProgress(total, total, null));
-        return results;
     }
 
     static List<ZipArchiveEntry> EntriesUnder(ZipArchive zip, string prefix)
@@ -222,11 +233,12 @@ public static class VpkInstaller
             return n.Length > prefix.Length && n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }).ToList();
 
-    static long Extract(List<ZipArchiveEntry> entries, string prefix, string dest, long done, long total,
-                        VpkInstallOptions options, CancellationToken ct)
+    /// <summary>Inflates the entries into <paramref name="dest"/>; the files are written on a second thread meanwhile.</summary>
+    static void Extract(List<ZipArchiveEntry> entries, string prefix, string dest, InstallProgressReporter reporter,
+                        CancellationToken ct)
     {
         var root = Path.GetFullPath(dest) + Path.DirectorySeparatorChar;
-        var buffer = new byte[1 << 16];
+        using var writer = new FileWritePipeline(1 << 20, 4, n => reporter.Add(n), ct);
         foreach (var e in entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -239,23 +251,22 @@ public static class VpkInstaller
                 Directory.CreateDirectory(target);
                 continue;
             }
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            writer.Open(target, e.Length);
             using (var input = e.Open())
-            using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
             {
-                int n;
-                while ((n = input.Read(buffer)) > 0)
+                while (true)
                 {
                     ct.ThrowIfCancellationRequested();
-                    output.Write(buffer, 0, n);
-                    done += n;
-                    options.Progress?.Invoke(new VpkProgress(done, total, rel));
+                    var buf = writer.Rent();
+                    int n = input.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false);
+                    if (n > 0) writer.Write(buf, n);
+                    else writer.Return(buf);
+                    if (n < buf.Length) break;
                 }
             }
-            if (e.LastWriteTime.Year > 1980)
-                try { File.SetLastWriteTime(target, e.LastWriteTime.DateTime); } catch (IOException) { } catch (ArgumentException) { }
+            writer.Close(lastWrite: e.LastWriteTime.Year > 1980 ? e.LastWriteTime.DateTime : null);
         }
-        return done;
+        writer.Complete();
     }
 
     /// <summary>

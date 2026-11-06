@@ -115,6 +115,26 @@ public sealed class PkgReader : IDisposable
         tmp.AsSpan(skip, dst.Length).CopyTo(dst);
     }
 
+    /// <summary>A cipher for <see cref="ReadData"/> (reuse it across calls; not thread-safe).</summary>
+    public AesUtil.Ctr CreateCipher() => new(_key);
+
+    /// <summary>
+    /// Reads <paramref name="dst"/>.Length decrypted bytes of an entry starting at <paramref name="offset"/> (a multiple
+    /// of 16) into <paramref name="dst"/>; returns the time spent reading and decrypting.
+    /// </summary>
+    public (TimeSpan read, TimeSpan decrypt) ReadData(PkgEntry e, long offset, Span<byte> dst, AesUtil.Ctr ctr)
+    {
+        if ((offset & 15) != 0) throw new ArgumentException("offset must be 16-aligned", nameof(offset));
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        _fs.Position = (long)(_dataOffset + e.DataOffset) + offset;
+        _fs.ReadExactly(dst);
+        long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Span<byte> counter = stackalloc byte[16];
+        AesUtil.CounterAt(_iv, (e.DataOffset + (ulong)offset) / 16).CopyTo(counter);
+        ctr.Transform(dst, counter);
+        return (System.Diagnostics.Stopwatch.GetElapsedTime(t0, t1), System.Diagnostics.Stopwatch.GetElapsedTime(t1));
+    }
+
     public void Extract(PkgEntry e, Stream output, Action<long>? progress = null)
     {
         if (e.IsDirectory) return;

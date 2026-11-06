@@ -116,7 +116,7 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void App_AtRoot_GoesToUx0App()
     {
-        var progress = new List<VpkProgress>();
+        var progress = new List<InstallProgress>();
         var results = VpkInstaller.Install(Zip(AppEntries("", "PCSE00001")), Ux0, new VpkInstallOptions { Progress = progress.Add });
 
         var r = Assert.Single(results);
