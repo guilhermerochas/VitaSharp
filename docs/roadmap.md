@@ -557,7 +557,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
   Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
 - [ ] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
-  06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 53 funções). Cada uma com o
+  06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 90 funções). Cada uma com o
   comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
   sentido com rede/PSN/hardware ausente devolvem o erro que o Vita devolve nesse caso. Jogos:
   - SceNpManager::NID_FFBFC540 (0xFFBFC540) (PCSE00093)
@@ -614,6 +614,44 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - SceVshBridge::vshSblQafMgrIsAllowLiblocationChangeModel (0x58E1DE33)
   - SceVshBridge::vshSblQafMgrIsAllowNearTest (0xD0D4EB67)
   - SceWlan::sceWlanGetConfiguration (0x70AF9BD6)
+  Mais 37 achadas depois (06/11/2026, mesmos logs, sessões novas do Sistema do Vita):
+  - SceAppMgrUser::sceAppMgrSetBgmProxyApp (0xC42F41E9)
+  - SceBt::sceBtGetRegisteredInfo (0xB6C9A094)
+  - SceBt::sceBtSetConfiguration (0x9B1F2964)
+  - SceHid::sceHidKeyboardSetIntercept (0x5D727742)
+  - SceHid::sceHidKeyboardUnregisterEnumHintCallback (0x8068D61E)
+  - SceHid::sceHidKeyboardUnregisterReadHintCallback (0xF73C5FBA)
+  - SceHttp::NID_F30073EC (0xF30073EC)
+  - SceNetCtl::NID_0CC36330 (0x0CC36330)
+  - SceNetCtl::NID_147B054C (0x147B054C)
+  - SceNetCtl::NID_6A56FC3A (0x6A56FC3A)
+  - SceNetCtl::NID_713394C0 (0x713394C0)
+  - SceNetCtl::NID_AB1462C5 (0xAB1462C5)
+  - SceNetCtl::NID_BC0563A0 (0xBC0563A0)
+  - SceNetCtl::NID_E8E8DF18 (0xE8E8DF18)
+  - SceNpCommerce2::NID_25C58D33 (0x25C58D33)
+  - SceNpCommerce2::NID_45ACE466 (0x45ACE466)
+  - SceNpCommerce2::NID_4C406B2A (0x4C406B2A)
+  - SceNpCommerce2::NID_5AB115CE (0x5AB115CE)
+  - SceNpCommerce2::NID_5D8B5B59 (0x5D8B5B59)
+  - SceNpCommerce2::NID_749C8571 (0x749C8571)
+  - SceNpCommerce2::NID_86405E79 (0x86405E79)
+  - SceNpCommerce2::NID_8ECAE666 (0x8ECAE666)
+  - SceNpCommerce2::NID_AA090F5E (0xAA090F5E)
+  - SceNpCommerce2::NID_BC89C4D3 (0xBC89C4D3)
+  - SceNpCommerce2::NID_BFDC7B9F (0xBFDC7B9F)
+  - SceNpCommerce2::NID_C7B04A45 (0xC7B04A45)
+  - SceNpCommerce2::NID_D09A38DA (0xD09A38DA)
+  - SceNpCommon::sceNpCommonGetNpEnviroment (0xAD6403E0)
+  - SceNpManager::NID_29C9B8A5 (0x29C9B8A5)
+  - SceNpManager::NID_ED12AF16 (0xED12AF16)
+  - SceSblQafMgr::sceSblQafMgrIsAllowAllDebugMenuDisplay (0x66843305)
+  - SceSblQafMgr::sceSblQafMgrIsAllowLimitedDebugMenuDisplay (0xC456212D)
+  - SceSblQafMgr::sceSblQafMgrIsAllowMinimumDebugMenuDisplay (0xA156BBD2)
+  - SceSblQafMgr::sceSblQafMgrIsAllowNonQAPup (0xB5621615)
+  - SceUdcd::NID_F1A3690B (0xF1A3690B)
+  - SceVshBridge::_vshSblAimgrGetPscode (0x1AF2CFC9)
+  - SceWlan::sceWlanSetConfiguration (0xDBE8AEF2)
 
 - [x] Jak and Daxter Collection (PCSA00080): no menu da coleção, a faixa vertical do meio (a prévia do jogo
   selecionado) aparece como listras horizontais embaralhadas, enquanto o resto do menu está certo (relato do usuário,
