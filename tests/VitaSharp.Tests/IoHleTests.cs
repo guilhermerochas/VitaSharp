@@ -147,6 +147,25 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void AsyncOpIsAnEventObject()
+    {
+        // libpaf waits for each sceIoReadAsync with sceKernelWaitEvent(opid, 1, ...) before sceIoComplete
+        uint m = fx.Memory.Alloc(16, "evt");
+        Ptr<uint> result = new(m), timeout = new(m + 4);
+        Ptr<ulong> user = new(m + 8);
+        var op = new IoAsyncOp { UserData = 0x1234 };
+        Assert.Equal(SceError.EVENT_COND, op.PollEvent(1, result, user));
+        timeout.Value = 1000;
+        Assert.Equal(SceError.WAIT_TIMEOUT, op.WaitEvent(1, result, user, timeout));
+        op.Finish(5);
+        Assert.Equal(0, op.WaitEvent(1, result, user, new Ptr<uint>(0)));
+        Assert.Equal(IoAsyncOp.CompletionBit, result.Value);
+        Assert.Equal(0x1234ul, user.Value);
+        Assert.Equal(0, op.PollEvent(1, result, user));
+        Assert.Equal(SceError.INVALID_ARGUMENT, op.WaitEvent(0, result, user, timeout));
+    }
+
+    [Fact]
     public void IoPriorities()
     {
         var io = new IoFileMgr();

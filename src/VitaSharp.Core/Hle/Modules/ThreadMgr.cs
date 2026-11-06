@@ -1173,6 +1173,7 @@ public sealed partial class ThreadMgr : HleModule
         if (Event(uid) is { } e) return e.Wait(Self, waitPattern, resultPattern, userData, timeout);
         if (Timer(uid) is { } t) return t.Wait(resultPattern, userData, timeout);
         if (Obj<MsgPipe>(uid) is { } p) { userData.TrySet(0); return p.WaitEvent(waitPattern, resultPattern, timeout); }
+        if (Obj<IoAsyncOp>(uid) is { } op) return op.WaitEvent(waitPattern, resultPattern, userData, timeout);
         return SceError.UNKNOWN_EVENT_ID;
     }
 
@@ -1182,6 +1183,7 @@ public sealed partial class ThreadMgr : HleModule
         if (Event(uid) is { } e) return e.Poll(waitPattern, resultPattern, userData);
         if (Timer(uid) is { } t) return t.Poll(resultPattern, userData);
         if (Obj<MsgPipe>(uid) is { } p) { userData.TrySet(0); return p.PollEvent(waitPattern, resultPattern); }
+        if (Obj<IoAsyncOp>(uid) is { } op) return op.PollEvent(waitPattern, resultPattern, userData);
         return SceError.UNKNOWN_EVENT_ID;
     }
 

@@ -302,9 +302,9 @@ public sealed partial class Ctrl : HleModule
             // goes to its suspend state and the shell gets event 0x10 {application id})
             if (ps && !_psDown) Emu.Vita.OnPsButton();
             _psDown = ps;
-            return Emu.IsForeground ? s : ControllerState.Neutral;
+            return Emu.IsForeground || Emu.Vita.TouchClaimedByShell(0) ? s : ControllerState.Neutral;
         }
-        if (!Emu.IsForeground) return ControllerState.Neutral;
+        if (!Emu.IsForeground || Emu.Vita.TouchClaimedByShell(0)) return ControllerState.Neutral;
         s.Buttons &= ~VitaButtons.PsButton; // a system button: applications never see it
         return s;
     }

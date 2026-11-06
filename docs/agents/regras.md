@@ -48,6 +48,8 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
   sempre com `--out=<pasta temporária>`.
 - Os cenários em `tests/scenarios/*.txt` têm `data=` com a pasta do usuário: sempre rode com `--data=` (ele vence o
   `data=`) ou use cópias sem essa linha.
+- Para copiar pastas de dados (saves, troféus, ur0, licenças) use `robocopy /E`, nunca `Copy-Item -Recurse`: ele
+  copiou pastas pela metade sem dar erro (06/11/2026). Confira a contagem de arquivos depois de copiar.
 - **Remova as junctions (rmdir) ANTES de apagar qualquer pasta**, e nunca enquanto uma execução as usa.
 - Não faça buscas recursivas em `%USERPROFILE%` (a pasta do usuário). Não mate processos do usuário. Peça ao lead antes de qualquer teste
   que tome a tela do usuário (janela, tela cheia).

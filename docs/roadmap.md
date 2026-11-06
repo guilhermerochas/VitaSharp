@@ -508,7 +508,61 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
   tem a barra, e de Mensagens são iguais: não é isso).
   Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
-  Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware)
+  Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware).
+  Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` do scratchpad): **Teclado (IME) a 60 fps** (era 5-6):
+  as cenas de processos diferentes não se esperam mais (60caec2, padrão em 6df044e; `VITASHARP_GPU_SCENE_INTERLEAVE=0`
+  volta a arbitragem): o renderizador guarda a cena aberta de cada processo e a retoma (VulkanRenderer.SceneContexts.cs),
+  o draw segurado pelo gate dos uniforms espera na fila do seu processo sem travar o worker, e os dumps de GPU gravam o
+  processo de cada comando. Os dumps de GPU reproduzem idênticos à main (16 de 16 com quadros, de novo depois do merge
+  com a main dce8f6b, `fw8_cmp/summary.txt`) e o fps dos jogos é o mesmo com e sem o intercalamento (`fw8_fps/summary.txt`:
+  FIFA 13 60/60, Devious Dungeon 56-60/56-60, Uncharted 30/30 no gameplay); teclado, "vita" digitado
+  (`ime_il6/typed.png`). Os botões vão ao shell enquanto o teclado está aberto (be22179): o círculo mostra o foco e
+  confirma a predição, o d-pad e o X funcionam nas teclas (`ime_circ*`); **o círculo ainda não fecha o teclado** e um
+  toque curto às vezes se perde ("via" em vez de "vita", 1 de 4 execuções): próximo passo, ver se o shell (1 núcleo)
+  fica ocupado com a predição e perde o toque inteiro entre dois quadros dele. **Barra de status**: não investigada
+  além do estático: Troféus importa só SceIpmi/SceAppMgr Safe Memory, os apps sem barra importam SceShellUtil
+  BB54D049 (que é um relatório de erro, IPC 0xC000D, não a barra); num print antigo (`fw_out/x_trophies/main.png`)
+  Troféus também está sem barra: conferir primeiro se alguma tela de app tem a barra hoje. **setup_no.nav**: é o
+  roteiro, não o emulador: ele termina (`quit`) na nota dos pais sem tocar em OK, então `/CONFIG/SYSTEM/initialize`
+  nunca é gravado e o próximo boot daquela pasta recomeça a configuração; com o OK a configuração termina e o shell vai
+  à tela inicial (`setup1/sheet.png`, registro com initialize=1).
+- [ ] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
+  `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
+  serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
+  "avmedia_service:". Tentativa (patch `fw8_photo_wip.patch` no scratchpad, fora do git por não salvar a foto): sistema
+  carrega o ScePhotoExport real; `sceAppMgrLaunchAppByUri/2` viram pedido ao shell (evento 6 com a URI, flags |
+  0x100000, como o kernel 3.74) e o shell inicia o NPXS10036 com flags 0x600000 (servidor IPC no status +0x74; não abre
+  um segundo); semáforo/event flag apagado com handles abertos por nome vira zumbi até o último close (o servidor
+  assertava UNKNOWN_SEMA_ID); `sceKernelGetMsgPipeCreatorId` aceita o nome do pipe (libipmi) e devolve o pid. Com isso o
+  cliente conecta, manda o pedido tipo 8 (método 0x41560004?) e recebe a resposta tipo 5 toda zerada, desconecta e tenta
+  de novo; a câmera mostra "Could not save the image (C1-11213-8)" e chama sceErrorHistoryPostError (`cam8`, `cam9`
+  com a correção do IO assíncrono abaixo: igual). Próximo passo: ver no NPXS10036 (eboot 91 KB) o despacho do servidor e
+  por que responde zero (estado de inicialização? evento que falta?). As pastas padrão do Vita (ux0:picture, ux0:video;
+  photo0 hoje é `<fs>/photo0`, não ux0:picture) ainda não foram tratadas. **Vídeo**: o crash do emulador
+  (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
+  guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
+  repetido; o Videoenc aceita as assinaturas que a câmera usa e o encode diz "sem quadro". A gravação ainda derruba o
+  app **no guest** (salto para 0 em ScePhotoCamJobQueue1, lr eboot+0xD6FDB: chamada por vtable nula, `vid3`), logo
+  depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
+  crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
+  (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
+- [ ] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
+  uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
+  (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).
+  Jogos abertos direto pelo launcher nunca passam pelo servidor do shell, então o app mostra "There are no trophies"
+  para eles (o trophy_local.db do usuário tem tbl_trophy_title vazio). Falta a migração dos títulos que só estão no
+  JSON: instalar cada um no servidor sem abrir o jogo (a ponte precisa de um processo do título por causa do
+  sceAppMgrTrophyMount(300, pid) que lê o TROPHY.TRP). A falha do relato (`[SceIpmi] INTERNAL ASSERTION FAILURE
+  0x8002058e`, BKPT em SceTrophy+394CE: o método síncrono +0x10 do cliente IPMI devolveu 0x8002058E na segunda
+  abertura do app, depois de near/Email/Calendário) não se repetiu em 9 aberturas (`tro2`-`tro5`: abrir/fechar 6 vezes,
+  com o Email suspenso); a gravação do usuário começa depois do crash.
+- [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
+  (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
+  (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync
+  com sceKernelWaitEvent(opid, 1); isso devolvia UNKNOWN_EVENT_ID, a cópia falhava (0x80AF5001 no job da LiveArea,
+  callback shell 0x811B6F18) e o shell usava a LiveArea padrão. O opid agora é um objeto de evento (9255af8): FIFA 13,
+  Uncharted e Gravity Rush mostram fundo, portão e frames (`la6/la2.png`, `la_uc/la2.png`, `la_gr/la2.png`). O
+  `#_livearea_path` "ur0:appmeta/<id>/livearea/contents" do app.db é o que o dbrecovery 3.74 grava, não é a causa.
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
@@ -558,6 +612,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
+  Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
+  dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no
+  caminho da Mali real: bissecar no aparelho com chaves de runtime (MSAA, framebuffer fetch, formatos e mips de
+  textura, compressão BC/ASTC decodificada, precisão dos shaders, profundidade, ordem de barreiras e uploads de
+  textura, reaproveitamento de descritores), gravar tela e contar quadros com `flick.sh`/`tileflick.py` contra um
+  vídeo do Vita real e corrigir de forma genérica. Validação de verdade no Killzone em gameplay (regra do Android) e
+  depois Uncharted, F1 2011, God of War e Devious Dungeon sem nenhum quadro piscando. Com o agente de Android
 - [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)

@@ -51,6 +51,9 @@ public enum GpuDumpRecord : byte
     Signal = 0x16,
     /// <summary>u32 write address, u32 write size (a GPU transfer done on the CPU; its effect reaches the dump through later reads).</summary>
     Callback = 0x17,
+    /// <summary>var pid: the commands from here on are that process's (<see cref="GpuCommand.Pid"/>; dumps of sessions with
+    /// several processes, whose scenes the renderer keeps apart).</summary>
+    Process = 0x18,
     /// <summary>The queue ran empty and the backend's Idle ran.</summary>
     Idle = 0x20,
 }
@@ -397,6 +400,13 @@ public sealed class GpuDumpCodec
     /// </summary>
     public bool Write(GpuCommand cmd, DumpBuffer defs, DumpBuffer w)
     {
+        if (cmd.Pid != _writePid && cmd is DrawCommand or BeginSceneCommand or EndSceneCommand or FinishCommand or MidSceneFlushCommand
+                or SignalCommand or CallbackCommand or PresentCommand)
+        {
+            w.U8((byte)GpuDumpRecord.Process);
+            w.Var((uint)cmd.Pid);
+            _writePid = cmd.Pid;
+        }
         switch (cmd)
         {
             case DrawCommand d: WriteDraw(d, defs, w); return true;
@@ -574,6 +584,17 @@ public sealed class GpuDumpCodec
     /// their uniforms into the cursor's buffer, so the command is valid until the cursor moves to another chunk.
     /// </summary>
     public GpuCommand ReadCommand(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
+    {
+        var c = ReadCommandRecord(kind, r, draw);
+        c.Pid = ReadPid;
+        return c;
+    }
+
+    /// <summary>The process of the commands written last / read next (<see cref="GpuDumpRecord.Process"/>).</summary>
+    int _writePid;
+    public int ReadPid;
+
+    GpuCommand ReadCommandRecord(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
     {
         switch (kind)
         {

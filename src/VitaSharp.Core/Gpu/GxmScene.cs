@@ -8,6 +8,9 @@ public abstract class GpuCommand
     /// <summary>The address space of the process that submitted the command: the guest addresses it holds are that
     /// process's (the GPU worker reads and writes guest memory there while it executes the command).</summary>
     public Memory.AddressSpace? Space;
+    /// <summary>The submitting process, set once a second process shares the GPU (0: host work, or a single process):
+    /// the backend keeps an open scene per process (<see cref="GpuQueue.InterleaveScenes"/>).</summary>
+    public int Pid;
 }
 
 public sealed record ColorSurfaceInfo(uint Data, uint Width, uint Height, uint StrideInPixels, uint ColorFormat, uint SurfaceType, bool Downscale, uint GammaMode);
@@ -37,6 +40,9 @@ public sealed class FinishCommand : GpuCommand;
 
 /// <summary>sceGxmMidSceneFlush: what the scene rendered so far is stored to memory, so later draws of the same scene can sample it.</summary>
 public sealed class MidSceneFlushCommand : GpuCommand;
+
+/// <summary>Process <see cref="GpuCommand.Pid"/> ended: the backend drops the scene it left open.</summary>
+public sealed class ProcessEndedCommand : GpuCommand;
 
 public sealed class PresentCommand : GpuCommand
 {

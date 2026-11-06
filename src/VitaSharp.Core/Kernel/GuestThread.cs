@@ -384,11 +384,11 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 try
                 {
                     if (PendingCallbacks > 0) CallbackProcessor?.Invoke(this);
-                    Invoke(f, s->SvcImm);
+                    InvokeGuarded(f, s);
                 }
                 finally { CallbackWait = prev; }
             }
-            else Invoke(f, s->SvcImm);
+            else InvokeGuarded(f, s);
             f.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
             else if (DebugMode.CollectHleErrors && s->R[0] is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, s->R[0], a0, a1, a2, a3, lr);
@@ -404,6 +404,24 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         // The stub's next instruction is "bx lr": return directly.
         Arm.BxWritePc(s, s->R[14]);
         _hleSeq++;
+    }
+
+    /// <summary>
+    /// Runs the HLE function; a bug in it (a .NET exception of the kinds a wrong guest argument or an unexpected
+    /// sequence of calls raises) must not take the guest thread, and with it the process, down: it is logged with its
+    /// stack once per function and the call fails with SCE_KERNEL_ERROR_ERROR, as a firmware function refusing the
+    /// arguments would. Guest exits, faults and the other exceptions keep their meaning.
+    /// </summary>
+    void InvokeGuarded(HleFunction f, CpuState* s)
+    {
+        try { Invoke(f, s->SvcImm); }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException
+                                      or NullReferenceException or ArithmeticException or FormatException)
+        {
+            if (!f.ExceptionLogged) Log.Error($"HLE function {f.Library}::{f.Name} failed on thread '{Name}' (lr 0x{s->R[14]:X8}), returning an error to the guest: {e}");
+            f.ExceptionLogged = true;
+            s->R[0] = unchecked((uint)SceError.ERROR);
+        }
     }
 
     /// <summary>Calls a guest function on this (current) thread and returns R0. Re-entrant.</summary>

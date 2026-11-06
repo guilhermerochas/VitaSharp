@@ -406,12 +406,15 @@ public sealed partial class CodecEngine : HleModule
 
     [Hle] int sceCodecEngineCloseUnmapMemBlock(int uid) { lock (_blocks) return _blocks.Remove(uid) ? 0 : ERR_INVALID_VALUE; }
 
+    /// <summary>Returns the address, or 0 when the block cannot hold it: callers test the result against 0 (the camera,
+    /// NPXS10004, stores anything else as an address and frees it later).</summary>
     [Hle]
     uint sceCodecEngineAllocMemoryFromUnmapMemBlock(int uid, uint size, uint alignment)
     {
         lock (_blocks)
         {
-            if (!_blocks.TryGetValue(uid, out var b)) return unchecked((uint)ERR_INVALID_VALUE);
+            if (!_blocks.TryGetValue(uid, out var b)) return 0;
+            if (size == 0 || size > b.Size) return 0;
             size = GuestMemory.AlignUp(Math.Max(size, 1), 256);
             // The alignment is a request for the codec's physical pages, not a guarantee about the virtual address
             // inside the game's block: Gravity Rush's AvPlayer opens a 1 MiB block, takes 256 KiB from it and then
@@ -420,7 +423,7 @@ public sealed partial class CodecEngine : HleModule
             // alignment first, then smaller powers of two.
             for (uint align = Math.Max(alignment == 0 ? 256u : System.Numerics.BitOperations.RoundUpToPowerOf2(alignment), 256u); align >= 256; align >>= 1)
                 if (TryAlloc(b, size, align) is uint p) return p;
-            return unchecked((uint)ERR_INVALID_VALUE);
+            return 0;
         }
     }
 
@@ -444,8 +447,9 @@ public sealed partial class CodecEngine : HleModule
     {
         lock (_blocks)
         {
+            // a block that was never handed out (or is freed twice) is refused, never a host exception
             if (!_blocks.TryGetValue(uid, out var b) || !b.Used.Remove(addr, out uint size)) return ERR_INVALID_VALUE;
-            b.Free.Add(addr, size);
+            if (!b.Free.TryAdd(addr, size)) return ERR_INVALID_VALUE;
             // merge adjacent free ranges
             for (int i = 0; i + 1 < b.Free.Count;)
             {
