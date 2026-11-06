@@ -1,0 +1,72 @@
+# Email (NPXS10072): every screen reached from its first page, back, PS button / Continue, close, open again
+# (tests/nav/sysapps, build/sysapps-sweep.ps1; expected results in docs/notes/system-apps.md, Sweep checklist)
+wait 600
+press cross
+wait 200
+swipe 0.93 0.12 0.3 0.7 30
+wait 400
+press cross
+wait 100
+swipe 0.5 0.8 0.5 0.2 20
+wait 90
+log open email 1
+tap 0.15 0.53
+wait 150
+press circle
+wait 60
+shot gate1
+tap 0.5 0.54
+wait 500
+shot main1
+log add
+tap 0.5 0.85
+wait 300
+shot add
+log other
+tap 0.5 0.58
+wait 300
+shot other
+press circle
+wait 300
+log add_back
+wait 10
+shot add_back
+press circle
+wait 300
+log accounts
+wait 10
+shot accounts
+log ps
+press psbutton
+wait 300
+shot ps1
+log continue
+tap 0.5 0.54
+wait 300
+shot resumed
+press psbutton
+wait 300
+log close
+swipe 0.97 0.04 0.3 0.7 30
+wait 300
+shot closed1
+# the shell shows its lock screen when the ended app's end event arrives (see the checklist): unlock it, close the hint
+swipe 0.93 0.12 0.3 0.7 30
+wait 200
+tap 0.146 0.2
+wait 100
+shot home2
+log open email 2
+tap 0.15 0.53
+wait 150
+shot gate2
+tap 0.5 0.54
+wait 500
+shot main2
+press psbutton
+wait 300
+shot ps2
+swipe 0.97 0.04 0.3 0.7 30
+wait 300
+shot closed2
+quit
