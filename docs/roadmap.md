@@ -1161,7 +1161,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (present 9646, pad 0x4000 em 9645), e depois a câmera fica parada com o Jak andando: os dois combinam com o relógio
   de vsync parado do item (c); falta o usuário confirmar no mesmo trecho com o build novo
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
+- [x] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
   ~40 px do topo, largura toda, com o botão SKIP): ela aparece num quadro e some no seguinte. Provavelmente o jogo
@@ -1188,6 +1188,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   janela com esta versão; se continuar, gravar um F8 (dump de GPU) durante o pisca-pisca
   Ainda pisca (relato do usuário, 04/11/2026, depois da correção do tamanho da textura): o botão SKIP continua
   piscando; validar ao vivo com o detector de flicker e uma captura F8 do usuário no momento
+  Confirmado pelo usuário (06/11/2026): o SKIP não pisca mais (b6949d7)
 - [x] Croixleur Sigma (PCSG00537; no Vita3K trava ao gerar shaders): roda a ~30 fps, mas no início 3 cenas são
   puladas com `vkAllocateMemory(host buffer) failed: ErrorOutOfDeviceMemory` e "out of host memory for 0,0 MB" com a
   VRAM a 4% e o heap do host a 2% (31/10/2026, main e74a747, log `20261031_030841_PCSG00537`); a captura F10 também
