@@ -1,4 +1,4 @@
-using VitaSharp.Core.Util;
+﻿using VitaSharp.Core.Util;
 using System.Diagnostics;
 using VitaSharp.Core.Memory;
 
@@ -881,6 +881,9 @@ public static class EventBits
 {
     public const uint Create = 0x4, Delete = 0x8, Error = 0x10, Timer = 0x8000, UserMask = 0xFF000000;
     public const uint AttrAutoReset = 0x100, AttrOpenable = 0x80, AttrThPrio = 0x2000;
+    /// <summary>SCE_KERNEL_ATTR_NOTIFY_CB_WAKEUP_ONLY: accepted at creation (Injustice's NRS async IO events use 0x900);
+    /// it only affects which callbacks a CB wait runs, nothing reads it here (Vita3K neither).</summary>
+    public const uint AttrNotifyCbWakeupOnly = 0x800;
 }
 
 /// <summary>

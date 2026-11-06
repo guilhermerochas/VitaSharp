@@ -1134,7 +1134,7 @@ public sealed partial class ThreadMgr : HleModule
         if (namePtr == 0) return SceError.ILLEGAL_ADDR;
         string name = GuestMemory.ReadCString(namePtr, 256);
         if ((attr & EventBits.AttrOpenable) != 0 && System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
-        if ((attr & ~(EventBits.AttrAutoReset | EventBits.AttrThPrio | EventBits.AttrOpenable)) != 0) return SceError.ILLEGAL_ATTR;
+        if ((attr & ~(EventBits.AttrAutoReset | EventBits.AttrThPrio | EventBits.AttrOpenable | EventBits.AttrNotifyCbWakeupOnly)) != 0) return SceError.ILLEGAL_ATTR;
         if ((initPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
         return K.Objects.Register(new SimpleEvent { Name = name, Attr = attr, Pattern = initPattern | EventBits.Create });
     }
