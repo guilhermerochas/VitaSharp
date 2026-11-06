@@ -320,3 +320,34 @@ from 33.9 to 49.5 ms between sessions (phone temperature).
 - RENDER_AREA_TRIM (VulkanRenderer.Tiler.cs `ChainRenderArea`) is pixel-identical on 21 desktop replays (the user's
   dumps, the Uncharted plants dump at 0.75, the Killzone dump; native and mali profiles). It stays off until a
   longer live series shows the bench gain in the frame time.
+
+## Killzone: command-buffer slots, 6 November 2026 (perf/android-9)
+
+Same scene and method as above (slot 1 state re-saved at the staircase: the old one had another snapshot schema).
+Display median / mean frame ms, 30 s per run, interleaved:
+
+| Variant | Runs | Notes |
+|---|---|---|
+| base (3 slots x 64 MB) | 15/69.2, 12/79.4, 12/79.5, 12/81.3, 12/78.9 | GPU 41-49 ms |
+| `VITASHARP_DISPLAY_EARLY_SIGNAL=1` | 15/76.2, 15/69.2 | alone it does not move the median in this series |
+| 8 slots x 16 MB (`VITASHARP_FRAMES_IN_FLIGHT=8`, `VITASHARP_UPLOAD_RING_MB=16`) | 20/57.9 | |
+| EARLY + 8 slots | 20/63.0, 20/54.5, 20/59.6, 20/55.1, 20/55.4 | **now the Android default (8 x 16 MB; EARLY stays off)** |
+| EARLY + 8 slots + ADPF wall-time reports | 20/55.2, 20/57.3 | no change: the A76 cores ran at 1.8 GHz in these runs; switch dropped |
+| EARLY + LAZY + 8 slots | froze after the load twice, 102.9 ms once | not pursued |
+
+- Why: a frame is split into ~2.9 submissions (sync points submit early) and every submission takes a slot, so 3 slots
+  held about one frame and often far less GPU work (two tiny submissions next to a 45 ms one): the worker waited 20-26 ms
+  per frame on slot fences (PERF sync `Slot`) while the GPU ran dry. Dolphin's Vulkan backend keeps 8 command buffers
+  for the same reason. 20 desktop dumps replay pixel-identical with 8 x 16 MB.
+- Load states: a thread waiting for a vblank never stopped while a load paused the emulation (Killzone's PadThread
+  in `sceCtrlReadBufferPositive`: "PadThread did not stop", the game froze); fixed in `VBlank.WaitFor`.
+- **Open: managed-heap corruption on Android after a load state.** Signatures (all Mono SGen, concurrent major
+  `marksweep-conc`, the .NET Android default): SIGSEGV ACCERR in an SGen worker, assertion `sgen-los.c:381`,
+  "How can an object and a reference inside it not be in the same block?", SIGSEGV in a TP worker during a save, and
+  `ArgumentException: DestinationTooShort` in `Gxm.SubmitDraw` (array references gone wrong) followed by a GPU-worker
+  SIGSEGV. With the perf/android-9 APK the game died 30-60 s after a single load in 2 of 2 load-stress runs (and once
+  after 5 loads). Not from the native JIT (no raw pointers into managed arrays besides the pinned 16 KB LOS array
+  `Arm.ExclusiveGens`). Untested lead: an APK built with `-p:AndroidEnableSGenConcurrent=false` (major=marksweep)
+  was installed but not measured before the round stopped; next: run `loadstress.sh`-style loads with it, and if the
+  crashes persist, look for unsafe writes into managed memory on the load path (`ReplaceBackend`, `Code.Clear`,
+  module `LoadState`). Scripted `loadstate` steps after the first in one live file did not run (only one load per file).

@@ -40,8 +40,12 @@ public static class VBlank
         if (Display.FrameSleepMs > 0) Thread.Sleep(Display.FrameSleepMs); // debug: slow every vblank wait (host time)
         if (Count >= target) return Count;
         using var blocked = Scheduler.Block();
+        var self = GuestThread.Current;
         while (true)
         {
+            // a load state stops the threads while the emulation is paused: the frozen clock never reaches the vblank,
+            // so a thread waiting here (Killzone's PadThread in sceCtrlReadBufferPositive) must leave like a delay does
+            if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
             long cur = Count, at = GuestClock.FromSeconds(target * PeriodSeconds / TimeScale.VBlank) + 1; // +1 tick: no rounding below the boundary
             if (cur >= target) { GuestThread.Current?.Core.WokeAt(at); return cur; } // resumes at the vblank, not at the late host wake-up
             GuestClock.WaitUntil(at);

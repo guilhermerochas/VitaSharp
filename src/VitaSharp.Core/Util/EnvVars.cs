@@ -280,8 +280,11 @@ public static class EnvVars
     public const string DelaySpin = "VITASHARP_DELAY_SPIN";
     /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
-    /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>
+    /// <summary>Vulkan command-buffer slots in flight (2-8, default 3, 8 on Android; each holds a host upload ring, see UploadRingMb).</summary>
     public const string FramesInFlight = "VITASHARP_FRAMES_IN_FLIGHT";
+    /// <summary>Size of each command-buffer slot's host upload ring in MB (8-64, default 64, 16 on Android; uploads past it go to
+    /// overflow chunks).</summary>
+    public const string UploadRingMb = "VITASHARP_UPLOAD_RING_MB";
     /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target
     /// writebacks (published when their frame retires, at the latest by the next flip). Default 0.</summary>
     public const string LazyWritebackSync = "VITASHARP_LAZY_WRITEBACK_SYNC";
