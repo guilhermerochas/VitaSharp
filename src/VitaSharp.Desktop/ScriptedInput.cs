@@ -57,11 +57,27 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 
     public ScriptedInput(string script)
     {
+        var steps = script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (int i = 0; i < steps.Length; i++)
+        {
+            // steps are comma separated, so a decimal comma (a script written with the pt-BR culture: "circle@52,5")
+            // cuts a step in two; the piece after it starts with a digit
+            if (i + 1 < steps.Length && steps[i + 1].Length > 0 && char.IsAsciiDigit(steps[i + 1][0]))
+                throw new FormatException($"bad input step '{steps[i]},{steps[i + 1]}': numbers use '.' as the decimal separator ('52.5', not '52,5')");
+            try { ParseStep(steps[i]); }
+            catch (Exception e) when (e is FormatException or IndexOutOfRangeException or ArgumentException or OverflowException)
+            {
+                throw new FormatException($"bad input step '{steps[i]}' (name@time[:args], numbers with '.'): {e.Message}", e);
+            }
+        }
+    }
+
+    void ParseStep(string raw)
+    {
         var inv = CultureInfo.InvariantCulture;
-        foreach (var raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var at = raw.Split('@');
-            if (at.Length != 2) throw new FormatException($"bad input step '{raw}'");
+            if (at.Length != 2) throw new FormatException("expected exactly one '@'");
             var parts = at[1].Split(':');
             bool frames = parts[0].StartsWith('f');
             string when = parts[0];
