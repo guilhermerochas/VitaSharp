@@ -1368,6 +1368,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
   coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
   da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
+- [x] Jak 1, cena inteira escura em quadros alternados por segundos (gravação do usuário 06/11/2026 18:37, build
+  19c2375: Daxter parado antes do menu de pausa, luma ~24 x ~36 quadro sim/quadro não, presents 5859-5889; agente C,
+  fix/bugs-games-15, `scratchpad/bugsC15_jak`). Reproduz no replay do `gpu.vsgd` (5871, 5873, 5875 escuros). Causa:
+  o jogo extruda os volumes de sombra com um programa que grava na memória, em duas janelas de 1 MB vizinhas que
+  alterna por quadro (0x60501400 e 0x60601400); as faixas gravadas pela GPU dos dois quadros se juntam numa só, e
+  quando a janela do desenho seguinte (a outra metade) achava uma página escrita pela CPU depois (dados do quadro
+  seguinte), a faixa inteira era descartada, inclusive o volume que o quadro acabara de extrudar: o desenho do
+  volume (`[stream] id=455`) lia a cópia velha da memória do guest, o stencil ficava desbalanceado e o quad de
+  sombra (st=5) escurecia a tela. Corrigido: só as páginas que a CPU escreveu saem da faixa (o resto continua lido do
+  espelho), e antes de juntar faixas antigas a uma gravação nova (que renova o carimbo) as escritas da CPU desde as
+  antigas são conferidas. Replay: 5873/5875 claros (o 5871 continua escuro porque mostra um buffer importado do
+  estado gravado). `replay-gpu --compare` contra a main: os 18 dumps do usuário idênticos; no da gravação só mudam
+  5873/5875 (claros) e um canto de sombra no 5893. Jogo rodando (`rerun` da gravação a partir do estado, cópia em
+  `bugsC15_jak/cap_*`): main 25 quadros seguidos alternando (presents 154-178), com a correção 5 (169-173, logo depois
+  de carregar o estado) e depois estável. Ainda aberto: esses 5 quadros iniciais.
+  Achado à parte (gravação 18:34, cutscene, preto no present 2155, prioridade menor): não é o espelho (nenhum
+  programa grava na memória nessa cena); os desenhos do céu e do cenário saem pretos porque a textura 32x32 em
+  0x630F2B40 (amostrada pelo céu, vs 79BC61BE4C9F8178) foi lida já reescrita pela CPU ((255,0,0) contra (255,3,33)
+  no 2154): a mesma classe do "céu preto por um quadro" acima (a CPU à frente do worker reescreve dados que o quadro
+  ainda vai ler). `--draw-limit=222@2155` mostra só alguns objetos (`bugsC15_jak/b222`).
 - [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
