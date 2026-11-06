@@ -64,7 +64,8 @@ public static class ShellEvents
     /// <summary>A launch requested by the shell finished: +4 the application id, -1 when it failed (the shell then
     /// reads the application's status and app0 path and activates it).</summary>
     public const int AppLaunched = 0xA;
-    /// <summary>An application process ended: +4 pid, +0x14 application id (the shell's handler reads the id there).</summary>
+    /// <summary>An application process ended (<see cref="VitaSystem.PostAppEnded"/>): +4 pid, +8 state, +0x14 application
+    /// id, +0xC/+0x18 -1, +0x20 the title id.</summary>
     public const int AppEnded = 4;
     /// <summary>An application asked for another one to start (sceAppMgrLaunchAppByName): +4 and +8 its application
     /// id (kernel appmgr 0x8101410C); the shell answers with sceAppMgrLaunchAppByName2ndStage or LaunchAppCancel.</summary>
@@ -225,6 +226,39 @@ public sealed class VitaSystem
         }
     }
 
+    // ---- the shell's touch regions (sceTouchSetRegion / ActivateRegion, regions above 0): while one is active over an
+    // application in front, the shell's overlay takes the contacts on the panel (its on-screen keyboard)
+    readonly Dictionary<(int Port, int Region), (ushort X0, ushort Y0, ushort X1, ushort Y1, bool Active)> _shellTouchRegions = new();
+
+    public void SetShellTouchRegion(int port, int region, ushort x0, ushort y0, ushort x1, ushort y1)
+    {
+        lock (_shellTouchRegions)
+        {
+            bool active = _shellTouchRegions.TryGetValue((port, region), out var r) && r.Active;
+            _shellTouchRegions[(port, region)] = (x0, y0, x1, y1, active);
+        }
+    }
+
+    public void ActivateShellTouchRegion(int port, int region, bool enable)
+    {
+        lock (_shellTouchRegions)
+        {
+            var r = _shellTouchRegions.TryGetValue((port, region), out var old) ? old : default;
+            _shellTouchRegions[(port, region)] = r with { Active = enable };
+        }
+    }
+
+    /// <summary>True when the touches of <paramref name="port"/> go to the shell instead of the application in front:
+    /// the shell has an active touch region there (its overlay plane is up).</summary>
+    public bool TouchClaimedByShell(int port)
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == port && r.Active) return true;
+        return false;
+    }
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
 
@@ -262,6 +296,27 @@ public sealed class VitaSystem
         if (fg == null || fg.IsShell || Shell == null) return;
         Log.Info($"PS button: {fg.Describe()} goes to its LiveArea");
         PostShellEvent(ShellEvents.ShowLiveArea, fg.AppId);
+    }
+
+    /// <summary>
+    /// An application process ended: shell event 4 as the FW 3.74 kernel appmgr builds it (0x81013FE4, called from the
+    /// destroy path 0x81000860; same layout as event 3, the status change): +4 pid, +8 the entry's state (2 = in front),
+    /// +0xC and +0x18 the ids of the application it was started for (-1 when none, entry flag bit 18 clear), +0x14 the
+    /// application id, +0x1C a halfword of the entry (0 here; 1 makes the kernel drop the event with its pending
+    /// create/status events), +0x20 the entry's 0x20-byte name (title id). The shell's handler (shell.self 0x8127DBD2)
+    /// looks +0x18 up as an application (-1: none) and reads +8/+0x10; with zeros there (only pid and id written) it
+    /// called sceAppMgrSetPowerSaveMode(1, 1) and showed its lock screen after every application end.
+    /// </summary>
+    public void PostAppEnded(int pid, int appId, int state, string titleId)
+    {
+        Span<int> w = stackalloc int[15];
+        w[0] = pid; w[1] = state; w[2] = -1; w[3] = 0; w[4] = appId; w[5] = -1; w[6] = 0;
+        var name = System.Text.Encoding.ASCII.GetBytes(titleId);
+        Span<byte> nb = stackalloc byte[0x20];
+        nb.Clear(); // locals are not zeroed in this assembly
+        name.AsSpan(0, Math.Min(name.Length, 0x1F)).CopyTo(nb);
+        System.Runtime.InteropServices.MemoryMarshal.Cast<byte, int>(nb).CopyTo(w[7..]);
+        PostShellEvent(ShellEvents.AppEnded, w);
     }
 
     public int ShellEventCount { get { lock (_shellEvents) return _shellEvents.Count; } }

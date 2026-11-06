@@ -222,7 +222,7 @@ Every script: 0 crashes; "stalls" are the known 5-7 s watchdog STALLs at boot wh
 
 Found in this round (not fixed):
 
-- **Lock screen after an application ends.** When the end event of an application arrives (shell event 4, after the
+- (Fixed, fix/system-apps-6: event 4 now has the kernel's layout, see `VitaSystem.PostAppEnded`) **Lock screen after an application ends.** When the end event of an application arrives (shell event 4, after the
   LiveArea's close or when a helper such as Calendar BG exits), the shell shows its lock screen (date and time, the peel
   corner); a peel or the PS button gets back. Trace (`fw5_out/close_tr`): event 4 -> `sceAppMgrGetStatusByAppId` (fails,
   0x80802012, the app is gone) -> `sceAppMgrSetPowerSaveMode(1, 1)` -> `sceAppMgrSetSystemImposeState2(1, ...)`. A real
