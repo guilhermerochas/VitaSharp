@@ -117,6 +117,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Killzone no Android a 30 fps (pedido do usuário, 06/11/2026; perf/android-8): hoje 12-15 fps de mediana,
+  68-83 ms por quadro, GPU 42-51 ms (`docs/notes/android-frame-anatomy.md`, seção Killzone). O rastro Perfetto mostra
+  a GPU ocupada só 48% do tempo: a cadeia jogo -> worker -> GPU -> jogo é serial (`docs/notes/android-perf-references.md`).
+  Próximos, por ganho esperado: (1) `VITASHARP_DISPLAY_EARLY_SIGNAL=1` levou a mediana de 12 a 15 fps em duas corridas
+  (64,0/74,8 ms contra 77,5/78,9): repetir em 3 pares frios e no Uncharted/F1 antes de ligar; depois, notificações GXM
+  liberadas no submit com a cerca real só onde o jogo lê a GPU (writebacks, visibilidade), como Dolphin/PCSX2;
+  (2) opção de qualidade por jogo no Android (escala interna, MSAA), padrão nativo: 0,75 ou MSAA desligado levam a
+  GPU a ~34,5 ms e o quadro a ~62 ms; (3) `VITASHARP_RENDER_AREA_TRIM=1` (db2d72d): -2 a -5 ms de GPU na cena de
+  pós-processamento no bench, pixel-idêntico em 21 dumps; ligar quando uma série ao vivo mais longa confirmar.
+  `VITASHARP_PRESENT_THREAD` piorou (85-86 ms) e `VITASHARP_TEXSET_PERSIST` não mudou o quadro: ficam desligados
+
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `scratchpad/and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
   chave do Android muda). Replay do mesmo dump no PC (agente C, 05/11/2026, build da main a19cdbe + a correção do
