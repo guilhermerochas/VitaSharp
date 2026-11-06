@@ -22,6 +22,8 @@ namespace VitaSharp.Desktop;
 ///                           (<see cref="VirtualMotion"/>, which then becomes the SceMotion source when no tilt step
 ///                           exists)
 ///   mlook@T:dx:dy[:len]     mouse look: the mouse moves dx, dy pixels over len with the middle button held
+///   mouse@T:dx:dy[:len][:l] the captured mouse moves dx, dy pixels over len as the right stick (":l" the left one),
+///                           through <see cref="MouseStick"/> with the default mouse settings
 /// T is seconds ("12.5") or presented frames ("f1200"); len uses the same unit (default 0.25 s / 8 frames).
 /// Frame timing is deterministic whatever the emulation speed (turbo runs). "f1200+3" is 3 seconds of wall time after
 /// frame 1200 was presented (len in seconds): steps that must happen while the emulation is paused, when no frame
@@ -31,7 +33,7 @@ namespace VitaSharp.Desktop;
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource
 {
-    enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook }
+    enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook, MouseStick }
 
     /// <param name="AfterSeconds">"fN+S": the step starts S wall-clock seconds after frame N (NaN: plain timing).</param>
     sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y, float X1 = float.NaN, float Y1 = float.NaN, string? KeyName = null)
@@ -46,6 +48,8 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     readonly CompiledProfile _keyboard = new(DefaultMappings.Keyboard());
     readonly VirtualMotion _virtual = new();
     readonly Dictionary<Step, float> _mouseDone = new();
+    readonly MouseStick _mouseStick = new();
+    readonly Dictionary<Step, float> _mouseStickDone = new();
 
     readonly List<Step> _steps = new();
     readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -87,6 +91,10 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                     break;
                 case "mlook":
                     _steps.Add(new Step(Kind.MouseLook, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
+                    break;
+                case "mouse":
+                    _steps.Add(new Step(Kind.MouseStick, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv),
+                        KeyName: parts.Length > 4 && parts[4] == "l" ? "l" : "r"));
                     break;
                 case "lstick" or "rstick":
                     _steps.Add(new Step(name == "lstick" ? Kind.LStick : Kind.RStick, 0, frames, start, Len(3), float.Parse(parts[1], inv), float.Parse(parts[2], inv)));
@@ -179,6 +187,11 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                 case Kind.RStick: st.Rx = Axis(s.X); st.Ry = Axis(s.Y); break;
             }
         }
+        if (MouseStickInput() is { } mouse)
+        {
+            if (mouse.Rx != 0 || mouse.Ry != 0) { st.Rx = mouse.State.Rx; st.Ry = mouse.State.Ry; }
+            if (mouse.Lx != 0 || mouse.Ly != 0) { st.Lx = mouse.State.Lx; st.Ly = mouse.State.Ly; }
+        }
         if (HeldKeys() is { } keys)
         {
             var m = InputMapper.Map(_keyboard, null, keys);
@@ -187,6 +200,27 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
             if (m.Rx != 0 || m.Ry != 0) { st.Rx = m.State.Rx; st.Ry = m.State.Ry; }
         }
         return st;
+    }
+
+    /// <summary>The mouse steps' movement since the last poll through the mouse stick; null without mouse steps.</summary>
+    MappedInput? MouseStickInput()
+    {
+        MouseMode mode = MouseMode.Off;
+        lock (_mouseStick)
+        {
+            foreach (var s in _steps)
+            {
+                if (s.Kind != Kind.MouseStick) continue;
+                mode = s.KeyName == "l" ? MouseMode.LeftStick : MouseMode.RightStick;
+                var (now, start) = Timeline(s);
+                float t = (float)Math.Clamp((now - start) / Math.Max(s.Length, 1e-6), 0, 1);
+                float done = _mouseStickDone.GetValueOrDefault(s);
+                if (t <= done) continue;
+                _mouseStick.Add(s.X * (t - done), s.Y * (t - done));
+                _mouseStickDone[s] = t;
+            }
+            return mode == MouseMode.Off ? null : _mouseStick.Mapped(mode);
+        }
     }
 
     /// <summary>Keys of the active key steps; null when none is held.</summary>

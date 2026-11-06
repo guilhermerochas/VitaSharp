@@ -90,6 +90,8 @@ public sealed class ControllerProfile
     public MotionSourceMode MotionSource { get; set; }
     /// <summary>Virtual motion feel: maximum angle and ramp speed of the tilt controls, mouse look.</summary>
     public TiltSettings Tilt { get; set; } = new();
+    /// <summary>The mouse as a stick (read from the keyboard profile only): mode, feel, keys, per-game modes.</summary>
+    public MouseSettings Mouse { get; set; } = new();
 
     public const string DefaultRearModifier = "pad:lefttrigger", DefaultBothModifier = "pad:righttrigger";
 
@@ -149,7 +151,7 @@ public sealed class ControllerProfile
         LeftStick = LeftStick.Clone(), RightStick = RightStick.Clone(), SwapConfirm = SwapConfirm, ButtonThreshold = ButtonThreshold,
         TouchFrontX = TouchFrontX, TouchFrontY = TouchFrontY, TouchBackX = TouchBackX, TouchBackY = TouchBackY,
         TouchpadEnabled = TouchpadEnabled, TouchpadRearModifier = TouchpadRearModifier, TouchpadBothModifier = TouchpadBothModifier,
-        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation, MotionSource = MotionSource, Tilt = Tilt.Clone(),
+        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation, MotionSource = MotionSource, Tilt = Tilt.Clone(), Mouse = Mouse.Clone(),
     };
 }
 

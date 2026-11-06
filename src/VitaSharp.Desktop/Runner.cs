@@ -256,6 +256,17 @@ public static class Runner
         // scripted pause / F10 key steps (--input key@...:P) also work in the window
         if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
         window.Resized += () => { if (EmulationPause.IsPaused) ShowPauseBadge(renderer); };
+        // the mouse mode (F4 cycles giroscópio / analógico direito / analógico esquerdo / desligado): a notice in the
+        // top-left corner for 3 s and in the title bar
+        int mouseNotice = 0;
+        void ShowMouseNotice(string text)
+        {
+            diag.Status?.Invoke(text);
+            if (renderer is { } r && PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: false) is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height);
+            int n = Interlocked.Increment(ref mouseNotice);
+            _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref mouseNotice) == n) ShowPauseBadge(renderer); });
+        }
+        window.MouseModeChanged += ShowMouseNotice;
 
         window.Loaded += () =>
         {
@@ -264,6 +275,7 @@ public static class Runner
             renderer.AnomalyDetected += diag.OnAnomaly;
             emu.Gpu.Backend = renderer;
             emu.LoadTitle(appPath, Opt(options, "--self") ?? "eboot.bin");
+            window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
             if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
