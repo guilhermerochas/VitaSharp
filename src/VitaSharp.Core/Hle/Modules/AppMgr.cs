@@ -47,6 +47,17 @@ public sealed partial class AppMgr : HleModule
         return MountAlias($"am{id}", rel, mountPoint);
     }
 
+    /// <summary>(int id, char mountPoint[16]): the media databases under ux0:mms (Photos mounts 400 at start): 400
+    /// photo, then (by the folders' order, not seen called) 401 music and 402 video; each holds an AVContent.db.</summary>
+    [Hle]
+    int sceAppMgrMmsMount(int id, uint mountPoint)
+    {
+        string? rel = id switch { 400 => "ux0/mms/photo", 401 => "ux0/mms/music", 402 => "ux0/mms/video", _ => null };
+        if (rel == null) return ERR_PARAM;
+        Directory.CreateDirectory(Path.Combine(Emu.Options.FsRoot, rel.Replace('/', Path.DirectorySeparatorChar)));
+        return MountAlias($"mms{id}", rel, mountPoint);
+    }
+
     [Hle]
     int sceAppMgrWorkDirMount(int id, uint mountPoint)
     {
@@ -311,6 +322,30 @@ public sealed partial class AppMgr : HleModule
     /// <summary>(void) -> bool: a "game budget" application is present. Callers
     /// (NPXS10003 and other system apps) test non-zero; none ever runs here.</summary>
     [Hle] int sceAppMgrIsGameBudgetAppPresent() => 0;
+
+    /// <summary>(int activated): an application (the shell's paf apps) tells appmgr whether its recommended screen
+    /// orientation applies; the handheld screen does not rotate, so it is only acknowledged.</summary>
+    [Hle] int sceAppMgrSetRecommendedScreenOrientationActivated(int activated) => 0;
+
+    /// <summary>(int appId): which application's frames the shell composes behind its own (-1: none). The emulator
+    /// composes the foreground process itself.</summary>
+    [Hle] int sceAppMgrSetBackRenderPortOwner(int appId) => 0;
+
+    /// <summary>(int appId): the application that plays background music for another one (Sign Up for the shell).</summary>
+    [Hle] int sceAppMgrSetBgmProxyApp(int appId) => 0;
+
+    /// <summary>(const char *appPath, SceAppMgrRifInfo *info 0x70, const void *opt 8): appmgr reads the license (rif)
+    /// of the application at the path: its validity times at +0x50/+0x58 (0: no limit). System applications in vs0 have
+    /// no license: 0x80800004, which the shell expects for them. A path of 0x124 characters or more: 0x8002710B.</summary>
+    [Hle]
+    int sceAppMgrCheckRifGD(uint appPath, uint info, uint opt)
+    {
+        string path = appPath != 0 ? GuestMemory.ReadCString(appPath, 0x125) : "";
+        if (path.Length >= 0x124) return unchecked((int)0x8002710B);
+        if (path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase)) return unchecked((int)0x80800004);
+        if (info != 0) GuestMemory.Fill(info, 0, 0x70);
+        return 0;
+    }
 
     [Hle] int sceAppMgrPhotoMount(uint param) => AppUtil.MountPhoto();
     [Hle] int sceAppMgrPhotoUmount() => AppUtil.UmountPhoto() == 0 ? 0 : ERR_NOT_FOUND;
