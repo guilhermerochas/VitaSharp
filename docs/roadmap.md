@@ -333,6 +333,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (`vs0:data/external/webcore`); barra de status ausente sobre Mensagens/Amigos/Party; Configurações > Sistema/
   Formatar/Economia de energia ainda não abertas (`settings_tail.nav` escrito, rodar de novo). Texto cortado no boot
   direto: não reproduzido (`run NPXS10015` mostra o texto inteiro). Botão PS no PC: não testado (precisa da janela)
+  Rodada fix/system-apps-6 (05/11/2026, provas em `fw6_out/` do scratchpad): **tela de bloqueio** corrigida (0e92acf:
+  evento 4 com o layout do kernel, +8 estado, +0xC/+0x18 -1, +0x20 title id; depois de fechar volta a tela inicial,
+  `close1/after.png`; Calendário não cai mais na tela de bloqueio, mostra NW-2288-0 já no primeiro início, `cal1`).
+  **Teclado (IME)**: 0,8 -> 7-8 fps (e928487, o gate dos uniforms agora deixa o backend submeter: a cerca da display
+  queue do shell ficava presa 390 ms; `ime1` antes, `ime2` depois) e as teclas digitam (53447dc, toque vai ao shell com
+  a região 2 ativa): "vita" digitado, Enter vai para a senha, o botão de esconder fecha (`ime_word2/sheet.png`). Ainda
+  abaixo de 30 fps: o shell segura a cena ~33 ms (espera de vblank com a cena aberta) e a arbitragem segura o BeginScene
+  do setup; toques de 8 quadros às vezes se perdem (`ime_word`: "ta" de "vita"); o círculo não fecha o teclado.
+  **Navegador**: não é rede: ele espera o processo do motor web **NPXS10083 (SceWebKitProcess**, eboot em vs0:app, usa
+  ScePsp2Compat/SceWebKit de vs0:data/external/webcore; NPXS10084 é o "mini") — `sceAppMgrGetStatusByName("NPXS10083")`
+  falha e ninguém o inicia. O código que vigia e inicia está no eboot do Navegador perto de 0x810A8100-0x810A8950
+  ("SceWebCoreProcessWatcher", referências a 0x810F5E8C); próximo passo: ver como ele pede o início (provavelmente pelo
+  shell/SceShellSvc ou sceAppMgrLaunchAppByPath) e implementar; depois as 8 NIDs ScePsp2Compat que faltam.
+  `sceGxmGetDisplayQueueThreadIdInternal` implementado (sem efeito visível). **near**: NID_EFC9BD25 devolve o ponteiro de
+  contexto interno do liblocation real (global +0x4000) e NID_2311B24A um byte (0 até 5C7185D2); são internas entre
+  liblocation e liblocation_internal/extension (LLE) e o stub já devolve 0: a tela preta tem outra causa (não
+  investigada). Configurações > Sistema/Formatar/Economia: não rodado. A primeira descida da tela de bloqueio no boot às
+  vezes falha (`br1`: ficou na tela de bloqueio o tempo todo; `br2` igual roteiro, passou).
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma

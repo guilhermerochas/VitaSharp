@@ -157,6 +157,9 @@ public sealed partial class Gxm : HleModule
     [Hle][Hle("sceGxmUnmapFragmentUsseMemoryInternal")] int sceGxmUnmapFragmentUsseMemory(uint baseAddr) => 0;
     /// <summary>No prototype; Vita3K answers 0 (libpaf then initializes GXM itself).</summary>
     [Hle] int sceGxmIsInitializationInternal() => 0;
+    /// <summary>The UID of the display queue thread sceGxmInitialize made (the Browser asks for it before it starts its web
+    /// engine); SCE_GXM_ERROR_UNINITIALIZED before.</summary>
+    [Hle] int sceGxmGetDisplayQueueThreadIdInternal() => _displayThread is { } t ? t.Uid : ERR_UNINITIALIZED;
     [Hle] int sceGxmPadHeartbeat(uint displaySurface, uint displaySync) => 0;
     /// <summary>SCE_GXM_WCLAMP_MODE_ENABLED = 0x8000. Stored in the draw state; the clamp itself is not applied by the
     /// renderer yet (Vulkan clipping already handles W &lt;= 0).</summary>
