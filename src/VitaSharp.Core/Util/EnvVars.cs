@@ -38,6 +38,8 @@ public static class EnvVars
     /// <summary>=1: logs every NGS source voice event (play, key off, buffer callbacks, player/ATRAC9 buffer table
     /// changes) with the reported play position; with --audio-dump each source voice's output also gets its own WAV.</summary>
     public const string NgsTrace = "VITASHARP_NGS_TRACE";
+    /// <summary>=0: the NGS envelope module is a passthrough and a key off stops the voice at once (as before; A/B).</summary>
+    public const string NgsEnvelope = "VITASHARP_NGS_ENVELOPE";
     /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
     /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
     public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";

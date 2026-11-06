@@ -652,6 +652,7 @@ public sealed partial class Ngs : HleModule
         v.State = to;
         foreach (var m in v.Modules)
         {
+            if (m.Kind == NgsModuleKind.Envelope && to == NgsVoiceState.Active && from == NgsVoiceState.Available) ResetEnvelope(m);
             if (m.Source == null) continue;
             if (to == NgsVoiceState.Active && from == NgsVoiceState.Available)
             {
@@ -739,7 +740,9 @@ public sealed partial class Ngs : HleModule
         {
             if (v.State is not (NgsVoiceState.Active or NgsVoiceState.Finalizing)) return OK;
             v.State = NgsVoiceState.Finalizing;
-            v.KeyedOff = true;
+            // with an envelope the voice plays its release and ends when it does (ProcessEnvelope); without one, or
+            // with a 0 ms release, it ends in the next update
+            if (ActiveEnvelope(v) is not { } env || !StartRelease(env)) v.KeyedOff = true;
         }
         return OK;
     }
@@ -926,6 +929,8 @@ public sealed partial class Ngs : HleModule
                 return ProcessPlayer(v, m, g);
             case NgsModuleKind.Atrac9:
                 return ProcessAtrac9(v, m, g);
+            case NgsModuleKind.Envelope:
+                return ProcessEnvelope(v, m, g);
             default:
                 return false; // effects are passthrough for now
         }
