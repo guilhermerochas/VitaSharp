@@ -102,9 +102,9 @@ public sealed class GxpProgram
         {
             int p = pbase + i * 16;
             int nameOff = (int)U32(p);
-            byte b4 = Data[p + 4], b5 = Data[p + 5];
+            byte b4 = U8(p + 4), b5 = U8(p + 5);
             ps.Add(new GxpParameter(i, CString(p + nameOff), (ParamCategory)(b4 & 0xF), (ParamType)(b4 >> 4), b5 & 0xF, b5 >> 4,
-                Data[p + 6], Data[p + 7], U32(p + 8), U32(p + 12), (uint)p));
+                U8(p + 6), U8(p + 7), U32(p + 8), U32(p + 12), (uint)p));
         }
         Parameters = ps;
 
@@ -115,7 +115,7 @@ public sealed class GxpProgram
 
         var ls = new List<GxpLiteral>();
         int lbase = Rel(0x74);
-        for (int i = 0; i < LiteralsCount; i++) ls.Add(new GxpLiteral(U32(lbase + i * 8), BitConverter.ToSingle(Data, lbase + i * 8 + 4)));
+        for (int i = 0; i < LiteralsCount; i++) ls.Add(new GxpLiteral(U32(lbase + i * 8), F32(lbase + i * 8 + 4)));
         Literals = ls;
 
         var ub = new List<GxpUniformBufferInfo>();
@@ -201,9 +201,36 @@ public sealed class GxpProgram
 
     // ---- raw access helpers (offsets are relative to the field position for *_offset fields)
     int Rel(int field) => field + (int)U32(field);
-    public uint U32(int o) => o + 4 <= Data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(o)) : 0;
-    public ushort U16(int o) => o + 2 <= Data.Length ? BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(o)) : (ushort)0;
-    public ulong U64(int o) => o + 8 <= Data.Length ? BinaryPrimitives.ReadUInt64LittleEndian(Data.AsSpan(o)) : 0;
+    // out-of-range reads give 0, so a damaged program parses (Validate reports what is wrong with it)
+    public uint U32(int o) => o >= 0 && o + 4 <= Data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(o)) : 0;
+    public ushort U16(int o) => o >= 0 && o + 2 <= Data.Length ? BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(o)) : (ushort)0;
+    public ulong U64(int o) => o >= 0 && o + 8 <= Data.Length ? BinaryPrimitives.ReadUInt64LittleEndian(Data.AsSpan(o)) : 0;
+    byte U8(int o) => o >= 0 && o < Data.Length ? Data[o] : (byte)0;
+    float F32(int o) => BitConverter.UInt32BitsToSingle(U32(o));
+
+    /// <summary>
+    /// Checks that the header's tables (parameters, containers, literals, uniform buffers, dependent samplers) and the
+    /// primary program lie inside <paramref name="data"/>; returns what is wrong, or null for a well-formed program.
+    /// The "GXP\0" magic also turns up in data that is not a plain program: Tearaway's shaders/*.mofo files keep their
+    /// programs inside the game's own serialisation (a SAND file, not the plain GXP bytes), and the shadertest scan of the game finds 574 blocks
+    /// with shifted header fields, 569 of them with a table far past their end.
+    /// </summary>
+    public static string? Validate(ReadOnlySpan<byte> data)
+    {
+        const int header = 0x98;
+        if (data.Length < header) return $"size 0x{data.Length:X} is smaller than the 0x{header:X}-byte header";
+        return Table(data, "parameter", 0x24, 0x28, 16) ?? Table(data, "container", 0x90, 0x94, 8) ?? Table(data, "literal", 0x70, 0x74, 8)
+            ?? Table(data, "uniform buffer", 0x78, 0x7C, 8) ?? Table(data, "dependent sampler", 0x80, 0x84, 4)
+            ?? Table(data, "primary program", 0x3C, 0x40, 8);
+    }
+
+    static string? Table(ReadOnlySpan<byte> d, string what, int countField, int offsetField, int entrySize)
+    {
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(d[countField..]);
+        if (count == 0) return null;
+        long start = offsetField + (long)BinaryPrimitives.ReadInt32LittleEndian(d[offsetField..]), end = start + (long)count * entrySize;
+        return start < 0 || end > d.Length ? $"{what} table ({count} x {entrySize} bytes at 0x{start:X}) is outside the 0x{d.Length:X}-byte program" : null;
+    }
 
     string CString(int o)
     {

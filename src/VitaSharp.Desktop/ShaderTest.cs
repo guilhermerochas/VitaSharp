@@ -30,7 +30,7 @@ static class ShaderTest
 
         using var compiler = new ShaderCompiler(null);
         var seen = new HashSet<ulong>();
-        int ok = 0, fail = 0, total = 0;
+        int ok = 0, fail = 0, total = 0, invalid = 0;
         var warnings = new Dictionary<string, int>();
         foreach (var file in Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories))
         {
@@ -48,6 +48,12 @@ static class ShaderTest
                 if (data[i] != 'G' || data[i + 1] != 'X' || data[i + 2] != 'P' || data[i + 3] != 0) continue;
                 int size = (int)BinaryPrimitives.ReadUInt32LittleEndian(span[(i + 8)..]);
                 if (size < 0x40 || i + size > data.Length) continue;
+                if (GxpProgram.Validate(span.Slice(i, size)) is { } bad)
+                {
+                    invalid++;
+                    Console.WriteLine($"{Path.GetFileName(file)} +0x{i:X}: not a valid GXP program, skipped: {bad}");
+                    continue;
+                }
                 var prog = new GxpProgram(span.Slice(i, size).ToArray(), 0);
                 if (!seen.Add(prog.Hash)) continue;
                 total++;
@@ -81,7 +87,7 @@ static class ShaderTest
                 }
             }
         }
-        Console.WriteLine($"GXP programs: {total}, compiled {ok}, failed {fail}");
+        Console.WriteLine($"GXP programs: {total}, compiled {ok}, failed {fail}" + (invalid > 0 ? $", {invalid} invalid GXP blocks skipped" : ""));
         foreach (var (w, n) in warnings.OrderByDescending(kv => kv.Value).Take(25)) Console.WriteLine($"  {n,5}x {w}");
         return fail == 0 ? 0 : 2;
     }
