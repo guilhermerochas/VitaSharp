@@ -60,6 +60,8 @@ public sealed class Emulator : IDisposable
     public int AppId { get; }
     /// <summary>The process declared itself the shell (sceAppMgrDeclareShellProcess2): SceAppMgr's shell events go to it.</summary>
     public bool IsShell { get; set; }
+    /// <summary>The flags the shell started the application with (sceAppMgrLaunchAppByName2ndStage), 0 otherwise.</summary>
+    public int LaunchFlags { get; set; }
     /// <summary>The system's guest memory (allocator, shared regions), the same object for every process.</summary>
     public GuestMemory Memory { get; }
     /// <summary>The process's own address space (<see cref="AddressSpace"/>): its threads, and host work done for it,

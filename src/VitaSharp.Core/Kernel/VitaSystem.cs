@@ -178,6 +178,11 @@ public sealed class VitaSystem
     /// <summary>The process that declared itself the shell (sceAppMgrDeclareShellProcess2).</summary>
     public Emulator? Shell => Processes.FirstOrDefault(p => p.IsShell);
 
+    /// <summary>pid -> host folder of an installed application: while a system program installs that application's
+    /// trophy set in the shell's trophy server for it (<see cref="Hle.Np.TrophyServerBridge.InstallStoredTitles"/>),
+    /// sceAppMgrTrophyMount(300, pid) mounts this application instead of the program's own.</summary>
+    public readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> TrophyApps = new();
+
     /// <summary>SceAppMgr's global state block (0x80 bytes, _sceAppMgrGetAppMgrState copies it whole): +0 prioritize
     /// system chat, +4 system impose state, +8 initialised to -1, +0xC audio routing, +0x10 recommended screen
     /// orientation, +0x14 system impose state 2.</summary>

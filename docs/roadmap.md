@@ -566,6 +566,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `sceKernelGetMsgPipeCreatorId` por nome entrou (validado no PS4 Link: SceShellSvc e SceDbUtilDcn resolvem o pid do
   shell, mais o `sceAppMgrIsPidShellAndCrashed` que o cliente passa a consultar); o resto do patch (ScePhotoExport real,
   LaunchAppByUri como pedido ao shell, flags de serviço) e o despacho do NPXS10036 não foram mexidos (orçamento).
+  06/11/2026 (fix/bugs-games-13): o `sceAppMgrLaunchAppByUri/2` como pedido ao shell e as flags de serviço entraram (o
+  "psnreg:" do PS4 Link abre o Sign Up; "avmedia_service:" inicia o NPXS10036 com 0x600000, `bugsC13_out/cam1`). Com o
+  ScePhotoExport real (patch `scratchpad/bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
+  save the image": o NPXS10036 carrega libpaf, sqlite, dbutil, dbrecovery_utility e meta_gen e fica no laço do
+  SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento).
   **Vídeo**: o crash do emulador
   (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
   guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
@@ -574,7 +579,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
   crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
   (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
-- [ ] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
+- [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).
   Jogos abertos direto pelo launcher nunca passam pelo servidor do shell, então o app mostra "There are no trophies"
@@ -591,6 +596,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   jogos que passam NULL), instala e dá os troféus do JSON. A dúvida a testar primeiro: se o servidor aceita um contexto
   de outro título vindo de um programa do sistema (ele pode amarrar o contexto ao title id do pid). Validar com uma
   cópia do `ux0:user` e do `ur0` (como em `bugsC12_data`), nunca no %APPDATA%.
+  Migração feita (06/11/2026, fix/bugs-games-13): quando um programa do sistema que não é o shell abre o pipe
+  `SceNpTrophyServerMP` (o Troféus), a ponte roda no processo dele antes: para cada JSON sem
+  `ur0:user/00/trophy/data/<NPCOMMID>/TRPTITLE.DAT`, com o app em `ux0:app` e com a assinatura guardada, o
+  `sceAppMgrTrophyMount(300, pid)` aponta para o app, a ponte cria o contexto, instala, dá os troféus do JSON, apaga o
+  contexto e no fim fecha a própria conexão (com ela aberta o Troféus mostrava "Could not restore the trophy
+  information (NP-10219-3)": o servidor recusa a segunda conexão do mesmo processo). Resposta da dúvida: o servidor
+  aceita o contexto de outro título vindo do Troféus, mas **confere a assinatura** (SceNpCommunicationSignature, 0xA0
+  bytes, magic 0xB9DDE13B; sem ela o np_trophy dá 0x80551604, com zeros o servidor dá 0x8055160B). Ela não pode ser
+  inventada: o HLE agora guarda a que o jogo passa (sceNpTrophyCreateContext ou sceNpInit) em
+  `ux0:user/00/trophy/<NPCOMMID>.sig`, então os jogos jogados antes desta versão precisam abrir uma vez (pelo launcher
+  serve) para aparecer. Validado numa cópia (`scratchpad/bugsC13_out/mc1` grava a assinatura do Minecraft rodando direto,
+  `tro14/t2.png` Troféus com "Minecraft 7%, 0 0 0 5" e `tro15/sheet.png` lista, detalhes e reabertura sem reinstalar).
+  Estranho: durante a migração o shell mostra o aviso "You have earned a trophy!" para cada troféu dado (5 no Minecraft).
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
   (am110:) para ur0:temp/appmeta; o pic0 (maior) passa pelo leitor assíncrono do libpaf, que espera cada sceIoReadAsync
@@ -872,6 +890,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     (NPXS10018) abre com "An error has occurred. (NW-8941-2)" em vez de "Create / Use an Existing Account" que o
     checklist do `docs/notes/system-apps.md` espera (`bugsC12_out/base_messages/signup.png` e `s_messages/signup.png`);
     o NID_86405E79 do Commerce2 devolve 0x80431063 (servidor inalcançável) logo antes
+    (06/11/2026, fix/bugs-games-13: o mesmo NW-8941-2 aparece pelo PS4 Link agora que o "psnreg:" abre o Sign Up,
+    `bugsC13_out/signup1/sheet.png`. No traço HLE do SceSignup a única chamada com erro antes do aviso é esse
+    NID_86405E79 = 0x80431063: o emulador diz rede conectada e conta local, e o servidor não responde, que é o que o
+    Vita mostra com rede mas sem os servidores. "Create / Use an Existing Account" só viria com o servidor respondendo
+    (ou num Vita sem rede, que pararia antes na checagem da conexão); não mudei, é decisão de modelo de rede, não defeito)
   Kernel (rodada 2): com a rede do kernel respondendo, o Settings passou a abrir e fechar sua conexão IPMI com o
   SceMtpService do shell, e o servidor caía em `[SceIpmi] INTERNAL ASSERTION FAILURE (0x80028101)`: o cliente apaga seus
   semáforos antes de o servidor fechar os handles que abriu por nome, e aqui o Delete tirava o objeto da tabela na hora

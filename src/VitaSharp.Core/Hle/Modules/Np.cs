@@ -71,6 +71,10 @@ public sealed partial class NpManager : HleModule
             uint id = config != 0 ? GuestMemory.R32(config) : 0;
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
         }
+        // its signature: a trophy context created without an id uses this one (np_trophy NID_96DF1B76)
+        uint sign = config != 0 ? GuestMemory.R32(config + 8) : 0;
+        if (_commId != null && sign != 0)
+            TrophyUnlocks.SaveSignature(Emu.Options.FsRoot, _commId, GuestMemory.ReadSpan(sign, TrophyUnlocks.SignatureSize).ToArray());
         var acct = PsnAccount.Current;
         Log.Info($"sceNpInit: communication id {_commId ?? "(none)"} ({(acct.SignedIn ? $"signed in to PSN as {acct.OnlineId}, {(acct.LocalServices ? "local PSN services" : "servers unreachable")}" : "signed out of PSN")})");
         return 0;
@@ -220,9 +224,21 @@ public sealed partial class NpManager : HleModule
         return 0;
     }
 
-    /// <summary>(void *a, void *b, void *c[, void *d]): account details with optional outputs (NULL ones go to a scratch
-    /// buffer): NID_DDF30B0E (trophy server job), NID_ED12AF16 (Sign Up). Signed out, like the requests above.</summary>
-    [Hle("sceNpManager_DDF30B0E", Nid = 0xDDF30B0E, Library = "SceNpManager")] int sceNpManagerSysGetAccountIds(uint a, uint b, uint c) => ERR_SIGNED_OUT;
+    /// <summary>(void *info, SceNpId *npId, SceNpAccountId *accountId): request 0xB001C, three optional outputs (0x44,
+    /// 0x24 and 8 bytes; NULL ones go to a scratch buffer). Like the records above it is empty without an account (all
+    /// zero, success): the shell's trophy server job reads the account id into TRPUSER.DAT and, on an error, deletes
+    /// the file and Trophy Collection shows "Could not restore the trophy information (NP-2042-8)".</summary>
+    [Hle("sceNpManager_DDF30B0E", Nid = 0xDDF30B0E, Library = "SceNpManager")]
+    int sceNpManagerSysGetAccountIds(uint info, uint npId, uint accountId)
+    {
+        if (info != 0) GuestMemory.Fill(info, 0, 0x44);
+        if (npId != 0) GuestMemory.Fill(npId, 0, 0x24);
+        if (accountId != 0) GuestMemory.Fill(accountId, 0, 8);
+        return 0;
+    }
+
+    /// <summary>(void *a, void *b, void *c, void *d): account details with optional outputs (NULL ones go to a scratch
+    /// buffer): NID_ED12AF16 (Sign Up). Signed out.</summary>
     [Hle("sceNpManager_ED12AF16", Nid = 0xED12AF16, Library = "SceNpManager")] int sceNpManagerSysGetAccountDetails(uint a, uint b, uint c, uint d) => ERR_SIGNED_OUT;
 
     /// <summary>(void *callback, void *arg): a system-side event callback in np_manager's four-slot table (full:

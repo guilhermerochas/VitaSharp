@@ -43,17 +43,8 @@ public sealed class TrophyWindow : Window
         TrophyGrade.Platinum => "#A9C4E8", TrophyGrade.Gold => "#E2B13C", TrophyGrade.Silver => "#C3C7CE", _ => "#C07A44",
     }));
 
-    /// <summary>SceSystemParamLang of the PC's UI language (TROP_&lt;nn&gt;.SFM): 0 ja, 1 en-US, 2 fr, 3 es, 4 de, 5 it, 6 nl,
-    /// 7 pt-PT, 8 ru, 9 ko, 10 zh-Hant, 11 zh-Hans, 12 fi, 13 sv, 14 da, 15 no, 16 pl, 17 pt-BR, 18 en-GB, 19 tr.</summary>
-    public static int VitaLanguage(CultureInfo c) => c.Name switch
-    {
-        "pt-BR" => 17, "en-GB" => 18, "zh-TW" or "zh-HK" or "zh-Hant" => 10, "zh-CN" or "zh-SG" or "zh-Hans" => 11,
-        _ => c.TwoLetterISOLanguageName switch
-        {
-            "ja" => 0, "en" => 1, "fr" => 2, "es" => 3, "de" => 4, "it" => 5, "nl" => 6, "pt" => 7, "ru" => 8, "ko" => 9,
-            "fi" => 12, "sv" => 13, "da" => 14, "nb" or "nn" or "no" => 15, "pl" => 16, "tr" => 19, _ => 1,
-        },
-    };
+    /// <summary>SceSystemParamLang of the PC's UI language (TROP_&lt;nn&gt;.SFM).</summary>
+    public static int VitaLanguage(CultureInfo c) => VitaSharp.Core.Firmware.SystemLanguage.FromCulture(c);
 
     public TrophyWindow(GameEntry game, IReadOnlyList<TrophySetView> sets)
     {

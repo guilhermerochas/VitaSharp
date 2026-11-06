@@ -99,7 +99,7 @@ public sealed partial class AppUtil : HleModule
     /// <summary>Integer system parameters (SCE_SYSTEM_PARAM_ID_*), shared with SceRegMgr so both agree.</summary>
     internal static int SystemParamInt(uint id) => id switch
     {
-        1 => 1,  // language: English (US)
+        1 => Firmware.SystemLanguage.Host, // language: the host's UI language, else English (US)
         2 => 1,  // enter button: cross
         4 => 0,  // date format YYYYMMDD
         5 => 0,  // 12 hour clock

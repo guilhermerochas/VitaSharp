@@ -149,6 +149,19 @@ public class ShellTests
     public void VitaLanguageCodes(string culture, string vita) =>
         Assert.Equal(vita, LiveAreaTemplate.VitaLanguage(new System.Globalization.CultureInfo(culture)));
 
+    /// <summary>The system language a fresh system starts with follows the host (SceSystemParamLang), else English (US).</summary>
+    [Theory]
+    [InlineData("pt-BR", 17)]
+    [InlineData("pt-PT", 7)]
+    [InlineData("en-US", 1)]
+    [InlineData("en-GB", 18)]
+    [InlineData("ru-RU", 8)]
+    [InlineData("zh-TW", 10)]
+    [InlineData("cs-CZ", 1)]
+    [InlineData("", 1)]
+    public void SystemLanguageFollowsHost(string culture, int lang) =>
+        Assert.Equal(lang, VitaSharp.Core.Firmware.SystemLanguage.FromCulture(new System.Globalization.CultureInfo(culture)));
+
     // ------------------------------------------------------------------ layout
 
     [Fact]

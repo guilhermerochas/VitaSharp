@@ -596,4 +596,17 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc), TrophyUnlocks.TickToUtc(back[1]));
         Assert.EndsWith(Path.Combine("ux0", "user", "00", "trophy", "NPWR00001_00.json"), path);
     }
+
+    /// <summary>The title's signature is kept beside its unlocks (the shell's trophy server checks it on install).</summary>
+    [Fact]
+    public void TrophySignatureRoundTrip()
+    {
+        Assert.Null(TrophyUnlocks.LoadSignature(_root, "NPWR00001_00"));
+        var sign = Enumerable.Range(0, TrophyUnlocks.SignatureSize).Select(i => (byte)i).ToArray();
+        TrophyUnlocks.SaveSignature(_root, "NPWR00001_00", sign);
+        Assert.Equal(sign, TrophyUnlocks.LoadSignature(_root, "NPWR00001_00"));
+        Assert.EndsWith(Path.Combine("ux0", "user", "00", "trophy", "NPWR00001_00.sig"), TrophyUnlocks.SignaturePathFor(_root, "NPWR00001_00"));
+        File.WriteAllBytes(TrophyUnlocks.SignaturePathFor(_root, "NPWR00002_00"), [1, 2, 3]);
+        Assert.Null(TrophyUnlocks.LoadSignature(_root, "NPWR00002_00")); // not a signature
+    }
 }
