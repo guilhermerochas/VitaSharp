@@ -190,7 +190,15 @@ public sealed class GpuQueue : IDisposable
         long ti = FrameLedger.Now();
         uint before = GateCheck ? CopyAndHash(d) : 0;
         bool ended = false;
-        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence && !(ended = gate.Wait(10)); i++) { }
+        for (int i = 0; i < 25 && !_stopping && Interlocked.Read(ref _maxWaited) < d.Sequence; i++)
+        {
+            // the work recorded so far goes to the GPU and finished frames retire while the draw waits: a sync point
+            // before the open scene (the display queue entry of the previous frame, which the guest may wait on before it
+            // ends this scene) must still fire
+            try { lock (_backendLock) Backend?.Idle(); }
+            catch (Exception e) { Log.WarnOnce("gpu-gate-idle", $"GPU backend idle failed during a scene gate wait: {e.Message}"); }
+            if (ended = gate.Wait(10)) break;
+        }
         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
         if (GateCheck)
         {
