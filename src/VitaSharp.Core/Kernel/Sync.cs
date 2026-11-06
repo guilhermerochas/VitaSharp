@@ -119,18 +119,42 @@ public static class Wait
         if (microseconds == 0) { Thread.Yield(); Latency(); return; }
         if (microseconds < (ulong)SyscallLatencyUs) microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
         // guest time: follows the test speed factor, and turbo mode skips the wait
-        using var blocked = Scheduler.Block();
-        // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
-        // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
-        long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
-        bool spin = microseconds >= DelaySpinMinUs;
-        while (GuestClock.Ticks < end)
+        var blocked = Scheduler.Block();
+        try
         {
-            if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
-            // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
-            GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
+            // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
+            // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
+            long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+            bool spin = microseconds >= DelaySpinMinUs;
+            // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
+            // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
+            // its callback: run only on return, its callback never ran and the game's vsync counter stood still.
+            bool callbacks = self != null && self.CallbackWait && GuestThread.CallbackProcessor != null;
+            while (GuestClock.Ticks < end)
+            {
+                if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
+                if (callbacks)
+                {
+                    if (Volatile.Read(ref self!.PendingCallbacks) > 0)
+                    {
+                        blocked.Dispose(); // the callback is guest code: it runs holding an emulated core
+                        try { GuestThread.CallbackProcessor!(self); }
+                        finally { blocked = Scheduler.Block(); }
+                        continue;
+                    }
+                    // Callback.Notify pulses the owner's WaitLock
+                    long left = Math.Min(end, GuestClock.Ticks + slice) - GuestClock.Ticks;
+                    int ms = (int)Math.Clamp(left * 1000.0 / System.Diagnostics.Stopwatch.Frequency / GuestClock.Speed + 1, 1, 50);
+                    lock (self.WaitLock)
+                        if (Volatile.Read(ref self.PendingCallbacks) == 0) Monitor.Wait(self.WaitLock, ms);
+                    continue;
+                }
+                // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
+                GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
+            }
+            self?.Core.WokeAt(end);
         }
-        self?.Core.WokeAt(end);
+        finally { blocked.Dispose(); }
     }
 }
 
