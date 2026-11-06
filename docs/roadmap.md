@@ -558,6 +558,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
+  Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
+  dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no
+  caminho da Mali real: bissecar no aparelho com chaves de runtime (MSAA, framebuffer fetch, formatos e mips de
+  textura, compressão BC/ASTC decodificada, precisão dos shaders, profundidade, ordem de barreiras e uploads de
+  textura, reaproveitamento de descritores), gravar tela e contar quadros com `flick.sh`/`tileflick.py` contra um
+  vídeo do Vita real e corrigir de forma genérica. Validação de verdade no Killzone em gameplay (regra do Android) e
+  depois Uncharted, F1 2011, God of War e Devious Dungeon sem nenhum quadro piscando. Com o agente de Android
 - [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
