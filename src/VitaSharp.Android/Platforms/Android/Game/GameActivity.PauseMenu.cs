@@ -9,7 +9,6 @@ using Color = Android.Graphics.Color;
 using Paint = Android.Graphics.Paint;
 using Path = Android.Graphics.Path;
 using ScrollView = Android.Widget.ScrollView;
-using Switch = Android.Widget.Switch;
 
 namespace VitaSharp.Android.Game;
 
@@ -235,6 +234,26 @@ public sealed partial class GameActivity
     }
 #endif
 
+    /// <summary>"Salvando a gravação" over the game while leaving waits for a "Gravar tudo" save: a card in the menu's
+    /// style that eats every touch (the caller removes it).</summary>
+    AView SavingNotice()
+    {
+        var overlay = new FrameLayout(this) { Clickable = true };
+        overlay.SetBackgroundColor(CBackdrop);
+        var card = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        card.SetPadding(Dp(24), Dp(18), Dp(24), Dp(20));
+        card.Background = Rounded(CPanel, 28, CPanelBorder);
+        var title = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        title.SetGravity(GravityFlags.CenterVertical);
+        title.AddView(new IconView(this, IconRecord, CRec), new LinearLayout.LayoutParams(Dp(20), Dp(20)));
+        title.AddView(Text("Salvando a gravação…", 16, Sora, CText), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(10) });
+        card.AddView(title);
+        card.AddView(Text("Não feche o app: o jogo fecha sozinho quando terminar", 13, Inter, CMuted), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(6) });
+        overlay.AddView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Center));
+        _root?.AddView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+        return overlay;
+    }
+
     // ------------------------------------------------------------------ controller keys while the menu is open
 
     /// <summary>A key of a physical controller while the menu is open: A presses the focused button, B goes back, Start
@@ -388,15 +407,14 @@ public sealed partial class GameActivity
         b.Background = Focusable(CSurface, 18, CBorder);
         var image = new ImageView(this);
         image.SetScaleType(ImageView.ScaleType.CenterCrop!);
+        // the corners are the view's outline: a RoundedBitmapDrawable rounds in the small bitmap's pixels (a pill shape)
+        image.Background = Rounded(Color.ParseColor("#0E1116"), 12, CBorder);
+        image.OutlineProvider = ViewOutlineProvider.Background;
+        image.ClipToOutline = true;
         if (info?.Thumbnail is { Length: > 0 } png && BitmapFactory.DecodeByteArray(png, 0, png.Length) is { } bmp)
-        {
-            var rounded = AndroidX.Core.Graphics.Drawable.RoundedBitmapDrawableFactory.Create(Resources!, bmp)!;
-            rounded.CornerRadius = Dp(12);
-            image.SetImageDrawable(rounded);
-        }
-        else image.Background = Rounded(Color.ParseColor("#0E1116"), 12, CBorder);
-        // 16:9-ish picture over the full card width
-        image.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(96));
+            image.SetImageBitmap(bmp);
+        // a wide picture over the card width, low enough for both rows of slots on a landscape phone (~380 dp tall)
+        image.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(60));
         b.AddView(image);
         b.AddView(Text($"Slot {slot}", 13, InterSemiBold, enabled ? CText : CFaint), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
         b.AddView(Text(info != null ? info.CreatedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "vazio", 12, Inter, CMuted, single: true));
@@ -408,10 +426,9 @@ public sealed partial class GameActivity
     AView ToggleRow(string label, string? detail, Func<bool> get, Action<bool> set)
     {
         var row = Row(label, detail);
-        var sw = new Switch(this) { Checked = get(), Focusable = false, Clickable = false };
-        sw.ThumbTintList = global::Android.Content.Res.ColorStateList.ValueOf(CText);
-        sw.TrackTintList = new global::Android.Content.Res.ColorStateList([[global::Android.Resource.Attribute.StateChecked], []], [CAccent.ToArgb(), CBorderStrong.ToArgb()]);
-        row.AddView(sw, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.CenterVertical });
+        // drawn here: the activity's platform theme (Theme.Black) gives android.widget.Switch the old "LIG/DESL" text look
+        var sw = new ToggleView(this, CAccent, CBorderStrong, CText) { Checked = get() };
+        row.AddView(sw, new LinearLayout.LayoutParams(Dp(44), Dp(26)) { Gravity = GravityFlags.CenterVertical, LeftMargin = Dp(12) });
         MakeButton(row, () => { set(!get()); sw.Checked = get(); _controls?.Invalidate(); });
         return row;
     }
@@ -436,6 +453,25 @@ public sealed partial class GameActivity
         if (detail != null) texts.AddView(Text(detail, 12, Inter, CMuted, single: true));
         row.AddView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1));
         return row;
+    }
+
+    /// <summary>The app's switch (Ui/Theme.cs): a rounded track, accent when on, with the thumb at its end.</summary>
+    sealed class ToggleView(global::Android.Content.Context context, Color on, Color off, Color thumb) : AView(context)
+    {
+        readonly Paint _paint = new(PaintFlags.AntiAlias);
+        bool _checked;
+
+        public bool Checked { get => _checked; set { _checked = value; Invalidate(); } }
+
+        protected override void OnDraw(Canvas canvas)
+        {
+            base.OnDraw(canvas);
+            float h = Height, r = h / 2;
+            _paint.Color = _checked ? on : off;
+            canvas.DrawRoundRect(0, 0, Width, h, r, r, _paint);
+            _paint.Color = thumb;
+            canvas.DrawCircle(_checked ? Width - r : r, r, r - h * 0.14f, _paint);
+        }
     }
 
     /// <summary>A 24x24 SVG path icon (the mockups' Lucide-style strokes), stroked 1.9 units wide or filled.</summary>
