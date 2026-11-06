@@ -6,7 +6,7 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
 ## Trabalho e entrega
 
 - Trabalhe numa worktree própria (`git worktree add -b <branch> .claude/worktrees/<nome> main`). **Nunca edite a
-  checkout principal** `C:\Users\guisa\VitaSharp` (`src`, `docs`, `tests`): use caminhos ABSOLUTOS da sua worktree em
+  checkout principal** `%USERPROFILE%\VitaSharp` (`src`, `docs`, `tests`): use caminhos ABSOLUTOS da sua worktree em
   todo Edit/Write e em toda API de arquivo do .NET/PowerShell (cuidado com caminhos relativos). Preserve CRLF.
 - Commits com o trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; um commit por correção. **Não faça
   merge nem push** (o lead faz).
@@ -49,12 +49,16 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
 - Os cenários em `tests/scenarios/*.txt` têm `data=` com a pasta do usuário: sempre rode com `--data=` (ele vence o
   `data=`) ou use cópias sem essa linha.
 - **Remova as junctions (rmdir) ANTES de apagar qualquer pasta**, e nunca enquanto uma execução as usa.
-- Não faça buscas recursivas em `C:\Users\guisa`. Não mate processos do usuário. Peça ao lead antes de qualquer teste
+- Não faça buscas recursivas em `%USERPROFILE%` (a pasta do usuário). Não mate processos do usuário. Peça ao lead antes de qualquer teste
   que tome a tela do usuário (janela, tela cheia).
+- **Nada pessoal ou sigiloso no git** (pedido do usuário, 06/11/2026): nenhum caminho com o nome do usuário
+  (`C:/Users/<nome>` vira `%USERPROFILE%`, `%APPDATA%` ou `<scratchpad>`), nenhum número de série, e-mail, cookie, token,
+  chave, licença (rif/zRIF/work.bin) ou dado da conta, nem em código, docs, cenários, roteiros ou mensagens de commit.
+  O teste `NoPersonalPathsTests` falha se um caminho de usuário aparecer.
 - Nunca commite o firmware (PSVUPDAT.PUP) nem capturas de tela ("Captura de tela*.png").
 - Ao terminar um item, apague as saídas, builds e capturas dele que não servem mais.
 
-## Celular (Redmi Note 14, adb `haqwzhl7zxu49xfi`)
+## Celular (Redmi Note 14)
 
 - **Um agente por vez** no celular; só quem o lead disser que é o dono usa adb. Os outros esperam a vez.
 - `export MSYS_NO_PATHCONV=1` no Git Bash.

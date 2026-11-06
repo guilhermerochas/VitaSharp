@@ -541,7 +541,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
 - [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
   substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
-  `C:/Users/guisa/Ryubing/docs/coding-guidelines/coding-style.md` e `C:/Users/guisa/Ryubing/.editorconfig`. Regras
+  `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
   ("padrões do Visual Studio"): chaves Allman; 4 espaços; campos privados/internos `_camelCase`, estáticos `s_`,
   thread-static `t_`, `static readonly` nessa ordem, `readonly` sempre que der, campos públicos em PascalCase e raros;
   sem `this.`; visibilidade sempre explícita e como primeiro modificador; `using` no topo, fora do namespace; no máximo

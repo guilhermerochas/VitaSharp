@@ -1880,7 +1880,7 @@ Como nenhum jogo instalado importa essas libs, a referência é um homebrew de t
 (copiados de `vs0:sys/external`) e (2) HLE. O homebrew grava em `ux0:data/fonttest/*.bin` os structs e buffers de
 glifo de uma bateria fixa de chamadas; os dois conjuntos de arquivos devem ser idênticos para Pgf e coincidir em
 métricas/posições para Pvf (AA com tolerância). Os scripts Python usados para conferir o formato PGF ficaram em
-`C:\Users\guisa\AppData\Local\Temp\claude\C--Users-guisa-VitaSharp\2816b272-89dd-49a3-bac3-17c610349d63\scratchpad\pgfdraw.py`
+`<scratchpad>\pgfdraw.py`
 e `...\pgfhdr.py` (Python 2.7, `py -E -s pgfdraw.py <arquivo.pgf> <código hex> [s]`, o terceiro argumento desenha a
 sombra) e podem virar a base de um teste unitário de `PgfFont`.
 

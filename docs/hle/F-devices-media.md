@@ -283,7 +283,7 @@ Códigos de erro de `psp2/motion.h`: NOT_SAMPLING `0x80360206`, ALREADY_SAMPLING
   `W64(p+0x30, ts)`. Depois, `_counter++`.
 - **Implementado:** `NOT_SAMPLING` **não** é exigido (permissivo como `sceMotionGetState`, ver o risco na família STUB); registros do mais antigo ao mais novo, intervalo de 16 667 µs.
 - **Validação:** `VitaSharp.Desktop imports PCSA00552` deixa de listar a função. Criar `tests/scenarios/inv_boot.txt`
-  (`title=PCSA00552`, `data=C:\Users\guisa\AppData\Roaming\VitaSharp`, `args=--seconds=90 --dump-every=60`) e conferir
+  (`title=PCSA00552`, `data=%APPDATA%\VitaSharp`, `args=--seconds=90 --dump-every=60`) e conferir
   que o modo AR não trava na leitura de sensores.
 
 ### Família STUB: estado de amostragem e filtros do SceMotion
