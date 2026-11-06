@@ -47,7 +47,7 @@ public sealed class PresentCommand : GpuCommand
     public long Flip = -1, VBlank, GuestUs, HostTicks;
 }
 
-/// <summary>Arbitrary work that must happen in GPU order (transfers done on the CPU, sync pointsâ€¦).</summary>
+/// <summary>Arbitrary work that must happen in GPU order (transfers done on the CPU, sync points…).</summary>
 /// <summary>
 /// A sync point the guest (or the display queue) observes: runs once every earlier GPU operation completed and its
 /// results (render-target writebacks, visibility test results, earlier notifications) are in guest memory.

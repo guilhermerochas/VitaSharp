@@ -15,7 +15,7 @@ public sealed partial class SystemGesture : HleModule
     const uint STATE_INACTIVE = 0, STATE_BEGIN = 1, STATE_ACTIVE = 2, STATE_END = 3;
 
     const int TapMaxMove = 40;                               // panel units
-    const ulong TapMaxTime = 500_000, HoldTime = 500_000;  // Âµs
+    const ulong TapMaxTime = 500_000, HoldTime = 500_000;  // µs
     const ulong MultiTapWindow = 350_000;
 
     sealed partial class Primitive

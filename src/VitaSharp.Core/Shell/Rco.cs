@@ -86,7 +86,7 @@ public sealed record RcoFile(RcoElement Element, string Table, string Id, string
 /// <summary>
 /// Reader for the PS Vita's RCO resource containers ("RCOF", version 0x110): the CXML format the system UI (libpaf)
 /// loads its pages, styles, textures, sounds and strings from (vs0:vsh/shell/*.rco, data/external/common/
-/// common_resource.rco, each system app's *_plugin.rco). Layout: a 0x50 byte header with nine (offset, size) tables â€”
+/// common_resource.rco, each system app's *_plugin.rco). Layout: a 0x50 byte header with nine (offset, size) tables —
 /// element tree, id strings, id hashes, strings, wide strings, hashes, int arrays, float arrays and files. Elements are
 /// {name, attribute count, parent, previous, next, first child, last child} followed by 16-byte attributes {name, type,
 /// two value words}. File attributes point into the file table; the element's compress="on"/origsize say when the

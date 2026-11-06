@@ -76,14 +76,14 @@ public sealed class LibraryView : Screen<LibraryState>
                         ).Spacing(2),
                         HStack(
                             Chip("+ Instalar", true, InstallGame),
-                            IconButton("âš™", () => RootPage.Show(RootTab.Settings)).VCenter()
+                            IconButton("⚙", () => RootPage.Show(RootTab.Settings)).VCenter()
                         ).Spacing(10).GridColumn(1).VCenter()
                     ).Padding(20, 20, 20, 8),
                     SearchBox(),
                     HStack(
-                        Chip($"Todos Â· {State.Games.Count}", State.Filter == GameLibrary.Filter.All, () => SetState(s => s.Filter = GameLibrary.Filter.All)),
+                        Chip($"Todos · {State.Games.Count}", State.Filter == GameLibrary.Filter.All, () => SetState(s => s.Filter = GameLibrary.Filter.All)),
                         Chip("Recentes", State.Filter == GameLibrary.Filter.Recent, () => SetState(s => s.Filter = GameLibrary.Filter.Recent)),
-                        Chip("JogÃ¡veis", State.Filter == GameLibrary.Filter.Playable, () => SetState(s => s.Filter = GameLibrary.Filter.Playable))
+                        Chip("Jogáveis", State.Filter == GameLibrary.Filter.Playable, () => SetState(s => s.Filter = GameLibrary.Filter.Playable))
                     ).Spacing(8).Padding(20, 14, 20, 4),
                     last != null && State.Search.Length == 0 ? ContinueCard(last) : null,
                     SystemCard(),
@@ -91,9 +91,9 @@ public sealed class LibraryView : Screen<LibraryState>
                     SectionTitle(State.Filter switch
                     {
                         GameLibrary.Filter.Recent => "Jogados recentemente",
-                        GameLibrary.Filter.Playable => "JogÃ¡veis",
+                        GameLibrary.Filter.Playable => "Jogáveis",
                         _ => "Todos os jogos",
-                    }, "Aâ€“Z"),
+                    }, "A–Z"),
                     State.Loading ? ActivityIndicator().IsRunning(true).HCenter().Margin(0, 24)
                         : shown.Count == 0 ? EmptyLibrary()
                         : GameGrid(shown),
@@ -107,7 +107,7 @@ public sealed class LibraryView : Screen<LibraryState>
     VisualNode SearchBox() =>
         Border(
             Grid("Auto", "Auto,*",
-                Label("âŒ•").FontSize(18).TextColor(Palette.Muted).VCenter(),
+                Label("⌕").FontSize(18).TextColor(Palette.Muted).VCenter(),
                 Entry().Placeholder("Buscar jogos").Text(State.Search).OnTextChanged(t => SetState(s => s.Search = t ?? ""))
                     .BackgroundColor(Colors.Transparent).GridColumn(1).Margin(8, 0, 0, 0)
             ).Padding(16, 0))
@@ -124,11 +124,11 @@ public sealed class LibraryView : Screen<LibraryState>
                     VStack(
                         Label("CONTINUAR JOGANDO").FontSize(11).TextColor(Palette.AccentSoft).CharacterSpacing(1),
                         Label(g.Title).FontFamily(Fonts.SoraSemiBold).FontSize(17).MaxLines(2).LineBreakMode(LineBreakMode.TailTruncation),
-                        Label($"{GameLibrary.PlayTime(settings.PlaySeconds)} Â· {GameLibrary.LastPlayed(settings.LastPlayedUtc, DateTime.UtcNow).ToLowerInvariant()}")
+                        Label($"{GameLibrary.PlayTime(settings.PlaySeconds)} · {GameLibrary.LastPlayed(settings.LastPlayedUtc, DateTime.UtcNow).ToLowerInvariant()}")
                             .FontSize(12).TextColor(Palette.Muted),
                         TrophyLine(t, Palette.Track)
                     ).Spacing(4).GridColumn(1).Margin(14, 0).VCenter(),
-                    Border(Label("â–¶").FontSize(20).TextColor(Palette.OnAccent).Center())
+                    Border(Label("▶").FontSize(20).TextColor(Palette.OnAccent).Center())
                         .StrokeShape(new RoundRectangle().CornerRadius(26)).StrokeThickness(0).BackgroundColor(Palette.Accent)
                         .WidthRequest(52).HeightRequest(52).GridColumn(2).VCenter()
                         .OnTapped(() => Play(g))
@@ -145,14 +145,14 @@ public sealed class LibraryView : Screen<LibraryState>
             : $"O shell do firmware {fw.Installed?.Version ?? ""} em tela cheia";
         return Border(
                 Grid("Auto", "Auto,*,Auto",
-                    Border(Label("â–­").FontSize(22).TextColor(Palette.AccentSoft).Center())
+                    Border(Label("▭").FontSize(22).TextColor(Palette.AccentSoft).Center())
                         .StrokeShape(new RoundRectangle().CornerRadius(12)).StrokeThickness(0).BackgroundColor(Palette.SurfaceHigh)
                         .WidthRequest(40).HeightRequest(40),
                     VStack(
                         Label("Sistema do Vita").FontFamily(Fonts.InterSemiBold).FontSize(14),
                         Label(detail).FontSize(12).TextColor(Palette.Muted)
                     ).Spacing(2).GridColumn(1).Margin(12, 0).VCenter(),
-                    Label("â€º").FontSize(20).TextColor(Palette.Faint).GridColumn(2).VCenter()
+                    Label("›").FontSize(20).TextColor(Palette.Faint).GridColumn(2).VCenter()
                 ).Padding(14, 12))
             .StrokeShape(new RoundRectangle().CornerRadius(18)).Stroke(Palette.Border).StrokeThickness(1)
             .BackgroundColor(Palette.Surface).Margin(20, 12, 20, 0)
@@ -175,8 +175,8 @@ public sealed class LibraryView : Screen<LibraryState>
         VStack(
             Label("Nenhum jogo instalado").FontFamily(Fonts.SoraSemiBold).FontSize(16).HCenter(),
             Label(State.Games.Count == 0
-                    ? "Instale um jogo a partir de um .vpk, ou de um .pkg com a licenÃ§a (work.bin, .rif ou zRIF). Os jogos ficam na pasta de dados do app."
-                    : "Nada corresponde Ã  busca.")
+                    ? "Instale um jogo a partir de um .vpk, ou de um .pkg com a licença (work.bin, .rif ou zRIF). Os jogos ficam na pasta de dados do app."
+                    : "Nada corresponde à busca.")
                 .FontSize(13).TextColor(Palette.Muted).HorizontalTextAlignment(TextAlignment.Center),
             State.Games.Count == 0 ? PrimaryButton("+  Instalar jogo", InstallGame, State.Installing == null).Margin(0, 12, 0, 0) : null
         ).Spacing(6).Padding(32, 24);
@@ -201,7 +201,7 @@ public sealed class LibraryView : Screen<LibraryState>
                     g.IconPath != null ? Image().Source(g.IconPath).Aspect(Aspect.AspectFill) : null,
                     Grid("Auto", "*,Auto",
                         g.IconPath == null ? Label(g.Initials).FontFamily(Fonts.SoraBold).FontSize(24).TextColor(Color.FromArgb("#F1F4F9")).VEnd() : null,
-                        Border(Label(playable ? "JogÃ¡vel" : g.Category).FontFamily(Fonts.InterSemiBold).FontSize(11).TextColor(Color.FromArgb("#8FB2FF")).Center())
+                        Border(Label(playable ? "Jogável" : g.Category).FontFamily(Fonts.InterSemiBold).FontSize(11).TextColor(Color.FromArgb("#8FB2FF")).Center())
                             .StrokeShape(new RoundRectangle().CornerRadius(11)).StrokeThickness(0)
                             .BackgroundColor(Color.FromArgb("#B8090C12")).Padding(8, 0).HeightRequest(22).GridColumn(1).VEnd()
                     ).Padding(12).VEnd()
@@ -215,7 +215,7 @@ public sealed class LibraryView : Screen<LibraryState>
 
     VisualNode TrophyLine(TrophyProgress t, Color track) =>
         Grid("Auto", "Auto,Auto,*",
-            Label("ðŸ†").FontSize(11).TextColor(Palette.Gold).VCenter(),
+            Label("🏆").FontSize(11).TextColor(Palette.Gold).VCenter(),
             Label(t.Text).FontSize(11).TextColor(Palette.TextSoft).GridColumn(1).Margin(6, 0).VCenter(),
             t.HasTrophies ? Bar(t.Fraction, track).GridColumn(2) : null
         );
@@ -229,7 +229,7 @@ public sealed class LibraryView : Screen<LibraryState>
         if (State.Installing != null) return;
         var kind = await Choose("Instalar jogo", [
             new Settings.Choice("vpk", "Arquivo .vpk (ou .zip)"),
-            new Settings.Choice("pkg", "Arquivo .pkg + licenÃ§a (work.bin, .rif ou zRIF)"),
+            new Settings.Choice("pkg", "Arquivo .pkg + licença (work.bin, .rif ou zRIF)"),
         ]);
         if (kind == "vpk") await InstallVpk();
         else if (kind == "pkg") await InstallPkg();
@@ -243,9 +243,9 @@ public sealed class LibraryView : Screen<LibraryState>
         var pkg = await Saf.PickAsync("application/octet-stream");
         if (pkg == null) return;
         if (!pkg.DisplayName.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase)
-            && !await Confirm("Instalar PKG", $"\"{pkg.DisplayName}\" nÃ£o termina em .pkg. Tentar mesmo assim?", "Tentar"))
+            && !await Confirm("Instalar PKG", $"\"{pkg.DisplayName}\" não termina em .pkg. Tentar mesmo assim?", "Tentar"))
             return;
-        var source = await Choose("LicenÃ§a do jogo", [
+        var source = await Choose("Licença do jogo", [
             new Settings.Choice("file", "Arquivo work.bin ou .rif"),
             new Settings.Choice("zrif", "Colar o zRIF (texto)"),
         ]);
@@ -254,7 +254,7 @@ public sealed class LibraryView : Screen<LibraryState>
         {
             var lic = await Saf.PickAsync("application/octet-stream");
             if (lic == null) return;
-            await Run("LicenÃ§a", async () => license = await Task.Run(() =>
+            await Run("Licença", async () => license = await Task.Run(() =>
             {
                 using var s = lic.OpenSeekable(ImportCache);
                 var bytes = new byte[Math.Min(s.Length, 4096)];
@@ -264,10 +264,10 @@ public sealed class LibraryView : Screen<LibraryState>
         }
         else if (source == "zrif")
         {
-            var text = await Prompt("zRIF", "Cole o zRIF da licenÃ§a (o texto exportado pelo NoNpDrm/pkg2zip).");
+            var text = await Prompt("zRIF", "Cole o zRIF da licença (o texto exportado pelo NoNpDrm/pkg2zip).");
             if (string.IsNullOrWhiteSpace(text)) return;
             try { license = Zrif.Decode(text); }
-            catch (InvalidDataException e) { await Alert("zRIF invÃ¡lido", e.Message); return; }
+            catch (InvalidDataException e) { await Alert("zRIF inválido", e.Message); return; }
         }
         if (license == null) return;
 
@@ -278,7 +278,7 @@ public sealed class LibraryView : Screen<LibraryState>
             {
                 var t = await Task.Run(() => PkgInstaller.Install(pkg.OpenSeekable(ImportCache), license, AppServices.Data.Ux0,
                     m => Log.Info($"PKG: {m}"), f => SetState(s => s.InstallProgress = f)));
-                await Alert("Instalar PKG", $"{t.TitleId} Â· {t.Title} ({t.Type})\n\nInstalado.");
+                await Alert("Instalar PKG", $"{t.TitleId} · {t.Title} ({t.Type})\n\nInstalado.");
             }
             finally
             {
@@ -308,7 +308,7 @@ public sealed class LibraryView : Screen<LibraryState>
                 });
                 var installed = results.Where(r => r.Installed).ToList();
                 await Alert("Instalar VPK", installed.Count == 0 ? "Nada foi instalado."
-                    : string.Join("\n", installed.Select(r => $"{r.Content.TitleId} Â· {r.Content.Title} ({r.Content.Kind})")) + "\n\nInstalado.");
+                    : string.Join("\n", installed.Select(r => $"{r.Content.TitleId} · {r.Content.Title} ({r.Content.Kind})")) + "\n\nInstalado.");
             }
             finally
             {
