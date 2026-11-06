@@ -8,27 +8,38 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
-- [ ] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
-  objetos do kernel (threads, semáforos, mutexes, event flags, timers), estado dos módulos HLE (áudio, NGS, GXM,
-  arquivos abertos, câmera, rede simulada) e estado da GPU (imagens renderizadas, texturas, cache). Decisão do
-  usuário (01/11/2026): estado dos módulos salvo **por módulo** (`ISnapshotState` explícito em cada um), não por um
-  serializador genérico com reflexão; pode ser gerado na compilação (source generator) a partir dos campos, com os
-  casos especiais escritos à mão (vídeo/MediaCodec, saídas de áudio, arquivos, GXM). Desenho e estimativa em
-  `docs/notes/dev-snapshots.md` (CPU/memória/threads ~2 dias; módulos de Uncharted/F1 3–5 dias; total 1–2 semanas);
-  fica para depois da prioridade de desempenho no Android
-- [ ] Formato versionado e tolerante a mudanças do emulador; aviso claro quando um estado antigo não puder ser carregado
-  Conferido (05/11/2026, agente C): um estado de outro esquema não derruba nada. `--load-state` registra `Load state:
-  the save state was written by an incompatible VitaSharp build (<versão>); its emulator state layout differs from this
-  build's` e o jogo segue do boot (`scratchpad/bugsC5_out/jak1_paced.log`, estado da 57c57b1 na main a19cdbe); pelo código (não
-  visto na janela), F7 mostra "Não foi possível carregar o estado: <motivo>" na barra de título; o launcher desabilita o slot com o
-  motivo na dica; no Android o motivo vai num aviso (toast). Falta: o motivo está em inglês e a barra de título some
-  em 6 s; e o formato não é tolerante: qualquer campo novo num objeto salvo (ex. 9482b0f) invalida todos os estados
-  Aviso corrigido (agente C dia 6, fix/bugs-games-6): em português ("Este estado foi salvo por outra versão do
-  VitaSharp (1.0.0+57c57b1) e não pode ser carregado", idem para formato e jogo diferentes), sem o prefixo repetido, e
-  os erros de estado ficam 15 s na barra de título (os avisos curtos continuam 6 s). Visto no `--load-state` sem janela
-  (`scratchpad/bugsC6_out/ss_old/log.txt`); a barra de título não foi vista na janela
-- [ ] Interface: slots por jogo com miniatura, atalhos (salvar/carregar rápido) e menu de pausa
-- [ ] Uso em diagnóstico: o jogador salva o estado no momento do problema e manda junto com a captura
+- [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
+  objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
+  decisão do usuário de 01/11/2026) e a GPU (o renderer é recriado e reconstrói os caches da memória do jogo). Feito
+  (8efb2d5..3b45916, desenho em `docs/notes/save-states.md`, inventário em `docs/notes/dev-snapshots.md`). Validado
+  no desktop em 04/11/2026 com 16 jogos (tabela "Tested" em `save-states.md`) e no celular (Knightin'+, Uncharted,
+  F1: `docs/notes/android-frame-anatomy.md`, main 1c0e516). 06/11/2026 (feat/savestate-tolerant): Tearaway salva e
+  carrega (antes a carga era recusada com a cena da GPU aberta e o salvamento com uma command list sendo gravada),
+  carregado duas vezes seguidas no modo de depuração, 30 fps e o boneco anda com o direcional depois das cargas, sem
+  device lost (`scratchpad/ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
+  carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`scratchpad/ss1_jak1`); God of War Collection: estado no
+  menu, carregado, God of War 1 até o menu do jogo a 30 fps (`scratchpad/ss1_gow1`)
+- [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
+  (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
+  ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
+  título, dica do slot no launcher e aviso no Android (agente C dia 6, `scratchpad/bugsC6_out/ss_old/log.txt`).
+  Visto na janela (06/11/2026): o estado do Jak 1 da 57c57b1 com `--load-state` mostra o aviso na barra de título de
+  8,2 s a 24,1 s e o jogo segue a 30 fps (`scratchpad/ss1_oldstate/titles.txt`, `window_0.png`)
+- [x] Interface: F5/F7 (rápido), F6 escolhe o slot 1-9, Shift+F5/F7 no slot; o launcher lista os estados do jogo com
+  miniatura e abre o jogo carregando um; Android: "Salvar estado"/"Carregar estado" no menu de pausa, 6 slots com
+  miniatura e data (24a3c6f; carga e salvamento por passos no celular em 9c288d7)
+- [x] Uso em diagnóstico: o Gravar tudo (F8) leva o estado do início (`state_start.vss`) e o da pré-gravação
+  (`state_preroll.vss`), e `rerun` recomeça dele com a entrada gravada (FIFA 13: 95% dos quadros iguais, mediana da
+  diferença 0; `docs/notes/session-capture.md`)
+- [ ] Sem teste por falta de um jogo instalado que use: Atrac, Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
+  NetAdhocMatching/Rudp, TriggerUtil e o `sceIme` (teclado do jogo sem o diálogo do sistema); esses módulos recusam o
+  salvamento só enquanto estão em uso. Sob o shell do Vita (vários processos) o salvamento é recusado
+- [ ] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
+  sem janela; não houve teste com janela); o teclado do sistema (ImeDialog) aberto num save: o Sakatsuku
+  (`st_game2`, 7000 quadros) não chegou ao teclado, e o Invizimals não foi testado
+- [ ] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
+  (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
+  não investigada (`scratchpad/ss1_jak1/stdout.txt`)
 
 ## Desempenho (PC)
 
@@ -95,6 +106,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   main. (2) DeviceLost: 0 em 5 replays com `--gpu-profile=desktop` (2 builds, 3 com cache de shaders vazio,
   `bugsC6_out/plants_ref_desk`, `plants_new_desk`, `plants_dl3..5`); o da rodada anterior foi no 1º present, depois
   de 1335 ms de compilação de shaders no mesmo quadro, com a CPU dividida (provável TDR do driver); não reproduz
+  Conferido (06/11/2026, perf/android-7): o replay com `--gpu-profile=mali` no build de baabc78 (fix/bugs-games-6) já
+  mostra o Drake inteiro; o da main ainda o quebra (`scratchpad/and7_runs/drake_mali_cmp.png`, esquerda main, direita
+  baabc78). A bisseção do pisca no celular não foi feita (testes no celular parados pelo usuário); preparado:
+  `scratchpad/and7_tools/flick.sh` (screenrecord do aparelho, quadros distintos, `tileflick.py` por variante do env.txt)
+  e o vídeo do Vita `scratchpad/and7_yt/uc_vita.mp4` (o Prologue começa por volta de 70 s)
 - [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
@@ -110,6 +126,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   às 20:55 sem a correção dos acentos). O Redmi recusa `adb shell input` (INJECT_EVENTS): para dirigir o menu e as
   telas sem o usuário há agora `VITASHARP_ANDROID_UI_INPUT` (build dev, `Developer/UiScript.cs`, commit 96ac1d5).
   A validação no celular foi interrompida a pedido do usuário antes dos prints do menu
+  Validado no celular (06/11/2026, perf/android-7, APK LLVM dev, por toque com `VITASHARP_ANDROID_UI_INPUT`):
+  página principal, Salvar estado (salvou no slot 2 com miniatura), Carregar estado (carregou o slot 2 em 3 s),
+  Ajustes, Desenvolvedor, Recentralizar (aviso "Movimento recentralizado"), Gravar tudo / Parar gravação, Sair do
+  jogo (`scratchpad/and7_tools/shots/pm_main.png`, `pm_a.jpg`, `st_a.jpg`, `st_b.jpg`, `rec_a.jpg`). Achado e corrigido (79925c5, ainda
+  não validado no aparelho): os interruptores de Ajustes eram um texto minúsculo "LIG/DESL" (Switch do Theme.Black),
+  as páginas de slots passavam da altura da tela, a miniatura era uma pílula, o aviso de "Salvando a gravação" era um
+  AlertDialog antigo. O gancho UI_INPUT por Instrumentation era recusado (INJECT_EVENTS) também na própria janela:
+  agora despacha direto na activity (99911c2). Pelo controle: B volta/fecha; D-pad e A não fizeram nada no gancho
+  (nenhuma view com foco em modo de toque) — a correção do gancho (sai do modo de toque) não foi testada no aparelho;
+  falta também o PS de um controle real. Gravar tudo no Android: sair pelo menu durante a gravação espera o save com
+  aviso e o zip fica completo (31 arquivos, 194 MB: estado, dump de GPU de 288 quadros, quadros, áudio, report;
+  `captures/PCSA00029_20261105_232641_tudo.zip` no celular). Estranho: a gravação derruba o Uncharted de ~26 para
+  12-14 fps (gravador 10,7 ms/quadro no worker + 13,3 ms de compressão); o session.txt diz "the GPU dump ended without
+  a present" sempre que se para com o jogo pausado (o menu pausa antes do stop)
 - [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
@@ -117,6 +147,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   glifos (á à â ã ç é ê í ó ô õ ú, conferido no cmap). Varredura do repositório inteiro: só esse arquivo e três
   comentários do Core; `SourceEncodingTests` falha se a sequência voltar (src, tests, build). As outras telas,
   diálogos, o overlay de FPS/REC e o texto dos jogos (PVF) ainda não foram vistos no celular
+  Validado no celular (06/11/2026, perf/android-7): Biblioteca ("Jogáveis", "Todos · 8", "Jogável"), Ajustes
+  ("licença", "Padrão", "Automático"), diálogo da CPU, Desempenho, Controles, página do jogo, menu de pausa e
+  overlay ("Pausado", "● REC") com os acentos certos (`scratchpad/and7_tools/shots/lib3.png`, `app_ajustes.png`, `app3.jpg`, `app3b.jpg`,
+  `pm_main.png`). Texto dos jogos (PVF) não conferido
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
   instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
   saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.
@@ -419,6 +453,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   liblocation e liblocation_internal/extension (LLE) e o stub já devolve 0: a tela preta tem outra causa (não
   investigada). Configurações > Sistema/Formatar/Economia: não rodado. A primeira descida da tela de bloqueio no boot às
   vezes falha (`br1`: ficou na tela de bloqueio o tempo todo; `br2` igual roteiro, passou).
+  Rodada fix/system-apps-7 (06/11/2026, provas em `fw7_out/` do scratchpad): **Navegador** corrigido (f1d8488): ele
+  mesmo inicia o motor web com `sceAppMgrLaunchAppByName2` quando `sceAppMgrGetStatusByName("NPXS10083")` falha com
+  0x80802012 (o HLE devolvia 0x8080201C e ele desistia); mais NID_BEF71602 (funções exportadas por NID) e
+  `sceKernelWaitEvent` em message pipes (o IPC entre os dois processos). Sem rede: "Cannot display the page
+  (C2-14921-7)", OK, PS, continuar, fechar e reabrir funcionam (`br8/sheet.png`). As 8 NIDs de ScePsp2Compat eram
+  só imports do eboot do NPXS10083, resolvidos quando ele carrega o módulo. **near** corrigido (064c1dc):
+  liblocation_internal/extension só chamam funções internas do SceLibLocation, então o liblocation real (cliente
+  IPC do shell) é carregado; mostra as páginas de introdução e "Sign up for PSN" (`near4/sheet.png`). Configurações >
+  Sistema/Formatar/Economia de energia: rodado, OK (`st1/sheet.png`). Dica da tela inicial: não é bug, são dicas em
+  sequência que avançam quando fechadas no X (o `press cross` dos roteiros não fecha). A descida da tela de bloqueio
+  não falhou em ~12 boots desta rodada. **Teclado (IME): sem ganho, revertido**: medido no `GpuQueue` (por processo)
+  com o teclado aberto: o shell abre ~53 cenas/s e cada uma fica aberta ~19 ms (espera o vblank com a cena aberta),
+  98% do tempo; o setup espera 5 s a cada 5 s e faz ~13 cenas por quadro, cada uma esperando uma cena do shell (6-7
+  fps). Tentado (1) revezamento (quem espera um BeginScene ganha a próxima cena): 6 fps, e numa execução o servidor
+  IME do shell assertou (UNKNOWN_SEMA_ID); (2) dar os botões ao shell enquanto a região de toque 2 dele está ativa:
+  o círculo continua sem fechar o teclado (o setup também lê os botões; o caminho do círculo não foi achado). O
+  próximo passo continua sendo gravar as cenas de processos diferentes em render passes separados (suspender a cena
+  aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
+  shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
+  tem a barra, e de Mensagens são iguais: não é isso).
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
@@ -649,7 +703,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   as cores certas. Ainda leem os bytes crus da imagem: o espelho de CDRAM das uniformes mapeadas e as texturas que
   reinterpretam um alvo com outro tamanho de texel (`ReinterpretRenderTarget`), e a composição de alvos dentro de
   um framebuffer da CPU
-- [ ] FIFA 13: estalos no som da torcida (relato do usuário, 05/11/2026 03:36, main 5a3bcb4, log
+- [x] FIFA 13: estalos no som da torcida (relato do usuário, 05/11/2026 03:36, main 5a3bcb4, log
   `logs61105_033621_PCSE00093.log`, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`). Sem underruns (1 em 261 s).
   Suspeita forte: a correção da narração (7732c69) toca os superframes ATRAC9 zerados como silêncio, e o agente B já
   tinha visto que isso põe um buraco de 0,27 s num anel da torcida; buracos/emendas sem suavização no loop dão estalo.
@@ -667,7 +721,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   velhos: 62 contra 4 e 9), então a 7732c69 fica. A saída do host (OpenAL) não descarta grãos (Submit bloqueia).
   Falta ouvir: um F10 com áudio no momento do estalo diria se ele está no que o jogo gera (dump) ou depois (host).
   Ferramentas no scratchpad `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
-- [ ] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
+  Confirmado pelo usuário (06/11/2026, main 0d298b4): todos os problemas do FIFA 13 corrigidos
+- [x] FIFA 13: "a voz da torcida está estranha" (relato do usuário, 05/11/2026 22:22, main da8372d, gravação
+  `captures\PCSE00093_20261105_222244_tudo`, 10 s de partida). Achados (fix/bugs-games-7), sem causa no emulador:
+  com o `state_start.vss` (60 s, `VITASHARP_NGS_TRACE=1` + `--audio-dump`, `scratchpad/bugsB7_out/state0`) a torcida
+  são 4 vozes ATRAC9 estéreo (E00974FE: um laço fixo de 3,77 s em 0x89A41DB0 e três anéis de 13440 bytes que o jogo
+  regrava) e 2 mono (E00470FE, ronco grave); a narração são 2 vozes mono (E00270FE/E00370FE). O decodificador bate
+  com o FFmpeg também em estéreo (107,6 dB), **mas com a polaridade invertida** nos dois canais (inaudível sozinho;
+  só importaria somado a um som correlacionado que não venha do ATRAC9). Rota (log novo do trace: cada play mostra
+  as saídas até o master): Atrac9 -> Mixer -> (Mixer) -> Master, só saída 0, sem reverb; EQ/Envelope/Distortion/
+  Generator com parâmetros zerados (o jogo não os usa), Mixer com 1,0/1,0; volumes e matriz iguais ao Vita3K. Nenhum
+  superframe velho, nenhum corte (os 39 erros de decodificação são o enchimento zerado do fim das falas), nenhum
+  clipping (pico do mix -5,5 dBFS). Diferença medida contra o Vita real (YouTube `bMYfYTF_BHc` 300-420 s, além do
+  `R3WhJ9u_MB4`): no Vita a torcida quase não tem graves (abaixo de ~400 Hz fica 30-40 dB abaixo da faixa 600-2000 Hz);
+  aqui o grave vem forte das próprias vozes (as mono E00470FE têm o máximo abaixo de 200 Hz, e o anel 0x89A416C0
+  -12 dB). Como o jogo não configura EQ, a hipótese que sobra é o que o hardware faz com um módulo EQ/filtro de
+  parâmetros zerados e não contornado (passa direto aqui e no Vita3K). Próximo: o usuário dizer o que soa estranho
+  (tom, eco, grave, repetição) ou um vídeo do mesmo momento; comparar a mesma cena do Vita3K não dá (não abre o jogo)
+  Confirmado pelo usuário (06/11/2026, main 0d298b4): todos os problemas do FIFA 13 corrigidos
+- [x] FIFA 13: as cunhas/pontos escuros na grama continuam depois da cópia dos uniforms na execução (318be32; relato
   do usuário 05/11/2026 03:40, dump F8 `gpudumps\PCSE00093_20261105_034029.vsgd`: o `specks.py` acha pontos em 5 de
   266 quadros, ex. 13543 com 21 px em (338,71)). Então a causa não é (só) o uniform copiado cedo; olhar de novo a malha
   de sombra projetada (vs DCBB621AC8070CB0) nesses quadros com `--draw-limit`.
@@ -703,13 +775,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cópias o corte antigo encurtava: numa partida do FIFA
   com a correção, 147.600 cortes evitados (contados em cada cálculo de tamanho, inclusive o do audit) e 200 MB a mais lidos (`bugsB3_out/fifa_clamp`; a
   partida e a sombra seguem certas no t05). Próximo: o usuário jogar uma partida com a correção; se
-  ainda houver cunhas, gravar tudo (Ctrl+F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
+  ainda houver cunhas, gravar tudo (F8) num triângulo e testar `VITASHARP_UB_SCENE_END=frame`
   Relato novo (main a19cdbe, com o 479b54f): "retângulos pretos abaixo dos jogadores", gravação completa
   `PCSE00093_20261105_211112_tudo`. Os 442 quadros ao vivo (frames.vsfr, extraídos com `vitasharp-perf capture
   --frames`) são iguais ao replay do gpu.vsgd nos 389 presents em comum (pixels 50+ níveis mais escuros ao vivo: 0-1
   por quadro), e nenhum dos dois tem retângulo (specks.py ao vivo: 1 quadro com >= 8 blocos, sombras normais). Ou o
   defeito não caiu nessa janela, ou ele não aparece na imagem lida para a gravação; falta um print ou o horário do
   retângulo
+  05/11/2026 22:22 (main da8372d, com a b6949d7): o usuário não viu mais os triângulos na partida. Parece resolvido,
+  falta mais uma partida
+  Confirmado pelo usuário (06/11/2026, main 0d298b4): todos os problemas do FIFA 13 corrigidos
 - [ ] Achados do agente de bug C (05/11/2026; detalhes na branch fix/bugs-games, commits 749d738..7330147):
   Jak 1: com o save state do usuário (carregado depois do LoadExec da coleção, cópias de ux0/user/00 e np) há quadros
   isolados com o céu preto e o mar azul-claro (7 em 623 quadros, `tileflick.py`), e a câmera segue o Jak; os dumps do
@@ -1066,7 +1141,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   variável sem resolver do `Il2CppAssemblies` (também no God Wars); 1 underrun de áudio do CRI Atom. A captura
   automática `PCSG00952_20261104_201246` é só a tela da Unity (falso positivo). Conferir com vídeos do Vita de
   verdade se as paradas são carregamento normal ou travamento, e jogar além do começo
-- [ ] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
+- [x] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
   `gpudumps\PCSE00093_20261104_190442.vsgd`). Pistas: `TEXTURE SUSPECT 0x60E8F6C0 UBC3 32x64 SUSPECT-SEAMS`, a
@@ -1129,6 +1204,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Sem custo medido (partida de 18,6 mil quadros lado a lado, metades trocadas: worker 4,95 x 5,28 ms/quadro, main
   5,29 x 5,98). Nas janelas de 800 quadros gravadas aqui (`--vulkan --gpu-dump-at`) não há cunha nem com nem sem a
   mudança (`specks.py`: 0 quadros com >= 8 blocos), então a prova continua sendo a partida do usuário
+  Confirmado pelo usuário (06/11/2026, main 0d298b4): todos os problemas do FIFA 13 corrigidos
 - [x] FIFA 13 (PCSE00093; no Vita3K nem abre): no treino da Arena, uma malha enorme preta e branca se estica da
   frente da câmera até o meio da tela e se mexe a cada quadro (provavelmente o jogador com os vértices "explodidos":
   skinning — matrizes de osso, formato/índice dos atributos de osso ou o buffer de uniformes —, ou um triângulo que

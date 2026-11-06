@@ -7,7 +7,7 @@ log), and how the game logic got there (a save state plus the input, re-run head
 
 Code: `src/VitaSharp.Core/Capture/` (shared by the desktop and Android), the renderer's present tap
 (`VulkanRendererOptions.PresentTap`, `VulkanRenderer.Replay.cs`), `src/VitaSharp.Desktop/SessionCaptureControl.cs`
-(Ctrl+F8, `--capture-*`, `rerun`), the Android pause menu (`GameActivity.cs`, `EmulationSession.cs`), the analyzer
+(F8, `--capture-*`, `rerun`), the Android pause menu (`GameActivity.cs`, `EmulationSession.cs`), the analyzer
 `vitasharp-perf capture` (`tools/VitaSharp.PerfTools/Commands/CaptureCommand.cs`, `Core/Capture/CaptureAnalyzer.cs`).
 Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 
@@ -15,8 +15,8 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 
 > **Gravar tudo** (quando aparecer qualquer problema: imagem piscando, tela preta, travada, câmera parada, som
 > estranho):
-> - **PC:** aperte **Ctrl+F8** durante o jogo. A barra de título mostra *"● REC | Gravando tudo (Ctrl+F8 para
->   parar)"*. Jogue até o problema aparecer e aperte **Ctrl+F8** de novo. A barra mostra *"Salvando a gravação..."* e
+> - **PC:** aperte **F8** durante o jogo. A barra de título mostra *"● REC | Gravando tudo (F8 para
+>   parar)"*. Jogue até o problema aparecer e aperte **F8** de novo. A barra mostra *"Salvando a gravação..."* e
 >   depois *"Gravação salva: <arquivo>.zip"*.
 > - **Android:** no menu de pausa (botão PS), escolha **Gravar tudo**. O contador de FPS mostra *"● REC"*. Para
 >   parar, abra o menu de novo e escolha **Parar gravação**.
@@ -27,7 +27,7 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 >   `Android/data/io.github.vitasharp/files/captures`).
 >
 > Outras mensagens: *"Aguarde: a gravação anterior ainda está sendo salva"*, *"Falha ao iniciar a gravação: ..."*,
-> *"Falha ao salvar a gravação: ..."*. F8 (dump da GPU), F9 (modo de depuração) e F10 (diagnóstico) continuam iguais.
+> *"Falha ao salvar a gravação: ..."*. Ctrl+F8 grava só o dump da GPU; F9 (modo de depuração) e F10 (diagnóstico) continuam iguais.
 >
 > A gravação termina sempre, mesmo com o jogo travado. Fechar a janela (X, Alt+F4, *Stop* no launcher) ou sair do
 > jogo no Android com uma gravação ligada ou ainda sendo salva não perde nada: a janela fica aberta com *"Salvando a
@@ -61,7 +61,7 @@ Folder `<data>/captures/<TITLEID>_<yyyyMMdd_HHmmss>_tudo/` and its zip:
 | `input.tsv` | every change of pad and touch the guest read, every motion sample, every `sceKernelGetRandomNumber` result, the emulator hotkeys and the capture's marks, with host ns, guest µs and guest flip |
 | `state_start.vss` | save state taken at the start of the recording |
 | `state_preroll.vss` | save state at the start of the pre-roll (when armed) |
-| `gpu.vsgd` | GPU dump from the start (the F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
+| `gpu.vsgd` | GPU dump from the start (the Ctrl+F8 format; `replay-gpu`); up to 5400 frames on the desktop, 1800 on Android |
 | `audio/*.wav`, `audio/files.txt`, `audio_mix.wav` | every guest audio port and every NGS source voice as a WAV (`AudioDump`), the time each opened, and their mix at 48 kHz as the device would play it |
 | `threads_start.txt`, `threads_stop.txt` | guest threads (wait state, backtrace, recent HLE calls in debug mode), held mutexes, GPU queue |
 | `hle_errors.txt` | HLE error returns and unimplemented calls by count (counted while recording, as debug mode does) |
@@ -75,7 +75,7 @@ timing and the input go into memory rings, and a save state is taken every 30 s 
 PreRollStateInterval`; at least the pre-roll time) into `<data>/captures/.preroll/` (the last two are kept). The
 rings keep everything since the older of the two states, and at least the pre-roll time, within a memory limit
 (192 MB of encoded frames on the desktop, 64 MB on Android). A recording starts with the ring (frames flagged
-pre-roll) and copies the older state as `state_preroll.vss`, so a glitch seen before Ctrl+F8 is in the capture and
+pre-roll) and copies the older state as `state_preroll.vss`, so a glitch seen before F8 is in the capture and
 can be re-run.
 
 ### Frames file
@@ -94,7 +94,7 @@ Measured on the desktop (GTX 1650 laptop, 4 logical CPUs given to the emulator, 
 | | |
 |---|---|
 | Presented frames | ~1.1 MB/s at 60 fps on FIFA 13 menus (~70 MB/min); moving gameplay more |
-| GPU dump | the F8 numbers: FIFA 13 menus 3 MB/s, Killzone gameplay ~20 MB/s (docs/notes/gpu-dump.md) |
+| GPU dump | the Ctrl+F8 numbers: FIFA 13 menus 3 MB/s, Killzone gameplay ~20 MB/s (docs/notes/gpu-dump.md) |
 | States | 30-50 MB each (start, and pre-roll) |
 | Audio | 11.5 MB/min per stereo 48 kHz port or voice WAV |
 | Input, timeline, text | < 1 MB/min |

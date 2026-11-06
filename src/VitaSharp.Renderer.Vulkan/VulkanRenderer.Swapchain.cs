@@ -118,6 +118,7 @@ public sealed unsafe partial class VulkanRenderer
         lock (_presentLock)
         {
             if (_core.SurfaceExt == null) return;
+            DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             DestroySwapchain();
             _core.ReplaceSurface(null);
@@ -132,6 +133,7 @@ public sealed unsafe partial class VulkanRenderer
         lock (_presentLock)
         {
             if (_core.SurfaceExt == null) throw new InvalidOperationException("the renderer was created without a presentation surface");
+            DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             DestroySwapchain();
             _core.ReplaceSurface(surface);
@@ -144,8 +146,10 @@ public sealed unsafe partial class VulkanRenderer
     bool AcquireSwapchain(out uint index)
     {
         index = 0;
+        DrainPresent(); // the swapchain is not used by the present thread and this acquire at once
         if (_swapchainDirty)
         {
+            DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             CreateSwapchain();
             if (_swapchainDirty) return false;
@@ -197,7 +201,13 @@ public sealed unsafe partial class VulkanRenderer
 
     void PresentSwapchain(uint index, Silk.NET.Vulkan.Semaphore wait)
     {
-        var sc = _swapchain;
+        if (PresentThreadOn) QueuePresentAsync(index, wait); // VulkanRenderer.PresentThread.cs
+        else PresentNow(_swapchain, index, wait);
+    }
+
+    /// <summary>vkQueuePresentKHR (the GPU worker, or the present thread with VITASHARP_PRESENT_THREAD=1).</summary>
+    void PresentNow(SwapchainKHR sc, uint index, Silk.NET.Vulkan.Semaphore wait)
+    {
         var pi = new PresentInfoKHR
         {
             SType = StructureType.PresentInfoKhr,
@@ -207,7 +217,8 @@ public sealed unsafe partial class VulkanRenderer
             PSwapchains = &sc,
             PImageIndices = &index,
         };
-        var r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
+        Result r;
+        lock (_queueLock) r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
         if (r == Result.ErrorOutOfDateKhr || (r == Result.SuboptimalKhr && !_suboptimalExpected)) _swapchainDirty = true;
     }
 

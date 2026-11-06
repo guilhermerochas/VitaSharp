@@ -108,7 +108,7 @@ only while one exists; with none open the module saves normally).
 | Ctrl, Display | Display.cs | hand-written | vblank notifier restarted when callbacks exist |
 | Fiber | Fiber.cs | hand-written | fibers with their register contexts, per-thread current fiber |
 | Fios2User | Fios2User.cs | hand-written | overlay table |
-| Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers, recorded command lists; a list being recorded is refused |
+| Gxm | Gxm.cs | hand-written | contexts, targets, programs (rebuilt from guest binaries), patchers, recorded command lists and a list being recorded |
 | SystemGesture | SystemGesture.cs | generated (nested) | touch primitives and recognizers |
 | Http | Http.cs | hand-written | templates/connections/requests; an exchange in flight or an epoll is refused |
 | IoFileMgr | IoFileMgr.cs | hand-written | files reopened by path at their offset, directory listings |

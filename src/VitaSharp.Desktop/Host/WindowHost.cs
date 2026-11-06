@@ -50,11 +50,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public event Action? DiagnosticRequested;
     /// <summary>F9: turns debug mode on or off in game (raised on the window thread).</summary>
     public event Action? DebugModeToggled;
-    /// <summary>F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
+    /// <summary>Ctrl+F8: starts or stops a GPU dump recording (raised on the window thread; see docs/notes/gpu-dump.md).</summary>
     public event Action? GpuDumpToggled;
-    /// <summary>Ctrl+F8: starts or stops "Gravar tudo", the session capture (docs/notes/session-capture.md).</summary>
+    /// <summary>F8: starts or stops "Gravar tudo", the session capture (docs/notes/session-capture.md).</summary>
     public event Action? SessionCaptureToggled;
-    bool _ctrlF8Down;
+    bool _f8Down;
     /// <summary>Save states (window thread): F5 quick save, Shift+F5 save to the selected slot, F7 quick load, Shift+F7
     /// load the selected slot, F6 next slot. The argument is the slot (0 = quick), or -1 for F6.</summary>
     public event Action<int>? SaveStateKey, LoadStateKey;
@@ -308,6 +308,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     // ---------------------------------------------------------------- input
 
+    /// <summary>One F8 press: "Gravar tudo", or with Ctrl the GPU dump (the key handler and --input steps).</summary>
+    public void PressF8(bool ctrl) => (ctrl ? GpuDumpToggled : SessionCaptureToggled)?.Invoke();
+
     void OnKey(Key key, bool down)
     {
         if (key == Key.F11)
@@ -320,10 +323,9 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
         if (key == Key.F8)
         {
-            // Ctrl+F8: "Gravar tudo" (one toggle per press, whatever key repeat sends); F8 alone: the GPU dump
-            if (down && IsControlDown) { if (!_ctrlF8Down) SessionCaptureToggled?.Invoke(); _ctrlF8Down = true; }
-            else if (down) GpuDumpToggled?.Invoke();
-            else _ctrlF8Down = false;
+            // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump (one toggle per press, whatever key repeat sends)
+            if (down && !_f8Down) PressF8(IsControlDown);
+            _f8Down = down;
             return;
         }
         if (key is Key.F5 or Key.F6 or Key.F7 && TextCapture == null)

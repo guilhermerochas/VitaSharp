@@ -72,7 +72,7 @@ point a scenario reaches is not the end of the game.
 | Resistance: Burning Skies | PCSA00008 | In‑game | New game, intro movie, first scene | `rbs_boot` |
 | Sakatsuku (J.League Pro Soccer Club wo Tsukurou!) 2013 | PCSG00198 | Menus | Title, save flow, new-game creation | `st_boot`, `st_game2` |
 | Sengoku Musou 2 Empires HD | PCSG00230 | Menus | Empire mode setup, army cutscene, first strategy turn | `sm2e_play` |
-| Sonic & All-Stars Racing Transformed | PCSE00056 | Hangs | Stops at frame 29, before the logos | `sasrt` |
+| Sonic & All-Stars Racing Transformed | PCSE00056 | Playable | Boots and plays (sceTouchPeek fix 63c125a; confirmed by the user 05/11/2026) | `sasrt` |
 | Soul Sacrifice Delta | PCSA00152 | In‑game | First area; slow at the fire and smoke (to confirm) | `soulsac_boot` |
 | Silent Hill: Book of Memories | PCSE00011 | In‑game | Character creation and intro cutscene | `shbom_boot` |
 | Silverio Vendetta -Verse of Orpheus- | PCSG00845 | In‑game | Visual novel: title, prologue and story text (needs the firmware fonts) | `verse_orpheus_boot` |

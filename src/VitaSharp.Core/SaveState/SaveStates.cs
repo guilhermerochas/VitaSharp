@@ -46,6 +46,17 @@ public static class SaveStates
     /// </summary>
     public static SaveStateHeader Save(Emulator emu, string path, byte[]? thumbnailPng = null, int timeoutMs = 3000)
     {
+        lock (Gate) return SaveLocked(emu, path, thumbnailPng, timeoutMs);
+    }
+
+    /// <summary>One save or load at a time: the Gravar tudo pre-roll saves every 30 s on its own thread, and one that ran
+    /// during a load (Tearaway in debug mode) resumed the emulation the load had paused, so the load failed half done
+    /// ("the guest clock is restored only while the emulation is paused") and the pre-roll state was taken from
+    /// threads being replaced.</summary>
+    static readonly object Gate = new();
+
+    static SaveStateHeader SaveLocked(Emulator emu, string path, byte[]? thumbnailPng, int timeoutMs)
+    {
         CheckSystem(emu);
         CheckModules(emu);
         var sw = Stopwatch.StartNew();
@@ -263,6 +274,12 @@ public static class SaveStates
     /// </summary>
     public static void Load(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory = null)
     {
+        lock (Gate) LoadLocked(emu, path, backendFactory);
+        Loaded?.Invoke(emu);
+    }
+
+    static void LoadLocked(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory)
+    {
         CheckSystem(emu);
         var sw = Stopwatch.StartNew();
         SaveStateHeader header;
@@ -281,12 +298,12 @@ public static class SaveStates
                 throw new SnapshotException($"module {m.GetType().Name} was used in this session and its state cannot be replaced; restart the game, then load the state");
 
         bool wasPaused = EmulationPause.IsPaused;
-        var held = Hold(emu);
+        var held = new List<GuestThread>();
         try
         {
             // module service threads finish what they are doing with the emulation running, then everything stops
             if (wasPaused) EmulationPause.Resume("load state");
-            WaitServiceThreads(emu);
+            HoldForLoad(emu, held);
             EmulationPause.Pause("load state", @internal: true);
             long t0 = sw.ElapsedMilliseconds;
             StopThreads(emu);
@@ -307,23 +324,41 @@ public static class SaveStates
             foreach (var t in held) t.HoldForSave(false);
             if (!wasPaused) EmulationPause.Resume("load state"); else EmulationPause.Pause("load state");
         }
-        Loaded?.Invoke(emu);
     }
 
-    /// <summary>Stops every guest thread but the host-body ones (module service threads, kept and re-keyed); those must
-    /// be idle.</summary>
-    static void WaitServiceThreads(Emulator emu)
+    /// <summary>
+    /// Holds the guest threads for a load until no GPU scene is open and the module service threads (kept across the
+    /// load) are idle. Like a save, the hold starts between two scenes and is released and taken again when a scene
+    /// stays open: the thread that opened it may wait for a held thread to finish it (Tearaway's SandPit, whose scenes
+    /// are fed by worker threads, kept one open for the whole 3 s and every load at that point was refused).
+    /// </summary>
+    static void HoldForLoad(Emulator emu, List<GuestThread> held)
     {
         var until = Environment.TickCount64 + 3000;
         while (true)
         {
+            if (held.Count == 0)
+            {
+                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++) Thread.Sleep(1);
+                held.AddRange(Hold(emu));
+            }
             string? busy = null;
-            foreach (var t in emu.Kernel.Threads)
-                if (t.HostBody != null && t.IsLive && t.SafePointProblem(out _) is { } p) busy = p;
-            if (emu.OpenSceneThread is { } scene) busy = $"thread '{scene.Name}' is finishing a GPU scene";
-            if (busy == null) return;
+            var settle = Environment.TickCount64 + 300;
+            do
+            {
+                busy = null;
+                foreach (var t in emu.Kernel.Threads)
+                    if (t.HostBody != null && t.IsLive && t.SafePointProblem(out _) is { } p) busy = p;
+                if (emu.OpenSceneThread is { } scene) busy = $"thread '{scene.Name}' is finishing a GPU scene";
+                if (busy == null) return;
+                Thread.Sleep(1);
+            } while (Environment.TickCount64 < settle);
             if (Environment.TickCount64 > until) throw new SnapshotException($"not at a safe point: {busy}");
-            Thread.Sleep(1);
+            if (emu.OpenSceneThread == null) continue;
+            // a scene stays open: let every thread run, then hold again between two scenes
+            foreach (var t in held) t.HoldForSave(false);
+            held.Clear();
+            Thread.Sleep(5);
         }
     }
 

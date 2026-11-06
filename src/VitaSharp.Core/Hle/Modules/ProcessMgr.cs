@@ -40,6 +40,28 @@ public sealed partial class ProcessMgr : HleModule
     /// like (r0 = message without newline, result ignored). Behaves as an unformatted debug print.</summary>
     [Hle("NID_023EAA62", Nid = 0x023EAA62, Library = "SceLibKernel")]
     int Nid023EAA62(string msg) { Log.Info("[guest] " + msg.TrimEnd('\n')); return 0; }
+    /// <summary>Unnamed SceLibKernel export: (SceUID modid, uint libNid, int count, const uint *nids, void **funcs) the
+    /// addresses of functions a module loaded with sceKernelLoadStartModule exports, by library and function NID. The
+    /// Browser's web engine (vs0:data/external/webcore/vita_jsextobj.suprx) loads its plugin module this way and calls
+    /// the first function it gets; returning 0 without filling the table made it jump to garbage.</summary>
+    [Hle("NID_BEF71602", Nid = 0xBEF71602, Library = "SceLibKernel")]
+    int NidBEF71602(int modid, uint libNid, int count, uint nids, uint funcs)
+    {
+        if (!K.Modules.ContainsKey(modid)) return unchecked((int)0x8002D011); // SCE_KERNEL_ERROR_UNKNOWN_MODULE
+        if (count < 0 || (count > 0 && (nids == 0 || funcs == 0))) return unchecked((int)0x80020005);
+        for (int i = 0; i < count; i++)
+        {
+            uint nid = GuestMemory.R32(nids + (uint)i * 4);
+            if (!Emu.Linker.TryGetFunctionExport(libNid, nid, out uint addr))
+            {
+                Log.Warn($"NID_BEF71602: library 0x{libNid:X8} function 0x{nid:X8} not exported by any loaded module");
+                return unchecked((int)0x8002D01C);
+            }
+            GuestMemory.W32(funcs + (uint)i * 4, addr);
+        }
+        return 0;
+    }
+
     [Hle] int sceKernelPowerTick(int type) => 0;
     [Hle] int sceKernelPowerLock(int type) => 0;
     [Hle] int sceKernelPowerUnlock(int type) => 0;

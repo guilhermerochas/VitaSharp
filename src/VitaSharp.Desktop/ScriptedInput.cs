@@ -28,7 +28,8 @@ namespace VitaSharp.Desktop;
 /// Frame timing is deterministic whatever the emulation speed (turbo runs). "f1200+3" is 3 seconds of wall time after
 /// frame 1200 was presented (len in seconds): steps that must happen while the emulation is paused, when no frame
 /// comes. A key step on the pause hotkey (P by default) pauses or resumes the emulation once, when it starts, and one
-/// on F10 takes a diagnostic capture, one on F11 toggles fullscreen (window runs) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
+/// on F10 takes a diagnostic capture, one on F11 toggles fullscreen and one on F8 / Ctrl+F8 starts or stops "Gravar tudo" /
+/// the GPU dump (window runs) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
 /// pauses at frame 300, captures the paused frame and resumes 5 seconds after the pause.
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource
@@ -136,7 +137,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 
     /// <summary>
     /// Emulator keys of the script that have started since the last call, in order: <see cref="PauseKey"/> for a step on
-    /// the pause hotkey of the default keyboard profile (each toggles the pause once), "F10" for the diagnostic capture.
+    /// the pause hotkey of the default keyboard profile (each toggles the pause once), "F10" for the diagnostic capture, "F8" / "Ctrl+F8" (window runs).
     /// The front-end polls this, also while the paused guest polls no input.
     /// </summary>
     public List<string>? TakeHostKeys()
@@ -151,7 +152,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         return keys;
     }
 
-    bool IsHostKey(string? key) => key is "F10" or "F11" || IsPauseKey(key);
+    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "F10" or "F11" || IsPauseKey(key);
 
     bool IsPauseKey(string? key)
     {

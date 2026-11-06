@@ -20,6 +20,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (ResScale != 1f) { Log.Warn("[gpudump] render targets are not carried in dumps taken at a resolution scale (VITASHARP_RES_SCALE)"); return null; }
         if (F.Recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+        DrainPresent();
         _vk.DeviceWaitIdle(_dev);
         var targets = _renderTargets.Values.OrderBy(t => t.LastScene).ThenBy(t => t.LastUsedFrame).ToList();
         var w = new DumpBuffer(1 << 20);

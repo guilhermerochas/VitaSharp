@@ -9,7 +9,7 @@ changed to bisect a glitch.
 
 | How | What |
 |---|---|
-| **F8** in the game window | starts a recording at the next present; F8 again stops it at the next present (it also stops by itself after 1800 frames, ~60 s at 30 fps). Works with or without debug mode |
+| **Ctrl+F8** in the game window | starts a recording at the next present; Ctrl+F8 again stops it at the next present (it also stops by itself after 1800 frames, ~60 s at 30 fps). Works with or without debug mode |
 | `--gpu-dump-at=F1:F2[:file]` (`run`, `test`, scenario `args=`) or `VITASHARP_GPU_DUMP_AT=F1:F2[:file]` | records frames F1..F2 exactly (frame N = the frame ending with renderer present N, the number in `frame_N.png`) |
 
 Files go to `<DataRoot>/gpudumps/<TITLEID>_<yyyyMMdd_HHmmss>.vsgd` unless a file is given. The log gets
@@ -21,14 +21,14 @@ being recorded.
 
 > **Gravar um dump da GPU** (quando aparecer um defeito gráfico que dá para reproduzir):
 > 1. Chegue perto do ponto onde o defeito aparece.
-> 2. Aperte **F8**. A barra de título mostra *"Gravando dump da GPU (F8 para parar)"*.
+> 2. Aperte **Ctrl+F8**. A barra de título mostra *"Gravando dump da GPU (Ctrl+F8 para parar)"*.
 > 3. Deixe o defeito aparecer na tela (alguns segundos bastam; o jogo pode ficar um pouco mais lento).
-> 4. Aperte **F8** de novo. A barra de título mostra *"Dump da GPU salvo: <arquivo> (N quadros, M MB)"*.
+> 4. Aperte **Ctrl+F8** de novo. A barra de título mostra *"Dump da GPU salvo: <arquivo> (N quadros, M MB)"*.
 > 5. Envie o arquivo `.vsgd` da pasta `gpudumps` (dentro da pasta de dados do VitaSharp).
 >
-> Outras mensagens: *"Salvando dump da GPU..."* (depois do segundo F8), *"Falha ao gravar o dump da GPU: ..."*,
+> Outras mensagens: *"Salvando dump da GPU..."* (depois do segundo Ctrl+F8), *"Falha ao gravar o dump da GPU: ..."*,
 > *"Já existe uma gravação do dump da GPU em andamento"*. Com o modo de depuração ligado (F9), a mensagem lembra:
-> *"Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU)"*.
+> *"Modo de depuração ligado (F9 desliga, F10 captura, F8 grava tudo com os últimos 10 s, Ctrl+F8 grava dump da GPU)"*.
 
 Why an explicit start instead of an always-on "last N seconds" ring in debug mode: Killzone gameplay produces
 ~0.7 MB of compressed dump per frame and the recorder needs ~30 ms of CPU per frame (mostly compression on
@@ -119,7 +119,7 @@ blob), 0x10 BeginScene, 0x11 Draw, 0x12 EndScene, 0x13 Finish, 0x14 MidSceneFlus
 A dump cut short (crash) is readable up to its last complete chunk; the reader skips unknown chunk types. Chunks
 are compressed with Brotli quality 3 on up to 4 background threads (quality 5 compressed at ~30 MB/s and stalled
 the GPU worker). Code: `src/VitaSharp.Core/Gpu/GpuDumpFormat.cs` (codec), `GpuDumpRecorder.cs`, `GpuDumpReader.cs`,
-`src/VitaSharp.Desktop/GpuDumpControl.cs` (F8, `--gpu-dump-at`, header), `ReplayGpu.cs`; tests in
+`src/VitaSharp.Desktop/GpuDumpControl.cs` (Ctrl+F8, `--gpu-dump-at`, header), `ReplayGpu.cs`; tests in
 `tests/VitaSharp.Tests/GpuDumpTests.cs`.
 
 ## Verification (GTX 1650 laptop, 2026-10-23)
@@ -176,5 +176,5 @@ Off: no recorder object; `GpuQueue` reads one static field per command and `Read
   GPU and settings in its header. A different GPU may give different results with the same commands.
 - Memory written by the CPU concurrently with a GPU read can race: the dump holds what the recorder saw, which may
   differ from what the renderer copied a few microseconds later (not observed in the tests).
-- F8 recordings stop by themselves after 1800 frames; large dumps (Killzone: ~20 MB/s) need disk space.
+- Ctrl+F8 recordings stop by themselves after 1800 frames; large dumps (Killzone: ~20 MB/s) need disk space.
 - The format version must be bumped when records change; readers reject newer versions.

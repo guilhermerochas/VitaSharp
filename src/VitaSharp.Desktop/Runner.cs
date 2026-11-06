@@ -214,20 +214,20 @@ public static class Runner
                 if (pkg?.Trophies.Count > 1)
                     trophyToast.Enqueue(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent(set.CommId, pkg.Title, pkg.Trophies[1], pkg.TrophyIcon(pkg.Trophies[1].Id)));
             });
-        // Ctrl+F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
+        // F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
         capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
         capture.Capture.Options.RecordingChanged = _ => ShowTitle();
-        window.SessionCaptureToggled += () => capture.Capture.Toggle("Ctrl+F8");
+        window.SessionCaptureToggled += () => capture.Capture.Toggle("F8");
         window.DiagnosticRequested += () => { capture.Capture.NoteKey("F10"); diag.Capture("F10"); };
-        // F8: GPU dump recording (docs/notes/gpu-dump.md)
-        window.GpuDumpToggled += () => { capture.Capture.NoteKey("F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
+        // Ctrl+F8: GPU dump recording (docs/notes/gpu-dump.md)
+        window.GpuDumpToggled += () => { capture.Capture.NoteKey("Ctrl+F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
         window.DebugModeToggled += () =>
         {
             if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
             capture.Capture.NoteKey("F9");
             capture.UpdatePreRoll();
-            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava dump da GPU, Ctrl+F8 grava tudo com os últimos 10 s)" : "Modo de depuração desligado");
+            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava tudo com os últimos 10 s, Ctrl+F8 grava dump da GPU)" : "Modo de depuração desligado");
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
@@ -331,7 +331,7 @@ public static class Runner
     }
 
     /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
-    /// F11 toggles fullscreen (window runs).</summary>
+    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs).</summary>
     static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null)
     {
         if (script.TakeHostKeys() is not { } keys) return;
@@ -340,6 +340,7 @@ public static class Runner
             if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
             else if (k == "F10") diag.Capture("--input F10");
             else if (k == "F11") window?.ToggleFullscreen();
+            else if (k is "F8" or "Ctrl+F8") window?.PressF8(k == "Ctrl+F8");
         }
     }
 

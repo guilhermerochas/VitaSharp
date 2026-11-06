@@ -8,7 +8,7 @@ namespace VitaSharp.Core.SaveState;
 public static partial class SnapshotSchema
 {
     /// <summary>Version of the hand-written state layouts.</summary>
-    public const int ManualVersion = 2;
+    public const int ManualVersion = 3;
 
     public static string Hash => $"{ManualVersion}-{GeneratedHash}";
 
