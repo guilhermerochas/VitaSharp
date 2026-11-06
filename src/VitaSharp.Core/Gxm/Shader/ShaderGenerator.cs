@@ -554,6 +554,10 @@ float packC10(vec3 c) {
 
     static ulong[] ReadCode(GxpProgram p, int start, int count)
     {
+        // a block that is not a real program (a GXP magic inside other data) can claim millions of instructions: every
+        // instruction has to lie inside the program's bytes, as on the GPU, which only runs what was uploaded
+        if (count < 0 || start < 0 || (long)start + (long)count * 8 > p.Data.Length)
+            throw new InvalidDataException($"GXP program: {count} instructions at 0x{(uint)start:X} lie outside the 0x{p.Data.Length:X}-byte program");
         var code = new ulong[Math.Max(0, count)];
         for (int i = 0; i < code.Length; i++) code[i] = p.ReadInstruction(start, i);
         return code;

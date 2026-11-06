@@ -221,7 +221,15 @@ public sealed class GxpProgram
         if (data.Length < header) return $"size 0x{data.Length:X} is smaller than the 0x{header:X}-byte header";
         return Table(data, "parameter", 0x24, 0x28, 16) ?? Table(data, "container", 0x90, 0x94, 8) ?? Table(data, "literal", 0x70, 0x74, 8)
             ?? Table(data, "uniform buffer", 0x78, 0x7C, 8) ?? Table(data, "dependent sampler", 0x80, 0x84, 4)
-            ?? Table(data, "primary program", 0x3C, 0x40, 8);
+            ?? Table(data, "primary program", 0x3C, 0x40, 8) ?? Secondary(data);
+    }
+
+    /// <summary>The secondary program runs from the offset at 0x48 to the one at 0x4C (each relative to its field).</summary>
+    static string? Secondary(ReadOnlySpan<byte> d)
+    {
+        long start = 0x48 + (long)BinaryPrimitives.ReadInt32LittleEndian(d[0x48..]), end = 0x4C + (long)BinaryPrimitives.ReadInt32LittleEndian(d[0x4C..]);
+        if (end <= start) return null; // none
+        return start < 0 || end > d.Length ? $"secondary program (0x{start:X}..0x{end:X}) is outside the 0x{d.Length:X}-byte program" : null;
     }
 
     static string? Table(ReadOnlySpan<byte> d, string what, int countField, int offsetField, int entrySize)

@@ -773,7 +773,18 @@ public sealed partial class ThreadMgr : HleModule
     /// <summary>Same arguments as sceKernelCreateMsgPipe; the "LR" (caller address kept for debugging) is not used.</summary>
     [Hle] int sceKernelCreateMsgPipeWithLR(string name, uint type, uint attr, uint bufSize, uint opt) => sceKernelCreateMsgPipe(name, type, attr, bufSize, opt);
 
-    [Hle] int sceKernelGetMsgPipeCreatorId(int uid) => Obj<MsgPipe>(uid)?.CreatorThreadUid ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    /// <summary>libipmi (libshellsvc) calls it with the pipe's name ("SceShellSvcServerMP", "SceDbUtilDcnServerMP"...) and
+    /// keeps the result as the server's process id (it passes it to sceAppMgrIsPidShellAndCrashed and compares it with a
+    /// later call): by name the result is the creating process. A UID argument keeps the old answer (the creating thread).</summary>
+    [Hle]
+    int sceKernelGetMsgPipeCreatorId(uint arg)
+    {
+        if (Obj<MsgPipe>((int)arg) is { } byUid) return byUid.CreatorThreadUid;
+        if (arg < 0x10000) return SceError.UNKNOWN_MSG_PIPE_ID;
+        string name = GuestMemory.ReadCString(arg, 32);
+        var pipe = K.Objects.All<MsgPipe>().FirstOrDefault(x => x.Name == name && !x.IsDeleted);
+        return pipe?.OwnerPid ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    }
     [Hle] int sceKernelOpenMsgPipe(uint name) => KernelInfo.OpenByName<MsgPipe>(K.Objects, name, p => !p.IsDeleted);
     [Hle] int sceKernelCloseMsgPipe(int uid) => KernelInfo.CloseHandle<MsgPipe>(K.Objects, uid, SceError.UNKNOWN_MSG_PIPE_ID);
 

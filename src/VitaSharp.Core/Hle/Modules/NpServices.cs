@@ -119,6 +119,34 @@ public sealed partial class NpWebApi : HleModule
     [Hle("sceNpWebApi_E83CE7F1", Nid = 0xE83CE7F1, Library = "SceNpWebApi")]
     int sceNpWebApiRegisterForSystem(uint obj) => 0;
 
+    /// <summary>(const void *a, const void *b): a library context for the system software (the library's busy check,
+    /// 0x80559F02, cannot trigger here); its id. Messages and the PS4 Link set themselves up with it.</summary>
+    [Hle("sceNpWebApi_A11FBA1A", Nid = 0xA11FBA1A, Library = "SceNpWebApi")]
+    int sceNpWebApiInitializeForSystem(uint a, uint b, uint c) => a == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    /// <summary>(int libCtxId, const void *a, const void *b): a push event filter for the system software (both
+    /// required); its id.</summary>
+    [Hle("sceNpWebApi_19062C5A", Nid = 0x19062C5A, Library = "SceNpWebApi")]
+    int sceNpWebApiCreatePushEventFilterForSystem(int libCtxId, uint a, uint b) => a == 0 || b == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    /// <summary>(int libCtxId, a, b, c, void *callback, void *arg): a push event callback (callback and arg required);
+    /// its id. Push events never arrive offline.</summary>
+    [Hle("sceNpWebApi_159396F0", Nid = 0x159396F0, Library = "SceNpWebApi")]
+    int sceNpWebApiRegisterPushEventCallbackForSystem(int libCtxId, uint a, uint b, uint c, uint callback, uint arg) =>
+        callback == 0 || arg == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    /// <summary>(int libCtxId, int filterId, void *callback, void *arg): service / extended push event callbacks
+    /// (NID_83E94928, NID_1BDB76C0): the callback is required; an id.</summary>
+    [Hle("sceNpWebApi_83E94928", Nid = 0x83E94928, Library = "SceNpWebApi")]
+    int sceNpWebApiRegisterServicePushEventCallbackForSystem(int libCtxId, int filterId, uint callback, uint arg) => callback == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    [Hle("sceNpWebApi_1BDB76C0", Nid = 0x1BDB76C0, Library = "SceNpWebApi")]
+    int sceNpWebApiRegisterExtdPushEventCallbackForSystem(int libCtxId, int filterId, uint callback, uint arg) => callback == 0 ? ERR_WEBAPI_ARG : NewId();
+
+    /// <summary>(int id): drops a system push event object; nothing is kept.</summary>
+    [Hle("sceNpWebApi_BED99F66", Nid = 0xBED99F66, Library = "SceNpWebApi")]
+    int sceNpWebApiUnregisterForSystem(int id) => 0;
+
     [Hle] int sceNpWebApiCreateHandle(int libCtxId) => NewId();
     [Hle] int sceNpWebApiDeleteHandle(int libCtxId, int handleId) => 0;
     [Hle] int sceNpWebApiAbortHandle(int libCtxId, int handleId) => 0;
@@ -277,6 +305,37 @@ public sealed partial class NpCommerce2 : HleModule
     [Hle("sceNpCommerce2_BFDC7B9F", Nid = 0xBFDC7B9F, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest4(uint a, uint b) => PsnAccount.Current.ServerError;
     [Hle("sceNpCommerce2_C7B04A45", Nid = 0xC7B04A45, Library = "SceNpCommerce2")] int sceNpCommerce2SysRequest5(uint a, uint b) => PsnAccount.Current.ServerError;
 
+    // ---- the PS4 Link's NIDs (np_commerce2.suprx FW 3.74). Two go to the shell's store service (NID_624B7A50 (void),
+    // NID_145137BE (int)): the service is there and accepts. Six act on a store session object by id (requests to the
+    // servers): unreachable. Six parse a server result into the caller's record: no result ever exists, so they only
+    // check their arguments and reject the input. NID_71ADF5A6 reads a session's state word: none yet (0).
+    [Hle("sceNpCommerce2_624B7A50", Nid = 0x624B7A50, Library = "SceNpCommerce2")] int sceNpCommerce2SysServiceNotify0() => 0;
+    [Hle("sceNpCommerce2_145137BE", Nid = 0x145137BE, Library = "SceNpCommerce2")] int sceNpCommerce2SysServiceNotify1(int a) => 0;
+
+    [Hle("sceNpCommerce2_2DC2A0F9", Nid = 0x2DC2A0F9, Library = "SceNpCommerce2")] int sceNpCommerce2SysSessionRequest0(uint id) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_C737A929", Nid = 0xC737A929, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSessionRequest1(uint id, uint p) => p == 0 ? ERR_SYS_INVALID : PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_4D00AA32", Nid = 0x4D00AA32, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSessionRequest2(uint id, uint p) => p == 0 ? ERR_SYS_INVALID : PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_34194245", Nid = 0x34194245, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSessionRequest3(uint id, uint a, uint b, uint c, uint d, uint e) =>
+        a == 0 || b == 0 || c == 0 || d == 0 || e == 0 ? ERR_SYS_INVALID : PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_4329A980", Nid = 0x4329A980, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSessionRequest4(uint a, uint b, uint c, uint d) => PsnAccount.Current.ServerError;
+    [Hle("sceNpCommerce2_7E3C9196", Nid = 0x7E3C9196, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysSessionRequest5(uint a, uint b, uint c, uint d) => PsnAccount.Current.ServerError;
+
+    [Hle("sceNpCommerce2_71ADF5A6", Nid = 0x71ADF5A6, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysGetSessionState(uint id, uint state) { if (state != 0) GuestMemory.W32(state, 0); return 0; }
+
+    [Hle("sceNpCommerce2_1BFF9C73", Nid = 0x1BFF9C73, Library = "SceNpCommerce2")]
+    int sceNpCommerce2SysParse0(uint rec, uint result, uint size) => ERR_SYS_INVALID; // all three required, and no result exists
+    [Hle("sceNpCommerce2_64E27331", Nid = 0x64E27331, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse1(uint rec, uint a, uint result) => ERR_SYS_INVALID;
+    [Hle("sceNpCommerce2_499732CA", Nid = 0x499732CA, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse2(uint result, uint rec) => ERR_SYS_INVALID;
+    [Hle("sceNpCommerce2_1A53A505", Nid = 0x1A53A505, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse3(uint result, uint rec) => ERR_SYS_INVALID;
+    [Hle("sceNpCommerce2_C1542070", Nid = 0xC1542070, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse4(uint result, uint rec) => ERR_SYS_INVALID;
+    [Hle("sceNpCommerce2_9B444B7C", Nid = 0x9B444B7C, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse5(uint a, uint b, uint c, uint d) => ERR_SYS_INVALID;
+
     [Hle] int sceNpCommerce2Init() { lock (_lock) _inited = true; return 0; }
     [Hle] int sceNpCommerce2Term() { lock (_lock) { _inited = false; _ctx.Clear(); _reqs.Clear(); } return 0; }
 
@@ -367,4 +426,21 @@ public sealed partial class NpCommerce2 : HleModule
 public sealed partial class NpDrmPackage : HleModule
 {
     [Hle] int sceNpDrmPackageIsGameExist() => 1;
+}
+
+/// <summary>SceNpSnsFacebook (the Facebook link of the system software, FW 3.74): the library sets itself up locally;
+/// without a linked Facebook account (none can be linked offline) the access tokens are never there.</summary>
+public sealed partial class NpSnsFacebook : HleModule
+{
+    const int ERR_INVALID_ARGUMENT = unchecked((int)0x80553003), ERR_NOT_SIGNED_IN = unchecked((int)0x80553002);
+    bool _inited;
+    int _nextReq = 1;
+
+    [Hle] int sceNpSnsFacebookInit(uint param) { _inited = true; return 0; }
+    [Hle] int sceNpSnsFacebookTerm() { _inited = false; return 0; }
+    [Hle] int sceNpSnsFacebookCreateRequest() => Interlocked.Increment(ref _nextReq);
+    [Hle] int sceNpSnsFacebookDeleteRequest(int req) => 0;
+    [Hle] int sceNpSnsFacebookAbortRequest(int req) => 0;
+    [Hle] int sceNpSnsFacebookGetAccessToken(int req, uint param, uint result) => param == 0 || result == 0 ? ERR_INVALID_ARGUMENT : ERR_NOT_SIGNED_IN;
+    [Hle] int sceNpSnsFacebookGetLongAccessToken(int req, uint param, uint result) => param == 0 || result == 0 ? ERR_INVALID_ARGUMENT : ERR_NOT_SIGNED_IN;
 }

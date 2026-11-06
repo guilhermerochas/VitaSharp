@@ -225,6 +225,33 @@ public sealed partial class NpManager : HleModule
     [Hle("sceNpManager_DDF30B0E", Nid = 0xDDF30B0E, Library = "SceNpManager")] int sceNpManagerSysGetAccountIds(uint a, uint b, uint c) => ERR_SIGNED_OUT;
     [Hle("sceNpManager_ED12AF16", Nid = 0xED12AF16, Library = "SceNpManager")] int sceNpManagerSysGetAccountDetails(uint a, uint b, uint c, uint d) => ERR_SIGNED_OUT;
 
+    /// <summary>(void *callback, void *arg): a system-side event callback in np_manager's four-slot table (full:
+    /// 0x80550504); the library registers it with the service and returns the service's id for it. The signed-out
+    /// service never raises an event, so the callback never runs.</summary>
+    [Hle("sceNpManager_351A74C2", Nid = 0x351A74C2, Library = "SceNpManager")]
+    int sceNpManagerSysRegisterCallback(uint callback, uint arg)
+    {
+        lock (_lock)
+        {
+            if (_sysCallbacks >= 4) return unchecked((int)0x80550504);
+            return ++_sysCallbacks;
+        }
+    }
+    int _sysCallbacks;
+
+    /// <summary>(void): the system-side clean-up (np_manager releases its six + seven internal objects and runs its
+    /// exit hook); 0x80550002 when the system side was never initialised, but the clean-up runs either way.</summary>
+    [Hle("sceNpManager_997CD5A7", Nid = 0x997CD5A7, Library = "SceNpManager")]
+    int sceNpManagerSysCleanup()
+    {
+        lock (_lock)
+        {
+            int r = _sysInited ? 0 : unchecked((int)0x80550002);
+            _sysCallbacks = 0;
+            return r;
+        }
+    }
+
     /// <summary>
     /// (SceNpManagerCacheParam *param, 0xA4 bytes): np_manager.suprx (FW 3.74) fetches the 0x148-byte account record of
     /// NID_E45E4003 and copies its +0 (0x24 bytes, the SceNpId) to param+0 and its +0x38 (0x80 bytes, the avatar URL)
@@ -458,6 +485,19 @@ public sealed partial class NpManager : HleModule
     {
         if (env != 0) { GuestMemory.Fill(env, 0, 16); GuestMemory.WriteCString(env, "np", 16); }
         return 0;
+    }
+
+    /// <summary>(char buf[8]): the system software version as text, np_common.suprx FW 3.74: the buffer cleared, then
+    /// snprintf(buf, 8, "%d.%02d") of the BCD version sceKernelGetSystemSwVersion reports ("3.74"); its length back.
+    /// The PS4 Link's activity module asks for it.</summary>
+    [Hle("sceNpCommon_0624AE44", Nid = 0x0624AE44, Library = "SceNpCommon")]
+    int sceNpCommonGetSystemSwVersionString(uint buf)
+    {
+        uint v = SystemMisc.SystemSwVersion;
+        string s = $"{(v >> 28) * 10 + ((v >> 24) & 0xF)}.{((v >> 20) & 0xF) * 10 + ((v >> 16) & 0xF):D2}";
+        GuestMemory.Fill(buf, 0, 8);
+        GuestMemory.WriteCString(buf, s, 8);
+        return s.Length;
     }
 
     // ---------------------------------------------------------------- communication id text (SceNpCommon)

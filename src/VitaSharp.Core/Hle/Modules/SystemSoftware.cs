@@ -27,6 +27,23 @@ public sealed partial class SystemSoftware : HleModule
     /// <summary>How many common dialogs the process may hold open at once; accepted.</summary>
     [Hle] int sceKernelCDialogSetLeaseLimit(int limit) => 0;
 
+    /// <summary>Ends the process's common dialog session (the lease the dialog framework took): none is held here.</summary>
+    [Hle] int sceKernelCDialogSessionClose() => 0;
+
+    /// <summary>(handler): the process's core dump handler, run by SceCoredump when the process crashes (SceCoredump
+    /// FW 3.74: NULL 0x800A0000; a second registration 0x800A0002). A crash here is reported by the emulator instead.</summary>
+    [Hle]
+    int sceCoredumpRegisterCoredumpHandler(uint handler)
+    {
+        if (handler == 0) return unchecked((int)0x800A0000);
+        if (_coredumpHandler != 0) return unchecked((int)0x800A0002);
+        _coredumpHandler = handler;
+        return 0;
+    }
+    uint _coredumpHandler;
+
+    [Hle] int sceCoredumpUnregisterCoredumpHandler() { _coredumpHandler = 0; return 0; }
+
     // ------------------------------------------------------------------ SceSblSsUpdateMgr
 
     /// <summary>
