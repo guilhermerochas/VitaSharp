@@ -272,7 +272,7 @@ public static class SaveStates
         using (var reader = new SaveStateReader(file))
         {
             header = reader.Header;
-            if (SaveStateFile.Incompatibility(header, emu.TitleId) is { } why) throw new SnapshotException(why);
+            if (SaveStateFile.Incompatibility(header, emu.TitleId) is { } why) throw new SaveStateIncompatibleException(why);
             // decompressed while the game still runs
             while (reader.Next(out var name, out _)) sections.Add((name, reader.ReadAll()));
         }
