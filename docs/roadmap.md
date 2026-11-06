@@ -19,6 +19,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   device lost (`scratchpad/ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
   carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`scratchpad/ss1_jak1`); God of War Collection: estado no
   menu, carregado, God of War 1 até o menu do jogo a 30 fps (`scratchpad/ss1_gow1`)
+- [x] Estado salvo depois de um LoadExec carrega numa sessão nova (06/11/2026, fix/savestate-loadexec): o programa do
+  estado é o primeiro módulo dele (`SaveStates.ProgramOf`); `--load-state` (launcher, `rerun` do Gravar tudo) boota esse
+  self direto; F7/slot com outro self rodando faz o LoadExec antes e carrega após 120 quadros; os módulos são achados
+  por arquivo e endereço e ficam com os UIDs salvos. Junto: `sceGxmDisplayQueueAddEntry` com a fila cheia não espera
+  para sempre quando a thread é parada (o LoadExec pedido pelo host esperava 10 s e seguia com a thread antiga viva).
+  Validado: Jak 1 e God of War 1 em gameplay salvos, carregados em sessão nova pelos dois caminhos, 20 e 30 fps como
+  ao salvar (`scratchpad/ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
+  LoadExec) a 59 fps (`ss2_ucB`); o rerun da gravação do usuário `PCSA00080_20261106_002008_tudo` (build da época
+  0d298b4 + estas mudanças, o esquema da main mudou depois) carrega e 98% dos quadros saem iguais
+  (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui); o Android ainda
+  não faz o passo do LoadExec ao carregar um estado de outro self
 - [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
   (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
   ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de

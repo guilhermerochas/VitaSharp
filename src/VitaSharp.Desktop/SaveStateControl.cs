@@ -63,6 +63,8 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         if (!File.Exists(path)) { status?.Invoke($"Estado {label} vazio"); return false; }
         try
         {
+            // a state of another executable of the game (saved after a LoadExec): that one is started first
+            SaveStates.SwitchProgramFor(emu, path, status);
             SaveStates.Load(emu, path, emu.Gpu.Backend != null ? backendFactory : null);
             status?.Invoke($"Estado {label} carregado");
             return true;
