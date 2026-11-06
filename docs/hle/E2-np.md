@@ -492,7 +492,7 @@ RegisterHandler,GetMembers,GetMemberInfo,GetMemberVoiceInfo}`. Os `sceNpMessageD
 
 | Função | NID | Protótipo (inferido) | Contrato offline |
 | --- | --- | --- | --- |
-| `sceNpManagerGetCachedParam` | `0x43DC48A1` | `int (SceNpManagerCacheParam *param)`; layout a confirmar | Sem conta: `SCE_NP_ERROR_SIGNED_OUT`; nulo → 0x80550503 |
+| `sceNpManagerGetCachedParam` | `0x43DC48A1` | `int (SceNpManagerCacheParam *param)`, 0xA4 bytes: +0 SceNpId (0x24), +0x24 URL do avatar (0x80); desmontado do np_manager.suprx 3.74, que copia do registro de 0x148 bytes do NID_E45E4003 (+0 e +0x38) | Conta emulada conectada: NpId dela, URL vazia, 0; sem conta: tudo zero, 0; nulo → 0x80550503 |
 | `sceNpAuthCreateOAuthRequest` | `0x555EB58C` | `int (void)` → reqId | Retorna ID > 0 (tabela local) |
 | `sceNpAuthDeleteOAuthRequest` | `0x8C94C7A5` | `int (SceInt32 reqId)` | Remove; 0 (ID desconhecido → 0x80550503) |
 | `sceNpAuthAbortOAuthRequest` | `0xECBC7614` | `int (SceInt32 reqId)` | 0 |

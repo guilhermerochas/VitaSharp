@@ -147,6 +147,14 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
         Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(id + 0x24));              // 0x24-byte SceNpId
         Assert.Equal(0, NpIdUtil.Compare(id, id));
 
+        // the cached parameters (np_manager.suprx: SceNpId at +0, avatar URL at +0x24, 0xA4 bytes)
+        uint cached = Alloc(0xA8, 0xCC);
+        Assert.Equal(0, Call(np, "sceNpManagerGetCachedParam", cached));
+        Assert.Equal("Tester_01", GuestMemory.ReadCString(cached, 16));
+        Assert.Equal(1, GuestMemory.Read<byte>(cached + 0x1C));
+        Assert.Equal(0u, GuestMemory.R32(cached + 0x24));                   // no avatar URL
+        Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(cached + 0xA4));
+
         uint country = Alloc(4, 0xCC), lang = Alloc(4, 0xCC);
         Assert.Equal(0, Call(np, "sceNpManagerGetAccountRegion", country, lang));
         Assert.Equal("us", GuestMemory.ReadCString(country, 4));
@@ -168,6 +176,10 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
         Assert.Equal(NP_SIGNED_OUT, Call(np, "sceNpManagerGetNpId", id));
         Assert.Equal(0xCCCCCCCCu, GuestMemory.R32(id));                     // untouched
         Assert.Equal(NP_SIGNED_OUT, Call(np, "sceNpManagerGetAccountRegion", Alloc(4), Alloc(4)));
+        uint cached = Alloc(0xA4, 0xCC);
+        Assert.Equal(0, Call(np, "sceNpManagerGetCachedParam", cached)); // no account: an all-zero record
+        Assert.Equal(0u, GuestMemory.R32(cached));
+        Assert.Equal(0u, GuestMemory.R32(cached + 0xA0));
         Assert.Equal(NP_SIGNED_OUT, Call(np, "sceNpAuthGetTicket", 1, Alloc(16), 16u));
         Assert.Equal(NpCommunity.NO_LOGIN, NpCommunity.OfflineResult);
     });
