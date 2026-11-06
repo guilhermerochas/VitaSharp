@@ -13,6 +13,8 @@ public static class EnvVars
     public const string AndroidInput = "VITASHARP_ANDROID_INPUT";
     /// <summary>Android: a file polled while the game runs; its ScriptedPad steps (T relative to when it is read) are added and the file deleted, so a PC script can react to the screen (adb push).</summary>
     public const string AndroidInputLive = "VITASHARP_ANDROID_INPUT_LIVE";
+    /// <summary>Android developer builds: a file polled every 250 ms on the UI thread, also while the game is paused (the app screens poll the path, the game screen the path + ".game"; Platforms/Android/Developer/UiScript.cs); each line ("key:dpad_down", "key:button_a", "touch:x:y" in 0..1 of the screen) is injected into the game activity as a controller key or a touch, then the file is deleted (drives the pause menu where the phone refuses adb shell input).</summary>
+    public const string AndroidUiInput = "VITASHARP_ANDROID_UI_INPUT";
     /// <summary>A/B switch: =old builds the per-draw texture sets the way main b29e26a did (all 16 units visited, render
     /// targets scanned through the dictionary); default new (only the sampled units, flat render-target range table).</summary>
     public const string TexLookup = "VITASHARP_TEXLOOKUP";
@@ -245,6 +247,8 @@ public static class EnvVars
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
+    /// <summary>=1: every guest delay (sceKernelDelayThread) spins its last half millisecond (the old behaviour), =0: none does; default: only delays of 5 ms or more (Core/Kernel/Sync.cs Wait.Sleep).</summary>
+    public const string DelaySpin = "VITASHARP_DELAY_SPIN";
     /// <summary>0 (A/B): an ATRAC9 superframe that fails to decode is skipped (no samples) instead of playing as a superframe of silence; its bytes count as consumed either way.</summary>
     public const string At9ErrorSilence = "VITASHARP_AT9_ERROR_SILENCE";
     /// <summary>Vulkan command-buffer slots in flight (2-6, default 3; each holds a 64 MB host upload ring).</summary>

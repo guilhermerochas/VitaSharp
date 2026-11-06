@@ -44,7 +44,7 @@ public readonly record struct Val(string E, char K, int N)
 }
 
 /// <summary>
-/// USSE â†’ GLSL translator. The register model follows Vita3K: every bank is an array of vec4 holding raw
+/// USSE → GLSL translator. The register model follows Vita3K: every bank is an array of vec4 holding raw
 /// 32-bit words; typed loads/stores pack and unpack f16/u16/u8/c10 data inside those words.
 /// </summary>
 public sealed partial class UsseTranslator

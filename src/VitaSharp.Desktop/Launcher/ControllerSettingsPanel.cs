@@ -54,6 +54,11 @@ public sealed class ControllerSettingsPanel : UserControl
     readonly TextBlock _tiltAngleText, _tiltSpeedText, _mouseSensText, _tiltLive;
     readonly CheckBox _mouseLook, _mouseInvert;
     readonly Border _keyboardMotionOptions;
+    // keyboard: the mouse as a stick (MouseSettings)
+    readonly ComboBox _mouseMode;
+    readonly Slider _mStickSens, _mStickDz, _mStickCurve, _mStickReturn;
+    readonly TextBlock _mStickSensText, _mStickDzText, _mStickCurveText, _mStickReturnText, _mouseModeNote;
+    readonly CheckBox _mStickInvert;
     readonly VirtualMotion _tiltPreview = new();
     readonly MotionSample[] _tiltScratch = new MotionSample[64];
     TextBlock? _motionRowsHeader;
@@ -179,6 +184,33 @@ public sealed class ControllerSettingsPanel : UserControl
         km.Children.Add(Row("Mouse", _mouseSens, _mouseSensText));
         km.Children.Add(_mouseInvert);
         km.Children.Add(_tiltLive);
+
+        _mouseMode = new ComboBox
+        {
+            ItemsSource = new[] { "Giroscópio (botão do meio)", "Analógico direito", "Analógico esquerdo", "Desligado" },
+            Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
+        };
+        ToolTip.SetTip(_mouseMode, "O que o movimento do mouse faz na janela do jogo. Num analógico, o cursor fica preso na janela (Esc solta, um clique prende de novo) " +
+                                   "e o mouse vira a alavanca: mirar e girar a câmera como num jogo de PC. F4 alterna o modo com o jogo rodando e guarda a escolha para aquele jogo.");
+        _mouseMode.SelectionChanged += (_, _) => Edit(p => p.Mouse.Mode = (MouseMode)Math.Max(0, _mouseMode.SelectedIndex));
+        (_mStickSens, _mStickSensText) = SliderRow(0.1, 5, v => Edit(p => p.Mouse.Sensitivity = (float)v), v => $"{v:0.00}x");
+        (_mStickDz, _mStickDzText) = SliderRow(0, 0.5, v => Edit(p => p.Mouse.Deadzone = (float)v), v => $"{v:P0}");
+        ToolTip.SetTip(_mStickDz, "Zona morta do jogo a pular: qualquer movimento do mouse já começa com esta inclinação da alavanca, para movimentos pequenos não sumirem na zona morta do jogo.");
+        (_mStickCurve, _mStickCurveText) = SliderRow(0.3, 3, v => Edit(p => p.Mouse.Curve = (float)v), v => $"{v:0.00}");
+        ToolTip.SetTip(_mStickCurve, "Curva de resposta: 1 = linear; acima de 1, movimentos lentos mais finos; abaixo de 1, mais rápida.");
+        (_mStickReturn, _mStickReturnText) = SliderRow(10, 500, v => Edit(p => p.Mouse.ReturnMs = (float)Math.Round(v)), v => $"{v:0} ms");
+        ToolTip.SetTip(_mStickReturn, "Tempo para a alavanca voltar ao centro quando o mouse para.");
+        _mStickInvert = new CheckBox { Content = "Inverter eixo Y (analógico)" };
+        _mStickInvert.IsCheckedChanged += (_, _) => Edit(p => p.Mouse.InvertY = _mStickInvert.IsChecked == true);
+        _mouseModeNote = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+        km.Children.Add(Header("Mouse como analógico"));
+        km.Children.Add(Row("Modo", _mouseMode, new TextBlock()));
+        km.Children.Add(Row("Sensibilidade", _mStickSens, _mStickSensText));
+        km.Children.Add(Row("Zona morta", _mStickDz, _mStickDzText));
+        km.Children.Add(Row("Curva", _mStickCurve, _mStickCurveText));
+        km.Children.Add(Row("Retorno", _mStickReturn, _mStickReturnText));
+        km.Children.Add(_mStickInvert);
+        km.Children.Add(_mouseModeNote);
         _keyboardMotionOptions = new Border { Child = km };
 
         (_dzL, _dzLText) = SliderRow(0, 0.5, v => Edit(p => p.LeftStick.Deadzone = (float)v), v => $"{v:P0}");
@@ -404,6 +436,13 @@ public sealed class ControllerSettingsPanel : UserControl
         _tiltAngleText.Text = $"{_tiltAngle.Value:0}°"; _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x"; _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
         _mouseLook.IsChecked = _profile.Tilt.MouseLook;
         _mouseInvert.IsChecked = _profile.Tilt.MouseInvertY;
+        var mouse = _profile.Mouse;
+        _mouseMode.SelectedIndex = (int)mouse.Mode;
+        _mStickSens.Value = mouse.Sensitivity; _mStickDz.Value = mouse.Deadzone; _mStickCurve.Value = mouse.Curve; _mStickReturn.Value = mouse.ReturnMs;
+        _mStickSensText.Text = $"{mouse.Sensitivity:0.00}x"; _mStickDzText.Text = $"{mouse.Deadzone:P0}"; _mStickCurveText.Text = $"{mouse.Curve:0.00}"; _mStickReturnText.Text = $"{mouse.ReturnMs:0} ms";
+        _mStickInvert.IsChecked = mouse.InvertY;
+        _mouseModeNote.Text = $"No jogo: {mouse.ToggleKey} alterna o modo (aviso na tela; fica salvo para aquele jogo), {mouse.ReleaseKey} solta o cursor e um clique prende de novo."
+            + (mouse.Games.Count > 0 ? $" Jogos com modo próprio: {string.Join(", ", mouse.Games.Select(g => $"{g.Key} ({MouseSettings.Label(Enum.TryParse<MouseMode>(g.Value, out var m) ? m : MouseMode.Motion)})"))}." : "");
         _triggers.IsChecked = DefaultMappings.TriggersAsShoulders(_profile);
         _triggers.IsEnabled = _current?.IsGamepad == true;
         _touchpad.IsChecked = _profile.TouchpadEnabled;

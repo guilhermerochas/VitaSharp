@@ -26,6 +26,9 @@ public sealed class MainActivity : MauiAppCompatActivity
             bars.AppearanceLightStatusBars = false;
             bars.AppearanceLightNavigationBars = false;
         }
+#if VITASHARP_DEVELOPER
+        Developer.UiScript.Start(this);
+#endif
         LaunchRequestedGame(Intent);
     }
 

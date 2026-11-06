@@ -28,6 +28,9 @@ public sealed class HostInput : IMotionSource, IDisposable
     readonly PadMotionSample[] _motionBuf = new PadMotionSample[SdlGamepads.MotionCapacity];
     readonly VirtualMotion _virtual;
     bool _virtualLogged;
+    readonly MouseStick _mouse;
+    string? _titleId;
+    MouseMode _mouseMode;
 
     public static string ConfigPath(string dataRoot) => Path.Combine(dataRoot, InputProfileStore.FileName);
 
@@ -37,6 +40,8 @@ public sealed class HostInput : IMotionSource, IDisposable
         _store = InputProfileStore.Load(ConfigPath(dataRoot));
         _keyboard = new CompiledProfile(_store.KeyboardProfile());
         _virtual = new VirtualMotion(_keyboard.Profile.Tilt);
+        _mouse = new MouseStick(_keyboard.Profile.Mouse);
+        _mouseMode = _keyboard.Profile.Mouse.ModeFor(null);
         if (_store.Config.Keyboard != null || _store.Config.Controllers.Count > 0)
             Log.Info($"Input: profiles from {ConfigPath(dataRoot)} (keyboard {(_store.Config.Keyboard != null ? "custom" : "default")}, {_store.Config.Controllers.Count} controller profile(s))");
         if (pads != null) _pads = pads.Available ? pads : null;
@@ -105,6 +110,7 @@ public sealed class HostInput : IMotionSource, IDisposable
             }
             else if (_fallback != null && _fallbackProfile != null)
                 m = InputMapper.Combine(m, InputMapper.Map(_fallbackProfile, _fallback, null));
+            if (MouseIsStick) m = InputMapper.Combine(m, _mouse.Mapped(_mouseMode));
             return m;
         }
     }
@@ -149,9 +155,58 @@ public sealed class HostInput : IMotionSource, IDisposable
 
     MotionSourceMode SourceMode => _keyboard.Profile.MotionSource;
 
+    // ------------------------------------------------------------------ mouse as a stick
+
+    /// <summary>The running game: its saved mouse mode applies (<see cref="MouseSettings.Games"/>).</summary>
+    public string? TitleId
+    {
+        get => _titleId;
+        set { lock (_lock) { _titleId = value; _mouseMode = _keyboard.Profile.Mouse.ModeFor(value); _mouse.Reset(); } }
+    }
+
+    public MouseMode MouseMode => _mouseMode;
+
+    /// <summary>The mouse drives a stick: the window captures the cursor and feeds <see cref="MouseMoved"/>.</summary>
+    public bool MouseIsStick => _mouseMode is MouseMode.RightStick or MouseMode.LeftStick;
+
+    public MouseSettings MouseSettings => _keyboard.Profile.Mouse;
+
+    /// <summary>The captured cursor moved by (dx, dy) pixels.</summary>
+    public void MouseMoved(float dx, float dy) { if (MouseIsStick) _mouse.Add(dx, dy); }
+
+    /// <summary>The cursor was released: the stick goes back to the centre at once.</summary>
+    public void MouseReleased() => _mouse.Reset();
+
+    /// <summary>The mode hotkey: the next mode (giroscópio, analógico direito, analógico esquerdo, desligado), saved for
+    /// the running game in input.json. Returns the new mode.</summary>
+    public MouseMode CycleMouseMode()
+    {
+        lock (_lock)
+        {
+            _mouseMode = MouseSettings.Next(_mouseMode);
+            _mouse.Reset();
+            if (_titleId is { Length: > 0 } id)
+            {
+                _keyboard.Profile.Mouse.Games[id] = _mouseMode.ToString();
+                try
+                {
+                    // the stored keyboard profile (the defaults when there is none yet) with this game's mode
+                    var stored = _store.KeyboardProfile();
+                    stored.Mouse.Games[id] = _mouseMode.ToString();
+                    _store.Put(stored);
+                    _store.Save();
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Input: could not save the mouse mode: {e.Message}"); }
+            }
+            Log.Info($"Input: mouse mode {_mouseMode}{(_titleId != null ? $" for {_titleId}" : "")}");
+            return _mouseMode;
+        }
+    }
+
     /// <summary>The mouse moved by (dx, dy) pixels in the game window while the middle button was held.</summary>
     public void MouseLook(float dx, float dy)
     {
+        if (_mouseMode != MouseMode.Motion) return;
         if (!_keyboard.Profile.Tilt.MouseLook || SourceMode is MotionSourceMode.Off or MotionSourceMode.Controller) return;
         _virtual.AddMouse(dx, dy);
     }

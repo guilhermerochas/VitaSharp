@@ -17,6 +17,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `docs/notes/dev-snapshots.md` (CPU/memória/threads ~2 dias; módulos de Uncharted/F1 3–5 dias; total 1–2 semanas);
   fica para depois da prioridade de desempenho no Android
 - [ ] Formato versionado e tolerante a mudanças do emulador; aviso claro quando um estado antigo não puder ser carregado
+  Conferido (05/11/2026, agente C): um estado de outro esquema não derruba nada. `--load-state` registra `Load state:
+  the save state was written by an incompatible VitaSharp build (<versão>); its emulator state layout differs from this
+  build's` e o jogo segue do boot (`scratchpad/bugsC5_out/jak1_paced.log`, estado da 57c57b1 na main a19cdbe); pelo código (não
+  visto na janela), F7 mostra "Não foi possível carregar o estado: <motivo>" na barra de título; o launcher desabilita o slot com o
+  motivo na dica; no Android o motivo vai num aviso (toast). Falta: o motivo está em inglês e a barra de título some
+  em 6 s; e o formato não é tolerante: qualquer campo novo num objeto salvo (ex. 9482b0f) invalida todos os estados
 - [ ] Interface: slots por jogo com miniatura, atalhos (salvar/carregar rápido) e menu de pausa
 - [ ] Uso em diagnóstico: o jogador salva o estado no momento do problema e manda junto com a captura
 
@@ -57,11 +63,49 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
+  `scratchpad/and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
+  chave do Android muda). Replay do mesmo dump no PC (agente C, 05/11/2026, build da main a19cdbe + a correção do
+  DelayThread): **não pisca**, nem com o perfil nativo nem com `--gpu-profile=mali` (`tileflick.py`: 0 quadros com
+  flash em 151; na faixa de baixo, a grama, a mudança n→n+1 é 1,0 e n→n+2 1,5, ou seja, movimento contínuo do vento, não
+  alternância; `bugsC5_out/uc_plants_native`, `uc_plants_mali`, recorte `uc_grass_strip.png`). Como o dump guarda os
+  comandos do jogo, a animação que o jogo manda é suave: o pisca vem da execução na GPU do celular (driver Mali-G57),
+  não do jogo nem do caminho mobile do renderer emulado no PC. O tradutor não usa precisão reduzida (nenhum
+  `RelaxedPrecision`/f16). Próximo, com o celular: o mesmo dump com `replay-gpu` no celular (android-gpu-dump) e
+  `--draw-limit` nos desenhos da grama. Referência do Vita (vídeo `PGOXsCBMa9A`, 73 s): a grama balança devagar, sem
+  pisca. Estranho, no PC: (1) com `--gpu-profile=mali` o Drake sai quebrado a partir do present ~4030 (só a mochila e
+  partes do corpo; ~11 mil pixels diferentes do perfil nativo, `uc_native_mali_phone.png`), e no celular ele está
+  certo. Causa: o perfil limita a 16 imagens amostradas por estágio (Mali Bifrost), o fragmento reserva 2 para o
+  framebuffer fetch e fica com 14 unidades, e os programas do Drake que amostram as unidades 14 e 15 são pulados (log:
+  `program 6A20E1F185A19E8F samples texture unit 15 but this device binds only 14: draw skipped`, idem 0CD0BE7FF59F2AF3).
+  Nenhuma quirk muda isso (bisseção com `VITASHARP_GPU_QUIRKS=-<quirk>`: 11299 pixels diferentes em todas, `mali_q-*`),
+  e tirar uma a uma as features do perfil no perfil desktop também não (0-2 pixels, `desk_f-*`). O Mali-G57 do
+  celular (Valhall) desenha o Drake, ou seja, expõe mais que 16: o limite do perfil é pessimista para Valhall (conferir
+  os limites reais no log do celular e ajustar o perfil). Não tem relação com o pisca das plantas (a grama não usa
+  essas unidades e não pisca no replay). (2) Um de três replays com `--gpu-profile=desktop` deu `ErrorDeviceLost` no
+  vkQueueSubmit; os outros dois passaram (PC dividido com outros agentes; não reproduz)
 - [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
   jogo pausado: continuar, salvar/carregar estado (slots com miniatura), configurações do jogo, recentralizar,
   gravações de desenvolvedor, sair; navegável por toque e pelo controle físico
+  Feito (05/11/2026, agente C, fix/bugs-games-5, commit 72b769a; falta validar no celular): `GameActivity.PauseMenu.cs`,
+  um cartão sobre o jogo pausado com a paleta, as fontes Inter/Sora, os cantos e os ícones de `pausa.html` (traços
+  SVG com `PathParser`), em duas colunas para paisagem: Continuar e Sair; Salvar/Carregar estado (página dos 6 slots
+  com miniatura e data), Ajustes (toque traseiro, controles na tela, pré-gravação, recentralizar), Recentralizar,
+  Gravar tudo/Parar gravação e, no build de desenvolvedor, Desenvolvedor (Gravar tempo/conteúdo). Toque e controle:
+  todo botão recebe o foco (D-pad/analógico movem, A ou Enter aperta, B ou Voltar volta, Start ou PS fecha), o focado
+  ganha o contorno azul; um toque fora do cartão continua. APK dev em `scratchpad/bugsC5_apk` (instalado no celular
+  às 20:55 sem a correção dos acentos). O Redmi recusa `adb shell input` (INJECT_EVENTS): para dirigir o menu e as
+  telas sem o usuário há agora `VITASHARP_ANDROID_UI_INPUT` (build dev, `Developer/UiScript.cs`, commit 96ac1d5).
+  A validação no celular foi interrompida a pedido do usuário antes dos prints do menu
+- [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
+  o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
+  novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
+  exatamente o que o celular mostra (`scratchpad/bugsC5_phone/before_library.png`). As fontes Inter e Sora têm os
+  glifos (á à â ã ç é ê í ó ô õ ú, conferido no cmap). Varredura do repositório inteiro: só esse arquivo e três
+  comentários do Core; `SourceEncodingTests` falha se a sequência voltar (src, tests, build). As outras telas,
+  diálogos, o overlay de FPS/REC e o texto dos jogos (PVF) ainda não foram vistos no celular
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
   instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
   saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.
@@ -254,6 +298,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - [ ] Modo do mouse escolhido no mapeamento: giroscópio, analógico direito, analógico esquerdo ou desligado
     (qualquer analógico pode ser o alvo), com um botão/tecla de atalho para alternar entre os modos com o jogo rodando
     (aviso na tela com o modo atual) e o modo salvo por jogo no perfil de controle
+  Feito (05/11/2026, agente C, fix/bugs-games-5; falta validar a captura na janela): `MouseSettings` no perfil do
+  teclado (`input.json`, `mouse`): modo (giroscópio = o mouse look de antes com o botão do meio, analógico direito,
+  analógico esquerdo, desligado), sensibilidade, inverter Y, zona morta do jogo a pular, curva, tempo de retorno ao
+  centro, tecla de soltar (Esc) e de alternar (F4), e o modo por jogo (`games`: title id → modo). `MouseStick`
+  (Core/Input) faz cada pixel empurrar a alavanca e ela voltar ao centro com constante de tempo ReturnMs/3, então uma
+  velocidade constante do mouse dá uma inclinação proporcional qualquer que seja a taxa de leitura. Na janela, num modo
+  de analógico o cursor fica preso (Silk.NET `CursorMode.Raw`), Esc solta, um clique prende de novo; preso, os botões
+  não tocam a tela. F4 alterna os quatro modos com o jogo rodando, guarda a escolha para aquele jogo e mostra o aviso
+  no canto ("Mouse: analógico direito (Escape solta o cursor, F4 muda)") e na barra de título. Launcher: seção "Mouse
+  como analógico" nas opções do teclado em Controles. Script: `mouse@T:dx:dy[:len][:l]`. Validado sem janela no
+  Uncharted (`bugsC5_scn/uc_mouse.txt`, `mouse@f7000:1200:0:f90`): a câmera gira para a direita durante o movimento e
+  para quando ele acaba (`scratchpad/bugsC5_out/uc_mouse_strip.png`, 6950/6990 parados, 7010-7090 girando); testes
+  `MouseStickTests`. Falta: a captura do cursor e o F4 na janela (pedir ao lead/usuário)
 
 ## Firmware e sistema
 
@@ -351,6 +408,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `SHA256SUMS` e a trava de firmware, nomeada pela hash do commit (ex.: tag `build-<hash curta>`, título "VitaSharp
   <versão>+<hash>", corpo com a lista de commits desde a anterior). Manter só as últimas N releases automáticas (ou
   uma release "nightly" sempre substituída) para não lotar a aba; as releases `v*` continuam como estão
+  Feito (05/11/2026, agente C, fix/bugs-games-5; falta validar no GitHub, depende do push): o `release.yml` também
+  roda em `workflow_run` do CI na `main` (evento push, conclusão success) e publica os pacotes daquela execução do CI
+  (baixados por `run-id`, sem compilar de novo, renomeados de `VitaSharp-ci-<n>-*` para
+  `VitaSharp-<último v* ou 0.0.0>-build.g<hash>-*`) como prerelease "VitaSharp <versão>+<hash>", tag `build-<hash>`,
+  com a mesma checagem de firmware, `SHA256SUMS.txt` e notas com os commits desde a release anterior (build-* ou v*);
+  nunca vira "latest" e só as 10 últimas ficam (`KEEP_BUILDS`; as antigas e suas tags são apagadas com `gh release
+  delete --cleanup-tag`). README, seção Releases, atualizado. O APK continua de fora até o CI ter o job do Android
 - [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
@@ -453,6 +517,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   render target/textura nova usada antes de ser preenchida, ou conteúdo antigo de uma superfície reaproveitada; pegar
   um F10 ou dump de GPU numa troca de tela); (3) 19–30 fps, quase sempre 22–24 (Unity, alvo provável 30): medir com
   `--profile`/F10 se é CPU ou espera da GPU, como no The Deer God
+  Correção do item (3), falta o usuário medir na janela (05/11/2026, agente C, fix/bugs-games-5; achados do agente B
+  na fix/bugs-games-4: é Ren'Py, e `saveThreadProc`/`SDL_TimerThread` giram em `DelayThread(1000)`): o
+  `sceKernelDelayThread` dormia quase todo o prazo e **girava** (SpinWait) os últimos ~0,5 ms para acordar na hora, e
+  num laço de 1 ms isso é meio núcleo do host por thread. Agora só os atrasos de 5 ms ou mais giram no fim (limitadores
+  de quadro); os curtos só dormem no timer de alta resolução do Windows (atraso medido aqui: mediana 0,3 ms, p99
+  0,7 ms), e a thread retoma no prazo em tempo de guest como antes (`CpuCore.WokeAt`). `VITASHARP_DELAY_SPIN=1` volta
+  ao antigo (todos giram), `=0` nenhum gira. Medido sem janela em 2 núcleos (0x30, 1800 quadros, mesmo build,
+  `scratchpad/bugsC5_out/blind_nospin` x `blind_spin`): CPU do processo 35,7 → 25,0 ms/quadro, `saveThreadProc`
+  7,57 → 0,43 ms/quadro, `SDL_TimerThread` 5,63 → 0,42; `main` igual (13,5 x 13,1). O fps sem janela já era 30 nos
+  trechos de jogo nos dois (com quedas nos carregamentos nos dois, o PC estava dividido com outros agentes). Ritmo sem
+  regressão (mesmo build, `--profile`, novo x `DELAY_SPIN=1`): Devious Dungeon p50 16,68/16,68 ms, >25 ms 10 x 23;
+  F1 2011 (menus, 25-60 fps) p50 38,9/38,4, p99 64/76; Uncharted (menu) 59,9/59,3 fps, p90 17,6/18,4, >25 ms 3 x 25
+  (`bugsC5_out/dd_boot_*`, `f1_menu_*`, `uc_menu_*`). Ainda abertos: (1) o boot (~5 s até o 1º quadro, ~20 s em 2
+  núcleos) e (2) a troca de tela (f560-780, `bugsB3_out/blind_tr`)
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -687,6 +765,42 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   item — desempenho; (e) **câmera fixa**: não reproduzida (a câmera segue o Jak nos 3 testes e no replay). Menu da
   coleção (prévia MJPEG): `jak_menu` com o build de hoje: 1 ida-e-volta em 527 quadros (1351→1352→1353), contra 0/506
   da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
+- [ ] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
+  padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
+  (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
+  para concluir com uma rodada, e o fps é o mesmo (20). (b) **Blackout depois de carregar o estado**: 31 presents
+  pretos com ritmo (1806-1836, ~9-20 fps logo depois da carga) contra 47-48 sem ritmo: a duração acompanha o tempo, não
+  a contagem de quadros, ou seja, é um temporizador do jogo. O `guest clock +15832 ms` do log não é um salto: é o
+  relógio salvo no estado sendo restaurado (`GuestClock.RestoreMicroseconds` em `SaveStates.cs`; com ritmo deu
+  `-2329 ms`, o relógio voltou para os 73,8 s do estado), então do ponto de vista do jogo o tempo é contínuo e não estica
+  o blackout. Não há referência no Vita para um save state; no boot do Vita real (vídeo `B2hItpwydrQ`, Vita slim) o
+  "Loading" some num fade e há ~1,5 s de preto antes do logo, a mesma ordem. (c) **Novo: o logo da Naughty Dog não
+  aparece.** No Vita real, depois do "Sony Computer Entertainment presents / Loading", o Daxter corre pela tela e o
+  logo da Naughty Dog entra com o Jak (~8 s), e só então vem o título. Aqui (`bugsC5_out/boot_strip.png`,
+  `bugsC5_scn/jak1_boot.txt`, main a19cdbe) o Daxter aparece parado (1844-1904, quadros idênticos), depois ~110
+  presents pretos e o título direto, sem o logo, e esse trecho rodou a 20 fps (não é a lentidão). Em seguida a tela de
+  título cai para 0,4-2 fps com 25-55 MB alocados por quadro (`ALLOC` no log) e GC de geração 2 quase todo quadro: a
+  lentidão da tela de título conhecida tem esse sinal, a investigar (quem aloca). (d) **Câmera fixa**: no replay do dump
+  do usuário `PCSA00080_20261105_015823` (`bugsC5_out/cam015823.png`, a cada 60 presents) a câmera fica no mesmo lugar
+  enquanto o Jak anda até sair do quadro, nos dois dumps; no estado do usuário com o lstick dos testes a câmera segue o
+  Jak (`bugsC5_out/paced2.png`, mesmo lugar do mapa). A diferença é a entrada: o usuário jogou com um DualShock 4
+  (touchpad e giroscópio mapeados, log `20261105_015542`). Próximo: repetir com `rstick`/`btap` segurado e com
+  `tilt` para ver qual entrada trava a câmera. (e) Estranho: o estado `jak1_quick.vss` (gravado na 57c57b1) não carrega
+  mais na main a19cdbe (`the save state was written by an incompatible VitaSharp build`: o esquema mudou, provavelmente
+  com a 9482b0f), então o save state do usuário também não carrega na main atual
+  (f) **479b54f não deixou o Jak mais lento** (pedido do lead): o estado do usuário com o build da fix/bugs-games-3
+  (`bugsC3_bin`, com a 479b54f) e o mesmo build com ela revertida (`bugsC5_rev`, worktree `bugsC5rev`), 2 rodadas
+  alternadas cada, `--profile` 1900-2350 (`bugsC5_out/jak_ab_fix1/2`, `jak_ab_rev1/2`): 20,0 fps nas quatro, intervalo
+  p50 50,05 ms em todas, GPU worker 4,87/5,41 ms/quadro com e 4,80/4,64 sem (ruído; CPU total 27,7/30,3 x 26,2/27,7).
+  Os 2 fps do usuário vieram da CPU estourada (o build do APK do agente C sem limite). (g) **Os 20 fps são o jogo
+  pedindo 3 vblanks por troca**: o callback da fila de display chama `sceDisplayWaitSetFrameBufMulti(3, ...)` em todo
+  quadro (`--trace-hle-frames=2000:2003`, `bugsC5_out/jak1_tr.log`) e o intervalo é 50,0 ms cravado; as threads quase
+  só esperam (GOAL `wait:condvar DMADone` 70%, F3DPlaybackThread bloqueada em `sceGxmDisplayQueueAddEntry` 61-77%,
+  main em `sceGxmWaitEvent`; GOAL 2,5 ms e GPU worker 5 ms de CPU por quadro). O jogo escolhe o intervalo: o dado do
+  `AddEntry` (pilha 0x81FC0864) é um ponteiro (0x86A92F00, `--watch=81FC0864:4:2000:2001`, `bugsC5_out/jak1_watch.log`)
+  e o callback (lr 0x810411B3) lê o 3 de outro lugar; provavelmente o tempo medido do quadro, que inclui a espera na
+  fila cheia, então uma vez em 3 se mantém. No Vita o Jak 1 roda a 30. Próximo: `--watch-read` no callback para achar
+  a variável do intervalo e quem a escreve
 - [ ] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os

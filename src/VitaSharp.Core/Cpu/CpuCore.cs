@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace VitaSharp.Core.Cpu;
 
-/// <summary>Executes one guest thread's CPU state: block lookup â†’ (JIT-compiled | interpreted) â†’ exit handling.</summary>
+/// <summary>Executes one guest thread's CPU state: block lookup → (JIT-compiled | interpreted) → exit handling.</summary>
 public sealed unsafe class CpuCore : IDisposable
 {
     public CpuState* State { get; }

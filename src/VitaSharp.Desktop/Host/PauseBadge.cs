@@ -13,8 +13,9 @@ public static class PauseBadge
     /// <summary>"Pausado (P)", or "Pausado" when the pause has no key.</summary>
     public static string Text(string keyLabel) => keyLabel.Length > 0 ? $"Pausado ({keyLabel})" : "Pausado";
 
-    /// <summary>The badge as BGRA bytes (opaque), scaled with the window (1x at 544 lines); null when Skia is missing.</summary>
-    public static (byte[] Bgra, int Width, int Height)? Render(string text, int windowHeight)
+    /// <summary>The badge as BGRA bytes (opaque), scaled with the window (1x at 544 lines); null when Skia is missing.
+    /// <paramref name="pauseSign"/> false: the text alone (other short notices, such as the mouse mode).</summary>
+    public static (byte[] Bgra, int Width, int Height)? Render(string text, int windowHeight, bool pauseSign = true)
     {
         try
         {
@@ -23,7 +24,7 @@ public static class PauseBadge
             using var white = new SKPaint { Color = SKColors.White, IsAntialias = true };
             float textW;
             using (var measure = new SKPaint { Typeface = font.Typeface, TextSize = font.Size }) textW = measure.MeasureText(text);
-            float pad = 10 * scale, bar = 14 * scale, gap = 9 * scale;
+            float pad = 10 * scale, bar = pauseSign ? 14 * scale : 0, gap = pauseSign ? 9 * scale : 0;
             int w = (int)Math.Ceiling(pad + bar + gap + textW + pad), h = (int)Math.Ceiling(34 * scale);
             var info = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
             using var bmp = new SKBitmap(info);
@@ -31,10 +32,13 @@ public static class PauseBadge
             {
                 c.Clear(new SKColor(0x1B, 0x1F, 0x27));
                 // the pause sign: two bars
+                if (pauseSign)
+                {
                 using var accent = new SKPaint { Color = new SKColor(0xFF, 0xB5, 0x47), IsAntialias = true };
                 float top = h * 0.28f, bottom = h * 0.72f, bw = bar * 0.36f;
                 c.DrawRect(pad, top, bw, bottom - top, accent);
                 c.DrawRect(pad + bar - bw, top, bw, bottom - top, accent);
+                }
                 var metrics = font.Metrics;
                 float baseline = h / 2f - (metrics.Ascent + metrics.Descent) / 2f;
                 c.DrawText(text, pad + bar + gap, baseline, font, white);

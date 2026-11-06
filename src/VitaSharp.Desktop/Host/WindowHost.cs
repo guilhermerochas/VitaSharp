@@ -63,8 +63,30 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public string PauseKeyLabel => _hostInput.KeyboardHotkey(VitaControl.PauseEmulation) is { } b
         ? Launcher.ControlNames.Describe(b, ControllerKind.Keyboard) : "";
 
+    /// <summary>The mouse mode hotkey (<see cref="MouseSettings.ToggleKey"/>, F4) changed the mode: the on-screen notice
+    /// text (window thread).</summary>
+    public event Action<string>? MouseModeChanged;
+
+    /// <summary>The game whose saved mouse mode applies (window thread, once the title is loaded): a stick mode
+    /// captures the cursor and shows the mode notice.</summary>
+    public string? TitleId
+    {
+        get => _hostInput.TitleId;
+        set
+        {
+            _hostInput.TitleId = value;
+            CaptureMouse(_hostInput.MouseIsStick);
+            if (_hostInput.MouseIsStick) MouseModeChanged?.Invoke(MouseModeNotice());
+        }
+    }
+
+    // the mouse as a stick: the cursor is captured (hidden, unbounded raw motion) while the window has it
+    bool _mouseCaptured;
+    System.Numerics.Vector2? _mouseLast;
+    IMouse? _mouseDevice;
+
     readonly HashSet<Key> _pauseKeysDown = new();
-    bool _padPauseHeld;
+    bool _padPauseHeld, _mouseToggleDown;
     long _lastHotkeyPoll;
 
     /// <summary>
@@ -185,8 +207,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         }
         foreach (var m in _input.Mice)
         {
-            // left button = front touch screen, right button = rear touch panel
-            m.MouseDown += (mouse, b) => { if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true); };
+            _mouseDevice ??= m;
+            // left button = front touch screen, right button = rear touch panel; with the cursor captured (mouse as a
+            // stick) the pointer has no position on the screen, so the buttons do not touch, and a click with the
+            // cursor released captures it again
+            m.MouseDown += (mouse, b) =>
+            {
+                if (_mouseCaptured) return;
+                if (_hostInput.MouseIsStick && b == MouseButton.Left) { CaptureMouse(true); return; }
+                if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true);
+            };
             m.MouseUp += (mouse, b) => { if (b == MouseButton.Left) UpdateTouch(mouse.Position, false, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, false, true); };
             // middle button held = mouse look: moving the mouse rotates the Vita (virtual motion sensors)
             System.Numerics.Vector2? look = null;
@@ -194,6 +224,12 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             m.MouseUp += (_, b) => { if (b == MouseButton.Middle) look = null; };
             m.MouseMove += (mouse, pos) =>
             {
+                if (_mouseCaptured)
+                {
+                    if (_mouseLast is { } prev) _hostInput.MouseMoved(pos.X - prev.X, pos.Y - prev.Y);
+                    _mouseLast = pos;
+                    return;
+                }
                 if (mouse.IsButtonPressed(MouseButton.Left)) UpdateTouch(pos, true, false);
                 if (mouse.IsButtonPressed(MouseButton.Right)) UpdateTouch(pos, true, true);
                 if (look is { } last && mouse.IsButtonPressed(MouseButton.Middle))
@@ -204,6 +240,30 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             };
         }
         Loaded?.Invoke();
+    }
+
+    /// <summary>Captures (hidden, raw unbounded motion) or releases the cursor. Window thread.</summary>
+    void CaptureMouse(bool capture)
+    {
+        if (_mouseDevice is not { } m || capture == _mouseCaptured) return;
+        try
+        {
+            m.Cursor.CursorMode = capture ? (m.Cursor.IsSupported(CursorMode.Raw) ? CursorMode.Raw : CursorMode.Disabled) : CursorMode.Normal;
+        }
+        catch (Exception e) { Log.Warn($"Window: could not {(capture ? "capture" : "release")} the mouse cursor: {e.Message}"); return; }
+        _mouseCaptured = capture;
+        _mouseLast = null;
+        lock (_inputLock) { _touches.Clear(); _backTouches.Clear(); }
+        if (!capture) _hostInput.MouseReleased();
+        Log.Info(capture ? $"Window: mouse captured ({MouseSettings.Label(_hostInput.MouseMode)}; {_hostInput.MouseSettings.ReleaseKey} releases it, a click captures it again)" : "Window: mouse released");
+    }
+
+    /// <summary>The on-screen hint of the mouse mode: "Mouse: analógico direito (Esc solta, F4 muda)".</summary>
+    public string MouseModeNotice()
+    {
+        var s = _hostInput.MouseSettings;
+        string keys = _hostInput.MouseIsStick ? $"{s.ReleaseKey} solta o cursor, {s.ToggleKey} muda" : $"{s.ToggleKey} muda";
+        return $"Mouse: {MouseSettings.Label(_hostInput.MouseMode)} ({keys})";
     }
 
     /// <summary>Title bar / taskbar icon. macOS (bundle icon) and Wayland (desktop file) have no per-window icon.</summary>
@@ -265,6 +325,24 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             return;
         }
         if (down && TextCapture is { } capture) { capture.OnKey(key); return; }
+        // the mouse keys never reach the game: release the captured cursor, change the mouse mode
+        var mouse = _hostInput.MouseSettings;
+        if (key.ToString() == mouse.ReleaseKey && _mouseCaptured)
+        {
+            if (down) CaptureMouse(false);
+            return;
+        }
+        if (key.ToString() == mouse.ToggleKey)
+        {
+            if (down && !_mouseToggleDown)
+            {
+                _hostInput.CycleMouseMode();
+                CaptureMouse(_hostInput.MouseIsStick);
+                MouseModeChanged?.Invoke(MouseModeNotice());
+            }
+            _mouseToggleDown = down;
+            return;
+        }
         // the pause hotkey never reaches the game; a held key toggles once (key repeat is ignored)
         if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key.ToString()))
         {
