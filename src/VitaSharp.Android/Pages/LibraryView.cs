@@ -277,7 +277,7 @@ public sealed class LibraryView : Screen<LibraryState>
             try
             {
                 var t = await Task.Run(() => PkgInstaller.Install(pkg.OpenSeekable(ImportCache), license, AppServices.Data.Ux0,
-                    m => Log.Info($"PKG: {m}"), f => SetState(s => s.InstallProgress = f)));
+                    m => Log.Info($"PKG: {m}"), p => SetState(s => s.InstallProgress = p.Fraction)));
                 await Alert("Instalar PKG", $"{t.TitleId} · {t.Title} ({t.Type})\n\nInstalado.");
             }
             finally

@@ -650,7 +650,7 @@ public sealed partial class MainWindow : Window
         {
             var t = await Task.Run(() => PkgInstaller.Install(pkg, lic, Program.Ux0,
                 msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
-                p => Dispatcher.UIThread.Post(() => SetStatus($"Installing {Path.GetFileName(pkg)}… {p:P0}"))));
+                p => Dispatcher.UIThread.Post(() => SetStatus($"Installing {Path.GetFileName(pkg)}… {p.Fraction:P0}"))));
             AppendLog($"Installed {t.TitleId} \"{t.Title}\"");
             Refresh();
             _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == t.TitleId);
