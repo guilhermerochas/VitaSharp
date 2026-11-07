@@ -416,6 +416,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
+  música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
+  `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
+  para ela tocar; validar com gravação do áudio (F8) na tela inicial e comparar com um vídeo do Vita real
 - [ ] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
