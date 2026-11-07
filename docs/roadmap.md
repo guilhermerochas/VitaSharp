@@ -719,7 +719,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quadro a quadro os frames ao vivo (`vitasharp-perf capture --frames`) e o áudio de cada gravação contra um vídeo do
   Vita real do mesmo trecho, e perguntar ao usuário o que viu em cada uma antes de corrigir
   O que o usuário viu em cada uma: 030833 = o áudio da torcida; 031028 = um problema visual que impediu de cobrar o
-  escanteio (ver se é o HUD/indicador da cobrança, a câmera ou a entrada); 032507 = o vídeo de abertura (não sabe se é
+  escanteio: algo na frente tapava a visão da cobrança (um objeto/camada desenhado onde não devia: placa, torcida, HUD,
+  máscara ou camada de efeito na frente da câmera do escanteio; achar o desenho com `--draw-limit` no dump da gravação e
+  comparar com um vídeo do Vita da mesma câmera); 032507 = o vídeo de abertura (não sabe se é
   assim no Vita: comparar com um vídeo do Vita real). Validar assim que o limite semanal renovar
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
