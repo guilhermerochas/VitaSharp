@@ -702,6 +702,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
+  indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
+  um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
+  tenta a rede da EA: `sceNetResolverStartNtoa` falha 3x (0x804101E1, DNS), `sceNetRecvfrom` 419x com EAGAIN, `sceNetSendto`
+  falha, `sceNpInit` 0x80550001, `sceNetCtlInit` já iniciado; `SceNpManager::NID_FFBFC540` sem implementação (o mesmo do
+  FIFA 13, outro jogo EA); `sceSysmoduleIsLoaded` respondendo "não carregado" 27973x (polling). Provável: o jogo espera
+  tempos de rede/DNS antes de seguir. Ver o que um Vita sem rede responde (ex.: sceNetCtl desconectado faz o jogo pular o
+  online na hora) e se o erro de rede deve ou não aparecer, comparar a duração da tela com um vídeo do Vita, e implementar
+  o NID_FFBFC540 (registro de 64 bytes do SceNpManagerIpc; notas no item das funções HLE)
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
