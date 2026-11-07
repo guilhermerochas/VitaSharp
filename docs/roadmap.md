@@ -691,6 +691,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
+  depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
+  a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
+  gravada só quando o jogo abre com esta versão; os jogos jogados antes não têm. Corrigir para não depender de abrir cada
+  jogo: obter a assinatura de outro jeito (ela fica no próprio jogo: procurar no eboot/módulos de cada jogo instalado a
+  estrutura SceNpCommunicationSignature que ele passa ao sceNpTrophyCreateContext, ou no pacote de troféus), migrar todos
+  de uma vez sem avisos de "troféu conquistado" e validar com uma CÓPIA dos dados do usuário (todos os jogos com JSON
+  aparecendo no app com as datas)
 - [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
   Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
   dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no
