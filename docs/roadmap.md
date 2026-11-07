@@ -702,6 +702,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
+  build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
+  roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
+  rosto leva aqui e no Vita real (vídeo), ver se é leitura de arquivo (FIOS/IO assíncrono), decodificação de textura ou
+  geração na CPU, e corrigir se for o emulador. Conferir antes com o build da main atual (o usuário usava o release
+  99396f5, mais antigo)
+- [ ] 99Vidas (PCSE00914): gravação do usuário no boot sem nenhum quadro (06/11/2026, release 99396f5,
+  `captures\PCSE00914_20261106_221719_tudo`; AsyncReadManager do Unity rodando, quadro 0). A main tem o 1dfb147
+  (sceNpManagerGetCachedParam, com o qual o jogo chega à abertura aqui): conferir com o build novo antes de investigar
 - [ ] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
