@@ -718,6 +718,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   e nenhum flash ou tela preta, então o defeito é algo que ele não mede (textura, modelo, animação, cor, som). Analisar
   quadro a quadro os frames ao vivo (`vitasharp-perf capture --frames`) e o áudio de cada gravação contra um vídeo do
   Vita real do mesmo trecho, e perguntar ao usuário o que viu em cada uma antes de corrigir
+  O que o usuário viu em cada uma: 030833 = o áudio da torcida; 031028 = um problema visual que impediu de cobrar o
+  escanteio (ver se é o HUD/indicador da cobrança, a câmera ou a entrada); 032507 = o vídeo de abertura (não sabe se é
+  assim no Vita: comparar com um vídeo do Vita real). Validar assim que o limite semanal renovar
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
