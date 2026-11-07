@@ -182,7 +182,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   baabc78). A bisseção do pisca no celular não foi feita (testes no celular parados pelo usuário); preparado:
   `scratchpad/and7_tools/flick.sh` (screenrecord do aparelho, quadros distintos, `tileflick.py` por variante do env.txt)
   e o vídeo do Vita `scratchpad/and7_yt/uc_vita.mp4` (o Prologue começa por volta de 70 s)
-- [ ] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
+- [x] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
   jogo pausado: continuar, salvar/carregar estado (slots com miniatura), configurações do jogo, recentralizar,
@@ -218,7 +218,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   recebe o foco, `dumpsys activity top`), e não havia controle físico (nem o botão PS). Corrigido sem validar
   (ae93ac8): o primeiro botão de cada página é o foco padrão (`FocusedByDefault`); sem isso, a primeira seta de um
   controle real focaria o primeiro focável da árvore, o próprio quadro do menu. Falta: validar com um controle
-- [ ] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
+  Feito e validado no celular por toque (06/11/2026); foco pelo controle físico ainda sem teste (sem controle no aparelho)
+- [x] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
   exatamente o que o celular mostra (`scratchpad/bugsC5_phone/before_library.png`). As fontes Inter e Sora têm os
@@ -229,6 +230,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ("licença", "Padrão", "Automático"), diálogo da CPU, Desempenho, Controles, página do jogo, menu de pausa e
   overlay ("Pausado", "● REC") com os acentos certos (`scratchpad/and7_tools/shots/lib3.png`, `app_ajustes.png`, `app3.jpg`, `app3b.jpg`,
   `pm_main.png`). Texto dos jogos (PVF) não conferido
+  Validado no celular (06/11/2026, perf/android-7): acentos certos em todas as telas do app
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
   instrução do Vita no caminho quente e os cortes pequenos (perf/jit-a64: juntar marcações de página suja, PC só nas
   saídas frias, ponto flutuante fora do caminho, contagem simplificada) não deram ganho mensurável no Devious Dungeon.
@@ -692,7 +694,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   idioma pelo sistema (com opção nas configurações) e cair para inglês quando faltar uma chave; um teste que falha se um
   texto de interface ficar fora dos arquivos ou se faltar uma chave em algum idioma. Também resolve a regra 16 do guia
   Ryubing (sem caracteres não ASCII no código). Os logs continuam em inglês
-- [ ] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
+- [x] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
   Fazer o CI, a cada push na `main` com testes e pacotes ok, publicar sozinho uma release (prerelease) na aba
   "Releases" do GitHub com os pacotes Native AOT (win-x64, linux-x64, osx-arm64; depois o APK android-arm64), o
   `SHA256SUMS` e a trava de firmware, nomeada pela hash do commit (ex.: tag `build-<hash curta>`, título "VitaSharp
@@ -705,6 +707,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   com a mesma checagem de firmware, `SHA256SUMS.txt` e notas com os commits desde a release anterior (build-* ou v*);
   nunca vira "latest" e só as 10 últimas ficam (`KEEP_BUILDS`; as antigas e suas tags são apagadas com `gh release
   delete --cleanup-tag`). README, seção Releases, atualizado. O APK continua de fora até o CI ter o job do Android
+  Feito: release automática build-<hash> a cada push verde na main (6b85695), já publicando (build-eb950c1)
 - [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
