@@ -712,6 +712,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
+  gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
+  todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
+  e nenhum flash ou tela preta, então o defeito é algo que ele não mede (textura, modelo, animação, cor, som). Analisar
+  quadro a quadro os frames ao vivo (`vitasharp-perf capture --frames`) e o áudio de cada gravação contra um vídeo do
+  Vita real do mesmo trecho, e perguntar ao usuário o que viu em cada uma antes de corrigir
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
