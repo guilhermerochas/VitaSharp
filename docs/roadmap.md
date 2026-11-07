@@ -702,6 +702,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
+  `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
+  vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
+  pretos isolados (2432, 2460). O filme é tocado pelo AvPlayer com H.264 pelo `ffmpeg-d3d11va` (decodificação na GPU
+  do Windows). Suspeitas: ordem de apresentação dos quadros com B-frames (o histórico de quadros do decodificador
+  corrigido para o Jak), um quadro entregue antes de terminar de decodificar, ou a cópia da imagem da d3d11va. Comparar
+  com a decodificação em software (sem d3d11va) e com um vídeo do Vita; corrigir de forma genérica
 - [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
