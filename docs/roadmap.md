@@ -712,6 +712,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
+  agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
+  contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
+  do Vita: lógica de verdade quando a função faz algo, e retorno vazio/de erro só quando é isso que o console faz
+  (sem rede/PSN/hardware ausente = o erro que o Vita devolve nessas condições); nunca stub genérico que devolve 0 sem
+  pensar. Fonte da lista: `docs/hle/data/vitasdk-user-functions.tsv` (7.006 funções user-mode do VitaSDK) menos as
+  implementadas, nesta ordem: (1) as importadas pelos jogos instalados (`VitaSharp.Desktop imports <TITLEID>`) e as que
+  aparecem nos logs; (2) as que o Vita3K implementa de verdade e nós não; (3) as bibliotecas que os jogos de Vita mais usam
+  (Gxm, Ngs, AppUtil, CommonDialog, Np, Net, Audio, Ctrl/Touch/Motion, Fios2, Sas, Atrac, Avplayer...); (4) o resto
+  por biblioteca. Referências: firmware 3.74 desmontado (agente B deixou ELFs e scripts) e o Vita3K. Cada lote com teste
+  unitário quando der, um jogo/app que chama a função seguindo sem regressão, e o item marcado com a contagem; meta:
+  ~3.840 com comportamento real
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
