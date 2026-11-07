@@ -642,6 +642,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   callback shell 0x811B6F18) e o shell usava a LiveArea padrão. O opid agora é um objeto de evento (9255af8): FIFA 13,
   Uncharted e Gravity Rush mostram fundo, portão e frames (`la6/la2.png`, `la_uc/la2.png`, `la_gr/la2.png`). O
   `#_livearea_path` "ur0:appmeta/<id>/livearea/contents" do app.db é o que o dbrecovery 3.74 grava, não é a causa.
+  Confirmado pelo usuário (06/11/2026): as imagens da LiveArea aparecem e o app Troféus funciona (os troféus antigos
+  de jogos não reabertos e os avisos da migração seguem no item de troféus antigos)
 - [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
