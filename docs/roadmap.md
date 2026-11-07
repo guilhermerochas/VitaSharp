@@ -128,6 +128,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
+  jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
+  com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
+  nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
+  modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
+  medir no Killzone com e sem o modo desempenho
+- [ ] Vibração dos botões na tela enquanto segura o analógico (pedido do usuário, 07/11/2026): opção nos controles por
+  toque para os botões virtuais vibrarem ao serem tocados mesmo com o outro dedo no analógico (hoje o toque multiponto
+  com o analógico pressionado não dá retorno tátil); intensidade ajustável e desligável, por perfil de controle
+
 - [ ] Killzone no Android a 30 fps (pedido do usuário, 06/11/2026; perf/android-8): hoje 12-15 fps de mediana,
   68-83 ms por quadro, GPU 42-51 ms (`docs/notes/android-frame-anatomy.md`, seção Killzone). O rastro Perfetto mostra
   a GPU ocupada só 48% do tempo: a cadeia jogo -> worker -> GPU -> jogo é serial (`docs/notes/android-perf-references.md`).
@@ -667,6 +677,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `--camera=<webcam>`)
 
 ## Código
+
+- [ ] Sugestão de layout novo para o launcher do desktop (pedido do usuário, 07/11/2026), como foi feito para o app
+  Android: proposta de um visual moderno e próprio do VitaSharp (o usuário citou o Ryujinx só como exemplo de visual
+  moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
+  LiveArea/capturas/estados salvos/troféus/ajustes por jogo, configurações organizadas por seção, tema claro e escuro e
+  as mesmas cores, fontes e ícones do app Android. Primeiro mostrar a proposta ao usuário (prints ou protótipo) e só
+  implementar depois da aprovação
 
 - [ ] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
   launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão
