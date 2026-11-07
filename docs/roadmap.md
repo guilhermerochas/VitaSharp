@@ -60,9 +60,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Sem teste por falta de um jogo instalado que use: Atrac, Sas, Audioenc/Videoenc/Mp4Recorder, G729, Location,
   NetAdhocMatching/Rudp, TriggerUtil e o `sceIme` (teclado do jogo sem o diálogo do sistema); esses módulos recusam o
   salvamento só enquanto estão em uso. Sob o shell do Vita (vários processos) o salvamento é recusado
-- [ ] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
+- [x] Não validado (06/11/2026): o device lost do Tearaway na janela (o relato de 04/11 não reproduziu em 3 cargas
   sem janela; não houve teste com janela); o teclado do sistema (ImeDialog) aberto num save: o Sakatsuku
   (`st_game2`, 7000 quadros) não chegou ao teclado, e o Invizimals não foi testado
+  Confirmado pelo usuário (06/11/2026): ok
 - [x] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
   (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
   não investigada (`scratchpad/ss1_jak1/stdout.txt`)
@@ -743,7 +744,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   not met` (`crash_M2_shader.txt`). Duas vezes em ~28 cargas, sempre logo depois de carregar: o heap de objetos
   grandes do GC corrompido, provável escrita fora do lugar durante/depois da carga (buffers do renderer recriado,
   memória do guest, spans sobre arrays). Com o agente de bugs
-- [ ] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
+- [x] Carregar estado duas vezes seguidas derruba o emulador (relato do usuário, 06/11/2026 02:45, PCSF00476, main
   1ae237f, log `20261106_024439_PCSF00476`): o 1º F7 carrega; o 2º também ('GPU backend replaced', relógio do guest
   voltando 16 s), o jogo desenha 3 cenas MSAA e o log para; o Windows registra TDR do driver da GPU (LiveKernelEvent 141)
   e o processo cai com c0000005 em coreclr.dll. Corrigir o renderer recriado e garantir que uma falha da GPU nunca
@@ -760,6 +761,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   sem queda nem TDR, 30/60 fps depois (`scratchpad/bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
   `scratchpad/bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
   em menus/cenas (sem gameplay roteirizado); device lost não foi provocado de verdade
+  Confirmado pelo usuário (06/11/2026): ok
 - [x] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; regressão completada no dia 10).
   O envelope era passthrough e `sceNgsVoiceKeyOff` parava a voz no update seguinte; o SDK diz que depois do key off
   "o processamento continua até a voz terminar" (release). O Jak 1 usa racks Scream com envelope (pontos 0→1 em 0 ms,
@@ -802,6 +804,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`scratchpad/bugsC3_data/tests/inj_menu/sheet.png`,
   `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
   Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
+  Confirmado pelo usuário (06/11/2026): ok
 - [ ] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
   06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 90 funções). Cada uma com o
   comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
@@ -1101,6 +1104,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   4,1 s (present 11, os 10 primeiros são pretos), Tearaway 1,9 s (present 1) (`scratchpad/bugsC10_out/blind3`,
   `splash_PCSB01240`, `splash_PCSC00045`, `splash_PCSF00476`). Não conferido em vídeo do Vita se outros jogos com
   quadros pretos no início (Killzone) também seguram o pic0 por cima deles
+  Confirmado pelo usuário (06/11/2026): ok
 - [x] MLB 14 The Show (PCSA00115; no Vita3K aborta na intro): roda a 53–60 fps e depois de ~70 s trava no quadro
   4116 (31/10/2026, main 13ca113, log `20261031_191246_PCSA00115`, captura F10 `diagnostics\PCSA00115_20261031_191416`
   de antes do travamento). Watchdog `STALL` aos 6 s e 30 s; a fila da GPU está vazia (966383 comandos concluídos). A
@@ -1517,6 +1521,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (present 9646, pad 0x4000 em 9645), e depois a câmera fica parada com o Jak andando: os dois combinam com o relógio
   de vsync parado do item (c); falta o usuário confirmar no mesmo trecho com o build novo
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
+  Confirmado pelo usuário (06/11/2026): ok
 - [x] Flicker no desktop, Croixleur Sigma (PCSG00537; 31/10/2026, main 7918e46, captura F10
   `diagnostics\PCSG00537_20261031_170452`): nos diálogos da história a imagem alterna entre dois quadros diferentes,
   um sim e outro não (diferença n→n+1 constante, n→n+2 zero em 105 quadros). Só muda a faixa decorativa de cima (os
@@ -1676,7 +1681,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Feito no 40e2fb5 (05/11/2026) e conferido em 06/11/2026 (fix/bugs-games-11): o Akiba's Beat loga `10 variable imports
   wait for a module exporting Il2CppAssemblies` no boot e, 0,3 s depois, `Il2CppAssemblies: 10 waiting variable imports
   bound`, sem aviso; o jogo roda até a primeira batalha (log `scratchpad/bugsC11_out/akiba4/log.txt`)
-- [ ] Akiba's Beat (PCSG00952, Unity): validar o jogo todo (pedido do usuário, 04/11/2026; sessão de 2,5 min, log
+- [x] Akiba's Beat (PCSG00952, Unity): validar o jogo todo (pedido do usuário, 04/11/2026; sessão de 2,5 min, log
   `logs61104_201229_PCSG00952.log`, main 5d4b998). No log: 60 fps quase o tempo todo, mas a imagem fica parada
   ~10 s (quadro 4171, 20:14:05-20:14:16, `frozen: identical image for 600 presents`) e ~4 s de tela preta em 20:13:46
   (talvez carregamento); 2,6 s de engasgo de shaders na primeira vez (91 desenhos em 14 quadros); 10 importações de
@@ -1698,6 +1703,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   direita), pausa e volta. Os ataques ainda não aparecem: o tutorial pede o movimento antes (próximo passo do roteiro). 60 fps estáveis, 0 underruns, nenhuma imagem parada; avisos só de
   formatos de textura vistos pela 1ª vez e um `scene without colour surface`. Provas: `scratchpad/bugsC11_out/akiba5_sheet.png`,
   `akiba4_sheet.png`. Sem o pace, a Unity (flips IMMEDIATE) roda a ~460 fps sem janela: esperas em quadros não servem
+  Confirmado pelo usuário (06/11/2026): ok
 - [x] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
   direita sai cinza-clara e granulada em vez de grama, e o áudio da torcida está "zuado" (relato do usuário,
   04/11/2026; captura F10 `diagnostics\PCSE00093_20261104_190454` com áudio, replay de 127 quadros e draw ring, dump
@@ -1854,6 +1860,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   A regra do hardware é uma hipótese que bate com os dois jogos (o que é G16 com cull CCW não foi visto). Sobra: no
   close-up do quadro 3795 o G16 = 0 deixa uns pontos verdes na borda de uma folha (como antes do 11f18ce), sem vídeo do
   Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
+  Confirmado pelo usuário (06/11/2026): ok
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
 - [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
