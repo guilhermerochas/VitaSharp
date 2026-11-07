@@ -397,7 +397,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   podem ser mapeados como qualquer botão do Vita (ex.: R para atirar e L para mirar no Killzone, junto com o mouse como
   analógico do F4), no perfil de controle (`input.json`), por jogo, e na tela de controles do launcher; funcionando com
   o cursor capturado na janela
-- [ ] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e
+- [x] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e
   girar a câmera como num jogo de PC (ex.: Killzone, Uncharted). Captura do cursor na janela (com tecla para soltar),
   sensibilidade, inverter eixo Y, zona morta/curva de resposta e retorno ao centro quando o mouse para; opção no
   perfil de controle (`input.json`) e na tela de controles do launcher. Hoje o mouse só move o giroscópio
@@ -418,6 +418,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Uncharted (`bugsC5_scn/uc_mouse.txt`, `mouse@f7000:1200:0:f90`): a câmera gira para a direita durante o movimento e
   para quando ele acaba (`scratchpad/bugsC5_out/uc_mouse_strip.png`, 6950/6990 parados, 7010-7090 girando); testes
   `MouseStickTests`. Falta: a captura do cursor e o F4 na janela (pedir ao lead/usuário)
+  Confirmado pelo usuário (06/11/2026): mouse como analógico com F4 e o Gravar tudo no F8 funcionando
 
 ## Firmware e sistema
 
