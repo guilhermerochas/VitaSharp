@@ -80,6 +80,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   jogo) e no Android, com aviso de custo de GPU; o padrão continua nativo. Validar sem defeitos (bordas, linhas entre
   tiles, efeitos de pós-processamento e alvos reinterpretados) com `replay-gpu --compare` em 1x idêntico e prints em 2x/4x
   de Uncharted, Killzone, Gravity Rush, FIFA 13 e um jogo 2D (Gunvolt/Sonic Mania)
+  Ordem (usuário, 07/11/2026): primeiro no desktop; no Android só depois de resolver o desempenho do Android
 - [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
   (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
   Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.
