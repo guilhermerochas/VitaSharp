@@ -691,6 +691,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
+  entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
+  hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
+  um botão com o jogo e com o shell abertos
 - [ ] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
   depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
   a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
