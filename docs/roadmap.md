@@ -654,6 +654,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
+  launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão
+  espalhados no código e misturados entre inglês e português. Juntar tudo em arquivos de recurso por idioma (ex.: `.resx`
+  ou JSON com chaves, um para `en` e um para `pt-BR`, compartilhados pelo desktop e pelo Android via Core), escolher o
+  idioma pelo sistema (com opção nas configurações) e cair para inglês quando faltar uma chave; um teste que falha se um
+  texto de interface ficar fora dos arquivos ou se faltar uma chave em algum idioma. Também resolve a regra 16 do guia
+  Ryubing (sem caracteres não ASCII no código). Os logs continuam em inglês
 - [ ] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
   Fazer o CI, a cada push na `main` com testes e pacotes ok, publicar sozinho uma release (prerelease) na aba
   "Releases" do GitHub com os pacotes Native AOT (win-x64, linux-x64, osx-arm64; depois o APK android-arm64), o
