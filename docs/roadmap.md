@@ -996,6 +996,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
+  gravação `captures\PCSB00097_20261108_032607_tudo`, 322 quadros de dump da GPU, 30 fps). O usuário trocou a resolução
+  interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
+  da escala (alvo reinterpretado/desfoque lido no tamanho errado, como o planeta do LBP e a luz do Resistance) ou do
+  jogo (efeito de profundidade de campo); comparar com vídeo do Vita real. Validar
 - [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
   usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
   (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
