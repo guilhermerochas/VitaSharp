@@ -1,21 +1,35 @@
-# Launcher do desktop: proposta de layout novo (etapa 1)
+# Launcher do desktop: layout novo
 
-Proposta para o item do roadmap "Sugestão de layout novo para o launcher do desktop". É só o desenho: o launcher
-atual (`src/VitaSharp.Desktop/Launcher/MainWindow.cs`) não mudou. As telas são um protótipo Avalonia de verdade em
-`src/VitaSharp.Desktop/Launcher/Prototype/`, renderizado para PNG sem abrir janela (plataforma headless do Avalonia com
-Skia), a partir dos jogos instalados na pasta de dados:
+O launcher do desktop (src/VitaSharp.Desktop/Launcher) segue a proposta aprovada pelo usuário (etapa 1, 07/11/2026;
+abaixo) e foi implementado na etapa 2: barra lateral fixa, capas largas com pic0 + icon0, ajustes do jogo ao lado
+da visão geral, tema claro com acento #3767DB.
 
-```
-VitaSharp ui-prototype <pasta-de-saída> --data=<pasta de dados de teste> [--title=<ID do jogo em destaque>] [--size=1440x900]
-```
+## Como está feito (etapa 2)
 
-Gera 12 telas em `dark` e `light` (`--screens=a,b` escolhe algumas): `library`, `library-list`, `library-home`,
-`game`, `settings`, `settings-general`, `system`, `trophies`, `captures`, `install`, `update` e `empty`. São lidos de
-verdade: títulos, IDs, versões, região, `icon0.png`, `pic0.png`, tamanho das pastas, troféus (pacote do jogo +
-desbloqueios gravados, de uma CÓPIA da pasta de troféus), estado do firmware (`firmware.json`, pd0), as gravações F8
-e os dumps da GPU, e a tela inicial do Vita é o próprio `ShellView` do launcher. São exemplos até a etapa 2: tempo
-jogado, estados salvos (miniaturas são recortes do `pic0`), a fila de instalação e as notas do diálogo de atualização
-(assuntos de commits reais entre duas builds).
+- MainWindow.cs: a janela (barra lateral, página atual, barra de status e log), a navegação (Navigate), o
+  botão/atalho do Sistema do Vita (Ctrl+H, oot-shell), os processos do emulador e o tempo jogado. As páginas ficam em
+  MainWindow.Library.cs (capas, lista, tela inicial recriada, primeira execução), MainWindow.GamePage.cs,
+  MainWindow.System.cs, MainWindow.Trophies.cs, MainWindow.Captures.cs, MainWindow.Install.cs (fila de
+  instalação) e SettingsPage.cs. Cada página é refeita ao navegar e quando o tema muda.
+- Ui/Kit.cs: paleta (Palette.DarkSet / LightSet, Palette.Current) e os componentes (cartões, linhas de ajuste,
+  chips, botões planos, segmentados, chaves, barras). LauncherTheme dá as cores atuais aos painéis antigos
+  (firmware, troféus, controles). LauncherApp.ApplyTheme troca entre Sistema / Escuro / Claro.
+- Ui/Strings.cs: todos os textos das páginas, no formato da classe que o designer de .resx gera (uma propriedade
+  por texto, métodos onde entra número ou nome), pronto para o item de arquivos de idioma en/pt-BR.
+- Dados reais: tempo jogado e última vez em <data>/playtime.json (gravados pelo launcher para o que ele inicia, o
+  Sistema do Vita como shell), estados salvos com a miniatura do próprio arquivo .vss, troféus do pacote do jogo +
+  desbloqueios gravados, capturas de captures, gpudumps e diagnostics, fila com o progresso dos instaladores.
+- Ajustes novos em launcher.json: View (grid, list, home), RecreatedHome, StartupView (library ou
+  system), GameClick (play ou livearea), UiTheme, LibrarySort, LibraryRegion, CheckUpdates,
+  UpdateChannel. O antigo View = home liga RecreatedHome sozinho.
+- A atualização automática só tem as linhas de ajuste; o diálogo entra com o item do roadmap.
+- VitaSharp ui-render <pasta> --data=<pasta de teste> [--title=ID] [--launch=ID|shell --seconds=N --affinity=F0]
+  renderiza todas as páginas nos dois temas sem abrir janela e, com --launch, inicia um jogo ou o Sistema do Vita
+  pelo launcher com --headless e confere o código de saída e o tempo jogado.
+
+## Proposta (etapa 1)
+
+Telas geradas na etapa 1 por um protótipo (já removido; o ui-render faz o mesmo com o launcher de verdade).
 
 ## Identidade
 

@@ -104,6 +104,7 @@ public static class Strings
     // ------------------------------------------------------------------ library
     public static string LibrarySubtitle(int games, int playable) => F("{0} jogos instalados · {1} jogáveis", games, playable);
     public static string SearchGames => "Buscar por nome ou ID";
+    public static string RefreshTip => "Ler a pasta de jogos de novo (F5)";
     public static string Install => "Instalar";
     public static string InstallVpkMenu => "VPK ou zip…";
     public static string InstallPkgMenu => "PKG com licença…";

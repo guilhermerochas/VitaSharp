@@ -27,7 +27,7 @@ public sealed partial class MainWindow
         _filtersHost = new Border();
         _resultsHost = new Border();
 
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 0, 0, 20) };
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Margin = new Thickness(0, 0, 0, 20) };
         header.Children.Add(_k.VStack(2, _k.Heading(S.Library, 30), _k.Text(S.LibrarySubtitle(_all.Count, _all.Count(g => g.Category == "gd")), 13.5, color: P.Muted)));
         _search = new TextBox
         {
@@ -41,9 +41,13 @@ public sealed partial class MainWindow
         searchBox.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false, Child = _k.Icon("search", 18, P.Muted) });
         searchBox.Children.Add(new Border { Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false, Child = _k.Kbd("Ctrl F") });
         header.Children.Add(Kit.At(searchBox, col: 1));
+        var refresh = _k.Secondary("", "refresh", () => Refresh(), 46, tip: S.RefreshTip);
+        refresh.Margin = new Thickness(0, 0, 12, 0);
+        refresh.VerticalAlignment = VerticalAlignment.Center;
+        header.Children.Add(Kit.At(refresh, col: 2));
         var add = InstallMenu(46);
         add.VerticalAlignment = VerticalAlignment.Center;
-        header.Children.Add(Kit.At(add, col: 2));
+        header.Children.Add(Kit.At(add, col: 3));
         page.Children.Add(header);
 
         page.Children.Add(Kit.At(_filtersHost, row: 1));

@@ -82,7 +82,7 @@ public sealed partial class MainWindow
         stats.Children.Add(Stat("save", S.SaveStatesTitle, states.Count.ToString(S.Culture)));
         page.Children.Add(stats);
 
-        var cols = new Grid { ColumnDefinitions = new ColumnDefinitions("*,24,400"), Margin = new Thickness(0, 28, 0, 0) };
+        var cols = new Grid { ColumnDefinitions = new ColumnDefinitions("*,24,460"), Margin = new Thickness(0, 28, 0, 0) };
         var left = new StackPanel { Spacing = 26 };
         left.Children.Add(StatesSection(g, states));
         if (total > 0) left.Children.Add(TrophySummary(g));
@@ -283,10 +283,10 @@ public sealed partial class MainWindow
         var rates = GameOptions.FrameRates;
         s.Children.Add(_k.Group(
             _k.Row("monitor", S.InternalResolution, S.InternalResolutionDetail,
-                _k.Dropdown(res.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(res, c => c.Factor == opts.ResScale)), i => { opts.ResScale = res[i].Factor; Store(); }, 200),
+                _k.Dropdown(res.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(res, c => c.Factor == opts.ResScale)), i => { opts.ResScale = res[i].Factor; Store(); }, 176),
                 tip: S.InternalResolutionTip),
             _k.Row("gauge", S.FrameRate, S.FrameRateDetail,
-                _k.Dropdown(rates.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(rates, c => c.Value == opts.FrameRate)), i => { opts.FrameRate = rates[i].Value; Store(); }, 200),
+                _k.Dropdown(rates.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(rates, c => c.Value == opts.FrameRate)), i => { opts.FrameRate = rates[i].Value; Store(); }, 176),
                 tip: S.FrameRateTip),
             _k.Row("gamepad", S.Controls, S.ControlsDetail, open: () => { Navigate(PageSettings); _settingsPage?.ShowSection(SettingsPage.SectionControls); })));
         s.Children.Add(_k.Text(_runningGame?.TitleId == g.TitleId ? S.AppliesNextStart : S.AppliesOnStart, 12, color: P.Muted).Also(t => t.Margin = new Thickness(6, 10, 0, 0)));
