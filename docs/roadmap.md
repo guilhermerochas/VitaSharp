@@ -854,7 +854,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cobrança (ou o usuário dizer o que tapava). 030833 = as vozes da torcida não têm cliques, lacunas nem grãos repetidos
   (`vitasharp-perf audio-check`); a voz 03 (0x89A424A0) bate em 0 dBFS (0,03% de clipping) e todas cortam acima de
   ~12 kHz; sem referência do Vita no mesmo trecho não dá para dizer o que soa estranho
-- [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
+- [x] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
   do Vita: lógica de verdade quando a função faz algo, e retorno vazio/de erro só quando é isso que o console faz
@@ -886,6 +886,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     serviço Near; o NearUtil HLE de hoje devolve códigos genéricos, não os 0x801049xx do firmware), SceMp4 NID_C05DFF01
     (recebe o ponteiro do objeto do libscemp4, que o HLE troca por número) e SceNpManager NID_FFBFC540 (o tratador
     0xB0025 não apareceu como constante no shell.self; o despacho do servidor IPMI fica por tabela)
+  Confirmado pelo usuário (07/11/2026): lote 3 (+339) aceito como ok; o que faltou para as ~1000 são funções de bibliotecas que sempre rodam do firmware (nunca chamadas pelo HLE) ou do lado do sistema. As 3 que jogos importam e faltam (NearUtil, SceMp4 C05DFF01, NpManager FFBFC540) seguem nos itens de bug
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
