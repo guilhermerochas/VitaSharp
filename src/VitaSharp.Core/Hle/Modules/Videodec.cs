@@ -59,11 +59,15 @@ public sealed partial class Videodec : HleModule
     uint _nextHandle = 1;
 
     [Hle("sceVideodecInitLibraryInternal")]
+    [Hle("_sceVideodecInitLibraryInternal")]
     [Hle("sceVideodecInitLibraryNongameapp")]
+    [Hle("_sceVideodecInitLibraryNongameapp")]
     [Hle("_sceVideodecInitLibrary")]
     [Hle] int sceVideodecInitLibrary(uint codecType, uint initInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
     [Hle("sceVideodecInitLibraryWithUnmapMemInternal")]
+    [Hle("_sceVideodecInitLibraryWithUnmapMemInternal")]
     [Hle("sceVideodecInitLibraryWithUnmapMemNongameapp")]
+    [Hle("_sceVideodecInitLibraryWithUnmapMemNongameapp")]
     [Hle("_sceVideodecInitLibraryWithUnmapMem")]
     [Hle] int sceVideodecInitLibraryWithUnmapMem(uint codecType, uint initInfo, uint memInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
     [Hle("_sceVideodecTermLibrary")]
@@ -71,7 +75,9 @@ public sealed partial class Videodec : HleModule
 
     /// <summary>Memory the codec library needs for its own state; the decoding happens host-side.</summary>
     [Hle("sceVideodecQueryMemSizeInternal")]
+    [Hle("_sceVideodecQueryMemSizeInternal")]
     [Hle("sceVideodecQueryMemSizeNongameapp")]
+    [Hle("_sceVideodecQueryMemSizeNongameapp")]
     [Hle("_sceVideodecQueryMemSize")]
     [Hle]
     int sceVideodecQueryMemSize(uint codecType, uint initInfo, uint memInfo)
@@ -89,7 +95,9 @@ public sealed partial class Videodec : HleModule
     }
 
     [Hle("sceAvcdecQueryDecoderMemSizeInternal")]
+    [Hle("_sceAvcdecQueryDecoderMemSizeInternal")]
     [Hle("sceAvcdecQueryDecoderMemSizeNongameapp")]
+    [Hle("_sceAvcdecQueryDecoderMemSizeNongameapp")]
     [Hle("_sceAvcdecQueryDecoderMemSize")]
     [Hle]
     int sceAvcdecQueryDecoderMemSize(uint codecType, uint query, uint info)
@@ -103,7 +111,9 @@ public sealed partial class Videodec : HleModule
     }
 
     [Hle("sceAvcdecCreateDecoderInternal")]
+    [Hle("_sceAvcdecCreateDecoderInternal")]
     [Hle("sceAvcdecCreateDecoderNongameapp")]
+    [Hle("_sceAvcdecCreateDecoderNongameapp")]
     [Hle("_sceAvcdecCreateDecoder")]
     [Hle]
     int sceAvcdecCreateDecoder(uint codecType, uint ctrl, uint query)
