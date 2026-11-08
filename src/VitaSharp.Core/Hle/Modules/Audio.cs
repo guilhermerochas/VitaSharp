@@ -177,6 +177,13 @@ public sealed partial class Audio : HleModule
         lock (p.Lock)
         {
             if (len > 0) p.Grain = len;
+            // the dump's WAV header has the rate it was opened with: a new rate starts a new file (the shell's music
+            // player opens its BGM port at 44.1 kHz and sets 48 kHz before playing)
+            if (freq > 0 && freq != p.Freq && p.Dump != null)
+            {
+                p.Dump.Dispose();
+                p.Dump = AudioDump.Open(p.DumpName, freq);
+            }
             if (freq > 0) p.Freq = freq;
             if (mode >= 0) p.Channels = mode == 0 ? 1 : 2;
             if (len > 0 || freq > 0)
