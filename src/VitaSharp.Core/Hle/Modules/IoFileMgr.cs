@@ -114,14 +114,16 @@ public sealed partial class IoFileMgr : HleModule
         if (_files.TryGetValue(fd, out var t) && t.Tty >= 0) return 0;
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         int n;
+        long pos;
         using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
         lock (f)
         {
+            pos = f.Stream.Position;
             n = f.Stream.Read(GuestMemory.Span(buf, (int)size));
             DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
             Interlocked.Add(ref BytesRead, n);
         }
-        IoTiming.Read(n);
+        IoTiming.Read(f, pos, n);
         return n;
     }
 
@@ -164,7 +166,7 @@ public sealed partial class IoFileMgr : HleModule
         int n = RandomAccess.Read(f.Stream.SafeFileHandle, GuestMemory.Span(buf, (int)size), offset);
         DirtyPages.MarkRange(buf, (uint)Math.Max(n, 0)); // again after the data landed: a long read can span a dirty-page sweep
         Interlocked.Add(ref BytesRead, n);
-        IoTiming.Read(n);
+        IoTiming.Read(f, offset, n);
         return n;
     }
 
