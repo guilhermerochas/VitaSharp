@@ -737,7 +737,7 @@ public sealed partial class Touch : HleModule
     int sceTouchActivateRegion(int port, int region, int enable, int attr)
     {
         if (port is < 0 or > 1 || region is < 0 or > 0xFF) return ERR_INVALID_ARG;
-        if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0);
+        if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0, attr);
         return 0;
     }
     [Hle] int sceTouchClearRegion() => 0;
