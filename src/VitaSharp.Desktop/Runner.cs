@@ -138,7 +138,7 @@ public static class Runner
             ShaderWorkers = int.TryParse(Opt(options, "--shader-workers"), out var shaderWorkers) && shaderWorkers > 0 ? shaderWorkers : 0,
             // --gpu-profile=adreno|mali|desktop: behave as that GPU class (test the mobile paths on a desktop GPU)
             GpuProfile = Opt(options, "--gpu-profile"),
-            // --res-scale=0.75|0.5: internal resolution below native (VITASHARP_RES_SCALE; VulkanRenderer.ResScale.cs)
+            // --res-scale=0.75|0.5|2|3|4: internal resolution below or above native (VITASHARP_RES_SCALE; VulkanRenderer.ResScale.cs)
             ResScale = float.TryParse(Opt(options, "--res-scale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var resScale) ? resScale : 0,
         };
         // --flicker-check[=threshold]: every presented frame is read back small and checked for one-frame flashes and
@@ -177,7 +177,8 @@ public static class Runner
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? "salvando estado..." : $"{fps:F0} FPS";
+            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? "salvando estado..." : $"{fps:F0} FPS"
+                + (VitaSharp.Core.Hle.Modules.FrameRate.Label is { Length: > 0 } fr ? $" ({fr})" : "");
             string rec = capture?.Capture.IsRecording == true ? "● REC | " : "";
             if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = "Salvando a gravação... não feche a janela";
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
@@ -512,6 +513,10 @@ public static class Runner
         if (long.TryParse(Opt(options, "--jit-threshold"), out var jitT)) VitaSharp.Core.Cpu.Jit.HotInstructions = jitT; // executed instructions before a block is compiled
         if (int.TryParse(Opt(options, "--bt-depth"), out var btd)) VitaSharp.Core.Kernel.GuestThread.BacktraceDepth = btd;
         if (int.TryParse(Opt(options, "--frame-sleep"), out var fsl)) VitaSharp.Core.Hle.Modules.Display.FrameSleepMs = fsl;
+        // --frame-rate=native|30|60|unlimited: vblanks per flip (the launcher's "Taxa de quadros" per game)
+        if (Opt(options, "--frame-rate") is { } frameRate) VitaSharp.Core.Hle.Modules.FrameRate.Mode = VitaSharp.Core.Hle.Modules.FrameRate.Parse(frameRate);
+        if (VitaSharp.Core.Hle.Modules.FrameRate.Mode != VitaSharp.Core.Hle.Modules.FrameRateMode.Native)
+            Log.Info($"Frame rate: {VitaSharp.Core.Hle.Modules.FrameRate.Label} (--frame-rate)");
         if (double.TryParse(Opt(options, "--io-speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ioMBps))
             VitaSharp.Core.Util.IoTiming.BytesPerSecond = ioMBps * 1e6; // 0 = instant reads
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;

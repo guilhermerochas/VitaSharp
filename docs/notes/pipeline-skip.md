@@ -115,3 +115,31 @@ missing or persistent-wrong content.
 `VitaSharp.Desktop test tests/scenarios/<name>.txt --shader-cache=<fresh dir> [--data=<scratch root>]`, with
 `__GL_SHADER_DISK_CACHE_PATH=<fresh dir>`. Read the `[shadercache] session` and `PERF stalls` lines in the
 scenario's log.txt.
+
+## Graphics pipeline libraries (perf/desktop-res, 7 November 2026): tried, no gain, removed
+`VK_EXT_graphics_pipeline_library` the way DXVK uses it: a first-use pipeline linked without link-time optimisation
+from four libraries (vertex input, pre-rasterisation with the vertex module, fragment shader, fragment output), the
+optimised pipeline built on a shader worker and swapped in when ready. Render-pass pipelines (MSAA, programmable
+blending) included. Pixel-identical on the Killzone dump.
+
+Killzone `kz_skin`, cold `--shader-cache` and a fresh `__GL_SHADER_DISK_CACHE_PATH` per run, GTX 1650, pinned to 4
+logical CPUs at BelowNormal, interleaved off/on/on/off:
+
+| run | pipelines built on the GPU thread | frames stalled >= 16.7 ms | worst stall |
+|---|---|---|---|
+| off 1 | 175 (10734 ms) | 90 | 14973 ms |
+| on 2 | 359 (21397 ms), 44 linked | 90 | 10972 ms |
+| on 3 | 352 (18788 ms) | 97 | 7794 ms |
+| off 4 | 126 (5031 ms) | 90 | 4888 ms |
+
+- With a cold NVIDIA driver cache a shader library costs about as much as a whole pipeline: the driver compiles the
+  shader either way, and Killzone has about as many shaders as pipelines (~670 / ~500). Libraries built on the GPU
+  thread moved the compile there (a first version: 13 s in libraries); libraries prebuilt on the two workers took the
+  workers' time from the pipeline prefetch (166 prefetched instead of 351), so more pipelines were built on the GPU
+  thread. Linking itself is cheap (~0.03 ms per pipeline).
+- With a warm driver cache and a cold emulator cache (the replay of the Killzone dump), linking did cut the GPU
+  thread's pipeline time from 502 to 91 ms, but those pipelines were already only 2.6 ms each.
+- The first-run stall here is compile throughput (two workers, about 10-13 s of shaderc plus the driver), not the
+  pipeline step. More workers or prewarming from a shipped `pipelines.list` would address it; GPL does not.
+- The patch is kept out of the tree (agent scratchpad `and10_gpl_wip.patch`).
+

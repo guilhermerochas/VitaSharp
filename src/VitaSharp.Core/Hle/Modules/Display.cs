@@ -55,6 +55,59 @@ public static class VBlank
     public static long WaitNext() => WaitFor(Count + 1);
 }
 
+/// <summary>
+/// "Taxa de quadros" per game: how many vblanks a frame takes. <see cref="Native"/> (the default) leaves the game's
+/// own choice alone; <see cref="Fixed30"/> and <see cref="Fixed60"/> hold every flip to 2 or 1 vblanks (shorter waits
+/// for games that ask for more, a wait before the flip for games that flip sooner); <see cref="Unlimited"/> drops the
+/// display waits, so the game runs as fast as the host does. Only the vblank intervals the game asks the display for
+/// change, never the game's code: games whose logic advances per frame run faster or slower with it.
+/// </summary>
+public enum FrameRateMode { Native, Fixed30, Fixed60, Unlimited }
+
+public static class FrameRate
+{
+    /// <summary>The mode of this session (--frame-rate= / VITASHARP_FRAME_RATE, set before the game boots).</summary>
+    public static FrameRateMode Mode = Parse(Environment.GetEnvironmentVariable(EnvVars.FrameRate));
+
+    /// <summary>"native" (or empty), "30", "60", "unlimited"; anything else is native.</summary>
+    public static FrameRateMode Parse(string? s) => s?.Trim().ToLowerInvariant() switch
+    {
+        "30" => FrameRateMode.Fixed30,
+        "60" => FrameRateMode.Fixed60,
+        "unlimited" or "off" or "0" => FrameRateMode.Unlimited,
+        _ => FrameRateMode.Native,
+    };
+
+    /// <summary>The option's value for a mode (<see cref="Parse"/>'s input).</summary>
+    public static string Name(FrameRateMode m) => m switch
+    {
+        FrameRateMode.Fixed30 => "30", FrameRateMode.Fixed60 => "60", FrameRateMode.Unlimited => "unlimited", _ => "native",
+    };
+
+    /// <summary>Short label for the FPS line ("" for native).</summary>
+    public static string Label => Mode switch
+    {
+        FrameRateMode.Fixed30 => "fixo 30", FrameRateMode.Fixed60 => "fixo 60", FrameRateMode.Unlimited => "sem limite", _ => "",
+    };
+
+    /// <summary>Vblanks per flip of the fixed modes (0: native or unlimited).</summary>
+    internal static int Interval => Mode switch { FrameRateMode.Fixed30 => 2, FrameRateMode.Fixed60 => 1, _ => 0 };
+
+    /// <summary>A display wait of <paramref name="count"/> vblanks as the mode wants it: at most the fixed interval.</summary>
+    internal static uint Vblanks(uint count)
+    {
+        count = Math.Max(count, 1);
+        int k = Interval;
+        return k > 0 && count > k ? (uint)k : count;
+    }
+
+    /// <summary>Display waits are skipped (<see cref="FrameRateMode.Unlimited"/>).</summary>
+    internal static bool NoWaits => Mode == FrameRateMode.Unlimited;
+
+    /// <summary>Flips held to the fixed interval (they came sooner than the mode allows).</summary>
+    public static long FlipsHeld;
+}
+
 public sealed partial class Display : HleModule
 {
     const int ERR_INVALID_VALUE = unchecked((int)0x80290001), ERR_INVALID_ADDR = unchecked((int)0x80290002);
@@ -91,6 +144,12 @@ public sealed partial class Display : HleModule
         {
             ImmediateFlipsPaced++;
             using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + 1);
+        }
+        // fixed frame rate: a flip sooner than the interval waits for it (a 60 fps game held to 30)
+        if (FrameRate.Interval is var k and > 0 && _lastFlipVcount >= 0 && VBlank.Count < _lastFlipVcount + k)
+        {
+            FrameRate.FlipsHeld++;
+            using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + k);
         }
         _lastSetVcount = _lastFlipVcount = VBlank.Count;
         // the display shows the foreground process (the shell, or the application it launched); a process in the
@@ -166,22 +225,24 @@ public sealed partial class Display : HleModule
     [Hle("sceDisplayGetMaximumFrameBufResolution")]
     int GetMaxRes(Ptr<int> w, Ptr<int> h) { w.TrySet(960); h.TrySet(544); return 0; }
 
-    [Hle] int sceDisplayWaitVblankStart() { VBlank.WaitNext(); return 0; }
-    [Hle] int sceDisplayWaitVblankStartCB() { VBlank.WaitNext(); RunCallbacks(); return 0; }
+    // display waits go through the per-game frame rate mode (FrameRate): fixed modes cap the vblanks a wait asks for,
+    // unlimited skips them
+    [Hle] int sceDisplayWaitVblankStart() { if (!FrameRate.NoWaits) VBlank.WaitNext(); return 0; }
+    [Hle] int sceDisplayWaitVblankStartCB() { if (!FrameRate.NoWaits) VBlank.WaitNext(); RunCallbacks(); return 0; }
 
     [Hle]
     int sceDisplayWaitVblankStartMulti(uint count)
     {
-        VBlank.DisplayWait(VBlank.Count + Math.Max(count, 1));
+        if (!FrameRate.NoWaits) VBlank.DisplayWait(VBlank.Count + FrameRate.Vblanks(count));
         return 0;
     }
 
     [Hle] int sceDisplayWaitVblankStartMultiCB(uint count) { sceDisplayWaitVblankStartMulti(count); RunCallbacks(); return 0; }
 
-    [Hle] int sceDisplayWaitSetFrameBuf() { VBlank.WaitFor(_lastSetVcount + 1); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufCB() { VBlank.WaitFor(_lastSetVcount + 1); RunCallbacks(); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufMulti(uint count) { VBlank.DisplayWait(_lastSetVcount + Math.Max(count, 1)); return 0; }
-    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { VBlank.DisplayWait(_lastSetVcount + Math.Max(count, 1)); RunCallbacks(); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBuf() { if (!FrameRate.NoWaits) VBlank.WaitFor(_lastSetVcount + 1); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufCB() { if (!FrameRate.NoWaits) VBlank.WaitFor(_lastSetVcount + 1); RunCallbacks(); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufMulti(uint count) { if (!FrameRate.NoWaits) VBlank.DisplayWait(_lastSetVcount + FrameRate.Vblanks(count)); return 0; }
+    [Hle] int sceDisplayWaitSetFrameBufMultiCB(uint count) { if (!FrameRate.NoWaits) VBlank.DisplayWait(_lastSetVcount + FrameRate.Vblanks(count)); RunCallbacks(); return 0; }
 
     /// <summary>On hardware the callbacks notified during a *CB wait run inside the wait, before it returns.</summary>
     static void RunCallbacks()

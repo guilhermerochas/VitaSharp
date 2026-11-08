@@ -295,6 +295,8 @@ void main() {
         t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
         t.Version = dt.Version;
+        // above native the scaled plane is larger than the guest's stencil surface: it goes through a buffer of its own
+        if (dt.Scale > 1f) { CopyScaledStencil(dt, t, w, h); return (t.View, ImageLayout.ShaderReadOnlyOptimal); }
         // stencil aspect -> CDRAM mirror (guest layout, one byte per pixel) -> R8 image
         EnsureMirror();
         _mirroredDepth.Remove((dt, true));
@@ -320,5 +322,62 @@ void main() {
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit);
         return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+    }
+
+    Silk.NET.Vulkan.Buffer _stencilScratch;
+    DeviceMemory _stencilScratchMem;
+    ulong _stencilScratchBytes;
+
+    /// <summary>
+    /// Stencil texture of a target above native resolution (VulkanRenderer.ResScale.cs): the stencil aspect is copied
+    /// at the internal resolution through a scratch buffer into the R8 image, so the texture keeps the scaled detail and
+    /// nothing is written past the guest's stencil surface in the CDRAM mirror.
+    /// </summary>
+    void CopyScaledStencil(DepthTarget dt, StencilTex t, uint w, uint h)
+    {
+        ulong bytes = (ulong)w * h;
+        if (_stencilScratchBytes < bytes)
+        {
+            if (_stencilScratch.Handle != 0)
+            {
+                var (ob, om) = (_stencilScratch, _stencilScratchMem);
+                DestroyAfterGpu(() => _core.DestroyBuffer(ob, om));
+            }
+            (_stencilScratch, _stencilScratchMem) = _core.CreateDeviceBuffer(bytes, BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.Region);
+            _stencilScratchBytes = bytes;
+        }
+        EndRendering();
+        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds,
+            PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit,
+            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
+        BufferBarrier(_stencilScratch, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
+        var region = new BufferImageCopy
+        {
+            BufferRowLength = w,
+            BufferImageHeight = h,
+            ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.StencilBit, 0, 0, 1),
+            ImageExtent = new Extent3D(w, h, 1),
+        };
+        _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _stencilScratch, 1, in region);
+        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
+            AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+        BufferBarrier(_stencilScratch, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit,
+            AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
+        region.ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1);
+        _vk.CmdCopyBufferToImage(Cmd, _stencilScratch, t.Image, ImageLayout.TransferDstOptimal, 1, in region);
+        Barrier(t.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
+            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+    }
+
+    void DestroyStencilScratch()
+    {
+        if (_stencilScratch.Handle != 0) _core.DestroyBuffer(_stencilScratch, _stencilScratchMem);
+        _stencilScratch = default;
+        _stencilScratchBytes = 0;
     }
 }

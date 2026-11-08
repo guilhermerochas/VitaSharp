@@ -71,17 +71,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
-- [ ] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026): opção por jogo de 1x (nativo, 960x544,
-  padrão), 2x, 3x, 4x (e talvez 5x/6x, até 4K) que renderiza os alvos do jogo numa resolução maior e apresenta nítido na
-  janela/tela cheia. Base: a escala interna que já existe para reduzir no Android (`VITASHARP_RES_SCALE`,
-  `VulkanRenderer.ResScale.cs`, hoje só 0,5/0,75): estender para fatores maiores que 1 (viewport/scissor/clip, regiões
-  e cópias entre alvos, texturas lidas de alvos renderizados, MSAA, profundidade, cópias da CPU que leem/escrevem o
-  framebuffer e o writeback, que tem de voltar à resolução nativa para a memória do guest). Opções no launcher (Ajustes do
-  jogo) e no Android, com aviso de custo de GPU; o padrão continua nativo. Validar sem defeitos (bordas, linhas entre
-  tiles, efeitos de pós-processamento e alvos reinterpretados) com `replay-gpu --compare` em 1x idêntico e prints em 2x/4x
-  de Uncharted, Killzone, Gravity Rush, FIFA 13 e um jogo 2D (Gunvolt/Sonic Mania)
-  Ordem (usuário, 07/11/2026): primeiro no desktop; no Android só depois de resolver o desempenho do Android
-- [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
+- [x] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026), no desktop: "Resolução interna" por
+  jogo no painel do jogo do launcher (1x nativa padrão, 2x, 3x, 4x; `--res-scale=2|3|4`, `VITASHARP_RES_SCALE`),
+  estendendo `VulkanRenderer.ResScale.cs` a fatores inteiros acima de 1. Acima do nativo, texturas de stencil e as
+  linhas escaladas dos alvos reinterpretados (G-buffer do Uncharted) passam por buffers próprios (não cabem na memória do
+  guest); writeback e cópias da CPU continuam na resolução nativa; dumps de quadro e prints saem na resolução interna.
+  Validado (perf/desktop-res): `replay-gpu --compare` 1x idêntico ao main em 20 dumps (582 quadros), 2x sem erro em
+  todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
+  Sonic Mania. Limite conhecido: `gl_PointSize` não é escalado (sprites de ponto ficam menores acima do nativo; mudar o
+  gerador invalida o cache de shaders de todos)
+- [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
+  desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
+- [x] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
   (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
   Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.
   Onde atua: no intervalo de vblank que o jogo pede (`sceDisplayWaitSetFrameBufMulti`/`WaitVblankStartMulti`,
@@ -91,6 +92,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   modo do mouse), no launcher do desktop (página/ajustes do jogo) e no app Android (ajustes do jogo e menu de pausa),
   com o modo atual no overlay de FPS
 
+  Desktop feito (perf/desktop-res, 07/11/2026): "Taxa de quadros" no painel do jogo do launcher, `--frame-rate=native|30|60|unlimited`
+  (`VITASHARP_FRAME_RATE`, `FrameRate` em Hle/Modules/Display.cs): os modos fixos limitam os vblanks que as esperas
+  de display pedem e seguram a troca que vem antes do intervalo; Sem limite pula as esperas de display. Modo no título da
+  janela ao lado do FPS. Medido: menu do Jak 30 -> 59 fps em Fixo 60, Sonic Mania 60 -> 30 em Fixo 30, Sem limite 121 fps
+- [ ] Taxa de quadros por jogo no app Android (ajustes do jogo e menu de pausa, com o modo no overlay de FPS): o núcleo
+  já tem `FrameRate`; falta a interface (Android parado por ordem do usuário, 07/11/2026)
 - [ ] Reflexão o mínimo possível (desktop e Android; ajuda o Native AOT, o Mono AOT e o tempo de início). Hoje
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
   `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o
@@ -121,6 +128,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
   sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
+  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
+  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
+  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
+  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
+  pipelines.list pré-gerado por jogo
 - [ ] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)

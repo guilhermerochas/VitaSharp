@@ -405,5 +405,6 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_mirror.Handle != 0) _core.DestroyBuffer(_mirror, _mirrorMem);
         _mirror = default;
+        DestroyStencilScratch();
     }
 }

@@ -150,7 +150,7 @@ public static class EnvVars
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
     public const string Replay = "VITASHARP_REPLAY";
-    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
+    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75 below native; 2, 3, 4 above it; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";
     /// <summary>1: a stage binding the same texture descriptors as an earlier one in the frame reuses its descriptor set (VulkanRenderer.TexSetReuse.cs).</summary>
     public const string TexSetReuse = "VITASHARP_TEXSET_REUSE";
@@ -273,6 +273,9 @@ public static class EnvVars
     /// <summary>1 (experiment): sceDisplaySetFrameBuf in IMMEDIATE mode flips at most once per vblank (a second flip in the
     /// same vblank waits for the next one). Default off.</summary>
     public const string DisplayImmediatePace = "VITASHARP_DISPLAY_IMMEDIATE_PACE";
+    /// <summary>Frame rate mode: native (default), 30, 60 or unlimited (Hle/Modules/Display.cs FrameRate; desktop
+    /// --frame-rate=, the launcher's "Taxa de quadros" per game).</summary>
+    public const string FrameRate = "VITASHARP_FRAME_RATE";
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";

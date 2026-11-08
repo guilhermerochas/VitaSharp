@@ -852,7 +852,11 @@ public sealed unsafe partial class VulkanRenderer
         // a scaled target is reinterpreted at its internal resolution: its image goes into the mirror with packed
         // scaled rows and the texture reads the matching scaled rectangle (VulkanRenderer.ResScale.cs)
         var geo = ScaledReinterpretGeometry(rt, addr, w, h, texRow, (uint)rtBpp, texBpp);
-        if (geo is not null ? !MirrorRenderTargetScaled(rt) : !MirrorRenderTarget(rt)) return null;
+        // above native the scaled rows are in the target's own buffer, else in the mirror
+        var src = _mirror;
+        if (geo is { Own: true } && ScaledRowsOf(rt) is { Handle: not 0 } own) src = own;
+        else if (geo is { Own: true }) geo = null;
+        if (geo is null ? !MirrorRenderTarget(rt) : !geo.Value.Own && !MirrorRenderTargetScaled(rt)) return null;
         uint aw = geo?.W ?? w, ah = geo?.H ?? h;
 
         var key = (addr, d.Format, w, h, texRow, gamma);
@@ -880,7 +884,7 @@ public sealed unsafe partial class VulkanRenderer
         a.Source = rt;
         a.Version = rt.Version;
         PauseRendering(rt);
-        BufferBarrier(_mirror, PipelineStageFlags.TransferBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
+        BufferBarrier(src, PipelineStageFlags.TransferBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.TransferWriteBit | AccessFlags.ShaderReadBit, AccessFlags.TransferReadBit);
         Barrier(a.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
@@ -893,7 +897,7 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(geo?.CopyW ?? w, geo?.CopyH ?? h, 1),
         };
         DevStampOp();
-        _vk.CmdCopyBufferToImage(Cmd, _mirror, a.Image, ImageLayout.TransferDstOptimal, 1, in region);
+        _vk.CmdCopyBufferToImage(Cmd, src, a.Image, ImageLayout.TransferDstOptimal, 1, in region);
         Barrier(a.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         return a.View;
