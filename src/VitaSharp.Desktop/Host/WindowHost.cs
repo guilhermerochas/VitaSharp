@@ -61,7 +61,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// <summary>The pause hotkey (<see cref="VitaControl.PauseEmulation"/>: a key of the keyboard profile, P by default,
     /// or a controller binding / button combination) was pressed: pause or resume the emulation (window thread).</summary>
     public event Action? PauseToggled;
-    /// <summary>F1 / F2 (Shift = the previous value): internal resolution / frame rate mode while the game runs
+    /// <summary>F1 / F2 / F3 (Shift = the previous value): internal resolution / frame rate mode / MSAA mode while the game runs
     /// (<see cref="GraphicsHotkeys"/>; window thread, the handler must not block). The argument is the key name
     /// ("F1", "Shift+F1", "F2", "Shift+F2").</summary>
     public event Action<string>? GraphicsKey;
@@ -370,7 +370,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             _f8Down = down;
             return;
         }
-        if (key is Key.F1 or Key.F2 && TextCapture == null)
+        if (key is Key.F1 or Key.F2 or Key.F3 && TextCapture == null)
         {
             // one change per press, whatever key repeat sends
             if (!down) _graphicsKeysDown.Remove(key);

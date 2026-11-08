@@ -58,6 +58,9 @@ public sealed class VulkanRendererOptions
     public string? ShotPath;
     /// <summary>Internal resolution scale of render targets (0.5, 0.75; per game on Android): 0 = VITASHARP_RES_SCALE, else native (VulkanRenderer.ResScale.cs).</summary>
     public float ResScale;
+    /// <summary>MSAA scenes: "native" (real multisampling), "ss" (2x supersampling) or "off"; null = VITASHARP_MSAA, else
+    /// native (VulkanRenderer.MsaaNative.cs). The F3 hotkey sets it and replaces the renderer.</summary>
+    public string? Msaa;
     /// <summary>A renderer disposed to be replaced on the same surface (state load, LoadExec) hands its Vulkan instance,
     /// device, surface and swapchain to the next one instead of destroying them; the next one recreates the swapchain
     /// from it like a resize. Destroying and recreating all of it for the window each load crashed the process on the
@@ -169,6 +172,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     {
         _opt = options;
         ResScale = options.ResScale > 0 ? ParseResScale(options.ResScale.ToString(System.Globalization.CultureInfo.InvariantCulture)) : EnvResScale;
+        MsaaSetting = ParseMsaa(options.Msaa ?? Environment.GetEnvironmentVariable(EnvVars.Msaa));
         _presentCount = Math.Max(0, options.FirstPresent);
         if (options.Handoff is { } h && ReferenceEquals(h.Surface, options.Surface))
         {

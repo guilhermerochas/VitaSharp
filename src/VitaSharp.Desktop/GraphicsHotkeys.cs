@@ -9,7 +9,8 @@ namespace VitaSharp.Desktop;
 /// <summary>
 /// Graphics options changed while the game runs (the window's F1 / F2, and key@fN:F1 steps of an --input script):
 /// F1 the next internal resolution (1x, 2x, 3x, 4x, then back to 1x), Shift+F1 the previous one; F2 the next frame
-/// rate mode (native, fixed 30, fixed 60, unlimited), Shift+F2 the previous one. Each change shows a notice with the
+/// rate mode (native, fixed 30, fixed 60, unlimited), Shift+F2 the previous one; F3 the next MSAA mode (native
+/// multisampling, 2x supersampling, off), Shift+F3 the previous one. Each change shows a notice with the
 /// new value. They last for the session: the launcher's per-game settings are not changed.
 /// <para>
 /// A new resolution needs a new renderer (render targets, depth images and pipelines are sized by it): the guest
@@ -25,15 +26,58 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
     int _busy;
 
     /// <summary>Host key names of the hotkeys (window keys and --input steps).</summary>
-    public static bool IsHotkey(string key) => key is "F1" or "Shift+F1" or "F2" or "Shift+F2";
+    public static bool IsHotkey(string key) => key is "F1" or "Shift+F1" or "F2" or "Shift+F2" or "F3" or "Shift+F3";
 
-    /// <summary>Runs the hotkey <paramref name="key"/> ("F1", "Shift+F1", "F2", "Shift+F2").</summary>
+    /// <summary>Runs the hotkey <paramref name="key"/> ("F1", "Shift+F1", "F2", "Shift+F2", "F3", "Shift+F3").</summary>
     public void Press(string key)
     {
         bool back = key.StartsWith("Shift+", StringComparison.Ordinal);
         if (key.EndsWith("F1", StringComparison.Ordinal)) CycleResolution(back);
         else if (key.EndsWith("F2", StringComparison.Ordinal)) CycleFrameRate(back);
+        else if (key.EndsWith("F3", StringComparison.Ordinal)) CycleMsaa(back);
     }
+
+    static readonly string[] MsaaModes = ["native", "ss", "off"];
+
+    /// <summary>The next (or previous) MSAA mode (real multisampling, 2x supersampling, off): like a new resolution, a
+    /// new renderer replaces the current one between two GPU scenes.</summary>
+    public void CycleMsaa(bool back)
+    {
+        if (current() is not { } r) return;
+        if (Interlocked.Exchange(ref _busy, 1) == 1) return;
+        string from = r.MsaaMode;
+        string to = MsaaModes[Next(Array.IndexOf(MsaaModes, from), MsaaModes.Length, back)];
+        Task.Run(() =>
+        {
+            try
+            {
+                string? saved = ro.Msaa;
+                ro.Msaa = to;
+                if (SaveStates.ReplaceBackendBetweenScenes(emu, factory) is { } why)
+                {
+                    ro.Msaa = saved;
+                    Log.Warn($"MSAA {from} -> {to} not applied: {why}");
+                    notice($"MSAA: não foi possível trocar agora ({why})");
+                    return;
+                }
+                Log.Info($"MSAA {from} -> {to} (hotkey) at guest frame {Display.FramesPresented}");
+                notice($"MSAA: {MsaaLabel(to)}");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"MSAA change failed: {e}");
+                notice("MSAA: falhou (veja o log)");
+            }
+            finally { Volatile.Write(ref _busy, 0); }
+        });
+    }
+
+    static string MsaaLabel(string mode) => mode switch
+    {
+        "ss" => "superamostragem 2x",
+        "off" => "desligado",
+        _ => "nativo (multiamostragem real)",
+    };
 
     static int Next(int i, int count, bool back) => back ? (i <= 0 ? count - 1 : i - 1) : (i < 0 ? 0 : (i + 1) % count);
 
