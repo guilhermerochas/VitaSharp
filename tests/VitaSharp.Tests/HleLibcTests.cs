@@ -319,5 +319,22 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         Assert.Equal(9L, GuestMemory.Read<long>(obj));
         Assert.Equal(0, Call<int>(c, "_Atomic_compare_exchange_strong", w + 4, 8u, obj, e, d));
         Assert.Equal(9L, GuestMemory.Read<long>(e));
+        // std::string (Dinkumware: buffer or pointer at +4, size +0x14, capacity +0x18)
+        uint s1 = Buf(0x1C), s2 = Buf(0x1C);
+        Call<uint>(c, "_ZNSsC1EPKc", s1, Str("short"));
+        Assert.Equal(5u, GuestMemory.R32(s1 + 0x14));
+        Assert.Equal(15u, GuestMemory.R32(s1 + 0x18));
+        Assert.Equal("short", GuestMemory.ReadCString(s1 + 4));
+        Call<uint>(c, "_ZNSsC1EPKc", s2, Str("a string longer than fifteen"));
+        Assert.Equal(31u, GuestMemory.R32(s2 + 0x18));
+        Assert.Equal("a string longer than fifteen", GuestMemory.ReadCString(GuestMemory.R32(s2 + 4)));
+        Call<uint>(c, "_ZNSs6assignERKSsjj", null!, s1, s2, 2u, 6u);
+        Assert.Equal("string", GuestMemory.ReadCString(s1 + 4));
+        Assert.True(Call<bool>(c, "_ZNSs5_GrowEjb", null!, s1, 40u, false));
+        Assert.True(GuestMemory.R32(s1 + 0x18) >= 40);
+        Assert.Equal("string", GuestMemory.ReadCString(GuestMemory.R32(s1 + 4)));
+        Assert.True(Call<bool>(c, "_ZNSs5_GrowEjb", null!, s1, 3u, true)); // back to the internal buffer
+        Assert.Equal(15u, GuestMemory.R32(s1 + 0x18));
+        Assert.Equal("str", GuestMemory.ReadCString(s1 + 4));
     }
 }

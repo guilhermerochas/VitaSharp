@@ -613,6 +613,75 @@ public sealed partial class Libc
         GuestMemory.Write(s + 4, (byte)0);
     }
 
+    void StrEos(uint s, uint n)
+    {
+        GuestMemory.W32(s + 0x14, n);
+        GuestMemory.Write(StrData(s) + n, (byte)0);
+    }
+
+    /// <summary>basic_string::_Copy: a buffer for <paramref name="newSize"/> characters keeping the first
+    /// <paramref name="oldLen"/> (capacity newSize | 15, or 1.5 times the old one when that is larger).</summary>
+    void StrCopy(uint s, uint newSize, uint oldLen)
+    {
+        uint res = GuestMemory.R32(s + 0x18), newRes = newSize | 15;
+        if (newRes == 0xFFFFFFFF) newRes = newSize;
+        else if (res / 2 > newRes / 3 && res <= 0xFFFFFFFE - res / 2) newRes = res + res / 2;
+        uint p = New(newRes + 1, false);
+        if (oldLen != 0) GuestMemory.Copy(p, StrData(s), oldLen);
+        if (res >= 16) free(GuestMemory.R32(s + 4));
+        GuestMemory.W32(s + 4, p);
+        GuestMemory.W32(s + 0x18, newRes);
+        StrEos(s, oldLen);
+    }
+
+    /// <summary>basic_string::_Grow(newsize, trim): room for newsize characters (length_error past max_size);
+    /// with trim, a short string goes back to the internal buffer; true when newsize is not 0.</summary>
+    [Hle]
+    bool _ZNSs5_GrowEjb(HleContext ctx, uint s, uint newSize, bool trim)
+    {
+        if (newSize > 0xFFFFFFFE) { ThrowNew(ctx, ExcLengthError, text: "string too long"); return false; }
+        uint res = GuestMemory.R32(s + 0x18), size = GuestMemory.R32(s + 0x14);
+        if (res < newSize) StrCopy(s, newSize, size);
+        else if (trim && newSize < 16)
+        {
+            uint keep = Math.Min(newSize, size);
+            if (res >= 16)
+            {
+                uint p = GuestMemory.R32(s + 4);
+                if (keep != 0) GuestMemory.Copy(s + 4, p, keep);
+                free(p);
+            }
+            GuestMemory.W32(s + 0x18, 15);
+            StrEos(s, keep);
+        }
+        else if (newSize == 0) StrEos(s, 0);
+        return newSize > 0;
+    }
+
+    [Hle] uint _ZNSsC1EPKc(uint s, uint text) { StrAssign(s, text, StrLen(text)); return s; }
+    [Hle] uint _ZNSsC1ERKSs(uint s, uint other) { StrAssign(s, StrData(other), GuestMemory.R32(other + 0x14)); return s; }
+
+    /// <summary>basic_string::assign(str, pos, count): the substring (out_of_range when pos is past the end).</summary>
+    [Hle]
+    uint _ZNSs6assignERKSsjj(HleContext ctx, uint s, uint other, uint pos, uint count)
+    {
+        uint size = GuestMemory.R32(other + 0x14);
+        if (size < pos) { ThrowNew(ctx, ExcOutOfRange, text: "invalid string position"); return s; }
+        uint num = Math.Min(count, size - pos);
+        if (s == other)
+        {
+            uint d = StrData(s);
+            if (num != 0 && pos != 0) GuestMemory.Copy(d, d + pos, num);
+            StrEos(s, num);
+        }
+        else if (_ZNSs5_GrowEjb(ctx, s, num, false))
+        {
+            GuestMemory.Copy(StrData(s), StrData(other) + pos, num);
+            StrEos(s, num);
+        }
+        return s;
+    }
+
     // ------------------------------------------------------------------ the standard exception classes
 
     sealed record ExcClass(string Name, uint Vtable, uint Size, ExcClass? Base, string? What);
