@@ -255,6 +255,11 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(3, j.MaxSplitDecoders);
         Assert.Equal(Jpeg.ERR_INVALID_POINTER, Call(j, "sceJpegInitMJpegWithParam", 0u));
         Assert.Equal(0, Call(j, "sceJpegInitMJpeg", 1)); // second init is accepted (as Vita3K)
+        // the syscall form (avcodec_us 3.74: the parameter struct, then a scratch struct with its size)
+        uint scratch = fx.Memory.Alloc(8, "jpeg-opt");
+        GuestMemory.W32(p + 4, 4);
+        Assert.Equal(0, Call(j, "_sceJpegInitMJpegWithParam", p, scratch));
+        Assert.Equal(4, j.MaxSplitDecoders);
     }
 
     uint OutputInfo(Jpeg j, uint jpeg, int size, int format, int mode, out int ret, bool arm = false)
