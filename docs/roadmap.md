@@ -5,6 +5,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 ## Diagnóstico
 
 - [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
+- [ ] Killzone (PCSC00045) `kz_skin` a 1x morreu calado no quadro 3435 numa das 8 rodadas da perf/desktop-res
+  (07/11/2026; sem exceção, `.err` vazio). Não reproduziu (perf/desktop-11): 6 rodadas seguidas, 3 com cache de
+  shaders e do driver frios e 3 quentes, com outros emuladores disputando a CPU, todas até o quadro 4500 com código de
+  saída 0 (23-29 fps, `scratchpad/perf11_out/kz_summary.txt`). O log de eventos do Windows não tem nenhum "Application
+  Error"/WER do VitaSharp desde 06/11 15:14, então aquela rodada não caiu por exceção nativa nem do .NET (essas deixam
+  evento, como os c0000374/c0000005 de 06/11): o processo foi encerrado de fora (TerminateProcess: um `Stop-Process`
+  de outro agente, por exemplo) ou saiu sem passar pelo fim da rodada. O script daquela rodada lia `$p.ExitCode` de um
+  `Start-Process -PassThru` sem guardar o handle (vem vazio), por isso não há código de saída. Agora toda saída
+  normal do processo escreve `Process exit at guest frame N` no log: um log sem essa linha e sem `UNHANDLED` é um
+  processo morto de fora ou em código nativo (ver o WER). Se repetir, rodar com `DOTNET_DbgEnableMiniDump=1` e
+  guardar o código de saída (`scratchpad/perf11_tools/run.ps1` faz os dois)
 
 ## Save states
 

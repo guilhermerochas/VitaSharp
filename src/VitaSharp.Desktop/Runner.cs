@@ -406,9 +406,17 @@ public static class Runner
         }) { IsBackground = true, Name = "diag-at" }.Start();
     }
 
-    /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed.</summary>
+    /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed. Every
+    /// orderly exit logs a last "Process exit" line: a log that ends without it (and without an UNHANDLED line) means
+    /// the process was terminated from outside or died in native code (Windows Error Reporting then has an
+    /// Application Error event, a kill leaves none).</summary>
     static void InstallCrashLogging()
     {
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            Log.Info($"Process exit at guest frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
+            Log.Flush();
+        };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             Log.Error($"UNHANDLED EXCEPTION (terminating: {e.IsTerminating}) on thread '{Thread.CurrentThread.Name}' at guest frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {e.ExceptionObject}");
