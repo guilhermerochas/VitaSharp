@@ -1829,7 +1829,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   usou a cópia em 44 leituras em que a memória já tinha o quadro seguinte. Mas o `rerun` da gravação continua com
   quadros inteiros escuros (luma 1-9): desligado 6, ligado 6/0/0/5 em quatro rodadas (`bugsC17_jak/reruns_*`), então a
   textura do céu não é a única (ou não é a) causa; o próximo passo é `--trace-draws` num quadro escuro do `rerun` (não
-  do replay) e comparar todas as leituras (texturas maiores, vértices, uniforms) com o quadro anterior.
+  do replay) e comparar todas as leituras (texturas maiores, vértices, uniforms) com o quadro anterior.
+  Causa achada e corrigida (08/11/2026, agente C, fix/bugs-games-19): o céu não é escrito pela CPU, vem de 7
+  sceGxmTransferCopy por quadro (thread F3DPlaybackThread, logo depois do EndScene) de uma superfície 512x512 em
+  0x6312BB40 (os "tiles" do céu/sol) para as texturas 0x630F2B40, 0x630F9B40 etc. A mesma memória é uma superfície
+  360x204 desenhada antes no quadro. As duas são copiadas para a memória no fim da cena (writeback), mas só quando o
+  quadro do Vulkan termina; a transferência roda no worker logo depois e, se o quadro ainda estava em voo, lia o 360x204
+  (preto) do quadro anterior: as texturas do céu saíam zeradas e a cena inteira (iluminada por elas) ficava escura num
+  quadro. Prova no dump da gravação nova do início do Jak 1 (`bugsC3_data/captures/PCSA00080_20261108_010555_tudo`,
+  intro depois de New Game): no 1398 as duas texturas são (0,0,0,0) e com `--draw-limit` o quadro só fica escuro a
+  partir do desenho 10 (o céu). Correção: o BeforeCallback também espera (Finish) quando um writeback ainda pendente
+  cai na faixa que a transferência lê. Sem carga: base 1 de 2 gravações com 14 quadros escuros (a outra 0), com a
+  correção 0 em 3 gravações (`..._013041_tudo`, `..._014457_tudo`, `..._023505_tudo`); fps igual (13-14 com o PC
+  carregado por outros agentes). Validação parcial (o erro depende da carga); replay não muda (os callbacks do dump
+  não leem superfícies)
 - [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
