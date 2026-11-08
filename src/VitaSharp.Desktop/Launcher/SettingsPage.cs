@@ -1,9 +1,10 @@
-﻿using VitaSharp.Core.Localization;
+using VitaSharp.Core.Localization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using VitaSharp.Desktop.Input;
 using VitaSharp.Desktop.Launcher.Ui;
 using S = VitaSharp.Desktop.Launcher.Ui.Strings;
@@ -128,6 +129,56 @@ public sealed class SettingsPage : UserControl
         _save();
     }
 
+    /// <summary>"Camera frontal" / "Camera traseira": default, none (grey), each webcam, a picture file.</summary>
+    Control CameraRow(IReadOnlyList<string> webcams, bool back)
+    {
+        string current = back ? _settings.CameraBack : _settings.CameraFront;
+        var (values, labels) = CameraChoices(webcams, current, back);
+        int pick = values.Count; // the last entry opens the file picker
+        labels.Add(S.CameraPickPicture);
+        int index = Math.Max(0, values.FindIndex(v => v.Equals(current, StringComparison.OrdinalIgnoreCase)));
+        ComboBox? box = null;
+        box = _k.Dropdown(labels, index, i =>
+        {
+            if (i < pick) { index = i; Set(() => { if (back) _settings.CameraBack = values[i]; else _settings.CameraFront = values[i]; }); return; }
+            _ = PickPicture();
+        }, 300);
+
+        async Task PickPicture()
+        {
+            var top = TopLevel.GetTopLevel(this);
+            var files = top == null ? [] : await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = S.CameraPickTitle,
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType(S.CameraPictureFileType) { Patterns = ["*.png", "*.jpg", "*.jpeg"] }],
+            });
+            var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
+            if (path == null || !VitaSharp.Core.Host.CameraSpec.IsImagePath(path)) { box!.SelectedIndex = index; return; }
+            Set(() => { if (back) _settings.CameraBack = path; else _settings.CameraFront = path; });
+            var offset = _scroll.Offset;
+            _scroll.Content = BuildList();
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _scroll.Offset = offset, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+
+        return back ? _k.Row("camera", S.CameraBack, S.CameraBackDetail, box) : _k.Row("camera", S.CameraFront, S.CameraFrontDetail, box);
+    }
+
+    /// <summary>Values and labels of a camera dropdown (without the "pick a picture" entry); the current value is kept
+    /// even when its webcam is unplugged or it is a picture.</summary>
+    public static (List<string> Values, List<string> Labels) CameraChoices(IReadOnlyList<string> webcams, string current, bool back)
+    {
+        var values = new List<string> { "", "none" };
+        var labels = new List<string> { back ? S.CameraBackDefault : S.CameraDefault, S.CameraNone };
+        foreach (var w in webcams) { values.Add(w); labels.Add(w); }
+        if (!values.Contains(current, StringComparer.OrdinalIgnoreCase))
+        {
+            values.Add(current);
+            labels.Add(VitaSharp.Core.Host.CameraSpec.IsImagePath(current) ? S.CameraPicture(Path.GetFileName(current)) : S.CameraDisconnected(current));
+        }
+        return (values, labels);
+    }
+
     Control BuildList()
     {
         var s = new StackPanel { Spacing = 10, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 32) };
@@ -197,19 +248,15 @@ public sealed class SettingsPage : UserControl
             ("il", S.CpuIl),
             ("interp", S.CpuInterp),
         }.Where(c => c.Value is "" or "interp" || VitaSharp.Core.Cpu.Jit.All.Any(b => b.Name == c.Value && b.IsSupported)).ToArray();
-        var cameraValues = new List<string> { "", "none" };
-        var cameraLabels = new List<string> { S.CameraDefault, S.CameraNone };
-        foreach (var d in VitaSharp.Desktop.Host.FlashCapCamera.ListDevices()) { cameraValues.Add(d.Name); cameraLabels.Add(d.Name); }
-        if (!cameraValues.Contains(_settings.Camera, StringComparer.OrdinalIgnoreCase)) { cameraValues.Add(_settings.Camera); cameraLabels.Add(S.CameraDisconnected(_settings.Camera)); }
+        var webcams = VitaSharp.Desktop.Host.FlashCapCamera.ListDevices().Select(d => d.Name).ToList();
         s.Children.Add(_k.Group(
             _k.Row("cpu", S.Cpu, S.CpuDetail, _k.Dropdown(cpuChoices.Select(c => c.Label).ToArray(),
                 Math.Max(0, Array.FindIndex(cpuChoices, c => c.Value.Equals(_settings.CpuBackend, StringComparison.OrdinalIgnoreCase))),
                 i => Set(() => _settings.CpuBackend = cpuChoices[i].Value), 300)),
             _k.Row("gauge", S.CpuClock, S.CpuClockDetail, _k.Dropdown([S.Clock333, S.Clock444], _settings.CpuMhz == 444 ? 1 : 0,
                 i => Set(() => _settings.CpuMhz = i == 1 ? 444 : 0), 300)),
-            _k.Row("camera", S.Camera, S.CameraDetail, _k.Dropdown(cameraLabels,
-                Math.Max(0, cameraValues.FindIndex(v => v.Equals(_settings.Camera, StringComparison.OrdinalIgnoreCase))),
-                i => Set(() => _settings.Camera = cameraValues[i]), 300))));
+            CameraRow(webcams, back: false),
+            CameraRow(webcams, back: true)));
 
         // ---------------------------------------------------------- Rede e PSN
         s.Children.Add(Anchor(SectionNetwork, S.SectionNetwork));

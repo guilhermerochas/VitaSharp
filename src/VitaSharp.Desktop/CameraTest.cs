@@ -33,7 +33,7 @@ public static partial class CameraTest
         var devices = FlashCapCamera.ListDevices();
         Console.WriteLine($"{devices.Count} capture device(s):");
         for (int i = 0; i < devices.Count; i++) Console.WriteLine($"  [{i}] {devices[i].Name} ({devices[i].DeviceType})");
-        using var source = FlashCapCamera.TryCreate(selection);
+        using var source = FlashCapCamera.CreateForVita(selection, selection);
         if (source == null) { Console.WriteLine("camera disabled"); return 1; }
         var sw = Stopwatch.StartNew();
         using var stream = source.Open(CameraFacing.Front, 640, 480, 30);
@@ -68,7 +68,7 @@ public static partial class CameraTest
 
     static int Cycles(string? selection, int cycles)
     {
-        var source = FlashCapCamera.TryCreate(selection);
+        var source = FlashCapCamera.CreateForVita(selection, selection);
         if (source == null) { Console.WriteLine("camera disabled"); return 1; }
         Console.WriteLine($"devices: {string.Join(", ", source.DeviceNames)}"); // enumerate before the first sample
         var (user0, gdi0) = GuiObjects();
@@ -111,7 +111,7 @@ public static partial class CameraTest
     static int Retry(string? selection)
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine("--retry needs Windows"); return 1; }
-        using var source = FlashCapCamera.TryCreate(selection);
+        using var source = FlashCapCamera.CreateForVita(selection, selection);
         if (source == null) { Console.WriteLine("camera disabled"); return 1; }
         _ = source.DeviceNames;
         // empty popup menus are USER objects: allocate them until the per-process quota (10000 by default) is reached

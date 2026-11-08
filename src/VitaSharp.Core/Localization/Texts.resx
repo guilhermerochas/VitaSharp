@@ -48,20 +48,41 @@
   <data name="AsyncShadersDetail" xml:space="preserve">
     <value>Prepares shaders and pipelines on other threads: fewer stutters when entering new areas</value>
   </data>
-  <data name="Camera" xml:space="preserve">
-    <value>Camera</value>
+  <data name="CameraBack" xml:space="preserve">
+    <value>Back camera</value>
+  </data>
+  <data name="CameraBackDefault" xml:space="preserve">
+    <value>Default (another webcam, else the first one)</value>
+  </data>
+  <data name="CameraBackDetail" xml:space="preserve">
+    <value>What the Vita's back camera shows: a webcam, a picture or a gray image</value>
   </data>
   <data name="CameraDefault" xml:space="preserve">
     <value>Default (first camera)</value>
   </data>
-  <data name="CameraDetail" xml:space="preserve">
-    <value>Webcam used for the Vita's cameras</value>
-  </data>
   <data name="CameraDisconnected" xml:space="preserve">
     <value>{0} (disconnected)</value>
   </data>
+  <data name="CameraFront" xml:space="preserve">
+    <value>Front camera</value>
+  </data>
+  <data name="CameraFrontDetail" xml:space="preserve">
+    <value>What the Vita's front camera shows: a webcam, a picture or a gray image</value>
+  </data>
   <data name="CameraNone" xml:space="preserve">
     <value>None (gray picture)</value>
+  </data>
+  <data name="CameraPickPicture" xml:space="preserve">
+    <value>Picture...</value>
+  </data>
+  <data name="CameraPickTitle" xml:space="preserve">
+    <value>Choose a picture for the camera</value>
+  </data>
+  <data name="CameraPicture" xml:space="preserve">
+    <value>Picture: {0}</value>
+  </data>
+  <data name="CameraPictureFileType" xml:space="preserve">
+    <value>Pictures (PNG, JPEG)</value>
   </data>
   <data name="Cancel" xml:space="preserve">
     <value>Cancel</value>

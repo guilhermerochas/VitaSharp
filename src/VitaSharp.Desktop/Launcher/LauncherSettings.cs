@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace VitaSharp.Desktop.Launcher;
 
@@ -10,8 +10,15 @@ public sealed class LauncherSettings
     public bool VSync { get; set; } = true;
     public bool Validation { get; set; }
     public bool ShowLog { get; set; }
-    /// <summary>Webcam used for the Vita cameras: "" = first device, "none" = no webcam (grey frames), or a device name.</summary>
+    /// <summary>Old single setting for both Vita cameras (launcher.json of earlier builds); <see cref="Load"/> moves it
+    /// to <see cref="CameraFront"/> and <see cref="CameraBack"/>.</summary>
     public string Camera { get; set; } = "";
+    /// <summary>"Camera frontal" (--camera-front=): "" = the first webcam, "none" = grey frames, a webcam name or a
+    /// .png/.jpg picture path (<see cref="Core.Host.CameraSpec"/>).</summary>
+    public string CameraFront { get; set; } = "";
+    /// <summary>"Camera traseira" (--camera-back=): "" = the next webcam other than the front one, else the same one;
+    /// otherwise as <see cref="CameraFront"/>.</summary>
+    public string CameraBack { get; set; } = "";
     /// <summary>CPU backend: "" = best supported on this PC, or "native", "il", "interp" (--cpu=).</summary>
     public string CpuBackend { get; set; } = "";
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
@@ -118,12 +125,22 @@ public sealed class LauncherSettings
             {
                 // the old launcher's home view switch: keep offering it
                 if (s.View == ViewHome) s.RecreatedHome = true;
+                s.MigrateCamera();
                 return s;
             }
         }
         catch (JsonException) { }
         catch (IOException) { }
         return new();
+    }
+
+    /// <summary>The old single camera setting becomes the setting of both cameras.</summary>
+    public void MigrateCamera()
+    {
+        if (string.IsNullOrWhiteSpace(Camera)) return;
+        if (CameraFront.Length == 0) CameraFront = Camera;
+        if (CameraBack.Length == 0) CameraBack = Camera;
+        Camera = "";
     }
 
     public void Save()
@@ -141,7 +158,8 @@ public sealed class LauncherSettings
         if (Scale > 1) yield return $"--scale={Scale}";
         if (!VSync) yield return "--no-vsync";
         if (Validation) yield return "--validation";
-        if (!string.IsNullOrWhiteSpace(Camera)) yield return $"--camera={Camera}";
+        if (!string.IsNullOrWhiteSpace(CameraFront)) yield return $"--camera-front={CameraFront}";
+        if (!string.IsNullOrWhiteSpace(CameraBack)) yield return $"--camera-back={CameraBack}";
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
         if (CpuMhz > 0) yield return $"--cpu-mhz={CpuMhz}";
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";

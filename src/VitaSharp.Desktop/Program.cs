@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core;
+using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
@@ -556,7 +556,9 @@ public static class Program
         Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
         Console.WriteLine("  msg-preview <out.png> [message] [--buttons=A,B] [--selected=N] [--progress=N]  draw the message dialog overlay");
-        Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
+        Console.WriteLine("  run options: --camera=<name|index|none|picture.png/.jpg> source of both Vita cameras");
+        Console.WriteLine("               --camera-front=<...> / --camera-back=<...> one camera (default: front = first webcam,");
+        Console.WriteLine("               back = the next other webcam, else the same one)");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
         Console.WriteLine("               --dialogs=auto     answer message / save data dialogs at once (no panel over the game)");
         Console.WriteLine("               --overlay-dump=<dir>  also write every panel drawn over the game (dialogs, save state picker) as PNG");
