@@ -158,9 +158,31 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             Closing?.Invoke();
         };
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
-        // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
-        _window.Update += _ =>
+        // keys held when the window loses the focus never get their release: forget them, or the next press of F8
+        // (one toggle per press) would be taken for key repeat and lost
+        _window.FocusChanged += focused =>
         {
+            if (focused) return;
+            if (_f8Down || _f11Down || _graphicsKeysDown.Count > 0) Log.Info("Window: focus lost with F8/F11/F1-F3 held: their release is assumed");
+            _f8Down = _f11Down = false;
+            _graphicsKeysDown.Clear();
+        };
+        // GLFW gamepad fallback (only without SDL): sampled on the window thread, as GLFW requires
+        Action update = () =>
+        {
+            // the window thread must never stop for long (a frozen window): a gap is logged with its length
+            long t = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (_lastUpdate != 0)
+            {
+                double gapMs = (t - _lastUpdate) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                var gc = GC.GetTotalPauseDuration();
+                if (gapMs >= 1000)
+                    Log.Warn($"Window: the window thread did not run for {gapMs:F0} ms; garbage collection paused every thread for {(gc - _gcPauseAtUpdate).TotalMilliseconds:F0} ms of it (moving or resizing the window also holds it)");
+                _gcPauseAtUpdate = gc;
+                MaxUpdateGapMs = Math.Max(MaxUpdateGapMs, gapMs);
+            }
+            else _gcPauseAtUpdate = GC.GetTotalPauseDuration();
+            _lastUpdate = t;
             DrainWindowWork();
             Tick?.Invoke();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -173,6 +195,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             _lastFallbackPoll = now;
             PollFallbackGamepad();
         };
+        _window.Update += _ => update();
     }
 
     /// <summary>
@@ -328,11 +351,20 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     public void Run()
     {
         _windowThread = Environment.CurrentManagedThreadId;
+        VitaSharp.Core.Util.NativeThread.Register("Window");
         try { _window.Run(); }
         finally { _windowThread = -1; DrainWindowWork(); }
     }
 
     public void Close() => _window.Close();
+
+    /// <summary>Closes the window as its X button does: <see cref="CloseVeto"/> may keep it open (a recording being
+    /// saved), which <see cref="Close"/> skips. Window thread (scripted "Close" key).</summary>
+    public void RequestClose()
+    {
+        if (CloseVeto?.Invoke() == true) return;
+        _window.Close();
+    }
 
     int _windowThread = -1;
     readonly System.Collections.Concurrent.ConcurrentQueue<(Action Work, ManualResetEventSlim Done)> _windowWork = new();
@@ -384,7 +416,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     // ---------------------------------------------------------------- input
 
     /// <summary>One F8 press: "Gravar tudo", or with Ctrl the GPU dump (the key handler and --input steps).</summary>
-    public void PressF8(bool ctrl) => (ctrl ? GpuDumpToggled : SessionCaptureToggled)?.Invoke();
+    public void PressF8(bool ctrl)
+    {
+        Log.Info($"Window: {(ctrl ? "Ctrl+F8 (GPU dump)" : "F8 (Gravar tudo)")} pressed");
+        (ctrl ? GpuDumpToggled : SessionCaptureToggled)?.Invoke();
+    }
+
+    long _lastUpdate;
+    TimeSpan _gcPauseAtUpdate;
+    /// <summary>Longest time the window thread went without an update (ms): tests and the capture check.</summary>
+    public double MaxUpdateGapMs { get; private set; }
 
     /// <summary>A save state key from an --input script ("F5", "F6", "F7", "Shift+F5", "Shift+F7"), as the keyboard
     /// sends it: to the open picker / dialog, else the save state events. Window thread.</summary>

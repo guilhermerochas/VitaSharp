@@ -44,6 +44,14 @@ public sealed class SessionCaptureOptions
     public int EncoderQueueFrames = 120;
     /// <summary>Recording parts (a re-run records without a state or a GPU dump).</summary>
     public bool StartState = true, GpuDump = true, Zip = true;
+    /// <summary>Longest recording: it stops and saves by itself after this many seconds (0 = no limit). A 6-minute
+    /// recording (PCSE00333, 14,603 frames) was 2.6 GB and took over two minutes to save.
+    /// VITASHARP_CAPTURE_MAX_SECONDS / --capture-max=SECONDS.</summary>
+    public double MaxSeconds = DefaultMaxSeconds;
+    /// <summary>Largest recording: it stops by itself once its encoded pictures (frames.vsfr) pass this many bytes
+    /// (0 = no limit).</summary>
+    public long MaxBytes = 1L << 30;
+    public const double DefaultMaxSeconds = 60;
     /// <summary>Hotkey name in the messages ("F8"; Android: the pause menu).</summary>
     public string StopHint = Localization.Loc.Get("CaptureStopHint");
 }
@@ -109,6 +117,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public GpuDumpResult? DumpResult;
         public readonly ManualResetEventSlim DumpDone = new(true);
         public long RandomCalls;
+        public volatile bool LimitReached;
         public double StartStateMs;
         public long ProcessCpuMs0;
     }
@@ -129,6 +138,32 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     public string? LastZip { get; private set; }
     /// <summary>Set when the last recording was completely written (tests, scripted runs wait on it).</summary>
     public readonly ManualResetEventSlim Idle = new(true);
+    /// <summary>Seconds since the running recording started (0 when none runs): the REC badge.</summary>
+    public double RecordingSeconds => _rec is { } r ? (CaptureClock.NowNs - r.StartNs) / 1e9 : 0;
+    /// <summary>Progress of the save in percent (0-100), -1 when nothing is being saved: the "saving NN%" badge.</summary>
+    public int SavePercent => Volatile.Read(ref _savePercent);
+    /// <summary>What the save is doing now ("frames", "analysis", "zip"...), null when nothing is being saved.</summary>
+    public string? SaveStep => Volatile.Read(ref _saveStep);
+    int _savePercent = -1;
+    string? _saveStep;
+    string? _stopPending;
+    volatile bool _starting;
+    readonly CancellationTokenSource _hurry = new();
+
+    /// <summary>The window is closing while a recording is saved: the optional steps (the analysis, report.txt) are
+    /// skipped so the close waits only for the files themselves. Any thread.</summary>
+    public void Hurry()
+    {
+        if (_hurry.IsCancellationRequested) return;
+        Log.Info("[capture] hurry: the window is closing, the analysis (report.txt) is skipped");
+        _hurry.Cancel();
+    }
+
+    void SetProgress(string step, double pct)
+    {
+        Volatile.Write(ref _saveStep, step);
+        Volatile.Write(ref _savePercent, (int)Math.Clamp(pct, 0, 99));
+    }
 
     // ------------------------------------------------------------------ arming
 
@@ -306,6 +341,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Recording? dest;
         lock (_lock) dest = _rec;
         if (dest == null && _preRollSeconds <= 0) return;
+        if (dest != null && !dest.LimitReached) CheckLimit(dest);
         byte[]? px = null;
         // the encoder fell behind (slow device): keep the timing, drop the picture
         if (q.Count < _o.EncoderQueueFrames && rgba.Length >= w * h * 4)
@@ -316,6 +352,25 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         else Interlocked.Increment(ref _droppedPictures);
         try { q.Add(new Work(WorkKind.Frame, info, px, w, h, dest, null)); }
         catch (InvalidOperationException) { if (px != null) ArrayPool<byte>.Shared.Return(px); }
+    }
+
+    /// <summary>The length / size limit: the recording stops and saves by itself, with a notice (GPU worker: only the
+    /// check runs here, the stop on a pool thread).</summary>
+    void CheckLimit(Recording r)
+    {
+        double secs = (CaptureClock.NowNs - r.StartNs) / 1e9;
+        bool time = _o.MaxSeconds > 0 && secs >= _o.MaxSeconds;
+        bool size = _o.MaxBytes > 0 && Interlocked.Read(ref r.FrameBytes) >= _o.MaxBytes;
+        if (!time && !size) return;
+        r.LimitReached = true;
+        string why = time ? FormattableString.Invariant($"{_o.MaxSeconds:F0} s") : $"{_o.MaxBytes >> 20} MB";
+        Log.Info($"[capture] limit reached ({why}): the recording stops and saves by itself");
+        lock (r.Notes) r.Notes.Add($"stopped by the limit ({why}; VITASHARP_CAPTURE_MAX_SECONDS / --capture-max=SECONDS change it, 0 = none)");
+        _o.Status?.Invoke(Localization.Loc.Format("CaptureLimit", why));
+        Task.Run(() =>
+        {
+            for (int i = 0; i < 400 && _rec == r && !Stop("limit"); i++) Thread.Sleep(25);
+        });
     }
 
     bool IRandomHook.Replay(Span<byte> dst) => false;
@@ -391,30 +446,42 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>F8 / the pause menu: starts a recording, or stops the running one. Never blocks.</summary>
     public void Toggle(string reason = "hotkey")
     {
-        if (_rec != null) Stop(reason); else Start(reason);
+        // every press is logged with what it did: a press that seems lost can be told apart from one that was refused
+        bool stop = _rec != null || _starting;
+        bool ok = stop ? Stop(reason) : Start(reason);
+        Log.Info($"[capture] {reason} pressed: {(stop ? "stop" : "start")} {(ok ? "accepted" : SavePercent >= 0 ? $"refused (the previous recording is still being saved, {SavePercent}%)" : "refused")}");
     }
 
-    /// <summary>Starts a recording (in the background: the start save state stops the game for ~0.1-0.3 s).</summary>
-    public bool Start(string reason = "hotkey")
+    /// <summary>Starts a recording (in the background: the start save state stops the game for ~0.1-0.3 s).
+    /// <paramref name="limit"/>: whether the length / size limit applies (a scripted --capture-at range or a re-run
+    /// records exactly what it asked for).</summary>
+    public bool Start(string reason = "hotkey", bool limit = true)
     {
         if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke(Localization.Loc.Get("CaptureWait")); return false; }
         if (_rec != null) { Volatile.Write(ref _busy, 0); return false; }
         Idle.Reset();
+        _starting = true;
         Task.Run(() =>
         {
-            try { StartCore(reason); }
+            try { StartCore(reason, limit); }
             catch (Exception e)
             {
                 Log.Warn($"[capture] start failed: {e}");
                 _o.Status?.Invoke(Localization.Loc.Format("CaptureStartFailed", e.Message));
                 Idle.Set();
             }
-            finally { Volatile.Write(ref _busy, 0); }
+            finally
+            {
+                _starting = false;
+                Volatile.Write(ref _busy, 0);
+                // a stop pressed while the recording was starting (start save state): done now
+                if (Interlocked.Exchange(ref _stopPending, null) is { } why && _rec != null) Stop(why);
+            }
         });
         return true;
     }
 
-    void StartCore(string reason)
+    void StartCore(string reason, bool limit)
     {
         string title = Safe(string.IsNullOrEmpty(_emu.TitleId) ? "NOTITLE" : _emu.TitleId);
         string baseName = $"{title}_{DateTime.Now:yyyyMMdd_HHmmss}_tudo";
@@ -423,7 +490,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Directory.CreateDirectory(dir);
         var r = new Recording(dir)
         {
-            StartNs = CaptureClock.NowNs, StartFlip = Hle.Modules.Display.FramesPresented, StartUs = GuestClock.Microseconds, StartTime = DateTime.Now,
+            LimitReached = !limit, StartNs = CaptureClock.NowNs, StartFlip = Hle.Modules.Display.FramesPresented, StartUs = GuestClock.Microseconds, StartTime = DateTime.Now,
             ProcessCpuMs0 = (long)Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds,
         };
         r.FramesFile = new FileStream(Path.Combine(dir, "frames.vsfr"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
@@ -495,8 +562,20 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>Stops the recording and writes the folder and its zip in the background.</summary>
     public bool Stop(string reason = "hotkey")
     {
-        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke(Localization.Loc.Get("CaptureStarting")); return false; }
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
+        {
+            // still starting (the start save state): the stop is kept and done as soon as the start completes, so a
+            // press is never lost
+            if (_starting)
+            {
+                Volatile.Write(ref _stopPending, reason);
+                _o.Status?.Invoke(Localization.Loc.Get("CaptureStarting"));
+                return true;
+            }
+            return false;
+        }
         if (_rec == null) { Volatile.Write(ref _busy, 0); return false; }
+        SetProgress("frames", 0);
         Task.Run(() =>
         {
             try { StopCore(reason); }
@@ -505,7 +584,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 Log.Warn($"[capture] stop failed: {e}");
                 _o.Status?.Invoke(Localization.Loc.Format("CaptureSaveFailed", e.Message));
             }
-            finally { Volatile.Write(ref _busy, 0); Idle.Set(); }
+            finally
+            {
+                Volatile.Write(ref _saveStep, null);
+                Volatile.Write(ref _savePercent, -1);
+                Volatile.Write(ref _busy, 0);
+                Idle.Set();
+            }
         });
         return true;
     }
@@ -533,6 +618,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         if (ReferenceEquals(CaptureHooks.Random, this)) CaptureHooks.Random = null;
         Step(r, "threads_stop.txt", () => WriteText(r.Dir, "threads_stop.txt", _o.Threads));
         var closed = new ManualResetEventSlim();
+        var encoderQueue = _queue;
         lock (_lock)
         {
             r.Input.Add(InputEvent.Now("mark", $"stop {reason}"));
@@ -541,7 +627,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             if (_preRollSeconds <= 0) StopRunning();
         }
         _o.RecordingChanged?.Invoke(false);
-        if (!closed.Wait(30000)) r.Notes.Add("error: the frame encoder did not finish in 30 s: frames.vsfr may be incomplete");
+        var saveClock = Stopwatch.StartNew();
+        // the encoder's backlog (at most EncoderQueueFrames pictures) is the first part of the progress
+        int backlog = Math.Max(1, encoderQueue?.Count ?? 1);
+        while (!closed.Wait(100))
+        {
+            SetProgress("frames", 10.0 * (1 - Math.Min(1.0, (encoderQueue?.Count ?? 0) / (double)backlog)));
+            if (saveClock.ElapsedMilliseconds > 30000) { r.Notes.Add("error: the frame encoder did not finish in 30 s: frames.vsfr may be incomplete"); break; }
+        }
+        SetProgress("gpu dump", 10);
         Step(r, "gpu dump", () =>
         {
             if (r.Dump == null || r.DumpDone.Wait(2000)) return;
@@ -549,6 +643,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             else r.Notes.Add("error: the GPU dump did not finish in 15 s");
         });
 
+        SetProgress("files", 15);
         string dir = r.Dir;
         List<InputEvent> input;
         lock (_lock) input = r.Input.ToList();
@@ -565,20 +660,36 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             Step(r, "audio/files.txt", () => File.WriteAllLines(Path.Combine(dir, "audio", "files.txt"), wavs.Select(x => FormattableString.Invariant($"{Path.GetFileName(x.File)}	{x.StartMs:F1}")).Prepend("# file	startMs (after the recording start)")));
             Step(r, "audio_mix.wav", () => CaptureAudio.Mix(wavs, Path.Combine(dir, "audio_mix.wav")));
         }
-        Log.Info($"[capture] saved {dir}: {r.Frames.Count} frames ({r.FrameBytes / 1048576.0:F1} MB of pictures), {input.Count} input events" +
+        Log.Info($"[capture] files written {dir}: {r.Frames.Count} frames ({r.FrameBytes / 1048576.0:F1} MB of pictures), {input.Count} input events" +
                  (r.DumpResult is { } d ? $", GPU dump {d.Frames} frames {d.FileBytes / 1048576.0:F1} MB" : ""));
         Log.Flush();
         Step(r, "log.txt", () => CopyLog(Path.Combine(dir, "log.txt")));
-        Step(r, "report.txt (analysis)", () => CaptureAnalyzer.Analyze(dir, quiet: true));
+        // the analysis is optional (vitasharp-perf capture DIR writes it again): skipped when the window is closing
+        double zipFrom = _o.Zip ? 60 : 99;
+        var analysisClock = Stopwatch.StartNew();
+        if (_hurry.IsCancellationRequested) lock (r.Notes) r.Notes.Add("analysis skipped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+        else
+            Step(r, "report.txt (analysis)", () =>
+            {
+                try { CaptureAnalyzer.Analyze(dir, quiet: true, progress: p => SetProgress("analysis", 20 + p * (zipFrom - 20)), cancel: _hurry.Token, expectedFrames: r.Frames.Count); }
+                catch (OperationCanceledException)
+                {
+                    lock (r.Notes) r.Notes.Add("analysis stopped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+                    Log.Info("[capture] analysis stopped (the window is closing)");
+                }
+            });
+        double analysisS = analysisClock.Elapsed.TotalSeconds;
         // last before the zip, so it lists every step that failed
         Step(r, "session.txt", () => WriteSession(r, cpuMs));
         string? zip = null;
         if (_o.Zip)
         {
             zip = dir + ".zip";
-            try { ZipFolder(dir, zip); LastZip = zip; }
+            SetProgress("zip", zipFrom);
+            try { ZipFolder(dir, zip, p => SetProgress("zip", zipFrom + p * (100 - zipFrom))); LastZip = zip; }
             catch (Exception e) { Log.Warn($"[capture] zip failed: {e.Message}"); zip = null; }
         }
+        Log.Info(FormattableString.Invariant($"[capture] saved {zip ?? dir} in {saveClock.Elapsed.TotalSeconds:F1} s (analysis {analysisS:F1} s{(_hurry.IsCancellationRequested ? ", hurried: the window is closing" : "")})"));
         _o.Status?.Invoke(Localization.Loc.Format("CaptureSaved", zip ?? dir));
     }
 
@@ -694,16 +805,31 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     }
 
     /// <summary>The folder as a zip next to it; files that are already compressed (states, dumps) are stored.</summary>
-    static void ZipFolder(string dir, string zip)
+    /// <summary>The folder as a zip next to it; files that are already compressed (states, dumps, the Brotli/QOI
+    /// pictures of frames.vsfr) are stored. <paramref name="progress"/> gets the fraction of bytes written (0-1).</summary>
+    internal static void ZipFolder(string dir, string zip, Action<double>? progress = null)
     {
         if (File.Exists(zip)) File.Delete(zip);
+        var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Select(f => new FileInfo(f)).ToList();
+        double total = Math.Max(1, files.Sum(f => f.Length)), done = 0;
         using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
         string baseName = Path.GetFileName(dir);
-        foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        var buf = new byte[1 << 20];
+        foreach (var f in files)
         {
-            string ext = Path.GetExtension(f).ToLowerInvariant();
-            var level = ext is ".vss" or ".vsgd" or ".png" or ".zip" ? CompressionLevel.NoCompression : CompressionLevel.Fastest;
-            z.CreateEntryFromFile(f, Path.Combine(baseName, Path.GetRelativePath(dir, f)).Replace('\\', '/'), level);
+            string ext = f.Extension.ToLowerInvariant();
+            var level = ext is ".vss" or ".vsgd" or ".vsfr" or ".png" or ".zip" ? CompressionLevel.NoCompression : CompressionLevel.Fastest;
+            var entry = z.CreateEntry(Path.Combine(baseName, Path.GetRelativePath(dir, f.FullName)).Replace('\\', '/'), level);
+            entry.LastWriteTime = f.LastWriteTime;
+            using var input = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 16);
+            using var output = entry.Open();
+            int n;
+            while ((n = input.Read(buf, 0, buf.Length)) > 0)
+            {
+                output.Write(buf, 0, n);
+                done += n;
+                progress?.Invoke(done / total);
+            }
         }
     }
 

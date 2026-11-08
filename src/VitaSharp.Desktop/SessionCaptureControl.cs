@@ -43,6 +43,10 @@ sealed class SessionCaptureControl : IDisposable
             if (renderer() is { } r) foreach (var line in r.DescribeForDiagnostics().Split('\n')) sb.AppendLine($"renderer: {line.TrimEnd('\r')}");
             return sb.ToString();
         };
+        // the longest recording (default 60 s; 0 = no limit): --capture-max=SECONDS or VITASHARP_CAPTURE_MAX_SECONDS
+        if ((Runner.Opt(options, "--capture-max") ?? Environment.GetEnvironmentVariable(EnvVars.CaptureMaxSeconds)) is { } max
+            && double.TryParse(max, NumberStyles.Float, CultureInfo.InvariantCulture, out var maxS))
+            o.MaxSeconds = Math.Max(0, maxS);
         Capture = new SessionCapture(emu, o);
         string? spec = options.FirstOrDefault(x => x == "--capture-preroll" || x.StartsWith("--capture-preroll="))
             is { } opt ? (opt.Contains('=') ? opt[(opt.IndexOf('=') + 1)..] : DefaultPreRoll.ToString(CultureInfo.InvariantCulture))
@@ -69,7 +73,7 @@ sealed class SessionCaptureControl : IDisposable
         new Thread(() =>
         {
             while (Core.Hle.Modules.Display.FramesPresented < a) Thread.Sleep(5);
-            Capture.Start("--capture-at");
+            Capture.Start("--capture-at", limit: false);
             while (Core.Hle.Modules.Display.FramesPresented < b) Thread.Sleep(5);
             // the start may still be running (save state); Stop is refused while it is
             for (int i = 0; i < 400 && !Capture.Stop("--capture-at"); i++) Thread.Sleep(25);
@@ -165,7 +169,7 @@ sealed class SessionCaptureControl : IDisposable
             SaveStates.Loaded += _ =>
             {
                 input.Activate(fromUs);
-                control.Capture.Start("re-run");
+                control.Capture.Start("re-run", limit: false);
                 new Thread(() =>
                 {
                     while (GuestClock.Microseconds < input.LastUs + 2_000_000 && emu.Running) Thread.Sleep(20);

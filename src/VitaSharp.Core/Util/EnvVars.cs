@@ -213,6 +213,9 @@ public static class EnvVars
     public const string CapturePreRoll = "VITASHARP_CAPTURE_PREROLL";
     /// <summary>=START:STOP (guest frames): records a session capture over those frames (--capture-at; tests).</summary>
     public const string CaptureAt = "VITASHARP_CAPTURE_AT";
+    /// <summary>=SECONDS (0 = no limit; default 60): "Gravar tudo" stops and saves by itself after that long
+    /// (--capture-max=SECONDS; SessionCaptureOptions.MaxSeconds).</summary>
+    public const string CaptureMaxSeconds = "VITASHARP_CAPTURE_MAX_SECONDS";
 
 
 
