@@ -4,7 +4,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
-- [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
+- [x] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
   Feito em parte (07/11/2026, perf/desktop-11): `F1` / `Shift+F1` passam para a resolução interna seguinte / anterior
   (1x, 2x, 3x, 4x) e `F2` / `Shift+F2` para a taxa de quadros seguinte / anterior (nativa, fixa em 30, fixa em 60, sem
   limite), com aviso no canto da janela e na barra de título; valem só para a sessão (o perfil do jogo no launcher
@@ -15,6 +15,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   2500 e 2600 no modo fixo em 30 (`scratchpad/perf11_out/hk_mania`, `hk_win`, `hk_sheet.png`). Falta: o MSAA (real /
   antigo / desligado) ainda é lido uma vez por processo (`VITASHARP_MSAA`, estático no renderizador); para trocar ao
   vivo ele precisa virar opção do renderizador como a escala
+  Confirmado pelo usuário (08/11/2026)
 - [ ] Killzone (PCSC00045) `kz_skin` a 1x morreu calado no quadro 3435 numa das 8 rodadas da perf/desktop-res
   (07/11/2026; sem exceção, `.err` vazio). Não reproduziu (perf/desktop-11): 6 rodadas seguidas, 3 com cache de
   shaders e do driver frios e 3 quentes, com outros emuladores disputando a CPU, todas até o quadro 4500 com código de
@@ -29,7 +30,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
-- [ ] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
+- [x] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
   jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
   salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
   escolhido (se já houver estado, pedir confirmação para **sobrescrever**, mostrando o print antigo e o atual),
@@ -44,6 +45,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   F5/F7 rápidos e Shift+F5/F7 no slot escolhido continuam. Validado no Gravity Rush (janela oculta, roteiro: salvar
   no slot 2, substituir com confirmação, carregar o slot 2 pela aba Carregar, o jogo segue a 30 fps). Falta: pausar
   o jogo com a tela aberta, apagar, print grande ao carregar, tempo de jogo/versão no slot, e o Android
+  Confirmado pelo usuário (08/11/2026)
 
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
@@ -126,6 +128,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   modo Sem limite também solta o ritmo do vblank; o áudio continua no tempo real. Guardar no perfil do jogo (como o
   modo do mouse), no launcher do desktop (página/ajustes do jogo) e no app Android (ajustes do jogo e menu de pausa),
   com o modo atual no overlay de FPS
+  Confirmado pelo usuário (08/11/2026)
 
   Desktop feito (perf/desktop-res, 07/11/2026): "Taxa de quadros" no painel do jogo do launcher, `--frame-rate=native|30|60|unlimited`
   (`VITASHARP_FRAME_RATE`, `FrameRate` em Hle/Modules/Display.cs): os modos fixos limitam os vblanks que as esperas
@@ -513,6 +516,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tecla, um clique do direito/meio/laterais (o esquerdo só sobre o desenho do Vita) grava o botão. Validado no 99Vidas
   (janela oculta, mensagens do Windows na janela): botão direito = Cruz respondeu NÃO ao diálogo, botão 4 = pausa.
   O perfil do teclado é um só (não por jogo)
+  Confirmado pelo usuário (08/11/2026)
 - [x] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e
   girar a câmera como num jogo de PC (ex.: Killzone, Uncharted). Captura do cursor na janela (com tecla para soltar),
   sensibilidade, inverter eixo Y, zona morta/curva de resposta e retorno ao centro quando o mouse para; opção no
@@ -580,6 +584,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   diálogo de licença de verdade (sem janela), digita o zRIF, aperta Instalar e a fila instala o `.pkg` numa pasta de
   dados de teste; o `.rif` em `ux0:license/<TITLEID>` e o `work.bin` saem iguais ao zRIF decodificado. Teste
   `PkgInstallTests` (um `.pkg` montado no teste, `PkgFixture`): instalação com zRIF e recusa de licença de outro jogo
+  Confirmado pelo usuário (08/11/2026)
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de
@@ -919,7 +924,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
-- [ ] Sugestão de layout novo para o launcher do desktop (pedido do usuário, 07/11/2026), como foi feito para o app
+- [x] Sugestão de layout novo para o launcher do desktop (pedido do usuário, 07/11/2026), como foi feito para o app
   Android: proposta de um visual moderno e próprio do VitaSharp (o usuário citou o Ryujinx só como exemplo de visual
   moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
   LiveArea/capturas/estados salvos/troféus/ajustes por jogo, configurações organizadas por seção, tema claro e escuro e
@@ -929,6 +934,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   troféus, capturas, fila de instalação, configurações por seção, tema claro/escuro, tempo jogado. Validado sem janela
   (`ui-render`: todas as páginas com dados reais; Killzone e o Sistema do Vita iniciados pelo launcher com `--headless`,
   saída 0 e tempo jogado gravado); falta o usuário usar com janela. A atualização automática só tem os ajustes.
+  Confirmado pelo usuário (08/11/2026)
 
 - [x] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
   launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão
@@ -954,6 +960,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Texts.pt-BR.resx (~330 textos, escritos em inglês e português). O APK compila (Debug); não rodou no celular. Falta:
   estender o teste de ASCII ao Android e ao Mobile.Core (os símbolos ✕ ○ › ▶ e os comentários em português ainda
   estão no código) e uma escolha de idioma no app (hoje segue o idioma do aparelho)
+  Confirmado pelo usuário (08/11/2026)
 - [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
   releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um
