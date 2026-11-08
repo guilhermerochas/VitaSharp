@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=fa1f63408f4b68fd9971350d4009da5256da4ddb764ae998dc764759239760d2 -->
+<!-- pair: README.pt-BR.md sha256=888f1c768002fa81918e07e7e57d4fa24e59aa048678753e99f4405928bb6b59 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -99,7 +99,7 @@ and **Continue** resumes the game. Details and what is missing in [`docs/notes/s
 **Android.** See [Android](#android).
 
 **Language.** The launcher and the game window follow the system's language (English or Brazilian Portuguese);
-**Settings > General > Appearance > Language** picks one. Logs stay in English.
+**Settings > General > Appearance > Language** picks one (on Android: **Settings > Appearance > Language**). Logs stay in English.
 
 Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
 `~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in
@@ -119,7 +119,8 @@ Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Li
 | `F2` / `Shift+F2` | Next / previous frame rate while the game runs (native, locked to 30, locked to 60, unlimited) |
 | `F3` / `Shift+F3` | Next / previous MSAA mode while the game runs (native, 2x supersampling, off; this session only, with an on-screen notice) |
 | `F4` | Mouse mode: gyroscope (middle button), right stick, left stick or off, saved per game (`Esc` releases the cursor) |
-| `F5` / `F7` | Save / load the quick state; `F6` picks a slot (1-9), `Shift+F5` / `Shift+F7` save / load in it |
+| `F5` / `F7` | Save / load the quick state; `Shift+F5` / `Shift+F7` save / load in the chosen slot |
+| `F6` | Save state picker over the paused game: the quick slot and slots 1-9 with their picture, date, play time and version; save (overwriting asks, showing the old and the current picture), load (with the picture large), delete (`Del` / Triangle) |
 | `F8` | Starts / stops **Record everything** (see [Report a bug](#report-a-bug)) |
 | `Ctrl+F8` | Starts / stops a GPU dump (`gpudumps/*.vsgd`; `replay-gpu` redraws it draw by draw, without the game) |
 | `F9` | Turns debug mode on / off (detailed logs, 10 s pre-recording, automatic captures) |
