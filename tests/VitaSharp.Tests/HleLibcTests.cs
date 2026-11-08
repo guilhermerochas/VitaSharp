@@ -268,4 +268,30 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         Assert.Equal(24.0, Libm.TGamma(5), 9);
         Assert.Equal(Math.Log(120), Libm.LGamma(6), 9);
     }
+
+    [Fact]
+    public void CxxRuntimePieces()
+    {
+        var c = NewLibc();
+        uint p = Call<uint>(c, "_Znwj", 24u);
+        Assert.NotEqual(0u, p);
+        Invoke(c, "_ZdlPv", p);
+        uint cell = Buf(8), expected = Buf(4);
+        GuestMemory.W32(cell, 5);
+        Assert.Equal(5, Call<int>(c, "_Atomic_fetch_add_4", cell, 3, 5));
+        Assert.Equal(8u, GuestMemory.R32(cell));
+        GuestMemory.W32(expected, 7);
+        Assert.Equal(0, Call<int>(c, "_Atomic_compare_exchange_strong_4", cell, expected, 1, 5, 5));
+        Assert.Equal(8u, GuestMemory.R32(expected)); // the current value comes back
+        Assert.Equal(1, Call<int>(c, "_Atomic_compare_exchange_strong_4", cell, expected, 1, 5, 5));
+        Assert.Equal(1u, GuestMemory.R32(cell));
+        uint t1 = Buf(8), t2 = Buf(8), name = Str("N3FooE");
+        GuestMemory.W32(t1 + 4, name);
+        GuestMemory.W32(t2 + 4, name);
+        Assert.Equal(1, Call<int>(c, "_ZNKSt9type_infoeqERKS_", t1, t2));
+        Assert.Equal(name, Call<uint>(c, "_ZNKSt9type_info4nameEv", t1));
+        Assert.Equal("no such file or directory", GuestMemory.ReadCString(Call<uint>(c, "_ZSt13_Syserror_mapi", 2)));
+        Assert.Equal(0u, Call<uint>(c, "_ZSt13_Syserror_mapi", 5000));
+        Assert.Equal("bad allocation", GuestMemory.ReadCString(Call<uint>(c, "_ZNKSt9bad_alloc4whatEv", 0u)));
+    }
 }

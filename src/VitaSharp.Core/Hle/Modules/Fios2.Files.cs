@@ -271,7 +271,7 @@ public sealed partial class Fios2
     [Hle] int sceFiosFHCloseSync(uint attr, int fh) => CloseFile(fh);
     [Hle] int sceFiosFHClose(uint attr, int fh) => Complete(attr, CloseFile(fh));
 
-    /// <summary>Reads at an offset (the position is not touched); 0 bytes past the end is SCE_FIOS_ERROR_EOF.</summary>
+    /// <summary>Reads at an offset (the position is not touched): the bytes read, 0 at the end of the file.</summary>
     long ReadAt(FileH f, uint buf, long len, long offset)
     {
         if (!f.Read) return ERR_WRITE_ONLY;
@@ -281,7 +281,7 @@ public sealed partial class Fios2
         if (len == 0) return 0;
         if (f.ArchiveData != null)
         {
-            if (offset >= f.ArchiveData.Length) return ERR_EOF;
+            if (offset >= f.ArchiveData.Length) return 0;
             int n = (int)Math.Min(len, f.ArchiveData.Length - offset);
             f.ArchiveData.AsSpan((int)offset, n).CopyTo(GuestMemory.Span(buf, n));
             return n;
@@ -295,7 +295,7 @@ public sealed partial class Fios2
             if (r == 0) break;
             total += r;
         }
-        return total == 0 ? ERR_EOF : total;
+        return total;
     }
 
     long WriteAt(FileH f, uint buf, long len, long offset)
@@ -341,15 +341,18 @@ public sealed partial class Fios2
     long PRead(int fh, uint buf, long len, long off) => GetFile(fh) is { } f ? ReadAt(f, buf, len, off) : ERR_BAD_FH;
     long PWrite(int fh, uint buf, long len, long off) => GetFile(fh) is { } f ? WriteAt(f, buf, len, off) : ERR_BAD_FH;
 
-    int AsyncIo(uint attr, long r, long len, uint buf, long off) => Complete(attr, r < 0 ? (int)r : 0, r < 0 ? 0 : r, len, buf, off);
+    /// <summary>An I/O op's result: a read that reaches the end of the file before its length completes with
+    /// SCE_FIOS_ERROR_EOF (the sync forms, through sceFiosOpSyncWait, then return the bytes read).</summary>
+    int AsyncIo(uint attr, long r, long len, uint buf, long off, bool read = false)
+        => Complete(attr, r < 0 ? (int)r : read && r < len ? ERR_EOF : 0, r < 0 ? 0 : r, len, buf, off);
 
     [Hle] long sceFiosFHReadSync(uint attr, int fh, uint buf, long len) => Read(fh, buf, len);
     [Hle] long sceFiosFHWriteSync(uint attr, int fh, uint buf, long len) => Write(fh, buf, len);
     [Hle] long sceFiosFHPreadSync(uint attr, int fh, uint buf, long len, long off) => PRead(fh, buf, len, off);
     [Hle] long sceFiosFHPwriteSync(uint attr, int fh, uint buf, long len, long off) => PWrite(fh, buf, len, off);
-    [Hle] int sceFiosFHRead(uint attr, int fh, uint buf, long len) { long p = GetFile(fh)?.Pos ?? 0; return AsyncIo(attr, Read(fh, buf, len), len, buf, p); }
+    [Hle] int sceFiosFHRead(uint attr, int fh, uint buf, long len) { long p = GetFile(fh)?.Pos ?? 0; return AsyncIo(attr, Read(fh, buf, len), len, buf, p, true); }
     [Hle] int sceFiosFHWrite(uint attr, int fh, uint buf, long len) { long p = GetFile(fh)?.Pos ?? 0; return AsyncIo(attr, Write(fh, buf, len), len, buf, p); }
-    [Hle] int sceFiosFHPread(uint attr, int fh, uint buf, long len, long off) => AsyncIo(attr, PRead(fh, buf, len, off), len, buf, off);
+    [Hle] int sceFiosFHPread(uint attr, int fh, uint buf, long len, long off) => AsyncIo(attr, PRead(fh, buf, len, off), len, buf, off, true);
     [Hle] int sceFiosFHPwrite(uint attr, int fh, uint buf, long len, long off) => AsyncIo(attr, PWrite(fh, buf, len, off), len, buf, off);
 
     /// <summary>Scatter/gather over SceFiosIOV { void *ptr; size_t length; } entries (1..1024 of them).</summary>
@@ -364,22 +367,21 @@ public sealed partial class Fios2
         {
             uint p = GuestMemory.R32(iov + (uint)i * 8), n = GuestMemory.R32(iov + (uint)i * 8 + 4);
             long r = write ? WriteAt(f, p, n, pos + total) : ReadAt(f, p, n, pos + total);
-            if (r == ERR_EOF) break;
             if (r < 0) return total > 0 ? total : r;
             total += r;
             if (r < n) break;
         }
         if (offset == null) f.Pos += total;
-        return total == 0 && !write ? ERR_EOF : total;
+        return total;
     }
 
     [Hle] long sceFiosFHReadvSync(uint attr, int fh, uint iov, int count) => Vector(fh, iov, count, null, false);
     [Hle] long sceFiosFHWritevSync(uint attr, int fh, uint iov, int count) => Vector(fh, iov, count, null, true);
     [Hle] long sceFiosFHPreadvSync(uint attr, int fh, uint iov, int count, long off) => Vector(fh, iov, count, off, false);
     [Hle] long sceFiosFHPwritevSync(uint attr, int fh, uint iov, int count, long off) => Vector(fh, iov, count, off, true);
-    [Hle] int sceFiosFHReadv(uint attr, int fh, uint iov, int count) => AsyncIo(attr, Vector(fh, iov, count, null, false), 0, iov, 0);
+    [Hle] int sceFiosFHReadv(uint attr, int fh, uint iov, int count) => AsyncIo(attr, Vector(fh, iov, count, null, false), 0, iov, 0, true);
     [Hle] int sceFiosFHWritev(uint attr, int fh, uint iov, int count) => AsyncIo(attr, Vector(fh, iov, count, null, true), 0, iov, 0);
-    [Hle] int sceFiosFHPreadv(uint attr, int fh, uint iov, int count, long off) => AsyncIo(attr, Vector(fh, iov, count, off, false), 0, iov, off);
+    [Hle] int sceFiosFHPreadv(uint attr, int fh, uint iov, int count, long off) => AsyncIo(attr, Vector(fh, iov, count, off, false), 0, iov, off, true);
     [Hle] int sceFiosFHPwritev(uint attr, int fh, uint iov, int count, long off) => AsyncIo(attr, Vector(fh, iov, count, off, true), 0, iov, off);
 
     /// <summary>sceFiosFHSeek(fh, offset, whence): SEEK_SET 0, CUR 1, END 2; returns the new position or an error.</summary>
@@ -455,16 +457,16 @@ public sealed partial class Fios2
     // ------------------------------------------------------------------ paths: stat, exists, delete, rename, size
 
     /// <summary>SceFiosStat: i64 size, access/modification/creation SceFiosDate, u32 statFlags, u32 reserved, i64
-    /// uid, gid, dev, ino, mode.</summary>
+    /// uid, gid, dev, ino, mode (0x50 bytes).</summary>
     static void WriteStat(uint stat, long size, bool dir, bool writable, DateTime mtime, DateTime? atime = null, DateTime? ctime = null)
     {
-        GuestMemory.Span(stat, 0x58).Clear();
+        GuestMemory.Span(stat, 0x50).Clear();
         GuestMemory.Write(stat, size);
         GuestMemory.Write(stat + 8, DateOf(atime ?? mtime));
         GuestMemory.Write(stat + 16, DateOf(mtime));
         GuestMemory.Write(stat + 24, DateOf(ctime ?? mtime));
         GuestMemory.W32(stat + 32, (dir ? STATUS_DIRECTORY : 0) | STATUS_READABLE | (writable ? STATUS_WRITABLE : 0));
-        GuestMemory.Write(stat + 80, (long)((dir ? 0x1000 : 0x2000) | (writable ? 0x1B6 : 0x124)));
+        GuestMemory.Write(stat + 72, (long)((dir ? 0x1000 : 0x2000) | (writable ? 0x1B6 : 0x124)));
     }
 
     int StatPath(string path, uint stat)
@@ -565,7 +567,7 @@ public sealed partial class Fios2
 
     [Hle] long sceFiosFileReadSync(uint attr, string path, uint buf, long len, long off) => FileTransfer(path, buf, len, off, false);
     [Hle] long sceFiosFileWriteSync(uint attr, string path, uint buf, long len, long off) => FileTransfer(path, buf, len, off, true);
-    [Hle] int sceFiosFileRead(uint attr, string path, uint buf, long len, long off) => AsyncIo(attr, FileTransfer(path, buf, len, off, false), len, buf, off);
+    [Hle] int sceFiosFileRead(uint attr, string path, uint buf, long len, long off) => AsyncIo(attr, FileTransfer(path, buf, len, off, false), len, buf, off, true);
     [Hle] int sceFiosFileWrite(uint attr, string path, uint buf, long len, long off) => AsyncIo(attr, FileTransfer(path, buf, len, off, true), len, buf, off);
 
     [Hle]

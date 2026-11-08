@@ -36,7 +36,8 @@ public sealed class EmulatorOptions
     /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
     public IReadOnlyCollection<string>? LleModules { get; init; }
     /// <summary>Sysmodule libraries to keep on HLE even when the game or the firmware provides the module
-    /// ("libult", "libSceJson", or the short names "ult", "json", ...). Null: VITASHARP_HLE_MODULES.</summary>
+    /// ("libult", "libSceJson", or the short names "ult", "json", ...), and the process preloads a game ships ("libc",
+    /// "libfios2"...). Null: VITASHARP_HLE_MODULES.</summary>
     public IReadOnlyCollection<string>? HleModules { get; init; }
     /// <summary>An existing guest address space to run in (there is one per process: unit tests that boot an
     /// emulator share the test fixture's). Null: the emulator creates it.</summary>
@@ -524,7 +525,9 @@ public sealed class Emulator : IDisposable
         uint preloadDisabled = ProcessParamField(0x24);
         foreach (var (bit, name) in new[] { (0x00010000u, "libc"), (0x00200000u, "libfios2"), (0x00800000u, "libSceFt2"), (0x01000000u, "libpvf") })
         {
-            if ((preloadDisabled & bit) != 0) continue;
+            // the HLE-modules option keeps these on HLE too (VITASHARP_HLE_MODULES=libc,libfios2: the C library and
+            // FIOS2 of the HLE instead of the game's own copies)
+            if ((preloadDisabled & bit) != 0 || KeepOnHle(name)) continue;
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }

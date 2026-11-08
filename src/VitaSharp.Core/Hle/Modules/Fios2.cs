@@ -143,7 +143,9 @@ public sealed partial class Fios2 : HleModule
 
     [Hle] int sceFiosOpWait(int op) => GetOp(op) is { } o ? o.Err : ERR_BAD_OP;
     [Hle] int sceFiosOpWaitUntil(int op, long deadline) => sceFiosOpWait(op);
-    [Hle] long sceFiosOpSyncWait(int op) { var o = GetOp(op); if (o == null) return ERR_BAD_OP; long r = o.Err < 0 ? o.Err : o.Actual; sceFiosOpDelete(op); return r; }
+    /// <summary>Waits, deletes the op and returns its count, or its error (SCE_FIOS_ERROR_EOF counts as success, as in
+    /// libfios2.suprx: a sync read at the end of a file returns the bytes it got, 0 at the very end).</summary>
+    [Hle] long sceFiosOpSyncWait(int op) { var o = GetOp(op); if (o == null) return ERR_BAD_OP; long r = o.Err < 0 && o.Err != ERR_EOF ? o.Err : o.Actual; sceFiosOpDelete(op); return r; }
     [Hle] long sceFiosOpSyncWaitForIO(int op) => sceFiosOpSyncWait(op);
     [Hle] int sceFiosOpIsDone(int op) => GetOp(op) != null ? 1 : 0;
     /// <summary>Operations finish when issued, so none is ever cancelled.</summary>

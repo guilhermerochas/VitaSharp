@@ -57,12 +57,17 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(5L, Call<long>(f, "sceFiosFHTell", fh));
         Assert.Equal(8L, Call<long>(f, "sceFiosFHSeek", fh, -2L, 2));
         Assert.Equal(2L, Call<long>(f, "sceFiosFHReadSync", 0u, fh, buf, 10L));
-        Assert.Equal(unchecked((long)(int)0x80820010), Call<long>(f, "sceFiosFHReadSync", 0u, fh, buf, 10L)); // EOF
+        Assert.Equal(0L, Call<long>(f, "sceFiosFHReadSync", 0u, fh, buf, 10L)); // at the end: 0 bytes (EOF is success for sync forms)
+        int eofOp = Call<int>(f, "sceFiosFHPread", 0u, fh, buf, 10L, 6L); // a read cut short by the end
+        Assert.Equal(unchecked((int)0x80820010), Call<int>(f, "sceFiosOpGetError", eofOp));
+        Assert.Equal(4L, Call<long>(f, "sceFiosOpSyncWait", eofOp));
         Assert.Equal(unchecked((long)(int)0x80820015), Call<long>(f, "sceFiosFHWriteSync", 0u, fh, buf, 1L)); // read only
         uint stat = Buf(0x58);
+        GuestMemory.W32(stat + 0x50, 0xA5A5A5A5); // SceFiosStat is 0x50 bytes: nothing past it is written
         Assert.Equal(0, Call<int>(f, "sceFiosFHStatSync", 0u, fh, stat));
         Assert.Equal(10L, GuestMemory.Read<long>(stat));
         Assert.Equal(0u, GuestMemory.R32(stat + 32) & 1);
+        Assert.Equal(0xA5A5A5A5u, GuestMemory.R32(stat + 0x50));
         // an async read is already done when it returns
         int op = Call<int>(f, "sceFiosFHPread", 0u, fh, buf, 4L, 6L);
         Assert.Equal(1, Call<int>(f, "sceFiosOpIsDone", op));
