@@ -134,14 +134,23 @@ public sealed class GameOptions
     public static readonly (int Factor, string Label)[] ResScales =
         [(1, "1x nativa (960×544)"), (2, "2x (1920×1088)"), (3, "3x (2880×1632)"), (4, "4x (3840×2176)")];
 
+    /// <summary>"Taxa de quadros": "native" (the default: the game's own pacing), "30", "60" or "unlimited", --frame-rate=
+    /// (Hle/Modules/Display.cs FrameRate).</summary>
+    public string FrameRate { get; set; } = "native";
+
+    /// <summary>Frame rate choices: option value and label.</summary>
+    public static readonly (string Value, string Label)[] FrameRates =
+        [("native", "Nativo (do jogo)"), ("30", "Fixo em 30"), ("60", "Fixo em 60"), ("unlimited", "Sem limite")];
+
     public IEnumerable<string> RunOptions()
     {
         if (ResScale is >= 2 and <= 4) yield return $"--res-scale={ResScale}";
+        if (FrameRate is "30" or "60" or "unlimited") yield return $"--frame-rate={FrameRate}";
     }
 
     /// <summary>Every option at its default: the entry can be dropped.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsDefault => ResScale is < 2 or > 4;
+    public bool IsDefault => ResScale is < 2 or > 4 && FrameRate is not ("30" or "60" or "unlimited");
 }
 
 /// <summary>Source-generated JSON metadata for the settings file (Native AOT has no reflection-based serializer).</summary>

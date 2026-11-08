@@ -391,6 +391,19 @@ public sealed partial class MainWindow : Window
         res.Width = 170;
         row.Children.Add(res);
         panel.Children.Add(row);
+        var rates = GameOptions.FrameRates;
+        var rate = new ComboBox
+        {
+            ItemsSource = rates.Select(c => c.Label).ToArray(), Width = 170,
+            SelectedIndex = Math.Max(0, Array.FindIndex(rates, c => c.Value == opts.FrameRate)),
+        };
+        ToolTip.SetTip(rate, "Nativo: o jogo roda como no Vita. Fixo em 30/60: cada quadro dura 2 ou 1 vblank (ex.: um jogo a 20 fps passa a 30). " +
+            "Sem limite: sem espera de vblank, o jogo roda o mais rápido que o PC aguentar. Jogos cuja lógica anda por quadro ficam " +
+            "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo.");
+        var rateRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        rateRow.Children.Add(new TextBlock { Text = "Taxa de quadros", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
+        rateRow.Children.Add(rate);
+        panel.Children.Add(rateRow);
         var note = new TextBlock { Text = "Vale na próxima vez que o jogo abrir.", Foreground = Muted, FontSize = 11, IsVisible = running };
         panel.Children.Add(note);
         void Store()
@@ -403,6 +416,12 @@ public sealed partial class MainWindow : Window
         {
             if (res.SelectedIndex < 0) return;
             opts.ResScale = choices[res.SelectedIndex].Factor;
+            Store();
+        };
+        rate.SelectionChanged += (_, _) =>
+        {
+            if (rate.SelectedIndex < 0) return;
+            opts.FrameRate = rates[rate.SelectedIndex].Value;
             Store();
         };
         return panel;

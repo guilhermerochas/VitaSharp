@@ -82,7 +82,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   gerador invalida o cache de shaders de todos)
 - [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
   desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
-- [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
+- [x] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
   (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
   Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.
   Onde atua: no intervalo de vblank que o jogo pede (`sceDisplayWaitSetFrameBufMulti`/`WaitVblankStartMulti`,
@@ -92,6 +92,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   modo do mouse), no launcher do desktop (página/ajustes do jogo) e no app Android (ajustes do jogo e menu de pausa),
   com o modo atual no overlay de FPS
 
+  Desktop feito (perf/desktop-res, 07/11/2026): "Taxa de quadros" no painel do jogo do launcher, `--frame-rate=native|30|60|unlimited`
+  (`VITASHARP_FRAME_RATE`, `FrameRate` em Hle/Modules/Display.cs): os modos fixos limitam os vblanks que as esperas
+  de display pedem e seguram a troca que vem antes do intervalo; Sem limite pula as esperas de display. Modo no título da
+  janela ao lado do FPS. Medido: menu do Jak 30 -> 59 fps em Fixo 60, Sonic Mania 60 -> 30 em Fixo 30, Sem limite 121 fps
+- [ ] Taxa de quadros por jogo no app Android (ajustes do jogo e menu de pausa, com o modo no overlay de FPS): o núcleo
+  já tem `FrameRate`; falta a interface (Android parado por ordem do usuário, 07/11/2026)
 - [ ] Reflexão o mínimo possível (desktop e Android; ajuda o Native AOT, o Mono AOT e o tempo de início). Hoje
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
   `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o

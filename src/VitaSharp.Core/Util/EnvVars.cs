@@ -273,6 +273,9 @@ public static class EnvVars
     /// <summary>1 (experiment): sceDisplaySetFrameBuf in IMMEDIATE mode flips at most once per vblank (a second flip in the
     /// same vblank waits for the next one). Default off.</summary>
     public const string DisplayImmediatePace = "VITASHARP_DISPLAY_IMMEDIATE_PACE";
+    /// <summary>Frame rate mode: native (default), 30, 60 or unlimited (Hle/Modules/Display.cs FrameRate; desktop
+    /// --frame-rate=, the launcher's "Taxa de quadros" per game).</summary>
+    public const string FrameRate = "VITASHARP_FRAME_RATE";
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";
