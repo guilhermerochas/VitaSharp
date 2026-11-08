@@ -1800,6 +1800,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `guestGpuWait` alto), que precisa da tela do usuário: rodar o jogo com a chave e comparar o F10/FrameLedger com o
   de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
   no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
+  Medido de novo (08/11/2026, perf/desktop-11, main 8984522 + perf/desktop-11, janela oculta, 4 rodadas de 150 s
+  alternando sem/com `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`, `scratchpad/perf11_out/deer*`): com o PC livre o gameplay
+  fica em 55-61 fps nos dois modos (janelas de 5 s: 58-61, uma de 55); as quedas para 0-25 fps só apareceram nas
+  rodadas em que outros agentes compilavam (CPU do PC a 90-100%: até os timers do processo atrasavam 5-9 s, e os
+  quadros mostram `guestGpuWait` de 100-245 ms), então os engasgos com `guestGpuWait` alto são a CPU do PC disputada,
+  não um defeito achado do emulador; a chave não muda isso. A tela parada de ~12-15 s é sempre no quadro 2752 (a
+  troca de cena depois do menu): é carga de verdade do jogo. Com `--profile` (sem janela, com a chave para ter o ritmo
+  da janela; `deer_prof_pace`) a thread `UnityPreload` faz 212 M ciclos/s de código + 61 M de HLE (40% rodando, 30% no
+  ritmo da CPU emulada a 333 MHz, 18% em `sceIoPread`), enquanto a `Unity_main_thread` dorme em `sceKernelDelayThread`;
+  o quadro 2753 leva 11,8 s (fileIo 4,2 s, ritmo da CPU 3,7 s). Sem a chave e sem janela o jogo corre a ~280 fps, as
+  entradas por número de quadro caem em outros momentos e essa carga nem acontece na rodada. Nada mudado: a carga
+  segue o relógio emulado de 333 MHz e o tempo de leitura emulado; falta comparar o tempo dessa carga com um vídeo do
+  Vita de verdade antes de mexer no ritmo de leitura ou da CPU
   Desligada por padrão até o usuário confirmar na janela.
   Medido na janela oculta (agente C dia 11, 06/11/2026, fix/bugs-games-10, `VITASHARP_HIDDEN_WINDOW=1`, 150 s, Cross a
   cada 200 quadros; `scratchpad/bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas
