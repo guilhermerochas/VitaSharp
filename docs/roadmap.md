@@ -89,8 +89,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   guest); writeback e cópias da CPU continuam na resolução nativa; dumps de quadro e prints saem na resolução interna.
   Validado (perf/desktop-res): `replay-gpu --compare` 1x idêntico ao main em 20 dumps (582 quadros), 2x sem erro em
   todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
-  Sonic Mania. Limite conhecido: `gl_PointSize` não é escalado (sprites de ponto ficam menores acima do nativo; mudar o
-  gerador invalida o cache de shaders de todos)
+  Sonic Mania. `gl_PointSize` escalado desde 07/11/2026 (perf/desktop-11): os programas de vértice que escrevem o
+  tamanho do ponto multiplicam por `rinfo.res_multiplier` numa variante com chave própria (`ShaderHints.ScaledPointSize`),
+  então só esses shaders são traduzidos de novo; o cache dos outros continua valendo (sem subir a versão do gerador).
+  Junto: as contagens dos testes de visibilidade (INCREMENT) de cenas escaladas são divididas por k*k (vinham k*k vezes
+  maiores). Conferido: `replay-gpu --compare` dos 18 dumps idêntico ao main em 1x e em 2x; o Uncharted desenha 334
+  pontos por quadro num stencil de 720x408 (`scratchpad/perf11_cmp/vis_trace2`, não aparecem nos quadros gravados); o
+  Killzone em 2x (`kzvis2`) dá contagens de visibilidade na mesma ordem das de 1x (`kzvis1`, 10-25 mil) com o sol e as
+  luzes normais. Nenhum jogo instalado com sprites de ponto visíveis foi achado (The Deer God: 12 programas com
+  tamanho de ponto, Killzone 0, pelo `shadertest`)
 - [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
   desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
 - [x] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**

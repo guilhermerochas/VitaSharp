@@ -30,7 +30,7 @@ static class ShaderTest
 
         using var compiler = new ShaderCompiler(null);
         var seen = new HashSet<ulong>();
-        int ok = 0, fail = 0, total = 0, invalid = 0;
+        int ok = 0, fail = 0, total = 0, invalid = 0, pointSize = 0;
         var warnings = new Dictionary<string, int>();
         foreach (var file in Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories))
         {
@@ -57,6 +57,7 @@ static class ShaderTest
                 var prog = new GxpProgram(span.Slice(i, size).ToArray(), 0);
                 if (!seen.Add(prog.Hash)) continue;
                 total++;
+                if (prog.WritesPointSize) pointSize++; // point sprites (their size follows the internal resolution)
                 string name = $"{prog.Hash:x16}.{(prog.IsVertex ? "vert" : "frag")}";
                 GeneratedShader gen;
                 try
@@ -87,7 +88,7 @@ static class ShaderTest
                 }
             }
         }
-        Console.WriteLine($"GXP programs: {total}, compiled {ok}, failed {fail}" + (invalid > 0 ? $", {invalid} invalid GXP blocks skipped" : ""));
+        Console.WriteLine($"GXP programs: {total}, compiled {ok}, failed {fail}" + (invalid > 0 ? $", {invalid} invalid GXP blocks skipped" : "") + $"; {pointSize} vertex programs write the point size");
         foreach (var (w, n) in warnings.OrderByDescending(kv => kv.Value).Take(25)) Console.WriteLine($"  {n,5}x {w}");
         return fail == 0 ? 0 : 2;
     }

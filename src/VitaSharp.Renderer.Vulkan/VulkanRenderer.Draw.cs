@@ -167,7 +167,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, GxmVertexStream[]? streams, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
-        bool fetchSingle = false, uint varyingMask = 0)
+        bool fetchSingle = false, uint varyingMask = 0, bool scaledPointSize = false)
     {
         ulong h = ShaderHints.Fnv.Offset;
         for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
@@ -178,6 +178,7 @@ public sealed unsafe partial class VulkanRenderer
         if (fetchInput) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputKey);
         if (fetchSingle) h = ShaderHints.Fnv.Mix(h, ShaderHints.FetchInputSingleKey);
         if (tileWord1) h = ShaderHints.Fnv.Mix(h, ShaderHints.TileWord1Key);
+        if (scaledPointSize) h = ShaderHints.Fnv.Mix(h, ShaderHints.ScaledPointSizeKey);
         return varyingMask != 0 ? ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(h, ShaderHints.VaryingMaskKey), varyingMask) : h;
     }
 
@@ -286,7 +287,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="varyingMask">the draw's <see cref="VertexVaryingMask"/> (the colour-format slot of the hints delegate)</param>
     static ShaderHints VertexHints(DrawCommand d, uint varyingMask) => new(TextureFormats(d.VertexTextures, d.VertexProgram.Info.TexturesUsed),
         d.VertexProgram.Attributes.Select(a => ((uint)a.RegIndex, (int)a.ComponentCount, AttributeFormatKey(a, d.VertexProgram.Streams))).ToArray(), 0,
-        VaryingMask: varyingMask);
+        VaryingMask: varyingMask, ScaledPointSize: d.VertexProgram.Info.Program.WritesPointSize);
 
     static ShaderHints FragmentHints(DrawCommand d, uint colorFormat) =>
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram));
@@ -348,7 +349,7 @@ public sealed unsafe partial class VulkanRenderer
         var vp = d.VertexProgram;
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
         uint mask = VertexVaryingMask(d);
-        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: mask);
+        ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: mask, scaledPointSize: vp.Info.Program.WritesPointSize);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
         var me = GetModule(vp.Info.Program, hk, VertexHints, d, mask);
         e = new VsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = vp.Info.Program.Hash, HintKey = hk, Vp = vp };
@@ -466,6 +467,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Every pipeline created (owner for destruction), shared with the prewarm thread.</summary>
     readonly System.Collections.Concurrent.ConcurrentDictionary<PipelineKey, Pipeline> _sharedPipelines = new();
     Pipeline _boundPipeline;
+    bool _pointsSeen;
 
     static int TopologyClass(PrimitiveTopology t) => t switch
     {
@@ -783,6 +785,11 @@ public sealed unsafe partial class VulkanRenderer
         bool tw1 = _tw1Active && fs.Gen!.TileWord1 != 0 && fs.Gen.RawColorBits == 0;
         bool inputFetch = (fs.Gen!.UsesFragColor || tw1) && _ms && MsaaInputFetch && fs.Gen.RawColorBits == 0;
         var topology = Formats.Topology(d.PrimitiveType);
+        if (topology == PrimitiveTopology.PointList && !_pointsSeen)
+        {
+            _pointsSeen = true; // once per renderer: tells whether a game draws point sprites (their size follows res_multiplier)
+            Log.Info($"[gpu] first point-list draw: vertex program {d.VertexProgram.Info.Program.Hash:X16} {(d.VertexProgram.Info.Program.WritesPointSize ? "writes the point size" : "has no point size (1 pixel)")}, scene scale {SceneScale}");
+        }
         // a small programmable-blending draw in a one-sample scene: rendered in its own render pass that reads the
         // surface as an input attachment, piece by piece (FetchSplitDraw; VulkanRenderer.SingleFetch.cs)
         // (any size with rasterization-order access, VITASHARP_FETCH_LARGE: no pieces needed)
