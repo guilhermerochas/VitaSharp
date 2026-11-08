@@ -92,6 +92,8 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     AVHWDeviceType _device;
     AVPixelFormat _hwFormat = AVPixelFormat.AV_PIX_FMT_NONE;
     // access units since the last IDR picture, kept while decoding in hardware so a fallback can replay them
+    static readonly bool LowDelay = Environment.GetEnvironmentVariable(Util.EnvVars.VideoLowDelay) == "1";
+
     readonly List<(byte[] Data, long Pts)> _sinceIdr = new();
     long _sinceIdrBytes;
     const long MaxReplayBytes = 16 << 20;
@@ -147,7 +149,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             if (hwFormat == AVPixelFormat.AV_PIX_FMT_NONE) { ReportUnavailable(device, "the decoder has no such hwaccel"); return false; }
         }
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
-        ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY; // the hardware decoder returns pictures as soon as possible
+        // pictures come out in display order, as from the Vita's decoder and Vita3K's (no low-delay flag): with
+        // AV_CODEC_FLAG_LOW_DELAY FFmpeg hands each picture out as soon as it is decoded, so a stream with B-frames
+        // came out in decode order and a game that shows the pictures as they arrive (Ninja Gaiden Sigma 2 Plus's
+        // intro, every third picture two frames back) jumped back and forth. VITASHARP_VIDEO_LOW_DELAY=1: the old way
+        if (LowDelay) ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
         ctx->thread_count = 1;
         if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {

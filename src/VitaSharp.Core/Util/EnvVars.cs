@@ -41,6 +41,9 @@ public static class EnvVars
     /// <summary>=0: a depth/stencil image created for a scene that loads its surface keeps Vulkan's undefined content
     /// instead of the surface's earlier image (A/B of VulkanRenderer.SeedLoadedDepth).</summary>
     public const string DepthSeed = "VITASHARP_DEPTH_SEED";
+    /// <summary>=1: FFmpeg video decoders hand pictures out as soon as decoded (decode order with B-frames) instead of in
+    /// display order (A/B).</summary>
+    public const string VideoLowDelay = "VITASHARP_VIDEO_LOW_DELAY";
     /// <summary>=1: logs every NGS source voice event (play, key off, buffer callbacks, player/ATRAC9 buffer table
     /// changes) with the reported play position; with --audio-dump each source voice's output also gets its own WAV.</summary>
     public const string NgsTrace = "VITASHARP_NGS_TRACE";
