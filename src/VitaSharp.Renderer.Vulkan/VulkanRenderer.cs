@@ -541,6 +541,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         /// <summary>Internal resolution scale (VulkanRenderer.ResScale.cs): <see cref="Width"/>/<see cref="Height"/>
         /// are the image's size, guest size times this.</summary>
         public float Scale = 1f;
+        /// <summary>Last used by a supersampled scene: SsScale texels per surface sample, not one
+        /// (<see cref="SeedLoadedDepth"/> copies only between images of the same layout).</summary>
+        public bool Supersampled;
     }
 
     readonly Dictionary<(uint, uint, uint, uint), RenderTarget> _renderTargets = new();
@@ -686,6 +689,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         Barrier(img, ImageLayout.Undefined, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
             PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             0, AccessFlags.DepthStencilAttachmentWriteBit | AccessFlags.DepthStencilAttachmentReadBit);
+        if (Poison) PoisonDepth(Cmd, img); // VITASHARP_GPU_POISON: what a new image holds is undefined (VulkanRenderer.Tiler.cs)
         _depthTargets[key] = dt;
         return dt;
     }
@@ -827,12 +831,65 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // stores made before it (a CPU fill of the surface before rendering into it)
             _rt.MemStamp = DirtyPages.Epoch + 2;
         }
+        if (_depth.LastScene == 0 && b.Depth is { ForceLoad: true } && SeedDepth) SeedLoadedDepth(_depth, b.Depth, _ss);
+        _depth.Supersampled = _ss;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
         if (b.Depth is { ForceStore: true }) _depth.ForceStored = true;
         // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
         if (_ms && b.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit) _depth.TwoXAsFour = true;
         _depthNeedsClear = b.Depth == null || !b.Depth.ForceLoad;
+    }
+
+    /// <summary>
+    /// A scene that loads its depth/stencil surface (SCE_GXM_DEPTH_STENCIL_FORCE_LOAD) into a depth image created just
+    /// now, because no earlier scene used this surface at this size: the image starts with the content the earlier
+    /// scenes left on the surface. Same-size scenes share one image and see it already; a different size (Injustice
+    /// renders its 3D at 720x408 and loads the same depth/stencil surface for the 960x544 HUD scene) got a new image
+    /// whose content Vulkan leaves undefined. The driver handed over recycled memory with stray stencil bits, and the
+    /// HUD's stencil masks (EQUAL 0 over all 8 bits after clearing only the low 7) failed: the health bars, names and
+    /// timer were never drawn in a live session, though a GPU dump replayed them (fresh, zeroed memory). The overlap
+    /// with the surface's most recent image of the same layout (samples, scale, stride) is copied; the rest is cleared to
+    /// the scene's background depth and stencil. VITASHARP_DEPTH_SEED=0 leaves it undefined (A/B).
+    /// </summary>
+    static readonly bool SeedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
+
+    void SeedLoadedDepth(DepthTarget dt, DepthSurfaceInfo d, bool supersampled)
+    {
+        DepthTarget? src = null;
+        foreach (var o in _depthTargets.Values)
+            if (o != dt && o.LastScene != 0 && o.Address == dt.Address && o.StencilAddress == dt.StencilAddress && o.Samples == dt.Samples
+                && o.Scale == dt.Scale && o.StrideBytes == dt.StrideBytes && o.Supersampled == supersampled && (src == null || o.LastScene > src.LastScene))
+                src = o;
+        BeginFrameIfNeeded();
+        EndRendering();
+        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        var tests = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
+        var attRw = AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit;
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, ds, tests, PipelineStageFlags.TransferBit, attRw, AccessFlags.TransferWriteBit);
+        var clear = new ClearDepthStencilValue(Math.Clamp(d.BackgroundDepth, 0f, 1f), d.BackgroundStencil);
+        var range = new ImageSubresourceRange(ds, 0, 1, 0, 1);
+        _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+        if (src != null)
+        {
+            Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.TransferDstOptimal, ds, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.TransferWriteBit, AccessFlags.TransferWriteBit);
+            Barrier(src.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds, tests, PipelineStageFlags.TransferBit,
+                AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
+            var copy = new ImageCopy
+            {
+                SrcSubresource = new ImageSubresourceLayers(ds, 0, 0, 1),
+                DstSubresource = new ImageSubresourceLayers(ds, 0, 0, 1),
+                Extent = new Extent3D(Math.Min(src.Width, dt.Width), Math.Min(src.Height, dt.Height), 1),
+            };
+            _vk.CmdCopyImage(Cmd, src.Image, ImageLayout.TransferSrcOptimal, dt.Image, ImageLayout.TransferDstOptimal, 1, in copy);
+            Barrier(src.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds, PipelineStageFlags.TransferBit, tests,
+                AccessFlags.TransferReadBit, attRw);
+            src.LastTouchedFrame = FrameCount;
+        }
+        Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds, PipelineStageFlags.TransferBit, tests,
+            AccessFlags.TransferWriteBit, attRw);
+        dt.Version++;
     }
 
     void EndScene(EndSceneCommand e)
