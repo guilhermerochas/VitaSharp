@@ -216,6 +216,12 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call<int>(mgr, "sceAppMgrSaveDataGetQuota", quota));
         Assert.Equal(1024u, GuestMemory.R32(quota + 4)); // no param.sfo: 1 MiB default
         Assert.Equal(ERR_STRUCT, Call<int>(mgr, "sceAppMgrSaveDataGetQuota", 0u));
+        // the syscall form (driver_us 3.74: the struct, then a scratch struct holding its size word) behaves the same
+        GuestMemory.W32(st, 0x1C);
+        GuestMemory.W32(st + 4, 3);
+        Assert.Equal(0, Call<int>(mgr, "_sceAppMgrSaveDataSlotGetStatus", st, Alloc(8)));
+        Assert.Equal(1u, GuestMemory.R32(st + 8));
+        Assert.Equal(0, Call<int>(mgr, "_sceAppMgrSaveDataGetQuota", quota, Alloc(8)));
     }
 
     [Fact]
