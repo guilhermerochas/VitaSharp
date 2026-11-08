@@ -650,6 +650,13 @@ public sealed class Emulator : IDisposable
     /// heap sizes as module_start arguments), so they are never pulled in as another module's dependency.</summary>
     public static readonly HashSet<string> OnRequestModules = new(StringComparer.OrdinalIgnoreCase) { "libpaf" };
 
+    /// <summary>Libraries a system program takes from the firmware although the HLE has some of their functions: their
+    /// firmware version is an IPC client of a service in the shell, which does the real work. ScePhotoExport
+    /// (libScePhotoExport.suprx) asks the system's SceAvMediaSrv (NPXS10036, started for "avmedia_service:") to store
+    /// the picture in photo0: and register it in the system's photo database, which the HLE (a copy into
+    /// photo0:/TITLEID) does not; the camera calls internal functions of it (16B1028E...) the HLE never had.</summary>
+    public static readonly HashSet<string> FirmwareServiceClients = new(StringComparer.Ordinal) { "ScePhotoExport" };
+
     /// <summary>
     /// Loads (without starting them) the firmware modules that provide the libraries <paramref name="root"/> imports,
     /// and theirs in turn, the way sysmodule loads a module's dependencies. Returns them in start order (each after
@@ -704,7 +711,10 @@ public sealed class Emulator : IDisposable
                 // but its internal context functions, so near (NPXS10000) gets the real liblocation (an IPC client of
                 // the shell's location provider) instead of HLE stubs that returned NULL and stopped its first page.
                 bool firmwareNeedsInternals = m.Path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) && nids.Length > 0 && nids.All(n => !Hle.Implements(n));
-                if ((Hle.ImplementsLibrary(lib) && !firmwareNeedsInternals) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                // and for the libraries whose firmware version is a client of a service the system runs, which the HLE
+                // only approximates (FirmwareServiceClients): a system program gets the real one
+                bool serviceClient = IsSystemProgram && FirmwareServiceClients.Contains(lib);
+                if ((Hle.ImplementsLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;

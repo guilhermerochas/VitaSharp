@@ -35,6 +35,22 @@ public sealed class VfsTests : IDisposable
     }
 
     [Fact]
+    public void MediaDevicesAreMemoryCardFoldersAndOldOnesMoveThere()
+    {
+        string fs = Path.Combine(_root, "fs");
+        Directory.CreateDirectory(Path.Combine(fs, "photo0", "CAMERA"));
+        File.WriteAllText(Path.Combine(fs, "photo0", "CAMERA", "a.jpg"), "old");
+        Directory.CreateDirectory(Path.Combine(fs, "ux0", "picture"));
+        File.WriteAllText(Path.Combine(fs, "ux0", "picture", "b.jpg"), "new");
+        var vfs = new Vfs(fs);
+        Assert.Equal(Path.Combine(fs, "ux0", "picture", "CAMERA", "a.jpg"), vfs.Resolve("photo0:CAMERA/a.jpg"));
+        Assert.True(File.Exists(vfs.Resolve("photo0:b.jpg")));
+        Assert.False(Directory.Exists(Path.Combine(fs, "photo0")));
+        Assert.Equal(Path.Combine(fs, "ux0", "video"), vfs.Resolve("video0:"));
+        Assert.Equal(Path.Combine(fs, "ux0", "music"), vfs.Resolve("music0:"));
+    }
+
+    [Fact]
     public void BackslashesAndDotSegmentsAreNormalized()
     {
         var host = NewVfs().Resolve(@"app0:\DATA\.\x\..\sub\FILE.txt");

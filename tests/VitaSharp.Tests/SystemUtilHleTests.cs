@@ -409,7 +409,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromData", data, 0u, param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(0, Call(m, "scePhotoExportFromData", data, n, param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal("photo0:/PCSA00002/20260102_030405.jpg", GuestMemory.ReadCString(outp));
-        Assert.True(File.Exists(Path.Combine(_root, "photo0", "PCSA00002", "20260102_030405.jpg")));
+        Assert.True(File.Exists(Path.Combine(_root, "ux0", "picture", "PCSA00002", "20260102_030405.jpg")));
         Assert.Equal(0, Call(m, "scePhotoExportFromData", data, n, param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal("photo0:/PCSA00002/20260102_030405_1.jpg", GuestMemory.ReadCString(outp));
         Assert.Equal(0, Call(m, "scePhotoExportFromData", data, n, param, 0u, 0u, 0u, 0u, 0u)); // no out path
@@ -436,7 +436,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal("photo0:/PCSA00002/shot.png", GuestMemory.ReadCString(outp));
         Assert.Equal(0, Call(m, "scePhotoExportFromFile", Str("app0:shot.png"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal("photo0:/PCSA00002/shot_1.png", GuestMemory.ReadCString(outp));
-        Assert.Equal(Png, File.ReadAllBytes(Path.Combine(_root, "photo0", "PCSA00002", "shot_1.png")));
+        Assert.Equal(Png, File.ReadAllBytes(Path.Combine(_root, "ux0", "picture", "PCSA00002", "shot_1.png")));
         Assert.Equal(MediaExport.ERR_NOENT, Call(m, "scePhotoExportFromFile", Str("app0:none.png"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromFile", Str("app0:notes.txt"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromFile", 0u, param, 0u, 0u, 0u, outp, 0x100u));
@@ -448,7 +448,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         GuestMemory.WriteCString(inP, "app0:clip.mp4");
         Assert.Equal(0, Call(m, "sceVideoExportFromFile", inP, 0, 0u, 0u, 0u, 0u, 0, outP));
         Assert.Equal("video0:/PCSA00002/clip.mp4", GuestMemory.ReadCString(outP));
-        Assert.True(File.Exists(Path.Combine(_root, "video0", "PCSA00002", "clip.mp4")));
+        Assert.True(File.Exists(Path.Combine(_root, "ux0", "video", "PCSA00002", "clip.mp4")));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "sceVideoExportFromFile", inP, 0, 0u, 0u, 0u, 0u, 0, 0u));
 
         Assert.Equal(0, Call(m, "sceMusicExportFromFile", Str("app0:song.mp3"), param, 0u, 0u, 0u, 0u, outp, 0x100u));

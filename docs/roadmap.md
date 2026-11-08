@@ -638,6 +638,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
   crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
   (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
+  **Foto: resolvido** (07/11/2026, fix/system-apps-10, provas em `scratchpad/fw10_out/cam9`, `cam10`): eram duas
+  falhas. (1) O libpaf grava a foto com IO assíncrono e lê o fd do open no `SceIoAsyncParam` (último argumento de
+  todo `sceIoXxxAsync`, resultado de 64 bits no +0) depois do `sceKernelWaitEvent`; o HLE ignorava esse argumento, o
+  paf escrevia no fd 0 e o JPEG falhava com 0x80AF5021 (a thread ScePafJobDefault da câmera, não as JobQueue). (2) O
+  photo0: era `<fs>/photo0` e o NPXS10036 (outro processo, que tinha montado photo0 = ux0:picture) não achava a foto
+  para registrar (0x80101A0C). Agora photo0/music0/video0 são ux0:picture/music/video em todo processo (as pastas
+  antigas migram), e o sistema usa o libScePhotoExport do firmware (cliente IPC do NPXS10036). A câmera salva em
+  `ux0:picture/CAMERA/<xx>/<data>.jpg`, o NPXS10036 registra no `ux0:mms/photo/AVContent.db`, a miniatura aparece na
+  câmera e a foto em Fotos > Imagens da câmera e abre (`cam10/pics.png`, `pic1.png`; a webcam deste PC dá quadro
+  preto, brilho médio 8/255, por isso a foto é preta).
 - [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).
