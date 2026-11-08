@@ -32,7 +32,12 @@ public sealed class GpuQueue : IDisposable
     /// surface and waits for it (desktop: the window thread); null = on the caller.</summary>
     public Action<Action>? ReplaceOn;
 
-    public void ReplaceBackend(Func<IGpuBackend?>? factory)
+    /// <param name="sameTitle">the same title goes on (state load, a new internal resolution or MSAA mode): the new
+    /// backend opens the old one's per-title caches (<see cref="IGpuBackend.BeginTitle"/>) once the old one closed them,
+    /// so it prewarms the title's shaders and pipelines instead of translating and compiling them all again (every F1
+    /// press froze Resistance for 0.6-0.9 s on ~100 shaders and ~50 pipelines). False for LoadExec: the next
+    /// executable announces its own title.</param>
+    public void ReplaceBackend(Func<IGpuBackend?>? factory, bool sameTitle = false)
     {
         WaitIdle();
         lock (_backendLock)
@@ -40,9 +45,12 @@ public sealed class GpuQueue : IDisposable
             void Swap()
             {
                 var old = Backend;
+                string? title = sameTitle ? old?.TitleId : null;
                 Backend = null;
                 old?.Dispose();
                 if (factory != null) Backend = factory();
+                if (title != null && Backend is { } b)
+                    try { b.BeginTitle(title); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
             }
             if (ReplaceOn is { } on) on(Swap); else Swap();
         }

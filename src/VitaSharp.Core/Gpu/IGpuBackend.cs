@@ -28,6 +28,9 @@ public interface IGpuBackend : IDisposable
     /// </summary>
     void BeginTitle(string titleId) { }
 
+    /// <summary>The title passed to <see cref="BeginTitle"/>, or null (a backend without per-title state).</summary>
+    string? TitleId => null;
+
     /// <summary>Called on the submitting thread for each command before it is queued (no worker state may be touched):
     /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution.</summary>
     void Prefetch(GpuCommand command) { }

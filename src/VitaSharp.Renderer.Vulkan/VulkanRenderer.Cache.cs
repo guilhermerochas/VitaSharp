@@ -93,6 +93,9 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== title setup
 
+    /// <summary>The title whose caches this renderer opened (<see cref="BeginTitle"/>).</summary>
+    public string? TitleId => _titleId;
+
     public void BeginTitle(string titleId)
     {
         lock (_titleLock)

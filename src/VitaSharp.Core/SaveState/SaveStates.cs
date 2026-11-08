@@ -161,7 +161,7 @@ public static class SaveStates
                 if (emu.OpenSceneThread is { } scene) return $"thread '{scene.Name}' is finishing a GPU scene";
                 var t0 = Stopwatch.GetTimestamp();
                 emu.Gpu.WaitIdle();
-                emu.Gpu.ReplaceBackend(factory);
+                emu.Gpu.ReplaceBackend(factory, sameTitle: true);
                 Log.Info($"GPU backend replaced while running in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
                 return null;
             }
@@ -499,7 +499,7 @@ public static class SaveStates
     {
         emu.Gpu.WaitIdle();
         var t0 = Stopwatch.GetTimestamp();
-        if (backendFactory != null) emu.Gpu.ReplaceBackend(backendFactory);
+        if (backendFactory != null) emu.Gpu.ReplaceBackend(backendFactory, sameTitle: true);
         Log.Info($"Load state: GPU backend replaced in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
         emu.Code.Clear();
         AudioDiagnostics.ProcessEnded();
