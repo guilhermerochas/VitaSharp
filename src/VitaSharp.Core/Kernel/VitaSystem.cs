@@ -294,6 +294,12 @@ public sealed class VitaSystem
 
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
+    /// <summary>The process holding the audio output alone (sceAppMgrAcquireSoundOutExclusive2/3), -1 none.</summary>
+    public int SoundOutExclusiveOwner = -1;
+    /// <summary>The process holding the input devices (sceAppMgrAcquireBtrm), -1 none.</summary>
+    public int BtrmOwner = -1;
+    /// <summary>Notification requests (0x40 bytes) applications sent the shell (sceAppMgrSendNotificationRequest).</summary>
+    public readonly Queue<byte[]> NotificationRequests = new();
 
     // ---- SceAppMgr's events for the shell (sceAppMgrReceiveShellEvent): 0x40-byte records, first word the event type
 

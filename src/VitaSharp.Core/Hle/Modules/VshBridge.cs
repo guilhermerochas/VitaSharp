@@ -21,7 +21,7 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblQafMgrIsAllowLoadMagicGate() => 0;
     [Hle] int vshSblUtMgrHasStoreFlag() => 0;
     [Hle] int vshSblUtMgrHasComTestFlag() => 0;
-    [Hle] int vshSysconIsIduMode() => 0;
+    [Hle] int vshSysconIsIduMode() => _iduMode ? 1 : 0;
     [Hle] int vshSysconHasWWAN() => 0;
     /// <summary>A store demo (show mode) unit: no.</summary>
     [Hle] int vshSysconIsShowMode() => 0;
@@ -180,6 +180,7 @@ public sealed partial class VshBridge : HleModule
     [Hle] int sceAVConfigClearAutoSuspend2(int a) => 0;
     /// <summary>(int *enable, ...): the volume buttons work.</summary>
     [Hle] int sceAVConfigGetVolCtrlEnable(Ptr<int> enable, Ptr<int> unk) { enable.TrySet(1); unk.TrySet(0); return 0; }
-    /// <summary>(int *volume): the system volume, 0..30 (the handheld's default 20 until the registry says otherwise).</summary>
-    [Hle] int sceAVConfigGetSystemVol(Ptr<int> volume) { volume.TrySet(20); return 0; }
+    /// <summary>(int *volume): the system volume, 0..30: the last sceAVConfigSetSystemVol, else the registry's
+    /// /CONFIG/SOUND/main_volume, else the handheld's default 20.</summary>
+    [Hle] int sceAVConfigGetSystemVol(Ptr<int> volume) { volume.TrySet(CurrentSystemVolume()); return 0; }
 }

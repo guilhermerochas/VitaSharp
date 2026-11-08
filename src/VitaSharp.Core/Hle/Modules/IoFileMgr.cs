@@ -363,7 +363,7 @@ public sealed partial class IoFileMgr : HleModule
     static bool IsReadOnlyDevice(string path) => ReadOnlyDevices.Contains(Io.Vfs.Split(path).device, StringComparer.OrdinalIgnoreCase);
 
     [Hle]
-    int sceIoChstat(string path, uint stat, int bits)
+    internal int sceIoChstat(string path, uint stat, int bits)
     {
         if (stat == 0) return SceError.IO_EINVAL;
         if (IsReadOnlyDevice(path)) return IO_EROFS;

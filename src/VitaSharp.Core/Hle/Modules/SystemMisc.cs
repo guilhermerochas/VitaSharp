@@ -492,7 +492,24 @@ public sealed partial class SystemMisc : HleModule
         return 0;
     }
     [Hle] int sceAppMgrSetNetworkDisconnectionWarningDialogState(int state) => 0;
-    [Hle] int sceAppMgrReceiveSystemEvent(uint ev) => unchecked((int)0x80801000);
+    readonly Queue<(int Event, string? Data)> _systemEvents = new();
+
+    /// <summary>A system event another system program sent this application (sceAppMgrSendSystemEvent/2).</summary>
+    internal void PostSystemEvent(int ev, string? data) { lock (_systemEvents) _systemEvents.Enqueue((ev, data)); }
+
+    /// <summary>(SceAppMgrSystemEvent *ev 0x40): the next system event (+0 the event, +4 the 12-character payload of
+    /// SendSystemEvent2); 0x80801000 when none is queued.</summary>
+    [Hle]
+    int sceAppMgrReceiveSystemEvent(uint ev)
+    {
+        (int Event, string? Data) e;
+        lock (_systemEvents) { if (!_systemEvents.TryDequeue(out e)) return unchecked((int)0x80801000); }
+        if (ev == 0) return unchecked((int)0x80800001);
+        GuestMemory.Fill(ev, 0, 0x40);
+        GuestMemory.W32(ev, (uint)e.Event);
+        if (e.Data != null) GuestMemory.WriteCString(ev + 4, e.Data, 0xD);
+        return 0;
+    }
 
     [Hle("_sceAppMgrGetAppState")]
     int _sceAppMgrGetAppState(uint state, uint size, uint version)
@@ -565,7 +582,7 @@ public sealed partial class SystemMisc : HleModule
         throw new GuestThreadExitException(0, false); // this thread ends; the host restarts the process
     }
     [Hle] int sceAppMgrGetBudgetInfo(uint info) { GuestMemory.Span(info + 4, 0x60).Clear(); return 0; }
-    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => 0;
+    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => GetRunningAppIdListForShell(list, count, 0);
 
     // ------------------------------------------------------------------ ScePower
 

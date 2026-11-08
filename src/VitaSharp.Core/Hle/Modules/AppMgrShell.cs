@@ -402,9 +402,10 @@ public sealed partial class AppMgrShell : HleModule
         return 0;
     }
 
-    /// <summary>(void *request): requests from applications for the shell to show a notification. The shell polls it
-    /// every frame and handles a request whenever the call succeeds, so with none queued it must fail.</summary>
-    [Hle] int sceAppMgrReceiveNotificationRequestForShell(uint request) => ERR_NO_EVENT;
+    /// <summary>(void *request 0x40): requests from applications for the shell to show a notification
+    /// (sceAppMgrSendNotificationRequest). The shell polls it every frame and handles a request whenever the call
+    /// succeeds, so with none queued it must fail (0x80802013).</summary>
+    [Hle] int sceAppMgrReceiveNotificationRequestForShell(uint request) => TakeNotification(request);
 
     // display composition settings the shell gives for itself: VitaSharp shows the foreground process whole
     [Hle] int sceAppMgrSetDisplayMergeConf(int a, int b) => 0;
