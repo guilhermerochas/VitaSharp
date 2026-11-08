@@ -135,6 +135,9 @@ public sealed partial class ProcessMgr : HleModule
         catch { return -1; }
     }
 
+    /// <summary>Ends the process as sceKernelExitProcess does (SceLibc exit/_Exit/abort).</summary>
+    internal void ExitProcess(int res) => sceKernelExitProcess(res);
+
     [Hle]
     void sceKernelExitProcess(int res)
     {

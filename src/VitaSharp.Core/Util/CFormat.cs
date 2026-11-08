@@ -76,12 +76,14 @@ public static class CFormat
                     body = Pad("0x", args.NextU32().ToString("x8"), width, left, false);
                     break;
                 case 'c':
-                    body = Pad("", ((char)(byte)args.NextU32()).ToString(), width, left, false);
+                    // %lc: a wide (16-bit) character
+                    body = Pad("", (len == "l" ? (char)(ushort)args.NextU32() : (char)(byte)args.NextU32()).ToString(), width, left, false);
                     break;
                 case 's':
                 {
                     uint p = args.NextU32();
-                    string s = p == 0 ? "(null)" : GuestMemory.ReadCString(p);
+                    // %ls: a wide (UTF-16) string
+                    string s = p == 0 ? "(null)" : len == "l" ? ReadWide(p) : GuestMemory.ReadCString(p);
                     if (prec >= 0 && s.Length > prec) s = s[..prec];
                     body = Pad("", s, width, left, false);
                     break;
@@ -111,6 +113,13 @@ public static class CFormat
             }
             sb.Append(body);
         }
+        return sb.ToString();
+    }
+
+    static string ReadWide(uint p)
+    {
+        var sb = new StringBuilder();
+        for (; ; p += 2) { ushort c = GuestMemory.Read<ushort>(p); if (c == 0) break; sb.Append((char)c); }
         return sb.ToString();
     }
 

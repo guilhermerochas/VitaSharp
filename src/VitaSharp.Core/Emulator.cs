@@ -657,6 +657,15 @@ public sealed class Emulator : IDisposable
     /// photo0:/TITLEID) does not; the camera calls internal functions of it (16B1028E...) the HLE never had.</summary>
     public static readonly HashSet<string> FirmwareServiceClients = new(StringComparer.Ordinal) { "ScePhotoExport" };
 
+    /// <summary>Libraries whose firmware module is plain user-mode code (the C runtime, the C++ runtime): a system program
+    /// always gets the real module when the firmware is installed, exactly as before the HLE had any of their
+    /// functions. Their HLE versions serve the processes that never load the module (a game without its own copy,
+    /// homebrew, no firmware installed).</summary>
+    public static readonly HashSet<string> FirmwareCodeLibraries = new(StringComparer.Ordinal) { "SceLibc", "SceLibm", "SceLibstdcxx" };
+
+    /// <summary>The HLE stands in for <paramref name="library"/> when a system program's dependencies are resolved.</summary>
+    bool HleServesLibrary(string library) => Hle.ImplementsLibrary(library) && !FirmwareCodeLibraries.Contains(library);
+
     /// <summary>
     /// Loads (without starting them) the firmware modules that provide the libraries <paramref name="root"/> imports,
     /// and theirs in turn, the way sysmodule loads a module's dependencies. Returns them in start order (each after
@@ -685,7 +694,7 @@ public sealed class Emulator : IDisposable
                     var img = ModuleImage.Read(Loader.Self.SelfDecryptor.ToElf(File.ReadAllBytes(host), null));
                     foreach (var (lib, _, _) in img.Imports)
                     {
-                        if (index.Provider(lib) is not { } p || Hle.ImplementsLibrary(lib)) continue;
+                        if (index.Provider(lib) is not { } p || HleServesLibrary(lib)) continue;
                         if (OnRequestModules.Contains(Path.GetFileNameWithoutExtension(p.VitaPath))
                             || (!string.Equals(p.VitaPath, vitaPath, StringComparison.OrdinalIgnoreCase) && NeedsOnRequest(p.VitaPath)))
                         { result = true; break; }
@@ -714,7 +723,7 @@ public sealed class Emulator : IDisposable
                 // and for the libraries whose firmware version is a client of a service the system runs, which the HLE
                 // only approximates (FirmwareServiceClients): a system program gets the real one
                 bool serviceClient = IsSystemProgram && FirmwareServiceClients.Contains(lib);
-                if ((Hle.ImplementsLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                if ((HleServesLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;

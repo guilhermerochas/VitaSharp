@@ -45,7 +45,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle("sceIoOpen")]
-    int sceIoOpen(string path, int flags, int mode)
+    internal int sceIoOpen(string path, int flags, int mode)
     {
         // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
         if (Io.Vfs.IsTty(path, out int tty))
@@ -98,7 +98,7 @@ public sealed partial class IoFileMgr : HleModule
 
     [Hle]
     [Hle("sceIoClose2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same argument
-    int sceIoClose(int fd)
+    internal int sceIoClose(int fd)
     {
         if (fd is >= 0x10 and <= 0x12) return 0;
         if (!_files.TryRemove(fd, out var f)) return SceError.IO_EBADF;
@@ -108,7 +108,7 @@ public sealed partial class IoFileMgr : HleModule
 
     [Hle]
     [Hle("sceIoRead2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same arguments
-    int sceIoRead(int fd, uint buf, uint size)
+    internal int sceIoRead(int fd, uint buf, uint size)
     {
         if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
         if (_files.TryGetValue(fd, out var t) && t.Tty >= 0) return 0;
@@ -127,7 +127,7 @@ public sealed partial class IoFileMgr : HleModule
 
     [Hle]
     [Hle("sceIoWrite2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same arguments
-    int sceIoWrite(int fd, uint buf, uint size)
+    internal int sceIoWrite(int fd, uint buf, uint size)
     {
         if (fd is 0x11 or 0x12)
         {
@@ -148,7 +148,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    long sceIoLseek(int fd, long offset, int whence)
+    internal long sceIoLseek(int fd, long offset, int whence)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f) return f.Stream.Seek(offset, (SeekOrigin)whence);
@@ -157,7 +157,7 @@ public sealed partial class IoFileMgr : HleModule
     [Hle] int sceIoLseek32(int fd, int offset, int whence) => (int)sceIoLseek(fd, offset, whence);
 
     [Hle]
-    int sceIoPread(int fd, uint buf, uint size, long offset)
+    internal int sceIoPread(int fd, uint buf, uint size, long offset)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         using var ledger = FrameLedger.Time(FrameLedger.Cat.FileIo);
@@ -169,7 +169,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoPwrite(int fd, uint buf, uint size, long offset)
+    internal int sceIoPwrite(int fd, uint buf, uint size, long offset)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         RandomAccess.Write(f.Stream.SafeFileHandle, GuestMemory.ReadSpan(buf, (int)size), offset);
@@ -197,7 +197,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoSyncByFd(int fd, int flag)
+    internal int sceIoSyncByFd(int fd, int flag)
     {
         if (!_files.TryGetValue(fd, out var f)) return IsSpecialFd(fd) ? 0 : SceError.IO_EBADF;
         if (f.Stream != null) lock (f) f.Stream.Flush(true);
@@ -208,7 +208,7 @@ public sealed partial class IoFileMgr : HleModule
     static bool IsSpecialFd(int fd) => fd is >= 0x10 and <= 0x12;
 
     [Hle]
-    int sceIoRemove(string path)
+    internal int sceIoRemove(string path)
     {
         var host = HostPath(path, true);
         if (host == null || !File.Exists(host)) return SceError.IO_ENOENT;
@@ -217,7 +217,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoMkdir(string path, int mode)
+    internal int sceIoMkdir(string path, int mode)
     {
         var host = HostPath(path, true);
         if (host == null) return SceError.IO_ENOENT;
@@ -227,7 +227,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoRmdir(string path)
+    internal int sceIoRmdir(string path)
     {
         var host = HostPath(path, true);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
@@ -236,7 +236,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoRename(string oldPath, string newPath)
+    internal int sceIoRename(string oldPath, string newPath)
     {
         var a = HostPath(oldPath, true);
         var b = HostPath(newPath, true);
@@ -248,7 +248,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoDopen(string path)
+    internal int sceIoDopen(string path)
     {
         var host = HostPath(path);
         if (host == null || !Directory.Exists(host)) return SceError.IO_ENOENT;
@@ -258,7 +258,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoDread(int fd, uint dirent)
+    internal int sceIoDread(int fd, uint dirent)
     {
         if (!_dirs.TryGetValue(fd, out var d)) return SceError.IO_EBADF;
         if (d.Index >= d.Entries.Length) return 0;
@@ -269,7 +269,7 @@ public sealed partial class IoFileMgr : HleModule
         return 1;
     }
 
-    [Hle] int sceIoDclose(int fd) => _dirs.TryRemove(fd, out _) ? 0 : SceError.IO_EBADF;
+    [Hle] internal int sceIoDclose(int fd) => _dirs.TryRemove(fd, out _) ? 0 : SceError.IO_EBADF;
 
     static void WriteDateTime(uint p, DateTime t)
     {
@@ -295,7 +295,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoGetstat(string path, uint stat)
+    internal int sceIoGetstat(string path, uint stat)
     {
         var host = HostPath(path);
         if (host == null || (!File.Exists(host) && !Directory.Exists(host))) return SceError.IO_ENOENT;
@@ -305,7 +305,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    int sceIoGetstatByFd(int fd, uint stat)
+    internal int sceIoGetstatByFd(int fd, uint stat)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         GuestMemory.Span(stat, 88).Clear();
