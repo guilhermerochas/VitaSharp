@@ -796,6 +796,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   mesmo tick em que ele acaba (o hardware avisa um tick antes): 39% contra 43% de silêncio, dentro da variação.
   Próximo passo: medir quanto tempo de CPU o ATStreamEngine recebe por segundo (o decoder de música do jogo pode estar
   sem tempo de CPU no núcleo 1, ou esperando um evento/semáforo que chega tarde) e comparar com o Vita3K
+  Música corrigida (07/11/2026, agente C, fix/bugs-games-18, 352d66f): não era o produtor. O jogo mistura a música
+  dentro do callback de troca de buffer de cada tick do NGS (thread de áudio sem nome, prio 64): a cópia vem de um
+  buffer de mistura de 512 quadros (0x822EB800) que o mixer do jogo enche a cada tick. O OpenAL Soft devolve os buffers
+  por atualização de mixagem (960 quadros = 2 grãos de 512), então o `sceAudioOutOutput` do jogo voltava duas vezes
+  seguidas, dois ticks rodavam sem intervalo e o segundo não tinha dado novo (padrão `_#_#_##`). O headless não
+  reproduz (o ritmo é pelo relógio); com o OpenAL de verdade sem som (driver `wave` do OpenAL Soft via `ALSOFT_CONF`) dá
+  34%. Correção como o `audio_output` do Vita3K: quando um grão chega menos de um grão depois do anterior, espera
+  metade do resto (`VITASHARP_AUDIO_SPACING`, 0 desliga). Mesmo binário, 75 s: desligado 29,6% de grãos zerados,
+  65,6 saídas/s e 112 underruns; ligado 0,5%, 93,6/s e 9 (`bugsC18_out/ab_off_audio`, `ab_on_audio`). Falta o vídeo
+  Vídeo corrigido (2f7518c): o filme da abertura (`databin/MOVIE/NINJA_VI.MP4`, H.264 com B-frames) saía fora de
+  ordem. O decodificador FFmpeg era aberto com `AV_CODEC_FLAG_LOW_DELAY`, que entrega cada quadro assim que decodifica
+  (ordem de decodificação), e o jogo mostra os quadros do sceAvcdec na ordem em que chegam: a cada três quadros um
+  voltava dois. Agora sai na ordem de exibição, como o Vita3K (sem o flag; `VITASHARP_VIDEO_LOW_DELAY=1` volta ao
+  antigo). Medido contra o filme decodificado pelo ffmpeg de linha de comando (cada present casado com o quadro do
+  filme, `scratchpad/bugsC18_order.py`), 700 presents a partir do 300: low-delay 62 voltas para trás; sem ele 1 (no
+  início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
+  "flashes" que restam no analisador são relâmpagos do próprio filme
 
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
@@ -816,6 +833,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cobrança (ou o usuário dizer o que tapava). 030833 = as vozes da torcida não têm cliques, lacunas nem grãos repetidos
   (`vitasharp-perf audio-check`); a voz 03 (0x89A424A0) bate em 0 dBFS (0,03% de clipping) e todas cortam acima de
   ~12 kHz; sem referência do Vita no mesmo trecho não dá para dizer o que soa estranho
+  Gravação nova da torcida (`captures\PCSE00093_20261107_223859_tudo`, agente C, fix/bugs-games-18): rerun com o
+  OpenAL de verdade (driver wave) sem e com o 352d66f: o port 1 tinha 2 buracos (97 ms) sem o espaçamento e nenhum com
+  ele; vozes ATRAC9 com 0 superframes velhos. A voz 08 (0x89A44060, ATRAC9 mono em anel) é um tom forte de ~3 kHz
+  (provavelmente o apito): os "saltos" são a própria onda (amplitude ~30000), não descontinuidade. No fim de cada clipe
+  o jogo grava superframes zerados no anel; o LibAtrac9 (o nosso decodificador) e o FFmpeg (o do Vita3K) rejeitam o
+  segundo frame (FirstInSuperframe) e o Vita3K também chama DECODE_ERROR: o mesmo que fazemos desde o 7732c69 (toca
+  silêncio, conta os bytes; o jogo mata a voz no fim do clipe). Sem mudança
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
@@ -862,6 +886,34 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   19 ms (`..._211757_tudo`, `..._212638_tudo` com o build novo). O FFmpeg de linha de comando decodifica o mesmo filme
   (`bugsC17_lbp/movie.mp4`) igual bit a bit com e sem d3d11va (900 quadros, com e sem low_delay), então o defeito vem
   do caminho da GPU dentro do emulador (lentidão/concorrência), não do fluxo. Falta o usuário confirmar no jogo
+  d3d11va (agente C, fix/bugs-games-18): o filme do LBP também tem B-frames, e o FFmpeg do emulador abria com
+  low-delay (corrigido no 2f7518c, ver Ninja Gaiden). Com d3d11va, mesmo build, frames 2400-2620 sem entrada: com
+  low-delay 4 flashes (pares A-B-A em 2403/2404 e 2440/2441, `bugsC3_data/captures/PCSA00017_20261107_234538_tudo`);
+  sem low-delay a janela caiu noutro trecho do filme (o boot variou) e deu 16 flashes de células
+  (`..._235336_tudo`), e o software no mesmo build 2 (`..._235636_tudo`). Inconclusivo: comparar o mesmo trecho
+  (rerun de uma gravação com estado no meio do filme, `--video-decoder=hw` x software x `VITASHARP_VIDEO_LOW_DELAY=1`)
+  antes de voltar o `auto` para a GPU
+  Áudio "estranho" (gravações `captures\PCSA00017_20261107_230046_tudo` e `..._230127_tudo`, agente C,
+  fix/bugs-games-18): as vozes NGS saem limpas, mas o port 1 (thread "FMOD NGS output thread", grão de 256) repete grãos
+  idênticos a 4 grãos antes (anel de 4 saídas do FMOD): 199 de 1689 (12%) na gravação do usuário. Mesma causa do Ninja
+  Gaiden (o OpenAL devolve ~4 grãos de 256 de uma vez). Rerun da 230046 com o OpenAL de verdade: sem o espaçamento 970
+  de 2303 grãos repetidos (42%), com o 352d66f 0 (`bugsC18_out/lbpr_off_audio`, `lbpr_on_audio`).
+  Planeta "embaçado" (mesmas gravações, com `--res-scale=2`): o desfoque de profundidade lê a profundidade da cena 4X
+  (store forçado) desempacotada como textura 1440x816; acima do nativo a imagem multisample é escalada, mas o
+  desempacotamento era no tamanho do guest, então o texel (x, y) lia o pixel (x/2, y/2) da imagem escalada (só o quarto
+  superior esquerdo) e o planeta inteiro ficava desfocado. Corrigido (e66ac42): desempacota no tamanho escalado. Replay
+  do dump da gravação: nativo nítido, 2x antes desfocado, 2x depois igual ao nativo (`bugsC18_rp/lbp_r1`, `lbp_r2`,
+  `lbp_r2fix`, `scratchpad/bugsC18_yt/lbpfix.png`)
+- [ ] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
+  `captures\PCSE00271_20261107_223633_tudo`). Nos 478 quadros ao vivo as barras de vida, os nomes e o tempo nunca
+  aparecem (o HUD de baixo aparece); o replay do mesmo dump mostra tudo e bate com o Vita real (vídeo `XerzDSm7Z9U`:
+  barras prateadas). Causa: a cena do HUD (960x544) carrega (FORCE_LOAD) o depth/stencil 0x60600000 que a cena 3D usa
+  em 720x408; com outro tamanho ela ganhava uma imagem nova com conteúdo indefinido, a memória reciclada do driver
+  trazia o bit 7 do stencil ligado e as máscaras do HUD (EQUAL 0 nos 8 bits depois de limpar só os 7 de baixo) falhavam.
+  Correção (cf3cf9d + 8b6787d): a imagem nova recebe a sobreposição da imagem mais recente da mesma superfície e o resto
+  fica como memória zerada (`VITASHARP_DEPTH_SEED=0` desliga; `VITASHARP_GPU_POISON=1` agora envenena imagens de
+  profundidade novas). Prova no replay com poison: sem a correção o HUD de cima some como no usuário, com ela aparece
+  (`scratchpad/bugsC18_yt/p01.png`, `p2.png`). Falta o usuário confirmar no jogo
 - [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
@@ -881,6 +933,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (0,0,0,0): o fade do filme fica em zero o tempo todo, por lógica do próprio jogo (o player de vídeo é código do jogo,
   entry 0x816361B5). Hipótese a conferir: o fade espera a posição do áudio do filme (NGS) ou outro estado do player.
   Próximo passo: achar quem grava esse multiplicador (backtrace `VITASHARP_BT_DRAW=6` já dá o lr) e o que ele lê
+  08/11/2026 (agente C, fix/bugs-games-18, só achados): com o 2f7518c (vídeo sem low-delay) o boot continua preto
+  (`bugsC18_out/nfs_new_frames`); o sceAvcdec decodifica 184 quadros sem erro. O thread "EAAudioCore Dac" acorda a
+  cada 16 ms (grão de 768) como deve. Visto no caminho: depois do quadro ~1120 (~35 s) o jogo cai para 2-5 fps
+  ("Hawaii_Main_Thread" com 4,95 M ciclos/quadro cobrados de HLE), provavelmente as chamadas de rede/PSN; medir
+  com `--trace-hle-threads=Hawaii_Main_Thread` nesse trecho
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
