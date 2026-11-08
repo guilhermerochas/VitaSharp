@@ -676,7 +676,7 @@ most of them in its slow first 45 s and then one every few seconds at 52 fps (no
 mixer missing deadlines while the game runs below its rate, so it goes with the speed work. Uncharted's title
 music has no clicks.
 
-**Rendering parity** (phone screenshots against desktop frames of the same scenes, `scratchpad/phone_shots` of the run):
+**Rendering parity** (phone screenshots against desktop frames of the same scenes, `phone_shots` of the run):
 Knightin'+ room, Devious Dungeon town, F1 2011 race start (chase camera), Uncharted title match apart from the on-screen controls drawn over
 the phone's picture.
 
@@ -802,7 +802,7 @@ descriptor-write change is installed on the phone):
    APK (the Android binaries are on the Vulkan-ValidationLayers releases page).
 
 **Desktop revalidation** of the 34 installed games (Croixleur Sigma excluded; scratch data root with copied saves,
-sheets and the review in `scratchpad/phone2_shots/pc`): no crash; Sonic & All-Stars Racing still hangs at frame 29
+sheets and the review in `phone2_shots/pc`): no crash; Sonic & All-Stars Racing still hangs at frame 29
 (known). New: The Deer God unpaced (214-348 fps), Shinobido 2 green line under the intro movie and
 `sceKernelGetCpuId` unimplemented (31,410 calls), Call of Duty's title in Russian, slow screens confirmed on an idle PC: Silent
 Hill's Zone Select (15-22 fps) and Crazy Market's terms of service (16 fps); the Soul Sacrifice and Skullgirls dips

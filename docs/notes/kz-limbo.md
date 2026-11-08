@@ -50,6 +50,6 @@ lines, so the hardware also runs the second sub-step.
 
 ## Not done / remaining
 - The generic "guest clock follows the CPU ledger" change was implemented and tested (it did not fix the bug by itself),
-  then dropped as unnecessary. Patch kept in the session scratchpad (guestclock-ledger.patch).
+  then dropped as unnecessary. Patch kept in a local work folder (guestclock-ledger.patch).
 - The VFP rounding modes other than nearest, and NaN propagation with DN=0, are not modelled (manual
   FuzzSimdAgainstUnicorn anyFpscr=true rows show the differences). Vita games run with FPSCR 0x03000000.

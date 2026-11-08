@@ -263,7 +263,7 @@ base median 40.6 mean 40.7 ms, PERSIST median 40.4 mean 41.9 ms.
   starts). Worker savings do not reach the frame time here.
 - **TEXSET_PERSIST**: the unit resolution drops 5.2-5.4 -> 2.8-2.9 ms and Execute about 2.6-3 ms (as on 5 November),
   pixel-identical on 38 desktop replays (the 18 dumps of the user's gpudumps folder and the Uncharted plants dump,
-  native and mali profiles: `and7_cmp/summary.txt` in the agent's scratchpad). No frame-time gain in this scene; it
+  native and mali profiles: `and7_cmp/summary.txt` in a local work folder). No frame-time gain in this scene; it
   stays off by default until a CPU-bound scene shows one.
 - **PRESENT_THREAD** (`VulkanRenderer.PresentThread.cs`): the worker's Present phase drops from 5.6-6.7 ms to 0.73 ms and
   Execute from 33.7 to 28.4-28.7 ms; the driver's blocking moved to the present thread. Same frame time (GPU-bound), no

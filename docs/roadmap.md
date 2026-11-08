@@ -27,21 +27,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (`SaveStates.ReplaceBackendBetweenScenes`, o mesmo caminho da carga de estado; 57-470 ms). Também como passos de
   script (`key@f2250:F1`). Validado no Sonic Mania em gameplay, sem janela e com janela oculta: 1x -> 2x -> 3x -> 2x
   (quadros gravados em 960x544, 1920x1088, 2880x1632, imagem certa logo depois de cada troca) e 30 fps entre os quadros
-  2500 e 2600 no modo fixo em 30 (`scratchpad/perf11_out/hk_mania`, `hk_win`, `hk_sheet.png`). Falta: o MSAA (real /
+  2500 e 2600 no modo fixo em 30 (`perf11_out/hk_mania`, `hk_win`, `hk_sheet.png`). Falta: o MSAA (real /
   antigo / desligado) ainda é lido uma vez por processo (`VITASHARP_MSAA`, estático no renderizador); para trocar ao
   vivo ele precisa virar opção do renderizador como a escala
   Confirmado pelo usuário (08/11/2026)
 - [ ] Killzone (PCSC00045) `kz_skin` a 1x morreu calado no quadro 3435 numa das 8 rodadas da perf/desktop-res
   (07/11/2026; sem exceção, `.err` vazio). Não reproduziu (perf/desktop-11): 6 rodadas seguidas, 3 com cache de
   shaders e do driver frios e 3 quentes, com outros emuladores disputando a CPU, todas até o quadro 4500 com código de
-  saída 0 (23-29 fps, `scratchpad/perf11_out/kz_summary.txt`). O log de eventos do Windows não tem nenhum "Application
+  saída 0 (23-29 fps, `perf11_out/kz_summary.txt`). O log de eventos do Windows não tem nenhum "Application
   Error"/WER do VitaSharp desde 06/11 15:14, então aquela rodada não caiu por exceção nativa nem do .NET (essas deixam
   evento, como os c0000374/c0000005 de 06/11): o processo foi encerrado de fora (TerminateProcess: um `Stop-Process`
   de outro agente, por exemplo) ou saiu sem passar pelo fim da rodada. O script daquela rodada lia `$p.ExitCode` de um
   `Start-Process -PassThru` sem guardar o handle (vem vazio), por isso não há código de saída. Agora toda saída
   normal do processo escreve `Process exit at guest frame N` no log: um log sem essa linha e sem `UNHANDLED` é um
   processo morto de fora ou em código nativo (ver o WER). Se repetir, rodar com `DOTNET_DbgEnableMiniDump=1` e
-  guardar o código de saída (`scratchpad/perf11_tools/run.ps1` faz os dois)
+  guardar o código de saída (`perf11_tools/run.ps1` faz os dois)
 
 ## Save states
 
@@ -66,7 +66,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tempo de jogo (segundos do relógio do jogo) e a versão. Os prints dos estados passaram a 480x272 (screenshot do
   renderer, o sink de 96x54 fica de reserva); o launcher mostra o tempo de jogo no card do estado. Validado no Sonic
   Mania (janela oculta, teclas postadas na janela): salvar, substituir, carregar (60 fps depois), apagar, F5/F7
-  rápidos; frames +0 com o seletor aberto (`prod3_out/ss4/ov`, `prod3_out/ui/game_dark.png` no scratchpad). Falta: o
+  rápidos; frames +0 com o seletor aberto (`prod3_out/ss4/ov`, `prod3_out/ui/game_dark.png` na pasta de trabalho local). Falta: o
   Android (a tela de estados por cima do jogo no menu de pausa, validar no Killzone no celular)
   Confirmado pelo usuário (08/11/2026)
 
@@ -78,31 +78,31 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   F1: `docs/notes/android-frame-anatomy.md`, main 1c0e516). 06/11/2026 (feat/savestate-tolerant): Tearaway salva e
   carrega (antes a carga era recusada com a cena da GPU aberta e o salvamento com uma command list sendo gravada),
   carregado duas vezes seguidas no modo de depuração, 30 fps e o boneco anda com o direcional depois das cargas, sem
-  device lost (`scratchpad/ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
-  carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`scratchpad/ss1_jak1`); God of War Collection: estado no
-  menu, carregado, God of War 1 até o menu do jogo a 30 fps (`scratchpad/ss1_gow1`)
+  device lost (`ss1_tear5`); LoadExec depois de uma carga: estado no menu da Jak and Daxter Collection,
+  carregado, Cross no Jak 1 e o Jak 1 chega ao PRESS START (`ss1_jak1`); God of War Collection: estado no
+  menu, carregado, God of War 1 até o menu do jogo a 30 fps (`ss1_gow1`)
 - [x] Estado salvo depois de um LoadExec carrega numa sessão nova (06/11/2026, fix/savestate-loadexec): o programa do
   estado é o primeiro módulo dele (`SaveStates.ProgramOf`); `--load-state` (launcher, `rerun` do Gravar tudo) boota esse
   self direto; F7/slot com outro self rodando faz o LoadExec antes e carrega após 120 quadros; os módulos são achados
   por arquivo e endereço e ficam com os UIDs salvos. Junto: `sceGxmDisplayQueueAddEntry` com a fila cheia não espera
   para sempre quando a thread é parada (o LoadExec pedido pelo host esperava 10 s e seguia com a thread antiga viva).
   Validado: Jak 1 e God of War 1 em gameplay salvos, carregados em sessão nova pelos dois caminhos, 20 e 30 fps como
-  ao salvar (`scratchpad/ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
+  ao salvar (`ss2_jakB`, `ss2_jakC4`, `ss2_gowB`, `ss2_gowC6`); Uncharted (o eboot.bin dele também faz
   LoadExec) a 59 fps (`ss2_ucB`); o rerun da gravação do usuário `PCSA00080_20261106_002008_tudo` (build da época
   0d298b4 + estas mudanças, o esquema da main mudou depois) carrega e 98% dos quadros saem iguais
   (`ss2_cap/.../reruns`). Os argumentos do LoadExec não são repassados (a memória salva os substitui). Android
   (06/11/2026, perf/android-8, ba51978): o Carregar estado do menu de pausa faz o mesmo `SwitchProgramFor` (a emulação
   volta a rodar durante o LoadExec, o menu a tinha pausado). Validado no celular: estado salvo no GOW1 da coleção do
   God of War, jogo reaberto no menu da coleção, slot carregado pelo menu: o log mostra `LoadExec app0:GOW1.self` e a
-  carga, o jogo segue do ponto salvo e responde (`scratchpad/and8_tools/shots/g4_loadpage.jpg`, `g6_loaded.jpg`,
+  carga, o jogo segue do ponto salvo e responde (`and8_tools/shots/g4_loadpage.jpg`, `g6_loaded.jpg`,
   `g7_after.jpg`); Killzone (sem LoadExec) salvo e carregado no gameplay pelo mesmo caminho em todas as corridas de
   medida. O Jak and Daxter Collection não está no celular
 - [x] Estados de outra versão: decisão do usuário (05/11/2026): estados de outra versão são recusados com aviso claro
   (não há formato tolerante; `SnapshotSchema.ManualVersion` + o hash dos layouts gerados decidem). Aviso em português
   ("Este estado foi salvo por outra versão do VitaSharp (1.0.0+57c57b1) e não pode ser carregado"), 15 s na barra de
-  título, dica do slot no launcher e aviso no Android (agente C dia 6, `scratchpad/bugsC6_out/ss_old/log.txt`).
+  título, dica do slot no launcher e aviso no Android (agente C dia 6, `bugsC6_out/ss_old/log.txt`).
   Visto na janela (06/11/2026): o estado do Jak 1 da 57c57b1 com `--load-state` mostra o aviso na barra de título de
-  8,2 s a 24,1 s e o jogo segue a 30 fps (`scratchpad/ss1_oldstate/titles.txt`, `window_0.png`)
+  8,2 s a 24,1 s e o jogo segue a 30 fps (`ss1_oldstate/titles.txt`, `window_0.png`)
 - [x] Interface: F5/F7 (rápido), F6 escolhe o slot 1-9, Shift+F5/F7 no slot; o launcher lista os estados do jogo com
   miniatura e abre o jogo carregando um; Android: "Salvar estado"/"Carregar estado" no menu de pausa, 6 slots com
   miniatura e data (24a3c6f; carga e salvamento por passos no celular em 9c288d7)
@@ -118,7 +118,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Confirmado pelo usuário (06/11/2026): ok
 - [x] Jak and Daxter Collection, menu (antes de qualquer save): a GPU parou ~20 s num `FinishCommand` no quadro 1076
   (watchdog STALL, quadro 1 da GPU não retirado) e depois seguiu; com outros agentes usando a GPU ao mesmo tempo, causa
-  não investigada (`scratchpad/ss1_jak1/stdout.txt`)
+  não investigada (`ss1_jak1/stdout.txt`)
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
 
 ## Desempenho (PC)
@@ -140,7 +140,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   então só esses shaders são traduzidos de novo; o cache dos outros continua valendo (sem subir a versão do gerador).
   Junto: as contagens dos testes de visibilidade (INCREMENT) de cenas escaladas são divididas por k*k (vinham k*k vezes
   maiores). Conferido: `replay-gpu --compare` dos 18 dumps idêntico ao main em 1x e em 2x; o Uncharted desenha 334
-  pontos por quadro num stencil de 720x408 (`scratchpad/perf11_cmp/vis_trace2`, não aparecem nos quadros gravados); o
+  pontos por quadro num stencil de 720x408 (`perf11_cmp/vis_trace2`, não aparecem nos quadros gravados); o
   Killzone em 2x (`kzvis2`) dá contagens de visibilidade na mesma ordem das de 1x (`kzvis1`, 10-25 mil) com o sol e as
   luzes normais. Nenhum jogo instalado com sprites de ponto visíveis foi achado (The Deer God: 12 programas com
   tamanho de ponto, Killzone 0, pelo `shadertest`)
@@ -186,7 +186,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     `JsonSerializerIsReflectionEnabledByDefault=false`)
     Feito no desktop (07/11/2026): todas as chamadas já passavam contexto gerado ou `JsonTypeInfo`; o
     `VitaSharp.Desktop.csproj` desliga o serializador por reflexão (`runtimeconfig.json` com a chave). Conferido: o
-    jogo abre e lê o `input.json` de perfis (teclado personalizado + 1 controle; `scratchpad/perf11_out/json_win`). No app Android falta pôr a mesma propriedade e testar no celular (Android parado)
+    jogo abre e lê o `input.json` de perfis (teclado personalizado + 1 controle; `perf11_out/json_win`). No app Android falta pôr a mesma propriedade e testar no celular (Android parado)
   - [ ] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
     (tabelas de HLE, NIDs, formatos) — gerar na compilação o que hoje é montado ao iniciar
   - [ ] Caminhos quentes sem custos escondidos: boxing, `params object[]`, interpolação de string em logs desligados
@@ -250,7 +250,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Perfil (dotnet-trace na travada): a `pthread` passa ~77% e a `main` ~22% do tempo dentro de uma mesma chamada HLE
   (provavelmente `sceKernelLockLwMutex`: 27 M lock/unlock no `mania_boot`), boa parte gastando CPU. Tentado: entregar o
   mutex direto ao primeiro da fila no unlock (como o `Mutex::serve` do Vita3K e o PPSSPP): piorou (98 s contra 70 s,
-  mais travadas), revertido (patch no scratchpad `perf14_tools/mutex_handoff_wip.patch`). Próximo passo: contar as
+  mais travadas), revertido (patch na pasta de trabalho local `perf14_tools/mutex_handoff_wip.patch`). Próximo passo: contar as
   esperas com disputa por mutex/thread (nome, quem segura) na travada, e ver se o custo é o `Latency()` de 30 us
   por espera acordada ou o giro do `Monitor`
 
@@ -282,7 +282,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VITASHARP_PRESENT_THREAD` piorou (85-86 ms) e `VITASHARP_TEXSET_PERSIST` não mudou o quadro: ficam desligados
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
-  `scratchpad/and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
+  `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
   chave do Android muda). Replay do mesmo dump no PC (agente C, 05/11/2026, build da main a19cdbe + a correção do
   DelayThread): **não pisca**, nem com o perfil nativo nem com `--gpu-profile=mali` (`tileflick.py`: 0 quadros com
   flash em 151; na faixa de baixo, a grama, a mudança n→n+1 é 1,0 e n→n+2 1,5, ou seja, movimento contínuo do vento, não
@@ -305,15 +305,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Agente C dia 6 (05/11/2026, fix/bugs-games-6): (1) **corrigido** o perfil: agora usa os limites que o Mali-G57 r54
   reporta (8388608 por estágio, 7 sets, 256 B de push constants, 1/4/8 amostras); replay com `--gpu-profile=mali`: 0
   desenhos pulados (eram 3040), diferença média máxima contra o desktop 0,110 (era 2,339), Drake inteiro
-  (`scratchpad/bugsC6_out/mali_drake_4037.png`: main mali / novo mali / desktop); desktop 151/151 quadros idênticos à
+  (`bugsC6_out/mali_drake_4037.png`: main mali / novo mali / desktop); desktop 151/151 quadros idênticos à
   main. (2) DeviceLost: 0 em 5 replays com `--gpu-profile=desktop` (2 builds, 3 com cache de shaders vazio,
   `bugsC6_out/plants_ref_desk`, `plants_new_desk`, `plants_dl3..5`); o da rodada anterior foi no 1º present, depois
   de 1335 ms de compilação de shaders no mesmo quadro, com a CPU dividida (provável TDR do driver); não reproduz
   Conferido (06/11/2026, perf/android-7): o replay com `--gpu-profile=mali` no build de baabc78 (fix/bugs-games-6) já
-  mostra o Drake inteiro; o da main ainda o quebra (`scratchpad/and7_runs/drake_mali_cmp.png`, esquerda main, direita
+  mostra o Drake inteiro; o da main ainda o quebra (`and7_runs/drake_mali_cmp.png`, esquerda main, direita
   baabc78). A bisseção do pisca no celular não foi feita (testes no celular parados pelo usuário); preparado:
-  `scratchpad/and7_tools/flick.sh` (screenrecord do aparelho, quadros distintos, `tileflick.py` por variante do env.txt)
-  e o vídeo do Vita `scratchpad/and7_yt/uc_vita.mp4` (o Prologue começa por volta de 70 s)
+  `and7_tools/flick.sh` (screenrecord do aparelho, quadros distintos, `tileflick.py` por variante do env.txt)
+  e o vídeo do Vita `and7_yt/uc_vita.mp4` (o Prologue começa por volta de 70 s)
 - [x] Menu de pausa do Android (botão PS) no estilo do app (pedido do usuário, 05/11/2026): hoje é um `AlertDialog`
   padrão do Android (`GameActivity.cs` ~482/524, `GameActivity.SaveStates.cs` ~72 para os slots de estado). Trocar por
   uma tela própria com as cores, fontes, cantos e ícones das páginas do app (lista de jogos/configurações), por cima do
@@ -325,14 +325,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   com miniatura e data), Ajustes (toque traseiro, controles na tela, pré-gravação, recentralizar), Recentralizar,
   Gravar tudo/Parar gravação e, no build de desenvolvedor, Desenvolvedor (Gravar tempo/conteúdo). Toque e controle:
   todo botão recebe o foco (D-pad/analógico movem, A ou Enter aperta, B ou Voltar volta, Start ou PS fecha), o focado
-  ganha o contorno azul; um toque fora do cartão continua. APK dev em `scratchpad/bugsC5_apk` (instalado no celular
+  ganha o contorno azul; um toque fora do cartão continua. APK dev em `bugsC5_apk` (instalado no celular
   às 20:55 sem a correção dos acentos). O Redmi recusa `adb shell input` (INJECT_EVENTS): para dirigir o menu e as
   telas sem o usuário há agora `VITASHARP_ANDROID_UI_INPUT` (build dev, `Developer/UiScript.cs`, commit 96ac1d5).
   A validação no celular foi interrompida a pedido do usuário antes dos prints do menu
   Validado no celular (06/11/2026, perf/android-7, APK LLVM dev, por toque com `VITASHARP_ANDROID_UI_INPUT`):
   página principal, Salvar estado (salvou no slot 2 com miniatura), Carregar estado (carregou o slot 2 em 3 s),
   Ajustes, Desenvolvedor, Recentralizar (aviso "Movimento recentralizado"), Gravar tudo / Parar gravação, Sair do
-  jogo (`scratchpad/and7_tools/shots/pm_main.png`, `pm_a.jpg`, `st_a.jpg`, `st_b.jpg`, `rec_a.jpg`). Achado e corrigido (79925c5, ainda
+  jogo (`and7_tools/shots/pm_main.png`, `pm_a.jpg`, `st_a.jpg`, `st_b.jpg`, `rec_a.jpg`). Achado e corrigido (79925c5, ainda
   não validado no aparelho): os interruptores de Ajustes eram um texto minúsculo "LIG/DESL" (Switch do Theme.Black),
   as páginas de slots passavam da altura da tela, a miniatura era uma pílula, o aviso de "Salvando a gravação" era um
   AlertDialog antigo. O gancho UI_INPUT por Instrumentation era recusado (INJECT_EVENTS) também na própria janela:
@@ -345,7 +345,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   a present" sempre que se para com o jogo pausado (o menu pausa antes do stop)
   Validado no celular (06/11/2026, perf/android-8, APK LLVM dev da main 4a8bb94, no Killzone e no God of War): as
   páginas de slots cabem na tela, a miniatura tem cantos retos, a página principal por toque
-  (`scratchpad/and8_tools/shots/m1_main.jpg`, `m3_save_slots.jpg`, `g4_loadpage.jpg`). O foco por D-pad/A continua
+  (`and8_tools/shots/m1_main.jpg`, `m3_save_slots.jpg`, `g4_loadpage.jpg`). O foco por D-pad/A continua
   sem validação: as teclas injetadas pelo gancho não tiram a janela do modo de toque neste celular (nenhuma view
   recebe o foco, `dumpsys activity top`), e não havia controle físico (nem o botão PS). Corrigido sem validar
   (ae93ac8): o primeiro botão de cada página é o foco padrão (`FocusedByDefault`); sem isso, a primeira seta de um
@@ -354,13 +354,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [x] Acentos quebrados no Android (relato do usuário, 05/11/2026): **causa achada e corrigida** (commit 239d126, falta
   o print do depois no celular): `Pages/LibraryView.cs` estava salvo com UTF-8 lido como Windows-1252 e gravado de
   novo ("JogÃ¡veis", "Todos Â· 8", "licenÃ§a", e os ícones ⚙ ⌕ ▶ › 🏆 como "âš™", "âŒ•", "â–¶", "â€º", "ðŸ†"),
-  exatamente o que o celular mostra (`scratchpad/bugsC5_phone/before_library.png`). As fontes Inter e Sora têm os
+  exatamente o que o celular mostra (`bugsC5_phone/before_library.png`). As fontes Inter e Sora têm os
   glifos (á à â ã ç é ê í ó ô õ ú, conferido no cmap). Varredura do repositório inteiro: só esse arquivo e três
   comentários do Core; `SourceEncodingTests` falha se a sequência voltar (src, tests, build). As outras telas,
   diálogos, o overlay de FPS/REC e o texto dos jogos (PVF) ainda não foram vistos no celular
   Validado no celular (06/11/2026, perf/android-7): Biblioteca ("Jogáveis", "Todos · 8", "Jogável"), Ajustes
   ("licença", "Padrão", "Automático"), diálogo da CPU, Desempenho, Controles, página do jogo, menu de pausa e
-  overlay ("Pausado", "● REC") com os acentos certos (`scratchpad/and7_tools/shots/lib3.png`, `app_ajustes.png`, `app3.jpg`, `app3b.jpg`,
+  overlay ("Pausado", "● REC") com os acentos certos (`and7_tools/shots/lib3.png`, `app_ajustes.png`, `app3.jpg`, `app3b.jpg`,
   `pm_main.png`). Texto dos jogos (PVF) não conferido
   Validado no celular (06/11/2026, perf/android-7): acentos certos em todas as telas do app
 - [ ] Reescrita do JIT para ARM64 (pedido do usuário, 04/11/2026): o código gerado ainda tem ~6-12 palavras por
@@ -577,7 +577,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   no canto ("Mouse: analógico direito (Escape solta o cursor, F4 muda)") e na barra de título. Launcher: seção "Mouse
   como analógico" nas opções do teclado em Controles. Script: `mouse@T:dx:dy[:len][:l]`. Validado sem janela no
   Uncharted (`bugsC5_scn/uc_mouse.txt`, `mouse@f7000:1200:0:f90`): a câmera gira para a direita durante o movimento e
-  para quando ele acaba (`scratchpad/bugsC5_out/uc_mouse_strip.png`, 6950/6990 parados, 7010-7090 girando); testes
+  para quando ele acaba (`bugsC5_out/uc_mouse_strip.png`, 6950/6990 parados, 7010-7090 girando); testes
   `MouseStickTests`. Falta: a captura do cursor e o F4 na janela (pedir ao lead/usuário)
   Confirmado pelo usuário (06/11/2026): mouse como analógico com F4 e o Gravar tudo no F8 funcionando
 
@@ -606,7 +606,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   player SceShellMusicCore na porta BGM), mas o pd0 é dado de fábrica que nenhuma atualização traz e a instalação do
   usuário (do PSVUPDAT.PUP) tem o pd0 vazio. Com o pd0 do Vita3K numa cópia dos dados a tela inicial toca: porta BGM
   48 kHz, 33 s em 33 s, 0 underruns; o espectrograma bate com o home.at9 decodificado pelo ffmpeg (correlação 0,98;
-  trecho sem relação 0,80), mesmo nível (`scratchpad/fw9_out/bgm2_audio/03_port2_BGM_48000.wav`). Agora: a instalação
+  trecho sem relação 0,80), mesmo nível (`fw9_out/bgm2_audio/03_port2_BGM_48000.wav`). Agora: a instalação
   do PUP copia o pd0 do Vita3K quando ele existe, `install-firmware --pd0[=<pasta>]` copia só o pd0 e o shell avisa no
   log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
   abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
@@ -633,7 +633,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   movimento, sockets do sistema)
   Achados (05/11/2026, fix/user-bugs-6): a configuração inicial completa nos três caminhos ("Não tenho conta",
   "Tenho conta" + "Definir depois" = configuração de uso experimental da PSN, "Usar" = tela de Sign-In; prints em
-  `fw_out/setup_*` do scratchpad); o "Definir depois" travava em "Aguarde" (pedido de sistema do SceNpManager, 4fbab47)
+  `fw_out/setup_*` da pasta de trabalho local); o "Definir depois" travava em "Aguarde" (pedido de sistema do SceNpManager, 4fbab47)
   e depois mostrava "É preciso atualizar o software do sistema" (checagem de vínculo da conta, 82365bb).
   Teclado na tela (IME): não é um travamento, é a tela a ~1 fps sem teclado. Reproduzido na tela de Sign-In da
   configuração inicial (tocar no campo; `fw_out/ime_diag`, `ime_trace3`): o ime_plugin do shell abre e o **shell passa
@@ -653,7 +653,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Rodada fix/system-apps-5 (05/11/2026): (1) feito (efecbd5, `VulkanRenderer.ShellOverlay.cs`): o teclado aparece por
   cima da tela de Sign-In com a página visível em volta (`fw5_out/ime_new/kb2.png`; antes sem teclado,
   `fw5_out/ime_base/kb2.png`). Continua a ~1 fps (0,6-1,0 fps medido; antes 0,8) e **as teclas não digitam**. Tentado
-  sem ganho (revertido; patch `fw5_all_wip.patch` no scratchpad): (a) segurar o BeginScene de cada processo até o
+  sem ganho (revertido; patch `fw5_all_wip.patch` na pasta de trabalho local): (a) segurar o BeginScene de cada processo até o
   comando seguinte dele (a arbitragem começa no primeiro desenho): a `SceShellMain` desenha **antes** de esperar a
   `ScePafDisplaySurfaceCond`, então nada muda; (b) a espera da thread da display queue pela cerca contar como espera
   do guest (libera o gate dos uniforms para desenhos anteriores a ela): sem efeito; (c) rotear o toque para o shell
@@ -693,7 +693,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (`vs0:data/external/webcore`); barra de status ausente sobre Mensagens/Amigos/Party; Configurações > Sistema/
   Formatar/Economia de energia ainda não abertas (`settings_tail.nav` escrito, rodar de novo). Texto cortado no boot
   direto: não reproduzido (`run NPXS10015` mostra o texto inteiro). Botão PS no PC: não testado (precisa da janela)
-  Rodada fix/system-apps-6 (05/11/2026, provas em `fw6_out/` do scratchpad): **tela de bloqueio** corrigida (0e92acf:
+  Rodada fix/system-apps-6 (05/11/2026, provas em `fw6_out/` da pasta de trabalho local): **tela de bloqueio** corrigida (0e92acf:
   evento 4 com o layout do kernel, +8 estado, +0xC/+0x18 -1, +0x20 title id; depois de fechar volta a tela inicial,
   `close1/after.png`; Calendário não cai mais na tela de bloqueio, mostra NW-2288-0 já no primeiro início, `cal1`).
   **Teclado (IME)**: 0,8 -> 7-8 fps (e928487, o gate dos uniforms agora deixa o backend submeter: a cerca da display
@@ -711,7 +711,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   liblocation e liblocation_internal/extension (LLE) e o stub já devolve 0: a tela preta tem outra causa (não
   investigada). Configurações > Sistema/Formatar/Economia: não rodado. A primeira descida da tela de bloqueio no boot às
   vezes falha (`br1`: ficou na tela de bloqueio o tempo todo; `br2` igual roteiro, passou).
-  Rodada fix/system-apps-7 (06/11/2026, provas em `fw7_out/` do scratchpad): **Navegador** corrigido (f1d8488): ele
+  Rodada fix/system-apps-7 (06/11/2026, provas em `fw7_out/` da pasta de trabalho local): **Navegador** corrigido (f1d8488): ele
   mesmo inicia o motor web com `sceAppMgrLaunchAppByName2` quando `sceAppMgrGetStatusByName("NPXS10083")` falha com
   0x80802012 (o HLE devolvia 0x8080201C e ele desistia); mais NID_BEF71602 (funções exportadas por NID) e
   `sceKernelWaitEvent` em message pipes (o IPC entre os dois processos). Sem rede: "Cannot display the page
@@ -731,13 +731,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
   tem a barra, e de Mensagens são iguais: não é isso). 07/11/2026 (fix/system-apps-10): hoje **nenhum** app do
-  sistema mostra a barra, nem Troféus (`scratchpad/fw9_out/tro7/list.png`); só a tela inicial tem. A causa é comum
+  sistema mostra a barra, nem Troféus (`fw9_out/tro7/list.png`); só a tela inicial tem. A causa é comum
   e provavelmente a mesma do teclado antes do intercalamento: a barra é desenhada pelo shell por cima do app e o
   VitaSharp só apresenta o processo da frente (`Display.sceDisplaySetFrameBuf`) ou o quadro do cliente SceSharedFb.
   Próximo passo: ver se o shell desenha a barra num plano próprio enquanto um app está na frente (sceGxm do
   SceShellMain com o app aberto) e compor esse plano. Botão PS no PC e texto cortado no boot direto: não mexidos
   nesta rodada (o primeiro precisa da janela, o segundo não foi reproduzido na rodada 9).
-  **Barra de status: resolvido** (07/11/2026, fix/system-apps-11, provas em `scratchpad/fw11_out/tro2/t2.png` e
+  **Barra de status: resolvido** (07/11/2026, fix/system-apps-11, provas em `fw11_out/tro2/t2.png` e
   `apps1/sheet.png`): não era composição (o shell já desenha a barra dentro do quadro SceSharedFb que ele compõe). O
   shell lê a cada quadro, no SceAppMgrAppStatus do app da frente, +0x48/+0x49/+0x4A (visível, cor, transparência;
   shell 0x8127DF5E) e o HLE escrevia zero. Agora vêm do param.sfo (ATTRIBUTE 0x80 = barra, que todo app do sistema
@@ -748,7 +748,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   servidor de troféus do shell, esperado).
   Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
   Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware).
-  Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` do scratchpad): **Teclado (IME) a 60 fps** (era 5-6):
+  Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` da pasta de trabalho local): **Teclado (IME) a 60 fps** (era 5-6):
   as cenas de processos diferentes não se esperam mais (60caec2, padrão em 6df044e; `VITASHARP_GPU_SCENE_INTERLEAVE=0`
   volta a arbitragem): o renderizador guarda a cena aberta de cada processo e a retoma (VulkanRenderer.SceneContexts.cs),
   o draw segurado pelo gate dos uniforms espera na fila do seu processo sem travar o worker, e os dumps de GPU gravam o
@@ -771,17 +771,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   traduz as teclas do paf numa tabela em 0x8100B8A0 (offset no ELF decriptado): a tecla 3 vira 0x2000 (o mesmo da
   tecla 0x14, provável "fechar") só se `paf Framework (F72FC59E)[+0x5c] == 0` ou `810030F4(obj[+0x9C]) != 0`; senão
   vira 4. O que se vê (o círculo só mostra o foco e confirma a predição) bate com o ramo 4. Próximo passo: rodar o
-  roteiro do teclado (`scratchpad/fw9_ime.nav`, refeito do log de `fw8_out/ime_circ3`, numa pasta de dados nova como
+  roteiro do teclado (`fw9_ime.nav`, refeito do log de `fw8_out/ime_circ3`, numa pasta de dados nova como
   `fw9_ime_data`) lendo o Framework[+0x5c] e o retorno de 810030F4 no instante do círculo, e conferir num vídeo do
   Vita real se o círculo fecha mesmo com uma predição aberta ("vita" sublinhado).
-  07/11/2026 (fix/system-apps-10, `scratchpad/fw10_out/ime2`, não resolvido): a pista acima estava errada. A função
+  07/11/2026 (fix/system-apps-10, `fw10_out/ime2`, não resolvido): a pista acima estava errada. A função
   da "tabela de teclas" (ime_plugin 0x8100B836, base no shell 0x83210000) roda **uma vez por tecla do layout** quando
   o teclado é montado (r1 = definição da tecla, tipo 0xF na primeira), não a cada botão; com `--probe` nela e no ramo
   da tecla 3 nenhum aperto do círculo passou por ali. O caminho do botão círculo até o ime_plugin (evento de
   "voltar" do paf no processo do shell) segue por achar; próximo passo: `--trace-hle-threads=SceShellMain` no
   instante do `press circle` e procurar no ime_plugin quem trata o evento de cancelar do paf (o handler de
   `paf::ui::Event` da janela do teclado), e confirmar num vídeo do Vita real que o círculo fecha o teclado.
-  07/11/2026 (fix/system-apps-11, `scratchpad/fw11_out/ime3`..`ime6`, não resolvido; a configuração inicial precisa
+  07/11/2026 (fix/system-apps-11, `fw11_out/ime3`..`ime6`, não resolvido; a configuração inicial precisa
   de uma pasta de dados sem ur0, `fw11_reset_ime.ps1`): o que cada botão faz hoje no teclado aberto (só o shell lê os
   botões): círculo = primeiro mostra o foco, depois nada visível (com o foco no Enter, um círculo longo passou ao
   campo Senha, como o Enter); triângulo = confirma a predição; quadrado = apaga (backspace); Start = foco no Enter;
@@ -789,7 +789,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   app (o setup, por baixo) não muda nada (o paf do app ignora o círculo com o teclado aberto; experimento revertido).
   Nenhuma chamada HLE difere entre o círculo e o chevron (o pedido de fechar anda por memória/IPC do ime_plugin).
   Falta ainda a referência: num vídeo do Vita real, o que o círculo faz com o teclado aberto.
-  **Círculo no teclado: resolvido** (08/11/2026, fix/system-apps-12, provas em `scratchpad/fw12_out/ime6/sheet.png`,
+  **Círculo no teclado: resolvido** (08/11/2026, fix/system-apps-12, provas em `fw12_out/ime6/sheet.png`,
   `ime7/sheet.png`, `ime3/sheet.png`): o libpaf do shell já trocava círculo/X certo (tabela de botões em 0x81301094,
   círculo = tecla 0x20 "voltar" com /CONFIG/SYSTEM/button_assign = 1). Quem desfazia era o ime_plugin: ao abrir o
   teclado (0x81002B4C) ele lê `sceAppMgrAppParamGetInt(pid do app, 0x10)` (o botão de confirmar do processo) e, se for
@@ -807,7 +807,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [x] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
   `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
   serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
-  "avmedia_service:". Tentativa (patch `fw8_photo_wip.patch` no scratchpad, fora do git por não salvar a foto): sistema
+  "avmedia_service:". Tentativa (patch `fw8_photo_wip.patch` na pasta de trabalho local, fora do git por não salvar a foto): sistema
   carrega o ScePhotoExport real; `sceAppMgrLaunchAppByUri/2` viram pedido ao shell (evento 6 com a URI, flags |
   0x100000, como o kernel 3.74) e o shell inicia o NPXS10036 com flags 0x600000 (servidor IPC no status +0x74; não abre
   um segundo); semáforo/event flag apagado com handles abertos por nome vira zumbi até o último close (o servidor
@@ -823,7 +823,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   LaunchAppByUri como pedido ao shell, flags de serviço) e o despacho do NPXS10036 não foram mexidos (orçamento).
   06/11/2026 (fix/bugs-games-13): o `sceAppMgrLaunchAppByUri/2` como pedido ao shell e as flags de serviço entraram (o
   "psnreg:" do PS4 Link abre o Sign Up; "avmedia_service:" inicia o NPXS10036 com 0x600000, `bugsC13_out/cam1`). Com o
-  ScePhotoExport real (patch `scratchpad/bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
+  ScePhotoExport real (patch `bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
   save the image": o NPXS10036 carrega libpaf, sqlite, dbutil, dbrecovery_utility e meta_gen e fica no laço do
   SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento). fix/bugs-games-14: não retomado (orçamento semanal no fim).
   Despacho do NPXS10036 (07/11/2026, fix/system-apps-9, só estático): o servidor libipmi é criado em eboot 0x81000604
@@ -844,7 +844,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
   crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
   (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
-  **Foto: resolvido** (07/11/2026, fix/system-apps-10, provas em `scratchpad/fw10_out/cam9`, `cam10`): eram duas
+  **Foto: resolvido** (07/11/2026, fix/system-apps-10, provas em `fw10_out/cam9`, `cam10`): eram duas
   falhas. (1) O libpaf grava a foto com IO assíncrono e lê o fd do open no `SceIoAsyncParam` (último argumento de
   todo `sceIoXxxAsync`, resultado de 64 bits no +0) depois do `sceKernelWaitEvent`; o HLE ignorava esse argumento, o
   paf escrevia no fd 0 e o JPEG falhava com 0x80AF5021 (a thread ScePafJobDefault da câmera, não as JobQueue). (2) O
@@ -854,7 +854,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `ux0:picture/CAMERA/<xx>/<data>.jpg`, o NPXS10036 registra no `ux0:mms/photo/AVContent.db`, a miniatura aparece na
   câmera e a foto em Fotos > Imagens da câmera e abre (`cam10/pics.png`, `pic1.png`; a webcam deste PC dá quadro
   preto, brilho médio 8/255, por isso a foto é preta).
-  **Vídeo (não resolvido, 07/11/2026, fix/system-apps-10, `scratchpad/fw10_out/vid2`)**: a gravação não cai mais (o
+  **Vídeo (não resolvido, 07/11/2026, fix/system-apps-10, `fw10_out/vid2`)**: a gravação não cai mais (o
   salto para a vtable nula sumiu junto com a correção do IO assíncrono) e as duas funções que faltavam do
   SceCodecEngineUser (9A5E7B2F ao começar, 9AD7E66F ao parar; sem argumentos, retorno ignorado, provável monitor de
   desempenho) devolvem 0. Fluxo medido: QueryMemSize/QueryEncoderMemSize (tipo 0x1002), bloco unmap de 6 MiB com 3
@@ -868,7 +868,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `SceAvcencNalUnit` (+0 endereço, +4 tamanho, +8 tipo) e onde os bytes dos NALs moram (provavelmente o buffer de
   0x200000 do bloco unmap). Próximo passo: com `--probe` no retorno do Encode, ler a entrada (0x8414CEE4) e a saída
   (0x8414CEA0) e seguir no eboot da câmera (fw10_cam.elf, base +0x02F10000) o que ela faz com os NALs até o muxer.
-  07/11/2026 (fix/system-apps-11, `scratchpad/fw11_out/vid2`..`vid5`): **o MP4 agora tem vídeo de verdade** (116
+  07/11/2026 (fix/system-apps-11, `fw11_out/vid2`..`vid5`): **o MP4 agora tem vídeo de verdade** (116
   quadros H.264 640x480 em 3,9 s, Constrained Baseline, AAC junto; `ffprobe` e um quadro decodificado, `vid2/frame60.png`).
   Layouts lidos no eboot da câmera (0x83FE8EE6) e confirmados com `--probe`, escritos no Videoenc.cs: entrada de 0x30
   bytes (+8 pitch, +0xC largura, +0x10 altura, +0x24 a imagem YUV420 planar da SceCamera, +0x2C flags), saída (+0 != 0
@@ -885,7 +885,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   libFflMp4 (montado em tempo de execução); próximo passo: `--probe` nos retornos do libvideoprofiler (base do
   processo 0x881C0000) para achar qual verificação do MP4 falha (perfil/nível do SPS, fps 29,97 do muxer, duração
   vídeo 3,87 s x áudio 4,29 s, miniatura `.m4t` ausente).
-  **Vídeo: resolvido** (08/11/2026, fix/system-apps-12, provas em `scratchpad/fw12_out/vid10/sheet.png` e
+  **Vídeo: resolvido** (08/11/2026, fix/system-apps-12, provas em `fw12_out/vid10/sheet.png` e
   `vid6/play1.png`): o 0x80103F2A sai do MsvPromoter (0x81003952: nenhum vídeo achado depois do perfil) porque o
   libvideoprofiler não achava a trilha de vídeo (0x80103C04, lista de trilhas vazia): o avcC do MP4 tinha SPS e PPS
   vazios. A câmera lê SPS/PPS do bloco de controle do encoder logo depois do `sceAvcencSetEncoderParameter` (+0x14/+0x18
@@ -922,15 +922,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   bytes, magic 0xB9DDE13B; sem ela o np_trophy dá 0x80551604, com zeros o servidor dá 0x8055160B). Ela não pode ser
   inventada: o HLE agora guarda a que o jogo passa (sceNpTrophyCreateContext ou sceNpInit) em
   `ux0:user/00/trophy/<NPCOMMID>.sig`, então os jogos jogados antes desta versão precisam abrir uma vez (pelo launcher
-  serve) para aparecer. Validado numa cópia (`scratchpad/bugsC13_out/mc1` grava a assinatura do Minecraft rodando direto,
+  serve) para aparecer. Validado numa cópia (`bugsC13_out/mc1` grava a assinatura do Minecraft rodando direto,
   `tro14/t2.png` Troféus com "Minecraft 7%, 0 0 0 5" e `tro15/sheet.png` lista, detalhes e reabertura sem reinstalar).
   Estranho: durante a migração o shell mostra o aviso "You have earned a trophy!" para cada troféu dado (5 no Minecraft).
-  **Aviso na migração (aberto, fix/bugs-games-14)**: reproduzido numa cópia (`scratchpad/bugsC14_out/tro1/t1.png`,
+  **Aviso na migração (aberto, fix/bugs-games-14)**: reproduzido numa cópia (`bugsC14_out/tro1/t1.png`,
   "Montando / Você conquistou um troféu!" ao abrir Troféus). O servidor (shell.self, SceNpTrophyServerJob) faz por
   desbloqueio, dentro da própria chamada síncrona da ponte: `sceAppMgrAppParamGetInt(pid, 1/5/0xD)` e
   `sceAppMgrGetStatusById(pid)` (lr 812CB04D, wrapper 812CB034, a3 = NPCOMMID). O callback de fim do UnlockTrophyJob
   (814287F4) chama 81229A58, que só segue se 812CB034 (o GetStatusById) der >= 0; tentativa: devolver "não achado" a
-  essas consultas durante os desbloqueios da ponte (patch `scratchpad/bugsC14_trophy_silent_wip.patch`, fora do git):
+  essas consultas durante os desbloqueios da ponte (patch `bugsC14_trophy_silent_wip.patch`, fora do git):
   as 5 consultas falharam e o aviso apareceu igual (`tro4/t1.png`), então o aviso não sai desse caminho. Próximo passo:
   achar quem empurra o aviso (strings "JobPushNotification"/"notificationPush"/"sys-notify" do shell; talvez o cliente
   np_trophy do processo ou a UI do shell ao receber o evento do servidor) e ver se há um modo de "sync" sem aviso
@@ -941,7 +941,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   0x80551609) e o pedido (+0x84, falta = 0x8055169B): o "pedido" é o id que D70DAFA7 devolve (0x6000x); com ele a chamada
   passa das três buscas e falha com 0x80551609 em `812D7E20` (exige contexto[+0x20] == 1). Criar o contexto com
   options=1 não muda nada; falta achar quem põe contexto[+0x20] = 1 (talvez um contexto de depuração/sistema).
-  Rodadas em `scratchpad/bugsC16_out/tro2..tro5` (log "silent unlock"). `SceNpManager::NID_A775A452` (pergunta do
+  Rodadas em `bugsC16_out/tro2..tro5` (log "silent unlock"). `SceNpManager::NID_A775A452` (pergunta do
   servidor antes de sincronizar com a rede) agora devolve 0 (sem sincronizar): `tro5/log.txt` sem funções faltando.
 - [x] LiveArea dos jogos com o fundo padrão do sistema em vez do template do jogo
   (`captures/shell_20261106_021501_tudo`): ao abrir a LiveArea de um jogo o shell copia icon0.png e pic0.png do appmeta
@@ -1060,7 +1060,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   embute `VitaSharpBuildTime`
   Falta (pendente do próximo push da main, que gera uma build-* mais nova que a build-d99089e): a troca de verdade.
   Como testar, só leitura e numa cópia: (1) baixar `VitaSharp-0.0.0-build.gd99089e-win-x64.zip` da release
-  build-d99089e para uma pasta nova no scratchpad, conferir o SHA-256 com o `SHA256SUMS.txt` e extrair em `inst`;
+  build-d99089e para uma pasta nova na pasta de trabalho local, conferir o SHA-256 com o `SHA256SUMS.txt` e extrair em `inst`;
   (2) `inst\VitaSharp\VitaSharp.Desktop.exe --data=<pasta de teste vazia> update` deve listar a build nova;
   (3) o diálogo: `... --data=<pasta de teste> ui-render <saída> --update-feed=https://api.github.com/repos/<dono>/VitaSharp/releases?per_page=30`
   grava o PNG do diálogo com a versão, a data e as notas; (4) a troca: `... --data=<pasta de teste> update --apply
@@ -1125,7 +1125,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~100 shaders e ~50 pipelines, porque o renderizador novo não abria os caches do jogo (só o primeiro recebia
   `BeginTitle`); agora F1/F3/load state passam o título adiante e o novo faz o prewarm (cenário `res_f1`: 0 shaders
   traduzidos e 0 quadros travados depois de cada troca). (2) **Aberto**: em 2x/3x/4x a luz da cena sai errada (listras
-  verticais finas em 2x, tudo azulado em 3x/4x; replay do dump da gravação em cada escala, `scratchpad/perf12_out/
+  verticais finas em 2x, tudo azulado em 3x/4x; replay do dump da gravação em cada escala, `perf12_out/
   res_m3900.png`). O G-buffer 0x64800000 (720x408 F16F16F16F16, escrito com bits crus) sai igual nas escalas; o erro é
   na leitura: o passe de luz amostra esse alvo como **uma** textura 1440x408 U8U8U8U8 com o uv do pixel da tela, o que
   cai exatamente na fronteira entre os dois texels (metades) de cada pixel (u*1440 = 2x+1). No nativo o arredondamento
@@ -1141,8 +1141,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de formato das hints (`ShaderGenerator.RtReinterpretFlag`, só esses shaders ganham chave nova) e são lidas por
   `rtfetch_*`: o uv volta ao centro do pixel nativo do fragmento (derivadas de tela), pega o texel nativo e lê a
   cópia dele no alias escalado na sub-posição do fragmento. Replay do dump da gravação, quadro 3900: 1x/2x/3x/4x com
-  a mesma luz (`scratchpad/perf13_out/fb_m3900.png`; antes `fa_m3900.png`), 1x idêntico ao main. `replay-gpu
-  --compare` 1x e 2x: 7 dumps pequenos sem diferença até a parada (lista em `scratchpad/perf13_cmp/c1.txt`).
+  a mesma luz (`perf13_out/fb_m3900.png`; antes `fa_m3900.png`), 1x idêntico ao main. `replay-gpu
+  --compare` 1x e 2x: 7 dumps pequenos sem diferença até a parada (lista em `perf13_cmp/c1.txt`).
   **Validado** (08/11/2026): `--compare` 1x e 2x em todos os 18 dumps e na gravação: só a gravação do Resistance muda
   em 2x (a luz corrigida) e os brilhos dos refletores do FIFA 13 (efeito da correção do 2X MSAA do Ninja Gaiden). No
   jogo (a gravação não serve para rerun: o save state é de outro formato): cenário `rbs_continue` até a sala dos
@@ -1187,7 +1187,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   como ruído. Trace (`VITASHARP_NGS_TRACE=1`, `bugsC17_out/ngm2`): o NGS lê o buffer certo a cada tick e o callback de
   troca chega a cada tick; o conteúdo é que vem zerado (ex. ticks 1511 e 1514). O produtor parece ser o
   "ATStreamEngine"/"ATStreamPlayer" do jogo (prio 64, núcleo 1, junto com ArmSpurs e TFW workers), que não acompanha.
-  Tentativa sem efeito claro (revertida, patch `scratchpad/bugsC17_ngs_eagerswap_wip.patch`): trocar de buffer no
+  Tentativa sem efeito claro (revertida, patch `bugsC17_ngs_eagerswap_wip.patch`): trocar de buffer no
   mesmo tick em que ele acaba (o hardware avisa um tick antes): 39% contra 43% de silêncio, dentro da variação.
   Próximo passo: medir quanto tempo de CPU o ATStreamEngine recebe por segundo (o decoder de música do jogo pode estar
   sem tempo de CPU no núcleo 1, ou esperando um evento/semáforo que chega tarde) e comparar com o Vita3K
@@ -1205,7 +1205,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (ordem de decodificação), e o jogo mostra os quadros do sceAvcdec na ordem em que chegam: a cada três quadros um
   voltava dois. Agora sai na ordem de exibição, como o Vita3K (sem o flag; `VITASHARP_VIDEO_LOW_DELAY=1` volta ao
   antigo). Medido contra o filme decodificado pelo ffmpeg de linha de comando (cada present casado com o quadro do
-  filme, `scratchpad/bugsC18_order.py`), 700 presents a partir do 300: low-delay 62 voltas para trás; sem ele 1 (no
+  filme, `bugsC18_order.py`), 700 presents a partir do 300: low-delay 62 voltas para trás; sem ele 1 (no
   início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
   "flashes" que restam no analisador são relâmpagos do próprio filme
   Pista do usuário (08/11/2026): a abertura do Ninja Gaiden Sigma 1 (PCSB00097) vai fluida e a do Sigma 2 engasga, no mesmo build. Comparar os dois caminhos lado a lado (player usado: avPlayer x sceAvcdec, fps do filme x vblank, buffers/anel, ritmo de entrega dos quadros e de troca do framebuffer, áudio do filme como relógio) e achar o que o Sigma 2 faz diferente; os agentes não acharam defeito olhando só o Sigma 2
@@ -1253,7 +1253,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   a imagem fica parada ~3,5 s e o filme pula para o fim (..._142721_tudo); o player do jogo não se recupera do
   demuxer reaberto no quadro-chave. 99Vidas (PCSE00914, pedido do lead): o travamento depois de Load state: GPU
   backend replaced não reproduziu em 9 cargas com este build (headless, janela oculta, 6 cargas seguidas); o build
-  do agente de produto (scratchpad/desk) recusa o save em f4000 porque um diálogo Msg do sistema está aberto, então o
+  do agente de produto (desk) recusa o save em f4000 porque um diálogo Msg do sistema está aberto, então o
   estado que travou foi salvo com esse diálogo aberto
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
@@ -1267,7 +1267,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   comparar com um vídeo do Vita da mesma câmera); 032507 = o vídeo de abertura (não sabe se é
   assim no Vita: comparar com um vídeo do Vita real). Validar assim que o limite semanal renovar
   Achados (07/11/2026, agente C, fix/bugs-games-17): 032507 = a abertura (bola da EA Sports, jogador de bicicleta,
-  bola na rede) bate com o vídeo do Vita real (`NfnIFRme17c`, `scratchpad/bugsC17_yt/fifa_sheet.png`) e não tem
+  bola na rede) bate com o vídeo do Vita real (`NfnIFRme17c`, `bugsC17_yt/fifa_sheet.png`) e não tem
   flash nem quadro trocado a 60 fps (`bugsC17_fifa/sheet032507.png`). 031028 = os 295 quadros ao vivo são só a
   comemoração do gol ("22' Goal 7 DANILINHO", câmera atrás do escanteio, `bugsC17_fifa/sheet031028.png`): não há
   cobrança de escanteio na gravação e nada fora do normal além da faixa do gol; precisa de uma gravação do momento da
@@ -1402,7 +1402,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   desempacotamento era no tamanho do guest, então o texel (x, y) lia o pixel (x/2, y/2) da imagem escalada (só o quarto
   superior esquerdo) e o planeta inteiro ficava desfocado. Corrigido (e66ac42): desempacota no tamanho escalado. Replay
   do dump da gravação: nativo nítido, 2x antes desfocado, 2x depois igual ao nativo (`bugsC18_rp/lbp_r1`, `lbp_r2`,
-  `lbp_r2fix`, `scratchpad/bugsC18_yt/lbpfix.png`)
+  `lbp_r2fix`, `bugsC18_yt/lbpfix.png`)
   Confirmado pelo usuário (08/11/2026)
 - [x] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
   `captures\PCSE00271_20261107_223633_tudo`). Nos 478 quadros ao vivo as barras de vida, os nomes e o tempo nunca
@@ -1413,7 +1413,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Correção (cf3cf9d + 8b6787d): a imagem nova recebe a sobreposição da imagem mais recente da mesma superfície e o resto
   fica como memória zerada (`VITASHARP_DEPTH_SEED=0` desliga; `VITASHARP_GPU_POISON=1` agora envenena imagens de
   profundidade novas). Prova no replay com poison: sem a correção o HUD de cima some como no usuário, com ela aparece
-  (`scratchpad/bugsC18_yt/p01.png`, `p2.png`). Falta o usuário confirmar no jogo
+  (`bugsC18_yt/p01.png`, `p2.png`). Falta o usuário confirmar no jogo
   Voltou ao vivo (relato do usuário, 08/11/2026, main 65bcf95, `captures\PCSE00271_20261108_163244_tudo`): a 1x desde o
   boot o HUD de cima some e só aparece depois do F1. Causa: a semeadura só valia para uma imagem de profundidade criada
   na hora; numa sessão de verdade a imagem 960x544 da superfície já existia dos menus e a cena do HUD de cada luta
@@ -1458,7 +1458,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   online na hora) e se o erro de rede deve ou não aparecer, comparar a duração da tela com um vídeo do Vita, e implementar
   o NID_FFBFC540 (registro de 64 bytes do SceNpManagerIpc; notas no item das funções HLE)
   Achados (07/11/2026, agente C, fix/bugs-games-17): o problema visível não é a rede. No Vita real (vídeo do YouTube
-  `8puPotAAmVc`, `scratchpad/bugsC17_yt/nfs_sheet.png`) o boot mostra o logo da EA, o vídeo da cidade (Criterion),
+  `8puPotAAmVc`, `bugsC17_yt/nfs_sheet.png`) o boot mostra o logo da EA, o vídeo da cidade (Criterion),
   a tela branca "MOST WANTED" com o aviso (~6 s), a faixa de carregamento e só então o diálogo de PSN. Aqui a tela fica
   preta de 5 s a 50 s (`bugsC3_data/captures/PCSE00089_20261107_212738_tudo`, boot sem entrada): os filmes (SceMp4 +
   sceAvcdec, 720x400) decodificam certo (textura YUV420P2 0x8591AC00 com o logo da Criterion no `--trace-draws=300`,
@@ -1547,7 +1547,7 @@ fs8):
   estrutura SceNpCommunicationSignature que ele passa ao sceNpTrophyCreateContext, ou no pacote de troféus), migrar todos
   de uma vez sem avisos de "troféu conquistado" e validar com uma CÓPIA dos dados do usuário (todos os jogos com JSON
   aparecendo no app com as datas)
-  Feito (07/11/2026, fix/system-apps-9, provas em `scratchpad/fw9_out/`): (a) a assinatura sai do próprio jogo: o eboot
+  Feito (07/11/2026, fix/system-apps-9, provas em `fw9_out/`): (a) a assinatura sai do próprio jogo: o eboot
   (e os módulos em sce_module) é decriptado com a licença e a constante de 0xA0 bytes com o magic 0xB9DDE13B mais perto
   do id "NPWRxxxxx" é a assinatura (a do Minecraft é idêntica à que o jogo passou; `Hle/Np/TrophySignature.cs`); é
   guardada no `.sig` na primeira migração. (b) sem avisos: o DebugUnlock (IPC 0x90036, np_trophy C1406504) exige um
@@ -1575,19 +1575,19 @@ fs8):
   16 px) em 196 quadros distintos a 0,75 e 1 em 179 a 1,0 (no canto dos controles na tela); as maiores mudanças de
   bloco são a animação do Drake, a grama muda continuamente. Killzone no gameplay (escadas do início), parado e
   andando: nenhuma alternância (o brilho da região só muda com o movimento da câmera). Provas:
-  `scratchpad/and8_runs/flick_base.mp4`, `flick_s100.mp4`, `flick_kz_base.mp4`, `flick_kz_walk2.mp4`. Pausado a pedido
+  `and8_runs/flick_base.mp4`, `flick_s100.mp4`, `flick_kz_base.mp4`, `flick_kz_walk2.mp4`. Pausado a pedido
   do usuário (desempenho primeiro): falta saber de qual jogo/cena/APK é o relato para bissecar
 - [ ] Android: um segundo load state logo depois do primeiro congela o jogo (06/11/2026, perf/android-8, APK LLVM dev
   db2d72d, Killzone PCSC00045, `VITASHARP_RES_SCALE=0.75;VITASHARP_RENDER_AREA_TRIM=1`). O roteiro mandou um só
   `loadstate@0:1` (`VITASHARP_ANDROID_INPUT_LIVE`); o log tem duas cargas: 15:57:41 "Estado do slot 1 carregado" e,
   11 s depois, "Não foi possível carregar o estado: thread 'PadThread' did not stop (in ); restart the game"; daí em
-  diante 0 fps, o processo vivo (`scratchpad/and8_runs/log_RS75b.txt`, print `and8_tools/shots/kz_RS75b.jpg`). Duas
+  diante 0 fps, o processo vivo (`and8_runs/log_RS75b.txt`, print `and8_tools/shots/kz_RS75b.jpg`). Duas
   coisas: (1) por que o passo do roteiro rodou duas vezes (o ScriptedPad relido depois da carga?); (2) uma carga que
   falha no meio deixa o jogo parado em vez de voltar ao estado de antes. Em 25 corridas com uma carga só, nenhuma
   falhou. Parecido com o item abaixo (desktop). Com o agente de bugs
 - [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
   (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
-  (`scratchpad/and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
+  (`and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
   carga, abort na thread `Shader worker 1`: `* Assertion at sgen-los.c:381, condition '!section->free_chunk_map [i]'
   not met` (`crash_M2_shader.txt`). Duas vezes em ~28 cargas, sempre logo depois de carregar: o heap de objetos
   grandes do GC corrompido, provável escrita fora do lugar durante/depois da carga (buffers do renderer recriado,
@@ -1606,8 +1606,8 @@ fs8):
   num resize; `VulkanRendererOptions.KeepDevice`, só na janela), a troca roda na thread da janela, e um device
   perdido vira aviso no título (`A GPU parou de responder...`) e um device novo no próximo load. Com janela oculta
   (chave de teste nova `VITASHARP_HIDDEN_WINDOW=1`, sem som): Tearaway 12 loads, FIFA 13 10, Uncharted 10 (+1 LoadExec),
-  sem queda nem TDR, 30/60 fps depois (`scratchpad/bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
-  `scratchpad/bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
+  sem queda nem TDR, 30/60 fps depois (`bugsC9_out/tear_w7`, `fifa_w2`, `uc_w2`; prints em
+  `bugsC9_proof`). O relógio do guest voltando é o tempo do estado salvo (esperado). Limite: os loads foram
   em menus/cenas (sem gameplay roteirizado); device lost não foi provocado de verdade
   Confirmado pelo usuário (06/11/2026): ok
 - [x] NGS: módulo de envelope (agente C dia 9, fix/bugs-games-9, commit WIP "NGS envelope"; regressão completada no dia 10).
@@ -1616,7 +1616,7 @@ fs8):
   sustain 1 ou 0,5625, release de 23 ms a 12 s) e dá key off com o som ainda alto: cada som era cortado no meio da onda.
   Feito: pontos, sustain no último ponto, loop, release linear (curva CURVED aproximada como linear) e a voz termina com
   o release; `VITASHARP_NGS_ENVELOPE=0` volta ao passthrough. Jak 1 gameplay (`jak_g2`): cortes bruscos (som alto→0) nas
-  vozes 152 → 2, 143 vozes terminam pelo release, 20 fps iguais, 0 HLE-ERR (`scratchpad/bugsC9_out/jak_a2` x `jak_e1`,
+  vozes 152 → 2, 143 vozes terminam pelo release, 20 fps iguais, 0 HLE-ERR (`bugsC9_out/jak_a2` x `jak_e1`,
   WAVs por voz em `audio/`; `bugsC9_tools/asum.py`). Regressão de ritmo feita: DD 59,9/59,9, F1 59,9/59,9, UC 59,8/59,9,
   KZ 29,9 (ref. não rodou); **faltam KZ ref, FIFA e GoW** (`bugsC9_tools/regress.ps1`, com --audio-dump: conferir que
   nenhum som some por voz presa em Finalizing durante o release). Os "clicks" do analisador de captura no Jak (~41 por
@@ -1626,7 +1626,7 @@ fs8):
   velho). O clipping de 0,12% da gravação do usuário não reproduz aqui (0,002% no gameplay do `jak_g2`)
   Agente C dia 10 (06/11/2026): **regressão completa, fica ligado por padrão** (mesmo build, `VITASHARP_NGS_ENVELOPE=0`
   como referência, `bugsC9_tools/regress.ps1`): Killzone 29,9/29,9 fps (p99 35,0/36,7 ms), FIFA 13 59,6/59,5, God of War
-  59,8/59,8 (`scratchpad/bugsC9_out/r_kz_on_nd`, `r_kz_off_nd`, `r_fifa_on`/`off`, `r_gow_on`/`off`). Nenhum som
+  59,8/59,8 (`bugsC9_out/r_kz_on_nd`, `r_kz_off_nd`, `r_fifa_on`/`off`, `r_gow_on`/`off`). Nenhum som
   some: a mistura gravada (`--audio-dump`) tem o mesmo RMS (KZ -23,4/-23,5, FIFA -23,1/-23,1, GoW -25,1/-25,2 dBFS) e, em
   FIFA e GoW, 0-1 de 133-150 meios-segundos diferem mais de 6 dB; com o modo de depuração, nenhum erro novo de NGS
   (`sceNgsVoicePlay` numa voz ainda em release seria o sintoma; `bugsC9_tools/onoff.py`). Não ouvi (sem som no PC
@@ -1649,7 +1649,7 @@ fs8):
   `RenderingThread` morria numa exceção do host em `sceKernelGetThreadInfo` (tamanho da estrutura acima de 0x80, ao
   esperar o fim da `Scaleform Render Thread`, que roda e termina normalmente); agora devolve NO_MEMORY como os outros
   `Get*Info` e o Vita3K. O jogo passa pelos avisos, abertura, menu principal, pergunta do tutorial e a luta do
-  tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`scratchpad/bugsC3_data/tests/inj_menu/sheet.png`,
+  tutorial (Batman x Superman, andar e golpes respondem) a 55-60 fps (`bugsC3_data/tests/inj_menu/sheet.png`,
   `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
   Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
   Confirmado pelo usuário (06/11/2026): ok
@@ -1772,7 +1772,7 @@ fs8):
     71ADF5A6, 7E3C9196, 9B444B7C, C1542070, C737A929) (PS4 Link) — feitas (fix/bugs-games-12). SceNetInternal do
     libnet: 235DE96C = a interface IfNames[i] (lo0, eth0..., wlan0...) existe? (só lo0; -1 = a lista do kernel),
     DE8DD55E/7493FB0C = ler/gravar a configuração 0x18 da pilha (controle 0x10000018/0x20000018); validadas no PS3
-    Remote Play (pergunta eth0/wlan0, chega à tela de registro) e no PS4 Link (`scratchpad/bugsC12_out/s_ps3rp`,
+    Remote Play (pergunta eth0/wlan0, chega à tela de registro) e no PS4 Link (`bugsC12_out/s_ps3rp`,
     `s_ps4link2`, 0 não implementadas). CnvRegionPsCode = código de produto por região (0x103 J1, 0x104 US ... 0x10D
     CN; só o shell, os outros ENOSYS), como o SceRegistryMgr. Os 15 do SceNpCommerce2 seguem os wrappers do
     np_commerce2 (argumentos 0x80550F03; pedidos ao servidor = servidor inalcançável; leitores de resultado rejeitam,
@@ -1846,7 +1846,7 @@ fs8):
   recebe a mensagem k-1 depois que a `main` já decodificou k (o `ReceiveMsgPipe` dela volta com uma mensagem que já
   estava no pipe: está uma mensagem atrás). Testado sem efeito (2 tentativas, timebox): esperar o GPU worker ficar em
   dia antes de o decoder escrever (42/171 quadros com listras contra 39/171), e fila de display mais funda
-  (VS_DQ_CAP=3: 41/171). Medição: `tools/stripes.py` do scratchpad (razão entre gradiente vertical e horizontal na faixa
+  (VS_DQ_CAP=3: 41/171). Medição: `tools/stripes.py` da pasta de trabalho local (razão entre gradiente vertical e horizontal na faixa
   do meio > 2). Próximo passo: medir onde a `F3DPlaybackThread` perde o quadro (o intervalo entre o AddEntry e o
   ReceiveMsgPipe varia de 0,4 a 25 ms conforme o trace), e modelar a latência da notificação de fim de cena (escrever
   a notificação um tempo de GPU do Vita depois do EndScene) ou a duração do decode do codec, nessa ordem
@@ -1910,7 +1910,7 @@ fs8):
   de quadro); os curtos só dormem no timer de alta resolução do Windows (atraso medido aqui: mediana 0,3 ms, p99
   0,7 ms), e a thread retoma no prazo em tempo de guest como antes (`CpuCore.WokeAt`). `VITASHARP_DELAY_SPIN=1` volta
   ao antigo (todos giram), `=0` nenhum gira. Medido sem janela em 2 núcleos (0x30, 1800 quadros, mesmo build,
-  `scratchpad/bugsC5_out/blind_nospin` x `blind_spin`): CPU do processo 35,7 → 25,0 ms/quadro, `saveThreadProc`
+  `bugsC5_out/blind_nospin` x `blind_spin`): CPU do processo 35,7 → 25,0 ms/quadro, `saveThreadProc`
   7,57 → 0,43 ms/quadro, `SDL_TimerThread` 5,63 → 0,42; `main` igual (13,5 x 13,1). O fps sem janela já era 30 nos
   trechos de jogo nos dois (com quedas nos carregamentos nos dois, o PC estava dividido com outros agentes). Ritmo sem
   regressão (mesmo build, `--profile`, novo x `DELAY_SPIN=1`): Devious Dungeon p50 16,68/16,68 ms, >25 ms 10 x 23;
@@ -1919,7 +1919,7 @@ fs8):
   núcleos) e (2) a troca de tela (f560-780, `bugsB3_out/blind_tr`)
   Agente C dia 6 (05/11/2026): (2) a troca de tela é a transição do Ren'Py: o menu some de uma vez (602 → 603), 16
   quadros pretos (~0,5 s) e um fade-in da cena nova (619-640, sem defeito de textura sem janela,
-  `scratchpad/bugsC6_out/blind_tr_4.png`). O preto é o fade-out que deveria mostrar o menu escurecendo: no dump
+  `bugsC6_out/blind_tr_4.png`). O preto é o fade-out que deveria mostrar o menu escurecendo: no dump
   `bugsC6_out/blind_fade2.vsgd` (presents 598-604, trace `blind_fade2_tr/trace_603`) o jogo desenha uma textura 32x32
   (0x612656F0/0x612666F0, preta com alfa médio 0,14) em dois alvos 960x540 (0x62CE6950, 0x62EE4950) e depois compõe os
   dois (fs 1EB8007BE57CDB61, blend 1/1/5): os dois saem pretos, e o menu (que está em 0x60E6C680) não entra na
@@ -1928,7 +1928,7 @@ fs8):
   `preloader`, o init do Python do Ren'Py); com a CPU dividida passa de 30 s (watchdog STALL em `blind_fade`); falta
   o tempo do Vita real para comparar
   Agente C dia 8 (06/11/2026, fix/bugs-games-8): **(2) não é defeito, o Vita real faz igual.** No vídeo do Vita
-  (`9vleIQnJ8dI`, "Blind Men (PS Vita Gameplay)", Start no menu aos ~82 s; `scratchpad/bugsC8_yt/trans.png`, 10 qps) o
+  (`9vleIQnJ8dI`, "Blind Men (PS Vita Gameplay)", Start no menu aos ~82 s; `bugsC8_yt/trans.png`, 10 qps) o
   menu some de uma vez, fica ~0,7 s preto e a cena entra em fade, como aqui. As duas texturas 32x32 são sólidos
   pretos opacos (todos os texels 0,0,0,255 em `trace_603/textures`, não alfa 0,14): o Ren'Py faz o dissolve entre
   dois quadros só com o fundo preto (no present 601 o mesmo tipo de 32x32, 0x60E6B680, é o fundo do menu, com as
@@ -1938,7 +1938,7 @@ fs8):
   vídeo `9vleIQnJ8dI`) até o logo da Ratalaika; aqui o jogo apresenta um 1º quadro preto com 1 s (uma textura
   960x540 U8U8U8U8 preta em tela cheia: o SDL do Ren'Py limpando a tela; não há presplash nos arquivos do jogo) e o
   2º só 19 s depois (PC dividido; ~5 s ocioso). Feito e **não commitado**: mostrar o pic0 na janela até o 1º present
-  do jogo (`scratchpad/bugsC9_proof/bootsplash_pic0.patch`; validado só por log: `Boot picture: 960x544 shown`,
+  do jogo (`bugsC9_proof/bootsplash_pic0.patch`; validado só por log: `Boot picture: 960x544 shown`,
   `shown for 1,0 s`), mas isso só cobre 1 s: o Vita segue com o pic0 depois desse quadro preto. Falta saber a regra
   do sistema (o pic0 fica até o 1º quadro não preto? até o jogo terminar de carregar? é o SceShell que o desenha?) com
   o firmware LLE ou outro vídeo de jogo cujo 1º quadro seja preto
@@ -1949,7 +1949,7 @@ fs8):
   (algum canal > 16), no máximo 60 s; enquanto isso cada quadro do jogo é lido de volta e conferido e a janela mostra o
   pic0 no lugar dele (`VulkanRenderer.BootSplash.cs`; só na janela, apps do sistema NPXS não têm). Blind Men: `shown for
   21,7 s, until the game's first frame that is not black (present 84)`; Devious Dungeon 6,6 s (present 2), Killzone
-  4,1 s (present 11, os 10 primeiros são pretos), Tearaway 1,9 s (present 1) (`scratchpad/bugsC10_out/blind3`,
+  4,1 s (present 11, os 10 primeiros são pretos), Tearaway 1,9 s (present 1) (`bugsC10_out/blind3`,
   `splash_PCSB01240`, `splash_PCSC00045`, `splash_PCSF00476`). Não conferido em vídeo do Vita se outros jogos com
   quadros pretos no início (Killzone) também seguram o pic0 por cima deles
   Confirmado pelo usuário (06/11/2026): ok
@@ -2022,7 +2022,7 @@ fs8):
   superfície em `RtSwizzle`: a fase volta, mas as cores do jogo todo invertem (vermelho no lugar de azul), porque a
   apresentação (blit cru da imagem) e o resto do caminho contam com o erro oposto. A correção certa é tratar a imagem
   de superfícies RGBA/BGRA de forma consistente em todos os pontos (amostragem, apresentação, writeback, regiões, cópias),
-  ou gravar na ordem da memória; patch do experimento em `scratchpad/bugs2_gunvolt_swizzle.patch`
+  ou gravar na ordem da memória; patch do experimento em `bugs2_gunvolt_swizzle.patch`
   Corrigido (04/11/2026, fix/user-bugs-3): as imagens de superfícies U8U8U8U8 RGBA/BGRA continuam em ordem lógica
   (o blending precisa do alfa no canal A), e todos os consumidores passaram a vê-las na ordem da memória: amostragem
   (`RtSwizzle` compõe o swizzle da textura com `Formats.SurfaceMemoryOrder`, também nas regiões e cadeias de mips),
@@ -2049,11 +2049,11 @@ fs8):
   real `R3WhJ9u_MB4` dá 0,5/s pelo mesmo critério) e as reproduções com dado velho voltam (plays com >2 superframes
   velhos: 62 contra 4 e 9), então a 7732c69 fica. A saída do host (OpenAL) não descarta grãos (Submit bloqueia).
   Falta ouvir: um F10 com áudio no momento do estalo diria se ele está no que o jogo gera (dump) ou depois (host).
-  Ferramentas no scratchpad `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
+  Ferramentas na pasta de trabalho local `bugsB2_tools` (`drops.py`, `phase.py`, `gaps.py`, `clickhist.py`, `ffsnr.py`)
   Confirmado pelo usuário (06/11/2026, main 0d298b4): todos os problemas do FIFA 13 corrigidos
 - [x] FIFA 13: "a voz da torcida está estranha" (relato do usuário, 05/11/2026 22:22, main da8372d, gravação
   `captures\PCSE00093_20261105_222244_tudo`, 10 s de partida). Achados (fix/bugs-games-7), sem causa no emulador:
-  com o `state_start.vss` (60 s, `VITASHARP_NGS_TRACE=1` + `--audio-dump`, `scratchpad/bugsB7_out/state0`) a torcida
+  com o `state_start.vss` (60 s, `VITASHARP_NGS_TRACE=1` + `--audio-dump`, `bugsB7_out/state0`) a torcida
   são 4 vozes ATRAC9 estéreo (E00974FE: um laço fixo de 3,77 s em 0x89A41DB0 e três anéis de 13440 bytes que o jogo
   regrava) e 2 mono (E00470FE, ronco grave); a narração são 2 vozes mono (E00270FE/E00370FE). O decodificador bate
   com o FFmpeg também em estéreo (107,6 dB), **mas com a polaridade invertida** nos dois canais (inaudível sozinho;
@@ -2127,7 +2127,7 @@ fs8):
   respeitado; próximo passo é logar `sceKernelGetProcessTimeWide` por quadro e `--watch` na origem da cor. Akiba's
   Beat: as telas pretas longas são carregamentos (no Vita 8-18 s, com ícone animado; aqui a imagem congela ~10 s)
 - [ ] Achados do agente de bug C, dia 2 (05/11/2026, branch fix/bugs-games-2; dados em
-  `scratchpad/bugsC2_*`). Corrigidos: (1) o renderer criado depois de um LoadExec ou de carregar um estado segue a
+  `bugsC2_*`). Corrigidos: (1) o renderer criado depois de um LoadExec ou de carregar um estado segue a
   contagem de presents do jogo (`FirstPresent = Display.FramesPresented`): o `--gpu-dump-at=1740:2340` do Jak 1
   depois do LoadExec e do estado gravou os presents 1740-2340 e os frame_N.png mantêm os números; (2) o travamento
   ao carregar estado do Jak 1 (main em DMAPut, GOAL em DMADone): as threads salvas dentro de uma espera reemitem a
@@ -2151,7 +2151,7 @@ fs8):
   desenhos mesmo quando atravessam um present; os ids do `draws.txt` são os N do `--draw-limit`). Prova:
   `--draw-limit=0@1930` no `jak_flash.vsgd` muda só o `frame_001930.png` (antes: `0@1928` mudava o 1930);
   `--draw-limit=0@13605` no dump do FIFA `PCSE00093_20261105_034029` muda só o 13605 (atraso 1 nesse dump, 2 em 10
-  presents); saídas em `scratchpad/bugsC3_out/new_lim0_1930`, `fifa_lim0` (compare.txt)
+  presents); saídas em `bugsC3_out/new_lim0_1930`, `fifa_lim0` (compare.txt)
   Tearaway (`tearaway_boot` com `--save-state=f1800 --load-state-at=f2100 --validation`): sem device lost, com e sem
   a correção (2 rodadas), imagem certa depois da carga. Atenção: o `--validation` não faz nada neste PC, a camada
   `VK_LAYER_KHRONOS_validation` não está instalada (só há os binários Android em `vvl_dl`), e o código ignora isso
@@ -2200,17 +2200,17 @@ fs8):
   e o jogo trava (watchdog STALL, `main` segura o mutex FluxRndr); log `logs61105_003217_PCSA00080.log`.
   Corrigido na main pela 5378b1a (o LoadExec renova o espaço de endereços; a thread saltava para código HLE antigo).
   Prova: a sessão seguinte do usuário (`logs61105_015542_PCSA00080.log`, main 57c57b1) passa do LoadExec e chega ao
-  gameplay do Jak 1; as 3 execuções do agente C dia 3 (`scratchpad/bugsC3_out/jak1_live_main/_fix/_final.log`, uma
+  gameplay do Jak 1; as 3 execuções do agente C dia 3 (`bugsC3_out/jak1_live_main/_fix/_final.log`, uma
   com o build da main) fazem o `LoadExec app0:Jak1.self` a partir do menu, a F3DPlaybackThread roda e não há
-  `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `scratchpad/bugsC_jak` (dia 1)
+  `Undefined instruction` nem STALL; idem nos 10 logs com LoadExec de `bugsC_jak` (dia 1)
 - [x] Jak and Daxter Collection (PCSA00080), menu (main 84a12b1, teste do usuário 05/11/2026): a prévia (MJPEG,
   textura 0x63FBC400) ainda pisca quando o Jak olha para a direita (provável: dois quadros seguidos com o mesmo
   tamanho, então a escolha pelo tamanho não distingue o quadro k do k+1). A 57c57b1 (quadros tirados na ordem de
   decodificação, 0/506 idas e voltas) é posterior ao relato; com o build do agente C dia 3 (`jak_menu`): 1 ida-e-volta
-  em 527 quadros (1351→1352→1353, `scratchpad/bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
+  em 527 quadros (1351→1352→1353, `bugsC3_out/menu1352.png`), contra 7/504 antes da 57c57b1 — falta o
   usuário confirmar olhando para a direita na main atual
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `scratchpad/bugsC3_*`).
+- [ ] Achados do agente de bug C, dia 3 (05/11/2026, branch fix/bugs-games-3; dados em `bugsC3_*`).
   Corrigido: **Jak 1, flash de um quadro (faixa escura translúcida abaixo do horizonte)**. Com a ferramenta do item
   acima, o `--draw-limit` no `jak_flash.vsgd` (present 1928, faixa; 1927, sem) isola os desenhos 874-875: o 874 é um
   volume de sombra por stencil (z-fail: faces da frente INCR_WRAP, de trás DECR_WRAP, 4008 índices, sem cor) e o 875 um
@@ -2233,7 +2233,7 @@ fs8):
   isso a prova fica no dump). Novas linhas de traço (`--trace-draws`/F10): `st=` com ops/ref/máscaras do stencil,
   `vsStore ub<i>@addr` nos programas que gravam memória, `[stream]`/`[mirror]` com a origem de cada stream lido do
   espelho e as faixas descartadas. `replay-gpu --compare` dos 16 dumps do usuário + `jak_fix` contra a main
-  (`scratchpad/bugsC3_cmp`, a cada 10 quadros): 14 idênticos; só mudam os do Jak 1 com sombras (`PCSA00080_20261105_015823` 24/71 quadros,
+  (`bugsC3_cmp`, a cada 10 quadros): 14 idênticos; só mudam os do Jak 1 com sombras (`PCSA00080_20261105_015823` 24/71 quadros,
   `_020221` 1/54, `jak_fix` 41/61), todos pela correção: some a faixa/cunha escura nas rochas e aparece a sombra
   do Jak (`diff_001760.png`, `diff_001850.png`, `jak_fix_new/frame_002120.png`).
   Ainda aberto (Jak 1): (a) **céu preto por um quadro** (1 em 643 ao vivo, `jak1_live_final` quadro 1950; reproduz no
@@ -2248,7 +2248,7 @@ fs8):
   Não é o renderer: no replay de `jak_final.vsgd` (`frames_index.txt`) cada um desses presents tem a cena inteira
   (~1450 desenhos, 1752-1782) e o último desenho é um quadrado de tela cheia opaco sem textura (vs 96859A639870B7F2,
   fs 687E44699E752BD2) que cobre tudo de preto; `--draw-limit=1462@1770` (sem ele) mostra o Jak e o cenário certos
-  (`scratchpad/bugsC3_out/blk_lim1462/frame_001770.png`), e no 1783 o jogo para de emiti-lo (corte seco, sem fade).
+  (`bugsC3_out/blk_lim1462/frame_001770.png`), e no 1783 o jogo para de emiti-lo (corte seco, sem fade).
   É o "blackout" do próprio jogo depois de carregar a área; falta saber se a duração é a do Vita (ver um vídeo do
   Vita/Vita3K) ou se o salto do relógio na carga (`guest clock +15832 ms` no resume) a estende; (c) **mar com buracos pretos por um quadro**
   (replay `jak_fix.vsgd` present 2112, `bugsC3_out/flash2112.png`): nesse quadro o jogo emitiu 52 desenhos a menos
@@ -2259,7 +2259,7 @@ fs8):
   da 57c57b1 e 7/504 antes dela — dentro do ruído; falta o usuário confirmar olhando para a direita.
 - [x] Jak 1, cena inteira escura em quadros alternados por segundos (gravação do usuário 06/11/2026 18:37, build
   19c2375: Daxter parado antes do menu de pausa, luma ~24 x ~36 quadro sim/quadro não, presents 5859-5889; agente C,
-  fix/bugs-games-15, `scratchpad/bugsC15_jak`). Reproduz no replay do `gpu.vsgd` (5871, 5873, 5875 escuros). Causa:
+  fix/bugs-games-15, `bugsC15_jak`). Reproduz no replay do `gpu.vsgd` (5871, 5873, 5875 escuros). Causa:
   o jogo extruda os volumes de sombra com um programa que grava na memória, em duas janelas de 1 MB vizinhas que
   alterna por quadro (0x60501400 e 0x60601400); as faixas gravadas pela GPU dos dois quadros se juntam numa só, e
   quando a janela do desenho seguinte (a outra metade) achava uma página escrita pela CPU depois (dados do quadro
@@ -2279,14 +2279,14 @@ fs8):
   faz uma varredura das páginas sujas ao fechar cada cena (`SceneGate.SweepEpoch`) e o worker só conta as escritas da
   CPU até o fim da cena do desenho que lê (`DirtyPages.WrittenBetween`); a faixa gravada leva o carimbo do fim da cena
   que gravou. Replay não muda (os comandos do dump não têm cena). `rerun` da gravação: antes 9 e 7 quadros alternando
-  (`scratchpad/bugsC16_jak/rr1`, `rr2`), com a correção 0 e 0 (`rf1`, `rf2`; só um achado de 1 célula no 209, o mesmo
+  (`bugsC16_jak/rr1`, `rr2`), com a correção 0 e 0 (`rf1`, `rf2`; só um achado de 1 célula no 209, o mesmo
   tipo do 220/237 de antes), 20 fps iguais.
   Achado à parte (gravação 18:34, cutscene, preto no present 2155, prioridade menor): não é o espelho (nenhum
   programa grava na memória nessa cena); os desenhos do céu e do cenário saem pretos porque a textura 32x32 em
   0x630F2B40 (amostrada pelo céu, vs 79BC61BE4C9F8178) foi lida já reescrita pela CPU ((255,0,0) contra (255,3,33)
   no 2154): a mesma classe do "céu preto por um quadro" acima (a CPU à frente do worker reescreve dados que o quadro
   ainda vai ler). `--draw-limit=222@2155` mostra só alguns objetos (`bugsC15_jak/b222`).
-  Tentativa (07/11/2026, agente C, fix/bugs-games-17, sem commit; patch em `scratchpad/bugsC17_texsnapshot_wip.patch`):
+  Tentativa (07/11/2026, agente C, fix/bugs-games-17, sem commit; patch em `bugsC17_texsnapshot_wip.patch`):
   cópia das texturas pequenas no fim da cena (o guest guarda os bytes das texturas de até 32x32 e depois 128x128 que
   os desenhos da cena amostram, reaproveitando a cópia enquanto as páginas não mudam; o worker usa essa cópia,
   `VITASHARP_TEX_SNAPSHOT=0` desliga). Funciona no mecanismo: no `rerun` com `VITASHARP_TRACE_TEX=630F2B40` o worker
@@ -2307,7 +2307,7 @@ fs8):
   correção 0 em 3 gravações (`..._013041_tudo`, `..._014457_tudo`, `..._023505_tudo`); fps igual (13-14 com o PC
   carregado por outros agentes). Validação parcial (o erro depende da carga); replay não muda (os callbacks do dump
   não leem superfícies)
-- [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
+- [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais
   para concluir com uma rodada, e o fps é o mesmo (20). (b) **Blackout depois de carregar o estado**: 31 presents
@@ -2344,7 +2344,7 @@ fs8):
   fila cheia, então uma vez em 3 se mantém. No Vita o Jak 1 roda a 30. Próximo: `--watch-read` no callback para achar
   a variável do intervalo e quem a escreve
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [x] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `scratchpad/bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
+- [x] Jak 1, agente C dia 6 (05/11/2026, fix/bugs-games-6; `bugsC6_*`, cenários `bugsC6_scn/jak1_*.txt`).
   (a) **Tela de título lenta: corrigido o grosso** (0,4-2,5 fps → 10-12 fps, alocação 19-55 MB → 0,2 MB/quadro). Cada
   quadro tem ~6300 desenhos com 16 KB de uniforms de vértice (27 MB/quadro): passava do heap de uniforms (48 MB), o
   `UniformArena` não guardava nenhum bloco gerenciado de reserva (o limite de 16 contava os 48 do heap) e alocava 1 MB
@@ -2369,7 +2369,7 @@ fs8):
   é o desta sessão; o trace de HLE não mostrou o AddEntry). Provável: o jogo escolhe 3 vblanks porque o quadro dele
   passa de 33 ms (item a: pacing)
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [x] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `scratchpad/bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
+- [x] Jak 1, agente C dia 8 (06/11/2026, fix/bugs-games-8; `bugsC8_*`, cenários `bugsC8_scn/jak_*.txt`).
   (a) **Tela de título: custo de HLE corrigido** (commit "HLE cost: libgxm accessors..."): 14,4 → 18,8 fps, F3D
   11,7 → 3,8 M ciclos de HLE/quadro (`bugsC8_out/jak_t_ref` x `jak_t_new`). (b) **Os 20 fps do gameplay são o
   nativo**: a palavra +4 dos dados do `AddEntry` é o campo [obj+0x98] do device F3D, gravado uma vez na inicialização
@@ -2471,7 +2471,7 @@ fs8):
   de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
   no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
   Medido de novo (08/11/2026, perf/desktop-11, main 8984522 + perf/desktop-11, janela oculta, 4 rodadas de 150 s
-  alternando sem/com `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`, `scratchpad/perf11_out/deer*`): com o PC livre o gameplay
+  alternando sem/com `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`, `perf11_out/deer*`): com o PC livre o gameplay
   fica em 55-61 fps nos dois modos (janelas de 5 s: 58-61, uma de 55); as quedas para 0-25 fps só apareceram nas
   rodadas em que outros agentes compilavam (CPU do PC a 90-100%: até os timers do processo atrasavam 5-9 s, e os
   quadros mostram `guestGpuWait` de 100-245 ms), então os engasgos com `guestGpuWait` alto são a CPU do PC disputada,
@@ -2485,7 +2485,7 @@ fs8):
   Vita de verdade antes de mexer no ritmo de leitura ou da CPU
   Desligada por padrão até o usuário confirmar na janela.
   Medido na janela oculta (agente C dia 11, 06/11/2026, fix/bugs-games-10, `VITASHARP_HIDDEN_WINDOW=1`, 150 s, Cross a
-  cada 200 quadros; `scratchpad/bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas
+  cada 200 quadros; `bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas
   quedas (41, 46) e a parada da troca de cena (watchdog `STALL` 5 s, quadro 2752); com a chave, 59-60 fps, uma queda
   (45) e a mesma parada (6 s, quadro 2754). Os engasgos do relato (12-16 fps por ~5 s) não aparecem em nenhum dos dois
   com o PC ocioso, então não há ganho medido para ligar por padrão. Com a chave na janela, Devious Dungeon 60, F1 2011
@@ -2511,7 +2511,7 @@ fs8):
   Agora o Peek devolve 0 quando não há amostra mais nova que o último `sceTouchRead` da porta (o buffer continua
   preenchido com a amostra mais nova; portas que o jogo nunca lê seguem como antes). `VITASHARP_TOUCH_PEEK_UNREAD=0`
   volta ao antigo. Prova: 3 de 3 boots passam do quadro 25 (logos SEGA/Sumo/CRIWARE e a tela legal; 400 quadros a
-  30 fps, `scratchpad/bugsB3_out/sonic_fix1..3`), e com a chave desligada o mesmo build trava no quadro 23
+  30 fps, `bugsB3_out/sonic_fix1..3`), e com a chave desligada o mesmo build trava no quadro 23
   (`bugsB3_out/sonic_ab0`); na rodada boa de antes a thread nem entrava nesse loop (ordem das threads). O cenário
   `sasrt` inteiro (2400 quadros) agora passa pelos logos, o filme de abertura, o título "PRESS START", o aviso de
   autosave e a criação do save (`bugsB3_out/sonic_full/sheet.png`); falta o usuário jogar uma corrida
@@ -2562,7 +2562,7 @@ fs8):
   o módulo de origem carregar (hoje o aviso aparece em todo jogo Unity mesmo quando tudo é resolvido)
   Feito no 40e2fb5 (05/11/2026) e conferido em 06/11/2026 (fix/bugs-games-11): o Akiba's Beat loga `10 variable imports
   wait for a module exporting Il2CppAssemblies` no boot e, 0,3 s depois, `Il2CppAssemblies: 10 waiting variable imports
-  bound`, sem aviso; o jogo roda até a primeira batalha (log `scratchpad/bugsC11_out/akiba4/log.txt`)
+  bound`, sem aviso; o jogo roda até a primeira batalha (log `bugsC11_out/akiba4/log.txt`)
 - [x] Akiba's Beat (PCSG00952, Unity): validar o jogo todo (pedido do usuário, 04/11/2026; sessão de 2,5 min, log
   `logs61104_201229_PCSG00952.log`, main 5d4b998). No log: 60 fps quase o tempo todo, mas a imagem fica parada
   ~10 s (quadro 4171, 20:14:05-20:14:16, `frozen: identical image for 600 presents`) e ~4 s de tela preta em 20:13:46
@@ -2583,7 +2583,7 @@ fs8):
   pulado (Start, "はい") e o primeiro calabouço: andar, virar, câmera, os ataques, o encontro com o primeiro inimigo
   ("Encounter"), a batalha com a 1ª caixa de tutorial e o passo "aproxime-se e afaste-se" (analógico à esquerda e à
   direita), pausa e volta. Os ataques ainda não aparecem: o tutorial pede o movimento antes (próximo passo do roteiro). 60 fps estáveis, 0 underruns, nenhuma imagem parada; avisos só de
-  formatos de textura vistos pela 1ª vez e um `scene without colour surface`. Provas: `scratchpad/bugsC11_out/akiba5_sheet.png`,
+  formatos de textura vistos pela 1ª vez e um `scene without colour surface`. Provas: `bugsC11_out/akiba5_sheet.png`,
   `akiba4_sheet.png`. Sem o pace, a Unity (flips IMMEDIATE) roda a ~460 fps sem janela: esperas em quadros não servem
   Confirmado pelo usuário (06/11/2026): ok
 - [x] FIFA 13 (PCSE00093): na partida (Botafogo x Fluminense, main 5d4b998), a faixa do campo depois da linha lateral
@@ -2612,7 +2612,7 @@ fs8):
   EAAudioCore reabastece pela posição informada; o fim de cada anel tem superframes zerados (900 de 900 erros de decode
   são zeros), que o HLE pulava sem gastar tempo nem contar em bytes consumidos. Em várias voltas o jogo não reescreve
   nada do anel (hash igual) e a voz repete o mesmo conteúdo (repetições a cada 0,90 s / 2,99 s nos WAVs,
-  `tools/audrep.py` do scratchpad), e há kill+play seguidos a cada 4-8 ticks (192 bytes) pela mesma função do jogo
+  `tools/audrep.py` da pasta de trabalho local), e há kill+play seguidos a cada 4-8 ticks (192 bytes) pela mesma função do jogo
   (lr 0x8140D0E5). Tocar o superframe ruim como silêncio contando bytes (como o Vita3K soma os contadores) não mudou a
   contagem de voltas sem reescrita; fica em `VITASHARP_AT9_ERROR_SILENCE=1` (A/B). Os módulos EQ/envelope vêm todos
   zerados, o Mixer da voz vem com ganho 1,0/1,0 (o HLE ignora o Mixer). O espectro do nosso mix tem ~20 dB a mais
@@ -2706,7 +2706,7 @@ fs8):
   borda/toon dos personagens); nenhum outro shader tem aviso. Próximo: ver no `--dump` em que conta o G16 entra (se
   multiplica a borda, o efeito de rim light some) e comparar com um vídeo do Vita real
   Agente C dia 6 (05/11/2026): **menu do título sem regressão**: 59,8 fps, p50 16,68 ms, 6 de 299 intervalos acima de
-  17,5 ms com o PC ocioso (`scratchpad/bugsC6_out/ztd_menu.log`, `bugsC3_data/tests/ztd_menu/sheet.png`); os 47-57 eram
+  17,5 ms com o PC ocioso (`bugsC6_out/ztd_menu.log`, `bugsC3_data/tests/ztd_menu/sheet.png`); os 47-57 eram
   CPU dividida. G16: `shadertest --warnings` ainda dá 40x `load from unsupported bank Global register 16`; em todos os
   40 o G16 só aparece num `VTST` contra os 16 bits de baixo de um uniform (`p0 = G16 != sa[8].y & 0xFFFF`) e o
   predicado guarda uma cópia de registradores (`VMOV r1 = pa0`) antes da iluminação (`07a17b44508ff793.frag`): com
@@ -2717,16 +2717,16 @@ fs8):
   frente). Feita a chave de depuração `VITASHARP_G16=front|back` (padrão continua 0; GLSL idêntico sem ela;
   `shadertest` com `front`: nenhum aviso de G16, 105/105 compilam). Não validado: a cena de abertura gravada não usa esses programas (dump `bugsC8_out/ztd_scene.vsgd`, f2180-2182: replays com
   front/back/zero idênticos, 9 shaders, nenhum com G16). Falta uma cena com eles (provável: salas de fuga 3D) para
-  comparar com o vídeo do Vita (`zwPJR5er054`, `scratchpad/bugsC8_yt/ztd.webm`, 10 primeiros minutos)
+  comparar com o vídeo do Vita (`zwPJR5er054`, `bugsC8_yt/ztd.webm`, 10 primeiros minutos)
   Agente C dia 9: não feito (o dia foi para o Injustice, o áudio do Jak e o crash de load state). Cenário pronto
-  `scratchpad/bugsC9_scn/ztd_scout.txt` (Cross a cada 60 quadros de f2250 a f4200, quadros a cada 50): no vídeo, depois
+  `bugsC9_scn/ztd_scout.txt` (Cross a cada 60 quadros de f2250 a f4200, quadros a cada 50): no vídeo, depois
   do "Coincide" (f2180 aqui) vem a cena das celas com os personagens 3D, que deve usar os shaders toon/HemiRimBump
   **Corrigido** (agente C dia 10, 06/11/2026, fix/bugs-games-9; validado aqui, falta o usuário confirmar): o G16 agora
   é `gl_FrontFacing` por padrão (`VITASHARP_G16=zero|back` para depurar; `GeneratorVersion` 21, os caches se
-  refazem). Dump da cena das celas (`scratchpad/bugsC9_out/ztd_cells.vsgd`, presents 3150-3152, com os avisos de G16)
+  refazem). Dump da cena das celas (`bugsC9_out/ztd_cells.vsgd`, presents 3150-3152, com os avisos de G16)
   reproduzido com zero/front/back e comparado ao vídeo do Vita (1:23): zero e back são iguais, personagens claros e
   chapados (camisa do Sigma RGB 134/128/127, cabelo 203/186/172); front dá a sombra do Vita (camisa 100/95/95, cabelo
-  165/141/128; Vita 110/104/99 e 155/137/122). No jogo com o padrão novo (`scratchpad/bugsC9_proof/ztd_g16front_sheet.png`
+  165/141/128; Vita 110/104/99 e 155/137/122). No jogo com o padrão novo (`bugsC9_proof/ztd_g16front_sheet.png`
   x `ztd_g16zero_sheet.png`): sombreado como no vídeo e a máscara do Zero com a textura suja do Vita (antes branca)
   `replay-gpu --compare` nos 18 dumps: só os 2 do Tearaway mudam (ele também lê o G16: as bordas das folhas de papel
   de dois lados ficam escuras e somem uns pontos verdes na borda; média até 2,5/255, `bugsC9_proof/tearaway_g16_before_after_diff.png`);
@@ -2738,7 +2738,7 @@ fs8):
   par de cores (TexCoord6/7); os desenhos do papel são cull=0 (sem culling), os do ZTD cull=1 (CW). Agora o G16 é a face
   da frente só em desenhos com culling e 0 sem culling (push constant `face_cull`; `GeneratorVersion` 22;
   `VITASHARP_G16=front-always` volta ao comportamento anterior). Tearaway = G16 0 de antes (61 quadros idênticos), ZTD
-  igual ao 288f6ed (3 quadros idênticos, diferente do zero). Prova `scratchpad/bugsC10_proof/tearaway_g16_vita_vs_main_vs_new.png`.
+  igual ao 288f6ed (3 quadros idênticos, diferente do zero). Prova `bugsC10_proof/tearaway_g16_vita_vs_main_vs_new.png`.
   A regra do hardware é uma hipótese que bate com os dois jogos (o que é G16 com cull CCW não foi visto). Sobra: no
   close-up do quadro 3795 o G16 = 0 deixa uns pontos verdes na borda de uma folha (como antes do 11f18ce), sem vídeo do
   Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
@@ -2763,9 +2763,9 @@ fs8):
   Feito (06/11/2026, fix/bugs-games-11): desmontado do np_manager.suprx 3.74, copia do registro de 0x148 bytes do
   NID_E45E4003 o SceNpId (+0, 0x24) e a URL do avatar (+0x38, 0x80) para um SceNpManagerCacheParam de 0xA4 bytes e
   devolve 0; o HLE dá o NpId da conta emulada (sem URL) ou tudo zero sem conta. O 99Vidas chama 4 vezes no boot e
-  recebe "VitaSharp" (`--peek`, log `scratchpad/bugsC11_out/np_99vidas_peek/log.txt`) e segue para a abertura
+  recebe "VitaSharp" (`--peek`, log `bugsC11_out/np_99vidas_peek/log.txt`) e segue para a abertura
 - [ ] Revalidação dos jogos do PC (31/10/2026, branch perf/android-phone-2; folhas e resumo em
-  `scratchpad/phone2_shots/pc`, `review.md`): The Deer God (PCSB01070) sem limite de quadros (214-348 fps; antes 60);
+  `phone2_shots/pc`, `review.md`): The Deer God (PCSB01070) sem limite de quadros (214-348 fps; antes 60);
   Shinobido 2 (PCSE00015) com uma linha verde embaixo do filme de abertura e `sceKernelGetCpuId` sem implementação
   (31.410 chamadas) — corrigidos em 04/11/2026 (fix/user-bugs): o filme é 960x540 e o jogo amostra o buffer de 544
   linhas; o decodificador do Vita escreve macroblocos inteiros e agora as linhas até o múltiplo de 16 repetem a última

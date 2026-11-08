@@ -141,7 +141,7 @@ logical CPUs at BelowNormal, interleaved off/on/on/off:
   thread's pipeline time from 502 to 91 ms, but those pipelines were already only 2.6 ms each.
 - The first-run stall here is compile throughput (two workers, about 10-13 s of shaderc plus the driver), not the
   pipeline step. More workers or prewarming from a shipped `pipelines.list` would address it; GPL does not.
-- The patch is kept out of the tree (agent scratchpad `and10_gpl_wip.patch`).
+- The patch is kept out of the tree (local work folder `and10_gpl_wip.patch`).
 
 ## Compile throughput (perf/desktop-12, 8 November 2026)
 Injustice `inj_fight` (Training fight) and Killzone `kz_skin`, cold caches, GTX 1650, pinned to 4 logical CPUs:

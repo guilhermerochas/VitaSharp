@@ -1,7 +1,7 @@
 # Especificações HLE pendentes
 
 Este diretório descreve, função por função, tudo o que falta implementar no HLE do VitaSharp em relação ao VitaSDK
-(user-mode). Foi escrito para que uma sessão futura (humana ou do Claude) pegue um arquivo, implemente as funções
+(user-mode). Foi escrito para que uma sessão futura pegue um arquivo, implemente as funções
 e marque o checkbox, sem refazer a pesquisa.
 
 Fonte da comparação (2026-10-18):

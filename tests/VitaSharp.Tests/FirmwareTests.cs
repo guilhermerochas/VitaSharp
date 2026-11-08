@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using VitaSharp.Core.Crypto;
@@ -720,7 +720,7 @@ static class RealFirmware
             {
                 var p = Path.Combine(d.FullName, "PSVUPDAT.PUP");
                 if (File.Exists(p)) return p;
-                // a git worktree under <repo>/.claude/worktrees/<name>: the file sits in the main checkout
+                // a git worktree nested in the repository (<repo>/<dir>/worktrees/<name>): the file sits in the main checkout
                 var main = d.Parent?.Parent?.Parent;
                 if (d.Parent?.Name == "worktrees" && main != null && File.Exists(Path.Combine(main.FullName, "PSVUPDAT.PUP")))
                     return Path.Combine(main.FullName, "PSVUPDAT.PUP");

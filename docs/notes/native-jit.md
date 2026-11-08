@@ -20,7 +20,7 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 
 ## perf/a64-regalloc (2026-10-31): guest state across regions, exit stubs
 
-Branch `perf/a64-regalloc` (worktree `.claude/worktrees/a64ra`, from main b8d2331). Not merged, not pushed; x64 output
+Branch `perf/a64-regalloc` (from main b8d2331). Not merged, not pushed; x64 output
 unchanged (the frontend option is off for it). Two more `VITASHARP_NATIVE_A64_NOOPT` names:
 
 | Name | Change |
@@ -69,7 +69,7 @@ first.
 
 ## perf/arm64-jit (2026-10-30): ARM64 code quality
 
-Branch `perf/arm64-jit` (worktree `.claude/worktrees/a64jit`, from main 4dbe06c, main 241ad19 merged). Not merged, not
+Branch `perf/arm64-jit` (from main 4dbe06c, main 241ad19 merged). Not merged, not
 pushed. Roadmap item "Ajuste do JIT nativo ARM64" (Android, "Velocidade nativa no celular"). Everything here is counted
 in the Unicorn sandbox; **falta medir no aparelho** (Redmi Note 14, Helio G99: 2x Cortex-A76 + 6x A55). The x64 backend
 is untouched (no x64 file changed; the IR and frontend are unchanged).
@@ -157,7 +157,7 @@ the link-slot double load.
 
 ## perf/jit-complete (2026-10-29)
 
-Branch `perf/jit-complete` (worktree `.claude/worktrees/jit-complete`, from main 9ffaa48). Not merged, not pushed.
+Branch `perf/jit-complete` (from main 9ffaa48). Not merged, not pushed.
 
 ### Coverage added (both backends: the work is in the shared frontend or has an ARM64 twin)
 - Media instructions in plain IR (`Native/ArmFrontend.Media.cs`, no new IR ops, so x64 and ARM64 lower them alike), ARM
@@ -243,7 +243,7 @@ machine; the back-to-back rerun above is the comparison.
 
 ## perf/neon-jit (2026-10-22)
 
-Branch `perf/neon-jit` (worktree `.claude/worktrees/neon-jit`), merged with main 23efe56. Not merged into main, not
+Branch `perf/neon-jit` (worktree a local worktree), merged with main 23efe56. Not merged into main, not
 pushed.
 
 ### What is inline now
@@ -335,7 +335,7 @@ from the renderer (MSAA, new in main b93da80) or from the CPU is not established
   - Verify now reports NEON/VFP-block mismatches separately ("N mismatches (M in blocks with NEON/VFP ops)").
 
 ### Next steps
-1. Killzone main thread (about 27 ms/frame in kzl_walk3): profile host time (scratchpad cpurep on a nettrace); HLE,
+1. Killzone main thread (about 27 ms/frame in kzl_walk3): profile host time (local work folder cpurep on a nettrace); HLE,
    waits and spins dominate, not guest NEON.
 2. T32_Mul halfword/word multiplies (SMULxy/SMLAxy with Q, SMULWy/SMLAWy, SMMUL/SMMLA) inline: about 120M callouts in
    Sonic Mania; T32_Parallel (SADD16/UADD8/...) for Devious Dungeon.
@@ -524,7 +524,7 @@ callouts in lock loops plus NEON callouts); IL 24.6. That regression is what the
 
 ## feat/arm64-jit (2026-10-29) — native ARM64 backend
 
-Branch `feat/arm64-jit` (worktree `.claude/worktrees/arm64-jit`, from main 7610224, main 7f26c85 merged). Not merged
+Branch `feat/arm64-jit` (from main 7610224, main 7f26c85 merged). Not merged
 into main, not pushed. The foundation for the Android port; also Apple silicon macOS, Linux ARM64, Windows on ARM.
 
 ### Structure

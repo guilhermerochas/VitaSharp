@@ -92,4 +92,4 @@ normal colours (rbs_boot as committed no longer reaches gameplay because a save 
 
 ## Testing
 
-Scripts in the session scratchpad `msaa/` (`run.sh <bin> <prefix> <scenario> [ENV=..]`, `mkscen.sh`).
+Scripts in a local work folder `msaa/` (`run.sh <bin> <prefix> <scenario> [ENV=..]`, `mkscen.sh`).

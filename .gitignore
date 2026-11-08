@@ -523,3 +523,6 @@ third_party/android-adrenotools/
 /bench/
 obj-dev/
 bin-dev/
+
+# Claude Code agent rules (local only, not part of VitaSharp)
+docs/agents/
