@@ -346,4 +346,157 @@ public sealed partial class Libc
     [Hle] int sce_paf_private_fseek(uint file, int off, int whence) => fseek(file, off, whence);
     [Hle] int sce_paf_private_ftell(uint file) => ftell(file);
     [Hle] int sce_paf_private_fgetc(uint file) => fgetc(file);
+
+    // ---- the plain names libpaf exports beside the sce_paf_private_* ones
+    [Hle] uint sce_paf_malloc(uint size) => malloc(size);
+    [Hle] void sce_paf_free(uint p) { if (p != 0) free(p); }
+    [Hle] uint sce_paf_realloc(uint p, uint size) => realloc(p, size);
+    [Hle] uint sce_paf_calloc(uint n, uint size) => calloc(n, size);
+    [Hle] uint sce_paf_musable_size(uint p) => p == 0 ? 0 : malloc_usable_size(p);
+    /// <summary>The heap reports of libpaf's global heap allocator: the HLE heap has nothing to give back or check.</summary>
+    [Hle] int sce_paf_mtrim() => 0;
+    [Hle] int sce_paf_check_memorybounds() => 0;
+    [Hle] void sce_paf_dump_heap_info(uint how) => Util.Log.Info("sce_paf_dump_heap_info: HLE heap");
+    [Hle] void sce_paf_dump_heap_status() => Util.Log.Info("sce_paf_dump_heap_status: HLE heap");
+    [Hle] void sce_paf_report_memoryblocks(uint a, uint b) => Util.Log.Info("sce_paf_report_memoryblocks: HLE heap");
+
+    /// <summary>(dst, value, n): n 32-bit words.</summary>
+    [Hle]
+    uint sce_paf_memset32(uint dst, uint v, int n)
+    {
+        for (uint i = 0; (int)i < n; i++) GuestMemory.W32(dst + i * 4, v);
+        return dst;
+    }
+
+    /// <summary>bcmp as libpaf has it: the sign of the first differing byte (unsigned), n signed.</summary>
+    [Hle("sce_paf_bcmp", Nid = 0x1076722F)] int sce_paf_bcmp(uint a, uint b, int n) => Math.Sign(sce_paf_private_memcmp(a, b, n));
+    [Hle("sce_paf_bcopy", Nid = 0x44C0825D)] void sce_paf_bcopy(uint src, uint dst, int n) { if (src != dst && n > 0) GuestMemory.Copy(dst, src, (uint)n); }
+    [Hle("sce_paf_bzero", Nid = 0xD21442B4)] void sce_paf_bzero(uint dst, int n) { if (n > 0) GuestMemory.Fill(dst, 0, (uint)n); }
+    [Hle("sce_paf_strcat", Nid = 0x2344E6F2)] uint sce_paf_strcat(uint dst, uint src) => strcat(dst, src);
+    [Hle("sce_paf_strspn", Nid = 0xE3F8F3D6)] uint sce_paf_strspn(uint s, uint set) => strspn(s, set);
+    [Hle("sce_paf_strcspn", Nid = 0xB429DD2A)] uint sce_paf_strcspn(uint s, uint set) => strcspn(s, set);
+    [Hle] uint sce_paf_strtok(uint s, uint delim) => strtok(s, delim);
+    [Hle("sce_paf_vsprintf", Nid = 0x3079B56B)] int sce_paf_vsprintf(uint buf, string fmt, uint va) => vsprintf(buf, fmt, va);
+    [Hle] int sce_paf_vswprintf(uint buf, uint n, uint fmt, uint va) => vswprintf(buf, n, fmt, va);
+
+    /// <summary>(s, int *out): the decimal number at s into *out; returns where it stopped.</summary>
+    [Hle]
+    uint sce_paf_atob(uint s, uint outValue)
+    {
+        uint end = _pafScratch != 0 ? _pafScratch : _pafScratch = StaticAlloc(4, 4);
+        int v = strtol(s, end, 10);
+        GuestMemory.W32(outValue, (uint)v);
+        return GuestMemory.R32(end);
+    }
+
+    uint _pafScratch;
+
+    // ---- wide strings (16-bit), with libpaf's NULL rules
+    [Hle("sce_paf_wcscpy", Nid = 0xE9B40477)] uint sce_paf_wcscpy(uint dst, uint src) => dst == 0 || src == 0 ? 0 : wcscpy(dst, src);
+    [Hle("sce_paf_wcscat", Nid = 0xDDDDD6E0)] uint sce_paf_wcscat(uint dst, uint src) => dst == 0 || src == 0 ? 0 : wcscat(dst, src);
+    [Hle("sce_paf_wcsrchr", Nid = 0x439EB9D4)] uint sce_paf_wcsrchr(uint s, int c) => s == 0 ? 0 : wcsrchr(s, (ushort)c);
+    [Hle] uint sce_paf_wcsstr(uint s, uint find) => wcsstr(s, find);
+    [Hle("sce_paf_wcspbrk", Nid = 0xD7A2DF29)] uint sce_paf_wcspbrk(uint s, uint set) => wcspbrk(s, set);
+    [Hle("sce_paf_wcsspn", Nid = 0x85DB686E)] uint sce_paf_wcsspn(uint s, uint set) => wcsspn(s, set);
+    [Hle("sce_paf_wcscspn", Nid = 0xDE8B2091)] uint sce_paf_wcscspn(uint s, uint set) => wcscspn(s, set);
+    [Hle] uint sce_paf_wcstok(uint s, uint delim, uint save) => s == 0 && GuestMemory.R32(save) == 0 ? 0 : wcstok(s, delim, save);
+    [Hle("sce_paf_wmemmove", Nid = 0x468A09B1)] uint sce_paf_wmemmove(uint dst, uint src, int n) { if (dst != src && n > 0) GuestMemory.Copy(dst, src, (uint)n * 2); return dst; }
+
+    [Hle("sce_paf_wmemset", Nid = 0x36890967)]
+    uint sce_paf_wmemset(uint dst, int c, int n)
+    {
+        for (uint i = 0; (int)i < n; i++) GuestMemory.Write(dst + i * 2, (ushort)c);
+        return dst;
+    }
+
+    [Hle("sce_paf_wmemcmp", Nid = 0x381B6216)]
+    int sce_paf_wmemcmp(uint a, uint b, int n)
+    {
+        for (uint i = 0; (int)i < n; i++)
+        {
+            ushort x = H(a + i * 2), y = H(b + i * 2);
+            if (x != y) return x < y ? -1 : 1;
+        }
+        return 0;
+    }
+
+    [Hle("sce_paf_wmemchr", Nid = 0x8236A020)]
+    uint sce_paf_wmemchr(uint s, int c, int n)
+    {
+        for (uint i = 0; (int)i < n; i++) if (H(s + i * 2) == (ushort)c) return s + i * 2;
+        return 0;
+    }
+
+    static int PafLowerW(ushort c) => c < 0x80 ? PafLower((byte)c) : c;
+
+    [Hle("sce_paf_wcscasecmp", Nid = 0x92A125F6)]
+    int sce_paf_wcscasecmp(uint a, uint b)
+    {
+        if (PafNullCmp(a, b) is { } r) return r;
+        for (; ; a += 2, b += 2)
+        {
+            int x = PafLowerW(H(a)), y = PafLowerW(H(b));
+            if (x != y) return x - y;
+            if (x == 0) return 0;
+        }
+    }
+
+    [Hle("sce_paf_wcsncasecmp", Nid = 0x8D65035E)]
+    int sce_paf_wcsncasecmp(uint a, uint b, int n)
+    {
+        if (PafNullCmp(a, b) is { } r) return r;
+        for (; n > 0; n--, a += 2, b += 2)
+        {
+            int x = PafLowerW(H(a)), y = PafLowerW(H(b));
+            if (x != y) return x - y;
+            if (x == 0) return 0;
+        }
+        return 0;
+    }
+
+    // ---- libpaf's single-precision math (its own short series; the HLE gives the exact value)
+    [Hle] float sce_paf_sinf(float x) => MathF.Sin(x);
+    [Hle] float sce_paf_cosf(float x) => MathF.Cos(x);
+    [Hle] float sce_paf_tanf(float x) => MathF.Sin(x) / MathF.Cos(x);
+    [Hle] float sce_paf_asinf(float x) => MathF.Asin(x);
+    [Hle] float sce_paf_acosf(float x) => MathF.Acos(x);
+    [Hle] float sce_paf_atanf(float x) => MathF.Atan(x);
+    [Hle] float sce_paf_atan2f(float y, float x) => MathF.Atan2(y, x);
+    [Hle] float sce_paf_expf(float x) => MathF.Exp(x);
+    /// <summary>0 gives -infinity, a negative number NaN.</summary>
+    [Hle] float sce_paf_logf(float x) => MathF.Log(x);
+    [Hle] float sce_paf_powf(float x, float y) => MathF.Pow(x, y);
+    [Hle] float sce_paf_floorf(float x) => MathF.Floor(x);
+    [Hle] float sce_paf_ceilf(float x) => MathF.Ceiling(x);
+    [Hle] float sce_paf_roundf(float x) => MathF.Round(x, MidpointRounding.AwayFromZero);
+    /// <summary>The double floor goes through a float, as libpaf's does.</summary>
+    [Hle] double sce_paf_floor(double x) => MathF.Floor((float)x);
+    /// <summary>A zero divisor gives 0.</summary>
+    [Hle] double sce_paf_fmod(double x, double y) => y == 0 ? 0 : x % y;
+
+    // ---- files (the C library's streams)
+    [Hle] int sce_paf_feof(uint file) => file == 0 ? 0 : feof(file);
+    /// <summary>A NULL or closed stream counts as an error.</summary>
+    [Hle] int sce_paf_ferror(uint file) => file == 0 || Get(file) == null ? 1 : ferror(file);
+    [Hle] int sce_paf_fileno(uint file) => file == 0 || Get(file) == null ? -1 : fileno(file);
+    [Hle] void sce_paf_clearerr(uint file) { if (file != 0) clearerr(file); }
+    [Hle] int sce_paf_ungetc(int c, uint file) => ungetc(c, file);
+    [Hle("sce_paf_fputc", Nid = 0xAF1831DC)] int sce_paf_fputc(int c, uint file) => fputc(c, file);
+    [Hle] uint sce_paf_fdopen(int fd, uint mode) => mode == 0 ? 0 : fdopen(fd, GuestMemory.ReadCString(mode));
+
+    // ---- process exit and the C++ runtime (the C library's)
+    [Hle("exit", Nid = 0x92BF63C9)] void PafExit(int status) => exit(status);
+    [Hle("abort", Library = "ScePafStdc")] void PafAbort() => abort();
+    [Hle("__cxa_finalize", Library = "ScePafStdc")] void PafCxaFinalize(uint dso) => __cxa_finalize(dso);
+    [Hle("__cxa_guard_acquire", Library = "ScePafStdc")] int PafGuardAcquire(uint g) => __cxa_guard_acquire(g);
+    [Hle("__cxa_guard_release", Library = "ScePafStdc")] void PafGuardRelease(uint g) => __cxa_guard_release(g);
+    [Hle("__cxa_guard_abort", Library = "ScePafStdc")] void PafGuardAbort(uint g) => __cxa_guard_abort(g);
+    /// <summary>A call through a deleted virtual function: libpaf prints and stops.</summary>
+    [Hle("__cxa_deleted_virtual", Library = "ScePafStdc")]
+    void PafDeletedVirtual() { Util.Log.Warn("libpaf: deleted virtual function called"); abort(); }
+
+    // ---- for the libpaf classes (Paf): their objects and strings come from the same heap as sce_paf_malloc
+    internal uint PafHeapAlloc(uint size) => malloc(size);
+    internal void PafHeapFree(uint p) => free(p);
+    internal uint PafStatic(uint size, uint align) => StaticAlloc(size, align);
 }

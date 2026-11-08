@@ -24,7 +24,7 @@ public sealed partial class ThreadMgr : HleModule
     public static int ResolvePriority(int priority) => Kernel.Kernel.ResolvePriority(priority);
 
     [Hle]
-    int sceKernelCreateThread(string name, uint entry, int initPriority, int stackSize, uint attr, int cpuAffinityMask, uint option)
+    internal int sceKernelCreateThread(string name, uint entry, int initPriority, int stackSize, uint attr, int cpuAffinityMask, uint option)
     {
         if (entry == 0) return SceError.INVALID_ARGUMENT;
         int prio = ResolvePriority(initPriority);
@@ -33,7 +33,7 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     [Hle]
-    int sceKernelStartThread(int thid, uint argSize, uint argp)
+    internal int sceKernelStartThread(int thid, uint argSize, uint argp)
     {
         var t = K.GetThread(thid);
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
@@ -44,7 +44,7 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] void sceKernelExitDeleteThread(int status) => throw new GuestThreadExitException(status, true);
 
     [Hle]
-    int sceKernelDeleteThread(int thid)
+    internal int sceKernelDeleteThread(int thid)
     {
         var t = K.GetThread(thid);
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
@@ -55,7 +55,7 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelWaitThreadEnd")]
     [Hle("sceKernelWaitThreadEndCB")]
-    int sceKernelWaitThreadEnd(int thid, Ptr<int> stat, Ptr<uint> timeout)
+    internal int sceKernelWaitThreadEnd(int thid, Ptr<int> stat, Ptr<uint> timeout)
     {
         var t = K.GetThread(thid);
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
@@ -103,7 +103,7 @@ public sealed partial class ThreadMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelGetThreadId() => Self.Uid;
+    [Hle] internal int sceKernelGetThreadId() => Self.Uid;
 
     [Hle]
     [Hle("ksceKernelGetThreadCurrentPriority")] // same NID exported under the kernel name by early firmware
@@ -111,7 +111,7 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle]
     [Hle("sceKernelChangeThreadPriority2")]
-    int sceKernelChangeThreadPriority(int thid, int priority)
+    internal int sceKernelChangeThreadPriority(int thid, int priority)
     {
         var t = K.GetThread(thid);
         if (t == null) return SceError.UNKNOWN_THREAD_ID;
@@ -252,7 +252,7 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelDelayThread")]
     [Hle("sceKernelDelayThreadCB")]
-    int sceKernelDelayThread(uint usec)
+    internal int sceKernelDelayThread(uint usec)
     {
         Kernel.Wait.Sleep(usec);
         return 0;
@@ -459,7 +459,7 @@ public sealed partial class ThreadMgr : HleModule
     int sceKernelCreateSema_16XX(string name, uint attr, int initVal, int maxVal, uint opt) => sceKernelCreateSema(name, attr, initVal, maxVal, opt);
 
     [Hle]
-    int sceKernelCreateSema(string name, uint attr, int initVal, int maxVal, uint opt)
+    internal int sceKernelCreateSema(string name, uint attr, int initVal, int maxVal, uint opt)
     {
         if (initVal < 0 || maxVal <= 0 || initVal > maxVal) return SceError.INVALID_ARGUMENT;
         var s = new Semaphore { Name = name, Attr = attr, InitCount = initVal, Count = initVal, MaxCount = maxVal };
@@ -467,7 +467,7 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     [Hle]
-    int sceKernelDeleteSema(int uid)
+    internal int sceKernelDeleteSema(int uid)
     {
         var s = Obj<Semaphore>(uid);
         if (s == null) return SceError.UNKNOWN_SEMA_ID;
@@ -478,11 +478,11 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle] int sceKernelOpenSema(uint name) => KernelInfo.OpenByName<Semaphore>(K.Objects, name);
     [Hle] int sceKernelCloseSema(int uid) => KernelInfo.CloseHandle<Semaphore>(K.Objects, uid, SceError.UNKNOWN_SEMA_ID);
-    [Hle] int sceKernelSignalSema(int uid, int signal) => Obj<Semaphore>(uid)?.Signal(signal) ?? SceError.UNKNOWN_SEMA_ID;
+    [Hle] internal int sceKernelSignalSema(int uid, int signal) => Obj<Semaphore>(uid)?.Signal(signal) ?? SceError.UNKNOWN_SEMA_ID;
 
     [Hle("sceKernelWaitSema")]
     [Hle("sceKernelWaitSemaCB")]
-    int sceKernelWaitSema(int uid, int need, Ptr<uint> timeout) => Obj<Semaphore>(uid)?.WaitSema(need, timeout) ?? SceError.UNKNOWN_SEMA_ID;
+    internal int sceKernelWaitSema(int uid, int need, Ptr<uint> timeout) => Obj<Semaphore>(uid)?.WaitSema(need, timeout) ?? SceError.UNKNOWN_SEMA_ID;
 
     [Hle] int sceKernelPollSema(int uid, int need) => Obj<Semaphore>(uid)?.Poll(need) ?? SceError.UNKNOWN_SEMA_ID;
     [Hle] int sceKernelCancelSema(int uid, int setCount, Ptr<int> numWait) => Obj<Semaphore>(uid)?.Cancel(setCount, numWait) ?? SceError.UNKNOWN_SEMA_ID;
@@ -508,11 +508,11 @@ public sealed partial class ThreadMgr : HleModule
     // ------------------------------------------------------------------ event flags
 
     [Hle]
-    int sceKernelCreateEventFlag(string name, uint attr, uint initPattern, uint opt)
+    internal int sceKernelCreateEventFlag(string name, uint attr, uint initPattern, uint opt)
         => K.Objects.Register(new EventFlag { Name = name, Attr = attr, InitPattern = initPattern, Pattern = initPattern });
 
     [Hle]
-    int sceKernelDeleteEventFlag(int uid)
+    internal int sceKernelDeleteEventFlag(int uid)
     {
         var e = Obj<EventFlag>(uid);
         if (e == null) return SceError.UNKNOWN_EVF_ID;
@@ -523,12 +523,12 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle] int sceKernelOpenEventFlag(uint name) => KernelInfo.OpenByName<EventFlag>(K.Objects, name);
     [Hle] int sceKernelCloseEventFlag(int uid) => KernelInfo.CloseHandle<EventFlag>(K.Objects, uid, SceError.UNKNOWN_EVF_ID);
-    [Hle] int sceKernelSetEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Set(bits); return 0; }
-    [Hle] int sceKernelClearEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Clear(bits); return 0; }
+    [Hle] internal int sceKernelSetEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Set(bits); return 0; }
+    [Hle] internal int sceKernelClearEventFlag(int uid, uint bits) { var e = Obj<EventFlag>(uid); if (e == null) return SceError.UNKNOWN_EVF_ID; e.Clear(bits); return 0; }
 
     [Hle("sceKernelWaitEventFlag")]
     [Hle("sceKernelWaitEventFlagCB")]
-    int sceKernelWaitEventFlag(int uid, uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
+    internal int sceKernelWaitEventFlag(int uid, uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
         => Obj<EventFlag>(uid)?.WaitFlag(bits, mode, outBits, timeout) ?? SceError.UNKNOWN_EVF_ID;
 
     [Hle] int sceKernelPollEventFlag(int uid, uint bits, uint mode, Ptr<uint> outBits) => Obj<EventFlag>(uid)?.Poll(bits, mode, outBits) ?? SceError.UNKNOWN_EVF_ID;
@@ -610,7 +610,7 @@ public sealed partial class ThreadMgr : HleModule
     Mutex? LwMutexOf(uint work) => work == 0 ? null : Obj<Mutex>((int)GuestMemory.R32(work + 16));
 
     [Hle]
-    int sceKernelCreateLwMutex(uint work, string name, uint attr, int initCount, uint opt)
+    internal int sceKernelCreateLwMutex(uint work, string name, uint attr, int initCount, uint opt)
     {
         if (work == 0) return SceError.INVALID_ARGUMENT;
         var m = new Mutex { Name = name, Attr = attr, InitCount = initCount, WorkArea = work };
@@ -623,7 +623,7 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     [Hle]
-    int sceKernelDeleteLwMutex(uint work)
+    internal int sceKernelDeleteLwMutex(uint work)
     {
         var m = LwMutexOf(work);
         if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
@@ -634,13 +634,13 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelLockLwMutex")]
     [Hle("sceKernelLockLwMutexCB")]
-    int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_LW_MUTEX_ID;
+    internal int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
-    [Hle] int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
+    [Hle] internal int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
     [Hle("sceKernelUnlockLwMutex")]
     [Hle("sceKernelUnlockLwMutex2")]
-    int sceKernelUnlockLwMutex(uint work, int count) => LwMutexOf(work)?.Unlock(Self, count) ?? SceError.LW_MUTEX_NOT_OWNED;
+    internal int sceKernelUnlockLwMutex(uint work, int count) => LwMutexOf(work)?.Unlock(Self, count) ?? SceError.LW_MUTEX_NOT_OWNED;
 
     [Hle]
     int sceKernelGetLwMutexInfo(uint work, uint info)
@@ -736,7 +736,7 @@ public sealed partial class ThreadMgr : HleModule
     CondVar? LwCondOf(uint work) => work == 0 ? null : Obj<CondVar>((int)GuestMemory.R32(work));
 
     [Hle]
-    int sceKernelCreateLwCond(uint work, string name, uint attr, uint workMutex, uint opt)
+    internal int sceKernelCreateLwCond(uint work, string name, uint attr, uint workMutex, uint opt)
     {
         var m = LwMutexOf(workMutex);
         if (m == null) return SceError.UNKNOWN_LW_MUTEX_ID;
@@ -746,14 +746,14 @@ public sealed partial class ThreadMgr : HleModule
         return 0;
     }
 
-    [Hle] int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Delete(); K.Objects.Remove(c.Uid); return 0; }
+    [Hle] internal int sceKernelDeleteLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Delete(); K.Objects.Remove(c.Uid); return 0; }
 
     [Hle("sceKernelWaitLwCond")]
     [Hle("sceKernelWaitLwCondCB")]
-    int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? SceError.UNKNOWN_LW_COND_ID;
+    internal int sceKernelWaitLwCond(uint work, Ptr<uint> timeout) => LwCondOf(work)?.WaitCond(Self, timeout) ?? SceError.UNKNOWN_LW_COND_ID;
 
-    [Hle] int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Signal(); return 0; }
-    [Hle] int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.SignalAll(); return 0; }
+    [Hle] internal int sceKernelSignalLwCond(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.Signal(); return 0; }
+    [Hle] internal int sceKernelSignalLwCondAll(uint work) { var c = LwCondOf(work); if (c == null) return SceError.UNKNOWN_LW_COND_ID; c.SignalAll(); return 0; }
     [Hle]
     int sceKernelSignalLwCondTo(uint work, int thid)
     {
