@@ -57,11 +57,11 @@ public sealed class PsnPage : Screen<PsnState>
                 Card(
                     Row(Loc.Get("MServer"), n.RpcnServer.Length > 0 ? n.RpcnServer : Loc.Get("MNoneLower"), rpcn ? () => Edit(Loc.Get("MRpcnServer"), Loc.Get("MHostPort"), n.RpcnServer, v => Change(x => x.RpcnServer = v.Trim())) : null),
                     Divider(),
-                    Row(Loc.Get("MUser"), n.RpcnUser.Length > 0 ? n.RpcnUser : "—", rpcn ? () => Edit(Loc.Get("MRpcnUser"), "", n.RpcnUser, v => Change(x => x.RpcnUser = v.Trim())) : null),
+                    Row(Loc.Get("MUser"), n.RpcnUser.Length > 0 ? n.RpcnUser : "\u2014", rpcn ? () => Edit(Loc.Get("MRpcnUser"), "", n.RpcnUser, v => Change(x => x.RpcnUser = v.Trim())) : null),
                     Divider(),
-                    Row(Loc.Get("MPassword"), State.HasPassword ? "••••••••" : "—", rpcn ? EditPassword : null, detail: Loc.Get("MKeystoreDetail")),
+                    Row(Loc.Get("MPassword"), State.HasPassword ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "\u2014", rpcn ? EditPassword : null, detail: Loc.Get("MKeystoreDetail")),
                     Divider(),
-                    Row("Token", n.RpcnToken.Length > 0 ? Loc.Get("MSet") : "—", rpcn ? () => Edit(Loc.Get("MRpcnToken"), Loc.Get("MRpcnTokenHint"), n.RpcnToken, v => Change(x => x.RpcnToken = v.Trim())) : null)
+                    Row("Token", n.RpcnToken.Length > 0 ? Loc.Get("MSet") : "\u2014", rpcn ? () => Edit(Loc.Get("MRpcnToken"), Loc.Get("MRpcnTokenHint"), n.RpcnToken, v => Change(x => x.RpcnToken = v.Trim())) : null)
                 ).Opacity(rpcn ? 1 : 0.5),
                 Note(rpcn ? Loc.Get("MRpcnNote")
                           : Loc.Get("MRpcnNeedsInternet"))

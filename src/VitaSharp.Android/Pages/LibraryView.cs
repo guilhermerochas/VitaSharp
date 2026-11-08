@@ -20,7 +20,7 @@ public sealed class LibraryState
     public bool Loading { get; set; } = true;
     public string? Installing { get; set; }
     public double InstallProgress { get; set; }
-    /// <summary>"42% · 80 MB/s · 0:12 restantes" under the install bar.</summary>
+    /// <summary>"42% - 80 MB/s - 0:12 restantes" under the install bar.</summary>
     public string InstallDetail { get; set; } = "";
     public FirmwareStatus? Firmware { get; set; }
 }
@@ -79,7 +79,7 @@ public sealed class LibraryView : Screen<LibraryState>
                         ).Spacing(2),
                         HStack(
                             Chip(Loc.Get("MInstallChip"), true, InstallGame),
-                            IconButton("⚙", () => RootPage.Show(RootTab.Settings)).VCenter()
+                            IconButton("\u2699", () => RootPage.Show(RootTab.Settings)).VCenter()
                         ).Spacing(10).GridColumn(1).VCenter()
                     ).Padding(20, 20, 20, 8),
                     SearchBox(),
@@ -96,7 +96,7 @@ public sealed class LibraryView : Screen<LibraryState>
                         GameLibrary.Filter.Recent => Loc.Get("MRecentlyPlayed"),
                         GameLibrary.Filter.Playable => Loc.Get("MPlayable"),
                         _ => Loc.Get("MAllGames"),
-                    }, "A–Z"),
+                    }, "A\u2013Z"),
                     State.Loading ? ActivityIndicator().IsRunning(true).HCenter().Margin(0, 24)
                         : shown.Count == 0 ? EmptyLibrary()
                         : GameGrid(shown),
@@ -110,7 +110,7 @@ public sealed class LibraryView : Screen<LibraryState>
     VisualNode SearchBox() =>
         Border(
             Grid("Auto", "Auto,*",
-                Label("⌕").FontSize(18).TextColor(Palette.Muted).VCenter(),
+                Label("\u2315").FontSize(18).TextColor(Palette.Muted).VCenter(),
                 Entry().Placeholder(Loc.Get("MSearchGames")).Text(State.Search).OnTextChanged(t => SetState(s => s.Search = t ?? ""))
                     .BackgroundColor(Colors.Transparent).GridColumn(1).Margin(8, 0, 0, 0)
             ).Padding(16, 0))
@@ -127,11 +127,11 @@ public sealed class LibraryView : Screen<LibraryState>
                     VStack(
                         Label(Loc.Get("MContinuePlaying")).FontSize(11).TextColor(Palette.AccentSoft).CharacterSpacing(1),
                         Label(g.Title).FontFamily(Fonts.SoraSemiBold).FontSize(17).MaxLines(2).LineBreakMode(LineBreakMode.TailTruncation),
-                        Label($"{GameLibrary.PlayTime(settings.PlaySeconds)} · {GameLibrary.LastPlayed(settings.LastPlayedUtc, DateTime.UtcNow).ToLowerInvariant()}")
+                        Label($"{GameLibrary.PlayTime(settings.PlaySeconds)} \u00B7 {GameLibrary.LastPlayed(settings.LastPlayedUtc, DateTime.UtcNow).ToLowerInvariant()}")
                             .FontSize(12).TextColor(Palette.Muted),
                         TrophyLine(t, Palette.Track)
                     ).Spacing(4).GridColumn(1).Margin(14, 0).VCenter(),
-                    Border(Label("▶").FontSize(20).TextColor(Palette.OnAccent).Center())
+                    Border(Label("\u25B6").FontSize(20).TextColor(Palette.OnAccent).Center())
                         .StrokeShape(new RoundRectangle().CornerRadius(26)).StrokeThickness(0).BackgroundColor(Palette.Accent)
                         .WidthRequest(52).HeightRequest(52).GridColumn(2).VCenter()
                         .OnTapped(() => Play(g))
@@ -148,14 +148,14 @@ public sealed class LibraryView : Screen<LibraryState>
             : Loc.Format("MShellFullscreen", fw.Installed?.Version ?? "");
         return Border(
                 Grid("Auto", "Auto,*,Auto",
-                    Border(Label("▭").FontSize(22).TextColor(Palette.AccentSoft).Center())
+                    Border(Label("\u25AD").FontSize(22).TextColor(Palette.AccentSoft).Center())
                         .StrokeShape(new RoundRectangle().CornerRadius(12)).StrokeThickness(0).BackgroundColor(Palette.SurfaceHigh)
                         .WidthRequest(40).HeightRequest(40),
                     VStack(
                         Label(Loc.Get("MVitaSystem")).FontFamily(Fonts.InterSemiBold).FontSize(14),
                         Label(detail).FontSize(12).TextColor(Palette.Muted)
                     ).Spacing(2).GridColumn(1).Margin(12, 0).VCenter(),
-                    Label("›").FontSize(20).TextColor(Palette.Faint).GridColumn(2).VCenter()
+                    Label("\u203A").FontSize(20).TextColor(Palette.Faint).GridColumn(2).VCenter()
                 ).Padding(14, 12))
             .StrokeShape(new RoundRectangle().CornerRadius(18)).Stroke(Palette.Border).StrokeThickness(1)
             .BackgroundColor(Palette.Surface).Margin(20, 12, 20, 0)
@@ -219,7 +219,7 @@ public sealed class LibraryView : Screen<LibraryState>
 
     VisualNode TrophyLine(TrophyProgress t, Color track) =>
         Grid("Auto", "Auto,Auto,*",
-            Label("🏆").FontSize(11).TextColor(Palette.Gold).VCenter(),
+            Label("\U0001F3C6").FontSize(11).TextColor(Palette.Gold).VCenter(),
             Label(t.Text).FontSize(11).TextColor(Palette.TextSoft).GridColumn(1).Margin(6, 0).VCenter(),
             t.HasTrophies ? Bar(t.Fraction, track).GridColumn(2) : null
         );
@@ -318,7 +318,7 @@ public sealed class LibraryView : Screen<LibraryState>
                 });
                 var installed = results.Where(r => r.Installed).ToList();
                 await Alert(Loc.Get("MInstallVpk"), installed.Count == 0 ? Loc.Get("MNothingInstalled")
-                    : string.Join("\n", installed.Select(r => $"{r.Content.TitleId} · {r.Content.Title} ({r.Content.Kind})")) + Loc.Get("MInstalledSuffix"));
+                    : string.Join("\n", installed.Select(r => $"{r.Content.TitleId} \u00B7 {r.Content.Title} ({r.Content.Kind})")) + Loc.Get("MInstalledSuffix"));
             }
             finally
             {

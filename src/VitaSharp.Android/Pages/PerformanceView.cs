@@ -56,9 +56,9 @@ public sealed class PerformanceView : Screen<PerformanceState>
                     : State.Played.SelectMany((p, i) => new VisualNode?[]
                     {
                         i > 0 ? Divider() : null,
-                        Row(p.Game.Title, p.Stats.AverageFps > 0 ? $"{p.Stats.AverageFps:0} FPS" : "—",
+                        Row(p.Game.Title, p.Stats.AverageFps > 0 ? $"{p.Stats.AverageFps:0} FPS" : "\u2014",
                             () => Navigation?.PushAsync<GamePage, GameProps>(x => x.TitleId = p.Game.TitleId),
-                            detail: $"{GameLibrary.PlayTime(p.Stats.PlaySeconds)} · {GameLibrary.LastPlayed(p.Stats.LastPlayedUtc, DateTime.UtcNow)}"),
+                            detail: $"{GameLibrary.PlayTime(p.Stats.PlaySeconds)} \u00B7 {GameLibrary.LastPlayed(p.Stats.LastPlayedUtc, DateTime.UtcNow)}"),
                     }).ToArray())
             ));
 }

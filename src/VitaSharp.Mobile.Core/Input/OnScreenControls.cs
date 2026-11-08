@@ -20,7 +20,7 @@ public sealed record OnScreenControl(VitaControl Control, string Label, float X,
 /// The translucent controls over the game view (docs/android/mockups/jogo.html) and the PS button of the Vita system
 /// view (sistema.html), turned into the core's <see cref="IInputBackend"/> (platform-neutral; the app's
 /// OnScreenControlsView draws it and feeds it the MotionEvent pointers): buttons and sticks from touches on the controls,
-/// front touch from touches on the image, rear touch while the TRÁS toggle is on.
+/// front touch from touches on the image, rear touch while the TRAS toggle is on.
 /// <para>
 /// A finger that starts on a stick keeps driving it wherever it moves (until it lifts), and a finger that starts on
 /// the image stays a touch-screen finger, so sliding over a control does not press it.
@@ -51,7 +51,7 @@ public sealed class OnScreenPad : IInputBackend
     public IReadOnlyList<OnScreenControl> Layout { get; set; } = DefaultLayout;
     public bool Visible { get; set; } = true;
 
-    /// <summary>TRÁS: while on, touches on the image go to the rear touch pad instead of the screen.</summary>
+    /// <summary>TRAS: while on, touches on the image go to the rear touch pad instead of the screen.</summary>
     public bool RearTouch
     {
         get { lock (_lock) return _rear; }
@@ -73,7 +73,7 @@ public sealed class OnScreenPad : IInputBackend
     readonly HashSet<OnScreenControl> _pressed = new();
     readonly Dictionary<OnScreenControl, (float X, float Y)> _knobs = new();
 
-    /// <summary>Controls held right now, and TRÁS while it is on (drawn in the accent colour).</summary>
+    /// <summary>Controls held right now, and TRAS while it is on (drawn in the accent colour).</summary>
     public bool IsPressed(OnScreenControl c)
     {
         lock (_lock) return _pressed.Contains(c) || c.Control == VitaControl.TouchBack && _rear;
@@ -166,14 +166,14 @@ public sealed class OnScreenPad : IInputBackend
     [
         new(VitaControl.L, "L", R(18, 0), R(12, 1), R(108, 0), R(40, 1)),
         new(VitaControl.R, "R", R(718, 0), R(12, 1), R(108, 0), R(40, 1)),
-        new(VitaControl.Up, "▲", R(70, 0), R(92, 1), R(40, 0), R(44, 1)),
-        new(VitaControl.Down, "▼", R(70, 0), R(168, 1), R(40, 0), R(44, 1)),
-        new(VitaControl.Left, "◀", R(30, 0), R(132, 1), R(44, 0), R(40, 1)),
-        new(VitaControl.Right, "▶", R(106, 0), R(132, 1), R(44, 0), R(40, 1)),
-        new(VitaControl.Triangle, "△", R(714, 0), R(84, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Square, "□", R(664, 0), R(134, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Circle, "○", R(764, 0), R(134, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Cross, "✕", R(714, 0), R(184, 1), R(50, 0), R(50, 1)),
+        new(VitaControl.Up, "\u25B2", R(70, 0), R(92, 1), R(40, 0), R(44, 1)),
+        new(VitaControl.Down, "\u25BC", R(70, 0), R(168, 1), R(40, 0), R(44, 1)),
+        new(VitaControl.Left, "\u25C0", R(30, 0), R(132, 1), R(44, 0), R(40, 1)),
+        new(VitaControl.Right, "\u25B6", R(106, 0), R(132, 1), R(44, 0), R(40, 1)),
+        new(VitaControl.Triangle, "\u25B3", R(714, 0), R(84, 1), R(50, 0), R(50, 1)),
+        new(VitaControl.Square, "\u25A1", R(664, 0), R(134, 1), R(50, 0), R(50, 1)),
+        new(VitaControl.Circle, "\u25CB", R(764, 0), R(134, 1), R(50, 0), R(50, 1)),
+        new(VitaControl.Cross, "\u2715", R(714, 0), R(184, 1), R(50, 0), R(50, 1)),
         new(VitaControl.LStickUp, "", R(112, 0), R(236, 1), R(124, 0), R(124, 1), OnScreenShape.Stick),
         new(VitaControl.RStickUp, "", R(608, 0), R(236, 1), R(124, 0), R(124, 1), OnScreenShape.Stick),
         new(VitaControl.Select, "SELECT", R(322, 0), R(346, 1), R(76, 0), R(30, 1)),

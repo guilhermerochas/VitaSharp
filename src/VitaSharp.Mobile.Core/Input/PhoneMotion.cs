@@ -62,7 +62,7 @@ public static class AndroidMotionAxes
         _ => v,
     };
 
-    /// <summary>A phone's accelerometer (m/s², gravity read as +9.8 up the z axis when lying flat) and gyroscope
+    /// <summary>A phone's accelerometer (m/s^2, gravity read as +9.8 up the z axis when lying flat) and gyroscope
     /// (rad/s) as a Vita sample, for the display rotation of <see cref="DeviceToScreen"/>.</summary>
     public static MotionSample FromPhone(ulong timestampUs, Vector3 accelMs2, Vector3 gyroRads, int displayRotation)
         => MotionAxes.FromDevice(timestampUs, DeviceToScreen(accelMs2, displayRotation), DeviceToScreen(gyroRads, displayRotation));
@@ -70,7 +70,7 @@ public static class AndroidMotionAxes
     /// <summary>
     /// A controller's sensors as Android reports them (InputDevice.getSensorManager, Android 12+: the kernel's
     /// hid-playstation / hid-nintendo axes, the frame SDL also uses: x right, y out of the controller's face, z towards
-    /// the player; m/s² and rad/s). <see cref="MotionOrientation.Natural"/> like the desktop: a controller lying on
+    /// the player; m/s^2 and rad/s). <see cref="MotionOrientation.Natural"/> like the desktop: a controller lying on
     /// the desk is a Vita lying screen up.
     /// </summary>
     public static MotionSample FromController(ulong timestampUs, Vector3 accelMs2, Vector3 gyroRads)
@@ -142,7 +142,7 @@ public sealed class SensorMotionSource : IMotionSource
     /// <summary>The re-centre rotation in use (identity = none).</summary>
     public Quaternion RecentreRotation { get { lock (_lock) return _recentre; } }
 
-    /// <summary>An accelerometer event: m/s² in the sensor's own frame.</summary>
+    /// <summary>An accelerometer event: m/s^2 in the sensor's own frame.</summary>
     public void OnAccelerometer(Vector3 ms2)
     {
         lock (_lock)

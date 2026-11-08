@@ -235,7 +235,7 @@ public sealed partial class GameActivity
     }
 #endif
 
-    /// <summary>"Salvando a gravação" over the game while leaving waits for a "Gravar tudo" save: a card in the menu's
+    /// <summary>"Salvando a gravacao" over the game while leaving waits for a "Gravar tudo" save: a card in the menu's
     /// style that eats every touch (the caller removes it).</summary>
     AView SavingNotice()
     {
@@ -446,7 +446,7 @@ public sealed partial class GameActivity
     AView ActionRow(string label, string? detail, Action onClick)
     {
         var row = Row(label, detail);
-        row.AddView(Text("›", 20, Inter, CFaint), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.CenterVertical });
+        row.AddView(Text("\u203A", 20, Inter, CFaint), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.CenterVertical });
         MakeButton(row, onClick);
         return row;
     }

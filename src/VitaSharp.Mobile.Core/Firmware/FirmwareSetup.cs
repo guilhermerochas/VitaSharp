@@ -17,8 +17,8 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
         HasEntries(Path.Combine(fsRoot, "pd0")),
         File.Exists(Path.Combine(fsRoot, ShellPath.Replace('/', Path.DirectorySeparatorChar))));
 
-    /// <summary>The summary line of the Ajustes list: "3.74 · fontes ausentes", "3.74 + pacote de fontes" or
-    /// "não instalado".</summary>
+    /// <summary>The summary line of the Ajustes list: "3.74 - fontes ausentes", "3.74 + pacote de fontes" or
+    /// "nao instalado".</summary>
     public string Summary => Installed is not { } fw ? Loc.Get("MNotInstalled")
         : SystemFonts ? fw.Display : Loc.Format("MFontsMissing", fw.Version ?? Loc.Get("MUnknownVersion"));
 

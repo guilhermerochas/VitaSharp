@@ -34,7 +34,7 @@ public static class CpuChoices
 /// <summary>
 /// "Conta PSN e rede" (docs/android/mockups/psn.html): the emulated PSN account, the local PSN services, the opt-in
 /// real internet and the optional RPCN server, with the same defaults and meaning as the desktop launcher
-/// (docs/hle/E2-np.md §0.000-0.0). Nothing ever goes to Sony's servers; with <see cref="RealInternet"/> off (the default)
+/// (docs/hle/E2-np.md section 0.000-0.0). Nothing ever goes to Sony's servers; with <see cref="RealInternet"/> off (the default)
 /// nothing leaves the phone. The RPCN password is not part of this object: the front-end keeps it in the Android
 /// Keystore (EncryptedSharedPreferences) and passes it to <see cref="ToOptions"/>.
 /// </summary>

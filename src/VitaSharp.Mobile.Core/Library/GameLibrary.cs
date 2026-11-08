@@ -15,7 +15,7 @@ public sealed record TrophyProgress(int Earned, int Total, IReadOnlyDictionary<T
     public bool HasTrophies => Total > 0;
     public int Percent => Total == 0 ? 0 : Earned * 100 / Total;
     public double Fraction => Total == 0 ? 0 : (double)Earned / Total;
-    /// <summary>"18/48", or "Sem troféus" for a game without a trophy set.</summary>
+    /// <summary>"18/48", or "Sem trofeus" for a game without a trophy set.</summary>
     public string Text => HasTrophies ? $"{Earned}/{Total}" : Loc.Get("MNoTrophies");
 }
 
@@ -32,8 +32,8 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
         _ => $"{SizeBytes / 1024} KB",
     };
 
-    /// <summary>"PCSC00045 · v1.12 · 3,2 GB".</summary>
-    public string Subtitle => string.Join(" · ", new[] { TitleId, Version.Length > 0 ? "v" + Version : "", SizeBytes > 0 ? SizeText : "" }.Where(s => s.Length > 0));
+    /// <summary>"PCSC00045 - v1.12 - 3,2 GB".</summary>
+    public string Subtitle => string.Join(" \u00B7 ", new[] { TitleId, Version.Length > 0 ? "v" + Version : "", SizeBytes > 0 ? SizeText : "" }.Where(s => s.Length > 0));
 }
 
 /// <summary>
@@ -94,12 +94,12 @@ public static class GameLibrary
         return total == 0 ? TrophyProgress.None : new TrophyProgress(earned, total, grades);
     }
 
-    /// <summary>Library filters (the chips "Todos · N", "Recentes", "Jogáveis").</summary>
+    /// <summary>Library filters (the chips "Todos - N", "Recentes", "Jogaveis").</summary>
     public enum Filter { All, Recent, Playable }
 
     /// <summary>
     /// The games matching the search text and filter. "Recentes": played at least once, most recent first.
-    /// "Jogáveis": applications (category gd), not patches or add-ons copied into app/.
+    /// "Jogaveis": applications (category gd), not patches or add-ons copied into app/.
     /// </summary>
     public static IReadOnlyList<GameEntry> Query(IEnumerable<GameEntry> games, string search, Filter filter, Func<GameEntry, GameSettings> settings)
     {
@@ -115,15 +115,15 @@ public static class GameLibrary
         };
     }
 
-    /// <summary>"12h 40m", "35m" or "—".</summary>
+    /// <summary>"12h 40m", "35m" or "-".</summary>
     public static string PlayTime(long seconds) => seconds switch
     {
-        <= 0 => "—",
+        <= 0 => "\u2014",
         < 3600 => $"{Math.Max(1, seconds / 60)}m",
         _ => $"{seconds / 3600}h {seconds % 3600 / 60:D2}m",
     };
 
-    /// <summary>"Hoje", "Ontem", "há 3 dias" or the date.</summary>
+    /// <summary>"Hoje", "Ontem", "ha 3 dias" or the date.</summary>
     public static string LastPlayed(DateTime? utc, DateTime nowUtc)
     {
         if (utc is not { } t) return Loc.Get("MNever");
@@ -141,7 +141,7 @@ public static class GameLibrary
     /// "KM", "Resistance: Burning Skies" = "RBS"), or its first two letters.</summary>
     public static string Initials(string title)
     {
-        var words = title.Split([' ', ':', '-', '_', '.', '™', '®'], StringSplitOptions.RemoveEmptyEntries)
+        var words = title.Split([' ', ':', '-', '_', '.', '\u2122', '\u00AE'], StringSplitOptions.RemoveEmptyEntries)
             .Where(w => char.IsLetterOrDigit(w[0]) && !(w.Length <= 2 && char.IsLower(w[0]))).ToArray();
         if (words.Length >= 2) return string.Concat(words.Take(3).Select(w => char.ToUpperInvariant(w[0])));
         var s = words.Length == 1 ? words[0] : title;

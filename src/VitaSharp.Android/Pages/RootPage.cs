@@ -13,7 +13,7 @@ public sealed class RootState
 
 /// <summary>
 /// The app's root: a navigation page whose first page holds the four tabs of the bottom bar (Biblioteca, Controles,
-/// Desempenho, Ajustes); detail screens (Detalhes, Troféus, Firmware, ...) are pushed on top of it.
+/// Desempenho, Ajustes); detail screens (Detalhes, Trofeus, Firmware, ...) are pushed on top of it.
 /// </summary>
 public sealed class RootPage : Screen<RootState>
 {
@@ -53,10 +53,10 @@ public sealed class RootPage : Screen<RootState>
 
     VisualNode BottomBar() =>
         Grid("Auto", "*,*,*,*",
-            TabButton(RootTab.Library, "▦", Loc.Get("MLibrary"), 0),
-            TabButton(RootTab.Controls, "◎", Loc.Get("MControls"), 1),
-            TabButton(RootTab.Performance, "∿", Loc.Get("MPerformance"), 2),
-            TabButton(RootTab.Settings, "≡", Loc.Get("MSettings"), 3)
+            TabButton(RootTab.Library, "\u25A6", Loc.Get("MLibrary"), 0),
+            TabButton(RootTab.Controls, "\u25CE", Loc.Get("MControls"), 1),
+            TabButton(RootTab.Performance, "\u223F", Loc.Get("MPerformance"), 2),
+            TabButton(RootTab.Settings, "\u2261", Loc.Get("MSettings"), 3)
         ).BackgroundColor(Palette.Background).Padding(0, 8, 0, 12);
 
     VisualNode TabButton(RootTab tab, string glyph, string label, int column)

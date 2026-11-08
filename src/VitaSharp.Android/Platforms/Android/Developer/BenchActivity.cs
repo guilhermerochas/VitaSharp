@@ -11,7 +11,7 @@ namespace VitaSharp.Android.Developer;
 /// <summary>
 /// Developer APK only: one GPU bench run (<see cref="GpuBench"/>) in a process of its own (the renderer's environment
 /// switches are read once per process), then the process ends. Started by build/android-bench.* or the
-/// "Opções de desenvolvedor" screen:
+/// "Opcoes de desenvolvedor" screen:
 /// <c>adb shell am start -n io.github.vitasharp/io.github.vitasharp.BenchActivity --es bench "fixture=uc_title;variant=v1;reps=3;run=R"</c>.
 /// Fixtures, variants and results are in files/bench (tools/dev/README.md); the BENCH lines also go to logcat.
 /// </summary>
@@ -38,7 +38,7 @@ public sealed class BenchActivity : Activity
         Window?.AddFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
         string text = Intent?.GetStringExtra(ExtraBench) ?? "";
         // the replay is headless: say what the black screen is (it closes itself when the run ends)
-        SetContentView(new global::Android.Widget.TextView(this) { Text = $"VitaSharp Dev: bench da GPU rodando (fecha sozinho)\n\n{text.Replace(";", "\n")}", TextSize = 16 });
+        SetContentView(new global::Android.Widget.TextView(this) { Text = VitaSharp.Core.Localization.Loc.Get("MDevBenchRunning") + "\n\n" + text.Replace(";", "\n"), TextSize = 16 });
 
         var t = new Thread(() =>
         {

@@ -59,7 +59,7 @@ public sealed class GpuDriverScreen
         if (m.DriverVersion.Length > 0) parts.Add(m.DriverVersion);
         parts.Add(m.LibraryName);
         if (m.MinApi > 0) parts.Add($"API {m.MinApi}+");
-        return string.Join(" · ", parts);
+        return string.Join(" \u00B7 ", parts);
     }
 
     /// <summary>Selects a driver ("" = the system driver). True when the choice changed (applies on the next start).</summary>
@@ -132,13 +132,13 @@ public sealed class GpuDriverScreen
     public bool RestartNeeded(GameProcessInfo? running) => running != null && running.GpuConfig != Config;
 }
 
-/// <summary>A labelled value, feature or quirk line of the "Informações da GPU" view.</summary>
+/// <summary>A labelled value, feature or quirk line of the "Informacoes da GPU" view.</summary>
 public sealed record GpuInfoRow(string Label, string Value);
 public sealed record GpuFeatureChip(string Name, bool Present, string? Note = null);
 public sealed record GpuQuirkLine(GpuQuirk Quirk, string Description, bool Workaround);
 
 /// <summary>
-/// The "Informações da GPU" view (docs/android/mockups/gpu-info.html): what <see cref="GpuCapabilities"/> found at
+/// The "Informacoes da GPU" view (docs/android/mockups/gpu-info.html): what <see cref="GpuCapabilities"/> found at
 /// device creation, in Portuguese. The share button sends <see cref="GpuCapabilities.Describe"/> (the same block the
 /// startup log and info.txt carry), so bug reports stay in the format docs/notes/mobile-gpu.md uses.
 /// </summary>
@@ -156,7 +156,7 @@ public static class GpuInfoView
             new("GPU", d.DeviceName),
             new("Driver", driver),
             new("Vulkan", $"{d.ApiVersion >> 22}.{(d.ApiVersion >> 12) & 0x3FF}.{d.ApiVersion & 0xFFF}"),
-            new(Loc.Get("MArchitecture"), arch.Count > 0 ? string.Join(" · ", arch) : Loc.Get("MImmediate")),
+            new(Loc.Get("MArchitecture"), arch.Count > 0 ? string.Join(" \u00B7 ", arch) : Loc.Get("MImmediate")),
             new(Loc.Get("MMemoryBudget"), caps.Has(GpuFeature.MemoryBudget) ? "VK_EXT_memory_budget" : Loc.Format("MOfTheHeap", caps.FallbackBudgetFraction)),
         ];
     }

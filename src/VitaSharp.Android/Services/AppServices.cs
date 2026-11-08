@@ -59,6 +59,8 @@ public static class AppServices
             if (!gameProcess) Log.OpenFile(Path.Combine(Data.Logs, "app.log"));
             foreach (var (name, value) in env) Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
+            // the texts' language (Ajustes > Language): set before any screen or the game reads a text
+            VitaSharp.Core.Localization.Loc.SetLanguage(Prefs.Language);
             if (Prefs.DebugMode) { Log.Level = LogLevel.Debug; DebugMode.Enable(); }
             InputProfiles = InputProfileStore.Load(Data.InputProfiles);
             Gamepads = new AndroidGamepads(InputProfiles);
