@@ -582,7 +582,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   próximo passo continua sendo gravar as cenas de processos diferentes em render passes separados (suspender a cena
   aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
-  tem a barra, e de Mensagens são iguais: não é isso).
+  tem a barra, e de Mensagens são iguais: não é isso). 07/11/2026 (fix/system-apps-10): hoje **nenhum** app do
+  sistema mostra a barra, nem Troféus (`scratchpad/fw9_out/tro7/list.png`); só a tela inicial tem. A causa é comum
+  e provavelmente a mesma do teclado antes do intercalamento: a barra é desenhada pelo shell por cima do app e o
+  VitaSharp só apresenta o processo da frente (`Display.sceDisplaySetFrameBuf`) ou o quadro do cliente SceSharedFb.
+  Próximo passo: ver se o shell desenha a barra num plano próprio enquanto um app está na frente (sceGxm do
+  SceShellMain com o app aberto) e compor esse plano. Botão PS no PC e texto cortado no boot direto: não mexidos
+  nesta rodada (o primeiro precisa da janela, o segundo não foi reproduzido na rodada 9).
   Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
   Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware).
   Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` do scratchpad): **Teclado (IME) a 60 fps** (era 5-6):
@@ -611,6 +617,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   roteiro do teclado (`scratchpad/fw9_ime.nav`, refeito do log de `fw8_out/ime_circ3`, numa pasta de dados nova como
   `fw9_ime_data`) lendo o Framework[+0x5c] e o retorno de 810030F4 no instante do círculo, e conferir num vídeo do
   Vita real se o círculo fecha mesmo com uma predição aberta ("vita" sublinhado).
+  07/11/2026 (fix/system-apps-10, `scratchpad/fw10_out/ime2`, não resolvido): a pista acima estava errada. A função
+  da "tabela de teclas" (ime_plugin 0x8100B836, base no shell 0x83210000) roda **uma vez por tecla do layout** quando
+  o teclado é montado (r1 = definição da tecla, tipo 0xF na primeira), não a cada botão; com `--probe` nela e no ramo
+  da tecla 3 nenhum aperto do círculo passou por ali. O caminho do botão círculo até o ime_plugin (evento de
+  "voltar" do paf no processo do shell) segue por achar; próximo passo: `--trace-hle-threads=SceShellMain` no
+  instante do `press circle` e procurar no ime_plugin quem trata o evento de cancelar do paf (o handler de
+  `paf::ui::Event` da janela do teclado), e confirmar num vídeo do Vita real que o círculo fecha o teclado.
 - [ ] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
   `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
   serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
@@ -651,6 +664,30 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   depois de SceCodecEngineUser NID_9A5E7B2F (não implementada); não há encoder H.264 no emulador, então mesmo sem o
   crash o MP4 sairia vazio (`photo0/temp/photocam/movie/*.mp4` com 0 bytes). Próximo passo: o que NID_9A5E7B2F devolve
   (provável objeto/ponteiro que vira a vtable) e decidir o encoder (FFmpeg com h264_mf/openh264).
+  **Foto: resolvido** (07/11/2026, fix/system-apps-10, provas em `scratchpad/fw10_out/cam9`, `cam10`): eram duas
+  falhas. (1) O libpaf grava a foto com IO assíncrono e lê o fd do open no `SceIoAsyncParam` (último argumento de
+  todo `sceIoXxxAsync`, resultado de 64 bits no +0) depois do `sceKernelWaitEvent`; o HLE ignorava esse argumento, o
+  paf escrevia no fd 0 e o JPEG falhava com 0x80AF5021 (a thread ScePafJobDefault da câmera, não as JobQueue). (2) O
+  photo0: era `<fs>/photo0` e o NPXS10036 (outro processo, que tinha montado photo0 = ux0:picture) não achava a foto
+  para registrar (0x80101A0C). Agora photo0/music0/video0 são ux0:picture/music/video em todo processo (as pastas
+  antigas migram), e o sistema usa o libScePhotoExport do firmware (cliente IPC do NPXS10036). A câmera salva em
+  `ux0:picture/CAMERA/<xx>/<data>.jpg`, o NPXS10036 registra no `ux0:mms/photo/AVContent.db`, a miniatura aparece na
+  câmera e a foto em Fotos > Imagens da câmera e abre (`cam10/pics.png`, `pic1.png`; a webcam deste PC dá quadro
+  preto, brilho médio 8/255, por isso a foto é preta).
+  **Vídeo (não resolvido, 07/11/2026, fix/system-apps-10, `scratchpad/fw10_out/vid2`)**: a gravação não cai mais (o
+  salto para a vtable nula sumiu junto com a correção do IO assíncrono) e as duas funções que faltavam do
+  SceCodecEngineUser (9A5E7B2F ao começar, 9AD7E66F ao parar; sem argumentos, retorno ignorado, provável monitor de
+  desempenho) devolvem 0. Fluxo medido: QueryMemSize/QueryEncoderMemSize (tipo 0x1002), bloco unmap de 6 MiB com 3
+  alocações (0x40000, 0x200000 = provável buffer de stream, 0x40000), InitLibraryWithUnmapMem, CreateEncoder
+  640x480, SetEncoderParameter, ~30 `sceAvcencEncode(ctrl, input, output)`/s na thread ScePhotoAvSrcVideoSrcMain,
+  EncodeStop, DeleteEncoder. O libFflMp4 (LLE) grava o MP4 em `ux0:picture/CAMERA/<xx>/<data>.mp4` com o áudio AAC
+  certo (93 pacotes em 2 s) e a trilha H.264 640x480 vazia; a câmera então diz "Não foi possível salvar o vídeo". O
+  que falta: (1) um encoder H.264 (o mais simples honesto seria só macroblocos I_PCM em CAVLC, ~460 KB por quadro,
+  ou intra 16x16 DC com resíduo CAVLC); (2) os layouts que a câmera usa e ninguém confirmou: a imagem de entrada do
+  Encode (+0x? endereços Y/UV e pitch), a imagem de saída (+0 != 0 quando há quadro, número de NALs em +0x34), o
+  `SceAvcencNalUnit` (+0 endereço, +4 tamanho, +8 tipo) e onde os bytes dos NALs moram (provavelmente o buffer de
+  0x200000 do bloco unmap). Próximo passo: com `--probe` no retorno do Encode, ler a entrada (0x8414CEE4) e a saída
+  (0x8414CEA0) e seguir no eboot da câmera (fw10_cam.elf, base +0x02F10000) o que ela faz com os NALs até o muxer.
 - [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).

@@ -130,19 +130,25 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     public void AsyncOpenWriteCompleteOnTty()
     {
         var io = new IoFileMgr();
-        int op = Call(io, "sceIoOpenAsync", "tty0:", 3, 0);
+        // every request also writes its result (64 bits) to its SceIoAsyncParam, where libpaf reads the fd of an open
+        uint param = fx.Memory.Alloc(0x18, "asyncParam");
+        GuestMemory.Write(param, -1L);
+        int op = Call(io, "sceIoOpenAsync", "tty0:", 3, 0, param);
         Assert.True(op > 0);
+        long paramFd = GuestMemory.Read<long>(param);
         int fd = Call(io, "sceIoComplete", op);
         Assert.True(fd > 0);
+        Assert.Equal(fd, paramFd);
         Assert.Equal(SceError.UNKNOWN_EVENT_ID, Call(io, "sceIoComplete", op)); // opid freed
 
         uint buf = fx.Memory.Alloc(16, "buf");
         GuestMemory.WriteCString(buf, "hello");
-        int wop = Call(io, "sceIoWriteAsync", fd, buf, 5u);
+        int wop = Call(io, "sceIoWriteAsync", fd, buf, 5u, param);
+        Assert.Equal(5L, GuestMemory.Read<long>(param));
         Assert.Equal(0, Call(io, "sceIoCancel", wop)); // already complete: nothing to cancel
         Assert.Equal(5, Call(io, "sceIoComplete", wop));
-        Assert.Equal(0, Call(io, "sceIoComplete", Call(io, "sceIoCloseAsync", fd)));
-        Assert.Equal(SceError.IO_EBADF, Call(io, "sceIoReadAsync", fd, buf, 4u)); // closed fd fails immediately
+        Assert.Equal(0, Call(io, "sceIoComplete", Call(io, "sceIoCloseAsync", fd, 0u)));
+        Assert.Equal(SceError.IO_EBADF, Call(io, "sceIoReadAsync", fd, buf, 4u, 0u)); // closed fd fails immediately
         Assert.Equal(SceError.IO_EBADF, Call(io, "sceIoCancel", 0x12345));
     }
 

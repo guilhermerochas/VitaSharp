@@ -14,8 +14,17 @@ public sealed class Vfs
     public Vfs(string fsRoot)
     {
         FsRoot = fsRoot;
-        foreach (var dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "host0", "sd0", "photo0", "music0", "video0" })
+        foreach (var dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "host0", "sd0" })
             Mount(dev, Path.Combine(fsRoot, dev));
+        // the media devices are folders of the memory card, as on the Vita (and Vita3K): photo0 = ux0:picture,
+        // music0 = ux0:music, video0 = ux0:video. The Camera saves in photo0: and the system's AvMediaService (another
+        // process) opens the same path to register the picture, so every process must see the same folder.
+        foreach (var (dev, dir) in MediaDevices)
+        {
+            string host = Path.Combine(fsRoot, "ux0", dir);
+            MigrateLegacyMediaFolder(Path.Combine(fsRoot, dev), host);
+            Mount(dev, host);
+        }
         // the game card: gro0 (the card's read-only application) and grw0 (its writable area) exist only while a card
         // is in the slot. With them always mounted the shell's game card promoter saw a card (sceIoGetstat("gro0:")
         // succeeded), found no gro0:app and reported "Could not install. (C0-11274-5)" (0x80AF5022) at every boot.
@@ -24,6 +33,37 @@ public sealed class Vfs
         {
             Mount("gro0", Path.Combine(fsRoot, "gro0"));
             Mount("grw0", Path.Combine(fsRoot, "grw0"));
+        }
+    }
+
+    /// <summary>The media devices and their ux0 folders.</summary>
+    public static readonly (string Device, string Folder)[] MediaDevices = [("photo0", "picture"), ("music0", "music"), ("video0", "video")];
+
+    static readonly object MigrateLock = new();
+
+    /// <summary>
+    /// Earlier versions kept the media devices in &lt;fs&gt;/photo0, music0 and video0: their contents move into the
+    /// ux0 folder (entries already there are kept and the old ones stay where they were), and the old folder goes once
+    /// it is empty.
+    /// </summary>
+    static void MigrateLegacyMediaFolder(string legacy, string target)
+    {
+        lock (MigrateLock)
+        {
+            try
+            {
+                if (!Directory.Exists(legacy) || new DirectoryInfo(legacy).LinkTarget != null) return;
+                Directory.CreateDirectory(target);
+                foreach (var e in Directory.EnumerateFileSystemEntries(legacy))
+                {
+                    string dst = Path.Combine(target, Path.GetFileName(e));
+                    if (Path.Exists(dst)) continue;
+                    if (Directory.Exists(e)) Directory.Move(e, dst); else File.Move(e, dst);
+                }
+                if (!Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy);
+            }
+            catch (IOException) { } // in use or not movable: the old folder stays, the device uses the new one
+            catch (UnauthorizedAccessException) { }
         }
     }
 
