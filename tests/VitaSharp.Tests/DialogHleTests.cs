@@ -51,6 +51,32 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(d, "sceMsgDialogGetStatus"));
     }
 
+    /// <summary>A YES/NO question right after a canceled network check (no network) is answered NO, once: 99Vidas asks
+    /// "connect to PSN... try again?" and YES repeated the check forever.</summary>
+    [Fact]
+    public void YesNoAfterFailedNetCheckAnswersNo()
+    {
+        var saved = VitaSharp.Core.Hle.PsnAccount.Current;
+        VitaSharp.Core.Hle.PsnAccount.Current = VitaSharp.Core.Hle.PsnAccount.Offline;
+        try
+        {
+            var d = new CommonDialog();
+            uint ncp = Alloc(0xE0);
+            GuestMemory.W32(ncp + 0x50, 3); // PSN_ONLINE
+            Assert.Equal(0, Call(d, "sceNetCheckDialogInit", ncp));
+            Assert.Equal(0, Call(d, "sceNetCheckDialogTerm"));
+            uint res = Alloc(0x2C);
+            foreach (uint expected in new[] { 2u, 1u }) // NO after the failed check, then YES again
+            {
+                Assert.Equal(0, Call(d, "sceMsgDialogInit", MsgParam(1, 1)));
+                Assert.Equal(0, Call(d, "sceMsgDialogGetResult", res));
+                Assert.Equal(expected, GuestMemory.R32(res + 8));
+                Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
+            }
+        }
+        finally { VitaSharp.Core.Hle.PsnAccount.Current = saved; }
+    }
+
     uint ImeParam()
     {
         uint param = Alloc(0xA8);

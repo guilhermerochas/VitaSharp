@@ -174,8 +174,10 @@ public sealed partial class CommonDialog : HleModule
     // ------------------------------------------------------------------ MsgDialog
 
     const int MsgModeUser = 1, MsgModeSystem = 2, MsgModeErrorCode = 3, MsgModeProgressBar = 4;
-    const int MsgButtonInvalid = 0, MsgButtonOk = 1;
+    const int MsgButtonInvalid = 0, MsgButtonOk = 1, MsgButtonNo = 2; // SCE_MSG_DIALOG_BUTTON_ID_OK/YES 1, NO 2
     int _msgMode, _msgButton;
+    /// <summary>The last NetCheckDialog was canceled (no network / signed out) and no user message has been shown since.</summary>
+    bool _netCheckFailed;
     uint _msgBarPercent;
 
     /// <summary>SceMsgDialogParam (0x88): +0 sdkVersion, +4 commonParam, +0x50 mode, +0x54 userMsgParam*,
@@ -205,8 +207,13 @@ public sealed partial class CommonDialog : HleModule
                 {
                     case 2: stayRunning = true; break;                                   // NONE: closed by the application
                     case 4: result = ResultUserCanceled; break;                          // CANCEL only
+                    // YES/NO right after a failed network check ("connect to PSN... try again?"): the user of a console
+                    // without network answers NO; YES would repeat the check forever (99Vidas' Cross-Save prompt)
+                    case 1 when _netCheckFailed: _msgButton = MsgButtonNo; break;
                     default: _msgButton = MsgButtonOk; break;                            // OK, YES, OK of OK_CANCEL, BUTTON1
                 }
+                _netCheckFailed = false;
+                if (_msgButton == MsgButtonNo) Log.Info("MsgDialog: answered NO (a YES/NO question after a failed network check)");
                 break;
             }
             case MsgModeSystem:
@@ -566,6 +573,7 @@ public sealed partial class CommonDialog : HleModule
         var acct = PsnAccount.Current;
         _netCheckPsnSucceeded = acct.SignedIn && mode is NetCheckModePsn or NetCheckModePsnOnline;
         State.Finish(_netCheckPsnSucceeded ? ResultOk : ResultUserCanceled);
+        _netCheckFailed = !_netCheckPsnSucceeded;
         // the PSN_ONLINE check connects the console: NP reports ONLINE from now on
         if (_netCheckPsnSucceeded && mode == NetCheckModePsnOnline)
             Emu?.Hle.Modules.OfType<NpManager>().FirstOrDefault()?.OnPsnOnlineCheckSucceeded();
