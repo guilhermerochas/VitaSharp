@@ -18,6 +18,7 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
 {
     readonly WindowHost _window;
     readonly Action<byte[]?, int, int> _show;
+    readonly Func<ControllerState> _pad;
     readonly object _lock = new();
     TextEntry? _entry;
     // dialog session: the answer callback; SceIme session: the event callbacks
@@ -27,10 +28,12 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
     VitaButtons _prevPad;
     bool _padArmed;
 
-    public ImeOverlay(WindowHost window, Action<byte[]?, int, int> show)
+    /// <param name="pad">The controller the entry reads (the mapped host controller, or the --input script).</param>
+    public ImeOverlay(WindowHost window, Action<byte[]?, int, int> show, Func<ControllerState>? pad = null)
     {
         _window = window;
         _show = show;
+        _pad = pad ?? window.RawController;
         _window.Tick += PollGamepad;
     }
 
@@ -112,7 +115,7 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
     void PollGamepad()
     {
         if (_window.TextCapture != this) return;
-        var b = _window.RawController().Buttons & (VitaButtons.Cross | VitaButtons.Circle | VitaButtons.Start);
+        var b = _pad().Buttons & (VitaButtons.Cross | VitaButtons.Circle | VitaButtons.Start);
         VitaButtons pressed;
         lock (_lock)
         {

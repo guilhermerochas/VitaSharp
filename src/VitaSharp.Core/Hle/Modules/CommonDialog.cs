@@ -1,5 +1,6 @@
 using System.Text;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -89,7 +90,9 @@ public sealed partial class CommonDialogState
 /// <summary>
 /// SceCommonDialog: message, save data, IME, net check, NP and the other system dialogs over one shared state machine.
 /// No PSN server is reachable, so online dialogs finish as "user canceled" (the NetCheckDialog PSN modes follow the
-/// emulated account, see <see cref="PsnAccount"/>); message dialogs complete at once with the default choice. The IME
+/// emulated account, see <see cref="PsnAccount"/>); message dialogs and the save data dialog's messages wait for the
+/// user on the front-end's message UI when there is one (<see cref="HostServices.MessageDialog"/>), else they complete
+/// at once with the default choice. The IME
 /// dialog asks the front-end's text entry when there is one (<see cref="HostServices.ImeDialog"/>), else it answers at
 /// once with --ime-text or the initial text.
 /// </summary>
@@ -171,17 +174,88 @@ public sealed partial class CommonDialog : HleModule
     /// <summary>No worker thread exists here; the caller's own thread is a valid UID for priority/affinity changes.</summary>
     [Hle] int sceCommonDialogGetWorkerThreadId() => Kernel.GuestThread.Current?.Uid ?? 0;
 
+    // ------------------------------------------------------------------ message UI (MsgDialog, SaveDataDialog messages)
+    // With a host UI (HostServices.MessageDialog: the desktop overlay) a message with buttons stays RUNNING until the user
+    // picks one, and a message without buttons is shown until the application closes it. Without one (headless and
+    // scripted runs) every message is answered at once with the automatic choice, as before.
+
+    /// <summary>Test hook: the host message UI (null = <see cref="Emulator"/>'s <c>Host.MessageDialog</c>).</summary>
+    internal IMessageDialogBackend? MessageBackendOverride;
+    IMessageDialogBackend? MessageBackend => MessageBackendOverride ?? Emu?.Host.MessageDialog;
+    /// <summary>The host UI showing the current message (null = none) and its session (bumped on every open / hide, so
+    /// a late answer is ignored).</summary>
+    IMessageDialogBackend? _ui;
+    int _uiSession;
+
+    static MessageDialogButton OkButton => new(Loc.Get("DlgOk"), 1);
+    static MessageDialogButton[] YesNoButtons => [new(Loc.Get("DlgYes"), 1), new(Loc.Get("DlgNo"), 2, IsCancel: true)];
+
+    /// <summary>Shows <paramref name="request"/> on the host UI; <paramref name="answer"/> gets the chosen button's
+    /// index on any thread, inside <see cref="CommonDialogState.Lock"/>, while the session is still current.</summary>
+    void ShowUi(IMessageDialogBackend ui, MessageDialogRequest request, Action<int> answer)
+    {
+        int session;
+        // the enter button of the dialog: the game's sceCommonDialogSetConfigParam, else the system setting
+        bool circle = ConfigEnterButton != 0xFFFFFFFF ? ConfigEnterButton == 0 : AppUtil.SystemParamInt(2, AppUtil.SystemRegistry(Emu)) == 0;
+        request = request with { CircleConfirms = circle };
+        lock (State.Lock) { session = ++_uiSession; _ui = ui; }
+        ui.Open(request, index =>
+        {
+            lock (State.Lock)
+            {
+                if (session != _uiSession || index < 0 || index >= request.Buttons.Count) return;
+                _ui = null;
+                answer(index);
+            }
+        });
+    }
+
+    /// <summary>Hides the message shown on the host UI, if any (the application closed, aborted or replaced it).</summary>
+    void HideUi()
+    {
+        IMessageDialogBackend? ui;
+        lock (State.Lock) { ui = _ui; _ui = null; _uiSession++; }
+        ui?.Close();
+    }
+
+    void UiProgress(int percent, string? message)
+    {
+        IMessageDialogBackend? ui;
+        lock (State.Lock) ui = _ui;
+        ui?.SetProgress(percent, message);
+    }
+
     // ------------------------------------------------------------------ MsgDialog
 
     const int MsgModeUser = 1, MsgModeSystem = 2, MsgModeErrorCode = 3, MsgModeProgressBar = 4;
-    const int MsgButtonInvalid = 0, MsgButtonOk = 1, MsgButtonNo = 2; // SCE_MSG_DIALOG_BUTTON_ID_OK/YES 1, NO 2
+    const int MsgButtonInvalid = 0, MsgButtonOk = 1, MsgButtonNo = 2; // SCE_MSG_DIALOG_BUTTON_ID_OK/YES 1, NO 2, RETRY 3
     int _msgMode, _msgButton;
     /// <summary>The last NetCheckDialog was canceled (no network / signed out) and no user message has been shown since.</summary>
     bool _netCheckFailed;
     uint _msgBarPercent;
 
-    /// <summary>SceMsgDialogParam (0x88): +0 sdkVersion, +4 commonParam, +0x50 mode, +0x54 userMsgParam*,
-    /// +0x58 sysMsgParam*, +0x5C errorCodeParam*, +0x60 progBarParam*, +0x64 flag.</summary>
+    /// <summary>The system message texts of SceMsgDialogSystemMessageType (psp2/message_dialog.h).</summary>
+    static string MsgSystemText(int type, uint value) => type switch
+    {
+        1 or 5 or 6 => Loc.Get("DlgWait"),                                  // WAIT, WAIT_SMALL, WAIT_CANCEL
+        2 => Loc.Get("DlgNoSpace"),                                         // NOSPACE
+        3 => Loc.Get("DlgCalibration"),                                     // MAGNETIC_CALIBRATION
+        7 or 8 => Loc.Get("DlgNeedMemoryCard"),                             // NEED_MC_CONTINUE, NEED_MC_OPERATION
+        9 => Loc.Format("DlgNoSpaceContinuable", Math.Max(1u, value)),      // NOSPACE_CONTINUABLE (value = KiB needed)
+        100 => Loc.Get("DlgMicDisabled"),                                   // TRC_MIC_DISABLED
+        101 or 102 => Loc.Get("DlgWifiRequired"),                           // TRC_WIFI_REQUIRED_OPERATION / _APPLICATION
+        103 => Loc.Get("DlgEmptyStore"),                                    // TRC_EMPTY_STORE
+        _ => Loc.Format("DlgSystemMessage", type),
+    };
+
+    /// <summary>
+    /// SceMsgDialogParam (0x88): +0 sdkVersion, +4 commonParam, +0x50 mode, +0x54 userMsgParam*, +0x58 sysMsgParam*,
+    /// +0x5C errorCodeParam*, +0x60 progBarParam*, +0x64 flag. With a host UI (<see cref="HostServices.MessageDialog"/>)
+    /// the message is shown with the buttons of its type (Vita3K's table: OK; YES/NO; OK/CANCEL, CANCEL = NO; CANCEL
+    /// alone; three custom buttons YES/NO/RETRY) and stays RUNNING until the user picks one; a message without buttons
+    /// (NONE, the wait messages, the progress bar) until the application closes it. Without a host UI the automatic
+    /// choice is taken at once: OK/YES, except NO for a YES/NO question right after a failed network check.
+    /// </summary>
     [Hle]
     int sceMsgDialogInit(uint param)
     {
@@ -190,56 +264,98 @@ public sealed partial class CommonDialog : HleModule
         if (mode is < MsgModeUser or > MsgModeProgressBar) return CommonDialogError.INVALID_ARGUMENT;
         int r = State.Begin(DialogType.Msg);
         if (r < 0) return r;
+        HideUi();
         _msgMode = mode;
         _msgButton = MsgButtonInvalid;
         _msgBarPercent = 0;
         bool stayRunning = false;
         int result = ResultOk;
+        string text = "";
+        MessageDialogButton[] buttons = [];
+        int? progress = null;
+        // CANCEL (alone) answers USER_CANCELED; every other button finishes OK with its id
+        bool cancelCancels = false;
         switch (mode)
         {
             case MsgModeUser:
             {
                 uint up = GuestMemory.R32(param + 0x54);
                 int buttonType = up != 0 ? (int)GuestMemory.R32(up) : 0;
-                string msg = up != 0 ? GuestMemory.ReadCString(GuestMemory.R32(up + 4)) : "";
-                Log.Info($"MsgDialog: {msg} (buttons {buttonType})");
+                text = up != 0 ? GuestMemory.ReadCString(GuestMemory.R32(up + 4)) : "";
+                Log.Info($"MsgDialog: {text} (buttons {buttonType})");
                 switch (buttonType)
                 {
+                    case 1: buttons = YesNoButtons; break;
                     case 2: stayRunning = true; break;                                   // NONE: closed by the application
-                    case 4: result = ResultUserCanceled; break;                          // CANCEL only
+                    case 3: buttons = [OkButton, new(Loc.Get("DlgCancel"), MsgButtonNo, IsCancel: true)]; break;
+                    case 4: buttons = [new(Loc.Get("DlgCancel"), MsgButtonInvalid, IsCancel: true)]; cancelCancels = true; result = ResultUserCanceled; break;
+                    case 5:
+                    {
+                        // SceMsgDialogButtonsParam: msg1*, fontSize1, msg2*, fontSize2, msg3*, fontSize3
+                        uint bp = GuestMemory.R32(up + 8);
+                        string Label(int i, string fallback) => bp != 0 && GuestMemory.R32(bp + (uint)i * 8) is var p and not 0 ? GuestMemory.ReadCString(p) : fallback;
+                        buttons = [new(Label(0, Loc.Get("DlgYes")), 1), new(Label(1, Loc.Get("DlgNo")), 2), new(Label(2, Loc.Get("DlgRetry")), 3)];
+                        break;
+                    }
+                    default: buttons = [OkButton]; break;
+                }
+                if (!stayRunning && buttonType != 4)
+                {
                     // YES/NO right after a failed network check ("connect to PSN... try again?"): the user of a console
                     // without network answers NO; YES would repeat the check forever (99Vidas' Cross-Save prompt)
-                    case 1 when _netCheckFailed: _msgButton = MsgButtonNo; break;
-                    default: _msgButton = MsgButtonOk; break;                            // OK, YES, OK of OK_CANCEL, BUTTON1
+                    _msgButton = buttonType == 1 && _netCheckFailed ? MsgButtonNo : MsgButtonOk;
                 }
                 _netCheckFailed = false;
-                if (_msgButton == MsgButtonNo) Log.Info("MsgDialog: answered NO (a YES/NO question after a failed network check)");
                 break;
             }
             case MsgModeSystem:
             {
                 uint sp = GuestMemory.R32(param + 0x58);
                 int type = sp != 0 ? (int)GuestMemory.R32(sp) : 0;
+                uint value = sp != 0 ? GuestMemory.R32(sp + 4) : 0;
                 Log.Info($"MsgDialog: system message {type}");
-                if (type is 1 or 5 or 6) stayRunning = true;                              // WAIT, WAIT_SMALL, WAIT_CANCEL
-                else _msgButton = MsgButtonOk;
+                text = MsgSystemText(type, value);
+                if (type is 1 or 5) stayRunning = true;                                   // WAIT, WAIT_SMALL
+                else if (type == 6) { stayRunning = true; buttons = [new(Loc.Get("DlgCancel"), MsgButtonNo, IsCancel: true)]; cancelCancels = true; } // WAIT_CANCEL
+                else { _msgButton = MsgButtonOk; buttons = [OkButton]; }
                 break;
             }
             case MsgModeErrorCode:
             {
                 uint ep = GuestMemory.R32(param + 0x5C);
-                Log.Info($"MsgDialog: error code 0x{(ep != 0 ? GuestMemory.R32(ep) : 0):X8}");
+                uint code = ep != 0 ? GuestMemory.R32(ep) : 0;
+                Log.Info($"MsgDialog: error code 0x{code:X8}");
+                text = Loc.Format("DlgError", $"0x{code:X8}");
                 _msgButton = MsgButtonOk;
+                buttons = [OkButton];
                 break;
             }
             case MsgModeProgressBar:
             {
                 uint pp = GuestMemory.R32(param + 0x60);
-                if (pp != 0 && GuestMemory.R32(pp + 0x2C) != 0) Log.Info($"MsgDialog: progress bar: {GuestMemory.ReadCString(GuestMemory.R32(pp + 0x2C))}");
+                uint msgPtr = pp != 0 ? GuestMemory.R32(pp + 0x2C) : 0;
+                text = msgPtr != 0 ? GuestMemory.ReadCString(msgPtr) : pp != 0 && GuestMemory.R32(pp + 4) is var t and not 0 ? MsgSystemText((int)t, 0) : Loc.Get("DlgWait");
+                if (msgPtr != 0) Log.Info($"MsgDialog: progress bar: {text}");
+                progress = 0;
                 stayRunning = true;
                 break;
             }
         }
+        if (MessageBackend is { } ui)
+        {
+            bool cancelResult = cancelCancels;
+            if (buttons.Length > 0) _msgButton = MsgButtonInvalid; // the user answers
+            ShowUi(ui, new MessageDialogRequest(text, buttons, progress), i =>
+            {
+                if (State.StatusOf(DialogType.Msg) != StatusRunning) return;
+                var b = buttons[i];
+                _msgButton = b.Id;
+                State.Finish(b.IsCancel && cancelResult ? ResultUserCanceled : ResultOk);
+                Log.Info($"MsgDialog: the user chose \"{b.Label}\" (button {b.Id})");
+            });
+            return 0;
+        }
+        if (_msgButton == MsgButtonNo) Log.Info("MsgDialog: answered NO (a YES/NO question after a failed network check)");
         if (!stayRunning) State.Finish(result);
         return 0;
     }
@@ -253,12 +369,13 @@ public sealed partial class CommonDialog : HleModule
         {
             if (State.StatusOf(DialogType.Msg) != StatusRunning) return CommonDialogError.NOT_RUNNING;
             State.Finish(ResultOk);
-            return 0;
         }
+        HideUi();
+        return 0;
     }
 
-    [Hle] int sceMsgDialogAbort() => State.Abort(DialogType.Msg);
-    [Hle] int sceMsgDialogTerm() => State.Term(DialogType.Msg);
+    [Hle] int sceMsgDialogAbort() { int r = State.Abort(DialogType.Msg); if (r == 0) HideUi(); return r; }
+    [Hle] int sceMsgDialogTerm() { int r = State.Term(DialogType.Msg); if (r == 0) HideUi(); return r; }
 
     /// <summary>SceMsgDialogResult (0x2C): +0 mode, +4 result, +8 buttonId.</summary>
     [Hle]
@@ -286,6 +403,7 @@ public sealed partial class CommonDialog : HleModule
         int r = ProgressBarCheck();
         if (r < 0) return r;
         _msgBarPercent = Math.Min(100, _msgBarPercent + delta);
+        UiProgress((int)_msgBarPercent, null);
         return 0;
     }
 
@@ -295,6 +413,7 @@ public sealed partial class CommonDialog : HleModule
         int r = ProgressBarCheck();
         if (r < 0) return r;
         _msgBarPercent = Math.Min(100, rate);
+        UiProgress((int)_msgBarPercent, null);
         return 0;
     }
 
@@ -304,7 +423,9 @@ public sealed partial class CommonDialog : HleModule
         int r = ProgressBarCheck();
         if (r < 0) return r;
         if (barMsg == 0) return CommonDialogError.NULL;
-        Log.Info($"MsgDialog: progress bar: {GuestMemory.ReadCString(barMsg)}");
+        string msg = GuestMemory.ReadCString(barMsg);
+        Log.Info($"MsgDialog: progress bar: {msg}");
+        UiProgress((int)_msgBarPercent, msg);
         return 0;
     }
 
@@ -315,9 +436,14 @@ public sealed partial class CommonDialog : HleModule
     // The dialog "runs" (status RUNNING) and its work completes at once (substatus FINISHED: the user confirmed / the
     // slot was shown); the application then calls Finish to close it (status FINISHED) and Term. Sub-dialogs without a
     // button (progress bar, "Saving..." message) stay running until the application closes them (SaveSubStatusFor).
+    // With a host UI the messages and confirmations (user, system and error code modes, the progress bar) are shown
+    // and the substatus stays RUNNING until the user answers (SaveShowUi); the slot modes stay automatic.
 
     const int SaveModeFixed = 1, SaveModeList = 2, SaveModeUserMsg = 3, SaveModeSystemMsg = 4, SaveModeErrorCode = 5, SaveModeProgressBar = 6;
+    const int SaveDispSave = 1, SaveDispLoad = 2, SaveDispDelete = 3;
     int _saveSub = StatusNone, _saveMode, _saveSlot = -1;
+    /// <summary>SCE_SAVEDATA_DIALOG_BUTTON_ID of the answer: OK/YES 1 (the automatic answer), NO 2.</summary>
+    int _saveButton = 1;
     uint _saveUserData, _saveSlotInfo;
 
     [Hle]
@@ -340,7 +466,9 @@ public sealed partial class CommonDialog : HleModule
             _ => -1,
         };
         _saveSub = SaveSubStatusFor(param);
+        _saveButton = 1;
         Log.Info($"sceSaveDataDialogInit mode {_saveMode} dispType {GuestMemory.R32(param + 0x54)} slot {_saveSlot} sub {sub:X8} subType {(sub != 0 ? GuestMemory.R32(sub) : 0)} value {(sub != 0 ? GuestMemory.R32(sub + 4) : 0)} flag {GuestMemory.R32(param + 0x74)}");
+        SaveShowUi(param);
         return 0;
     }
 
@@ -367,6 +495,82 @@ public sealed partial class CommonDialog : HleModule
         return waits ? StatusRunning : StatusFinished;
     }
 
+    /// <summary>The text and buttons of a save data system message (SCE_SAVEDATA_DIALOG_SYSMSG_TYPE_*: NODATA 1,
+    /// CONFIRM 2, OVERWRITE 3, NOSPACE 4, PROGRESS 5, FINISHED 6, CONFIRM_CANCEL 7, FILE_CORRUPTED 8,
+    /// NOSPACE_CONTINUABLE 9, NODATA_IMPORT 12), as Vita3K shows them; the confirmations are YES/NO.</summary>
+    static (string Text, MessageDialogButton[] Buttons) SaveSystemMessage(int type, uint value, int disp)
+    {
+        string ByDisp(string save, string load, string delete) => Loc.Get(disp switch { SaveDispLoad => load, SaveDispDelete => delete, _ => save });
+        return type switch
+        {
+            1 => (Loc.Get("SaveDlgNoData"), [OkButton]),
+            2 => (ByDisp("SaveDlgConfirmSave", "SaveDlgConfirmLoad", "SaveDlgConfirmDelete"), YesNoButtons),
+            3 => (Loc.Get("SaveDlgOverwrite"), YesNoButtons),
+            4 => (Loc.Format("SaveDlgNoSpace", Math.Max(1u, value)), [OkButton]),
+            5 => (ByDisp("SaveDlgProgressSave", "SaveDlgProgressLoad", "SaveDlgProgressDelete"), []),
+            6 => (ByDisp("SaveDlgFinishedSave", "SaveDlgFinishedLoad", "SaveDlgFinishedDelete"), [OkButton]),
+            7 => (ByDisp("SaveDlgCancelSave", "SaveDlgCancelLoad", "SaveDlgCancelDelete"), YesNoButtons),
+            8 => (Loc.Get("SaveDlgCorrupted"), [OkButton]),
+            9 => (Loc.Format("SaveDlgNoSpaceContinuable", Math.Max(1u, value)), [OkButton]),
+            12 => (Loc.Get("SaveDlgNoDataImport"), [OkButton]),
+            _ => (Loc.Format("DlgSystemMessage", type), [OkButton]),
+        };
+    }
+
+    /// <summary>Shows the message of a user / system / error code / progress bar save data dialog on the host UI, if
+    /// there is one: a message with buttons keeps the substatus RUNNING until the user answers (YES/OK = button 1, NO
+    /// = 2; the result stays OK, as in Vita3K).</summary>
+    void SaveShowUi(uint param)
+    {
+        HideUi();
+        _saveBarPercent = 0;
+        if (MessageBackend is not { } ui) return;
+        int disp = (int)GuestMemory.R32(param + 0x54);
+        string text;
+        MessageDialogButton[] buttons;
+        int? progress = null;
+        switch (_saveMode)
+        {
+            case SaveModeUserMsg:
+            {
+                // SceSaveDataDialogUserMessageParam: buttonType (OK 0, YESNO 1, NONE 2), msg*, targetSlot
+                uint up = GuestMemory.R32(param + 0x60);
+                int buttonType = up != 0 ? (int)GuestMemory.R32(up) : 0;
+                text = up != 0 && GuestMemory.R32(up + 4) is var m and not 0 ? GuestMemory.ReadCString(m) : "";
+                buttons = buttonType switch { 1 => YesNoButtons, SaveButtonTypeNone => [], _ => [OkButton] };
+                break;
+            }
+            case SaveModeSystemMsg:
+            {
+                uint sp = GuestMemory.R32(param + 0x64);
+                (text, buttons) = SaveSystemMessage(sp != 0 ? (int)GuestMemory.R32(sp) : 0, sp != 0 ? GuestMemory.R32(sp + 4) : 0, disp);
+                break;
+            }
+            case SaveModeErrorCode:
+            {
+                uint ep = GuestMemory.R32(param + 0x68);
+                text = Loc.Format("DlgError", $"0x{(ep != 0 ? GuestMemory.R32(ep) : 0):X8}");
+                buttons = [OkButton];
+                break;
+            }
+            case SaveModeProgressBar:
+                text = Loc.Get(disp switch { SaveDispLoad => "SaveDlgProgressLoad", SaveDispDelete => "SaveDlgProgressDelete", _ => "SaveDlgProgressSave" });
+                buttons = [];
+                progress = 0;
+                break;
+            default: return; // the slot modes stay automatic
+        }
+        Log.Info($"SaveDataDialog: showing \"{text}\" ({buttons.Length} buttons)");
+        if (buttons.Length > 0) { _saveSub = StatusRunning; _saveButton = 0; }
+        ShowUi(ui, new MessageDialogRequest(text, buttons, progress), i =>
+        {
+            if (!SaveRunning) return;
+            _saveButton = buttons[i].Id;
+            _saveSub = StatusFinished;
+            Log.Info($"SaveDataDialog: the user chose \"{buttons[i].Label}\" (button {buttons[i].Id})");
+        });
+    }
+
     [Hle]
     int sceSaveDataDialogContinue(uint param)
     {
@@ -374,16 +578,19 @@ public sealed partial class CommonDialog : HleModule
         if (param == 0) return CommonDialogError.NULL;
         _saveMode = (int)GuestMemory.R32(param + 0x50);
         _saveSub = SaveSubStatusFor(param);
+        _saveButton = 1;
+        SaveShowUi(param);
         return 0;
     }
     [Hle] int sceSaveDataDialogGetStatus() => State.StatusOf(DialogType.SaveData);
     [Hle] int sceSaveDataDialogGetSubStatus() => SaveRunning ? _saveSub : StatusNone;
-    [Hle] int sceSaveDataDialogFinish(uint param) { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; State.Finish(ResultOk); return 0; }
-    [Hle] int sceSaveDataDialogAbort() { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; State.Finish(ResultAborted); return 0; }
-    [Hle] int sceSaveDataDialogTerm() { int r = State.Term(DialogType.SaveData); if (r == 0) _saveSub = StatusNone; return r; }
-    [Hle] int sceSaveDataDialogProgressBarInc(int target, uint delta) => 0;
-    [Hle] int sceSaveDataDialogProgressBarSetValue(int target, uint rate) => 0;
-    [Hle] int sceSaveDataDialogSubClose() { _saveSub = StatusFinished; return 0; }
+    [Hle] int sceSaveDataDialogFinish(uint param) { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; State.Finish(ResultOk); HideUi(); return 0; }
+    [Hle] int sceSaveDataDialogAbort() { if (!SaveRunning) return CommonDialogError.NOT_RUNNING; State.Finish(ResultAborted); HideUi(); return 0; }
+    [Hle] int sceSaveDataDialogTerm() { int r = State.Term(DialogType.SaveData); if (r == 0) { _saveSub = StatusNone; HideUi(); } return r; }
+    [Hle] int sceSaveDataDialogProgressBarInc(int target, uint delta) { _saveBarPercent = Math.Min(100, _saveBarPercent + delta); UiProgress((int)_saveBarPercent, null); return 0; }
+    [Hle] int sceSaveDataDialogProgressBarSetValue(int target, uint rate) { _saveBarPercent = Math.Min(100, rate); UiProgress((int)_saveBarPercent, null); return 0; }
+    [Hle] int sceSaveDataDialogSubClose() { _saveSub = StatusFinished; HideUi(); return 0; }
+    uint _saveBarPercent;
 
     [Hle]
     int sceSaveDataDialogGetResult(uint result)
@@ -394,7 +601,7 @@ public sealed partial class CommonDialog : HleModule
         GuestMemory.Fill(result, 0, 0x38);
         GuestMemory.W32(result, (uint)_saveMode);
         GuestMemory.W32(result + 4, (uint)State.Result);
-        GuestMemory.W32(result + 8, State.Result == ResultAborted ? 0u : 1u); // SCE_SAVEDATA_DIALOG_BUTTON_ID_OK / YES
+        GuestMemory.W32(result + 8, State.Result == ResultAborted ? 0u : (uint)_saveButton); // SCE_SAVEDATA_DIALOG_BUTTON_ID_OK / YES 1, NO 2
         GuestMemory.W32(result + 12, (uint)_saveSlot);
         if (_saveSlot >= 0)
         {

@@ -100,6 +100,8 @@ static class ControlNames
         "AltLeft" => Loc.Format("CtlKeyLeft", "Alt"), "AltRight" => Loc.Format("CtlKeyRight", "Alt"),
         "SuperLeft" => Loc.Format("CtlKeyLeft", "Win"), "SuperRight" => Loc.Format("CtlKeyRight", "Win"),
         "Up" => ArrowUp, "Down" => ArrowDown, "Left" => ArrowLeft, "Right" => ArrowRight,
+        "MouseLeft" => T("CtlMouseLeft"), "MouseRight" => T("CtlMouseRight"), "MouseMiddle" => T("CtlMouseMiddle"),
+        "Mouse4" => Loc.Format("CtlMouseButton", 4), "Mouse5" => Loc.Format("CtlMouseButton", 5),
         "Space" => T("CtlKeySpace"), "Backspace" => "Backspace", "Escape" => "Esc", "Delete" => "Delete",
         "GraveAccent" => "`", "Apostrophe" => "'", "LeftBracket" => "[", "RightBracket" => "]",
         "BackSlash" => "\\", "Comma" => ",", "Period" => ".", "Slash" => "/", "Semicolon" => ";", "Minus" => "-", "Equal" => "=",

@@ -93,6 +93,36 @@ public interface IImeDialogBackend
     void Close();
 }
 
+/// <summary>One button of a system message dialog: its label and the value the guest gets back (a
+/// SCE_MSG_DIALOG_BUTTON_ID / SCE_SAVEDATA_DIALOG_BUTTON_ID). <paramref name="IsCancel"/>: the button Circle / Esc
+/// presses (NO, Cancel).</summary>
+public sealed record MessageDialogButton(string Label, int Id, bool IsCancel = false);
+
+/// <summary>What a system message dialog shows (sceMsgDialog, the SaveDataDialog's messages): the message, its buttons
+/// (none: a wait / progress message the application closes itself) and an optional progress bar (0..100).</summary>
+public sealed record MessageDialogRequest(string Message, IReadOnlyList<MessageDialogButton> Buttons, int? Progress = null)
+{
+    /// <summary>Index of the button selected when the dialog opens.</summary>
+    public int DefaultButton { get; init; }
+    /// <summary>The console's enter button is Circle (Japanese / Asian systems): Circle presses the selected button and
+    /// Cross cancels, instead of the other way round.</summary>
+    public bool CircleConfirms { get; init; }
+}
+
+/// <summary>
+/// Host UI backing the system message dialogs (sceMsgDialog*, sceSaveDataDialog* messages and confirmations): a modal
+/// panel over the game. <see cref="Open"/> is called from a guest thread and must not block; the front-end calls
+/// <c>done</c> once, from any thread, with the chosen button's index in <see cref="MessageDialogRequest.Buttons"/>.
+/// A dialog without buttons is closed by the core with <see cref="Close"/> (also sceMsgDialogAbort / Term).
+/// </summary>
+public interface IMessageDialogBackend
+{
+    void Open(MessageDialogRequest request, Action<int> done);
+    /// <summary>The progress bar of the open dialog moved (0..100) or its text changed (null keeps it). Any thread.</summary>
+    void SetProgress(int percent, string? message) { }
+    void Close();
+}
+
 /// <summary>Host services the core needs from a front-end. Everything is optional (headless runs).</summary>
 public sealed class HostServices : IDisposable
 {
@@ -103,6 +133,9 @@ public sealed class HostServices : IDisposable
     /// <summary>Text entry for the IME dialog (sceImeDialogInit); null = answered at once with --ime-text or the
     /// initial text.</summary>
     public IImeDialogBackend? ImeDialog { get; set; }
+    /// <summary>UI for the message dialogs and the save data dialog's messages (sceMsgDialogInit,
+    /// sceSaveDataDialogInit); null = answered at once with the automatic choice (headless and scripted runs).</summary>
+    public IMessageDialogBackend? MessageDialog { get; set; }
     /// <summary>Webcam / device camera backing SceCamera; null = emulated camera delivering grey frames.</summary>
     public ICameraSource? Camera { get; set; }
     /// <summary>Motion sensors backing SceMotion (controller gyro, phone sensors); null = device at rest.</summary>

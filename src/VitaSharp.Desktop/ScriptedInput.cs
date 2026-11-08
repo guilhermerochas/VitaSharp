@@ -29,7 +29,7 @@ namespace VitaSharp.Desktop;
 /// frame 1200 was presented (len in seconds): steps that must happen while the emulation is paused, when no frame
 /// comes. A key step on the pause hotkey (P by default) pauses or resumes the emulation once, when it starts, and one
 /// on F10 takes a diagnostic capture, one on F11 toggles fullscreen, one on F8 / Ctrl+F8 starts or stops "Gravar tudo" /
-/// the GPU dump (window runs) and one on F1 / F2 / F3 (Shift+F1 / Shift+F2 / Shift+F3: back) changes the internal resolution / frame
+/// the GPU dump (window runs), one on F5 / F6 / F7 (Shift+F5 / Shift+F7) is the save state key (window runs: F6 opens the picker) and one on F1 / F2 / F3 (Shift+F1 / Shift+F2 / Shift+F3: back) changes the internal resolution / frame
 /// rate mode / MSAA mode (<see cref="GraphicsHotkeys"/>) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
 /// pauses at frame 300, captures the paused frame and resumes 5 seconds after the pause.
 /// </summary>
@@ -169,7 +169,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         return keys;
     }
 
-    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "F10" or "F11" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
+    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "F10" or "F11" or "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
 
     bool IsPauseKey(string? key)
     {
@@ -326,4 +326,13 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
             if (s.Kind == kind && Active(s)) { dest[0] = Touch(s, back); return 1; }
         return 0;
     }
+}
+
+/// <summary>The game's input while a system dialog is open over it: a neutral controller and no touches (the dialog
+/// reads the script itself), else <paramref name="inner"/>.</summary>
+sealed class DialogGatedInput(IInputBackend inner, Func<bool> dialogOpen) : IInputBackend
+{
+    public ControllerState GetController(int port) => dialogOpen() ? ControllerState.Neutral : inner.GetController(port);
+    public IReadOnlyList<TouchPoint> GetTouches(bool back) => dialogOpen() ? [] : inner.GetTouches(back);
+    public int GetTouches(bool back, Span<TouchPoint> dest) => dialogOpen() ? 0 : inner.GetTouches(back, dest);
 }

@@ -38,6 +38,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   PCSX2) e navegação por controle, teclado e toque; estados de outra versão aparecem marcados como incompatíveis
   (não carregam). O launcher continua listando os estados do jogo com os mesmos prints. Base: os slots, prints e o
   menu de pausa do Android que já existem (`SaveStateControl`, `GameActivity.SaveStates`/`PauseMenu`)
+  Parte feita (08/11/2026, feat/product-2, desktop): F6 abre o seletor por cima do jogo (`Host/SaveStateOverlay`:
+  rápido + slots 1-9 com print, data e "Outra versão: não carrega"; abas Salvar/Carregar com Tab, L/R ou clique;
+  setas/direcional, Enter/Cruz, F5 salva, F7 carrega, F6 próximo, Esc/Círculo fecha; substituir pede confirmação).
+  F5/F7 rápidos e Shift+F5/F7 no slot escolhido continuam. Validado no Gravity Rush (janela oculta, roteiro: salvar
+  no slot 2, substituir com confirmação, carregar o slot 2 pela aba Carregar, o jogo segue a 30 fps). Falta: pausar
+  o jogo com a tela aberta, apagar, print grande ao carregar, tempo de jogo/versão no slot, e o Android
 
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
@@ -497,10 +503,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Controles
 
-- [ ] Botões do mouse mapeáveis (pedido do usuário, 06/11/2026): o botão esquerdo e o direito do mouse (e o do meio)
+- [x] Botões do mouse mapeáveis (pedido do usuário, 06/11/2026): o botão esquerdo e o direito do mouse (e o do meio)
   podem ser mapeados como qualquer botão do Vita (ex.: R para atirar e L para mirar no Killzone, junto com o mouse como
   analógico do F4), no perfil de controle (`input.json`), por jogo, e na tela de controles do launcher; funcionando com
   o cursor capturado na janela
+  Feito (08/11/2026, feat/product-2): os botões do mouse são teclas do perfil do teclado (`key:MouseLeft`,
+  `key:MouseRight`, `key:MouseMiddle`, `key:Mouse4`, `key:Mouse5`); um botão mapeado aperta o controle do Vita (ou o
+  atalho de pausa) em vez de tocar na tela, também com o cursor capturado; na tela de controles, enquanto espera a
+  tecla, um clique do direito/meio/laterais (o esquerdo só sobre o desenho do Vita) grava o botão. Validado no 99Vidas
+  (janela oculta, mensagens do Windows na janela): botão direito = Cruz respondeu NÃO ao diálogo, botão 4 = pausa.
+  O perfil do teclado é um só (não por jogo)
 - [x] Mouse como analógico direito (desktop): o movimento do mouse vira a alavanca direita do Vita, para mirar e
   girar a câmera como num jogo de PC (ex.: Killzone, Uncharted). Captura do cursor na janela (com tecla para soltar),
   sensibilidade, inverter eixo Y, zona morta/curva de resposta e retorno ao centro quando o mouse para; opção no
@@ -526,10 +538,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Diálogos comuns com interface de verdade (08/11/2026): o sceMsgDialog (e os outros diálogos comuns sem UI)
-  responde sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
+- [x] Diálogos comuns com interface de verdade (08/11/2026): o sceMsgDialog (e os outros diálogos comuns sem UI)
+  respondia sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
   uma vez (282ec7d, 99Vidas sem rede). Como no Vita3K, mostrar o diálogo por cima do jogo e deixar o usuário escolher
   com os botões/toque, para não depender de respostas automáticas
+  Feito (08/11/2026, agente de produto, feat/product-2): `IMessageDialogBackend` (`HostServices.MessageDialog`); o
+  sceMsgDialog (mensagem do usuário com os botões do Vita3K: OK, SIM/NÃO, OK/CANCELAR, CANCELAR, 3 botões; mensagens
+  do sistema; código de erro; barra de progresso) e as mensagens/confirmações do SaveDataDialog (usuário, sistema com
+  os textos do Vita3K por dispType, código de erro, barra de progresso) esperam a escolha quando há janela; sem ela
+  (headless, `--dialogs=auto`) ficam as respostas automáticas de antes. Desktop: `Host/MessageOverlay` no
+  `SetCenterOverlay` (setas/Tab, Enter/Espaço, Esc = botão de cancelar, direcional/Cruz/Círculo, clique; Círculo
+  confirma quando o botão de confirmar do sistema/jogo é o Círculo; fonte do sistema com glifos japoneses/chineses).
+  Validado no 99Vidas (janela oculta, roteiro): "Deseja tentar novamente?" aparece com Sim/Não, NÃO segue até o
+  gameplay; Soccer Tsuku (aviso da PSN em japonês, OK). Nenhum jogo da biblioteca mostrou um SaveDataDialog de
+  mensagem em 8 tentativas (GR, Soccer Tsuku, RBS, Minecraft, NFS MW, Sonic Racing): essa parte só tem teste de unidade
+  (`DialogHleTests`). `msg-preview` desenha o painel; `--overlay-dump=<pasta>` grava os painéis de um teste
 - [x] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
   música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
   `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
