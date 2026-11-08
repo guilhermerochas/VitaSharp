@@ -4,7 +4,7 @@ namespace VitaSharp.Core.Hle;
 /// The PSN account of the emulated console. VitaSharp never talks to Sony's servers; this only decides what the
 /// system reports locally:
 /// <list type="bullet">
-/// <item><b>Signed in</b> (default, like Vita3K's "PSN status: signed in"): NetCtl reports a connected access point with an
+/// <item><b>Signed in</b> (opt-in, --psn=on): NetCtl reports a connected access point with an
 /// IP address, NP reports <see cref="OnlineId"/> as the account (service state ONLINE with the local services, else
 /// SIGNED_IN until a PSN_ONLINE NetCheckDialog connects) and the NetCheckDialog PSN modes finish OK.
 /// With <see cref="LocalServices"/> (default) the PSN services that can work for a single player are served locally
@@ -13,7 +13,8 @@ namespace VitaSharp.Core.Hle;
 /// unreachable server with <see cref="ServerUnreachable"/>. Without local services every server request fails that way.
 /// Many titles refuse to leave their start screen without a signed-in account (e.g. a Cross-Save sign-in prompt that only
 /// offers "retry").</item>
-/// <item><b>Signed out</b>: no account and no network; NP reports SIGNED_OUT, account queries fail with
+/// <item><b>Signed out</b> (the default, like Vita3K's default "PSN signed out"; the user chose "no network for everyone",
+/// 08/11/2026): no account and no network (NetCtl DISCONNECTED, no IP); NP reports SIGNED_OUT, account queries fail with
 /// SCE_NP_ERROR_SIGNED_OUT, NetCtl callbacks are told DISCONNECTED and the NetCheckDialog is canceled.</item>
 /// </list>
 /// Process-wide (one emulated console per process); set from <see cref="EmulatorOptions.Psn"/> when the emulator starts.
@@ -33,8 +34,10 @@ public sealed record PsnAccount(bool SignedIn, string OnlineId, bool LocalServic
     /// <summary>SCE_NP_ERROR_SIGNED_OUT.</summary>
     public const int SignedOutError = unchecked((int)0x80550006);
 
-    public static readonly PsnAccount Default = new(true, DefaultOnlineId);
+    public static readonly PsnAccount Default = new(false, DefaultOnlineId);
     public static readonly PsnAccount Offline = new(false, DefaultOnlineId);
+    /// <summary>The emulated account signed in (--psn=on).</summary>
+    public static readonly PsnAccount SignedInAccount = new(true, DefaultOnlineId);
 
     static volatile PsnAccount _current = Default;
 

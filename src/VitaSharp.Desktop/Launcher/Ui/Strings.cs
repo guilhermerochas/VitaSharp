@@ -354,7 +354,7 @@ public static class Strings
     public static string CameraNone => "Nenhuma (imagem cinza)";
     public static string CameraDisconnected(string name) => F("{0} (desconectada)", name);
     public static string PsnSignedIn => "Simular conta PSN conectada";
-    public static string PsnSignedInDetail => "Muitos jogos só passam da tela inicial com uma conta PSN. A conta é simulada aqui: nada vai para os servidores da Sony";
+    public static string PsnSignedInDetail => "Desligado (padrão): o console fica sem rede e sem conta, como no Vita3K. Ligue só para jogos que exigem uma conta PSN; nada vai para os servidores da Sony";
     public static string PsnId => "ID online";
     public static string PsnIdDetail => "De 3 a 16 letras, números, '-' ou '_', começando com uma letra";
     public static string PsnIdInvalid => "ID online inválido: use de 3 a 16 letras, números, '-' ou '_', começando com uma letra.";

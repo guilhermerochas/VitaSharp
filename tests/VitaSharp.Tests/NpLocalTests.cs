@@ -374,7 +374,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void Matching2ContextStartCallsBack()
     {
-        PsnAccount.Current = PsnAccount.Default;
+        PsnAccount.Current = PsnAccount.SignedInAccount;
         var (m, calls) = NewMatching2();
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", (uint)ctx, 0x81000001u, 0x1234u));
@@ -399,7 +399,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void Matching2RequestsAlwaysAnswer()
     {
-        PsnAccount.Current = PsnAccount.Default;
+        PsnAccount.Current = PsnAccount.SignedInAccount;
         var (m, calls) = NewMatching2();
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL)); // no context callback registered: nothing called
@@ -452,13 +452,13 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal([ctx, (uint)NpMatching2.CONTEXT_EVENT_START_OVER, (uint)NpMatching2.EVENT_CAUSE_CONTEXT_ERROR,
             unchecked((uint)PsnAccount.ServerUnreachable), 0x42u], over.Args);
         Assert.NotEqual(0, Call(m, "sceNpMatching2SearchRoom", ctx, Alloc(16), 0u, Alloc(4))); // still not started
-        PsnAccount.Current = PsnAccount.Default;
+        PsnAccount.Current = PsnAccount.SignedInAccount;
     }
 
     [Fact]
     public void Matching2Ps4StyleContextCallback()
     {
-        PsnAccount.Current = PsnAccount.Default;
+        PsnAccount.Current = PsnAccount.SignedInAccount;
         var (m, calls) = NewMatching2();
         Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", 0x81000301u, 0x77u, 0u)); // (cb, arg), no context yet
         ushort ctx = Context(m);

@@ -47,12 +47,13 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
     }
 
     [Fact]
-    public void DefaultAccountIsSignedIn()
+    public void DefaultAccountIsSignedOut()
     {
-        Assert.True(PsnAccount.Default.SignedIn);
-        Assert.Equal("VitaSharp", PsnAccount.Default.OnlineId);
+        Assert.False(PsnAccount.Default.SignedIn); // no network for everyone, like Vita3K (08/11/2026)
+        Assert.True(PsnAccount.SignedInAccount.SignedIn);
+        Assert.Equal("VitaSharp", PsnAccount.SignedInAccount.OnlineId);
         Assert.False(PsnAccount.Offline.SignedIn);
-        Assert.Equal(HTTP_NETWORK, PsnAccount.Default.ServerError);
+        Assert.Equal(HTTP_NETWORK, PsnAccount.SignedInAccount.ServerError);
         Assert.Equal(NP_SIGNED_OUT, PsnAccount.Offline.ServerError);
     }
 
@@ -74,7 +75,7 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
     }
 
     [Fact]
-    public void NetCheckDialogPsnModesSucceedWhenSignedIn() => With(PsnAccount.Default, () =>
+    public void NetCheckDialogPsnModesSucceedWhenSignedIn() => With(PsnAccount.SignedInAccount, () =>
     {
         var d = new CommonDialog();
         Assert.Equal((0u, 1u), NetCheck(d, 2));  // PSN: sign-in check
@@ -92,7 +93,7 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
     });
 
     [Fact]
-    public void NetCheckDialogAbortAfterFinishKeepsResult() => With(PsnAccount.Default, () =>
+    public void NetCheckDialogAbortAfterFinishKeepsResult() => With(PsnAccount.SignedInAccount, () =>
     {
         var d = new CommonDialog();
         uint param = Alloc(0xE0);

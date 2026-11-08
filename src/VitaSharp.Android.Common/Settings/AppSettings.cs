@@ -39,7 +39,7 @@ public static class CpuChoices
 /// </summary>
 public sealed class NetworkSettings
 {
-    public bool PsnSignedIn { get; set; } = true;
+    public bool PsnSignedIn { get; set; }
     public string PsnOnlineId { get; set; } = PsnAccount.DefaultOnlineId;
     public bool PsnLocalServices { get; set; } = true;
     public bool RealInternet { get; set; }

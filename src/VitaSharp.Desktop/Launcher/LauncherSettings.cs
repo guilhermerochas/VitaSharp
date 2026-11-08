@@ -26,9 +26,9 @@ public sealed class LauncherSettings
     /// <summary>"Pré-gravação": F8's session capture keeps the seconds before it was pressed (--capture-preroll,
     /// docs/notes/session-capture.md).</summary>
     public bool CapturePreRoll { get; set; }
-    /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on, the default) or
-    /// signed out (--psn=off). Signed in, sign-in checks pass and PSN server requests fail as unreachable.</summary>
-    public bool PsnSignedIn { get; set; } = true;
+    /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on) or
+    /// signed out (--psn=off, the default: no network, like Vita3K). Signed in, sign-in checks pass and PSN server requests fail as unreachable.</summary>
+    public bool PsnSignedIn { get; set; }
     /// <summary>Online ID of the emulated PSN account (--psn-id=).</summary>
     public string PsnOnlineId { get; set; } = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
     /// <summary>"Serviços PSN locais": TUS / Cross-Save, rankings, tickets and matching served from &lt;data&gt;/np
