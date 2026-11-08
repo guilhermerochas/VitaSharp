@@ -172,3 +172,9 @@ Injustice `inj_fight` (Training fight) and Killzone `kz_skin`, cold caches, GTX 
   7647 ms on average (-4%, inside the run-to-run spread); shader time the same (~2.0-2.1 s). And the output is not
   pixel-identical (mean difference up to 0.005 on every compared frame, while off-vs-off and on-vs-on are identical).
   Not worth it: removed (perf/desktop-13).
+
+## Not continued (perf/desktop-14, 8 November 2026)
+- Nothing left in the list above promises a measurable win: GPL fast-link and a pipeline cache were measured without
+  gain, more workers do not help on the 4 pinned CPUs, scalar banks and `--shaderc-opt=perf` did not pay off, and
+  `VK_EXT_shader_object` would hit the same per-shader driver compile that dominates here. The remaining lever is
+  shipping prewarm data (`pipelines.list`), which is per game and out of scope for a generic fix.

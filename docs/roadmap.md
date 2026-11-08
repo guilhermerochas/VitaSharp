@@ -105,7 +105,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   guest); writeback e cópias da CPU continuam na resolução nativa; dumps de quadro e prints saem na resolução interna.
   Validado (perf/desktop-res): `replay-gpu --compare` 1x idêntico ao main em 20 dumps (582 quadros), 2x sem erro em
   todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
-  Sonic Mania. `gl_PointSize` escalado desde 07/11/2026 (perf/desktop-11): os programas de vértice que escrevem o
+  Sonic Mania. Varredura 1x x 2x de perf/desktop-14 (08/11/2026, cenários sem janela com o mesmo roteiro, e
+  `replay-gpu` de uma partida do FIFA 13): sem defeito de escala novo em Uncharted (gameplay), Killzone (treino VR),
+  FIFA 13 (partida), Injustice (luta), Croixleur Σ (seleção com modelo 3D), Soccer Tsuku (secretária 3D), Sonic Mania,
+  LBP (cápsula), Jak 1 (menus), Tearaway (menus), Gravity Rush (título) e Minecraft (menus); os cenários do Jak,
+  Tearaway, GR e Minecraft não chegam ao gameplay com os saves atuais.
+  `gl_PointSize` escalado desde 07/11/2026 (perf/desktop-11): os programas de vértice que escrevem o
   tamanho do ponto multiplicam por `rinfo.res_multiplier` numa variante com chave própria (`ShaderHints.ScaledPointSize`),
   então só esses shaders são traduzidos de novo; o cache dos outros continua valendo (sem subir a versão do gerador).
   Junto: as contagens dos testes de visibilidade (INCREMENT) de cenas escaladas são divididas por k*k (vinham k*k vezes
@@ -213,6 +218,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Opção por jogo "Relógio da CPU" (333 MHz / 444 MHz / sem ritmo), como a taxa de quadros por jogo: **pendente da
   decisão do usuário, não implementar antes** (anotado em 08/11/2026, perf/desktop-12). Motivo: o menu do Sonic Mania
   (item acima) e outros jogos presos na CPU emulada a 333 MHz; hoje só --cpu-mhz=/VITASHARP_CPU_MHZ mudam isso
+- [ ] Sonic Mania: travadas de 3-5 s nos carregamentos (quadros ~1131 e ~1856 do `mania_boot`, 6-17 fps nesses 5 s)
+  (perf/desktop-14, 08/11/2026). Reproduz com a CPU livre, em 1x e 2x e também sem ritmo de CPU (`--cpu-mhz=0`), então
+  é tempo do host, não o relógio emulado. Precisa de `ux0:data/Mania` na pasta de dados (sem ele a tela fica preta).
+  Perfil (dotnet-trace na travada): a `pthread` passa ~77% e a `main` ~22% do tempo dentro de uma mesma chamada HLE
+  (provavelmente `sceKernelLockLwMutex`: 27 M lock/unlock no `mania_boot`), boa parte gastando CPU. Tentado: entregar o
+  mutex direto ao primeiro da fila no unlock (como o `Mutex::serve` do Vita3K e o PPSSPP): piorou (98 s contra 70 s,
+  mais travadas), revertido (patch no scratchpad `perf14_tools/mutex_handoff_wip.patch`). Próximo passo: contar as
+  esperas com disputa por mutex/thread (nome, quem segura) na travada, e ver se o custo é o `Latency()` de 30 us
+  por espera acordada ou o giro do `Monitor`
 
 ## Android
 
@@ -1079,6 +1093,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   perf/desktop-13: 3 de 15). O jogo cria a thread 'Autoload' (quadro ~61) e nunca chega à 'FMOD nonblocking
   thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
   `--diag-at` (threads e esperas) numa execução travada e comparar com uma boa
+  perf/desktop-14: 0 de 30 boots com o cache de shaders quente (10 a 1x, 10 a 1x em paralelo, 10 a 2x com dumps de
+  quadro); 1 de 4 e 1 de 1 com cache frio (`--shader-cache` e cache do driver novos). Nas travadas a main fica num
+  laço de espera do carregador (`DelayThread(16 ms)` em 0x8112BAEA/0x8112C680, prioridade baixada para 0xBD) que
+  espera um contador de operações pendentes da FIOS (libfios2 LLE) chegar a 0, e todas as threads da FIOS
+  (SceFiosCallback/IO/Libdeflt0) dormem em `sceKernelWaitLwCondCB` nos seus SceFiosSchedulerWakeup: uma operação na
+  fila sem ninguém acordado (wakeup perdido). Numa delas a trava foi antes do primeiro quadro (quadro 0), na outra com
+  a LoadScr ainda desenhando. O traço das chamadas de sincronização (`--trace-hle-only=` lwcond/sema/evf) mostra
+  cada Signal com o waiter já em espera, menos o último: o SceFiosLibdeflt0 sinaliza o 0x820D3700 enquanto a
+  SceFiosCallback está entre o seu Signal(0x820D007C) e o próximo Wait(0x820D3700). Lw mutexes e conds conferidos
+  (Sync.cs: Wait/Signal atômicos sob o lock do cond; IO assíncrono é síncrono): falta ver se a FIOS sinaliza sem o
+  mutex 0x820D36D8 (aí o predicado dela é que precisa de outra ordem, ex.: um ldrex/strex) — próximo passo: traçar
+  também `sceKernelLockLwMutex`/`Unlock` desse mutex numa execução fria
 - [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va
