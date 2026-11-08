@@ -273,7 +273,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     public void CxxRuntimePieces()
     {
         var c = NewLibc();
-        uint p = Call<uint>(c, "_Znwj", 24u);
+        uint p = Call<uint>(c, "_Znwj", null!, 24u); // no HLE context: only used to throw bad_alloc
         Assert.NotEqual(0u, p);
         Invoke(c, "_ZdlPv", p);
         uint cell = Buf(8), expected = Buf(4);
@@ -293,5 +293,31 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         Assert.Equal("no such file or directory", GuestMemory.ReadCString(Call<uint>(c, "_ZSt13_Syserror_mapi", 2)));
         Assert.Equal(0u, Call<uint>(c, "_ZSt13_Syserror_mapi", 5000));
         Assert.Equal("bad allocation", GuestMemory.ReadCString(Call<uint>(c, "_ZNKSt9bad_alloc4whatEv", 0u)));
+        // 1-, 2- and 8-byte atomics: the neighbouring bytes of a sub-word cell are kept
+        uint w = Buf(16);
+        GuestMemory.W32(w, 0x11223344);
+        Assert.Equal(0x33u, Call<uint>(c, "_Atomic_fetch_add_1", w + 1, 0xFFu, 5));
+        Assert.Equal(0x11223244u, GuestMemory.R32(w));
+        Assert.Equal(0x1122u, Call<uint>(c, "_Atomic_exchange_2", w + 2, 0xBEEFu, 5));
+        Assert.Equal(0xBEEF3244u, GuestMemory.R32(w));
+        uint exp1 = Buf(4);
+        GuestMemory.Write(exp1, (byte)0x99);
+        Assert.Equal(0, Call<int>(c, "_Atomic_compare_exchange_strong_1", w, exp1, 0x55u, 5, 5));
+        Assert.Equal((byte)0x44, GuestMemory.Read<byte>(exp1));
+        Assert.Equal(1, Call<int>(c, "_Atomic_compare_exchange_strong_1", w, exp1, 0x55u, 5, 5));
+        Assert.Equal(0xBEEF3255u, GuestMemory.R32(w));
+        GuestMemory.Write(w + 8, 0x1_0000_0001L);
+        Assert.Equal(0x1_0000_0001L, Call<long>(c, "_Atomic_fetch_add_8", w + 8, 0xFFFF_FFFFL, 5));
+        Assert.Equal(0x2_0000_0000L, GuestMemory.Read<long>(w + 8));
+        Assert.Equal(0u, Call<uint>(c, "_Atomic_flag_test_and_set", w + 4, 5));
+        Assert.Equal(1u, Call<uint>(c, "_Atomic_flag_test_and_set", w + 4, 5));
+        Invoke(c, "_Atomic_flag_clear", w + 4, 5);
+        // a generic compare-exchange under a free flag
+        uint obj = Buf(8), e = Buf(8), d = Buf(8);
+        GuestMemory.Write(obj, 7L); GuestMemory.Write(e, 7L); GuestMemory.Write(d, 9L);
+        Assert.Equal(1, Call<int>(c, "_Atomic_compare_exchange_strong", w + 4, 8u, obj, e, d));
+        Assert.Equal(9L, GuestMemory.Read<long>(obj));
+        Assert.Equal(0, Call<int>(c, "_Atomic_compare_exchange_strong", w + 4, 8u, obj, e, d));
+        Assert.Equal(9L, GuestMemory.Read<long>(e));
     }
 }

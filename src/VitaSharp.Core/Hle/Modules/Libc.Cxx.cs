@@ -8,17 +8,16 @@ namespace VitaSharp.Core.Hle.Modules;
 // SceLibstdcxx (libc.suprx 3.74): the parts of the C++ runtime that do not need the module's own data (vtables,
 // exception tables): operator new/delete and the new handler, std::_Mutex, the 4-byte atomics, type_info compares,
 // the what() texts, _Syserror_map, _Xtime_get_ticks; and SceLibc's module TLS (_sceLdTls*, __tls_get_addr).
-// C++ exceptions are not raised here: where the library would throw (new without memory and no handler) the
-// process is terminated as an uncaught exception would.
+// The exceptions themselves are in Libc.Exceptions.cs.
 public sealed partial class Libc
 {
     // ------------------------------------------------------------------ operator new / delete
 
     uint _newHandler;
 
-    /// <summary>operator new: malloc, calling the new handler while it fails; with no handler std::bad_alloc would
-    /// be thrown, which here ends the process (terminate).</summary>
-    uint New(uint size, bool nothrow)
+    /// <summary>operator new: malloc, calling the new handler while it fails; with no handler std::bad_alloc is
+    /// thrown (from a guest call, <paramref name="ctx"/>; otherwise terminate), the nothrow forms return 0.</summary>
+    uint New(uint size, bool nothrow, HleContext? ctx = null)
     {
         while (true)
         {
@@ -28,15 +27,16 @@ public sealed partial class Libc
             if (h == 0)
             {
                 if (nothrow) return 0;
-                Log.Error($"[guest] operator new({size}): out of memory and no new handler (std::bad_alloc)");
-                terminate();
+                Log.Warn($"[guest] operator new({size}): out of memory and no new handler (std::bad_alloc)");
+                if (ctx != null) ThrowNew(ctx, ExcBadAlloc);
+                else TerminateNow();
                 return 0;
             }
             GuestThread.Current?.CallGuest(h);
         }
     }
 
-    [Hle("_Znwj")] [Hle("_Znaj")] uint _Znwj(uint size) => New(size, false);
+    [Hle("_Znwj")] [Hle("_Znaj")] uint _Znwj(HleContext ctx, uint size) => New(size, false, ctx);
     [Hle("_ZnwjRKSt9nothrow_t")] [Hle("_ZnajRKSt9nothrow_t")] uint _ZnwjRKSt9nothrow_t(uint size, uint nothrow) => New(size, true);
     [Hle("_ZdlPv")] [Hle("_ZdaPv")] [Hle("_ZdlPvRKSt9nothrow_t")] [Hle("_ZdaPvRKSt9nothrow_t")] void _ZdlPv(uint p) => free(p);
     /// <summary>The placement forms do nothing.</summary>
@@ -44,22 +44,6 @@ public sealed partial class Libc
 
     [Hle] uint _ZSt15set_new_handlerPFvvE(uint h) { uint old = _newHandler; _newHandler = h; return old; }
     [Hle] uint _ZSt16_get_new_handlerv() => _newHandler;
-
-    uint _terminateHandler;
-
-    [Hle] uint _ZSt13set_terminatePFvvE(uint h) { uint old = _terminateHandler; _terminateHandler = h; return old; }
-
-    /// <summary>std::terminate: the terminate handler, then abort.</summary>
-    [Hle("_ZSt9terminatev")]
-    void terminate()
-    {
-        uint h = _terminateHandler;
-        if (h != 0) GuestThread.Current?.CallGuest(h);
-        abort();
-    }
-
-    /// <summary>No exception is ever in flight in the HLE runtime.</summary>
-    [Hle] int _ZSt18uncaught_exceptionv() => 0;
 
     // ------------------------------------------------------------------ std::_Mutex
 

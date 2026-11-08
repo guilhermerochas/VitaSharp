@@ -16,6 +16,10 @@ public static class SessionReport
         foreach (var l in CpuBackendLines()) yield return l;
         foreach (var f in emu.Hle.Functions.Where(f => f.CallCount > 0).OrderByDescending(f => f.CallCount).Take(40))
             yield return $"  {f.CallCount,8} x {f.Name}{(f.Implemented ? "" : " (unimplemented)")}";
+        if (Environment.GetEnvironmentVariable(EnvVars.HleCalls) == "1")
+            foreach (var p in (emu.Vita?.Processes ?? []).Prepend(emu).DistinctBy(p => p.Hle))
+                foreach (var f in p.Hle.Functions.Where(f => f.CallCount > 0).OrderBy(f => f.Name, StringComparer.Ordinal))
+                    yield return $"  hle-call {p.TitleId} {f.CallCount} {f.Name}{(f.Implemented ? "" : " (unimplemented)")}";
         foreach (var t in emu.Kernel.Threads) yield return "  thread " + t.Describe();
         // the other processes of the system (applications the shell started)
         foreach (var p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
