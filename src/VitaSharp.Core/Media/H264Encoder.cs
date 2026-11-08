@@ -96,7 +96,13 @@ public sealed unsafe class H264Encoder : IDisposable
     {
         while (ffmpeg.avcodec_receive_packet(_ctx, _pkt) >= 0)
         {
-            list.Add((new ReadOnlySpan<byte>(_pkt->data, _pkt->size).ToArray(), (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0));
+            var au = new ReadOnlySpan<byte>(_pkt->data, _pkt->size).ToArray();
+            bool key = (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
+            // with the global header the encoder may leave the parameter sets out of the stream: keep them in band
+            // before each key picture, as without it
+            if (key && ParameterSets() is var (sps, pps) && !SplitNals(au).Exists(n => (au[n.Offset] & 0x1F) == 7))
+                au = [0, 0, 0, 1, .. sps, 0, 0, 0, 1, .. pps, .. au];
+            list.Add((au, key));
             ffmpeg.av_packet_unref(_pkt);
         }
     }
