@@ -185,6 +185,17 @@ public sealed partial class AppUtil : HleModule
         return _safeMem = data;
     }
 
+    /// <summary>A fresh (all zero) safe memory area (sceAppMgrInitSafeMemoryById).</summary>
+    internal void ClearSafeMemory()
+    {
+        lock (_safeMemLock)
+        {
+            var data = SafeMemory(out var p);
+            Array.Clear(data);
+            if (File.Exists(p)) File.WriteAllBytes(p, data);
+        }
+    }
+
     [Hle]
     internal int sceAppUtilLoadSafeMemory(uint buf, uint size, long offset)
     {

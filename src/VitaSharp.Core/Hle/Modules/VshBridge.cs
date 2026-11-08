@@ -21,7 +21,7 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshSblQafMgrIsAllowLoadMagicGate() => 0;
     [Hle] int vshSblUtMgrHasStoreFlag() => 0;
     [Hle] int vshSblUtMgrHasComTestFlag() => 0;
-    [Hle] int vshSysconIsIduMode() => 0;
+    [Hle] int vshSysconIsIduMode() => _iduMode ? 1 : 0;
     [Hle] int vshSysconHasWWAN() => 0;
     /// <summary>A store demo (show mode) unit: no.</summary>
     [Hle] int vshSysconIsShowMode() => 0;
