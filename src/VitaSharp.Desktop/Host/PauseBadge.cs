@@ -15,8 +15,9 @@ public static class PauseBadge
     public static string Text(string keyLabel) => keyLabel.Length > 0 ? Loc.Format("PausedKey", keyLabel) : Loc.Get("Paused");
 
     /// <summary>The badge as BGRA bytes (opaque), scaled with the window (1x at 544 lines); null when Skia is missing.
-    /// <paramref name="pauseSign"/> false: the text alone (other short notices, such as the mouse mode).</summary>
-    public static (byte[] Bgra, int Width, int Height)? Render(string text, int windowHeight, bool pauseSign = true)
+    /// <paramref name="pauseSign"/> false: the text alone (other short notices, such as the mouse mode);
+    /// <paramref name="recDot"/>: a red dot instead of the pause sign ("Gravar tudo" recording).</summary>
+    public static (byte[] Bgra, int Width, int Height)? Render(string text, int windowHeight, bool pauseSign = true, bool recDot = false)
     {
         try
         {
@@ -25,7 +26,8 @@ public static class PauseBadge
             using var white = new SKPaint { Color = SKColors.White, IsAntialias = true };
             float textW;
             using (var measure = new SKPaint { Typeface = font.Typeface, TextSize = font.Size }) textW = measure.MeasureText(text);
-            float pad = 10 * scale, bar = pauseSign ? 14 * scale : 0, gap = pauseSign ? 9 * scale : 0;
+            bool sign = pauseSign || recDot;
+            float pad = 10 * scale, bar = sign ? 14 * scale : 0, gap = sign ? 9 * scale : 0;
             int w = (int)Math.Ceiling(pad + bar + gap + textW + pad), h = (int)Math.Ceiling(34 * scale);
             var info = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
             using var bmp = new SKBitmap(info);
@@ -33,7 +35,12 @@ public static class PauseBadge
             {
                 c.Clear(new SKColor(0x1B, 0x1F, 0x27));
                 // the pause sign: two bars
-                if (pauseSign)
+                if (recDot)
+                {
+                    using var red = new SKPaint { Color = new SKColor(0xE5, 0x2B, 0x2B), IsAntialias = true };
+                    c.DrawCircle(pad + bar / 2, h / 2f, bar * 0.42f, red);
+                }
+                else if (pauseSign)
                 {
                 using var accent = new SKPaint { Color = new SKColor(0xFF, 0xB5, 0x47), IsAntialias = true };
                 float top = h * 0.28f, bottom = h * 0.72f, bw = bar * 0.36f;

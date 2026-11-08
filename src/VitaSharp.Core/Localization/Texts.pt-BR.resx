@@ -87,6 +87,12 @@
   <data name="Cancel" xml:space="preserve">
     <value>Cancelar</value>
   </data>
+  <data name="CaptureLimit" xml:space="preserve">
+    <value>A gravação chegou ao limite ({0}) e parou sozinha: salvando...</value>
+  </data>
+  <data name="GameSavingRecordingPct" xml:space="preserve">
+    <value>Salvando a gravação: {0}%</value>
+  </data>
   <data name="CaptureRecording" xml:space="preserve">
     <value>Gravando tudo ({0})</value>
   </data>
@@ -109,7 +115,7 @@
     <value>Falha ao iniciar a gravação: {0}</value>
   </data>
   <data name="CaptureStarting" xml:space="preserve">
-    <value>Aguarde: a gravação ainda está começando</value>
+    <value>A gravação ainda está começando: ela para assim que começar</value>
   </data>
   <data name="CaptureStopHint" xml:space="preserve">
     <value>F8 para parar</value>
@@ -803,9 +809,6 @@
   </data>
   <data name="GameRunningShort" xml:space="preserve">
     <value>Um jogo está rodando</value>
-  </data>
-  <data name="GameSavingRecording" xml:space="preserve">
-    <value>Salvando a gravação... não feche a janela</value>
   </data>
   <data name="GameSavingState" xml:space="preserve">
     <value>salvando estado...</value>
