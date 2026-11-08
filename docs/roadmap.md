@@ -611,6 +611,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
   abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
   Confirmado pelo usuário (07/11/2026)
+  Música parando com um app na frente (relato do usuário 08/11/2026, 1834769): confirmado pelo usuário (08/11/2026)
 - [x] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
@@ -1175,7 +1176,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado é um contador da FIOS atualizado com LDREX/STREX fora desse mutex (perda de atualização no monitor exclusivo
   entre núcleos, `X64Emitter.StoreExclusive`/`Arm.StoreExclusive32`), ou a cópia do valor que a Callback leu; próximo
   passo: desmontar o predicado da SceFiosCallback em 0x820B9672 e vigiar (`--watch`) o endereço que ela lê
-- [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
+- [x] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va
   tem 44 flashes e 4 pares de quadros trocados em 23 s; em software (o novo padrão `auto`, db00236) 10 flashes e 2 pares
@@ -1403,7 +1404,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   do dump da gravação: nativo nítido, 2x antes desfocado, 2x depois igual ao nativo (`bugsC18_rp/lbp_r1`, `lbp_r2`,
   `lbp_r2fix`, `scratchpad/bugsC18_yt/lbpfix.png`)
   Confirmado pelo usuário (08/11/2026)
-- [ ] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
+- [x] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
   `captures\PCSE00271_20261107_223633_tudo`). Nos 478 quadros ao vivo as barras de vida, os nomes e o tempo nunca
   aparecem (o HUD de baixo aparece); o replay do mesmo dump mostra tudo e bate com o Vita real (vídeo `XerzDSm7Z9U`:
   barras prateadas). Causa: a cena do HUD (960x544) carrega (FORCE_LOAD) o depth/stencil 0x60600000 que a cena 3D usa
@@ -1420,23 +1421,27 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   superfície copia a sobreposição da imagem mais nova da mesma superfície sempre que ela renderizou depois. Prova ao
   vivo do boot pelos menus até Luta Única, sem troca de escala: main sem barras/nomes/tempo
   (`bugsC3_data/tests/inj_nav3`), com a correção completos (`inj_nav4`; `inj_nav5` com `VITASHARP_GPU_POISON=1`)
-- [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): barra de vida "zuada", sobrepondo o resto da tela (relato do usuário,
+  Confirmado pelo usuário (08/11/2026)
+- [x] Ninja Gaiden Sigma 2 Plus (PCSE00233): barra de vida "zuada", sobrepondo o resto da tela (relato do usuário,
   08/11/2026, `captures\PCSE00233_20261108_162212_tudo`). Corrigido (agente C, 4c5f352): o jogo corta os pedaços da barra
   com planos de recorte do usuário (saídas CLIP0-3 do vertex program, vo1 bits 0-7), que o tradutor ignorava; a parte
   vermelha ia até a borda. Agora viram gl_ClipDistance[1..7] (gerador v23). Replay do dump igual ao vídeo do Vita real
   (`l2I_NsWWFEI`); falta o usuário confirmar
-- [ ] 99Vidas (PCSE00914): o logo do parceiro na intro e textos de menus somem (relato do usuário, 08/11/2026,
+  Confirmado pelo usuário (08/11/2026)
+- [x] 99Vidas (PCSE00914): o logo do parceiro na intro e textos de menus somem (relato do usuário, 08/11/2026,
   `captures\PCSE00914_20261108_164513_tudo` e `..._165037_tudo`). Corrigido (agente C, 343ad70): o Unity renderiza
   superfícies 8x8 no começo e depois carrega o logo, o atlas da fonte e sprites na mesma memória; a checagem de
   "sobrescrito depois de renderizar" só olhava páginas inteiras dentro da superfície (uma 8x8 não tem nenhuma) e a
   textura vinha da superfície velha. Prova ao vivo: logo "99 VIDAS" e os textos da seleção de personagem aparecem
   (`bugsC3_data/tests/v99_fix`, `v99p_fix` x `v99_main`, `v99p_main`); o menu de pausa em jogo não foi alcançado por
   script, falta o usuário confirmar
-- [ ] Need for Speed Most Wanted (PCSE00089): "não vira o carro" (relato do usuário, 08/11/2026,
+  Confirmado pelo usuário (08/11/2026)
+- [x] Need for Speed Most Wanted (PCSE00089): "não vira o carro" (relato do usuário, 08/11/2026,
   `captures\PCSE00089_20261108_162657_tudo`, já em gameplay). Não reproduzido (agente C): do estado da gravação, R +
   analógico à direita por script faz o carro girar com a main e com a correção do Peek (b3c16ca: sceCtrlPeek/Read
   preenchem todas as amostras pedidas e devolvem a contagem, como o ctrl_get do Vita3K; o jogo lê 2 amostras). Falta
   uma gravação com o carro em velocidade sem virar
+  Confirmado pelo usuário (08/11/2026)
 - [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
   libshacccg.suprx com o ShaRKF00D); taiInjectDataForUser/taiInjectAbs e taiHookFunctionOffsetForUser em Thumb
