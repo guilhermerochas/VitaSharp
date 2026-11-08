@@ -174,12 +174,14 @@ public static class Strings
     public static string InternalResolution => "Resolução interna";
     public static string InternalResolutionDetail => "Mais nítido, custa placa de vídeo";
     public static string InternalResolutionTip => "Renderiza o jogo numa resolução maior que a do Vita (como o PCSX2): imagem mais nítida na janela ou em tela cheia. " +
-        "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x.";
+        "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x. " +
+        "Com o jogo rodando, F1 / Shift+F1 trocam a resolução só naquela sessão.";
     public static string FrameRate => "Taxa de quadros";
     public static string FrameRateDetail => "Limite deste jogo";
     public static string FrameRateTip => "Nativo: o jogo roda como no Vita. Fixo em 30/60: cada quadro dura 2 ou 1 vblank (ex.: um jogo a 20 fps passa a 30). " +
         "Sem limite: sem espera de vblank, o jogo roda o mais rápido que o PC aguentar. Jogos cuja lógica anda por quadro ficam " +
-        "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo.";
+        "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo. " +
+        "Com o jogo rodando, F2 / Shift+F2 trocam a taxa só naquela sessão.";
     public static string ControlsDetail => "Teclado e controles (valem para todos os jogos)";
     public static string AppliesOnStart => "Vale quando o jogo abrir.";
     public static string AppliesNextStart => "Vale na próxima vez que o jogo abrir.";

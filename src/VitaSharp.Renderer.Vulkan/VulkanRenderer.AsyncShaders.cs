@@ -155,7 +155,7 @@ public sealed unsafe partial class VulkanRenderer
                     if (d.IndexCount == 0 || d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null || d.VertexProgram?.Info == null) return;
                     var vp = d.VertexProgram;
                     uint vmask = VertexVaryingMask(d);
-                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: vmask);
+                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: vmask, scaledPointSize: vp.Info.Program.WritesPointSize);
                     if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, vmask));
                     else PromoteRebuildJob(vp.Info.Program.Hash, vk);
                     var fp = d.FragmentProgram;

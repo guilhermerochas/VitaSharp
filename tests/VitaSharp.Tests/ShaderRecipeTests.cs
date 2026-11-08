@@ -33,7 +33,8 @@ public class ShaderRecipeTests : IDisposable
         foreach (var h in new[] { VertexHints(), FragmentHints(), FragmentHints(fetch: true), FragmentHints() with { OutputRegisterFormat = 1 },
                      FragmentHints(fetch: true) with { OutputRegisterFormat = 5 }, FragmentHints() with { OutputRegisterFormat = 1, TileWord1 = true },
                      FragmentHints(fetch: true) with { OutputRegisterFormat = 1, TileWord1 = true },
-                     FragmentHints(fetch: true) with { FetchInputSingleSample = true }, VertexHints() with { VaryingMask = 0x31 } })
+                     FragmentHints(fetch: true) with { FetchInputSingleSample = true }, VertexHints() with { VaryingMask = 0x31 },
+                     VertexHints() with { ScaledPointSize = true }, VertexHints() with { VaryingMask = 0x31, ScaledPointSize = true } })
         {
             var r = new ShaderRecipe(0x1122334455667788, h.Key(), h.Attributes.Length > 0, h);
             var back = ShaderRecipe.Decode(r.Encode());
@@ -49,8 +50,18 @@ public class ShaderRecipeTests : IDisposable
             Assert.Equal(h.TileWord1, back.Hints.TileWord1);
             Assert.Equal(h.FetchInputSingleSample, back.Hints.FetchInputSingleSample);
             Assert.Equal(h.VaryingMask, back.Hints.VaryingMask);
+            Assert.Equal(h.ScaledPointSize, back.Hints.ScaledPointSize);
             Assert.Equal(h.Key(), back.Hints.Key());
         }
+    }
+
+    [Fact]
+    public void ScaledPointSizeVariantsHaveTheirOwnKey()
+    {
+        // only point-size programs get the new key: every other program keeps its cached shaders
+        var plain = VertexHints();
+        Assert.NotEqual(plain.Key(), (plain with { ScaledPointSize = true }).Key());
+        Assert.Equal(new ShaderHints(plain.TextureFormats, plain.Attributes, 0).Key(), plain.Key());
     }
 
     [Fact]

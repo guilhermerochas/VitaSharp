@@ -18,10 +18,16 @@ namespace VitaSharp.Core.Gxm.Shader;
 /// as a plain subpassInput</param>
 /// <param name="VaryingMask">vertex shaders: the varying locations (bits 1-13) the draw's fragment program reads
 /// (<see cref="ShaderGenerator.FragmentVaryingMask"/>); only those are declared and written. 0 = all of them</param>
+/// <param name="ScaledPointSize">vertex programs that write the point size (<see cref="GxpProgram.WritesPointSize"/>):
+/// gl_PointSize is multiplied by the internal resolution (rinfo.res_multiplier), so point sprites keep their size on
+/// screen above native. Its own key bit: only these programs get new cache entries (the shader caches of every other
+/// program stay valid)</param>
 public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int ComponentCount, byte Format)[] Attributes, uint ColorFormat,
     bool FetchInputAttachment = false, uint OutputRegisterFormat = 0, bool TileWord1 = false, bool FetchInputSingleSample = false,
-    uint VaryingMask = 0)
+    uint VaryingMask = 0, bool ScaledPointSize = false)
 {
+    /// <summary>Mixed into the key of <see cref="ScaledPointSize"/> variants (other keys are unchanged).</summary>
+    public const uint ScaledPointSizeKey = 0x50535A31;
     /// <summary>Mixed into the key, then <see cref="VaryingMask"/>, when the mask is set (other keys are unchanged).</summary>
     public const uint VaryingMaskKey = 0x56415259;
     /// <summary>Mixed into the key of <see cref="FetchInputAttachment"/> variants (other keys are unchanged).</summary>
@@ -49,6 +55,7 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
         if (FetchInputAttachment) h = Fnv.Mix(h, FetchInputKey);
         if (FetchInputSingleSample) h = Fnv.Mix(h, FetchInputSingleKey);
         if (TileWord1) h = Fnv.Mix(h, TileWord1Key);
+        if (ScaledPointSize) h = Fnv.Mix(h, ScaledPointSizeKey);
         return VaryingMask != 0 ? Fnv.Mix(Fnv.Mix(h, VaryingMaskKey), VaryingMask) : h;
     }
 
@@ -473,7 +480,7 @@ float packC10(vec3 c) {
         if (program.PrimaryInstrCount > 0)
             t.TranslateProgram(ReadCode(program, program.PrimaryProgramStart, (int)program.PrimaryInstrCount), false);
 
-        if (vertex) EmitVertexFinalize(program, t, decl, hints.VaryingMask);
+        if (vertex) EmitVertexFinalize(program, t, decl, hints.VaryingMask, hints.ScaledPointSize);
         else EmitFragmentFinalize(program, hints, t, decl, result);
         if (!vertex && FarPlane == FarPlaneClip.Discard)
         {
@@ -1149,7 +1156,7 @@ float packC10(vec3 c) {
         return new System.Runtime.CompilerServices.StrongBox<uint>(other ? 0 : mask | 1);
     }).Value;
 
-    static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl, uint varyingMask)
+    static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl, uint varyingMask, bool scaledPointSize)
     {
         bool Declared(int loc) => varyingMask == 0 || (varyingMask & (1u << loc)) != 0;
         int outputs = program.VertexOutputs(out var coordInfos);
@@ -1205,7 +1212,9 @@ float packC10(vec3 c) {
             }
             else if (flag == GxpProgram.OutPsize)
             {
-                t.Line($"gl_PointSize = {t.Load(o, 1).E};");
+                // GXM point sizes are in guest pixels: at an internal resolution above (or below) native the sprite
+                // covers res_multiplier times as many attachment pixels (Vita3K scales gl_PointSize the same way)
+                t.Line(scaledPointSize ? $"gl_PointSize = {t.Load(o, 1).E} * rinfo.res_multiplier;" : $"gl_PointSize = {t.Load(o, 1).E};");
             }
             else if (Declared(loc))
             {

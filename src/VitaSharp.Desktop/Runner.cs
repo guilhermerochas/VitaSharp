@@ -273,8 +273,6 @@ public static class Runner
         }
         EmulationPause.Changed += OnPauseChanged;
         window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
-        // scripted pause / F10 key steps (--input key@...:P) also work in the window
-        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window);
         window.Resized += () => { if (EmulationPause.IsUserPaused) ShowPauseBadge(renderer); };
         // the mouse mode (F4 cycles giroscópio / analógico direito / analógico esquerdo / desligado): a notice in the
         // top-left corner for 3 s and in the title bar
@@ -287,6 +285,13 @@ public static class Runner
             _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref mouseNotice) == n) ShowPauseBadge(renderer); });
         }
         window.MouseModeChanged += ShowMouseNotice;
+        // F1 / F2: internal resolution and frame rate mode while the game runs, with the same notice
+        var graphics = new GraphicsHotkeys(emu, rendererOptions, () => renderer,
+            () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; },
+            text => { ShowMouseNotice(text); ShowTitle(); });
+        window.GraphicsKey += k => { capture.Capture.NoteKey(k); graphics.Press(k); };
+        // scripted pause / F10 / F1 / F2 key steps (--input key@...:P) also work in the window
+        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window, graphics);
 
         window.Loaded += () =>
         {
@@ -354,8 +359,9 @@ public static class Runner
     }
 
     /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
-    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs).</summary>
-    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null)
+    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F1 / F2 (Shift = back)
+    /// change the internal resolution / frame rate mode.</summary>
+    static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null, GraphicsHotkeys? graphics = null)
     {
         if (script.TakeHostKeys() is not { } keys) return;
         foreach (var k in keys)
@@ -364,6 +370,7 @@ public static class Runner
             else if (k == "F10") diag.Capture("--input F10");
             else if (k == "F11") window?.ToggleFullscreen();
             else if (k is "F8" or "Ctrl+F8") window?.PressF8(k == "Ctrl+F8");
+            else if (GraphicsHotkeys.IsHotkey(k)) graphics?.Press(k);
         }
     }
 
@@ -406,9 +413,17 @@ public static class Runner
         }) { IsBackground = true, Name = "diag-at" }.Start();
     }
 
-    /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed.</summary>
+    /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed. Every
+    /// orderly exit logs a last "Process exit" line: a log that ends without it (and without an UNHANDLED line) means
+    /// the process was terminated from outside or died in native code (Windows Error Reporting then has an
+    /// Application Error event, a kill leaves none).</summary>
     static void InstallCrashLogging()
     {
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            Log.Info($"Process exit at guest frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}");
+            Log.Flush();
+        };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             Log.Error($"UNHANDLED EXCEPTION (terminating: {e.IsTerminating}) on thread '{Thread.CurrentThread.Name}' at guest frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {e.ExceptionObject}");
@@ -563,6 +578,7 @@ public static class Runner
         emu.Start();
         if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
         var hostKeyScript = emu.Host.Input is ScriptedInput { HasHostKeySteps: true } ps ? ps : null;
+        var graphics = new GraphicsHotkeys(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, () => NewHeadlessRenderer(ro, diag), text => Log.Info($"[notice] {text}"));
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
         bool profileHle = options.Contains("--profile-hle");
@@ -574,7 +590,7 @@ public static class Runner
         while (!fatal.Wait(50) && nav?.Quit != true && playback?.Done != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
             // scripted pause / F10 key steps (key@f300:P, key@f300+5:P): the guest polls no input while paused, so here
-            if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag);
+            if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag, graphics: graphics);
             double now = wall.Elapsed.TotalSeconds;
             if (now - fpsAt >= 5) // periodic frame rate, so boot and gameplay can be told apart
             {

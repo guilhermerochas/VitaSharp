@@ -5,6 +5,27 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 ## Diagnóstico
 
 - [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
+  Feito em parte (07/11/2026, perf/desktop-11): `F1` / `Shift+F1` passam para a resolução interna seguinte / anterior
+  (1x, 2x, 3x, 4x) e `F2` / `Shift+F2` para a taxa de quadros seguinte / anterior (nativa, fixa em 30, fixa em 60, sem
+  limite), com aviso no canto da janela e na barra de título; valem só para a sessão (o perfil do jogo no launcher
+  não muda). A resolução troca o renderizador com as threads do jogo seguras entre duas cenas da GPU
+  (`SaveStates.ReplaceBackendBetweenScenes`, o mesmo caminho da carga de estado; 57-470 ms). Também como passos de
+  script (`key@f2250:F1`). Validado no Sonic Mania em gameplay, sem janela e com janela oculta: 1x -> 2x -> 3x -> 2x
+  (quadros gravados em 960x544, 1920x1088, 2880x1632, imagem certa logo depois de cada troca) e 30 fps entre os quadros
+  2500 e 2600 no modo fixo em 30 (`scratchpad/perf11_out/hk_mania`, `hk_win`, `hk_sheet.png`). Falta: o MSAA (real /
+  antigo / desligado) ainda é lido uma vez por processo (`VITASHARP_MSAA`, estático no renderizador); para trocar ao
+  vivo ele precisa virar opção do renderizador como a escala
+- [ ] Killzone (PCSC00045) `kz_skin` a 1x morreu calado no quadro 3435 numa das 8 rodadas da perf/desktop-res
+  (07/11/2026; sem exceção, `.err` vazio). Não reproduziu (perf/desktop-11): 6 rodadas seguidas, 3 com cache de
+  shaders e do driver frios e 3 quentes, com outros emuladores disputando a CPU, todas até o quadro 4500 com código de
+  saída 0 (23-29 fps, `scratchpad/perf11_out/kz_summary.txt`). O log de eventos do Windows não tem nenhum "Application
+  Error"/WER do VitaSharp desde 06/11 15:14, então aquela rodada não caiu por exceção nativa nem do .NET (essas deixam
+  evento, como os c0000374/c0000005 de 06/11): o processo foi encerrado de fora (TerminateProcess: um `Stop-Process`
+  de outro agente, por exemplo) ou saiu sem passar pelo fim da rodada. O script daquela rodada lia `$p.ExitCode` de um
+  `Start-Process -PassThru` sem guardar o handle (vem vazio), por isso não há código de saída. Agora toda saída
+  normal do processo escreve `Process exit at guest frame N` no log: um log sem essa linha e sem `UNHANDLED` é um
+  processo morto de fora ou em código nativo (ver o WER). Se repetir, rodar com `DOTNET_DbgEnableMiniDump=1` e
+  guardar o código de saída (`scratchpad/perf11_tools/run.ps1` faz os dois)
 
 ## Save states
 
@@ -78,8 +99,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   guest); writeback e cópias da CPU continuam na resolução nativa; dumps de quadro e prints saem na resolução interna.
   Validado (perf/desktop-res): `replay-gpu --compare` 1x idêntico ao main em 20 dumps (582 quadros), 2x sem erro em
   todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
-  Sonic Mania. Limite conhecido: `gl_PointSize` não é escalado (sprites de ponto ficam menores acima do nativo; mudar o
-  gerador invalida o cache de shaders de todos)
+  Sonic Mania. `gl_PointSize` escalado desde 07/11/2026 (perf/desktop-11): os programas de vértice que escrevem o
+  tamanho do ponto multiplicam por `rinfo.res_multiplier` numa variante com chave própria (`ShaderHints.ScaledPointSize`),
+  então só esses shaders são traduzidos de novo; o cache dos outros continua valendo (sem subir a versão do gerador).
+  Junto: as contagens dos testes de visibilidade (INCREMENT) de cenas escaladas são divididas por k*k (vinham k*k vezes
+  maiores). Conferido: `replay-gpu --compare` dos 18 dumps idêntico ao main em 1x e em 2x; o Uncharted desenha 334
+  pontos por quadro num stencil de 720x408 (`scratchpad/perf11_cmp/vis_trace2`, não aparecem nos quadros gravados); o
+  Killzone em 2x (`kzvis2`) dá contagens de visibilidade na mesma ordem das de 1x (`kzvis1`, 10-25 mil) com o sol e as
+  luzes normais. Nenhum jogo instalado com sprites de ponto visíveis foi achado (The Deer God: 12 programas com
+  tamanho de ponto, Killzone 0, pelo `shadertest`)
   Confirmado pelo usuário (07/11/2026)
 - [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
   desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
@@ -103,12 +131,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
   `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o
   backend IL do JIT, que precisa dele). Análises e trocas:
-  - [ ] Auditar cada uso e trocar por geradores de código (source generators) ou tabelas fixas: atributos lidos em
+  - [x] Auditar cada uso e trocar por geradores de código (source generators) ou tabelas fixas: atributos lidos em
     tempo de execução viram tabelas geradas na compilação; enums com `switch` gerado em vez de `Enum.ToString/Parse`
-  - [ ] Ligar os analisadores de trimming/AOT (`IsAotCompatible`, `EnableTrimAnalyzer`, `EnableAotAnalyzer`) em todos
+    Auditado (07/11/2026, perf/desktop-11): não sobrou reflexão de verdade fora do backend IL. As chamadas `[Hle]` já
+    vêm do gerador (`VitaSharp.Core.Generators`); os `GetProperty` são do DOM do `System.Text.Json` (`JsonElement`),
+    não reflexão; `Enum.GetValues<T>`/`Enum.Parse<T>`/`TryParse<T>` genéricos funcionam no Native AOT e só rodam em
+    relatórios, scripts e na leitura de configurações; `GetCustomAttribute` só lê a versão do assembly;
+    `Type.GetType("Mono.RuntimeStructs")` (constante, analisável) detecta o Mono; `typeof(T).GetFields()` do relatório
+    de recursos do Vulkan tem `[DynamicallyAccessedMembers]`. Nada barato a trocar
+  - [x] Ligar os analisadores de trimming/AOT (`IsAotCompatible`, `EnableTrimAnalyzer`, `EnableAotAnalyzer`) em todos
     os projetos com aviso tratado como erro, para nenhum uso novo entrar sem ser visto (IL2026/IL3050)
-  - [ ] Conferir o JSON: todos os `JsonSerializer` com contexto gerado (sem o serializador por reflexão como reserva;
+    Feito (07/11/2026): Core, Renderer.Vulkan e Android.Common já tinham `IsAotCompatible` e o Desktop os
+    analisadores; o `Directory.Build.targets` agora transforma os avisos de trimming/AOT/arquivo único (IL2026, IL2046,
+    IL2055-IL2095, IL2111, IL3000-IL3002, IL3050/IL3051) em erro nesses projetos. O app Android fica de fora (a análise
+    dele só roda no build longo do APK)
+  - [x] Conferir o JSON: todos os `JsonSerializer` com contexto gerado (sem o serializador por reflexão como reserva;
     `JsonSerializerIsReflectionEnabledByDefault=false`)
+    Feito no desktop (07/11/2026): todas as chamadas já passavam contexto gerado ou `JsonTypeInfo`; o
+    `VitaSharp.Desktop.csproj` desliga o serializador por reflexão (`runtimeconfig.json` com a chave). Conferido: o
+    jogo abre e lê o `input.json` de perfis (teclado personalizado + 1 controle; `scratchpad/perf11_out/json_win`). No app Android falta pôr a mesma propriedade e testar no celular (Android parado)
   - [ ] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
     (tabelas de HLE, NIDs, formatos) — gerar na compilação o que hoje é montado ao iniciar
   - [ ] Caminhos quentes sem custos escondidos: boxing, `params object[]`, interpolação de string em logs desligados
@@ -138,6 +179,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
+  Medido (07/11/2026, perf/desktop-11, `mania_boot` com `--profile-from=1520 --frames=1660`, menu principal e seleção
+  de save): 53,4 fps, quadro p50 17,5 ms. Não é a GPU nem o renderizador: a thread `pthread` (o renderizador por
+  software do RSDKv5) executa 5,2 M ciclos emulados por quadro (1,07 ciclo/instrução, 720 K blocos) e fica 59% rodando
+  + 24% no ritmo da CPU emulada + 17% esperando a `main`. O jogo não chama `scePowerSetArmClockFrequency` (nem
+  importa ScePower), então roda nos 333 MHz padrão: 5,2 M ciclos = 15,7 ms de CPU por quadro, mais a espera, passa de
+  16,7 ms. Prova: com `--cpu-mhz=444` 59,4 fps (p50 16,6 ms) e sem ritmo (`--cpu-mhz=0`) 59,6 fps cravados, mesmo
+  número de ciclos. Os dados do usuário têm `pixWidth=480` e o mod UltrawideMania (mais pixels por quadro que os 424 do
+  jogo). Nada mudado: acelerar só este caso seria mexer no modelo de custo (`BlockBuilder.CycleCost`) ou no relógio
+  padrão de todos os jogos (o Silent Hill depende dos 333 MHz). Opções para o usuário decidir: uma opção por jogo de
+  "Relógio da CPU" (333 / 444 / sem ritmo) como a taxa de quadros, ou conferir num Vita de verdade se este menu com o
+  mod e 480 de largura fica a 60 a 333 MHz (se ficar, o custo do laço de pixels está alto no modelo)
 
 ## Android
 
@@ -1964,6 +2016,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `guestGpuWait` alto), que precisa da tela do usuário: rodar o jogo com a chave e comparar o F10/FrameLedger com o
   de antes. Regressão com a chave ligada: Devious Dungeon (59,9 fps), F1 2011 (25 fps, como antes) e Uncharted (60 fps
   no boot) usam NEXTFRAME, a chave não entra (contador 0) — rodadas `bugsB3_out/dd_pace`, `f1_pace`, `uc_pace`.
+  Medido de novo (08/11/2026, perf/desktop-11, main 8984522 + perf/desktop-11, janela oculta, 4 rodadas de 150 s
+  alternando sem/com `VITASHARP_DISPLAY_IMMEDIATE_PACE=1`, `scratchpad/perf11_out/deer*`): com o PC livre o gameplay
+  fica em 55-61 fps nos dois modos (janelas de 5 s: 58-61, uma de 55); as quedas para 0-25 fps só apareceram nas
+  rodadas em que outros agentes compilavam (CPU do PC a 90-100%: até os timers do processo atrasavam 5-9 s, e os
+  quadros mostram `guestGpuWait` de 100-245 ms), então os engasgos com `guestGpuWait` alto são a CPU do PC disputada,
+  não um defeito achado do emulador; a chave não muda isso. A tela parada de ~12-15 s é sempre no quadro 2752 (a
+  troca de cena depois do menu): é carga de verdade do jogo. Com `--profile` (sem janela, com a chave para ter o ritmo
+  da janela; `deer_prof_pace`) a thread `UnityPreload` faz 212 M ciclos/s de código + 61 M de HLE (40% rodando, 30% no
+  ritmo da CPU emulada a 333 MHz, 18% em `sceIoPread`), enquanto a `Unity_main_thread` dorme em `sceKernelDelayThread`;
+  o quadro 2753 leva 11,8 s (fileIo 4,2 s, ritmo da CPU 3,7 s). Sem a chave e sem janela o jogo corre a ~280 fps, as
+  entradas por número de quadro caem em outros momentos e essa carga nem acontece na rodada. Nada mudado: a carga
+  segue o relógio emulado de 333 MHz e o tempo de leitura emulado; falta comparar o tempo dessa carga com um vídeo do
+  Vita de verdade antes de mexer no ritmo de leitura ou da CPU
   Desligada por padrão até o usuário confirmar na janela.
   Medido na janela oculta (agente C dia 11, 06/11/2026, fix/bugs-games-10, `VITASHARP_HIDDEN_WINDOW=1`, 150 s, Cross a
   cada 200 quadros; `scratchpad/bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas

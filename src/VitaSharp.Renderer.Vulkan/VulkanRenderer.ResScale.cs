@@ -30,6 +30,9 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>This renderer's scale: <see cref="VulkanRendererOptions.ResScale"/> when set, else <see cref="EnvResScale"/>.</summary>
     internal readonly float ResScale;
 
+    /// <summary>This renderer's internal resolution factor (1 = native).</summary>
+    public float InternalScale => ResScale;
+
     /// <summary>Largest internal resolution factor (4x: 3840x2176 for a 960x544 surface).</summary>
     internal const float MaxResScale = 4f;
 

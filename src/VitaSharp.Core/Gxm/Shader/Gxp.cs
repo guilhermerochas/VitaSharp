@@ -180,6 +180,9 @@ public sealed class GxpProgram
     // ---- vertex outputs (gxp::get_vertex_outputs)
     public const int OutPosition = 1 << 0, OutFog = 1 << 1, OutColor0 = 1 << 2, OutColor1 = 1 << 3, OutTexcoord0 = 1 << 4, OutPsize = 1 << 14;
 
+    /// <summary>A vertex program that writes gl_PointSize (point sprites).</summary>
+    public bool WritesPointSize => IsVertex && (VertexOutputs1 & 0x100) != 0;
+
     public int VertexOutputs(out byte[] coordInfos)
     {
         coordInfos = new byte[10];
