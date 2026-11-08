@@ -116,6 +116,11 @@ public sealed unsafe partial class VulkanRenderer
 
     (ImageView, ImageLayout) UnpackedDepthTexture(DepthTarget dt, uint w, uint h)
     {
+        // above native the multisampled image is scaled too: every sample of it is unpacked, at the scaled size, like
+        // the single-sampled depth texture (VulkanRenderer.ResScale.cs). Unpacked at the guest size, texel (x, y) read
+        // pixel (x/2, y/2) of the scaled image, the top-left quarter of the scene, and LittleBigPlanet's depth of field
+        // blurred the whole planet in its pod menus at 2x
+        if (dt.Scale != 1f) { w = ScaleDim(w, dt.Scale); h = ScaleDim(h, dt.Scale); }
         w = Math.Min(w, dt.Width * 2);
         h = Math.Min(h, dt.Height * 2);
         const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
