@@ -904,12 +904,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Ryubing: um texto em português no código falha o teste). 550 textos. Validado com `ui-render --lang=en|pt-BR`.
   Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Android.Common` ainda têm os
   textos em português no código; migrar para as mesmas chaves e estender o teste de ASCII a eles
-- [ ] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
+- [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
   releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um
   link "English | Português" no topo de cada um. Só o que é externo: coisas internas (este roadmap, `docs/agents/`,
   `docs/notes/`, `docs/hle/`) continuam num idioma só, como estão. Manter os dois em dia a cada mudança (um teste que
   avisa quando um arquivo externo muda sem o par)
+  Feito (08/11/2026, feat/product-1): `README.md` em inglês e `README.pt-BR.md`, `docs/compatibility.md` e
+  `docs/compatibility.pt-BR.md`, com "English | Português" no topo (atualizados para o launcher novo: Instalar pkg /
+  vpk, firmware na página Sistema do Vita, idioma, atualização automática). `ExternalDocPairsTests`: os externos
+  exigidos e todo `*.pt-BR.md` têm o par e o link, e a primeira linha de cada um (`<!-- pair: <outro> sha256=... -->`)
+  guarda o hash do outro idioma: mudar um sem o outro falha o teste, que mostra as duas linhas novas. O
+  `docs/android/README.md` (compilar e rodar o app) e o cabeçalho das notas de release ficam só em inglês por enquanto
 - [x] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
   Fazer o CI, a cada push na `main` com testes e pacotes ok, publicar sozinho uma release (prerelease) na aba
   "Releases" do GitHub com os pacotes Native AOT (win-x64, linux-x64, osx-arm64; depois o APK android-arm64), o
