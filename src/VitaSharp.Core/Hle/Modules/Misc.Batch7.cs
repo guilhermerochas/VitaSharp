@@ -96,12 +96,6 @@ public sealed partial class Net
     [Hle] int sceNetInternalInetPton(int af, string src, uint dst) => sceNetInetPton(af, src, dst);
 }
 
-public sealed partial class Libc
-{
-    /// <summary>The handler operator new calls when out of memory (as _get_new_handler).</summary>
-    [Hle] uint _ZSt15get_new_handlerv() => _ZSt16_get_new_handlerv();
-}
-
 public sealed partial class Videodec
 {
     // the user forms of the system applications' entries (avcodec_us: the arguments go through unchanged)
