@@ -4,13 +4,12 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
-/// SceVideoencUser / SceAvcenc: hardware H.264 encoder (used for video recording, usually through SceLibMp4Recorder).
-/// There is no vitasdk header and no Vita3K module: prototypes are inferred from the SceVideodec/SceAvcdec pair
-/// (Videodec.cs). Functional stub: libraries and encoder handles are tracked and arguments validated, frames are
-/// accepted and dropped, and no NAL units are ever produced (the output only goes to a file or the network, never
-/// back to the game). Error codes follow SceVideodec (INVALID_PARAM / INVALID_POINTER) until confirmed.
-/// Only words whose layout is assumed by analogy with SceAvcdec are touched: the handle at ctrl+0, the memory size at
-/// memInfo+0 / encoderInfo+0, width/height at query+0/+4. Nothing is written through picture/NAL structs.
+/// SceVideoencUser / SceAvcenc: hardware H.264 encoder (video recording: the Camera, SceLibMp4Recorder). There is no
+/// vitasdk header and no Vita3K module: prototypes are inferred from the SceVideodec/SceAvcdec pair (Videodec.cs) and
+/// the picture layouts from the Camera (NPXS10004, FW 3.74), which encodes through <see cref="sceAvcencEncode"/> and
+/// takes each NAL unit with <see cref="sceAvcencGetNalUnit"/> (layouts there). The pictures are encoded with FFmpeg's
+/// H.264 encoder (<see cref="Media.H264Encoder"/>); without one, no picture is produced. Error codes follow
+/// SceVideodec (INVALID_PARAM / INVALID_POINTER) until confirmed.
 /// </summary>
 public sealed partial class Videoenc : HleModule
 {
@@ -22,8 +21,12 @@ public sealed partial class Videoenc : HleModule
     sealed class Encoder
     {
         public uint Width, Height, Preset;
-        public long Frames;
-        public bool Stopped;
+        public long Frames, Pictures;
+        public bool Stopped, Tried;
+        public int FrameRate = 30, BitRate = 3_000_000, Gop = 30;
+        public Media.H264Encoder? Codec;
+        /// <summary>The NAL units of the last picture: guest address (after the start code), size, nal_unit_type.</summary>
+        public readonly List<(uint Address, uint Size, byte Type)> Nals = new();
     }
 
     readonly object _lock = new();
@@ -40,7 +43,6 @@ public sealed partial class Videoenc : HleModule
     int InitLibrary(uint codecType)
     {
         CheckType(codecType);
-        Log.WarnOnce("videoenc-stub", "sceVideoenc/sceAvcenc: H.264 encoding is not emulated, frames are dropped");
         lock (_lock) _libraries.Add(codecType);
         return 0;
     }
@@ -72,7 +74,11 @@ public sealed partial class Videoenc : HleModule
         lock (_lock)
         {
             _libraries.Remove(codecType);
-            if (_libraries.Count == 0) _encoders.Clear();
+            if (_libraries.Count == 0)
+            {
+                foreach (var e in _encoders.Values) e.Codec?.Dispose();
+                _encoders.Clear();
+            }
         }
         return 0;
     }
@@ -136,18 +142,26 @@ public sealed partial class Videoenc : HleModule
     [Hle]
     int sceAvcencDeleteEncoder(uint ctrl)
     {
-        if (Find(ctrl, out int err, out uint h) == null) return err;
+        if (Find(ctrl, out int err, out uint h) is not { } e) return err;
         lock (_lock) _encoders.Remove(h);
+        e.Codec?.Dispose();
         return 0;
     }
 
-    /// <summary>Parameter layout unknown: the first 0x40 bytes are logged once.</summary>
+    /// <summary>Layout not confirmed. What the Camera passes (640x480): +0xC 28 (its IDR interval: it counts 0x1C
+    /// pictures between key frames), +0x18/+0x1C/+0x20 width, pitch and height, +0x30 1500000 and +0x34 1800000
+    /// (bit rate and its peak). The interval and bit rate are taken when they are plausible, before the first
+    /// picture; the first 0x40 bytes are logged.</summary>
     [Hle]
     int sceAvcencSetEncoderParameter(uint ctrl, uint param)
     {
-        if (Find(ctrl, out int err, out _) == null) return err;
+        var e = Find(ctrl, out int err, out _);
+        if (e == null) return err;
         if (param == 0) return ERR_INVALID_POINTER;
-        Log.DebugOnce("avcenc-param", "sceAvcencSetEncoderParameter: " + Convert.ToHexString(GuestMemory.Span(param, 0x40)));
+        Log.Info("sceAvcencSetEncoderParameter: " + Convert.ToHexString(GuestMemory.ReadSpan(param, 0x40)));
+        uint gop = GuestMemory.R32(param + 0xC), rate = GuestMemory.R32(param + 0x30);
+        if (gop is >= 1 and <= 300) e.Gop = (int)gop;
+        if (rate is >= 64_000 and <= 40_000_000) e.BitRate = (int)rate;
         return 0;
     }
 
@@ -171,7 +185,16 @@ public sealed partial class Videoenc : HleModule
         return 0;
     }
 
-    /// <summary>The frame is counted and dropped (no H.264 encoder).</summary>
+    /// <summary>
+    /// (ctrl, input, output). Input as the Camera fills it (0x30 bytes): +0 size 0x30, +8 pitch, +0xC width, +0x10
+    /// height, +0x24 the picture (YUV 4:2:0 planar: the Y plane, then U and V at half pitch right after it, as
+    /// SceCamera's YUV420_PLANE frames are), 0 for no picture; +0x2C flags (1). Output: +0 nonzero when a picture was
+    /// produced, +4 the number of picture infos and +8 an array of pointers to them. A picture info (0x28 bytes): +0
+    /// size, +4/+8/+0xC and +0x10/+0x14/+0x18 the two timestamps as (seconds, numerator, denominator) (the Camera turns
+    /// them into its 240 kHz DTS/PTS), +0x1C/+0x20 the stream buffer the caller gives and, back, the bytes written, +0x24
+    /// the number of NAL units and +0x25 the picture type (4 = IDR). The NAL units go to the stream buffer in Annex B
+    /// with 4-byte start codes: the Camera overwrites each start code with the unit's big-endian length (MP4 samples).
+    /// </summary>
     [Hle]
     int sceAvcencEncode(uint ctrl, uint input, uint output)
     {
@@ -180,38 +203,98 @@ public sealed partial class Videoenc : HleModule
         if (input == 0) return ERR_INVALID_POINTER;
         e.Frames++;
         e.Stopped = false;
-        NoPicture(output);
+        uint y = GuestMemory.R32(input + 0x24);
+        if (y == 0 || output == 0) { NoPicture(output); return 0; }
+        uint pitch = GuestMemory.R32(input + 8), w = GuestMemory.R32(input + 0xC), h = GuestMemory.R32(input + 0x10);
+        if (w == 0 || h == 0 || w > MaxWidth || h > MaxHeight) (w, h) = (e.Width, e.Height);
+        if (pitch < w) pitch = w;
+        if (!e.Tried)
+        {
+            e.Tried = true;
+            e.Codec = Media.H264Encoder.TryCreate((int)w, (int)h, e.FrameRate, e.BitRate, e.Gop);
+        }
+        if (e.Codec == null || e.Codec.Width != w || e.Codec.Height != h) { NoPicture(output); return 0; }
+        uint ySize = pitch * h, cPitch = pitch / 2, cSize = cPitch * (h / 2);
+        var units = e.Codec.Encode(GuestMemory.ReadSpan(y, (int)ySize), (int)pitch,
+            GuestMemory.ReadSpan(y + ySize, (int)cSize), GuestMemory.ReadSpan(y + ySize + cSize, (int)cSize), (int)cPitch);
+        WritePicture(e, output, units);
         return 0;
+    }
+
+    /// <summary>Describes the encoded access units (normally one) in the output and the caller's stream buffer.</summary>
+    static void WritePicture(Encoder e, uint output, List<(byte[] Data, bool Key)> units)
+    {
+        e.Nals.Clear();
+        uint list = output == 0 ? 0 : GuestMemory.R32(output + 8);
+        uint info = units.Count == 0 || list == 0 || GuestMemory.R32(output + 4) == 0 ? 0 : GuestMemory.R32(list);
+        if (info == 0 || GuestMemory.R32(info) < 0x26) { NoPicture(output); return; }
+        uint buf = GuestMemory.R32(info + 0x1C), cap = GuestMemory.R32(info + 0x20), pos = 0;
+        bool key = false;
+        foreach (var (data, k) in units)
+        {
+            key |= k;
+            foreach (var (off, len) in Media.H264Encoder.SplitNals(data))
+            {
+                if (pos + 4 + (uint)len > cap)
+                {
+                    Log.WarnOnce("avcenc-full", $"sceAvcencEncode: picture larger than the stream buffer ({cap} bytes), NAL units dropped");
+                    break;
+                }
+                GuestMemory.W32(buf + pos, 0x01000000); // 00 00 00 01
+                data.AsSpan(off, len).CopyTo(GuestMemory.Span(buf + pos + 4, len));
+                e.Nals.Add((buf + pos + 4, (uint)len, (byte)(data[off] & 0x1F)));
+                pos += 4 + (uint)len;
+            }
+        }
+        if (e.Nals.Count == 0) { NoPicture(output); return; }
+        long n = e.Pictures++;
+        uint fps = (uint)Math.Max(e.FrameRate, 1);
+        for (uint t = 4; t <= 0x10; t += 0xC) // decoding and presentation time are the same (no B-frames)
+        {
+            GuestMemory.W32(info + t, (uint)(n / fps));
+            GuestMemory.W32(info + t + 4, (uint)(n % fps));
+            GuestMemory.W32(info + t + 8, fps);
+        }
+        GuestMemory.W32(info + 0x20, pos);
+        GuestMemory.Write(info + 0x24, (byte)Math.Min(e.Nals.Count, 255));
+        GuestMemory.Write(info + 0x25, (byte)(key ? 4 : 1));
+        GuestMemory.W32(output, 1);
     }
 
     [Hle] int sceAvcencEncodeFlush(uint ctrl) => Find(ctrl, out int err, out _) == null ? err : 0;
 
+    /// <summary>(ctrl, output): the end of the stream; what the encoder still holds comes out as in Encode.</summary>
     [Hle]
     int sceAvcencEncodeStop(uint ctrl, uint output)
     {
         var e = Find(ctrl, out int err, out _);
         if (e == null) return err;
         e.Stopped = true;
-        NoPicture(output);
+        if (e.Codec != null && output != 0) WritePicture(e, output, e.Codec.Flush());
+        else NoPicture(output);
         return 0;
     }
 
-    /// <summary>The output picture of Encode / EncodeStop: +0 is nonzero when a picture was produced (the camera then
-    /// reads its NAL count at +0x34 and takes each with sceAvcencGetNalUnit). Without an encoder none is: +0 = 0
-    /// (left untouched, the camera read garbage NAL entries and jumped through a null function pointer).</summary>
+    /// <summary>No picture: output +0 = 0 (left untouched, the Camera read garbage NAL entries and jumped through a null
+    /// function pointer).</summary>
     static void NoPicture(uint output)
     {
         if (output != 0) GuestMemory.W32(output, 0);
     }
 
-    /// <summary>(ctrl, index, SceAvcencNalUnit *nal {+0 address, +4 size, +8 type}) as the camera calls it. No NAL unit
-    /// is ever produced (no encoder), so none is described.</summary>
+    /// <summary>(ctrl, index, SceAvcencNalUnit *nal): +0 the unit's address in the stream buffer (after its start code),
+    /// +4 its size, +8 its nal_unit_type (byte; the Camera marks a picture with a type 5 unit as a key frame).</summary>
     [Hle]
     int sceAvcencGetNalUnit(uint ctrl, uint index, uint nal)
     {
-        if (Find(ctrl, out int err, out _) == null) return err;
+        var e = Find(ctrl, out int err, out _);
+        if (e == null) return err;
         if (nal == 0) return ERR_INVALID_POINTER;
-        Log.WarnOnce("avcenc-nal", "sceAvcencGetNalUnit: no NAL units are produced (encoder not emulated)");
+        if (index >= (uint)e.Nals.Count) return ERR_INVALID_PARAM;
+        var (addr, size, type) = e.Nals[(int)index];
+        GuestMemory.W32(nal, addr);
+        GuestMemory.W32(nal + 4, size);
+        GuestMemory.Write(nal + 8, type);
         return 0;
     }
 

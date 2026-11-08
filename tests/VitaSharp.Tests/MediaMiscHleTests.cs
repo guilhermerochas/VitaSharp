@@ -654,14 +654,69 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(v, "sceAvcencEncode", ctrl, pic, pic + 0x40));
         Assert.Equal(2, v.FramesOf(h));
         GuestMemory.Fill(pic, 0xAB, 0x40);
-        Assert.Equal(0, Call(v, "sceAvcencGetNalUnit", ctrl, 0u, pic));
-        Assert.Equal(0xABABABABu, GuestMemory.R32(pic)); // NAL struct untouched (layout unconfirmed)
+        Assert.Equal(Videoenc.ERR_INVALID_PARAM, Call(v, "sceAvcencGetNalUnit", ctrl, 0u, pic)); // no picture (input +0x24 = 0): no NAL unit
+        Assert.Equal(0xABABABABu, GuestMemory.R32(pic));
         Assert.Equal(0, Call(v, "sceAvcencEncodeFlush", ctrl));
         Assert.Equal(0, Call(v, "sceAvcencEncodeStop", ctrl, 0u));
         Assert.Equal(0, Call(v, "sceAvcencDeleteEncoder", ctrl));
         Assert.Equal(Videoenc.ERR_INVALID_PARAM, Call(v, "sceAvcencDeleteEncoder", ctrl));
         Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceAvcencEncode", 0u, pic, pic));
         Assert.Equal(0, Call(v, "sceVideoencTermLibrary", Videoenc.TYPE_HW_AVCENC_GUESS));
+    }
+
+    [Fact]
+    public void H264SplitNalsHandlesBothStartCodeLengths()
+    {
+        byte[] au = [0, 0, 0, 1, 0x67, 1, 2, 0, 0, 1, 0x68, 3, 0, 0, 0, 1, 0x65, 4, 5, 6];
+        Assert.Equal([(4, 3), (10, 2), (16, 4)], VitaSharp.Core.Media.H264Encoder.SplitNals(au));
+    }
+
+    /// <summary>The Camera's layouts: a grey 64x48 I420 picture in, an IDR access unit (SPS, PPS, IDR slice) in the
+    /// stream buffer with 4-byte start codes, the picture info filled and each unit described by GetNalUnit.</summary>
+    [Fact]
+    public void AvcencEncodesCameraPicture()
+    {
+        if (!VitaSharp.Core.Media.FFmpegLoader.Available) return;
+        var v = new Videoenc();
+        uint s = fx.Memory.Alloc(0x20000, "avcenc"), ctrl = s, query = s + 0x40, input = s + 0x80, output = s + 0x100,
+            info = s + 0x140, nal = s + 0x180, yuv = s + 0x1000, buf = s + 0x4000;
+        GuestMemory.W32(query, 64);
+        GuestMemory.W32(query + 4, 48);
+        Assert.Equal(0, Call(v, "sceAvcencCreateEncoder", Videoenc.TYPE_HW_AVCENC_GUESS, ctrl, query));
+        GuestMemory.Fill(yuv, 0x7E, 64 * 48 * 3 / 2);
+        GuestMemory.Fill(input, 0, 0x30);
+        GuestMemory.W32(input, 0x30);
+        GuestMemory.W32(input + 8, 64);
+        GuestMemory.W32(input + 0xC, 64);
+        GuestMemory.W32(input + 0x10, 48);
+        GuestMemory.W32(input + 0x24, yuv);
+        GuestMemory.W32(input + 0x2C, 1);
+        GuestMemory.Fill(info, 0, 0x28);
+        GuestMemory.W32(info, 0x28);
+        GuestMemory.W32(info + 0x1C, buf);
+        GuestMemory.W32(info + 0x20, 0x10000);
+        GuestMemory.W32(output, 0);
+        GuestMemory.W32(output + 4, 1);
+        GuestMemory.W32(output + 8, output + 0xC);
+        GuestMemory.W32(output + 0xC, info);
+        Assert.Equal(0, Call(v, "sceAvcencEncode", ctrl, input, output));
+        Assert.NotEqual(0u, GuestMemory.R32(output));
+        int count = GuestMemory.Read<byte>(info + 0x24);
+        Assert.True(count >= 2);
+        Assert.Equal(4, GuestMemory.Read<byte>(info + 0x25)); // the first picture is an IDR
+        Assert.Equal(30u, GuestMemory.R32(info + 0xC));
+        var types = new List<int>();
+        for (uint i = 0; i < count; i++)
+        {
+            Assert.Equal(0, Call(v, "sceAvcencGetNalUnit", ctrl, i, nal));
+            uint a = GuestMemory.R32(nal);
+            Assert.InRange(a, buf + 4, buf + GuestMemory.R32(info + 0x20));
+            Assert.Equal(0x01000000u, GuestMemory.R32(a - 4));
+            types.Add(GuestMemory.Read<byte>(nal + 8));
+        }
+        Assert.Contains(7, types);
+        Assert.Contains(5, types);
+        Assert.Equal(0, Call(v, "sceAvcencDeleteEncoder", ctrl));
     }
 
     [Fact]
