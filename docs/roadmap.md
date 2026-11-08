@@ -913,7 +913,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   nunca vira "latest" e só as 10 últimas ficam (`KEEP_BUILDS`; as antigas e suas tags são apagadas com `gh release
   delete --cleanup-tag`). README, seção Releases, atualizado. O APK continua de fora até o CI ter o job do Android
   Feito: release automática build-<hash> a cada push verde na main (6b85695), já publicando (build-eb950c1)
-- [ ] Atualização automática do emulador pelas releases do GitHub, no estilo do PCSX2 (pedido do usuário, 07/11/2026):
+- [x] Atualização automática do emulador pelas releases do GitHub, no estilo do PCSX2 (pedido do usuário, 07/11/2026):
   ao abrir (e por um botão "Procurar atualizações" nas Configurações), consultar a API de releases do GitHub do
   projeto, comparar com a versão/hash do build em uso e, se houver uma mais nova, mostrar um diálogo com a versão, a
   data e as notas (lista de commits), com Atualizar / Pular esta versão / Lembrar depois. Atualizar baixa o pacote da
@@ -922,6 +922,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Opções: canal (builds automáticas `build-*` ou só versões `v*`), checar ao iniciar liga/desliga. Nunca toca nos
   dados do usuário (pasta de dados, firmware, saves). Android: avisar e abrir o APK novo (instalação pelo sistema),
   depois que o CI publicar o APK
+  Feito no desktop (08/11/2026, feat/product-1): `Core/Update` (releases da API, canal builds = build-* e v*, canal
+  releases = só v*; mais nova = publicada depois da release do commit em uso, ou depois da hora do build quando o
+  commit não está na lista; pacote win-x64.zip/-setup.exe/linux .tar.gz/.AppImage/osx .app.zip; `SHA256SUMS.txt`),
+  `Updater.cs` (o exe do pacote novo roda `apply-update`: espera o processo antigo sair, copia só os arquivos do pacote
+  por cima, nunca apaga nada e recusa se a pasta de dados estiver dentro da instalação, e reabre; instalação pelo setup
+  roda o instalador; AppImage é renomeado por cima), diálogo no launcher (ao abrir e "Procurar agora"). O repositório
+  vem do `GITHUB_REPOSITORY` do CI (`VitaSharpUpdateRepository`): build compilado do código não se atualiza.
+  `VITASHARP_UPDATE_FEED` troca o feed. Validado com um feed local (pasta com `releases.json` e URLs file://): build
+  1.0.0+7f2e54a achou a build-2222222 (9.9.9), `update --apply` baixou o zip de 158 MB, conferiu o SHA-256, o exe novo
+  copiou 121 arquivos e reabriu (`version` = 9.9.9, `update` = em dia); diálogo em `ui-render --update-feed`;
+  `UpdateFeedTests` com um servidor HTTP local (inclui pacote adulterado recusado). Falta: rodar contra o GitHub de
+  verdade depois da primeira release com o repositório embutido, o caminho do setup.exe/AppImage/macOS, e o Android
 - [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo

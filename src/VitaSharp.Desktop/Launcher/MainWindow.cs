@@ -112,6 +112,12 @@ public sealed partial class MainWindow : Window
         // "Ao abrir o emulador: Sistema do Vita": the shell starts right away, the launcher stays behind it
         if (_saveSettings && _settings.StartupView == LauncherSettings.StartSystem && ShellInstalled)
             Opened += (_, _) => LaunchSystem();
+        // "Procurar atualizações ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
+        if (_saveSettings)
+        {
+            Updater.CleanDownloads();
+            if (_settings.CheckUpdates) Opened += (_, _) => _ = CheckForUpdates(manual: false);
+        }
     }
 
     void SaveSettings()

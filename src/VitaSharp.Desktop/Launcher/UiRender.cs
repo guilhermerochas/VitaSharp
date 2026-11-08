@@ -9,7 +9,8 @@ namespace VitaSharp.Desktop.Launcher;
 /// as a PNG in the dark and light themes, from the data folder's games, trophies, captures and save states.
 /// <c>--launch</c> also starts a game (or the Vita system) through the launcher with --headless --seconds=N and reports
 /// how the process ended and the play time recorded (<c>--affinity=F0</c> pins it); <c>--install-pkg=P --license=zRIF</c>
-/// installs a package through the license dialog (see <see cref="InstallPkg"/>). Settings are not saved.
+/// installs a package through the license dialog (see <see cref="InstallPkg"/>); <c>--update-feed=&lt;folder|URL&gt;</c>
+/// renders the update dialog for the newest release of that feed. Settings are not saved.
 /// </summary>
 static class UiRender
 {
@@ -79,6 +80,22 @@ static class UiRender
 
             if (Opt("--install-pkg") is { } pkg && theme == themes[0])
                 failures += InstallPkg(main, Path.GetFullPath(pkg), Opt("--license") ?? "", outDir, theme, Shot);
+
+            if (Opt("--update-feed") is { } feed && Updater.Feed(feed) is { } feedUri)
+            {
+                var release = Updater.CheckAsync(Opt("--channel") ?? Core.Update.UpdateFeed.ChannelBuilds, feedUri).GetAwaiter().GetResult();
+                if (release == null) { Console.WriteLine($"  update-feed: no update for {Updater.Current.Display}"); failures++; }
+                else
+                {
+                    var dlg = main.UpdateDialog(release);
+                    dlg.Show(main);
+                    for (int i = 0; i < 4; i++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); }
+                    var path = Path.Combine(outDir, $"update-dialog_{theme}.png");
+                    dlg.CaptureRenderedFrame()?.Save(path);
+                    Console.WriteLine($"  update-feed: {Updater.Current.Display} -> {release.Tag}; wrote {path}");
+                    dlg.Close();
+                }
+            }
 
             if (launch != null && theme == themes[0])
             {
