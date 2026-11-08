@@ -723,16 +723,16 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// <summary>
     /// A depth texture or a mapped (CDRAM mirror) read hits the depth/stencil surface of a multisampled scene. Its
     /// samples are not stored to memory unless the scene forces the store, so the read sees guest memory, like on
-    /// hardware: warned once, and true is returned. A forced-stored 4X depth read as a depth texture is served by
+    /// hardware: warned once, and true is returned. A forced-stored 2X / 4X depth read as a depth texture is served by
     /// unpacking the samples instead (<see cref="UnpackedDepthTexture"/>; <paramref name="unpack"/>).
     /// </summary>
     bool MultisampledDepthRead(DepthTarget dt, bool stencil, bool unpack = false)
     {
         dt.EverRead = true;
         if (dt.Samples == SampleCountFlags.Count1Bit) return false;
-        if (unpack && !stencil && dt.ForceStored && dt.Samples == SampleCountFlags.Count4Bit && !dt.TwoXAsFour) return false;
+        if (unpack && !stencil && dt.ForceStored) return false;
         Log.WarnOnce($"msdepth-read-{dt.Address:X8}-{stencil}", $"[gpu] {(stencil ? "stencil" : "depth")} surface 0x{(stencil ? dt.StencilAddress : dt.Address):X8} of a multisampled scene is read: " +
-            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene forces the store, but only 4X depth read as a texture is unpacked" : ""));
+            "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene forces the store, but only depth read as a texture is unpacked" : ""));
         return true;
     }
 
@@ -754,7 +754,14 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         if (_dummyMsView.Handle != 0) { _vk.DestroyImageView(_dev, _dummyMsView, null); _vk.DestroyImage(_dev, _dummyMsImage, null); }
         foreach (var p in _msLoadPipelines.Values) _vk.DestroyPipeline(_dev, p, null);
         _msLoadPipelines.Clear();
-        if (_depthUnpackPipeline.Handle != 0) { _vk.DestroyPipeline(_dev, _depthUnpackPipeline, null); _vk.DestroyShaderModule(_dev, _depthUnpackFs, null); }
+        for (int i = 0; i < _depthUnpackPipelines.Length; i++)
+            if (_depthUnpackPipelines[i].Handle != 0)
+            {
+                _vk.DestroyPipeline(_dev, _depthUnpackPipelines[i], null);
+                _vk.DestroyShaderModule(_dev, _depthUnpackFs[i], null);
+                _depthUnpackPipelines[i] = default;
+                _depthUnpackFs[i] = default;
+            }
         if (_msLoadLayout.Handle != 0)
         {
             _vk.DestroyPipelineLayout(_dev, _msLoadLayout, null);

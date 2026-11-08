@@ -1003,6 +1003,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
   da escala (alvo reinterpretado/desfoque lido no tamanho errado, como o planeta do LBP e a luz do Resistance) ou do
   jogo (efeito de profundidade de campo); comparar com vídeo do Vita real. Validar
+  **Corrigido** (perf/desktop-13; falta o usuário confirmar): não era da escala (a gravação toda está em 1x; o F1 voltou
+  a 1x no quadro 317, a gravação começa no 1972) nem só o efeito do jogo. A profundidade de campo das cenas (abertura
+  do capítulo 1) lê a profundidade da cena 960x544 MSAA 2X (force store) como uma textura F32 960x1088 (as duas
+  amostras de cada pixel uma em cima da outra) e mistura a cópia borrada pelo fator de foco. Só o 4X tinha as amostras
+  desempacotadas (`UnpackedDepthTexture`); no 2X a leitura via a memória do convidado, o fator saía "longe" em tudo e
+  o personagem em foco ficava tão borrado quanto o fundo. Agora 2X (e 2X em imagem de 4 amostras, Msaa2xAs4x) também
+  é desempacotado. Comparado com vídeo do Vita real (YouTube J7LRdOTELtg, 46-56 s): Ryu nítido e fundo borrado, igual.
+  Replay 1x-4x iguais; rerun ao vivo de uma cópia da gravação em 1x e 2x com o Ryu nítido. Efeito colateral: os brilhos
+  dos refletores do FIFA 13 (partículas que leem a profundidade 2X da própria cena) mudam um pouco atrás do menu de pausa.
 - [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
   usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
   (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
