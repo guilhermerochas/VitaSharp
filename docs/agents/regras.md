@@ -34,9 +34,16 @@ regra daqui e o pedido do agente divergirem, vale a regra daqui; em dúvida, per
 
 ## CPU (o PC do usuário: 8 CPUs lógicas)
 
-- CPU total **até 92%**: meça a carga (Win32_Processor LoadPercentage, 2-3 amostras) **antes de cada build e de cada
-  execução** do emulador e espere se não houver folga. Nunca rode um teste com janela ao mesmo tempo que um build.
-- Emuladores fixados na metade menos carregada (0x0F ou 0xF0), prioridade BelowNormal; `dotnet build/test` com `-m:2`.
+- CPU total **até 90%** (regra do usuário, 08/11/2026): antes de cada build, teste ou execução (emulador, Vita3K)
+  espere **3 leituras seguidas de até 75%** (Win32_Processor LoadPercentage). Nunca rode um teste com janela ao mesmo
+  tempo que um build.
+- **No máximo dois trabalhos pesados ao mesmo tempo, somando todos os agentes**: antes de começar, pegue uma vaga com
+  `mkdir <scratchpad>\heavy_slots\slot1` (ou `slot2`; o mkdir falha se já existir — aí tente a outra; se as duas
+  existirem, espere 30 s e tente de novo), escreva dentro seu nome e a hora, e apague a pasta assim que o trabalho
+  terminar (também se falhar). Vaga com mais de 40 min é considerada abandonada. Uma série de execuções (ex.: 20
+  boots) usa uma vaga só, uma execução de cada vez.
+- Emuladores fixados na metade menos carregada (0x0F ou 0xF0), prioridade BelowNormal; `dotnet build/test` com `-m:2`
+  e `-p:UseSharedCompilation=false` (o compilador compartilhado ignora o `-m:2` e ocupa ~7 núcleos).
 - Build sempre para a pasta temporária com `-o` (o VitaSharp do usuário trava o `bin` da checkout).
 - Pare seus emuladores e rode `dotnet build-server shutdown` ao terminar.
 
