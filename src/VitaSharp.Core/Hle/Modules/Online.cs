@@ -17,12 +17,14 @@ public sealed partial class Net : HleModule
     [Hle] uint sceNetHtons(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness((ushort)v);
     [Hle] uint sceNetNtohs(uint v) => System.Buffers.Binary.BinaryPrimitives.ReverseEndianness((ushort)v);
 
+    /// <summary>The emulated unit's Wi-Fi MAC (the host's is not exposed).</summary>
+    internal static ReadOnlySpan<byte> MacAddress => [0x00, 0x1F, 0xA7, 0x56, 0x49, 0x54];
+
     [Hle]
     int sceNetGetMacAddress(uint addr, int flags)
     {
         if (addr == 0) return unchecked((int)0x80410116);
-        byte[] mac = [0x00, 0x1F, 0xA7, 0x56, 0x49, 0x54];
-        mac.CopyTo(GuestMemory.Span(addr, 6));
+        MacAddress.CopyTo(GuestMemory.Span(addr, 6));
         return 0;
     }
 
