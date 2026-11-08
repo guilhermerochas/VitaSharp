@@ -472,6 +472,54 @@ public sealed partial class AppUtil : HleModule
         return 0;
     }
 
+    // ------------------------------------------------------------------ cache0: (apputil.suprx FW 3.74)
+
+    bool _cacheMounted;
+
+    /// <summary>cache0: is the title's work directory ux0:cache/&lt;TITLEID&gt; (sceAppMgrWorkDirMountById 205 with the
+    /// application's title id). Before sceAppUtilInit 0x80100601.</summary>
+    [Hle]
+    int sceAppUtilCacheMount()
+    {
+        if (!_initialized) return ERR_NOT_INITIALIZED;
+        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "cache", Emu.TitleId);
+        Directory.CreateDirectory(dir);
+        Emu.Vfs.Mount("cache0", dir);
+        _cacheMounted = true;
+        return 0;
+    }
+
+    /// <summary>sceAppMgrUmount("cache0:"); not mounted 0x80100604.</summary>
+    [Hle]
+    int sceAppUtilCacheUmount()
+    {
+        if (!_initialized) return ERR_NOT_INITIALIZED;
+        if (!_cacheMounted) return ERR_NOT_MOUNTED;
+        Emu.Vfs.Unmount("cache0");
+        _cacheMounted = false;
+        return 0;
+    }
+
+    /// <summary>(SceSize *maxSize, SceSize *freeSize): sceAppMgrGetDevInfo("cache0:"); not mounted 0x80100604.</summary>
+    [Hle]
+    int sceAppUtilCacheGetDevInfo(Ptr<ulong> maxSize, Ptr<ulong> freeSize)
+    {
+        if (!_initialized) return ERR_NOT_INITIALIZED;
+        if (!_cacheMounted || Emu.Vfs.Resolve("cache0:") is not { } host) return ERR_NOT_MOUNTED;
+        const ulong Cap = 64UL << 30;
+        ulong total = Cap, free = Cap / 2;
+        try
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(host))!);
+            total = Math.Min((ulong)drive.TotalSize, Cap);
+            free = Math.Min((ulong)drive.AvailableFreeSpace, total);
+        }
+        catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException) { }
+        maxSize.TrySet(total);
+        freeSize.TrySet(free);
+        return 0;
+    }
+
     [Hle] int sceAppUtilPhotoMount() => MountPhoto();
     [Hle] int sceAppUtilPhotoUmount() => UmountPhoto();
 

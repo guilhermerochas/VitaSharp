@@ -1172,6 +1172,22 @@ public sealed partial class SimpleEvent : KernelObject
         return SceError.OK;
     }
 
+    /// <summary>Cancels every wait (WAIT_CANCEL) and replaces the whole pattern (the create bit too) and the user data.</summary>
+    public int CancelWithSetPattern(uint setPattern, ulong userData, Ptr<uint> numWait)
+    {
+        if ((setPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
+        lock (this)
+        {
+            numWait.TrySet((uint)_waiters.Count);
+            foreach (var w in _waiters) w.Code = SceError.WAIT_CANCEL;
+            _waiters.Clear();
+            Pattern = setPattern;
+            LastUserData = userData;
+            Monitor.PulseAll(this);
+            return SceError.OK;
+        }
+    }
+
     public int Cancel(Ptr<uint> numWait)
     {
         lock (this)

@@ -40,6 +40,7 @@ public sealed unsafe partial class Audiodec : HleModule
     readonly Dictionary<uint, Decoder> _decoders = new();
     uint _nextHandle = 1;
 
+    [Hle("_sceAudiodecInitLibrary")]
     [Hle]
     int sceAudiodecInitLibrary(uint codecType, uint initParam)
     {
@@ -49,6 +50,7 @@ public sealed unsafe partial class Audiodec : HleModule
         return 0;
     }
 
+    [Hle("_sceAudiodecTermLibrary")]
     [Hle]
     int sceAudiodecTermLibrary(uint codecType)
     {
@@ -60,9 +62,12 @@ public sealed unsafe partial class Audiodec : HleModule
     internal int InitLibraryInternal(uint codecType) { lock (_libraries) _libraries.Add(codecType); return 0; }
     internal int TermLibraryInternal(uint codecType) { lock (_libraries) return _libraries.Remove(codecType) ? 0 : ERR_NOT_INITIALIZED; }
 
+    [Hle("_sceAudiodecCreateDecoder")]
     [Hle] int sceAudiodecCreateDecoder(uint ctrl, uint codecType) => Create(ctrl, codecType, true);
     // external decoders live in memory the application provides: no sceAudiodecInitLibrary needed
+    [Hle("_sceAudiodecCreateDecoderExternal")]
     [Hle] int sceAudiodecCreateDecoderExternal(uint ctrl, uint codecType, uint context, uint size) => Create(ctrl, codecType, false);
+    [Hle("_sceAudiodecGetContextSize")]
     [Hle] int sceAudiodecGetContextSize(uint ctrl, uint codecType) => 0x10000;
 
     int Create(uint ctrl, uint codecType, bool needsLibrary)
@@ -164,7 +169,9 @@ public sealed unsafe partial class Audiodec : HleModule
         return null;
     }
 
+    [Hle("_sceAudiodecDecode")]
     [Hle] int sceAudiodecDecode(uint ctrl) => DecodeFrames(ctrl, 1);
+    [Hle("_sceAudiodecDecodeNFrames")]
     [Hle] int sceAudiodecDecodeNFrames(uint ctrl, uint frames) => DecodeFrames(ctrl, Math.Max(frames, 1));
 
     int DecodeFrames(uint ctrl, uint frames)
@@ -242,6 +249,7 @@ public sealed unsafe partial class Audiodec : HleModule
 
     /// <summary>One frame on each of nStreams decoders (pCtrls is an array of SceAudiodecCtrl pointers). All must
     /// share one codec and have distinct handles; the first stream error is returned.</summary>
+    [Hle("_sceAudiodecDecodeNStreams")]
     [Hle]
     int sceAudiodecDecodeNStreams(uint ctrls, uint nStreams)
     {
@@ -272,6 +280,7 @@ public sealed unsafe partial class Audiodec : HleModule
     /// [samplesOffset, samplesOffset + samplesToDecode), at that same offset in pPcm (Vita3K's placement; unconfirmed
     /// on hardware). outputPcmSize reports every decoded sample, inputEsSize the bytes consumed.
     /// </summary>
+    [Hle("_sceAudiodecPartlyDecode")]
     [Hle]
     int sceAudiodecPartlyDecode(uint ctrl, uint samplesOffset, uint samplesToDecode)
     {
@@ -300,9 +309,12 @@ public sealed unsafe partial class Audiodec : HleModule
     }
 
     // Resident decoders (system memory, no sceAudiodecInitLibrary). Prototypes inferred: (ctrl, codecType) / (ctrl).
+    [Hle("_sceAudiodecCreateDecoderResident")]
     [Hle] int sceAudiodecCreateDecoderResident(uint ctrl, uint codecType) => Create(ctrl, codecType, false);
+    [Hle("_sceAudiodecDeleteDecoderResident")]
     [Hle] int sceAudiodecDeleteDecoderResident(uint ctrl) => sceAudiodecDeleteDecoder(ctrl);
 
+    [Hle("_sceAudiodecClearContext")]
     [Hle]
     int sceAudiodecClearContext(uint ctrl)
     {
@@ -313,6 +325,7 @@ public sealed unsafe partial class Audiodec : HleModule
         return 0;
     }
 
+    [Hle("_sceAudiodecDeleteDecoder")]
     [Hle]
     int sceAudiodecDeleteDecoder(uint ctrl)
     {
@@ -328,8 +341,10 @@ public sealed unsafe partial class Audiodec : HleModule
         return 0;
     }
 
+    [Hle("_sceAudiodecDeleteDecoderExternal")]
     [Hle] int sceAudiodecDeleteDecoderExternal(uint ctrl, uint context) => sceAudiodecDeleteDecoder(ctrl);
 
+    [Hle("_sceAudiodecGetInternalError")]
     [Hle]
     int sceAudiodecGetInternalError(uint ctrl, Ptr<int> error)
     {

@@ -130,6 +130,10 @@ public static class Program
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
+            case "hle-implemented":
+                // hle-implemented [--vitasdk=<vitasdk-user-functions.tsv>]: every NID with an HLE implementation, as
+                // docs/hle/data/vitasharp-implemented.tsv (nid, name, module, library, "vh" when the VitaSDK lists it).
+                return ListHleImplemented(args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..]);
             case "imports" when args.Length >= 2:
             {
                 // imports <title> [exe] [--names=SceNp,SceNet]: also list every imported function name of the
@@ -388,6 +392,29 @@ public static class Program
         return 0;
     }
 
+    static int ListHleImplemented(string? vitasdkTsv)
+    {
+        var vitasdk = new HashSet<uint>();
+        if (vitasdkTsv != null)
+            foreach (var line in File.ReadLines(vitasdkTsv))
+                if (line.StartsWith("0x") && uint.TryParse(line.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber, null, out var n)) vitasdk.Add(n);
+        // Same resolution as HleRegistry.RegisterModule: explicit NID, else every NID of the name (optionally per library);
+        // a later registration of a NID replaces an earlier one.
+        var byNid = new SortedDictionary<uint, (string Name, string Module)>();
+        foreach (var m in HleBindings.Modules)
+            foreach (var b in m.Bindings())
+            {
+                string name = b.Name ?? b.Method;
+                var nids = b.Nid != 0 ? [b.Nid]
+                    : NidDatabase.LookupName(name).Where(i => b.Library == null || i.Library == b.Library).Select(i => i.Nid).ToArray();
+                foreach (var nid in nids) byNid[nid] = (NidDatabase.Lookup(nid)?.Name ?? name, m.Type.Name);
+            }
+        foreach (var (nid, (name, module)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~", StringComparer.Ordinal).ThenBy(e => e.Value.Name, StringComparer.Ordinal))
+            Console.WriteLine($"0x{nid:X8}	{name}	{module}	{NidDatabase.Lookup(nid)?.Library ?? "-"}	{(vitasdk.Contains(nid) ? "vh" : "-")}");
+        Console.Error.WriteLine($"{byNid.Count} implemented NIDs ({byNid.Keys.Count(vitasdk.Contains)} in the VitaSDK list)");
+        return 0;
+    }
+
     /// <summary>rco-dump &lt;file.rco&gt; [--extract=&lt;dir&gt;]: the element tree of a system RCO and, optionally, its files.</summary>
     static int RcoDump(string path, string? extractDir)
     {
@@ -440,6 +467,7 @@ public static class Program
         Console.WriteLine("  run options: --capture-preroll[=S] --capture-at=A:B  Gravar tudo (F8): keep the last S s / record guest frames A..B");
         Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
+        Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");

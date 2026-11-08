@@ -69,6 +69,7 @@ public sealed partial class Display : HleModule
     long _lastFlipVcount = -1;
     public static long ImmediateFlipsPaced;
 
+    [Hle("_sceDisplaySetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})
     [Hle("sceDisplaySetFrameBuf")]
     internal int SetFrameBuf(uint pParam, uint sync)
     {
@@ -141,6 +142,7 @@ public sealed partial class Display : HleModule
     [Hle("sceDisplaySetFrameBufForCompat")]
     int SetFrameBufForCompat(uint pParam, uint sync) => SetFrameBuf(pParam, sync);
 
+    [Hle("_sceDisplayGetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})
     [Hle("sceDisplayGetFrameBuf")]
     int GetFrameBuf(uint pParam, uint sync)
     {
@@ -160,6 +162,7 @@ public sealed partial class Display : HleModule
     [Hle] uint sceDisplayGetVcount() => (uint)VBlank.Count;
     [Hle] int sceDisplayGetPrimaryHead() => 0;
 
+    [Hle("_sceDisplayGetMaximumFrameBufResolution")]
     [Hle("sceDisplayGetMaximumFrameBufResolution")]
     int GetMaxRes(Ptr<int> w, Ptr<int> h) { w.TrySet(960); h.TrySet(544); return 0; }
 
@@ -272,6 +275,7 @@ public sealed partial class Display : HleModule
     /// <summary>Inferred: (head, SceDisplayResolutionInfo *info). Info (0x1C): size, screen_mode, width, height,
     /// output_format, scan_mode, fps (float).</summary>
     [Hle]
+    [Hle("_sceDisplayGetResolutionInfoInternal")] // syscall: (head, info, opt {info->size})
     int sceDisplayGetResolutionInfoInternal(int head, uint info)
     {
         if (head != 0) return ERR_INVALID_HEAD;

@@ -318,6 +318,11 @@ public sealed partial class ProcessMgr : HleModule
 
     [Hle] uint sceClibMemset(uint dst, int ch, uint len) { GuestMemory.Fill(dst, (byte)ch, len); Kernel.GuestThread.Current!.Core.ChargeInstructions(len / 8); return dst; }
 
+    /// <summary>SceDmacmgr: a copy / fill by the DMA controller, synchronous for the caller; returns the destination.
+    /// The CPU does not do the work, so no instructions are charged.</summary>
+    [Hle] uint sceDmacMemcpy(uint dst, uint src, uint len) { GuestMemory.Copy(dst, src, len); return dst; }
+    [Hle] uint sceDmacMemset(uint dst, int ch, uint len) { GuestMemory.Fill(dst, (byte)ch, len); return dst; }
+
     [Hle]
     int sceClibMemcmp(uint a, uint b, uint len) => GuestMemory.Span(a, (int)len).SequenceCompareTo(GuestMemory.Span(b, (int)len));
 

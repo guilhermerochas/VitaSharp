@@ -41,6 +41,7 @@ public sealed partial class JpegEnc : HleModule
 
     // ------------------------------------------------------------------ SceJpegEncUser
 
+    [Hle("_sceJpegEncoderGetContextSize")]
     [Hle] int sceJpegEncoderGetContextSize() => ContextSize;
 
     [Hle]
