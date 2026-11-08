@@ -406,6 +406,15 @@ public sealed partial class CodecEngine : HleModule
 
     [Hle] int sceCodecEngineCloseUnmapMemBlock(int uid) { lock (_blocks) return _blocks.Remove(uid) ? 0 : ERR_INVALID_VALUE; }
 
+    // Two argument-less calls the Camera (NPXS10004) makes when video recording starts (9A5E7B2F) and stops
+    // (9AD7E66F), ignoring the results: probably the codec engine's performance monitor start/stop (unnamed; inferred
+    // from the call sites). There is no codec hardware to monitor, so both succeed.
+    [Hle("sceCodecEngineUser_9A5E7B2F", Nid = 0x9A5E7B2F, Library = "SceCodecEngineUser")]
+    int CodecEngineMonitorStart() => 0;
+
+    [Hle("sceCodecEngineUser_9AD7E66F", Nid = 0x9AD7E66F, Library = "SceCodecEngineUser")]
+    int CodecEngineMonitorStop() => 0;
+
     /// <summary>Returns the address, or 0 when the block cannot hold it: callers test the result against 0 (the camera,
     /// NPXS10004, stores anything else as an address and frees it later).</summary>
     [Hle]
