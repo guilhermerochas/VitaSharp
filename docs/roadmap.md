@@ -590,6 +590,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Próximo passo: ver se o shell desenha a barra num plano próprio enquanto um app está na frente (sceGxm do
   SceShellMain com o app aberto) e compor esse plano. Botão PS no PC e texto cortado no boot direto: não mexidos
   nesta rodada (o primeiro precisa da janela, o segundo não foi reproduzido na rodada 9).
+  **Barra de status: resolvido** (07/11/2026, fix/system-apps-11, provas em `scratchpad/fw11_out/tro2/t2.png` e
+  `apps1/sheet.png`): não era composição (o shell já desenha a barra dentro do quadro SceSharedFb que ele compõe). O
+  shell lê a cada quadro, no SceAppMgrAppStatus do app da frente, +0x48/+0x49/+0x4A (visível, cor, transparência;
+  shell 0x8127DF5E) e o HLE escrevia zero. Agora vêm do param.sfo (ATTRIBUTE 0x80 = barra, que todo app do sistema
+  com tela tem e nenhum jogo tem; 0x100 = branca: Amigos, Email, Calendário; 0x20 = translúcida: Store e Navegador
+  dentro do jogo) e do `sceAppMgrSetInfobarState`. Troféus e Mensagens com a barra preta, Amigos com a branca, a tela
+  inicial igual. Texto cortado no boot direto: de novo não reproduzido (`run NPXS10015`: Configurações com o texto
+  inteiro, `fw11_out/direct.png`); no `run NPXS10008` sem o shell, Troféus fica só no fundo depois de ~12 s (sem o
+  servidor de troféus do shell, esperado).
   Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
   Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware).
   Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` do scratchpad): **Teclado (IME) a 60 fps** (era 5-6):
@@ -625,6 +634,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   "voltar" do paf no processo do shell) segue por achar; próximo passo: `--trace-hle-threads=SceShellMain` no
   instante do `press circle` e procurar no ime_plugin quem trata o evento de cancelar do paf (o handler de
   `paf::ui::Event` da janela do teclado), e confirmar num vídeo do Vita real que o círculo fecha o teclado.
+  07/11/2026 (fix/system-apps-11, `scratchpad/fw11_out/ime3`..`ime6`, não resolvido; a configuração inicial precisa
+  de uma pasta de dados sem ur0, `fw11_reset_ime.ps1`): o que cada botão faz hoje no teclado aberto (só o shell lê os
+  botões): círculo = primeiro mostra o foco, depois nada visível (com o foco no Enter, um círculo longo passou ao
+  campo Senha, como o Enter); triângulo = confirma a predição; quadrado = apaga (backspace); Start = foco no Enter;
+  Select = nada; o X digita. A tecla de fechar (chevron, canto inferior esquerdo) fecha. Os botões irem também para o
+  app (o setup, por baixo) não muda nada (o paf do app ignora o círculo com o teclado aberto; experimento revertido).
+  Nenhuma chamada HLE difere entre o círculo e o chevron (o pedido de fechar anda por memória/IPC do ime_plugin).
+  Falta ainda a referência: num vídeo do Vita real, o que o círculo faz com o teclado aberto.
 - [ ] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
   `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
   serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
@@ -689,6 +706,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `SceAvcencNalUnit` (+0 endereço, +4 tamanho, +8 tipo) e onde os bytes dos NALs moram (provavelmente o buffer de
   0x200000 do bloco unmap). Próximo passo: com `--probe` no retorno do Encode, ler a entrada (0x8414CEE4) e a saída
   (0x8414CEA0) e seguir no eboot da câmera (fw10_cam.elf, base +0x02F10000) o que ela faz com os NALs até o muxer.
+  07/11/2026 (fix/system-apps-11, `scratchpad/fw11_out/vid2`..`vid5`): **o MP4 agora tem vídeo de verdade** (116
+  quadros H.264 640x480 em 3,9 s, Constrained Baseline, AAC junto; `ffprobe` e um quadro decodificado, `vid2/frame60.png`).
+  Layouts lidos no eboot da câmera (0x83FE8EE6) e confirmados com `--probe`, escritos no Videoenc.cs: entrada de 0x30
+  bytes (+8 pitch, +0xC largura, +0x10 altura, +0x24 a imagem YUV420 planar da SceCamera, +0x2C flags), saída (+0 != 0
+  com quadro, +4 número de infos, +8 lista de ponteiros para infos de 0x28 bytes: dois tempos em (segundos,
+  numerador, denominador), buffer de stream +0x1C/+0x20 que a câmera dá (0x64000 bytes, no heap dela, não no bloco
+  unmap), +0x24 número de NALs, +0x25 tipo 4 = IDR), `SceAvcencNalUnit` (+0 endereço depois do start code, +4
+  tamanho, +8 nal_unit_type): a câmera troca cada start code de 4 bytes pelo tamanho big-endian (amostra MP4). O
+  encoder é o do FFmpeg (libopenh264, BSD, já vem no FFmpeg LGPL do build; I_PCM não caberia no buffer de 400 KB);
+  sem FFmpeg (Android) não sai quadro, como antes. **Ainda não resolvido**: a câmera continua com "Não foi possível
+  salvar o vídeo (C2-10836-8)". Não é o arquivo: o NPXS10036 move o MP4 para `photo0:CAMERA/<xx>/`, carrega
+  MsvPromoter + libFflMp4 + libvideoprofiler, lê o arquivo inteiro e o promote devolve 0x80103F2A (probe em eboot
+  0x866B3886, r4), que o serviço traduz em 0x80101A0C (0x866B3940: 0x80103F20 -> A0B, 3F17 -> A04, 1AF1 -> A0E,
+  1AF0 -> A0A, o resto -> A0C). O 0x80103F2A não aparece como constante no MsvPromoter, libvideoprofiler nem
+  libFflMp4 (montado em tempo de execução); próximo passo: `--probe` nos retornos do libvideoprofiler (base do
+  processo 0x881C0000) para achar qual verificação do MP4 falha (perfil/nível do SPS, fps 29,97 do muxer, duração
+  vídeo 3,87 s x áudio 4,29 s, miniatura `.m4t` ausente).
 - [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).

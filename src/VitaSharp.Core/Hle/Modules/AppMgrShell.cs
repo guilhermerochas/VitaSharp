@@ -19,7 +19,7 @@ public sealed partial class AppMgrShell : HleModule
     /// SceAppMgrAppStatus (0x80) as the kernel fills it (FW 3.74 appmgr, the function shared by GetStatusByAppId and
     /// GetStatusByName): +0x0C the application name (title id, 0x20), +0x30 application id, +0x34 process id, +0x38
     /// "in the foreground" (the entry's state is 2), +0x3C running, +0x44 the application id again (the shell stores this
-    /// one and compares it with later statuses), +0x50 the title id again, +0x71 the application
+    /// one and compares it with later statuses), +0x48/+0x49/+0x4A the info bar (AppMgr.Infobar), +0x50 the title id again, +0x71 the application
     /// type byte and +0x74 its flags. libipmi only lets a process create an IPC server when +0x74 bit 0 is set or
     /// the type is 2: the shell's.
     /// </summary>
@@ -34,6 +34,13 @@ public sealed partial class AppMgrShell : HleModule
         GuestMemory.W32(st + 0x38, p.IsForeground ? 1u : 0u);
         GuestMemory.W32(st + 0x3C, p.Running ? 1u : 0u);
         GuestMemory.W32(st + 0x44, (uint)p.AppId); // the id the shell keeps for the running application (and compares)
+        if (!p.IsShell && p.Hle.Modules.OfType<AppMgr>().FirstOrDefault() is { } mgr)
+        {
+            var (visible, color, transparency) = mgr.Infobar;
+            GuestMemory.Write(st + 0x48, visible);
+            GuestMemory.Write(st + 0x49, color);
+            GuestMemory.Write(st + 0x4A, transparency);
+        }
         GuestMemory.WriteCString(st + 0x50, p.TitleId, 0x20);
         if (p.IsShell)
         {
