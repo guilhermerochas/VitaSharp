@@ -148,6 +148,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
+  Medido (07/11/2026, perf/desktop-11, `mania_boot` com `--profile-from=1520 --frames=1660`, menu principal e seleção
+  de save): 53,4 fps, quadro p50 17,5 ms. Não é a GPU nem o renderizador: a thread `pthread` (o renderizador por
+  software do RSDKv5) executa 5,2 M ciclos emulados por quadro (1,07 ciclo/instrução, 720 K blocos) e fica 59% rodando
+  + 24% no ritmo da CPU emulada + 17% esperando a `main`. O jogo não chama `scePowerSetArmClockFrequency` (nem
+  importa ScePower), então roda nos 333 MHz padrão: 5,2 M ciclos = 15,7 ms de CPU por quadro, mais a espera, passa de
+  16,7 ms. Prova: com `--cpu-mhz=444` 59,4 fps (p50 16,6 ms) e sem ritmo (`--cpu-mhz=0`) 59,6 fps cravados, mesmo
+  número de ciclos. Os dados do usuário têm `pixWidth=480` e o mod UltrawideMania (mais pixels por quadro que os 424 do
+  jogo). Nada mudado: acelerar só este caso seria mexer no modelo de custo (`BlockBuilder.CycleCost`) ou no relógio
+  padrão de todos os jogos (o Silent Hill depende dos 333 MHz). Opções para o usuário decidir: uma opção por jogo de
+  "Relógio da CPU" (333 / 444 / sem ritmo) como a taxa de quadros, ou conferir num Vita de verdade se este menu com o
+  mod e 480 de largura fica a 60 a 333 MHz (se ficar, o custo do laço de pixels está alto no modelo)
 
 ## Android
 
