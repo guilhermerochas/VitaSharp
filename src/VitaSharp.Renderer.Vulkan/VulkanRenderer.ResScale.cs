@@ -4,7 +4,8 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Renderer.Vulkan;
 
 /// <summary>
-/// Internal resolution below native (VITASHARP_RES_SCALE=0.75 or 0.5; off by default), like Vita3K's resolution
+/// Internal resolution below native (VITASHARP_RES_SCALE=0.75 or 0.5, for slow phone GPUs) or above it (2, 3 or 4: the
+/// desktop's "Resolução interna" per game, like PCSX2's upscaling); native by default. Like Vita3K's resolution
 /// multiplier: colour targets and their depth/stencil images are created at <see cref="ResScale"/> times the guest
 /// size, scenes render with the viewport, scissor, render area and line width scaled (shaders see gl_FragCoord in
 /// guest pixels through res_multiplier), and textures that sample a target read the scaled image directly through
@@ -15,17 +16,22 @@ namespace VitaSharp.Renderer.Vulkan;
 /// copy (<see cref="NativeImageOf"/>, a nearest blit), and the guest memory a target starts from is uploaded at native
 /// size and blitted down. Region, scene-start and framebuffer-fetch copies work in scaled pixels. Depth and stencil
 /// planes of scaled scenes are not mirrored for mapped reads (those read guest memory, as with an unsynchronised
-/// surface in Vita3K). Targets smaller than <see cref="ResScaleMinSize"/> pixels in either direction, and formats the
+/// surface in Vita3K). Above native, stencil textures go through a scratch buffer (the scaled plane is larger than the
+/// guest surface), so do the packed scaled rows of reinterpreted reads, and frame dumps/screenshots are taken at the internal
+/// resolution. Targets smaller than <see cref="ResScaleMinSize"/> pixels in either direction, and formats the
 /// GPU cannot blit, stay native.
 /// </para>
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    /// <summary>VITASHARP_RES_SCALE: 1 (native) unless set to a value in [0.25, 1).</summary>
+    /// <summary>VITASHARP_RES_SCALE: 1 (native) unless set to a value in [0.25, 1) or to a whole factor 2-4.</summary>
     static readonly float EnvResScale = ParseResScale(Environment.GetEnvironmentVariable(EnvVars.ResScale));
 
     /// <summary>This renderer's scale: <see cref="VulkanRendererOptions.ResScale"/> when set, else <see cref="EnvResScale"/>.</summary>
     internal readonly float ResScale;
+
+    /// <summary>Largest internal resolution factor (4x: 3840x2176 for a 960x544 surface).</summary>
+    internal const float MaxResScale = 4f;
 
     /// <summary>Targets with a side below this stay at native size (lookup tables, luminance reductions).</summary>
     const uint ResScaleMinSize = 32;
@@ -34,7 +40,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (string.IsNullOrWhiteSpace(s)) return 1f;
         if (!float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v)) return 1f;
-        return v is >= 0.25f and < 1f ? v : 1f;
+        if (v is >= 0.25f and < 1f) return v;
+        // above native only whole factors (PCSX2's 2x-4x): every guest pixel is a block of attachment pixels, so
+        // scissors, region copies and fetch copies stay on pixel edges
+        float k = MathF.Round(v);
+        return k is >= 2f and <= MaxResScale && MathF.Abs(v - k) < 0.01f ? k : 1f;
     }
 
     /// <summary>A guest dimension at scale <paramref name="s"/> (at least 1 pixel).</summary>
@@ -176,7 +186,8 @@ public sealed unsafe partial class VulkanRenderer
     /// one share the memory: writing either drops the other.</summary>
     readonly Dictionary<RenderTarget, long> _mirroredRtScaled = new();
 
-    readonly record struct ReinterpretGeo(ulong Offset, uint RowTexels, uint W, uint H, uint CopyW, uint CopyH);
+    /// <param name="Own">The offset is in the target's own buffer (<see cref="RenderTarget.ScaledRows"/>, above native), not in the mirror.</param>
+    readonly record struct ReinterpretGeo(ulong Offset, uint RowTexels, uint W, uint H, uint CopyW, uint CopyH, bool Own = false);
 
     /// <summary>
     /// Where a linear texture of another texel size that reads a scaled target's memory lies in the scaled mirror
@@ -205,6 +216,9 @@ public sealed unsafe partial class VulkanRenderer
         uint sh = ScaleDim(h, s);
         uint copyW = Math.Min(sw, maxW), copyH = Math.Min(sh, rt.ImgH - sy0);
         if (copyW == 0 || copyH == 0) return null;
+        // above native a scaled row is longer than the surface's stride and the scaled layout does not fit in the
+        // target's memory: it goes into a buffer of the target's own (ScaledRowsOf)
+        if (s > 1f) return new ReinterpretGeo(start, scaledRowBytes / texBpp, sw, sh, copyW, copyH, Own: true);
         return new ReinterpretGeo(rt.Address - Core.Memory.GuestMemory.CdramStart + start, scaledRowBytes / texBpp, sw, sh, copyW, copyH);
     }
 
@@ -236,9 +250,46 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
+    /// <summary>
+    /// Above native: the target's image in packed scaled rows in its own buffer (refreshed when it changed), for
+    /// reinterpreted reads at the internal resolution. Default when the format cannot be copied raw.
+    /// </summary>
+    Silk.NET.Vulkan.Buffer ScaledRowsOf(RenderTarget rt)
+    {
+        int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
+        if (rt.Format == Format.B8G8R8A8Unorm || HostBytesPerPixel(rt.Format) != guestBpp) return default;
+        rt.LastTouchedFrame = FrameCount;
+        if (rt.ScaledRows.Handle == 0)
+            (rt.ScaledRows, rt.ScaledRowsMem) = _core.CreateDeviceBuffer((ulong)rt.ImgW * rt.ImgH * (uint)guestBpp,
+                BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.Region);
+        if (rt.ScaledRowsVersion == rt.Version) return rt.ScaledRows;
+        rt.ScaledRowsVersion = rt.Version;
+        rt.Dirty = true;
+        SyncRenderTargetForRead(rt);
+        EndRendering();
+        BufferBarrier(rt.ScaledRows, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
+        var region = new BufferImageCopy
+        {
+            BufferRowLength = rt.ImgW,
+            BufferImageHeight = rt.ImgH,
+            ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            ImageExtent = new Extent3D(rt.ImgW, rt.ImgH, 1),
+        };
+        _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, rt.ScaledRows, 1, in region);
+        BufferBarrier(rt.ScaledRows, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        return rt.ScaledRows;
+    }
+
     void ReleaseNativeImage(RenderTarget rt, bool now)
     {
         _mirroredRtScaled.Remove(rt);
+        if (rt.ScaledRows.Handle != 0)
+        {
+            var (b, m) = (rt.ScaledRows, rt.ScaledRowsMem);
+            rt.ScaledRows = default;
+            rt.ScaledRowsVersion = -1;
+            Release(() => _core.DestroyBuffer(b, m), now);
+        }
         if (rt.NativeImage.Handle == 0) return;
         var (img, view, mem) = (rt.NativeImage, rt.NativeView, rt.NativeMem);
         rt.NativeImage = default;

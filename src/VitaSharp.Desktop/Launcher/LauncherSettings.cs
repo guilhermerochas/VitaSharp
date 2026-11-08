@@ -62,6 +62,10 @@ public sealed class LauncherSettings
     /// built-in one), --trophy-sound=.</summary>
     public bool TrophySound { get; set; } = true;
 
+    /// <summary>"Ajustes do jogo": options of one game by title ID, set on the game's page and passed only when that game
+    /// starts. Games without an entry run with the defaults.</summary>
+    public Dictionary<string, GameOptions> Games { get; set; } = new();
+
     public const string ViewList = "list", ViewHome = "home";
 
     /// <summary>An RPCN server and account are configured.</summary>
@@ -87,9 +91,11 @@ public sealed class LauncherSettings
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, LauncherJson.Default.LauncherSettings));
     }
 
-    /// <summary>Command-line options for "run".</summary>
-    public IEnumerable<string> RunOptions()
+    /// <summary>Command-line options for "run" (with <paramref name="titleId"/>'s own options, <see cref="Games"/>).</summary>
+    public IEnumerable<string> RunOptions(string? titleId = null)
     {
+        if (titleId != null && Games.TryGetValue(titleId, out var game))
+            foreach (var o in game.RunOptions()) yield return o;
         if (Fullscreen) yield return "--fullscreen";
         if (Scale > 1) yield return $"--scale={Scale}";
         if (!VSync) yield return "--no-vsync";
@@ -115,6 +121,27 @@ public sealed class LauncherSettings
         var hle = string.Join(",", HleModules.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         if (hle.Length > 0) yield return $"--hle-modules={hle}";
     }
+}
+
+/// <summary>Options of one game ("Ajustes do jogo" on its page in the launcher).</summary>
+public sealed class GameOptions
+{
+    /// <summary>"Resolução interna": render targets at this multiple of the Vita's resolution (1 = native 960x544, the
+    /// default; 2-4 like PCSX2's upscaling), --res-scale= (VulkanRenderer.ResScale.cs). Costs GPU time with the pixel count.</summary>
+    public int ResScale { get; set; } = 1;
+
+    /// <summary>Internal resolution choices: factor and label.</summary>
+    public static readonly (int Factor, string Label)[] ResScales =
+        [(1, "1x nativa (960×544)"), (2, "2x (1920×1088)"), (3, "3x (2880×1632)"), (4, "4x (3840×2176)")];
+
+    public IEnumerable<string> RunOptions()
+    {
+        if (ResScale is >= 2 and <= 4) yield return $"--res-scale={ResScale}";
+    }
+
+    /// <summary>Every option at its default: the entry can be dropped.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDefault => ResScale is < 2 or > 4;
 }
 
 /// <summary>Source-generated JSON metadata for the settings file (Native AOT has no reflection-based serializer).</summary>

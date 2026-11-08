@@ -349,6 +349,7 @@ public sealed partial class MainWindow : Window
             };
             _details.Children.Add(stop);
         }
+        _details.Children.Add(GameOptionsPanel(g, busy && _runningGame == g));
         var folder = new Button { Content = "Open game folder", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         folder.Click += (_, _) => OpenPath(g.Path);
         _details.Children.Add(folder);
@@ -369,6 +370,42 @@ public sealed partial class MainWindow : Window
         var remove = new Button { Content = "Uninstall…", IsEnabled = !busy, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         remove.Click += async (_, _) => await Uninstall(g);
         _details.Children.Add(remove);
+    }
+
+    /// <summary>"Ajustes do jogo": this game's own options (<see cref="LauncherSettings.Games"/>), used when it starts.</summary>
+    Control GameOptionsPanel(GameEntry g, bool running)
+    {
+        var opts = _settings.Games.GetValueOrDefault(g.TitleId) ?? new GameOptions();
+        var panel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 6, 0, 2) };
+        panel.Children.Add(new TextBlock { Text = "Ajustes do jogo", FontWeight = FontWeight.SemiBold });
+        var choices = GameOptions.ResScales;
+        var res = new ComboBox
+        {
+            ItemsSource = choices.Select(c => c.Label).ToArray(), HorizontalAlignment = HorizontalAlignment.Stretch,
+            SelectedIndex = Math.Max(0, Array.FindIndex(choices, c => c.Factor == opts.ResScale)),
+        };
+        ToolTip.SetTip(res, "Renderiza o jogo numa resolução maior que a do Vita (como o PCSX2): imagem mais nítida na janela ou em tela cheia. " +
+            "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x.");
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.Add(new TextBlock { Text = "Resolução interna", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
+        res.Width = 170;
+        row.Children.Add(res);
+        panel.Children.Add(row);
+        var note = new TextBlock { Text = "Vale na próxima vez que o jogo abrir.", Foreground = Muted, FontSize = 11, IsVisible = running };
+        panel.Children.Add(note);
+        void Store()
+        {
+            if (opts.IsDefault) _settings.Games.Remove(g.TitleId);
+            else _settings.Games[g.TitleId] = opts;
+            SaveSettings();
+        }
+        res.SelectionChanged += (_, _) =>
+        {
+            if (res.SelectedIndex < 0) return;
+            opts.ResScale = choices[res.SelectedIndex].Factor;
+            Store();
+        };
+        return panel;
     }
 
     static Control InfoLine(string label, string value)
@@ -402,7 +439,7 @@ public sealed partial class MainWindow : Window
         if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
         foreach (var c in command) psi.ArgumentList.Add(c);
-        foreach (var o in _settings.RunOptions()) psi.ArgumentList.Add(o);
+        foreach (var o in _settings.RunOptions(g?.TitleId)) psi.ArgumentList.Add(o);
         psi.Environment[EnvVars.Data] = Program.DataRoot;
         // the RPCN password goes in the environment of the game process, not on its command line
         if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;

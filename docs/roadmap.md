@@ -71,16 +71,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
-- [ ] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026): opção por jogo de 1x (nativo, 960x544,
-  padrão), 2x, 3x, 4x (e talvez 5x/6x, até 4K) que renderiza os alvos do jogo numa resolução maior e apresenta nítido na
-  janela/tela cheia. Base: a escala interna que já existe para reduzir no Android (`VITASHARP_RES_SCALE`,
-  `VulkanRenderer.ResScale.cs`, hoje só 0,5/0,75): estender para fatores maiores que 1 (viewport/scissor/clip, regiões
-  e cópias entre alvos, texturas lidas de alvos renderizados, MSAA, profundidade, cópias da CPU que leem/escrevem o
-  framebuffer e o writeback, que tem de voltar à resolução nativa para a memória do guest). Opções no launcher (Ajustes do
-  jogo) e no Android, com aviso de custo de GPU; o padrão continua nativo. Validar sem defeitos (bordas, linhas entre
-  tiles, efeitos de pós-processamento e alvos reinterpretados) com `replay-gpu --compare` em 1x idêntico e prints em 2x/4x
-  de Uncharted, Killzone, Gravity Rush, FIFA 13 e um jogo 2D (Gunvolt/Sonic Mania)
-  Ordem (usuário, 07/11/2026): primeiro no desktop; no Android só depois de resolver o desempenho do Android
+- [x] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026), no desktop: "Resolução interna" por
+  jogo no painel do jogo do launcher (1x nativa padrão, 2x, 3x, 4x; `--res-scale=2|3|4`, `VITASHARP_RES_SCALE`),
+  estendendo `VulkanRenderer.ResScale.cs` a fatores inteiros acima de 1. Acima do nativo, texturas de stencil e as
+  linhas escaladas dos alvos reinterpretados (G-buffer do Uncharted) passam por buffers próprios (não cabem na memória do
+  guest); writeback e cópias da CPU continuam na resolução nativa; dumps de quadro e prints saem na resolução interna.
+  Validado (perf/desktop-res): `replay-gpu --compare` 1x idêntico ao main em 20 dumps (582 quadros), 2x sem erro em
+  todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
+  Sonic Mania. Limite conhecido: `gl_PointSize` não é escalado (sprites de ponto ficam menores acima do nativo; mudar o
+  gerador invalida o cache de shaders de todos)
+- [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
+  desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
 - [ ] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
   (padrão: o jogo roda exatamente como hoje, nada muda), **Fixo em 30**, **Fixo em 60** e **Sem limite**. Exemplo: o
   Jak 1 roda a 20 fps no Vita (o jogo pede 3 vblanks por troca); com a opção, travar em 30, rodar a 60 ou liberar.

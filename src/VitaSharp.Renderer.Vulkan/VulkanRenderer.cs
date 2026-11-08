@@ -503,6 +503,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public ImageView NativeView;
         public ImageMemoryPool.Allocation NativeMem;
         public long NativeVersion = -1;
+        /// <summary>Above native: the image in packed scaled rows for reinterpreted reads (its scaled layout does not
+        /// fit in the guest surface's memory, so it has a buffer of its own; VulkanRenderer.ResScale.cs).</summary>
+        public Silk.NET.Vulkan.Buffer ScaledRows;
+        public DeviceMemory ScaledRowsMem;
+        public long ScaledRowsVersion = -1;
     }
 
     sealed class DepthTarget
@@ -1126,7 +1131,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         bool png = _opt.DumpFramesDir != null && _presentCount % Math.Max(1, _opt.DumpEvery) == 0 && _presentCount >= _opt.DumpFrom;
         string? shot = _opt.ShotPath != null ? Interlocked.Exchange(ref _opt.ShotPath, null) : null;
         bool dump = png || shot != null || _opt.FrameSink != null;
-        if (dump) { RecordReadback(src, frame.Width, frame.Height); F.DumpPng = png; F.ShotPath = shot; }
+        if (dump) { RecordReadback(src, frame.Width, frame.Height, internalRes: png || shot != null); F.DumpPng = png; F.ShotPath = shot; }
         else F.DumpPending = false;
         F.SplashCheck = false;
         if (SplashWaiting) // the boot picture stays until a frame with content: this one is read back and checked
@@ -1198,10 +1203,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         ProfMark(ProfPhase.PresRetire);
     }
 
-    void RecordReadback(RenderTarget src, uint w, uint h)
+    /// <param name="internalRes">Frame dumps and screenshots of a target above native resolution are read at the
+    /// internal resolution (as PCSX2's screenshots); the rest (frame sink, splash check) at guest size.</param>
+    void RecordReadback(RenderTarget src, uint w, uint h, bool internalRes = false)
     {
         w = Math.Min(w, src.Width);
         h = Math.Min(h, src.Height);
+        bool scaled = internalRes && src.Scale > 1f;
+        if (scaled) { w = Math.Min(ScaleDim(w, src.Scale), src.ImgW); h = Math.Min(ScaleDim(h, src.Scale), src.ImgH); }
         var f = F;
         if (f.Readback is not { } rb || rb.W != w || rb.H != h)
         {
@@ -1216,7 +1225,16 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Extent3D(w, h, 1),
         };
-        _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(src), ImageLayout.General, r.Buf, 1, in region); // guest size (VulkanRenderer.ResScale.cs)
+        if (scaled)
+            Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
+                AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
+        // guest size unless scaled (VulkanRenderer.ResScale.cs)
+        _vk.CmdCopyImageToBuffer(Cmd, scaled ? src.Image : NativeImageOf(src), ImageLayout.General, r.Buf, 1, in region);
+        if (scaled)
+            Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+                PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit,
+                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit);
         f.DumpIndex = (int)_presentCount;
         f.DumpPending = true;
         _readbackIsBgra = src.Format == Format.B8G8R8A8Unorm;
@@ -1377,7 +1395,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (rt.Format == Format.B8G8R8A8Unorm) for (int i = 0; i < px.Length; i += 4) (px[i], px[i + 2]) = (px[i + 2], px[i]);
             var opaque = (byte[])px.Clone();
             for (int i = 3; i < opaque.Length; i += 4) opaque[i] = 255;
-            if (shot is { } s && s.Src == rt) WriteScreenshot(s.Path, opaque, rt.ImgW, Math.Min(s.W, rt.ImgW), Math.Min(s.H, rt.ImgH));
+            if (shot is { } s && s.Src == rt) WriteScreenshot(s.Path, opaque, rt.ImgW, Math.Min(ScaleDim(s.W, rt.Scale), rt.ImgW), Math.Min(ScaleDim(s.H, rt.Scale), rt.ImgH));
             Png.Write(Path.Combine(dir, replaced.Contains(rt) ? $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}_{rt.ColorFormat:X8}.png" : $"rt_{rt.Address:X8}_{rt.Width}x{rt.Height}.png"), opaque, (int)rt.ImgW, (int)rt.ImgH);
             _core.DestroyBuffer(buf, mem);
         }

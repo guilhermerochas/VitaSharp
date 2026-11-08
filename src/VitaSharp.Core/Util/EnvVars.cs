@@ -150,7 +150,7 @@ public static class EnvVars
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
     public const string Replay = "VITASHARP_REPLAY";
-    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
+    /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75 below native; 2, 3, 4 above it; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";
     /// <summary>1: a stage binding the same texture descriptors as an earlier one in the frame reuses its descriptor set (VulkanRenderer.TexSetReuse.cs).</summary>
     public const string TexSetReuse = "VITASHARP_TEXSET_REUSE";
