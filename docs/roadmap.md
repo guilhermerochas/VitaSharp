@@ -1069,8 +1069,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   em 2x (a luz corrigida) e os brilhos dos refletores do FIFA 13 (efeito da correção do 2X MSAA do Ninja Gaiden). No
   jogo (a gravação não serve para rerun: o save state é de outro formato): cenário `rbs_continue` até a sala dos
   bombeiros e olhando para a direita, em `--res-scale` 1/2/3/4: luz igual à de 1x em todas; main em 4x no mesmo ponto
-  sai com o machado e as mãos azulados. Atenção: `--env=VITASHARP_RES_SCALE` não muda a escala de `test` (só do
-  replay-gpu); use `--res-scale=`.
+  sai com o machado e as mãos azulados. `--env=KEY=VALUE` e `--res-scale=` agora valem igual em
+  run/test/boot-shell/rerun e replay-gpu (perf/desktop-14; antes `--env` só existia no replay-gpu).
   Os prefetches dos workers não conhecem os bits (calculam a chave sem eles): esses poucos shaders compilam no
   primeiro uso. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
   antes da troca; não reproduzidos

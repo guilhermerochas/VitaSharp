@@ -45,8 +45,30 @@ public static class Runner
     internal static string TrophyNotice(VitaSharp.Core.Hle.Np.TrophyUnlockedEvent e) =>
         Loc.Format("GameTrophyUnlocked", e.Trophy.Name, TrophyToast.GradeName(e.Trophy.Grade));
 
+    /// <summary>
+    /// --env=KEY=VALUE (repeatable): sets an environment switch for this run, the same as setting it before starting
+    /// (run, test, boot-shell and rerun; replay-gpu has its own, merged with the dump's recorded switches). Applied
+    /// before anything reads them (renderer and shader generator switches are read once, when their types initialise).
+    /// Options are first-match-wins, so for a key given twice (command line before a scenario's args=) the first wins.
+    /// </summary>
+    internal static void ApplyEnvOptions(string[] options)
+    {
+        var seen = new HashSet<string>();
+        foreach (var e in options)
+        {
+            if (!e.StartsWith("--env=", StringComparison.Ordinal)) continue;
+            var kv = e["--env=".Length..];
+            int eq = kv.IndexOf('=');
+            if (eq <= 0) { Log.Warn($"{e} ignored (use --env=KEY=VALUE)"); continue; }
+            if (!seen.Add(kv[..eq])) continue;
+            Environment.SetEnvironmentVariable(kv[..eq], kv[(eq + 1)..]);
+            Console.WriteLine($"Environment: {kv}");
+        }
+    }
+
     public static int Run(string appPath, string[] options)
     {
+        ApplyEnvOptions(options);
         // 1 ms system timer resolution while a game runs (guest wait timeouts and audio/vsync pacing rely on it)
         if (OperatingSystem.IsWindows()) timeBeginPeriod(1);
         // guest threads and the GPU worker above normal host priority (docs/notes/thread-priority.md); VITASHARP_HOST_PRIO wins

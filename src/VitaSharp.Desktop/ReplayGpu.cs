@@ -30,6 +30,7 @@ static class ReplayGpu
         Console.WriteLine("                           display queue issue them one or two presents earlier)");
         Console.WriteLine("    --msaa=native|ss|off   VITASHARP_MSAA; --debug-fs=<hash>:<expr> VITASHARP_DEBUG_FS; --debug-tex0=<mode>");
         Console.WriteLine("    --env=KEY=VALUE        any renderer/shader environment switch (repeatable); --no-recorded-env ignores the recorded ones");
+        Console.WriteLine("    --res-scale=2|3|4|0.75|0.5  internal resolution (VITASHARP_RES_SCALE), as in run/test");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
         Console.WriteLine("    --shader-cache=<dir> --async-shaders=on|off (default off) --no-idle --no-targets --debug-mode");
@@ -64,12 +65,16 @@ static class ReplayGpu
         if (Opt(options, "--gpu-profile") is { } gp) set[EnvVars.GpuProfile] = gp;
         if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
         if (Opt(options, "--debug-tex0") is { } dt) set[EnvVars.DebugTex0] = dt;
+        // --env= is first-match-wins like every other option (and wins over the recorded switches)
+        var given = new HashSet<string>();
         foreach (var e in options.Where(o => o.StartsWith("--env=")))
         {
             var kv = e["--env=".Length..];
             int eq = kv.IndexOf('=');
-            if (eq > 0) set[kv[..eq]] = kv[(eq + 1)..];
+            if (eq > 0 && given.Add(kv[..eq])) set[kv[..eq]] = kv[(eq + 1)..];
         }
+        // --res-scale= as in run/test, where the option also wins over VITASHARP_RES_SCALE
+        if (Opt(options, "--res-scale") is { } rs) set[EnvVars.ResScale] = rs;
         foreach (var (k, v) in set) Environment.SetEnvironmentVariable(k, v);
         if (set.Count > 0) Console.WriteLine("Environment: " + string.Join(' ', set.Select(kv => $"{kv.Key}={kv.Value}")));
     }
