@@ -35,7 +35,52 @@ public sealed partial class Videodec : HleModule
         /// them once at the start of the movie, and a new decoder without them cannot decode the units that follow.</summary>
         public byte[]? ParamSets;
         public bool ResendParamSets;
+        /// <summary>The access units since the last IDR picture (one growing buffer, reused), so a save state can rebuild
+        /// the decoder's reference pictures: a new decoder fed only the units after the load has no references for them
+        /// until the next IDR, and a movie loaded between two IDRs froze for seconds (Ninja Gaiden Sigma 2 Plus's intro,
+        /// ~3.5 s). <see cref="ReplayValid"/> is false while the GOP is longer than <see cref="MaxReplayBytes"/>.</summary>
+        public byte[] Replay = [];
+        public int ReplayBytes;
+        public readonly List<(int Offset, int Length, long Pts)> ReplayUnits = [];
+        public bool ReplayValid;
+        /// <summary>The pts of the last picture taken from the codec; after a replay, the pictures up to
+        /// <see cref="SkipThroughPts"/> (the last one taken before the save) are ones the game already had and are
+        /// dropped. By pts, not by count: with B-frames the decoder holds pictures back, so a count of the units or of the
+        /// pictures out since the IDR is off by the reorder delay (and dropped new pictures stalled the game's player).</summary>
+        public long LastTakenPts = long.MinValue, SkipThroughPts = long.MinValue;
+
+        public void Remember(ReadOnlySpan<byte> unit, long pts)
+        {
+            if (StartsIdr(unit)) { ReplayBytes = 0; ReplayUnits.Clear(); ReplayValid = true; }
+            if (!ReplayValid) return;
+            if (ReplayBytes + unit.Length > MaxReplayBytes) { ReplayValid = false; ReplayUnits.Clear(); ReplayBytes = 0; return; }
+            if (Replay.Length < ReplayBytes + unit.Length) Array.Resize(ref Replay, Math.Max(ReplayBytes + unit.Length, Math.Max(256 << 10, Replay.Length * 2)));
+            unit.CopyTo(Replay.AsSpan(ReplayBytes));
+            ReplayUnits.Add((ReplayBytes, unit.Length, pts));
+            ReplayBytes += unit.Length;
+        }
+
+        public void Forget() { ReplayBytes = 0; ReplayUnits.Clear(); ReplayValid = false; SkipThroughPts = long.MinValue; }
+
+        /// <summary>A picture out of the codec, or null: the pictures a replay produces again are dropped.</summary>
+        public DecodedPicture? Take()
+        {
+            while (Codec?.Take() is { } p)
+            {
+                if (SkipThroughPts != long.MinValue)
+                {
+                    if (p.Pts <= SkipThroughPts) { Codec.Recycle(p); continue; }
+                    SkipThroughPts = long.MinValue;
+                }
+                LastTakenPts = p.Pts;
+                return p;
+            }
+            return null;
+        }
     }
+
+    /// <summary>Upper bound on the access units kept for a save state's replay (per decoder).</summary>
+    const int MaxReplayBytes = 32 << 20;
 
     /// <summary>
     /// An asynchronous decoder (MediaCodec) hands its pictures out one or more calls after their access unit, or repeats the
@@ -163,6 +208,7 @@ public sealed partial class Videodec : HleModule
             if (ParameterSets(unit) is { } ps) d.ParamSets = ps;
             else if (d.ResendParamSets && d.ParamSets != null) d.Codec.Send(d.ParamSets, pts);
             d.ResendParamSets = false;
+            d.Remember(unit, pts);
             d.Codec.Send(unit, pts);
             if (d.AuPts != long.MinValue && pts < d.AuPts) d.AuReordered = true;
             d.AuPts = pts;
@@ -176,6 +222,26 @@ public sealed partial class Videodec : HleModule
         d.LastCall = t0;
         return r;
     }
+
+    /// <summary>True when the first slice of an Annex B access unit is an IDR slice (NAL type 5): only the NAL headers
+    /// up to that slice are looked at, not the slice data.</summary>
+    internal static bool StartsIdr(ReadOnlySpan<byte> au)
+    {
+        int i = 0;
+        while (true)
+        {
+            int start = au[i..].IndexOf(StartCode);
+            if (start < 0) return false;
+            int hdr = i + start + 3;
+            if (hdr >= au.Length) return false;
+            int type = au[hdr] & 0x1F;
+            if (type == 5) return true;
+            if (type == 1) return false;
+            i = hdr;
+        }
+    }
+
+    static ReadOnlySpan<byte> StartCode => [0, 0, 1];
 
     /// <summary>The SPS and PPS NAL units before the first slice of an Annex B access unit (with start codes), or null.</summary>
     internal static byte[]? ParameterSets(ReadOnlySpan<byte> au)
@@ -225,7 +291,7 @@ public sealed partial class Videodec : HleModule
             // other call): they wait in a short queue and go out one per call in order. Showing only the newest of a burst
             // and repeating it on the next call showed every other picture of F1 2011's movies twice. The queue is capped
             // (oldest dropped) so the delay cannot grow.
-            while (codec.Take() is { } p) d.Ready.Add(p);
+            while (d.Take() is { } p) d.Ready.Add(p);
             int keep = (int)capacity + MaxBacklog;
             while (d.Ready.Count > keep) { codec.Recycle(d.Ready[0]); d.Ready.RemoveAt(0); d.Dropped++; }
             while (n < capacity && d.Ready.Count > 0)
@@ -243,7 +309,7 @@ public sealed partial class Videodec : HleModule
                 d.Ready.RemoveAt(0);
                 if (!Emit(q)) { d.Codec?.Recycle(q); break; }
             }
-            while (n < capacity && d.Codec?.Take() is { } pic)
+            while (n < capacity && d.Take() is { } pic)
                 if (!Emit(pic)) break;
         }
         if (n == 0 && repeatIfLate && d.Started && d.Last != null && d.Codec is { Asynchronous: true } && capacity > 0 && GuestMemory.R32(list) is var first && first != 0)
@@ -271,6 +337,7 @@ public sealed partial class Videodec : HleModule
         var d = Find(ctrl, out int err);
         if (d == null) return err;
         d.Codec?.Flush();
+        d.Forget();
         d.Started = false;
         d.AuPts = long.MinValue; d.AuReordered = false;
         return array == 0 ? 0 : Output(d, array);
@@ -285,6 +352,7 @@ public sealed partial class Videodec : HleModule
         foreach (var q in d.Ready) d.Codec?.Recycle(q);
         d.Ready.Clear();
         d.Codec?.Reset();
+        d.Forget();
         d.Started = false;
         d.AuPts = long.MinValue; d.AuReordered = false;
         return 0;
