@@ -141,7 +141,11 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 22;
+    public const int GeneratorVersion = 23;
+
+    /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
+    /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
+    const int MaxClipDistances = 8;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
@@ -1274,6 +1278,20 @@ float packC10(vec3 c) {
                 written.Add(name);
             }
             num += count;
+        }
+        // user clip planes (vo1 bits 0-7, one component each after the point size): the program writes the plane
+        // distances and the GPU clips where one is negative. Ninja Gaiden Sigma 2 Plus cuts the pieces of its health
+        // bar to the current life with them; unclipped, the bar's red part ran across the whole screen. They follow
+        // the far plane's clip distance (index 0) where that one is used; without shaderClipDistance they are not clipped.
+        if (FarPlane == FarPlaneClip.ClipDistance)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                if ((outputs & (1 << (15 + i))) == 0) continue;
+                var o = Operand.Make(0); o.Bank = Bank.Output; o.Num = num; o.Type = DataType.F32;
+                if (i + 1 < MaxClipDistances) t.Line($"gl_ClipDistance[{i + 1}] = {t.Load(o, 1).E};");
+                num++;
+            }
         }
         for (int loc = 1; loc <= 13; loc++)
         {
