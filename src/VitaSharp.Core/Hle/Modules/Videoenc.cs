@@ -162,7 +162,48 @@ public sealed partial class Videoenc : HleModule
         uint gop = GuestMemory.R32(param + 0xC), rate = GuestMemory.R32(param + 0x30);
         if (gop is >= 1 and <= 300) e.Gop = (int)gop;
         if (rate is >= 64_000 and <= 40_000_000) e.BitRate = (int)rate;
+        // the picture size (the creation query's second word is not the height: the Camera's is 640x640 there)
+        uint w = GuestMemory.R32(param + 0x18), h = GuestMemory.R32(param + 0x20);
+        if (!e.Tried && w is > 0 and <= MaxWidth && h is > 0 and <= MaxHeight && (w & 1) == 0 && (h & 1) == 0) (e.Width, e.Height) = (w, h);
+        WriteParameterSets(e, ctrl);
         return 0;
+    }
+
+    Media.H264Encoder? Codec(Encoder e, uint w, uint h)
+    {
+        if (!e.Tried)
+        {
+            e.Tried = true;
+            e.Codec = Media.H264Encoder.TryCreate((int)w, (int)h, e.FrameRate, e.BitRate, e.Gop);
+        }
+        return e.Codec;
+    }
+
+    /// <summary>
+    /// The encoder's SPS and PPS for the caller, once it is set up (the Camera reads them right after
+    /// <see cref="sceAvcencSetEncoderParameter"/> for the MP4's avcC; without them the avcC has empty parameter sets
+    /// and the system's video profiler finds no video track: "Could not save the video"). The control block the
+    /// Camera gives (0x34 bytes, layout read in NPXS10004): +0 the handle, +4/+8 and +0xC/+0x10 its two encoder
+    /// buffers, +0x14/+0x18 a 0x400-byte buffer for the parameter sets; back, +0x1C/+0x20 the SPS (address in that
+    /// buffer, size, no start code) and +0x28/+0x2C the PPS.
+    /// </summary>
+    void WriteParameterSets(Encoder e, uint ctrl)
+    {
+        uint buf = GuestMemory.R32(ctrl + 0x14), cap = GuestMemory.R32(ctrl + 0x18);
+        // a plausible buffer only: other callers' control blocks may hold something else there
+        if (cap is < 0x40 or > 0x10000 || !GuestMemory.IsMapped(buf) || !GuestMemory.IsMapped(buf + cap - 1)) return;
+        if (Codec(e, e.Width, e.Height)?.ParameterSets() is not var (sps, pps)) return;
+        if ((uint)(sps.Length + pps.Length) > cap)
+        {
+            Log.WarnOnce("avcenc-ps", $"sceAvcenc: parameter sets ({sps.Length + pps.Length} bytes) larger than the caller's buffer ({cap})");
+            return;
+        }
+        sps.CopyTo(GuestMemory.Span(buf, sps.Length));
+        pps.CopyTo(GuestMemory.Span(buf + (uint)sps.Length, pps.Length));
+        GuestMemory.W32(ctrl + 0x1C, buf);
+        GuestMemory.W32(ctrl + 0x20, (uint)sps.Length);
+        GuestMemory.W32(ctrl + 0x28, buf + (uint)sps.Length);
+        GuestMemory.W32(ctrl + 0x2C, (uint)pps.Length);
     }
 
     /// <summary>Inferred (ctrl, preset); stored only.</summary>
@@ -208,14 +249,9 @@ public sealed partial class Videoenc : HleModule
         uint pitch = GuestMemory.R32(input + 8), w = GuestMemory.R32(input + 0xC), h = GuestMemory.R32(input + 0x10);
         if (w == 0 || h == 0 || w > MaxWidth || h > MaxHeight) (w, h) = (e.Width, e.Height);
         if (pitch < w) pitch = w;
-        if (!e.Tried)
-        {
-            e.Tried = true;
-            e.Codec = Media.H264Encoder.TryCreate((int)w, (int)h, e.FrameRate, e.BitRate, e.Gop);
-        }
-        if (e.Codec == null || e.Codec.Width != w || e.Codec.Height != h) { NoPicture(output); return 0; }
+        if (Codec(e, w, h) is not { } codec || codec.Width != w || codec.Height != h) { NoPicture(output); return 0; }
         uint ySize = pitch * h, cPitch = pitch / 2, cSize = cPitch * (h / 2);
-        var units = e.Codec.Encode(GuestMemory.ReadSpan(y, (int)ySize), (int)pitch,
+        var units = codec.Encode(GuestMemory.ReadSpan(y, (int)ySize), (int)pitch,
             GuestMemory.ReadSpan(y + ySize, (int)cSize), GuestMemory.ReadSpan(y + ySize + cSize, (int)cSize), (int)cPitch);
         WritePicture(e, output, units);
         return 0;

@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core.Util;
+using VitaSharp.Core.Util;
 using System.Diagnostics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Host;
@@ -371,9 +371,9 @@ public sealed partial class Ctrl : HleModule
             // goes to its suspend state and the shell gets event 0x10 {application id})
             if (ps && !_psDown) Emu.Vita.OnPsButton();
             _psDown = ps;
-            return Emu.IsForeground || Emu.Vita.TouchClaimedByShell(0) ? s : ControllerState.Neutral;
+            return Emu.IsForeground || Emu.Vita.ButtonsClaimedByShell() ? s : ControllerState.Neutral;
         }
-        if (!Emu.IsForeground || Emu.Vita.TouchClaimedByShell(0)) return ControllerState.Neutral;
+        if (!Emu.IsForeground || Emu.Vita.ButtonsClaimedByShell()) return ControllerState.Neutral;
         s.Buttons &= ~VitaButtons.PsButton; // a system button: applications never see it
         return s;
     }
@@ -606,10 +606,22 @@ public sealed partial class Touch : HleModule
         // stopped panel: the read still succeeds, with a header and no reports (Vita3K: reportNum = 0)
         // polled every frame: stack buffers instead of lists/LINQ (no garbage per call)
         Span<TouchPoint> touches = stackalloc TouchPoint[8];
-        // only the foreground process is touched, except where the shell claims the panel over it (its on-screen
-        // keyboard's touch region): those contacts are the shell's
-        bool touched = Emu.Vita.TouchClaimedByShell(port) ? Emu.IsShell : Emu.IsForeground;
+        // only the foreground process is touched, except inside the shell's active touch regions over it (its status
+        // bar, its on-screen keyboard): those contacts are the shell's
+        bool claimed = Emu.Vita.TouchClaimedByShell(port);
+        bool touched = claimed || Emu.IsForeground;
         int reports = _sampling[port] != 0 && touched && Emu.Host.Input is { } input ? input.GetTouches(port == 1, touches) : 0;
+        if (claimed)
+        {
+            int kept = 0;
+            for (int r = 0; r < reports; r++)
+            {
+                var t = touches[r];
+                bool shells = Emu.Vita.ShellTouchRegionAt(port, PanelX(t.X), PanelY(port, t.Y));
+                if (shells == Emu.IsShell) touches[kept++] = t;
+            }
+            reports = kept;
+        }
         Span<byte> ids = stackalloc byte[8];
         lock (_ids)
         {
@@ -647,8 +659,6 @@ public sealed partial class Touch : HleModule
         GuestMemory.Fill(data, 0, 0x90);
         GuestMemory.Write(data, (ulong)Emu.Kernel.ProcessTimeUs);
         GuestMemory.W32(data + 12, (uint)reports);
-        // front panel covers 1920x1088; the rear panel's active area is y 108..889 (see sceTouchGetPanelInfo)
-        float yMin = port == 0 ? 0 : 108, yMax = port == 0 ? 1087 : 889;
         byte force = _force[port] ? (byte)128 : (byte)0; // panel force range is 1..128 and the host has no pressure
         for (int r = 0; r < reports; r++)
         {
@@ -656,10 +666,19 @@ public sealed partial class Touch : HleModule
             var t = touches[r];
             GuestMemory.Write(rp, ids[r]);
             GuestMemory.Write(rp + 1, force);
-            GuestMemory.Write(rp + 2, (ushort)Math.Clamp(t.X * 1919, 0, 1919));
-            GuestMemory.Write(rp + 4, (ushort)Math.Clamp(yMin + t.Y * (yMax - yMin), yMin, yMax));
+            GuestMemory.Write(rp + 2, (ushort)PanelX(t.X));
+            GuestMemory.Write(rp + 4, (ushort)PanelY(port, t.Y));
         }
         return 1;
+    }
+
+    // front panel covers 1920x1088; the rear panel's active area is y 108..889 (see sceTouchGetPanelInfo)
+    static int PanelX(float x) => (int)Math.Clamp(x * 1919, 0, 1919);
+
+    static int PanelY(int port, float y)
+    {
+        float yMin = port == 0 ? 0 : 108, yMax = port == 0 ? 1087 : 889;
+        return (int)Math.Clamp(yMin + y * (yMax - yMin), yMin, yMax);
     }
 
     /// <summary>Peek returns how many samples sceTouchRead has not consumed yet (0 when none: the newest sample is still
@@ -700,9 +719,9 @@ public sealed partial class Touch : HleModule
     [Hle("sceTouchReadRegionExt")]
     int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchRead(port, data, count);
 
-    /// <summary>(port, region, rect: u16 x0, y0, x1, y1 in panel coordinates, attr). The shell's ime_plugin sets region 2
-    /// to the whole front panel and activates it while its on-screen keyboard is up (over an application in front):
-    /// those touches are the shell's then (<see cref="Kernel.VitaSystem.TouchClaimedByShell"/>).</summary>
+    /// <summary>(port, region, rect: u16 x, y, width, height in panel coordinates, attr). The shell's ime_plugin keeps
+    /// region 2 over its on-screen keyboard and the status bar region 1 over the bar while they are up over an
+    /// application in front: the contacts inside are the shell's (<see cref="Kernel.VitaSystem.ShellTouchRegionAt"/>).</summary>
     [Hle]
     int sceTouchSetRegion(int port, int region, uint rect, int attr)
     {
@@ -718,7 +737,7 @@ public sealed partial class Touch : HleModule
     int sceTouchActivateRegion(int port, int region, int enable, int attr)
     {
         if (port is < 0 or > 1 || region is < 0 or > 0xFF) return ERR_INVALID_ARG;
-        if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0);
+        if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0, attr);
         return 0;
     }
     [Hle] int sceTouchClearRegion() => 0;

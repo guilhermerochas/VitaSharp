@@ -232,29 +232,33 @@ public sealed class VitaSystem
     }
 
     // ---- the shell's touch regions (sceTouchSetRegion / ActivateRegion, regions above 0): while one is active over an
-    // application in front, the shell's overlay takes the contacts on the panel (its on-screen keyboard)
-    readonly Dictionary<(int Port, int Region), (ushort X0, ushort Y0, ushort X1, ushort Y1, bool Active)> _shellTouchRegions = new();
+    // application in front, the contacts inside it are the shell's (its status bar, its on-screen keyboard)
+    readonly Dictionary<(int Port, int Region), (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr)> _shellTouchRegions = new();
 
-    public void SetShellTouchRegion(int port, int region, ushort x0, ushort y0, ushort x1, ushort y1)
+    /// <summary>The rectangle is (x, y, width, height) in panel coordinates: the status bar's region 1 grows from
+    /// (0, 0, 1920, 1) to (0, 0, 1920, 64) with the bar, the keyboard's region 2 is (0, 594, 1920, 494).</summary>
+    public void SetShellTouchRegion(int port, int region, ushort x, ushort y, ushort w, ushort h)
     {
         lock (_shellTouchRegions)
         {
-            bool active = _shellTouchRegions.TryGetValue((port, region), out var r) && r.Active;
-            _shellTouchRegions[(port, region)] = (x0, y0, x1, y1, active);
+            bool known = _shellTouchRegions.TryGetValue((port, region), out var r);
+            _shellTouchRegions[(port, region)] = (x, y, w, h, known && r.Active, known ? r.Attr : 0);
         }
     }
 
-    public void ActivateShellTouchRegion(int port, int region, bool enable)
+    public void ActivateShellTouchRegion(int port, int region, bool enable, int attr)
     {
         lock (_shellTouchRegions)
         {
             var r = _shellTouchRegions.TryGetValue((port, region), out var old) ? old : default;
-            _shellTouchRegions[(port, region)] = r with { Active = enable };
+            if (r.Active != enable || r.Attr != attr)
+                Log.Info($"Shell touch region {port}/{region} {(enable ? "on" : "off")} attr {attr}: ({r.X}, {r.Y}) {r.W}x{r.H}");
+            _shellTouchRegions[(port, region)] = r with { Active = enable, Attr = attr };
         }
     }
 
-    /// <summary>True when the touches of <paramref name="port"/> go to the shell instead of the application in front:
-    /// the shell has an active touch region there (its overlay plane is up).</summary>
+    /// <summary>True when the shell has an active touch region on <paramref name="port"/> over an application in front;
+    /// only the contacts inside one are the shell's (<see cref="ShellTouchRegionAt"/>).</summary>
     public bool TouchClaimedByShell(int port)
     {
         if (Foreground is not { IsShell: false }) return false;
@@ -264,6 +268,25 @@ public sealed class VitaSystem
         return false;
     }
 
+    /// <summary>Whether the panel point (x, y) of <paramref name="port"/> (panel coordinates) is in an active shell
+    /// region over an application in front.</summary>
+    public bool ShellTouchRegionAt(int port, int x, int y)
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == port && r.Active && x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H) return true;
+        return false;
+    }
+    /// <summary>True when the shell's overlay takes the buttons from the application in front (its on-screen keyboard).</summary>
+    public bool ButtonsClaimedByShell()
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == 0 && r.Active && r.H >= 256) return true;
+        return false;
+    }
     /// <summary>While the trophy server bridge gives a trophy earned before (TrophyServerBridge), its unlock date
     /// (SceRtcTick): the shell's trophy server threads read it as the current tick, so the server records the date the
     /// trophy was earned. 0 = none.</summary>

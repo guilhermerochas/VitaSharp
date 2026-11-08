@@ -694,7 +694,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   app (o setup, por baixo) não muda nada (o paf do app ignora o círculo com o teclado aberto; experimento revertido).
   Nenhuma chamada HLE difere entre o círculo e o chevron (o pedido de fechar anda por memória/IPC do ime_plugin).
   Falta ainda a referência: num vídeo do Vita real, o que o círculo faz com o teclado aberto.
-- [ ] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
+  **Círculo no teclado: resolvido** (08/11/2026, fix/system-apps-12, provas em `scratchpad/fw12_out/ime6/sheet.png`,
+  `ime7/sheet.png`, `ime3/sheet.png`): o libpaf do shell já trocava círculo/X certo (tabela de botões em 0x81301094,
+  círculo = tecla 0x20 "voltar" com /CONFIG/SYSTEM/button_assign = 1). Quem desfazia era o ime_plugin: ao abrir o
+  teclado (0x81002B4C) ele lê `sceAppMgrAppParamGetInt(pid do app, 0x10)` (o botão de confirmar do processo) e, se for
+  diferente do do libpaf, troca círculo e X no teclado; o HLE devolvia 0 (círculo) para todo parâmetro. Agora o 0x10
+  devolve a configuração do sistema: círculo fecha o teclado mantendo o texto e, com o teclado fechado, volta no app;
+  X digita a tecla com foco, quadrado apaga, triângulo confirma a predição. Com button_assign = 0 (modo japonês) o X
+  fecha o teclado (`ime3`). No caminho: depois da barra de status (rodada 11) o shell deixa a região de toque 1 ativa
+  sobre a barra, e qualquer região ativa dava ao shell o painel inteiro e os botões: a Galeria do Fotos (e qualquer app
+  com a barra) não respondia a toque nem botão. Agora só os toques dentro de uma região ativa (x, y, largura, altura:
+  barra 1920x1..64 no topo com attr 2, teclado (0, 594) 1920x494 com attr 4) vão ao shell, e os botões só com uma região do tamanho do
+  teclado. O padrão do button_assign continua X (como o Vita3K); um Vita japonês/asiático de fábrica vem com círculo.
+  Deste item seguem abertos o botão PS no PC (precisa da janela) e o texto cortado no boot direto (não reproduzido nas
+  rodadas 9 e 11); nas execuções desta rodada (câmera, Fotos, configuração inicial, teclado) nenhuma função HLE
+  faltou.
+- [x] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
   `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
   serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
   "avmedia_service:". Tentativa (patch `fw8_photo_wip.patch` no scratchpad, fora do git por não salvar a foto): sistema
@@ -775,6 +790,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   libFflMp4 (montado em tempo de execução); próximo passo: `--probe` nos retornos do libvideoprofiler (base do
   processo 0x881C0000) para achar qual verificação do MP4 falha (perfil/nível do SPS, fps 29,97 do muxer, duração
   vídeo 3,87 s x áudio 4,29 s, miniatura `.m4t` ausente).
+  **Vídeo: resolvido** (08/11/2026, fix/system-apps-12, provas em `scratchpad/fw12_out/vid10/sheet.png` e
+  `vid6/play1.png`): o 0x80103F2A sai do MsvPromoter (0x81003952: nenhum vídeo achado depois do perfil) porque o
+  libvideoprofiler não achava a trilha de vídeo (0x80103C04, lista de trilhas vazia): o avcC do MP4 tinha SPS e PPS
+  vazios. A câmera lê SPS/PPS do bloco de controle do encoder logo depois do `sceAvcencSetEncoderParameter` (+0x14/+0x18
+  um buffer de 0x400 bytes dela; de volta +0x1C/+0x20 SPS, +0x28/+0x2C PPS) e monta o avcC com o cabeçalho fixo
+  01 42 E0 1E. Agora o encoder FFmpeg abre com cabeçalho global e o extradata dá os dois; o tamanho da imagem vem do
+  parâmetro (+0x18/+0x20; a consulta da criação dizia 640x640). Gravar 4 s: a câmera salva sem erro, a miniatura com
+  o ícone de vídeo aparece, Fotos > Imagens da câmera mostra o vídeo "00:04", abre e toca até o fim (123-125 quadros
+  decodificados, 0 perdidos); `SceMp4` NID C05DFF01 (fim da reprodução) devolve 0. A webcam deste PC não está ligada
+  ao emulador (quadros cinza), então o conteúdo não dá para conferir aqui.
 - [x] Troféus (NPXS10008): os troféus ganhos só aparecem para jogos já rodados **pelo sistema** (shell). Validado com
   uma cópia dos dados: Minecraft (NPWR06859, 5 troféus no JSON do HLE) aberto pelo shell, a ponte do servidor
   (TrophyServerBridge) instala o título e dá os 5 troféus, e Troféus mostra "Minecraft 7%, 5 bronzes" (`tro7/t2.png`).
@@ -832,7 +857,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `#_livearea_path` "ur0:appmeta/<id>/livearea/contents" do app.db é o que o dbrecovery 3.74 grava, não é a causa.
   Confirmado pelo usuário (06/11/2026): as imagens da LiveArea aparecem e o app Troféus funciona (os troféus antigos
   de jogos não reabertos e os avisos da migração seguem no item de troféus antigos)
-- [ ] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
+- [x] App de Câmera (NPXS10007) trava logo depois de abrir (30/10/2026, main 4dbe06c, log `20261030_204528_shell`):
   a câmera traseira abre (`Integrated Camera` 640x480 YUYV), o primeiro quadro é lido e a textura YUV420P3 aparece,
   e então o app para; não há mais leituras da câmera, a thread `ScePhotoCamMain` está Dormant, uma
   `SceCameraCoreCameraDeviceThread` espera em `condvar SceCameraCoreCameraDeviceLoopStatusCond` e a outra está Dormant.
@@ -841,6 +866,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   antes de criar as threads da câmera. (04/11/2026: não deu para reproduzir — a instalação atual do firmware 3.74
   em `%APPDATA%\VitaSharp\fs` não tem `vs0:app/NPXS10007`; precisa reinstalar/conferir o firmware e rodar com
   `--camera=<webcam>`)
+  Superado (08/11/2026, fix/system-apps-12): o firmware 3.74 não tem NPXS10007; a câmera é o modo câmera do Fotos
+  (NPXS10004), que abre a webcam, tira foto e grava vídeo, e os dois aparecem e abrem em Fotos (item da Câmera acima).
 
 ## Código
 

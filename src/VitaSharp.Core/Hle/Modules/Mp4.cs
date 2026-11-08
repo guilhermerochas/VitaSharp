@@ -251,4 +251,7 @@ public sealed partial class Mp4 : HleModule
     [Hle(Nid = 0xA870587F)] int Mp4_A870587F(int h, uint a, uint b) { Log.DebugOnce("mp4-A870587F", $"sceMp4 NID A870587F({h}, {a:X}, {b:X})"); return 0; }
     [Hle(Nid = 0xD2871F1C)] int Mp4_D2871F1C(int h, uint a, uint b) { Log.DebugOnce("mp4-D2871F1C", $"sceMp4 NID D2871F1C({h}, {a:X}, {b:X})"); return 0; }
     [Hle(Nid = 0xCB91CEBC)] int Mp4_CB91CEBC(int h, uint a, uint b) { Log.DebugOnce("mp4-CB91CEBC", $"sceMp4 NID CB91CEBC({h}, {a:X}, {b:X})"); return 0; }
+    /// <summary>(handle): the Camera's player calls it like CB91CEBC, only while its file is open (state 2), when
+    /// the playback of a recorded video ends; probably the streaming stop that pairs with it. Nothing to stop here.</summary>
+    [Hle(Nid = 0xC05DFF01)] int Mp4_C05DFF01(int h) => Get(h) != null ? 0 : ERR_INVALID_HANDLE;
 }

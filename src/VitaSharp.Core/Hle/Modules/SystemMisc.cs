@@ -539,8 +539,16 @@ public sealed partial class SystemMisc : HleModule
         return 0;
     }
 
+    /// <summary>(pid, param, int *value). Param 0x10 is the process's enter button (0 circle, 1 cross): the shell's
+    /// ime_plugin (FW 3.74, 0x81002B4C) compares it with libpaf's button assignment and, when they differ, swaps the
+    /// meaning of circle and cross on its keyboard (circle then confirmed the focused key instead of closing the
+    /// keyboard). Every process uses the system setting here. The others are 0 until known.</summary>
     [Hle("sceAppMgrAppParamGetInt")]
-    int sceAppMgrAppParamGetInt(int pid, int param, Ptr<int> value) { value.TrySet(0); return 0; }
+    int sceAppMgrAppParamGetInt(int pid, int param, Ptr<int> value)
+    {
+        value.TrySet(param == 0x10 ? AppUtil.SystemParamInt(2, AppUtil.SystemRegistry(Emu)) : 0);
+        return 0;
+    }
 
     [Hle]
     int sceAppMgrLoadExec(string path, uint argv, uint opt)
