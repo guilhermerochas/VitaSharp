@@ -38,27 +38,46 @@ public sealed partial class Ngs : HleModule
 
     uint Def(NgsBuss b) => Definitions() + (uint)b * 8;
 
+    [Hle("sceNgsVoiceDefGetMasterBussInternal")]
     [Hle] uint sceNgsVoiceDefGetMasterBuss() => Def(NgsBuss.Master);
+    [Hle("sceNgsVoiceDefGetCompressorBussInternal")]
     [Hle] uint sceNgsVoiceDefGetCompressorBuss() => Def(NgsBuss.Compressor);
+    [Hle("sceNgsVoiceDefGetCompressorSideChainBussInternal")]
     [Hle] uint sceNgsVoiceDefGetCompressorSideChainBuss() => Def(NgsBuss.SideChainCompressor);
+    [Hle("sceNgsVoiceDefGetDelayBussInternal")]
     [Hle] uint sceNgsVoiceDefGetDelayBuss() => Def(NgsBuss.Delay);
+    [Hle("sceNgsVoiceDefGetDistortionBussInternal")]
     [Hle] uint sceNgsVoiceDefGetDistortionBuss() => Def(NgsBuss.Distortion);
+    [Hle("sceNgsVoiceDefGetEnvelopeBussInternal")]
     [Hle] uint sceNgsVoiceDefGetEnvelopeBuss() => Def(NgsBuss.Envelope);
+    [Hle("sceNgsVoiceDefGetEqBussInternal")]
     [Hle] uint sceNgsVoiceDefGetEqBuss() => Def(NgsBuss.Equalization);
+    [Hle("sceNgsVoiceDefGetMixerBussInternal")]
     [Hle] uint sceNgsVoiceDefGetMixerBuss() => Def(NgsBuss.Mixer);
+    [Hle("sceNgsVoiceDefGetPauserBussInternal")]
     [Hle] uint sceNgsVoiceDefGetPauserBuss() => Def(NgsBuss.Pauser);
+    [Hle("sceNgsVoiceDefGetPitchShiftBussInternal")]
     [Hle] uint sceNgsVoiceDefGetPitchShiftBuss() => Def(NgsBuss.PitchShift);
+    [Hle("sceNgsVoiceDefGetReverbBussInternal")]
     [Hle] uint sceNgsVoiceDefGetReverbBuss() => Def(NgsBuss.Reverb);
+    [Hle("sceNgsVoiceDefGetSasEmuVoiceInternal")]
     [Hle] uint sceNgsVoiceDefGetSasEmuVoice() => Def(NgsBuss.SasEmulation);
+    [Hle("sceNgsVoiceDefGetSimpleVoiceInternal")]
     [Hle] uint sceNgsVoiceDefGetSimpleVoice() => Def(NgsBuss.Simple);
+    [Hle("sceNgsVoiceDefGetAtrac9VoiceInternal")]
     [Hle] uint sceNgsVoiceDefGetAtrac9Voice() => Def(NgsBuss.Atrac9);
+    [Hle("sceNgsVoiceDefGetSimpleAtrac9VoiceInternal")]
     [Hle] uint sceNgsVoiceDefGetSimpleAtrac9Voice() => Def(NgsBuss.SimpleAtrac9);
+    [Hle("sceNgsVoiceDefGetScreamVoiceInternal")]
     [Hle] uint sceNgsVoiceDefGetScreamVoice() => Def(NgsBuss.Scream);
+    [Hle("sceNgsVoiceDefGetScreamVoiceAT9Internal")]
     [Hle] uint sceNgsVoiceDefGetScreamAtrac9Voice() => Def(NgsBuss.ScreamAtrac9);
+    [Hle("sceNgsVoiceDefGetTemplate1Internal")]
     [Hle] uint sceNgsVoiceDefGetTemplate1() => Def(NgsBuss.NormalPlayer);
 
     // =================================================================== system / rack
 
+    [Hle("sceNgsSystemGetRequiredMemorySizeInternal")]
     [Hle]
     int sceNgsSystemGetRequiredMemorySize(uint parameters, Ptr<uint> size)
     {
@@ -116,6 +135,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsSystemReleaseInternal")]
     [Hle]
     int sceNgsSystemRelease(uint system)
     {
@@ -130,10 +150,12 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsSystemSetFlagsInternal")]
     [Hle] int sceNgsSystemSetFlags(uint system, uint flags) => OK;
     // sceNgsSystemLock keeps sceNgsSystemUpdate (on other threads) from running while the game changes several voices.
     // It is not owned: Sengoku Musou 2 Empires counts its lock users and the last one out unlocks, whichever thread
     // locked first. A host Monitor (owned, and blocking while holding an emulated core) deadlocked it.
+    [Hle("sceNgsSystemLockInternal")]
     [Hle]
     int sceNgsSystemLock(uint system)
     {
@@ -147,6 +169,7 @@ public sealed partial class Ngs : HleModule
     static object Self => (object?)GuestThread.Current ?? Thread.CurrentThread;
     bool Live => Emu is null || Emu.Running;
 
+    [Hle("sceNgsSystemUnlockInternal")]
     [Hle]
     int sceNgsSystemUnlock(uint system)
     {
@@ -186,7 +209,9 @@ public sealed partial class Ngs : HleModule
         if (!WaitGuestUnlocked(s, self, acquire: false))
             using (Scheduler.Block()) WaitGuestUnlocked(s, self, acquire: false, block: true);
     }
+    [Hle("sceNgsSystemSetParamErrorCallbackInternal")]
     [Hle] int sceNgsSystemSetParamErrorCallback(uint system, uint cb) => OK;
+    [Hle("sceNgsRackSetParamErrorCallbackInternal")]
     [Hle] int sceNgsRackSetParamErrorCallback(uint rack, uint cb) => OK;
 
     static uint VoiceFootprint(NgsBuss type, uint patchesPerOutput)
@@ -196,6 +221,7 @@ public sealed partial class Ngs : HleModule
         return 32 + paramBytes + patchesPerOutput * NgsModules.OutputCount(type) * 32;
     }
 
+    [Hle("sceNgsRackGetRequiredMemorySizeInternal")]
     [Hle]
     int sceNgsRackGetRequiredMemorySize(uint system, uint desc, Ptr<uint> size)
     {
@@ -280,6 +306,7 @@ public sealed partial class Ngs : HleModule
         _racks.TryRemove(rack.Handle, out _);
     }
 
+    [Hle("sceNgsRackReleaseInternal")]
     [Hle]
     int sceNgsRackRelease(uint rack, uint callback)
     {
@@ -293,6 +320,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsRackGetVoiceHandleInternal")]
     [Hle]
     int sceNgsRackGetVoiceHandle(uint rack, uint index, Ptr<uint> outVoice)
     {
@@ -304,6 +332,7 @@ public sealed partial class Ngs : HleModule
 
     // =================================================================== patches
 
+    [Hle("sceNgsPatchCreateRoutingInternal")]
     [Hle]
     int sceNgsPatchCreateRouting(uint setup, Ptr<uint> outPatch)
     {
@@ -342,6 +371,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsPatchRemoveRoutingInternal")]
     [Hle]
     int sceNgsPatchRemoveRouting(uint patch)
     {
@@ -395,6 +425,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceGetOutputPatchInternal")]
     [Hle]
     int sceNgsVoiceGetOutputPatch(uint voice, int outIndex, int sub, Ptr<uint> outPatch)
     {
@@ -549,6 +580,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceBypassModuleInternal")]
     [Hle]
     int sceNgsVoiceBypassModule(uint voice, uint module, uint flag)
     {
@@ -558,6 +590,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceGetModuleBypassInternal")]
     [Hle]
     int sceNgsVoiceGetModuleBypass(uint voice, uint module, Ptr<uint> flag)
     {
@@ -576,6 +609,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceSetModuleCallbackInternal")]
     [Hle]
     int sceNgsVoiceSetModuleCallback(uint voice, uint module, uint callback, uint userData)
     {
@@ -586,6 +620,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceSetFinishedCallbackInternal")]
     [Hle]
     int sceNgsVoiceSetFinishedCallback(uint voice, uint callback, uint userData)
     {
@@ -690,6 +725,7 @@ public sealed partial class Ngs : HleModule
     static void SetState(NgsModuleData m, int off, int v) => BitConverter.TryWriteBytes(m.GuestState.AsSpan(off), v);
     static int GetState(NgsModuleData m, int off) => BitConverter.ToInt32(m.GuestState, off);
 
+    [Hle("sceNgsVoicePlayInternal")]
     [Hle]
     int sceNgsVoicePlay(uint voice)
     {
@@ -719,6 +755,7 @@ public sealed partial class Ngs : HleModule
         v.Paused = false;
     }
 
+    [Hle("sceNgsVoiceKillInternal")]
     [Hle]
     int sceNgsVoiceKill(uint voice)
     {
@@ -728,6 +765,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceKeyOffInternal")]
     [Hle]
     int sceNgsVoiceKeyOff(uint voice)
     {
@@ -747,6 +785,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoicePauseInternal")]
     [Hle]
     int sceNgsVoicePause(uint voice)
     {
@@ -760,6 +799,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsVoiceResumeInternal")]
     [Hle]
     int sceNgsVoiceResume(uint voice)
     {
@@ -806,6 +846,7 @@ public sealed partial class Ngs : HleModule
         t.CallGuest(callback, info);
     }
 
+    [Hle("sceNgsSystemUpdateInternal")]
     [Hle]
     int sceNgsSystemUpdate(uint system)
     {
@@ -1282,6 +1323,8 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsModuleGetNumPresetsInternal")]
     [Hle] int sceNgsModuleGetNumPresets(uint system, uint module, Ptr<uint> num) { num.TrySet(0); return OK; }
+    [Hle("sceNgsModuleGetPresetInternal")]
     [Hle] int sceNgsModuleGetPreset(uint system, uint module, uint index, uint buf) => ERROR;
 }
