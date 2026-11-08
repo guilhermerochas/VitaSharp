@@ -5,7 +5,7 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>Save states: a host video decoder cannot be saved; each one is created again with its saved size and
 /// starts empty (the restored movie restarts at a key frame, see Mp4.Snapshot.cs; pictures already decoded but not
-/// yet taken are dropped).</summary>
+/// yet taken are dropped). It is given the stream's SPS and PPS again before its first unit.</summary>
 [GenerateSnapshot, SnapshotIgnoreFields("_decoders", "_carryOver")]
 public sealed partial class Videodec
 {
@@ -14,7 +14,7 @@ public sealed partial class Videodec
         lock (_decoders)
         {
             w.Write(_decoders.Count);
-            foreach (var (h, d) in _decoders) { w.Write(h); w.Write(d.MaxWidth); w.Write(d.MaxHeight); w.Write(d.Started); }
+            foreach (var (h, d) in _decoders) { w.Write(h); w.Write(d.MaxWidth); w.Write(d.MaxHeight); w.Write(d.Started); w.Write(d.ParamSets); }
         }
     }
 
@@ -30,7 +30,8 @@ public sealed partial class Videodec
             {
                 uint h = r.ReadUInt32(), w = r.ReadUInt32(), ht = r.ReadUInt32();
                 bool started = r.ReadBool();
-                _decoders[h] = new Decoder { Codec = VideoDecoders.CreateH264(new VideoDecoderOptions((int)w, (int)ht)), MaxWidth = w, MaxHeight = ht, Started = started };
+                var ps = r.ReadBytes();
+                _decoders[h] = new Decoder { Codec = VideoDecoders.CreateH264(new VideoDecoderOptions((int)w, (int)ht)), MaxWidth = w, MaxHeight = ht, Started = started, ParamSets = ps, ResendParamSets = ps != null };
             }
         }
     }

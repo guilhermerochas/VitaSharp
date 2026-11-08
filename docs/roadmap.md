@@ -1122,6 +1122,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   com `threads_start.txt` e ver se o código traduzido (cache do JIT) ou um mapeamento de memória não foi refeito na
   carga. Fila da rodada 20 ainda não iniciada: NFS Most Wanted no diálogo Origin, fps do shell main x f0e692f com o PC
   livre, filme do LBP com `--video-decoder=hw`, rosto lento do Soccer Tsuku (PCSG00198)
+  Crash do load-state corrigido (08/11/2026, agente C): o thread 'main' do Sigma 2 roda fibers (SceFiber HLE) e o
+  contexto de fiber restaurado de um save state vinha sem a parte do host do CpuState (MemBase nulo); o sceFiberRun /
+  Switch copiava o contexto inteiro por cima do estado do thread e o primeiro acesso à memória caía (AccessViolation em
+  T16.LdStSp, MemBase 0x0 no log de diagnóstico). Agora a troca de fiber só troca os registradores do guest. Sem a
+  correção 3/3 reruns caem; com ela 0 em 5 (reruns de ugsC3_data/captures/PCSE00233_20261108_142546_tudo 2x e
+  ..._150404_tudo, e --load-state direto). Junto: o decodificador H.264 recriado na carga recebe de novo o SPS/PPS
+  do filme (antes: 
+on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do filme da abertura
+  a imagem fica parada ~3,5 s e o filme pula para o fim (..._142721_tudo); o player do jogo não se recupera do
+  demuxer reaberto no quadro-chave. 99Vidas (PCSE00914, pedido do lead): o travamento depois de Load state: GPU
+  backend replaced não reproduziu em 9 cargas com este build (headless, janela oculta, 6 cargas seguidas); o build
+  do agente de produto (scratchpad/desk) recusa o save em f4000 porque um diálogo Msg do sistema está aberto, então o
+  estado que travou foi salvo com esse diálogo aberto
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)

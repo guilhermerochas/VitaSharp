@@ -43,4 +43,12 @@ public sealed class DecoderOutputsTests(GuestMemoryFixture fx)
             Assert.Equal(100 + n, shown); // before the fix buffer a kept serving its previous picture: 102, 103, 101, ...
         }
     }
+
+    [Fact]
+    public void AvcdecFindsTheParameterSetsBeforeTheFirstSlice()
+    {
+        byte[] au = [0, 0, 0, 1, 0x09, 0xF0, 0, 0, 0, 1, 0x67, 1, 2, 3, 0, 0, 1, 0x68, 4, 5, 0, 0, 1, 0x65, 9, 9, 0, 0, 1, 0x67, 7];
+        Assert.Equal(new byte[] { 0, 0, 0, 1, 0x67, 1, 2, 3, 0, 0, 0, 1, 0x68, 4, 5 }, VitaSharp.Core.Hle.Modules.Videodec.ParameterSets(au));
+        Assert.Null(VitaSharp.Core.Hle.Modules.Videodec.ParameterSets([0, 0, 0, 1, 0x41, 1, 2]));
+    }
 }

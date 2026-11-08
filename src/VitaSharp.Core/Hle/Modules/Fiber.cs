@@ -82,10 +82,20 @@ public sealed unsafe partial class Fiber : HleModule
     }
 
     /// <summary>Loads <paramref name="ctx"/> into the CPU; the HLE dispatcher then resumes there instead of returning to LR.</summary>
+    /// <summary>Where the host bookkeeping of <see cref="CpuState"/> starts (native backend counters, MemBase, the dispatch table).</summary>
+    static readonly int HostPart = (int)System.Runtime.InteropServices.Marshal.OffsetOf<CpuState>(nameof(CpuState.CycleAcc));
+
     static int Load(GuestThread t, CpuState* s, in CpuState ctx)
     {
         uint tls = s->TpidrUro, tlsRw = s->TpidrUrw;
+        // only the guest registers change: the host part stays the running thread's. A context restored from a save state
+        // has none (MemBase null): Ninja Gaiden Sigma 2 Plus's main thread runs fibers and its first guest memory access after
+        // a load crashed (AccessViolation in T16.LdStSp)
+        int hostBytes = sizeof(CpuState) - HostPart;
+        var host = stackalloc byte[hostBytes];
+        new Span<byte>((byte*)s + HostPart, hostBytes).CopyTo(new Span<byte>(host, hostBytes));
         *s = ctx;
+        new Span<byte>(host, hostBytes).CopyTo(new Span<byte>((byte*)s + HostPart, hostBytes));
         s->TpidrUro = tls; s->TpidrUrw = tlsRw; // thread-local registers belong to the thread, not the fiber
         s->ExclusiveValid = 0;
         t.ContextReplaced = true;

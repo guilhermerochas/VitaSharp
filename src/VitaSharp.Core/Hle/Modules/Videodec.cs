@@ -31,6 +31,10 @@ public sealed partial class Videodec : HleModule
         /// <summary>Statistics, logged when the decoder is deleted: calls, pictures repeated, calls with no picture,
         /// the slowest call (Stopwatch ticks).</summary>
         public long Calls, Repeats, Empty, MaxCallTicks, Dropped, CarriedOver, CallTicks, FirstCall, LastCall;
+        /// <summary>The stream's last SPS and PPS (Annex B), kept for a decoder recreated by a save state load: players send
+        /// them once at the start of the movie, and a new decoder without them cannot decode the units that follow.</summary>
+        public byte[]? ParamSets;
+        public bool ResendParamSets;
     }
 
     /// <summary>
@@ -155,7 +159,11 @@ public sealed partial class Videodec : HleModule
         long? stamp = null;
         if (d.Codec != null && es != 0 && size != 0)
         {
-            d.Codec.Send(GuestMemory.Span(es, (int)size), pts);
+            var unit = GuestMemory.Span(es, (int)size);
+            if (ParameterSets(unit) is { } ps) d.ParamSets = ps;
+            else if (d.ResendParamSets && d.ParamSets != null) d.Codec.Send(d.ParamSets, pts);
+            d.ResendParamSets = false;
+            d.Codec.Send(unit, pts);
             if (d.AuPts != long.MinValue && pts < d.AuPts) d.AuReordered = true;
             d.AuPts = pts;
             if (StampUnitPts && d.Codec.Asynchronous && !d.AuReordered) stamp = pts;
@@ -167,6 +175,29 @@ public sealed partial class Videodec : HleModule
         if (d.FirstCall == 0) d.FirstCall = t0;
         d.LastCall = t0;
         return r;
+    }
+
+    /// <summary>The SPS and PPS NAL units before the first slice of an Annex B access unit (with start codes), or null.</summary>
+    internal static byte[]? ParameterSets(ReadOnlySpan<byte> au)
+    {
+        List<byte>? ps = null;
+        int i = 0;
+        while (true)
+        {
+            int start = au[i..].IndexOf(new byte[] { 0, 0, 1 });
+            if (start < 0) break;
+            int hdr = i + start + 3;
+            if (hdr >= au.Length) break;
+            int type = au[hdr] & 0x1F;
+            if (type is 1 or 5) break; // a slice: the parameter sets come before it
+            int next = au[hdr..].IndexOf(new byte[] { 0, 0, 1 });
+            int end = next < 0 ? au.Length : hdr + next;
+            if (next >= 0 && end > hdr && au[end - 1] == 0) end--; // the next start code's leading zero
+            if (type is 7 or 8) { ps ??= []; ps.AddRange(new byte[] { 0, 0, 0, 1 }); ps.AddRange(au[hdr..end].ToArray()); }
+            if (next < 0) break;
+            i = hdr + next;
+        }
+        return ps?.ToArray();
     }
 
     /// <summary>Writes every ready picture into the caller's picture array. <paramref name="repeatIfLate"/>: an
