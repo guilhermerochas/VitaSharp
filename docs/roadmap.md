@@ -858,6 +858,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cobrança (ou o usuário dizer o que tapava). 030833 = as vozes da torcida não têm cliques, lacunas nem grãos repetidos
   (`vitasharp-perf audio-check`); a voz 03 (0x89A424A0) bate em 0 dBFS (0,03% de clipping) e todas cortam acima de
   ~12 kHz; sem referência do Vita no mesmo trecho não dá para dizer o que soa estranho
+  Áudio da torcida confirmado ok pelo usuário (07/11/2026, depois do espaçamento dos grãos 352d66f); seguem abertos o escanteio e o frame ATRAC9 zerado no fim do fluxo
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
