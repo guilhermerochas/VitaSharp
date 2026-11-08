@@ -798,7 +798,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
         ProfMark(ProfPhase.BsTarget);
-        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
+        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} store={b.Depth?.ForceStore} bgDepth={b.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface
         ChooseMsaaPath(b);
