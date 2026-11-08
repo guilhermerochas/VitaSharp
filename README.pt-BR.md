@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=821beaf057b6fece7f90745ca386b57bb5f6aa1311edee6a657afcf7be2a77d0 -->
+<!-- pair: README.md sha256=0cd0512e3015e0c4bd5ec97a5500a49933fcb86aa14fc46419d3204f016c2e66 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -20,6 +20,15 @@ Vulkan e mais de 1.100 funções do sistema reimplementadas, tudo em .NET 10.
 <img src="docs/assets/screenshots/shell-home.webp" alt="A tela inicial do PS Vita com os jogos instalados, rodando no VitaSharp" width="760">
 
 <sub><i>A tela inicial de verdade do PS Vita (o <code>shell.self</code> do firmware) rodando no VitaSharp.</i></sub>
+
+<br><br>
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/launcher-light.png">
+  <img src="docs/assets/launcher.png" alt="O launcher do VitaSharp: a biblioteca de jogos" width="760">
+</picture>
+
+<sub><i>A biblioteca de jogos do launcher do desktop (entradas homebrew de exemplo; o tema claro segue o tema do seu GitHub).</i></sub>
 
 </div>
 
@@ -88,8 +97,7 @@ de comando: `install-firmware <PSVUPDAT.PUP>`.
 instalados e LiveArea. Um jogo aberto pela LiveArea roda como um segundo processo; o botão PS (tecla Home) volta ao
 sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
-**Android.** No app: **Instalar VPK**, o `.PUP` do firmware e pacotes de driver da GPU são escolhidos pelo seletor
-de arquivos do Android; o menu de pausa (botão PS) tem os estados salvos e o **Gravar tudo**.
+**Android.** Veja [Android](#android).
 
 **Idioma.** O launcher e a janela do jogo seguem o idioma do sistema (inglês ou português do Brasil);
 **Configurações > Geral > Aparência > Idioma** escolhe um. Os logs continuam em inglês.
@@ -122,6 +130,49 @@ Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` n
 
 Controles (SDL2) são detectados sozinhos, com layout posicional (o botão de baixo é sempre Cruz) e giroscópio. Tudo
 pode ser remapeado em **Configurações > Controles**, por controle ([`docs/notes/controller-config.md`](docs/notes/controller-config.md)).
+
+## Android
+
+O app Android (`src/VitaSharp.Android`) roda o mesmo núcleo do emulador do desktop em celulares arm64 (Android 8.0 ou
+mais novo, Vulkan), com telas próprias: biblioteca de jogos, detalhes do jogo (backend de CPU, clock, perfil de GPU,
+VSync e FPS por jogo, saves), troféus, controles, ajustes, firmware, driver da GPU, conta PSN e rede, e uma página de
+desempenho. Os textos do app estão em português por enquanto. Telas e design:
+[`docs/android/README.md`](docs/android/README.md#screens).
+
+**Instalar o APK.** Ainda não há APK na página de Releases: compile num PC (o workload .NET MAUI Android, o Android
+SDK e um JDK 17; o compilador de shaders do aparelho uma vez com `build/build-android-shaderc.ps1` / `.sh`) e instale
+o `io.github.vitasharp-Signed.apk` com `adb install` ou abrindo-o no celular. Passos e opções:
+[`docs/android/README.md`](docs/android/README.md#building).
+
+```sh
+dotnet build src/VitaSharp.Android -c Release -m:2
+adb install -r src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-Signed.apk
+```
+
+**Jogos e firmware.** O app não pede permissão de armazenamento: os arquivos entram pelo seletor de arquivos do
+Android. Na **Biblioteca**, **Instalar jogo** aceita um `.vpk` (ou `.zip`) ou um `.pkg` com a licença (`work.bin`,
+`.rif` ou o zRIF colado). O firmware é opcional, como no PC: **Ajustes > Firmware > Instalar firmware (.PUP)** com o
+`PSVUPDAT.PUP`; depois o **Sistema do Vita** na biblioteca abre a tela inicial de verdade. Drivers de GPU próprios
+(Adreno, pela libadrenotools) se instalam em **Ajustes > Driver da GPU**. Os dados ficam na pasta do próprio app
+(`Android/data/io.github.vitasharp/files`, a mesma organização do desktop); desinstalar o app apaga essa pasta.
+
+**Controles.** Controles translúcidos na tela, nas laterais da imagem (direcional, analógicos, botões de ação, L/R,
+SELECT/PS/START, o botão TRÁS para o touchpad traseiro); toques na imagem são a tela de toque da frente. Controles
+Bluetooth ou USB são detectados sozinhos com o layout posicional do desktop (os controles na tela somem enquanto um
+está conectado), e um teclado físico usa as teclas do desktop. **Controles** ajusta a troca O/X, zona morta,
+opacidade, vibração e ocultar sozinho. O giroscópio e o acelerômetro do celular alimentam o sensor de movimento do
+Vita (ainda não verificado num aparelho).
+
+**Menu de pausa.** O botão PS (na tela ou no controle) pausa um jogo aberto sozinho: **Continuar**, **Salvar estado** /
+**Carregar estado** (6 slots com imagem), **Ajustes** (toque traseiro, controles na tela, pré-gravação),
+**Recentralizar** (movimento), **Gravar tudo** e **Sair do jogo**. O **Gravar tudo** grava o mesmo relatório de bug do
+F8 do desktop (estado salvo, entrada, dump da GPU, quadros, áudio e log) em `captures/` até **Parar gravação**; envie
+o `.zip` como em [Relatar um bug](#relatar-um-bug).
+
+**Estado e limites.** Testado num Redmi Note 14 (Mali-G57) e no emulador Android x86_64; celulares Adreno e controles
+físicos ainda não foram verificados. O desempenho é o trabalho em andamento: jogos mais leves chegam aos 30 ou 60 fps
+nativos, os 3D pesados ainda não (Killzone: Mercenary, o teste de referência, roda a uns 12-15 fps contra os 30
+dele). Os itens em aberto estão no [roadmap](docs/roadmap.md) (seção Android).
 
 ## Relatar um bug
 

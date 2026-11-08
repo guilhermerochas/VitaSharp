@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=1ceb1695b83f4c9daff90eb00ab0e995f45a23ca634f09c24b65ec4636c101dc -->
+<!-- pair: README.pt-BR.md sha256=fa1f63408f4b68fd9971350d4009da5256da4ddb764ae998dc764759239760d2 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -20,6 +20,15 @@ renderer and more than 1,100 system functions reimplemented, all in .NET 10.
 <img src="docs/assets/screenshots/shell-home.webp" alt="The PS Vita home screen with the installed games, running in VitaSharp" width="760">
 
 <sub><i>The real PS Vita home screen (the firmware's <code>shell.self</code>) running in VitaSharp.</i></sub>
+
+<br><br>
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/launcher-light.png">
+  <img src="docs/assets/launcher.png" alt="The VitaSharp launcher: the game library" width="760">
+</picture>
+
+<sub><i>The desktop launcher's game library (sample homebrew entries; the light theme follows your GitHub theme).</i></sub>
 
 </div>
 
@@ -87,8 +96,7 @@ runs the firmware's `shell.self`: initial setup the first time, lock screen, hom
 LiveArea. A game opened from the LiveArea runs as a second process; the PS button (Home key) goes back to the system
 and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
-**Android.** In the app: **Install VPK**, the firmware's `.PUP` and GPU driver packages are picked with Android's file
-picker; the pause menu (PS button) has the save states and **Record everything**.
+**Android.** See [Android](#android).
 
 **Language.** The launcher and the game window follow the system's language (English or Brazilian Portuguese);
 **Settings > General > Appearance > Language** picks one. Logs stay in English.
@@ -121,6 +129,48 @@ Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Li
 
 Controllers (SDL2) are detected on their own, with a positional layout (the bottom button is always Cross) and
 gyroscope. Everything can be remapped in **Settings > Controls**, per controller ([`docs/notes/controller-config.md`](docs/notes/controller-config.md)).
+
+## Android
+
+The Android app (`src/VitaSharp.Android`) runs the same emulator core as the desktop on arm64 phones (Android 8.0 or
+newer, Vulkan), with its own screens: game library, game details (CPU backend, clock, GPU profile, VSync and FPS per
+game, saves), trophies, controls, settings, firmware, GPU driver, PSN account and network, and a performance page.
+The app's texts are in Portuguese for now. Screens and design: [`docs/android/README.md`](docs/android/README.md#screens).
+
+**Install the APK.** There is no APK on the Releases page yet: build it on a PC (the .NET MAUI Android workload, the
+Android SDK and a JDK 17; the device's shader compiler once with `build/build-android-shaderc.ps1` / `.sh`), then
+install `io.github.vitasharp-Signed.apk` with `adb install` or by opening it on the phone. Steps and options:
+[`docs/android/README.md`](docs/android/README.md#building).
+
+```sh
+dotnet build src/VitaSharp.Android -c Release -m:2
+adb install -r src/VitaSharp.Android/bin/Release/net10.0-android/io.github.vitasharp-Signed.apk
+```
+
+**Games and firmware.** The app asks for no storage permission: files come in through Android's file picker. In
+**Biblioteca**, **Instalar jogo** takes a `.vpk` (or `.zip`) or a `.pkg` with its license (`work.bin`, `.rif` or the
+pasted zRIF). The firmware is optional, as on the PC: **Ajustes > Firmware > Instalar firmware (.PUP)** with
+`PSVUPDAT.PUP`; then **Sistema do Vita** in the library boots the real home screen. Custom GPU drivers (Adreno, through
+libadrenotools) are installed in **Ajustes > Driver da GPU**. Data lives in the app's own folder
+(`Android/data/io.github.vitasharp/files`, the desktop's layout); uninstalling the app deletes it.
+
+**Controls.** Translucent on-screen controls over the sides of the picture (D-pad, sticks, face buttons, L/R,
+SELECT/PS/START, a TRÁS toggle for the rear touchpad); touches on the picture are the front touch screen. Bluetooth or
+USB controllers are detected on their own with the desktop's positional layout (the on-screen controls hide while one
+is connected), and a hardware keyboard uses the desktop's keys. **Controles** sets the O/X swap, deadzone, opacity,
+vibration and auto-hide. The phone's gyroscope and accelerometer feed the Vita's motion sensor (not verified on a
+device yet).
+
+**Pause menu.** The PS button (on screen or on the controller) pauses a game started on its own: **Continuar**, **Salvar
+estado** / **Carregar estado** (6 slots with a picture), **Ajustes** (rear touch, on-screen controls, pre-recording),
+**Recentralizar** (motion), **Gravar tudo** and **Sair do jogo**. **Gravar tudo** records the same bug report as the
+desktop's F8 (save state, input, GPU dump, frames, audio and log) into `captures/` until **Parar gravação**; send the
+`.zip` as in [Report a bug](#report-a-bug).
+
+**State and limits.** Tested on a Redmi Note 14 (Mali-G57) and on the x86_64 Android emulator; Adreno phones and real
+controllers are not verified yet. Performance is the work in progress: lighter games reach their native 30 or 60 fps,
+heavy 3D ones do not yet (Killzone: Mercenary, the reference test, runs at about 12-15 fps against its 30). Open items
+are in the [roadmap](docs/roadmap.md) (Android section).
 
 ## Report a bug
 
