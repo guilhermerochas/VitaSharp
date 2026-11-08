@@ -189,15 +189,8 @@ public sealed partial class MainWindow : Window
 
     void RebuildSidebar()
     {
+        // no logo or name above the button (the window title names the app): the sidebar starts with the Vita system
         var s = new DockPanel { Margin = new Thickness(16, 22, 16, 18) };
-
-        var brand = _k.HStack(11);
-        brand.Margin = new Thickness(8, 0, 0, 20);
-        using (var logo = typeof(MainWindow).Assembly.GetManifestResourceStream("icon-64.png"))
-            if (logo != null) brand.Children.Add(new Image { Source = new Bitmap(logo), Width = 34, Height = 34 });
-        brand.Children.Add(_k.Heading("VitaSharp", 20));
-        DockPanel.SetDock(brand, Dock.Top);
-        s.Children.Add(brand);
 
         var launch = LaunchButton();
         launch.Margin = new Thickness(0, 0, 0, 18);
