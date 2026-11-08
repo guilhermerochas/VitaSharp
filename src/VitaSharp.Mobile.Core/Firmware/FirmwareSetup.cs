@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Firmware;
 
 namespace VitaSharp.Mobile.Core.Firmware;
@@ -18,8 +19,8 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
 
     /// <summary>The summary line of the Ajustes list: "3.74 · fontes ausentes", "3.74 + pacote de fontes" or
     /// "não instalado".</summary>
-    public string Summary => Installed is not { } fw ? "não instalado"
-        : SystemFonts ? fw.Display : $"{fw.Version ?? "versão desconhecida"} · fontes ausentes";
+    public string Summary => Installed is not { } fw ? Loc.Get("MNotInstalled")
+        : SystemFonts ? fw.Display : Loc.Format("MFontsMissing", fw.Version ?? Loc.Get("MUnknownVersion"));
 
     static bool HasEntries(string dir)
     {

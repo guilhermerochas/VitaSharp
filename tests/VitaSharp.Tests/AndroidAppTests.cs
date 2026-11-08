@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
@@ -183,7 +184,7 @@ public sealed class AndroidAppTests : IDisposable
     {
         var c = SettingsChoices.WithDefault(SettingsChoices.Clocks, "444");
         Assert.Equal(SettingsChoices.DefaultValue, c[0].Value);
-        Assert.Equal("Padrão (444 MHz (carregamentos mais rápidos))", c[0].Label);
+        Assert.Equal(Loc.Format("MDefaultParen", Loc.Get("MClock444")), c[0].Label);
         Assert.Equal(3, c.Count);
         Assert.Contains(CpuChoices.Available(), x => x.Value == "interp");
         Assert.Equal("", CpuChoices.Available()[0].Value);
@@ -221,7 +222,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal(("PCSC00045", "1.12", "KM"), (kz.TitleId, kz.Version, kz.Initials));
         Assert.StartsWith("PCSC00045 · v1.12 · ", kz.Subtitle);
 
-        Assert.Equal("Sem troféus", GameLibrary.Trophies(games[1], data).Text);
+        Assert.Equal(Loc.Get("MNoTrophies"), GameLibrary.Trophies(games[1], data).Text);
         var none = GameLibrary.Trophies(kz, data);
         Assert.Equal(("0/3", 0), (none.Text, none.Percent));
 
@@ -262,10 +263,10 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal("5m", GameLibrary.PlayTime(300));
         Assert.Equal("—", GameLibrary.PlayTime(0));
         var now = new DateTime(2026, 10, 30, 15, 0, 0, DateTimeKind.Local).ToUniversalTime();
-        Assert.Equal("Hoje", GameLibrary.LastPlayed(now.AddHours(-1), now));
-        Assert.Equal("Ontem", GameLibrary.LastPlayed(now.AddDays(-1), now));
-        Assert.Equal("há 3 dias", GameLibrary.LastPlayed(now.AddDays(-3), now));
-        Assert.Equal("Nunca", GameLibrary.LastPlayed(null, now));
+        Assert.Equal(Loc.Get("MToday"), GameLibrary.LastPlayed(now.AddHours(-1), now));
+        Assert.Equal(Loc.Get("MYesterday"), GameLibrary.LastPlayed(now.AddDays(-1), now));
+        Assert.Equal(Loc.Format("MDaysAgo", 3), GameLibrary.LastPlayed(now.AddDays(-3), now));
+        Assert.Equal(Loc.Get("MNever"), GameLibrary.LastPlayed(null, now));
     }
 
     // ---------------------------------------------------------------- input

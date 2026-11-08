@@ -1827,4 +1827,988 @@
   <data name="SsQuick" xml:space="preserve">
     <value>Rápido</value>
   </data>
+  <data name="MCancel" xml:space="preserve">
+    <value>Cancelar</value>
+  </data>
+  <data name="MOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="MYes" xml:space="preserve">
+    <value>Sim</value>
+  </data>
+  <data name="MController" xml:space="preserve">
+    <value>Controle</value>
+  </data>
+  <data name="MControls" xml:space="preserve">
+    <value>Controles</value>
+  </data>
+  <data name="MControllerConnected" xml:space="preserve">
+    <value>Controle conectado</value>
+  </data>
+  <data name="MNoController" xml:space="preserve">
+    <value>Nenhum controle</value>
+  </data>
+  <data name="MRefresh" xml:space="preserve">
+    <value>Atualizar</value>
+  </data>
+  <data name="MConnectController" xml:space="preserve">
+    <value>Conecte um controle Bluetooth ou USB</value>
+  </data>
+  <data name="MSelected" xml:space="preserve">
+    <value>selecionado</value>
+  </data>
+  <data name="MMapping" xml:space="preserve">
+    <value>Mapeamento</value>
+  </data>
+  <data name="MSwapConfirm" xml:space="preserve">
+    <value>Trocar ○ e ✕</value>
+  </data>
+  <data name="MSwapConfirmDetail" xml:space="preserve">
+    <value>Confirmar com ○, como nos jogos japoneses</value>
+  </data>
+  <data name="MStickDeadzone" xml:space="preserve">
+    <value>Zona morta dos analógicos</value>
+  </data>
+  <data name="MOnScreenControls" xml:space="preserve">
+    <value>Controles na tela</value>
+  </data>
+  <data name="MOpacity" xml:space="preserve">
+    <value>Opacidade</value>
+  </data>
+  <data name="MHaptics" xml:space="preserve">
+    <value>Vibrar ao tocar</value>
+  </data>
+  <data name="MHideWithGamepad" xml:space="preserve">
+    <value>Esconder com controle conectado</value>
+  </data>
+  <data name="MMotion" xml:space="preserve">
+    <value>Movimento</value>
+  </data>
+  <data name="MMotionSensors" xml:space="preserve">
+    <value>Sensores de movimento</value>
+  </data>
+  <data name="MMotionSensorsDetail" xml:space="preserve">
+    <value>Inclinação e giroscópio do Vita (SceMotion); Recentralizar fica no menu de pausa</value>
+  </data>
+  <data name="MControlsNote" xml:space="preserve">
+    <value>No jogo: TRÁS liga o toque traseiro (os toques na imagem vão para o painel de trás); PS abre o menu de pausa quando o jogo roda sem o sistema. O botão Home/PS do controle faz o mesmo.</value>
+  </data>
+  <data name="MGeneric" xml:space="preserve">
+    <value>Genérico</value>
+  </data>
+  <data name="MPsButton" xml:space="preserve">
+    <value>Botão PS</value>
+  </data>
+  <data name="MDpad" xml:space="preserve">
+    <value>Direcional</value>
+  </data>
+  <data name="MLeftStick" xml:space="preserve">
+    <value>Analógico esquerdo</value>
+  </data>
+  <data name="MRightStick" xml:space="preserve">
+    <value>Analógico direito</value>
+  </data>
+  <data name="MDeadzone" xml:space="preserve">
+    <value>Zona morta</value>
+  </data>
+  <data name="MNotOnThisDevice" xml:space="preserve">
+    <value> (este aparelho não tem)</value>
+  </data>
+  <data name="MControlsOpacity" xml:space="preserve">
+    <value>Opacidade dos controles</value>
+  </data>
+  <data name="MDeveloperOptions" xml:space="preserve">
+    <value>Opções de desenvolvedor</value>
+  </data>
+  <data name="MGpuBench" xml:space="preserve">
+    <value>Bench da GPU</value>
+  </data>
+  <data name="MRun" xml:space="preserve">
+    <value>rodar</value>
+  </data>
+  <data name="MNoFixture" xml:space="preserve">
+    <value>Nenhuma fixture</value>
+  </data>
+  <data name="MBenchVariants" xml:space="preserve">
+    <value>Variantes: {0} (pastas em bench/variants: shaders HASH_HINT.vert|frag e params.txt). Cada variante roda 3 vezes, intercaladas, num processo próprio.</value>
+  </data>
+  <data name="MBenchResults" xml:space="preserve">
+    <value>Resultados (bench/results/ui.tsv)</value>
+  </data>
+  <data name="MClearResults" xml:space="preserve">
+    <value>Limpar resultados</value>
+  </data>
+  <data name="MBenchRound" xml:space="preserve">
+    <value>{0} {1}, rodada {2}/3…</value>
+  </data>
+  <data name="MDone" xml:space="preserve">
+    <value>Pronto</value>
+  </data>
+  <data name="MSettings" xml:space="preserve">
+    <value>Ajustes</value>
+  </data>
+  <data name="MFirmware" xml:space="preserve">
+    <value>Firmware</value>
+  </data>
+  <data name="MVersion" xml:space="preserve">
+    <value>Versão</value>
+  </data>
+  <data name="MNotInstalled" xml:space="preserve">
+    <value>não instalado</value>
+  </data>
+  <data name="MSource" xml:space="preserve">
+    <value>Origem</value>
+  </data>
+  <data name="MInstalledOn" xml:space="preserve">
+    <value>Instalado em</value>
+  </data>
+  <data name="MPartitions" xml:space="preserve">
+    <value>Partições</value>
+  </data>
+  <data name="MOs0Detail" xml:space="preserve">
+    <value>kernel e módulos do sistema</value>
+  </data>
+  <data name="MWithShell" xml:space="preserve">
+    <value>com o shell</value>
+  </data>
+  <data name="MVs0Detail" xml:space="preserve">
+    <value>bibliotecas e o shell (vsh/shell/shell.self)</value>
+  </data>
+  <data name="MInstalled" xml:space="preserve">
+    <value>instalado</value>
+  </data>
+  <data name="MMissing" xml:space="preserve">
+    <value>ausente</value>
+  </data>
+  <data name="MPd0Detail" xml:space="preserve">
+    <value>conteúdo de boas-vindas e sons do sistema</value>
+  </data>
+  <data name="MSa0Fonts" xml:space="preserve">
+    <value>sa0 (fontes)</value>
+  </data>
+  <data name="MSa0Detail" xml:space="preserve">
+    <value>pacote de fontes do sistema</value>
+  </data>
+  <data name="MInstallFirmware" xml:space="preserve">
+    <value>Instalar firmware (.PUP)</value>
+  </data>
+  <data name="MInstallFonts" xml:space="preserve">
+    <value>Instalar pacote de fontes (.PUP)</value>
+  </data>
+  <data name="MFirmwareNote" xml:space="preserve">
+    <value>O arquivo .PUP é escolhido pelo seletor do sistema e lido no lugar, sem cópia. O VitaSharp não inclui nenhum firmware: use a atualização oficial do PS Vita (PSVUPDAT.PUP).</value>
+  </data>
+  <data name="MInstalling" xml:space="preserve">
+    <value>Instalando {0}</value>
+  </data>
+  <data name="MOpening" xml:space="preserve">
+    <value>Abrindo</value>
+  </data>
+  <data name="MInstallWhat" xml:space="preserve">
+    <value>Instalar {0}</value>
+  </data>
+  <data name="MInstalledWhat" xml:space="preserve">
+    <value>Instalado: {0}</value>
+  </data>
+  <data name="MFirmwareCanceled" xml:space="preserve">
+    <value>Instalação cancelada. O firmware anterior continua instalado.</value>
+  </data>
+  <data name="MPlay" xml:space="preserve">
+    <value>▶  Jogar</value>
+  </data>
+  <data name="MPlayTime" xml:space="preserve">
+    <value>Tempo jogado</value>
+  </data>
+  <data name="MAverageFps" xml:space="preserve">
+    <value>FPS médio</value>
+  </data>
+  <data name="MLast" xml:space="preserve">
+    <value>Último</value>
+  </data>
+  <data name="MGameSettings" xml:space="preserve">
+    <value>Configurações deste jogo</value>
+  </data>
+  <data name="MCpuClock" xml:space="preserve">
+    <value>Clock da CPU</value>
+  </data>
+  <data name="MGpuProfile" xml:space="preserve">
+    <value>Perfil da GPU</value>
+  </data>
+  <data name="MInternalResolution" xml:space="preserve">
+    <value>Resolução interna</value>
+  </data>
+  <data name="MShowFps" xml:space="preserve">
+    <value>Mostrar FPS</value>
+  </data>
+  <data name="MResetToDefaults" xml:space="preserve">
+    <value>Voltar ao padrão de Ajustes</value>
+  </data>
+  <data name="MSaves" xml:space="preserve">
+    <value>Saves</value>
+  </data>
+  <data name="MSavedData" xml:space="preserve">
+    <value>Dados salvos</value>
+  </data>
+  <data name="MNoSaveYet" xml:space="preserve">
+    <value>Nenhum save ainda</value>
+  </data>
+  <data name="MSavesUpdated" xml:space="preserve">
+    <value>Atualizado {0} · ux0:user/00/savedata/{1}</value>
+  </data>
+  <data name="MDeleteSaves" xml:space="preserve">
+    <value>Apagar saves</value>
+  </data>
+  <data name="MDefaultValue" xml:space="preserve">
+    <value>Padrão · {0}</value>
+  </data>
+  <data name="MTrophies" xml:space="preserve">
+    <value>Troféus</value>
+  </data>
+  <data name="MNoTrophies" xml:space="preserve">
+    <value>Sem troféus</value>
+  </data>
+  <data name="MDeleteSavesConfirm" xml:space="preserve">
+    <value>Apagar todos os dados salvos de {0}? Não dá para desfazer.</value>
+  </data>
+  <data name="MDelete" xml:space="preserve">
+    <value>Apagar</value>
+  </data>
+  <data name="MUninstall" xml:space="preserve">
+    <value>Desinstalar</value>
+  </data>
+  <data name="MCopyFolderPath" xml:space="preserve">
+    <value>Copiar caminho da pasta</value>
+  </data>
+  <data name="MUninstallConfirm" xml:space="preserve">
+    <value>Remover {0} ({1})? Os saves ficam.</value>
+  </data>
+  <data name="MRemove" xml:space="preserve">
+    <value>Remover</value>
+  </data>
+  <data name="MGpuDriver" xml:space="preserve">
+    <value>Driver da GPU</value>
+  </data>
+  <data name="MDriver" xml:space="preserve">
+    <value>Driver</value>
+  </data>
+  <data name="MInUse" xml:space="preserve">
+    <value>em uso</value>
+  </data>
+  <data name="MInstallingEllipsis" xml:space="preserve">
+    <value>Instalando…</value>
+  </data>
+  <data name="MInstallDriverZip" xml:space="preserve">
+    <value>Instalar driver (.zip)</value>
+  </data>
+  <data name="MCustomDriversAdrenoOnly" xml:space="preserve">
+    <value>Drivers customizados só existem para GPUs Adreno (Qualcomm). Este aparelho usa o driver do sistema.</value>
+  </data>
+  <data name="MAdrenoToolsOptions" xml:space="preserve">
+    <value>Opções da libadrenotools</value>
+  </data>
+  <data name="MEnableBcn" xml:space="preserve">
+    <value>Habilitar texturas BCn</value>
+  </data>
+  <data name="MEnableBcnDetail" xml:space="preserve">
+    <value>BCeNabler: drivers Adreno que escondem BC1-BC5</value>
+  </data>
+  <data name="MGpuTurbo" xml:space="preserve">
+    <value>Modo turbo da GPU</value>
+  </data>
+  <data name="MGpuTurboDetail" xml:space="preserve">
+    <value>Clock máximo da GPU (mais consumo)</value>
+  </data>
+  <data name="MFileRedirect" xml:space="preserve">
+    <value>Redirecionar arquivos do driver</value>
+  </data>
+  <data name="MFileRedirectDetail" xml:space="preserve">
+    <value>Para drivers que gravam no disco</value>
+  </data>
+  <data name="MDriverNote" xml:space="preserve">
+    <value>A troca vale a partir do próximo jogo: cada jogo roda num processo novo e um processo carrega um só driver. Os drivers precisam da libadrenotools empacotada no app (lib/arm64-v8a).</value>
+  </data>
+  <data name="MRemoveDriverConfirm" xml:space="preserve">
+    <value>Remover este driver? O driver do sistema volta a ser usado.</value>
+  </data>
+  <data name="MRestartGame" xml:space="preserve">
+    <value>Reiniciar o jogo</value>
+  </data>
+  <data name="MRestartGameConfirm" xml:space="preserve">
+    <value>{0} está aberto com a configuração anterior da GPU. Reiniciar o jogo agora para usar a nova? O progresso que não foi salvo no jogo se perde.</value>
+  </data>
+  <data name="MRestart" xml:space="preserve">
+    <value>Reiniciar</value>
+  </data>
+  <data name="MLater" xml:space="preserve">
+    <value>Depois</value>
+  </data>
+  <data name="MInstallDriver" xml:space="preserve">
+    <value>Instalar driver</value>
+  </data>
+  <data name="MDriverInstalledUse" xml:space="preserve">
+    <value>Instalado: {0} {1}. Usar este driver agora?</value>
+  </data>
+  <data name="MUse" xml:space="preserve">
+    <value>Usar</value>
+  </data>
+  <data name="MNotNow" xml:space="preserve">
+    <value>Agora não</value>
+  </data>
+  <data name="MGpuInfo" xml:space="preserve">
+    <value>Informações da GPU</value>
+  </data>
+  <data name="MVulkanFailed" xml:space="preserve">
+    <value>Não foi possível abrir o Vulkan neste aparelho: {0}</value>
+  </data>
+  <data name="MFeatures" xml:space="preserve">
+    <value>Recursos</value>
+  </data>
+  <data name="MYesLower" xml:space="preserve">
+    <value>sim</value>
+  </data>
+  <data name="MNoLower" xml:space="preserve">
+    <value>não</value>
+  </data>
+  <data name="MActiveWorkarounds" xml:space="preserve">
+    <value>Contornos ativos</value>
+  </data>
+  <data name="MNone" xml:space="preserve">
+    <value>Nenhum</value>
+  </data>
+  <data name="MObservedNoWorkaround" xml:space="preserve">
+    <value>Observados, sem contorno</value>
+  </data>
+  <data name="MShare" xml:space="preserve">
+    <value>Compartilhar</value>
+  </data>
+  <data name="MVitaSharpGpu" xml:space="preserve">
+    <value>GPU do VitaSharp</value>
+  </data>
+  <data name="MLibrary" xml:space="preserve">
+    <value>Biblioteca</value>
+  </data>
+  <data name="MInstallChip" xml:space="preserve">
+    <value>+ Instalar</value>
+  </data>
+  <data name="MAllCount" xml:space="preserve">
+    <value>Todos · {0}</value>
+  </data>
+  <data name="MRecent" xml:space="preserve">
+    <value>Recentes</value>
+  </data>
+  <data name="MPlayable" xml:space="preserve">
+    <value>Jogáveis</value>
+  </data>
+  <data name="MRecentlyPlayed" xml:space="preserve">
+    <value>Jogados recentemente</value>
+  </data>
+  <data name="MAllGames" xml:space="preserve">
+    <value>Todos os jogos</value>
+  </data>
+  <data name="MInstallGamePlus" xml:space="preserve">
+    <value>+  Instalar jogo</value>
+  </data>
+  <data name="MSearchGames" xml:space="preserve">
+    <value>Buscar jogos</value>
+  </data>
+  <data name="MContinuePlaying" xml:space="preserve">
+    <value>CONTINUAR JOGANDO</value>
+  </data>
+  <data name="MInstallFirmwareFirst" xml:space="preserve">
+    <value>Instale o firmware em Ajustes para usar</value>
+  </data>
+  <data name="MShellFullscreen" xml:space="preserve">
+    <value>O shell do firmware {0} em tela cheia</value>
+  </data>
+  <data name="MVitaSystem" xml:space="preserve">
+    <value>Sistema do Vita</value>
+  </data>
+  <data name="MNoGames" xml:space="preserve">
+    <value>Nenhum jogo instalado</value>
+  </data>
+  <data name="MNoGamesDetail" xml:space="preserve">
+    <value>Instale um jogo a partir de um .vpk, ou de um .pkg com a licença (work.bin, .rif ou zRIF). Os jogos ficam na pasta de dados do app.</value>
+  </data>
+  <data name="MNoMatch" xml:space="preserve">
+    <value>Nada corresponde à busca.</value>
+  </data>
+  <data name="MInstallGame" xml:space="preserve">
+    <value>Instalar jogo</value>
+  </data>
+  <data name="MVpkFile" xml:space="preserve">
+    <value>Arquivo .vpk (ou .zip)</value>
+  </data>
+  <data name="MPkgFile" xml:space="preserve">
+    <value>Arquivo .pkg + licença (work.bin, .rif ou zRIF)</value>
+  </data>
+  <data name="MNotPkgConfirm" xml:space="preserve">
+    <value>"{0}" não termina em .pkg. Tentar mesmo assim?</value>
+  </data>
+  <data name="MTry" xml:space="preserve">
+    <value>Tentar</value>
+  </data>
+  <data name="MGameLicense" xml:space="preserve">
+    <value>Licença do jogo</value>
+  </data>
+  <data name="MLicenseFile" xml:space="preserve">
+    <value>Arquivo work.bin ou .rif</value>
+  </data>
+  <data name="MPasteZrif" xml:space="preserve">
+    <value>Colar o zRIF (texto)</value>
+  </data>
+  <data name="MLicense" xml:space="preserve">
+    <value>Licença</value>
+  </data>
+  <data name="MPasteZrifDetail" xml:space="preserve">
+    <value>Cole o zRIF da licença (o texto exportado pelo NoNpDrm/pkg2zip).</value>
+  </data>
+  <data name="MInvalidZrif" xml:space="preserve">
+    <value>zRIF inválido</value>
+  </data>
+  <data name="MInstallPkg" xml:space="preserve">
+    <value>Instalar PKG</value>
+  </data>
+  <data name="MInstalledOne" xml:space="preserve">
+    <value>{0} · {1} ({2})&#xA;&#xA;Instalado.</value>
+  </data>
+  <data name="MRemaining" xml:space="preserve">
+    <value>restantes</value>
+  </data>
+  <data name="MInstallVpk" xml:space="preserve">
+    <value>Instalar VPK</value>
+  </data>
+  <data name="MNothingInstalled" xml:space="preserve">
+    <value>Nada foi instalado.</value>
+  </data>
+  <data name="MInstalledSuffix" xml:space="preserve">
+    <value>&#xA;&#xA;Instalado.</value>
+  </data>
+  <data name="MPerformance" xml:space="preserve">
+    <value>Desempenho</value>
+  </data>
+  <data name="MThisDevice" xml:space="preserve">
+    <value>Este aparelho</value>
+  </data>
+  <data name="MDynamicCode" xml:space="preserve">
+    <value>Código dinâmico</value>
+  </data>
+  <data name="MJitCompiled" xml:space="preserve">
+    <value>compilado pelo JIT do runtime</value>
+  </data>
+  <data name="MInterpreted" xml:space="preserve">
+    <value>interpretado</value>
+  </data>
+  <data name="MDefaultCpu" xml:space="preserve">
+    <value>CPU padrão</value>
+  </data>
+  <data name="MCpuBackends" xml:space="preserve">
+    <value>Backends de CPU</value>
+  </data>
+  <data name="MGames" xml:space="preserve">
+    <value>Jogos</value>
+  </data>
+  <data name="MNoGamePlayed" xml:space="preserve">
+    <value>Nenhum jogo jogado ainda</value>
+  </data>
+  <data name="MPsnAndNetwork" xml:space="preserve">
+    <value>Conta PSN e rede</value>
+  </data>
+  <data name="MAccount" xml:space="preserve">
+    <value>Conta</value>
+  </data>
+  <data name="MPsnSignedIn" xml:space="preserve">
+    <value>Conta PSN conectada</value>
+  </data>
+  <data name="MPsnSignedInDetail" xml:space="preserve">
+    <value>Simulada: as checagens de login do jogo passam</value>
+  </data>
+  <data name="MOnlineId" xml:space="preserve">
+    <value>ID online</value>
+  </data>
+  <data name="MOnlineIdHint" xml:space="preserve">
+    <value>3 a 16 letras, números, - ou _</value>
+  </data>
+  <data name="MOnlineIdInvalid" xml:space="preserve">
+    <value>ID inválido: 3 a 16 caracteres, começando com letra (letras, números, - ou _).</value>
+  </data>
+  <data name="MPsnLocal" xml:space="preserve">
+    <value>Serviços PSN locais</value>
+  </data>
+  <data name="MPsnLocalDetail" xml:space="preserve">
+    <value>Rankings, TUS e salvamento na nuvem guardados no aparelho</value>
+  </data>
+  <data name="MNetwork" xml:space="preserve">
+    <value>Rede</value>
+  </data>
+  <data name="MRealInternet" xml:space="preserve">
+    <value>Internet real</value>
+  </data>
+  <data name="MRealInternetDetail" xml:space="preserve">
+    <value>Os jogos acessam a internet deste aparelho (servidores da Sony sempre bloqueados)</value>
+  </data>
+  <data name="MRpcnServerOptional" xml:space="preserve">
+    <value>Servidor RPCN (opcional)</value>
+  </data>
+  <data name="MServer" xml:space="preserve">
+    <value>Servidor</value>
+  </data>
+  <data name="MNoneLower" xml:space="preserve">
+    <value>nenhum</value>
+  </data>
+  <data name="MRpcnServer" xml:space="preserve">
+    <value>Servidor RPCN</value>
+  </data>
+  <data name="MHostPort" xml:space="preserve">
+    <value>host ou host:porta</value>
+  </data>
+  <data name="MUser" xml:space="preserve">
+    <value>Usuário</value>
+  </data>
+  <data name="MRpcnUser" xml:space="preserve">
+    <value>Usuário RPCN</value>
+  </data>
+  <data name="MPassword" xml:space="preserve">
+    <value>Senha</value>
+  </data>
+  <data name="MKeystoreDetail" xml:space="preserve">
+    <value>Guardada no Android Keystore</value>
+  </data>
+  <data name="MSet" xml:space="preserve">
+    <value>definido</value>
+  </data>
+  <data name="MRpcnToken" xml:space="preserve">
+    <value>Token RPCN</value>
+  </data>
+  <data name="MRpcnTokenHint" xml:space="preserve">
+    <value>só no primeiro login de uma conta nova</value>
+  </data>
+  <data name="MRpcnNote" xml:space="preserve">
+    <value>Com um servidor RPCN, rankings e TUS vão para ele e o ID online passa a ser o usuário RPCN.</value>
+  </data>
+  <data name="MRpcnNeedsInternet" xml:space="preserve">
+    <value>Ligue a internet real (e a conta PSN) para configurar um servidor RPCN.</value>
+  </data>
+  <data name="MRpcnPassword" xml:space="preserve">
+    <value>Senha RPCN</value>
+  </data>
+  <data name="MRpcnPasswordDetail" xml:space="preserve">
+    <value>Fica no Android Keystore deste aparelho.</value>
+  </data>
+  <data name="MInstallGameDetail" xml:space="preserve">
+    <value>.vpk, ou .pkg com a licença (work.bin, .rif ou zRIF)</value>
+  </data>
+  <data name="MSystem" xml:space="preserve">
+    <value>Sistema</value>
+  </data>
+  <data name="MReady" xml:space="preserve">
+    <value>pronto</value>
+  </data>
+  <data name="MNeedsFirmware" xml:space="preserve">
+    <value>precisa do firmware</value>
+  </data>
+  <data name="MShellDetail" xml:space="preserve">
+    <value>O shell do firmware (vs0:vsh/shell) em tela cheia</value>
+  </data>
+  <data name="MDefaultAllGames" xml:space="preserve">
+    <value>Padrão de todos os jogos</value>
+  </data>
+  <data name="MGpuProfileDetail" xml:space="preserve">
+    <value>Contornos de driver (docs/notes/mobile-gpu.md)</value>
+  </data>
+  <data name="MTrophySound" xml:space="preserve">
+    <value>Som de troféu</value>
+  </data>
+  <data name="MTrophySoundDetail" xml:space="preserve">
+    <value>Som de aviso do firmware ao desbloquear um troféu (ou um som próprio sem firmware)</value>
+  </data>
+  <data name="MNetworkPsn" xml:space="preserve">
+    <value>Rede e PSN</value>
+  </data>
+  <data name="MSignedOut" xml:space="preserve">
+    <value>desconectada</value>
+  </data>
+  <data name="MRealInternetOn" xml:space="preserve">
+    <value>Internet real ligada</value>
+  </data>
+  <data name="MNothingLeaves" xml:space="preserve">
+    <value>Nada sai do aparelho</value>
+  </data>
+  <data name="MStorage" xml:space="preserve">
+    <value>Armazenamento</value>
+  </data>
+  <data name="MDataFolder" xml:space="preserve">
+    <value>Pasta de dados</value>
+  </data>
+  <data name="MInstalledGames" xml:space="preserve">
+    <value>Jogos instalados</value>
+  </data>
+  <data name="MInstalledGamesDetail" xml:space="preserve">
+    <value>fs/ux0/app · os saves ficam em fs/ux0/user/00/savedata</value>
+  </data>
+  <data name="MStorageNote" xml:space="preserve">
+    <value>Os jogos, saves, firmware e logs ficam na pasta do app (armazenamento específico do app): nenhuma permissão de armazenamento é pedida. Arquivos .VPK e .PUP são abertos pelo seletor do sistema e lidos no lugar.</value>
+  </data>
+  <data name="MDebugging" xml:space="preserve">
+    <value>Depuração</value>
+  </data>
+  <data name="MDebugMode" xml:space="preserve">
+    <value>Modo de depuração</value>
+  </data>
+  <data name="MDebugModeDetail" xml:space="preserve">
+    <value>Log detalhado no próximo jogo (logcat: VitaSharp, VitaSharp-Guest)</value>
+  </data>
+  <data name="MShareLog" xml:space="preserve">
+    <value>Compartilhar log</value>
+  </data>
+  <data name="MDeveloperOptionsDetail" xml:space="preserve">
+    <value>Bench da GPU (build de desenvolvedor)</value>
+  </data>
+  <data name="MCopied" xml:space="preserve">
+    <value>Copiado</value>
+  </data>
+  <data name="MNoLogYet" xml:space="preserve">
+    <value>Ainda não há log.</value>
+  </data>
+  <data name="MVitaSharpLog" xml:space="preserve">
+    <value>Log do VitaSharp</value>
+  </data>
+  <data name="MTrophiesOf" xml:space="preserve">
+    <value>{0} de {1} troféus</value>
+  </data>
+  <data name="MAll" xml:space="preserve">
+    <value>Todos</value>
+  </data>
+  <data name="MEarned" xml:space="preserve">
+    <value>Conquistados</value>
+  </data>
+  <data name="MMissingTrophies" xml:space="preserve">
+    <value>Faltam</value>
+  </data>
+  <data name="MEarnedOn" xml:space="preserve">
+    <value>Conquistado em {0:dd/MM/yyyy HH:mm}</value>
+  </data>
+  <data name="MGameThreadError" xml:space="preserve">
+    <value>O jogo parou com um erro na thread {0}: {1}</value>
+  </data>
+  <data name="MStopHint" xml:space="preserve">
+    <value>menu de pausa para parar</value>
+  </data>
+  <data name="MRestartFailed" xml:space="preserve">
+    <value>Falha ao reiniciar o jogo: {0}</value>
+  </data>
+  <data name="MNativeLibraryMissing" xml:space="preserve">
+    <value>Uma biblioteca nativa está faltando: {0}</value>
+  </data>
+  <data name="MStartFailed" xml:space="preserve">
+    <value>Não foi possível iniciar o jogo: {0}</value>
+  </data>
+  <data name="MStateSaved" xml:space="preserve">
+    <value>Estado salvo no slot {0}</value>
+  </data>
+  <data name="MStateSaveFailed" xml:space="preserve">
+    <value>Não foi possível salvar o estado: {0}</value>
+  </data>
+  <data name="MStateLoaded" xml:space="preserve">
+    <value>Estado do slot {0} carregado</value>
+  </data>
+  <data name="MStateLoadFailed" xml:space="preserve">
+    <value>Não foi possível carregar o estado: {0}</value>
+  </data>
+  <data name="MGameNotFound" xml:space="preserve">
+    <value>Jogo {0} não encontrado</value>
+  </data>
+  <data name="MPrepareFailed" xml:space="preserve">
+    <value>Não foi possível preparar o jogo: {0}</value>
+  </data>
+  <data name="MGameEnded" xml:space="preserve">
+    <value>O jogo terminou.</value>
+  </data>
+  <data name="MPaused" xml:space="preserve">
+    <value>Pausado</value>
+  </data>
+  <data name="MTrophyUnlocked" xml:space="preserve">
+    <value>🏆 Troféu desbloqueado&#xA;{0} · {1}</value>
+  </data>
+  <data name="MQuit" xml:space="preserve">
+    <value>Sair</value>
+  </data>
+  <data name="MRecordingSuffix" xml:space="preserve">
+    <value> · gravando</value>
+  </data>
+  <data name="MPausedSession" xml:space="preserve">
+    <value>Pausado · sessão de {0}{1}</value>
+  </data>
+  <data name="MUnderAMinute" xml:space="preserve">
+    <value>menos de 1 min</value>
+  </data>
+  <data name="MResume" xml:space="preserve">
+    <value>Continuar</value>
+  </data>
+  <data name="MQuitGame" xml:space="preserve">
+    <value>Sair do jogo</value>
+  </data>
+  <data name="MSaveState" xml:space="preserve">
+    <value>Salvar estado</value>
+  </data>
+  <data name="MLoadState" xml:space="preserve">
+    <value>Carregar estado</value>
+  </data>
+  <data name="MRecenter" xml:space="preserve">
+    <value>Recentralizar</value>
+  </data>
+  <data name="MRecentered" xml:space="preserve">
+    <value>Movimento recentralizado</value>
+  </data>
+  <data name="MStopRecording" xml:space="preserve">
+    <value>Parar gravação</value>
+  </data>
+  <data name="MRecordAll" xml:space="preserve">
+    <value>Gravar tudo</value>
+  </data>
+  <data name="MDeveloper" xml:space="preserve">
+    <value>Desenvolvedor</value>
+  </data>
+  <data name="MPickSlotSave" xml:space="preserve">
+    <value>Escolha o slot (o estado anterior do slot é substituído)</value>
+  </data>
+  <data name="MPickSlotLoad" xml:space="preserve">
+    <value>Escolha o estado salvo</value>
+  </data>
+  <data name="MSavingState" xml:space="preserve">
+    <value>Salvando estado…</value>
+  </data>
+  <data name="MLoadingState" xml:space="preserve">
+    <value>Carregando estado…</value>
+  </data>
+  <data name="MGameSettingsShort" xml:space="preserve">
+    <value>Ajustes do jogo</value>
+  </data>
+  <data name="MGameSettingsNote" xml:space="preserve">
+    <value>CPU, GPU e resolução ficam na página do jogo no app</value>
+  </data>
+  <data name="MRearTouch" xml:space="preserve">
+    <value>Toque traseiro</value>
+  </data>
+  <data name="MRearTouchDetail" xml:space="preserve">
+    <value>Metade de baixo da tela vira o touchpad traseiro</value>
+  </data>
+  <data name="MPreRoll" xml:space="preserve">
+    <value>Pré-gravação</value>
+  </data>
+  <data name="MPreRollDetail" xml:space="preserve">
+    <value>"Gravar tudo" inclui os últimos segundos antes de você apertar</value>
+  </data>
+  <data name="MRecenterMotion" xml:space="preserve">
+    <value>Recentralizar movimento</value>
+  </data>
+  <data name="MRecenterMotionDetail" xml:space="preserve">
+    <value>A posição atual do celular vira a posição de repouso</value>
+  </data>
+  <data name="MDevRecordings" xml:space="preserve">
+    <value>Gravações de desenvolvedor</value>
+  </data>
+  <data name="MDevRecordingsDetail" xml:space="preserve">
+    <value>Pasta de captura do build de desenvolvedor</value>
+  </data>
+  <data name="MStopDevRecording" xml:space="preserve">
+    <value>Parar gravação (desenvolvedor)</value>
+  </data>
+  <data name="MRecordTiming" xml:space="preserve">
+    <value>Gravar tempo</value>
+  </data>
+  <data name="MRecordTimingDetail" xml:space="preserve">
+    <value>Perfil de tempo (CPU, GPU, quadros)</value>
+  </data>
+  <data name="MRecordContent" xml:space="preserve">
+    <value>Gravar conteúdo</value>
+  </data>
+  <data name="MRecordContentDetail" xml:space="preserve">
+    <value>Quadros, dump de GPU e áudio</value>
+  </data>
+  <data name="MSavingRecording" xml:space="preserve">
+    <value>Salvando a gravação…</value>
+  </data>
+  <data name="MSavingRecordingDetail" xml:space="preserve">
+    <value>Não feche o app: o jogo fecha sozinho quando terminar</value>
+  </data>
+  <data name="MEmptyLower" xml:space="preserve">
+    <value>vazio</value>
+  </data>
+  <data name="MFile" xml:space="preserve">
+    <value>arquivo</value>
+  </data>
+  <data name="MFontsMissing" xml:space="preserve">
+    <value>{0} · fontes ausentes</value>
+  </data>
+  <data name="MUnknownVersion" xml:space="preserve">
+    <value>versão desconhecida</value>
+  </data>
+  <data name="MSystemDriver" xml:space="preserve">
+    <value>Driver do sistema</value>
+  </data>
+  <data name="MSystemDriverAdreno" xml:space="preserve">
+    <value>O que veio no aparelho, aberto pela libadrenotools</value>
+  </data>
+  <data name="MSystemDriverDetail" xml:space="preserve">
+    <value>O que veio no aparelho</value>
+  </data>
+  <data name="MUnifiedMemory" xml:space="preserve">
+    <value>memória unificada</value>
+  </data>
+  <data name="MArchitecture" xml:space="preserve">
+    <value>Arquitetura</value>
+  </data>
+  <data name="MImmediate" xml:space="preserve">
+    <value>imediata</value>
+  </data>
+  <data name="MMemoryBudget" xml:space="preserve">
+    <value>Orçamento de memória</value>
+  </data>
+  <data name="MOfTheHeap" xml:space="preserve">
+    <value>{0:P0} do heap</value>
+  </data>
+  <data name="MQualcommProprietary" xml:space="preserve">
+    <value>Qualcomm proprietário</value>
+  </data>
+  <data name="MArmProprietary" xml:space="preserve">
+    <value>ARM proprietário</value>
+  </data>
+  <data name="MImaginationProprietary" xml:space="preserve">
+    <value>Imagination proprietário</value>
+  </data>
+  <data name="MSamsungProprietary" xml:space="preserve">
+    <value>Samsung proprietário</value>
+  </data>
+  <data name="MQuirkTileBased" xml:space="preserve">
+    <value>load/store escolhidos por cena: a profundidade não volta para a memória quando a cena termina</value>
+  </data>
+  <data name="MQuirkDynamicIndex" xml:space="preserve">
+    <value>índices dinâmicos de registradores viram switch no shader</value>
+  </data>
+  <data name="MQuirkStaticEds" xml:space="preserve">
+    <value>cull, topologia, profundidade e stencil gravados no pipeline</value>
+  </data>
+  <data name="MQuirkDepthBias" xml:space="preserve">
+    <value>depth bias sempre ligado no pipeline, zero quando o draw não usa</value>
+  </data>
+  <data name="MQuirkPipelineCache" xml:space="preserve">
+    <value>um cache de pipelines por build do driver (drivers customizados)</value>
+  </data>
+  <data name="MQuirkMsaa2x" xml:space="preserve">
+    <value>cenas MSAA 2x desenhadas com 4 amostras</value>
+  </data>
+  <data name="MQuirkBudget" xml:space="preserve">
+    <value>texturas liberadas a partir de 50% do heap</value>
+  </data>
+  <data name="MQuirkRecorded" xml:space="preserve">
+    <value>registrado para relatórios de bug</value>
+  </data>
+  <data name="MQuirkTurnip" xml:space="preserve">
+    <value>driver Mesa: nenhum contorno do driver proprietário</value>
+  </data>
+  <data name="MQuirkCustomDriver" xml:space="preserve">
+    <value>aceita drivers customizados</value>
+  </data>
+  <data name="MQuirkPushDescriptors" xml:space="preserve">
+    <value>o renderizador já não usa push descriptors</value>
+  </data>
+  <data name="MQuirkClearAttachments" xml:space="preserve">
+    <value>o renderizador já limpa com load ops</value>
+  </data>
+  <data name="MPhoneSensors" xml:space="preserve">
+    <value>Sensores do celular</value>
+  </data>
+  <data name="MControllerGyro" xml:space="preserve">
+    <value>Giroscópio do controle</value>
+  </data>
+  <data name="MOff" xml:space="preserve">
+    <value>Desligado</value>
+  </data>
+  <data name="MNever" xml:space="preserve">
+    <value>Nunca</value>
+  </data>
+  <data name="MToday" xml:space="preserve">
+    <value>Hoje</value>
+  </data>
+  <data name="MYesterday" xml:space="preserve">
+    <value>Ontem</value>
+  </data>
+  <data name="MDaysAgo" xml:space="preserve">
+    <value>há {0} dias</value>
+  </data>
+  <data name="MHiddenTrophy" xml:space="preserve">
+    <value>Troféu oculto</value>
+  </data>
+  <data name="MHiddenTrophyDetail" xml:space="preserve">
+    <value>Continue jogando para descobrir.</value>
+  </data>
+  <data name="MPlatinum" xml:space="preserve">
+    <value>Platina</value>
+  </data>
+  <data name="MGold" xml:space="preserve">
+    <value>Ouro</value>
+  </data>
+  <data name="MSilver" xml:space="preserve">
+    <value>Prata</value>
+  </data>
+  <data name="MAutomaticWith" xml:space="preserve">
+    <value>Automático · {0}</value>
+  </data>
+  <data name="MNativeArm64" xml:space="preserve">
+    <value>Nativo (ARM64)</value>
+  </data>
+  <data name="MNativeX64" xml:space="preserve">
+    <value>Nativo (x64)</value>
+  </data>
+  <data name="MInterpreter" xml:space="preserve">
+    <value>Interpretador (mais lento)</value>
+  </data>
+  <data name="MPrivacyNote" xml:space="preserve">
+    <value>Privacidade: com a internet real ligada, o jogo envia dados (seu IP, o ID online, pontuações e salvamentos na nuvem) para os servidores dele e para o servidor RPCN abaixo. Desligada (padrão), nada sai do aparelho.</value>
+  </data>
+  <data name="MClock333" xml:space="preserve">
+    <value>333 MHz (como o Vita)</value>
+  </data>
+  <data name="MClock444" xml:space="preserve">
+    <value>444 MHz (carregamentos mais rápidos)</value>
+  </data>
+  <data name="MGpuAuto" xml:space="preserve">
+    <value>Automático (este aparelho)</value>
+  </data>
+  <data name="MGpuNoWorkarounds" xml:space="preserve">
+    <value>Sem contornos de driver</value>
+  </data>
+  <data name="MGpuAdreno" xml:space="preserve">
+    <value>Simular Adreno</value>
+  </data>
+  <data name="MGpuMali" xml:space="preserve">
+    <value>Simular Mali</value>
+  </data>
+  <data name="MResNative" xml:space="preserve">
+    <value>Nativa (960x544)</value>
+  </data>
+  <data name="MRes75" xml:space="preserve">
+    <value>75% (mais rápido)</value>
+  </data>
+  <data name="MRes50" xml:space="preserve">
+    <value>50% (o mais rápido, mais suave)</value>
+  </data>
+  <data name="MDefaultParen" xml:space="preserve">
+    <value>Padrão ({0})</value>
+  </data>
+  <data name="MLastGameLog" xml:space="preserve">
+    <value>Log do último jogo</value>
+  </data>
+  <data name="MPlayableOne" xml:space="preserve">
+    <value>Jogável</value>
+  </data>
+  <data name="MFullLogAt" xml:space="preserve">
+    <value>&#xA;&#xA;O log completo está em </value>
+  </data>
+  <data name="MCannotOpen" xml:space="preserve">
+    <value>não foi possível abrir {0}</value>
+  </data>
+  <data name="MRearButton" xml:space="preserve">
+    <value>TRÁS</value>
+  </data>
 </root>

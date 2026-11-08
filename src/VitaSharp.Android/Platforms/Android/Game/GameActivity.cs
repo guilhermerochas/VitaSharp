@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -39,7 +40,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     /// <summary>The shell as a game entry (boots shell.self instead of eboot.bin).</summary>
     public static GameEntry SystemShell() =>
-        new(SystemTitleId, "Sistema do Vita", "", "sys", System.IO.Path.Combine(AppServices.Data.Fs, "vs0", "vsh", "shell"), null, 0);
+        new(SystemTitleId, Loc.Get("MVitaSystem"), "", "sys", System.IO.Path.Combine(AppServices.Data.Fs, "vs0", "vsh", "shell"), null, 0);
 
     EmulationSession? _session;
     GameDisplayTuning? _displayTuning;
@@ -127,7 +128,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         if (game == null)
         {
             Log.Error($"Game {titleId} is not installed");
-            Toast.MakeText(this, $"Jogo {titleId} não encontrado", ToastLength.Long)?.Show();
+            Toast.MakeText(this, Loc.Format("MGameNotFound", titleId), ToastLength.Long)?.Show();
             Finish();
             return;
         }
@@ -200,7 +201,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         catch (Exception e)
         {
             Log.Error($"Session for {game.TitleId}: {e}");
-            ShowFatal($"Não foi possível preparar o jogo: {e.Message}");
+            ShowFatal(Loc.Format("MPrepareFailed", e.Message));
             return;
         }
         _session.Failed += msg => RunOnUiThread(() => ShowFatal(msg));
@@ -331,7 +332,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         var d = InputDevice.GetDevice(deviceId);
         if (!IsGameController(d)) return;
         var axes = d!.MotionRanges?.Select(r => (int)r.Axis).Distinct().ToArray() ?? [];
-        AppServices.Gamepads.Connect(deviceId, d.Name ?? "Controle", d.VendorId, d.ProductId, axes);
+        AppServices.Gamepads.Connect(deviceId, d.Name ?? Loc.Get("MController"), d.VendorId, d.ProductId, axes);
         Log.Info($"Controller connected: {d.Name} ({d.VendorId:X4}:{d.ProductId:X4}), axes {string.Join(",", axes)}");
     }
 
@@ -435,13 +436,13 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         {
             _endedShown = true;
             Log.Warn($"The process of {_session.Game.TitleId} ended");
-            ShowFatal("O jogo terminou.");
+            ShowFatal(Loc.Get("MGameEnded"));
             return;
         }
         long frames = _session.Frames;
         long fps = frames - _lastFrames;
         _lastFrames = frames;
-        _fps.Text = _session.Paused ? "Pausado" : $"{fps} FPS";
+        _fps.Text = _session.Paused ? Loc.Get("MPaused") : $"{fps} FPS";
         bool rec = _session.Capture.IsRecording;
 #if VITASHARP_DEVELOPER
         rec |= _session.CaptureDir != null;
@@ -462,7 +463,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     void ShowTrophy(TrophyUnlockedEvent e)
     {
         if (_toast == null) return;
-        _toast.Text = $"🏆 Troféu desbloqueado\n{e.Trophy.Name} · {TrophyList.GradeName(e.Trophy.Grade)}";
+        _toast.Text = Loc.Format("MTrophyUnlocked", e.Trophy.Name, TrophyList.GradeName(e.Trophy.Grade));
         _toast.Visibility = ViewStates.Visible;
         _toast.PostDelayed(() => _toast.Visibility = ViewStates.Gone, 5000);
         _session?.PlayTrophySound();
@@ -494,8 +495,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _session?.Pause();
         new AlertDialog.Builder(this)
             .SetTitle("VitaSharp")!
-            .SetMessage(message + "\n\nO log completo está em " + System.IO.Path.Combine(AppServices.Data.Logs, "last.log"))!
-            .SetPositiveButton("Sair", (_, _) => Leave())!
+            .SetMessage(message + Loc.Get("MFullLogAt") + System.IO.Path.Combine(AppServices.Data.Logs, "last.log"))!
+            .SetPositiveButton(Loc.Get("MQuit"), (_, _) => Leave())!
             .SetCancelable(false)!
             .Show();
     }

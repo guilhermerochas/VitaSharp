@@ -948,6 +948,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Ryubing: um texto em português no código falha o teste). 550 textos. Validado com `ui-render --lang=en|pt-BR`.
   Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Mobile.Core` ainda têm os
   textos em português no código; migrar para as mesmas chaves e estender o teste de ASCII a eles
+  Android feito (08/11/2026, feat/product-2): as páginas (biblioteca, jogo, controles, desempenho, ajustes, firmware,
+  PSN, GPU, troféus, desenvolvedor), o menu de pausa, os avisos do jogo e os textos do `VitaSharp.Mobile.Core` (rótulos
+  das escolhas, driver/peculiaridades da GPU, troféus, datas, firmware) passaram para chaves `M*` no Texts.resx /
+  Texts.pt-BR.resx (~330 textos, escritos em inglês e português). O APK compila (Debug); não rodou no celular. Falta:
+  estender o teste de ASCII ao Android e ao Mobile.Core (os símbolos ✕ ○ › ▶ e os comentários em português ainda
+  estão no código) e uma escolha de idioma no app (hoje segue o idioma do aparelho)
 - [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
   releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um

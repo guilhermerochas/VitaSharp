@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Globalization;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Io;
@@ -15,7 +16,7 @@ public sealed record TrophyProgress(int Earned, int Total, IReadOnlyDictionary<T
     public int Percent => Total == 0 ? 0 : Earned * 100 / Total;
     public double Fraction => Total == 0 ? 0 : (double)Earned / Total;
     /// <summary>"18/48", or "Sem troféus" for a game without a trophy set.</summary>
-    public string Text => HasTrophies ? $"{Earned}/{Total}" : "Sem troféus";
+    public string Text => HasTrophies ? $"{Earned}/{Total}" : Loc.Get("MNoTrophies");
 }
 
 /// <summary>An installed game as the Biblioteca shows it.</summary>
@@ -26,7 +27,7 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
 
     public string SizeText => SizeBytes switch
     {
-        >= 1L << 30 => string.Create(CultureInfo.GetCultureInfo("pt-BR"), $"{SizeBytes / (double)(1L << 30):F1} GB"),
+        >= 1L << 30 => string.Create(Loc.Culture, $"{SizeBytes / (double)(1L << 30):F1} GB"),
         >= 1L << 20 => $"{SizeBytes / (1L << 20)} MB",
         _ => $"{SizeBytes / 1024} KB",
     };
@@ -125,13 +126,13 @@ public static class GameLibrary
     /// <summary>"Hoje", "Ontem", "há 3 dias" or the date.</summary>
     public static string LastPlayed(DateTime? utc, DateTime nowUtc)
     {
-        if (utc is not { } t) return "Nunca";
+        if (utc is not { } t) return Loc.Get("MNever");
         int days = (nowUtc.ToLocalTime().Date - t.ToLocalTime().Date).Days;
         return days switch
         {
-            <= 0 => "Hoje",
-            1 => "Ontem",
-            < 7 => $"há {days} dias",
+            <= 0 => Loc.Get("MToday"),
+            1 => Loc.Get("MYesterday"),
+            < 7 => Loc.Format("MDaysAgo", days),
             _ => t.ToLocalTime().ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
         };
     }

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using VitaSharp.Core.Cpu;
@@ -111,23 +112,23 @@ public static class SettingsChoices
 {
     public static IReadOnlyList<Choice> Clocks { get; } =
     [
-        new("0", "333 MHz (como o Vita)"),
-        new("444", "444 MHz (carregamentos mais rápidos)"),
+        new("0", Loc.Get("MClock333")),
+        new("444", Loc.Get("MClock444")),
     ];
 
     public static IReadOnlyList<Choice> GpuProfiles { get; } =
     [
-        new("", "Automático (este aparelho)"),
-        new("desktop", "Sem contornos de driver"),
-        new("adreno", "Simular Adreno"),
-        new("mali", "Simular Mali"),
+        new("", Loc.Get("MGpuAuto")),
+        new("desktop", Loc.Get("MGpuNoWorkarounds")),
+        new("adreno", Loc.Get("MGpuAdreno")),
+        new("mali", Loc.Get("MGpuMali")),
     ];
 
     public static IReadOnlyList<Choice> ResScales { get; } =
     [
-        new("", "Nativa (960x544)"),
-        new("0.75", "75% (mais rápido)"),
-        new("0.5", "50% (o mais rápido, mais suave)"),
+        new("", Loc.Get("MResNative")),
+        new("0.75", Loc.Get("MRes75")),
+        new("0.5", Loc.Get("MRes50")),
     ];
 
     /// <summary>The label of <paramref name="value"/> in <paramref name="choices"/>, or the value itself.</summary>
@@ -135,7 +136,7 @@ public static class SettingsChoices
 
     /// <summary>A per-game row's choices: "Padrão (…)" (follow the global setting, value null) first.</summary>
     public static IReadOnlyList<Choice> WithDefault(IReadOnlyList<Choice> choices, string globalValue) =>
-        [new(DefaultValue, $"Padrão ({LabelOf(choices, globalValue)})"), .. choices];
+        [new(DefaultValue, Loc.Format("MDefaultParen", LabelOf(choices, globalValue))), .. choices];
 
     /// <summary>The value standing for "follow the global setting" in a per-game picker.</summary>
     public const string DefaultValue = "\u0001default";

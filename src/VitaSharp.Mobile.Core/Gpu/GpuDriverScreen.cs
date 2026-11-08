@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Mobile.Core.Storage;
 
@@ -43,9 +44,9 @@ public sealed class GpuDriverScreen
     {
         var installed = Store.List();
         bool systemSelected = Settings.Driver.Length == 0 || installed.All(d => d.Id != Settings.Driver);
-        var list = new List<GpuDriverOption> { new("", "Driver do sistema",
+        var list = new List<GpuDriverOption> { new("", Loc.Get("MSystemDriver"),
             // libadrenotools only opens it on Adreno GPUs; elsewhere the system's Vulkan loader does
-            CustomDriversSupported ? "O que veio no aparelho, aberto pela libadrenotools" : "O que veio no aparelho", systemSelected, false) };
+            CustomDriversSupported ? Loc.Get("MSystemDriverAdreno") : Loc.Get("MSystemDriverDetail"), systemSelected, false) };
         foreach (var d in installed)
             list.Add(new(d.Id, d.Meta.Name, Detail(d.Meta), !systemSelected && d.Id == Settings.Driver, true));
         return list;
@@ -149,25 +150,25 @@ public static class GpuInfoView
         string driver = customDriver ?? $"{DriverName(caps.Driver)} {GpuCapabilities.FormatDriverVersion(caps.Vendor, caps.Driver, caps.DriverVersion)}";
         var arch = new List<string>();
         if (caps.Has(GpuQuirk.TileBased)) arch.Add("tile-based");
-        if (d.UnifiedMemory) arch.Add("memória unificada");
+        if (d.UnifiedMemory) arch.Add(Loc.Get("MUnifiedMemory"));
         return
         [
             new("GPU", d.DeviceName),
             new("Driver", driver),
             new("Vulkan", $"{d.ApiVersion >> 22}.{(d.ApiVersion >> 12) & 0x3FF}.{d.ApiVersion & 0xFFF}"),
-            new("Arquitetura", arch.Count > 0 ? string.Join(" · ", arch) : "imediata"),
-            new("Orçamento de memória", caps.Has(GpuFeature.MemoryBudget) ? "VK_EXT_memory_budget" : $"{caps.FallbackBudgetFraction:P0} do heap"),
+            new(Loc.Get("MArchitecture"), arch.Count > 0 ? string.Join(" · ", arch) : Loc.Get("MImmediate")),
+            new(Loc.Get("MMemoryBudget"), caps.Has(GpuFeature.MemoryBudget) ? "VK_EXT_memory_budget" : Loc.Format("MOfTheHeap", caps.FallbackBudgetFraction)),
         ];
     }
 
     static string DriverName(GpuDriver d) => d switch
     {
-        GpuDriver.QualcommProprietary => "Qualcomm proprietário",
+        GpuDriver.QualcommProprietary => Loc.Get("MQualcommProprietary"),
         GpuDriver.Turnip => "Mesa Turnip",
-        GpuDriver.ArmProprietary => "ARM proprietário",
+        GpuDriver.ArmProprietary => Loc.Get("MArmProprietary"),
         GpuDriver.Panvk => "Mesa PanVK",
-        GpuDriver.ImaginationProprietary => "Imagination proprietário",
-        GpuDriver.SamsungProprietary => "Samsung proprietário",
+        GpuDriver.ImaginationProprietary => Loc.Get("MImaginationProprietary"),
+        GpuDriver.SamsungProprietary => Loc.Get("MSamsungProprietary"),
         _ => d.ToString(),
     };
 
@@ -196,18 +197,18 @@ public static class GpuInfoView
 
     static string Describe(GpuQuirk q) => q switch
     {
-        GpuQuirk.TileBased => "load/store escolhidos por cena: a profundidade não volta para a memória quando a cena termina",
-        GpuQuirk.DynamicIndexLowering => "índices dinâmicos de registradores viram switch no shader",
-        GpuQuirk.StaticExtendedDynamicState => "cull, topologia, profundidade e stencil gravados no pipeline",
-        GpuQuirk.StaticDepthBiasEnable => "depth bias sempre ligado no pipeline, zero quando o draw não usa",
-        GpuQuirk.PipelineCachePerDriverBuild => "um cache de pipelines por build do driver (drivers customizados)",
-        GpuQuirk.Msaa2xAs4x => "cenas MSAA 2x desenhadas com 4 amostras",
-        GpuQuirk.ConservativeMemoryBudget => "texturas liberadas a partir de 50% do heap",
-        GpuQuirk.DynamicRenderingSuspect => "registrado para relatórios de bug",
-        GpuQuirk.TurnipDriver => "driver Mesa: nenhum contorno do driver proprietário",
-        GpuQuirk.CustomDriverCapable => "aceita drivers customizados",
-        GpuQuirk.AvoidPushDescriptors => "o renderizador já não usa push descriptors",
-        GpuQuirk.AvoidClearAttachments => "o renderizador já limpa com load ops",
+        GpuQuirk.TileBased => Loc.Get("MQuirkTileBased"),
+        GpuQuirk.DynamicIndexLowering => Loc.Get("MQuirkDynamicIndex"),
+        GpuQuirk.StaticExtendedDynamicState => Loc.Get("MQuirkStaticEds"),
+        GpuQuirk.StaticDepthBiasEnable => Loc.Get("MQuirkDepthBias"),
+        GpuQuirk.PipelineCachePerDriverBuild => Loc.Get("MQuirkPipelineCache"),
+        GpuQuirk.Msaa2xAs4x => Loc.Get("MQuirkMsaa2x"),
+        GpuQuirk.ConservativeMemoryBudget => Loc.Get("MQuirkBudget"),
+        GpuQuirk.DynamicRenderingSuspect => Loc.Get("MQuirkRecorded"),
+        GpuQuirk.TurnipDriver => Loc.Get("MQuirkTurnip"),
+        GpuQuirk.CustomDriverCapable => Loc.Get("MQuirkCustomDriver"),
+        GpuQuirk.AvoidPushDescriptors => Loc.Get("MQuirkPushDescriptors"),
+        GpuQuirk.AvoidClearAttachments => Loc.Get("MQuirkClearAttachments"),
         _ => q.ToString(),
     };
 }

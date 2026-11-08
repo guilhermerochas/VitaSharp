@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
@@ -43,75 +44,74 @@ public sealed class SettingsView : Screen<SettingsState>
     {
         var p = AppServices.Prefs;
         var fw = State.Firmware;
-        return PageBody("Ajustes",
+        return PageBody(Loc.Get("MSettings"),
             VStack(
-                SectionTitle("Jogos"),
+                SectionTitle(Loc.Get("MGames")),
                 Card(
-                    Row("Instalar jogo", null, () =>
+                    Row(Loc.Get("MInstallGame"), null, () =>
                     {
                         LibraryView.InstallRequested = true;
                         RootPage.Show(RootTab.Library);
-                    }, detail: ".vpk, ou .pkg com a licença (work.bin, .rif ou zRIF)")
+                    }, detail: Loc.Get("MInstallGameDetail"))
                 ),
-                SectionTitle("Sistema"),
+                SectionTitle(Loc.Get("MSystem")),
                 Card(
-                    Row("Firmware", fw?.Summary ?? "…", () => Navigation?.PushAsync<FirmwarePage>(),
+                    Row(Loc.Get("MFirmware"), fw?.Summary ?? "…", () => Navigation?.PushAsync<FirmwarePage>(),
                         valueColor: fw?.Installed != null ? Palette.Ok : Palette.Muted),
                     Divider(),
-                    Row("Sistema do Vita", fw is { Shell: true } ? "pronto" : "precisa do firmware", () =>
+                    Row(Loc.Get("MVitaSystem"), fw is { Shell: true } ? Loc.Get("MReady") : Loc.Get("MNeedsFirmware"), () =>
                     {
                         if (fw is { Shell: true }) Game.GameActivity.Launch(MainActivity.Current!, Game.GameActivity.SystemTitleId);
                         else Navigation?.PushAsync<FirmwarePage>();
-                    }, detail: "O shell do firmware (vs0:vsh/shell) em tela cheia")
+                    }, detail: Loc.Get("MShellDetail"))
                 ),
-                SectionTitle("Desempenho"),
+                SectionTitle(Loc.Get("MPerformance")),
                 Card(
                     Row("CPU", SettingsChoices.LabelOf(CpuChoices.Available(), p.CpuBackend),
-                        () => Pick("CPU", CpuChoices.Available(), v => p.CpuBackend = v), detail: "Padrão de todos os jogos"),
+                        () => Pick("CPU", CpuChoices.Available(), v => p.CpuBackend = v), detail: Loc.Get("MDefaultAllGames")),
                     Divider(),
-                    Row("Clock da CPU", SettingsChoices.LabelOf(SettingsChoices.Clocks, p.CpuMhz.ToString()),
-                        () => Pick("Clock da CPU", SettingsChoices.Clocks, v => p.CpuMhz = int.Parse(v))),
+                    Row(Loc.Get("MCpuClock"), SettingsChoices.LabelOf(SettingsChoices.Clocks, p.CpuMhz.ToString()),
+                        () => Pick(Loc.Get("MCpuClock"), SettingsChoices.Clocks, v => p.CpuMhz = int.Parse(v))),
                     Divider(),
-                    Row("Perfil da GPU", SettingsChoices.LabelOf(SettingsChoices.GpuProfiles, p.GpuProfile),
-                        () => Pick("Perfil da GPU", SettingsChoices.GpuProfiles, v => p.GpuProfile = v),
-                        detail: "Contornos de driver (docs/notes/mobile-gpu.md)"),
+                    Row(Loc.Get("MGpuProfile"), SettingsChoices.LabelOf(SettingsChoices.GpuProfiles, p.GpuProfile),
+                        () => Pick(Loc.Get("MGpuProfile"), SettingsChoices.GpuProfiles, v => p.GpuProfile = v),
+                        detail: Loc.Get("MGpuProfileDetail")),
                     Divider(),
                     ToggleRow("VSync", p.VSync, v => Change(x => x.VSync = v)),
                     Divider(),
-                    ToggleRow("Mostrar FPS", p.ShowFps, v => Change(x => x.ShowFps = v)),
+                    ToggleRow(Loc.Get("MShowFps"), p.ShowFps, v => Change(x => x.ShowFps = v)),
                     Divider(),
-                    ToggleRow("Som de troféu", p.TrophySound, v => Change(x => x.TrophySound = v),
-                        detail: "Som de aviso do firmware ao desbloquear um troféu (ou um som próprio sem firmware)"),
+                    ToggleRow(Loc.Get("MTrophySound"), p.TrophySound, v => Change(x => x.TrophySound = v),
+                        detail: Loc.Get("MTrophySoundDetail")),
                     Divider(),
-                    Row("Driver da GPU", null, () => Navigation?.PushAsync<GpuDriverPage>()),
+                    Row(Loc.Get("MGpuDriver"), null, () => Navigation?.PushAsync<GpuDriverPage>()),
                     Divider(),
-                    Row("Informações da GPU", null, () => Navigation?.PushAsync<GpuInfoPage>())
+                    Row(Loc.Get("MGpuInfo"), null, () => Navigation?.PushAsync<GpuInfoPage>())
                 ),
-                SectionTitle("Rede e PSN"),
+                SectionTitle(Loc.Get("MNetworkPsn")),
                 Card(
-                    Row("Conta PSN e rede", p.Network.PsnSignedIn ? p.Network.PsnOnlineId : "desconectada",
+                    Row(Loc.Get("MPsnAndNetwork"), p.Network.PsnSignedIn ? p.Network.PsnOnlineId : Loc.Get("MSignedOut"),
                         () => Navigation?.PushAsync<PsnPage>(),
-                        detail: p.Network.RealInternet ? "Internet real ligada" : "Nada sai do aparelho")
+                        detail: p.Network.RealInternet ? Loc.Get("MRealInternetOn") : Loc.Get("MNothingLeaves"))
                 ),
-                SectionTitle("Armazenamento"),
+                SectionTitle(Loc.Get("MStorage")),
                 Card(
-                    Row("Pasta de dados", null, Copy(AppServices.Data.Root), detail: AppServices.Data.Root),
+                    Row(Loc.Get("MDataFolder"), null, Copy(AppServices.Data.Root), detail: AppServices.Data.Root),
                     Divider(),
-                    Row("Jogos instalados", null, Copy(AppServices.Data.Apps), detail: "fs/ux0/app · os saves ficam em fs/ux0/user/00/savedata")
+                    Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Get("MInstalledGamesDetail"))
                 ),
-                Note("Os jogos, saves, firmware e logs ficam na pasta do app (armazenamento específico do app): nenhuma " +
-                     "permissão de armazenamento é pedida. Arquivos .VPK e .PUP são abertos pelo seletor do sistema e lidos no lugar."),
-                SectionTitle("Depuração"),
+                Note(Loc.Get("MStorageNote")),
+                SectionTitle(Loc.Get("MDebugging")),
                 Card(
-                    ToggleRow("Modo de depuração", p.DebugMode, v => Change(x => x.DebugMode = v),
-                        detail: "Log detalhado no próximo jogo (logcat: VitaSharp, VitaSharp-Guest)"),
+                    ToggleRow(Loc.Get("MDebugMode"), p.DebugMode, v => Change(x => x.DebugMode = v),
+                        detail: Loc.Get("MDebugModeDetail")),
                     Divider(),
-                    Row("Log do último jogo", null, Copy(System.IO.Path.Combine(AppServices.Data.Logs, "last.log")), detail: "logs/last.log"),
+                    Row(Loc.Get("MLastGameLog"), null, Copy(System.IO.Path.Combine(AppServices.Data.Logs, "last.log")), detail: "logs/last.log"),
                     Divider(),
-                    Row("Compartilhar log", null, ShareLog)
+                    Row(Loc.Get("MShareLog"), null, ShareLog)
 #if VITASHARP_DEVELOPER
                     , Divider(),
-                    Row("Opções de desenvolvedor", null, () => Navigation?.PushAsync<DeveloperPage>(), detail: "Bench da GPU (build de desenvolvedor)")
+                    Row(Loc.Get("MDeveloperOptions"), null, () => Navigation?.PushAsync<DeveloperPage>(), detail: Loc.Get("MDeveloperOptionsDetail"))
 #endif
                 ),
 
@@ -137,14 +137,14 @@ public sealed class SettingsView : Screen<SettingsState>
     Action Copy(string text) => async () =>
     {
         await Clipboard.Default.SetTextAsync(text);
-        await Alert("Copiado", text);
+        await Alert(Loc.Get("MCopied"), text);
     };
 
     async void ShareLog()
     {
         string path = System.IO.Path.Combine(AppServices.Data.Logs, "last.log");
         if (!File.Exists(path)) path = System.IO.Path.Combine(AppServices.Data.Logs, "app.log");
-        if (!File.Exists(path)) { await Alert("Log", "Ainda não há log."); return; }
-        await Share.Default.RequestAsync(new ShareFileRequest("Log do VitaSharp", new ShareFile(path, "text/plain")));
+        if (!File.Exists(path)) { await Alert("Log", Loc.Get("MNoLogYet")); return; }
+        await Share.Default.RequestAsync(new ShareFileRequest(Loc.Get("MVitaSharpLog"), new ShareFile(path, "text/plain")));
     }
 }

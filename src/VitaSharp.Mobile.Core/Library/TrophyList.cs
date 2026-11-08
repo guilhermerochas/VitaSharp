@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Mobile.Core.Storage;
 
@@ -7,8 +8,8 @@ namespace VitaSharp.Mobile.Core.Library;
 public sealed record TrophyRow(string CommId, int Id, TrophyGrade Grade, string Name, string Detail, bool Hidden, DateTime? UnlockedUtc, byte[]? Icon)
 {
     public bool Unlocked => UnlockedUtc != null;
-    public string ShownName => Hidden && !Unlocked ? "Troféu oculto" : Name;
-    public string ShownDetail => Hidden && !Unlocked ? "Continue jogando para descobrir." : Detail;
+    public string ShownName => Hidden && !Unlocked ? Loc.Get("MHiddenTrophy") : Name;
+    public string ShownDetail => Hidden && !Unlocked ? Loc.Get("MHiddenTrophyDetail") : Detail;
 }
 
 /// <summary>The Troféus screen (docs/android/mockups/trofeus.html) of one game: every set it ships, its rows and the
@@ -69,7 +70,7 @@ public sealed class TrophyList
 
     public static string GradeName(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => "Platina", TrophyGrade.Gold => "Ouro", TrophyGrade.Silver => "Prata", _ => "Bronze",
+        TrophyGrade.Platinum => Loc.Get("MPlatinum"), TrophyGrade.Gold => Loc.Get("MGold"), TrophyGrade.Silver => Loc.Get("MSilver"), _ => "Bronze",
     };
 
     /// <summary>The grade colours of the mockups (and the desktop's trophy window).</summary>

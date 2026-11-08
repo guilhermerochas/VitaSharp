@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Diagnostics;
 using VitaSharp.Android.Audio;
 using VitaSharp.Android.Gpu;
@@ -88,7 +89,7 @@ public sealed partial class EmulationSession : IDisposable
         _emu.Fatal += (t, e) =>
         {
             Log.Error($"Fatal error in thread {t.Name}: {e}");
-            Failed?.Invoke($"O jogo parou com um erro na thread {t.Name}: {e.Message}");
+            Failed?.Invoke(Loc.Format("MGameThreadError", t.Name, e.Message));
         };
         _emu.Host.Input = input;
         _emu.Host.Motion = input.Keyboard; // the keyboard's tilt keys (VirtualMotion), from their first use
@@ -157,7 +158,7 @@ public sealed partial class EmulationSession : IDisposable
             RunOptions = [$"--cpu-mhz={_settings.ClockHz / 1_000_000}"],
             // a phone has less memory and slower cores than a PC
             PreRollMaxBytes = 64L << 20, EncoderQueueFrames = 48, DumpMaxFrames = 1800,
-            StopHint = "menu de pausa para parar",
+            StopHint = Loc.Get("MStopHint"),
             Status = s => CaptureStatus?.Invoke(s),
         });
         // VITASHARP_CAPTURE_PREROLL=SECONDS in env.txt, or the pause menu's "Pré-gravação"
@@ -178,7 +179,7 @@ public sealed partial class EmulationSession : IDisposable
             catch (Exception e)
             {
                 Log.Error($"LoadExec failed: {e}");
-                Failed?.Invoke($"Falha ao reiniciar o jogo: {e.Message}");
+                Failed?.Invoke(Loc.Format("MRestartFailed", e.Message));
             }
         });
     }
@@ -278,8 +279,8 @@ public sealed partial class EmulationSession : IDisposable
         {
             Log.Error($"Could not start {_game.TitleId}: {e}");
             Failed?.Invoke(e is DllNotFoundException
-                ? $"Uma biblioteca nativa está faltando: {e.Message}"
-                : $"Não foi possível iniciar o jogo: {e.Message}");
+                ? Loc.Format("MNativeLibraryMissing", e.Message)
+                : Loc.Format("MStartFailed", e.Message));
         }
     }
 

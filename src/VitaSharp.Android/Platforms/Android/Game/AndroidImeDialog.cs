@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.App;
 using Android.Content;
 using Android.Text;
@@ -113,10 +114,10 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
         container.SetPadding(pad, pad / 2, pad, 0);
         container.AddView(edit);
         var dialog = new AlertDialog.Builder(activity)
-            .SetTitle(title.Length > 0 ? title : "Digite o texto")!
+            .SetTitle(title.Length > 0 ? title : Loc.Get("ImeTitle"))!
             .SetView(container)!
-            .SetPositiveButton("OK", (_, _) => Answer(true))!
-            .SetNegativeButton("Cancelar", (_, _) => Answer(false))!
+            .SetPositiveButton(Loc.Get("MOk"), (_, _) => Answer(true))!
+            .SetNegativeButton(Loc.Get("MCancel"), (_, _) => Answer(false))!
             .SetOnCancelListener(new CancelListener(() => Answer(false)))!
             .Create()!;
         // the soft keyboard comes up with the dialog
