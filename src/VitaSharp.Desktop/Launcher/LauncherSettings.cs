@@ -17,13 +17,13 @@ public sealed class LauncherSettings
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
     /// maximum a game can request. Faster loads, but games that rely on retail timing can break.</summary>
     public int CpuMhz { get; set; }
-    /// <summary>"Compilação rápida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
+    /// <summary>"Compilacao rapida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
     public bool FastShaderCompile { get; set; } = true;
     /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
     public bool BackgroundShaderCompile { get; set; } = true;
-    /// <summary>"Modo de depuração": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
+    /// <summary>"Modo de depuracao": detailed diagnostic logging (--debug-mode, docs/notes/debug-mode.md).</summary>
     public bool DebugMode { get; set; }
-    /// <summary>"Pré-gravação": F8's session capture keeps the seconds before it was pressed (--capture-preroll,
+    /// <summary>"Pre-gravacao": F8's session capture keeps the seconds before it was pressed (--capture-preroll,
     /// docs/notes/session-capture.md).</summary>
     public bool CapturePreRoll { get; set; }
     /// <summary>"Simular conta PSN conectada (offline)": the emulated PSN account is signed in (--psn=on, the default) or
@@ -31,7 +31,7 @@ public sealed class LauncherSettings
     public bool PsnSignedIn { get; set; } = true;
     /// <summary>Online ID of the emulated PSN account (--psn-id=).</summary>
     public string PsnOnlineId { get; set; } = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
-    /// <summary>"Serviços PSN locais": TUS / Cross-Save, rankings, tickets and matching served from &lt;data&gt;/np
+    /// <summary>"Servicos PSN locais": TUS / Cross-Save, rankings, tickets and matching served from &lt;data&gt;/np
     /// (--psn-local=on, the default) or every PSN server request failing as unreachable (--psn-local=off).</summary>
     public bool PsnLocalServices { get; set; } = true;
     /// <summary>"Internet real": game sockets, DNS and HTTP go through this PC's network (--net=real). Off by default:
@@ -68,19 +68,22 @@ public sealed class LauncherSettings
     /// <summary>Launcher theme: "system" (follows the OS, the default), "dark" or "light".</summary>
     public string UiTheme { get; set; } = ThemeSystem;
 
+    /// <summary>Interface language: "system" (the default), "en" or "pt-BR" (<see cref="Core.Localization.Loc"/>).</summary>
+    public string Language { get; set; } = Core.Localization.Loc.System;
+
     /// <summary>Library sort: "az" (title), "recent" (last played first) or "time" (most played first).</summary>
     public string LibrarySort { get; set; } = "az";
 
     /// <summary>Library region filter (<see cref="GameEntry.Region"/>); "" = every region.</summary>
     public string LibraryRegion { get; set; } = "";
 
-    /// <summary>"Procurar atualizações ao iniciar" (MainWindow.Update.cs).</summary>
+    /// <summary>"Procurar atualizacoes ao iniciar" (MainWindow.Update.cs).</summary>
     public bool CheckUpdates { get; set; } = true;
 
     /// <summary>Update channel: "builds" (every automatic build) or "releases" (tagged versions only).</summary>
     public string UpdateChannel { get; set; } = "builds";
 
-    /// <summary>The release tag the user chose "Pular esta versão" for: the check at start does not offer it again.</summary>
+    /// <summary>The release tag the user chose "Pular esta versao" for: the check at start does not offer it again.</summary>
     public string SkippedUpdate { get; set; } = "";
 
     /// <summary>Home screen theme id (<see cref="VitaSharp.Core.Shell.ShellTheme.Id"/>); "" = the firmware's default.</summary>
@@ -89,7 +92,7 @@ public sealed class LauncherSettings
     public bool HomeBgm { get; set; }
     /// <summary>Play the system sound effects (common_resource.rco) on the home screen and LiveArea.</summary>
     public bool SystemSounds { get; set; }
-    /// <summary>"Som de troféu": a chime with the in-game trophy notification (the firmware's notice sound, else a
+    /// <summary>"Som de trofeu": a chime with the in-game trophy notification (the firmware's notice sound, else a
     /// built-in one), --trophy-sound=.</summary>
     public bool TrophySound { get; set; } = true;
 
@@ -164,21 +167,22 @@ public sealed class LauncherSettings
 /// <summary>Options of one game ("Ajustes do jogo" on its page in the launcher).</summary>
 public sealed class GameOptions
 {
-    /// <summary>"Resolução interna": render targets at this multiple of the Vita's resolution (1 = native 960x544, the
+    /// <summary>"Resolucao interna": render targets at this multiple of the Vita's resolution (1 = native 960x544, the
     /// default; 2-4 like PCSX2's upscaling), --res-scale= (VulkanRenderer.ResScale.cs). Costs GPU time with the pixel count.</summary>
     public int ResScale { get; set; } = 1;
 
     /// <summary>Internal resolution choices: factor and label.</summary>
-    public static readonly (int Factor, string Label)[] ResScales =
-        [(1, "1x nativa (960×544)"), (2, "2x (1920×1088)"), (3, "3x (2880×1632)"), (4, "4x (3840×2176)")];
+    public static (int Factor, string Label)[] ResScales =>
+        [(1, Core.Localization.Loc.Get("ResNative")), (2, "2x (1920\u00D71088)"), (3, "3x (2880\u00D71632)"), (4, "4x (3840\u00D72176)")];
 
     /// <summary>"Taxa de quadros": "native" (the default: the game's own pacing), "30", "60" or "unlimited", --frame-rate=
     /// (Hle/Modules/Display.cs FrameRate).</summary>
     public string FrameRate { get; set; } = "native";
 
     /// <summary>Frame rate choices: option value and label.</summary>
-    public static readonly (string Value, string Label)[] FrameRates =
-        [("native", "Nativo (do jogo)"), ("30", "Fixo em 30"), ("60", "Fixo em 60"), ("unlimited", "Sem limite")];
+    public static (string Value, string Label)[] FrameRates =>
+        [("native", Core.Localization.Loc.Get("RateNative")), ("30", Core.Localization.Loc.Get("RateFixed30")),
+         ("60", Core.Localization.Loc.Get("RateFixed60")), ("unlimited", Core.Localization.Loc.Get("RateUnlimited"))];
 
     public IEnumerable<string> RunOptions()
     {
@@ -204,7 +208,7 @@ public sealed class PlayRecord
     public DateTime LastPlayedUtc { get; set; }
 }
 
-/// <summary>"Tempo jogado" / "Última vez": &lt;data&gt;/playtime.json, by title ID ("shell" for the Vita system).</summary>
+/// <summary>"Tempo jogado" / "Ultima vez": &lt;data&gt;/playtime.json, by title ID ("shell" for the Vita system).</summary>
 public static class PlayHistory
 {
     static string FilePath => Path.Combine(Program.DataRoot, "playtime.json");

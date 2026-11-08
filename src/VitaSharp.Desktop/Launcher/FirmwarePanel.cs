@@ -5,12 +5,14 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using VitaSharp.Core.Firmware;
+using VitaSharp.Core.Localization;
+using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>
-/// Configurações > Geral > Firmware: the installed system software (or "não instalado"), "Instalar firmware (.PUP)…"
-/// with a progress bar and cancel, and "Usar firmware do Vita3K" when a Vita3K installation with firmware is found
+/// Settings > General > Firmware: the installed system software (or "not installed"), "Install firmware (.PUP)..."
+/// with a progress bar and cancel, and "Use Vita3K's firmware" when a Vita3K installation with firmware is found
 /// (its os0/vs0/sa0/pd0 are copied, never linked: VitaSharp then never writes into Vita3K's folders).
 /// </summary>
 public sealed class FirmwarePanel : StackPanel
@@ -18,9 +20,9 @@ public sealed class FirmwarePanel : StackPanel
     readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap };
     readonly TextBlock _detail = new() { Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12, IsVisible = false };
     readonly ProgressBar _progress = new() { Minimum = 0, Maximum = 1, Height = 6, IsVisible = false };
-    readonly Button _install = new() { Content = "Instalar firmware (.PUP)…" };
-    readonly Button _vita3k = new() { Content = "Usar firmware do Vita3K" };
-    readonly Button _cancel = new() { Content = "Cancelar", IsVisible = false };
+    readonly Button _install = new() { Content = Loc.Get("FwInstallPup") };
+    readonly Button _vita3k = new() { Content = Loc.Get("FwUseVita3K") };
+    readonly Button _cancel = new() { Content = S.Cancel, IsVisible = false };
     readonly string? _vita3kRoot = FirmwareInstaller.FindVita3KFirmware();
     CancellationTokenSource? _cts;
 
@@ -37,7 +39,7 @@ public sealed class FirmwarePanel : StackPanel
         buttons.Children.Add(_install);
         if (_vita3kRoot != null)
         {
-            ToolTip.SetTip(_vita3k, $"Copia os0, vs0, sa0 e pd0 de {_vita3kRoot} (inclui as fontes do sistema, se o Vita3K as tiver).");
+            ToolTip.SetTip(_vita3k, Loc.Format("FwUseVita3KTip", _vita3kRoot));
             buttons.Children.Add(_vita3k);
         }
         buttons.Children.Add(_cancel);
@@ -48,12 +50,10 @@ public sealed class FirmwarePanel : StackPanel
         Children.Add(new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
-            Text = "O firmware oficial (PSVUPDAT.PUP, baixado do site da PlayStation) traz as bibliotecas do sistema que o " +
-                   "VitaSharp não reimplementa (Json, Xml, Sqlite...). As fontes do sistema vêm no pacote de fontes " +
-                   "(outro .PUP) ou junto com o firmware do Vita3K. Os jogos continuam funcionando sem firmware.",
+            Text = Loc.Get("FwAbout"),
         });
         _install.Click += async (_, _) => await PickAndInstall();
-        _vita3k.Click += async (_, _) => await Run("Copiando firmware do Vita3K…",
+        _vita3k.Click += async (_, _) => await Run(Loc.Get("FwCopyingVita3K"),
             (p, ct) => FirmwareInstaller.ImportFrom(_vita3kRoot!, Program.FsRoot, "Vita3K", p, ct));
         _cancel.Click += (_, _) => { _cts?.Cancel(); _cancel.IsEnabled = false; };
         Refresh();
@@ -67,9 +67,9 @@ public sealed class FirmwarePanel : StackPanel
         // fonts count on their own: sa0 may have been filled without a firmware install (copied by hand)
         bool fonts = FirmwareInfo.HasSystemFonts(Program.FsRoot);
         _status.Text = info == null
-            ? "Firmware: não instalado" + (fonts ? " — fontes do sistema presentes (sa0)" : "")
+            ? Loc.Get("FwStatusMissing") + (fonts ? Loc.Get("FwFontsPresent") : "")
             : $"Firmware: {info.Display}" + (info.Partitions.Count > 0 ? $"  ({string.Join(", ", info.Partitions)})" : "") +
-              (fonts ? " — com fontes do sistema" : " — sem fontes do sistema");
+              Loc.Get(fonts ? "FwWithFonts" : "FwWithoutFonts");
     }
 
     async Task PickAndInstall()
@@ -78,13 +78,13 @@ public sealed class FirmwarePanel : StackPanel
         if (top == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Selecione a atualização do sistema do PS Vita (PSVUPDAT.PUP)",
+            Title = Loc.Get("FwPickTitle"),
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("Atualização do PS Vita (.PUP)") { Patterns = ["*.PUP", "*.pup"] }, FilePickerFileTypes.All],
+            FileTypeFilter = [new FilePickerFileType(Loc.Get("FwPupFileType")) { Patterns = ["*.PUP", "*.pup"] }, FilePickerFileTypes.All],
         });
         var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
         if (path == null) return;
-        await Run($"Instalando {Path.GetFileName(path)}…", (p, ct) =>
+        await Run(Loc.Format("FwInstalling", Path.GetFileName(path)), (p, ct) =>
         {
             var info = FirmwareInstaller.Install(path, Program.FsRoot, p, ct);
             // a system update has no pd0 (the home screen music): Vita3K's, when it has one
@@ -115,10 +115,10 @@ public sealed class FirmwarePanel : StackPanel
             var token = _cts.Token;
             result = await Task.Run(() => job(progress, token));
         }
-        catch (OperationCanceledException) { error = "Instalação cancelada; o firmware anterior foi mantido."; }
+        catch (OperationCanceledException) { error = Loc.Get("FwCancelled"); }
         catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            error = "Falha ao instalar o firmware: " + e.Message;
+            error = Loc.Format("FwFailed", e.Message);
         }
         finally
         {
@@ -136,7 +136,7 @@ public sealed class FirmwarePanel : StackPanel
             _detail.Text = error;
             _detail.Foreground = Brushes.IndianRed;
         }
-        else _detail.Text = $"Firmware {result!.Display} instalado em {Program.FsRoot}.";
+        else _detail.Text = Loc.Format("FwInstalledIn", result!.Display, Program.FsRoot);
         Finished?.Invoke();
     }
 

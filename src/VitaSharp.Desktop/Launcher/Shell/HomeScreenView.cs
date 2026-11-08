@@ -105,7 +105,7 @@ public sealed class HomeScreenView : ShellCanvas
         }
         if (_apps.Count == 0)
         {
-            var t = Text("Nenhum jogo instalado. Use \"Add game ▾\" para instalar um VPK, PKG ou pasta.", 18, Brushes.White, null, 700, TextAlignment.Center, 2);
+            var t = Text(Core.Localization.Loc.Get("ShellNoGames"), 18, Brushes.White, null, 700, TextAlignment.Center, 2);
             DrawShadowed(ctx, t, new Point((W - 700) / 2, H / 2 - 20));
         }
         DrawPageDots(ctx);
@@ -141,7 +141,7 @@ public sealed class HomeScreenView : ShellCanvas
         {
             // system apps (run from vs0:app on the firmware's libraries) are marked with a small badge
             ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(200, 20, 30, 45)), new Pen(Brushes.White, 1.2), c + new Point(r * 0.7, r * 0.7), 9, 9);
-            var g = Text("⚙", 11, Brushes.White);
+            var g = Text("\u2699", 11, Brushes.White);
             ctx.DrawText(g, c + new Point(r * 0.7 - g.Width / 2, r * 0.7 - g.Height / 2));
         }
         var t = Text(app.Title, selected ? 13.5 : 12.5, fontBrush, selected ? UiBold : Ui, 172, TextAlignment.Center);

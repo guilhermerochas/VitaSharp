@@ -9,7 +9,7 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Troféus: every game's trophy progress, and one game's list with grades and unlock dates (hidden trophies keep
+/// <summary>Trofeus: every game's trophy progress, and one game's list with grades and unlock dates (hidden trophies keep
 /// their text secret until unlocked, as on the console).</summary>
 public sealed partial class MainWindow
 {

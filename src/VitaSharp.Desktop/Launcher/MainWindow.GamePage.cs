@@ -11,7 +11,7 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Página do jogo: pic0 behind the top, start buttons, play time, save states with their pictures, trophies,
+/// <summary>Pagina do jogo: pic0 behind the top, start buttons, play time, save states with their pictures, trophies,
 /// captures and the game's own settings (internal resolution, frame rate).</summary>
 public sealed partial class MainWindow
 {
@@ -63,7 +63,7 @@ public sealed partial class MainWindow
         info.Children.Add(badges);
         info.Children.Add(_k.Heading(g.Title, 34).Also(t => { t.TextWrapping = TextWrapping.Wrap; t.MaxHeight = 90; }));
         string installed = Directory.Exists(g.Path) ? S.InstalledOn(Directory.GetCreationTime(g.Path)) : "";
-        info.Children.Add(_k.Text(string.Join("  ·  ", new[] { g.TitleId, g.Version.Length > 0 ? "v" + g.Version : "", g.SizeText, installed }.Where(x => x.Length > 0)), 13.5, color: P.Muted));
+        info.Children.Add(_k.Text(string.Join("  \u00B7  ", new[] { g.TitleId, g.Version.Length > 0 ? "v" + g.Version : "", g.SizeText, installed }.Where(x => x.Length > 0)), 13.5, color: P.Muted));
         var buttons = _k.HStack(10, PlayButton(g, 50, 170), _k.Secondary(S.OpenLiveArea, "vita", () => OpenLiveArea(g), 50, tip: S.LiveAreaTip));
         if (LatestState(g) is { } latest) buttons.Children.Add(_k.Secondary(S.LoadLatestState, "save", () => LoadState(g, latest), 50, enabled: _running == null));
         buttons.Margin = new Thickness(0, 10, 0, 0);
@@ -77,7 +77,7 @@ public sealed partial class MainWindow
         var states = StatesOf(g);
         var stats = new UniformGrid { Columns = 4, Margin = new Thickness(0, 26, -14, 0) };
         stats.Children.Add(Stat("clock", S.TimePlayed, play != null ? S.Duration(play.Seconds) : S.NeverPlayed));
-        stats.Children.Add(Stat("zap", S.LastPlayed, play != null ? S.When(play.LastPlayedUtc.ToLocalTime()) : "—"));
+        stats.Children.Add(Stat("zap", S.LastPlayed, play != null ? S.When(play.LastPlayedUtc.ToLocalTime()) : "\u2014"));
         stats.Children.Add(Stat("trophy", S.Trophies, total > 0 ? $"{got} / {total}" : S.NoTrophies, P.Gold));
         stats.Children.Add(Stat("save", S.SaveStatesTitle, states.Count.ToString(S.Culture)));
         page.Children.Add(stats);
@@ -203,7 +203,7 @@ public sealed partial class MainWindow
             {
                 var r = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 0, 12, 0) };
                 r.Children.Add(TrophyIcon(set, t, 44, true));
-                r.Children.Add(Kit.At(_k.VStack(2, _k.Text(t.Name, 13, FontWeight.SemiBold), _k.Text($"{S.Grade(t.Grade)} · {S.When(TrophyTime(set, t.Id)!.Value)}", 11.5, color: P.Muted))
+                r.Children.Add(Kit.At(_k.VStack(2, _k.Text(t.Name, 13, FontWeight.SemiBold), _k.Text($"{S.Grade(t.Grade)} \u00B7 {S.When(TrophyTime(set, t.Id)!.Value)}", 11.5, color: P.Muted))
                     .Also(x => { x.Margin = new Thickness(10, 0, 0, 0); x.VerticalAlignment = VerticalAlignment.Center; }), col: 1));
                 row.Children.Add(r);
             }

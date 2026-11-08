@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Collections;
 using System.IO.Compression;
 using System.Reflection;
@@ -9,7 +10,7 @@ using VitaSharp.Renderer.Vulkan;
 namespace VitaSharp.Desktop;
 
 /// <summary>
-/// "Capturar diagnóstico" (F10 in the game window, --diag-at=FRAME[,FRAME...], and debug-mode anomalies): the renderer
+/// "Capturar diagnostico" (F10 in the game window, --diag-at=FRAME[,FRAME...], and debug-mode anomalies): the renderer
 /// traces the next frame (draw list, render targets, sampled textures, screenshot) into
 /// &lt;DataRoot&gt;/diagnostics/&lt;TITLEID&gt;_&lt;yyyyMMdd_HHmmss&gt;/, then this class adds info.txt, the log so far and the
 /// emulator state, and zips the folder next to it. One capture at a time; requests during a capture are ignored.
@@ -70,7 +71,7 @@ public sealed class Diagnostics
         }
         long guestFrame = DebugMode.Frame;
         Log.Info($"[diag] capture requested ({reason}) at guest frame {guestFrame}: {dir}");
-        Status?.Invoke("Capturando diagnóstico...");
+        Status?.Invoke(Loc.Get("DiagCapturing"));
         var renderer = _renderer();
         var tcs = new TaskCompletionSource<DiagnosticCaptureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         bool requested = renderer != null && renderer.RequestDiagnosticCapture(dir, r => tcs.TrySetResult(r), postFrames, triggerPresent);
@@ -91,7 +92,7 @@ public sealed class Diagnostics
                 }
                 Finish(dir, reason, guestFrame, renderer, res, note);
             }
-            catch (Exception e) { Log.Warn($"[diag] capture failed: {e}"); Status?.Invoke("Falha ao salvar o diagnóstico (veja o log)"); }
+            catch (Exception e) { Log.Warn($"[diag] capture failed: {e}"); Status?.Invoke(Loc.Get("DiagFailed")); }
             finally { Volatile.Write(ref _busy, 0); }
         });
         return true;
@@ -131,7 +132,7 @@ public sealed class Diagnostics
         CopyLog(Path.Combine(dir, "log.txt"));
         if (File.Exists(zip)) File.Delete(zip);
         ZipFile.CreateFromDirectory(dir, zip, CompressionLevel.Optimal, includeBaseDirectory: true);
-        Status?.Invoke($"Diagnóstico salvo: {zip}");
+        Status?.Invoke(Loc.Format("DiagSaved", zip));
     }
 
     static void CopyLog(string dest)

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Diagnostics;
 using VitaSharp.Core;
 using VitaSharp.Core.Firmware;
@@ -40,9 +41,9 @@ public static class Runner
         }
     }
 
-    /// <summary>The title-bar notice of a trophy unlock ("Troféu desbloqueado: <name> (Ouro)").</summary>
+    /// <summary>The title-bar notice of a trophy unlock ("Trofeu desbloqueado: <name> (Ouro)").</summary>
     internal static string TrophyNotice(VitaSharp.Core.Hle.Np.TrophyUnlockedEvent e) =>
-        $"Troféu desbloqueado: {e.Trophy.Name} ({TrophyToast.GradeName(e.Trophy.Grade)})";
+        Loc.Format("GameTrophyUnlocked", e.Trophy.Name, TrophyToast.GradeName(e.Trophy.Grade));
 
     public static int Run(string appPath, string[] options)
     {
@@ -65,7 +66,7 @@ public static class Runner
         bool noJit = options.Contains("--no-jit");
         bool headless = options.Contains("--headless") || Opt(options, "--seconds") != null;
         if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
-        // debug mode (launcher "Modo de depuração"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
+        // debug mode (launcher "Modo de depuracao"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
         if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true") DebugMode.Enable();
         // logs/last.log for this session, the previous sessions kept as logs/<time>_<title>.log
         if (Opt(options, "--log") is { } logPath) Log.OpenFile(logPath);
@@ -84,7 +85,7 @@ public static class Runner
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
             ffv.Configure(vdec);
         // --psn=on|off: emulated PSN account signed in (default) or signed out; --psn-id=<online id> names the account
-        // (launcher: Configurações > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
+        // (launcher: Configuracoes > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
         // --net=off|real (default VITASHARP_NET, else off): real internet for SceNet/SceHttp; --net-allow=h1,h2 limits it to
         // those hosts (default VITASHARP_NET_ALLOW). Sony's servers are always blocked.
         string? netOpt = Opt(options, "--net") ?? Environment.GetEnvironmentVariable(EnvVars.Net);
@@ -130,7 +131,7 @@ public static class Runner
             ShaderCacheDir = Opt(options, "--shader-cache") ?? Path.Combine(Program.DataRoot, "shadercache"),
             Validation = options.Contains("--validation"),
             VSync = !options.Contains("--no-vsync"),
-            // stutter options (launcher: Configurações > Geral > Desempenho); VITASHARP_SHADERC_OPT, VITASHARP_ASYNC_SHADERS,
+            // stutter options (launcher: Configuracoes > Geral > Desempenho); VITASHARP_SHADERC_OPT, VITASHARP_ASYNC_SHADERS,
             // VITASHARP_ASYNC_PIPELINES and VITASHARP_SHADER_WORKERS override them
             ShaderOptimization = Opt(options, "--shaderc-opt"),
             AsyncShaders = OnOff(options, "--async-shaders") ?? true,
@@ -177,10 +178,10 @@ public static class Runner
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? "salvando estado..." : $"{fps:F0} FPS"
+            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? Loc.Get("GameSavingState") : $"{fps:F0} FPS"
                 + (VitaSharp.Core.Hle.Modules.FrameRate.Label is { Length: > 0 } fr ? $" ({fr})" : "");
-            string rec = capture?.Capture.IsRecording == true ? "● REC | " : "";
-            if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = "Salvando a gravação... não feche a janela";
+            string rec = capture?.Capture.IsRecording == true ? "\u25CF REC | " : "";
+            if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = Loc.Get("GameSavingRecording");
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
         // errors stay longer than the short confirmations (a refused save state was gone before it could be read)
@@ -200,7 +201,7 @@ public static class Runner
         };
         // trophy unlocks: a card in the top-right corner of the window (renderer overlay) and a notice in the title bar,
         // like the console's pop-up
-        // --trophy-sound=on|off (launcher "Som de troféu", on by default): the firmware's notice chime, else a built-in
+        // --trophy-sound=on|off (launcher "Som de trofeu", on by default): the firmware's notice chime, else a built-in
         // one, on its own OpenAL source when the card appears
         var trophySound = (OnOff(options, "--trophy-sound") ?? true) && audio != null
             ? new Lazy<VitaSharp.Core.Shell.PcmSound>(() =>
@@ -240,7 +241,7 @@ public static class Runner
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
             capture.Capture.NoteKey("F9");
             capture.UpdatePreRoll();
-            diag.Status?.Invoke(DebugMode.Enabled ? "Modo de depuração ligado (F9 desliga, F10 captura, F8 grava tudo com os últimos 10 s, Ctrl+F8 grava dump da GPU)" : "Modo de depuração desligado");
+            diag.Status?.Invoke(Loc.Get(DebugMode.Enabled ? "GameDebugOn" : "GameDebugOff"));
         };
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
@@ -256,9 +257,9 @@ public static class Runner
 
         // the GPU driver reset (TDR) or lost the device: the game stops drawing, the process stays up and says so; a state load
         // or a restart makes a new device
-        void OnDeviceLost(string where) => ShowStatus("A GPU parou de responder (driver reiniciado): carregue um estado (F7) ou reinicie o jogo", 600_000);
+        void OnDeviceLost(string where) => ShowStatus(Loc.Get("GameDeviceLost"), 600_000);
 
-        // pause hotkey (Controles > "Pausar emulação": P by default, or a controller combination): freezes every guest
+        // pause hotkey (Controles > "Pausar emulacao": P by default, or a controller combination): freezes every guest
         // process, the guest clock and the audio; the window keeps the last frame with a "Pausado" badge
         void ShowPauseBadge(VulkanRenderer? r)
         {
@@ -274,7 +275,7 @@ public static class Runner
         EmulationPause.Changed += OnPauseChanged;
         window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
         window.Resized += () => { if (EmulationPause.IsUserPaused) ShowPauseBadge(renderer); };
-        // the mouse mode (F4 cycles giroscópio / analógico direito / analógico esquerdo / desligado): a notice in the
+        // the mouse mode (F4 cycles giroscopio / analogico direito / analogico esquerdo / desligado): a notice in the
         // top-left corner for 3 s and in the title bar
         int mouseNotice = 0;
         void ShowMouseNotice(string text)
@@ -331,13 +332,13 @@ public static class Runner
             {
                 closeAfterSave = true;
                 Log.Info("[capture] window closing with a recording running or being saved: the window closes when it is saved");
-                Console.WriteLine("Salvando a gravação (Gravar tudo) antes de fechar...");
+                Console.WriteLine("Saving the recording (Gravar tudo) before closing...");
                 new Thread(() =>
                 {
                     // a recording still starting refuses Stop: retry until it stops, then wait for the save
                     while (c.IsRecording && !c.Stop("window closed")) Thread.Sleep(250);
                     c.Idle.Wait();
-                    Console.WriteLine(c.LastZip is { } z ? $"Gravação salva: {z}" : "Gravação salva (veja o log)");
+                    Console.WriteLine(c.LastZip is { } z ? $"Recording saved: {z}" : "Recording saved (see the log)");
                     Volatile.Write(ref closeNow, 1);
                 }) { IsBackground = true, Name = "capture close" }.Start();
             }

@@ -10,7 +10,7 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Emulator updates (PCSX2-style): the check at start and from Configurações, and the update dialog.</summary>
+/// <summary>Emulator updates (PCSX2-style): the check at start and from Configuracoes, and the update dialog.</summary>
 public sealed partial class MainWindow
 {
     bool _checkingUpdates;
@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         finally { _checkingUpdates = false; }
     }
 
-    /// <summary>The update dialog: version in use → new one, date, the release notes, and Pular esta versão / Lembrar
+    /// <summary>The update dialog: version in use -> new one, date, the release notes, and Pular esta versao / Lembrar
     /// depois / Atualizar agora.</summary>
     internal Window UpdateDialog(UpdateRelease release)
     {
@@ -126,7 +126,7 @@ public sealed partial class MainWindow
             l = l.TrimEnd();
             if (l.StartsWith('#')) l = l.TrimStart('#', ' ');
             l = System.Text.RegularExpressions.Regex.Replace(l, @"\[([^\]]*)\]\([^)]*\)", "$1").Replace("**", "").Replace("`", "");
-            return l.StartsWith("- ") ? "•  " + l[2..] : l;
+            return l.StartsWith("- ") ? "\u2022  " + l[2..] : l;
         });
         return string.Join('\n', lines).Trim();
     }

@@ -195,7 +195,7 @@ public sealed class HostInput : IMotionSource, IDisposable
     /// <summary>The cursor was released: the stick goes back to the centre at once.</summary>
     public void MouseReleased() => _mouse.Reset();
 
-    /// <summary>The mode hotkey: the next mode (giroscópio, analógico direito, analógico esquerdo, desligado), saved for
+    /// <summary>The mode hotkey: the next mode (giroscopio, analogico direito, analogico esquerdo, desligado), saved for
     /// the running game in input.json. Returns the new mode.</summary>
     public MouseMode CycleMouseMode()
     {
@@ -257,7 +257,7 @@ public sealed class HostInput : IMotionSource, IDisposable
     }
 
     /// <summary>The controller whose sensors drive the Vita: the first connected one with a gyroscope and an
-    /// accelerometer whose profile keeps "Usar giroscópio do controle" on. Called under _lock.</summary>
+    /// accelerometer whose profile keeps "Usar giroscopio do controle" on. Called under _lock.</summary>
     PadInfo? MotionPad()
     {
         if (_pads == null || SourceMode is MotionSourceMode.Off or MotionSourceMode.KeyboardMouse) return null;

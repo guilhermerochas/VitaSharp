@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using SkiaSharp;
 using VitaSharp.Core.Util;
 
@@ -11,7 +12,7 @@ namespace VitaSharp.Desktop.Host;
 public static class PauseBadge
 {
     /// <summary>"Pausado (P)", or "Pausado" when the pause has no key.</summary>
-    public static string Text(string keyLabel) => keyLabel.Length > 0 ? $"Pausado ({keyLabel})" : "Pausado";
+    public static string Text(string keyLabel) => keyLabel.Length > 0 ? Loc.Format("PausedKey", keyLabel) : Loc.Get("Paused");
 
     /// <summary>The badge as BGRA bytes (opaque), scaled with the window (1x at 544 lines); null when Skia is missing.
     /// <paramref name="pauseSign"/> false: the text alone (other short notices, such as the mouse mode).</summary>

@@ -304,4 +304,7 @@ public static class EnvVars
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
+    /// <summary>Interface language: "en" or "pt-BR" (default: the system's; Localization/Loc.cs). The launcher sets it
+    /// for the games it starts from Configurações > Idioma.</summary>
+    public const string Language = "VITASHARP_LANGUAGE";
 }

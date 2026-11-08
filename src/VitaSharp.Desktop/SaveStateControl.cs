@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.SaveState;
@@ -26,13 +27,13 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
     {
         _slot = _slot % 9 + 1;
         string p = PathOf(_slot);
-        status?.Invoke(File.Exists(p) ? $"Estado {_slot}: salvo em {File.GetLastWriteTime(p):g}" : $"Estado {_slot}: vazio");
+        status?.Invoke(File.Exists(p) ? Loc.Format("StateSlotSaved", _slot, File.GetLastWriteTime(p)) : Loc.Format("StateSlotEmpty", _slot));
     }
 
     /// <summary>Saves to <paramref name="slot"/> (0 = quick save) off the calling thread.</summary>
-    public void SaveAsync(int slot) => Run(() => Save(PathOf(slot), slot == 0 ? "rápido" : slot.ToString()));
+    public void SaveAsync(int slot) => Run(() => Save(PathOf(slot), slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString()));
 
-    public void LoadAsync(int slot) => Run(() => Load(PathOf(slot), slot == 0 ? "rápido" : slot.ToString()));
+    public void LoadAsync(int slot) => Run(() => Load(PathOf(slot), slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString()));
 
     void Run(Action a)
     {
@@ -47,32 +48,32 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
             byte[]? thumb = EmulationPause.IsPaused ? null : GrabThumbnail(ro, 300);
             SaveStates.Save(emu, path, thumb);
             _lastSaved = path;
-            status?.Invoke($"Estado {label} salvo");
+            status?.Invoke(Loc.Format("StateSaved", label));
             return true;
         }
         catch (SnapshotException e)
         {
             Log.Warn($"Save state: {e.Message}");
-            (error ?? status)?.Invoke($"Não foi possível salvar o estado: {e.Message}");
+            (error ?? status)?.Invoke(Loc.Format("StateSaveFailed", e.Message));
             return false;
         }
     }
 
     public bool Load(string path, string label = "")
     {
-        if (!File.Exists(path)) { status?.Invoke($"Estado {label} vazio"); return false; }
+        if (!File.Exists(path)) { status?.Invoke(Loc.Format("StateEmpty", label)); return false; }
         try
         {
             // a state of another executable of the game (saved after a LoadExec): that one is started first
             SaveStates.SwitchProgramFor(emu, path, status);
             SaveStates.Load(emu, path, emu.Gpu.Backend != null ? backendFactory : null);
-            status?.Invoke($"Estado {label} carregado");
+            status?.Invoke(Loc.Format("StateLoaded", label));
             return true;
         }
         catch (Exception e) when (e is SnapshotException or IOException)
         {
             Log.Warn($"Load state: {e.Message}");
-            (error ?? status)?.Invoke(e is SaveStateIncompatibleException ? e.Message : $"Não foi possível carregar o estado: {e.Message}");
+            (error ?? status)?.Invoke(e is SaveStateIncompatibleException ? e.Message : Loc.Format("StateLoadFailed", e.Message));
             return false;
         }
     }

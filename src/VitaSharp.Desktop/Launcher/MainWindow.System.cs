@@ -79,6 +79,7 @@ public sealed partial class MainWindow
         _settingsPage = new SettingsPage(_settings, SaveSettings);
         _settingsPage.ThemeChanged += t => { LauncherApp.ApplyTheme(t); RebuildAll(); };
         _settingsPage.OpenSystem += () => Navigate(PageSystem);
+        _settingsPage.LanguageChanged += () => RebuildAll();
         _settingsPage.CheckUpdatesNow += () => _ = CheckForUpdates(manual: true);
         return _settingsPage;
     }

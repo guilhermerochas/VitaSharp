@@ -15,8 +15,8 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
     /// <summary>Firmware partitions VitaSharp installs (the same folders Vita3K fills).</summary>
     public static readonly string[] PartitionNames = ["os0", "vs0", "sa0", "pd0"];
 
-    /// <summary>Text for the launcher: "3.74", "3.74 + fontes" or "instalado (versão desconhecida)".</summary>
-    public string Display => (Version ?? "versão desconhecida") + (FontPackage ? " + pacote de fontes" : "");
+    /// <summary>Text for the launcher: "3.74", "3.74 + fontes" or "instalado (versao desconhecida)".</summary>
+    public string Display => (Version ?? Localization.Loc.Get("UnknownVersion")) + (FontPackage ? Localization.Loc.Get("FwFontPackage") : "");
 
     /// <summary>
     /// The installed firmware, or null when vs0:sys/external holds no modules. Without firmware.json (a vs0 copied by
@@ -295,7 +295,7 @@ public static class FirmwareInstaller
                 : new FirmwareInfo(previous?.Version, previous?.Build ?? 0, previous?.Source is { Length: > 0 } s ? s : sourceName, DateTime.UtcNow, true,
                     installed.Union(previous?.Partitions ?? []).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray());
             info.Write(fsRoot);
-            progress?.Report(new FirmwareProgress("Concluído", 1.0));
+            progress?.Report(new FirmwareProgress(Localization.Loc.Get("FwDone"), 1.0));
             Log.Info($"firmware: installed {info.Display} into {fsRoot} ({string.Join(", ", installed)})");
             return info;
         }
@@ -340,7 +340,7 @@ public static class FirmwareInstaller
             foreach (var part in parts) Commit(Path.Combine(staging, part), Path.Combine(fsRoot, part), merge: part == "sa0", staging);
             var info = new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, sourceName, DateTime.UtcNow, false, parts);
             info.Write(fsRoot);
-            progress?.Report(new FirmwareProgress("Concluído", 1.0));
+            progress?.Report(new FirmwareProgress(Localization.Loc.Get("FwDone"), 1.0));
             Log.Info($"firmware: copied {info.Display} from {sourceFsRoot} into {fsRoot}");
             return info;
         }

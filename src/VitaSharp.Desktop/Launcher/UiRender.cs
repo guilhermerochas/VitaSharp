@@ -31,6 +31,7 @@ static class UiRender
         {
             var settings = LauncherSettings.Load();
             settings.UiTheme = theme;
+            if (Opt("--lang") is { } lang) settings.Language = lang;
             settings.RecreatedHome = true;
             settings.View = LauncherSettings.ViewGrid;
             var main = new MainWindow(settings) { Width = size.Item1, Height = size.Item2 };

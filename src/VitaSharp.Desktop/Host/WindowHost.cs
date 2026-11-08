@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Input;
@@ -46,7 +47,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// keeps it open (a "Gravar tudo" recording is still being saved); the owner calls <see cref="Close"/> later.</summary>
     public Func<bool>? CloseVeto;
     public event Action? Resized;
-    /// <summary>F10: "Capturar diagnóstico" (raised on the window thread; the handler must not block).</summary>
+    /// <summary>F10: "Capturar diagnostico" (raised on the window thread; the handler must not block).</summary>
     public event Action? DiagnosticRequested;
     /// <summary>F9: turns debug mode on or off in game (raised on the window thread).</summary>
     public event Action? DebugModeToggled;
@@ -272,11 +273,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         Log.Info(capture ? $"Window: mouse captured ({MouseSettings.Label(_hostInput.MouseMode)}; {_hostInput.MouseSettings.ReleaseKey} releases it, a click captures it again)" : "Window: mouse released");
     }
 
-    /// <summary>The on-screen hint of the mouse mode: "Mouse: analógico direito (Esc solta, F4 muda)".</summary>
+    /// <summary>The on-screen hint of the mouse mode: "Mouse: analogico direito (Esc solta, F4 muda)".</summary>
     public string MouseModeNotice()
     {
         var s = _hostInput.MouseSettings;
-        string keys = _hostInput.MouseIsStick ? $"{s.ReleaseKey} solta o cursor, {s.ToggleKey} muda" : $"{s.ToggleKey} muda";
+        string keys = _hostInput.MouseIsStick ? Loc.Format("MouseKeysStick", s.ReleaseKey, s.ToggleKey) : Loc.Format("MouseKeys", s.ToggleKey);
         return $"Mouse: {MouseSettings.Label(_hostInput.MouseMode)} ({keys})";
     }
 

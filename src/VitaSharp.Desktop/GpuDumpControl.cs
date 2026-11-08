@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Collections;
 using VitaSharp.Core;
 using VitaSharp.Core.Gpu;
@@ -63,11 +64,11 @@ static class GpuDumpControl
         {
             active.Stop();
             Log.Info($"[gpudump] Ctrl+F8: stopping after {active.FramesRecorded} frames");
-            status?.Invoke("Salvando dump da GPU...");
+            status?.Invoke(Loc.Get("DumpSaving"));
             return;
         }
         var rec = Start(emu, renderer(), options, NewPath(emu), -1, InteractiveMaxFrames, status, hostInfo?.Invoke());
-        if (rec == null) status?.Invoke("Já existe uma gravação do dump da GPU em andamento");
+        if (rec == null) status?.Invoke(Loc.Get("DumpBusy"));
     }
 
     static GpuDumpRecorder? Start(Emulator emu, VulkanRenderer? renderer, string[] options, string path, long startAfter, long frames,
@@ -79,9 +80,9 @@ static class GpuDumpControl
             Header = BuildHeader(emu, renderer, options, hostInfo),
             StartAfterPresent = startAfter,
             MaxFrames = frames,
-            Started = _ => status?.Invoke("Gravando dump da GPU (Ctrl+F8 para parar)"),
-            Finished = r => status?.Invoke(r.Error != null ? $"Falha ao gravar o dump da GPU: {r.Error}"
-                : $"Dump da GPU salvo: {r.Path} ({r.Frames} quadros, {r.FileBytes / 1048576.0:F0} MB)"),
+            Started = _ => status?.Invoke(Loc.Get("DumpRecording")),
+            Finished = r => status?.Invoke(r.Error != null ? Loc.Format("DumpFailed", r.Error)
+                : Loc.Format("DumpSaved", r.Path, r.Frames, r.FileBytes / 1048576.0)),
         };
         var rec = GpuDumpRecorder.Start(opt);
         if (rec != null) Log.Info($"[gpudump] armed: {path}" + (startAfter >= 0 ? $" after present #{startAfter}" : " at the next present") + (frames > 0 ? $", {frames} frames" : ""));

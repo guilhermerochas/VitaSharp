@@ -89,22 +89,22 @@ public static class SaveStateFile
     }
 
     /// <summary>Why a state with this header cannot be loaded into the running build and title, or null. Shown to the
-    /// user as is (title bar, launcher tooltip, Android notice), so in Portuguese like the rest of the UI.</summary>
+    /// user as is (title bar, launcher tooltip, Android notice), so in the interface language.</summary>
     public static string? Incompatibility(SaveStateHeader h, string titleId)
     {
         if (h.FormatVersion != FormatVersion)
-            return $"Este estado foi salvo por outra versão do VitaSharp ({ShortVersion(h.EmulatorVersion)}) e não pode ser carregado (formato {h.FormatVersion}; esta versão lê o formato {FormatVersion})";
+            return Localization.Loc.Format("StateOtherFormat", ShortVersion(h.EmulatorVersion), h.FormatVersion, FormatVersion);
         if (h.Schema != SnapshotSchema.Hash)
-            return $"Este estado foi salvo por outra versão do VitaSharp ({ShortVersion(h.EmulatorVersion)}) e não pode ser carregado";
+            return Localization.Loc.Format("StateOtherVersion", ShortVersion(h.EmulatorVersion));
         if (!string.Equals(h.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
-            return $"Este estado é de outro jogo ({h.TitleId} {h.Title}) e não pode ser carregado em {titleId}";
+            return Localization.Loc.Format("StateOtherGame", h.TitleId, h.Title, titleId);
         return null;
     }
 
     /// <summary>"1.0.0+60d6517ede5e..." as "1.0.0+60d6517": the build's commit, short enough for a title bar.</summary>
     static string ShortVersion(string? v)
     {
-        if (string.IsNullOrEmpty(v)) return "versão desconhecida";
+        if (string.IsNullOrEmpty(v)) return Localization.Loc.Get("UnknownVersion");
         int plus = v.IndexOf('+');
         return plus >= 0 && v.Length > plus + 8 ? v[..(plus + 8)] : v;
     }

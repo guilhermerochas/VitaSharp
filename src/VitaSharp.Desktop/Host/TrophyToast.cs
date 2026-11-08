@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using SkiaSharp;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Util;
@@ -5,7 +6,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Desktop.Host;
 
 /// <summary>
-/// The in-game trophy notification: a card with the trophy icon, "Troféu desbloqueado", the name and the grade, drawn on
+/// The in-game trophy notification: a card with the trophy icon, "Trofeu desbloqueado", the name and the grade, drawn on
 /// the CPU (SkiaSharp, already shipped with Avalonia) and shown for a few seconds in the top-right corner of the emulator
 /// window through <see cref="VitaSharp.Renderer.Vulkan.VulkanRenderer.SetOverlay"/>. Unlocks that arrive together are
 /// shown one after the other.
@@ -73,7 +74,7 @@ public sealed class TrophyToast : IDisposable
 
     public static string GradeName(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => "Platina", TrophyGrade.Gold => "Ouro", TrophyGrade.Silver => "Prata", _ => "Bronze",
+        TrophyGrade.Platinum => Loc.Get("GradePlatinum"), TrophyGrade.Gold => Loc.Get("GradeGold"), TrophyGrade.Silver => Loc.Get("GradeSilver"), _ => Loc.Get("GradeBronze"),
     };
 
     /// <summary>The card as BGRA bytes (opaque).</summary>
@@ -102,7 +103,7 @@ public sealed class TrophyToast : IDisposable
             using var muted = new SKPaint { Color = new SKColor(0x9A, 0xA3, 0xB2), IsAntialias = true };
             using var white = new SKPaint { Color = SKColors.White, IsAntialias = true };
             using var gradePaint = new SKPaint { Color = grade, IsAntialias = true };
-            c.DrawText("Troféu desbloqueado", tx, pad + 12 * scale, small, muted);
+            c.DrawText(Loc.Get("ToastTrophyUnlocked"), tx, pad + 12 * scale, small, muted);
             c.DrawText(Fit(e.Trophy.Name, big, right - tx), tx, pad + 32 * scale, big, white);
             c.DrawText(GradeName(e.Trophy.Grade), tx, pad + 50 * scale, small, gradePaint);
         }
@@ -114,8 +115,8 @@ public sealed class TrophyToast : IDisposable
     {
         using var m = new SKPaint { Typeface = font.Typeface, TextSize = font.Size };
         if (m.MeasureText(s) <= width) return s;
-        while (s.Length > 1 && m.MeasureText(s + "…") > width) s = s[..^1];
-        return s + "…";
+        while (s.Length > 1 && m.MeasureText(s + "\u2026") > width) s = s[..^1];
+        return s + "\u2026";
     }
 
     public void Dispose() => _timer.Dispose();

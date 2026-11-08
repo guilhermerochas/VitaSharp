@@ -87,8 +87,8 @@ static class UiSnapshot
     }
 
     /// <summary>
-    /// <c>ui-snapshot &lt;out-dir&gt; --home [--livearea[=ID1,ID2]]</c>: the launcher in "Tela inicial" view — the first
-    /// home page, the next page and the selection ring — and the LiveArea of each listed title (default: every installed
+    /// <c>ui-snapshot &lt;out-dir&gt; --home [--livearea[=ID1,ID2]]</c>: the launcher in "Tela inicial" view - the first
+    /// home page, the next page and the selection ring - and the LiveArea of each listed title (default: every installed
     /// game). Settings are not saved; the clock shows 12:34.
     /// </summary>
     static async Task<int> HomeScript(string outDir, string[] args)
@@ -291,7 +291,7 @@ static class UiSnapshot
             var bound = DefaultMappings.Keyboard().Get(c).Select(b => b.Key).ToArray();
             if (!keys.SequenceEqual(bound)) { Console.WriteLine($"  {c}: default keys {string.Join("/", bound)}"); failures++; }
         }
-        // emulator hotkeys: "Pausar emulação" on its default key
+        // emulator hotkeys: "Pausar emulacao" on its default key
         panel.ShowHotkeys();
         await Snap("keyboard_hotkeys");
         var pauseKeys = DefaultMappings.Keyboard().Get(VitaControl.PauseEmulation).Select(b => b.Key).ToArray();
