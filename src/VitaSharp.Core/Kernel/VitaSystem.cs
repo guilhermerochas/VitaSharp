@@ -264,6 +264,11 @@ public sealed class VitaSystem
         return false;
     }
 
+    /// <summary>While the trophy server bridge gives a trophy earned before (TrophyServerBridge), its unlock date
+    /// (SceRtcTick): the shell's trophy server threads read it as the current tick, so the server records the date the
+    /// trophy was earned. 0 = none.</summary>
+    public long TrophyUnlockTick;
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
 

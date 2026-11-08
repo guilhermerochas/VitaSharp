@@ -784,7 +784,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
   um botão com o jogo e com o shell abertos
-- [ ] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
+- [x] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
   depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
   a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
   gravada só quando o jogo abre com esta versão; os jogos jogados antes não têm. Corrigir para não depender de abrir cada
@@ -792,6 +792,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estrutura SceNpCommunicationSignature que ele passa ao sceNpTrophyCreateContext, ou no pacote de troféus), migrar todos
   de uma vez sem avisos de "troféu conquistado" e validar com uma CÓPIA dos dados do usuário (todos os jogos com JSON
   aparecendo no app com as datas)
+  Feito (07/11/2026, fix/system-apps-9, provas em `scratchpad/fw9_out/`): (a) a assinatura sai do próprio jogo: o eboot
+  (e os módulos em sce_module) é decriptado com a licença e a constante de 0xA0 bytes com o magic 0xB9DDE13B mais perto
+  do id "NPWRxxxxx" é a assinatura (a do Minecraft é idêntica à que o jogo passou; `Hle/Np/TrophySignature.cs`); é
+  guardada no `.sig` na primeira migração. (b) sem avisos: o DebugUnlock (IPC 0x90036, np_trophy C1406504) exige um
+  contexto do tipo 1 (contexto[+0x20], que o servidor grava a partir do 3.º argumento do IPC de criação); o np_trophy
+  C80794CF cria esse contexto só com o NPCOMMID (sem assinatura), e a ponte dá os troféus por ele no handle de
+  instalação. (c) datas: durante cada DebugUnlock as threads SceNpTrophyServer* do shell leem a data do JSON em
+  sceRtcGetCurrentTick/_vshRtcGetCurrentSecureTick. (d) uma conexão por título: o servidor monta o app do cliente
+  (sceAppMgrTrophyMount 300) uma vez por conexão, então o 2.º título lia a pasta do 1.º (0x80551619). Validado numa
+  cópia dos dados do usuário: os 6 jogos com JSON e app instalado (Croixleur, Killzone, Silent Hill, Gravity Rush,
+  Minecraft, FIFA 13) aparecem com CoD (`tro6/sheet.png`, `tro7/list2.png`), sem aviso durante a migração
+  (`tro4/open*.png`), Minecraft "Inventariando" conquistado 2026/10/23 como no JSON (`tro7/mc_t1.png`). NPWR04671 e
+  NPWR19711 não têm app instalado e ficam de fora.
 - [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
   Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
   dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no

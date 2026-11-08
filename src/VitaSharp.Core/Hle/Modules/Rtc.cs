@@ -33,7 +33,14 @@ public sealed partial class Rtc : HleModule
         catch { return DateTime.UnixEpoch; }
     }
 
-    [Hle] int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
+    [Hle] int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(TrophyServerTick(Emu) ?? NowTick); return 0; }
+
+    /// <summary>The date of a trophy the trophy server bridge is giving (<see cref="Kernel.VitaSystem.TrophyUnlockTick"/>),
+    /// for the shell's trophy server threads (SceNpTrophyServer*: they stamp an unlock with sceRtcGetCurrentTick and
+    /// _vshRtcGetCurrentSecureTick).</summary>
+    internal static ulong? TrophyServerTick(Emulator emu) =>
+        Interlocked.Read(ref emu.Vita.TrophyUnlockTick) is var t and not 0 && emu.IsShell
+        && Kernel.GuestThread.Current?.Name.StartsWith("SceNpTrophyServer", StringComparison.Ordinal) == true ? (ulong)t : null;
     [Hle] int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
     [Hle] uint sceRtcGetTickResolution() => 1_000_000;
 
