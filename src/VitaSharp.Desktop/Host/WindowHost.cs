@@ -195,8 +195,20 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             _lastFallbackPoll = now;
             PollFallbackGamepad();
         };
-        _window.Update += _ => update();
+        // Silk.NET's loop never sleeps (no render, no vsync here): without a wait the window thread spun a whole core
+        // (53 s of CPU in a 62 s Spider-Man run, 85% of a core) that the game threads and the GPU worker needed. A 2 ms
+        // wait (1 ms system timer: Runner's timeBeginPeriod) keeps ~400 updates/s for the 100-250 Hz input polls; work
+        // for the window thread (RunOnWindowThread) wakes it at once.
+        _window.Update += _ =>
+        {
+            update();
+            _windowWake.WaitOne(WindowIdleMs);
+        };
     }
+
+    /// <summary>Longest wait of the window loop between two updates when nothing wakes it (ms).</summary>
+    public const int WindowIdleMs = 2;
+    readonly AutoResetEvent _windowWake = new(false);
 
     /// <summary>
     /// Linux: GLFW 3.4 prefers Wayland whenever WAYLAND_DISPLAY is set and fails outright (no X11 fallback) when the
@@ -381,6 +393,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         Exception? error = null;
         using var done = new ManualResetEventSlim();
         _windowWork.Enqueue((() => { try { work(); } catch (Exception e) { error = e; } }, done));
+        _windowWake.Set();
         while (!done.Wait(50))
             if (_windowThread == -1) DrainWindowWork(); // the loop ended meanwhile
         if (error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
