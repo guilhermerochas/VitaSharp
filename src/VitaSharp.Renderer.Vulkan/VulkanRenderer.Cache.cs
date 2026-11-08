@@ -324,11 +324,18 @@ public sealed unsafe partial class VulkanRenderer
     /// Background thread: loads the modules and compiles the pipelines the title used last time. It only adds to the
     /// shared module/pipeline tables, so the GPU thread never waits for it: a draw that needs a pipeline the
     /// prewarm has not reached yet just compiles it itself (the loser of such a race destroys its copy).
+    /// <para>With background compilation on, the shader workers take part (Ryujinx and yuzu build their pipeline
+    /// caches on all their compile threads too): this thread reads the records into <see cref="_prewarmJobs"/>, which
+    /// the workers serve after the draw-driven queues and the boot rebuild, and works on the queue itself. With a warm
+    /// driver cache each pipeline is a cache hit (under 1 ms); after a driver update or with a cleared driver cache
+    /// every one is a real compile (60-90 ms on a GTX 1650), and one thread took most of a minute for a few hundred
+    /// pipelines while the game, already running, built them itself on its GPU thread.</para>
     /// </summary>
     void Prewarm(string head)
     {
         var sw = Stopwatch.StartNew();
-        int failed = 0, stale = 0;
+        int failed = 0;
+        bool shared = false;
         try
         {
             foreach (ulong recordKey in _pipelineList!.Keys())
@@ -337,23 +344,60 @@ public sealed unsafe partial class VulkanRenderer
                 var rec = _pipelineList.TryRead(recordKey);
                 var r = rec == null ? null : PipelineRecipe.Decode(rec);
                 if (r == null) { failed++; continue; }
-                var res = BuildRecordedPipeline(r, out bool isStale);
-                if (res == SharedBuild.Built) _statPrewarmed++;
-                else if (isStale) stale++;
-                else if (res == SharedBuild.Failed) failed++;
+                EnqueuePrewarm(r);
             }
             if (_legacyPipelines != null)
-                foreach (var rec in _legacyPipelines)
-                {
-                    if (_stopPrewarm || _deviceLost) break;
-                    if (!PrewarmLegacy(rec)) failed++;
-                }
+                foreach (var rec in _legacyPipelines) EnqueuePrewarm(rec);
+            // the workers start on first use; they poll their queues, so a release only saves them the wait
+            if (_asyncShaders && !_prewarmJobs.IsEmpty && EnsureShaderWorkers())
+            {
+                shared = true;
+                _workAvailable.Release(_shaderWorkerCount);
+            }
+            while (RunPrewarmItem()) { }
+            // items a worker is still building
+            while (Volatile.Read(ref _prewarmPending) > 0 && !_stopPrewarm && !_stopShaderJobs && !_deviceLost) Thread.Sleep(2);
         }
         catch (Exception e) { Log.Warn($"[shadercache] prewarm aborted: {e.Message}"); }
         _legacyPipelines = null;
+        failed += _statPrewarmFailed;
+        bool stopped = _stopPrewarm || _stopShaderJobs || _deviceLost;
         Log.Info($"{head}; prewarmed {_statPrewarmed} pipelines ({_statPrewarmModules} shader modules) in {sw.ElapsedMilliseconds} ms"
-            + (failed > 0 ? $", {failed} skipped" : "") + (stale > 0 ? $", {stale} stale" : "") + (_stopPrewarm ? " (stopped early)" : ""));
-        if (!_stopPrewarm && _statPrewarmed > 0) ScheduleVkCacheSave();
+            + (shared ? $" (with {_shaderWorkerCount} shader workers)" : "")
+            + (failed > 0 ? $", {failed} skipped" : "") + (_statPrewarmStale > 0 ? $", {_statPrewarmStale} stale" : "") + (stopped ? " (stopped early)" : ""));
+        if (!stopped && _statPrewarmed > 0) ScheduleVkCacheSave();
+    }
+
+    /// <summary>Recorded pipelines to prewarm: <see cref="PipelineRecipe"/>s, or byte[] version 3 records.</summary>
+    readonly ConcurrentQueue<object> _prewarmJobs = new();
+    int _prewarmPending, _statPrewarmFailed, _statPrewarmStale;
+
+    void EnqueuePrewarm(object item)
+    {
+        Interlocked.Increment(ref _prewarmPending);
+        _prewarmJobs.Enqueue(item);
+    }
+
+    /// <summary>Builds one queued prewarm item (prewarm thread or a shader worker); false when the queue is empty.
+    /// After shutdown started the items are dropped.</summary>
+    bool RunPrewarmItem()
+    {
+        if (!_prewarmJobs.TryDequeue(out var item)) return false;
+        try
+        {
+            if (_stopPrewarm || _stopShaderJobs || _deviceLost) return true;
+            if (item is PipelineRecipe r)
+            {
+                var res = BuildRecordedPipeline(r, out bool stale);
+                if (res == SharedBuild.Built) Interlocked.Increment(ref _statPrewarmed);
+                else if (stale) Interlocked.Increment(ref _statPrewarmStale);
+                else if (res == SharedBuild.Failed) Interlocked.Increment(ref _statPrewarmFailed);
+            }
+            else if (item is byte[] rec && !PrewarmLegacy(rec)) Interlocked.Increment(ref _statPrewarmFailed);
+        }
+        catch (Exception e) { Log.WarnOnce("prewarm-item", $"[shadercache] prewarm item failed: {e.Message}"); }
+        finally { Interlocked.Decrement(ref _prewarmPending); }
+        return true;
     }
 
     /// <summary>
@@ -403,7 +447,7 @@ public sealed unsafe partial class VulkanRenderer
             r[51] == 0 ? SampleCountFlags.Count1Bit : (SampleCountFlags)r[51]);
         var entry = new VsEntry { Module = vs.Module, Gen = vs.Gen, Bindings = bindings, Attributes = attrs, LayoutHash = key.VertexLayout };
         var res = BuildSharedPipeline(key, entry, fs.Module, topology);
-        if (res == SharedBuild.Built) _statPrewarmed++;
+        if (res == SharedBuild.Built) Interlocked.Increment(ref _statPrewarmed);
         return res != SharedBuild.Failed;
     }
 
