@@ -34,7 +34,7 @@ public sealed partial class Rtc : HleModule
     }
 
     [Hle("_sceRtcGetCurrentTick")]
-    [Hle] int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(TrophyServerTick(Emu) ?? NowTick); return 0; }
+    [Hle] internal int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(TrophyServerTick(Emu) ?? NowTick); return 0; }
 
     /// <summary>The date of a trophy the trophy server bridge is giving (<see cref="Kernel.VitaSystem.TrophyUnlockTick"/>),
     /// for the shell's trophy server threads (SceNpTrophyServer*: they stamp an unlock with sceRtcGetCurrentTick and
@@ -44,12 +44,12 @@ public sealed partial class Rtc : HleModule
         && Kernel.GuestThread.Current?.Name.StartsWith("SceNpTrophyServer", StringComparison.Ordinal) == true ? (ulong)t : null;
 
     [Hle("_sceRtcGetCurrentNetworkTick")]
-    [Hle] int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
+    [Hle] internal int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
     [Hle] uint sceRtcGetTickResolution() => 1_000_000;
 
     [Hle("_sceRtcGetCurrentClock")]
     [Hle]
-    int sceRtcGetCurrentClock(uint time, int tzMinutes)
+    internal int sceRtcGetCurrentClock(uint time, int tzMinutes)
     {
         WriteDateTime(time, DateTime.UtcNow.AddMinutes(tzMinutes));
         return 0;
@@ -57,30 +57,30 @@ public sealed partial class Rtc : HleModule
 
     [Hle("_sceRtcGetCurrentClockLocalTime")]
     [Hle]
-    int sceRtcGetCurrentClockLocalTime(uint time)
+    internal int sceRtcGetCurrentClockLocalTime(uint time)
     {
         WriteDateTime(time, DateTime.Now);
         return 0;
     }
 
 
-    [Hle] int sceRtcGetDayOfWeek(int year, int month, int day)
+    [Hle] internal int sceRtcGetDayOfWeek(int year, int month, int day)
     {
         try { return (int)new DateTime(year, month, day).DayOfWeek; } catch { return -1; }
     }
 
-    [Hle] int sceRtcGetDaysInMonth(int year, int month) => DateTime.DaysInMonth(year, month);
-    [Hle] int sceRtcIsLeapYear(int year) => DateTime.IsLeapYear(year) ? 1 : 0;
+    [Hle] internal int sceRtcGetDaysInMonth(int year, int month) => DateTime.DaysInMonth(year, month);
+    [Hle] internal int sceRtcIsLeapYear(int year) => DateTime.IsLeapYear(year) ? 1 : 0;
 
     [Hle]
-    int sceRtcGetTick(uint time, Ptr<ulong> tick)
+    internal int sceRtcGetTick(uint time, Ptr<ulong> tick)
     {
         tick.TrySet((ulong)(ReadDateTime(time).Ticks / 10));
         return 0;
     }
 
     [Hle]
-    int sceRtcSetTick(uint time, Ptr<ulong> tick)
+    internal int sceRtcSetTick(uint time, Ptr<ulong> tick)
     {
         WriteDateTime(time, FromTick(tick.Value));
         return 0;
@@ -120,7 +120,7 @@ public sealed partial class Rtc : HleModule
 
     [Hle("_sceRtcConvertUtcToLocalTime")]
     [Hle]
-    int sceRtcConvertUtcToLocalTime(Ptr<ulong> utc, Ptr<ulong> local)
+    internal int sceRtcConvertUtcToLocalTime(Ptr<ulong> utc, Ptr<ulong> local)
     {
         var d = FromTick(utc.Value).ToLocalTime();
         local.Value = (ulong)(d.Ticks / 10);
@@ -129,7 +129,7 @@ public sealed partial class Rtc : HleModule
 
     [Hle("_sceRtcConvertLocalTimeToUtc")]
     [Hle]
-    int sceRtcConvertLocalTimeToUtc(Ptr<ulong> local, Ptr<ulong> utc)
+    internal int sceRtcConvertLocalTimeToUtc(Ptr<ulong> local, Ptr<ulong> utc)
     {
         var d = DateTime.SpecifyKind(FromTick(local.Value), DateTimeKind.Local).ToUniversalTime();
         utc.Value = (ulong)(d.Ticks / 10);
@@ -138,7 +138,7 @@ public sealed partial class Rtc : HleModule
 
     [Hle("_sceRtcFormatRFC3339")]
     [Hle]
-    int sceRtcFormatRFC3339(uint buf, Ptr<ulong> tick, int tzMinutes)
+    internal int sceRtcFormatRFC3339(uint buf, Ptr<ulong> tick, int tzMinutes)
     {
         var d = FromTick(tick.IsNull ? NowTick : tick.Value).AddMinutes(tzMinutes);
         string tz = tzMinutes == 0 ? "Z" : $"{(tzMinutes < 0 ? '-' : '+')}{Math.Abs(tzMinutes) / 60:00}:{Math.Abs(tzMinutes) % 60:00}";
@@ -148,7 +148,7 @@ public sealed partial class Rtc : HleModule
 
     [Hle("_sceRtcFormatRFC3339LocalTime")]
     [Hle]
-    int sceRtcFormatRFC3339LocalTime(uint buf, Ptr<ulong> tick) =>
+    internal int sceRtcFormatRFC3339LocalTime(uint buf, Ptr<ulong> tick) =>
         sceRtcFormatRFC3339(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
     [Hle("_sceRtcFormatRFC2822")]
@@ -166,7 +166,7 @@ public sealed partial class Rtc : HleModule
         sceRtcFormatRFC2822(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
     [Hle]
-    int sceRtcParseRFC3339(Ptr<ulong> tick, string s)
+    internal int sceRtcParseRFC3339(Ptr<ulong> tick, string s)
     {
         if (!DateTimeOffset.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var d))
             return unchecked((int)0x80251000);
@@ -248,8 +248,8 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
-    [Hle] int sceRtcTickAddMonths(Ptr<ulong> dst, Ptr<ulong> src, int months) => AddCalendar(dst, src, months);
-    [Hle] int sceRtcTickAddYears(Ptr<ulong> dst, Ptr<ulong> src, int years) => AddCalendar(dst, src, years * 12);
+    [Hle] internal int sceRtcTickAddMonths(Ptr<ulong> dst, Ptr<ulong> src, int months) => AddCalendar(dst, src, months);
+    [Hle] internal int sceRtcTickAddYears(Ptr<ulong> dst, Ptr<ulong> src, int years) => AddCalendar(dst, src, years * 12);
 
     /// <summary>Ad hoc, debug, GPS and retained network clocks: no such sources here, they follow the network tick.</summary>
     [Hle("sceRtcGetCurrentAdNetworkTick")]

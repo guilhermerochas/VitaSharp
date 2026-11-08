@@ -105,6 +105,7 @@ public sealed partial class Clib : HleModule
     internal uint MspaceReallocalign(uint mspace, uint ptr, uint size, uint alignment) => Realloc(mspace, ptr, size, alignment);
     internal uint UsableSize(uint ptr) => sceClibMspaceMallocUsableSize(ptr);
     internal int IsHeapEmpty(uint mspace) => sceClibMspaceIsHeapEmpty(mspace);
+    internal void MallocStats(uint mspace, uint stats) => sceClibMspaceMallocStats(mspace, stats);
 
     /// <summary>(block size, peak in use, in use) of an mspace; zeros for an unknown one.</summary>
     internal (uint Size, uint Peak, uint InUse) HeapStats(uint mspace)

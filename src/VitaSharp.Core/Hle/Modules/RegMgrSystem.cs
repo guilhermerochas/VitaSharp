@@ -173,7 +173,7 @@ public sealed partial class RegMgrSystem : HleModule
     }
 
     [Hle]
-    int sceRegMgrUtilityGetInt(uint id, Ptr<int> value)
+    internal int sceRegMgrUtilityGetInt(uint id, Ptr<int> value)
     {
         if (PathOf(id, nameof(sceRegMgrUtilityGetInt)) is not { } p) return ERR_INVALID;
         var (c, n) = Split(p);
