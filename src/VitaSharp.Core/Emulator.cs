@@ -657,14 +657,9 @@ public sealed class Emulator : IDisposable
     /// photo0:/TITLEID) does not; the camera calls internal functions of it (16B1028E...) the HLE never had.</summary>
     public static readonly HashSet<string> FirmwareServiceClients = new(StringComparer.Ordinal) { "ScePhotoExport" };
 
-    /// <summary>Libraries whose firmware module is plain user-mode code (the C runtime, the C++ runtime): a system program
-    /// always gets the real module when the firmware is installed, exactly as before the HLE had any of their
-    /// functions. Their HLE versions serve the processes that never load the module (a game without its own copy,
-    /// homebrew, no firmware installed).</summary>
-    public static readonly HashSet<string> FirmwareCodeLibraries = new(StringComparer.Ordinal) { "SceLibc", "SceLibm", "SceLibstdcxx" };
-
-    /// <summary>The HLE stands in for <paramref name="library"/> when a system program's dependencies are resolved.</summary>
-    bool HleServesLibrary(string library) => Hle.ImplementsLibrary(library) && !FirmwareCodeLibraries.Contains(library);
+    /// <summary>The HLE stands in for <paramref name="library"/> when a system program's dependencies are resolved
+    /// (libraries the HLE only has as a firmware fallback, <see cref="Hle.HleModule.FirmwareFallbackOnly"/>, do not).</summary>
+    bool HleServesLibrary(string library) => Hle.ImplementsLibrary(library);
 
     /// <summary>
     /// Loads (without starting them) the firmware modules that provide the libraries <paramref name="root"/> imports,

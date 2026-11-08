@@ -17,6 +17,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed partial class Fios2 : HleModule
 {
+    public override bool FirmwareFallbackOnly => true;
+
     // SCE_FIOS_ERROR_* (libfios2.suprx error-name table)
     internal const int OK = 0, IN_PROGRESS = 1;
     internal const int ERR_UNIMPLEMENTED = unchecked((int)0x80820000), ERR_CANT_ALLOCATE_OP = unchecked((int)0x80820001),

@@ -198,8 +198,13 @@ public sealed partial class ProcessMgr : HleModule
         throw new GuestThreadExitException(-1, false);
     }
 
-    [Hle] int __sce_aeabi_idiv0() { Log.Warn("Integer division by zero"); return 0; }
-    [Hle] long __sce_aeabi_ldiv0() { Log.Warn("Long division by zero"); return 0; }
+    // the unnamed SceLibGcc entries at the same address in libkernel.suprx 3.74
+    [Hle("NID_29C2EB11", Nid = 0x29C2EB11, Library = "SceLibGcc")]
+    [Hle("NID_B1CD7AC2", Nid = 0xB1CD7AC2, Library = "SceLibGcc")]
+    [Hle("__sce_aeabi_idiv0")] int __sce_aeabi_idiv0() { Log.Warn("Integer division by zero"); return 0; }
+    [Hle("NID_6214B80C", Nid = 0x6214B80C, Library = "SceLibGcc")]
+    [Hle("NID_83A4F46F", Nid = 0x83A4F46F, Library = "SceLibGcc")]
+    [Hle("__sce_aeabi_ldiv0")] long __sce_aeabi_ldiv0() { Log.Warn("Long division by zero"); return 0; }
 
     [Hle]
     int sceKernelBacktraceSelf(uint buf, uint size, Ptr<uint> count, int flags)

@@ -7,13 +7,15 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// SceLibc (vs0:sys/external/libc.suprx, FW 3.74: the Dinkumware C library). Every process normally runs the firmware
-/// module (games ship it in app0:sce_module, system programs get the vs0 one; <see cref="Emulator.FirmwareCodeLibraries"/>),
+/// module (games ship it in app0:sce_module, system programs get the vs0 one: <see cref="HleModule.FirmwareFallbackOnly"/>),
 /// so these serve a process that does not load it. Behaviour follows the 3.74 module: errno in TLS slot 0x88
 /// (sceKernelGetTLSAddr), 16-bit wchar_t, the C locale, its strerror texts, the Annex K constraint handler that by
 /// default prints the message to stderr and returns ERANGE (34).
 /// </summary>
 public sealed partial class Libc : HleModule
 {
+    public override bool FirmwareFallbackOnly => true;
+
     // errno values of the SCE libc (errno.h; the strerror table of libc.suprx)
     internal const int EPERM = 1, ENOENT = 2, EINTR = 4, EIO = 5, EBADF = 9, EAGAIN = 11, ENOMEM = 12, EACCES = 13,
         EBUSY = 16, EEXIST = 17, ENOTDIR = 20, EISDIR = 21, EINVAL = 22, EMFILE = 24, ENOSPC = 28, ESPIPE = 29,

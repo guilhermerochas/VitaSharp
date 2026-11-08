@@ -11,6 +11,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed class Libm : HleModule
 {
+    public override bool FirmwareFallbackOnly => true;
+
     const int EDOM = 33, ERANGE = 34;
 
     static double D(HleContext c, int i) => HleContext.ArgF64(c, i);
