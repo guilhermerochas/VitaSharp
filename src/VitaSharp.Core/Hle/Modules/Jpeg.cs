@@ -138,6 +138,8 @@ public sealed partial class Jpeg : HleModule
     [Hle] int sceJpegArmCreateSplitDecoder(uint a0, uint a1, uint a2, uint a3) => SplitCreate("sceJpegArmCreateSplitDecoder", a0, a1, a2, a3);
     [Hle] int sceJpegSplitDecodeMJpeg(uint ctrl) => SplitDecode("sceJpegSplitDecodeMJpeg", ctrl);
     [Hle] int sceJpegArmSplitDecodeMJpeg(uint ctrl) => SplitDecode("sceJpegArmSplitDecodeMJpeg", ctrl);
+    /// <summary>(SceJpegSplitDecoderCtrl *ctrl; the syscall copies the 0x60-byte control block in and out).</summary>
+    [Hle("_sceJpegDeleteSplitDecoder")]
     [Hle] int sceJpegDeleteSplitDecoder(uint ctrl) => 0;
     [Hle] int sceJpegArmDeleteSplitDecoder(uint ctrl) => 0;
 

@@ -115,6 +115,7 @@ public sealed partial class Ngs : HleModule
     [Hle] int sceSulphaNgsShutdown() => OK;
     [Hle] int sceSulphaNgsSetSampleName(uint location, uint length, uint name) => location == 0 || length == 0 ? INVALID_ARG : OK;
 
+    [Hle("sceNgsSystemInitInternal")]
     [Hle]
     int sceNgsSystemInit(uint memspace, uint memsize, uint p, Ptr<uint> outSystem)
     {
@@ -237,6 +238,7 @@ public sealed partial class Ngs : HleModule
         return OK;
     }
 
+    [Hle("sceNgsRackInitInternal")]
     [Hle]
     int sceNgsRackInit(uint system, uint bufferInfo, uint desc, Ptr<uint> outRack)
     {
@@ -470,6 +472,7 @@ public sealed partial class Ngs : HleModule
 
     NgsModuleData? Module(uint voice, uint index) => _voices.TryGetValue(voice, out var v) && index < v.Modules.Length ? v.Modules[index] : null;
 
+    [Hle("sceNgsVoiceInitInternal")]
     [Hle]
     int sceNgsVoiceInit(uint voice, uint preset, uint flags)
     {
@@ -508,6 +511,7 @@ public sealed partial class Ngs : HleModule
         return ok;
     }
 
+    [Hle("sceNgsVoiceSetPresetInternal")]
     [Hle]
     int sceNgsVoiceSetPreset(uint voice, uint preset)
     {
