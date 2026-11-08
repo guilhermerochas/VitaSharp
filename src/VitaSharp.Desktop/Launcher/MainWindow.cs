@@ -1,504 +1,314 @@
 ﻿using VitaSharp.Core.Util;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using VitaSharp.Core.Package;
+using VitaSharp.Desktop.Launcher.Ui;
+using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Game library: lists installed titles, installs new ones and launches the emulator for the selected game.</summary>
+/// <summary>
+/// The launcher (docs/notes/desktop-launcher-design.md): a fixed sidebar (the Vita system in one click, the pages, the
+/// install in progress, firmware state, theme) beside the current page: library, game page, Vita system, trophies,
+/// captures, install queue or settings. Pages are built from <see cref="Kit"/> in the current <see cref="Palette"/> and
+/// rebuilt when the theme changes. Games run as child processes ("run"), the Vita system as "boot-shell".
+/// </summary>
 public sealed partial class MainWindow : Window
 {
-    static readonly IBrush Accent = LauncherTheme.Accent;
-    static readonly IBrush Muted = LauncherTheme.Muted;
-    static readonly IBrush Panel = LauncherTheme.Panel;
-    static readonly IBrush WindowBackground = LauncherTheme.WindowBackground;
+    public const string PageLibrary = "library", PageGame = "game", PageSystem = "system", PageTrophies = "trophies",
+        PageCaptures = "captures", PageInstall = "install", PageSettings = "settings";
 
     readonly LauncherSettings _settings;
-    readonly ObservableCollection<GameEntry> _visible = new();
-    readonly Dictionary<string, Bitmap?> _icons = new();
-    List<GameEntry> _all = new();
+    readonly bool _saveSettings;
+    Kit _k = new(Palette.Current);
+    Palette P => _k.P;
 
-    readonly TextBox _search;
-    readonly ListBox _list;
-    readonly TextBlock _status;
-    readonly TextBox _log;
-    readonly Border _logPanel;
-    readonly StackPanel _details;
-    readonly TextBlock _emptyHint;
-    readonly ProgressBar _progress;
-    readonly Button _cancelInstall;
-    readonly List<Button> _installButtons = new();
-    CancellationTokenSource? _installCts;
+    List<GameEntry> _all = new();
+    Dictionary<string, PlayRecord> _play = new();
+
+    string _page = PageLibrary;
+    GameEntry? _pageGame;
+
+    readonly Grid _root = new() { ColumnDefinitions = new ColumnDefinitions("252,*") };
+    readonly Border _sidebarHost = new();
+    readonly Border _contentHost = new() { ClipToBounds = true };
+    readonly Panel _overlay = new() { IsVisible = false };
+    readonly DockPanel _statusBar = new();
+    readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly TextBox _log = new()
+    {
+        IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontSize = 12,
+        FontFamily = new FontFamily("Consolas, Menlo, monospace"), BorderThickness = new Thickness(0),
+    };
+    readonly Border _logPanel = new() { Height = 180 };
+
     Process? _running;
     GameEntry? _runningGame;
+    string? _runningTitle, _runningId;
+    DateTime _runStartUtc;
 
-    /// <summary>"Tela inicial": the Vita-style home screen and LiveArea (created when first shown).</summary>
+    /// <summary>Extra options for every run (ui-render's launch check: --headless --seconds=N).</summary>
+    internal string[] ExtraRunOptions = [];
+
+    /// <summary>The recreated home screen and LiveArea (library "Tela inicial" view, "Abrir a LiveArea").</summary>
     Shell.ShellView? _shell;
-    readonly DockPanel _listBody;
-    readonly Panel _bodyHost;
-    readonly ToggleButton _viewList, _viewHome;
-    readonly StackPanel _viewSwitch;
 
     public Shell.ShellView? ShellView => _shell;
+    public string CurrentPage => _page;
+    internal IReadOnlyList<GameEntry> Games => _all;
+    internal SettingsPage? SettingsPageForTests => _settingsPage;
+    internal bool IsRunning => _running != null;
+    internal Process? RunningProcessForTests => _running;
+    internal void OpenLiveAreaForTests(GameEntry g) => OpenLiveArea(g);
 
-    /// <param name="settings">Preferences to use instead of the saved ones (ui-snapshot); changes to them are not saved.</param>
+    /// <summary>Starts a title (or "shell") the way the launcher's buttons do; false when it could not start.</summary>
+    internal bool LaunchForTests(string titleId)
+    {
+        if (titleId == "shell") LaunchSystem();
+        else if (_all.FirstOrDefault(g => g.TitleId == titleId) is { } g) Launch(g);
+        return _running != null;
+    }
+
+    /// <param name="settings">Preferences to use instead of the saved ones (ui-snapshot, ui-render); changes are not saved.</param>
     public MainWindow(LauncherSettings? settings = null)
     {
         _settings = settings ?? LauncherSettings.Load();
         _saveSettings = settings == null;
+        LauncherApp.ApplyTheme(_settings.UiTheme);
         Title = "VitaSharp";
-        Width = 1100;
-        Height = 700;
-        MinWidth = 760;
-        MinHeight = 480;
-        Background = WindowBackground;
+        Width = 1360;
+        Height = 860;
+        MinWidth = 1000;
+        MinHeight = 620;
+        FontFamily = Kit.Inter;
 
-        _search = new TextBox { Watermark = "Search games", Width = 260, VerticalAlignment = VerticalAlignment.Center };
-        _search.TextChanged += (_, _) => ApplyFilter();
-
-        var toolbar = new DockPanel { Margin = new Thickness(16, 12), LastChildFill = false };
-        var brand = new TextBlock { Text = "VitaSharp", FontSize = 22, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-        DockPanel.SetDock(brand, Dock.Left);
-        toolbar.Children.Add(brand);
-        // view switch: the game list or the Vita home screen
-        _viewList = new ToggleButton { Content = "Lista", CornerRadius = new CornerRadius(4, 0, 0, 4) };
-        _viewHome = new ToggleButton { Content = "Tela inicial", CornerRadius = new CornerRadius(0, 4, 4, 0) };
-        ToolTip.SetTip(_viewHome, "Tela inicial do Vita: bolhas, LiveArea e o tema do firmware instalado");
-        _viewList.Click += (_, _) => SetView(LauncherSettings.ViewList, save: true);
-        _viewHome.Click += (_, _) => SetView(LauncherSettings.ViewHome, save: true);
-        // the recreated home screen is provisional until the firmware's own shell.self runs: off by default, the
-        // toolbar switch only shows once it was turned on in Configurações
-        _viewSwitch = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        var viewSwitch = _viewSwitch;
-        viewSwitch.Children.Add(_viewList);
-        viewSwitch.Children.Add(_viewHome);
-        DockPanel.SetDock(viewSwitch, Dock.Left);
-        toolbar.Children.Add(viewSwitch);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(_search);
-        // one "Add game" button with a drop-down (VPK, PKG, folder) instead of three toolbar buttons
-        var addGame = new Button { Content = "Add game ▾", VerticalAlignment = VerticalAlignment.Center };
-        var addMenu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        foreach (var (text, action) in new (string, Func<Task>)[] { ("Install VPK…", InstallVpk), ("Install PKG…", InstallPkg), ("Add game folder…", AddFolder) })
-        {
-            var item = new MenuItem { Header = text };
-            item.Click += async (_, _) => await action();
-            addMenu.Items.Add(item);
-        }
-        addGame.Flyout = addMenu;
-        _installButtons.Add(addGame);
-        // the PS Vita system software itself (the firmware's shell): available once the firmware is installed
-        var system = new Button { Content = "Sistema do Vita", VerticalAlignment = VerticalAlignment.Center, IsEnabled = ShellInstalled };
-        ToolTip.SetTip(system, "Inicia o sistema do Vita do firmware instalado (tela inicial, LiveArea); os jogos abertos por ele rodam na mesma sessão");
-        system.Click += (_, _) => LaunchSystem();
-        actions.Children.Add(system);
-        actions.Children.Add(addGame);
-        actions.Children.Add(MakeButton("Refresh", () => { Refresh(); return Task.CompletedTask; }));
-        actions.Children.Add(MakeButton("Settings", OpenSettings));
-        DockPanel.SetDock(actions, Dock.Right);
-        toolbar.Children.Add(actions);
-
-        _list = new ListBox
-        {
-            ItemsSource = _visible,
-            Background = Brushes.Transparent,
-            ItemTemplate = new FuncDataTemplate<GameEntry>((g, _) => GameRow(g), true),
-        };
-        _list.SelectionChanged += (_, _) => ShowDetails(_list.SelectedItem as GameEntry);
-        _list.DoubleTapped += (_, _) => { if (_list.SelectedItem is GameEntry g) Launch(g); };
-        _list.KeyDown += (_, e) => { if (e.Key == Key.Enter && _list.SelectedItem is GameEntry g) Launch(g); };
-
-        _emptyHint = new TextBlock
-        {
-            Text = "No games installed yet.\nUse \"Add game ▾\": Install VPK… (or drop a .vpk here), Install PKG… (package + work.bin/.rif license or zRIF) or Add game folder… (a decrypted game folder).",
-            Foreground = Muted, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24),
-        };
-        var listHost = new Panel();
-        listHost.Children.Add(_list);
-        listHost.Children.Add(_emptyHint);
-
-        _details = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
-        var detailsPanel = new Border { Background = Panel, Width = 320, Child = new ScrollViewer { Content = _details } };
-
-        _log = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Consolas, Menlo, monospace"), FontSize = 12 };
-        _logPanel = new Border { Height = 160, Background = Panel, Child = _log, IsVisible = _settings.ShowLog, Margin = new Thickness(0, 1, 0, 0) };
-
-        _status = new TextBlock { Foreground = Muted, Margin = new Thickness(16, 6), VerticalAlignment = VerticalAlignment.Center };
-        var logToggle = new CheckBox { Content = "Show log", IsChecked = _settings.ShowLog, Margin = new Thickness(0, 0, 12, 0) };
-        logToggle.IsCheckedChanged += (_, _) =>
-        {
-            _settings.ShowLog = logToggle.IsChecked == true;
-            _logPanel.IsVisible = _settings.ShowLog;
-            SaveSettings();
-        };
-        _progress = new ProgressBar { Width = 220, Minimum = 0, Maximum = 1, IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        _cancelInstall = new Button { Content = "Cancel", IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 12, 4) };
-        _cancelInstall.Click += (_, _) => _installCts?.Cancel();
-        var statusBar = new DockPanel { Background = Panel };
-        DockPanel.SetDock(logToggle, Dock.Right);
-        DockPanel.SetDock(_cancelInstall, Dock.Right);
-        DockPanel.SetDock(_progress, Dock.Right);
-        statusBar.Children.Add(logToggle);
-        statusBar.Children.Add(_cancelInstall);
-        statusBar.Children.Add(_progress);
-        statusBar.Children.Add(_status);
-
-        var body = _listBody = new DockPanel();
-        DockPanel.SetDock(detailsPanel, Dock.Right);
-        body.Children.Add(detailsPanel);
-        body.Children.Add(listHost);
-        _bodyHost = new Panel();
-        _bodyHost.Children.Add(body);
-
-        var root = new DockPanel();
-        DockPanel.SetDock(toolbar, Dock.Top);
-        DockPanel.SetDock(statusBar, Dock.Bottom);
+        var main = new DockPanel();
+        DockPanel.SetDock(_statusBar, Dock.Bottom);
         DockPanel.SetDock(_logPanel, Dock.Bottom);
-        root.Children.Add(toolbar);
-        root.Children.Add(statusBar);
-        root.Children.Add(_logPanel);
-        root.Children.Add(_bodyHost);
-        Content = root;
+        main.Children.Add(_statusBar);
+        main.Children.Add(_logPanel);
+        main.Children.Add(_contentHost);
+        _root.Children.Add(_sidebarHost);
+        _root.Children.Add(Kit.At(main, col: 1));
+        _root.Children.Add(Kit.At(_overlay, colSpan: 2));
+        _logPanel.Child = _log;
+        _logPanel.IsVisible = _settings.ShowLog;
+        Content = _root;
 
         AddHandler(DragDrop.DropEvent, OnDrop);
         DragDrop.SetAllowDrop(this, true);
+        AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
+        LauncherApp.PaletteChanged += OnPaletteChanged;
 
-        Refresh();
-        ShowDetails(_list.SelectedItem as GameEntry);
-        SetView(_settings.View, save: false);
+        Refresh(rebuild: false);
+        RebuildAll();
+        SetStatus(S.StatusReady(_all.Count, Program.DataRoot));
+        // "Ao abrir o emulador: Sistema do Vita": the shell starts right away, the launcher stays behind it
+        if (_saveSettings && _settings.StartupView == LauncherSettings.StartSystem && ShellInstalled)
+            Opened += (_, _) => LaunchSystem();
     }
-
-    readonly bool _saveSettings;
 
     void SaveSettings()
     {
         if (_saveSettings) _settings.Save();
     }
 
-    // ------------------------------------------------------------------ views
+    void OnPaletteChanged() => Dispatcher.UIThread.Post(RebuildAll);
 
-    /// <summary>Shows the game list or the home screen ("Tela inicial"), and remembers the choice.</summary>
-    public void SetView(string view, bool save)
+    /// <summary>Rebuilds every part in the current palette (theme change).</summary>
+    void RebuildAll()
     {
-        bool home = view == LauncherSettings.ViewHome;
-        _settings.View = home ? LauncherSettings.ViewHome : LauncherSettings.ViewList;
-        if (save) SaveSettings();
-        _viewList.IsChecked = !home;
-        _viewHome.IsChecked = home;
-        _viewSwitch.IsVisible = home;
-        if (home && _shell == null)
+        _settingsPage?.SaveControls();
+        // panels drawn with the old palette are made again (the firmware panel keeps a running installation)
+        if (_firmwarePanel is { Busy: false }) _firmwarePanel = null;
+        _k = new Kit(Palette.Current);
+        Background = Kit.B(P.Background);
+        _sidebarHost.Background = Kit.B(P.Sidebar);
+        _sidebarHost.BorderBrush = Kit.B(P.Border);
+        _sidebarHost.BorderThickness = new Thickness(0, 0, 1, 0);
+        _logPanel.Background = Kit.B(P.Surface);
+        _log.Background = Kit.B(P.Surface);
+        _log.Foreground = Kit.B(P.TextSoft);
+        BuildStatusBar();
+        RebuildSidebar();
+        ShowPage();
+    }
+
+    // ------------------------------------------------------------------ navigation
+
+    /// <summary>Opens a page (<see cref="PageLibrary"/> etc.); <paramref name="game"/> for the game page.</summary>
+    public void Navigate(string page, GameEntry? game = null)
+    {
+        LeavePage();
+        _page = page;
+        _pageGame = game ?? (page == PageGame ? _pageGame : null);
+        RebuildSidebar();
+        ShowPage();
+    }
+
+    void ShowPage()
+    {
+        CloseOverlay();
+        if (_page == PageGame && _pageGame != null && !_all.Any(g => g.TitleId == _pageGame.TitleId)) _page = PageLibrary;
+        _contentHost.Child = _page switch
         {
-            _shell = new Shell.ShellView(_settings, Program.FsRoot);
-            // a system app runs from its vs0:app folder through the same "run" path as a game
-            _shell.LaunchRequested += a => Launch(a.Game ?? new GameEntry(a.TitleId, a.Title, a.Version, "gd", a.Path, a.IconPath, 0));
-            _shell.SetApps(_visible);
-            if (_runningGame != null) _shell.SetRunning(ShellAppOf(_runningGame));
-            _bodyHost.Children.Add(_shell);
-        }
-        _listBody.IsVisible = !home;
-        if (_shell != null) _shell.IsVisible = home;
-        if (home) _shell!.Home.Focus();
-    }
-
-    static Shell.ShellApp ShellAppOf(GameEntry g) => new(g.TitleId, g.Title, g.Version, g.Path, g.IconPath, false, g);
-
-    // ------------------------------------------------------------------ library
-
-    void Refresh()
-    {
-        string? selected = (_list.SelectedItem as GameEntry)?.TitleId;
-        _all = GameLibrary.Scan(Program.Ux0);
-        _trophies.Clear();
-        ApplyFilter();
-        if (selected != null) _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == selected);
-        if (_list.SelectedItem == null && _visible.Count > 0) _list.SelectedIndex = 0;
-        SetStatus(_running != null ? $"Running {_runningGame?.Title}" : $"{_all.Count} game(s) installed — data folder: {Program.DataRoot}");
-    }
-
-    void ApplyFilter()
-    {
-        string q = _search.Text?.Trim() ?? "";
-        _visible.Clear();
-        foreach (var g in _all.Where(g => q.Length == 0
-                     || g.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-                     || g.TitleId.Contains(q, StringComparison.OrdinalIgnoreCase)))
-            _visible.Add(g);
-        _emptyHint.IsVisible = _visible.Count == 0;
-        if (_all.Count > 0 && _visible.Count == 0) _emptyHint.Text = "No game matches the search.";
-        _shell?.SetApps(_visible);
-    }
-
-    Bitmap? GameIcon(GameEntry g)
-    {
-        if (g.IconPath == null) return null;
-        if (_icons.TryGetValue(g.IconPath, out var b)) return b;
-        try { b = new Bitmap(g.IconPath); }
-        catch (Exception) { b = null; }
-        _icons[g.IconPath] = b;
-        return b;
-    }
-
-    Control GameRow(GameEntry g)
-    {
-        var icon = new Border
-        {
-            Width = 64, Height = 64, CornerRadius = new CornerRadius(10), ClipToBounds = true, Background = Panel,
-            Child = GameIcon(g) is { } bmp ? new Image { Source = bmp, Stretch = Stretch.UniformToFill } : new TextBlock { Text = "?", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            PageGame when _pageGame != null => GamePage(_pageGame),
+            PageSystem => SystemPage(),
+            PageTrophies => TrophiesPage(),
+            PageCaptures => CapturesPage(),
+            PageInstall => InstallPage(),
+            PageSettings => SettingsPageHost(),
+            _ => LibraryPage(),
         };
-        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) };
-        text.Children.Add(new TextBlock { Text = g.Title, FontSize = 16, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock
+    }
+
+    /// <summary>Saves what the page edits in place (controller mappings) before it is replaced.</summary>
+    void LeavePage()
+    {
+        _settingsPage?.SaveControls();
+    }
+
+    // ------------------------------------------------------------------ sidebar
+
+    void RebuildSidebar()
+    {
+        var s = new DockPanel { Margin = new Thickness(16, 22, 16, 18) };
+
+        var brand = _k.HStack(11);
+        brand.Margin = new Thickness(8, 0, 0, 20);
+        using (var logo = typeof(MainWindow).Assembly.GetManifestResourceStream("icon-64.png"))
+            if (logo != null) brand.Children.Add(new Image { Source = new Bitmap(logo), Width = 34, Height = 34 });
+        brand.Children.Add(_k.Heading("VitaSharp", 20));
+        DockPanel.SetDock(brand, Dock.Top);
+        s.Children.Add(brand);
+
+        var launch = LaunchButton();
+        launch.Margin = new Thickness(0, 0, 0, 18);
+        DockPanel.SetDock(launch, Dock.Top);
+        s.Children.Add(launch);
+
+        var bottom = _k.VStack(12);
+        if (RunningCard() is { } running) bottom.Children.Add(running);
+        if (InstallCard() is { } install) bottom.Children.Add(install);
+        bool fw = FirmwareInstalled;
+        var fwRow = _k.HStack(8, _k.Dot(fw ? P.Ok : P.Warn), _k.Text(fw ? S.FirmwareInstalledShort(FirmwareVersion) : S.FirmwareMissingShort, 12.5, color: P.Muted));
+        fwRow.Margin = new Thickness(6, 2, 0, 0);
+        bottom.Children.Add(Kit.Click(fwRow, () => Navigate(PageSystem), S.FirmwareTip));
+        int theme = _settings.UiTheme switch { LauncherSettings.ThemeDark => 1, LauncherSettings.ThemeLight => 2, _ => 0 };
+        bottom.Children.Add(_k.Segmented(theme, i => SetTheme(i switch { 1 => LauncherSettings.ThemeDark, 2 => LauncherSettings.ThemeLight, _ => LauncherSettings.ThemeSystem }),
+            (S.ThemeSystem, "monitor", null), ("", "moon", S.ThemeDark), ("", "sun", S.ThemeLight)));
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        s.Children.Add(bottom);
+
+        var nav = _k.VStack(4);
+        nav.Children.Add(NavItem("library", S.Library, _page is PageLibrary or PageGame, () => Navigate(PageLibrary), _all.Count > 0 ? _all.Count.ToString(S.Culture) : null));
+        nav.Children.Add(NavItem("vita", S.VitaSystem, _page == PageSystem, () => Navigate(PageSystem)));
+        nav.Children.Add(NavItem("trophy", S.Trophies, _page == PageTrophies, () => Navigate(PageTrophies)));
+        nav.Children.Add(NavItem("image", S.Captures, _page == PageCaptures, () => Navigate(PageCaptures)));
+        int pending = _jobs.Count(j => j.State is JobState.Waiting or JobState.Running);
+        nav.Children.Add(NavItem("download", S.InstallNav, _page == PageInstall, () => Navigate(PageInstall), pending > 0 ? pending.ToString(S.Culture) : null));
+        nav.Children.Add(new Border { Height = 1, Background = Kit.B(P.Border), Margin = new Thickness(8, 12) });
+        nav.Children.Add(NavItem("settings", S.Settings, _page == PageSettings, () => Navigate(PageSettings)));
+        s.Children.Add(new ScrollViewer { Content = nav, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
+        _sidebarHost.Child = s;
+    }
+
+    Control NavItem(string icon, string text, bool selected, Action open, string? count = null)
+    {
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        g.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 0), Child = _k.Icon(icon, 19, selected ? P.Accent : P.Muted) });
+        g.Children.Add(Kit.At(_k.Text(text, 14, selected ? FontWeight.SemiBold : FontWeight.Medium, selected ? P.Text : P.TextSoft), col: 1));
+        if (count != null) g.Children.Add(Kit.At(_k.Text(count, 12, FontWeight.Medium, P.Muted), col: 2));
+        return Kit.Click(new Border
         {
-            Text = $"{g.TitleId}   ·   {g.CategoryText}{(g.Version.Length > 0 ? $"   ·   v{g.Version}" : "")}   ·   {g.SizeText}",
-            Foreground = Muted, FontSize = 12,
+            Height = 42, Padding = new Thickness(12, 0), CornerRadius = new CornerRadius(12), Child = g,
+            Background = selected ? Kit.B(P.Highlight) : Brushes.Transparent,
+            BorderBrush = selected ? Kit.B(P.HighlightBorder) : Brushes.Transparent, BorderThickness = new Thickness(1),
+        }, open);
+    }
+
+    /// <summary>"Abrir Sistema do Vita": the firmware's shell in one click (or Ctrl+H) from any page.</summary>
+    Control LaunchButton()
+    {
+        bool enabled = ShellInstalled && _running == null;
+        var fg = enabled ? P.OnAccent : P.Faint;
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        g.Children.Add(new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center,
+            Background = Kit.B(enabled ? P.OnAccent : P.Border, enabled ? 0.16 : 1),
+            Child = new Border { Margin = new Thickness(2, 0, 0, 0), Child = _k.Icon("play", 13, fg, fill: true) },
         });
-        var row = new DockPanel { Margin = new Thickness(8, 6) };
-        DockPanel.SetDock(icon, Dock.Left);
-        row.Children.Add(icon);
-        if (TrophyBadge(g) is { } badge)
+        var texts = _k.VStack(0, _k.Text(S.OpenVitaSystem, 14, FontWeight.SemiBold, fg),
+            enabled ? _k.Text(S.ShortcutAnywhere, 11, FontWeight.Medium, P.OnAccent).Also(x => x.Opacity = 0.75)
+                : _k.Text(!ShellInstalled ? S.InstallFirmwareFirst : S.GameRunningShort, 11, color: P.Faint));
+        texts.VerticalAlignment = VerticalAlignment.Center;
+        g.Children.Add(Kit.At(texts, col: 1));
+        var visual = new Border
         {
-            DockPanel.SetDock(badge, Dock.Right);
-            row.Children.Add(badge);
-        }
-        row.Children.Add(text);
-        return row;
+            Height = 54, Padding = new Thickness(12, 0), CornerRadius = new CornerRadius(16), Child = g,
+            Background = enabled
+                ? new LinearGradientBrush { StartPoint = Kit.Rel(0, 0), EndPoint = Kit.Rel(1, 1), GradientStops = { new GradientStop(P.Accent, 0), new GradientStop(P.Accent2, 1) } }
+                : Kit.B(P.Surface),
+            BorderBrush = Kit.B(enabled ? Colors.Transparent : P.Border), BorderThickness = new Thickness(1),
+            BoxShadow = enabled ? BoxShadows.Parse(P.Dark ? "0 8 24 0 #406E9BFF" : "0 8 20 0 #403767DB") : default,
+        };
+        return Kit.Click(visual, LaunchSystem, S.OpenVitaSystemTip, enabled);
     }
 
-    // ------------------------------------------------------------------ trophies
-
-    /// <summary>Trophy sets per game folder (TROPHY.TRP + recorded unlocks), read once per refresh.</summary>
-    readonly Dictionary<string, List<TrophySetView>> _trophies = new();
-
-    List<TrophySetView> TrophiesOf(GameEntry g)
+    Control? RunningCard()
     {
-        if (!_trophies.TryGetValue(g.Path, out var sets))
-            _trophies[g.Path] = sets = TrophySetView.ForGame(g.Path, Program.FsRoot, TrophyWindow.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
-        return sets;
+        if (_running == null) return null;
+        var head = _k.HStack(8, _k.Dot(P.Ok), _k.Text(S.RunningNow, 12.5, FontWeight.SemiBold, P.Ok));
+        var body = _k.VStack(8, head, _k.Text(_runningTitle ?? "", 13.5, FontWeight.Medium),
+            _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, 34, P.Danger));
+        return new Border
+        {
+            Background = Kit.B(P.Surface), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16), Padding = new Thickness(14, 12), Child = body,
+        };
     }
 
-    /// <summary>"Trophies earned/total" with a progress bar beside a game in the list; clicking it opens the trophy list.</summary>
-    Control? TrophyBadge(GameEntry g)
+    void SetTheme(string theme)
     {
-        var sets = TrophiesOf(g);
-        int total = sets.Sum(s => s.Package.Trophies.Count), got = sets.Sum(s => s.UnlockedCount);
-        if (total == 0) return null;
-        var panel = new StackPanel { Spacing = 4, Width = 110 };
-        panel.Children.Add(new TextBlock { Text = $"Trophies {got}/{total}", FontSize = 12, Foreground = got > 0 ? Brushes.White : Muted, HorizontalAlignment = HorizontalAlignment.Right });
-        panel.Children.Add(new ProgressBar { Value = got * 100.0 / total, Maximum = 100, Height = 4, MinWidth = 0 });
-        var button = new Button
-        {
-            Content = panel, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(6, 4),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
-        };
-        ToolTip.SetTip(button, "Show the trophy list");
-        button.Click += async (_, e) => { e.Handled = true; await new TrophyWindow(g, sets).ShowDialog(this); };
-        return button;
+        _settings.UiTheme = theme;
+        SaveSettings();
+        LauncherApp.ApplyTheme(theme);
+        RebuildAll();
     }
 
-    void ShowDetails(GameEntry? g)
+    // ------------------------------------------------------------------ status bar and log
+
+    void BuildStatusBar()
     {
-        _details.Children.Clear();
-        if (g == null)
-        {
-            _details.Children.Add(new TextBlock { Text = "Select a game", Foreground = Muted });
-            return;
-        }
-        if (GameIcon(g) is { } bmp)
-            _details.Children.Add(new Border { Width = 160, Height = 160, CornerRadius = new CornerRadius(18), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Left, Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill } });
-        _details.Children.Add(new TextBlock { Text = g.Title, FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        _details.Children.Add(InfoLine("Title ID", g.TitleId));
-        _details.Children.Add(InfoLine("Type", g.CategoryText));
-        if (g.Version.Length > 0) _details.Children.Add(InfoLine("Version", g.Version));
-        _details.Children.Add(InfoLine("Size", g.SizeText));
-
-        bool busy = _running != null;
-        var play = new Button
-        {
-            Content = busy && _runningGame == g ? "Running…" : "Play", IsEnabled = !busy, Background = Accent, Foreground = Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(12, 10),
-            FontSize = 16, Margin = new Thickness(0, 8, 0, 0),
-        };
-        play.Click += (_, _) => Launch(g);
-        _details.Children.Add(play);
-        if (SaveStatesPanel(g, busy) is { } states) _details.Children.Add(states);
-        if (busy && _runningGame == g)
-        {
-            var stop = new Button { Content = "Stop", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-            // first click: close the game's window (a "Gravar tudo" recording is saved before it closes); a second click
-            // forces the stop
-            bool asked = false;
-            stop.Click += (_, _) =>
-            {
-                try
-                {
-                    if (!asked && _running?.CloseMainWindow() == true) { asked = true; stop.Content = "Forçar parada"; SetStatus("Fechando o jogo (uma gravação em andamento é salva antes)..."); }
-                    else _running?.Kill(true);
-                }
-                catch (InvalidOperationException) { }
-            };
-            _details.Children.Add(stop);
-        }
-        _details.Children.Add(GameOptionsPanel(g, busy && _runningGame == g));
-        var folder = new Button { Content = "Open game folder", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-        folder.Click += (_, _) => OpenPath(g.Path);
-        _details.Children.Add(folder);
-        // trophies: the sets the game ships and what the emulator recorded as unlocked
-        var trophySets = TrophiesOf(g);
-        int trophyCount = trophySets.Sum(s => s.Package.Trophies.Count), trophyUnlocked = trophySets.Sum(s => s.UnlockedCount);
-        var trophies = new Button
-        {
-            Content = trophyCount > 0 ? $"Trophies ({trophyUnlocked}/{trophyCount})" : "No trophies", IsEnabled = trophyCount > 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
-        };
-        trophies.Click += async (_, _) => await new TrophyWindow(g, trophySets).ShowDialog(this);
-        _details.Children.Add(trophies);
-        var saves = Path.Combine(Program.Ux0, "user", "00", "savedata", g.TitleId);
-        var saveBtn = new Button { Content = "Open save data", IsEnabled = Directory.Exists(saves), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-        saveBtn.Click += (_, _) => OpenPath(saves);
-        _details.Children.Add(saveBtn);
-        var remove = new Button { Content = "Uninstall…", IsEnabled = !busy, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-        remove.Click += async (_, _) => await Uninstall(g);
-        _details.Children.Add(remove);
+        _statusBar.Children.Clear();
+        _statusBar.Background = Kit.B(P.Sidebar);
+        _status.Foreground = Kit.B(P.Muted);
+        _status.FontSize = 12;
+        _status.Margin = new Thickness(16, 0);
+        var log = Kit.Click(_k.HStack(6, _k.Icon("terminal", 14, P.Muted), _k.Text(_logPanel.IsVisible ? S.HideLog : S.ShowLog, 12, FontWeight.Medium, P.TextSoft))
+            .Also(h => h.VerticalAlignment = VerticalAlignment.Center), ToggleLog);
+        log.Margin = new Thickness(0, 7, 16, 7);
+        DockPanel.SetDock(log, Dock.Right);
+        _statusBar.Children.Add(log);
+        _statusBar.Children.Add(_status);
     }
 
-    /// <summary>"Ajustes do jogo": this game's own options (<see cref="LauncherSettings.Games"/>), used when it starts.</summary>
-    Control GameOptionsPanel(GameEntry g, bool running)
+    void ToggleLog()
     {
-        var opts = _settings.Games.GetValueOrDefault(g.TitleId) ?? new GameOptions();
-        var panel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 6, 0, 2) };
-        panel.Children.Add(new TextBlock { Text = "Ajustes do jogo", FontWeight = FontWeight.SemiBold });
-        var choices = GameOptions.ResScales;
-        var res = new ComboBox
-        {
-            ItemsSource = choices.Select(c => c.Label).ToArray(), HorizontalAlignment = HorizontalAlignment.Stretch,
-            SelectedIndex = Math.Max(0, Array.FindIndex(choices, c => c.Factor == opts.ResScale)),
-        };
-        ToolTip.SetTip(res, "Renderiza o jogo numa resolução maior que a do Vita (como o PCSX2): imagem mais nítida na janela ou em tela cheia. " +
-            "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x.");
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        row.Children.Add(new TextBlock { Text = "Resolução interna", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
-        res.Width = 170;
-        row.Children.Add(res);
-        panel.Children.Add(row);
-        var rates = GameOptions.FrameRates;
-        var rate = new ComboBox
-        {
-            ItemsSource = rates.Select(c => c.Label).ToArray(), Width = 170,
-            SelectedIndex = Math.Max(0, Array.FindIndex(rates, c => c.Value == opts.FrameRate)),
-        };
-        ToolTip.SetTip(rate, "Nativo: o jogo roda como no Vita. Fixo em 30/60: cada quadro dura 2 ou 1 vblank (ex.: um jogo a 20 fps passa a 30). " +
-            "Sem limite: sem espera de vblank, o jogo roda o mais rápido que o PC aguentar. Jogos cuja lógica anda por quadro ficam " +
-            "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo.");
-        var rateRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        rateRow.Children.Add(new TextBlock { Text = "Taxa de quadros", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
-        rateRow.Children.Add(rate);
-        panel.Children.Add(rateRow);
-        var note = new TextBlock { Text = "Vale na próxima vez que o jogo abrir.", Foreground = Muted, FontSize = 11, IsVisible = running };
-        panel.Children.Add(note);
-        void Store()
-        {
-            if (opts.IsDefault) _settings.Games.Remove(g.TitleId);
-            else _settings.Games[g.TitleId] = opts;
-            SaveSettings();
-        }
-        res.SelectionChanged += (_, _) =>
-        {
-            if (res.SelectedIndex < 0) return;
-            opts.ResScale = choices[res.SelectedIndex].Factor;
-            Store();
-        };
-        rate.SelectionChanged += (_, _) =>
-        {
-            if (rate.SelectedIndex < 0) return;
-            opts.FrameRate = rates[rate.SelectedIndex].Value;
-            Store();
-        };
-        return panel;
+        _logPanel.IsVisible = !_logPanel.IsVisible;
+        _settings.ShowLog = _logPanel.IsVisible;
+        SaveSettings();
+        BuildStatusBar();
     }
 
-    static Control InfoLine(string label, string value)
-    {
-        var p = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        p.Children.Add(new TextBlock { Text = label, Foreground = Muted, Width = 70 });
-        p.Children.Add(new TextBlock { Text = value });
-        return p;
-    }
-
-    // ------------------------------------------------------------------ launching
-
-    void Launch(GameEntry g) => StartEmulator(g.Title, g.TitleId, ["run", g.Path], g);
-
-    /// <summary>"Sistema do Vita": boots the firmware's own shell (vs0:vsh/shell/shell.self) in the emulator window: its
-    /// home screen and LiveArea; the games it starts run as processes of the same emulator session.</summary>
-    void LaunchSystem() => StartEmulator("Sistema do Vita", "shell", ["boot-shell"], null);
-
-    /// <summary>The firmware is installed with its shell (needed for <see cref="LaunchSystem"/>).</summary>
-    static bool ShellInstalled => File.Exists(Path.Combine(Program.FsRoot, "vs0", "vsh", "shell", "shell.self"));
-
-    void StartEmulator(string title, string titleId, string[] command, GameEntry? g)
-    {
-        if (_running != null) return;
-        var exe = Environment.ProcessPath!;
-        var psi = new ProcessStartInfo(exe)
-        {
-            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
-        };
-        // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
-        if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-            psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
-        foreach (var c in command) psi.ArgumentList.Add(c);
-        foreach (var o in _settings.RunOptions(g?.TitleId)) psi.ArgumentList.Add(o);
-        psi.Environment[EnvVars.Data] = Program.DataRoot;
-        // the RPCN password goes in the environment of the game process, not on its command line
-        if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
-
-        _logLines.Clear(); _logChars = 0; _log.Text = "";
-        AppendLog($"> {title} ({titleId})");
-        try
-        {
-            var p = Process.Start(psi)!;
-            p.EnableRaisingEvents = true;
-            p.OutputDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
-            p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
-            _running = p;
-            _runningGame = g;
-            if (g != null) _shell?.SetRunning(ShellAppOf(g));
-            SetStatus($"Running {title}");
-            ShowDetails(_list.SelectedItem as GameEntry);
-        }
-        catch (Exception e)
-        {
-            SetStatus($"Could not start the emulator: {e.Message}");
-        }
-    }
-
-    void OnGameExited(Process p)
-    {
-        int code = p.ExitCode;
-        var title = _runningGame?.Title;
-        _running = null;
-        _runningGame = null;
-        _shell?.SetRunning(null);
-        p.Dispose();
-        Refresh(); // trophies earned while playing
-        SetStatus(code == 0 ? $"{title} closed." : $"{title} stopped with exit code {code}. See the log for details.");
-        if (code != 0 && !_logPanel.IsVisible) _logPanel.IsVisible = true;
-        ShowDetails(_list.SelectedItem as GameEntry);
-    }
+    void SetStatus(string s) => _status.Text = s;
 
     // Log lines are queued and flushed to the text box a few times per second: games can print hundreds of lines
     // per second, and rebuilding the whole text per line kept a core busy and starved the game process.
@@ -506,6 +316,9 @@ public sealed partial class MainWindow : Window
     int _logChars;
     bool _logFlushPending;
     const int MaxLogLines = 2000;
+
+    /// <summary>The last lines the game process printed (ui-render's launch check).</summary>
+    internal IReadOnlyCollection<string> LogLines => _logLines;
 
     void AppendLog(string line)
     {
@@ -527,345 +340,293 @@ public sealed partial class MainWindow : Window
         _log.CaretIndex = text.Length;
     }
 
-    void SetStatus(string s) => _status.Text = s;
+    // ------------------------------------------------------------------ keyboard
+
+    void OnKey(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.H) { LaunchSystem(); e.Handled = true; }
+        else if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.F) { Navigate(PageLibrary); _search?.Focus(); e.Handled = true; }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F5) { Refresh(); e.Handled = true; }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _overlay.IsVisible) { CloseOverlay(); e.Handled = true; }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _page == PageGame) { Navigate(PageLibrary); e.Handled = true; }
+    }
+
+    // ------------------------------------------------------------------ library data
+
+    void Refresh(bool rebuild = true)
+    {
+        _all = GameLibrary.Scan(Program.Ux0);
+        _play = PlayHistory.Load();
+        try { _fw = VitaSharp.Core.Firmware.FirmwareInfo.Read(Program.FsRoot); } catch (IOException) { _fw = null; }
+        _trophies.Clear();
+        _shell?.SetApps(_all);
+        if (_pageGame != null) _pageGame = _all.FirstOrDefault(g => g.TitleId == _pageGame.TitleId);
+        if (rebuild) { RebuildSidebar(); ShowPage(); }
+    }
+
+    PlayRecord? PlayOf(string titleId) => _play.GetValueOrDefault(titleId);
+
+    /// <summary>Trophy sets per game folder (TROPHY.TRP + recorded unlocks), read once per refresh.</summary>
+    readonly Dictionary<string, List<TrophySetView>> _trophies = new();
+
+    List<TrophySetView> TrophiesOf(GameEntry g)
+    {
+        if (!_trophies.TryGetValue(g.Path, out var sets))
+            _trophies[g.Path] = sets = TrophySetView.ForGame(g.Path, Program.FsRoot, TrophySetView.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
+        return sets;
+    }
+
+    (int Got, int Total) TrophyCount(GameEntry g)
+    {
+        var sets = TrophiesOf(g);
+        return (sets.Sum(s => s.UnlockedCount), sets.Sum(s => s.Package.Trophies.Count));
+    }
+
+    // ------------------------------------------------------------------ firmware state
+
+    /// <summary>The firmware is installed with its shell (needed for <see cref="LaunchSystem"/>).</summary>
+    static bool ShellInstalled => File.Exists(Path.Combine(Program.FsRoot, "vs0", "vsh", "shell", "shell.self"));
+
+    /// <summary>firmware.json / detected firmware, read at each refresh.</summary>
+    VitaSharp.Core.Firmware.FirmwareInfo? _fw;
+
+    bool FirmwareInstalled => _fw != null || ShellInstalled;
+
+    string FirmwareVersion => _fw?.Version ?? "?";
+
+    // ------------------------------------------------------------------ launching
+
+    /// <summary>Starts <paramref name="g"/> or opens its LiveArea first, as "Ao escolher um jogo" says.</summary>
+    void DefaultAction(GameEntry g)
+    {
+        if (_settings.GameClick == LauncherSettings.ClickLiveArea) OpenLiveArea(g);
+        else Launch(g);
+    }
+
+    void Launch(GameEntry g) => StartEmulator(g.Title, g.TitleId, ["run", g.Path], g);
+
+    void LoadState(GameEntry g, string file) => StartEmulator(g.Title, g.TitleId, ["run", g.Path, $"--load-state={file}"], g);
+
+    /// <summary>"Sistema do Vita": boots the firmware's own shell (vs0:vsh/shell/shell.self) in the emulator window: its
+    /// home screen and LiveArea; the games it starts run as processes of the same emulator session.</summary>
+    void LaunchSystem()
+    {
+        if (!ShellInstalled) { Navigate(PageSystem); return; }
+        StartEmulator(S.VitaSystem, "shell", ["boot-shell"], null);
+    }
+
+    bool _stopAsked;
+
+    void StartEmulator(string title, string titleId, string[] command, GameEntry? g)
+    {
+        if (_running != null) { SetStatus(S.AlreadyRunning(_runningTitle ?? "")); return; }
+        CloseOverlay();
+        var exe = Environment.ProcessPath!;
+        var psi = new ProcessStartInfo(exe)
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
+        };
+        // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
+        if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
+        foreach (var c in command) psi.ArgumentList.Add(c);
+        foreach (var o in _settings.RunOptions(g?.TitleId)) psi.ArgumentList.Add(o);
+        foreach (var o in ExtraRunOptions) psi.ArgumentList.Add(o);
+        psi.Environment[EnvVars.Data] = Program.DataRoot;
+        // the RPCN password goes in the environment of the game process, not on its command line
+        if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
+
+        _logLines.Clear(); _logChars = 0; _log.Text = "";
+        AppendLog($"> {title} ({titleId})");
+        try
+        {
+            var p = Process.Start(psi)!;
+            p.EnableRaisingEvents = true;
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
+            p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            _running = p;
+            _runningGame = g;
+            _runningTitle = title;
+            _runningId = titleId;
+            _runStartUtc = DateTime.UtcNow;
+            _stopAsked = false;
+            if (g != null) _shell?.SetRunning(ShellAppOf(g));
+            SetStatus(S.Running(title));
+            RebuildSidebar();
+            if (_page is PageGame or PageLibrary) ShowPage();
+        }
+        catch (Exception e)
+        {
+            SetStatus(S.CouldNotStart(e.Message));
+        }
+    }
+
+    /// <summary>First click: close the game's window (a "Gravar tudo" recording is saved before it closes); a second
+    /// click forces the stop.</summary>
+    void StopRunning()
+    {
+        try
+        {
+            if (!_stopAsked && _running?.CloseMainWindow() == true) { _stopAsked = true; SetStatus(S.Closing); RebuildSidebar(); }
+            else _running?.Kill(true);
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    /// <summary>Raised when the emulator process ended (ui-render's launch check).</summary>
+    internal event Action<int>? EmulatorExited;
+
+    void OnGameExited(Process p)
+    {
+        int code = p.ExitCode;
+        var title = _runningTitle;
+        if (_runningId != null) _play = PlayHistory.Add(_runningId, _runStartUtc);
+        _running = null;
+        _runningGame = null;
+        _runningTitle = _runningId = null;
+        _shell?.SetRunning(null);
+        p.Dispose();
+        Refresh(); // trophies earned and time played
+        SetStatus(code == 0 ? S.Closed(title ?? "") : S.StoppedWithCode(title ?? "", code));
+        if (code != 0 && !_logPanel.IsVisible) ToggleLog();
+        EmulatorExited?.Invoke(code);
+    }
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
+        if (_firmwarePanel is { Busy: true } fw)
+        {
+            // cancel the firmware installation and close once it has cleaned up its staging folder
+            e.Cancel = true;
+            fw.Finished += Close;
+            fw.CancelRunning();
+            return;
+        }
+        LeavePage();
         // the game closes its own window: a "Gravar tudo" recording is completed first (killing it lost the recording)
         try { if (_running?.CloseMainWindow() != true) _running?.Kill(true); } catch (InvalidOperationException) { }
-        _installCts?.Cancel();
+        foreach (var j in _jobs) j.Cts?.Cancel();
         _shell?.Dispose();
+        LauncherApp.PaletteChanged -= OnPaletteChanged;
         base.OnClosing(e);
     }
 
-    // ------------------------------------------------------------------ installing
+    // ------------------------------------------------------------------ LiveArea and the recreated home screen
 
-    async Task InstallVpk()
+    static Shell.ShellApp ShellAppOf(GameEntry g) => new(g.TitleId, g.Title, g.Version, g.Path, g.IconPath, false, g);
+
+    Shell.ShellView EnsureShell()
     {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select a PS Vita VPK or content zip",
-            AllowMultiple = true,
-            FileTypeFilter = [new FilePickerFileType("PS Vita VPK / zip") { Patterns = ["*.vpk", "*.zip"] }, FilePickerFileTypes.All],
-        });
-        foreach (var f in files)
-            if (f.TryGetLocalPath() is { } path && !await InstallVpkFile(path)) break;
+        if (_shell != null) return _shell;
+        _shell = new Shell.ShellView(_settings, Program.FsRoot);
+        // a system app runs from its vs0:app folder through the same "run" path as a game
+        _shell.LaunchRequested += a => Launch(a.Game ?? new GameEntry(a.TitleId, a.Title, a.Version, "gd", a.Path, a.IconPath, 0));
+        _shell.LiveAreaClosed += () => { if (_overlay.IsVisible) CloseOverlay(); };
+        _shell.SetApps(_all);
+        if (_runningGame != null) _shell.SetRunning(ShellAppOf(_runningGame));
+        return _shell;
     }
 
-    /// <summary>Installs one archive; returns false when it failed or was cancelled.</summary>
-    async Task<bool> InstallVpkFile(string archive)
+    static void Detach(Control c)
     {
-        if (_installCts != null) return false;
-        string name = Path.GetFileName(archive);
-        var cts = new CancellationTokenSource();
-        _installCts = cts;
-        SetInstalling(true);
-        SetStatus($"Installing {name}…");
-        AppendLog($"> Installing {name}");
-        int lastPermille = -1;
-        try
+        switch (c.Parent)
         {
-            var results = await Task.Run(() => VpkInstaller.Install(archive, Program.Ux0, new VpkInstallOptions
-            {
-                Log = msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
-                Progress = p =>
-                {
-                    int permille = (int)(p.Fraction * 1000);
-                    if (permille == lastPermille) return;
-                    lastPermille = permille;
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        _progress.Value = p.Fraction;
-                        SetStatus($"Installing {name}… {p.Describe()}");
-                    });
-                },
-                // runs on the install thread: show the dialog on the UI thread and wait for the answer
-                ConfirmOverwrite = c => Dispatcher.UIThread.InvokeAsync(() => Confirm(c.Kind switch
-                {
-                    VpkContentKind.Patch => $"An update for {c.TitleId} is already installed. Replace it with {(c.Version.Length > 0 ? "version " + c.Version : "this one")}?",
-                    VpkContentKind.AddCont => $"This add-on for {c.TitleId} is already installed. Replace it?",
-                    _ => $"\"{c.Title}\" ({c.TitleId}) is already installed. Replace it? Save data is kept.",
-                })).GetAwaiter().GetResult(),
-            }, cts.Token), cts.Token);
-
-            foreach (var r in results)
-                AppendLog(r.Installed ? $"Installed {r.TitleId} \"{r.Content.Title}\" ({r.Content.Kind}) -> {r.InstallPath}"
-                                      : $"Skipped {r.TitleId} ({r.Content.Kind}): already installed");
-            Refresh();
-            var installed = results.Where(r => r.Installed).ToList();
-            if (installed.Count == 0)
-            {
-                SetStatus($"Nothing installed from {name}.");
-                return true;
-            }
-            var app = installed.FirstOrDefault(r => r.Content.Kind == VpkContentKind.App) ?? installed[0];
-            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == app.TitleId) ?? _list.SelectedItem;
-            SetStatus(string.Join("  ", installed.Select(r => r.Content.Kind switch
-            {
-                VpkContentKind.Patch => $"Installed update for {r.TitleId}{(r.Content.Version.Length > 0 ? $" (v{r.Content.Version})" : "")}.",
-                VpkContentKind.AddCont => $"Installed add-on for {r.TitleId}.",
-                _ => $"{(r.Replaced ? "Reinstalled" : "Installed")} {r.Content.Title}.",
-            })));
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            AppendLog("Install cancelled.");
-            SetStatus($"Install of {name} cancelled.");
-            return false;
-        }
-        catch (Exception e)
-        {
-            AppendLog("Install failed: " + e.Message);
-            SetStatus("Install failed.");
-            await ShowMessage(e is VpkLicenseException ? "License required" : "Install failed",
-                $"{name} could not be installed.\n\n{e.Message}");
-            return false;
-        }
-        finally
-        {
-            _installCts = null;
-            cts.Dispose();
-            SetInstalling(false);
+            case Panel p: p.Children.Remove(c); break;
+            case Decorator d: d.Child = null; break;
+            case ContentControl cc: cc.Content = null; break;
         }
     }
 
-    void SetInstalling(bool installing)
+    /// <summary>"Abrir a LiveArea": the game's LiveArea (its sce_sys/livearea template) over the page; Start runs it.</summary>
+    void OpenLiveArea(GameEntry g)
     {
-        _progress.Value = 0;
-        _progress.IsVisible = installing;
-        _cancelInstall.IsVisible = installing;
-        foreach (var b in _installButtons) b.IsEnabled = !installing;
-    }
-
-    async Task InstallPkg()
-    {
-        var pkgs = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var shell = EnsureShell();
+        Detach(shell);
+        _overlay.Children.Clear();
+        _overlay.Background = Kit.B(Colors.Black, 0.6);
+        var frame = new Border
         {
-            Title = "Select a PS Vita package (.pkg)",
-            FileTypeFilter = [new FilePickerFileType("PS Vita package") { Patterns = ["*.pkg"] }],
-        });
-        var pkg = pkgs.FirstOrDefault()?.TryGetLocalPath();
-        if (pkg == null) return;
-        var lic = await AskPkgLicense(pkg);
-        if (lic == null) return;
-        await InstallPkgFiles(pkg, lic);
-    }
-
-    /// <summary>The license of a package: a work.bin/.rif file chosen with the picker, or a zRIF pasted in the text
-    /// field (the text NoNpDrm and pkg2zip lists give). Returns the file path or the zRIF text; null when cancelled.</summary>
-    async Task<string?> AskPkgLicense(string pkg)
-    {
-        string? result = null;
-        var zrif = new TextBox { Watermark = "zRIF (KO5ifR1dQ+eHBlOi…)", AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MinHeight = 60 };
-        var error = new TextBlock { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap, IsVisible = false };
-        var file = new Button { Content = "Choose work.bin / .rif…" };
-        var install = new Button { Content = "Install", Background = Accent, Foreground = Brushes.White, IsDefault = true };
-        var cancel = new Button { Content = "Cancel", IsCancel = true };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(install);
-        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = "License for " + Path.GetFileName(pkg), FontSize = 18, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(new TextBlock { Text = "Paste the zRIF of this package, or choose its license file (work.bin or .rif).", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(zrif);
-        panel.Children.Add(file);
-        panel.Children.Add(error);
-        panel.Children.Add(buttons);
-        var dlg = new Window { Title = "VitaSharp", Width = 480, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
-        void Fail(string message) { error.Text = message; error.IsVisible = true; }
-        install.Click += (_, _) =>
-        {
-            string text = new string((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
-            if (text.Length == 0) { Fail("Paste a zRIF or choose the license file."); return; }
-            if (!Zrif.LooksLikeZrif(text)) { Fail("That is not a zRIF (it starts with KO5ifR1dQ+…)."); return; }
-            try { Zrif.Decode(text); }
-            catch (Exception e) { Fail("The zRIF could not be read: " + e.Message); return; }
-            result = text;
-            dlg.Close();
+            Child = shell, CornerRadius = new CornerRadius(22), ClipToBounds = true, Margin = new Thickness(60, 40),
+            BorderBrush = Kit.B(P.BorderStrong), BorderThickness = new Thickness(1), BoxShadow = BoxShadows.Parse("0 24 60 0 #66000000"),
         };
-        file.Click += async (_, _) =>
-        {
-            var lics = await dlg.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Select the license for this package (work.bin or .rif)",
-                FileTypeFilter = [new FilePickerFileType("License") { Patterns = ["*.bin", "*.rif"] }, FilePickerFileTypes.All],
-            });
-            if (lics.FirstOrDefault()?.TryGetLocalPath() is { } path) { result = path; dlg.Close(); }
-        };
-        cancel.Click += (_, _) => dlg.Close();
-        await dlg.ShowDialog(this);
-        return result;
+        var close = _k.Secondary("", "x", CloseOverlay, 40);
+        close.HorizontalAlignment = HorizontalAlignment.Right;
+        close.VerticalAlignment = VerticalAlignment.Top;
+        close.Margin = new Thickness(0, 16, 16, 0);
+        _overlay.Children.Add(frame);
+        _overlay.Children.Add(close);
+        _overlay.IsVisible = true;
+        shell.IsVisible = true;
+        shell.OpenLiveArea(ShellAppOf(g));
     }
 
-    async Task InstallPkgFiles(string pkg, string lic)
+    void CloseOverlay()
     {
-        if (_installCts != null) return;
-        string name = Path.GetFileName(pkg);
-        var cts = new CancellationTokenSource();
-        _installCts = cts;
-        SetInstalling(true);
-        SetStatus($"Installing {name}…");
-        _logPanel.IsVisible = true;
-        try
+        if (!_overlay.IsVisible) return;
+        _overlay.IsVisible = false;
+        if (_shell != null && _shell.Parent is Control parent && parent.Parent == _overlay)
         {
-            var t = await Task.Run(() => PkgInstaller.Install(pkg, lic, Program.Ux0,
-                msg => Dispatcher.UIThread.Post(() => AppendLog(msg)),
-                p => Dispatcher.UIThread.Post(() =>
-                {
-                    if (_installCts != cts) return; // a late report after the install finished
-                    _progress.Value = p.Fraction;
-                    SetStatus($"Installing {name}… {p.Describe()}");
-                }), cts.Token), cts.Token);
-            AppendLog($"Installed {t.TitleId} \"{t.Title}\"");
-            Refresh();
-            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == t.TitleId);
-            SetStatus($"Installed {t.Title}.");
+            _shell.CloseLiveArea(sound: false);
+            Detach(_shell);
         }
-        catch (OperationCanceledException)
-        {
-            AppendLog("Install cancelled.");
-            SetStatus($"Install of {name} cancelled.");
-        }
-        catch (Exception e)
-        {
-            AppendLog("Install failed: " + e.Message);
-            SetStatus("Install failed: " + e.Message);
-        }
-        finally
-        {
-            _installCts = null;
-            cts.Dispose();
-            SetInstalling(false);
-        }
-    }
-
-    async Task AddFolder()
-    {
-        var dirs = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Select a decrypted game folder (contains eboot.bin and sce_sys)" });
-        var dir = dirs.FirstOrDefault()?.TryGetLocalPath();
-        if (dir != null) await AddFolderPath(dir);
-    }
-
-    async Task AddFolderPath(string dir)
-    {
-        var entry = GameLibrary.Read(dir);
-        if (entry == null)
-        {
-            SetStatus("That folder is not a game: eboot.bin was not found.");
-            return;
-        }
-        var dest = Path.Combine(Program.Ux0, "app", entry.TitleId);
-        if (Path.GetFullPath(dir).TrimEnd('\\', '/').Equals(Path.GetFullPath(dest).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
-        {
-            Refresh();
-            return;
-        }
-        if (Directory.Exists(dest) && !await Confirm($"{entry.TitleId} is already installed. Replace it?")) return;
-        SetStatus($"Copying {entry.Title}…");
-        try
-        {
-            await Task.Run(() =>
-            {
-                if (Directory.Exists(dest)) Directory.Delete(dest, true);
-                CopyDirectory(dir, dest);
-            });
-            Refresh();
-            _list.SelectedItem = _visible.FirstOrDefault(g => g.TitleId == entry.TitleId);
-            SetStatus($"Added {entry.Title}.");
-        }
-        catch (Exception e)
-        {
-            SetStatus("Copy failed: " + e.Message);
-        }
-    }
-
-    static void CopyDirectory(string src, string dst)
-    {
-        Directory.CreateDirectory(dst);
-        foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
-        foreach (var d in Directory.GetDirectories(src)) CopyDirectory(d, Path.Combine(dst, Path.GetFileName(d)));
-    }
-
-    async void OnDrop(object? sender, DragEventArgs e)
-    {
-        var items = e.Data.GetFiles()?.Select(f => f.TryGetLocalPath()).Where(p => p != null).Cast<string>().ToList() ?? [];
-        var pkg = items.FirstOrDefault(p => p.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase));
-        var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
-        var archives = items.Where(p => File.Exists(p) && (p.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))).ToList();
-        if (archives.Count > 0)
-        {
-            foreach (var a in archives)
-                if (!await InstallVpkFile(a)) break;
-        }
-        else if (pkg != null && lic != null) await InstallPkgFiles(pkg, lic);
-        else if (pkg != null && await AskPkgLicense(pkg) is { } asked) await InstallPkgFiles(pkg, asked);
-        else foreach (var dir in items.Where(Directory.Exists)) await AddFolderPath(dir);
-    }
-
-    async Task Uninstall(GameEntry g)
-    {
-        if (!await Confirm($"Uninstall \"{g.Title}\" ({g.TitleId})? Save data is kept.")) return;
-        try
-        {
-            await Task.Run(() => Directory.Delete(g.Path, true));
-            SetStatus($"Uninstalled {g.Title}.");
-        }
-        catch (Exception e) { SetStatus("Uninstall failed: " + e.Message); }
-        Refresh();
+        _overlay.Children.Clear();
+        if (_page == PageLibrary && _settings.View == LauncherSettings.ViewHome) ShowPage();
     }
 
     // ------------------------------------------------------------------ dialogs
 
-    async Task OpenSettings()
-    {
-        _shell?.ReleaseController();
-        await new SettingsDialog(_settings).ShowDialog(this);
-        SetView(_settings.View, save: false);
-        _shell?.ApplySettings();
-    }
-
     async Task ShowMessage(string title, string message)
     {
-        var ok = new Button { Content = "OK", Background = Accent, Foreground = Brushes.White, IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
-        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(ok);
-        var dlg = new Window { Title = "VitaSharp", Width = 460, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
+        var ok = _k.Primary(S.Ok, null, () => { }, 40, 90);
+        ok.HorizontalAlignment = HorizontalAlignment.Right;
+        var panel = _k.VStack(16, _k.Heading(title, 19), _k.Wrap(message, 13.5, P.TextSoft), ok);
+        panel.Margin = new Thickness(24);
+        var dlg = Dialog(panel, 480);
         ok.Click += (_, _) => dlg.Close();
         await dlg.ShowDialog(this);
     }
 
-    async Task<bool> Confirm(string message)
+    async Task<bool> Confirm(string message, string? yesText = null, bool danger = false)
     {
         bool result = false;
-        var yes = new Button { Content = "Yes", Background = Accent, Foreground = Brushes.White, IsDefault = true };
-        var no = new Button { Content = "No", IsCancel = true };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(no);
-        buttons.Children.Add(yes);
-        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(buttons);
-        var dlg = new Window { Title = "VitaSharp", Width = 400, SizeToContent = SizeToContent.Height, CanResize = false, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = WindowBackground };
-        yes.Click += (_, _) => { result = true; dlg.Close(); };
-        no.Click += (_, _) => dlg.Close();
+        var dlg = (Window?)null;
+        var yes = danger ? _k.Secondary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, P.Danger)
+                         : _k.Primary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, 90);
+        var no = _k.Secondary(S.No, null, () => dlg?.Close(), 40);
+        var buttons = _k.HStack(8, no, yes);
+        buttons.HorizontalAlignment = HorizontalAlignment.Right;
+        var panel = _k.VStack(20, _k.Wrap(message, 14, P.Text), buttons);
+        panel.Margin = new Thickness(24);
+        dlg = Dialog(panel, 440);
         await dlg.ShowDialog(this);
         return result;
     }
 
-    static Button MakeButton(string text, Func<Task> action)
+    Window Dialog(Control content, double width) => new()
     {
-        var b = new Button { Content = text, VerticalAlignment = VerticalAlignment.Center };
-        b.Click += async (_, _) => await action();
-        return b;
-    }
+        Title = "VitaSharp", Width = width, SizeToContent = SizeToContent.Height, CanResize = false, Content = content,
+        WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Kit.B(P.Surface), FontFamily = Kit.Inter,
+        RequestedThemeVariant = P.Dark ? Avalonia.Styling.ThemeVariant.Dark : Avalonia.Styling.ThemeVariant.Light,
+    };
 
     static void OpenPath(string path)
     {
-        if (!Directory.Exists(path)) return;
+        if (!Directory.Exists(path) && !File.Exists(path)) return;
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (Exception) { }
+    }
+
+    /// <summary>Shows a file in the system file manager (selected on Windows), else opens its folder.</summary>
+    static void Reveal(string file)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows() && File.Exists(file)) Process.Start("explorer.exe", $"/select,\"{file}\"");
+            else OpenPath(Path.GetDirectoryName(file) ?? file);
+        }
         catch (Exception) { }
     }
 }

@@ -1,4 +1,4 @@
-using VitaSharp.Core;
+﻿using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
@@ -91,8 +91,8 @@ public static class Program
             }
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
-            case "ui-prototype":
-                return Launcher.Prototype.LauncherPrototype.Run(args.Skip(1).ToArray());
+            case "ui-render":
+                return Launcher.UiRender.Run(args.Skip(1).ToArray());
             case "toast-preview" when args.Length >= 2:
             {
                 // toast-preview <out.png> [TITLEID]: draws the in-game trophy notification (first trophy of the title's set)
@@ -477,7 +477,7 @@ public static class Program
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
         Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
-        Console.WriteLine("  ui-prototype <out-dir> [--size=WxH] [--title=ID]  render the proposed launcher screens to PNGs, no window (docs/notes/desktop-launcher-design.md)");
+        Console.WriteLine("  ui-render <out-dir> [--title=ID] [--launch=ID|shell]  render every launcher page to PNGs without a window (use a scratch --data)");
         Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");

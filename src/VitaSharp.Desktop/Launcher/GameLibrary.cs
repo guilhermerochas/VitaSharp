@@ -1,4 +1,4 @@
-using VitaSharp.Core.Package;
+﻿using VitaSharp.Core.Package;
 
 namespace VitaSharp.Desktop.Launcher;
 
@@ -19,6 +19,20 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
         "ac" => "Add-on",
         _ => Category,
     };
+
+    /// <summary>Region from the title ID: PCSA/PCSE US, PCSB/PCSF Europe, PCSC/PCSG Japan, PCSD/PCSH Asia; anything
+    /// else (homebrew IDs) "Homebrew". Labels come from <see cref="Ui.Strings"/>.</summary>
+    public string Region => TitleId.Length >= 4 && TitleId.StartsWith("PCS", StringComparison.Ordinal) ? TitleId[3] switch
+    {
+        'A' or 'E' => Ui.Strings.RegionUs, 'B' or 'F' => Ui.Strings.RegionEurope, 'C' or 'G' => Ui.Strings.RegionJapan,
+        'D' or 'H' => Ui.Strings.RegionAsia, _ => Ui.Strings.RegionOther,
+    } : Ui.Strings.RegionHomebrew;
+
+    /// <summary>sce_sys/pic0.png: the 960x544 picture shown behind the game (LiveArea background), when the game has one.</summary>
+    public string? Pic0Path => VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(Path, "sce_sys/pic0.png") is var p && File.Exists(p) ? p : null;
+
+    /// <summary>Up to two initials of the title (placeholder for a missing icon).</summary>
+    public string Initials => string.Concat(Title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => char.IsLetterOrDigit(w[0])).Take(2).Select(w => char.ToUpperInvariant(w[0])));
 }
 
 /// <summary>Scans the virtual ux0:app folder (titles installed with "install" or copied in as decrypted folders).</summary>
