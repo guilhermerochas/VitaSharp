@@ -5,9 +5,9 @@ namespace VitaSharp.Core.Hle.Modules;
 
 // SceLibstdcxx std::ios_base as libc.suprx 3.74 lays it out (Dinkumware): +0 vptr, +4 _Stdstr (index of a standard
 // stream, 0 for others), +8 _Mystate, +0x0C _Except, +0x10 _Fmtfl, +0x14 _Prec, +0x18 _Wide, +0x1C _Arr (iword/pword
-// list), +0x20 _Calls (register_callback list), +0x24 _Ploc. The manipulators, ios_base::failure with the iostream
-// error category, and _Fiopen (the fopen modes of basic_filebuf). The standard stream objects and the locale
-// (ios_base::Init, _Winit) are not here.
+// list), +0x20 _Calls (register_callback list); the module has no locale. The manipulators, ios_base::failure with the
+// iostream error category, and _Fiopen (the fopen modes of basic_filebuf). The standard streams are in
+// Libc.Iostreams.cs.
 public sealed partial class Libc
 {
     const uint IosStdstr = 4, IosState = 8, IosExcept = 0xC, IosFmtfl = 0x10, IosPrec = 0x14, IosWide = 0x18,
@@ -80,6 +80,7 @@ public sealed partial class Libc
     /// <summary>ios_base::_Addstd(ios_base*): the stream takes the first free (or its own) of the 7 standard-stream
     /// slots, whose reference count goes up.</summary>
     [Hle("_ZNSt8ios_base7_AddstdEPS_")]
+    [Hle("_ZNSt8ios_base7_AddstdEv")]
     void IosAddstd(uint ios)
     {
         lock (_stdstrRefs)

@@ -5,6 +5,7 @@ using Android.Media;
 using Android.OS;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Audio;
 
 namespace VitaSharp.Android.Audio;
 

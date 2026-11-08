@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
-using VitaSharp.Android.Input;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Media;
+using VitaSharp.Mobile.Core.Input;
 
 namespace VitaSharp.Tests;
 

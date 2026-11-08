@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
-using VitaSharp.Android.Storage;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Storage;
 using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Android.Gpu;

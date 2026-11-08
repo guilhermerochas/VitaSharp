@@ -946,7 +946,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Core que aparecem para o usuário (estado incompatível, firmware, modo do mouse). `LocalizationTests`: mesmas chaves
   e marcadores nos dois idiomas, toda chave usada no código existe, e os .cs do desktop são só ASCII (regra 16 do
   Ryubing: um texto em português no código falha o teste). 550 textos. Validado com `ui-render --lang=en|pt-BR`.
-  Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Android.Common` ainda têm os
+  Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Mobile.Core` ainda têm os
   textos em português no código; migrar para as mesmas chaves e estender o teste de ASCII a eles
 - [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
@@ -995,11 +995,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   copiou 121 arquivos e reabriu (`version` = 9.9.9, `update` = em dia); diálogo em `ui-render --update-feed`;
   `UpdateFeedTests` com um servidor HTTP local (inclui pacote adulterado recusado). Falta: rodar contra o GitHub de
   verdade depois da primeira release com o repositório embutido, o caminho do setup.exe/AppImage/macOS, e o Android
-- [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
+- [x] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
+  Feito (08/11/2026, refactor/mobile-core): pasta, projeto, namespaces `VitaSharp.Mobile.Core.*`, referências, as duas
+  soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 - [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
   substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
   `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras
@@ -1024,6 +1026,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
   da escala (alvo reinterpretado/desfoque lido no tamanho errado, como o planeta do LBP e a luz do Resistance) ou do
   jogo (efeito de profundidade de campo); comparar com vídeo do Vita real. Validar
+  **Corrigido** (perf/desktop-13; falta o usuário confirmar): não era da escala (a gravação toda está em 1x; o F1 voltou
+  a 1x no quadro 317, a gravação começa no 1972) nem só o efeito do jogo. A profundidade de campo das cenas (abertura
+  do capítulo 1) lê a profundidade da cena 960x544 MSAA 2X (force store) como uma textura F32 960x1088 (as duas
+  amostras de cada pixel uma em cima da outra) e mistura a cópia borrada pelo fator de foco. Só o 4X tinha as amostras
+  desempacotadas (`UnpackedDepthTexture`); no 2X a leitura via a memória do convidado, o fator saía "longe" em tudo e
+  o personagem em foco ficava tão borrado quanto o fundo. Agora 2X (e 2X em imagem de 4 amostras, Msaa2xAs4x) também
+  é desempacotado. Comparado com vídeo do Vita real (YouTube J7LRdOTELtg, 46-56 s): Ryu nítido e fundo borrado, igual.
+  Replay 1x-4x iguais; rerun ao vivo de uma cópia da gravação em 1x e 2x com o Ryu nítido. Efeito colateral: os brilhos
+  dos refletores do FIFA 13 (partículas que leem a profundidade 2X da própria cena) mudam um pouco atrás do menu de pausa.
 - [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
   usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
   (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
@@ -1073,6 +1084,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
   "flashes" que restam no analisador são relâmpagos do próprio filme
   Pista do usuário (08/11/2026): a abertura do Ninja Gaiden Sigma 1 (PCSB00097) vai fluida e a do Sigma 2 engasga, no mesmo build. Comparar os dois caminhos lado a lado (player usado: avPlayer x sceAvcdec, fps do filme x vblank, buffers/anel, ritmo de entrega dos quadros e de troca do framebuffer, áudio do filme como relógio) e achar o que o Sigma 2 faz diferente; os agentes não acharam defeito olhando só o Sigma 2
+  Vídeo corrigido de verdade (08/11/2026, agente C, fix/bugs-games-20): casando cada present com o NINJA_VI.MP4
+  decodificado pelo ffmpeg (miniaturas 120x68, média por bloco, sem a média de brilho), a gravação do usuário
+  (captures\PCSE00233_20261108_015357_tudo, build cb284cf, já com o 2f7518c) mostra o filme inteiro na ordem
+  n+1, n+2, n (103 voltas de -2 em 411 presents), e não só nos B-frames. O decodificador estava certo (um quadro por
+  chamada, pts crescentes, anel de 3 buffers); o defeito era o histórico de quadros do decodificador
+  (Gpu/DecoderOutputs.cs, da 57c57b1 do Jak): o primeiro quadro do buffer 0x90500000 nunca é amostrado pelo jogo,
+  fica marcado como não usado, e daí em diante cada upload desse buffer pegava o quadro anterior (o 'mais antigo não
+  usado'), um ciclo atrasado para sempre. Com VITASHARP_DECODER_HISTORY=0 some (264/264 passos de +1). Correção: um
+  quadro decodificado antes de outro do mesmo tamanho que um upload já pegou (em qualquer endereço) foi pulado pelo
+  jogo e não é mais mostrado depois. Medido com boot ao vivo sem entrada (--capture-at=250:860), 5 execuções do build
+  final: 0 voltas para trás (325/325, 324/324, 304 com o PC carregado), contra 85-105 sem a correção
+  (ugsC3_data/captures/PCSE00233_20261108_1342* a ..._134743_tudo); teste DecoderOutputsTests. A diferença para o
+  Sigma 1: ele não deixa quadro sem amostrar no anel
 
   08/11/2026 (agente C, fix/bugs-games-19, só achados): nova gravação do usuário com o 2f7518c
   (`captures\PCSE00233_20261108_015357_tudo`, 30 fps cravados, 3 "trocas" e ~10 flashes). O `rerun` dela derruba o
@@ -1085,6 +1109,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   As trocas/flashes do analisador caem nos relâmpagos do próprio filme (quadros-fonte vizinhos diferem 50-70):
   falso positivo. Filme de 29,97 fps a 1 quadro por vblank de 30 Hz. Falta o usuário apontar o trecho que engasga
   (ou comparar com um vídeo do Vita real)
+
+  08/11/2026 (agente C, fix/bugs-games-20, interrompido pelo usuário antes de começar): o crash do `rerun` dessa
+  gravação depois de carregar o estado (AccessViolation em `T16.LdStSp`) segue aberto, sem investigação nova. Próximo
+  passo: rodar o `rerun` (cópia em `bugsC3_data`) com o log do thread que cai, comparar registradores/pilha do thread
+  com `threads_start.txt` e ver se o código traduzido (cache do JIT) ou um mapeamento de memória não foi refeito na
+  carga. Fila da rodada 20 ainda não iniciada: NFS Most Wanted no diálogo Origin, fps do shell main x f0e692f com o PC
+  livre, filme do LBP com `--video-decoder=hw`, rosto lento do Soccer Tsuku (PCSG00198)
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
@@ -1198,6 +1229,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `Libc.Exceptions.cs`, os helpers de `std::string`, os campos de `ios_base` em `Libc.Ios.cs`. Validar com Minecraft
   em modo libc do HLE chegando ao menu e ao jogo; também os `_Mtx_*/_Cnd_*/_Thrd_*` (31, xthreads sobre lwmutex/lwcond)
   e os syscalls do SceVshBridge/SceBbmc (corpos no bootimage.skprx).
+  - Passo 1 (feat/hle-batch-6, 08/11/2026): os jogos chegam a 1518/1518. O SceLibstdcxx do libc.suprx 3.74 é a biblioteca "abridged" da Dinkumware: não tem std::locale (basic_ios sem _Ploc; as facetas são _ctype<E> e _codecvt<E, char, _Mbstatet> embutidas), então não há locale clássico a reverter (0x81038DD8 é ~basic_ios). Feito (Libc.Streams/Iostreams/Strstream.cs): basic_streambuf e basic_filebuf<char/wchar_t> (overflow/underflow/uflow/pbackfail/xsgetn/xsputn/seek/setbuf/sync/_Endwrite, conversão UTF-8 do wchar_t pelo codecvt), _ctype/_codecvt, ios_base (_Findarr, register_callback, _Callfns, _Tidy, copyfmt), basic_ios/istream/ostream/iostream (destrutores, thunks, ostream(sb, isstd)), ios_base::Init e _Winit (filebufs sobre stdin/stdout/stderr, cin/cout/cerr/clog com tie e unitbuf, contagens -1 como variáveis), strstreambuf/istrstream/ostrstream/strstream, e as variáveis de dados que os jogos importam no modo libc do HLE (cin..wclog, _Ctype, _Tolotab, _Touptab, _Stdin/_Stdout/_Stderr, _BADOFF, _Fpz). O filebuf não aponta para o buffer do FILE (o FILE do HLE não tem buffer): cada caractere passa por overflow/uflow. Validado: Minecraft (PCSE00491) com VITASHARP_HLE_MODULES=libc chama ios_base::Init/_Winit 1189x, chega ao menu principal, termos, aviso de salvamento, diálogo PSN e placares, 0 "Unimplemented", 0 crash, 0 variáveis sem resolver (antes 8). Próximo: sistema (xthreads _Mtx/_Cnd/_Thrd e _Pad já escritos em rascunho, não commitados), depois VitaSDK e o resto.
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros

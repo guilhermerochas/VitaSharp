@@ -30,7 +30,7 @@ public sealed class TrophySoundTests
         Assert.True(Math.Abs((int)pcm.Samples[^1]) < 200); // faded out: no click at the end
     }
 
-    sealed class FakeSink : VitaSharp.Android.Audio.IPcmSink
+    sealed class FakeSink : VitaSharp.Mobile.Core.Audio.IPcmSink
     {
         public readonly List<short> Written = new();
         public bool Started;
@@ -59,7 +59,7 @@ public sealed class TrophySoundTests
     {
         var sink = new FakeSink();
         var pcm = TrophySound.Chime();
-        VitaSharp.Android.Audio.EffectPlayer.Play(sink, pcm);
+        VitaSharp.Mobile.Core.Audio.EffectPlayer.Play(sink, pcm);
         Assert.True(sink.Started);
         Assert.Equal(TrophySound.Convert(pcm, 44100, 2).Length, sink.Written.Count);
     }

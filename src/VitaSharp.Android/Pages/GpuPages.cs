@@ -1,11 +1,11 @@
 using MauiReactor;
-using VitaSharp.Android.Gpu;
 using VitaSharp.Android.Game;
 using VitaSharp.Android.Services;
-using VitaSharp.Android.Storage;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Gpu;
+using VitaSharp.Mobile.Core.Storage;
 using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Android.Pages;

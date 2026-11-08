@@ -1,18 +1,19 @@
 using System.Diagnostics;
 using VitaSharp.Android.Audio;
 using VitaSharp.Android.Gpu;
-using VitaSharp.Android.Input;
-using VitaSharp.Android.Library;
-using VitaSharp.Android.Logging;
 using VitaSharp.Android.Media;
 using VitaSharp.Android.Services;
-using VitaSharp.Android.Settings;
-using VitaSharp.Android.Storage;
 using VitaSharp.Core;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Gpu;
+using VitaSharp.Mobile.Core.Input;
+using VitaSharp.Mobile.Core.Library;
+using VitaSharp.Mobile.Core.Logging;
+using VitaSharp.Mobile.Core.Settings;
+using VitaSharp.Mobile.Core.Storage;
 using VitaSharp.Renderer.Vulkan;
 
 namespace VitaSharp.Android.Game;

@@ -1,9 +1,9 @@
 using MauiReactor;
-using VitaSharp.Android.Firmware;
 using VitaSharp.Android.Services;
-using VitaSharp.Android.Settings;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Firmware;
+using VitaSharp.Mobile.Core.Settings;
 
 namespace VitaSharp.Android.Pages;
 

@@ -1,16 +1,16 @@
-using VitaSharp.Android.Input;
-using VitaSharp.Android.Library;
-using VitaSharp.Android.Logging;
-using VitaSharp.Android.Settings;
-using VitaSharp.Android.Storage;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Input;
+using VitaSharp.Mobile.Core.Library;
+using VitaSharp.Mobile.Core.Logging;
+using VitaSharp.Mobile.Core.Settings;
+using VitaSharp.Mobile.Core.Storage;
 
 namespace VitaSharp.Tests;
 
-/// <summary>The platform-neutral layers of the Android app (src/VitaSharp.Android.Common): logcat formatting, settings,
+/// <summary>The platform-neutral layers of the Android app (src/VitaSharp.Mobile.Core): logcat formatting, settings,
 /// library and trophies, on-screen pad and gamepad mapping.</summary>
 public sealed class AndroidAppTests : IDisposable
 {

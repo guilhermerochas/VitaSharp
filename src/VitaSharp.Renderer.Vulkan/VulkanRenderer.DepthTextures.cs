@@ -104,7 +104,10 @@ public sealed unsafe partial class VulkanRenderer
     /// scene's depth as a 1440x816 U16 texture). With real MSAA the samples live in a multisampled depth image, so they
     /// are unpacked by a full-screen pass into a single-sample depth image twice the size, sample (x&amp;1, y&amp;1) of
     /// pixel (x/2, y/2) at texel (x, y) (Vulkan's standard 4x positions: 0 top left, 1 top right, 2 bottom left,
-    /// 3 bottom right), which is then sampled like any depth texture.
+    /// 3 bottom right), which is then sampled like any depth texture. A 2X scene stores its two samples one above the
+    /// other (Ninja Gaiden Sigma Plus's depth of field reads the 960x544 scene's depth as a 960x1088 F32 texture): texel
+    /// (x, y) is the upper (y even) or lower sample of pixel (x, y/2). Without that the read saw guest memory, the blur
+    /// factor came out "far" everywhere and the cutscenes were blurred over the subject in focus.
     /// </summary>
     void DestroyDepthTex(DepthTex t)
     {
@@ -121,7 +124,8 @@ public sealed unsafe partial class VulkanRenderer
         // pixel (x/2, y/2) of the scaled image, the top-left quarter of the scene, and LittleBigPlanet's depth of field
         // blurred the whole planet in its pod menus at 2x
         if (dt.Scale != 1f) { w = ScaleDim(w, dt.Scale); h = ScaleDim(h, dt.Scale); }
-        w = Math.Min(w, dt.Width * 2);
+        int layout = UnpackLayout(dt);
+        w = Math.Min(w, layout == 0 ? dt.Width * 2 : dt.Width);
         h = Math.Min(h, dt.Height * 2);
         const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
         if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
@@ -140,7 +144,7 @@ public sealed unsafe partial class VulkanRenderer
             EndRendering();
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ds,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
-            Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a 4X multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
+            Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a {(layout == 0 ? "4X" : "2X")} multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
         }
         t.LastUsedFrame = FrameCount;
         if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
@@ -182,7 +186,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         }
         else _vk.CmdBeginRendering(cmd, in ri);
-        _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, DepthUnpackPipeline());
+        _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, DepthUnpackPipeline(layout));
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
         var vp = new Viewport(0, 0, w, h, 0, 1);
         var sc = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h));
@@ -202,27 +206,44 @@ public sealed unsafe partial class VulkanRenderer
         return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
     }
 
-    const string DepthUnpackFs = """
+    /// <summary>
+    /// How the samples of <paramref name="dt"/> sit in the guest's sample-sized surface: 0 = 4X (2x2 per pixel),
+    /// 1 = 2X in a 2-sample image, 2 = 2X in a 4-sample image (Msaa2xAs4x).
+    /// </summary>
+    static int UnpackLayout(DepthTarget dt) => dt.TwoXAsFour ? 2 : dt.Samples == SampleCountFlags.Count2Bit ? 1 : 0;
+
+    // 4X: Vulkan's standard 4x positions (0 top left, 1 top right, 2 bottom left, 3 bottom right). 2X: Vulkan's 2x
+    // positions put sample 1 at (0.25, 0.25) above sample 0 at (0.75, 0.75); in a 4-sample image the 2X scene's upper
+    // and lower samples are 0 (0.375, 0.125) and 3 (0.625, 0.875)
+    static readonly string[] DepthUnpackFetch =
+    [
+        "texelFetch(src, p >> 1, (p.y & 1) * 2 + (p.x & 1))",
+        "texelFetch(src, ivec2(p.x, p.y >> 1), 1 - (p.y & 1))",
+        "texelFetch(src, ivec2(p.x, p.y >> 1), (p.y & 1) * 3)",
+    ];
+
+    /// <summary>The unpack pass's fragment shader for a <see cref="UnpackLayout"/> layout.</summary>
+    public static string DepthUnpackFs(int layout) => $$"""
 #version 450
 layout(set = 0, binding = 0) uniform sampler2DMS src;
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
-    gl_FragDepth = texelFetch(src, p >> 1, (p.y & 1) * 2 + (p.x & 1)).r;
+    gl_FragDepth = {{DepthUnpackFetch[layout]}}.r;
 }
 """;
 
-    Pipeline _depthUnpackPipeline;
-    ShaderModule _depthUnpackFs;
+    readonly Pipeline[] _depthUnpackPipelines = new Pipeline[3];
+    readonly ShaderModule[] _depthUnpackFs = new ShaderModule[3];
 
-    Pipeline DepthUnpackPipeline()
+    Pipeline DepthUnpackPipeline(int layout)
     {
-        if (_depthUnpackPipeline.Handle != 0) return _depthUnpackPipeline;
+        if (_depthUnpackPipelines[layout].Handle != 0) return _depthUnpackPipelines[layout];
         EnsureLoadLayout();
-        _depthUnpackFs = CompileBuiltin(DepthUnpackFs, false);
+        var fs = _depthUnpackFs[layout] = CompileBuiltin(DepthUnpackFs(layout), false);
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
-        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _depthUnpackFs, PName = entry };
+        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fs, PName = entry };
         var vi = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
         var ia = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = PrimitiveTopology.TriangleList };
         var vps = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
@@ -243,8 +264,8 @@ void main() {
             PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vps, PRasterizationState = &rs, PMultisampleState = &ms,
             PDepthStencilState = &dss, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
         };
-        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _depthUnpackPipeline).Ok("depth unpack pipeline");
-        return _depthUnpackPipeline;
+        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _depthUnpackPipelines[layout]).Ok("depth unpack pipeline");
+        return _depthUnpackPipelines[layout];
     }
 
     // ------------------------------------------------------------------ stencil planes sampled as U8 textures

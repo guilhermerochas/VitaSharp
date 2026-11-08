@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Android.Content;
 using Android.OS;
-using VitaSharp.Android.Performance;
 using VitaSharp.Android.Services;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Performance;
 
 namespace VitaSharp.Android.Game;
 
