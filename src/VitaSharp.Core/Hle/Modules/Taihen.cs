@@ -70,11 +70,170 @@ public sealed partial class Taihen : HleModule
 
     [Hle] int taiHookFunctionExportForUser(uint hook, uint args) => TAI_ERROR_NOT_IMPLEMENTED;
     [Hle] int taiHookFunctionImportForUser(uint hook, uint args) => TAI_ERROR_NOT_IMPLEMENTED;
-    [Hle] int taiHookFunctionOffsetForUser(uint hook, uint args) => TAI_ERROR_NOT_IMPLEMENTED;
-    [Hle] int taiInjectDataForUser(uint args) => TAI_ERROR_NOT_IMPLEMENTED;
-    [Hle] int taiInjectAbs(uint dest, uint src, uint size) => TAI_ERROR_NOT_IMPLEMENTED;
-    [Hle] int taiHookRelease(int uid, uint hook) => TAI_ERROR_NOT_FOUND;
-    [Hle] int taiInjectRelease(int uid) => TAI_ERROR_NOT_FOUND;
+    // hooks: uid -> (patched address, the bytes that were there before)
+    readonly Dictionary<int, (uint Address, byte[] Original)> _hooks = new();
+
+    /// <summary>
+    /// taiHookFunctionOffsetForUser(tai_hook_ref_t *p_hook, tai_offset_args_t *args): args = { size, modid, segidx,
+    /// offset, thumb, source (the hook function), source_size }. The function at the offset jumps to the hook; the
+    /// hook reaches the original through TAI_CONTINUE, which calls <c>old</c> of the struct _tai_hook_user
+    /// { next, func, old } that *p_hook points to: a trampoline with the original's first instructions (moved out by
+    /// the patch) and a jump back to the rest. SceShaccCgExt (vitaGL homebrew) hooks the runtime Cg compiler this way.
+    /// Only Thumb functions whose first instructions are not PC-relative are hooked.
+    /// </summary>
+    [Hle]
+    int taiHookFunctionOffsetForUser(uint hook, uint args)
+    {
+        if (hook == 0 || args == 0 || GuestMemory.R32(args) < 0x1C) return TAI_ERROR_INVALID_ARGS;
+        int modid = (int)GuestMemory.R32(args + 4), seg = (int)GuestMemory.R32(args + 8);
+        uint offset = GuestMemory.R32(args + 12), thumb = GuestMemory.R32(args + 16), func = GuestMemory.R32(args + 20);
+        if (func == 0) return TAI_ERROR_INVALID_ARGS;
+        if (!K.Modules.TryGetValue(modid, out var m) || !m.Segments.TryGetValue(seg, out var s) || offset >= s.Size) return TAI_ERROR_NOT_FOUND;
+        uint target = (s.Address + offset) & ~1u;
+        if (thumb == 0)
+        {
+            Log.WarnOnce($"taihook-arm-{target:X8}", $"taiHookFunctionOffsetForUser: ARM function 0x{target:X8} of {m.Name} not hooked (Thumb only)");
+            return TAI_ERROR_NOT_IMPLEMENTED;
+        }
+        // whole instructions covering the patch (ldr.w pc, [pc, #imm] + the hook's address: 8 bytes, 10 when not word aligned)
+        uint patch = target % 4 == 0 ? 8u : 10u, moved = 0;
+        while (moved < patch)
+        {
+            ushort hw = GuestMemory.Read<ushort>(target + moved);
+            bool wide = (hw >> 11) is 0x1D or 0x1E or 0x1F;
+            if (PcRelativeThumb(hw, wide ? GuestMemory.Read<ushort>(target + moved + 2) : (ushort)0))
+            {
+                Log.WarnOnce($"taihook-pcrel-{target:X8}", $"taiHookFunctionOffsetForUser: 0x{target:X8} of {m.Name} starts with a PC-relative instruction (0x{hw:X4}): not hooked");
+                return TAI_ERROR_NOT_IMPLEMENTED;
+            }
+            moved += wide ? 4u : 2u;
+        }
+        // trampoline: the moved instructions, then a jump to the rest of the original
+        uint tramp = Emu.Memory.Alloc(moved + 16, "taihen hook");
+        GuestMemory.Span(target, (int)moved).CopyTo(GuestMemory.Span(tramp, (int)moved));
+        WriteThumbJump(tramp + moved, (target + moved) | 1);
+        uint user = Emu.Memory.Alloc(12, "taihen hook ref");
+        GuestMemory.W32(user, 0);
+        GuestMemory.W32(user + 4, func);
+        GuestMemory.W32(user + 8, tramp | 1);
+        var original = GuestMemory.Span(target, (int)patch).ToArray();
+        WriteThumbJump(target, func | 1);
+        Emu.Code.Invalidate(target, patch);
+        Emu.Code.Invalidate(tramp, moved + 16);
+        GuestMemory.W32(hook, user);
+        lock (_injections)
+        {
+            int uid = _nextInjection++;
+            _hooks[uid] = (target, original);
+            return uid;
+        }
+    }
+
+    /// <summary>ldr.w pc, [pc, #imm] and the destination right after it (8 bytes; 10 when not word aligned).</summary>
+    static void WriteThumbJump(uint at, uint dest)
+    {
+        // the literal is read from Align(at + 4, 4) + imm: put it right after the 4-byte instruction
+        uint imm = at % 4 == 0 ? 0u : 2u;
+        GuestMemory.Write(at, (ushort)0xF8DF);
+        GuestMemory.Write(at + 2, (ushort)(0xF000 | imm));
+        GuestMemory.W32(at + 4 + imm, dest);
+    }
+
+    /// <summary>Thumb instructions that read the PC (they cannot run from the trampoline): branches, literal loads,
+    /// ADR, ADD/MOV with the PC.</summary>
+    static bool PcRelativeThumb(ushort hw, ushort hw2)
+    {
+        if ((hw >> 11) is 0x1D or 0x1E or 0x1F)
+        {
+            if ((hw & 0xF800) == 0xF000 && (hw2 & 0x8000) != 0) return true;           // B.W, BL, BLX, conditional B.W
+            if ((hw & 0xFF7F) == 0xF85F || (hw & 0xFF7F) == 0xF81F || (hw & 0xFF7F) == 0xF83F || (hw & 0xFF7F) == 0xF91F || (hw & 0xFF7F) == 0xF93F) return true; // LDR*.W literal
+            if ((hw & 0xFE5F) == 0xE85F) return true;                                  // LDRD literal
+            if ((hw & 0xFBFF) == 0xF20F || (hw & 0xFBFF) == 0xF2AF) return true;       // ADR.W
+            if ((hw & 0xFFF0) == 0xE8D0) return true;                                  // TBB/TBH
+            return false;
+        }
+        if ((hw & 0xF800) == 0x4800) return true;                                       // LDR literal
+        if ((hw & 0xF800) == 0xA000) return true;                                       // ADR
+        if ((hw & 0xF000) == 0xD000 && (hw & 0x0F00) < 0x0E00) return true;             // B<cond>
+        if ((hw & 0xF800) == 0xE000) return true;                                       // B
+        if ((hw & 0xF500) == 0xB100) return true;                                       // CBZ/CBNZ
+        if ((hw & 0xFF78) == 0x4478 || (hw & 0xFF78) == 0x4678) return true;            // ADD/MOV Rd, PC
+        if ((hw & 0xFF00) == 0x4700) return true;                                       // BX/BLX
+        return false;
+    }
+    // injections: uid -> (address, the bytes that were there before)
+    readonly Dictionary<int, (uint Address, byte[] Original)> _injections = new();
+    int _nextInjection = 1;
+
+    /// <summary>
+    /// taiInjectDataForUser(tai_offset_args_t *args): args = { size, modid, segidx, offset, thumb, source, source_size } (0x1C; 0x18 without thumb in old headers).
+    /// Writes source_size bytes over a loaded module's segment at offset and returns an injection id; the translated code
+    /// of that range is dropped. SceShaccCgExt (vitaGL homebrew) patches the runtime Cg compiler (ur0:data/libshacccg.suprx)
+    /// this way; without it the homebrew logged "Failed to apply patches" and its shaders did not compile as expected.
+    /// </summary>
+    [Hle]
+    int taiInjectDataForUser(uint args)
+    {
+        if (args == 0) return TAI_ERROR_INVALID_ARGS;
+        int modid = (int)GuestMemory.R32(args + 4);
+        int seg = (int)GuestMemory.R32(args + 8);
+        // the current taihen.h has a thumb field after offset (size 0x1C); without it the struct is 0x18
+        uint field = GuestMemory.R32(args) >= 0x1C ? 4u : 0u;
+        uint offset = GuestMemory.R32(args + 12), src = GuestMemory.R32(args + 16 + field), size = GuestMemory.R32(args + 20 + field);
+        string desc = $"taiInjectDataForUser(size 0x{GuestMemory.R32(args):X}, modid 0x{modid:X}, seg {seg}, offset 0x{offset:X}, source 0x{src:X8}, {size} bytes)";
+        Log.Debug(desc);
+        if (GuestMemory.R32(args) < 0x18 || src == 0 || size == 0 || size > 0x100000) { Log.Warn($"{desc}: invalid arguments"); return TAI_ERROR_INVALID_ARGS; }
+        if (!K.Modules.TryGetValue(modid, out var m) || !m.Segments.TryGetValue(seg, out var s)) return TAI_ERROR_NOT_FOUND;
+        if ((ulong)offset + size > s.Size)
+        {
+            Log.Warn($"taiInjectDataForUser: {size} bytes at offset 0x{offset:X} of segment {seg} of {m.Name} (0x{s.Size:X} bytes) do not fit");
+            return TAI_ERROR_INVALID_ARGS;
+        }
+        return Inject(s.Address + offset, src, size);
+    }
+
+    /// <summary>taiInjectAbs(dest, src, size): the same at an absolute address.</summary>
+    [Hle]
+    int taiInjectAbs(uint dest, uint src, uint size)
+    {
+        if (dest == 0 || src == 0 || size == 0 || size > 0x100000) return TAI_ERROR_INVALID_ARGS;
+        return Inject(dest, src, size);
+    }
+
+    int Inject(uint dest, uint src, uint size)
+    {
+        var original = GuestMemory.Span(dest, (int)size).ToArray();
+        GuestMemory.Span(src, (int)size).CopyTo(GuestMemory.Span(dest, (int)size));
+        Emu.Code.Invalidate(dest, size);
+        lock (_injections)
+        {
+            int uid = _nextInjection++;
+            _injections[uid] = (dest, original);
+            return uid;
+        }
+    }
+
+    /// <summary>taiHookRelease(uid, hook): puts the original instructions back.</summary>
+    [Hle]
+    int taiHookRelease(int uid, uint hook)
+    {
+        (uint Address, byte[] Original) h;
+        lock (_injections) if (!_hooks.Remove(uid, out h)) return TAI_ERROR_NOT_FOUND;
+        h.Original.CopyTo(GuestMemory.Span(h.Address, h.Original.Length));
+        Emu.Code.Invalidate(h.Address, (uint)h.Original.Length);
+        return 0;
+    }
+
+    /// <summary>taiInjectRelease(uid): puts the original bytes back.</summary>
+    [Hle]
+    int taiInjectRelease(int uid)
+    {
+        (uint Address, byte[] Original) inj;
+        lock (_injections) if (!_injections.Remove(uid, out inj)) return TAI_ERROR_NOT_FOUND;
+        inj.Original.CopyTo(GuestMemory.Span(inj.Address, inj.Original.Length));
+        Emu.Code.Invalidate(inj.Address, (uint)inj.Original.Length);
+        return 0;
+    }
 }
 
 /// <summary>SceSblDmac5Mgr: the DMAC5 crypto engine (hash commands) and SceLibRng.</summary>
