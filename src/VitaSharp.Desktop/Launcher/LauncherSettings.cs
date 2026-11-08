@@ -74,11 +74,15 @@ public sealed class LauncherSettings
     /// <summary>Library region filter (<see cref="GameEntry.Region"/>); "" = every region.</summary>
     public string LibraryRegion { get; set; } = "";
 
-    /// <summary>"Procurar atualizações ao iniciar" (auto-update roadmap item; the check itself is not built yet).</summary>
+    /// <summary>"Procurar atualizações ao iniciar" (MainWindow.Update.cs).</summary>
     public bool CheckUpdates { get; set; } = true;
 
     /// <summary>Update channel: "builds" (every automatic build) or "releases" (tagged versions only).</summary>
     public string UpdateChannel { get; set; } = "builds";
+
+    /// <summary>The release tag the user chose "Pular esta versão" for: the check at start does not offer it again.</summary>
+    public string SkippedUpdate { get; set; } = "";
+
     /// <summary>Home screen theme id (<see cref="VitaSharp.Core.Shell.ShellTheme.Id"/>); "" = the firmware's default.</summary>
     public string Theme { get; set; } = "";
     /// <summary>Play the system BGM (pd0:data/systembgm/home.at9 or the theme's) on the home screen.</summary>

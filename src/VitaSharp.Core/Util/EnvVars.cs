@@ -303,4 +303,7 @@ public static class EnvVars
     /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target
     /// writebacks (published when their frame retires, at the latest by the next flip). Default 0.</summary>
     public const string LazyWritebackSync = "VITASHARP_LAZY_WRITEBACK_SYNC";
+    /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
+    /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
+    public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
 }

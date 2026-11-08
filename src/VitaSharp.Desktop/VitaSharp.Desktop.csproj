@@ -69,6 +69,16 @@
     <EmbeddedResource Include="Assets\icon-16.png;Assets\icon-24.png;Assets\icon-32.png;Assets\icon-48.png;Assets\icon-64.png;Assets\icon-128.png;Assets\icon-256.png" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- emulator updates (Updater.cs): the repository whose GitHub releases a package checks. The CI sets
+       GITHUB_REPOSITORY (MSBuild sees environment variables as properties); a build from source has none and is
+       updated with git. -p:VitaSharpUpdateRepository=owner/name overrides it. -->
+  <PropertyGroup>
+    <VitaSharpUpdateRepository Condition="'$(VitaSharpUpdateRepository)' == ''">$(GITHUB_REPOSITORY)</VitaSharpUpdateRepository>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VitaSharpUpdateRepository)' != ''">
+    <AssemblyMetadata Include="VitaSharpUpdateRepository" Value="$(VitaSharpUpdateRepository)" />
+  </ItemGroup>
+
   <!-- self-contained single-file release (dotnet publish -r <rid> -p:VitaSharpRelease=true): the managed code is
        bundled into one ReadyToRun executable; native libraries (GLFW, OpenAL Soft, shaderc, Skia) stay next to it,
        with FFmpeg in ffmpeg/ -->

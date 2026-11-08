@@ -27,6 +27,8 @@ public static class Program
             args = args.Where(a => a != data).ToArray();
             DataFromCommandLine = true;
         }
+        // the update swap runs from the downloaded package and touches nothing else (no Vulkan, no window)
+        if (args.Length > 0 && args[0] == "apply-update") return Updater.ApplyCli(args.Skip(1).ToArray());
         if (OperatingSystem.IsMacOS() && MacVulkanLoader.RelaunchIfNeeded(args) is { } rc) return rc;
 
         if (args.Length == 0 || args[0] == "gui") return Launcher.LauncherApp.Run(args);
@@ -89,6 +91,11 @@ public static class Program
                 }
                 return 0;
             }
+            case "update":
+                return Updater.Cli(args.Skip(1).ToArray());
+            case "version":
+                Console.WriteLine(Diagnostics.BuildVersion());
+                return 0;
             case "ui-snapshot":
                 return Launcher.UiSnapshot.Run(args.Skip(1).ToArray());
             case "ui-render":
@@ -517,7 +524,9 @@ public static class Program
         Console.WriteLine("  rco-dump <file.rco> [--extract=<dir>]  print a system RCO resource tree; write out its textures, sounds and other files");
         Console.WriteLine("  camera-test [device] [out-prefix]    grab one webcam frame (SceCamera host path) as PNG");
         Console.WriteLine("  pad-test [--seconds=N] [--virtual]   list controllers (SDL2) and print their mapped Vita input");
-        Console.WriteLine("  ui-snapshot <out-dir>                render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
+        Console.WriteLine("  version                              print the version and commit of this build");
+        Console.WriteLine("  update [--channel=builds|releases] [--feed=URL|folder] [--apply]  check the GitHub releases for a newer emulator; --apply installs it");
+        Console.WriteLine("  ui-snapshot <out-dir>               render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
         Console.WriteLine("  ui-render <out-dir> [--title=ID] [--launch=ID|shell] [--install-pkg=P --license=zRIF]  render every launcher page to PNGs without a window (use a scratch --data)");
         Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");

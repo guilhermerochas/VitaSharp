@@ -33,6 +33,8 @@ public sealed class SettingsPage : UserControl
     public event Action<string>? ThemeChanged;
     /// <summary>"Sistema do Vita" was picked in the list (it has its own page).</summary>
     public event Action? OpenSystem;
+    /// <summary>"Procurar agora" was pressed (the launcher checks the releases and shows the update dialog).</summary>
+    public event Action? CheckUpdatesNow;
 
     /// <summary>The controller page (created when first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
@@ -155,8 +157,8 @@ public sealed class SettingsPage : UserControl
             _k.Row("layers", S.UpdateChannel, S.UpdateChannelDetail,
                 _k.Segmented(_settings.UpdateChannel == "releases" ? 1 : 0, i => Set(() => _settings.UpdateChannel = i == 1 ? "releases" : "builds"),
                     (S.ChannelBuilds, null, null), (S.ChannelReleases, null, null))),
-            _k.Row("clock", S.VersionInUse, Diagnostics.BuildVersion(),
-                _k.Secondary(S.CheckNow, null, () => { }, 36, enabled: false, tip: S.CheckNowSoon))));
+            _k.Row("clock", S.VersionInUse, Diagnostics.BuildVersion() + (Updater.Feed() == null ? " · " + S.NoUpdateFeed : ""),
+                _k.Secondary(S.CheckNow, null, () => CheckUpdatesNow?.Invoke(), 36))));
         s.Children.Add(_k.GroupTitle(S.Trophies));
         s.Children.Add(_k.Group(
             _k.Row("trophy", S.TrophySound, S.TrophySoundDetail, _k.Switch(_settings.TrophySound, v => Set(() => _settings.TrophySound = v)))));

@@ -155,6 +155,12 @@ especificações em [`docs/hle`](docs/hle/README.md).
   Windows, Linux e macOS e o `SHA256SUMS.txt`.
 - **Builds automáticos**: todo push na `main` cujo CI passou vira uma prerelease `build-<commit>` com os pacotes
   daquele CI (as 10 mais novas ficam).
+- **Atualização automática**: os pacotes procuram uma versão nova ao abrir (Configurações > Geral > Atualizações:
+  liga/desliga, canal builds automáticos ou só versões, **Procurar agora**). O diálogo mostra a versão em uso, a nova,
+  a data e as novidades, com **Pular esta versão**, **Lembrar depois** e **Atualizar agora**: o pacote da plataforma
+  é baixado, conferido pelo `SHA256SUMS.txt` e trocado (o instalador, no Windows instalado pelo setup), e o VitaSharp
+  reabre. Só os arquivos do emulador mudam; a pasta de dados nunca. Um build compilado do código se atualiza pelo git
+  (pela linha de comando: `update [--channel=releases] [--apply]`).
 - Os pacotes não são assinados (o Windows SmartScreen avisa) e nunca incluem firmware.
 
 ## Créditos e licença
