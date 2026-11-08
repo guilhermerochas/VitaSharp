@@ -239,7 +239,9 @@ public static class ShaderGenerator
         _ => FaceRegisterMode.Front,
     };
 
-    /// <summary>How the GXM far plane (z &lt;= w after the depth transform) is clipped; GXM does not clip at the near plane.</summary>
+    /// <summary>How the GXM far plane (z &lt;= w after the depth transform) is clipped. The near plane is clipped by the
+    /// hardware (the renderer no longer enables depth clamp: VkCore.DepthClamp), so the far clip here is redundant with
+    /// it on the desktop; the GLSL is kept as it was (shader caches).</summary>
     public enum FarPlaneClip
     {
         /// <summary>gl_ClipDistance[0] = w - z (the renderer enables depth clamp, which turns off the hardware's far clip).</summary>

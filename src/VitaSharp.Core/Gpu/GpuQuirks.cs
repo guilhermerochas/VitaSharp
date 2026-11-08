@@ -486,8 +486,9 @@ public static class GpuQuirkTable
                 reasons.Add($"{q}: no extended dynamic state (Vulkan 1.3 core)");
             }
         }
-        // GXM clips at the far plane but not at the near one: depth clamp plus a far-plane clip distance; without the
-        // clip distance a fragment-shader discard, or (forced off, or no depth clamp) the hardware's own clip
+        // the GXM far plane: a clip distance; without it a fragment-shader discard, or (forced off, or no depth clamp) the
+        // hardware's own clip. The renderer no longer enables depth clamp (GXM clips the near plane: VkCore.DepthClamp),
+        // so the discard only repeats the hardware's far clip; it is kept for the Mali shader pack key
         if ((features & (GpuFeature.ShaderClipDistance | GpuFeature.DepthClamp)) == GpuFeature.DepthClamp)
         {
             bool forcedOff = (overrides ?? "").Split(',', StringSplitOptions.TrimEntries)
@@ -495,7 +496,7 @@ public static class GpuQuirkTable
             if (!forcedOff)
             {
                 if ((quirks & GpuQuirk.FarPlaneDiscard) == 0)
-                    reasons.Add($"{GpuQuirk.FarPlaneDiscard}: no shaderClipDistance: the far plane is clipped by a fragment-shader discard (depth clamp keeps the near plane unclipped)");
+                    reasons.Add($"{GpuQuirk.FarPlaneDiscard}: no shaderClipDistance: the far plane is clipped by a fragment-shader discard (kept from when depth clamp was on; the hardware clips both planes now)");
                 quirks |= GpuQuirk.FarPlaneDiscard;
             }
             else
