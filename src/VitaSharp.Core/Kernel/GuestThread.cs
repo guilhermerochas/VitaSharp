@@ -62,6 +62,13 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     // callback support for *CB waits
     public int PendingCallbacks;
     public bool CallbackWait;
+    /// <summary>Callbacks of this thread running now (ThreadMgr.ProcessCallbacks). Callbacks do not nest: a *CB wait made
+    /// inside a callback leaves the notified ones pending until the callback returns (like PPSSPP's per-thread nesting
+    /// check). Nested, a callback that waits across a vblank (Jak 1's, with the fixed 30 fps hold) ran itself again at
+    /// every vblank, one level deeper each time, until the host stack overflowed.</summary>
+    public int CallbackDepth;
+    /// <summary>A callback-processing wait (*CB) outside a callback: notified callbacks run inside it.</summary>
+    public bool CanRunCallbacks => CallbackWait && CallbackDepth == 0;
     public volatile object? CurrentWaitSync;
     public static Func<GuestThread, int>? CallbackProcessor;
 

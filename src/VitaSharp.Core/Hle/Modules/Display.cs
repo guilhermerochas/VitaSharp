@@ -247,7 +247,7 @@ public sealed partial class Display : HleModule
     /// <summary>On hardware the callbacks notified during a *CB wait run inside the wait, before it returns.</summary>
     static void RunCallbacks()
     {
-        if (GuestThread.Current is { CallbackWait: true } t && Volatile.Read(ref t.PendingCallbacks) > 0)
+        if (GuestThread.Current is { CanRunCallbacks: true } t && Volatile.Read(ref t.PendingCallbacks) > 0)
             GuestThread.CallbackProcessor?.Invoke(t);
     }
 
