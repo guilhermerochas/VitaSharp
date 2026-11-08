@@ -242,6 +242,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Android
 
+- [ ] Antes de voltar ao Android (08/11/2026): `third_party/android-shaderc` e `third_party/android-adrenotools` da
+  checkout principal estão vazias desde 07/11 22:13 (provavelmente apagadas por uma limpeza através de junction); um APK
+  compilado agora sai sem `libshaderc*.so`/adrenotools. Refazer com `build/build-android-shaderc.ps1|.sh` e
+  `build/build-android-adrenotools.ps1|.sh` antes do próximo APK de teste
 - [ ] Compatibilidade com o modo desempenho / modo jogo dos celulares (pedido do usuário, 07/11/2026): o app se declara
   jogo para o Android e para os otimizadores dos fabricantes (`android:appCategory="game"`/`isGame`, `game_mode_config`
   com suporte aos modos de desempenho e de bateria da API GameManager, `GameState` de carregando/jogando), para entrar
