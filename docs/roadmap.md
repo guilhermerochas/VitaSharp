@@ -128,6 +128,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   rápida, sem otimizar, no thread da GPU) e trocar pelo otimizado em segundo plano; prever também as variantes
   tile-word e de saída inteira. Pular o desenho foi analisado e descartado: quase nada do que trava pode ser pulado
   sem risco (Killzone 0 de 91 engasgos, Tearaway 1 de 14), ver `docs/notes/pipeline-skip.md`
+  Tentado em 07/11/2026 (perf/desktop-res) e descartado: no Killzone com cache frio o thread da GPU passou a montar
+  mais pipelines (18,8-21,4 s contra 5,0-10,7 s; os mesmos ~90 quadros acima de 16,7 ms), porque no driver da NVIDIA
+  a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
+  vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
+  pipelines.list pré-gerado por jogo
 - [ ] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
