@@ -732,6 +732,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
+  07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
+  Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va
+  tem 44 flashes e 4 pares de quadros trocados em 23 s; em software (o novo padrão `auto`, db00236) 10 flashes e 2 pares
+  (`bugsC3_data/captures/PCSE00233_20261107_215142_tudo` x `..._215323_tudo`, 30 fps nos dois). Melhorou, mas sobram
+  flashes de célula e 2 pares trocados: conferir se são do próprio filme (cenas rápidas) ou ordem de quadros do player.
+  Música: a voz NGS 0x822A5F40 (player PCM estéreo 48 kHz em dois buffers de 512 quadros, um tick cada, em pingue-pongue)
+  toca buffers que o jogo entrega zerados: ~40% dos grãos são silêncio exato (padrão `_#_##`), o que o usuário ouve
+  como ruído. Trace (`VITASHARP_NGS_TRACE=1`, `bugsC17_out/ngm2`): o NGS lê o buffer certo a cada tick e o callback de
+  troca chega a cada tick; o conteúdo é que vem zerado (ex. ticks 1511 e 1514). O produtor parece ser o
+  "ATStreamEngine"/"ATStreamPlayer" do jogo (prio 64, núcleo 1, junto com ArmSpurs e TFW workers), que não acompanha.
+  Tentativa sem efeito claro (revertida, patch `scratchpad/bugsC17_ngs_eagerswap_wip.patch`): trocar de buffer no
+  mesmo tick em que ele acaba (o hardware avisa um tick antes): 39% contra 43% de silêncio, dentro da variação.
+  Próximo passo: medir quanto tempo de CPU o ATStreamEngine recebe por segundo (o decoder de música do jogo pode estar
+  sem tempo de CPU no núcleo 1, ou esperando um evento/semáforo que chega tarde) e comparar com o Vita3K
+
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
@@ -743,6 +759,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   máscara ou camada de efeito na frente da câmera do escanteio; achar o desenho com `--draw-limit` no dump da gravação e
   comparar com um vídeo do Vita da mesma câmera); 032507 = o vídeo de abertura (não sabe se é
   assim no Vita: comparar com um vídeo do Vita real). Validar assim que o limite semanal renovar
+  Achados (07/11/2026, agente C, fix/bugs-games-17): 032507 = a abertura (bola da EA Sports, jogador de bicicleta,
+  bola na rede) bate com o vídeo do Vita real (`NfnIFRme17c`, `scratchpad/bugsC17_yt/fifa_sheet.png`) e não tem
+  flash nem quadro trocado a 60 fps (`bugsC17_fifa/sheet032507.png`). 031028 = os 295 quadros ao vivo são só a
+  comemoração do gol ("22' Goal 7 DANILINHO", câmera atrás do escanteio, `bugsC17_fifa/sheet031028.png`): não há
+  cobrança de escanteio na gravação e nada fora do normal além da faixa do gol; precisa de uma gravação do momento da
+  cobrança (ou o usuário dizer o que tapava). 030833 = as vozes da torcida não têm cliques, lacunas nem grãos repetidos
+  (`vitasharp-perf audio-check`); a voz 03 (0x89A424A0) bate em 0 dBFS (0,03% de clipping) e todas cortam acima de
+  ~12 kHz; sem referência do Vita no mesmo trecho não dá para dizer o que soa estranho
 - [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
@@ -778,19 +802,39 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tempos de rede/DNS antes de seguir. Ver o que um Vita sem rede responde (ex.: sceNetCtl desconectado faz o jogo pular o
   online na hora) e se o erro de rede deve ou não aparecer, comparar a duração da tela com um vídeo do Vita, e implementar
   o NID_FFBFC540 (registro de 64 bytes do SceNpManagerIpc; notas no item das funções HLE)
+  Achados (07/11/2026, agente C, fix/bugs-games-17): o problema visível não é a rede. No Vita real (vídeo do YouTube
+  `8puPotAAmVc`, `scratchpad/bugsC17_yt/nfs_sheet.png`) o boot mostra o logo da EA, o vídeo da cidade (Criterion),
+  a tela branca "MOST WANTED" com o aviso (~6 s), a faixa de carregamento e só então o diálogo de PSN. Aqui a tela fica
+  preta de 5 s a 50 s (`bugsC3_data/captures/PCSE00089_20261107_212738_tudo`, boot sem entrada): os filmes (SceMp4 +
+  sceAvcdec, 720x400) decodificam certo (textura YUV420P2 0x8591AC00 com o logo da Criterion no `--trace-draws=300`,
+  `bugsC17_nfs/rp/trace_300`), mas o jogo desenha o quadro do filme (draw de 6 índices, vs 6C022B03953DA3AA, thread
+  "GXM Dispatch Thread", lr 0x8154E667) com o multiplicador de cor do shader (uniforms 20-23 do buffer padrão) em
+  (0,0,0,0): o fade do filme fica em zero o tempo todo, por lógica do próprio jogo (o player de vídeo é código do jogo,
+  entry 0x816361B5). Hipótese a conferir: o fade espera a posição do áudio do filme (NGS) ou outro estado do player.
+  Próximo passo: achar quem grava esse multiplicador (backtrace `VITASHARP_BT_DRAW=6` já dá o lr) e o que ele lê
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
   rosto leva aqui e no Vita real (vídeo), ver se é leitura de arquivo (FIOS/IO assíncrono), decodificação de textura ou
   geração na CPU, e corrigir se for o emulador. Conferir antes com o build da main atual (o usuário usava o release
   99396f5, mais antigo)
+  07/11/2026 (agente C): a gravação mostra o FACE VIEWER vazio os 2,5 s inteiros; o estado dela é do 99396f5 e a main não
+  carrega ("salvo por outra versão"), e chegar à tela de criação por roteiro não coube no tempo. Precisa de uma gravação
+  nova com a main (estado carregável) para medir
 - [ ] 99Vidas (PCSE00914): gravação do usuário no boot sem nenhum quadro (06/11/2026, release 99396f5,
   `captures\PCSE00914_20261106_221719_tudo`; AsyncReadManager do Unity rodando, quadro 0). A main tem o 1dfb147
   (sceNpManagerGetCachedParam, com o qual o jogo chega à abertura aqui): conferir com o build novo antes de investigar
+  Conferido (07/11/2026, agente C, main 176f5d6): 	ests/scenarios/99vidas_boot.txt chega ao tutorial com as lutas a
+  60 fps (quadro 3988, ugsC3_data/tests/99vidas_boot/sheet_3.png): o boot sem quadros era do release antigo
 - [ ] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
   um botão com o jogo e com o shell abertos
+  Correção feita (07/11/2026, agente C, afdb095): o input.json é relido quando muda (data do arquivo olhada a cada 500 ms) e
+  cada Put/Remove muda uma revisão; o HostInput do desktop e o teclado e os controles do Android recompilam os perfis na
+  hora (os controles do Android nem pegavam o perfil salvo antes de reconectar). Jogo rodando (Jak 1, janela oculta):
+  "Input: input.json changed, mapping reloaded" logo depois de trocar o arquivo (ugsC17_out/input1/log.txt); o efeito
+  nos botões está no teste ARemappingAppliesWithTheGameRunning. Falta o usuário trocar um botão com o jogo e o shell abertos
 - [ ] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
   depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
   a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
