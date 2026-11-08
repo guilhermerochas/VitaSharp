@@ -831,7 +831,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // stores made before it (a CPU fill of the surface before rendering into it)
             _rt.MemStamp = DirtyPages.Epoch + 2;
         }
-        if (_depth.LastScene == 0 && b.Depth is { ForceLoad: true } && SeedDepth) SeedLoadedDepth(_depth, b.Depth, _ss);
+        if (_depth.LastScene == 0 && b.Depth is { ForceLoad: true } && SeedDepth) SeedLoadedDepth(_depth, _ss);
         _depth.Supersampled = _ss;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
@@ -849,12 +849,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// whose content Vulkan leaves undefined. The driver handed over recycled memory with stray stencil bits, and the
     /// HUD's stencil masks (EQUAL 0 over all 8 bits after clearing only the low 7) failed: the health bars, names and
     /// timer were never drawn in a live session, though a GPU dump replayed them (fresh, zeroed memory). The overlap
-    /// with the surface's most recent image of the same layout (samples, scale, stride) is copied; the rest is cleared to
-    /// the scene's background depth and stencil. VITASHARP_DEPTH_SEED=0 leaves it undefined (A/B).
+    /// with the surface's most recent image of the same layout (samples, scale, stride) is copied; the rest reads as zeroed memory
+    /// (depth 0, stencil 0). VITASHARP_DEPTH_SEED=0 leaves it undefined (A/B).
     /// </summary>
     static readonly bool SeedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
 
-    void SeedLoadedDepth(DepthTarget dt, DepthSurfaceInfo d, bool supersampled)
+    void SeedLoadedDepth(DepthTarget dt, bool supersampled)
     {
         DepthTarget? src = null;
         foreach (var o in _depthTargets.Values)
@@ -867,7 +867,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var tests = PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit;
         var attRw = AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit;
         Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, ds, tests, PipelineStageFlags.TransferBit, attRw, AccessFlags.TransferWriteBit);
-        var clear = new ClearDepthStencilValue(Math.Clamp(d.BackgroundDepth, 0f, 1f), d.BackgroundStencil);
+        // what a load reads where no earlier image covers it: zeroed memory (depth 0, stencil 0), as a surface the GPU never
+        // stored holds on the hardware once allocated
+        var clear = new ClearDepthStencilValue(0f, 0);
         var range = new ImageSubresourceRange(ds, 0, 1, 0, 1);
         _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
         if (src != null)
