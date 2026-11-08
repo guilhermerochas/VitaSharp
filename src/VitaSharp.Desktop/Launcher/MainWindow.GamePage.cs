@@ -16,6 +16,8 @@ namespace VitaSharp.Desktop.Launcher;
 /// captures and the game's own settings (internal resolution, frame rate).</summary>
 public sealed partial class MainWindow
 {
+    Button? _gameFolders;
+
     Control GamePage(GameEntry g)
     {
         var root = new Grid();
@@ -38,14 +40,13 @@ public sealed partial class MainWindow
         var page = new StackPanel { Margin = new Thickness(36, 24, 36, 32) };
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
         top.Children.Add(GlassButton("chevron-left", S.Library, () => Navigate(PageLibrary)));
-        top.Children.Add(Kit.At(GlassButton("folder", null, () => OpenPath(g.Path), S.OpenGameFolder), col: 2));
-        var savedata = Path.Combine(Program.Ux0, "user", "00", "savedata", g.TitleId);
+        var folders = GlassButton("folder", S.GameFolders, () => { }, S.GameFoldersTip);
+        folders.Flyout = GameFoldersMenu(g);
+        _gameFolders = folders;
+        top.Children.Add(Kit.At(folders, col: 2));
         var more = GlassButton("more", null, () => { }, S.More);
         var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
         void Item(string text, Action a, bool enabled = true) { var mi = new MenuItem { Header = text, IsEnabled = enabled }; mi.Click += (_, _) => a(); flyout.Items.Add(mi); }
-        Item(S.OpenGameFolder, () => OpenPath(g.Path));
-        Item(S.OpenSaveData, () => OpenPath(savedata), Directory.Exists(savedata));
-        Item(S.OpenStatesFolder, () => OpenPath(SaveStates.Folder(Program.DataRoot, g.TitleId)), Directory.Exists(SaveStates.Folder(Program.DataRoot, g.TitleId)));
         Item(S.Uninstall, () => _ = Uninstall(g), _runningGame?.TitleId != g.TitleId);
         more.Flyout = flyout;
         more.Margin = new Thickness(8, 0, 0, 0);
@@ -94,6 +95,46 @@ public sealed partial class MainWindow
 
         root.Children.Add(page);
         return new ScrollViewer { Content = root, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    }
+
+    /// <summary>
+    /// "Pastas": the game's folders on this PC, opened in the file manager (the game page's header button and the
+    /// library cover's right-click menu): app (ux0:app/ID), save data, patch and add-on content when present, save
+    /// states, and the newest capture and log of the game (selected in their folders).
+    /// </summary>
+    MenuFlyout GameFoldersMenu(GameEntry g)
+    {
+        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        void Item(string text, Action a, bool enabled = true) { var mi = new MenuItem { Header = text, IsEnabled = enabled }; mi.Click += (_, _) => a(); flyout.Items.Add(mi); }
+        string id = g.TitleId;
+        var savedata = Path.Combine(Program.Ux0, "user", "00", "savedata", id);
+        var patch = Path.Combine(Program.Ux0, "patch", id);
+        var addcont = Path.Combine(Program.Ux0, "addcont", id);
+        var states = SaveStates.Folder(Program.DataRoot, id);
+        Item(S.FolderApp(id), () => OpenPath(g.Path), Directory.Exists(g.Path));
+        Item(S.FolderSaveData(id), () => OpenPath(savedata), Directory.Exists(savedata));
+        if (Directory.Exists(patch)) Item(S.FolderPatch(id), () => OpenPath(patch));
+        if (Directory.Exists(addcont)) Item(S.FolderAddcont(id), () => OpenPath(addcont));
+        Item(S.FolderStates(id), () => OpenPath(states), Directory.Exists(states));
+        flyout.Items.Add(new Separator());
+        var capture = CaptureFiles().FirstOrDefault(c => c.TitleId == id);
+        Item(S.FolderCaptures, () => Reveal(capture!.Path), capture != null);
+        var log = NewestLog(id);
+        Item(S.FolderLogs, () => Reveal(log!), log != null);
+        return flyout;
+    }
+
+    /// <summary>The newest session log of a title (logs/&lt;date&gt;_&lt;time&gt;_&lt;title id&gt;.log), or null.</summary>
+    static string? NewestLog(string titleId)
+    {
+        var dir = Path.Combine(Program.DataRoot, "logs");
+        try
+        {
+            return Directory.Exists(dir)
+                ? Directory.GetFiles(dir, "*_" + titleId + ".log").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+                : null;
+        }
+        catch (IOException) { return null; }
     }
 
     Button GlassButton(string icon, string? text, Action click, string? tip = null)

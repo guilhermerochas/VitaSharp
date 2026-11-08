@@ -156,6 +156,15 @@ public static class Strings
     public static string InstalledOn(DateTime local) => F(T(), local);
     public static string OpenGameFolder => T();
     public static string OpenSaveData => T();
+    public static string GameFolders => T();
+    public static string GameFoldersTip => T();
+    public static string FolderApp(string id) => F(T(), id);
+    public static string FolderSaveData(string id) => F(T(), id);
+    public static string FolderPatch(string id) => F(T(), id);
+    public static string FolderAddcont(string id) => F(T(), id);
+    public static string FolderStates(string id) => F(T(), id);
+    public static string FolderCaptures => T();
+    public static string FolderLogs => T();
     public static string OpenStatesFolder => T();
     public static string Uninstall => T();
     public static string TimePlayed => T();

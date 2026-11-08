@@ -52,10 +52,10 @@
     <value>Back camera</value>
   </data>
   <data name="CameraBackDefault" xml:space="preserve">
-    <value>Default (another webcam, else the first one)</value>
+    <value>Default (second webcam)</value>
   </data>
   <data name="CameraBackDetail" xml:space="preserve">
-    <value>What the Vita's back camera shows: a webcam, a picture or a gray image</value>
+    <value>What the Vita's back camera shows: a webcam, a picture or gray. Default: the second webcam, or the first one if there is only one</value>
   </data>
   <data name="CameraDefault" xml:space="preserve">
     <value>Default (first camera)</value>
@@ -67,7 +67,7 @@
     <value>Front camera</value>
   </data>
   <data name="CameraFrontDetail" xml:space="preserve">
-    <value>What the Vita's front camera shows: a webcam, a picture or a gray image</value>
+    <value>What the Vita's front camera shows: a webcam, a picture or gray</value>
   </data>
   <data name="CameraNone" xml:space="preserve">
     <value>None (gray picture)</value>
@@ -2861,5 +2861,32 @@
   </data>
   <data name="MDevAwake" xml:space="preserve">
     <value>VitaSharp Dev: screen kept on</value>
+  </data>
+  <data name="FolderAddcont" xml:space="preserve">
+    <value>Add-on content (ux0:addcont/{0})</value>
+  </data>
+  <data name="FolderApp" xml:space="preserve">
+    <value>Game (ux0:app/{0})</value>
+  </data>
+  <data name="FolderCaptures" xml:space="preserve">
+    <value>Newest capture of this game</value>
+  </data>
+  <data name="FolderLogs" xml:space="preserve">
+    <value>Newest log of this game</value>
+  </data>
+  <data name="FolderPatch" xml:space="preserve">
+    <value>Update (ux0:patch/{0})</value>
+  </data>
+  <data name="FolderSaveData" xml:space="preserve">
+    <value>Save data (ux0:user/00/savedata/{0})</value>
+  </data>
+  <data name="GameFolders" xml:space="preserve">
+    <value>Folders</value>
+  </data>
+  <data name="GameFoldersTip" xml:space="preserve">
+    <value>Open the game's folders on this PC</value>
+  </data>
+  <data name="FolderStates" xml:space="preserve">
+    <value>Save states (savestates/{0})</value>
   </data>
 </root>
