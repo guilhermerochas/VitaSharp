@@ -185,6 +185,14 @@ public sealed partial class Fios2User : HleModule
     [Hle]
     int sceFiosOverlayThreadIsDisabled02() => ThreadOverlaysDisabled ? 1 : 0;
 
+    // the SceFios2 (libfios2) user-side calls, for the calling process
+    internal int AddOverlay(uint overlay, uint outId) => sceFiosOverlayAddForProcess02(0, overlay, new Ptr<int>(outId));
+    internal int RemoveOverlay(int id) => sceFiosOverlayRemoveForProcess02(0, id);
+    internal int GetOverlayInfo(int id, uint outOverlay) => sceFiosOverlayGetInfoForProcess02(0, id, outOverlay);
+    internal int ModifyOverlay(int id, uint overlay) => sceFiosOverlayModifyForProcess02(0, id, overlay);
+    internal int GetOverlayList(uint outIds, uint max, uint actual) => sceFiosOverlayGetList02(0, 0, 0xFF, outIds, max, new Ptr<uint>(actual));
+    internal int ResolveOverlay(int mode, string path, uint outPath, uint max) => sceFiosOverlayResolveSync02(0, mode, path, outPath, max);
+
     // ------------------------------------------------------------------ SceFios2Kernel (libfios2 from SDKs before 1.80)
     // Same overlay table; extra arguments travel in an option struct:
     // { char *pOutPath; SceSize maxPath; char loOrderFilter; char hiOrderFilter; char reserved[2]; int reserved[4]; }

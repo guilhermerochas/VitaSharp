@@ -409,4 +409,25 @@ public sealed partial class IoFileMgr : HleModule
         if (buf != 0 && (int)bufLen > 0) GuestMemory.Span(buf, (int)bufLen).Clear();
         return 0;
     }
+
+    // ------------------------------------------------------------------ for the other HLE libraries (SceFios2, SceLibc)
+
+    /// <summary>The host path of a guest path (overlays applied), null when unmapped.</summary>
+    internal string? HostPathFor(string path, bool write = false) => HostPath(path, write);
+
+    internal int Devctl(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoDevctl(dev, cmd, arg, argLen, buf, bufLen);
+    internal int Ioctl(int fd, int cmd, uint arg, uint argLen, uint buf, uint bufLen) => sceIoIoctl(fd, cmd, arg, argLen, buf, bufLen);
+    internal int Chstat(string path, uint stat, int bits) => sceIoChstat(path, stat, bits);
+
+    /// <summary>Sets the length of an open file (ftruncate); a sceIo error code when it cannot.</summary>
+    internal int Truncate(int fd, long length)
+    {
+        if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
+        if (length < 0) return SceError.IO_EINVAL;
+        try { lock (f) f.Stream.SetLength(length); return 0; }
+        catch (Exception e) when (e is IOException or NotSupportedException or UnauthorizedAccessException) { return SceError.IO_EBADF; }
+    }
+
+    /// <summary>The length of an open file, or a sceIo error code.</summary>
+    internal long Length(int fd) => _files.TryGetValue(fd, out var f) && f.Stream != null ? f.Stream.Length : SceError.IO_EBADF;
 }
