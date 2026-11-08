@@ -44,6 +44,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   F5/F7 rápidos e Shift+F5/F7 no slot escolhido continuam. Validado no Gravity Rush (janela oculta, roteiro: salvar
   no slot 2, substituir com confirmação, carregar o slot 2 pela aba Carregar, o jogo segue a 30 fps). Falta: pausar
   o jogo com a tela aberta, apagar, print grande ao carregar, tempo de jogo/versão no slot, e o Android
+  Feito (08/11/2026, feat/product-3, desktop): o F6 pausa o jogo (pausa interna, sem o selo "Pausado") depois de
+  tirar o print da tela atual e retoma ao fechar; Del/Backspace/Triângulo apaga o slot (pergunta antes); carregar pelo
+  seletor mostra o print grande e pergunta; substituir mostra o print salvo e o atual lado a lado; cada slot mostra o
+  tempo de jogo (segundos do relógio do jogo) e a versão. Os prints dos estados passaram a 480x272 (screenshot do
+  renderer, o sink de 96x54 fica de reserva); o launcher mostra o tempo de jogo no card do estado. Validado no Sonic
+  Mania (janela oculta, teclas postadas na janela): salvar, substituir, carregar (60 fps depois), apagar, F5/F7
+  rápidos; frames +0 com o seletor aberto (`prod3_out/ss4/ov`, `prod3_out/ui/game_dark.png` no scratchpad). Falta: o
+  Android (a tela de estados por cima do jogo no menu de pausa, validar no Killzone no celular)
 
 - [x] Salvar e carregar o estado inteiro do emulador: CPU (registradores, NEON/VFP, monitor exclusivo), memória,
   objetos do kernel, estado dos módulos HLE (por módulo, `ISnapshotState` gerado na compilação com as partes à mão,
@@ -954,6 +962,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Texts.pt-BR.resx (~330 textos, escritos em inglês e português). O APK compila (Debug); não rodou no celular. Falta:
   estender o teste de ASCII ao Android e ao Mobile.Core (os símbolos ✕ ○ › ▶ e os comentários em português ainda
   estão no código) e uma escolha de idioma no app (hoje segue o idioma do aparelho)
+  Feito (08/11/2026, feat/product-3): `LocalizationTests` confere também `VitaSharp.Android` e `VitaSharp.Mobile.Core`
+  (só ASCII: símbolos como \u, textos das telas de desenvolvedor no .resx, comentários em ASCII); Ajustes > Aparência >
+  Idioma no app (Sistema / English / Português, `config/app.json` `Language`, aplicado nos dois processos ao iniciar;
+  trocar oferece reiniciar o app). O APK compila (Debug); não rodou no celular
 - [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
   releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um
@@ -1001,6 +1013,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   copiou 121 arquivos e reabriu (`version` = 9.9.9, `update` = em dia); diálogo em `ui-render --update-feed`;
   `UpdateFeedTests` com um servidor HTTP local (inclui pacote adulterado recusado). Falta: rodar contra o GitHub de
   verdade depois da primeira release com o repositório embutido, o caminho do setup.exe/AppImage/macOS, e o Android
+  GitHub de verdade (08/11/2026, feat/product-3): a build-d99089e é a primeira release com o repositório embutido (a
+  build-3cae19d e as anteriores não têm o atualizador). O pacote win-x64 dela, numa cópia, acha o próprio commit na API
+  e responde "em dia"; o `version` mostrava "built 1600-12-31" (o pacote AOT não tem VitaSharp.Core.dll): agora o CI
+  embute `VitaSharpBuildTime`
 - [x] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
