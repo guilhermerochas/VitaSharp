@@ -6,7 +6,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Android.Game;
 
 /// <summary>
-/// The phone's sensors and cameras in the game (roadmap: "Sensores do celular alimentando o SceMotion e câmera do
+/// The phone's sensors and cameras in the game (roadmap: "Sensores do celular alimentando o SceMotion e camera do
 /// celular no SceCamera"): <see cref="AndroidMotionSensors"/> as the SceMotion source (the "Movimento" setting) and
 /// <see cref="AndroidCamera"/> as the SceCamera host camera. The activity creates it, hands it to the session and
 /// forwards its lifecycle (listeners and cameras only while in the foreground) and the permission result.

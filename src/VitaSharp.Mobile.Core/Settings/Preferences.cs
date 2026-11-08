@@ -26,7 +26,7 @@ public sealed class AppPreferences
     public string GpuProfile { get; set; } = "";
     public bool VSync { get; set; } = true;
     public bool ShowFps { get; set; }
-    /// <summary>"Modo de depuração": debug logging (Log level Debug + DebugMode, docs/notes/debug-mode.md).</summary>
+    /// <summary>"Modo de depuracao": debug logging (Log level Debug + DebugMode, docs/notes/debug-mode.md).</summary>
     public bool DebugMode { get; set; }
     /// <summary>Opacity of the on-screen controls, 0.1..1.</summary>
     public float OnScreenOpacity { get; set; } = 0.55f;
@@ -37,20 +37,31 @@ public sealed class AppPreferences
     /// <summary>"Movimento": what drives SceMotion, "" = automatic (the phone's sensors when it has them, else a
     /// controller's), "phone", "controller" or "off" (Input.AndroidMotionModes).</summary>
     public string Motion { get; set; } = "";
-    /// <summary>"Som de troféu": a chime with the in-game trophy notification (the firmware's notice sound, else a
+    /// <summary>"Som de trofeu": a chime with the in-game trophy notification (the firmware's notice sound, else a
     /// built-in one; same as the desktop launcher's option, --trophy-sound=).</summary>
     public bool TrophySound { get; set; } = true;
     /// <summary>"Conta PSN e rede" (password excluded: it lives in the Android Keystore).</summary>
     public NetworkSettings Network { get; set; } = new();
     /// <summary>Title id of the last game played ("Continuar jogando").</summary>
     public string LastPlayed { get; set; } = "";
+    /// <summary>Language of the app's texts: "" = the phone's, "en" or "pt-BR" (<see cref="Loc.SetLanguage"/>, same
+    /// choice as the desktop launcher's).</summary>
+    public string Language { get; set; } = "";
+
+    /// <summary>The choices of the language row: the phone's language, English, Portuguese.</summary>
+    public static IReadOnlyList<Choice> Languages =>
+    [
+        new("", Loc.Get("ThemeSystem")),
+        new(Loc.English, Loc.Get("LanguageEnglish")),
+        new(Loc.Portuguese, Loc.Get("LanguagePortuguese")),
+    ];
 
     public static AppPreferences Load(string path) => SettingsFile.Load(path, PrefsJson.Default.AppPreferences) ?? new();
     public void Save(string path) => SettingsFile.Save(path, this, PrefsJson.Default.AppPreferences);
 }
 
 /// <summary>
-/// Per-game settings ("Configurações deste jogo" in detalhes.html) and play statistics, stored in
+/// Per-game settings ("Configuracoes deste jogo" in detalhes.html) and play statistics, stored in
 /// &lt;data&gt;/config/games/TITLEID.json. Null settings follow <see cref="AppPreferences"/>.
 /// </summary>
 public sealed class GameSettings
@@ -60,7 +71,7 @@ public sealed class GameSettings
     public string? GpuProfile { get; set; }
     public bool? VSync { get; set; }
     public bool? ShowFps { get; set; }
-    /// <summary>"Resolução interna": render-target scale below native, "0.75" or "0.5" (null = native; per game only,
+    /// <summary>"Resolucao interna": render-target scale below native, "0.75" or "0.5" (null = native; per game only,
     /// VulkanRenderer.ResScale.cs). Lower is faster on GPU-bound games, and softer.</summary>
     public string? ResScale { get; set; }
 
@@ -134,7 +145,7 @@ public static class SettingsChoices
     /// <summary>The label of <paramref name="value"/> in <paramref name="choices"/>, or the value itself.</summary>
     public static string LabelOf(IReadOnlyList<Choice> choices, string value) => choices.FirstOrDefault(c => c.Value == value)?.Label ?? value;
 
-    /// <summary>A per-game row's choices: "Padrão (…)" (follow the global setting, value null) first.</summary>
+    /// <summary>A per-game row's choices: "Padrao (...)" (follow the global setting, value null) first.</summary>
     public static IReadOnlyList<Choice> WithDefault(IReadOnlyList<Choice> choices, string globalValue) =>
         [new(DefaultValue, Loc.Format("MDefaultParen", LabelOf(choices, globalValue))), .. choices];
 

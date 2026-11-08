@@ -156,7 +156,7 @@ public sealed class GpuInfoState
 }
 
 /// <summary>
-/// Informações da GPU (gpu-info.html): what the renderer finds on this device: GPU, driver, Vulkan version,
+/// Informacoes da GPU (gpu-info.html): what the renderer finds on this device: GPU, driver, Vulkan version,
 /// tile-based / unified memory, the features it uses, the active quirk workarounds and the quirks that change nothing.
 /// "Compartilhar" sends the same block as the startup log / info.txt (GpuCapabilities.Describe).
 /// </summary>

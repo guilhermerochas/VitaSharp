@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=0cd0512e3015e0c4bd5ec97a5500a49933fcb86aa14fc46419d3204f016c2e66 -->
+<!-- pair: README.md sha256=2eb6d962f6b474deb849d1c21cd369e2b7761aa930156565aa0ed1a7d871bd27 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -100,7 +100,7 @@ sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/sy
 **Android.** Veja [Android](#android).
 
 **Idioma.** O launcher e a janela do jogo seguem o idioma do sistema (inglês ou português do Brasil);
-**Configurações > Geral > Aparência > Idioma** escolhe um. Os logs continuam em inglês.
+**Configurações > Geral > Aparência > Idioma** escolhe um (no Android: **Ajustes > Aparência > Idioma**). Os logs continuam em inglês.
 
 Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
 `~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
@@ -120,7 +120,8 @@ Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` n
 | `F2` / `Shift+F2` | Taxa de quadros seguinte / anterior com o jogo rodando (nativa, fixa em 30, fixa em 60, sem limite) |
 | `F3` / `Shift+F3` | MSAA seguinte / anterior com o jogo rodando (nativo, superamostragem 2x, desligado; só nesta sessão, com aviso na tela) |
 | `F4` | Modo do mouse: giroscópio (botão do meio), analógico direito, analógico esquerdo ou desligado, salvo por jogo (`Esc` solta o cursor) |
-| `F5` / `F7` | Salvar / carregar o estado rápido; `F6` escolhe um slot (1-9), `Shift+F5` / `Shift+F7` salvam / carregam nele |
+| `F5` / `F7` | Salvar / carregar o estado rápido; `Shift+F5` / `Shift+F7` salvam / carregam no slot escolhido |
+| `F6` | Tela de estados por cima do jogo pausado: o slot rápido e os slots 1-9 com o print, a data, o tempo de jogo e a versão; salvar (substituir pergunta antes, mostrando o print antigo e o atual), carregar (com o print grande), apagar (`Del` / Triângulo) |
 | `F8` | Inicia / para o **Gravar tudo** (ver [Relatar um bug](#relatar-um-bug)) |
 | `Ctrl+F8` | Inicia / para um dump da GPU (`gpudumps/*.vsgd`; `replay-gpu` refaz desenho por desenho, sem o jogo) |
 | `F9` | Liga / desliga o modo de depuração (logs detalhados, pré-gravação de 10 s, capturas automáticas) |

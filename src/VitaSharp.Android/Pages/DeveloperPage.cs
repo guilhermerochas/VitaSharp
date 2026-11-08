@@ -14,7 +14,7 @@ public sealed class DeveloperState
     public string Status { get; set; } = "";
 }
 
-/// <summary>"Opções de desenvolvedor" (developer APK only): the GPU bench's fixtures and variants in files/bench, a run of
+/// <summary>"Opcoes de desenvolvedor" (developer APK only): the GPU bench's fixtures and variants in files/bench, a run of
 /// one fixture against every variant (A/B interleaved, one process per run) and the results table.</summary>
 public sealed class DeveloperPage : Screen<DeveloperState>
 {
@@ -36,7 +36,7 @@ public sealed class DeveloperPage : Screen<DeveloperState>
                 Note(Loc.Format("MBenchVariants", string.Join(", ", variants))),
                 Label(State.Status).TextColor(Palette.Faint).Margin(20, 4),
                 SectionTitle(Loc.Get("MBenchResults")),
-                Card(Label(table.Length > 0 ? table : "—").FontFamily("monospace").FontSize(10).Margin(12)),
+                Card(Label(table.Length > 0 ? table : "\u2014").FontFamily("monospace").FontSize(10).Margin(12)),
                 VStack(SecondaryButton(Loc.Get("MClearResults"), () => { File.Delete(results); SetState(s => s.Revision++); })).Padding(20, 8)
             ), kicker: Loc.Get("MSettings"));
     }

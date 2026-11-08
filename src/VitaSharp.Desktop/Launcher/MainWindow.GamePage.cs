@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Desktop.Launcher.Ui;
 using S = VitaSharp.Desktop.Launcher.Ui.Strings;
@@ -164,6 +165,9 @@ public sealed partial class MainWindow
             if (st.Problem != null)
                 thumb.Children.Add(new Border { Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top, Child = _k.Badge(S.Incompatible, P.Warn, Color.Parse("#0B0E13")) });
             var c = _k.VStack(6, thumb, _k.Text(st.Name, 13.5, FontWeight.SemiBold), _k.Text(S.When(st.When), 12, color: P.Muted));
+            // the play time, as in the in-game picker (F6); a state of another version has the badge instead
+            if (st.Header is { } h && st.Problem == null)
+                c.Children.Add(_k.Text(Loc.Format("SsPlayTime", Host.SaveStateOverlay.PlayTime(h.GuestSeconds)), 11.5, color: P.Faint));
             c.Margin = new Thickness(0, 0, 14, 0);
             bool can = st.Problem == null && _running == null;
             row.Children.Add(Kit.Click(c, () => LoadState(g, st.Path), st.Problem ?? S.LoadStateTip, can));

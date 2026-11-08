@@ -204,7 +204,7 @@ public sealed class Diagnostics
         var asm = Assembly.GetEntryAssembly() ?? typeof(Diagnostics).Assembly;
         string? info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         string when = "";
-        try { when = $", built {File.GetLastWriteTime(Path.Combine(AppContext.BaseDirectory, "VitaSharp.Core.dll")):yyyy-MM-dd HH:mm}"; } catch { }
+        try { when = $", built {Updater.BuildTime().ToLocalTime():yyyy-MM-dd HH:mm}"; } catch { }
         return $"VitaSharp {info ?? asm.GetName().Version?.ToString() ?? "?"}{when}";
     }
 

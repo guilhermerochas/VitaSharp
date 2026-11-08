@@ -402,9 +402,9 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         var bar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         bar.SetPadding(Dp(4), Dp(6), Dp(4), 0);
-        _fps = Chip("— FPS", 12);
+        _fps = Chip("\u2014 FPS", 12);
         bar.AddView(_fps);
-        var pause = Chip("❚❚", 12);
+        var pause = Chip("\u275A\u275A", 12);
         pause.Click += (_, _) => OpenMenu();
         // not focusable: arrow keys of a keyboard (or a D-pad that is not a game controller) moved the focus onto it
         // and drew Android's focus highlight over the game
@@ -447,7 +447,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 #if VITASHARP_DEVELOPER
         rec |= _session.CaptureDir != null;
 #endif
-        if (rec) _fps.Text = "● REC  " + _fps.Text;
+        if (rec) _fps.Text = "\u25CF REC  " + _fps.Text;
 
         // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
         if (++_fpsTicks % 30 == 0 && !_session.Paused)

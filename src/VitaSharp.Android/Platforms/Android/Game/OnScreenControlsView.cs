@@ -12,9 +12,9 @@ namespace VitaSharp.Android.Game;
 
 /// <summary>
 /// The translucent on-screen controls of jogo.html over the SurfaceView: draws <see cref="OnScreenPad.Layout"/> (pressed
-/// controls in the accent colour, stick knobs following the finger, TRÁS lit while rear touch is on) and feeds every
+/// controls in the accent colour, stick knobs following the finger, TRAS lit while rear touch is on) and feeds every
 /// MotionEvent pointer to the pad as fractions of the view. Touches on the image that hit no control become front touch
-/// (or rear touch with TRÁS on) inside the pad.
+/// (or rear touch with TRAS on) inside the pad.
 /// </summary>
 public sealed class OnScreenControlsView : View
 {

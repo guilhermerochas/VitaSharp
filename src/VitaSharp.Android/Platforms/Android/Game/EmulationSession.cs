@@ -161,7 +161,7 @@ public sealed partial class EmulationSession : IDisposable
             StopHint = Loc.Get("MStopHint"),
             Status = s => CaptureStatus?.Invoke(s),
         });
-        // VITASHARP_CAPTURE_PREROLL=SECONDS in env.txt, or the pause menu's "Pré-gravação"
+        // VITASHARP_CAPTURE_PREROLL=SECONDS in env.txt, or the pause menu's "Pre-gravacao"
         if (double.TryParse(System.Environment.GetEnvironmentVariable(EnvVars.CapturePreRoll), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var preRoll))
             Capture.SetPreRoll(preRoll);
 
@@ -188,7 +188,7 @@ public sealed partial class EmulationSession : IDisposable
 
     VitaSharp.Core.Shell.PcmSound? _trophySound;
 
-    /// <summary>"Som de troféu" (on by default): the firmware's notice chime, else the built-in one, on a device stream
+    /// <summary>"Som de trofeu" (on by default): the firmware's notice chime, else the built-in one, on a device stream
     /// of its own (the guest's ports are untouched). Called when the trophy toast appears.</summary>
     public void PlayTrophySound()
     {
@@ -333,7 +333,7 @@ public sealed partial class EmulationSession : IDisposable
     /// <summary>"Gravar tudo": the session capture of this game run (pause menu).</summary>
     public Core.Capture.SessionCapture Capture { get; }
 
-    /// <summary>Seconds of pre-roll when the player turns "Pré-gravação" on.</summary>
+    /// <summary>Seconds of pre-roll when the player turns "Pre-gravacao" on.</summary>
     public const double PreRollSeconds = 10;
 
 #if VITASHARP_DEVELOPER
@@ -347,7 +347,7 @@ public sealed partial class EmulationSession : IDisposable
 
     /// <summary>
     /// "Gravar tempo" (kind tempo): the developer trace markers on (a Perfetto session started with build/android-trace.*
-    /// sees them), fps and the renderer's PERF lines at the stop. "Gravar conteúdo" (conteudo): a GPU dump of the
+    /// sees them), fps and the renderer's PERF lines at the stop. "Gravar conteudo" (conteudo): a GPU dump of the
     /// next frames (up to 600) for the bench and replay-gpu, with every guest memory range the GPU read (texture data
     /// and descriptors, so the texture uploads), and the guest audio ports as WAVs (audio/). Output:
     /// files/captures/TITLE_DATE_KIND/ with info.txt and the log; pulled with adb (tools/dev/README.md).

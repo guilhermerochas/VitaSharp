@@ -74,7 +74,7 @@ public sealed class FirmwarePage : Screen<FirmwareState>
         Card(
             VStack(
                 Label(Loc.Format("MInstalling", State.Installing)).FontFamily(Fonts.InterSemiBold).FontSize(14),
-                Label(State.Progress.Stage + (State.Progress.Detail is { } d ? $" · {d}" : "")).FontSize(12).TextColor(Palette.Muted)
+                Label(State.Progress.Stage + (State.Progress.Detail is { } d ? $" \u00B7 {d}" : "")).FontSize(12).TextColor(Palette.Muted)
                     .LineBreakMode(LineBreakMode.TailTruncation),
                 ProgressBar().Progress(State.Progress.Fraction),
                 SecondaryButton(Loc.Get("MCancel"), () => _cts?.Cancel())

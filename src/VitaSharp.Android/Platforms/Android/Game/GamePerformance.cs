@@ -21,7 +21,7 @@ namespace VitaSharp.Android.Game;
 /// 16.7 ms at 60 fps, 33.3 ms at 30), so the system raises the clocks before the game falls behind.</item>
 /// <item><b>Display rate</b> (API 30+, always on): the game's frame rate goes to <c>Surface.setFrameRate</c> through
 /// <see cref="FrameRateChanged"/>, so a 90/120 Hz panel switches to a rate the frames divide evenly.</item>
-/// <item>hot threads get a 1 µs timer slack (sleeps end on time without spinning: <see cref="HostTuning.AvoidBusyWaits"/>).</item>
+/// <item>hot threads get a 1 us timer slack (sleeps end on time without spinning: <see cref="HostTuning.AvoidBusyWaits"/>).</item>
 /// </list>
 /// <c>VITASHARP_ANDROID_AFFINITY=off</c> turns placement and ADPF off (the display rate and timer slack stay), to
 /// compare. Everything here is best effort: a failing call is logged once and the game goes on.
@@ -78,8 +78,8 @@ public sealed partial class GamePerformance : IDisposable
 
     // ------------------------------------------------------------------ threads
 
-    /// <summary>On the registering thread: guest threads and the GPU worker sleep with a 1 µs timer slack (Linux's
-    /// default 50 µs makes every short nanosleep late, and these threads no longer spin to make up for it).</summary>
+    /// <summary>On the registering thread: guest threads and the GPU worker sleep with a 1 us timer slack (Linux's
+    /// default 50 us makes every short nanosleep late, and these threads no longer spin to make up for it).</summary>
     void OnRegistered(int tid, NativeThread.Role role)
     {
         if (role is not (NativeThread.Role.Guest or NativeThread.Role.Gpu)) return;

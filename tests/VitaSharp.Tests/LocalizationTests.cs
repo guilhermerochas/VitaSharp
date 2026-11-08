@@ -7,7 +7,7 @@ namespace VitaSharp.Tests;
 
 /// <summary>
 /// The interface texts (src/VitaSharp.Core/Localization/Texts.resx in English, Texts.pt-BR.resx in Portuguese): both
-/// files have the same keys with the same placeholders, every key the code asks for exists, and the desktop sources
+/// files have the same keys with the same placeholders, every key the code asks for exists, and the front-end sources
 /// hold no interface text of their own (they are ASCII-only, Ryubing rule 16: a Portuguese text in the code fails).
 /// </summary>
 public partial class LocalizationTests
@@ -78,12 +78,15 @@ public partial class LocalizationTests
         Assert.Empty(missing);
     }
 
-    /// <summary>The desktop sources (launcher, game window, notices) are ASCII-only: every interface text lives in the
-    /// language files, symbols are \u escapes.</summary>
-    [Fact]
-    public void DesktopSourcesHaveNoTextOfTheirOwn()
+    /// <summary>The front-end sources (desktop launcher, game window and notices; the Android app and its shared
+    /// mobile logic) are ASCII-only: every interface text lives in the language files, symbols are \u escapes.</summary>
+    [Theory]
+    [InlineData("VitaSharp.Desktop")]
+    [InlineData("VitaSharp.Android")]
+    [InlineData("VitaSharp.Mobile.Core")]
+    public void FrontEndSourcesHaveNoTextOfTheirOwn(string project)
     {
-        string dir = Path.Combine(Root(), "src", "VitaSharp.Desktop");
+        string dir = Path.Combine(Root(), "src", project);
         var bad = new List<string>();
         foreach (var file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
         {

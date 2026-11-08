@@ -109,13 +109,13 @@ public sealed class ControlsView : Screen<ControlsState>
         return shown.SelectMany((c, i) => new VisualNode?[]
         {
             i > 0 ? Divider() : null,
-            Row(ControlName(c), string.Join(" / ", p.Get(c).Select(b => b.Describe(kind))) is { Length: > 0 } s ? s : "—"),
+            Row(ControlName(c), string.Join(" / ", p.Get(c).Select(b => b.Describe(kind))) is { Length: > 0 } s ? s : "\u2014"),
         }).ToArray();
     }
 
     static string ControlName(VitaControl c) => c switch
     {
-        VitaControl.Cross => "✕", VitaControl.Circle => "○", VitaControl.Square => "□", VitaControl.Triangle => "△",
+        VitaControl.Cross => "\u2715", VitaControl.Circle => "\u25CB", VitaControl.Square => "\u25A1", VitaControl.Triangle => "\u25B3",
         VitaControl.PS => Loc.Get("MPsButton"), VitaControl.Up => Loc.Get("MDpad"), VitaControl.LStickUp => Loc.Get("MLeftStick"),
         VitaControl.RStickUp => Loc.Get("MRightStick"), VitaControl.Start => "START", VitaControl.Select => "SELECT",
         _ => c.ToString(),

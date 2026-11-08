@@ -20,8 +20,8 @@ public sealed class GameState
 
 /// <summary>
 /// Detalhes do jogo (detalhes.html): cover, play button, play time / average FPS / last played, the trophy card
-/// (opens Troféus), the game's own settings (CPU backend, clock 333/444 MHz, GPU profile, VSync, FPS overlay; each
-/// "Padrão" follows Ajustes) and its saves (ux0:user/00/savedata/TITLEID).
+/// (opens Trofeus), the game's own settings (CPU backend, clock 333/444 MHz, GPU profile, VSync, FPS overlay; each
+/// "Padrao" follows Ajustes) and its saves (ux0:user/00/savedata/TITLEID).
 /// </summary>
 public sealed class GamePage : Screen<GameState, GameProps>
 {
@@ -70,7 +70,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
             VScrollView(
                 VStack(
                     Grid("Auto", "Auto,*",
-                        IconButton("‹", () => Navigation?.PopAsync()),
+                        IconButton("\u2039", () => Navigation?.PopAsync()),
                         Label("").GridColumn(1)
                     ).Padding(16, 16, 16, 0),
                     HStack(
@@ -82,11 +82,11 @@ public sealed class GamePage : Screen<GameState, GameProps>
                     ).Spacing(16).Padding(20, 16, 20, 0),
                     Grid("Auto", "*,Auto",
                         PrimaryButton(Loc.Get("MPlay"), () => GameActivity.Launch(MainActivity.Current!, g.TitleId)),
-                        IconButton("⋯", More, 54).GridColumn(1).Margin(12, 0, 0, 0)
+                        IconButton("\u22EF", More, 54).GridColumn(1).Margin(12, 0, 0, 0)
                     ).Padding(20, 18, 20, 0),
                     Grid("Auto", "*,*,*",
                         Stat(Loc.Get("MPlayTime"), GameLibrary.PlayTime(s.PlaySeconds), 0),
-                        Stat(Loc.Get("MAverageFps"), s.AverageFps > 0 ? $"{s.AverageFps:0}" : "—", 1),
+                        Stat(Loc.Get("MAverageFps"), s.AverageFps > 0 ? $"{s.AverageFps:0}" : "\u2014", 1),
                         Stat(Loc.Get("MLast"), GameLibrary.LastPlayed(s.LastPlayedUtc, DateTime.UtcNow), 2)
                     ).ColumnSpacing(10).Padding(20, 16, 20, 0),
                     TrophyCard(),
@@ -126,7 +126,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
         ).HasNavigationBar(false).BackgroundColor(Palette.Background);
     }
 
-    /// <summary>A per-game value: "Padrão (…)" when it follows Ajustes, else the game's own choice.</summary>
+    /// <summary>A per-game value: "Padrao (...)" when it follows Ajustes, else the game's own choice.</summary>
     static string ValueText(IReadOnlyList<Choice> choices, string? own, string effective) =>
         own == null ? Loc.Format("MDefaultValue", effective) : SettingsChoices.LabelOf(choices, own);
 
@@ -145,7 +145,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
         return Border(
                 VStack(
                     Grid("Auto", "Auto,*,Auto,Auto",
-                        Label("🏆").FontSize(18).TextColor(Palette.Gold).VCenter(),
+                        Label("\U0001F3C6").FontSize(18).TextColor(Palette.Gold).VCenter(),
                         Label(Loc.Get("MTrophies")).FontFamily(Fonts.SoraSemiBold).FontSize(17).GridColumn(1).Margin(10, 0).VCenter(),
                         Label(t.HasTrophies ? $"{t.Earned} / {t.Total}" : Loc.Get("MNoTrophies")).FontFamily(Fonts.InterSemiBold).FontSize(15).GridColumn(2).VCenter(),
                         t.HasTrophies ? Label($"  {t.Percent}%").FontSize(15).TextColor(Palette.Accent).GridColumn(3).VCenter() : null
@@ -154,7 +154,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
                     t.HasTrophies
                         ? HStack(grades.Where(gr => t.ByGrade.ContainsKey(gr)).Select(gr =>
                             (VisualNode)HStack(
-                                Label("●").FontSize(12).TextColor(Color.FromArgb(TrophyList.GradeColor(gr))).VCenter(),
+                                Label("\u25CF").FontSize(12).TextColor(Color.FromArgb(TrophyList.GradeColor(gr))).VCenter(),
                                 Label($"{t.ByGrade[gr].Earned}/{t.ByGrade[gr].Total}").FontSize(14).TextColor(Palette.TextSoft).VCenter()
                             ).Spacing(6)).ToArray()).Spacing(18).Margin(0, 12, 0, 0)
                         : null

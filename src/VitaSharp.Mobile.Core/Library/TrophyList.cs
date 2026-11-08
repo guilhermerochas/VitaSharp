@@ -4,7 +4,7 @@ using VitaSharp.Mobile.Core.Storage;
 
 namespace VitaSharp.Mobile.Core.Library;
 
-/// <summary>One row of the Troféus list. Hidden trophies keep their text secret until unlocked, as on the console.</summary>
+/// <summary>One row of the Trofeus list. Hidden trophies keep their text secret until unlocked, as on the console.</summary>
 public sealed record TrophyRow(string CommId, int Id, TrophyGrade Grade, string Name, string Detail, bool Hidden, DateTime? UnlockedUtc, byte[]? Icon)
 {
     public bool Unlocked => UnlockedUtc != null;
@@ -12,7 +12,7 @@ public sealed record TrophyRow(string CommId, int Id, TrophyGrade Grade, string 
     public string ShownDetail => Hidden && !Unlocked ? Loc.Get("MHiddenTrophyDetail") : Detail;
 }
 
-/// <summary>The Troféus screen (docs/android/mockups/trofeus.html) of one game: every set it ships, its rows and the
+/// <summary>The Trofeus screen (docs/android/mockups/trofeus.html) of one game: every set it ships, its rows and the
 /// filters "Todos", "Conquistados" and "Faltam".</summary>
 public sealed class TrophyList
 {

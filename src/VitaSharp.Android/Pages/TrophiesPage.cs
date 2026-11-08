@@ -15,7 +15,7 @@ public sealed class TrophiesState
 }
 
 /// <summary>
-/// Troféus (trofeus.html): the game's trophy set from its TROPHY.TRP and the unlocks in ux0:user/00/trophy: progress,
+/// Trofeus (trofeus.html): the game's trophy set from its TROPHY.TRP and the unlocks in ux0:user/00/trophy: progress,
 /// counts per grade, filters and the list (icon, grade, description, unlock date); locked and hidden trophies dimmed.
 /// </summary>
 public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
@@ -75,7 +75,7 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
         double opacity = r.Unlocked ? 1 : 0.55;
         var icon = r.Icon is { } bytes && (r.Unlocked || !r.Hidden)
             ? Image().Source(ImageSource.FromStream(() => new MemoryStream(bytes))).Aspect(Aspect.AspectFill)
-            : (VisualNode)Label(r.Hidden ? "?" : "🏆").FontSize(20).TextColor(Palette.Muted).Center();
+            : (VisualNode)Label(r.Hidden ? "?" : "\U0001F3C6").FontSize(20).TextColor(Palette.Muted).Center();
         return Border(
                 Grid("Auto", "Auto,*",
                     Border(icon).StrokeShape(new RoundRectangle().CornerRadius(12)).StrokeThickness(0)

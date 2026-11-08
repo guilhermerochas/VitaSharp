@@ -17,7 +17,7 @@ public sealed class SettingsState
 /// <summary>
 /// Ajustes (ajustes.html): Sistema (firmware status, Sistema do Vita), Desempenho (the default CPU backend, clock and
 /// GPU profile of every game, VSync, FPS, GPU driver and GPU information), Rede e PSN, Armazenamento (where the data
-/// folder is) and Depuração (debug logging, the log files).
+/// folder is) and Depuracao (debug logging, the log files).
 /// </summary>
 public sealed class SettingsView : Screen<SettingsState>
 {
@@ -54,9 +54,14 @@ public sealed class SettingsView : Screen<SettingsState>
                         RootPage.Show(RootTab.Library);
                     }, detail: Loc.Get("MInstallGameDetail"))
                 ),
+                SectionTitle(Loc.Get("Appearance")),
+                Card(
+                    Row(Loc.Get("Language"), SettingsChoices.LabelOf(AppPreferences.Languages, p.Language), PickLanguage,
+                        detail: Loc.Get("MLanguageDetail"))
+                ),
                 SectionTitle(Loc.Get("MSystem")),
                 Card(
-                    Row(Loc.Get("MFirmware"), fw?.Summary ?? "…", () => Navigation?.PushAsync<FirmwarePage>(),
+                    Row(Loc.Get("MFirmware"), fw?.Summary ?? "\u2026", () => Navigation?.PushAsync<FirmwarePage>(),
                         valueColor: fw?.Installed != null ? Palette.Ok : Palette.Muted),
                     Divider(),
                     Row(Loc.Get("MVitaSystem"), fw is { Shell: true } ? Loc.Get("MReady") : Loc.Get("MNeedsFirmware"), () =>
@@ -115,7 +120,7 @@ public sealed class SettingsView : Screen<SettingsState>
 #endif
                 ),
 
-                Note($"VitaSharp · {RuntimeReport.Runtime}")
+                Note($"VitaSharp \u00B7 {RuntimeReport.Runtime}")
             ));
     }
 
@@ -123,6 +128,31 @@ public sealed class SettingsView : Screen<SettingsState>
     {
         var v = await Choose(title, choices);
         if (v != null) Change(_ => apply(v));
+    }
+
+    /// <summary>The language row: the choice is saved and applied at once; the screens already built keep their texts
+    /// until the app starts again, which it offers to do.</summary>
+    async void PickLanguage()
+    {
+        var v = await Choose(Loc.Get("Language"), AppPreferences.Languages);
+        if (v == null || v == AppServices.Prefs.Language) return;
+        Change(x => x.Language = v);
+        Loc.SetLanguage(v);
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = Loc.Culture;
+        if (await Confirm(Loc.Get("Language"), Loc.Get("MLanguageRestart"), Loc.Get("MRestart"), Loc.Get("MLater")))
+            RestartApp();
+    }
+
+    /// <summary>Starts the app's main screen in a new task and ends this process (the UI process only: a game runs in
+    /// its own).</summary>
+    static void RestartApp()
+    {
+        var context = MainActivity.Current ?? (global::Android.Content.Context)AppServices.AppContext;
+        if (context.PackageManager?.GetLaunchIntentForPackage(context.PackageName!) is not { } intent) return;
+        intent.AddFlags(global::Android.Content.ActivityFlags.NewTask | global::Android.Content.ActivityFlags.ClearTask);
+        context.StartActivity(intent);
+        Log.Info("Language changed: restarting the app");
+        global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
     }
 
     void Change(Action<AppPreferences> change)

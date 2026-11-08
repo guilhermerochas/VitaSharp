@@ -39,7 +39,7 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
 
     protected MauiReactor.HStack Header(string title, bool back, string? kicker = null) =>
         HStack(
-            back ? IconButton("‹", () => Navigation?.PopAsync()) : null,
+            back ? IconButton("\u2039", () => Navigation?.PopAsync()) : null,
             VStack(
                 kicker != null ? Label(kicker.ToUpperInvariant()).FontSize(12).TextColor(Palette.Muted).CharacterSpacing(1) : null,
                 Label(title).FontFamily(Fonts.SoraBold).FontSize(back ? 22 : 28).LineBreakMode(LineBreakMode.TailTruncation)
@@ -77,7 +77,7 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
             ).Spacing(2).VCenter(),
             value != null ? Label(value).FontSize(14).TextColor(valueColor ?? Palette.Muted).VCenter().HEnd()
                 .LineBreakMode(LineBreakMode.TailTruncation).MaximumWidthRequest(200).GridColumn(1).Margin(8, 0, 0, 0) : null,
-            onTap != null ? Label("›").FontSize(20).TextColor(Palette.Faint).VCenter().GridColumn(2).Margin(10, 0, 0, 0) : null
+            onTap != null ? Label("\u203A").FontSize(20).TextColor(Palette.Faint).VCenter().GridColumn(2).Margin(10, 0, 0, 0) : null
         ).Padding(16, 14).MinimumHeightRequest(56);
         return onTap != null ? row.OnTapped(onTap) : row;
     }
