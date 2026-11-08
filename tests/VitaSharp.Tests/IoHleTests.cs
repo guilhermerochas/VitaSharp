@@ -153,6 +153,26 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void AsyncSyscallFormsTakeTheParamFromTheWrapperStruct()
+    {
+        // 3.74 libkernel: sceIoOpenAsync puts its SceIoAsyncParam* at opt+0, sceIoPwriteAsync after the 64-bit offset
+        var io = new IoFileMgr();
+        uint opt = fx.Memory.Alloc(0x10, "opt"), param = fx.Memory.Alloc(0x18, "asyncParam");
+        GuestMemory.W32(opt, param);
+        GuestMemory.Write(param, -1L);
+        int op = Call(io, "_sceIoOpenAsync", "tty0:", 3, 0, opt);
+        int fd = Call(io, "sceIoComplete", op);
+        Assert.Equal((long)fd, GuestMemory.Read<long>(param));
+        uint buf = fx.Memory.Alloc(16, "buf");
+        GuestMemory.Write(opt, 0L);       // offset
+        GuestMemory.W32(opt + 8, param);  // then the param
+        int wop = Call(io, "_sceIoPwriteAsync", fd, buf, 4u, opt);
+        Assert.Equal((long)SceError.IO_EBADF, GuestMemory.Read<long>(param)); // a tty has no file to write at an offset
+        Call(io, "sceIoComplete", wop);
+        Assert.Equal(0, Call(io, "sceIoComplete", Call(io, "sceIoCloseAsync", fd, 0u)));
+    }
+
+    [Fact]
     public void AsyncOpIsAnEventObject()
     {
         // libpaf waits for each sceIoReadAsync with sceKernelWaitEvent(opid, 1, ...) before sceIoComplete
