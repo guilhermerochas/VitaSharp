@@ -725,7 +725,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
   LiveArea/capturas/estados salvos/troféus/ajustes por jogo, configurações organizadas por seção, tema claro e escuro e
   as mesmas cores, fontes e ícones do app Android. Primeiro mostrar a proposta ao usuário (prints ou protótipo) e só
-  implementar depois da aprovação
+  implementar depois da aprovação. Proposta feita (07/11/2026, etapa 1, aguardando aprovação):
+  `docs/notes/desktop-launcher-design.md` e o protótipo `ui-prototype` (`Launcher/Prototype`, PNGs sem janela)
 
 - [ ] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
   launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão
