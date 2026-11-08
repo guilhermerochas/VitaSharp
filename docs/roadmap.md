@@ -80,6 +80,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   todos; gameplay em 2x de Killzone, Uncharted, Gravity Rush, Sonic Mania e FIFA 13 (dump de partida), 4x de Killzone e
   Sonic Mania. Limite conhecido: `gl_PointSize` não é escalado (sprites de ponto ficam menores acima do nativo; mudar o
   gerador invalida o cache de shaders de todos)
+  Confirmado pelo usuário (07/11/2026)
 - [ ] Resolução interna maior no Android (opção por jogo nos ajustes e aviso de custo de GPU), depois de resolver o
   desempenho do Android (ordem do usuário, 07/11/2026); o renderizador já aceita 2x-4x
 - [x] Taxa de quadros por jogo (pedido do usuário, 06/11/2026): uma opção **por jogo** (não global) com **Nativo**
@@ -932,7 +933,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (sceNpManagerGetCachedParam, com o qual o jogo chega à abertura aqui): conferir com o build novo antes de investigar
   Conferido (07/11/2026, agente C, main 176f5d6): 	ests/scenarios/99vidas_boot.txt chega ao tutorial com as lutas a
   60 fps (quadro 3988, ugsC3_data/tests/99vidas_boot/sheet_3.png): o boot sem quadros era do release antigo
-- [ ] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
+- [x] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
   um botão com o jogo e com o shell abertos
@@ -941,6 +942,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   hora (os controles do Android nem pegavam o perfil salvo antes de reconectar). Jogo rodando (Jak 1, janela oculta):
   "Input: input.json changed, mapping reloaded" logo depois de trocar o arquivo (ugsC17_out/input1/log.txt); o efeito
   nos botões está no teste ARemappingAppliesWithTheGameRunning. Falta o usuário trocar um botão com o jogo e o shell abertos
+  Confirmado pelo usuário (07/11/2026)
 - [x] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
   depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
   a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
