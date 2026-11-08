@@ -93,6 +93,12 @@ public sealed partial class Libc
         _ => 0,
     };
 
+    static readonly HashSet<string> InternalFunctions =
+    [
+        "bad_array_new_length.D0", "bad_function_call.D0", "bad_function_call.what", "bad_weak_ptr.D0", "bad_weak_ptr.what",
+        "system_error.D0",
+    ];
+
     /// <summary>
     /// Builds the exported RTTI of Libc.Rtti.g.cs in guest memory: every typeinfo and name, and the vtables whose
     /// functions the HLE implements (the others, the stream and locale classes, stay unprovided).
@@ -109,8 +115,7 @@ public sealed partial class Libc
         bool Buildable(string[] words) => words.All(w => w[0] switch
         {
             'F' => Emu.Hle.Implements(System.Convert.ToUInt32(w[1..], 16)),
-            'H' => w[1..] is "bad_array_new_length.D0" or "bad_function_call.D0" or "bad_function_call.what" or "bad_weak_ptr.D0"
-                or "bad_weak_ptr.what" or "system_error.D0",
+            'H' => InternalFunctions.Contains(w[1..]),
             'X' => false,
             _ => true,
         });
@@ -178,6 +183,8 @@ public sealed partial class Libc
             if (nid >= 0xFFFF0000) continue; // not exported
             Emu.Hle.RegisterVariable(nid, () => Rtti.Address.GetValueOrDefault(nid));
         }
+        RegisterStreamVariables();
+        RegisterLibcVariables();
     }
 
     // ------------------------------------------------------------------ per-thread globals

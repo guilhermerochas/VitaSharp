@@ -144,7 +144,8 @@ public static class Program
                 // docs/hle/data/vitasharp-implemented.tsv (nid, name, module, library, "vh" when the VitaSDK lists it).
                 return ListHleImplemented(args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..]);
             case "hle-coverage":
-                return HleCoverage(args.Skip(1).FirstOrDefault(a => a.StartsWith("--out="))?["--out=".Length..]);
+                return HleCoverage(args.Skip(1).FirstOrDefault(a => a.StartsWith("--out="))?["--out=".Length..],
+                    args.Skip(1).FirstOrDefault(a => a.StartsWith("--vitasdk="))?["--vitasdk=".Length..]);
             case "imports" when args.Length >= 2:
             {
                 // imports <title> [exe] [--names=SceNp,SceNet]: also list every imported function name of the
@@ -425,7 +426,7 @@ public static class Program
     /// ones the installed games import, the ones the system programs/modules import (not already counted for games) and
     /// the rest; --out writes one line per firmware function (nid, name, library, module, group, implemented, one
     /// importer).</summary>
-    static int HleCoverage(string? outTsv)
+    static int HleCoverage(string? outTsv, string? vitasdkTsv = null)
     {
         Log.Level = LogLevel.Warn;
         var impl = HleImplementedNids();
@@ -442,6 +443,16 @@ public static class Program
         }
         Line("overall", rows);
         foreach (var g in new[] { "games", "system", "general" }) Line(g, rows.Where(r => r.Group == g));
+        // the VitaSDK column: every user function of the VitaSDK NID list (docs/hle/data/vitasdk-user-functions.tsv), exported
+        // by the installed firmware or not
+        vitasdkTsv ??= Path.Combine(AppContext.BaseDirectory, "vitasdk-user-functions.tsv") is var d && File.Exists(d) ? d : null;
+        if (vitasdkTsv != null && File.Exists(vitasdkTsv))
+        {
+            var sdk = File.ReadLines(vitasdkTsv).Where(l => l.StartsWith("0x"))
+                .Select(l => uint.Parse(l.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber)).Distinct().ToList();
+            int n = sdk.Count(impl.ContainsKey);
+            Console.WriteLine($"{"vitasdk",-10} {n,6} / {sdk.Count,6}  {(sdk.Count == 0 ? 0 : 100.0 * n / sdk.Count),6:F1}%");
+        }
         // games/system imports that no installed firmware module exports (HLE-only libraries, removed ones)
         int extra = c.GameImports.Keys.Concat(c.SystemImports.Keys).Distinct().Count(n => !c.Exported.ContainsKey(n));
         Console.WriteLine($"({extra} imported NIDs are not exported by any installed firmware module; not counted)");
@@ -519,7 +530,7 @@ public static class Program
         Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
-        Console.WriteLine("  hle-coverage [--out=<tsv>]          HLE coverage of every function the installed firmware exports (games/system/general)");
+        Console.WriteLine("  hle-coverage [--out=<tsv>] [--vitasdk=<tsv>]  HLE coverage of every function the installed firmware exports (games/system/general)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");
         Console.WriteLine("  self2elf <in> <out> [license]        decrypt a SELF");

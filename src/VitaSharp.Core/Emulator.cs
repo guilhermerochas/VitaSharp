@@ -562,7 +562,8 @@ public sealed class Emulator : IDisposable
         }
         if (later > 0) Log.Info($"{later} variable imports wait for firmware modules the program loads itself (libpaf, common_gui_dialog...)");
         if (waiting.Count > 0)
-            Log.Info($"{_pendingVariables.Count} variable imports wait for a module exporting {string.Join(", ", waiting)}");
+            Log.Info($"{_pendingVariables.Count} variable imports wait for a module exporting {string.Join(", ", waiting)}: " +
+                string.Join(" ", _pendingVariables.Select(n => $"{n:X8}")));
     }
 
     /// <summary>Variable imports from libraries no module exported when the executable loaded (see LoadTitle).</summary>
