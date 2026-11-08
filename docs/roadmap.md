@@ -444,10 +444,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
+- [x] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
   música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
   `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
   para ela tocar; validar com gravação do áudio (F8) na tela inicial e comparar com um vídeo do Vita real
+  Causa (07/11/2026, fix/system-apps-9): o shell toca `pd0:data/systembgm/home.at9` (registro /CONFIG/SHELL/bgm,
+  player SceShellMusicCore na porta BGM), mas o pd0 é dado de fábrica que nenhuma atualização traz e a instalação do
+  usuário (do PSVUPDAT.PUP) tem o pd0 vazio. Com o pd0 do Vita3K numa cópia dos dados a tela inicial toca: porta BGM
+  48 kHz, 33 s em 33 s, 0 underruns; o espectrograma bate com o home.at9 decodificado pelo ffmpeg (correlação 0,98;
+  trecho sem relação 0,80), mesmo nível (`scratchpad/fw9_out/bgm2_audio/03_port2_BGM_48000.wav`). Agora: a instalação
+  do PUP copia o pd0 do Vita3K quando ele existe, `install-firmware --pd0[=<pasta>]` copia só o pd0 e o shell avisa no
+  log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
+  abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
 - [ ] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar

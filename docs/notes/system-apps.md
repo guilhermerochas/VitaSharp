@@ -366,7 +366,8 @@ Found in this round (not fixed):
   difference.
 - pd0 is not needed: it is factory data (Welcome Park, pd0:data/systembgm) that no system update carries. With
   `install-firmware PSVUPDAT.PUP` (os0 + vs0) plus sa0 fonts the shell boots to the home screen; install-firmware says
-  when sa0 or pd0 are missing.
+  when sa0 or pd0 are missing. The home screen music needs pd0 (pd0:data/systembgm/home.at9, played by
+  SceShellMusicCore on the BGM port): `install-firmware --pd0` copies Vita3K's, and a PUP install does it by itself.
 - With the old single-process fallback, the switch away from the shell still waits 10 s for one shell thread.
 
 ## The trophy server (shell.self)

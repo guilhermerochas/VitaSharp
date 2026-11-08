@@ -425,6 +425,7 @@ public static class Program
         Console.WriteLine("                                       install a VPK/content zip (app, patch or add-on, by param.sfo category)");
         Console.WriteLine("  install-firmware <PSVUPDAT.PUP>       install the official system software (os0/vs0/sa0/pd0) into the data folder");
         Console.WriteLine("  install-firmware <folder>|--vita3k   copy a firmware already installed elsewhere (e.g. Vita3K's)");
+        Console.WriteLine("  install-firmware --pd0[=<folder>]     copy only pd0 (factory data: the home screen music), from Vita3K by default");
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
         Console.WriteLine("  import-trophies <folder>|--vita3k    import a PS Vita's ur0:user/00/trophy (decrypted copy) or Vita3K's trophies");

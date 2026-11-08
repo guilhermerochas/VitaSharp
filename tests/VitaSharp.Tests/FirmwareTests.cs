@@ -594,6 +594,29 @@ public class FirmwareTests
     }
 
     [Fact]
+    public void Installer_ImportFactoryDataCopiesOnlyPd0()
+    {
+        var tmp = NewTempRoot();
+        try
+        {
+            string other = Path.Combine(tmp, "vita3k"), fsRoot = Path.Combine(tmp, "fs");
+            Directory.CreateDirectory(Path.Combine(other, "pd0", "data", "systembgm"));
+            File.WriteAllBytes(Path.Combine(other, "pd0", "data", "systembgm", "home.at9"), Bytes(40, 3));
+            Directory.CreateDirectory(Path.Combine(other, "vs0", "sys", "external"));
+            File.WriteAllBytes(Path.Combine(other, "vs0", "sys", "external", "libSceXml.suprx"), Bytes(50, 1));
+            Directory.CreateDirectory(Path.Combine(fsRoot, "pd0")); // empty, as a PUP install leaves it
+            Assert.False(FirmwareInstaller.HasFactoryData(fsRoot));
+            var info = FirmwareInstaller.ImportFactoryData(other, fsRoot);
+            Assert.Contains("pd0", info.Partitions);
+            Assert.True(FirmwareInstaller.HasFactoryData(fsRoot));
+            Assert.Equal(Bytes(40, 3), File.ReadAllBytes(Path.Combine(fsRoot, "pd0", "data", "systembgm", "home.at9")));
+            Assert.False(Directory.Exists(Path.Combine(fsRoot, "vs0"))); // only pd0
+            Assert.Throws<InvalidDataException>(() => FirmwareInstaller.ImportFactoryData(Path.Combine(tmp, "nothing"), fsRoot));
+        }
+        finally { FirmwareInstaller.DeleteTree(tmp); }
+    }
+
+    [Fact]
     public void FirmwareInfo_AbsentWithoutModules()
     {
         var tmp = NewTempRoot();
