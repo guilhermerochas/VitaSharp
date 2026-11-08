@@ -1078,16 +1078,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
-  usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). Achados (feat/product-4): o MP4 gravado está
-  certo — ffprobe dá 7,70 s; `mvhd` escala 90000, duração 693120; `mdhd` do vídeo 30000/230230 (29,97 fps, `stts` 230
-  x 1001), do áudio 48000/369664; `tkhd`/`elst` coerentes; os `uuid` da Sony (PROF/USMT) sem duração errada. 1:09 é
-  exatamente 693120 / 10000, ou seja, a duração de 90 kHz lida numa unidade 9x maior no lado do player (o avPlayer
-  da câmera é LLE e lê o arquivo sozinho; suspeitos: um HLE no caminho do player/perfilador de vídeo que devolve tempo
-  em unidade errada, ou o banco AVContent). Não deu para reproduzir no headless: o toque no botão foto/vídeo do modo
-  câmera (0.94, 0.58, como no `fw12_vidplay.nav`) não troca o modo nesta rodada, nem com a câmera cinza. Próximo
-  passo: reproduzir com a janela (ou outra rota até o modo vídeo), ler o tempo mostrado e rastrear as chamadas HLE do
-  avPlayer/`SceVideoProfiler` com `--trace-hle-only`.
+- [x] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
+  usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). O MP4 gravado está certo (ffprobe 7,70 s;
+  `mvhd` 90000/693120). **Corrigido** (feat/product-4): o player da câmera (avPlayer LLE) pega a duração do arquivo no
+  `sceMp4StartFileStreaming` (HLE), que devolvia ticks de 90 kHz; o libscemp4 do firmware 3.74 devolve em 1/10000 s
+  (duração do `mvhd` x 10000 / escala, 0x8100ccee; o `sceMp4TimeToPTS` dele usa a mesma unidade: tempo x 90000 /
+  10000), daí 693120 / 10000 = 1:09. Validado com o próprio vídeo do usuário no modo câmera (headless): 00:05/00:07
+  com a barra proporcional (antes 00:05/01:09; um clipe de 3,9 s mostrava 00:35). Ainda diferente do firmware, sem
+  mexer (os jogos funcionam assim): o `sceMp4PTSToTime` real é pts / 90000 e o `sceMp4TimeToPTS` real é tempo x 9 (o
+  HLE usa microssegundos); o `D5B26179` (layout compacto) vai para os mesmos offsets +0x28/+0x30 do layout de 0x158
+  (o F1 2011 lê a duração em +0x30; o HLE escreve a do vídeo em +0x28). No headless, o modo vídeo da câmera só troca
+  com os dados do `fw10_base` (com os dados do usuário o toque em 0.94, 0.58 não faz nada).
 
 - [x] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
   gravação `captures\PCSB00097_20261108_032607_tudo`, 322 quadros de dump da GPU, 30 fps). O usuário trocou a resolução

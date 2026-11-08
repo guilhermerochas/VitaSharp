@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// SceMp4: MP4 demuxer library (units are decoded by the game with SceAvcdec / its own AAC decoder). The API is
 /// undocumented; layouts were recovered from F1 2011's movie player:
 ///  - OpenFile(path, fileCallbacks{arg, open, close, readOffset, size}, memConfig, ...) -> handle
-///  - StartFileStreaming(h, int *streamCount, uint64 *duration)
+///  - StartFileStreaming(h, int *streamCount, uint64 *duration): the duration in 1/10000 s
 ///  - GetStreamInfo(h, index, info[0x158]): +0 type (0 video, 1 audio), +4 codec (video 1 = AVC; audio 2 = AAC),
 ///    video +8 width, +0xC height, +0x30 duration; audio +0x38 sample rate, +0x4C channels; +0x50 language[4]
 ///  - GetNextUnit(h, unit[0x38]): +0 data, +8 size, +0x10 pts, +0x18 dts, +0x28 sync, +0x2C stream, +0x30 type
@@ -107,7 +107,10 @@ public sealed partial class Mp4 : HleModule
     {
         if (Get(h) is not { } f) return ERR_INVALID_HANDLE;
         streamCount.TrySet(f.Demux.Streams.Count);
-        duration.TrySet((ulong)f.Demux.Duration90k);
+        // the file's duration in 1/10000 s, as libscemp4 computes it (mvhd duration * 10000 / timescale, FW 3.74
+        // 0x8100ccee; its sceMp4TimeToPTS takes the same unit: time * 90000 / 10000). In 90 kHz ticks the camera's
+        // player showed a 7 s clip as 1:09.
+        duration.TrySet((ulong)f.Demux.Duration90k / 9);
         return 0;
     }
 
