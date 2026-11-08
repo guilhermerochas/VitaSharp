@@ -582,7 +582,7 @@ public sealed partial class SystemMisc : HleModule
         throw new GuestThreadExitException(0, false); // this thread ends; the host restarts the process
     }
     [Hle] int sceAppMgrGetBudgetInfo(uint info) { GuestMemory.Span(info + 4, 0x60).Clear(); return 0; }
-    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => 0;
+    [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => GetRunningAppIdListForShell(list, count, 0);
 
     // ------------------------------------------------------------------ ScePower
 
