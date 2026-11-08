@@ -529,6 +529,46 @@ public sealed partial class Libc : HleModule
     [Hle] int tolower(int c) => c is >= 'A' and <= 'Z' ? c + 32 : c;
     [Hle] int toupper(int c) => c is >= 'a' and <= 'z' ? c - 32 : c;
 
+    uint _ctypeVar, _tolowerVar, _toupperVar;
+
+    /// <summary>A pointer variable to a table of 257 shorts for -1 (EOF) and 0..255; the pointer is to entry 0.</summary>
+    uint TableVariable(ref uint var, Func<int, short> entry)
+    {
+        lock (_constStrings)
+        {
+            if (var != 0) return var;
+            uint t = StaticAlloc(257 * 2, 4);
+            for (int c = -1; c < 256; c++) GuestMemory.Write(t + (uint)(c + 1) * 2, entry(c));
+            uint v = StaticAlloc(4, 4);
+            GuestMemory.W32(v, t + 2);
+            return var = v;
+        }
+    }
+
+    /// <summary>The data the C headers' inline code reads: _Ctype (the classification table of Libc.Streams.cs'
+    /// CtypeMask), _Tolotab and _Touptab (case mapping, EOF to itself), the FILE objects _Stdin/_Stdout/_Stderr, and
+    /// SceLibstdcxx's _BADOFF (-1) and _Fpz (a zero fpos_t).</summary>
+    void RegisterLibcVariables()
+    {
+        Emu.Hle.RegisterVariable(0x3CE6109D, () => TableVariable(ref _ctypeVar, c => c < 0 ? (short)0 : CtypeMask(c)));
+        Emu.Hle.RegisterVariable(0xD662E07C, () => TableVariable(ref _tolowerVar, c => (short)(c < 0 ? -1 : tolower(c))));
+        Emu.Hle.RegisterVariable(0x36878958, () => TableVariable(ref _toupperVar, c => (short)(c < 0 ? -1 : toupper(c))));
+        Emu.Hle.RegisterVariable(0x66B7406C, () => StdinFile().Addr);
+        Emu.Hle.RegisterVariable(0x5D8C1282, () => StdoutFile().Addr);
+        Emu.Hle.RegisterVariable(0xDDF9BB09, () => StderrFile().Addr);
+        Emu.Hle.RegisterVariable(0x9C449444, () => _badoff != 0 ? _badoff : _badoff = ConstWord(0xFFFFFFFF, 4));
+        Emu.Hle.RegisterVariable(0xD9478DCF, () => _fpz != 0 ? _fpz : _fpz = ConstWord(0, 16));
+    }
+
+    uint _badoff, _fpz;
+
+    uint ConstWord(uint v, uint size)
+    {
+        uint p = StaticAlloc(size, 8);
+        GuestMemory.W32(p, v);
+        return p;
+    }
+
     // ------------------------------------------------------------------ stdlib integer helpers
 
     [Hle] int abs(int v) => v < 0 ? -v : v;
