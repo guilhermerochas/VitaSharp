@@ -209,6 +209,19 @@ public sealed partial class SystemMisc : HleModule
     /// process, so loading one again gives the loaded module (PS4 Link loads libfios2 and libc, which the process
     /// preload already brought: a second libc started again on its main thread and ended it there).
     /// Each such load counts a reference that an unload drops (the module stays for the others).</summary>
+    /// <summary>
+    /// A module the game loads from a file that is not there. ur0:data/libshacccg.suprx is the PSM runtime's Cg
+    /// compiler, which vitaGL homebrew compiles its shaders with: it is not part of the firmware and each user extracts
+    /// it from their own console (Vita3K requires it the same way), so the log says how to get it.
+    /// </summary>
+    static void WarnMissingModule(string path)
+    {
+        if (path.EndsWith("libshacccg.suprx", StringComparison.OrdinalIgnoreCase))
+            Log.WarnOnce("libshacccg-missing", $"{path} is missing: this homebrew (vitaGL) needs the runtime shader compiler libshacccg.suprx. " +
+                "Extract it from your own PS Vita with ShaRKF00D (it takes it from the PSM runtime) and copy it to ur0:data/libshacccg.suprx " +
+                "in the emulator's data folder (fs/ur0/data).");
+    }
+
     Loader.LoadedModule? LoadedSystemModule(string path)
     {
         if (!path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase)) return null;
@@ -248,6 +261,7 @@ public sealed partial class SystemMisc : HleModule
         catch (FileNotFoundException)
         {
             Log.Warn($"sceKernelLoadStartModule: {path} not found");
+            WarnMissingModule(path);
             return unchecked((int)0x8002D01C);
         }
     }
@@ -257,7 +271,7 @@ public sealed partial class SystemMisc : HleModule
     {
         if (LoadedSystemModule(path) is { } loaded) return loaded.Uid;
         try { return Emu.LoadModule(path).Uid; }
-        catch (FileNotFoundException) { return unchecked((int)0x8002D01C); }
+        catch (FileNotFoundException) { WarnMissingModule(path); return unchecked((int)0x8002D01C); }
     }
 
     [Hle]
@@ -314,7 +328,7 @@ public sealed partial class SystemMisc : HleModule
         }
         Loader.LoadedModule mod;
         try { mod = Emu.LoadModule(path); }
-        catch (FileNotFoundException) { return unchecked((int)0x8002D01C); }
+        catch (FileNotFoundException) { WarnMissingModule(path); return unchecked((int)0x8002D01C); }
         // same as sceKernelLoadStartModule: the module stays loaded whatever module_start returns
         if (mod.StartEntry != 0) GuestThread.Current!.CallGuest(mod.StartEntry, args, argp);
         lock (_openCounts) _openCounts[mod.Uid] = 1;

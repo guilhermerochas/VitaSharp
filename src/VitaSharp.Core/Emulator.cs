@@ -765,7 +765,8 @@ public sealed class Emulator : IDisposable
 
     public LoadedModule LoadModule(string vitaPath)
     {
-        var host = Vfs.Resolve(vitaPath) ?? throw new FileNotFoundException(vitaPath);
+        // a missing file or folder is the guest's error (the callers return it), never a host exception that ends the thread
+        var host = Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath);
         var elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
         var m = ModuleLoader.Load(elf, vitaPath, Memory, Linker, 0);
         m.Uid = Kernel.Objects.Register(new ModuleObject(m));
