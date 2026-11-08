@@ -130,12 +130,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (31/10/2026): `GetMethod(s)`/`GetProperty(s)` em 3 arquivos, `GetField(s)` em 1, `GetCustomAttribute` em 2,
   `Enum.GetValues/GetNames/Parse` em 5, `Assembly.GetTypes/GetExecutingAssembly` em 1 e `Reflection.Emit` em 3 (o
   backend IL do JIT, que precisa dele). Análises e trocas:
-  - [ ] Auditar cada uso e trocar por geradores de código (source generators) ou tabelas fixas: atributos lidos em
+  - [x] Auditar cada uso e trocar por geradores de código (source generators) ou tabelas fixas: atributos lidos em
     tempo de execução viram tabelas geradas na compilação; enums com `switch` gerado em vez de `Enum.ToString/Parse`
-  - [ ] Ligar os analisadores de trimming/AOT (`IsAotCompatible`, `EnableTrimAnalyzer`, `EnableAotAnalyzer`) em todos
+    Auditado (07/11/2026, perf/desktop-11): não sobrou reflexão de verdade fora do backend IL. As chamadas `[Hle]` já
+    vêm do gerador (`VitaSharp.Core.Generators`); os `GetProperty` são do DOM do `System.Text.Json` (`JsonElement`),
+    não reflexão; `Enum.GetValues<T>`/`Enum.Parse<T>`/`TryParse<T>` genéricos funcionam no Native AOT e só rodam em
+    relatórios, scripts e na leitura de configurações; `GetCustomAttribute` só lê a versão do assembly;
+    `Type.GetType("Mono.RuntimeStructs")` (constante, analisável) detecta o Mono; `typeof(T).GetFields()` do relatório
+    de recursos do Vulkan tem `[DynamicallyAccessedMembers]`. Nada barato a trocar
+  - [x] Ligar os analisadores de trimming/AOT (`IsAotCompatible`, `EnableTrimAnalyzer`, `EnableAotAnalyzer`) em todos
     os projetos com aviso tratado como erro, para nenhum uso novo entrar sem ser visto (IL2026/IL3050)
-  - [ ] Conferir o JSON: todos os `JsonSerializer` com contexto gerado (sem o serializador por reflexão como reserva;
+    Feito (07/11/2026): Core, Renderer.Vulkan e Android.Common já tinham `IsAotCompatible` e o Desktop os
+    analisadores; o `Directory.Build.targets` agora transforma os avisos de trimming/AOT/arquivo único (IL2026, IL2046,
+    IL2055-IL2095, IL2111, IL3000-IL3002, IL3050/IL3051) em erro nesses projetos. O app Android fica de fora (a análise
+    dele só roda no build longo do APK)
+  - [x] Conferir o JSON: todos os `JsonSerializer` com contexto gerado (sem o serializador por reflexão como reserva;
     `JsonSerializerIsReflectionEnabledByDefault=false`)
+    Feito no desktop (07/11/2026): todas as chamadas já passavam contexto gerado ou `JsonTypeInfo`; o
+    `VitaSharp.Desktop.csproj` desliga o serializador por reflexão (`runtimeconfig.json` com a chave). Conferido: o
+    jogo abre e lê o `input.json` de perfis (teclado personalizado + 1 controle; `scratchpad/perf11_out/json_win`). No app Android falta pôr a mesma propriedade e testar no celular (Android parado)
   - [ ] Inicialização: medir o tempo de início (desktop JIT/AOT e app Android) e o que roda nos construtores estáticos
     (tabelas de HLE, NIDs, formatos) — gerar na compilação o que hoje é montado ao iniciar
   - [ ] Caminhos quentes sem custos escondidos: boxing, `params object[]`, interpolação de string em logs desligados

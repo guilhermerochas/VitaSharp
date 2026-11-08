@@ -89,6 +89,8 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAotAnalyzer>true</EnableAotAnalyzer>
     <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <!-- every JsonSerializer call passes a source-generated context: the reflection serializer is not even a fallback -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <!-- DirectShow webcams need runtime-generated COM interop: off in trimmed/AOT builds (Media Foundation instead) -->
