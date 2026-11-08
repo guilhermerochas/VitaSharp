@@ -468,6 +468,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   do PUP copia o pd0 do Vita3K quando ele existe, `install-firmware --pd0[=<pasta>]` copia só o pd0 e o shell avisa no
   log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
   abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
+  Confirmado pelo usuário (07/11/2026)
 - [ ] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
@@ -873,6 +874,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Minecraft, FIFA 13) aparecem com CoD (`tro6/sheet.png`, `tro7/list2.png`), sem aviso durante a migração
   (`tro4/open*.png`), Minecraft "Inventariando" conquistado 2026/10/23 como no JSON (`tro7/mc_t1.png`). NPWR04671 e
   NPWR19711 não têm app instalado e ficam de fora.
+  Confirmado pelo usuário (07/11/2026)
 - [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
   Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
   dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no
