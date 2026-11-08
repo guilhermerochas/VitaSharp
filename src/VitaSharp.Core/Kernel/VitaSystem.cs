@@ -239,8 +239,10 @@ public sealed class VitaSystem
     {
         lock (_shellTouchRegions)
         {
-            bool active = _shellTouchRegions.TryGetValue((port, region), out var r) && r.Active;
-            _shellTouchRegions[(port, region)] = (x0, y0, x1, y1, active);
+            bool known = _shellTouchRegions.TryGetValue((port, region), out var r);
+            if (!known || (r.X0, r.Y0, r.X1, r.Y1) != (x0, y0, x1, y1))
+                Log.Info($"Shell touch region {port}/{region}: ({x0}, {y0})-({x1}, {y1})");
+            _shellTouchRegions[(port, region)] = (x0, y0, x1, y1, known && r.Active);
         }
     }
 
@@ -253,14 +255,39 @@ public sealed class VitaSystem
         }
     }
 
-    /// <summary>True when the touches of <paramref name="port"/> go to the shell instead of the application in front:
-    /// the shell has an active touch region there (its overlay plane is up).</summary>
+    /// <summary>True when the shell has an active touch region on <paramref name="port"/> over an application in front.
+    /// Only the contacts inside one are the shell's (<see cref="ShellTouchRegionAt"/>): its status bar keeps a region
+    /// over the top of the panel while a system application with the bar is in front, its on-screen keyboard one over
+    /// the whole panel.</summary>
     public bool TouchClaimedByShell(int port)
     {
         if (Foreground is not { IsShell: false }) return false;
         lock (_shellTouchRegions)
             foreach (var (key, r) in _shellTouchRegions)
                 if (key.Port == port && r.Active) return true;
+        return false;
+    }
+
+    /// <summary>Whether the panel point (x, y) of <paramref name="port"/> (panel coordinates) is in an active shell
+    /// region over an application in front.</summary>
+    public bool ShellTouchRegionAt(int port, int x, int y)
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == port && r.Active && x >= r.X0 && x <= r.X1 && y >= r.Y0 && y <= r.Y1) return true;
+        return false;
+    }
+
+    /// <summary>True when the shell's overlay takes the buttons from the application in front: an active front panel
+    /// region covering (nearly) the whole panel, which is its on-screen keyboard. A smaller region (the status bar's)
+    /// leaves the buttons to the application.</summary>
+    public bool ButtonsClaimedByShell()
+    {
+        if (Foreground is not { IsShell: false }) return false;
+        lock (_shellTouchRegions)
+            foreach (var (key, r) in _shellTouchRegions)
+                if (key.Port == 0 && r.Active && r.X1 - r.X0 >= 1800 && r.Y1 - r.Y0 >= 1000) return true;
         return false;
     }
 
