@@ -44,6 +44,17 @@ public sealed partial class SystemSoftware : HleModule
 
     [Hle] int sceCoredumpUnregisterCoredumpHandler() { _coredumpHandler = 0; return 0; }
 
+    /// <summary>(const void *data, SceSize size): user data the next core dump of the process carries (SceCoredumpNounlink;
+    /// a game calls it with its own crash context). The latest block is kept here; a crash is reported by the emulator,
+    /// which has no core dump file to put it in.</summary>
+    [Hle]
+    int sceCoredumpWriteUserData(uint data, uint size)
+    {
+        _coredumpUserData = data == 0 || size == 0 ? [] : GuestMemory.ReadSpan(data, (int)Math.Min(size, 0x10000u)).ToArray();
+        return 0;
+    }
+    byte[] _coredumpUserData = [];
+
     // ------------------------------------------------------------------ SceSblSsUpdateMgr
 
     /// <summary>

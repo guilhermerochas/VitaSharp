@@ -336,6 +336,25 @@ public sealed partial class NpCommerce2 : HleModule
     [Hle("sceNpCommerce2_C1542070", Nid = 0xC1542070, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse4(uint result, uint rec) => ERR_SYS_INVALID;
     [Hle("sceNpCommerce2_9B444B7C", Nid = 0x9B444B7C, Library = "SceNpCommerce2")] int sceNpCommerce2SysParse5(uint a, uint b, uint c, uint d) => ERR_SYS_INVALID;
 
+    /// <summary>
+    /// (ctxId, SceSize *shortfall): how many bytes the context's libhttp / libssl pool lacked in its last request
+    /// (np_commerce2.suprx FW 3.74: the context's +0x550 / pool word). Library not initialised 0x80550F01, NULL pointer
+    /// 0x80550F03, unknown context 0x80550F0C. The HLE requests never use a guest pool, so nothing is ever short: 0.
+    /// </summary>
+    [Hle("sceNpCommerce2GetShortfallOfLibhttpPool")]
+    [Hle("sceNpCommerce2GetShortfallOfLibsslPool")]
+    int sceNpCommerce2GetShortfallOfPool(uint ctxId, Ptr<uint> shortfall)
+    {
+        lock (_lock)
+        {
+            if (!_inited) return unchecked((int)0x80550F01);
+            if (shortfall.IsNull) return ERR_SYS_INVALID;
+            if (!_ctx.Contains(ctxId)) return unchecked((int)0x80550F0C);
+            shortfall.Value = 0;
+            return 0;
+        }
+    }
+
     [Hle] int sceNpCommerce2Init() { lock (_lock) _inited = true; return 0; }
     [Hle] int sceNpCommerce2Term() { lock (_lock) { _inited = false; _ctx.Clear(); _reqs.Clear(); } return 0; }
 
