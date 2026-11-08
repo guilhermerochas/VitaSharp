@@ -1078,7 +1078,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
-- [ ] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
+- [x] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
   gravação `captures\PCSB00097_20261108_032607_tudo`, 322 quadros de dump da GPU, 30 fps). O usuário trocou a resolução
   interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
   da escala (alvo reinterpretado/desfoque lido no tamanho errado, como o planeta do LBP e a luz do Resistance) ou do
@@ -1092,7 +1092,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   é desempacotado. Comparado com vídeo do Vita real (YouTube J7LRdOTELtg, 46-56 s): Ryu nítido e fundo borrado, igual.
   Replay 1x-4x iguais; rerun ao vivo de uma cópia da gravação em 1x e 2x com o Ryu nítido. Efeito colateral: os brilhos
   dos refletores do FIFA 13 (partículas que leem a profundidade 2X da própria cena) mudam um pouco atrás do menu de pausa.
-- [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
+  Confirmado pelo usuário (08/11/2026)
+- [x] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
   usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
   (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
   ~100 shaders e ~50 pipelines, porque o renderizador novo não abria os caches do jogo (só o primeiro recebia
@@ -1125,12 +1126,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Os prefetches dos workers não conhecem os bits (calculam a chave sem eles): esses poucos shaders compilam no
   primeiro uso. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
   antes da troca; não reproduzidos
+  Confirmado pelo usuário (08/11/2026)
 - [ ] Resistance: Burning Skies (PCSA00008): às vezes trava na primeira tela de carregamento (a caveira gira para
   sempre) logo depois do boot (achado do agente, 08/11/2026). Intermitente e já existe no main (main: 1 de 8 boots;
   perf/desktop-13: 3 de 15). O jogo cria a thread 'Autoload' (quadro ~61) e nunca chega à 'FMOD nonblocking
   thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
   `--diag-at` (threads e esperas) numa execução travada e comparar com uma boa
-- [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
+- [x] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va
   tem 44 flashes e 4 pares de quadros trocados em 23 s; em software (o novo padrão `auto`, db00236) 10 flashes e 2 pares
@@ -1176,6 +1178,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   final: 0 voltas para trás (325/325, 324/324, 304 com o PC carregado), contra 85-105 sem a correção
   (ugsC3_data/captures/PCSE00233_20261108_1342* a ..._134743_tudo); teste DecoderOutputsTests. A diferença para o
   Sigma 1: ele não deixa quadro sem amostrar no anel
+  Confirmado pelo usuário (08/11/2026)
 
   08/11/2026 (agente C, fix/bugs-games-19, só achados): nova gravação do usuário com o 2f7518c
   (`captures\PCSE00233_20261108_015357_tudo`, 30 fps cravados, 3 "trocas" e ~10 flashes). O `rerun` dela derruba o
@@ -1322,7 +1325,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   em modo libc do HLE chegando ao menu e ao jogo; também os `_Mtx_*/_Cnd_*/_Thrd_*` (31, xthreads sobre lwmutex/lwcond)
   e os syscalls do SceVshBridge/SceBbmc (corpos no bootimage.skprx).
   - Passo 1 (feat/hle-batch-6, 08/11/2026): os jogos chegam a 1518/1518. O SceLibstdcxx do libc.suprx 3.74 é a biblioteca "abridged" da Dinkumware: não tem std::locale (basic_ios sem _Ploc; as facetas são _ctype<E> e _codecvt<E, char, _Mbstatet> embutidas), então não há locale clássico a reverter (0x81038DD8 é ~basic_ios). Feito (Libc.Streams/Iostreams/Strstream.cs): basic_streambuf e basic_filebuf<char/wchar_t> (overflow/underflow/uflow/pbackfail/xsgetn/xsputn/seek/setbuf/sync/_Endwrite, conversão UTF-8 do wchar_t pelo codecvt), _ctype/_codecvt, ios_base (_Findarr, register_callback, _Callfns, _Tidy, copyfmt), basic_ios/istream/ostream/iostream (destrutores, thunks, ostream(sb, isstd)), ios_base::Init e _Winit (filebufs sobre stdin/stdout/stderr, cin/cout/cerr/clog com tie e unitbuf, contagens -1 como variáveis), strstreambuf/istrstream/ostrstream/strstream, e as variáveis de dados que os jogos importam no modo libc do HLE (cin..wclog, _Ctype, _Tolotab, _Touptab, _Stdin/_Stdout/_Stderr, _BADOFF, _Fpz). O filebuf não aponta para o buffer do FILE (o FILE do HLE não tem buffer): cada caractere passa por overflow/uflow. Validado: Minecraft (PCSE00491) com VITASHARP_HLE_MODULES=libc chama ios_base::Init/_Winit 1189x, chega ao menu principal, termos, aviso de salvamento, diálogo PSN e placares, 0 "Unimplemented", 0 crash, 0 variáveis sem resolver (antes 8). Próximo: sistema (xthreads _Mtx/_Cnd/_Thrd e _Pad já escritos em rascunho, não commitados), depois VitaSDK e o resto.
-- [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
+- [x] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
   pretos isolados (2432, 2460). O filme é tocado pelo AvPlayer com H.264 pelo `ffmpeg-d3d11va` (decodificação na GPU
@@ -1354,6 +1357,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   superior esquerdo) e o planeta inteiro ficava desfocado. Corrigido (e66ac42): desempacota no tamanho escalado. Replay
   do dump da gravação: nativo nítido, 2x antes desfocado, 2x depois igual ao nativo (`bugsC18_rp/lbp_r1`, `lbp_r2`,
   `lbp_r2fix`, `scratchpad/bugsC18_yt/lbpfix.png`)
+  Confirmado pelo usuário (08/11/2026)
 - [ ] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
   `captures\PCSE00271_20261107_223633_tudo`). Nos 478 quadros ao vivo as barras de vida, os nomes e o tempo nunca
   aparecem (o HUD de baixo aparece); o replay do mesmo dump mostra tudo e bate com o Vita real (vídeo `XerzDSm7Z9U`:
@@ -1418,6 +1422,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   toque, com e sem conta (X, toque em CONTINUE, START não fazem nada; O volta ao título); o jogo lê o controle e não faz
   IO nesse estado, então não é rede: falta achar o que o diálogo espera (o spinner continua)
   08/11/2026 (agente C, fix/bugs-games-20, só achados, timebox): reproduz com a main (ugsC20_out/nfs1, 
+  Boot (logo EA, vídeo, título) confirmado pelo usuário (08/11/2026); seguem abertos o diálogo do Origin e os controles que não respondem
 fs8):
   depois do toque o jogo carrega 26 BNDL da UI/mundo (f659-f803, último UI/SCREENS2/669547_TRANSITIONS.BNDL) e para
   de ler; o spinner continua, X (8 e 30 quadros), toque em CONTINUE (0.25, 0.30), START e O não mudam nada em 10 s
@@ -1438,11 +1443,12 @@ fs8):
   07/11/2026 (agente C): a gravação mostra o FACE VIEWER vazio os 2,5 s inteiros; o estado dela é do 99396f5 e a main não
   carrega ("salvo por outra versão"), e chegar à tela de criação por roteiro não coube no tempo. Precisa de uma gravação
   nova com a main (estado carregável) para medir
-- [ ] 99Vidas (PCSE00914): gravação do usuário no boot sem nenhum quadro (06/11/2026, release 99396f5,
+- [x] 99Vidas (PCSE00914): gravação do usuário no boot sem nenhum quadro (06/11/2026, release 99396f5,
   `captures\PCSE00914_20261106_221719_tudo`; AsyncReadManager do Unity rodando, quadro 0). A main tem o 1dfb147
   (sceNpManagerGetCachedParam, com o qual o jogo chega à abertura aqui): conferir com o build novo antes de investigar
   Conferido (07/11/2026, agente C, main 176f5d6): 	ests/scenarios/99vidas_boot.txt chega ao tutorial com as lutas a
   60 fps (quadro 3988, ugsC3_data/tests/99vidas_boot/sheet_3.png): o boot sem quadros era do release antigo
+  Confirmado pelo usuário (08/11/2026)
 - [x] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
