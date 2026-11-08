@@ -4189,6 +4189,8 @@
 0x2A0A4737	_ZN3paf5graph11SurfaceCLUT12ActivateCLUTEv	FirmwareConstants	ScePafGraphics	-
 0x3F16DBC3	_ZN3paf5graph12TextObjParam9ParamNameEv	FirmwareConstants	ScePafGraphics	-
 0x72820EF4	_ZN3paf5graph13PlaneObjParam9ParamNameEv	FirmwareConstants	ScePafGraphics	-
+0x0C8CFE0A	_ZN3paf5graph3arl16FragShaderObject3endEv	Paf	ScePafGraphics	-
+0xE99F30F5	_ZN3paf5graph3arl16VertShaderObject3endEv	Paf	ScePafGraphics	-
 0x263AE4D2	_ZN3paf5graph7DrawObj11DrawObjTypeEv	FirmwareConstants	ScePafGraphics	-
 0x3FBE6C33	_ZN3paf5graph7Surface10GenTextureEv	FirmwareConstants	ScePafGraphics	-
 0xD97E12EB	_ZN3paf5graph7Surface13DeleteTextureEv	FirmwareConstants	ScePafGraphics	-
@@ -4200,6 +4202,7 @@
 0x69F9535E	_ZN3paf5graph8PlaneObj11DrawObjTypeEv	FirmwareConstants	ScePafGraphics	-
 0x7888845B	_ZN3paf5gutil5debug14WaitDummyVSyncEv	FirmwareConstants	ScePafGraphics	-
 0xF889F04B	_ZN3paf5gutil5debug7DevTermEv	FirmwareConstants	ScePafGraphics	-
+0x22AB24A0	_ZNK3paf5graph11SurfaceBase13PixelsToBytesEi	Paf	ScePafGraphics	-
 0x95D802A6	_ZNK3paf5graph12TextObjParam12GetParamNameEv	FirmwareConstants	ScePafGraphics	-
 0x6857E41B	_ZNK3paf5graph13PlaneObjParam12GetParamNameEv	FirmwareConstants	ScePafGraphics	-
 0x6A38991D	_ZNK3paf5graph7DrawObj14GetDrawObjTypeEv	FirmwareConstants	ScePafGraphics	-
@@ -4368,6 +4371,7 @@
 0x2DA1C059	_ZN3paf5Timer17DoFuncBounceInOutEf	Paf	ScePafMisc	-
 0xE5801EA1	_ZN3paf5Timer18DoFuncElasticInOutEf	Paf	ScePafMisc	-
 0x4BEBF513	_ZN3paf5cache9CacheBase10DiffOptionEPKNS1_6OptionE	FirmwareConstants	ScePafMisc	-
+0x0EB94344	_ZN3paf5image5Image19SetDecodeCancelFuncEPFbPvES2_	Paf	ScePafMisc	-
 0xC32ECD73	_ZN3paf6memory13HeapAllocator11GetFreeSizeEv	Paf	ScePafMisc	-
 0xCE97B579	_ZN3paf6memory13HeapAllocator12sce_paf_freeEPv	Paf	ScePafMisc	vh
 0x039D7846	_ZN3paf6memory13HeapAllocator13sce_paf_mtrimEv	Paf	ScePafMisc	-
@@ -4518,6 +4522,12 @@
 0xB421A294	_ZNK3paf4math4rect9right_topEv	Paf	ScePafMisc	-
 0x00387752	_ZNK3paf4math4recteqERKS1_	Paf	ScePafMisc	-
 0x12DB04A6	_ZNK3paf4math4rectneERKS1_	Paf	ScePafMisc	-
+0x2795D5F1	_ZNK3paf5image5Image11GetCLUTModeEv	Paf	ScePafMisc	-
+0x9ADD8A26	_ZNK3paf5image5Image11GetCLUTSizeEv	Paf	ScePafMisc	-
+0x73032689	_ZNK3paf5image5Image13GetPitchAlignEv	Paf	ScePafMisc	-
+0x147115CE	_ZNK3paf5image5Image7GetModeEv	Paf	ScePafMisc	-
+0x7B15112F	_ZNK3paf5image5Image8GetOrderEv	Paf	ScePafMisc	-
+0xBF87C099	_ZNK3paf5image5Image9GetFormatEv	Paf	ScePafMisc	-
 0xD9E9BEC8	_ZNK3paf6memory13HeapAllocator12GetBlockTypeEv	Paf	ScePafMisc	-
 0x68B7420B	_ZNK3paf6memory13HeapAllocator7GetNameEv	Paf	ScePafMisc	-
 0x9B22F2FE	_ZNK3paf6memory13HeapAllocator7GetTypeEv	FirmwareConstants	ScePafMisc	-
@@ -4756,6 +4766,7 @@
 0x3AD58D65	sce_paf_wcsstr	Libc	ScePafStdc	-
 0xE4A8A732	sce_paf_wcstok	Libc	ScePafStdc	-
 0x323FC518	sce_paf_wprintf_dummy	FirmwareConstants	ScePafStdc	-
+0x2AE6D3EB	_ZN3paf3job7JobItem6CancelEv	Paf	ScePafThread	-
 0xFE2DC4FE	_ZN3paf6thread13ThreadIDCache14SetCurrentTypeENS1_4TypeE	Paf	ScePafThread	-
 0xC6F80BB3	_ZN3paf6thread13ThreadIDCache3GetENS1_4TypeE	Paf	ScePafThread	-
 0xD27FC881	_ZN3paf6thread13ThreadIDCache5CheckENS1_4TypeE	Paf	ScePafThread	-
@@ -4819,8 +4830,13 @@
 0xD1D39853	_ZN3paf6thread9SemaphoreC2EPKciii	Paf	ScePafThread	-
 0xE72CBBE1	_ZN3paf6thread9SemaphoreD1Ev	Paf	ScePafThread	-
 0x323F3E4D	_ZN3paf6thread9SemaphoreD2Ev	Paf	ScePafThread	-
+0x142E7F78	_ZNK3paf3job7JobItem10IsCanceledEv	Paf	ScePafThread	-
+0x99300D8B	_ZN3paf6Plugin17TemplateOpenParamC1Ev	Paf	ScePafToplevel	-
 0x45ECE3A9	_ZN3paf6Plugin4InitEv	FirmwareConstants	ScePafToplevel	-
 0x907BA948	_ZN3paf9Framework10SampleInitEPNS0_9InitParamE	FirmwareConstants	ScePafToplevel	-
+0xD6FB2581	_ZN3paf9Framework16GetSoundInstanceEv	Paf	ScePafToplevel	-
+0x2FB738A8	_ZN3paf9Framework22GetEnvironmentInstanceEv	Paf	ScePafToplevel	-
+0x592F13C6	_ZN3paf9Framework7GetModeEv	Paf	ScePafToplevel	-
 0x89C0F5D1	_ZN3paf2ui12WebViewParam9ParamNameEv	FirmwareConstants	ScePafWebMapView	-
 0xF91FFDB9	_ZN3paf2ui15WebViewDelegate11OnStartLoadEPNS0_7WebViewE	FirmwareConstants	ScePafWebMapView	-
 0x9669F687	_ZN3paf2ui15WebViewDelegate12OnUrlChangedEPNS0_7WebViewERKNS_3UrlE	FirmwareConstants	ScePafWebMapView	-
@@ -4841,6 +4857,7 @@
 0x9F8AAE80	_ZN3paf2ui11ButtonParam9ParamNameEv	FirmwareConstants	ScePafWidget	-
 0x5D65E4DA	_ZN3paf2ui11ImageButton8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x80DB8B2A	_ZN3paf2ui11PlaneButton8TypeNameEv	FirmwareConstants	ScePafWidget	-
+0x243BEC17	_ZN3paf2ui11ProgressBar12IsSignalAnimEv	Paf	ScePafWidget	-
 0x8B33B970	_ZN3paf2ui11ProgressBar8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x6E0FC68D	_ZN3paf2ui11RadioButton8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x31334472	_ZN3paf2ui11ScrollBar2d8TypeNameEv	FirmwareConstants	ScePafWidget	-
@@ -4860,7 +4877,9 @@
 0x24ECDB01	_ZN3paf2ui14ScrollBarTouch8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x33221443	_ZN3paf2ui14ScrollViewBase12TrackReleaseEPNS0_5EventE	FirmwareConstants	ScePafWidget	-
 0x5E3E525C	_ZN3paf2ui14ScrollViewBase14OnChildRemovedEPNS0_6WidgetE	FirmwareConstants	ScePafWidget	-
+0x1D4A3C25	_ZN3paf2ui14ScrollViewBase17GetInternalWidgetEv	Paf	ScePafWidget	-
 0x98AA88EE	_ZN3paf2ui14ScrollViewBase17OnChildRegisteredEPNS0_6WidgetE	FirmwareConstants	ScePafWidget	-
+0x4A3F4C93	_ZN3paf2ui14ScrollViewBase19BlockUpdateViewPortEv	Paf	ScePafWidget	-
 0x8EA8F13B	_ZN3paf2ui14ScrollViewBase8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0xE3207F6B	_ZN3paf2ui14TextStyleParam9ParamNameEv	FirmwareConstants	ScePafWidget	-
 0x9CB39E79	_ZN3paf2ui15CompositeButton8TypeNameEv	FirmwareConstants	ScePafWidget	-
@@ -4934,7 +4953,10 @@
 0x966A7588	_ZN3paf2ui8FileList8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x00698CC7	_ZN3paf2ui8ItemSpin8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x7EA5A99F	_ZN3paf2ui8ListItem8TypeNameEv	FirmwareConstants	ScePafWidget	-
+0x399CBF5A	_ZN3paf2ui8ListView13GetSegmentNumEv	Paf	ScePafWidget	-
+0xDA9294E8	_ZN3paf2ui8ListView15GetGeneratedNumEv	Paf	ScePafWidget	-
 0x7D86A619	_ZN3paf2ui8ListView8TypeNameEv	FirmwareConstants	ScePafWidget	-
+0x434B1CB8	_ZN3paf2ui8ListView9BlockSyncEv	Paf	ScePafWidget	-
 0x404E3891	_ZN3paf2ui8PageTurn8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0xDDED729E	_ZN3paf2ui8RadioBox8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x2BF101B9	_ZN3paf2ui8RichText8TypeNameEv	FirmwareConstants	ScePafWidget	-
@@ -4944,6 +4966,8 @@
 0x8F8A6FFC	_ZN3paf2ui8filelist10CellSource10OnDragStopEi	FirmwareConstants	ScePafWidget	-
 0x3A7E1F4A	_ZN3paf2ui8filelist10CellSource11IsDraggableEv	FirmwareConstants	ScePafWidget	-
 0x14E77DA7	_ZN3paf2ui8filelist10CellSource11OnDragStartEi	FirmwareConstants	ScePafWidget	-
+0x5E194109	_ZN3paf2ui8filelist10CellSource13GetVisualizerERNS1_19VisualizerBindParamE	Paf	ScePafWidget	-
+0xCF262483	_ZN3paf2ui8filelist10CellSource5GetIDEi	Paf	ScePafWidget	-
 0x2FBD4E70	_ZN3paf2ui8filelist10CellSource6UpdateERNS1_16CellListAccessorE	FirmwareConstants	ScePafWidget	-
 0xCD4CD39B	_ZN3paf2ui8filelist10CellSource7IsDirtyEv	FirmwareConstants	ScePafWidget	-
 0x18C1DF57	_ZN3paf2ui8filelist10CellSource7OnMovedEii	FirmwareConstants	ScePafWidget	-
@@ -4953,10 +4977,13 @@
 0x4A6795B8	_ZN3paf2ui8filelist10Visualizer4StopEv	FirmwareConstants	ScePafWidget	-
 0xFA7E8F59	_ZN3paf2ui8filelist10Visualizer5StartEv	FirmwareConstants	ScePafWidget	-
 0x5648D334	_ZN3paf2ui8filelist10Visualizer8TypeNameEv	FirmwareConstants	ScePafWidget	-
+0x7710E053	_ZN3paf2ui8filelist13SegmentSource13GetCellSourceEix	Paf	ScePafWidget	-
+0xDCCDC90C	_ZN3paf2ui8filelist13SegmentSource5GetIDEi	Paf	ScePafWidget	-
 0x1BAFB96B	_ZN3paf2ui8filelist13SegmentSource6UpdateERNS1_19SegmentListAccessorE	FirmwareConstants	ScePafWidget	-
 0x9A416209	_ZN3paf2ui8filelist13SegmentSource7IsDirtyEv	FirmwareConstants	ScePafWidget	-
 0x9E9F7578	_ZN3paf2ui8filelist13SegmentSource8TypeNameEv	FirmwareConstants	ScePafWidget	-
 0x670B1CFF	_ZN3paf2ui8filelist13SegmentSource9OnUpdatedEv	FirmwareConstants	ScePafWidget	-
+0x647784E1	_ZN3paf2ui8filelist14CellFocusParamC1Ev	Paf	ScePafWidget	-
 0x3C914FDB	_ZN3paf2ui8listview11ItemFactory4StopERNS2_9StopParamE	FirmwareConstants	ScePafWidget	-
 0x93057A6C	_ZN3paf2ui8listview11ItemFactory5StartERNS2_10StartParamE	FirmwareConstants	ScePafWidget	-
 0xF9AAAC6D	_ZN3paf2ui9AppIcon2d8TypeNameEv	FirmwareConstants	ScePafWidget	-
@@ -5063,6 +5090,7 @@
 0xCA302E8E	_ZNK3paf2ui8filelist10CellSource11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
 0x6A0674B4	_ZNK3paf2ui8filelist10Visualizer11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
 0xEB74E2C3	_ZNK3paf2ui8filelist13SegmentSource11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
+0xCA4516CD	_ZNK3paf2ui8listview4Cell15GetSegmentIndexEv	Paf	ScePafWidget	-
 0xB102817A	_ZNK3paf2ui9AppIcon2d11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
 0x15087DB7	_ZNK3paf2ui9DirectBar11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
 0xB3878D10	_ZNK3paf2ui9ScrollBar11GetTypeNameEv	FirmwareConstants	ScePafWidget	-
