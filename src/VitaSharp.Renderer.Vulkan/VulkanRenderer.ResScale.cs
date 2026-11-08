@@ -1,4 +1,6 @@
 using Silk.NET.Vulkan;
+using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -260,7 +262,7 @@ public sealed unsafe partial class VulkanRenderer
     Silk.NET.Vulkan.Buffer ScaledRowsOf(RenderTarget rt)
     {
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
-        if (rt.Format == Format.B8G8R8A8Unorm || HostBytesPerPixel(rt.Format) != guestBpp) return default;
+        if (!ScaledRowsCopyable(rt)) return default;
         rt.LastTouchedFrame = FrameCount;
         if (rt.ScaledRows.Handle == 0)
             (rt.ScaledRows, rt.ScaledRowsMem) = _core.CreateDeviceBuffer((ulong)rt.ImgW * rt.ImgH * (uint)guestBpp,
@@ -281,6 +283,51 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdCopyImageToBuffer(Cmd, rt.Image, ImageLayout.General, rt.ScaledRows, 1, in region);
         BufferBarrier(rt.ScaledRows, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
         return rt.ScaledRows;
+    }
+
+    /// <summary>The target's image can be copied raw into packed scaled rows (<see cref="ScaledRowsOf"/>).</summary>
+    static bool ScaledRowsCopyable(RenderTarget rt) =>
+        rt.Format != Format.B8G8R8A8Unorm && HostBytesPerPixel(rt.Format) == Formats.ColorBytesPerPixel(rt.ColorFormat);
+
+    /// <summary>
+    /// Above native: the <see cref="Core.Gxm.Shader.ShaderGenerator.RtReinterpretFlag"/> bits of each fragment texture
+    /// unit that will read a render target through <see cref="ReinterpretRenderTarget"/> with a smaller texel (null when
+    /// none does, always at native or below). Such units are sampled at the native texel mapping in the shader.
+    /// Whatever the filter: a game reads such bytes at texel centres (Resistance's G-buffer has a linear min filter, and
+    /// at native its uv lands on the centre, where filtering returns the texel), and a blend of reinterpreted bytes
+    /// has no meaning to keep.
+    /// </summary>
+    uint[]? RtReinterpretHints(GxmTextureDesc[] tex, uint used)
+    {
+        if (ResScale <= 1f || used == 0) return null;
+        uint[]? bits = null;
+        for (int i = 0; i < 16 && i < tex.Length; i++)
+        {
+            if ((used & (1u << i)) == 0) continue;
+            var d = tex[i];
+            if (d.TextureType is not (GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeLinearStrided)) continue;
+            uint addr = d.DataAddress;
+            if (addr < Core.Memory.GuestMemory.CdramStart || addr >= Core.Memory.GuestMemory.CdramEnd) continue;
+            var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+            if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0) continue;
+            uint texBpp = (uint)info.BitsPerPixel / 8;
+            foreach (var rt in TargetsContaining(addr))
+            {
+                uint rtBpp = (uint)Formats.ColorBytesPerPixel(rt.ColorFormat);
+                if (addr < rt.Address || addr >= rt.Address + rt.Stride * rtBpp * rt.Height) continue;
+                // texels that split a pixel (r texels per pixel); wider texels keep sampling as before
+                if (texBpp >= rtBpp || rtBpp % texBpp != 0) break;
+                uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(d.Width, 8) * texBpp;
+                var geo = ScaledReinterpretGeometry(rt, addr, d.Width, d.Height, texRow, rtBpp, texBpp);
+                int k = geo is { Own: true } && !ScaledRowsCopyable(rt) ? 1 : geo != null ? (int)rt.Scale : 1;
+                // a native target read by a native scene needs nothing
+                if (k == 1 && RtScale <= 1f) break;
+                bits ??= new uint[16];
+                bits[i] = Core.Gxm.Shader.ShaderGenerator.RtReinterpretHint(k, (int)(rtBpp / texBpp));
+                break;
+            }
+        }
+        return bits;
     }
 
     void ReleaseNativeImage(RenderTarget rt, bool now)

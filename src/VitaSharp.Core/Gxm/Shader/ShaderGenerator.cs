@@ -161,6 +161,54 @@ public static class ShaderGenerator
     public static bool PerSampleFramebufferFetch = true;
 
     /// <summary>
+    /// Set in a fragment texture's <see cref="ShaderHints.TextureFormats"/> entry (bits a GXM texture format never
+    /// uses) when the texture reinterprets a render target with a larger texel (Resistance's 720x408 F16x4 G-buffer read
+    /// as one 1440x408 U8x4 texture) while the scene or the target is above native resolution. Bits 0-3 hold the
+    /// target's scale k (1 = the alias is native size), bits 4-7 the texels per target pixel r. The sampler then reads
+    /// through <see cref="RtFetchHelper"/>. Only such draws get new keys; every other shader keeps its key.
+    /// </summary>
+    public const uint RtReinterpretFlag = 0x800, RtReinterpretBits = 0xFFF;
+
+    /// <summary>The <see cref="RtReinterpretFlag"/> bits for a target at scale <paramref name="k"/> read with
+    /// <paramref name="ratio"/> texels per pixel.</summary>
+    public static uint RtReinterpretHint(int k, int ratio) => RtReinterpretFlag | (uint)Math.Clamp(ratio, 1, 15) << 4 | (uint)Math.Clamp(k, 1, 15);
+
+    /// <summary>
+    /// GLSL that samples a reinterpreted render target above native the way nearest sampling does at native resolution.
+    /// A game computes the texel of such a pass for native pixels: Resistance offsets its uv by half a U8x4 texel so it
+    /// lands on the centre of the first half of each F16x4 pixel. Upscaled, the same uv lands on texel edges (2x) or on
+    /// the other half (3x, 4x), and the bytes decode as another value. Like PCSX2's sample_depth (texelFetch of the
+    /// native texel, times the scale factor), the helper computes the native texel the hardware would read for the
+    /// native pixel this fragment belongs to (the uv moved back to that pixel's centre with the screen-space
+    /// derivatives), then reads that texel's copy in the scaled alias at the fragment's sub-pixel position.
+    /// </summary>
+    internal static string RtFetchHelper(string name, string sampler, uint hint)
+    {
+        int k = (int)Math.Max(1, hint & 0xF), r = (int)Math.Max(1, (hint >> 4) & 0xF);
+        var sb = new StringBuilder();
+        sb.AppendLine($"vec4 {name}(vec2 uv) {{");
+        sb.AppendLine($"    ivec2 sz = textureSize({sampler}, 0);");
+        sb.AppendLine($"    vec2 nsz = vec2(sz / {k});");
+        sb.AppendLine("    vec2 p = uv * nsz;");
+        sb.AppendLine("    float m = rinfo.res_multiplier;");
+        // the fragment's offset from the centre of its native pixel, in native screen pixels
+        sb.AppendLine("    vec2 d = fract(gl_FragCoord.xy / m) - 0.5;");
+        sb.AppendLine("    vec2 pc = p - (dFdx(p) * d.x + dFdy(p) * d.y) * m;");
+        sb.AppendLine("    ivec2 t = clamp(ivec2(floor(pc)), ivec2(0), ivec2(nsz) - 1);");
+        if (k == 1) sb.AppendLine("    return texelFetch(" + sampler + ", t, 0);");
+        else
+        {
+            // which of the k x k copies of the native pixel: the fragment's position inside it
+            sb.AppendLine($"    vec2 ds = (p - pc) / vec2({r}.0, 1.0);");
+            sb.AppendLine($"    ivec2 sub = clamp(ivec2(floor((ds + 0.5) * {k}.0)), ivec2(0), ivec2({k - 1}));");
+            sb.AppendLine($"    ivec2 a = ivec2((t.x / {r} * {k} + sub.x) * {r} + t.x % {r}, t.y * {k} + sub.y);");
+            sb.AppendLine($"    return texelFetch({sampler}, clamp(a, ivec2(0), sz - 1), 0);");
+        }
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Driver quirk (GpuQuirk.DynamicIndexLowering, Qualcomm's proprietary driver): words of the register banks
     /// read or written at a dynamic index (USSE indexed operands) go through switch helpers instead of a dynamic
     /// vector component index (bank[i >> 2][i & 3], OpVectorExtractDynamic / OpVectorInsertDynamic in SPIR-V),
@@ -333,7 +381,8 @@ float packC10(vec3 c) {
         {
             if (samplerVars.TryGetValue(unit, out var s)) return s;
             uint fmt = unit < hints.TextureFormats.Length ? hints.TextureFormats[unit] : 0x0C000000;
-            s = new UsseTranslator.SamplerUse($"{stagePrefix}{unit}", unit, cube, GxmFormats.TextureComponentType(fmt), GxmFormats.TextureComponentCount(fmt));
+            string? rtFetch = !vertex && !cube && (fmt & RtReinterpretFlag) != 0 ? $"rtfetch_{stagePrefix}{unit}" : null;
+            s = new UsseTranslator.SamplerUse($"{stagePrefix}{unit}", unit, cube, GxmFormats.TextureComponentType(fmt), GxmFormats.TextureComponentCount(fmt), rtFetch);
             samplerVars[unit] = s;
             result.Textures.Add((unit, cube));
             return s;
@@ -522,6 +571,8 @@ float packC10(vec3 c) {
         sb.AppendLine(PushConstants);
         foreach (var s in samplerVars.Values)
             sb.AppendLine($"layout(set = {texSet}, binding = {s.Index}) uniform {(s.IsCube ? "samplerCube" : "sampler2D")} {s.GlslName};");
+        foreach (var s in samplerVars.Values)
+            if (s.RtFetch != null) sb.Append(RtFetchHelper(s.RtFetch, s.GlslName, hints.TextureFormats[s.Index]));
         sb.Append(decl);
         int Size(int max, int min) => Math.Max(Math.Min(max + 1, 64), min);
         sb.AppendLine($"vec4 pa[{Size(t.MaxPa, 8)}];");
@@ -813,6 +864,7 @@ float packC10(vec3 c) {
             else coord = coords[q.CoordIndex] ?? Varying(4 + q.CoordIndex, $"v_TexCoord{q.CoordIndex}");
             string sampleExpr;
             if (q.S.IsCube) sampleExpr = $"texture({q.S.GlslName}, {coord}.xyz)";
+            else if (q.S.RtFetch != null) sampleExpr = q.ProdPos >= 0 ? $"{q.S.RtFetch}({coord}.xy / {coord}.{"xyzw"[q.ProdPos]})" : $"{q.S.RtFetch}({coord}.xy)";
             else if (q.ProdPos >= 0) sampleExpr = $"textureProj({q.S.GlslName}, vec3({coord}.xy, {coord}.{"xyzw"[q.ProdPos]}))";
             else sampleExpr = $"texture({q.S.GlslName}, {coord}.xy)";
             var type = q.Store == DataType.Unk ? q.S.ComponentType : q.Store;

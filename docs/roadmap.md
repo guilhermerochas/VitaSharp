@@ -1055,8 +1055,30 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ponto de fronteira arredonda para um lado ou outro conforme a escala (listras esparsas em 2x, metade errada em quase
   tudo em 3x/4x). Ler pela cópia nativa (sem a reinterpretação escalada) piora (listras a cada pixel). Opções a decidir:
   um texelFetch com arredondamento fixo para texturas que reinterpretam alvos escalados (o gerador não sabe disso hoje),
-  ou desenhar esses alvos em nativo. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
+  ou desenhar esses alvos em nativo. **Corrigido** (perf/desktop-13; falta o usuário confirmar; o trabalho
+  parou em 08/11/2026 a pedido do usuário e foi retomado no mesmo dia). Causa exata: o jogo soma -0,5/1440 ao uv (centro da 1ª metade do pixel
+  F16x4 no nativo: u*1440 = 2x+0,5); na escala k o mesmo deslocamento fica fixo e u*1440k = 2X+1-0,5k (borda em 2x,
+  a outra metade em 3x, borda de novo em 4x). Correção genérica como o sample_depth do PCSX2 (texelFetch do texel
+  nativo vezes a escala): texturas que reinterpretam um alvo com texel menor, acima do nativo, levam bits na entrada
+  de formato das hints (`ShaderGenerator.RtReinterpretFlag`, só esses shaders ganham chave nova) e são lidas por
+  `rtfetch_*`: o uv volta ao centro do pixel nativo do fragmento (derivadas de tela), pega o texel nativo e lê a
+  cópia dele no alias escalado na sub-posição do fragmento. Replay do dump da gravação, quadro 3900: 1x/2x/3x/4x com
+  a mesma luz (`scratchpad/perf13_out/fb_m3900.png`; antes `fa_m3900.png`), 1x idêntico ao main. `replay-gpu
+  --compare` 1x e 2x: 7 dumps pequenos sem diferença até a parada (lista em `scratchpad/perf13_cmp/c1.txt`).
+  **Validado** (08/11/2026): `--compare` 1x e 2x em todos os 18 dumps e na gravação: só a gravação do Resistance muda
+  em 2x (a luz corrigida) e os brilhos dos refletores do FIFA 13 (efeito da correção do 2X MSAA do Ninja Gaiden). No
+  jogo (a gravação não serve para rerun: o save state é de outro formato): cenário `rbs_continue` até a sala dos
+  bombeiros e olhando para a direita, em `--res-scale` 1/2/3/4: luz igual à de 1x em todas; main em 4x no mesmo ponto
+  sai com o machado e as mãos azulados. Atenção: `--env=VITASHARP_RES_SCALE` não muda a escala de `test` (só do
+  replay-gpu); use `--res-scale=`.
+  Os prefetches dos workers não conhecem os bits (calculam a chave sem eles): esses poucos shaders compilam no
+  primeiro uso. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
   antes da troca; não reproduzidos
+- [ ] Resistance: Burning Skies (PCSA00008): às vezes trava na primeira tela de carregamento (a caveira gira para
+  sempre) logo depois do boot (achado do agente, 08/11/2026). Intermitente e já existe no main (main: 1 de 8 boots;
+  perf/desktop-13: 3 de 15). O jogo cria a thread 'Autoload' (quadro ~61) e nunca chega à 'FMOD nonblocking
+  thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
+  `--diag-at` (threads e esperas) numa execução travada e comparar com uma boa
 - [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va

@@ -854,7 +854,7 @@ public sealed unsafe partial class VulkanRenderer
         var geo = ScaledReinterpretGeometry(rt, addr, w, h, texRow, (uint)rtBpp, texBpp);
         // above native the scaled rows are in the target's own buffer, else in the mirror
         var src = _mirror;
-        if (geo is { Own: true } && ScaledRowsOf(rt) is { Handle: not 0 } own) src = own;
+        if (geo is { Own: true } && ScaledRowsCopyable(rt) && ScaledRowsOf(rt) is { Handle: not 0 } own) src = own;
         else if (geo is { Own: true }) geo = null;
         if (geo is null ? !MirrorRenderTarget(rt) : !geo.Value.Own && !MirrorRenderTargetScaled(rt)) return null;
         uint aw = geo?.W ?? w, ah = geo?.H ?? h;
