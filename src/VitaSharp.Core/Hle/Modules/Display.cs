@@ -719,9 +719,9 @@ public sealed partial class Touch : HleModule
     [Hle("sceTouchReadRegionExt")]
     int sceTouchReadRegion(int port, uint data, uint count, int region) => region > 0xFF ? ERR_INVALID_ARG : sceTouchRead(port, data, count);
 
-    /// <summary>(port, region, rect: u16 x0, y0, x1, y1 in panel coordinates, attr). The shell's ime_plugin sets region 2
-    /// to the whole front panel and activates it while its on-screen keyboard is up (over an application in front):
-    /// those touches are the shell's then (<see cref="Kernel.VitaSystem.TouchClaimedByShell"/>).</summary>
+    /// <summary>(port, region, rect: u16 x, y, width, height in panel coordinates, attr). The shell's ime_plugin keeps
+    /// region 2 over its on-screen keyboard and the status bar region 1 over the bar while they are up over an
+    /// application in front: the contacts inside are the shell's (<see cref="Kernel.VitaSystem.ShellTouchRegionAt"/>).</summary>
     [Hle]
     int sceTouchSetRegion(int port, int region, uint rect, int attr)
     {
