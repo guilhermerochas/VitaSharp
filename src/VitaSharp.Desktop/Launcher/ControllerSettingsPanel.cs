@@ -75,7 +75,7 @@ public sealed class ControllerSettingsPanel : UserControl
     VitaControl? _listen;
     ListenMode _listenMode;
     readonly Queue<VitaControl> _sequence = new();
-    DateTime _listenUntil;
+    DateTime _listenUntil, _listenSince;
     /// <summary>Buttons pressed so far while recording a combination (in the order they were pressed).</summary>
     readonly List<InputBinding> _comboParts = new();
     TextBlock? _hotkeyRowsHeader;
@@ -295,6 +295,7 @@ public sealed class ControllerSettingsPanel : UserControl
         {
             top.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
             top.AddHandler(KeyUpEvent, OnKeyUp, RoutingStrategies.Tunnel);
+            top.AddHandler(PointerPressedEvent, OnPointerPressedListen, RoutingStrategies.Tunnel);
             if (top is Window w) w.Deactivated += OnDeactivated;
         }
         _timer.Start();
@@ -307,6 +308,7 @@ public sealed class ControllerSettingsPanel : UserControl
         {
             top.RemoveHandler(KeyDownEvent, OnKeyDown);
             top.RemoveHandler(KeyUpEvent, OnKeyUp);
+            top.RemoveHandler(PointerPressedEvent, OnPointerPressedListen);
             if (top is Window w) w.Deactivated -= OnDeactivated;
         }
         if (_ownsPads) _pads?.Dispose();
@@ -574,6 +576,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _listenMode = mode;
         _comboParts.Clear();
         _listenUntil = DateTime.UtcNow.AddSeconds(8);
+        _listenSince = DateTime.UtcNow;
         _layout.ListeningControl = c;
         _layout.SelectedControl = c;
         if (_current?.Pad is { } pad && _pads != null) _pads.TryGetState(pad.InstanceId, _baseline);
@@ -647,6 +650,28 @@ public sealed class ControllerSettingsPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// While a keyboard binding is being recorded, a mouse button binds too ("key:MouseRight"): the right, middle and
+    /// side buttons anywhere, the left one only on the Vita picture (a left click elsewhere is the user working the
+    /// screen: Cancel, another row).
+    /// </summary>
+    void OnPointerPressedListen(object? sender, PointerPressedEventArgs e)
+    {
+        if (_listen == null || _current?.IsKeyboard != true || (DateTime.UtcNow - _listenSince).TotalMilliseconds < 250) return;
+        var kind = e.GetCurrentPoint(null).Properties.PointerUpdateKind;
+        string? name = kind switch
+        {
+            PointerUpdateKind.LeftButtonPressed when _layout.IsPointerOver => "MouseLeft",
+            PointerUpdateKind.RightButtonPressed => "MouseRight",
+            PointerUpdateKind.MiddleButtonPressed => "MouseMiddle",
+            PointerUpdateKind.XButton1Pressed => "Mouse4",
+            PointerUpdateKind.XButton2Pressed => "Mouse5",
+            _ => null,
+        };
+        if (name == null) return;
+        Bound(InputBinding.OfKey(name));
+        e.Handled = true;
+    }
     void OnKeyUp(object? sender, KeyEventArgs e)
     {
         if (KeyNames.FromAvalonia(e.PhysicalKey, e.Key) is { } name) _keys.Remove(name);

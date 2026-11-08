@@ -9,7 +9,7 @@ namespace VitaSharp.Desktop;
 
 /// <summary>
 /// Save states on the desktop (docs/notes/save-states.md): the window's hotkeys (F5 quick save, F7 quick load, F6
-/// picks a slot 1-9, Shift+F5 / Shift+F7 save / load that slot), --load-state=PATH at start, and the scheduled
+/// picks a slot 1-9 in the save state picker (Host.SaveStateOverlay), Shift+F5 / Shift+F7 save / load that slot), --load-state=PATH at start, and the scheduled
 /// test steps --save-state=fN[,fN...] and --load-state-at=fN[,fN...] (loads the last state this run saved).
 /// States live in &lt;data&gt;/savestates/&lt;TITLEID&gt;/ with a small picture of the screen.
 /// </summary>
@@ -21,7 +21,13 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
 
     public int Slot => _slot;
 
-    string PathOf(int slot) => SaveStates.SlotPath(Program.DataRoot, emu.TitleId, slot);
+    public string PathOf(int slot) => SaveStates.SlotPath(Program.DataRoot, emu.TitleId, slot);
+
+    /// <summary>Why the state at <paramref name="path"/> cannot be loaded into this game and build, or null.</summary>
+    public string? LoadProblem(string path) => SaveStates.CheckFile(emu, path);
+
+    /// <summary>The slot picked in the save state picker becomes the one Shift+F5 / Shift+F7 use (the quick slot leaves it).</summary>
+    public void Select(int slot) { if (slot is >= 1 and <= 9) _slot = slot; }
 
     public void NextSlot()
     {

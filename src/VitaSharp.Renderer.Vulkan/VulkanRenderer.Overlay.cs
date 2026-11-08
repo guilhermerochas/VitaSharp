@@ -35,6 +35,16 @@ public sealed unsafe partial class VulkanRenderer
     /// emulation is paused the last frame is presented again with it (VulkanRenderer.Pause.cs). Any thread.</summary>
     public void SetStatusOverlay(byte[]? bgra, int width, int height) => Volatile.Write(ref _statusOverlay, NewOverlay(bgra, width, height));
 
+    /// <summary>Where the centre overlay of <paramref name="width"/> pixels is drawn in a window image of
+    /// <paramref name="swapWidth"/> x <paramref name="swapHeight"/>: centred horizontally, in the upper third (the Vita's
+    /// keyboard dialog sits at the top of the screen). The front end maps clicks on it with this.</summary>
+    public static (int X, int Y) CenterOverlayOrigin(int width, int swapWidth, int swapHeight)
+    {
+        int margin = (int)Math.Max(8, swapHeight / 40);
+        int w = Math.Min(width, swapWidth - 2 * margin);
+        return (Math.Max(margin, (swapWidth - w) / 2), Math.Max(margin, swapHeight / 6));
+    }
+
     /// <summary>After the game frame was blitted (dst in TRANSFER_DST layout).</summary>
     void DrawOverlay(Image dst)
     {
@@ -42,9 +52,8 @@ public sealed unsafe partial class VulkanRenderer
         if (Volatile.Read(ref _statusOverlay) is { } st) CopyOverlay(dst, st, _statusOverlayBufs, margin, margin);
         if (Volatile.Read(ref _centerOverlay) is { } c)
         {
-            int w = Math.Min(c.Width, (int)_swapExtent.Width - 2 * margin);
-            // centred, in the upper third (the Vita's keyboard dialog sits at the top of the screen)
-            CopyOverlay(dst, c, _centerOverlayBufs, Math.Max(margin, ((int)_swapExtent.Width - w) / 2), Math.Max(margin, (int)_swapExtent.Height / 6));
+            var (cx, cy) = CenterOverlayOrigin(c.Width, (int)_swapExtent.Width, (int)_swapExtent.Height);
+            CopyOverlay(dst, c, _centerOverlayBufs, cx, cy);
         }
         if (Volatile.Read(ref _overlay) is { } o)
         {

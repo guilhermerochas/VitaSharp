@@ -142,6 +142,20 @@ public sealed class HostInput : IMotionSource, IDisposable
         return false;
     }
 
+    /// <summary>Some control or hotkey of the keyboard profile is bound to this key name: mouse buttons ("MouseLeft",
+    /// "MouseRight", "MouseMiddle", "Mouse4", "Mouse5") then act as keys instead of touching / looking.</summary>
+    public bool IsKeyBound(string key)
+    {
+        lock (_lock)
+        {
+            ReloadIfChanged();
+            foreach (var c in VitaControls.All)
+                foreach (ref readonly var b in _keyboard[c])
+                    if (b.Kind == BindingKind.Key && b.Key == key) return true;
+            return false;
+        }
+    }
+
     /// <summary>Some controller holds hotkey <paramref name="c"/> (a single binding or a whole combination of its
     /// profile). Polled by the window, since the guest does not poll the controllers while the emulation is paused.</summary>
     public bool PadHotkeyHeld(VitaControl c)

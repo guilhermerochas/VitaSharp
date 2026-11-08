@@ -388,7 +388,7 @@
     <value>Pressed: {0}</value>
   </data>
   <data name="CsPressKey" xml:space="preserve">
-    <value>press a key</value>
+    <value>press a key or click a mouse button</value>
   </data>
   <data name="CsProfileDefault" xml:space="preserve">
     <value>using the default mapping</value>
@@ -1679,5 +1679,152 @@
   </data>
   <data name="GameMsaaNative" xml:space="preserve">
     <value>native (real multisampling)</value>
+  </data>
+  <data name="DlgOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="DlgYes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="DlgNo" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="DlgCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="DlgRetry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="DlgHelp" xml:space="preserve">
+    <value>Arrows choose · Enter confirms · Esc cancels · controller: Cross / Circle</value>
+  </data>
+  <data name="DlgHelpNoButtons" xml:space="preserve">
+    <value>Please wait for the game</value>
+  </data>
+  <data name="DlgTitle" xml:space="preserve">
+    <value>System message</value>
+  </data>
+  <data name="DlgWait" xml:space="preserve">
+    <value>Please wait...</value>
+  </data>
+  <data name="DlgNoSpace" xml:space="preserve">
+    <value>There is not enough free space on the memory card.</value>
+  </data>
+  <data name="DlgNoSpaceContinuable" xml:space="preserve">
+    <value>There is not enough free space on the memory card. {0} KB more are needed.</value>
+  </data>
+  <data name="DlgCalibration" xml:space="preserve">
+    <value>Calibrate the motion sensor: move the system in a figure eight.</value>
+  </data>
+  <data name="DlgNeedMemoryCard" xml:space="preserve">
+    <value>A memory card is required.</value>
+  </data>
+  <data name="DlgMicDisabled" xml:space="preserve">
+    <value>The microphone is disabled. Enable it in Settings.</value>
+  </data>
+  <data name="DlgWifiRequired" xml:space="preserve">
+    <value>A Wi-Fi connection is required.</value>
+  </data>
+  <data name="DlgEmptyStore" xml:space="preserve">
+    <value>There is no content available in PlayStation Store.</value>
+  </data>
+  <data name="DlgSystemMessage" xml:space="preserve">
+    <value>System message ({0}).</value>
+  </data>
+  <data name="DlgError" xml:space="preserve">
+    <value>An error has occurred. ({0})</value>
+  </data>
+  <data name="SaveDlgNoData" xml:space="preserve">
+    <value>There is no saved data.</value>
+  </data>
+  <data name="SaveDlgConfirmSave" xml:space="preserve">
+    <value>Do you want to save?</value>
+  </data>
+  <data name="SaveDlgConfirmLoad" xml:space="preserve">
+    <value>Do you want to load this saved data?</value>
+  </data>
+  <data name="SaveDlgConfirmDelete" xml:space="preserve">
+    <value>Do you want to delete this saved data?</value>
+  </data>
+  <data name="SaveDlgOverwrite" xml:space="preserve">
+    <value>Do you want to overwrite this saved data?</value>
+  </data>
+  <data name="SaveDlgNoSpace" xml:space="preserve">
+    <value>There is not enough free space to save. {0} KB more are needed.</value>
+  </data>
+  <data name="SaveDlgNoSpaceContinuable" xml:space="preserve">
+    <value>Could not save: there is not enough free space. {0} KB more are needed.</value>
+  </data>
+  <data name="SaveDlgProgressSave" xml:space="preserve">
+    <value>Saving... Do not turn off the system.</value>
+  </data>
+  <data name="SaveDlgProgressLoad" xml:space="preserve">
+    <value>Loading...</value>
+  </data>
+  <data name="SaveDlgProgressDelete" xml:space="preserve">
+    <value>Deleting...</value>
+  </data>
+  <data name="SaveDlgFinishedSave" xml:space="preserve">
+    <value>Saving complete.</value>
+  </data>
+  <data name="SaveDlgFinishedLoad" xml:space="preserve">
+    <value>Loading complete.</value>
+  </data>
+  <data name="SaveDlgFinishedDelete" xml:space="preserve">
+    <value>Deleted.</value>
+  </data>
+  <data name="SaveDlgCancelSave" xml:space="preserve">
+    <value>Do you want to cancel saving?</value>
+  </data>
+  <data name="SaveDlgCancelLoad" xml:space="preserve">
+    <value>Do you want to cancel loading?</value>
+  </data>
+  <data name="SaveDlgCancelDelete" xml:space="preserve">
+    <value>Do you want to cancel deleting?</value>
+  </data>
+  <data name="SaveDlgCorrupted" xml:space="preserve">
+    <value>The saved data is corrupted.</value>
+  </data>
+  <data name="SaveDlgNoDataImport" xml:space="preserve">
+    <value>There is no saved data that can be imported.</value>
+  </data>
+  <data name="CtlMouseLeft" xml:space="preserve">
+    <value>Mouse left button</value>
+  </data>
+  <data name="CtlMouseRight" xml:space="preserve">
+    <value>Mouse right button</value>
+  </data>
+  <data name="CtlMouseMiddle" xml:space="preserve">
+    <value>Mouse middle button</value>
+  </data>
+  <data name="CtlMouseButton" xml:space="preserve">
+    <value>Mouse button {0}</value>
+  </data>
+  <data name="SsTitle" xml:space="preserve">
+    <value>Save states</value>
+  </data>
+  <data name="SsSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SsLoad" xml:space="preserve">
+    <value>Load</value>
+  </data>
+  <data name="SsSlot" xml:space="preserve">
+    <value>Slot {0}</value>
+  </data>
+  <data name="SsEmpty" xml:space="preserve">
+    <value>Empty</value>
+  </data>
+  <data name="SsIncompatible" xml:space="preserve">
+    <value>Other version: cannot load</value>
+  </data>
+  <data name="SsOverwrite" xml:space="preserve">
+    <value>Overwrite {0}, saved on {1}?</value>
+  </data>
+  <data name="SsHelp" xml:space="preserve">
+    <value>Arrows choose · Enter / Cross acts · Tab / L / R switches Save and Load · F5 saves · F7 loads · F6 next · Esc closes</value>
+  </data>
+  <data name="SsQuick" xml:space="preserve">
+    <value>Quick save</value>
   </data>
 </root>

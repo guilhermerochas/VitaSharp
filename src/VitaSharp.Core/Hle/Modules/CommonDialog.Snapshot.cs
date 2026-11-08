@@ -4,7 +4,7 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>Save states: the dialog slot (a finished dialog's result is kept); no state is saved while a dialog is on
 /// screen, its host UI cannot be recreated.</summary>
-[GenerateSnapshot, SnapshotIgnoreFields("ImeBackendOverride", "_imeBackend")]
+[GenerateSnapshot, SnapshotIgnoreFields("ImeBackendOverride", "_imeBackend", "MessageBackendOverride", "_ui")]
 public sealed partial class CommonDialog : ISnapshotState
 {
     string? ISnapshotState.CheckSnapshot() => State.IsRunning ? $"a system dialog ({State.Type}) is open; close it, then save" : null;

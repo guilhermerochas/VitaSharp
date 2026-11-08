@@ -135,6 +135,18 @@ public static class Program
                 WriteBgraPng(args[1], bgra, w, h);
                 return 0;
             }
+            case "msg-preview" when args.Length >= 2:
+            {
+                // msg-preview <out.png> [message] [--buttons=Yes,No] [--selected=N] [--progress=N]: draws the message
+                // dialog panel of the game window (sceMsgDialog / save data messages)
+                string msg = args.Skip(2).FirstOrDefault(a => !a.StartsWith("--")) ?? "Message";
+                string[] buttons = args.FirstOrDefault(a => a.StartsWith("--buttons="))?["--buttons=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [VitaSharp.Core.Localization.Loc.Get("DlgOk")];
+                int sel = int.TryParse(args.FirstOrDefault(a => a.StartsWith("--selected="))?["--selected=".Length..], out var sv) ? sv : 0;
+                int? progress = int.TryParse(args.FirstOrDefault(a => a.StartsWith("--progress="))?["--progress=".Length..], out var pv) ? pv : null;
+                var panel = Host.MessageOverlay.Render(msg.Replace("\\n", "\n"), buttons, sel, progress, 2f);
+                WriteBgraPng(args[1], panel.Bgra, panel.Width, panel.Height);
+                return 0;
+            }
             case "pad-test":
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
@@ -237,7 +249,7 @@ public static class Program
         throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
     }
 
-    static void WriteBgraPng(string path, byte[] bgra, int w, int h)
+    internal static void WriteBgraPng(string path, byte[] bgra, int w, int h)
     {
         using var bmp = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul));
         System.Runtime.InteropServices.Marshal.Copy(bgra, 0, bmp.GetPixels(), bgra.Length);
@@ -532,8 +544,11 @@ public static class Program
         Console.WriteLine("  ui-render <out-dir> [--title=ID] [--launch=ID|shell] [--install-pkg=P --license=zRIF]  render every launcher page to PNGs without a window (use a scratch --data)");
         Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
+        Console.WriteLine("  msg-preview <out.png> [message] [--buttons=A,B] [--selected=N] [--progress=N]  draw the message dialog overlay");
         Console.WriteLine("  run options: --camera=<name|index|none> webcam for the Vita cameras (default: first)");
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
+        Console.WriteLine("               --dialogs=auto     answer message / save data dialogs at once (no panel over the game)");
+        Console.WriteLine("               --overlay-dump=<dir>  also write every panel drawn over the game (dialogs, save state picker) as PNG");
         Console.WriteLine("               --start-paused  pause the emulation right after the boot (P, or the key set in Controles, resumes)");
         Console.WriteLine("               --trophy-sound=on|off  chime with the trophy notification in the window (default on)");
         Console.WriteLine("               --video-decoder=auto|sw|hw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: software; hw: the platform's hardware decoder)");

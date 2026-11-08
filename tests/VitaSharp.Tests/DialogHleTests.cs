@@ -386,4 +386,96 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(2, Call(d, "sceSaveDataDialogGetStatus"));
         Assert.Equal(0, Call(d, "sceSaveDataDialogTerm"));
     }
+
+    sealed class FakeMessageUi : VitaSharp.Core.Host.IMessageDialogBackend
+    {
+        public VitaSharp.Core.Host.MessageDialogRequest? Request;
+        public Action<int>? Done;
+        public int Closed, Progress = -1;
+        public void Open(VitaSharp.Core.Host.MessageDialogRequest request, Action<int> done) { Request = request; Done = done; }
+        public void SetProgress(int percent, string? message) => Progress = percent;
+        public void Close() => Closed++;
+    }
+
+    /// <summary>With a host message UI a YES/NO question waits for the user, whose choice is the result's button id,
+    /// also right after a failed network check (no automatic NO then).</summary>
+    [Fact]
+    public void MsgDialogWaitsForTheHostUi()
+    {
+        var ui = new FakeMessageUi();
+        var d = new CommonDialog { MessageBackendOverride = ui };
+        Assert.Equal(0, Call(d, "sceMsgDialogInit", MsgParam(1, 1, "Try again?")));    // USER_MSG, YESNO
+        Assert.Equal(1, Call(d, "sceMsgDialogGetStatus"));
+        Assert.Equal("Try again?", ui.Request!.Message);
+        Assert.Equal(2, ui.Request.Buttons.Count);
+        Assert.Equal(new[] { 1, 2 }, ui.Request.Buttons.Select(b => b.Id));
+        Assert.True(ui.Request.Buttons[1].IsCancel);
+        uint res = Alloc(0x2C);
+        Assert.Equal(NOT_FINISHED, Call(d, "sceMsgDialogGetResult", res));
+        ui.Done!(1);                                                                     // NO
+        Assert.Equal(2, Call(d, "sceMsgDialogGetStatus"));
+        Assert.Equal(0, Call(d, "sceMsgDialogGetResult", res));
+        Assert.Equal(0u, GuestMemory.R32(res + 4));  // OK
+        Assert.Equal(2u, GuestMemory.R32(res + 8));  // NO
+        ui.Done!(0);                                                                     // a late answer changes nothing
+        Assert.Equal(0, Call(d, "sceMsgDialogGetResult", res));
+        Assert.Equal(2u, GuestMemory.R32(res + 8));
+        Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
+
+        // CANCEL alone: USER_CANCELED
+        Assert.Equal(0, Call(d, "sceMsgDialogInit", MsgParam(1, 4)));
+        ui.Done!(0);
+        Assert.Equal(0, Call(d, "sceMsgDialogGetResult", res));
+        Assert.Equal(1u, GuestMemory.R32(res + 4));
+        Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
+    }
+
+    [Fact]
+    public void MsgDialogWithoutButtonsIsShownUntilClosed()
+    {
+        var ui = new FakeMessageUi();
+        var d = new CommonDialog { MessageBackendOverride = ui };
+        Assert.Equal(0, Call(d, "sceMsgDialogInit", MsgParam(1, 2, "Loading")));       // NONE
+        Assert.Empty(ui.Request!.Buttons);
+        Assert.Equal(1, Call(d, "sceMsgDialogGetStatus"));
+        Assert.Equal(0, Call(d, "sceMsgDialogClose"));
+        Assert.Equal(1, ui.Closed);
+        Assert.Equal(2, Call(d, "sceMsgDialogGetStatus"));
+        Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
+
+        uint param = Alloc(0x88);
+        GuestMemory.W32(param + 0x50, 4);                                                // progress bar
+        Assert.Equal(0, Call(d, "sceMsgDialogInit", param));
+        Assert.Equal(0, ui.Request!.Progress);
+        Assert.Equal(0, Call(d, "sceMsgDialogProgressBarSetValue", 0, 40u));
+        Assert.Equal(40, ui.Progress);
+        Assert.Equal(0, Call(d, "sceMsgDialogClose"));
+        Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
+    }
+
+    /// <summary>A save data confirmation (system message OVERWRITE) keeps the substatus RUNNING until the user answers;
+    /// NO is button id 2.</summary>
+    [Fact]
+    public void SaveDataConfirmationWaitsForTheHostUi()
+    {
+        var ui = new FakeMessageUi();
+        var d = new CommonDialog { MessageBackendOverride = ui };
+        uint param = Alloc(0x100), sys = Alloc(0x40);
+        GuestMemory.W32(sys, 3);                    // OVERWRITE
+        GuestMemory.W32(sys + 8, 0xFFFFFFFF);       // targetSlot.id: none (no slot info)
+        GuestMemory.W32(param + 0x50, 4);           // SYSTEM_MSG
+        GuestMemory.W32(param + 0x54, 1);           // SAVE
+        GuestMemory.W32(param + 0x64, sys);
+        Assert.Equal(0, Call(d, "sceSaveDataDialogInit", param));
+        Assert.Equal(1, Call(d, "sceSaveDataDialogGetSubStatus"));
+        Assert.Equal(VitaSharp.Core.Localization.Loc.Get("SaveDlgOverwrite"), ui.Request!.Message);
+        ui.Done!(1);                                // NO
+        Assert.Equal(2, Call(d, "sceSaveDataDialogGetSubStatus"));
+        uint res = Alloc(0x38);
+        Assert.Equal(0, Call(d, "sceSaveDataDialogGetResult", res));
+        Assert.Equal(0u, GuestMemory.R32(res + 4));
+        Assert.Equal(2u, GuestMemory.R32(res + 8));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogFinish", 0u));
+        Assert.Equal(0, Call(d, "sceSaveDataDialogTerm"));
+    }
 }

@@ -217,9 +217,31 @@ public static class Runner
             trophySound != null ? () => audio!.PlayEffect(trophySound.Value) : null);
         // text entry for the IME dialog and SceIme: an overlay over the game typed with the physical keyboard
         // (Enter / Cross confirm, Esc / Circle cancel)
-        var imeOverlay = new ImeOverlay(window, (bgra, w, h) => renderer?.SetCenterOverlay(bgra, w, h));
+        // --overlay-dump=<dir>: every panel drawn over the game (IME, message dialogs, save state picker) is also written
+        // there as overlay_NNN.png (automated checks of the hidden window, whose frame dumps do not include them)
+        string? overlayDump = Opt(options, "--overlay-dump");
+        int overlayDumps = 0;
+        void ShowCenter(byte[]? bgra, int w, int h)
+        {
+            renderer?.SetCenterOverlay(bgra, w, h);
+            if (overlayDump == null || bgra == null) return;
+            try
+            {
+                Directory.CreateDirectory(overlayDump);
+                Program.WriteBgraPng(Path.Combine(overlayDump, $"overlay_{Interlocked.Increment(ref overlayDumps):D3}.png"), bgra, w, h);
+            }
+            catch (IOException e) { Log.WarnOnce("overlay-dump", $"--overlay-dump: {e.Message}"); }
+        }
+        var imeOverlay = new ImeOverlay(window, ShowCenter, scripted != null ? () => scripted.GetController(0) : null);
         emu.Host.ImeDialog = imeOverlay;
         emu.Host.TextInput = imeOverlay;
+        // system message dialogs (sceMsgDialog, the save data dialog's messages): a panel over the game that waits for the
+        // user (arrows / Enter / Esc, d-pad / Cross / Circle, click); --dialogs=auto answers them at once as headless runs do
+        var msgOverlay = new MessageOverlay(window, ShowCenter, scripted != null ? () => scripted.GetController(0) : null);
+        if (Opt(options, "--dialogs") == "auto") Log.Info("Message dialogs: automatic answers (--dialogs=auto)");
+        else emu.Host.MessageDialog = msgOverlay;
+        // the script drives the dialog, not the game, while one is open (as the window's own input does)
+        if (scripted != null) emu.Host.Input = new DialogGatedInput(scripted, () => window.TextCapture != null);
         VitaSharp.Core.Hle.Np.TrophyNotifications.Unlocked += e => { trophyToast.Enqueue(e); diag.Status?.Invoke(TrophyNotice(e)); };
         // --trophy-toast-test=<seconds>: shows the notification of the title's trophy 1 (nothing is unlocked), to check it
         if (int.TryParse(Opt(options, "--trophy-toast-test"), out int toastAt))
@@ -248,7 +270,18 @@ public static class Runner
         using var watchdog = new Watchdog(emu, () => renderer);
         // save states: F5/F7 quick save/load, F6 picks a slot, Shift+F5/F7 that slot (SaveStateControl)
         var states = new SaveStateControl(emu, rendererOptions, () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; }, diag.Status, s => ShowStatus(s, 15000));
-        window.SaveStateKey += slot => { capture.Capture.NoteKey(slot < 0 ? "F6" : "F5"); if (slot < 0) states.NextSlot(); else states.SaveAsync(slot == 0 ? 0 : states.Slot); };
+        // F6: the save state picker over the game (slots with their pictures and dates), opened on the next slot
+        var statePicker = new SaveStateOverlay(window, ShowCenter, states.PathOf, states.LoadProblem,
+            scripted != null ? () => scripted.GetController(0) : null);
+        statePicker.SaveRequested += slot => { states.Select(slot); states.SaveAsync(slot); };
+        statePicker.LoadRequested += slot => { states.Select(slot); states.LoadAsync(slot); };
+        window.SaveStateKey += slot =>
+        {
+            capture.Capture.NoteKey(slot < 0 ? "F6" : "F5");
+            if (slot >= 0) { states.SaveAsync(slot == 0 ? 0 : states.Slot); return; }
+            states.NextSlot();
+            statePicker.Open(states.Slot);
+        };
         window.LoadStateKey += slot => { capture.Capture.NoteKey("F7"); states.LoadAsync(slot == 0 ? 0 : states.Slot); };
         states.StartScheduled(options);
         capture.StartScheduled(options);
@@ -362,7 +395,7 @@ public static class Runner
     }
 
     /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
-    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F1 / F2 / F3 (Shift = back)
+    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F5 / F6 / F7 are the save state keys, F1 / F2 / F3 (Shift = back)
     /// change the internal resolution / frame rate mode / MSAA mode.</summary>
     static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null, GraphicsHotkeys? graphics = null)
     {
@@ -373,6 +406,7 @@ public static class Runner
             else if (k == "F10") diag.Capture("--input F10");
             else if (k == "F11") window?.ToggleFullscreen();
             else if (k is "F8" or "Ctrl+F8") window?.PressF8(k == "Ctrl+F8");
+            else if (k is "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7") window?.PressStateKey(k);
             else if (GraphicsHotkeys.IsHotkey(k)) graphics?.Press(k);
         }
     }

@@ -19,6 +19,8 @@ public interface ITextCapture
 {
     void OnKey(Key key);
     void OnChar(char c);
+    /// <summary>A left click at <paramref name="x"/>, <paramref name="y"/> in window image (framebuffer) pixels.</summary>
+    void OnClick(int x, int y) { }
 }
 
 /// <summary>Desktop window: Vulkan surface, keyboard/gamepad/mouse input.</summary>
@@ -223,20 +225,39 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         foreach (var m in _input.Mice)
         {
             _mouseDevice ??= m;
-            // left button = front touch screen, right button = rear touch panel; with the cursor captured (mouse as a
-            // stick) the pointer has no position on the screen, so the buttons do not touch, and a click with the
-            // cursor released captures it again
+            // left button = front touch screen, right button = rear touch panel, middle = mouse look, unless the
+            // keyboard profile binds the button to a Vita control ("key:MouseLeft"...: then it presses that control, also
+            // with the cursor captured); with the cursor captured (mouse as a stick) the pointer has no position on the
+            // screen, so the buttons do not touch, and a left click with the cursor released captures it again
             m.MouseDown += (mouse, b) =>
             {
+                // a dialog over the game takes the left clicks (its buttons) and nothing touches the game; a mouse button
+                // bound to a Vita button still presses it (the dialog reads the mapped controller)
+                if (TextCapture is { } capture && !_mouseCaptured)
+                {
+                    if (b == MouseButton.Left) { var (fx, fy) = ToFramebuffer(mouse.Position); capture.OnClick(fx, fy); }
+                    if (b == MouseButton.Left || MouseKey(b) is not { } bound || !_hostInput.IsKeyBound(bound)) return;
+                }
+                if (!_mouseCaptured && _hostInput.MouseIsStick && b == MouseButton.Left) { CaptureMouse(true); return; }
+                if (MouseKey(b) is { } key && _hostInput.IsKeyBound(key))
+                {
+                    _mouseKeysDown.Add(b);
+                    if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key)) PauseToggled?.Invoke();
+                    else _hostInput.KeyChanged(key, true);
+                    return;
+                }
                 if (_mouseCaptured) return;
-                if (_hostInput.MouseIsStick && b == MouseButton.Left) { CaptureMouse(true); return; }
-                if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true);
+                if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false);
+                else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true);
+                else if (b == MouseButton.Middle) _look = mouse.Position; // middle button held = mouse look (virtual motion)
             };
-            m.MouseUp += (mouse, b) => { if (b == MouseButton.Left) UpdateTouch(mouse.Position, false, false); else if (b == MouseButton.Right) UpdateTouch(mouse.Position, false, true); };
-            // middle button held = mouse look: moving the mouse rotates the Vita (virtual motion sensors)
-            System.Numerics.Vector2? look = null;
-            m.MouseDown += (mouse, b) => { if (b == MouseButton.Middle) look = mouse.Position; };
-            m.MouseUp += (_, b) => { if (b == MouseButton.Middle) look = null; };
+            m.MouseUp += (mouse, b) =>
+            {
+                if (_mouseKeysDown.Remove(b)) { if (MouseKey(b) is { } key) _hostInput.KeyChanged(key, false); return; }
+                if (b == MouseButton.Left) UpdateTouch(mouse.Position, false, false);
+                else if (b == MouseButton.Right) UpdateTouch(mouse.Position, false, true);
+                else if (b == MouseButton.Middle) _look = null;
+            };
             m.MouseMove += (mouse, pos) =>
             {
                 if (_mouseCaptured)
@@ -245,17 +266,28 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
                     _mouseLast = pos;
                     return;
                 }
-                if (mouse.IsButtonPressed(MouseButton.Left)) UpdateTouch(pos, true, false);
-                if (mouse.IsButtonPressed(MouseButton.Right)) UpdateTouch(pos, true, true);
-                if (look is { } last && mouse.IsButtonPressed(MouseButton.Middle))
+                if (mouse.IsButtonPressed(MouseButton.Left) && !_mouseKeysDown.Contains(MouseButton.Left)) UpdateTouch(pos, true, false);
+                if (mouse.IsButtonPressed(MouseButton.Right) && !_mouseKeysDown.Contains(MouseButton.Right)) UpdateTouch(pos, true, true);
+                if (_look is { } last && mouse.IsButtonPressed(MouseButton.Middle))
                 {
                     _hostInput.MouseLook(pos.X - last.X, pos.Y - last.Y);
-                    look = pos;
+                    _look = pos;
                 }
             };
         }
         Loaded?.Invoke();
     }
+
+    // mouse buttons bound as keys that are held (their release goes to the mapping, not the touch panel); mouse look
+    readonly HashSet<MouseButton> _mouseKeysDown = new();
+    System.Numerics.Vector2? _look;
+
+    /// <summary>The key name of a mouse button in the keyboard profile ("key:MouseRight"), null for the others.</summary>
+    public static string? MouseKey(MouseButton b) => b switch
+    {
+        MouseButton.Left => "MouseLeft", MouseButton.Right => "MouseRight", MouseButton.Middle => "MouseMiddle",
+        MouseButton.Button4 => "Mouse4", MouseButton.Button5 => "Mouse5", _ => null,
+    };
 
     /// <summary>Captures (hidden, raw unbounded motion) or releases the cursor. Window thread.</summary>
     void CaptureMouse(bool capture)
@@ -353,6 +385,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     /// <summary>One F8 press: "Gravar tudo", or with Ctrl the GPU dump (the key handler and --input steps).</summary>
     public void PressF8(bool ctrl) => (ctrl ? GpuDumpToggled : SessionCaptureToggled)?.Invoke();
+
+    /// <summary>A save state key from an --input script ("F5", "F6", "F7", "Shift+F5", "Shift+F7"), as the keyboard
+    /// sends it: to the open picker / dialog, else the save state events. Window thread.</summary>
+    public void PressStateKey(string name)
+    {
+        bool shift = name.StartsWith("Shift+", StringComparison.Ordinal);
+        var key = Enum.Parse<Key>(shift ? name[6..] : name);
+        if (TextCapture is { } capture) { capture.OnKey(key); return; }
+        (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : shift ? 1 : 0);
+    }
 
     void OnKey(Key key, bool down)
     {
@@ -463,6 +505,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             _window.Position = pos;
         }
         Log.Info($"Window: windowed {size.X}x{size.Y} at {pos.X},{pos.Y} (monitor attached: {handle != null && glfw.GetWindowMonitor(handle) != null})");
+    }
+
+    /// <summary>Window (cursor) coordinates to framebuffer pixels (they differ on high-DPI displays).</summary>
+    (int X, int Y) ToFramebuffer(System.Numerics.Vector2 pos)
+    {
+        var size = _window.Size;
+        float sx = size.X > 0 ? _fbW / (float)size.X : 1, sy = size.Y > 0 ? _fbH / (float)size.Y : 1;
+        return ((int)(pos.X * sx), (int)(pos.Y * sy));
     }
 
     void UpdateTouch(System.Numerics.Vector2 pos, bool down, bool back)
