@@ -509,6 +509,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] Diálogos comuns com interface de verdade (08/11/2026): o sceMsgDialog (e os outros diálogos comuns sem UI)
+  responde sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
+  uma vez (282ec7d, 99Vidas sem rede). Como no Vita3K, mostrar o diálogo por cima do jogo e deixar o usuário escolher
+  com os botões/toque, para não depender de respostas automáticas
 - [x] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
   música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
   `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
