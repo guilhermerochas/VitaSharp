@@ -301,6 +301,7 @@ public sealed partial class MainWindow
     {
         card.PointerEntered += (_, _) => { hover.IsVisible = true; card.BorderBrush = Kit.B(P.Accent); };
         card.PointerExited += (_, _) => { hover.IsVisible = false; card.BorderBrush = Kit.B(border); };
+        card.ContextFlyout = GameFoldersMenu(g); // right click: the game's folders
         card.Tapped += (_, e) => { if (!FromButton(e)) Navigate(PageGame, g); };
         card.DoubleTapped += (_, e) => { if (!FromButton(e) && _running == null) DefaultAction(g); };
     }

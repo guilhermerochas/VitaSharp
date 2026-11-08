@@ -62,6 +62,9 @@ static class UiRender
             {
                 main.Navigate(MainWindow.PageGame, game);
                 Shot("game");
+                main.ShowGameFoldersForTests();
+                Shot("game-folders");
+                main.Navigate(MainWindow.PageGame, game);
                 main.OpenLiveAreaForTests(game);
                 Shot("livearea");
             }
@@ -72,7 +75,7 @@ static class UiRender
             }
             main.Navigate(MainWindow.PageSettings);
             Shot("settings");
-            foreach (var section in new[] { SettingsPage.SectionGraphics, SettingsPage.SectionNetwork, SettingsPage.SectionControls })
+            foreach (var section in new[] { SettingsPage.SectionGraphics, SettingsPage.SectionEmulation, SettingsPage.SectionNetwork, SettingsPage.SectionControls })
             {
                 main.SettingsPageForTests!.ShowSection(section);
                 Shot("settings-" + section);

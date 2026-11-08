@@ -52,10 +52,10 @@
     <value>Câmera traseira</value>
   </data>
   <data name="CameraBackDefault" xml:space="preserve">
-    <value>Padrão (outra webcam, senão a primeira)</value>
+    <value>Padrão (segunda webcam)</value>
   </data>
   <data name="CameraBackDetail" xml:space="preserve">
-    <value>O que a câmera traseira do Vita mostra: uma webcam, uma imagem ou imagem cinza</value>
+    <value>O que a câmera traseira do Vita mostra: uma webcam, uma imagem ou cinza. Padrão: a segunda webcam, ou a primeira se só houver uma</value>
   </data>
   <data name="CameraDefault" xml:space="preserve">
     <value>Padrão (primeira câmera)</value>
@@ -67,7 +67,7 @@
     <value>Câmera frontal</value>
   </data>
   <data name="CameraFrontDetail" xml:space="preserve">
-    <value>O que a câmera frontal do Vita mostra: uma webcam, uma imagem ou imagem cinza</value>
+    <value>O que a câmera frontal do Vita mostra: uma webcam, uma imagem ou cinza</value>
   </data>
   <data name="CameraNone" xml:space="preserve">
     <value>Nenhuma (imagem cinza)</value>
@@ -2861,5 +2861,32 @@
   </data>
   <data name="MDevAwake" xml:space="preserve">
     <value>VitaSharp Dev: tela mantida ligada</value>
+  </data>
+  <data name="FolderAddcont" xml:space="preserve">
+    <value>Conteúdo adicional (ux0:addcont/{0})</value>
+  </data>
+  <data name="FolderApp" xml:space="preserve">
+    <value>Jogo (ux0:app/{0})</value>
+  </data>
+  <data name="FolderCaptures" xml:space="preserve">
+    <value>Captura mais recente deste jogo</value>
+  </data>
+  <data name="FolderLogs" xml:space="preserve">
+    <value>Log mais recente deste jogo</value>
+  </data>
+  <data name="FolderPatch" xml:space="preserve">
+    <value>Atualização (ux0:patch/{0})</value>
+  </data>
+  <data name="FolderSaveData" xml:space="preserve">
+    <value>Dados salvos (ux0:user/00/savedata/{0})</value>
+  </data>
+  <data name="GameFolders" xml:space="preserve">
+    <value>Pastas</value>
+  </data>
+  <data name="GameFoldersTip" xml:space="preserve">
+    <value>Abrir as pastas do jogo neste PC</value>
+  </data>
+  <data name="FolderStates" xml:space="preserve">
+    <value>Estados salvos (savestates/{0})</value>
   </data>
 </root>

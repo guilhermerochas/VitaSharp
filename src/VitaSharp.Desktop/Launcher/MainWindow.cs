@@ -66,6 +66,8 @@ public sealed partial class MainWindow : Window
     internal bool IsRunning => _running != null;
     internal Process? RunningProcessForTests => _running;
     internal void OpenLiveAreaForTests(GameEntry g) => OpenLiveArea(g);
+    /// <summary>Opens the game page's "Pastas" menu (ui-render).</summary>
+    internal void ShowGameFoldersForTests() { if (_gameFolders?.Flyout is { } f) f.ShowAt(_gameFolders); }
 
     /// <summary>Starts a title (or "shell") the way the launcher's buttons do; false when it could not start.</summary>
     internal bool LaunchForTests(string titleId)
