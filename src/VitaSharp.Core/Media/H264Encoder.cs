@@ -54,7 +54,9 @@ public sealed unsafe class H264Encoder : IDisposable
             ctx->max_b_frames = 0;
             ctx->bit_rate = bitRate > 0 ? bitRate : 2_000_000;
             ctx->thread_count = 1;
-            ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
+            // global header: the parameter sets also come out in extradata, before the first picture (SceAvcenc gives
+            // them to the caller when the encoder is set up, for the MP4's avcC)
+            ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY | ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
             if (ffmpeg.avcodec_open2(ctx, codec, null) < 0)
             {
                 ffmpeg.avcodec_free_context(&ctx);
@@ -107,6 +109,44 @@ public sealed unsafe class H264Encoder : IDisposable
             if (o + w > src.Length) break;
             src.Slice(o, w).CopyTo(new Span<byte>(dst + row * dstPitch, w));
         }
+    }
+
+    /// <summary>The sequence and picture parameter sets (NAL units without start codes) from the encoder's extradata,
+    /// in Annex B (OpenH264) or avcC form; null when the encoder gave none.</summary>
+    public (byte[] Sps, byte[] Pps)? ParameterSets()
+    {
+        if (_ctx == null || _ctx->extradata == null || _ctx->extradata_size <= 0) return null;
+        return ParseParameterSets(new ReadOnlySpan<byte>(_ctx->extradata, _ctx->extradata_size));
+    }
+
+    internal static (byte[] Sps, byte[] Pps)? ParseParameterSets(ReadOnlySpan<byte> extra)
+    {
+        byte[]? sps = null, pps = null;
+        if (extra.Length >= 7 && extra[0] == 1) // avcC: 5-byte header, SPS count, (size, SPS)..., PPS count, (size, PPS)...
+        {
+            int p = 5;
+            for (int pass = 0; pass < 2 && p < extra.Length; pass++)
+            {
+                int n = pass == 0 ? extra[p++] & 0x1F : extra[p++];
+                for (int i = 0; i < n && p + 2 <= extra.Length; i++)
+                {
+                    int len = extra[p] << 8 | extra[p + 1];
+                    p += 2;
+                    if (p + len > extra.Length) return null;
+                    var nal = extra.Slice(p, len).ToArray();
+                    p += len;
+                    if (pass == 0) sps ??= nal; else pps ??= nal;
+                }
+            }
+        }
+        else
+            foreach (var (off, len) in SplitNals(extra))
+                switch (extra[off] & 0x1F)
+                {
+                    case 7: sps ??= extra.Slice(off, len).ToArray(); break;
+                    case 8: pps ??= extra.Slice(off, len).ToArray(); break;
+                }
+        return sps != null && pps != null ? (sps, pps) : null;
     }
 
     /// <summary>The NAL units of an Annex B access unit: offset and length of each payload (after its start code).</summary>
