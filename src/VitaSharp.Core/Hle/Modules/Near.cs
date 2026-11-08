@@ -6,8 +6,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// <summary>
 /// SceNearUtil and SceNearDialogUtil: the discontinued "near" gift/neighbour service. There is no public header and no
 /// reference implementation, so the layouts are unknown and no output pointer is written (except the common-dialog
-/// result word). The service behaves as unavailable: Initialize fails, Finalize succeeds, everything else reports
-/// "not running". The game then hides the feature, as on a console without the Near application.
+/// result word). The service is unavailable: Initialize fails after the firmware's argument checks and SceNearUtil
+/// answers "not initialized" (FW 3.74 codes); the game then hides the feature, as on a console without the Near application.
 /// </summary>
 public sealed partial class NearUtil : HleModule
 {
@@ -21,35 +21,82 @@ public sealed partial class NearUtil : HleModule
     }
 
     // ---------------------------------------------------------------- SceNearUtil (sceNear*)
+    // libSceNearUtil.suprx (FW 3.74): every call but Initialize and LaunchNearAppForUpdate starts with "not
+    // initialized" (0x80104905) when the module state byte is clear, then checks its pointers (0x80104901). The state
+    // is set only when Initialize reaches the Near application (sceAppMgrLaunchAppByUri and its IPC server), which
+    // VitaSharp does not run, so Initialize fails after its argument checks and the rest report "not initialized".
 
-    [Hle] int sceNearInitialize() => Unavailable("sceNearInitialize");
-    [Hle] int sceNearFinalize() => 0;
-    [Hle] int sceNearFinalizeAndLaunchNearApp() { Log.Info("sceNearFinalizeAndLaunchNearApp: no Near application to launch"); return 0; }
-    [Hle] int sceNearRefresh() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetMyStatus() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetNeighbors() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetNewNeighbors() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetRecentNeighbors() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetLastNeighborFoundDateTime() => ERR_NOT_RUNNING;
-    [Hle] int sceNearSetGift() => ERR_NOT_RUNNING;
-    [Hle] int sceNearSetGift2() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetGift() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetGiftStatus() => ERR_NOT_RUNNING;
-    [Hle] int sceNearDeleteGift() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetDiscoveredGifts() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetDiscoveredGiftInfo() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetDiscoveredGiftSender() => ERR_NOT_RUNNING;
-    [Hle] int sceNearGetDiscoveredGiftStatus() => ERR_NOT_RUNNING;
-    [Hle] int sceNearConvertDiscoveredGiftParam() => ERR_NOT_RUNNING;
-    [Hle] int sceNearDeleteDiscoveredGift() => ERR_NOT_RUNNING;
-    [Hle] int sceNearIgnoreDiscoveredGift() => ERR_NOT_RUNNING;
-    [Hle] int sceNearOpenDiscoveredGiftImage() => ERR_NOT_RUNNING;
-    [Hle] int sceNearReadDiscoveredGiftImage() => ERR_NOT_RUNNING;
-    [Hle] int sceNearCloseDiscoveredGiftImage() => ERR_NOT_RUNNING;
-    [Hle] int sceNearOpenReceivedGiftData() => ERR_NOT_RUNNING;
-    [Hle] int sceNearReadReceivedGiftData() => ERR_NOT_RUNNING;
-    [Hle] int sceNearCloseReceivedGiftData() => ERR_NOT_RUNNING;
-    [Hle] int sceNearLaunchNearAppForDownload() { Log.Info("sceNearLaunchNearAppForDownload: no Near application"); return ERR_NOT_RUNNING; }
+    internal const int ERR_INVALID_ARG = unchecked((int)0x80104901), ERR_INVALID_COMM_ID = unchecked((int)0x80104902),
+        ERR_ALREADY_INITIALIZED = unchecked((int)0x80104903), ERR_NO_MEMORY = unchecked((int)0x80104904),
+        ERR_NOT_INITIALIZED = unchecked((int)0x80104905);
+
+    /// <summary>The NP communication id form the module accepts: four capitals, five digits, '_', two digits.</summary>
+    static bool ValidCommId(uint p)
+    {
+        for (uint i = 0; i < 12; i++)
+        {
+            byte c = GuestMemory.Read<byte>(p + i);
+            bool ok = i switch { < 4 => c is >= (byte)'A' and <= (byte)'Z', 9 => c == '_', _ => c is >= (byte)'0' and <= (byte)'9' };
+            if (!ok) return false;
+        }
+        return GuestMemory.Read<byte>(p + 12) == 0;
+    }
+
+    /// <summary>sceNearInitialize(const SceNpCommunicationId *id, const {void *buf; size_t size} *mem, ...): the
+    /// module's checks (NULL id/mem/buffer, a buffer under 256 KiB, a malformed id), then the Near service, which is
+    /// not available.</summary>
+    [Hle("sceNearInitialize")]
+    [Hle("sceNearUtil_A412E9CA", Nid = 0xA412E9CA, Library = "SceNearUtil")] // the early-SDK NID of the same entry
+    int sceNearInitialize(uint commId, uint memParam, uint flags)
+    {
+        if (commId == 0 || memParam == 0 || GuestMemory.R32(memParam) == 0) return ERR_INVALID_ARG;
+        if (GuestMemory.R32(memParam + 4) < 0x40000) return ERR_NO_MEMORY;
+        if (!ValidCommId(commId)) return ERR_INVALID_COMM_ID;
+        return Unavailable("sceNearInitialize");
+    }
+
+    [Hle("sceNearFinalize")]
+    [Hle("sceNearFinalizeAndLaunchNearApp")]
+    [Hle("sceNearRefresh")]
+    [Hle("sceNearGetMyStatus")]
+    [Hle("sceNearGetNeighbors")]
+    [Hle("sceNearGetNewNeighbors")]
+    [Hle("sceNearGetRecentNeighbors")]
+    [Hle("sceNearGetLastNeighborFoundDateTime")]
+    [Hle("sceNearSetGift")]
+    [Hle("sceNearSetGift2")]
+    [Hle("sceNearGetGift")]
+    [Hle("sceNearGetGiftStatus")]
+    [Hle("sceNearDeleteGift")]
+    [Hle("sceNearGetDiscoveredGifts")]
+    [Hle("sceNearGetDiscoveredGiftInfo")]
+    [Hle("sceNearGetDiscoveredGiftSender")]
+    [Hle("sceNearGetDiscoveredGiftStatus")]
+    [Hle("sceNearConvertDiscoveredGiftParam")]
+    [Hle("sceNearDeleteDiscoveredGift")]
+    [Hle("sceNearIgnoreDiscoveredGift")]
+    [Hle("sceNearOpenDiscoveredGiftImage")]
+    [Hle("sceNearReadDiscoveredGiftImage")]
+    [Hle("sceNearCloseDiscoveredGiftImage")]
+    [Hle("sceNearOpenReceivedGiftData")]
+    [Hle("sceNearReadReceivedGiftData")]
+    [Hle("sceNearCloseReceivedGiftData")]
+    [Hle("sceNearLaunchNearAppForDownload")]
+    // unnamed exports: wrappers of CloseDiscoveredGiftImage (46604AA3), ReadDiscoveredGiftImage (79A4283C),
+    // OpenDiscoveredGiftImage (CCC99AF1), DeleteGift (D22CB2DE), ConvertDiscoveredGiftParam (DDEB6C8C), and two that
+    // read the module's own state (8E47CFDC: 0x20 bytes of status, 9044B509: the neighbour list); all check the
+    // state byte first
+    [Hle("sceNearUtil_46604AA3", Nid = 0x46604AA3, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_79A4283C", Nid = 0x79A4283C, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_CCC99AF1", Nid = 0xCCC99AF1, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_D22CB2DE", Nid = 0xD22CB2DE, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_DDEB6C8C", Nid = 0xDDEB6C8C, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_8E47CFDC", Nid = 0x8E47CFDC, Library = "SceNearUtil")]
+    [Hle("sceNearUtil_9044B509", Nid = 0x9044B509, Library = "SceNearUtil")]
+    int sceNearNotInitialized() => ERR_NOT_INITIALIZED;
+
+    /// <summary>LaunchNearAppForUpdate needs no initialization: it asks the shell to open the Near application's
+    /// update page, which does not exist here.</summary>
     [Hle] int sceNearLaunchNearAppForUpdate() { Log.Info("sceNearLaunchNearAppForUpdate: no Near application"); return ERR_NOT_RUNNING; }
 
     // ---------------------------------------------------------------- SceNearUtil, early-SDK NIDs
@@ -60,9 +107,6 @@ public sealed partial class NearUtil : HleModule
     //  - 0x69EE6FB3's return value is used directly as an unsigned element count of a following loop (called twice,
     //    the second time with &count), so a negative error code would be read as ~2G entries: it and the other
     //    unidentified ones return 0 ("nothing"), writing nothing. 0x49A97D5F is checked with "<= 0 -> failure".
-
-    [Hle("sceNearUtil_A412E9CA", Nid = 0xA412E9CA, Library = "SceNearUtil")]
-    int NearA412E9CA(uint work, uint memParam, uint flags) => Unavailable("sceNearUtil_A412E9CA (Initialize)");
 
     [Hle("sceNearUtil_E608000B", Nid = 0xE608000B, Library = "SceNearUtil")]
     int NearE608000B(uint work) => 0;

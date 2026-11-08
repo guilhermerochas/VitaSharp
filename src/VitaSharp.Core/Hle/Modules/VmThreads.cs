@@ -33,6 +33,7 @@ public sealed unsafe partial class VmThreads : HleModule
     [Hle("sceKernelGetThreadContextForMono")]
     [Hle("_sceKernelGetThreadContextForVM")]
     [Hle("sceKernelGetThreadContextForVM")]
+    [Hle("__sceKernelGetThreadContextForVM")] // libkernel.suprx 3.74: a wrapper that forwards its arguments
     int GetContext(int uid, uint cpuInfo, uint vfpInfo)
     {
         var t = Target(uid);
@@ -82,6 +83,7 @@ public sealed unsafe partial class VmThreads : HleModule
     [Hle("sceKernelWaitExceptionForMono")]
     [Hle("sceKernelWaitException")]
     [Hle("sceKernelWaitExceptionCB")]
+    [Hle("sceKernelWaitExceptionCBForMono")] // libkernel.suprx 3.74: forwards to sceKernelWaitExceptionCB
     int WaitException()
     {
         var self = GuestThread.Current!;

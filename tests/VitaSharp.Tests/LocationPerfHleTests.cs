@@ -116,12 +116,21 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void NearIsUnavailableAndDialogFinishesAborted()
     {
         var n = new NearUtil();
-        Assert.Equal(NearUtil.ERR_NOT_SUPPORTED, Call(n, "sceNearInitialize"));
+        uint id = fx.Memory.Alloc(0x40, "near-id"), mem = fx.Memory.Alloc(8, "near-mem");
+        GuestMemory.WriteCString(id, "NPWR01234_00");
+        GuestMemory.W32(mem, 0x81000000);
+        GuestMemory.W32(mem + 4, 0x40000);
+        Assert.Equal(NearUtil.ERR_INVALID_ARG, Call(n, "sceNearInitialize", 0u, mem, 0u));
+        GuestMemory.W32(mem + 4, 0x3FFFF);
+        Assert.Equal(NearUtil.ERR_NO_MEMORY, Call(n, "sceNearInitialize", id, mem, 0u));
+        GuestMemory.W32(mem + 4, 0x40000);
+        GuestMemory.WriteCString(id, "npwr01234_00");
+        Assert.Equal(NearUtil.ERR_INVALID_COMM_ID, Call(n, "sceNearInitialize", id, mem, 0u));
+        GuestMemory.WriteCString(id, "NPWR01234_00");
+        Assert.Equal(NearUtil.ERR_NOT_SUPPORTED, Call(n, "sceNearInitialize", id, mem, 0u)); // no Near service
         Assert.Equal(NearUtil.ERR_NOT_SUPPORTED, Call(n, "sceNearUtilityInitialize"));
-        Assert.Equal(NearUtil.ERR_NOT_RUNNING, Call(n, "sceNearGetNeighbors"));
-        Assert.Equal(0, Call(n, "sceNearFinalize"));
-        // early-SDK NIDs: Initialize fails, the rest report "nothing" without writing
-        Assert.Equal(NearUtil.ERR_NOT_SUPPORTED, Call(n, "NearA412E9CA", 0u, 0u, 0u));
+        Assert.Equal(NearUtil.ERR_NOT_INITIALIZED, Call(n, "sceNearNotInitialized"));
+        // early-SDK NIDs: the rest report "nothing" without writing
         Assert.Equal(0, Call(n, "NearE608000B", 0u));
         Assert.Equal(0, Call(n, "NearEarlyNothing"));
 

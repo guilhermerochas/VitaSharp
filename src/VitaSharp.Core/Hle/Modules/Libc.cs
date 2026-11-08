@@ -358,7 +358,7 @@ public sealed partial class Libc : HleModule
     readonly Dictionary<string, uint> _constStrings = new();
 
     /// <summary>A guest copy of a constant string, made once (the module's read-only strings).</summary>
-    uint ConstString(string s)
+    internal uint ConstString(string s)
     {
         lock (_constStrings)
         {
@@ -562,7 +562,8 @@ public sealed partial class Libc : HleModule
     ulong _randState = 1;
     readonly object _randLock = new();
 
-    [Hle]
+    [Hle("rand")]
+    [Hle("_ZSt14_Random_devicev")] // std::_Random_device: libc.suprx forwards to rand
     int rand()
     {
         lock (_randLock)

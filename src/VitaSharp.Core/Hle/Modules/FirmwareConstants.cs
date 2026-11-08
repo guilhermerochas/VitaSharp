@@ -657,4 +657,714 @@ public sealed class FirmwareConstants : HleModule
     [Hle("NID_326E3A2F", Nid = 0x326E3A2F, Library = "SceWebKit")]
     [Hle("NID_AA2A76AF", Nid = 0xAA2A76AF, Library = "SceWebKit")]
     uint ReturnFFFFFFFF() => 0xFFFFFFFFu;
+
+    Libc? _libc;
+    /// <summary>A guest copy of a constant text (one per text, kept for the process).</summary>
+    uint Text(string s) => (_libc ??= Emu.Hle.Modules.OfType<Libc>().First()).ConstString(s);
+
+    /// <summary>Return the text "1.01.100322": SceSensMe.</summary>
+    [Hle("NID_90E815D2", Nid = 0x90E815D2, Library = "SceSensMe")]
+    uint Text0() => Text("1.01.100322");
+
+    /// <summary>Return the text "1.1.0.20100226": SceSensMe.</summary>
+    [Hle("NID_45B246B7", Nid = 0x45B246B7, Library = "SceSensMe")]
+    uint Text1() => Text("1.1.0.20100226");
+
+    /// <summary>Return the text "2010-03-26 22:28:06 b078b588d617e07886ad156e9f54ade6d823568e": SceSqlite.</summary>
+    [Hle("sqlite3_sourceid", Nid = 0x4CCB58A2, Library = "SceSqlite")]
+    uint Text2() => Text("2010-03-26 22:28:06 b078b588d617e07886ad156e9f54ade6d823568e");
+
+    /// <summary>Return the text "2011-05-19 13:26:54 ed1da510a239ea767a01dc332b667119fa3c908e": SceSqliteVsh.</summary>
+    [Hle("NID_A5690EF1", Nid = 0xA5690EF1, Library = "SceSqliteVsh")]
+    uint Text3() => Text("2011-05-19 13:26:54 ed1da510a239ea767a01dc332b667119fa3c908e");
+
+    /// <summary>Return the text "3.6.23.1": SceSqlite.</summary>
+    [Hle("sqlite3_libversion", Nid = 0x26E46324, Library = "SceSqlite")]
+    uint Text4() => Text("3.6.23.1");
+
+    /// <summary>Return the text "3.7.6.3": SceSqliteVsh.</summary>
+    [Hle("NID_9319D6F6", Nid = 0x9319D6F6, Library = "SceSqliteVsh")]
+    uint Text5() => Text("3.7.6.3");
+
+    /// <summary>Return the text "BubbleObj": ScePafGraphics.</summary>
+    [Hle("NID_24FA3DA2", Nid = 0x24FA3DA2, Library = "ScePafGraphics")]
+    [Hle("NID_792219B3", Nid = 0x792219B3, Library = "ScePafGraphics")]
+    uint Text6() => Text("BubbleObj");
+
+    /// <summary>Return the text "DrawObj": ScePafGraphics.</summary>
+    [Hle("NID_263AE4D2", Nid = 0x263AE4D2, Library = "ScePafGraphics")]
+    [Hle("NID_6A38991D", Nid = 0x6A38991D, Library = "ScePafGraphics")]
+    uint Text7() => Text("DrawObj");
+
+    /// <summary>Return the text "PageTurnObj": ScePafGraphics.</summary>
+    [Hle("NID_466F6910", Nid = 0x466F6910, Library = "ScePafGraphics")]
+    [Hle("NID_B05104FC", Nid = 0xB05104FC, Library = "ScePafGraphics")]
+    uint Text8() => Text("PageTurnObj");
+
+    /// <summary>Return the text "PanelObj": ScePafGraphics.</summary>
+    [Hle("NID_23182D99", Nid = 0x23182D99, Library = "ScePafGraphics")]
+    [Hle("NID_9AAE1DFF", Nid = 0x9AAE1DFF, Library = "ScePafGraphics")]
+    uint Text9() => Text("PanelObj");
+
+    /// <summary>Return the text "PlaneObj": ScePafGraphics.</summary>
+    [Hle("NID_69F9535E", Nid = 0x69F9535E, Library = "ScePafGraphics")]
+    [Hle("NID_D81F2F54", Nid = 0xD81F2F54, Library = "ScePafGraphics")]
+    uint Text10() => Text("PlaneObj");
+
+    /// <summary>Return the text "PlayStation Vita": ScePsp2Compat.</summary>
+    [Hle("NID_4B908535", Nid = 0x4B908535, Library = "ScePsp2Compat")]
+    uint Text11() => Text("PlayStation Vita");
+
+    /// <summary>Return the text "TextObj": ScePafGraphics.</summary>
+    [Hle("NID_2467B7D7", Nid = 0x2467B7D7, Library = "ScePafGraphics")]
+    [Hle("NID_F408D743", Nid = 0xF408D743, Library = "ScePafGraphics")]
+    uint Text12() => Text("TextObj");
+
+    /// <summary>Return the text "app_icon_2d": ScePafWidget.</summary>
+    [Hle("NID_B102817A", Nid = 0xB102817A, Library = "ScePafWidget")]
+    [Hle("NID_F9AAAC6D", Nid = 0xF9AAAC6D, Library = "ScePafWidget")]
+    uint Text13() => Text("app_icon_2d");
+
+    /// <summary>Return the text "app_icon_base": ScePafWidget.</summary>
+    [Hle("NID_597BF28B", Nid = 0x597BF28B, Library = "ScePafWidget")]
+    [Hle("NID_CDA6ACBE", Nid = 0xCDA6ACBE, Library = "ScePafWidget")]
+    uint Text14() => Text("app_icon_base");
+
+    /// <summary>Return the text "app_icon_base_base": ScePafWidget.</summary>
+    [Hle("NID_1A6516AF", Nid = 0x1A6516AF, Library = "ScePafWidget")]
+    [Hle("NID_F0270292", Nid = 0xF0270292, Library = "ScePafWidget")]
+    uint Text15() => Text("app_icon_base_base");
+
+    /// <summary>Return the text "app_icon_simple": ScePafWidget.</summary>
+    [Hle("NID_628E343E", Nid = 0x628E343E, Library = "ScePafWidget")]
+    [Hle("NID_AAECAF31", Nid = 0xAAECAF31, Library = "ScePafWidget")]
+    uint Text16() => Text("app_icon_simple");
+
+    /// <summary>Return the text "box": ScePafWidget.</summary>
+    [Hle("NID_065D3B50", Nid = 0x065D3B50, Library = "ScePafWidget")]
+    [Hle("NID_3A28435A", Nid = 0x3A28435A, Library = "ScePafWidget")]
+    uint Text17() => Text("box");
+
+    /// <summary>Return the text "box_base": ScePafWidget.</summary>
+    [Hle("NID_0FE594CC", Nid = 0x0FE594CC, Library = "ScePafWidget")]
+    [Hle("NID_B473322B", Nid = 0xB473322B, Library = "ScePafWidget")]
+    uint Text18() => Text("box_base");
+
+    /// <summary>Return the text "busyindicator": ScePafWidget.</summary>
+    [Hle("NID_1D1F5BF7", Nid = 0x1D1F5BF7, Library = "ScePafWidget")]
+    [Hle("NID_DBCC58BB", Nid = 0xDBCC58BB, Library = "ScePafWidget")]
+    uint Text19() => Text("busyindicator");
+
+    /// <summary>Return the text "busyindicator_base": ScePafWidget.</summary>
+    [Hle("NID_0B347065", Nid = 0x0B347065, Library = "ScePafWidget")]
+    [Hle("NID_C82640F4", Nid = 0xC82640F4, Library = "ScePafWidget")]
+    uint Text20() => Text("busyindicator_base");
+
+    /// <summary>Return the text "button": ScePafWidget.</summary>
+    [Hle("NID_240106D7", Nid = 0x240106D7, Library = "ScePafWidget")]
+    [Hle("NID_B773464D", Nid = 0xB773464D, Library = "ScePafWidget")]
+    uint Text21() => Text("button");
+
+    /// <summary>Return the text "button_base": ScePafWidget.</summary>
+    [Hle("NID_0C27E5ED", Nid = 0x0C27E5ED, Library = "ScePafWidget")]
+    [Hle("NID_180156B8", Nid = 0x180156B8, Library = "ScePafWidget")]
+    [Hle("NID_2AAF282D", Nid = 0x2AAF282D, Library = "ScePafWidget")]
+    [Hle("NID_8D4D3BA7", Nid = 0x8D4D3BA7, Library = "ScePafWidget")]
+    [Hle("NID_9F8AAE80", Nid = 0x9F8AAE80, Library = "ScePafWidget")]
+    [Hle("NID_A3254FB6", Nid = 0xA3254FB6, Library = "ScePafWidget")]
+    uint Text22() => Text("button_base");
+
+    /// <summary>Return the text "camera": ScePafWidget.</summary>
+    [Hle("NID_3E2D18C5", Nid = 0x3E2D18C5, Library = "ScePafWidget")]
+    [Hle("NID_EF2F316A", Nid = 0xEF2F316A, Library = "ScePafWidget")]
+    uint Text23() => Text("camera");
+
+    /// <summary>Return the text "cell_source": ScePafWidget.</summary>
+    [Hle("NID_CA302E8E", Nid = 0xCA302E8E, Library = "ScePafWidget")]
+    [Hle("NID_E60CC6D4", Nid = 0xE60CC6D4, Library = "ScePafWidget")]
+    uint Text24() => Text("cell_source");
+
+    /// <summary>Return the text "check_box": ScePafWidget.</summary>
+    [Hle("NID_320F97D5", Nid = 0x320F97D5, Library = "ScePafWidget")]
+    [Hle("NID_8EC2F0BF", Nid = 0x8EC2F0BF, Library = "ScePafWidget")]
+    uint Text25() => Text("check_box");
+
+    /// <summary>Return the text "composite_button": ScePafWidget.</summary>
+    [Hle("NID_9CB39E79", Nid = 0x9CB39E79, Library = "ScePafWidget")]
+    [Hle("NID_E3AFE3D2", Nid = 0xE3AFE3D2, Library = "ScePafWidget")]
+    uint Text26() => Text("composite_button");
+
+    /// <summary>Return the text "composite_drawer": ScePafWidget.</summary>
+    [Hle("NID_2E2A1124", Nid = 0x2E2A1124, Library = "ScePafWidget")]
+    [Hle("NID_8A9DDAE6", Nid = 0x8A9DDAE6, Library = "ScePafWidget")]
+    uint Text27() => Text("composite_drawer");
+
+    /// <summary>Return the text "corner_button": ScePafWidget.</summary>
+    [Hle("NID_1E01046A", Nid = 0x1E01046A, Library = "ScePafWidget")]
+    [Hle("NID_8E8EA698", Nid = 0x8E8EA698, Library = "ScePafWidget")]
+    uint Text28() => Text("corner_button");
+
+    /// <summary>Return the text "corner_button_base": ScePafWidget.</summary>
+    [Hle("NID_00C9EE85", Nid = 0x00C9EE85, Library = "ScePafWidget")]
+    [Hle("NID_3F03AC6F", Nid = 0x3F03AC6F, Library = "ScePafWidget")]
+    uint Text29() => Text("corner_button_base");
+
+    /// <summary>Return the text "dialog": ScePafWidget.</summary>
+    [Hle("NID_644CA867", Nid = 0x644CA867, Library = "ScePafWidget")]
+    [Hle("NID_A58F978C", Nid = 0xA58F978C, Library = "ScePafWidget")]
+    uint Text30() => Text("dialog");
+
+    /// <summary>Return the text "directbar": ScePafWidget.</summary>
+    [Hle("NID_15087DB7", Nid = 0x15087DB7, Library = "ScePafWidget")]
+    [Hle("NID_61CAD6A6", Nid = 0x61CAD6A6, Library = "ScePafWidget")]
+    uint Text31() => Text("directbar");
+
+    /// <summary>Return the text "directbar_base": ScePafWidget.</summary>
+    [Hle("NID_4A733C61", Nid = 0x4A733C61, Library = "ScePafWidget")]
+    [Hle("NID_98E510CD", Nid = 0x98E510CD, Library = "ScePafWidget")]
+    uint Text32() => Text("directbar_base");
+
+    /// <summary>Return the text "drawobj": ScePafResource.</summary>
+    [Hle("NID_62FC61B7", Nid = 0x62FC61B7, Library = "ScePafResource")]
+    [Hle("NID_87DB69C5", Nid = 0x87DB69C5, Library = "ScePafResource")]
+    uint Text33() => Text("drawobj");
+
+    /// <summary>Return the text "file_list": ScePafWidget.</summary>
+    [Hle("NID_8A33FF2B", Nid = 0x8A33FF2B, Library = "ScePafWidget")]
+    [Hle("NID_966A7588", Nid = 0x966A7588, Library = "ScePafWidget")]
+    uint Text34() => Text("file_list");
+
+    /// <summary>Return the text "focus_hint": ScePafResource.</summary>
+    [Hle("NID_81A31840", Nid = 0x81A31840, Library = "ScePafResource")]
+    [Hle("NID_C8CB72B0", Nid = 0xC8CB72B0, Library = "ScePafResource")]
+    uint Text35() => Text("focus_hint");
+
+    /// <summary>Return the text "group": ScePafWidget.</summary>
+    [Hle("NID_306B8AC4", Nid = 0x306B8AC4, Library = "ScePafWidget")]
+    [Hle("NID_4923EE85", Nid = 0x4923EE85, Library = "ScePafWidget")]
+    uint Text36() => Text("group");
+
+    /// <summary>Return the text "handler": ScePafResource.</summary>
+    [Hle("NID_1352E518", Nid = 0x1352E518, Library = "ScePafResource")]
+    [Hle("NID_430AAD71", Nid = 0x430AAD71, Library = "ScePafResource")]
+    [Hle("NID_8C7C0E4B", Nid = 0x8C7C0E4B, Library = "ScePafResource")]
+    [Hle("NID_C7DAD61A", Nid = 0xC7DAD61A, Library = "ScePafResource")]
+    uint Text37() => Text("handler");
+
+    /// <summary>Return the text "handler_button": ScePafWidget.</summary>
+    [Hle("NID_314AA7CD", Nid = 0x314AA7CD, Library = "ScePafWidget")]
+    [Hle("NID_AF4974DA", Nid = 0xAF4974DA, Library = "ScePafWidget")]
+    uint Text38() => Text("handler_button");
+
+    /// <summary>Return the text "handler_button_base": ScePafWidget.</summary>
+    [Hle("NID_355FFF81", Nid = 0x355FFF81, Library = "ScePafWidget")]
+    [Hle("NID_9B4C4D30", Nid = 0x9B4C4D30, Library = "ScePafWidget")]
+    uint Text39() => Text("handler_button_base");
+
+    /// <summary>Return the text "handler_corner_button": ScePafWidget.</summary>
+    [Hle("NID_7F0C0435", Nid = 0x7F0C0435, Library = "ScePafWidget")]
+    [Hle("NID_EE284ADD", Nid = 0xEE284ADD, Library = "ScePafWidget")]
+    uint Text40() => Text("handler_corner_button");
+
+    /// <summary>Return the text "handler_image_button": ScePafWidget.</summary>
+    [Hle("NID_A44AE001", Nid = 0xA44AE001, Library = "ScePafWidget")]
+    [Hle("NID_D089504F", Nid = 0xD089504F, Library = "ScePafWidget")]
+    uint Text41() => Text("handler_image_button");
+
+    /// <summary>Return the text "handler_plane_button": ScePafWidget.</summary>
+    [Hle("NID_47133930", Nid = 0x47133930, Library = "ScePafWidget")]
+    [Hle("NID_CFCF409C", Nid = 0xCFCF409C, Library = "ScePafWidget")]
+    uint Text42() => Text("handler_plane_button");
+
+    /// <summary>Return the text "handler_sliding_drawer": ScePafWidget.</summary>
+    [Hle("NID_A00B2795", Nid = 0xA00B2795, Library = "ScePafWidget")]
+    [Hle("NID_DD8408BD", Nid = 0xDD8408BD, Library = "ScePafWidget")]
+    uint Text43() => Text("handler_sliding_drawer");
+
+    /// <summary>Return the text "host_avch_cell_source": SceHostAvch.</summary>
+    [Hle("NID_07717EE3", Nid = 0x07717EE3, Library = "SceHostAvch")]
+    [Hle("NID_6136A490", Nid = 0x6136A490, Library = "SceHostAvch")]
+    uint Text44() => Text("host_avch_cell_source");
+
+    /// <summary>Return the text "image_button": ScePafWidget.</summary>
+    [Hle("NID_5D65E4DA", Nid = 0x5D65E4DA, Library = "ScePafWidget")]
+    [Hle("NID_BCDBE29A", Nid = 0xBCDBE29A, Library = "ScePafWidget")]
+    uint Text45() => Text("image_button");
+
+    /// <summary>Return the text "image_button_base": ScePafWidget.</summary>
+    [Hle("NID_23BA585C", Nid = 0x23BA585C, Library = "ScePafWidget")]
+    [Hle("NID_D8291B05", Nid = 0xD8291B05, Library = "ScePafWidget")]
+    uint Text46() => Text("image_button_base");
+
+    /// <summary>Return the text "image_slidebar": ScePafWidget.</summary>
+    [Hle("NID_57A4DF2E", Nid = 0x57A4DF2E, Library = "ScePafWidget")]
+    [Hle("NID_BEEE0DCA", Nid = 0xBEEE0DCA, Library = "ScePafWidget")]
+    uint Text47() => Text("image_slidebar");
+
+    /// <summary>Return the text "image_slidebar_base": ScePafWidget.</summary>
+    [Hle("NID_4BD8BC07", Nid = 0x4BD8BC07, Library = "ScePafWidget")]
+    [Hle("NID_9D0F86F7", Nid = 0x9D0F86F7, Library = "ScePafWidget")]
+    uint Text48() => Text("image_slidebar_base");
+
+    /// <summary>Return the text "item_spin": ScePafWidget.</summary>
+    [Hle("NID_00698CC7", Nid = 0x00698CC7, Library = "ScePafWidget")]
+    [Hle("NID_9B72616F", Nid = 0x9B72616F, Library = "ScePafWidget")]
+    uint Text49() => Text("item_spin");
+
+    /// <summary>Return the text "layout_box": ScePafWidget.</summary>
+    [Hle("NID_497E2020", Nid = 0x497E2020, Library = "ScePafWidget")]
+    [Hle("NID_EDB52C6F", Nid = 0xEDB52C6F, Library = "ScePafWidget")]
+    uint Text50() => Text("layout_box");
+
+    /// <summary>Return the text "layout_hint": ScePafResource.</summary>
+    [Hle("NID_122101EC", Nid = 0x122101EC, Library = "ScePafResource")]
+    [Hle("NID_C23AC891", Nid = 0xC23AC891, Library = "ScePafResource")]
+    uint Text51() => Text("layout_hint");
+
+    /// <summary>Return the text "layout_sliding_drawer": ScePafWidget.</summary>
+    [Hle("NID_479CEE67", Nid = 0x479CEE67, Library = "ScePafWidget")]
+    [Hle("NID_E5008453", Nid = 0xE5008453, Library = "ScePafWidget")]
+    uint Text52() => Text("layout_sliding_drawer");
+
+    /// <summary>Return the text "list_item": ScePafWidget.</summary>
+    [Hle("NID_7EA5A99F", Nid = 0x7EA5A99F, Library = "ScePafWidget")]
+    [Hle("NID_CB4AF8D4", Nid = 0xCB4AF8D4, Library = "ScePafWidget")]
+    uint Text53() => Text("list_item");
+
+    /// <summary>Return the text "list_view": ScePafWidget.</summary>
+    [Hle("NID_32B98BD0", Nid = 0x32B98BD0, Library = "ScePafWidget")]
+    [Hle("NID_7D86A619", Nid = 0x7D86A619, Library = "ScePafWidget")]
+    uint Text54() => Text("list_view");
+
+    /// <summary>Return the text "list_view_base": ScePafWidget.</summary>
+    [Hle("NID_2277ADCE", Nid = 0x2277ADCE, Library = "ScePafWidget")]
+    [Hle("NID_6E44B282", Nid = 0x6E44B282, Library = "ScePafWidget")]
+    uint Text55() => Text("list_view_base");
+
+    /// <summary>Return the text "num_spin": ScePafWidget.</summary>
+    [Hle("NID_E055FBA3", Nid = 0xE055FBA3, Library = "ScePafWidget")]
+    [Hle("NID_EF0A77EE", Nid = 0xEF0A77EE, Library = "ScePafWidget")]
+    uint Text56() => Text("num_spin");
+
+    /// <summary>Return the text "page": ScePafWidget.</summary>
+    [Hle("NID_39C194E8", Nid = 0x39C194E8, Library = "ScePafWidget")]
+    [Hle("NID_8A82ED50", Nid = 0x8A82ED50, Library = "ScePafWidget")]
+    uint Text57() => Text("page");
+
+    /// <summary>Return the text "pageturn": ScePafWidget.</summary>
+    [Hle("NID_2F886BFA", Nid = 0x2F886BFA, Library = "ScePafWidget")]
+    [Hle("NID_2FD19011", Nid = 0x2FD19011, Library = "ScePafWidget")]
+    [Hle("NID_404E3891", Nid = 0x404E3891, Library = "ScePafWidget")]
+    [Hle("NID_DCE67186", Nid = 0xDCE67186, Library = "ScePafWidget")]
+    uint Text58() => Text("pageturn");
+
+    /// <summary>Return the text "pageturn_base": ScePafWidget.</summary>
+    [Hle("NID_8FD82311", Nid = 0x8FD82311, Library = "ScePafWidget")]
+    [Hle("NID_B37108A7", Nid = 0xB37108A7, Library = "ScePafWidget")]
+    uint Text59() => Text("pageturn_base");
+
+    /// <summary>Return the text "plane": ScePafWidget.</summary>
+    [Hle("NID_60C533C8", Nid = 0x60C533C8, Library = "ScePafWidget")]
+    [Hle("NID_E3700EE7", Nid = 0xE3700EE7, Library = "ScePafWidget")]
+    uint Text60() => Text("plane");
+
+    /// <summary>Return the text "plane_button": ScePafWidget.</summary>
+    [Hle("NID_75D4C5F0", Nid = 0x75D4C5F0, Library = "ScePafWidget")]
+    [Hle("NID_80DB8B2A", Nid = 0x80DB8B2A, Library = "ScePafWidget")]
+    uint Text61() => Text("plane_button");
+
+    /// <summary>Return the text "planeobj": ScePafGraphics.</summary>
+    [Hle("NID_2FD4CCFE", Nid = 0x2FD4CCFE, Library = "ScePafGraphics")]
+    [Hle("NID_4B322BBE", Nid = 0x4B322BBE, Library = "ScePafGraphics")]
+    [Hle("NID_6857E41B", Nid = 0x6857E41B, Library = "ScePafGraphics")]
+    [Hle("NID_72820EF4", Nid = 0x72820EF4, Library = "ScePafGraphics")]
+    uint Text62() => Text("planeobj");
+
+    /// <summary>Return the text "progressbar": ScePafWidget.</summary>
+    [Hle("NID_064AF4AA", Nid = 0x064AF4AA, Library = "ScePafWidget")]
+    [Hle("NID_8B33B970", Nid = 0x8B33B970, Library = "ScePafWidget")]
+    uint Text63() => Text("progressbar");
+
+    /// <summary>Return the text "progressbar_base": ScePafWidget.</summary>
+    [Hle("NID_001DAA19", Nid = 0x001DAA19, Library = "ScePafWidget")]
+    [Hle("NID_DB3B1BA8", Nid = 0xDB3B1BA8, Library = "ScePafWidget")]
+    uint Text64() => Text("progressbar_base");
+
+    /// <summary>Return the text "progressbar_touch": ScePafWidget.</summary>
+    [Hle("NID_B9873DBC", Nid = 0xB9873DBC, Library = "ScePafWidget")]
+    [Hle("NID_D3057352", Nid = 0xD3057352, Library = "ScePafWidget")]
+    uint Text65() => Text("progressbar_touch");
+
+    /// <summary>Return the text "progressbar_touch_base": ScePafWidget.</summary>
+    [Hle("NID_53FBFE72", Nid = 0x53FBFE72, Library = "ScePafWidget")]
+    [Hle("NID_97FDE133", Nid = 0x97FDE133, Library = "ScePafWidget")]
+    uint Text66() => Text("progressbar_touch_base");
+
+    /// <summary>Return the text "property_element": ScePafCommon.</summary>
+    [Hle("NID_6586ECDE", Nid = 0x6586ECDE, Library = "ScePafCommon")]
+    [Hle("NID_E77305EF", Nid = 0xE77305EF, Library = "ScePafCommon")]
+    uint Text67() => Text("property_element");
+
+    /// <summary>Return the text "radio_box": ScePafWidget.</summary>
+    [Hle("NID_DDED729E", Nid = 0xDDED729E, Library = "ScePafWidget")]
+    [Hle("NID_F7086918", Nid = 0xF7086918, Library = "ScePafWidget")]
+    uint Text68() => Text("radio_box");
+
+    /// <summary>Return the text "radio_box_base": ScePafWidget.</summary>
+    [Hle("NID_8B816002", Nid = 0x8B816002, Library = "ScePafWidget")]
+    [Hle("NID_FF700F79", Nid = 0xFF700F79, Library = "ScePafWidget")]
+    uint Text69() => Text("radio_box_base");
+
+    /// <summary>Return the text "radio_button": ScePafWidget.</summary>
+    [Hle("NID_6E0FC68D", Nid = 0x6E0FC68D, Library = "ScePafWidget")]
+    [Hle("NID_9D26B32A", Nid = 0x9D26B32A, Library = "ScePafWidget")]
+    uint Text70() => Text("radio_button");
+
+    /// <summary>Return the text "resource_base": ScePafResource.</summary>
+    [Hle("NID_BE69AF44", Nid = 0xBE69AF44, Library = "ScePafResource")]
+    [Hle("NID_DE473E9E", Nid = 0xDE473E9E, Library = "ScePafResource")]
+    uint Text71() => Text("resource_base");
+
+    /// <summary>Return the text "rich_text": ScePafWidget.</summary>
+    [Hle("NID_2BF101B9", Nid = 0x2BF101B9, Library = "ScePafWidget")]
+    [Hle("NID_7A10B2CE", Nid = 0x7A10B2CE, Library = "ScePafWidget")]
+    uint Text72() => Text("rich_text");
+
+    /// <summary>Return the text "sa0:/data/font/pvf/jpn0.pvf": ScePsp2Compat.</summary>
+    [Hle("NID_CA0C5B79", Nid = 0xCA0C5B79, Library = "ScePsp2Compat")]
+    uint Text73() => Text("sa0:/data/font/pvf/jpn0.pvf");
+
+    /// <summary>Return the text "scroll_view": ScePafWidget.</summary>
+    [Hle("NID_135697FF", Nid = 0x135697FF, Library = "ScePafWidget")]
+    [Hle("NID_C1680F39", Nid = 0xC1680F39, Library = "ScePafWidget")]
+    uint Text74() => Text("scroll_view");
+
+    /// <summary>Return the text "scroll_view_base": ScePafWidget.</summary>
+    [Hle("NID_2CDBBC1B", Nid = 0x2CDBBC1B, Library = "ScePafWidget")]
+    [Hle("NID_647E8F32", Nid = 0x647E8F32, Library = "ScePafWidget")]
+    [Hle("NID_8EA8F13B", Nid = 0x8EA8F13B, Library = "ScePafWidget")]
+    [Hle("NID_FD6FFC90", Nid = 0xFD6FFC90, Library = "ScePafWidget")]
+    uint Text75() => Text("scroll_view_base");
+
+    /// <summary>Return the text "scroll_view_base_base": ScePafWidget.</summary>
+    [Hle("NID_3F02A7D7", Nid = 0x3F02A7D7, Library = "ScePafWidget")]
+    [Hle("NID_5ECCFD2D", Nid = 0x5ECCFD2D, Library = "ScePafWidget")]
+    uint Text76() => Text("scroll_view_base_base");
+
+    /// <summary>Return the text "scroll_view_parent": ScePafWidget.</summary>
+    [Hle("NID_6AF054DB", Nid = 0x6AF054DB, Library = "ScePafWidget")]
+    [Hle("NID_DA94A4AE", Nid = 0xDA94A4AE, Library = "ScePafWidget")]
+    uint Text77() => Text("scroll_view_parent");
+
+    /// <summary>Return the text "scrollbar": ScePafWidget.</summary>
+    [Hle("NID_B3878D10", Nid = 0xB3878D10, Library = "ScePafWidget")]
+    [Hle("NID_F47B28C6", Nid = 0xF47B28C6, Library = "ScePafWidget")]
+    uint Text78() => Text("scrollbar");
+
+    /// <summary>Return the text "scrollbar2d": ScePafWidget.</summary>
+    [Hle("NID_00714ACB", Nid = 0x00714ACB, Library = "ScePafWidget")]
+    [Hle("NID_31334472", Nid = 0x31334472, Library = "ScePafWidget")]
+    uint Text79() => Text("scrollbar2d");
+
+    /// <summary>Return the text "scrollbar2d_base": ScePafWidget.</summary>
+    [Hle("NID_60DA864A", Nid = 0x60DA864A, Library = "ScePafWidget")]
+    [Hle("NID_F1A838FF", Nid = 0xF1A838FF, Library = "ScePafWidget")]
+    uint Text80() => Text("scrollbar2d_base");
+
+    /// <summary>Return the text "scrollbar_base": ScePafWidget.</summary>
+    [Hle("NID_A24CDAAF", Nid = 0xA24CDAAF, Library = "ScePafWidget")]
+    [Hle("NID_A739B26E", Nid = 0xA739B26E, Library = "ScePafWidget")]
+    uint Text81() => Text("scrollbar_base");
+
+    /// <summary>Return the text "scrollbar_touch": ScePafWidget.</summary>
+    [Hle("NID_24ECDB01", Nid = 0x24ECDB01, Library = "ScePafWidget")]
+    [Hle("NID_F64A59EF", Nid = 0xF64A59EF, Library = "ScePafWidget")]
+    uint Text82() => Text("scrollbar_touch");
+
+    /// <summary>Return the text "scrollbar_touch_base": ScePafWidget.</summary>
+    [Hle("NID_4F3A6A19", Nid = 0x4F3A6A19, Library = "ScePafWidget")]
+    [Hle("NID_8972A0A1", Nid = 0x8972A0A1, Library = "ScePafWidget")]
+    uint Text83() => Text("scrollbar_touch_base");
+
+    /// <summary>Return the text "segment_source": ScePafWidget.</summary>
+    [Hle("NID_9E9F7578", Nid = 0x9E9F7578, Library = "ScePafWidget")]
+    [Hle("NID_EB74E2C3", Nid = 0xEB74E2C3, Library = "ScePafWidget")]
+    uint Text84() => Text("segment_source");
+
+    /// <summary>Return the text "slidebar": ScePafWidget.</summary>
+    [Hle("NID_35702DEE", Nid = 0x35702DEE, Library = "ScePafWidget")]
+    [Hle("NID_63E55B87", Nid = 0x63E55B87, Library = "ScePafWidget")]
+    uint Text85() => Text("slidebar");
+
+    /// <summary>Return the text "slidebar_base": ScePafWidget.</summary>
+    [Hle("NID_1E557106", Nid = 0x1E557106, Library = "ScePafWidget")]
+    [Hle("NID_204D1504", Nid = 0x204D1504, Library = "ScePafWidget")]
+    uint Text86() => Text("slidebar_base");
+
+    /// <summary>Return the text "sliding_drawer": ScePafWidget.</summary>
+    [Hle("NID_167D054C", Nid = 0x167D054C, Library = "ScePafWidget")]
+    [Hle("NID_B67C8F50", Nid = 0xB67C8F50, Library = "ScePafWidget")]
+    uint Text87() => Text("sliding_drawer");
+
+    /// <summary>Return the text "sliding_drawer_base": ScePafWidget.</summary>
+    [Hle("NID_396473CA", Nid = 0x396473CA, Library = "ScePafWidget")]
+    [Hle("NID_A4C49752", Nid = 0xA4C49752, Library = "ScePafWidget")]
+    uint Text88() => Text("sliding_drawer_base");
+
+    /// <summary>Return the text "sound_button_base": ScePafWidget.</summary>
+    [Hle("NID_25E5CDFA", Nid = 0x25E5CDFA, Library = "ScePafWidget")]
+    [Hle("NID_F66FEFAA", Nid = 0xF66FEFAA, Library = "ScePafWidget")]
+    uint Text89() => Text("sound_button_base");
+
+    /// <summary>Return the text "sound_image_slidebar": ScePafWidget.</summary>
+    [Hle("NID_2088C6E9", Nid = 0x2088C6E9, Library = "ScePafWidget")]
+    [Hle("NID_3193468E", Nid = 0x3193468E, Library = "ScePafWidget")]
+    uint Text90() => Text("sound_image_slidebar");
+
+    /// <summary>Return the text "sound_list_item": ScePafWidget.</summary>
+    [Hle("NID_B9EAD39C", Nid = 0xB9EAD39C, Library = "ScePafWidget")]
+    [Hle("NID_EBF2D738", Nid = 0xEBF2D738, Library = "ScePafWidget")]
+    uint Text91() => Text("sound_list_item");
+
+    /// <summary>Return the text "sound_progressbar_touch": ScePafWidget.</summary>
+    [Hle("NID_01A26893", Nid = 0x01A26893, Library = "ScePafWidget")]
+    [Hle("NID_99526750", Nid = 0x99526750, Library = "ScePafWidget")]
+    uint Text92() => Text("sound_progressbar_touch");
+
+    /// <summary>Return the text "sound_scroll_view_base": ScePafWidget.</summary>
+    [Hle("NID_215292CE", Nid = 0x215292CE, Library = "ScePafWidget")]
+    [Hle("NID_2D5D9218", Nid = 0x2D5D9218, Library = "ScePafWidget")]
+    uint Text93() => Text("sound_scroll_view_base");
+
+    /// <summary>Return the text "sound_scrollbar_touch": ScePafWidget.</summary>
+    [Hle("NID_62E64447", Nid = 0x62E64447, Library = "ScePafWidget")]
+    [Hle("NID_D6244120", Nid = 0xD6244120, Library = "ScePafWidget")]
+    uint Text94() => Text("sound_scrollbar_touch");
+
+    /// <summary>Return the text "sound_slidebar": ScePafWidget.</summary>
+    [Hle("NID_1B60CE6E", Nid = 0x1B60CE6E, Library = "ScePafWidget")]
+    [Hle("NID_21651F5B", Nid = 0x21651F5B, Library = "ScePafWidget")]
+    uint Text95() => Text("sound_slidebar");
+
+    /// <summary>Return the text "sound_state_button_base": ScePafWidget.</summary>
+    [Hle("NID_317FAD4E", Nid = 0x317FAD4E, Library = "ScePafWidget")]
+    [Hle("NID_4ED17152", Nid = 0x4ED17152, Library = "ScePafWidget")]
+    uint Text96() => Text("sound_state_button_base");
+
+    /// <summary>Return the text "sound_text": ScePafWidget.</summary>
+    [Hle("NID_CE85DEFB", Nid = 0xCE85DEFB, Library = "ScePafWidget")]
+    [Hle("NID_E5BA7A94", Nid = 0xE5BA7A94, Library = "ScePafWidget")]
+    uint Text97() => Text("sound_text");
+
+    /// <summary>Return the text "sound_text_box": ScePafWidget.</summary>
+    [Hle("NID_AB702BAD", Nid = 0xAB702BAD, Library = "ScePafWidget")]
+    [Hle("NID_E534D91D", Nid = 0xE534D91D, Library = "ScePafWidget")]
+    uint Text98() => Text("sound_text_box");
+
+    /// <summary>Return the text "spin_base": ScePafWidget.</summary>
+    [Hle("NID_8A3AA0C8", Nid = 0x8A3AA0C8, Library = "ScePafWidget")]
+    [Hle("NID_DD6D6411", Nid = 0xDD6D6411, Library = "ScePafWidget")]
+    uint Text99() => Text("spin_base");
+
+    /// <summary>Return the text "state_button_base": ScePafWidget.</summary>
+    [Hle("NID_8B0C4F14", Nid = 0x8B0C4F14, Library = "ScePafWidget")]
+    [Hle("NID_AA1B41C1", Nid = 0xAA1B41C1, Library = "ScePafWidget")]
+    uint Text100() => Text("state_button_base");
+
+    /// <summary>Return the text "string_element": ScePafCommon.</summary>
+    [Hle("NID_D56E8FFC", Nid = 0xD56E8FFC, Library = "ScePafCommon")]
+    [Hle("NID_E75DB53B", Nid = 0xE75DB53B, Library = "ScePafCommon")]
+    uint Text101() => Text("string_element");
+
+    /// <summary>Return the text "style_app_icon_base": ScePafWidget.</summary>
+    [Hle("NID_29B5959C", Nid = 0x29B5959C, Library = "ScePafWidget")]
+    [Hle("NID_E028EEFA", Nid = 0xE028EEFA, Library = "ScePafWidget")]
+    uint Text102() => Text("style_app_icon_base");
+
+    /// <summary>Return the text "style_busyindicator": ScePafWidget.</summary>
+    [Hle("NID_12E40E88", Nid = 0x12E40E88, Library = "ScePafWidget")]
+    [Hle("NID_D3A7139E", Nid = 0xD3A7139E, Library = "ScePafWidget")]
+    uint Text103() => Text("style_busyindicator");
+
+    /// <summary>Return the text "style_button": ScePafWidget.</summary>
+    [Hle("NID_2E89EF4B", Nid = 0x2E89EF4B, Library = "ScePafWidget")]
+    [Hle("NID_417D3D09", Nid = 0x417D3D09, Library = "ScePafWidget")]
+    uint Text104() => Text("style_button");
+
+    /// <summary>Return the text "style_corner_button": ScePafWidget.</summary>
+    [Hle("NID_7B0B53E8", Nid = 0x7B0B53E8, Library = "ScePafWidget")]
+    [Hle("NID_818816DE", Nid = 0x818816DE, Library = "ScePafWidget")]
+    uint Text105() => Text("style_corner_button");
+
+    /// <summary>Return the text "style_directbar": ScePafWidget.</summary>
+    [Hle("NID_56FF2B3D", Nid = 0x56FF2B3D, Library = "ScePafWidget")]
+    [Hle("NID_7B8E0513", Nid = 0x7B8E0513, Library = "ScePafWidget")]
+    uint Text106() => Text("style_directbar");
+
+    /// <summary>Return the text "style_image_button": ScePafWidget.</summary>
+    [Hle("NID_C974340D", Nid = 0xC974340D, Library = "ScePafWidget")]
+    [Hle("NID_CC1499C4", Nid = 0xCC1499C4, Library = "ScePafWidget")]
+    uint Text107() => Text("style_image_button");
+
+    /// <summary>Return the text "style_image_slidebar": ScePafWidget.</summary>
+    [Hle("NID_0817C5A3", Nid = 0x0817C5A3, Library = "ScePafWidget")]
+    [Hle("NID_D7D580C7", Nid = 0xD7D580C7, Library = "ScePafWidget")]
+    uint Text108() => Text("style_image_slidebar");
+
+    /// <summary>Return the text "style_list_item": ScePafWidget.</summary>
+    [Hle("NID_02BE7F61", Nid = 0x02BE7F61, Library = "ScePafWidget")]
+    [Hle("NID_CA719167", Nid = 0xCA719167, Library = "ScePafWidget")]
+    uint Text109() => Text("style_list_item");
+
+    /// <summary>Return the text "style_list_view": ScePafWidget.</summary>
+    [Hle("NID_6875209F", Nid = 0x6875209F, Library = "ScePafWidget")]
+    [Hle("NID_B4E24E41", Nid = 0xB4E24E41, Library = "ScePafWidget")]
+    uint Text110() => Text("style_list_view");
+
+    /// <summary>Return the text "style_pageturn": ScePafWidget.</summary>
+    [Hle("NID_966E590F", Nid = 0x966E590F, Library = "ScePafWidget")]
+    [Hle("NID_A09AE3FB", Nid = 0xA09AE3FB, Library = "ScePafWidget")]
+    uint Text111() => Text("style_pageturn");
+
+    /// <summary>Return the text "style_pageturn_base": ScePafWidget.</summary>
+    [Hle("NID_059F1D6F", Nid = 0x059F1D6F, Library = "ScePafWidget")]
+    [Hle("NID_144D4F40", Nid = 0x144D4F40, Library = "ScePafWidget")]
+    uint Text112() => Text("style_pageturn_base");
+
+    /// <summary>Return the text "style_plane": ScePafWidget.</summary>
+    [Hle("NID_3C897E4E", Nid = 0x3C897E4E, Library = "ScePafWidget")]
+    [Hle("NID_AD91130C", Nid = 0xAD91130C, Library = "ScePafWidget")]
+    uint Text113() => Text("style_plane");
+
+    /// <summary>Return the text "style_plane_button": ScePafWidget.</summary>
+    [Hle("NID_00BD5EAA", Nid = 0x00BD5EAA, Library = "ScePafWidget")]
+    [Hle("NID_C08C9D8A", Nid = 0xC08C9D8A, Library = "ScePafWidget")]
+    uint Text114() => Text("style_plane_button");
+
+    /// <summary>Return the text "style_progressbar": ScePafWidget.</summary>
+    [Hle("NID_7770C0BE", Nid = 0x7770C0BE, Library = "ScePafWidget")]
+    [Hle("NID_ABC870A5", Nid = 0xABC870A5, Library = "ScePafWidget")]
+    uint Text115() => Text("style_progressbar");
+
+    /// <summary>Return the text "style_progressbar_touch": ScePafWidget.</summary>
+    [Hle("NID_7E529FEC", Nid = 0x7E529FEC, Library = "ScePafWidget")]
+    [Hle("NID_9987BFEB", Nid = 0x9987BFEB, Library = "ScePafWidget")]
+    uint Text116() => Text("style_progressbar_touch");
+
+    /// <summary>Return the text "style_scroll_view": ScePafWidget.</summary>
+    [Hle("NID_BEE9C298", Nid = 0xBEE9C298, Library = "ScePafWidget")]
+    [Hle("NID_F3A13905", Nid = 0xF3A13905, Library = "ScePafWidget")]
+    uint Text117() => Text("style_scroll_view");
+
+    /// <summary>Return the text "style_scroll_view_base": ScePafWidget.</summary>
+    [Hle("NID_5C8FE329", Nid = 0x5C8FE329, Library = "ScePafWidget")]
+    [Hle("NID_DF2A69C7", Nid = 0xDF2A69C7, Library = "ScePafWidget")]
+    uint Text118() => Text("style_scroll_view_base");
+
+    /// <summary>Return the text "style_scrollbar": ScePafWidget.</summary>
+    [Hle("NID_5DEB3724", Nid = 0x5DEB3724, Library = "ScePafWidget")]
+    [Hle("NID_6FA3C4F7", Nid = 0x6FA3C4F7, Library = "ScePafWidget")]
+    uint Text119() => Text("style_scrollbar");
+
+    /// <summary>Return the text "style_scrollbar2d": ScePafWidget.</summary>
+    [Hle("NID_3CCC2E3E", Nid = 0x3CCC2E3E, Library = "ScePafWidget")]
+    [Hle("NID_C661BA1C", Nid = 0xC661BA1C, Library = "ScePafWidget")]
+    uint Text120() => Text("style_scrollbar2d");
+
+    /// <summary>Return the text "style_scrollbar_touch": ScePafWidget.</summary>
+    [Hle("NID_AC86E763", Nid = 0xAC86E763, Library = "ScePafWidget")]
+    [Hle("NID_BD531FF8", Nid = 0xBD531FF8, Library = "ScePafWidget")]
+    uint Text121() => Text("style_scrollbar_touch");
+
+    /// <summary>Return the text "style_slidebar": ScePafWidget.</summary>
+    [Hle("NID_9CB69E41", Nid = 0x9CB69E41, Library = "ScePafWidget")]
+    [Hle("NID_F8B4BE97", Nid = 0xF8B4BE97, Library = "ScePafWidget")]
+    uint Text122() => Text("style_slidebar");
+
+    /// <summary>Return the text "style_sliding_drawer": ScePafWidget.</summary>
+    [Hle("NID_BA39EB3E", Nid = 0xBA39EB3E, Library = "ScePafWidget")]
+    [Hle("NID_D42BE879", Nid = 0xD42BE879, Library = "ScePafWidget")]
+    uint Text123() => Text("style_sliding_drawer");
+
+    /// <summary>Return the text "style_state_button_base": ScePafWidget.</summary>
+    [Hle("NID_9F688689", Nid = 0x9F688689, Library = "ScePafWidget")]
+    [Hle("NID_F1DBC5BB", Nid = 0xF1DBC5BB, Library = "ScePafWidget")]
+    uint Text124() => Text("style_state_button_base");
+
+    /// <summary>Return the text "style_text": ScePafWidget.</summary>
+    [Hle("NID_206A14ED", Nid = 0x206A14ED, Library = "ScePafWidget")]
+    [Hle("NID_E3207F6B", Nid = 0xE3207F6B, Library = "ScePafWidget")]
+    uint Text125() => Text("style_text");
+
+    /// <summary>Return the text "style_text_box": ScePafWidget.</summary>
+    [Hle("NID_B7A76D76", Nid = 0xB7A76D76, Library = "ScePafWidget")]
+    [Hle("NID_ED4C9D27", Nid = 0xED4C9D27, Library = "ScePafWidget")]
+    uint Text126() => Text("style_text_box");
+
+    /// <summary>Return the text "style_web_view": ScePafWebMapView.</summary>
+    [Hle("NID_54F2DFB0", Nid = 0x54F2DFB0, Library = "ScePafWebMapView")]
+    [Hle("NID_F857D883", Nid = 0xF857D883, Library = "ScePafWebMapView")]
+    uint Text127() => Text("style_web_view");
+
+    /// <summary>Return the text "style_widget": ScePafResource.</summary>
+    [Hle("NID_0CCDE733", Nid = 0x0CCDE733, Library = "ScePafResource")]
+    [Hle("NID_A8996146", Nid = 0xA8996146, Library = "ScePafResource")]
+    uint Text128() => Text("style_widget");
+
+    /// <summary>Return the text "supplier": ScePafWidget.</summary>
+    [Hle("NID_90C77CC5", Nid = 0x90C77CC5, Library = "ScePafWidget")]
+    [Hle("NID_E3939871", Nid = 0xE3939871, Library = "ScePafWidget")]
+    uint Text129() => Text("supplier");
+
+    /// <summary>Return the text "text": ScePafWidget.</summary>
+    [Hle("NID_45AA2058", Nid = 0x45AA2058, Library = "ScePafWidget")]
+    [Hle("NID_723F6A4C", Nid = 0x723F6A4C, Library = "ScePafWidget")]
+    uint Text130() => Text("text");
+
+    /// <summary>Return the text "text_base": ScePafWidget.</summary>
+    [Hle("NID_2229E0D7", Nid = 0x2229E0D7, Library = "ScePafWidget")]
+    [Hle("NID_B305F50C", Nid = 0xB305F50C, Library = "ScePafWidget")]
+    uint Text131() => Text("text_base");
+
+    /// <summary>Return the text "text_box": ScePafWidget.</summary>
+    [Hle("NID_5DB8B9E0", Nid = 0x5DB8B9E0, Library = "ScePafWidget")]
+    [Hle("NID_BE985097", Nid = 0xBE985097, Library = "ScePafWidget")]
+    uint Text132() => Text("text_box");
+
+    /// <summary>Return the text "text_box_base": ScePafWidget.</summary>
+    [Hle("NID_26D34479", Nid = 0x26D34479, Library = "ScePafWidget")]
+    [Hle("NID_F6A3E1B7", Nid = 0xF6A3E1B7, Library = "ScePafWidget")]
+    uint Text133() => Text("text_box_base");
+
+    /// <summary>Return the text "textobj": ScePafGraphics.</summary>
+    [Hle("NID_3F16DBC3", Nid = 0x3F16DBC3, Library = "ScePafGraphics")]
+    [Hle("NID_95D802A6", Nid = 0x95D802A6, Library = "ScePafGraphics")]
+    uint Text134() => Text("textobj");
+
+    /// <summary>Return the text "visualizer": ScePafWidget.</summary>
+    [Hle("NID_5648D334", Nid = 0x5648D334, Library = "ScePafWidget")]
+    [Hle("NID_6A0674B4", Nid = 0x6A0674B4, Library = "ScePafWidget")]
+    uint Text135() => Text("visualizer");
+
+    /// <summary>Return the text "web_view_base": ScePafWebMapView.</summary>
+    [Hle("NID_0E0DDE86", Nid = 0x0E0DDE86, Library = "ScePafWebMapView")]
+    [Hle("NID_89C0F5D1", Nid = 0x89C0F5D1, Library = "ScePafWebMapView")]
+    uint Text136() => Text("web_view_base");
+
+    /// <summary>Return the text "webview": ScePafWebMapView.</summary>
+    [Hle("NID_1F41410D", Nid = 0x1F41410D, Library = "ScePafWebMapView")]
+    [Hle("NID_D8BE563B", Nid = 0xD8BE563B, Library = "ScePafWebMapView")]
+    uint Text137() => Text("webview");
+
+    /// <summary>Return the text "widget_base": ScePafResource, ScePafWidget.</summary>
+    [Hle("NID_AB60522E", Nid = 0xAB60522E, Library = "ScePafResource")]
+    [Hle("NID_FF4B1F16", Nid = 0xFF4B1F16, Library = "ScePafResource")]
+    [Hle("NID_6A74B572", Nid = 0x6A74B572, Library = "ScePafWidget")]
+    [Hle("NID_9462839B", Nid = 0x9462839B, Library = "ScePafWidget")]
+    uint Text138() => Text("widget_base");
+
+    /// <summary>Return the text "wstring_element": ScePafCommon.</summary>
+    [Hle("NID_A959A3AF", Nid = 0xA959A3AF, Library = "ScePafCommon")]
+    [Hle("NID_F4296E47", Nid = 0xF4296E47, Library = "ScePafCommon")]
+    uint Text139() => Text("wstring_element");
 }
