@@ -798,7 +798,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _inScene = true;
         _rt = b.Color != null ? GetRenderTarget(b.Color) : null;
         ProfMark(ProfPhase.BsTarget);
-        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} bgDepth={b.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
+        if (TracingScenes || TraceVis) TraceLine($"[scene] begin present={_presentCount} rt=0x{_rt?.Address ?? 0:X8} {b.Width}x{b.Height} msaa={b.Multisample} downscale={b.Color?.Downscale} ds=0x{b.Depth?.DepthData ?? 0:X8} load={b.Depth?.ForceLoad} store={b.Depth?.ForceStore} bgDepth={b.Depth?.BackgroundDepth} (next draw id={NextDrawId})");
         // MSAA: real multisampling (VulkanRenderer.MsaaNative.cs), else 2x supersampling (VulkanRenderer.Msaa.cs);
         // MSAA without downscale renders at 2x into the sample-sized surface
         ChooseMsaaPath(b);
@@ -836,7 +836,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // stores made before it (a CPU fill of the surface before rendering into it)
             _rt.MemStamp = DirtyPages.Epoch + 2;
         }
-        if (_depth.LastScene == 0 && b.Depth is { ForceLoad: true } && SeedDepth) SeedLoadedDepth(_depth, _ss);
+        if (b.Depth is { ForceLoad: true } && SeedDepth) SeedLoadedDepth(_depth, _ss);
         _depth.Supersampled = _ss;
         _depth.LastScene = _sceneSerial;
         _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
@@ -856,6 +856,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// timer were never drawn in a live session, though a GPU dump replayed them (fresh, zeroed memory). The overlap
     /// with the surface's most recent image of the same layout (samples, scale, stride) is copied; the rest reads as zeroed memory
     /// (depth 0, stencil 0). VITASHARP_DEPTH_SEED=0 leaves it undefined (A/B).
+    /// An image of an earlier scene loads the same way when another image of the surface (same layout) rendered after
+    /// it: the surface's memory holds what that one stored, not what this image kept. Only the overlap is copied, the
+    /// rest keeps this image's content. In a live session the 960x544 image of Injustice's depth/stencil surface
+    /// already existed from the menus, so the HUD scene of every fight loaded the menus' stale stencil instead of the
+    /// 720x408 scene's, and the bars were missing until a change of the internal resolution recreated the images.
     /// </summary>
     static readonly bool SeedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
 
@@ -866,6 +871,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (o != dt && o.LastScene != 0 && o.Address == dt.Address && o.StencilAddress == dt.StencilAddress && o.Samples == dt.Samples
                 && o.Scale == dt.Scale && o.StrideBytes == dt.StrideBytes && o.Supersampled == supersampled && (src == null || o.LastScene > src.LastScene))
                 src = o;
+        bool fresh = dt.LastScene == 0;
+        if (!fresh && (src == null || src.LastScene < dt.LastScene)) return; // this image holds the surface's newest content
         BeginFrameIfNeeded();
         EndRendering();
         const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
@@ -876,7 +883,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // stored holds on the hardware once allocated
         var clear = new ClearDepthStencilValue(0f, 0);
         var range = new ImageSubresourceRange(ds, 0, 1, 0, 1);
-        _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+        if (fresh) _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
         if (src != null)
         {
             Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.TransferDstOptimal, ds, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
