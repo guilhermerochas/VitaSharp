@@ -36,8 +36,9 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         status?.Invoke(File.Exists(p) ? Loc.Format("StateSlotSaved", _slot, File.GetLastWriteTime(p)) : Loc.Format("StateSlotEmpty", _slot));
     }
 
-    /// <summary>Saves to <paramref name="slot"/> (0 = quick save) off the calling thread.</summary>
-    public void SaveAsync(int slot) => Run(() => Save(PathOf(slot), slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString()));
+    /// <summary>Saves to <paramref name="slot"/> (0 = quick save) off the calling thread. <paramref name="thumbnail"/>:
+    /// the picture to store (the save state picker's, taken when it opened), else the next presented frame.</summary>
+    public void SaveAsync(int slot, byte[]? thumbnail = null) => Run(() => Save(PathOf(slot), slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString(), thumbnail));
 
     public void LoadAsync(int slot) => Run(() => Load(PathOf(slot), slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString()));
 
@@ -47,11 +48,11 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         Task.Run(() => { try { a(); } finally { Volatile.Write(ref _busy, 0); } });
     }
 
-    public bool Save(string path, string label = "")
+    public bool Save(string path, string label = "", byte[]? thumbnail = null)
     {
         try
         {
-            byte[]? thumb = EmulationPause.IsPaused ? null : GrabThumbnail(ro, 300);
+            byte[]? thumb = thumbnail ?? (EmulationPause.IsPaused ? null : GrabThumbnail(ro, 300));
             SaveStates.Save(emu, path, thumb);
             _lastSaved = path;
             status?.Invoke(Loc.Format("StateSaved", label));
@@ -84,8 +85,53 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         }
     }
 
-    /// <summary>A picture of the next presented frame as PNG bytes (the renderer's small frame sink), or null.</summary>
+    /// <summary>Size of the pictures stored in save states: large enough for the picker's big preview.</summary>
+    public const int ThumbWidth = 480, ThumbHeight = 272;
+
+    /// <summary>A picture of the next presented frame as PNG bytes (<see cref="ThumbWidth"/> x <see cref="ThumbHeight"/>,
+    /// from the renderer's one-shot screenshot; the small frame sink when that does not come in time), or null.</summary>
     public static byte[]? GrabThumbnail(VulkanRendererOptions ro, int timeoutMs)
+    {
+        string shot = Path.Combine(Path.GetTempPath(), $"vitasharp-shot-{Environment.ProcessId}-{Environment.TickCount64}.png");
+        try
+        {
+            ro.ShotPath = shot;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs + 700) // the frame retires a few frames later, then the PNG is written
+            {
+                if (File.Exists(shot) && ScaleShot(shot) is { } png) return png;
+                Thread.Sleep(15);
+            }
+            Log.Info("Save state: no screenshot in time, using the small frame picture");
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref ro.ShotPath, null, shot);
+            try { File.Delete(shot); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return GrabSinkThumbnail(ro, timeoutMs);
+    }
+
+    /// <summary>The screenshot at <paramref name="path"/> scaled to the thumbnail size as PNG; null while it is still
+    /// being written.</summary>
+    static byte[]? ScaleShot(string path)
+    {
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path); // the writer holds the file open exclusively until it is complete
+            if (bytes.Length < 12 || !bytes.AsSpan(bytes.Length - 8, 4).SequenceEqual("IEND"u8)) return null;
+            using var full = SkiaSharp.SKBitmap.Decode(bytes);
+            if (full == null) return null;
+            using var small = full.Resize(new SkiaSharp.SKImageInfo(ThumbWidth, ThumbHeight), SkiaSharp.SKFilterQuality.Medium);
+            if (small == null) return null;
+            using var data = small.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            return data?.ToArray();
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    static byte[]? GrabSinkThumbnail(VulkanRendererOptions ro, int timeoutMs)
     {
         byte[]? px = null;
         int w = 0, h = 0;

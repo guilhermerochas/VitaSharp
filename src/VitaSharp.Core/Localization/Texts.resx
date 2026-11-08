@@ -1822,7 +1822,7 @@
     <value>Overwrite {0}, saved on {1}?</value>
   </data>
   <data name="SsHelp" xml:space="preserve">
-    <value>Arrows choose · Enter / Cross acts · Tab / L / R switches Save and Load · F5 saves · F7 loads · F6 next · Esc closes</value>
+    <value>Arrows choose · Enter / Cross acts · Tab / L / R switches Save and Load · Del / Triangle deletes · F5 saves · F7 loads · F6 next · Esc closes</value>
   </data>
   <data name="SsQuick" xml:space="preserve">
     <value>Quick save</value>
@@ -2810,5 +2810,35 @@
   </data>
   <data name="MRearButton" xml:space="preserve">
     <value>REAR</value>
+  </data>
+  <data name="SsLoadAsk" xml:space="preserve">
+    <value>Load {0}, saved on {1}?</value>
+  </data>
+  <data name="SsDeleteAsk" xml:space="preserve">
+    <value>Delete {0}, saved on {1}?</value>
+  </data>
+  <data name="SsPlayTime" xml:space="preserve">
+    <value>Play time {0}</value>
+  </data>
+  <data name="SsPictureSaved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="SsPictureNow" xml:space="preserve">
+    <value>Now</value>
+  </data>
+  <data name="StateDeleted" xml:space="preserve">
+    <value>State {0} deleted</value>
+  </data>
+  <data name="MLanguageDetail" xml:space="preserve">
+    <value>System follows the phone's language; logs stay in English</value>
+  </data>
+  <data name="MLanguageRestart" xml:space="preserve">
+    <value>Restart VitaSharp now to show every screen in the new language?</value>
+  </data>
+  <data name="MDevBenchRunning" xml:space="preserve">
+    <value>VitaSharp Dev: GPU bench running (closes by itself)</value>
+  </data>
+  <data name="MDevAwake" xml:space="preserve">
+    <value>VitaSharp Dev: screen kept on</value>
   </data>
 </root>

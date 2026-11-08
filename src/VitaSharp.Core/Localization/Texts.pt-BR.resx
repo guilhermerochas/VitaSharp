@@ -1822,7 +1822,7 @@
     <value>Substituir {0}, salvo em {1}?</value>
   </data>
   <data name="SsHelp" xml:space="preserve">
-    <value>Setas escolhem · Enter / Cruz faz · Tab / L / R troca Salvar e Carregar · F5 salva · F7 carrega · F6 próximo · Esc fecha</value>
+    <value>Setas escolhem · Enter / Cruz faz · Tab / L / R troca Salvar e Carregar · Del / Triângulo apaga · F5 salva · F7 carrega · F6 próximo · Esc fecha</value>
   </data>
   <data name="SsQuick" xml:space="preserve">
     <value>Rápido</value>
@@ -2810,5 +2810,35 @@
   </data>
   <data name="MRearButton" xml:space="preserve">
     <value>TRÁS</value>
+  </data>
+  <data name="SsLoadAsk" xml:space="preserve">
+    <value>Carregar {0}, salvo em {1}?</value>
+  </data>
+  <data name="SsDeleteAsk" xml:space="preserve">
+    <value>Apagar {0}, salvo em {1}?</value>
+  </data>
+  <data name="SsPlayTime" xml:space="preserve">
+    <value>Tempo de jogo {0}</value>
+  </data>
+  <data name="SsPictureSaved" xml:space="preserve">
+    <value>Salvo</value>
+  </data>
+  <data name="SsPictureNow" xml:space="preserve">
+    <value>Agora</value>
+  </data>
+  <data name="StateDeleted" xml:space="preserve">
+    <value>Estado {0} apagado</value>
+  </data>
+  <data name="MLanguageDetail" xml:space="preserve">
+    <value>Sistema segue o idioma do celular; os logs continuam em inglês</value>
+  </data>
+  <data name="MLanguageRestart" xml:space="preserve">
+    <value>Reiniciar o VitaSharp agora para mostrar todas as telas no novo idioma?</value>
+  </data>
+  <data name="MDevBenchRunning" xml:space="preserve">
+    <value>VitaSharp Dev: bench da GPU rodando (fecha sozinho)</value>
+  </data>
+  <data name="MDevAwake" xml:space="preserve">
+    <value>VitaSharp Dev: tela mantida ligada</value>
   </data>
 </root>
