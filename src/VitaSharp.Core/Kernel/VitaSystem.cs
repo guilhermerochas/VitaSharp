@@ -294,6 +294,17 @@ public sealed class VitaSystem
 
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
+    /// <summary>The application the BGM port holder plays for (sceAppMgrSetBgmProxyApp), -1 for none.</summary>
+    public int BgmProxyApp = -1;
+
+    /// <summary>
+    /// The BGM ports of <paramref name="e"/> are silent: it holds the BGM port (the shell's music core for the home
+    /// screen music) but another process is in front and the holder plays for no application (no proxy). On the
+    /// Vita the system music stops while an application runs and comes back on the home screen (the shell then calls
+    /// sceAppMgrRestoreBgmSettingForShell); the shell itself makes no audio call when an application opens.
+    /// </summary>
+    public bool BgmMuted(Emulator e) =>
+        BgmPortOwner >= 0 && BgmPortOwner == e.AppId && BgmProxyApp < 0 && Volatile.Read(ref _foreground) is { } fg && !ReferenceEquals(fg, e);
     /// <summary>The process holding the audio output alone (sceAppMgrAcquireSoundOutExclusive2/3), -1 none.</summary>
     public int SoundOutExclusiveOwner = -1;
     /// <summary>The process holding the input devices (sceAppMgrAcquireBtrm), -1 none.</summary>

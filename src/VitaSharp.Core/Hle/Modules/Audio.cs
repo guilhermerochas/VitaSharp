@@ -256,7 +256,8 @@ public sealed partial class Audio : HleModule
     int _adoptMode;
     const int ERR_INVALID_VOLUME = unchecked((int)0x80260009);
 
-    float ProfileGain(int type) => type is >= 0 and <= 2 ? _profileGain[type] / 256f : 1f;
+    /// <summary>The profile gain of a port type; 0 for the BGM ports of a background BGM holder (<see cref="VitaSystem.BgmMuted"/>).</summary>
+    float ProfileGain(int type) => type == 1 && Emu.Vita.BgmMuted(Emu) ? 0f : type is >= 0 and <= 2 ? _profileGain[type] / 256f : 1f;
 
     [Hle] int sceAudioOutGetAdopt(int type) => type is >= 0 and <= 2 && !_adopted[type] ? 0 : 1;
 

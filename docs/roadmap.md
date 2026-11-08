@@ -1092,6 +1092,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
+  usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). Achados (feat/product-4): o MP4 gravado está
+  certo — ffprobe dá 7,70 s; `mvhd` escala 90000, duração 693120; `mdhd` do vídeo 30000/230230 (29,97 fps, `stts` 230
+  x 1001), do áudio 48000/369664; `tkhd`/`elst` coerentes; os `uuid` da Sony (PROF/USMT) sem duração errada. 1:09 é
+  exatamente 693120 / 10000, ou seja, a duração de 90 kHz lida numa unidade 9x maior no lado do player (o avPlayer
+  da câmera é LLE e lê o arquivo sozinho; suspeitos: um HLE no caminho do player/perfilador de vídeo que devolve tempo
+  em unidade errada, ou o banco AVContent). Não deu para reproduzir no headless: o toque no botão foto/vídeo do modo
+  câmera (0.94, 0.58, como no `fw12_vidplay.nav`) não troca o modo nesta rodada, nem com a câmera cinza. Próximo
+  passo: reproduzir com a janela (ou outra rota até o modo vídeo), ler o tempo mostrado e rastrear as chamadas HLE do
+  avPlayer/`SceVideoProfiler` com `--trace-hle-only`.
+
 - [x] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
   gravação `captures\PCSB00097_20261108_032607_tudo`, 322 quadros de dump da GPU, 30 fps). O usuário trocou a resolução
   interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
