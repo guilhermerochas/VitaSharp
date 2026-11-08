@@ -502,6 +502,47 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         finally { CpuState.Free(s); }
     }
 
+    /// <summary>
+    /// VZIP with Vd == Vm keeps the second half of the zipped pair, as on the Vita's Cortex-A9 (the ARM ARM leaves it
+    /// UNKNOWN). NFS Most Wanted widens a packed RGBA colour to floats with this sequence; the first half (old d0) made
+    /// every colour 0 and its movies drew black. Interpreter and native code must both give byte/255 per lane.
+    /// </summary>
+    [NativeFact]
+    public void VzipWithItselfKeepsTheSecondHalf()
+    {
+        EnsureGuestPages();
+        // rev r1, r0; vmov d1, r1, r1; vzip.8 d1, d1; vzip.16 q0, q0; vcvt.f32.u32 q0, q0, #32; b .
+        string[] code = ["BA01", "EC411B11", "FFB21181", "FFB601C0", "FFA00E50", "E7FE"];
+        var bytes = new List<byte>();
+        foreach (var w in code)
+        {
+            uint v = Convert.ToUInt32(w, 16);
+            if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+        }
+        bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+        var b = BlockBuilder.Build(CodeBase, true);
+        var cb = NativeX64Compiler.Instance.Compile(b)!;
+        var s = CpuState.Allocate();
+        try
+        {
+            foreach (bool native in new[] { false, true })
+            {
+                *s = default; s->MemBase = GuestMemory.Base;
+                s->R[0] = 0xFF804000; s->R[15] = CodeBase; s->Cpsr = 0x30; s->Fpscr = 0x0300_0000;
+                s->D[0] = 0x1122334455667788; // garbage the first half would pick up
+                if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                float[] lanes = [BitConverter.UInt32BitsToSingle((uint)s->D[0]), BitConverter.UInt32BitsToSingle((uint)(s->D[0] >> 32)),
+                                 BitConverter.UInt32BitsToSingle((uint)s->D[1]), BitConverter.UInt32BitsToSingle((uint)(s->D[1] >> 32))];
+                output.WriteLine($"{(native ? "native" : "interpreter")}: {string.Join(", ", lanes)}");
+                Assert.Equal(1.0f, lanes[0], 3);           // the high byte of r0 comes out in the first lane after REV
+                Assert.Equal(0x80 / 255f, lanes[1], 3);
+                Assert.Equal(0x40 / 255f, lanes[2], 3);
+                Assert.Equal(0.0f, lanes[3], 3);
+            }
+        }
+        finally { CpuState.Free(s); }
+    }
+
     /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
     [NativeFact]
     [Trait("Category", "Slow")]

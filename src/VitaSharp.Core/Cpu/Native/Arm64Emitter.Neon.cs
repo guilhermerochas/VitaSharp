@@ -389,8 +389,8 @@ public sealed unsafe partial class Arm64Emitter
                 int o1 = Dst(V3), o2 = Dst(V4);
                 a.VPerm(op1, size, q, o1, rd, rm);
                 a.VPerm(op1 + 4, size, q, o2, rd, rm);
-                Put(mOff, o2, q);
-                Put(dOff, o1, q);
+                if (kind == VecKind.Trn) { Put(mOff, o2, q); Put(dOff, o1, q); }
+                else { Put(dOff, o1, q); Put(mOff, o2, q); } // VZIP/VUZP with Vd == Vm keep the second half (interpreter)
                 return;
             }
             case VecKind.Movn: Load1(true); a.V2(0x12, false, size, false, r0, r2); Put(dOff, r0, false); return;

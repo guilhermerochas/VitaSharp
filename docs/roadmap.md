@@ -1022,6 +1022,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   cada 16 ms (grão de 768) como deve. Visto no caminho: depois do quadro ~1120 (~35 s) o jogo cai para 2-5 fps
   ("Hawaii_Main_Thread" com 4,95 M ciclos/quadro cobrados de HLE), provavelmente as chamadas de rede/PSN; medir
   com `--trace-hle-threads=Hawaii_Main_Thread` nesse trecho
+  Corrigido (08/11/2026, agente C, fix/bugs-games-19): a causa era a CPU, não o player. O multiplicador de cor do
+  desenho sai de uma cor empacotada (RGBA8) que o jogo abre em floats com `rev; vmov d1, r1, r1; vzip.8 d1, d1;
+  vzip.16 q0, q0; vcvt.f32.u32 q0, q0, #32` (0x81158462). VZIP com Vd == Vm é UNKNOWN no ARM ARM, mas o Cortex-A9 fica
+  com a segunda metade (o resultado gravado em Vm por último); o interpretador e os dois JITs (x64 e arm64) gravavam
+  Vd por último, a primeira metade vinha do d0 antigo (zero) e toda cor assim virava 0: o filme, o fundo branco e o
+  logo desenhavam pretos. Agora VZIP/VUZP gravam Vd e depois Vm (VTRN igual a antes); teste
+  `VzipWithItselfKeepsTheSecondHalf`. Jogo rodando (boot sem entrada, `bugsC19_out/nfs_fix/frames/sheet.png`):
+  logo da EA, vídeo da Criterion, tela branca MOST WANTED com o aviso e "TOUCH TO START", como no vídeo do Vita real;
+  30 fps cravados; a queda para 2-5 fps não reproduz em 110 s headless (perfil: o Hawaii_Main_Thread gira em
+  sceKernelGetProcessTimeWide ~25 mil vezes por quadro, um limitador de quadro do jogo, sem custo visível). Falta o
+  usuário confirmar
+  Visto depois do toque (achado, `bugsC19_out/nfs_play`, `nfs_cont`): o jogo abre o diálogo do Origin "You must be
+  signed in to PlayStation Network and the EA servers..." (Error Code 80210000) com um spinner que não para; X em
+  CONTINUE não faz nada em 60 s, O volta para o título e o diálogo volta. Sequência: o emulador responde PSN conectado
+  (sceNetCtlInetGetState 3, IP 192.168.0.10, sceNpGetServiceState conectado, ticket do sceNpAuth), o jogo chama
+  NID_FFBFC540 (sem implementação), resolve `gosredirector.ea.com` (falha na hora, 0x804101E1) e manda um UDP a cada
+  15 s (sceNetSendto 0x80410133) com sceNetRecvfrom em EAGAIN a cada quadro. O Vita3K por padrão responde PSN
+  desconectado, e aí o jogo pula o online. Decisão para o lead/usuário: responder "sem rede" para jogos que só tentam
+  servidores reais (ou uma opção por jogo), ou descobrir o que libera o CONTINUE (provavelmente o fim do pedido do
+  Origin, que fica esperando resposta do UDP)
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o

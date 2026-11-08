@@ -1144,8 +1144,8 @@ public sealed unsafe partial class X64Emitter
                 LdV(X0, dOff, q); LdV(X1, mOff, q);
                 Permute(X2, X0, X1, X4, nm);
                 Permute(X3, X0, X1, X4, nd);
-                StV(mOff, X2, q);
-                StV(dOff, X3, q);
+                if (kind == VecKind.Trn) { StV(mOff, X2, q); StV(dOff, X3, q); }
+                else { StV(dOff, X3, q); StV(mOff, X2, q); } // VZIP/VUZP with Vd == Vm keep the second half (interpreter)
                 return;
             }
             case VecKind.Movn:
