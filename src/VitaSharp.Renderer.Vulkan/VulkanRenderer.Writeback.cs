@@ -182,10 +182,28 @@ public sealed unsafe partial class VulkanRenderer
             any = true;
         }
         _xferTargets.Clear();
-        if (any) Finish(); // submits and retires every frame: the rows are in guest memory when it returns
+        // submits and retires every frame: the rows are in guest memory when it returns. Also when the source's pixels
+        // were already copied out at its scene end (MemVersion == Version) but that frame has not retired yet: its
+        // rows are not in memory, and the transfer read older ones. Jak 1 renders its sky tiles into a 512x512
+        // surface at the memory of a 360x204 one and copies them out right after the scene; the copy found the
+        // previous frame's 360x204 (black) pixels there whenever the frame was still in flight, and the sky
+        // textures, and the whole intro cutscene lit by them, came out black for a frame
+        if (any || PendingWritebackOverlaps(lo, hi)) Finish();
     }
 
     readonly List<RenderTarget> _xferTargets = new();
+
+    /// <summary>A writeback recorded in a frame that has not retired yet lands in [lo, hi).</summary>
+    bool PendingWritebackOverlaps(ulong lo, ulong hi)
+    {
+        foreach (var f in _frames)
+        {
+            if (f == null) continue;
+            foreach (var wb in f.Writebacks)
+                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo) return true;
+        }
+        return false;
+    }
 
     int _xferWritebacks, _xferInScene;
 
