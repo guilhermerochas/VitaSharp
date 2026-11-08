@@ -1094,7 +1094,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
   `--diag-at` (threads e esperas) numa execução travada e comparar com uma boa
   perf/desktop-14: 0 de 30 boots com o cache de shaders quente (10 a 1x, 10 a 1x em paralelo, 10 a 2x com dumps de
-  quadro); 1 de 4 e 1 de 1 com cache frio (`--shader-cache` e cache do driver novos). Nas travadas a main fica num
+  quadro); 3 de 15 com cache frio (`--shader-cache` e cache do driver novos). Nas travadas a main fica num
   laço de espera do carregador (`DelayThread(16 ms)` em 0x8112BAEA/0x8112C680, prioridade baixada para 0xBD) que
   espera um contador de operações pendentes da FIOS (libfios2 LLE) chegar a 0, e todas as threads da FIOS
   (SceFiosCallback/IO/Libdeflt0) dormem em `sceKernelWaitLwCondCB` nos seus SceFiosSchedulerWakeup: uma operação na
@@ -1102,9 +1102,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   a LoadScr ainda desenhando. O traço das chamadas de sincronização (`--trace-hle-only=` lwcond/sema/evf) mostra
   cada Signal com o waiter já em espera, menos o último: o SceFiosLibdeflt0 sinaliza o 0x820D3700 enquanto a
   SceFiosCallback está entre o seu Signal(0x820D007C) e o próximo Wait(0x820D3700). Lw mutexes e conds conferidos
-  (Sync.cs: Wait/Signal atômicos sob o lock do cond; IO assíncrono é síncrono): falta ver se a FIOS sinaliza sem o
-  mutex 0x820D36D8 (aí o predicado dela é que precisa de outra ordem, ex.: um ldrex/strex) — próximo passo: traçar
-  também `sceKernelLockLwMutex`/`Unlock` desse mutex numa execução fria
+  (Sync.cs: Wait/Signal atômicos sob o lock do cond; IO assíncrono é síncrono). Com o traço dos lw mutexes também
+  (1 travada em 10 boots frios, `rbs_h3`): o SceFiosLibdeflt0 faz Lock(0x820D36D8), Signal(0x820D3700),
+  Unlock(0x820D36D8) e dorme em 0x820D007C; só depois a SceFiosCallback faz Lock(0x820D36D8), confere o estado e mesmo
+  assim dorme em Wait(0x820D3700); a main fica em SceFiosOpWait (0x820D36A8) esperando a operação. Ou seja, o sinal
+  não se perdeu no cond: a Callback leu o estado depois do aviso e não viu o trabalho pronto. Suspeita seguinte: o
+  estado é um contador da FIOS atualizado com LDREX/STREX fora desse mutex (perda de atualização no monitor exclusivo
+  entre núcleos, `X64Emitter.StoreExclusive`/`Arm.StoreExclusive32`), ou a cópia do valor que a Callback leu; próximo
+  passo: desmontar o predicado da SceFiosCallback em 0x820B9672 e vigiar (`--watch`) o endereço que ela lê
 - [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va
