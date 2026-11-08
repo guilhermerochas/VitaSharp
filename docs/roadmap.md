@@ -522,7 +522,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
   abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
   Confirmado pelo usuário (07/11/2026)
-- [ ] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
+- [x] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
   o content ID contra o `.pkg` e gravar o `.rif` em `ux0:license/<TITLEID>` e o `work.bin`; no CLI (`install <pkg>
@@ -532,6 +532,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Downloads) e um zRIF gerado do `.rif` dele (zlib com o dicionário, janela 1 KB: começa com `KO5ifR1dQ+`): instalou os
   1,5 GB numa pasta de teste e gravou um `.rif` idêntico ao do usuário (`fw_out/pkg_install/install_log.txt`). O diálogo
   do launcher ainda não foi clicado (precisa da tela)
+  Validado no launcher novo (08/11/2026, feat/product-1): `ui-render --install-pkg=<pkg> --license=<zRIF>` abre o
+  diálogo de licença de verdade (sem janela), digita o zRIF, aperta Instalar e a fila instala o `.pkg` numa pasta de
+  dados de teste; o `.rif` em `ux0:license/<TITLEID>` e o `work.bin` saem iguais ao zRIF decodificado. Teste
+  `PkgInstallTests` (um `.pkg` montado no teste, `PkgFixture`): instalação com zRIF e recusa de licença de outro jogo
 - [ ] Sistema do Vita de verdade (ver docs/notes/system-apps.md): o shell já mostra os jogos, roda vários processos e faz a
   configuração inicial; falta o app de Troféus/Configurações desenharem (composição da tela compartilhada), o botão PS
   no PC, o texto cortado no boot direto, o travamento do teclado na tela (IME) e as funções restantes (sensor de

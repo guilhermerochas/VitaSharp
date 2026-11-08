@@ -231,9 +231,7 @@ public sealed partial class MainWindow
             FileTypeFilter = [new FilePickerFileType(S.PkgFileType) { Patterns = ["*.pkg"] }],
         });
         var pkg = pkgs.FirstOrDefault()?.TryGetLocalPath();
-        if (pkg == null) return;
-        var lic = await AskPkgLicense(pkg);
-        if (lic != null) EnqueuePkg(pkg, lic);
+        if (pkg != null) await AskLicenseAndQueue(pkg);
     }
 
     async Task AddFolder()
@@ -358,7 +356,7 @@ public sealed partial class MainWindow
         var zrif = new TextBox { Watermark = S.ZrifWatermark, AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MinHeight = 60, CornerRadius = new CornerRadius(12) };
         var error = _k.Wrap("", 12.5, P.Danger).Also(t => t.IsVisible = false);
         void Fail(string message) { error.Text = message; error.IsVisible = true; }
-        var install = _k.Primary(S.Install, null, () =>
+        void Submit()
         {
             string text = new string((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
             if (text.Length == 0) { Fail(S.ZrifEmpty); return; }
@@ -367,7 +365,8 @@ public sealed partial class MainWindow
             catch (Exception e) { Fail(S.ZrifUnreadable(e.Message)); return; }
             result = text;
             dlg?.Close();
-        }, 40, 100);
+        }
+        var install = _k.Primary(S.Install, null, Submit, 40, 100);
         var file = _k.Secondary(S.ChooseLicenseFile, "key", async () =>
         {
             var lics = await dlg!.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -383,9 +382,26 @@ public sealed partial class MainWindow
         var panel = _k.VStack(12, _k.Heading(S.LicenseFor(Path.GetFileName(pkg)), 18), _k.Wrap(S.LicenseText, 13.5, P.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 500);
+        if (LicenseDialogForTests is { } hook) dlg.Opened += (_, _) => hook(dlg, zrif, Submit);
         await dlg.ShowDialog(this);
         return result;
     }
+
+    /// <summary>ui-render's install check: called when the license dialog opens with the dialog, its zRIF field and
+    /// the "Instalar" action.</summary>
+    internal Action<Window, TextBox, Action>? LicenseDialogForTests;
+
+    /// <summary>The "Escolher pkg" flow after the file picker: asks for the license and queues the install; false when
+    /// the dialog was cancelled.</summary>
+    internal async Task<bool> AskLicenseAndQueue(string pkg)
+    {
+        var lic = await AskPkgLicense(pkg);
+        if (lic == null) return false;
+        EnqueuePkg(pkg, lic);
+        return true;
+    }
+
+    internal IReadOnlyList<InstallJob> JobsForTests => _jobs;
 
     async Task Uninstall(GameEntry g)
     {

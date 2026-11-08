@@ -4,11 +4,12 @@ using Avalonia.Threading;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>
-/// <c>ui-render &lt;out-dir&gt; [--size=WxH] [--title=ID] [--theme=dark|light] [--launch=ID|shell] [--seconds=N]</c> (use a
+/// <c>ui-render &lt;out-dir&gt; [--size=WxH] [--title=ID] [--theme=dark|light] [--launch=ID|shell] [--seconds=N] [--install-pkg=P --license=zRIF]</c> (use a
 /// scratch --data folder): the real launcher on Avalonia's headless platform (no window on screen), every page saved
 /// as a PNG in the dark and light themes, from the data folder's games, trophies, captures and save states.
 /// <c>--launch</c> also starts a game (or the Vita system) through the launcher with --headless --seconds=N and reports
-/// how the process ended and the play time recorded (<c>--affinity=F0</c> pins it). Settings are not saved.
+/// how the process ended and the play time recorded (<c>--affinity=F0</c> pins it); <c>--install-pkg=P --license=zRIF</c>
+/// installs a package through the license dialog (see <see cref="InstallPkg"/>). Settings are not saved.
 /// </summary>
 static class UiRender
 {
@@ -76,6 +77,9 @@ static class UiRender
             }
             main.Navigate(MainWindow.PageLibrary);
 
+            if (Opt("--install-pkg") is { } pkg && theme == themes[0])
+                failures += InstallPkg(main, Path.GetFullPath(pkg), Opt("--license") ?? "", outDir, theme, Shot);
+
             if (launch != null && theme == themes[0])
             {
                 main.ExtraRunOptions = ["--headless", $"--seconds={seconds}"];
@@ -111,5 +115,52 @@ static class UiRender
         }
         Console.WriteLine(failures == 0 ? "PASS" : $"{failures} problem(s)");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// <c>--install-pkg=&lt;pkg&gt; --license=&lt;zRIF&gt;</c>: the "Escolher pkg" flow after the file picker. The license
+    /// dialog opens, the zRIF is typed in its field and "Instalar" pressed; the queue then installs the package into
+    /// the --data folder, and the .rif in ux0:license and the work.bin are checked against the decoded zRIF.
+    /// </summary>
+    static int InstallPkg(MainWindow main, string pkg, string zrif, string outDir, string theme, Action<string> shot)
+    {
+        main.Navigate(MainWindow.PageInstall);
+        bool dialogShown = false;
+        main.LicenseDialogForTests = (dlg, field, submit) =>
+        {
+            dialogShown = true;
+            field.Text = zrif;
+            for (int i = 0; i < 4; i++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); }
+            var path = Path.Combine(outDir, $"license-dialog_{theme}.png");
+            dlg.CaptureRenderedFrame()?.Save(path);
+            Console.WriteLine($"  wrote {path}");
+            submit();
+        };
+        var asked = main.AskLicenseAndQueue(pkg);
+        var deadline = DateTime.UtcNow.AddMinutes(10);
+        while (!asked.IsCompleted && DateTime.UtcNow < deadline) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+        main.LicenseDialogForTests = null;
+        if (!dialogShown || !asked.IsCompleted || !asked.Result) { Console.WriteLine($"  install-pkg: the license dialog did not accept the zRIF (shown {dialogShown})"); return 1; }
+
+        while (main.JobsForTests.Any(j => j.State is JobState.Waiting or JobState.Running) && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(20);
+        }
+        Thread.Sleep(300); // the queue page redraws after 200 ms
+        Dispatcher.UIThread.RunJobs();
+        shot("install-done");
+        var job = main.JobsForTests.LastOrDefault();
+        Console.WriteLine($"  install-pkg: {job?.State} {job?.TitleId} {job?.Detail}");
+        if (job is not { State: JobState.Done, TitleId: { } titleId }) return 1;
+
+        var rif = Core.Package.Zrif.Decode(zrif);
+        string contentId = Core.Package.Zrif.ContentId(rif);
+        var licFile = Path.Combine(Program.Ux0, "license", titleId, contentId + ".rif");
+        var workBin = Path.Combine(Program.Ux0, "app", titleId, "sce_sys", "package", "work.bin");
+        bool ok = File.Exists(licFile) && File.ReadAllBytes(licFile).AsSpan().SequenceEqual(rif)
+               && File.Exists(workBin) && File.ReadAllBytes(workBin).AsSpan().SequenceEqual(rif);
+        Console.WriteLine($"  install-pkg: license {licFile} and work.bin {(ok ? "match the zRIF" : "MISSING or different")}");
+        return ok ? 0 : 1;
     }
 }
