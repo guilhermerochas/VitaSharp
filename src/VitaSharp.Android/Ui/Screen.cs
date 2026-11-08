@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using MauiReactor.Shapes;
 using VitaSharp.Core.Util;
@@ -134,22 +135,22 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
     {
         if (ContainerPage is not { } page) return null;
         var labels = choices.Select(c => c.Label).ToArray();
-        var picked = await page.DisplayActionSheetAsync(title, "Cancelar", null, labels);
+        var picked = await page.DisplayActionSheetAsync(title, Loc.Get("MCancel"), null, labels);
         return choices.FirstOrDefault(c => c.Label == picked)?.Value;
     }
 
-    protected async Task<bool> Confirm(string title, string message, string accept = "Sim", string cancel = "Cancelar") =>
+    protected async Task<bool> Confirm(string title, string message, string? accept = null, string? cancel = null) =>
         ContainerPage is { } page && await page.DisplayAlertAsync(title, message, accept, cancel);
 
     protected async Task Alert(string title, string message)
     {
-        if (ContainerPage is { } page) await page.DisplayAlertAsync(title, message, "OK");
+        if (ContainerPage is { } page) await page.DisplayAlertAsync(title, message, Loc.Get("MOk"));
     }
 
     protected async Task<string?> Prompt(string title, string message, string initial = "", bool password = false)
     {
         if (ContainerPage is not { } page) return null;
-        return await page.DisplayPromptAsync(title, message, "OK", "Cancelar", initialValue: initial,
+        return await page.DisplayPromptAsync(title, message, Loc.Get("MOk"), Loc.Get("MCancel"), initialValue: initial,
             keyboard: password ? Keyboard.Default : Keyboard.Text);
     }
 

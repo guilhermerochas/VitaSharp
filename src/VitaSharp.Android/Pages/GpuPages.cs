@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Game;
 using VitaSharp.Android.Services;
@@ -65,33 +66,32 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
         if (State.Model is not { } m)
             return ContentPage(ActivityIndicator().IsRunning(true).Center()).HasNavigationBar(false).BackgroundColor(Palette.Background);
         var options = m.Options();
-        return Page("Driver da GPU",
+        return Page(Loc.Get("MGpuDriver"),
             VStack(
-                SectionTitle("Driver"),
+                SectionTitle(Loc.Get("MDriver")),
                 Card(options.SelectMany((o, i) => new VisualNode?[]
                 {
                     i > 0 ? Divider() : null,
-                    Row(o.Title, o.Selected ? "em uso" : null, () => Select(o), detail: o.Detail, valueColor: Palette.Accent),
+                    Row(o.Title, o.Selected ? Loc.Get("MInUse") : null, () => Select(o), detail: o.Detail, valueColor: Palette.Accent),
                 }).ToArray()),
                 m.CustomDriversSupported
                     ? VStack(
-                        PrimaryButton(State.Installing ? "Instalando…" : "Instalar driver (.zip)", Install, !State.Installing)
+                        PrimaryButton(State.Installing ? Loc.Get("MInstallingEllipsis") : Loc.Get("MInstallDriverZip"), Install, !State.Installing)
                     ).Padding(20, 4, 20, 8)
-                    : Note("Drivers customizados só existem para GPUs Adreno (Qualcomm). Este aparelho usa o driver do sistema."),
-                SectionTitle("Opções da libadrenotools"),
+                    : Note(Loc.Get("MCustomDriversAdrenoOnly")),
+                SectionTitle(Loc.Get("MAdrenoToolsOptions")),
                 Card(
-                    ToggleRow("Habilitar texturas BCn", m.Settings.PatchBcn, v => Option(() => m.SetOptions(patchBcn: v)),
-                        detail: "BCeNabler: drivers Adreno que escondem BC1-BC5"),
+                    ToggleRow(Loc.Get("MEnableBcn"), m.Settings.PatchBcn, v => Option(() => m.SetOptions(patchBcn: v)),
+                        detail: Loc.Get("MEnableBcnDetail")),
                     Divider(),
-                    ToggleRow("Modo turbo da GPU", m.Settings.Turbo, v => Option(() => m.SetOptions(turbo: v)),
-                        detail: "Clock máximo da GPU (mais consumo)"),
+                    ToggleRow(Loc.Get("MGpuTurbo"), m.Settings.Turbo, v => Option(() => m.SetOptions(turbo: v)),
+                        detail: Loc.Get("MGpuTurboDetail")),
                     Divider(),
-                    ToggleRow("Redirecionar arquivos do driver", m.Settings.FileRedirect, v => Option(() => m.SetOptions(fileRedirect: v)),
-                        detail: "Para drivers que gravam no disco")
+                    ToggleRow(Loc.Get("MFileRedirect"), m.Settings.FileRedirect, v => Option(() => m.SetOptions(fileRedirect: v)),
+                        detail: Loc.Get("MFileRedirectDetail"))
                 ),
-                Note("A troca vale a partir do próximo jogo: cada jogo roda num processo novo e um processo carrega um só driver. " +
-                     "Os drivers precisam da libadrenotools empacotada no app (lib/arm64-v8a).")
-            ), kicker: "Ajustes");
+                Note(Loc.Get("MDriverNote"))
+            ), kicker: Loc.Get("MSettings"));
     }
 
     async void Select(GpuDriverOption o)
@@ -99,7 +99,7 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
         if (State.Model is not { } m) return;
         if (o.Removable && o.Selected)
         {
-            if (await Confirm(o.Title, "Remover este driver? O driver do sistema volta a ser usado.", "Remover"))
+            if (await Confirm(o.Title, Loc.Get("MRemoveDriverConfirm"), Loc.Get("MRemove")))
                 Option(() => m.Remove(o.Id));
             return;
         }
@@ -109,7 +109,7 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
     void Option(Action change)
     {
         try { change(); }
-        catch (Exception e) { _ = Alert("Driver da GPU", e.Message); return; }
+        catch (Exception e) { _ = Alert(Loc.Get("MGpuDriver"), e.Message); return; }
         SetState(s => s.Revision++);
         _ = OfferRestartAsync();
     }
@@ -121,8 +121,7 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
         if (State.Model is not { } m) return;
         var running = await Task.Run(() => GameProcessMarker.Read(AppServices.Data.GameProcessFile, GameProcessMarker.IsGameProcess));
         if (running == null || !m.RestartNeeded(running)) return;
-        if (await Confirm("Reiniciar o jogo", $"{running.Title} está aberto com a configuração anterior da GPU. Reiniciar o jogo agora para usar a nova? " +
-                          "O progresso que não foi salvo no jogo se perde.", "Reiniciar", "Depois"))
+        if (await Confirm(Loc.Get("MRestartGame"), Loc.Format("MRestartGameConfirm", running.Title), Loc.Get("MRestart"), Loc.Get("MLater")))
             await GameActivity.RestartAsync(MainActivity.Current!, running);
     }
 
@@ -132,17 +131,17 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
         var doc = await Saf.PickAsync("application/zip", "application/octet-stream");
         if (doc == null) return;
         SetState(s => s.Installing = true);
-        await Run("Instalar driver", async () =>
+        await Run(Loc.Get("MInstallDriver"), async () =>
         {
             try
             {
                 var installed = await Task.Run(() =>
                 {
                     using var stream = AppServices.AppContext.ContentResolver!.OpenInputStream(doc.Uri)
-                        ?? throw new IOException($"não foi possível abrir {doc.DisplayName}");
+                        ?? throw new IOException(Loc.Format("MCannotOpen", doc.DisplayName));
                     return m.Install(stream, (int)global::Android.OS.Build.VERSION.SdkInt);
                 });
-                if (await Confirm("Driver da GPU", $"Instalado: {installed.Meta.Name} {installed.Meta.DriverVersion}. Usar este driver agora?", "Usar", "Agora não"))
+                if (await Confirm(Loc.Get("MGpuDriver"), Loc.Format("MDriverInstalledUse", installed.Meta.Name, installed.Meta.DriverVersion), Loc.Get("MUse"), Loc.Get("MNotNow")))
                     Option(() => m.Select(installed.Id));
             }
             finally { SetState(s => { s.Installing = false; s.Revision++; }); }
@@ -175,22 +174,22 @@ public sealed class GpuInfoPage : Screen<GpuInfoState>
         if (!State.Loaded)
             return ContentPage(ActivityIndicator().IsRunning(true).Center()).HasNavigationBar(false).BackgroundColor(Palette.Background);
         if (State.Caps is not { } caps)
-            return Page("Informações da GPU", Note($"Não foi possível abrir o Vulkan neste aparelho: {GpuProbe.Error}"), kicker: "Ajustes");
+            return Page(Loc.Get("MGpuInfo"), Note(Loc.Format("MVulkanFailed", GpuProbe.Error)), kicker: Loc.Get("MSettings"));
         var quirks = GpuInfoView.Quirks(caps);
-        return Page("Informações da GPU",
+        return Page(Loc.Get("MGpuInfo"),
             VStack(
                 Card(GpuInfoView.Rows(caps).SelectMany((r, i) => new VisualNode?[] { i > 0 ? Divider() : null, Row(r.Label, r.Value) }).ToArray()),
-                SectionTitle("Recursos"),
+                SectionTitle(Loc.Get("MFeatures")),
                 Card(GpuInfoView.Features(caps).SelectMany((f, i) => new VisualNode?[]
                 {
                     i > 0 ? Divider() : null,
-                    Row(f.Name, f.Present ? f.Note ?? "sim" : "não", valueColor: f.Present ? Palette.Ok : Palette.Faint),
+                    Row(f.Name, f.Present ? f.Note ?? Loc.Get("MYesLower") : Loc.Get("MNoLower"), valueColor: f.Present ? Palette.Ok : Palette.Faint),
                 }).ToArray()),
-                SectionTitle("Contornos ativos"),
-                Card(quirks.Where(q => q.Workaround).Select(q => Row(q.Quirk.ToString(), null, detail: q.Description)).DefaultIfEmpty(Row("Nenhum", null)).ToArray()),
-                SectionTitle("Observados, sem contorno"),
-                Card(quirks.Where(q => !q.Workaround).Select(q => Row(q.Quirk.ToString(), null, detail: q.Description)).DefaultIfEmpty(Row("Nenhum", null)).ToArray()),
-                VStack(SecondaryButton("Compartilhar", () => _ = Share.Default.RequestAsync(new ShareTextRequest(caps.Describe(), "GPU do VitaSharp")))).Padding(20, 8)
-            ), kicker: "Ajustes");
+                SectionTitle(Loc.Get("MActiveWorkarounds")),
+                Card(quirks.Where(q => q.Workaround).Select(q => Row(q.Quirk.ToString(), null, detail: q.Description)).DefaultIfEmpty(Row(Loc.Get("MNone"), null)).ToArray()),
+                SectionTitle(Loc.Get("MObservedNoWorkaround")),
+                Card(quirks.Where(q => !q.Workaround).Select(q => Row(q.Quirk.ToString(), null, detail: q.Description)).DefaultIfEmpty(Row(Loc.Get("MNone"), null)).ToArray()),
+                VStack(SecondaryButton(Loc.Get("MShare"), () => _ = Share.Default.RequestAsync(new ShareTextRequest(caps.Describe(), Loc.Get("MVitaSharpGpu"))))).Padding(20, 8)
+            ), kicker: Loc.Get("MSettings"));
     }
 }

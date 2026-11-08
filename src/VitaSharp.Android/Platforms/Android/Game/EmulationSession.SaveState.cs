@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
@@ -44,12 +45,12 @@ public sealed partial class EmulationSession
         try
         {
             SaveStates.Save(_emu, StatePath(slot), _menuThumbnail);
-            return $"Estado salvo no slot {slot}";
+            return Loc.Format("MStateSaved", slot);
         }
         catch (SnapshotException e)
         {
             Log.Warn($"Save state: {e.Message}");
-            return $"Não foi possível salvar o estado: {e.Message}";
+            return Loc.Format("MStateSaveFailed", e.Message);
         }
     }
 
@@ -69,12 +70,12 @@ public sealed partial class EmulationSession
                 finally { if (paused) EmulationPause.Pause("load state: LoadExec"); }
             }
             SaveStates.Load(_emu, StatePath(slot), () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
-            return $"Estado do slot {slot} carregado";
+            return Loc.Format("MStateLoaded", slot);
         }
         catch (Exception e) when (e is SnapshotException or IOException)
         {
             Log.Warn($"Load state: {e.Message}");
-            return e is SaveStateIncompatibleException ? e.Message : $"Não foi possível carregar o estado: {e.Message}";
+            return e is SaveStateIncompatibleException ? e.Message : Loc.Format("MStateLoadFailed", e.Message);
         }
     }
 }

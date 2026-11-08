@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Np.Rpcn;
@@ -14,7 +15,7 @@ public static class CpuChoices
     /// </summary>
     public static IReadOnlyList<Choice> Available()
     {
-        var list = new List<Choice> { new("", $"Automático · {Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp")}") };
+        var list = new List<Choice> { new("", Loc.Format("MAutomaticWith", Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp"))) };
         foreach (var b in Jit.All.Where(b => b.IsSupported)) list.Add(new(b.Name, Label(b.Name)));
         list.Add(new("interp", Label("interp")));
         return list;
@@ -23,9 +24,9 @@ public static class CpuChoices
     public static string Label(string backend) => backend switch
     {
         "native" => System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64
-            ? "Nativo (ARM64)" : "Nativo (x64)",
+            ? Loc.Get("MNativeArm64") : Loc.Get("MNativeX64"),
         "il" => "JIT IL (.NET)",
-        "interp" => "Interpretador (mais lento)",
+        "interp" => Loc.Get("MInterpreter"),
         _ => backend,
     };
 }
@@ -48,8 +49,7 @@ public sealed class NetworkSettings
     public string RpcnToken { get; set; } = "";
 
     /// <summary>The privacy note shown under "Internet real" whatever its state.</summary>
-    public const string PrivacyNote = "Privacidade: com a internet real ligada, o jogo envia dados (seu IP, o ID online, pontuações e " +
-        "salvamentos na nuvem) para os servidores dele e para o servidor RPCN abaixo. Desligada (padrão), nada sai do aparelho.";
+    public static string PrivacyNote => Loc.Get("MPrivacyNote");
 
     /// <summary>The RPCN fields are editable only with real internet and a signed-in account (as on the desktop).</summary>
     public bool RpcnEditable => RealInternet && PsnSignedIn;

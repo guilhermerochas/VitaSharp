@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using System.Numerics;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
@@ -33,9 +34,9 @@ public static class AndroidMotionModes
 
     public static string Label(AndroidMotionMode m) => m switch
     {
-        AndroidMotionMode.Phone => "Sensores do celular",
-        AndroidMotionMode.Controller => "Giroscópio do controle",
-        _ => "Desligado",
+        AndroidMotionMode.Phone => Loc.Get("MPhoneSensors"),
+        AndroidMotionMode.Controller => Loc.Get("MControllerGyro"),
+        _ => Loc.Get("MOff"),
     };
 }
 

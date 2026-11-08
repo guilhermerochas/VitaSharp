@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using MauiReactor.Shapes;
 using VitaSharp.Android.Game;
@@ -80,45 +81,45 @@ public sealed class GamePage : Screen<GameState, GameProps>
                         ).Spacing(6).VCenter().MaximumWidthRequest(230)
                     ).Spacing(16).Padding(20, 16, 20, 0),
                     Grid("Auto", "*,Auto",
-                        PrimaryButton("▶  Jogar", () => GameActivity.Launch(MainActivity.Current!, g.TitleId)),
+                        PrimaryButton(Loc.Get("MPlay"), () => GameActivity.Launch(MainActivity.Current!, g.TitleId)),
                         IconButton("⋯", More, 54).GridColumn(1).Margin(12, 0, 0, 0)
                     ).Padding(20, 18, 20, 0),
                     Grid("Auto", "*,*,*",
-                        Stat("Tempo jogado", GameLibrary.PlayTime(s.PlaySeconds), 0),
-                        Stat("FPS médio", s.AverageFps > 0 ? $"{s.AverageFps:0}" : "—", 1),
-                        Stat("Último", GameLibrary.LastPlayed(s.LastPlayedUtc, DateTime.UtcNow), 2)
+                        Stat(Loc.Get("MPlayTime"), GameLibrary.PlayTime(s.PlaySeconds), 0),
+                        Stat(Loc.Get("MAverageFps"), s.AverageFps > 0 ? $"{s.AverageFps:0}" : "—", 1),
+                        Stat(Loc.Get("MLast"), GameLibrary.LastPlayed(s.LastPlayedUtc, DateTime.UtcNow), 2)
                     ).ColumnSpacing(10).Padding(20, 16, 20, 0),
                     TrophyCard(),
-                    SectionTitle("Configurações deste jogo"),
+                    SectionTitle(Loc.Get("MGameSettings")),
                     Card(
                         Row("CPU", ValueText(CpuChoices.Available(), s.CpuBackend, SettingsChoices.LabelOf(CpuChoices.Available(), eff.CpuBackend)),
                             () => Pick("CPU", CpuChoices.Available(), app.CpuBackend, v => s.CpuBackend = v)),
                         Divider(),
-                        Row("Clock da CPU", ValueText(SettingsChoices.Clocks, s.CpuMhz?.ToString(), SettingsChoices.LabelOf(SettingsChoices.Clocks, eff.CpuMhz.ToString())),
-                            () => Pick("Clock da CPU", SettingsChoices.Clocks, app.CpuMhz.ToString(), v => s.CpuMhz = v == null ? null : int.Parse(v))),
+                        Row(Loc.Get("MCpuClock"), ValueText(SettingsChoices.Clocks, s.CpuMhz?.ToString(), SettingsChoices.LabelOf(SettingsChoices.Clocks, eff.CpuMhz.ToString())),
+                            () => Pick(Loc.Get("MCpuClock"), SettingsChoices.Clocks, app.CpuMhz.ToString(), v => s.CpuMhz = v == null ? null : int.Parse(v))),
                         Divider(),
-                        Row("Perfil da GPU", ValueText(SettingsChoices.GpuProfiles, s.GpuProfile, SettingsChoices.LabelOf(SettingsChoices.GpuProfiles, eff.GpuProfile)),
-                            () => Pick("Perfil da GPU", SettingsChoices.GpuProfiles, app.GpuProfile, v => s.GpuProfile = v)),
+                        Row(Loc.Get("MGpuProfile"), ValueText(SettingsChoices.GpuProfiles, s.GpuProfile, SettingsChoices.LabelOf(SettingsChoices.GpuProfiles, eff.GpuProfile)),
+                            () => Pick(Loc.Get("MGpuProfile"), SettingsChoices.GpuProfiles, app.GpuProfile, v => s.GpuProfile = v)),
                         Divider(),
-                        Row("Resolução interna", ValueText(SettingsChoices.ResScales, s.ResScale, SettingsChoices.LabelOf(SettingsChoices.ResScales, eff.ResScale)),
-                            () => Pick("Resolução interna", SettingsChoices.ResScales, "", v => s.ResScale = v)),
+                        Row(Loc.Get("MInternalResolution"), ValueText(SettingsChoices.ResScales, s.ResScale, SettingsChoices.LabelOf(SettingsChoices.ResScales, eff.ResScale)),
+                            () => Pick(Loc.Get("MInternalResolution"), SettingsChoices.ResScales, "", v => s.ResScale = v)),
                         Divider(),
                         ToggleRow("VSync", eff.VSync, v => Save(x => x.VSync = v == app.VSync ? null : v)),
                         Divider(),
-                        ToggleRow("Mostrar FPS", eff.ShowFps, v => Save(x => x.ShowFps = v == app.ShowFps ? null : v)),
+                        ToggleRow(Loc.Get("MShowFps"), eff.ShowFps, v => Save(x => x.ShowFps = v == app.ShowFps ? null : v)),
                         s.HasOverrides ? Divider() : null,
-                        s.HasOverrides ? Row("Voltar ao padrão de Ajustes", null, () => Save(x =>
+                        s.HasOverrides ? Row(Loc.Get("MResetToDefaults"), null, () => Save(x =>
                         {
                             x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null;
                         })) : null
                     ),
-                    SectionTitle("Saves"),
+                    SectionTitle(Loc.Get("MSaves")),
                     Card(
-                        Row(State.Saves.Bytes > 0 ? "Dados salvos" : "Nenhum save ainda",
+                        Row(State.Saves.Bytes > 0 ? Loc.Get("MSavedData") : Loc.Get("MNoSaveYet"),
                             State.Saves.Bytes > 0 ? $"{State.Saves.Bytes / 1024} KB" : null,
-                            detail: State.Saves.Modified is { } m ? $"Atualizado {GameLibrary.LastPlayed(m, DateTime.UtcNow).ToLowerInvariant()} · ux0:user/00/savedata/{g.TitleId}" : $"ux0:user/00/savedata/{g.TitleId}"),
+                            detail: State.Saves.Modified is { } m ? Loc.Format("MSavesUpdated", GameLibrary.LastPlayed(m, DateTime.UtcNow).ToLowerInvariant(), g.TitleId) : $"ux0:user/00/savedata/{g.TitleId}"),
                         State.Saves.Bytes > 0 ? Divider() : null,
-                        State.Saves.Bytes > 0 ? Row("Apagar saves", null, DeleteSaves, valueColor: Palette.Danger) : null
+                        State.Saves.Bytes > 0 ? Row(Loc.Get("MDeleteSaves"), null, DeleteSaves, valueColor: Palette.Danger) : null
                     ),
                     BoxView().HeightRequest(24).Color(Colors.Transparent)
                 ))
@@ -127,7 +128,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
 
     /// <summary>A per-game value: "Padrão (…)" when it follows Ajustes, else the game's own choice.</summary>
     static string ValueText(IReadOnlyList<Choice> choices, string? own, string effective) =>
-        own == null ? $"Padrão · {effective}" : SettingsChoices.LabelOf(choices, own);
+        own == null ? Loc.Format("MDefaultValue", effective) : SettingsChoices.LabelOf(choices, own);
 
     VisualNode Stat(string label, string value, int column) =>
         Border(VStack(
@@ -145,8 +146,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
                 VStack(
                     Grid("Auto", "Auto,*,Auto,Auto",
                         Label("🏆").FontSize(18).TextColor(Palette.Gold).VCenter(),
-                        Label("Troféus").FontFamily(Fonts.SoraSemiBold).FontSize(17).GridColumn(1).Margin(10, 0).VCenter(),
-                        Label(t.HasTrophies ? $"{t.Earned} / {t.Total}" : "Sem troféus").FontFamily(Fonts.InterSemiBold).FontSize(15).GridColumn(2).VCenter(),
+                        Label(Loc.Get("MTrophies")).FontFamily(Fonts.SoraSemiBold).FontSize(17).GridColumn(1).Margin(10, 0).VCenter(),
+                        Label(t.HasTrophies ? $"{t.Earned} / {t.Total}" : Loc.Get("MNoTrophies")).FontFamily(Fonts.InterSemiBold).FontSize(15).GridColumn(2).VCenter(),
                         t.HasTrophies ? Label($"  {t.Percent}%").FontSize(15).TextColor(Palette.Accent).GridColumn(3).VCenter() : null
                     ),
                     t.HasTrophies ? Bar(t.Fraction).Margin(0, 12, 0, 0) : null,
@@ -180,8 +181,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
 
     async void DeleteSaves()
     {
-        if (!await Confirm("Apagar saves", $"Apagar todos os dados salvos de {State.Game?.Title}? Não dá para desfazer.", "Apagar")) return;
-        await Run("Apagar saves", async () =>
+        if (!await Confirm(Loc.Get("MDeleteSaves"), Loc.Format("MDeleteSavesConfirm", State.Game?.Title), Loc.Get("MDelete"))) return;
+        await Run(Loc.Get("MDeleteSaves"), async () =>
         {
             await Task.Run(() => Directory.Delete(AppServices.Data.SaveDir(Props.TitleId), true));
             Load();
@@ -191,18 +192,18 @@ public sealed class GamePage : Screen<GameState, GameProps>
     async void More()
     {
         if (State.Game is not { } g || ContainerPage is not { } page) return;
-        var pick = await page.DisplayActionSheetAsync(g.Title, "Cancelar", "Desinstalar", "Troféus", "Copiar caminho da pasta");
+        var pick = await page.DisplayActionSheetAsync(g.Title, Loc.Get("MCancel"), Loc.Get("MUninstall"), Loc.Get("MTrophies"), Loc.Get("MCopyFolderPath"));
         switch (pick)
         {
-            case "Troféus":
+            case var tr when tr == Loc.Get("MTrophies"):
                 await (Navigation?.PushAsync<TrophiesPage, GameProps>(p => p.TitleId = g.TitleId) ?? Task.CompletedTask);
                 break;
-            case "Copiar caminho da pasta":
+            case var c when c == Loc.Get("MCopyFolderPath"):
                 await Clipboard.Default.SetTextAsync(g.AppDir);
                 break;
-            case "Desinstalar":
-                if (!await Confirm("Desinstalar", $"Remover {g.Title} ({g.TitleId})? Os saves ficam.", "Remover")) return;
-                await Run("Desinstalar", async () =>
+            case var u when u == Loc.Get("MUninstall"):
+                if (!await Confirm(Loc.Get("MUninstall"), Loc.Format("MUninstallConfirm", g.Title, g.TitleId), Loc.Get("MRemove"))) return;
+                await Run(Loc.Get("MUninstall"), async () =>
                 {
                     await Task.Run(() => Directory.Delete(g.AppDir, true));
                     await (Navigation?.PopAsync() ?? Task.CompletedTask);

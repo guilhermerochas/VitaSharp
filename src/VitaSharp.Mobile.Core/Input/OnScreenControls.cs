@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 
@@ -178,6 +179,6 @@ public sealed class OnScreenPad : IInputBackend
         new(VitaControl.Select, "SELECT", R(322, 0), R(346, 1), R(76, 0), R(30, 1)),
         new(VitaControl.PS, "PS", R(410, 0), R(346, 1), R(30, 0), R(30, 1)),
         new(VitaControl.Start, "START", R(452, 0), R(346, 1), R(70, 0), R(30, 1)),
-        new(VitaControl.TouchBack, "TRÁS", R(22, 0), R(320, 1), R(52, 0), R(36, 1), OnScreenShape.Toggle),
+        new(VitaControl.TouchBack, Loc.Get("MRearButton"), R(22, 0), R(320, 1), R(52, 0), R(36, 1), OnScreenShape.Toggle),
     ];
 }

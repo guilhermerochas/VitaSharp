@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
@@ -31,27 +32,27 @@ public sealed class PerformanceView : Screen<PerformanceState>
     }
 
     public override VisualNode Render() =>
-        PageBody("Desempenho",
+        PageBody(Loc.Get("MPerformance"),
             VStack(
-                SectionTitle("Este aparelho"),
+                SectionTitle(Loc.Get("MThisDevice")),
                 Card(
                     Row(".NET", RuntimeReport.IsMono ? "Mono" : "CoreCLR", detail: RuntimeReport.Runtime),
                     Divider(),
-                    Row("Código dinâmico", RuntimeReport.DynamicCodeSupported ? "sim" : "não",
-                        detail: RuntimeReport.DynamicCodeCompiled ? "compilado pelo JIT do runtime" : "interpretado"),
+                    Row(Loc.Get("MDynamicCode"), RuntimeReport.DynamicCodeSupported ? Loc.Get("MYesLower") : Loc.Get("MNoLower"),
+                        detail: RuntimeReport.DynamicCodeCompiled ? Loc.Get("MJitCompiled") : Loc.Get("MInterpreted")),
                     Divider(),
-                    Row("CPU padrão", SettingsChoices.LabelOf(CpuChoices.Available(), AppServices.Prefs.CpuBackend)),
+                    Row(Loc.Get("MDefaultCpu"), SettingsChoices.LabelOf(CpuChoices.Available(), AppServices.Prefs.CpuBackend)),
                     Divider(),
-                    Row("Backends de CPU", string.Join(", ", CpuChoices.Available().Skip(1).Select(c => c.Label)))
+                    Row(Loc.Get("MCpuBackends"), string.Join(", ", CpuChoices.Available().Skip(1).Select(c => c.Label)))
                 ),
                 Card(
-                    Row("Informações da GPU", null, () => Navigation?.PushAsync<GpuInfoPage>()),
+                    Row(Loc.Get("MGpuInfo"), null, () => Navigation?.PushAsync<GpuInfoPage>()),
                     Divider(),
-                    Row("Driver da GPU", null, () => Navigation?.PushAsync<GpuDriverPage>())
+                    Row(Loc.Get("MGpuDriver"), null, () => Navigation?.PushAsync<GpuDriverPage>())
                 ),
-                SectionTitle("Jogos"),
+                SectionTitle(Loc.Get("MGames")),
                 Card(State.Played.Count == 0
-                    ? [Row("Nenhum jogo jogado ainda", null)]
+                    ? [Row(Loc.Get("MNoGamePlayed"), null)]
                     : State.Played.SelectMany((p, i) => new VisualNode?[]
                     {
                         i > 0 ? Divider() : null,

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using MauiReactor.Shapes;
 using VitaSharp.Android.Services;
@@ -42,7 +43,7 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
                 Border(
                     VStack(
                         Grid("Auto", "*,Auto",
-                            Label($"{p.Earned} de {p.Total} troféus").FontFamily(Fonts.SoraSemiBold).FontSize(17),
+                            Label(Loc.Format("MTrophiesOf", p.Earned, p.Total)).FontFamily(Fonts.SoraSemiBold).FontSize(17),
                             Label($"{p.Percent}%").FontFamily(Fonts.SoraBold).FontSize(17).TextColor(Palette.Accent).GridColumn(1)
                         ),
                         Bar(p.Fraction).Margin(0, 12, 0, 12),
@@ -52,12 +53,12 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
                     ).Padding(16))
                 .StrokeShape(new RoundRectangle().CornerRadius(20)).StrokeThickness(0).BackgroundColor(Palette.Surface).Margin(20, 8, 20, 0),
                 HStack(
-                    Chip("Todos", State.Filter == TrophyList.Filter.All, () => SetState(s => s.Filter = TrophyList.Filter.All)),
-                    Chip("Conquistados", State.Filter == TrophyList.Filter.Earned, () => SetState(s => s.Filter = TrophyList.Filter.Earned)),
-                    Chip("Faltam", State.Filter == TrophyList.Filter.Missing, () => SetState(s => s.Filter = TrophyList.Filter.Missing))
+                    Chip(Loc.Get("MAll"), State.Filter == TrophyList.Filter.All, () => SetState(s => s.Filter = TrophyList.Filter.All)),
+                    Chip(Loc.Get("MEarned"), State.Filter == TrophyList.Filter.Earned, () => SetState(s => s.Filter = TrophyList.Filter.Earned)),
+                    Chip(Loc.Get("MMissingTrophies"), State.Filter == TrophyList.Filter.Missing, () => SetState(s => s.Filter = TrophyList.Filter.Missing))
                 ).Spacing(8).Padding(20, 16, 20, 8),
                 VStack(rows.Select(TrophyRowView).ToArray()).Spacing(10).Padding(20, 0)
-            ), kicker: "Troféus");
+            ), kicker: Loc.Get("MTrophies"));
     }
 
     VisualNode GradeCount(TrophyGrade g, TrophyProgress p, int column)
@@ -85,7 +86,7 @@ public sealed class TrophiesPage : Screen<TrophiesState, GameProps>
                             Label(TrophyList.GradeName(r.Grade)).FontSize(11).TextColor(Color.FromArgb(TrophyList.GradeColor(r.Grade))).GridColumn(1).Margin(8, 0, 0, 0)
                         ),
                         Label(r.ShownDetail).FontSize(12).TextColor(Palette.Muted).MaxLines(3),
-                        r.UnlockedUtc is { } d ? Label($"Conquistado em {d.ToLocalTime():dd/MM/yyyy HH:mm}").FontSize(11).TextColor(Palette.AccentSoft) : null
+                        r.UnlockedUtc is { } d ? Label(Loc.Format("MEarnedOn", d.ToLocalTime())).FontSize(11).TextColor(Palette.AccentSoft) : null
                     ).Spacing(3).GridColumn(1).Margin(12, 0, 0, 0).VCenter()
                 ).Padding(12))
             .StrokeShape(new RoundRectangle().CornerRadius(16)).StrokeThickness(0).BackgroundColor(Palette.Surface)

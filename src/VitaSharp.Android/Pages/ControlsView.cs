@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.Views;
 using MauiReactor;
 using VitaSharp.Android.Services;
@@ -38,7 +39,7 @@ public sealed class ControlsView : Screen<ControlsState>
             bool pad = (d.Sources & InputSourceType.Gamepad) == InputSourceType.Gamepad || (d.Sources & InputSourceType.Joystick) == InputSourceType.Joystick;
             if (!pad) continue;
             string guid = AndroidGamepads.Guid(d.VendorId, d.ProductId);
-            list.Add((guid, d.Name ?? "Controle", ControllerClassifier.Classify(guid, d.Name)));
+            list.Add((guid, d.Name ?? Loc.Get("MController"), ControllerClassifier.Classify(guid, d.Name)));
         }
         SetState(s => { s.Controllers = list; s.Selected = Math.Min(s.Selected, Math.Max(0, list.Count - 1)); });
     }
@@ -55,39 +56,38 @@ public sealed class ControlsView : Screen<ControlsState>
         var prefs = AppServices.Prefs;
         var profile = Profile();
         var kind = State.Controllers.Count > 0 ? State.Controllers[State.Selected].Kind : ControllerKind.Generic;
-        return PageBody("Controles",
+        return PageBody(Loc.Get("MControls"),
             VStack(
-                SectionTitle("Controle conectado", State.Controllers.Count > 0 ? $"{State.Controllers.Count}" : null),
+                SectionTitle(Loc.Get("MControllerConnected"), State.Controllers.Count > 0 ? $"{State.Controllers.Count}" : null),
                 Card(State.Controllers.Count == 0
-                    ? [Row("Nenhum controle", "Atualizar", Scan, detail: "Conecte um controle Bluetooth ou USB")]
+                    ? [Row(Loc.Get("MNoController"), Loc.Get("MRefresh"), Scan, detail: Loc.Get("MConnectController"))]
                     : State.Controllers.SelectMany((c, i) => new VisualNode?[]
                     {
                         i > 0 ? Divider() : null,
-                        Row(c.Name, i == State.Selected ? "selecionado" : null, () => SetState(s => s.Selected = i),
+                        Row(c.Name, i == State.Selected ? Loc.Get("MSelected") : null, () => SetState(s => s.Selected = i),
                             detail: KindName(c.Kind), valueColor: Palette.Accent),
                     }).ToArray()),
-                profile != null ? SectionTitle("Mapeamento") : null,
+                profile != null ? SectionTitle(Loc.Get("MMapping")) : null,
                 profile != null ? Card(Mapping(profile, kind)) : null,
                 profile != null ? Card(
-                    ToggleRow("Trocar ○ e ✕", profile.SwapConfirm, v => SaveProfile(p => p.SwapConfirm = v),
-                        detail: "Confirmar com ○, como nos jogos japoneses"),
+                    ToggleRow(Loc.Get("MSwapConfirm"), profile.SwapConfirm, v => SaveProfile(p => p.SwapConfirm = v),
+                        detail: Loc.Get("MSwapConfirmDetail")),
                     Divider(),
-                    Row("Zona morta dos analógicos", $"{profile.LeftStick.Deadzone * 100:0}%", () => Deadzone(profile))
+                    Row(Loc.Get("MStickDeadzone"), $"{profile.LeftStick.Deadzone * 100:0}%", () => Deadzone(profile))
                 ) : null,
-                SectionTitle("Controles na tela"),
+                SectionTitle(Loc.Get("MOnScreenControls")),
                 Card(
-                    Row("Opacidade", $"{prefs.OnScreenOpacity * 100:0}%", Opacity),
+                    Row(Loc.Get("MOpacity"), $"{prefs.OnScreenOpacity * 100:0}%", Opacity),
                     Divider(),
-                    ToggleRow("Vibrar ao tocar", prefs.Haptics, v => { prefs.Haptics = v; AppServices.SavePrefs(); SetState(s => s.Revision++); }),
+                    ToggleRow(Loc.Get("MHaptics"), prefs.Haptics, v => { prefs.Haptics = v; AppServices.SavePrefs(); SetState(s => s.Revision++); }),
                     Divider(),
-                    ToggleRow("Esconder com controle conectado", prefs.HideOnScreenWithGamepad,
+                    ToggleRow(Loc.Get("MHideWithGamepad"), prefs.HideOnScreenWithGamepad,
                         v => { prefs.HideOnScreenWithGamepad = v; AppServices.SavePrefs(); SetState(s => s.Revision++); })
                 ),
-                SectionTitle("Movimento"),
-                Card(Row("Sensores de movimento", AndroidMotionModes.Label(AndroidMotionModes.Resolve(prefs.Motion, PhoneHasMotionSensors())), ChooseMotion,
-                    detail: "Inclinação e giroscópio do Vita (SceMotion); Recentralizar fica no menu de pausa")),
-                Note("No jogo: TRÁS liga o toque traseiro (os toques na imagem vão para o painel de trás); PS abre o menu de pausa " +
-                     "quando o jogo roda sem o sistema. O botão Home/PS do controle faz o mesmo.")
+                SectionTitle(Loc.Get("MMotion")),
+                Card(Row(Loc.Get("MMotionSensors"), AndroidMotionModes.Label(AndroidMotionModes.Resolve(prefs.Motion, PhoneHasMotionSensors())), ChooseMotion,
+                    detail: Loc.Get("MMotionSensorsDetail"))),
+                Note(Loc.Get("MControlsNote"))
             ));
     }
 
@@ -96,7 +96,7 @@ public sealed class ControlsView : Screen<ControlsState>
         ControllerKind.PlayStation => "PlayStation",
         ControllerKind.Xbox => "Xbox",
         ControllerKind.Nintendo => "Nintendo",
-        _ => "Genérico",
+        _ => Loc.Get("MGeneric"),
     };
 
     VisualNode?[] Mapping(ControllerProfile p, ControllerKind kind)
@@ -116,8 +116,8 @@ public sealed class ControlsView : Screen<ControlsState>
     static string ControlName(VitaControl c) => c switch
     {
         VitaControl.Cross => "✕", VitaControl.Circle => "○", VitaControl.Square => "□", VitaControl.Triangle => "△",
-        VitaControl.PS => "Botão PS", VitaControl.Up => "Direcional", VitaControl.LStickUp => "Analógico esquerdo",
-        VitaControl.RStickUp => "Analógico direito", VitaControl.Start => "START", VitaControl.Select => "SELECT",
+        VitaControl.PS => Loc.Get("MPsButton"), VitaControl.Up => Loc.Get("MDpad"), VitaControl.LStickUp => Loc.Get("MLeftStick"),
+        VitaControl.RStickUp => Loc.Get("MRightStick"), VitaControl.Start => "START", VitaControl.Select => "SELECT",
         _ => c.ToString(),
     };
 
@@ -133,7 +133,7 @@ public sealed class ControlsView : Screen<ControlsState>
     async void Deadzone(ControllerProfile p)
     {
         var choices = new[] { 0, 5, 10, 15, 20, 25 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
-        var v = await Choose("Zona morta", choices);
+        var v = await Choose(Loc.Get("MDeadzone"), choices);
         if (v == null) return;
         float dz = int.Parse(v) / 100f;
         SaveProfile(x => { x.LeftStick.Deadzone = dz; x.RightStick.Deadzone = dz; });
@@ -153,11 +153,11 @@ public sealed class ControlsView : Screen<ControlsState>
         bool phone = PhoneHasMotionSensors();
         var choices = new List<Mobile.Core.Settings.Choice>
         {
-            new(AndroidMotionModes.Phone, AndroidMotionModes.Label(AndroidMotionMode.Phone) + (phone ? "" : " (este aparelho não tem)")),
+            new(AndroidMotionModes.Phone, AndroidMotionModes.Label(AndroidMotionMode.Phone) + (phone ? "" : Loc.Get("MNotOnThisDevice"))),
             new(AndroidMotionModes.Controller, AndroidMotionModes.Label(AndroidMotionMode.Controller) + " (Android 12+)"),
             new(AndroidMotionModes.Off, AndroidMotionModes.Label(AndroidMotionMode.Off)),
         };
-        var v = await Choose("Movimento", choices);
+        var v = await Choose(Loc.Get("MMotion"), choices);
         if (v == null) return;
         AppServices.Prefs.Motion = v;
         AppServices.SavePrefs();
@@ -167,7 +167,7 @@ public sealed class ControlsView : Screen<ControlsState>
     async void Opacity()
     {
         var choices = new[] { 20, 35, 55, 75, 100 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
-        var v = await Choose("Opacidade dos controles", choices);
+        var v = await Choose(Loc.Get("MControlsOpacity"), choices);
         if (v == null) return;
         AppServices.Prefs.OnScreenOpacity = int.Parse(v) / 100f;
         AppServices.SavePrefs();

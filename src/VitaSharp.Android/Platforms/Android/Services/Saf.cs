@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.App;
 using Android.Content;
 using Android.Provider;
@@ -77,13 +78,13 @@ public static class Saf
         catch (Exception e)
         {
             Log.Warn($"SAF: {uri}: {e.Message}");
-            tcs.TrySetResult(new PickedDocument(uri, uri.LastPathSegment ?? "arquivo", -1));
+            tcs.TrySetResult(new PickedDocument(uri, uri.LastPathSegment ?? Loc.Get("MFile"), -1));
         }
     }
 
     static PickedDocument Describe(AUri uri)
     {
-        string name = uri.LastPathSegment ?? "arquivo";
+        string name = uri.LastPathSegment ?? Loc.Get("MFile");
         long size = -1;
         using var c = AppServices.AppContext.ContentResolver!.Query(uri, [IOpenableColumns.DisplayName, IOpenableColumns.Size], null, null, null);
         if (c != null && c.MoveToFirst())

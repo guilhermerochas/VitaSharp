@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.App;
 using Android.Graphics;
 using Android.OS;
@@ -20,7 +21,7 @@ public sealed partial class GameActivity
         if (_session is not { } session || slot < 1 || slot > EmulationSession.StateSlots) return;
         if (save) session.CaptureMenuThumbnail();
         session.Pause();
-        Toast.MakeText(this, save ? "Salvando estado…" : "Carregando estado…", ToastLength.Short)?.Show();
+        Toast.MakeText(this, save ? Loc.Get("MSavingState") : Loc.Get("MLoadingState"), ToastLength.Short)?.Show();
         Task.Run(() =>
         {
             string msg = save ? session.SaveState(slot) : session.LoadState(slot);

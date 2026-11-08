@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Android.Graphics;
 using Android.Graphics.Drawables;
 using Android.Views;
@@ -114,34 +115,34 @@ public sealed partial class GameActivity
         var titles = new LinearLayout(this) { Orientation = Orientation.Vertical };
         titles.AddView(Text(session?.Game.Title ?? "VitaSharp", 16, Sora, CText, single: true));
         long minutes = (long)_sessionClock.Elapsed.TotalMinutes;
-        string rec = session?.Capture.IsRecording == true ? " · gravando" : "";
-        titles.AddView(Text($"Pausado · sessão de {(minutes < 1 ? "menos de 1 min" : $"{minutes} min")}{rec}", 12, Inter, CMuted, single: true));
+        string rec = session?.Capture.IsRecording == true ? Loc.Get("MRecordingSuffix") : "";
+        titles.AddView(Text(Loc.Format("MPausedSession", minutes < 1 ? Loc.Get("MUnderAMinute") : $"{minutes} min", rec), 12, Inter, CMuted, single: true));
         header.AddView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1) { LeftMargin = Dp(12) });
         card.AddView(header);
 
         // two columns: continue / leave on the left, the actions grid on the right
         var columns = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         var left = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        var resume = PrimaryButton("Continuar", IconPlay, CloseMenu);
+        var resume = PrimaryButton(Loc.Get("MResume"), IconPlay, CloseMenu);
         left.AddView(resume, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(84)));
-        left.AddView(DangerButton("Sair do jogo", () => { CloseMenu(resume: false); Leave(); }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(50)) { TopMargin = Dp(10) });
+        left.AddView(DangerButton(Loc.Get("MQuitGame"), () => { CloseMenu(resume: false); Leave(); }), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(50)) { TopMargin = Dp(10) });
         columns.AddView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1));
 
         var tiles = new List<AView>
         {
-            Tile("Salvar estado", IconSave, () => ShowSlotsPage(save: true)),
-            Tile("Carregar estado", IconLoad, () => ShowSlotsPage(save: false)),
-            Tile("Ajustes", IconSettings, ShowSettingsPage),
+            Tile(Loc.Get("MSaveState"), IconSave, () => ShowSlotsPage(save: true)),
+            Tile(Loc.Get("MLoadState"), IconLoad, () => ShowSlotsPage(save: false)),
+            Tile(Loc.Get("MSettings"), IconSettings, ShowSettingsPage),
         };
         if (_sensors?.CanRecenter == true)
-            tiles.Add(Tile("Recentralizar", IconRecenter, () => { _sensors?.Recenter(); Toast.MakeText(this, "Movimento recentralizado", ToastLength.Short)?.Show(); }));
+            tiles.Add(Tile(Loc.Get("MRecenter"), IconRecenter, () => { _sensors?.Recenter(); Toast.MakeText(this, Loc.Get("MRecentered"), ToastLength.Short)?.Show(); }));
         // "Gravar tudo" (every build): the session capture, docs/notes/session-capture.md
         if (session?.Capture.IsRecording == true)
-            tiles.Add(Tile("Parar gravação", IconStop, () => { session.Capture.Stop("pause menu"); ShowMainPage(); }, CRec));
+            tiles.Add(Tile(Loc.Get("MStopRecording"), IconStop, () => { session.Capture.Stop("pause menu"); ShowMainPage(); }, CRec));
         else
-            tiles.Add(Tile("Gravar tudo", IconRecord, () => { session?.Capture.Start("pause menu"); CloseMenu(); }, CRec));
+            tiles.Add(Tile(Loc.Get("MRecordAll"), IconRecord, () => { session?.Capture.Start("pause menu"); CloseMenu(); }, CRec));
 #if VITASHARP_DEVELOPER
-        tiles.Add(Tile("Desenvolvedor", IconDev, ShowDeveloperPage));
+        tiles.Add(Tile(Loc.Get("MDeveloper"), IconDev, ShowDeveloperPage));
 #endif
         columns.AddView(Grid(tiles, 3), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 2) { LeftMargin = Dp(10) });
         card.AddView(columns, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(16) });
@@ -155,7 +156,7 @@ public sealed partial class GameActivity
         if (_menuCard is not { } card || _session is not { } session) return;
         card.RemoveAllViews();
         _menuBack = ShowMainPage;
-        card.AddView(PageHeader(save ? "Salvar estado" : "Carregar estado", save ? "Escolha o slot (o estado anterior do slot é substituído)" : "Escolha o estado salvo"));
+        card.AddView(PageHeader(save ? Loc.Get("MSaveState") : Loc.Get("MLoadState"), save ? Loc.Get("MPickSlotSave") : Loc.Get("MPickSlotLoad")));
         var slots = new List<AView>();
         AView? first = null;
         for (int slot = 1; slot <= EmulationSession.StateSlots; slot++)
@@ -166,7 +167,7 @@ public sealed partial class GameActivity
             var v = SlotCard(s, info, enabled, () =>
             {
                 CloseMenu(resume: false); // the game resumes once the save or load below is done
-                Toast.MakeText(this, save ? "Salvando estado…" : "Carregando estado…", ToastLength.Short)?.Show();
+                Toast.MakeText(this, save ? Loc.Get("MSavingState") : Loc.Get("MLoadingState"), ToastLength.Short)?.Show();
                 Task.Run(() =>
                 {
                     string msg = save ? session.SaveState(s) : session.LoadState(s);
@@ -190,7 +191,7 @@ public sealed partial class GameActivity
         if (_menuCard is not { } card) return;
         card.RemoveAllViews();
         _menuBack = ShowMainPage;
-        card.AddView(PageHeader("Ajustes do jogo", "CPU, GPU e resolução ficam na página do jogo no app"));
+        card.AddView(PageHeader(Loc.Get("MGameSettingsShort"), Loc.Get("MGameSettingsNote")));
         var list = new LinearLayout(this) { Orientation = Orientation.Vertical };
         list.Background = Rounded(CSurface, 20, CBorder);
         AView? first = null;
@@ -200,13 +201,13 @@ public sealed partial class GameActivity
             list.AddView(row);
             first ??= row;
         }
-        Add(ToggleRow("Toque traseiro", "Metade de baixo da tela vira o touchpad traseiro", () => _pad.RearTouch, v => _pad.RearTouch = v));
-        Add(ToggleRow("Controles na tela", null, () => _pad.Visible, v => _pad.Visible = v));
+        Add(ToggleRow(Loc.Get("MRearTouch"), Loc.Get("MRearTouchDetail"), () => _pad.RearTouch, v => _pad.RearTouch = v));
+        Add(ToggleRow(Loc.Get("MOnScreenControls"), null, () => _pad.Visible, v => _pad.Visible = v));
         if (_session is { } session)
-            Add(ToggleRow("Pré-gravação", "\"Gravar tudo\" inclui os últimos segundos antes de você apertar", () => session.Capture.Armed,
+            Add(ToggleRow(Loc.Get("MPreRoll"), Loc.Get("MPreRollDetail"), () => session.Capture.Armed,
                 v => session.Capture.SetPreRoll(v ? EmulationSession.PreRollSeconds : 0)));
         if (_sensors?.CanRecenter == true)
-            Add(ActionRow("Recentralizar movimento", "A posição atual do celular vira a posição de repouso", () => { _sensors?.Recenter(); Toast.MakeText(this, "Movimento recentralizado", ToastLength.Short)?.Show(); }));
+            Add(ActionRow(Loc.Get("MRecenterMotion"), Loc.Get("MRecenterMotionDetail"), () => { _sensors?.Recenter(); Toast.MakeText(this, Loc.Get("MRecentered"), ToastLength.Short)?.Show(); }));
         card.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
         FocusFirst(first);
     }
@@ -217,17 +218,17 @@ public sealed partial class GameActivity
         if (_menuCard is not { } card || _session is not { } session) return;
         card.RemoveAllViews();
         _menuBack = ShowMainPage;
-        card.AddView(PageHeader("Gravações de desenvolvedor", "Pasta de captura do build de desenvolvedor"));
+        card.AddView(PageHeader(Loc.Get("MDevRecordings"), Loc.Get("MDevRecordingsDetail")));
         var list = new LinearLayout(this) { Orientation = Orientation.Vertical };
         list.Background = Rounded(CSurface, 20, CBorder);
         AView first;
         if (session.CaptureDir != null)
-            list.AddView(first = ActionRow("Parar gravação (desenvolvedor)", session.CaptureDir, () => { session.StopCapture(); CloseMenu(); }));
+            list.AddView(first = ActionRow(Loc.Get("MStopDevRecording"), session.CaptureDir, () => { session.StopCapture(); CloseMenu(); }));
         else
         {
-            list.AddView(first = ActionRow("Gravar tempo", "Perfil de tempo (CPU, GPU, quadros)", () => { session.StartCapture("tempo"); CloseMenu(); }));
+            list.AddView(first = ActionRow(Loc.Get("MRecordTiming"), Loc.Get("MRecordTimingDetail"), () => { session.StartCapture("tempo"); CloseMenu(); }));
             list.AddView(new AView(this) { Background = new ColorDrawable(CBorder) }, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 1) { LeftMargin = Dp(16), RightMargin = Dp(16) });
-            list.AddView(ActionRow("Gravar conteúdo", "Quadros, dump de GPU e áudio", () => { session.StartCapture("conteudo"); CloseMenu(); }));
+            list.AddView(ActionRow(Loc.Get("MRecordContent"), Loc.Get("MRecordContentDetail"), () => { session.StartCapture("conteudo"); CloseMenu(); }));
         }
         card.AddView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
         FocusFirst(first);
@@ -246,9 +247,9 @@ public sealed partial class GameActivity
         var title = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         title.SetGravity(GravityFlags.CenterVertical);
         title.AddView(new IconView(this, IconRecord, CRec), new LinearLayout.LayoutParams(Dp(20), Dp(20)));
-        title.AddView(Text("Salvando a gravação…", 16, Sora, CText), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(10) });
+        title.AddView(Text(Loc.Get("MSavingRecording"), 16, Sora, CText), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { LeftMargin = Dp(10) });
         card.AddView(title);
-        card.AddView(Text("Não feche o app: o jogo fecha sozinho quando terminar", 13, Inter, CMuted), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(6) });
+        card.AddView(Text(Loc.Get("MSavingRecordingDetail"), 13, Inter, CMuted), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(6) });
         overlay.AddView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Center));
         _root?.AddView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
         return overlay;
@@ -426,7 +427,7 @@ public sealed partial class GameActivity
         image.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(60));
         b.AddView(image);
         b.AddView(Text($"Slot {slot}", 13, InterSemiBold, enabled ? CText : CFaint), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
-        b.AddView(Text(info != null ? info.CreatedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "vazio", 12, Inter, CMuted, single: true));
+        b.AddView(Text(info != null ? info.CreatedUtc.ToLocalTime().ToString("g", Loc.Culture) : Loc.Get("MEmptyLower"), 12, Inter, CMuted, single: true));
         if (enabled) MakeButton(b, onClick);
         else { b.Focusable = false; b.Alpha = 0.6f; }
         return b;

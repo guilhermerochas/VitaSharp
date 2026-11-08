@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
@@ -30,41 +31,41 @@ public sealed class PsnPage : Screen<PsnState>
     {
         var n = AppServices.Prefs.Network;
         bool rpcn = n.RpcnEditable;
-        return Page("Conta PSN e rede",
+        return Page(Loc.Get("MPsnAndNetwork"),
             VStack(
-                SectionTitle("Conta"),
+                SectionTitle(Loc.Get("MAccount")),
                 Card(
-                    ToggleRow("Conta PSN conectada", n.PsnSignedIn, v => Change(x => x.PsnSignedIn = v),
-                        detail: "Simulada: as checagens de login do jogo passam"),
+                    ToggleRow(Loc.Get("MPsnSignedIn"), n.PsnSignedIn, v => Change(x => x.PsnSignedIn = v),
+                        detail: Loc.Get("MPsnSignedInDetail")),
                     Divider(),
-                    Row("ID online", n.PsnOnlineId, () => Edit("ID online", "3 a 16 letras, números, - ou _", n.PsnOnlineId, v =>
+                    Row(Loc.Get("MOnlineId"), n.PsnOnlineId, () => Edit(Loc.Get("MOnlineId"), Loc.Get("MOnlineIdHint"), n.PsnOnlineId, v =>
                     {
                         if (PsnAccount.IsValidOnlineId(v)) Change(x => x.PsnOnlineId = v);
-                        else _ = Alert("ID online", "ID inválido: 3 a 16 caracteres, começando com letra (letras, números, - ou _).");
+                        else _ = Alert(Loc.Get("MOnlineId"), Loc.Get("MOnlineIdInvalid"));
                     })),
                     Divider(),
-                    ToggleRow("Serviços PSN locais", n.PsnLocalServices, v => Change(x => x.PsnLocalServices = v),
-                        detail: "Rankings, TUS e salvamento na nuvem guardados no aparelho")
+                    ToggleRow(Loc.Get("MPsnLocal"), n.PsnLocalServices, v => Change(x => x.PsnLocalServices = v),
+                        detail: Loc.Get("MPsnLocalDetail"))
                 ),
-                SectionTitle("Rede"),
+                SectionTitle(Loc.Get("MNetwork")),
                 Card(
-                    ToggleRow("Internet real", n.RealInternet, v => Change(x => x.RealInternet = v),
-                        detail: "Os jogos acessam a internet deste aparelho (servidores da Sony sempre bloqueados)")
+                    ToggleRow(Loc.Get("MRealInternet"), n.RealInternet, v => Change(x => x.RealInternet = v),
+                        detail: Loc.Get("MRealInternetDetail"))
                 ),
                 Note(NetworkSettings.PrivacyNote),
-                SectionTitle("Servidor RPCN (opcional)"),
+                SectionTitle(Loc.Get("MRpcnServerOptional")),
                 Card(
-                    Row("Servidor", n.RpcnServer.Length > 0 ? n.RpcnServer : "nenhum", rpcn ? () => Edit("Servidor RPCN", "host ou host:porta", n.RpcnServer, v => Change(x => x.RpcnServer = v.Trim())) : null),
+                    Row(Loc.Get("MServer"), n.RpcnServer.Length > 0 ? n.RpcnServer : Loc.Get("MNoneLower"), rpcn ? () => Edit(Loc.Get("MRpcnServer"), Loc.Get("MHostPort"), n.RpcnServer, v => Change(x => x.RpcnServer = v.Trim())) : null),
                     Divider(),
-                    Row("Usuário", n.RpcnUser.Length > 0 ? n.RpcnUser : "—", rpcn ? () => Edit("Usuário RPCN", "", n.RpcnUser, v => Change(x => x.RpcnUser = v.Trim())) : null),
+                    Row(Loc.Get("MUser"), n.RpcnUser.Length > 0 ? n.RpcnUser : "—", rpcn ? () => Edit(Loc.Get("MRpcnUser"), "", n.RpcnUser, v => Change(x => x.RpcnUser = v.Trim())) : null),
                     Divider(),
-                    Row("Senha", State.HasPassword ? "••••••••" : "—", rpcn ? EditPassword : null, detail: "Guardada no Android Keystore"),
+                    Row(Loc.Get("MPassword"), State.HasPassword ? "••••••••" : "—", rpcn ? EditPassword : null, detail: Loc.Get("MKeystoreDetail")),
                     Divider(),
-                    Row("Token", n.RpcnToken.Length > 0 ? "definido" : "—", rpcn ? () => Edit("Token RPCN", "só no primeiro login de uma conta nova", n.RpcnToken, v => Change(x => x.RpcnToken = v.Trim())) : null)
+                    Row("Token", n.RpcnToken.Length > 0 ? Loc.Get("MSet") : "—", rpcn ? () => Edit(Loc.Get("MRpcnToken"), Loc.Get("MRpcnTokenHint"), n.RpcnToken, v => Change(x => x.RpcnToken = v.Trim())) : null)
                 ).Opacity(rpcn ? 1 : 0.5),
-                Note(rpcn ? "Com um servidor RPCN, rankings e TUS vão para ele e o ID online passa a ser o usuário RPCN."
-                          : "Ligue a internet real (e a conta PSN) para configurar um servidor RPCN.")
-            ), kicker: "Ajustes");
+                Note(rpcn ? Loc.Get("MRpcnNote")
+                          : Loc.Get("MRpcnNeedsInternet"))
+            ), kicker: Loc.Get("MSettings"));
     }
 
     void Change(Action<NetworkSettings> change)
@@ -82,7 +83,7 @@ public sealed class PsnPage : Screen<PsnState>
 
     async void EditPassword()
     {
-        var v = await Prompt("Senha RPCN", "Fica no Android Keystore deste aparelho.", "", password: true);
+        var v = await Prompt(Loc.Get("MRpcnPassword"), Loc.Get("MRpcnPasswordDetail"), "", password: true);
         if (v == null) return;
         await AppServices.SetRpcnPasswordAsync(v);
         SetState(s => s.HasPassword = v.Length > 0);

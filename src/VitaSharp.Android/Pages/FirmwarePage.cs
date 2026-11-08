@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
@@ -38,46 +39,45 @@ public sealed class FirmwarePage : Screen<FirmwareState>
     {
         var st = State.Status;
         var fw = st?.Installed;
-        return Page("Firmware",
+        return Page(Loc.Get("MFirmware"),
             VStack(
                 Card(
-                    Row("Versão", fw?.Version ?? "não instalado", valueColor: fw != null ? Palette.Ok : Palette.Muted),
+                    Row(Loc.Get("MVersion"), fw?.Version ?? Loc.Get("MNotInstalled"), valueColor: fw != null ? Palette.Ok : Palette.Muted),
                     fw != null ? Divider() : null,
-                    fw != null ? Row("Origem", fw.Source) : null,
+                    fw != null ? Row(Loc.Get("MSource"), fw.Source) : null,
                     fw?.InstalledUtc != null ? Divider() : null,
-                    fw?.InstalledUtc is { } w ? Row("Instalado em", w.ToLocalTime().ToString("dd/MM/yyyy HH:mm")) : null
+                    fw?.InstalledUtc is { } w ? Row(Loc.Get("MInstalledOn"), w.ToLocalTime().ToString("dd/MM/yyyy HH:mm")) : null
                 ).Margin(20, 8, 20, 12),
-                SectionTitle("Partições"),
+                SectionTitle(Loc.Get("MPartitions")),
                 Card(
-                    Row("os0", Has("os0"), detail: "kernel e módulos do sistema"),
+                    Row("os0", Has("os0"), detail: Loc.Get("MOs0Detail")),
                     Divider(),
-                    Row("vs0", st?.Shell == true ? "com o shell" : Has("vs0"), detail: "bibliotecas e o shell (vsh/shell/shell.self)"),
+                    Row("vs0", st?.Shell == true ? Loc.Get("MWithShell") : Has("vs0"), detail: Loc.Get("MVs0Detail")),
                     Divider(),
-                    Row("pd0", st?.Pd0 == true ? "instalado" : "ausente", detail: "conteúdo de boas-vindas e sons do sistema"),
+                    Row("pd0", st?.Pd0 == true ? Loc.Get("MInstalled") : Loc.Get("MMissing"), detail: Loc.Get("MPd0Detail")),
                     Divider(),
-                    Row("sa0 (fontes)", st?.SystemFonts == true ? "instalado" : "ausente", detail: "pacote de fontes do sistema")
+                    Row(Loc.Get("MSa0Fonts"), st?.SystemFonts == true ? Loc.Get("MInstalled") : Loc.Get("MMissing"), detail: Loc.Get("MSa0Detail"))
                 ),
                 State.Installing != null ? InstallProgress() : null,
                 VStack(
-                    PrimaryButton("Instalar firmware (.PUP)", () => Install("PSVUPDAT.PUP"), State.Installing == null),
-                    SecondaryButton("Instalar pacote de fontes (.PUP)", () => Install("PSP2UPDAT fontes"), State.Installing == null)
+                    PrimaryButton(Loc.Get("MInstallFirmware"), () => Install("PSVUPDAT.PUP"), State.Installing == null),
+                    SecondaryButton(Loc.Get("MInstallFonts"), () => Install("PSP2UPDAT fontes"), State.Installing == null)
                 ).Spacing(10).Padding(20, 8, 20, 0),
-                Note("O arquivo .PUP é escolhido pelo seletor do sistema e lido no lugar, sem cópia. O VitaSharp não inclui " +
-                     "nenhum firmware: use a atualização oficial do PS Vita (PSVUPDAT.PUP).")
-            ), kicker: "Ajustes");
+                Note(Loc.Get("MFirmwareNote"))
+            ), kicker: Loc.Get("MSettings"));
     }
 
     string Has(string partition) =>
-        State.Status?.Installed?.Partitions.Contains(partition) == true ? "instalado" : "ausente";
+        State.Status?.Installed?.Partitions.Contains(partition) == true ? Loc.Get("MInstalled") : Loc.Get("MMissing");
 
     VisualNode InstallProgress() =>
         Card(
             VStack(
-                Label($"Instalando {State.Installing}").FontFamily(Fonts.InterSemiBold).FontSize(14),
+                Label(Loc.Format("MInstalling", State.Installing)).FontFamily(Fonts.InterSemiBold).FontSize(14),
                 Label(State.Progress.Stage + (State.Progress.Detail is { } d ? $" · {d}" : "")).FontSize(12).TextColor(Palette.Muted)
                     .LineBreakMode(LineBreakMode.TailTruncation),
                 ProgressBar().Progress(State.Progress.Fraction),
-                SecondaryButton("Cancelar", () => _cts?.Cancel())
+                SecondaryButton(Loc.Get("MCancel"), () => _cts?.Cancel())
             ).Spacing(8).Padding(16)
         ).Margin(20, 12, 20, 0);
 
@@ -86,20 +86,20 @@ public sealed class FirmwarePage : Screen<FirmwareState>
         var doc = await Saf.PickAsync(FirmwareSetup.PickerMimeType);
         if (doc == null) return;
         _cts = new CancellationTokenSource();
-        SetState(s => { s.Installing = doc.DisplayName; s.Progress = new("Abrindo", 0); });
+        SetState(s => { s.Installing = doc.DisplayName; s.Progress = new(Loc.Get("MOpening"), 0); });
         DeviceDisplay.Current.KeepScreenOn = true;
-        await Run($"Instalar {what}", async () =>
+        await Run(Loc.Format("MInstallWhat", what), async () =>
         {
             try
             {
                 string cache = System.IO.Path.Combine(AppServices.AppContext.CacheDir!.AbsolutePath, "imports");
                 var progress = new Progress<FirmwareProgress>(p => SetState(s => s.Progress = p));
                 var info = await FirmwareSetup.InstallAsync(() => doc.OpenSeekable(cache), doc.DisplayName, AppServices.Data.Fs, progress, _cts.Token);
-                await Alert("Firmware", $"Instalado: {info.Display}");
+                await Alert(Loc.Get("MFirmware"), Loc.Format("MInstalledWhat", info.Display));
             }
             catch (OperationCanceledException)
             {
-                await Alert("Firmware", "Instalação cancelada. O firmware anterior continua instalado.");
+                await Alert(Loc.Get("MFirmware"), Loc.Get("MFirmwareCanceled"));
             }
             finally
             {

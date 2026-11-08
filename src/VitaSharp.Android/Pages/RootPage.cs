@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using MauiReactor;
 using VitaSharp.Android.Ui;
 
@@ -52,10 +53,10 @@ public sealed class RootPage : Screen<RootState>
 
     VisualNode BottomBar() =>
         Grid("Auto", "*,*,*,*",
-            TabButton(RootTab.Library, "▦", "Biblioteca", 0),
-            TabButton(RootTab.Controls, "◎", "Controles", 1),
-            TabButton(RootTab.Performance, "∿", "Desempenho", 2),
-            TabButton(RootTab.Settings, "≡", "Ajustes", 3)
+            TabButton(RootTab.Library, "▦", Loc.Get("MLibrary"), 0),
+            TabButton(RootTab.Controls, "◎", Loc.Get("MControls"), 1),
+            TabButton(RootTab.Performance, "∿", Loc.Get("MPerformance"), 2),
+            TabButton(RootTab.Settings, "≡", Loc.Get("MSettings"), 3)
         ).BackgroundColor(Palette.Background).Padding(0, 8, 0, 12);
 
     VisualNode TabButton(RootTab tab, string glyph, string label, int column)
