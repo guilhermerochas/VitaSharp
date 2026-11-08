@@ -1,16 +1,16 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using VitaSharp.Android.Audio;
-using VitaSharp.Android.Gpu;
-using VitaSharp.Android.Media;
-using VitaSharp.Android.Storage;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Media;
+using VitaSharp.Mobile.Core.Audio;
+using VitaSharp.Mobile.Core.Gpu;
+using VitaSharp.Mobile.Core.Media;
+using VitaSharp.Mobile.Core.Storage;
 
 namespace VitaSharp.Tests;
 
 /// <summary>The platform-neutral parts of the Android audio, MediaCodec and GPU driver backends
-/// (src/VitaSharp.Android.Common): buffering policy, resampling and device recovery of the audio streams, decoder output
+/// (src/VitaSharp.Mobile.Core): buffering policy, resampling and device recovery of the audio streams, decoder output
 /// copies and fallback replay, driver packages, the driver screen and the game process marker.</summary>
 public sealed class AndroidMediaDriverTests : IDisposable
 {

@@ -333,7 +333,7 @@ public sealed partial class GameActivity
         }
         var tile = Text(game?.Initials ?? "VS", 15, Font(ref _soraBold, "Sora-Bold.ttf"), CCoverText);
         tile.Gravity = GravityFlags.Center;
-        tile.Background = Rounded(Color.ParseColor(Library.GameLibrary.CoverColor(game?.TitleId ?? "")), 14);
+        tile.Background = Rounded(Color.ParseColor(Mobile.Core.Library.GameLibrary.CoverColor(game?.TitleId ?? "")), 14);
         return tile;
     }
 

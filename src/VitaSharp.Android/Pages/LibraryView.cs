@@ -1,12 +1,12 @@
 using MauiReactor;
 using MauiReactor.Shapes;
-using VitaSharp.Android.Firmware;
 using VitaSharp.Android.Game;
-using VitaSharp.Android.Library;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Firmware;
+using VitaSharp.Mobile.Core.Library;
 
 namespace VitaSharp.Android.Pages;
 
@@ -231,8 +231,8 @@ public sealed class LibraryView : Screen<LibraryState>
     {
         if (State.Installing != null) return;
         var kind = await Choose("Instalar jogo", [
-            new Settings.Choice("vpk", "Arquivo .vpk (ou .zip)"),
-            new Settings.Choice("pkg", "Arquivo .pkg + licença (work.bin, .rif ou zRIF)"),
+            new Mobile.Core.Settings.Choice("vpk", "Arquivo .vpk (ou .zip)"),
+            new Mobile.Core.Settings.Choice("pkg", "Arquivo .pkg + licença (work.bin, .rif ou zRIF)"),
         ]);
         if (kind == "vpk") await InstallVpk();
         else if (kind == "pkg") await InstallPkg();
@@ -249,8 +249,8 @@ public sealed class LibraryView : Screen<LibraryState>
             && !await Confirm("Instalar PKG", $"\"{pkg.DisplayName}\" não termina em .pkg. Tentar mesmo assim?", "Tentar"))
             return;
         var source = await Choose("Licença do jogo", [
-            new Settings.Choice("file", "Arquivo work.bin ou .rif"),
-            new Settings.Choice("zrif", "Colar o zRIF (texto)"),
+            new Mobile.Core.Settings.Choice("file", "Arquivo work.bin ou .rif"),
+            new Mobile.Core.Settings.Choice("zrif", "Colar o zRIF (texto)"),
         ]);
         byte[]? license = null;
         if (source == "file")

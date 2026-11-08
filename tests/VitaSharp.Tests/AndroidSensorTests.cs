@@ -1,7 +1,7 @@
 using System.Numerics;
-using VitaSharp.Android.Input;
-using VitaSharp.Android.Media;
 using VitaSharp.Core.Host;
+using VitaSharp.Mobile.Core.Input;
+using VitaSharp.Mobile.Core.Media;
 
 namespace VitaSharp.Tests;
 

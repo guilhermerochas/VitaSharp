@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitaSharp.Core.Generators",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitaSharp.Renderer.Vulkan", "src\VitaSharp.Renderer.Vulkan\VitaSharp.Renderer.Vulkan.csproj", "{FB2374CE-CB9A-4B89-AFE1-FCADCDFF49B1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitaSharp.Android.Common", "src\VitaSharp.Android.Common\VitaSharp.Android.Common.csproj", "{F1B59A0F-8DA3-4255-90E1-96A31481F630}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitaSharp.Mobile.Core", "src\VitaSharp.Mobile.Core\VitaSharp.Mobile.Core.csproj", "{F1B59A0F-8DA3-4255-90E1-96A31481F630}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitaSharp.Android", "src\VitaSharp.Android\VitaSharp.Android.csproj", "{3CF94498-2431-4B85-A1CE-7082AC218927}"
 EndProject

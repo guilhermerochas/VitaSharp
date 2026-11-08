@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
-using VitaSharp.Android.Logging;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Logging;
 
 namespace VitaSharp.Android.Services;
 

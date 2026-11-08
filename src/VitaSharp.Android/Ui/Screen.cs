@@ -1,7 +1,7 @@
 using MauiReactor;
 using MauiReactor.Shapes;
-using VitaSharp.Android.Settings;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Settings;
 
 namespace VitaSharp.Android.Ui;
 
@@ -124,7 +124,7 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
                 ? Image().Source(iconPath).Aspect(Aspect.AspectFill)
                 : Label(initials).FontFamily(Fonts.SoraBold).FontSize(fontSize).TextColor(Color.FromArgb("#DCE5F7")).Center())
             .StrokeShape(new RoundRectangle().CornerRadius(corner)).StrokeThickness(0)
-            .BackgroundColor(Color.FromArgb(Library.GameLibrary.CoverColor(titleId)))
+            .BackgroundColor(Color.FromArgb(Mobile.Core.Library.GameLibrary.CoverColor(titleId)))
             .WidthRequest(size).HeightRequest(size);
 
     // ------------------------------------------------------------------ dialogs

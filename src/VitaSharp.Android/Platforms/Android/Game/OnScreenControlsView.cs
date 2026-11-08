@@ -1,8 +1,8 @@
 using Android.Content;
 using Android.Graphics;
 using Android.Views;
-using VitaSharp.Android.Input;
 using VitaSharp.Core.Input;
+using VitaSharp.Mobile.Core.Input;
 using Color = Android.Graphics.Color;
 using Paint = Android.Graphics.Paint;
 using RectF = Android.Graphics.RectF;

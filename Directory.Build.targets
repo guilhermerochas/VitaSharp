@@ -2,7 +2,7 @@
 
   <!--
     Reflection kept to a minimum (docs/roadmap.md, "Reflexão o mínimo possível"): in every project that runs the trim /
-    Native AOT analyzers (IsAotCompatible or EnableTrimAnalyzer: Core, Renderer.Vulkan, Android.Common, Desktop), their
+    Native AOT analyzers (IsAotCompatible or EnableTrimAnalyzer: Core, Renderer.Vulkan, Mobile.Core, Desktop), their
     findings are build errors, so no new reflection, Reflection.Emit or dynamic code use gets in unseen. The Android app
     project is left out: its trimming analysis runs only in the long APK build (docs/android/README.md).
     Here and not in Directory.Build.props: the projects set those properties after the props file is imported.

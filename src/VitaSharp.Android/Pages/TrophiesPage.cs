@@ -1,9 +1,9 @@
 using MauiReactor;
 using MauiReactor.Shapes;
-using VitaSharp.Android.Library;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Mobile.Core.Library;
 
 namespace VitaSharp.Android.Pages;
 

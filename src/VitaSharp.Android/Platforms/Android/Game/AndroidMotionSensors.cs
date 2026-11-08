@@ -5,9 +5,9 @@ using Android.Hardware.Display;
 using Android.OS;
 using Android.Runtime;
 using Android.Views;
-using VitaSharp.Android.Input;
 using VitaSharp.Android.Services;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Input;
 
 namespace VitaSharp.Android.Game;
 

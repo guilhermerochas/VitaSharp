@@ -923,7 +923,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Core que aparecem para o usuário (estado incompatível, firmware, modo do mouse). `LocalizationTests`: mesmas chaves
   e marcadores nos dois idiomas, toda chave usada no código existe, e os .cs do desktop são só ASCII (regra 16 do
   Ryubing: um texto em português no código falha o teste). 550 textos. Validado com `ui-render --lang=en|pt-BR`.
-  Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Android.Common` ainda têm os
+  Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Mobile.Core` ainda têm os
   textos em português no código; migrar para as mesmas chaves e estender o teste de ASCII a eles
 - [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
@@ -972,11 +972,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   copiou 121 arquivos e reabriu (`version` = 9.9.9, `update` = em dia); diálogo em `ui-render --update-feed`;
   `UpdateFeedTests` com um servidor HTTP local (inclui pacote adulterado recusado). Falta: rodar contra o GitHub de
   verdade depois da primeira release com o repositório embutido, o caminho do setup.exe/AppImage/macOS, e o Android
-- [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
+- [x] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
   projeto); fazer quando não houver branches abertas (namespaces,
   `VitaSharp.sln`, `VitaSharp.Android.sln`, testes, docs)
+  Feito (08/11/2026, refactor/mobile-core): pasta, projeto, namespaces `VitaSharp.Mobile.Core.*`, referências, as duas
+  soluções, `Directory.Build.targets`, testes e docs; só mecânico, sem mudança de comportamento
 - [ ] Refatorar o projeto para o guia de estilo de código do Ryujinx/Ryubing (pedido do usuário, 06/11/2026,
   substitui o guia do Google). Cópia local do guia e do `.editorconfig` dele (277 linhas, ponto de partida do nosso):
   `%USERPROFILE%/Ryubing/docs/coding-guidelines/coding-style.md` e `%USERPROFILE%/Ryubing/.editorconfig`. Regras

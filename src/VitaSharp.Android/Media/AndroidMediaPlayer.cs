@@ -1,6 +1,7 @@
 using Android.Media;
 using VitaSharp.Core.Media;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Media;
 using JByteBuffer = Java.Nio.ByteBuffer;
 
 namespace VitaSharp.Android.Media;
