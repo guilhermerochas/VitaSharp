@@ -1011,24 +1011,38 @@ public sealed partial class ThreadMgr : HleModule
     /// <summary>Runs pending callbacks owned by the thread; returns how many ran.</summary>
     public override void Initialize() => GuestThread.CallbackProcessor = ProcessCallbacks;
 
+    /// <summary>Callback runs held because the thread was already running a callback (see <see cref="GuestThread.CallbackDepth"/>).</summary>
+    public static long NestedCallbacksHeld;
+
     public int ProcessCallbacks(GuestThread t)
     {
+        if (t.CallbackDepth > 0)
+        {
+            // no nesting: they stay pending until the running callback returns
+            if (Interlocked.Increment(ref NestedCallbacksHeld) == 1) Log.Info($"Callbacks of '{t.Name}' notified while one of its callbacks runs: held until it returns (callbacks do not nest)");
+            return 0;
+        }
         int ran = 0;
         Interlocked.Exchange(ref t.PendingCallbacks, 0);
-        foreach (var cb in K.Objects.All<Callback>().Where(c => c.Owner == t).ToList())
+        t.CallbackDepth++;
+        try
         {
-            int count, arg;
-            lock (cb)
+            foreach (var cb in K.Objects.All<Callback>().Where(c => c.Owner == t).ToList())
             {
-                if (cb.NotifyCount == 0) continue;
-                count = cb.NotifyCount;
-                arg = cb.NotifyArg;
-                cb.NotifyCount = 0;
+                int count, arg;
+                lock (cb)
+                {
+                    if (cb.NotifyCount == 0) continue;
+                    count = cb.NotifyCount;
+                    arg = cb.NotifyArg;
+                    cb.NotifyCount = 0;
+                }
+                uint r = t.CallGuest(cb.Function, (uint)cb.Uid, (uint)count, (uint)arg, cb.Arg);
+                ran++;
+                if (r != 0) K.Objects.Remove(cb.Uid);
             }
-            uint r = t.CallGuest(cb.Function, (uint)cb.Uid, (uint)count, (uint)arg, cb.Arg);
-            ran++;
-            if (r != 0) K.Objects.Remove(cb.Uid);
         }
+        finally { t.CallbackDepth--; }
         return ran;
     }
 

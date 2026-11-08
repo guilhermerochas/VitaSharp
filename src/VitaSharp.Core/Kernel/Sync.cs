@@ -56,7 +56,7 @@ public static class Wait
                 }
                 if (ready(state)) { if (waited) Latency(); WriteRemaining(timeout, limitUs, start); return SceError.OK; }
                 if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
-                if (self != null && self.CallbackWait && Volatile.Read(ref self.PendingCallbacks) > 0 && GuestThread.CallbackProcessor != null)
+                if (self != null && self.CanRunCallbacks && Volatile.Read(ref self.PendingCallbacks) > 0 && GuestThread.CallbackProcessor != null)
                 {
                     Monitor.Exit(sync);
                     try { GuestThread.CallbackProcessor(self); }
@@ -129,7 +129,7 @@ public static class Wait
             // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
             // its callback: run only on return, its callback never ran and the game's vsync counter stood still.
-            bool callbacks = self != null && self.CallbackWait && GuestThread.CallbackProcessor != null;
+            bool callbacks = self != null && self.CanRunCallbacks && GuestThread.CallbackProcessor != null;
             while (GuestClock.Ticks < end)
             {
                 if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
