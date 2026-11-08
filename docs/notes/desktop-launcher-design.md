@@ -9,9 +9,13 @@ Skia), a partir dos jogos instalados na pasta de dados:
 VitaSharp ui-prototype <pasta-de-saída> --data=<pasta de dados de teste> [--title=<ID do jogo em destaque>] [--size=1440x900]
 ```
 
-Gera `library_*`, `game_*` e `settings_*` em `dark` e `light`. Títulos, IDs, versões, região, `icon0.png`, `pic0.png`
-e os troféus do pacote do jogo em destaque são lidos de verdade; tempo jogado, progresso dos troféus, estados salvos,
-instalação em andamento e as miniaturas (recortes do `pic0`) são exemplos até a etapa 2.
+Gera 12 telas em `dark` e `light` (`--screens=a,b` escolhe algumas): `library`, `library-list`, `library-home`,
+`game`, `settings`, `settings-general`, `system`, `trophies`, `captures`, `install`, `update` e `empty`. São lidos de
+verdade: títulos, IDs, versões, região, `icon0.png`, `pic0.png`, tamanho das pastas, troféus (pacote do jogo +
+desbloqueios gravados, de uma CÓPIA da pasta de troféus), estado do firmware (`firmware.json`, pd0), as gravações F8
+e os dumps da GPU, e a tela inicial do Vita é o próprio `ShellView` do launcher. São exemplos até a etapa 2: tempo
+jogado, estados salvos (miniaturas são recortes do `pic0`), a fila de instalação e as notas do diálogo de atualização
+(assuntos de commits reais entre duas builds).
 
 ## Identidade
 
@@ -40,6 +44,40 @@ firmware, como hoje), **Troféus**, **Capturas**, **Instalar pkg / vpk** e **Con
 em andamento (arquivo, barra, GB e tempo restante; arrastar um pkg/vpk/zip para a janela também instala), o estado do
 firmware e o seletor de tema (escuro/claro). A página do jogo abre por cima da biblioteca com "‹ Biblioteca" para
 voltar; Esc e o botão Voltar do mouse/controle também voltam.
+
+## Sistema do Vita em um clique
+
+- Botão **Abrir Sistema do Vita** no topo da barra lateral, em destaque (gradiente do acento), visível em todas as
+  telas; o atalho é **Ctrl+H** ("Home"), mostrado no próprio botão e na dica. Nenhuma tecla F: F8, F11 e as outras já
+  são do jogo. Sem firmware o botão fica apagado com "Instale o firmware antes".
+- A página **Sistema do Vita** fica só com os extras: firmware (versão, build, pd0, fontes, verificar), importar do
+  Vita3K e troféus, e as opções do sistema (idioma, botão de confirmar, data, tema, música e sons).
+- **Configurações > Geral > Início**: "Ao abrir o emulador: Biblioteca / Sistema do Vita" (entrar direto no shell, como
+  o "boot BIOS" do PCSX2), "Ao escolher um jogo: Jogar direto / Abrir a LiveArea" e o atalho.
+- **Biblioteca**: passar o mouse numa capa (ou numa linha da lista) mostra **Jogar** e **LiveArea** lado a lado; o
+  clique simples segue o ajuste acima. A vista "Tela inicial" é a tela inicial do Vita já existente no launcher.
+
+## Telas extras (segunda rodada)
+
+- **Biblioteca em lista** (`library-list_*`): ícone, nome e ID, região, versão, troféus com barra, tamanho real; a
+  linha sob o mouse ganha Jogar/LiveArea.
+- **Biblioteca na Tela inicial** (`library-home_*`): o `ShellView` (bolhas e papel de parede do firmware) dentro do
+  quadro da página.
+- **Troféus** (`trophies_*`): total por categoria no topo; à esquerda os jogos (ícone, barra, obtidos/total, busca);
+  à direita o jogo escolhido com o `pic0`, contagem por categoria, filtros (todos, obtidos, faltam) e a lista com
+  ícone, nome, descrição, categoria e data (bloqueados apagados, ocultos sem texto até serem obtidos).
+- **Capturas** (`captures_*`): filtros por tipo (gravações F8 "Gravar tudo", capturas de tela, dumps da GPU) e por
+  jogo; cada linha com miniatura, jogo, tipo, arquivo, data, tamanho, abrir pasta e apagar; "Apagar as de mais de 30
+  dias" e "Abrir pasta" no topo.
+- **Instalar pkg / vpk** (`install_*`): área de soltar (arrastar vale em qualquer tela), escolher arquivos ou pasta
+  descriptografada; fila com o item em andamento (barra, GB, tempo), na fila, concluídos (Jogar / Abrir página) e
+  falhos com o motivo e a ação (Informar licença).
+- **Atualização** (`update_*`, item do roadmap de atualização automática): diálogo no estilo do PCSX2 sobre a
+  biblioteca, com versão em uso → nova (build e data), o que mudou (commits, "ver tudo no GitHub"), a garantia de que
+  dados não são tocados e **Pular esta versão / Lembrar depois / Atualizar agora**. Os ajustes ficam em
+  `settings-general_*`: procurar ao iniciar, canal (builds automáticas ou só versões), versão em uso e "Procurar agora".
+- **Primeira execução** (`empty_*`): três passos (firmware, jogos, controles) e a biblioteca vazia como área de
+  soltar; barra lateral com o botão do Sistema do Vita apagado e "Firmware não instalado".
 
 ## Telas
 

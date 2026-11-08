@@ -24,7 +24,8 @@ sealed record ProtoGame(string TitleId, string Title, string Version, string Pat
     int Seed => Math.Abs(TitleId.GetHashCode(StringComparison.Ordinal)) % 1000;
     public int TrophyTotal { get; set; } = 0;
     public int Total => TrophyTotal > 0 ? TrophyTotal : 20 + Seed % 40;
-    public int TrophyGot => 1 + Seed * 7 % Total * 3 / 4;
+    public int? RealGot { get; set; }
+    public int TrophyGot => RealGot ?? 1 + Seed * 7 % Total * 3 / 4;
 
     public string Initials => string.Concat(Title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
 
@@ -62,37 +63,57 @@ sealed record ProtoGame(string TitleId, string Title, string Version, string Pat
 /// library with large covers, game page, settings by section, light and dark. Static mock-ups built from the real
 /// controls; nothing here is interactive yet.
 /// </summary>
-sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
+sealed partial class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero, ProtoData data)
 {
     ProtoPalette P => k.P;
 
     public const string Library = "library", Game = "game", Settings = "settings";
 
+    public static readonly string[] All =
+    [
+        Library, LibraryList, LibraryHome, Game, Settings, SettingsGeneral, VitaSystem, TrophyList, Captures, Install, Update, Empty,
+    ];
+
     public Control Build(string screen)
     {
         // the hero's real trophy count (its package), sample progress
         if (TrophySet() is { } set) hero.TrophyTotal = set.Trophies.Count;
+        bool empty = screen == Empty;
         var root = new Grid { ColumnDefinitions = new ColumnDefinitions("252,*"), Background = ProtoKit.B(P.Background) };
-        root.Children.Add(Sidebar(screen));
-        var content = screen switch { Game => GamePage(), Settings => SettingsPage(), _ => LibraryPage() };
+        root.Children.Add(Sidebar(screen, empty));
+        var content = screen switch
+        {
+            Game => GamePage(), Settings => SettingsPage(), SettingsGeneral => SettingsGeneralPage(), VitaSystem => SystemPage(),
+            TrophyList => TrophiesPage(), Captures => CapturesPage(), Install => InstallPage(), Empty => EmptyPage(),
+            LibraryList => LibraryPage(LibraryList), LibraryHome => LibraryPage(LibraryHome), _ => LibraryPage(Library),
+        };
         root.Children.Add(ProtoKit.At(new Border { ClipToBounds = true, Child = content }, col: 1));
+        if (screen == Library) root.Children.Add(ProtoKit.At(LaunchTooltip(), colSpan: 2));
+        if (screen == Update) root.Children.Add(ProtoKit.At(UpdateDialog(), colSpan: 2));
         return root;
     }
 
     // ------------------------------------------------------------------ sidebar
 
-    Control Sidebar(string screen)
+    Control Sidebar(string screen, bool empty)
     {
         var s = new DockPanel { Margin = new Thickness(16, 22, 16, 18) };
 
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 11, Margin = new Thickness(8, 0, 0, 26) };
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 11, Margin = new Thickness(8, 0, 0, 20) };
         using (var logo = typeof(PrototypeScreens).Assembly.GetManifestResourceStream("icon-64.png"))
             if (logo != null) brand.Children.Add(new Image { Source = new Bitmap(logo), Width = 34, Height = 34 });
         brand.Children.Add(k.Heading("VitaSharp", 20));
         DockPanel.SetDock(brand, Dock.Top);
         s.Children.Add(brand);
 
+        // one click (or Ctrl+H, from any screen) starts the firmware's shell
+        var launch = LaunchButton(!empty);
+        launch.Margin = new Thickness(0, 0, 0, 18);
+        DockPanel.SetDock(launch, Dock.Top);
+        s.Children.Add(launch);
+
         var bottom = new StackPanel { Spacing = 12 };
+        if (!empty && screen != Install) {
         // pkg/vpk installation in progress (also the drop target for files dragged onto the window)
         var install = new StackPanel { Spacing = 8 };
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
@@ -108,22 +129,23 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
             Background = ProtoKit.B(P.Surface), BorderBrush = ProtoKit.B(P.Border), BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16), Padding = new Thickness(14, 12), Child = install,
         });
+        }
         var fw = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(6, 2, 0, 0) };
-        fw.Children.Add(k.Dot(P.Ok));
-        fw.Children.Add(k.Text("Firmware 3.74 instalado", 12.5, color: P.Muted));
+        fw.Children.Add(k.Dot(empty ? P.Warn : P.Ok));
+        fw.Children.Add(k.Text(empty ? "Firmware não instalado" : $"Firmware {data.FirmwareVersion} instalado", 12.5, color: P.Muted));
         bottom.Children.Add(fw);
         bottom.Children.Add(k.Segmented(("Escuro", "moon", P.Dark), ("Claro", "sun", !P.Dark)));
         DockPanel.SetDock(bottom, Dock.Bottom);
         s.Children.Add(bottom);
 
         var nav = new StackPanel { Spacing = 4 };
-        nav.Children.Add(NavItem("library", "Biblioteca", screen is Library or Game, $"{games.Count}"));
-        nav.Children.Add(NavItem("vita", "Sistema do Vita", false));
-        nav.Children.Add(NavItem("trophy", "Troféus", false));
-        nav.Children.Add(NavItem("image", "Capturas", false));
-        nav.Children.Add(NavItem("download", "Instalar pkg / vpk", false));
+        nav.Children.Add(NavItem("library", "Biblioteca", screen is Library or LibraryList or LibraryHome or Game or Update or Empty, empty ? null : $"{games.Count}"));
+        nav.Children.Add(NavItem("vita", "Sistema do Vita", screen == VitaSystem));
+        nav.Children.Add(NavItem("trophy", "Troféus", screen == TrophyList));
+        nav.Children.Add(NavItem("image", "Capturas", screen == Captures));
+        nav.Children.Add(NavItem("download", "Instalar pkg / vpk", screen == Install, screen == Install || empty ? null : "1"));
         nav.Children.Add(new Border { Height = 1, Background = ProtoKit.B(P.Border), Margin = new Thickness(8, 12) });
-        nav.Children.Add(NavItem("settings", "Configurações", screen == Settings));
+        nav.Children.Add(NavItem("settings", "Configurações", screen is Settings or SettingsGeneral));
         s.Children.Add(nav);
 
         return new Border
@@ -148,7 +170,7 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
 
     // ------------------------------------------------------------------ library
 
-    Control LibraryPage()
+    Control LibraryPage(string view)
     {
         var page = new StackPanel { Margin = new Thickness(36, 28, 36, 0), Spacing = 0 };
 
@@ -189,8 +211,11 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
         chips.Children.Add(k.Chip("Região: todas", false, "globe", dropdown: true));
         chips.Children.Add(k.Chip("Ordenar: A–Z", false, dropdown: true));
         filters.Children.Add(chips);
-        filters.Children.Add(ProtoKit.At(k.Segmented(("", "grid", true), ("", "list", false), ("", "vita", false)), col: 1));
+        filters.Children.Add(ProtoKit.At(k.Segmented(("", "grid", view == Library), ("", "list", view == LibraryList), ("Tela inicial", "vita", view == LibraryHome)), col: 1));
         page.Children.Add(filters);
+
+        if (view == LibraryList) { page.Children.Add(GameList()); return page; }
+        if (view == LibraryHome) { page.Children.Add(HomeView()); return page; }
 
         page.Children.Add(HeroCard());
 
@@ -201,7 +226,7 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
 
         // as many columns as fit (cards at least 240 px wide), the gap is each card's right/bottom margin
         var grid = new UniformGrid { Columns = 4, Margin = new Thickness(0, 0, -18, 0) };
-        foreach (var g in games.Where(g => g != hero).Take(8)) grid.Children.Add(GameCard(g));
+        foreach (var g in games.Where(g => g != hero).Take(8)) grid.Children.Add(GameCard(g, hover: grid.Children.Count == 1));
         page.Children.Add(grid);
         return page;
     }
@@ -256,7 +281,7 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
         return s;
     }
 
-    Control GameCard(ProtoGame g)
+    Control GameCard(ProtoGame g, bool hover = false)
     {
         const double ArtH = 150;
         var art = new Grid { Height = ArtH };
@@ -289,13 +314,22 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
         foot.Children.Add(ProtoKit.At(tro, col: 2));
         text.Children.Add(foot);
 
+        if (hover)
+        {
+            // mouse over a cover: play directly or open its LiveArea first (the click default is a setting)
+            art.Children.Add(new Border { CornerRadius = new CornerRadius(18, 18, 0, 0), Background = ProtoKit.B(Color.Parse("#0B0E13"), 0.55) });
+            var acts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -20, 0, 0) };
+            acts.Children.Add(k.PrimaryButton("Jogar", "play", 40, 0));
+            acts.Children.Add(k.SecondaryButton("LiveArea", "vita", 40));
+            art.Children.Add(acts);
+        }
         var stack = new StackPanel();
         stack.Children.Add(art);
         stack.Children.Add(text);
         return new Border
         {
             Margin = new Thickness(0, 0, 18, 18), CornerRadius = new CornerRadius(18), Background = ProtoKit.B(P.Surface), ClipToBounds = true,
-            BorderBrush = ProtoKit.B(P.Border), BorderThickness = new Thickness(1), Child = stack,
+            BorderBrush = ProtoKit.B(hover ? P.Accent : P.Border), BorderThickness = new Thickness(hover ? 2 : 1), Child = stack,
             BoxShadow = P.Dark ? default : BoxShadows.Parse("0 2 8 0 #14000000"),
         };
     }
@@ -563,7 +597,7 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
 
         body.Children.Add(Group("Sistema do Vita"));
         body.Children.Add(k.Group(
-            k.Row("cpu", "Firmware", "3.74 · PSVUPDAT.PUP verificado · fontes instaladas", k.Badge("Instalado", P.Ok), chevron: true),
+            k.Row("cpu", "Firmware", data.FirmwareDetail, data.FontsInstalled ? k.Badge("Instalado", P.Ok) : k.Badge("Sem fontes", P.Warn), chevron: true),
             k.Row("vita", "Abrir o Sistema do Vita", "shell.self do firmware: tela inicial, LiveArea e apps do sistema", k.SecondaryButton("Abrir", "play", 36)),
             k.Row("globe", "Idioma do sistema", null, k.Dropdown("Português (Brasil)", 200)),
             k.Row("gamepad", "Botão de confirmar", "Usado pelos jogos e pelo sistema", k.Segmented(("✕ Cruz", null, true), ("○ Círculo", null, false)))));
@@ -571,7 +605,7 @@ sealed class PrototypeScreens(ProtoKit k, List<ProtoGame> games, ProtoGame hero)
         body.Children.Add(Group("Aparência"));
         body.Children.Add(k.Group(
             k.Row(P.Dark ? "moon" : "sun", "Tema", "Segue o Windows por padrão", k.Segmented(("Sistema", null, false), ("Escuro", "moon", P.Dark), ("Claro", "sun", !P.Dark))),
-            k.Row("library", "Ao abrir o VitaSharp", null, k.Segmented(("Biblioteca", null, true), ("Sistema do Vita", null, false))),
+            k.Row("library", "Ao abrir o emulador", null, k.Segmented(("Biblioteca", null, true), ("Sistema do Vita", null, false))),
             k.Row("volume", "Música do sistema na tela inicial", null, k.Switch(true))));
 
         body.Children.Add(Group("Gráficos"));
