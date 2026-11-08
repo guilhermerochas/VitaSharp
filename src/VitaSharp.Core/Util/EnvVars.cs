@@ -158,6 +158,9 @@ public static class EnvVars
     public const string NativeValidate = "VITASHARP_NATIVE_VALIDATE";
     public const string NativeVerify = "VITASHARP_NATIVE_VERIFY";
     public const string PeekEnd = "VITASHARP_PEEK_END";
+    /// <summary>=1: the end-of-run report lists every HLE function called, of every process (not only the 40 busiest),
+    /// as "hle-call PROCESS COUNT NAME" lines (proves which HLE paths a run exercised).</summary>
+    public const string HleCalls = "VITASHARP_HLE_CALLS";
     public const string Replay = "VITASHARP_REPLAY";
     /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75 below native; 2, 3, 4 above it; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";

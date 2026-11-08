@@ -416,12 +416,14 @@ public static class Program
     /// <summary>hle-coverage [--out=&lt;tsv&gt;]: how much of the real system the HLE implements. Total = every function the
     /// installed firmware exports to user code (user modules, syscall libraries of the kernel modules), split into the
     /// ones the installed games import, the ones the system programs/modules import (not already counted for games) and
-    /// the rest; --out writes one line per firmware function (nid, name, library, module, group, implemented).</summary>
+    /// the rest; --out writes one line per firmware function (nid, name, library, module, group, implemented, one
+    /// importer).</summary>
     static int HleCoverage(string? outTsv)
     {
         Log.Level = LogLevel.Warn;
         var impl = HleImplementedNids();
         var c = VitaSharp.Core.Firmware.FunctionCensus.Scan(FsRoot);
+        string Importer(uint nid) => c.GameImports.TryGetValue(nid, out var g) ? g : c.SystemImports.GetValueOrDefault(nid, "-");
         string Group(uint nid) => c.GameImports.ContainsKey(nid) ? "games" : c.SystemImports.ContainsKey(nid) ? "system" : "general";
         var rows = c.Exported.Select(e => (Nid: e.Key, e.Value.Library, e.Value.Module, Group: Group(e.Key), Impl: impl.ContainsKey(e.Key))).ToList();
         Console.WriteLine($"{c.FirmwareModules} firmware modules read, {c.Games} games; not read: {string.Join(", ", c.Failed)}");
@@ -438,9 +440,9 @@ public static class Program
         Console.WriteLine($"({extra} imported NIDs are not exported by any installed firmware module; not counted)");
         if (outTsv != null)
             File.WriteAllLines(outTsv, rows.OrderBy(r => r.Library, StringComparer.Ordinal).ThenBy(r => NidDatabase.NameOf(r.Nid), StringComparer.Ordinal)
-                .Select(r => $"0x{r.Nid:X8}	{NidDatabase.NameOf(r.Nid)}	{r.Library}	{r.Module}	{r.Group}	{(r.Impl ? "impl" : "-")}")
+                .Select(r => $"0x{r.Nid:X8}	{NidDatabase.NameOf(r.Nid)}	{r.Library}	{r.Module}	{r.Group}	{(r.Impl ? "impl" : "-")}	{Importer(r.Nid)}")
                 .Concat(c.GameImports.Concat(c.SystemImports).Where(e => !c.Exported.ContainsKey(e.Key)).DistinctBy(e => e.Key)
-                    .Select(e => $"0x{e.Key:X8}	{NidDatabase.NameOf(e.Key)}	{NidDatabase.Lookup(e.Key)?.Library ?? "-"}	{e.Value}	not-exported	{(impl.ContainsKey(e.Key) ? "impl" : "-")}")));
+                    .Select(e => $"0x{e.Key:X8}	{NidDatabase.NameOf(e.Key)}	{NidDatabase.Lookup(e.Key)?.Library ?? "-"}	{e.Value}	not-exported	{(impl.ContainsKey(e.Key) ? "impl" : "-")}	{Importer(e.Key)}")));
         return 0;
     }
 
