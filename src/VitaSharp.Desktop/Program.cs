@@ -409,7 +409,7 @@ public static class Program
                     : NidDatabase.LookupName(name).Where(i => b.Library == null || i.Library == b.Library).Select(i => i.Nid).ToArray();
                 foreach (var nid in nids) byNid[nid] = (NidDatabase.Lookup(nid)?.Name ?? name, m.Type.Name);
             }
-        foreach (var (nid, (name, module)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~").ThenBy(e => e.Value.Name, StringComparer.Ordinal))
+        foreach (var (nid, (name, module)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~", StringComparer.Ordinal).ThenBy(e => e.Value.Name, StringComparer.Ordinal))
             Console.WriteLine($"0x{nid:X8}	{name}	{module}	{NidDatabase.Lookup(nid)?.Library ?? "-"}	{(vitasdk.Contains(nid) ? "vh" : "-")}");
         Console.Error.WriteLine($"{byNid.Count} implemented NIDs ({byNid.Keys.Count(vitasdk.Contains)} in the VitaSDK list)");
         return 0;
