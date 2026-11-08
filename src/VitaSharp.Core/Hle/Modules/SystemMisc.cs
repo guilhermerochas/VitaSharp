@@ -484,7 +484,13 @@ public sealed partial class SystemMisc : HleModule
     /// <summary>Third-party applications that are not games (store "apps"); libpaf asserts that the system software
     /// is neither a game nor a non-game program.</summary>
     [Hle] int sceAppMgrIsNonGameProgram() => 0;
-    [Hle] int sceAppMgrSetInfobarState(int visible, int color, int transparency) => 0;
+    /// <summary>(visibility, colour, transparency): the application's info bar, reported to the shell in its status.</summary>
+    [Hle]
+    int sceAppMgrSetInfobarState(int visible, int color, int transparency)
+    {
+        Emu.Hle.Modules.OfType<AppMgr>().FirstOrDefault()?.SetInfobar(visible, color, transparency);
+        return 0;
+    }
     [Hle] int sceAppMgrSetNetworkDisconnectionWarningDialogState(int state) => 0;
     [Hle] int sceAppMgrReceiveSystemEvent(uint ev) => unchecked((int)0x80801000);
 

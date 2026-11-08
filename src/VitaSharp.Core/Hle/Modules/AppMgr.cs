@@ -23,6 +23,34 @@ public sealed partial class AppMgr : HleModule
     /// <summary>Launch parameter (URI/string from whoever launched the app); only the first read returns it.</summary>
     public string? LaunchParam { get; set; }
 
+    /// <summary>
+    /// The application's info bar (the shell's status bar over it): visibility, colour and transparency bytes, which
+    /// the kernel reports in SceAppMgrAppStatus +0x48/+0x49/+0x4A; the shell reads them every frame for the application
+    /// in front (FW 3.74 shell 0x8127DF5E) and shows its bar from them. -1 until the application sets them: the
+    /// defaults then come from param.sfo ATTRIBUTE, where bit 0x80 shows the bar (every system application with a
+    /// screen has it, no game does), 0x100 makes it white (Friends, Email, Calendar) and 0x20 translucent (the
+    /// in-game Store and Browser).
+    /// </summary>
+    int _infobar = -1;
+
+    internal (byte Visible, byte Color, byte Transparency) Infobar
+    {
+        get
+        {
+            int v = _infobar;
+            if (v < 0)
+            {
+                uint a = Emu.ParamSfo?.GetUInt("ATTRIBUTE") ?? 0;
+                v = ((a & 0x80) != 0 ? 1 : 0) | ((a & 0x100) != 0 ? 0x100 : 0) | ((a & 0x20) != 0 ? 0x10000 : 0);
+            }
+            return ((byte)v, (byte)(v >> 8), (byte)(v >> 16));
+        }
+    }
+
+    /// <summary>sceAppMgrSetInfobarState(visibility, colour, transparency).</summary>
+    internal void SetInfobar(int visible, int color, int transparency)
+        => _infobar = (visible & 0xFF) | (color & 0xFF) << 8 | (transparency & 0xFF) << 16;
+
     int MountAlias(string device, string hostRel, uint mountPoint)
     {
         if (mountPoint == 0) return ERR_NULL_POINTER;
