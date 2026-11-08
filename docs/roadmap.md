@@ -755,6 +755,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   por biblioteca. Referências: firmware 3.74 desmontado (agente B deixou ELFs e scripts) e o Vita3K. Cada lote com teste
   unitário quando der, um jogo/app que chama a função seguindo sem regressão, e o item marcado com a contagem; meta:
   ~3.840 com comportamento real
+  - Lote 3 (feat/hle-batch-3, 07/11/2026): 3.173 -> 3.512 NIDs com implementação (3.017 -> 3.356 das 7.006 do VitaSDK;
+    contagem pelo novo comando `VitaSharp.Desktop hle-implemented --vitasdk=docs/hle/data/vitasdk-user-functions.tsv`,
+    que gera `docs/hle/data/vitasharp-implemented.tsv`; o "~2.840" acima vinha de outra contagem). Feitas: os syscalls
+    `_sceKernel*`/`_sceIo*`/`_sceRtc*`/`_sceDisplay*`/módulos por trás dos wrappers do libkernel/driver_us 3.74 (argumentos
+    empacotados no opt como o wrapper passa), SceRtabi (divisão por zero saturando como o libkernel), SceDmacmgr,
+    sceKernelGetEventInfo/CancelEventWithSetPattern, SceNgsInternal (o libngs.suprx repassa com os mesmos argumentos;
+    IsFixForBugzilla89940 pela versão do SDK), syscalls do SceAvcodec (decodificadores de áudio/vídeo, encoder de áudio,
+    MJPEG) e as formas Internal/Nongameapp do Videodec, ScePspnetAdhoc (ctlInit/Term/GetEtherAddr e sockets PDP sem
+    rede ad hoc, erros do pspnet_adhoc.suprx), sceNpCommerce2GetShortfallOf*Pool, sceCoredumpWriteUserData,
+    sceAppUtilCache*, as funções cujo corpo no firmware 3.74 é um retorno constante (SceHid controle, SceBt OPP/HFP,
+    SceMotionDev formas 2/3, SceBbmc debug, sceSslInternalIsInitalized) e os syscalls que o driver_us só repassa
+    (SceAppMgr, SceError, overlays do SceFios2Kernel02). Validado sem regressão (boot e menu, 75-90 s headless, sem
+    "Unimplemented" nem crash) em PCSA00152, PCSE00491 (ad hoc), PCSA00034 (NpCommerce2) e PCSF00476 (coredump); as
+    telas de multijogador ad hoc e loja não foram exercitadas. Método que rende: os ELFs do firmware 3.74 em
+    `os0:kd`/`os0:us`/`vs0:sys/external` (self2elf) mostram o corpo de cada NID; os wrappers que só repassam
+    (`push; blx; pop`) e os corpos que só devolvem constante viram implementação exata. Falta (os jogos importam):
+    SceNearUtil NID_46604AA3/79A4283C/CCC99AF1/D22CB2DE/8E47CFDC/9044B509/DDEB6C8C (libSceNearUtil.suprx: estado do
+    serviço Near; o NearUtil HLE de hoje devolve códigos genéricos, não os 0x801049xx do firmware), SceMp4 NID_C05DFF01
+    (recebe o ponteiro do objeto do libscemp4, que o HLE troca por número) e SceNpManager NID_FFBFC540 (o tratador
+    0xB0025 não apareceu como constante no shell.self; o despacho do servidor IPMI fica por tabela)
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
