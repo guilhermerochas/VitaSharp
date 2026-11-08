@@ -96,7 +96,7 @@ public sealed partial class IoFileMgr
     {
         if (fd >= 0 && !IsKnownFd(fd)) return SceError.IO_EBADF;
         var o = new IoAsyncOp { Fd = fd, Name = "SceIoAsync" };
-        int uid = Emu != null ? K.Objects.Register(o) : (o.Uid = Interlocked.Add(ref _nextLocalOp, 2));
+        int uid = Emu?.Kernel != null ? K.Objects.Register(o) : (o.Uid = Interlocked.Add(ref _nextLocalOp, 2));
         _ops[uid] = o;
         long r;
         try { r = op(); }
@@ -145,7 +145,7 @@ public sealed partial class IoFileMgr
         {
             if (!op.Done) Wait.Until(op, op, static o => o.Done, default, null, op.WaitDescription);
         }
-        if (Emu != null) K.Objects.Remove(opid);
+        if (Emu?.Kernel != null) K.Objects.Remove(opid);
         return op.Cancelled ? IO_ECANCELED : (int)op.Result;
     }
 
@@ -170,7 +170,7 @@ public sealed partial class IoFileMgr
             if (!_ops.TryGetValue(opid, out var op)) { r = SceError.UNKNOWN_EVENT_ID; break; }
             lock (op) if (!op.Done) { r = EBUSY; break; }
             _ops.TryRemove(opid, out _);
-            if (Emu != null) K.Objects.Remove(opid);
+            if (Emu?.Kernel != null) K.Objects.Remove(opid);
             done++;
         }
         numCompleted.TrySet(done);
