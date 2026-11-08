@@ -1056,6 +1056,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   As trocas/flashes do analisador caem nos relâmpagos do próprio filme (quadros-fonte vizinhos diferem 50-70):
   falso positivo. Filme de 29,97 fps a 1 quadro por vblank de 30 Hz. Falta o usuário apontar o trecho que engasga
   (ou comparar com um vídeo do Vita real)
+
+  08/11/2026 (agente C, fix/bugs-games-20, interrompido pelo usuário antes de começar): o crash do `rerun` dessa
+  gravação depois de carregar o estado (AccessViolation em `T16.LdStSp`) segue aberto, sem investigação nova. Próximo
+  passo: rodar o `rerun` (cópia em `bugsC3_data`) com o log do thread que cai, comparar registradores/pilha do thread
+  com `threads_start.txt` e ver se o código traduzido (cache do JIT) ou um mapeamento de memória não foi refeito na
+  carga. Fila da rodada 20 ainda não iniciada: NFS Most Wanted no diálogo Origin, fps do shell main x f0e692f com o PC
+  livre, filme do LBP com `--video-decoder=hw`, rosto lento do Soccer Tsuku (PCSG00198)
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
