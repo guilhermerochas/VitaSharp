@@ -154,7 +154,7 @@ public sealed unsafe partial class VulkanRenderer
                 Log.Info(head + " - first run, nothing to prewarm");
                 return;
             }
-            _prewarmThread = new Thread(() => Prewarm(head)) { Name = "Shader prewarm", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+            _prewarmThread = new Thread(() => { WarmTranslator(recipes); Prewarm(head); }) { Name = "Shader prewarm", IsBackground = true, Priority = ThreadPriority.BelowNormal };
             _prewarmThread.Start();
         }
     }
@@ -354,6 +354,29 @@ public sealed unsafe partial class VulkanRenderer
         Log.Info($"{head}; prewarmed {_statPrewarmed} pipelines ({_statPrewarmModules} shader modules) in {sw.ElapsedMilliseconds} ms"
             + (failed > 0 ? $", {failed} skipped" : "") + (stale > 0 ? $", {stale} stale" : "") + (_stopPrewarm ? " (stopped early)" : ""));
         if (!_stopPrewarm && _statPrewarmed > 0) ScheduleVkCacheSave();
+    }
+
+    /// <summary>
+    /// Before the prewarm (every shader of the title is in the pack, so nothing will be translated): translates one recorded
+    /// vertex and one fragment program and drops the result, so the translator's code is compiled by the JIT here and
+    /// not when the game first meets a new shader (the first translation of a process took 42-55 ms, the next ones
+    /// 0.3-10 ms; it came on top of glslang's start-up, see <see cref="ShaderCompiler.WarmProcessInBackground"/>).
+    /// </summary>
+    void WarmTranslator(List<ShaderRecipe> recipes)
+    {
+        if (_stopPrewarm || _recipes is not { } store) return;
+        try
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            foreach (bool vertex in (ReadOnlySpan<bool>)[true, false])
+            {
+                if (recipes.FirstOrDefault(r => r.Vertex == vertex) is not { } r || store.ProgramBytes(r.ProgramHash) is not { } bytes) continue;
+                var prog = new GxpProgram(bytes, 0);
+                if (prog.IsVertex == vertex) ShaderGenerator.Generate(prog, r.Hints);
+            }
+            Log.Info($"[shadercache] shader translator warmed up in {Ms(Stopwatch.GetTimestamp() - t0):F0} ms (background)");
+        }
+        catch (Exception e) { Log.WarnOnce("translator-warm", $"[shadercache] translator warm-up failed: {e.Message}"); }
     }
 
     // version 3 record: vs program u64, vs hints u64, fs program u64, fs hints u64, colour format i32, has colour, blend,

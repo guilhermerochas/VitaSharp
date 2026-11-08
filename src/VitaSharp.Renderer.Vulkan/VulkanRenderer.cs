@@ -189,6 +189,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // VITASHARP_DEBUG_NAN=draws: the instrumented SPIR-V stays out of the on-disk cache
         _compiler = new ShaderCompiler(Core.Gxm.Shader.ShaderGenerator.NanDraws ? null : options.ShaderCacheDir, ShaderCompiler.ResolveOptLevel(options.ShaderOptimization));
         ConfigureAsyncShaders(options);
+        ShaderCompiler.WarmProcessInBackground(); // glslang's one-time initialisation off the first new shader's frame
         InitTrace();
         // programmable blending in multisampled scenes reads per sample only where sample-rate shading exists
         Core.Gxm.Shader.ShaderGenerator.PerSampleFramebufferFetch = _core.SampleRateShading;

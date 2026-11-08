@@ -43,6 +43,53 @@ public sealed unsafe class ShaderCompiler : IDisposable
         if (cacheDir != null) Directory.CreateDirectory(cacheDir);
     }
 
+    /// <summary>
+    /// Pays glslang's one-time process initialisation (its built-in symbol tables: ~100 ms on a desktop CPU, measured
+    /// 97-107 ms for the first shader of a process against 1-5 ms for the next ones) on a background thread at
+    /// renderer start, so the first shader the game needs does not. Without it the first new shader of every session,
+    /// even one with warm caches, stalled the frame that drew it by that much (FIFA 13: 2 new shaders, 211 ms).
+    /// Uses a compiler of its own (the initialisation is process-wide; glslang guards it). Once per process.
+    /// </summary>
+    public static void WarmProcessInBackground()
+    {
+        if (Environment.GetEnvironmentVariable(EnvVars.ShadercWarm) is "0" or "off") return;
+        if (Interlocked.Exchange(ref _warmStarted, 1) != 0) return;
+        new Thread(() =>
+        {
+            try
+            {
+                var sc = Shaderc.GetApi();
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                // never released: glslang counts its users and frees the tables when the last compiler goes away (a
+                // released warm-up compiler made the next shader pay the whole initialisation again)
+                var compiler = sc.CompilerInitialize();
+                WarmCompiler = (nint)compiler;
+                WarmCompile(sc, compiler, "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n", ShaderKind.VertexShader);
+                WarmCompile(sc, compiler, "#version 450\nlayout(location = 0) out vec4 c;\nvoid main() { c = vec4(0.0); }\n", ShaderKind.FragmentShader);
+                Log.Info($"[gpu] shaderc warmed up in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms (background)");
+            }
+            catch (Exception e) { Log.WarnOnce("shaderc-warm", $"[gpu] shaderc warm-up failed: {e.Message}"); }
+        }) { IsBackground = true, Name = "shaderc warm-up", Priority = ThreadPriority.BelowNormal }.Start();
+    }
+
+    static int _warmStarted;
+    /// <summary>The warm-up's compiler, kept for the process so glslang stays initialised.</summary>
+    internal static nint WarmCompiler { get; private set; }
+
+    static void WarmCompile(Shaderc sc, Compiler* compiler, string glsl, ShaderKind kind)
+    {
+        byte[] src = Encoding.UTF8.GetBytes(glsl);
+        byte[] name = Encoding.ASCII.GetBytes((kind == ShaderKind.VertexShader ? "warm.vert" : "warm.frag") + "\0");
+        byte[] entry = "main\0"u8.ToArray();
+        var opts = sc.CompileOptionsInitialize();
+        sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
+        CompilationResult* res;
+        fixed (byte* s = src) fixed (byte* n = name) fixed (byte* e = entry)
+            res = sc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
+        sc.CompileOptionsRelease(opts);
+        sc.ResultRelease(res);
+    }
+
     public byte[]? Compile(string glsl, bool vertex, out string? error) =>
         Compile(glsl, vertex ? ShaderKind.VertexShader : ShaderKind.FragmentShader, out error);
 
