@@ -5,6 +5,11 @@ namespace VitaSharp.Core.Util;
 /// Some games' streaming code has only ever run against real device latency (data arriving within the same frame
 /// it was requested changes their order of events), so reads queue on one device timeline: each costs a fixed
 /// access latency plus size / throughput, in guest time.
+/// A read that misses also brings in the rest of a read-ahead window of the file (<see cref="ReadAheadBytes"/>, like
+/// a block device's read-ahead and the file system's cluster cache): later reads inside that window cost no device
+/// time. Without it every small sequential read paid the full access latency: Sonic Mania's loader reads its 200 MB
+/// Data.rsdk in thousands of small pieces (18,600 reads in the `mania_boot` run), 0.5 ms each, and stood still for
+/// seconds on each stage load. Vita3K has no storage timing at all (every read instant).
 /// </summary>
 public static class IoTiming
 {
@@ -12,17 +17,34 @@ public static class IoTiming
     public static double BytesPerSecond { get; set; } = 25e6;
     /// <summary>Per-request access latency in seconds.</summary>
     public static double LatencySeconds { get; set; } = 0.0005;
+    /// <summary>Bytes of a file a missing read leaves cached after its own range; 0 = no read-ahead.</summary>
+    public static long ReadAheadBytes { get; set; } = 64 * 1024;
 
     static long _deviceFreeAt; // guest clock ticks
     static readonly object Lock = new();
 
+    /// <summary>The file range the last device read of a file brought in (guarded by <see cref="Lock"/>).</summary>
+    sealed class Window { public long Start = -1, End = -1; }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Window> Windows = new();
+
     /// <summary>Blocks the calling thread until a read of <paramref name="bytes"/> issued now would have completed.</summary>
-    public static void Read(long bytes)
+    public static void Read(long bytes) => Read(null, 0, bytes);
+
+    /// <summary>Same as <see cref="Read(long)"/> for a read of <paramref name="file"/> at <paramref name="offset"/>: free
+    /// when the range is inside the read-ahead window of the file's last device read.</summary>
+    public static void Read(object? file, long offset, long bytes)
     {
         if (BytesPerSecond <= 0 || bytes <= 0) return;
         long done;
         lock (Lock)
         {
+            if (file != null && ReadAheadBytes > 0)
+            {
+                var w = Windows.GetOrCreateValue(file);
+                if (offset >= w.Start && offset + bytes <= w.End) return;
+                w.Start = offset;
+                w.End = offset + Math.Max(bytes, ReadAheadBytes);
+            }
             long now = GuestClock.Ticks;
             long start = Math.Max(now, _deviceFreeAt);
             done = start + GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);

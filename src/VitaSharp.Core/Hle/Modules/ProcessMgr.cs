@@ -354,5 +354,6 @@ public sealed partial class ProcessMgr : HleModule
         uint _p;
         public StackVaContext(uint p) => _p = p;
         public uint Next() { uint v = GuestMemory.R32(_p); _p += 4; return v; }
+        public uint? Address => _p;
     }
 }

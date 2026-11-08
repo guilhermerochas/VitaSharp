@@ -253,6 +253,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   mais travadas), revertido (patch na pasta de trabalho local `perf14_tools/mutex_handoff_wip.patch`). Próximo passo: contar as
   esperas com disputa por mutex/thread (nome, quem segura) na travada, e ver se o custo é o `Latency()` de 30 us
   por espera acordada ou o giro do `Monitor`
+  Medido (perf/desktop-15, 08/11/2026): **não é o lwmutex**. Contando as esperas com disputa num `mania_boot` inteiro
+  (contador temporário no `Mutex.Lock`): 2 locks com disputa em 585 mil; o perfil antigo (dotnet-trace) atribuía o
+  tempo à função errada. O perfil do próprio emulador (`--profile-hle --profile-from=1050`) na travada do quadro 1131
+  (6,2 s): 3,1 s de E/S de arquivo (a `main` em `sceIoRead`), o resto trabalho da própria `main` (ritmo da CPU a
+  333 MHz 1,5 s, ~4.700 `sceClibMemcpy` e ~4.600 `sceKernelGetTLSAddr` por quadro) e a `pthread` esperando a `main`
+  num semáforo. **Corrigido em parte** (perf/desktop-15, `IoTiming` com janela de leitura antecipada de 64 KB por
+  arquivo): o modelo de tempo do cartão cobrava 0,5 ms de acesso em cada leitura, e o carregador lê o Data.rsdk de
+  200 MB em milhares de pedaços pequenos (18.600 `sceIoRead`); agora a leitura que erra traz a janela e as seguintes
+  dentro dela não custam tempo de dispositivo (leituras grandes e aleatórias cobradas como antes; o Vita3K não tem
+  tempo de E/S nenhum). Travada do 1131: 6,2 s -> 4,2 s (E/S 3,1 s -> 0,1 s); `mania_boot` 69,0 s (3 rodadas) ->
+  66,5-66,9 s (3 rodadas), igual a `--io-speed=0`; gameplay em Green Hill normal. A entrega direta do mutex (fila
+  FIFO/prioridade como Vita3K/PPSSPP) com 20 us de giro antes de dormir não mudou nada (69,0 x 68,8 s), não entrou
+  (patch guardado fora do repositório). Falta (próximo passo): o custo de host das
+  chamadas HLE triviais (`sceClibMemcpy`/`sceKernelGetTLSAddr` como intrínsecos no JIT em vez de sair do código
+  nativo, como os "HLE inline" do Ryujinx/dynarmic) e os 1,5 s de ritmo da CPU emulada, que um Vita também gastaria
 
 ## Android
 
@@ -1159,6 +1174,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   perf/desktop-13: 3 de 15). O jogo cria a thread 'Autoload' (quadro ~61) e nunca chega à 'FMOD nonblocking
   thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
   `--diag-at` (threads e esperas) numa execução travada e comparar com uma boa
+  perf/desktop-15 (08/11/2026): **não reproduz como trava**. Com o critério antigo ("a thread 'FMOD nonblocking' não
+  nasceu até o quadro 320") 1 de 12 boots frios "travou", mas com a CPU do PC a 96% (outros agentes): o carregamento só
+  estava lento (329 quadros em 64 s; no fim a fila de callbacks da FIOS vazia, as threads da FIOS ociosas e a `main`
+  rodando código do jogo). Com um critério de tempo (até 900 quadros/200 s, cenário com `--frames=900`): 23 boots
+  frios sem nenhuma trava (13 no main, carregamento pronto entre os quadros 149 e 302; 10 com as correções desta
+  rodada, quadros 137-144). O predicado de 0x820B9672 é o laço da SceFiosCallback (0x820B95EE): espera no cond
+  0x820D3700 quando a fila de callbacks (anel em +0x6C do agendador 0x820D36D0, contagem em +0x1070) está vazia ou o
+  contador global 0x820D48D4 > 0; com o índice de varredura igual à contagem faz uma espera de 50 ms e varre de novo.
+  O monitor exclusivo foi conferido (interpretador e JIT x64: geração por grânulo de 8 bytes, STREX falha se outro
+  núcleo gravou com STREX desde o LDREX, valor comparado contra gravações comuns; ABA só com gravações comuns, que não
+  perde atualização de contador) e não tem defeito; os contadores da FIOS (espera de operação em op+0x70, fim em
+  op+0x6C) usam LDREX/STREX com o mutex 0x820D3680 do jeito certo. Achado no caminho e corrigido: o printf a partir de
+  `va_list` (sceClibVprintf e afins) lia todo `%lld`/`%llx`/double uma palavra fora quando a lista começava em 4 mod 8
+  (o rastro da própria FIOS saía com "(null)" em tudo). Para diagnosticar: `--poke=820D2514:15@1` liga o rastro da
+  FIOS2 (api/op/io; 2 = sched e 8 = chunk são muito verbosos). Se voltar a travar com a CPU livre, olhar a última
+  operação "Accept" sem "COMPLETE" nesse rastro
 - [x] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   perf/desktop-14: 0 de 30 boots com o cache de shaders quente (10 a 1x, 10 a 1x em paralelo, 10 a 2x com dumps de
   quadro); 3 de 15 com cache frio (`--shader-cache` e cache do driver novos). Nas travadas a main fica num

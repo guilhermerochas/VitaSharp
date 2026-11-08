@@ -65,6 +65,9 @@ public sealed unsafe class HleContext
 public interface IVaSource
 {
     uint Next();
+    /// <summary>Guest address of the next word for a va_list in memory (null otherwise): doubleword arguments sit at
+    /// the next 8-byte aligned address (AAPCS, GCC's va_arg), wherever the list started.</summary>
+    uint? Address => null;
 }
 
 /// <summary>Variadic argument reader (for printf-style functions): register/stack slots or a va_list.</summary>
@@ -88,7 +91,9 @@ public sealed class VarArgs
     {
         if (_src != null)
         {
-            if ((_words & 1) != 0) NextU32();
+            // a va_list made by va_start usually starts at the saved r1 (4 mod 8): the parity of the words read so far
+            // put every %lld / double after an odd number of words (FIOS2's own trace) one word off
+            if (_src.Address is uint a ? (a & 7) != 0 : (_words & 1) != 0) NextU32();
         }
         else if ((_slot & 1) != 0) { _slot++; _words++; }
         uint lo = NextU32(), hi = NextU32();
