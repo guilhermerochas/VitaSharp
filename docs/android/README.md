@@ -12,7 +12,7 @@ On-screen text is in Portuguese, like the desktop launcher.
 
 Needs the .NET MAUI Android workload (`dotnet workload install maui-android`), the Android SDK (platform 36,
 build-tools) and a JDK 17. The desktop build does not: the app is outside `VitaSharp.sln`, which only gained the
-platform-neutral `VitaSharp.Android.Common` (plain `net10.0`).
+platform-neutral `VitaSharp.Mobile.Core` (plain `net10.0`).
 
 ```
 dotnet build src/VitaSharp.Android -c Release -m:2
@@ -47,7 +47,7 @@ bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes
 
 | Project | Target | In `VitaSharp.sln` | What |
 |---|---|---|---|
-| `src/VitaSharp.Android.Common` | `net10.0` | yes | models behind the screens, on-screen pad, gamepad mapping, logcat formatting (unit-tested: `AndroidAppTests`) |
+| `src/VitaSharp.Mobile.Core` | `net10.0` | yes | models behind the screens, on-screen pad, gamepad mapping, logcat formatting (unit-tested: `AndroidAppTests`) |
 | `src/VitaSharp.Android` | `net10.0-android` (minSdk 26) | no (`VitaSharp.Android.sln`) | the MAUI app, game activity, Android backends |
 
 ## Code
@@ -62,9 +62,9 @@ bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes
 - `Audio/AndroidAudioBackend.cs` (AAudio, AudioTrack), `Media/MediaCodecVideoDecoder.cs`,
   `Media/AndroidMediaPlayer.cs`, `Gpu/AdrenoToolsDriverLoader.cs`: the audio, video and GPU driver backends
   ([below](#audio-video-and-gpu-drivers); compiled into the app, not run yet). Their platform-neutral halves are in
-  `VitaSharp.Android.Common` (`Audio/BufferedPcmStream.cs`, `Media/MediaCodecSupport.cs`,
+  `VitaSharp.Mobile.Core` (`Audio/BufferedPcmStream.cs`, `Media/MediaCodecSupport.cs`,
   `Storage/GameProcessMarker.cs`; unit-tested: `AndroidMediaDriverTests`).
-- `src/VitaSharp.Android.Common`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
+- `src/VitaSharp.Mobile.Core`: `Library/` (game scan, trophy progress and list), `Settings/` (global and per-game
   settings, CPU/clock/GPU choices, PSN/network, `RuntimeReport`, `EnvironmentFile`), `Firmware/FirmwareSetup.cs`,
   `Gpu/GpuDriverScreen.cs` (Driver/Informações da GPU models), `Input/` (`OnScreenPad`, `AndroidGamepads`,
   `AndroidKeyboard`, `AndroidInput`), `Logging/` (`LogcatFormat`, `SessionLog`), `Performance/` (`CpuTopology`, `ThreadPlacementPlanner`,
@@ -96,7 +96,7 @@ bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes
 ## CPU cores and ADPF
 
 The game process places its hot threads itself (`Platforms/Android/Game/GamePerformance.cs`; the decisions are in
-`VitaSharp.Android.Common/Performance`, unit-tested: `AndroidPerformanceTests`). Measured on the Redmi Note 14 ([Phone run 2](#phone-run-2-performance-31102026)): the main guest thread and the GPU worker run on cores 6-7, the rest on 0-5.
+`VitaSharp.Mobile.Core/Performance`, unit-tested: `AndroidPerformanceTests`). Measured on the Redmi Note 14 ([Phone run 2](#phone-run-2-performance-31102026)): the main guest thread and the GPU worker run on cores 6-7, the rest on 0-5.
 
 - **Clusters** (`CpuTopology`): read at start from `/sys/devices/system/cpu/cpuN/cpu_capacity` and
   `cpufreq/cpuinfo_max_freq`, cores grouped by (capacity, maximum frequency) and ordered slowest to fastest; capacity
@@ -349,7 +349,7 @@ phones.
   performance mode, exclusive/MMAP sharing when granted, usage GAME, 16-bit) and the Java **AudioTrack** in
   low-latency mode on 8.0 (Oboe's rule: 8.0's AAudio is buggy) or when AAudio does not open. The stream runs at the
   rate the device reports (`AudioManager` `PROPERTY_OUTPUT_SAMPLE_RATE`), so AAudio adds no resampler of its own;
-  the guest's 48 kHz is converted (linear) only when the device differs. `BufferedPcmStream` (Android.Common) holds
+  the guest's 48 kHz is converted (linear) only when the device differs. `BufferedPcmStream` (Mobile.Core) holds
   the policy of the desktop OpenAL backend: up to `max(4, 2 × period grains + 2)` grains queued (the device buffer is
   sized to that), playback starting after one period plus a grain (primed before `requestStart`), Submit blocking
   while full (the guest's pacing). A dry spell (the device's xrun counter moved) counts once in `IAudioStream.Underruns`,

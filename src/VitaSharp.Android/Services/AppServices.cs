@@ -1,11 +1,11 @@
 using Android.Content;
-using VitaSharp.Android.Input;
-using VitaSharp.Android.Library;
-using VitaSharp.Android.Logging;
-using VitaSharp.Android.Settings;
-using VitaSharp.Android.Storage;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Input;
+using VitaSharp.Mobile.Core.Library;
+using VitaSharp.Mobile.Core.Logging;
+using VitaSharp.Mobile.Core.Settings;
+using VitaSharp.Mobile.Core.Storage;
 using Microsoft.Maui.Storage;
 
 namespace VitaSharp.Android.Services;

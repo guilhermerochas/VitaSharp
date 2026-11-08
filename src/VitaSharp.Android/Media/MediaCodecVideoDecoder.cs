@@ -1,6 +1,7 @@
 using Android.Media;
 using VitaSharp.Core.Media;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Media;
 
 namespace VitaSharp.Android.Media;
 

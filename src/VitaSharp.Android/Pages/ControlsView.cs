@@ -1,9 +1,9 @@
 using Android.Views;
 using MauiReactor;
-using VitaSharp.Android.Input;
 using VitaSharp.Android.Services;
 using VitaSharp.Android.Ui;
 using VitaSharp.Core.Input;
+using VitaSharp.Mobile.Core.Input;
 
 namespace VitaSharp.Android.Pages;
 
@@ -132,7 +132,7 @@ public sealed class ControlsView : Screen<ControlsState>
 
     async void Deadzone(ControllerProfile p)
     {
-        var choices = new[] { 0, 5, 10, 15, 20, 25 }.Select(v => new Settings.Choice(v.ToString(), $"{v}%")).ToList();
+        var choices = new[] { 0, 5, 10, 15, 20, 25 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
         var v = await Choose("Zona morta", choices);
         if (v == null) return;
         float dz = int.Parse(v) / 100f;
@@ -151,7 +151,7 @@ public sealed class ControlsView : Screen<ControlsState>
     async void ChooseMotion()
     {
         bool phone = PhoneHasMotionSensors();
-        var choices = new List<Settings.Choice>
+        var choices = new List<Mobile.Core.Settings.Choice>
         {
             new(AndroidMotionModes.Phone, AndroidMotionModes.Label(AndroidMotionMode.Phone) + (phone ? "" : " (este aparelho não tem)")),
             new(AndroidMotionModes.Controller, AndroidMotionModes.Label(AndroidMotionMode.Controller) + " (Android 12+)"),
@@ -166,7 +166,7 @@ public sealed class ControlsView : Screen<ControlsState>
 
     async void Opacity()
     {
-        var choices = new[] { 20, 35, 55, 75, 100 }.Select(v => new Settings.Choice(v.ToString(), $"{v}%")).ToList();
+        var choices = new[] { 20, 35, 55, 75, 100 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
         var v = await Choose("Opacidade dos controles", choices);
         if (v == null) return;
         AppServices.Prefs.OnScreenOpacity = int.Parse(v) / 100f;

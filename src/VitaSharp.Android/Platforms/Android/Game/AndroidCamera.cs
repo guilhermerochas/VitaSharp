@@ -7,9 +7,9 @@ using Android.Media;
 using Android.OS;
 using Android.Runtime;
 using Android.Views;
-using VitaSharp.Android.Media;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Media;
 using OperationCanceledException = System.OperationCanceledException;
 
 namespace VitaSharp.Android.Game;

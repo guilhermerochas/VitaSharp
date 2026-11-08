@@ -1,10 +1,10 @@
-using VitaSharp.Android.Logging;
-using VitaSharp.Android.Performance;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Logging;
+using VitaSharp.Mobile.Core.Performance;
 
 namespace VitaSharp.Tests;
 
-/// <summary>The Android app's speed layer (src/VitaSharp.Android.Common/Performance): CPU clusters from sysfs, the
+/// <summary>The Android app's speed layer (src/VitaSharp.Mobile.Core/Performance): CPU clusters from sysfs, the
 /// thread placement, the game's frame rate and the per-frame work for ADPF, the logcat level during gameplay.</summary>
 public sealed class AndroidPerformanceTests : IDisposable
 {
