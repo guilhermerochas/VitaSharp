@@ -58,11 +58,21 @@ public sealed partial class Videodec : HleModule
     DecodedPicture? _carryOver;
     uint _nextHandle = 1;
 
+    [Hle("sceVideodecInitLibraryInternal")]
+    [Hle("sceVideodecInitLibraryNongameapp")]
+    [Hle("_sceVideodecInitLibrary")]
     [Hle] int sceVideodecInitLibrary(uint codecType, uint initInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
+    [Hle("sceVideodecInitLibraryWithUnmapMemInternal")]
+    [Hle("sceVideodecInitLibraryWithUnmapMemNongameapp")]
+    [Hle("_sceVideodecInitLibraryWithUnmapMem")]
     [Hle] int sceVideodecInitLibraryWithUnmapMem(uint codecType, uint initInfo, uint memInfo) => codecType == TYPE_HW_AVCDEC ? 0 : ERR_INVALID_PARAM;
+    [Hle("_sceVideodecTermLibrary")]
     [Hle] int sceVideodecTermLibrary(uint codecType) => 0;
 
     /// <summary>Memory the codec library needs for its own state; the decoding happens host-side.</summary>
+    [Hle("sceVideodecQueryMemSizeInternal")]
+    [Hle("sceVideodecQueryMemSizeNongameapp")]
+    [Hle("_sceVideodecQueryMemSize")]
     [Hle]
     int sceVideodecQueryMemSize(uint codecType, uint initInfo, uint memInfo)
     {
@@ -78,6 +88,9 @@ public sealed partial class Videodec : HleModule
         return w <= 1920 && h <= 1088 && w * h <= 1920 * 1088 && refs <= 16;
     }
 
+    [Hle("sceAvcdecQueryDecoderMemSizeInternal")]
+    [Hle("sceAvcdecQueryDecoderMemSizeNongameapp")]
+    [Hle("_sceAvcdecQueryDecoderMemSize")]
     [Hle]
     int sceAvcdecQueryDecoderMemSize(uint codecType, uint query, uint info)
     {
@@ -89,6 +102,9 @@ public sealed partial class Videodec : HleModule
         return 0;
     }
 
+    [Hle("sceAvcdecCreateDecoderInternal")]
+    [Hle("sceAvcdecCreateDecoderNongameapp")]
+    [Hle("_sceAvcdecCreateDecoder")]
     [Hle]
     int sceAvcdecCreateDecoder(uint codecType, uint ctrl, uint query)
     {
@@ -116,6 +132,7 @@ public sealed partial class Videodec : HleModule
         return null;
     }
 
+    [Hle("_sceAvcdecDecode")]
     [Hle]
     int sceAvcdecDecode(uint ctrl, uint au, uint array)
     {
@@ -206,6 +223,7 @@ public sealed partial class Videodec : HleModule
         return 0;
     }
 
+    [Hle("_sceAvcdecDecodeStop")]
     [Hle]
     int sceAvcdecDecodeStop(uint ctrl, uint array)
     {
@@ -217,6 +235,7 @@ public sealed partial class Videodec : HleModule
         return array == 0 ? 0 : Output(d, array);
     }
 
+    [Hle("_sceAvcdecDecodeFlush")]
     [Hle]
     int sceAvcdecDecodeFlush(uint ctrl)
     {
@@ -230,6 +249,7 @@ public sealed partial class Videodec : HleModule
         return 0;
     }
 
+    [Hle("_sceAvcdecDecodeAvailableSize")]
     [Hle]
     int sceAvcdecDecodeAvailableSize(uint ctrl)
     {
@@ -237,6 +257,7 @@ public sealed partial class Videodec : HleModule
         return d == null ? err : (int)(d.MaxWidth * d.MaxHeight * 3 / 2);
     }
 
+    [Hle("_sceAvcdecDeleteDecoder")]
     [Hle]
     int sceAvcdecDeleteDecoder(uint ctrl)
     {

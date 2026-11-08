@@ -46,6 +46,7 @@ public sealed partial class Audioenc : HleModule
     uint _nextHandle = 1;
 
     /// <summary>SceAudioencInitParam (8): celp = { size (=8), totalStreams }.</summary>
+    [Hle("_sceAudioencInitLibrary")]
     [Hle]
     int sceAudioencInitLibrary(uint codecType, uint initParam)
     {
@@ -61,6 +62,7 @@ public sealed partial class Audioenc : HleModule
         return 0;
     }
 
+    [Hle("_sceAudioencTermLibrary")]
     [Hle]
     int sceAudioencTermLibrary(uint codecType)
     {
@@ -74,10 +76,13 @@ public sealed partial class Audioenc : HleModule
         return 0;
     }
 
+    [Hle("_sceAudioencCreateEncoder")]
     [Hle] int sceAudioencCreateEncoder(uint ctrl, uint codecType) => Create(ctrl, codecType, library: true, resident: false, context: 0);
+    [Hle("_sceAudioencCreateEncoderResident")]
     [Hle] int sceAudioencCreateEncoderResident(uint ctrl, uint codecType) => Create(ctrl, codecType, library: false, resident: true, context: 0); // system-reserved memory: InitLibrary not required (to confirm)
 
     /// <summary>Inferred from sceAudiodecCreateDecoderExternal: the app supplies the context memory, no InitLibrary.</summary>
+    [Hle("_sceAudioencCreateEncoderExternal")]
     [Hle]
     int sceAudioencCreateEncoderExternal(uint ctrl, uint codecType, uint vaContext, uint contextSize)
     {
@@ -87,6 +92,7 @@ public sealed partial class Audioenc : HleModule
     }
 
     /// <summary>Bytes of context an External encoder needs (value to confirm; same as sceAudiodecGetContextSize).</summary>
+    [Hle("_sceAudioencGetContextSize")]
     [Hle]
     int sceAudioencGetContextSize(uint ctrl, uint codecType)
     {
@@ -150,12 +156,17 @@ public sealed partial class Audioenc : HleModule
         return 0;
     }
 
+    [Hle("_sceAudioencDeleteEncoder")]
     [Hle] int sceAudioencDeleteEncoder(uint ctrl) => Delete(ctrl, 0);
+    [Hle("_sceAudioencDeleteEncoderResident")]
     [Hle] int sceAudioencDeleteEncoderResident(uint ctrl) => Delete(ctrl, 0);
     /// <summary>Writes the context address given at creation to *pvaContext so the app can free it.</summary>
+    [Hle("_sceAudioencDeleteEncoderExternal")]
     [Hle] int sceAudioencDeleteEncoderExternal(uint ctrl, uint pvaContext) => Delete(ctrl, pvaContext);
 
+    [Hle("_sceAudioencEncode")]
     [Hle] int sceAudioencEncode(uint ctrl) => EncodeFrames(ctrl, 1);
+    [Hle("_sceAudioencEncodeNFrames")]
     [Hle] int sceAudioencEncodeNFrames(uint ctrl, uint frames) => EncodeFrames(ctrl, Math.Max(frames, 1));
 
     int EncodeFrames(uint ctrl, uint frames)
@@ -171,11 +182,13 @@ public sealed partial class Audioenc : HleModule
         return 0;
     }
 
+    [Hle("_sceAudioencClearContext")]
     [Hle]
     int sceAudioencClearContext(uint ctrl) => Find(ctrl, out int err, out _) == null ? err : 0;
 
     /// <summary>SceAudioencOptInfoCelp (0x2C): size, header[32], headerSize, encoderVersion. The real CELP header and
     /// encoder version are unknown: header zeroed, headerSize 0, version 0.</summary>
+    [Hle("_sceAudioencGetOptInfo")]
     [Hle]
     int sceAudioencGetOptInfo(uint ctrl)
     {
@@ -188,6 +201,7 @@ public sealed partial class Audioenc : HleModule
         return 0;
     }
 
+    [Hle("_sceAudioencGetInternalError")]
     [Hle]
     int sceAudioencGetInternalError(uint ctrl, uint pInternalError)
     {

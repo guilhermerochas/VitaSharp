@@ -48,6 +48,7 @@ public sealed partial class Jpeg : HleModule
     // ------------------------------------------------------------------ library state
 
     /// <summary>Vita3K accepts a second init (no INIT_DONE check) and so do we: decoding is stateless here.</summary>
+    [Hle("_sceJpegInitMJpeg")]
     [Hle]
     int sceJpegInitMJpeg(int decoderCount)
     {
@@ -63,6 +64,7 @@ public sealed partial class Jpeg : HleModule
         return sceJpegInitMJpeg((int)GuestMemory.R32(param + 4));
     }
 
+    [Hle("_sceJpegFinishMJpeg")]
     [Hle]
     int sceJpegFinishMJpeg()
     {
