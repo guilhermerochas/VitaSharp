@@ -444,10 +444,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
+- [x] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
   música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
   `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
   para ela tocar; validar com gravação do áudio (F8) na tela inicial e comparar com um vídeo do Vita real
+  Causa (07/11/2026, fix/system-apps-9): o shell toca `pd0:data/systembgm/home.at9` (registro /CONFIG/SHELL/bgm,
+  player SceShellMusicCore na porta BGM), mas o pd0 é dado de fábrica que nenhuma atualização traz e a instalação do
+  usuário (do PSVUPDAT.PUP) tem o pd0 vazio. Com o pd0 do Vita3K numa cópia dos dados a tela inicial toca: porta BGM
+  48 kHz, 33 s em 33 s, 0 underruns; o espectrograma bate com o home.at9 decodificado pelo ffmpeg (correlação 0,98;
+  trecho sem relação 0,80), mesmo nível (`scratchpad/fw9_out/bgm2_audio/03_port2_BGM_48000.wav`). Agora: a instalação
+  do PUP copia o pd0 do Vita3K quando ele existe, `install-firmware --pd0[=<pasta>]` copia só o pd0 e o shell avisa no
+  log quando falta. O usuário precisa rodar `install-firmware --pd0` uma vez (ou reinstalar o PUP). O dump de áudio
+  abre um WAV novo quando a porta muda de taxa (o BGM abre a 44,1 kHz e passa a 48 kHz: o WAV dizia 44,1).
 - [ ] Licença em zRIF na instalação de `.pkg`: hoje `PkgInstaller` só aceita o arquivo `.rif`/`work.bin` (lê a
   klicensee em 0x50). Aceitar também a licença no formato zRIF (o texto base64 com o `.rif` comprimido em zlib, com
   o dicionário fixo, que o NoNpDrm exporta das licenças do próprio Vita do usuário): decodificar, descomprimir, validar
@@ -581,6 +589,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   roteiro, não o emulador: ele termina (`quit`) na nota dos pais sem tocar em OK, então `/CONFIG/SYSTEM/initialize`
   nunca é gravado e o próximo boot daquela pasta recomeça a configuração; com o OK a configuração termina e o shell vai
   à tela inicial (`setup1/sheet.png`, registro com initialize=1).
+  Círculo no teclado (07/11/2026, fix/system-apps-9, só estático, não resolvido): o libpaf lê o botão de confirmar com
+  sceRegMgrUtilityGetInt(0x229142 = /CONFIG/SYSTEM/button_assign) e guarda em settings[+0x7c] (1 = X confirma, o
+  padrão do HLE), então o círculo chega ao ime_plugin como "voltar". O ime_plugin (vs0:vsh/shell/ime_plugin.suprx)
+  traduz as teclas do paf numa tabela em 0x8100B8A0 (offset no ELF decriptado): a tecla 3 vira 0x2000 (o mesmo da
+  tecla 0x14, provável "fechar") só se `paf Framework (F72FC59E)[+0x5c] == 0` ou `810030F4(obj[+0x9C]) != 0`; senão
+  vira 4. O que se vê (o círculo só mostra o foco e confirma a predição) bate com o ramo 4. Próximo passo: rodar o
+  roteiro do teclado (`scratchpad/fw9_ime.nav`, refeito do log de `fw8_out/ime_circ3`, numa pasta de dados nova como
+  `fw9_ime_data`) lendo o Framework[+0x5c] e o retorno de 810030F4 no instante do círculo, e conferir num vídeo do
+  Vita real se o círculo fecha mesmo com uma predição aberta ("vita" sublinhado).
 - [ ] Câmera (modo câmera do Fotos, NPXS10004), relato do usuário 06/11/2026 (`captures/shell_20261106_020757_tudo` e
   `_020903_tudo`). **Foto (não resolvido, código não commitado)**: o libScePhotoExport do firmware é um cliente IPC do
   serviço SceAvMediaSrv, que é o app NPXS10036 (AvMediaService) iniciado pelo shell quando alguém pede a URI
@@ -603,6 +620,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ScePhotoExport real (patch `scratchpad/bugsC13_photoexport_wip.patch`, fora do git) a câmera continua com "Could not
   save the image": o NPXS10036 carrega libpaf, sqlite, dbutil, dbrecovery_utility e meta_gen e fica no laço do
   SceAvMediaServiceMain sem nenhuma chamada HLE com erro; o despacho do servidor segue não investigado (orçamento). fix/bugs-games-14: não retomado (orçamento semanal no fim).
+  Despacho do NPXS10036 (07/11/2026, fix/system-apps-9, só estático): o servidor libipmi é criado em eboot 0x81000604
+  (SceIpmi 391B02AA/2B646CEA, objeto de despacho no próprio serviço) e **atendido no laço da thread principal**
+  (0x81000BA4 chama o vtable[1] do servidor a cada volta; se ele devolver != 0 o serviço se encerra com
+  sceAppMgrDestroyAppByAppId(-2); um contador de ócio em +0x1C fecha o serviço depois de 0x753 voltas sem trabalho).
+  Métodos síncronos 0x41560000-13 em 0x8100A77E (atende 0, 3, 4, 5, 6, 9, A, D, E, 11, 12, 13), assíncronos em
+  0x8100A92A (1, 7, B, F); o servidor manda aos clientes 0x41560002/8/C/10. O cliente libScePhotoExport usa
+  0x41560000-6, F e 10. Próximo passo: com o patch `bugsC13_photoexport_wip.patch` (aplica limpo na main 176f5d6),
+  ver qual método a câmera manda e se o laço principal chega a atendê-lo (a thread SceAvMediaServiceMain fica
+  "Running" dentro do libpaf no dump de `fw8_out/cam9`: talvez nunca volte ao laço). Vídeo (NID_9A5E7B2F, vtable
+  nula, sem encoder H.264): não mexido nesta rodada.
   **Vídeo**: o crash do emulador
   (`ArgumentException` no free do CodecEngine) saiu (269b672): exceções .NET comuns numa função HLE viram erro para o
   guest em vez de derrubar o processo; o CodecEngine devolve 0 quando não há espaço (a câmera testa 0) e recusa free
@@ -784,7 +811,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
   hora quando ele muda (launcher, tela de controles, F4), no desktop e no Android, sem reiniciar a sessão; validar trocando
   um botão com o jogo e com o shell abertos
-- [ ] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
+- [x] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
   depois de abrir o app Troféus, e os troféus já salvos de outros jogos (ex.: Minecraft) não foram mapeados. Causa provável:
   a ponte só instala um título no servidor quando tem a assinatura de comunicação NP dele (`ux0:user/00/trophy/<id>.sig`),
   gravada só quando o jogo abre com esta versão; os jogos jogados antes não têm. Corrigir para não depender de abrir cada
@@ -792,6 +819,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estrutura SceNpCommunicationSignature que ele passa ao sceNpTrophyCreateContext, ou no pacote de troféus), migrar todos
   de uma vez sem avisos de "troféu conquistado" e validar com uma CÓPIA dos dados do usuário (todos os jogos com JSON
   aparecendo no app com as datas)
+  Feito (07/11/2026, fix/system-apps-9, provas em `scratchpad/fw9_out/`): (a) a assinatura sai do próprio jogo: o eboot
+  (e os módulos em sce_module) é decriptado com a licença e a constante de 0xA0 bytes com o magic 0xB9DDE13B mais perto
+  do id "NPWRxxxxx" é a assinatura (a do Minecraft é idêntica à que o jogo passou; `Hle/Np/TrophySignature.cs`); é
+  guardada no `.sig` na primeira migração. (b) sem avisos: o DebugUnlock (IPC 0x90036, np_trophy C1406504) exige um
+  contexto do tipo 1 (contexto[+0x20], que o servidor grava a partir do 3.º argumento do IPC de criação); o np_trophy
+  C80794CF cria esse contexto só com o NPCOMMID (sem assinatura), e a ponte dá os troféus por ele no handle de
+  instalação. (c) datas: durante cada DebugUnlock as threads SceNpTrophyServer* do shell leem a data do JSON em
+  sceRtcGetCurrentTick/_vshRtcGetCurrentSecureTick. (d) uma conexão por título: o servidor monta o app do cliente
+  (sceAppMgrTrophyMount 300) uma vez por conexão, então o 2.º título lia a pasta do 1.º (0x80551619). Validado numa
+  cópia dos dados do usuário: os 6 jogos com JSON e app instalado (Croixleur, Killzone, Silent Hill, Gravity Rush,
+  Minecraft, FIFA 13) aparecem com CoD (`tro6/sheet.png`, `tro7/list2.png`), sem aviso durante a migração
+  (`tro4/open*.png`), Minecraft "Inventariando" conquistado 2026/10/23 como no JSON (`tro7/mc_t1.png`). NPWR04671 e
+  NPWR19711 não têm app instalado e ficam de fora.
 - [ ] Android: corrigir o flicker de textura nos jogos (relato do usuário, 06/11/2026; prioridade de bug do Android).
   Texturas que piscam no celular e não no desktop (ex.: plantas do Uncharted no Prologue, item acima na seção Android,
   dump `and_flicker`). O replay dos dumps no PC, inclusive com `--gpu-profile=mali`, não pisca, então a causa está no

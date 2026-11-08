@@ -106,6 +106,9 @@ public sealed partial class AppMgrShell : HleModule
     {
         Emu.IsShell = true;
         Log.Info($"{Emu.Describe()} is the shell ({GuestMemory.ReadCString(name, 0x20)})");
+        // its home screen music is pd0:data/systembgm/home.at9 (factory data, in no system update)
+        if (!Firmware.FirmwareInstaller.HasFactoryData(Emu.Options.FsRoot))
+            Log.Warn("No pd0 (factory data): the home screen has no music. install-firmware --pd0 copies Vita3K's.");
         return 0;
     }
 

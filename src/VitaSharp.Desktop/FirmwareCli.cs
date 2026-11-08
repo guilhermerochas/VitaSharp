@@ -8,7 +8,8 @@ namespace VitaSharp.Desktop;
 /// <summary>
 /// install-firmware &lt;PSVUPDAT.PUP | folder | --vita3k&gt;: installs the official firmware into &lt;DataRoot&gt;/fs (os0, vs0,
 /// sa0, pd0). A folder (or --vita3k) is an already installed firmware to copy, e.g. Vita3K's. Ctrl+C cancels and
-/// leaves the previous firmware in place.
+/// leaves the previous firmware in place. --pd0[=folder] copies only pd0 (factory data: the home screen BGM), from
+/// Vita3K's installation by default.
 /// firmware-info: prints what is installed. firmware-verify [other fs root]: checks that the key modules decrypt and
 /// optionally compares the installed files with another installation (hashes).
 /// </summary>
@@ -33,6 +34,16 @@ public static class FirmwareCli
         try
         {
             FirmwareInfo info;
+            if (source == "--pd0" || source.StartsWith("--pd0=", StringComparison.Ordinal))
+            {
+                // only the factory data (the home screen BGM), from a folder or Vita3K's installation
+                string? from = source.Length > 6 ? source[6..] : FirmwareInstaller.FindVita3KFirmware();
+                if (from == null || !FirmwareInstaller.HasFactoryData(from)) { Console.Error.WriteLine("No pd0 found (give --pd0=<folder with pd0/data>)."); return 1; }
+                Console.WriteLine($"Copying pd0 from {from} into {Program.FsRoot}");
+                info = FirmwareInstaller.ImportFactoryData(from, Program.FsRoot, cts.Token);
+                Console.WriteLine($"Installed pd0 ({string.Join(", ", info.Partitions)})");
+                return 0;
+            }
             if (source == "--vita3k")
             {
                 var v3k = FirmwareInstaller.FindVita3KFirmware();
@@ -49,6 +60,7 @@ public static class FirmwareCli
             {
                 Console.WriteLine($"Installing {source} into {Program.FsRoot}");
                 info = FirmwareInstaller.Install(source, Program.FsRoot, progress, cts.Token);
+                info = FirmwareInstaller.ImportFactoryDataFromVita3KIfMissing(Program.FsRoot, cts.Token) ?? info;
             }
             Console.WriteLine($"Installed firmware {info.Display} ({string.Join(", ", info.Partitions)})");
             // a system update (PSVUPDAT.PUP) carries os0 and vs0 only: sa0 (system fonts) comes with the font package
@@ -56,7 +68,7 @@ public static class FirmwareCli
             if (!Directory.Exists(Path.Combine(Program.FsRoot, "sa0", "data", "font")))
                 Console.WriteLine("Note: no system fonts (sa0:data/font). Text needs them: install the font package PUP, or copy sa0 from Vita3K (install-firmware --vita3k).");
             if (!Directory.Exists(Path.Combine(Program.FsRoot, "pd0", "data")))
-                Console.WriteLine("Note: no pd0 (factory data, not part of system updates). The shell runs without it; only the home screen BGM and Welcome Park come from it (install-firmware --vita3k copies Vita3K's).");
+                Console.WriteLine("Note: no pd0 (factory data, not part of system updates). The shell runs without it; only the home screen BGM and Welcome Park come from it (install-firmware --pd0 copies Vita3K's).");
             return 0;
         }
         catch (OperationCanceledException)

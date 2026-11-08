@@ -22,12 +22,13 @@ internal sealed class TrophyServerBridge(Emulator emu)
     const uint NidInit = 0x34516838, NidCreateContext = 0xC49FD33F, NidDestroyContext = 0x56F5CBA5, NidDestroyHandle = 0xFF142071, NidTerm = 0xBFE0F28F, NidCreateHandle = 0x4EBC6977, NidUnlock = 0xB397AA24;
     // the internal exports the trophy setup dialog uses to install a set (names unknown)
     const uint NidOpenInstall = 0xD70DAFA7, NidInstall = 0x62E37599, NidInstallProgress = 0x0AC3CEA8, NidCloseInstall = 0x97D19AB6,
-        NidOpenInstallHandle = 0x17FB1D9E, NidCloseInstallHandle = 0xFD34F7CF, NidCommit = 0x2B0CC831, NidCommit3 = 0x3AC04020, NidCommit4 = 0x10182F1B;
+        NidOpenInstallHandle = 0x17FB1D9E, NidCloseInstallHandle = 0xFD34F7CF, NidCommit = 0x2B0CC831, NidCommit3 = 0x3AC04020, NidCommit4 = 0x10182F1B,
+        NidDebugUnlock = 0xC1406504, NidCreateDebugContext = 0xC80794CF;
     const int AlreadyUnlocked = unchecked((int)0x8055160F);
 
     bool _tried, _ready;
     uint _init, _createContext, _destroyContext, _createHandle, _unlock, _openInstall, _install, _installProgress, _closeInstall,
-        _openInstallHandle, _closeInstallHandle, _commit, _commit3, _commit4, _scratch;
+        _openInstallHandle, _closeInstallHandle, _commit, _commit3, _commit4, _debugUnlock, _createDebugContext, _scratch;
     int _handle;
     readonly Dictionary<string, int> _contexts = new();
 
@@ -68,6 +69,7 @@ internal sealed class TrophyServerBridge(Emulator emu)
             (_openInstallHandle, _closeInstallHandle) = (Export(NidOpenInstallHandle), Export(NidCloseInstallHandle));
             (_commit, _commit3, _commit4) = (Export(NidCommit), Export(NidCommit3), Export(NidCommit4));
             _destroyContext = Export(NidDestroyContext);
+            (_debugUnlock, _createDebugContext) = (Export(NidDebugUnlock), Export(NidCreateDebugContext));
             if (new[] { _init, _createContext, _createHandle, _unlock, _openInstall, _install, _installProgress, _closeInstall,
                     _openInstallHandle, _closeInstallHandle, _commit, _commit3, _commit4 }.Contains(0u))
             {
@@ -75,10 +77,7 @@ internal sealed class TrophyServerBridge(Emulator emu)
                 return false;
             }
             _scratch = emu.Memory.Alloc(0x200, "trophy server bridge");
-            int ri = (int)thread.CallGuest(_init, 0);
-            int rh = (int)thread.CallGuest(_createHandle, _scratch);
-            if (ri < 0 || rh < 0) { Log.Warn($"trophy server bridge: init 0x{ri:X8}, handle 0x{rh:X8}"); return false; }
-            _handle = (int)GuestMemory.R32(_scratch);
+            if (!Connect(thread)) return false;
             Log.Info($"Trophy server bridge: {emu.Describe()} is a client of the shell's trophy server");
             return _ready = true;
         }
@@ -89,10 +88,27 @@ internal sealed class TrophyServerBridge(Emulator emu)
         }
     }
 
+    /// <summary>Opens this process's connection to the server (np_trophy init and a handle).</summary>
+    bool Connect(GuestThread thread)
+    {
+        int ri = (int)thread.CallGuest(_init, 0);
+        int rh = (int)thread.CallGuest(_createHandle, _scratch);
+        if (ri < 0 || rh < 0) { Log.Warn($"trophy server bridge: init 0x{ri:X8}, handle 0x{rh:X8}"); return false; }
+        _handle = (int)GuestMemory.R32(_scratch);
+        return true;
+    }
+
+    /// <summary>Closes the connection: its handle, then np_trophy itself.</summary>
+    void Disconnect(GuestThread thread)
+    {
+        if (Export(NidDestroyHandle) is var dh and not 0) thread.CallGuest(dh, (uint)_handle);
+        if (Export(NidTerm) is var term and not 0) thread.CallGuest(term);
+    }
+
     /// <summary>The application created a context for <paramref name="commId"/> (SceNpCommunicationId at
     /// <paramref name="commIdAddr"/>, its signature at <paramref name="signAddr"/>, both may be 0): the server installs the
     /// set, then gets the trophies VitaSharp already has for it.</summary>
-    public void ContextCreated(string commId, uint commIdAddr, uint signAddr, IEnumerable<int> unlocked)
+    public void ContextCreated(string commId, uint commIdAddr, uint signAddr, IEnumerable<int> unlocked, IReadOnlyDictionary<int, ulong>? dates = null)
     {
         lock (_contexts) if (_contexts.ContainsKey(commId)) return;
         if (!Attach() || GuestThread.Current is not { } thread) return;
@@ -114,10 +130,17 @@ internal sealed class TrophyServerBridge(Emulator emu)
         int r = (int)thread.CallGuest(_createContext, _scratch, id, sign, 0, 0, 0);
         if (r < 0) { Log.Warn($"trophy server bridge: context for {commId} = 0x{r:X8}"); return; }
         int ctx = (int)GuestMemory.R32(_scratch);
-        if (!Register(thread, ctx, commId)) return;
+        var given = unlocked.ToList();
+        int n = Register(thread, ctx, commId, given, dates);
+        if (n < 0)
+        {
+            // the server keeps only a few contexts per client
+            if (_destroyContext != 0) thread.CallGuest(_destroyContext, (uint)ctx);
+            return;
+        }
         lock (_contexts) _contexts[commId] = ctx;
-        int n = 0;
-        foreach (int t in unlocked) if (Unlock(thread, ctx, t)) n++;
+        // what the silent path could not give goes through the normal unlock (the shell shows its notice)
+        foreach (int t in given.Skip(n)) if (Unlock(thread, ctx, t)) n++;
         Log.Info($"Trophy server bridge: {commId} installed in the trophy server ({n} unlocked trophies given)");
     }
 
@@ -127,7 +150,7 @@ internal sealed class TrophyServerBridge(Emulator emu)
     /// (ur0:user/00/trophy/data/&lt;NPCOMMID&gt;) are installed there from this process, each with its unlocked trophies, so
     /// the program lists them. The server reads each set's TROPHY.TRP through sceAppMgrTrophyMount(300, pid of this
     /// process), which points at the installed application that ships the set while its context is created, and checks
-    /// the title's signature: only the sets whose signature VitaSharp kept (the title ran once since) can be installed.
+    /// the title's signature: the one VitaSharp kept when the title ran, or else the one in the application's code.
     /// </summary>
     public void InstallStoredTitles()
     {
@@ -135,28 +158,46 @@ internal sealed class TrophyServerBridge(Emulator emu)
         string store = Path.Combine(root, "ux0", "user", "00", "trophy"), data = Path.Combine(root, "ur0", "user", "00", "trophy", "data");
         if (!Directory.Exists(store)) return;
         var pending = Directory.GetFiles(store, "*.json").Select(Path.GetFileNameWithoutExtension)
-            .Where(id => id is { Length: 12 } && id[9] == '_' && !File.Exists(Path.Combine(data, id, "TRPTITLE.DAT"))
-                         && TrophyUnlocks.LoadSignature(root, id) != null)
-            .Select(id => (Id: id!, App: AppWithSet(root, id!))).Where(t => t.App != null).ToList();
+            .Where(id => id is { Length: 12 } && id[9] == '_' && !File.Exists(Path.Combine(data, id, "TRPTITLE.DAT")))
+            .Select(id => (Id: id!, App: AppWithSet(root, id!))).Where(t => t.App != null && HasSignature(root, t.Id, t.App)).ToList();
         if (pending.Count == 0 || !Attach(system: true) || GuestThread.Current is not { } thread) return;
+        bool connected = true;
         foreach (var (id, app) in pending)
         {
             var pkg = TrophyPackage.Load(Path.Combine(app!, "sce_sys", "trophy", id, "TROPHY.TRP"), id);
             if (pkg == null) continue;
-            var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(root, id)).Keys
+            // one connection per title: the server mounts a client's application (sceAppMgrTrophyMount 300) once per
+            // connection and keeps it until the client goes, so a second title on the same one reads the first
+            // title's folder (0x80551619)
+            if (!connected && !(connected = Connect(thread))) break;
+            var dates = TrophyUnlocks.Load(TrophyUnlocks.PathFor(root, id));
+            var unlocked = dates.Keys
                 .Where(i => pkg.Trophies.FirstOrDefault(t => t.Id == i) is { } t && t.Grade != TrophyGrade.Platinum).Order().ToList();
             emu.Vita.TrophyApps[emu.Pid] = app!;
-            try { ContextCreated(id, 0, 0, unlocked); }
+            try { ContextCreated(id, 0, 0, unlocked, dates); }
             finally { emu.Vita.TrophyApps.TryRemove(emu.Pid, out _); }
-            // the program only needed the install: its contexts go (the server keeps a few per client)
+            // the program only needed the install: its context goes, then the connection
             int ctx;
-            lock (_contexts) if (!_contexts.Remove(id, out ctx)) continue;
-            if (_destroyContext != 0) thread.CallGuest(_destroyContext, (uint)ctx);
+            bool had;
+            lock (_contexts) had = _contexts.Remove(id, out ctx);
+            if (had && _destroyContext != 0) thread.CallGuest(_destroyContext, (uint)ctx);
+            Disconnect(thread);
+            connected = false;
         }
-        // and its connection: the program's own one is refused while this process has another
-        // ("Could not restore the trophy information")
-        if (Export(NidDestroyHandle) is var dh and not 0) thread.CallGuest(dh, (uint)_handle);
-        if (Export(NidTerm) is var term and not 0) thread.CallGuest(term);
+        // the program's own connection is refused while this process has another ("Could not restore the trophy
+        // information")
+        if (connected) Disconnect(thread);
+    }
+
+    /// <summary>The set's signature is known: kept from a run of the title, or read now from the application's code
+    /// (and kept).</summary>
+    static bool HasSignature(string root, string commId, string app)
+    {
+        if (TrophyUnlocks.LoadSignature(root, commId) != null) return true;
+        if (TrophySignature.FromApp(root, app, commId) is not { } sign) return false;
+        TrophyUnlocks.SaveSignature(root, commId, sign);
+        Log.Info($"Trophy: {commId} signature read from {Path.GetFileName(app)}");
+        return true;
     }
 
     uint Export(uint nid) => emu.Linker.TryGetFunctionExport(nid, out uint a) ? a : 0;
@@ -184,38 +225,82 @@ internal sealed class TrophyServerBridge(Emulator emu)
     /// an install request on it (D70DAFA7 with 0x01230001), the check of the context's set (62E37599: the server reads
     /// TROPHY.TRP and answers with a state; the dialog shows its details, 0AC3CEA8, and the user confirms), the install
     /// itself for that state (2B0CC831, 3AC04020 or 10182F1B: the server writes the title's conf and data files), then
-    /// the request and the handle closed (97D19AB6, FD34F7CF).
+    /// the request and the handle closed (97D19AB6, FD34F7CF). The trophies VitaSharp already has for the set
+    /// (<paramref name="unlocked"/>) are given on that handle with the server's debug unlock (np_trophy C1406504, IPC
+    /// 0x90036), which records them without the "You have earned a trophy!" notice the normal unlock makes the shell
+    /// show: they were earned before.
+    /// Returns how many were given that way, or -1 when the install failed.
     /// </summary>
-    bool Register(GuestThread thread, int ctx, string commId)
+    int Register(GuestThread thread, int ctx, string commId, List<int> unlocked, IReadOnlyDictionary<int, ulong>? dates)
     {
         uint hp = _scratch + 0xCC, req = _scratch + 0xD0, state = _scratch + 0xD4, progress = _scratch + 0xD8;
         GuestMemory.W32(req, 0);
         GuestMemory.W32(state, 0);
         int r = (int)thread.CallGuest(_openInstallHandle, hp);
-        if (r < 0) { Log.Warn($"trophy server bridge: install handle for {commId} = 0x{r:X8}"); return false; }
+        if (r < 0) { Log.Warn($"trophy server bridge: install handle for {commId} = 0x{r:X8}"); return -1; }
         uint h = GuestMemory.R32(hp);
         try
         {
             r = (int)thread.CallGuest(_openInstall, h, 0x01230001, 0x10, 0, 0, 0, req);
-            if (r < 0) { Log.Warn($"trophy server bridge: install request for {commId} = 0x{r:X8}"); return false; }
+            if (r < 0) { Log.Warn($"trophy server bridge: install request for {commId} = 0x{r:X8}"); return -1; }
             uint q = GuestMemory.R32(req);
             try
             {
                 r = (int)thread.CallGuest(_install, h, q, (uint)ctx, state);
-                if (r < 0) { Log.Warn($"trophy server bridge: install of {commId} = 0x{r:X8}"); return false; }
+                if (r < 0) { Log.Warn($"trophy server bridge: install of {commId} = 0x{r:X8}"); return -1; }
                 // the server answers with what the install needs (the dialog shows it, the user confirms): 1, 2 and 5
                 // continue with 2B0CC831, 3 with 3AC04020, 4 with 10182F1B
                 uint st = GuestMemory.R32(state);
                 uint commit = st switch { 1 or 2 or 5 => _commit, 3 => _commit3, 4 => _commit4, _ => 0 };
-                if (commit == 0) { Log.Warn($"trophy server bridge: install of {commId}: state {st}"); return false; }
+                if (commit == 0) { Log.Warn($"trophy server bridge: install of {commId}: state {st}"); return -1; }
                 GuestMemory.W32(progress, 0xFFFFFFFF);
                 r = (int)thread.CallGuest(commit, h, q, (uint)ctx, progress);
-                if (r < 0) { Log.Warn($"trophy server bridge: install of {commId} (state {st}) = 0x{r:X8}"); return false; }
-                return true;
+                if (r < 0) { Log.Warn($"trophy server bridge: install of {commId} (state {st}) = 0x{r:X8}"); return -1; }
+                return DebugUnlock(thread, h, q, commId, unlocked, dates);
             }
             finally { thread.CallGuest(_closeInstall, q); }
         }
         finally { thread.CallGuest(_closeInstallHandle, h); }
+    }
+
+    /// <summary>Gives <paramref name="unlocked"/> with the debug unlock on install handle <paramref name="h"/> and
+    /// request <paramref name="q"/>; stops at the first failure. Returns how many were given. The server takes the debug
+    /// unlock only on a context of the debug kind (context[+0x20] == 1): np_trophy C80794CF creates one for a
+    /// communication id alone (no signature, IPC create-context with kind 1), next to the title's normal context.</summary>
+    int DebugUnlock(GuestThread thread, uint h, uint q, string commId, List<int> unlocked, IReadOnlyDictionary<int, ulong>? dates)
+    {
+        if (_debugUnlock == 0 || _createDebugContext == 0 || unlocked.Count == 0) return 0;
+        uint target = _scratch + 0xE0, result = _scratch + 0xE8, idp = _scratch + 0x130, ctxp = _scratch + 0x140;
+        // SceNpCommunicationId: data[9] "NPWR01234", term, num, dummy
+        GuestMemory.Fill(idp, 0, 0x10);
+        GuestMemory.WriteCString(idp, commId[..9], 10);
+        GuestMemory.Write(idp + 10, byte.Parse(commId[10..]));
+        int r = (int)thread.CallGuest(_createDebugContext, ctxp, idp, 0, 0);
+        if (r < 0) { Log.Warn($"trophy server bridge: debug context for {commId} = 0x{r:X8}"); return 0; }
+        uint ctx = GuestMemory.R32(ctxp);
+        int n = 0;
+        try
+        {
+            foreach (int t in unlocked)
+            {
+                // {kind, id}: 3 = one trophy (2 = a group, 1 = all)
+                GuestMemory.W32(target, 3);
+                GuestMemory.W32(target + 4, (uint)t);
+                GuestMemory.Fill(result, 0, 0x40);
+                // the server stamps the unlock with the date VitaSharp kept (the trophy was earned then)
+                Interlocked.Exchange(ref emu.Vita.TrophyUnlockTick, dates != null && dates.TryGetValue(t, out var tick) ? (long)tick : 0);
+                try { r = (int)thread.CallGuest(_debugUnlock, h, q, ctx, target, result); }
+                finally { Interlocked.Exchange(ref emu.Vita.TrophyUnlockTick, 0); }
+                if (r < 0 && r != AlreadyUnlocked)
+                {
+                    Log.Warn($"trophy server bridge: silent unlock {commId} {t} = 0x{r:X8}");
+                    break;
+                }
+                n++;
+            }
+        }
+        finally { if (_destroyContext != 0) thread.CallGuest(_destroyContext, ctx); }
+        return n;
     }
 
     bool Unlock(GuestThread thread, int ctx, int trophyId)

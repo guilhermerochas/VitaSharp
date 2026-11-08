@@ -84,7 +84,12 @@ public sealed class FirmwarePanel : StackPanel
         });
         var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
         if (path == null) return;
-        await Run($"Instalando {Path.GetFileName(path)}…", (p, ct) => FirmwareInstaller.Install(path, Program.FsRoot, p, ct));
+        await Run($"Instalando {Path.GetFileName(path)}…", (p, ct) =>
+        {
+            var info = FirmwareInstaller.Install(path, Program.FsRoot, p, ct);
+            // a system update has no pd0 (the home screen music): Vita3K's, when it has one
+            return FirmwareInstaller.ImportFactoryDataFromVita3KIfMissing(Program.FsRoot, ct) ?? info;
+        });
     }
 
     async Task Run(string title, Func<IProgress<FirmwareProgress>, CancellationToken, FirmwareInfo> job)

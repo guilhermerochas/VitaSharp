@@ -76,8 +76,13 @@ public sealed partial class NpTrophy : HleModule
         }
         // with the shell running, its trophy server gets the set and what is unlocked (Trophy Collection lists it)
         int[] unlocked;
-        lock (set) unlocked = set.Unlocked.Keys.Where(i => set.Trophies.FirstOrDefault(t => t.Id == i)?.Grade != TrophyGrade.Platinum).Order().ToArray();
-        (_bridge ??= new TrophyServerBridge(Emu)).ContextCreated(set.CommId, commId, commSign, unlocked);
+        Dictionary<int, ulong> dates;
+        lock (set)
+        {
+            unlocked = set.Unlocked.Keys.Where(i => set.Trophies.FirstOrDefault(t => t.Id == i)?.Grade != TrophyGrade.Platinum).Order().ToArray();
+            dates = new Dictionary<int, ulong>(set.Unlocked);
+        }
+        (_bridge ??= new TrophyServerBridge(Emu)).ContextCreated(set.CommId, commId, commSign, unlocked, dates);
         return 0;
     }
 

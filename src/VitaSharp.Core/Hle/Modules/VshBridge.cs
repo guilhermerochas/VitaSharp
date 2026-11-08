@@ -165,7 +165,7 @@ public sealed partial class VshBridge : HleModule
     int _vshRtcGetCurrentSecureTick(uint tick)
     {
         if (tick == 0) return unchecked((int)0x80251000);
-        GuestMemory.Write(tick, (ulong)(DateTime.UtcNow.Ticks / 10));
+        GuestMemory.Write(tick, Rtc.TrophyServerTick(Emu) ?? (ulong)(DateTime.UtcNow.Ticks / 10));
         return 0;
     }
 

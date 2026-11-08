@@ -134,6 +134,59 @@ public static class FirmwareInstaller
         return Install(pup, Path.GetFileName(pupPath), fsRoot, progress, ct);
     }
 
+    /// <summary>After a system update install (which has no pd0: factory data, the home screen's BGM): copies Vita3K's
+    /// pd0 when <paramref name="fsRoot"/> has none and Vita3K has one. Returns the new info, or null when nothing was
+    /// copied.</summary>
+    public static FirmwareInfo? ImportFactoryDataFromVita3KIfMissing(string fsRoot, CancellationToken ct = default)
+    {
+        if (HasFactoryData(fsRoot) || FindVita3KFirmware() is not { } v3k || !HasFactoryData(v3k)) return null;
+        try { return ImportFactoryData(v3k, fsRoot, ct); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Log.Warn($"firmware: pd0 from {v3k}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>pd0 (factory data) is installed in <paramref name="fsRoot"/>: pd0/data holds the system BGM
+    /// (data/systembgm/home.at9, the shell's home screen music).</summary>
+    public static bool HasFactoryData(string fsRoot) => Directory.Exists(Path.Combine(fsRoot, "pd0", "data"));
+
+    /// <summary>
+    /// Copies only pd0 (the factory data partition) from an installed firmware (another emulator's, e.g. Vita3K's) into
+    /// <paramref name="fsRoot"/>, replacing the one there. No system update carries pd0, so a firmware installed from
+    /// PSVUPDAT.PUP has none and the shell's home screen stays silent (pd0:data/systembgm/home.at9).
+    /// </summary>
+    public static FirmwareInfo ImportFactoryData(string sourceFsRoot, string fsRoot, CancellationToken ct = default)
+    {
+        string src = Path.Combine(sourceFsRoot, "pd0");
+        if (!HasFactoryData(sourceFsRoot)) throw new InvalidDataException($"{sourceFsRoot} has no pd0 (pd0/data is missing)");
+        string staging = Path.Combine(fsRoot, StagingName);
+        DeleteTree(staging);
+        Directory.CreateDirectory(staging);
+        try
+        {
+            foreach (var file in EnumerateFilesNoLinks(src))
+            {
+                ct.ThrowIfCancellationRequested();
+                string dst = Path.Combine(staging, "pd0", Path.GetRelativePath(src, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                File.Copy(file, dst, overwrite: true);
+            }
+            Commit(Path.Combine(staging, "pd0"), Path.Combine(fsRoot, "pd0"), merge: false, staging);
+            var previous = FirmwareInfo.Read(fsRoot);
+            var info = previous is null ? new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, "pd0", DateTime.UtcNow, false, ["pd0"])
+                : previous with { Partitions = previous.Partitions.Union(["pd0"]).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray() };
+            info.Write(fsRoot);
+            Log.Info($"firmware: copied pd0 from {sourceFsRoot} into {fsRoot}");
+            return info;
+        }
+        finally
+        {
+            DeleteTree(staging);
+        }
+    }
+
     public static FirmwareInfo Install(Pup pup, string sourceName, string fsRoot, IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(fsRoot);
