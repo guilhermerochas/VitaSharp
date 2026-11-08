@@ -686,6 +686,7 @@ public static class Runner
     /// with the frame number burnt in.</summary>
     internal static void WriteContactSheet(string dir, List<(long Frame, byte[] Rgba)> thumbs)
     {
+        Directory.CreateDirectory(dir); // no PNG written (--dump-from past the run's last frame): the folder may not exist
         foreach (var old in Directory.GetFiles(dir, "sheet*.png")) File.Delete(old);
         var all = thumbs.OrderBy(t => t.Frame).ToList();
         for (int i = 0; i < all.Count; i += 30)
