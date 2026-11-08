@@ -1169,6 +1169,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `Libc.Exceptions.cs`, os helpers de `std::string`, os campos de `ios_base` em `Libc.Ios.cs`. Validar com Minecraft
   em modo libc do HLE chegando ao menu e ao jogo; também os `_Mtx_*/_Cnd_*/_Thrd_*` (31, xthreads sobre lwmutex/lwcond)
   e os syscalls do SceVshBridge/SceBbmc (corpos no bootimage.skprx).
+  - Parado em 08/11/2026 (feat/hle-batch-6, sem código ainda): worktree criada a partir do main c661803 e plano lido; nenhum build nem execução. Próximo passo: medir hle-coverage (base), depois reverter o Init 0x8102BD34 na desmontagem do libc.suprx 3.74 e escrever o asic_filebuf<char> e o locale clássico em Libc.Ios.cs, com testes de unidade.
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
