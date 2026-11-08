@@ -100,6 +100,17 @@ public sealed partial class Clib : HleModule
 
     [Hle] internal uint sceClibMspaceMalloc(uint mspace, uint size) => Malloc(mspace, size, MinAlign);
     [Hle] uint sceClibMspaceMemalign(uint mspace, uint alignment, uint size) => Malloc(mspace, size, alignment);
+    internal uint MspaceMemalign(uint mspace, uint alignment, uint size) => Malloc(mspace, size, alignment);
+    internal uint MspaceCalloc(uint mspace, uint num, uint size) => sceClibMspaceCalloc(mspace, num, size);
+    internal uint MspaceReallocalign(uint mspace, uint ptr, uint size, uint alignment) => Realloc(mspace, ptr, size, alignment);
+    internal uint UsableSize(uint ptr) => sceClibMspaceMallocUsableSize(ptr);
+    internal int IsHeapEmpty(uint mspace) => sceClibMspaceIsHeapEmpty(mspace);
+
+    /// <summary>(block size, peak in use, in use) of an mspace; zeros for an unknown one.</summary>
+    internal (uint Size, uint Peak, uint InUse) HeapStats(uint mspace)
+    {
+        lock (_heaps) return _heaps.TryGetValue(mspace, out var h) ? (h.Size, h.Peak, h.InUse) : (0, 0, 0);
+    }
 
     [Hle]
     uint sceClibMspaceCalloc(uint mspace, uint num, uint size)

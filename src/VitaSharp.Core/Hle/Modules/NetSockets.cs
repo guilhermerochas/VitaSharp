@@ -637,6 +637,7 @@ public sealed partial class Net
 
     /// <summary>SceNetEmulationParam is 0x200 bytes; flags 1 = eth0, 2 = wlan0.</summary>
     [Hle]
+    [Hle("NID_DF815D48", Nid = 0xDF815D48, Library = "SceNetInternal")] // same entry as sceNetEmulationSet in libnet.suprx 3.74
     int sceNetEmulationSet(uint param, int flags)
     {
         if (param == 0 || flags is not (1 or 2)) return NetErr(EINVAL);
@@ -645,6 +646,7 @@ public sealed partial class Net
     }
 
     [Hle]
+    [Hle("NID_6273AF23", Nid = 0x6273AF23, Library = "SceNetInternal")] // same entry as sceNetEmulationGet in libnet.suprx 3.74
     int sceNetEmulationGet(uint param, int flags)
     {
         if (param == 0 || flags is not (1 or 2)) return NetErr(EINVAL);

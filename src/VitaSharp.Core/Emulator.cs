@@ -36,7 +36,8 @@ public sealed class EmulatorOptions
     /// (vs0:sys/external) even though VitaSharp has an HLE implementation of them. Null: VITASHARP_LLE_MODULES.</summary>
     public IReadOnlyCollection<string>? LleModules { get; init; }
     /// <summary>Sysmodule libraries to keep on HLE even when the game or the firmware provides the module
-    /// ("libult", "libSceJson", or the short names "ult", "json", ...). Null: VITASHARP_HLE_MODULES.</summary>
+    /// ("libult", "libSceJson", or the short names "ult", "json", ...), and the process preloads a game ships ("libc",
+    /// "libfios2"...). Null: VITASHARP_HLE_MODULES.</summary>
     public IReadOnlyCollection<string>? HleModules { get; init; }
     /// <summary>An existing guest address space to run in (there is one per process: unit tests that boot an
     /// emulator share the test fixture's). Null: the emulator creates it.</summary>
@@ -524,7 +525,9 @@ public sealed class Emulator : IDisposable
         uint preloadDisabled = ProcessParamField(0x24);
         foreach (var (bit, name) in new[] { (0x00010000u, "libc"), (0x00200000u, "libfios2"), (0x00800000u, "libSceFt2"), (0x01000000u, "libpvf") })
         {
-            if ((preloadDisabled & bit) != 0) continue;
+            // the HLE-modules option keeps these on HLE too (VITASHARP_HLE_MODULES=libc,libfios2: the C library and
+            // FIOS2 of the HLE instead of the game's own copies)
+            if ((preloadDisabled & bit) != 0 || KeepOnHle(name)) continue;
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
@@ -657,6 +660,10 @@ public sealed class Emulator : IDisposable
     /// photo0:/TITLEID) does not; the camera calls internal functions of it (16B1028E...) the HLE never had.</summary>
     public static readonly HashSet<string> FirmwareServiceClients = new(StringComparer.Ordinal) { "ScePhotoExport" };
 
+    /// <summary>The HLE stands in for <paramref name="library"/> when a system program's dependencies are resolved
+    /// (libraries the HLE only has as a firmware fallback, <see cref="Hle.HleModule.FirmwareFallbackOnly"/>, do not).</summary>
+    bool HleServesLibrary(string library) => Hle.ImplementsLibrary(library);
+
     /// <summary>
     /// Loads (without starting them) the firmware modules that provide the libraries <paramref name="root"/> imports,
     /// and theirs in turn, the way sysmodule loads a module's dependencies. Returns them in start order (each after
@@ -685,7 +692,7 @@ public sealed class Emulator : IDisposable
                     var img = ModuleImage.Read(Loader.Self.SelfDecryptor.ToElf(File.ReadAllBytes(host), null));
                     foreach (var (lib, _, _) in img.Imports)
                     {
-                        if (index.Provider(lib) is not { } p || Hle.ImplementsLibrary(lib)) continue;
+                        if (index.Provider(lib) is not { } p || HleServesLibrary(lib)) continue;
                         if (OnRequestModules.Contains(Path.GetFileNameWithoutExtension(p.VitaPath))
                             || (!string.Equals(p.VitaPath, vitaPath, StringComparison.OrdinalIgnoreCase) && NeedsOnRequest(p.VitaPath)))
                         { result = true; break; }
@@ -714,7 +721,7 @@ public sealed class Emulator : IDisposable
                 // and for the libraries whose firmware version is a client of a service the system runs, which the HLE
                 // only approximates (FirmwareServiceClients): a system program gets the real one
                 bool serviceClient = IsSystemProgram && FirmwareServiceClients.Contains(lib);
-                if ((Hle.ImplementsLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                if ((HleServesLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;

@@ -1008,6 +1008,32 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     (recebe o ponteiro do objeto do libscemp4, que o HLE troca por número) e SceNpManager NID_FFBFC540 (o tratador
     0xB0025 não apareceu como constante no shell.self; o despacho do servidor IPMI fica por tabela)
   Lote 3 (+339) confirmado pelo usuário (07/11/2026); a meta de ~1000 continua (faltam ~660): próximo lote nas funções que o shell, os apps do sistema e os jogos importam (VshBridge, AppMgr, SceShellSvc, NearUtil, Mp4, NpManager...), mesmo as do lado do sistema
+  - Lote 4 (feat/hle-batch-4, 08/11/2026): 3.514 -> 5.125 NIDs com implementação (+1.611; 3.356 -> 4.150 das 7.006 do
+    VitaSDK; mesma contagem `hle-implemented`). Novo comando `VitaSharp.Desktop hle-coverage [--out=<tsv>]`: lê os 359
+    módulos do firmware instalado (os0/vs0, inclusive os de dentro do bootimage.skprx) e os imports dos jogos
+    instalados e dá implementadas/total de tudo o que o firmware exporta para o código de usuário. Antes -> depois:
+    geral 3.465/19.406 (17,9%) -> 5.076 (26,2%); importadas pelos jogos 1.151/1.518 (75,8%) -> 1.469 (96,8%); pelo
+    sistema 1.172/7.539 (15,5%) -> 1.323 (17,5%); o resto 1.142/10.349 (11,0%) -> 2.284 (22,1%). Feitas: SceLibc
+    inteira (350: strings, ctype, strto*/_Sto*, heap/mspace, stdio sobre os descritores sceIo, printf/scanf
+    estreito/largo/Annex K, multibyte UTF-8/UTF-16, time, exit/atexit, guardas C++, setjmp/longjmp, TLS de módulo)
+    com os detalhes do libc.suprx 3.74 (errno no TLS 0x88, textos do strerror, tratador de restrição que imprime e
+    devolve ERANGE, o rand LCG de 64 bits); SceLibm inteira (201, ABI hard-float); SceFios2 (160: handles com a
+    codificação do módulo, ops que terminam ao serem emitidas, PSARC zlib, códigos da tabela do libfios2.suprx);
+    42 do SceLibstdcxx (new/delete, std::_Mutex, atômicos, type_info, what(), _Syserror_map); SceNearUtil com os
+    códigos 0x801049xx do firmware e os 7 NIDs sem nome; 845 funções cujo corpo no firmware é um retorno constante,
+    vazio (bx lr) ou o endereço de um texto constante (paf, WebKit, VideoProfiler...; os que devolvem ponteiro para
+    dados do módulo ficaram de fora). Os módulos que só substituem código do firmware (Libc, Libm, Fios2,
+    FirmwareConstants) têm `HleModule.FirmwareFallbackOnly`: não contam para `ImplementsLibrary`, então os programas
+    do sistema continuam pegando essas bibliotecas do firmware como antes (shell: mesmos módulos e dependências LLE).
+    `VITASHARP_HLE_MODULES=libc,libfios2` agora também deixa no HLE os preloads que o jogo traz. Validado: shell e 4
+    jogos (PCSE00491, PCSA00152, PCSF00476, PCSB00245) sem regressão contra a base (mesmos módulos, 0
+    "Unimplemented", 0 crash, quadros iguais dentro do ruído); Minecraft (PCSE00491) com libc e FIOS2 do HLE
+    inicializa o FIOS2, lê os dados (2.608 sceFiosFHReadSync), cria o Gxm e apresenta o 1º quadro, e para no
+    iostream do C++ (ios_base/_Winit precisam dos dados do libstdc++ do módulo). Falta: o resto do SceLibstdcxx
+    (exceções, iostreams, locale: precisa das vtables/dados do módulo), SceMp4 NID_C05DFF01 e SceNpManager
+    NID_FFBFC540 (IPC 0xB0025 de 64 bytes ao servidor NP do shell, sem ponte no VitaSharp), o código de falha do
+    sceNearInitialize depois das checagens (precisa do app Near), e os syscalls do lado do sistema (SceAppMgr 108,
+    SceVshBridge 92, SceAvcodec 82, SceBbmc 48... do bootimage)
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros

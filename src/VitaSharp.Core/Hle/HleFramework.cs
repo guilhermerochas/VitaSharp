@@ -24,6 +24,11 @@ public abstract class HleModule
     protected GuestMemory Mem => Emu.Memory;
     protected Kernel.Kernel K => Emu.Kernel;
     public virtual void Initialize() { }
+
+    /// <summary>The module only stands in for firmware code (the C runtime, FIOS2, functions whose firmware body is a
+    /// constant): its functions serve a process that does not load the firmware module, and never make the HLE
+    /// take a library over from the firmware when a system program's dependencies are resolved.</summary>
+    public virtual bool FirmwareFallbackOnly => false;
 }
 
 /// <summary>Per-thread view used by HLE functions: argument access and the calling guest thread.</summary>
@@ -210,6 +215,7 @@ public sealed partial class HleRegistry : IImportResolver
             foreach (var nid in nids)
             {
                 NoteModuleNid(module, nid);
+                if (!module.FirmwareFallbackOnly) _serviceNids.Add(nid);
                 _impls[nid] = invoker;
                 _implNames[nid] = name;
                 if (_indexByNid.TryGetValue(nid, out var idx)) _functions[idx].Invoke = invoker;
@@ -221,15 +227,16 @@ public sealed partial class HleRegistry : IImportResolver
     public bool IsImplemented(uint nid) => _impls.ContainsKey(nid);
 
     HashSet<string>? _implementedLibraries;
+    readonly HashSet<uint> _serviceNids = new();
 
-    /// <summary>True when VitaSharp's HLE implements at least one function of <paramref name="library"/> (by the
-    /// NID database's library of each implemented NID).</summary>
     /// <summary>The HLE has function <paramref name="nid"/>.</summary>
     public bool Implements(uint nid) => _impls.ContainsKey(nid);
 
+    /// <summary>True when VitaSharp's HLE emulates <paramref name="library"/>: it implements at least one of its functions
+    /// in a module that is not <see cref="HleModule.FirmwareFallbackOnly"/> (by the NID database's library of each NID).</summary>
     public bool ImplementsLibrary(string library)
     {
-        _implementedLibraries ??= _impls.Keys.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);
+        _implementedLibraries ??= _serviceNids.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);
         return _implementedLibraries.Contains(library);
     }
 

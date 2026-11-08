@@ -55,7 +55,7 @@ internal static class TrophySignature
     }
 
     /// <summary>The application's klicensee: its work.bin, or a license in ux0:license/&lt;title id&gt;.</summary>
-    static byte[]? Klicensee(string fsRoot, string appDir)
+    internal static byte[]? Klicensee(string fsRoot, string appDir)
     {
         try
         {

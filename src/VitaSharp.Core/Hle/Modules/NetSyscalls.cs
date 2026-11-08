@@ -129,7 +129,8 @@ public sealed partial class Net
     [Hle] int sceNetSyscallIcmConnect(int s, int flags) => CheckSock(s) < 0 ? -9 : 0;
 
     /// <summary>SceNetInternal's user-side version (libnet): the same, with SceNet error codes and errno.</summary>
-    [Hle] int sceNetInternalIcmConnect(int s, int flags) => CheckSock(s);
+    [Hle("NID_84257F65", Nid = 0x84257F65, Library = "SceNet")] // same entry as sceNetInternalIcmConnect in libnet.suprx 3.74
+    [Hle("sceNetInternalIcmConnect")] int sceNetInternalIcmConnect(int s, int flags) => CheckSock(s);
 
     /// <summary>The stack setting 0x18 (control 0x10000018 reads it, 0x20000018 writes it), two slots by flag bit 0.</summary>
     int _ctl18a, _ctl18b;
