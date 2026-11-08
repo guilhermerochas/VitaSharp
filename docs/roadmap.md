@@ -896,6 +896,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
   "flashes" que restam no analisador são relâmpagos do próprio filme
 
+  08/11/2026 (agente C, fix/bugs-games-19, só achados): nova gravação do usuário com o 2f7518c
+  (`captures\PCSE00233_20261108_015357_tudo`, 30 fps cravados, 3 "trocas" e ~10 flashes). O `rerun` dela derruba o
+  emulador logo depois de carregar o estado, também com o build exato do usuário (cb284cf): AccessViolation em
+  `T16.LdStSp` num thread guest (bug de load-state à parte, aberto). Reproduzido ao vivo (boot sem entrada,
+  `bugsC3_data/captures/PCSE00233_20261108_022130_tudo`: mesmas trocas 364/365, 381/382, 519/520). O caminho do vídeo
+  está em ordem: um sceAvcdecDecode por quadro, pts de saída crescentes de 3003 em 3003, anel de 3 buffers, e a textura
+  que cada present amostra (trace-draws do dump nos presents 360-368, 379-383, 517-521) é o quadro N-244 do
+  NINJA_VI.MP4 decodificado pelo ffmpeg (erro 2-10 contra 50-70 dos vizinhos); os framebuffers alternam em ordem.
+  As trocas/flashes do analisador caem nos relâmpagos do próprio filme (quadros-fonte vizinhos diferem 50-70):
+  falso positivo. Filme de 29,97 fps a 1 quadro por vblank de 30 Hz. Falta o usuário apontar o trecho que engasga
+  (ou comparar com um vídeo do Vita real)
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
