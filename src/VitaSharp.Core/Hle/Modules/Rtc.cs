@@ -33,10 +33,13 @@ public sealed partial class Rtc : HleModule
         catch { return DateTime.UnixEpoch; }
     }
 
+    [Hle("_sceRtcGetCurrentTick")]
     [Hle] int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
+    [Hle("_sceRtcGetCurrentNetworkTick")]
     [Hle] int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
     [Hle] uint sceRtcGetTickResolution() => 1_000_000;
 
+    [Hle("_sceRtcGetCurrentClock")]
     [Hle]
     int sceRtcGetCurrentClock(uint time, int tzMinutes)
     {
@@ -44,6 +47,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcGetCurrentClockLocalTime")]
     [Hle]
     int sceRtcGetCurrentClockLocalTime(uint time)
     {
@@ -106,6 +110,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcConvertUtcToLocalTime")]
     [Hle]
     int sceRtcConvertUtcToLocalTime(Ptr<ulong> utc, Ptr<ulong> local)
     {
@@ -114,6 +119,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcConvertLocalTimeToUtc")]
     [Hle]
     int sceRtcConvertLocalTimeToUtc(Ptr<ulong> local, Ptr<ulong> utc)
     {
@@ -122,6 +128,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcFormatRFC3339")]
     [Hle]
     int sceRtcFormatRFC3339(uint buf, Ptr<ulong> tick, int tzMinutes)
     {
@@ -131,10 +138,12 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcFormatRFC3339LocalTime")]
     [Hle]
     int sceRtcFormatRFC3339LocalTime(uint buf, Ptr<ulong> tick) =>
         sceRtcFormatRFC3339(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
+    [Hle("_sceRtcFormatRFC2822")]
     [Hle]
     int sceRtcFormatRFC2822(uint buf, Ptr<ulong> tick, int tzMinutes)
     {
@@ -143,6 +152,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle("_sceRtcFormatRFC2822LocalTime")]
     [Hle]
     int sceRtcFormatRFC2822LocalTime(uint buf, Ptr<ulong> tick) =>
         sceRtcFormatRFC2822(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
@@ -235,9 +245,13 @@ public sealed partial class Rtc : HleModule
 
     /// <summary>Ad hoc, debug, GPS and retained network clocks: no such sources here, they follow the network tick.</summary>
     [Hle("sceRtcGetCurrentAdNetworkTick")]
+    [Hle("_sceRtcGetCurrentAdNetworkTick")]
     [Hle("sceRtcGetCurrentDebugNetworkTick")]
+    [Hle("_sceRtcGetCurrentDebugNetworkTick")]
     [Hle("sceRtcGetCurrentGpsTick")]
+    [Hle("_sceRtcGetCurrentGpsTick")]
     [Hle("sceRtcGetCurrentRetainedNetworkTick")]
+    [Hle("_sceRtcGetCurrentRetainedNetworkTick")]
     int sceRtcGetCurrentOtherNetworkTick(Ptr<ulong> tick)
     {
         if (tick.IsNull) return RTC_INVALID_POINTER;
@@ -247,7 +261,9 @@ public sealed partial class Rtc : HleModule
 
     /// <summary>Last user clock adjustment / RTC reset: reported as the emulator's boot time.</summary>
     [Hle("sceRtcGetLastAdjustedTick")]
+    [Hle("_sceRtcGetLastAdjustedTick")]
     [Hle("sceRtcGetLastReincarnatedTick")]
+    [Hle("_sceRtcGetLastReincarnatedTick")]
     int sceRtcGetLastAdjustedTick(Ptr<ulong> tick)
     {
         if (tick.IsNull) return RTC_INVALID_POINTER;
