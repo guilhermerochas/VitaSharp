@@ -5,6 +5,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 ## Diagnóstico
 
 - [ ] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
+  Feito em parte (07/11/2026, perf/desktop-11): `F1` / `Shift+F1` passam para a resolução interna seguinte / anterior
+  (1x, 2x, 3x, 4x) e `F2` / `Shift+F2` para a taxa de quadros seguinte / anterior (nativa, fixa em 30, fixa em 60, sem
+  limite), com aviso no canto da janela e na barra de título; valem só para a sessão (o perfil do jogo no launcher
+  não muda). A resolução troca o renderizador com as threads do jogo seguras entre duas cenas da GPU
+  (`SaveStates.ReplaceBackendBetweenScenes`, o mesmo caminho da carga de estado; 57-470 ms). Também como passos de
+  script (`key@f2250:F1`). Validado no Sonic Mania em gameplay, sem janela e com janela oculta: 1x -> 2x -> 3x -> 2x
+  (quadros gravados em 960x544, 1920x1088, 2880x1632, imagem certa logo depois de cada troca) e 30 fps entre os quadros
+  2500 e 2600 no modo fixo em 30 (`scratchpad/perf11_out/hk_mania`, `hk_win`, `hk_sheet.png`). Falta: o MSAA (real /
+  antigo / desligado) ainda é lido uma vez por processo (`VITASHARP_MSAA`, estático no renderizador); para trocar ao
+  vivo ele precisa virar opção do renderizador como a escala
 - [ ] Killzone (PCSC00045) `kz_skin` a 1x morreu calado no quadro 3435 numa das 8 rodadas da perf/desktop-res
   (07/11/2026; sem exceção, `.err` vazio). Não reproduziu (perf/desktop-11): 6 rodadas seguidas, 3 com cache de
   shaders e do driver frios e 3 quentes, com outros emuladores disputando a CPU, todas até o quadro 4500 com código de

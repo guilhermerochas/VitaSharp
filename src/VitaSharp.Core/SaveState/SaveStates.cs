@@ -142,6 +142,37 @@ public static class SaveStates
         return why ?? "timed out";
     }
 
+    /// <summary>
+    /// Replaces the GPU backend while the game runs (live graphics options: the internal resolution hotkey). The guest
+    /// threads are held between two GPU scenes, like for a save, so the new backend starts on a scene boundary; its
+    /// caches are built again from guest memory, as after a state load. Null when done, else why it was not.
+    /// </summary>
+    public static string? ReplaceBackendBetweenScenes(Emulator emu, Func<Gpu.IGpuBackend?> factory, int timeoutMs = 3000)
+    {
+        lock (Gate)
+        {
+            bool wasPaused = EmulationPause.IsPaused;
+            var held = new List<GuestThread>();
+            try
+            {
+                if (wasPaused) EmulationPause.Resume("GPU backend swap");
+                if (HoldBetweenScenes(emu, held, Stopwatch.StartNew(), timeoutMs) is { } why) return why;
+                EmulationPause.Pause("GPU backend swap", @internal: true);
+                if (emu.OpenSceneThread is { } scene) return $"thread '{scene.Name}' is finishing a GPU scene";
+                var t0 = Stopwatch.GetTimestamp();
+                emu.Gpu.WaitIdle();
+                emu.Gpu.ReplaceBackend(factory);
+                Log.Info($"GPU backend replaced while running in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
+                return null;
+            }
+            finally
+            {
+                if (wasPaused) EmulationPause.Pause("GPU backend swap"); else EmulationPause.Resume("GPU backend swap");
+                foreach (var t in held) t.HoldForSave(false);
+            }
+        }
+    }
+
     /// <summary>Holds every guest thread of <paramref name="emu"/> at its next safe point (module service threads run on).</summary>
     static List<GuestThread> Hold(Emulator emu)
     {

@@ -61,6 +61,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// <summary>The pause hotkey (<see cref="VitaControl.PauseEmulation"/>: a key of the keyboard profile, P by default,
     /// or a controller binding / button combination) was pressed: pause or resume the emulation (window thread).</summary>
     public event Action? PauseToggled;
+    /// <summary>F1 / F2 (Shift = the previous value): internal resolution / frame rate mode while the game runs
+    /// (<see cref="GraphicsHotkeys"/>; window thread, the handler must not block). The argument is the key name
+    /// ("F1", "Shift+F1", "F2", "Shift+F2").</summary>
+    public event Action<string>? GraphicsKey;
+    readonly HashSet<Key> _graphicsKeysDown = new();
 
     /// <summary>On-screen name of the keyboard's pause key ("P"), "" when it has none.</summary>
     public string PauseKeyLabel => _hostInput.KeyboardHotkey(VitaControl.PauseEmulation) is { } b
@@ -363,6 +368,13 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump (one toggle per press, whatever key repeat sends)
             if (down && !_f8Down) PressF8(IsControlDown);
             _f8Down = down;
+            return;
+        }
+        if (key is Key.F1 or Key.F2 && TextCapture == null)
+        {
+            // one change per press, whatever key repeat sends
+            if (!down) _graphicsKeysDown.Remove(key);
+            else if (_graphicsKeysDown.Add(key)) GraphicsKey?.Invoke((IsShiftDown ? "Shift+" : "") + key);
             return;
         }
         if (key is Key.F5 or Key.F6 or Key.F7 && TextCapture == null)
