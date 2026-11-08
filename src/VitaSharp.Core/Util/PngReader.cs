@@ -5,9 +5,11 @@ namespace VitaSharp.Core.Util;
 /// <summary>Minimal PNG reader for 8-bit RGB/RGBA non-interlaced images (the frame dumps).</summary>
 public static class PngReader
 {
-    public static (byte[] Rgba, int W, int H) Read(string path)
+    public static (byte[] Rgba, int W, int H) Read(string path) => Decode(File.ReadAllBytes(path), path);
+
+    /// <summary>Decodes PNG file bytes; <paramref name="path"/> only names the file in errors.</summary>
+    public static (byte[] Rgba, int W, int H) Decode(byte[] data, string path = "PNG")
     {
-        var data = File.ReadAllBytes(path);
         int p = 8, w = 0, h = 0, colorType = 6;
         using var idat = new MemoryStream();
         while (p + 8 <= data.Length)

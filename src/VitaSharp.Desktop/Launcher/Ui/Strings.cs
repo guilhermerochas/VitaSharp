@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
@@ -367,8 +367,15 @@ public static class Strings
     public static string CpuClockDetail => T();
     public static string Clock333 => T();
     public static string Clock444 => T();
-    public static string Camera => T();
-    public static string CameraDetail => T();
+    public static string CameraFront => T();
+    public static string CameraFrontDetail => T();
+    public static string CameraBack => T();
+    public static string CameraBackDetail => T();
+    public static string CameraBackDefault => T();
+    public static string CameraPickPicture => T();
+    public static string CameraPickTitle => T();
+    public static string CameraPictureFileType => T();
+    public static string CameraPicture(string name) => F(T(), name);
     public static string CameraDefault => T();
     public static string CameraNone => T();
     public static string CameraDisconnected(string name) => F(T(), name);

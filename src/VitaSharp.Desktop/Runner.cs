@@ -189,8 +189,10 @@ public static class Runner
         // motion sensors: the controller's gyro (SDL), or the script's tilt steps
         emu.Host.Motion = scripted ?? window.Motion;
         emu.Host.Audio = audio;
-        // webcam for SceCamera: --camera=<name or index> picks a device, --camera=none disables it (grey frames)
-        emu.Host.Camera = FlashCapCamera.TryCreate(Opt(options, "--camera"));
+        // SceCamera sources: --camera= sets both Vita cameras, --camera-front= / --camera-back= one (webcam name or
+        // index, "none" = grey, or a .png/.jpg picture); unset = front first webcam, back the next other webcam
+        var (camFront, camBack) = CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back"));
+        emu.Host.Camera = FlashCapCamera.CreateForVita(camFront, camBack);
         VulkanRenderer? renderer = null;
         var clock = Stopwatch.StartNew();
         long lastFrames = 0, titleTicks = 0;
@@ -645,7 +647,9 @@ public static class Runner
         if (nav != null) emu.Host.Input = nav;
         if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device")); // real audio device, as in the window mode
         if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
-        if (Opt(options, "--camera") is { } cam) emu.Host.Camera = FlashCapCamera.TryCreate(cam); // headless: webcam only on request
+        // headless: cameras only on request (an unset side stays grey)
+        if (CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back")) is var (hf, hb) && (hf != null || hb != null))
+            emu.Host.Camera = FlashCapCamera.CreateForVita(hf ?? "none", hb ?? "none");
         emu.BacktraceHle = Opt(options, "--bt");
         if (TraceOpt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');
         if (TraceOpt(options, "--trace-hle-threads") is { } tht) emu.TraceHleThreads = tht.Split('+');

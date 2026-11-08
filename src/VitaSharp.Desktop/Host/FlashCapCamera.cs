@@ -9,25 +9,43 @@ namespace VitaSharp.Desktop.Host;
 
 /// <summary>
 /// Host webcam for SceCamera through FlashCap (DirectShow / Media Foundation on Windows, V4L2 on Linux,
-/// AVFoundation on macOS). Both Vita cameras map to the selected host device. Capture runs on FlashCap's thread;
+/// AVFoundation on macOS). Each Vita camera has its own device choice (<see cref="CreateForVita"/>): by default the
+/// front camera is the first webcam and the back camera the next other webcam, else the same one. Capture runs on FlashCap's thread;
 /// each frame is converted to RGBA into a <see cref="CameraFrameBuffer"/> that keeps only the latest one.
 /// One device capture serves both Vita cameras and survives a sensor switch (<see cref="SharedCapture"/>).
 /// </summary>
 public sealed class FlashCapCamera : ICameraSource
 {
-    readonly string? _selection;
+    // per Vita camera (0 front, 1 back): null = the default device for that side, else a name or index
+    readonly string?[] _selection;
     List<CaptureDeviceDescriptor>? _devices;
     // a stopped Vita camera keeps the webcam open this long, so stop + start of the other sensor reuses it
     readonly SharedCapture _shared = new(TimeSpan.FromSeconds(2));
 
-    FlashCapCamera(string? selection) => _selection = selection;
+    FlashCapCamera(string? front, string? back) => _selection = [front, back];
 
-    /// <summary><paramref name="selection"/>: null/"" = first camera, "none" = disabled (returns null), a device
-    /// name (exact or substring, case-insensitive) or a 0-based index into <see cref="ListDevices"/>.</summary>
-    public static FlashCapCamera? TryCreate(string? selection)
+    /// <summary>
+    /// The host source of each Vita camera (<see cref="CameraSpec"/>): "" = default webcam, "none" = grey frames,
+    /// a .png/.jpg path = that still picture, else a webcam name (exact or substring, case-insensitive) or 0-based
+    /// index into <see cref="ListDevices"/>. Both webcam sides share one instance, so a single webcam serving both
+    /// cameras keeps its capture across a sensor switch. Null when neither camera has a source.
+    /// </summary>
+    public static ICameraSource? CreateForVita(string? front, string? back)
     {
-        if (string.Equals(selection, "none", StringComparison.OrdinalIgnoreCase)) return null;
-        return new FlashCapCamera(string.IsNullOrWhiteSpace(selection) ? null : selection.Trim());
+        var specs = new[] { CameraSpec.Parse(front), CameraSpec.Parse(back) };
+        FlashCapCamera? webcam = specs.Any(s => s.Kind is CameraSpecKind.Default or CameraSpecKind.Device)
+            ? new FlashCapCamera(DeviceSel(specs[0]), DeviceSel(specs[1]))
+            : null;
+        var sides = specs.Select(s => s.Kind switch
+        {
+            CameraSpecKind.None => null,
+            CameraSpecKind.Image => (ICameraSource?)StillImageCamera.TryLoad(s.Value),
+            _ => webcam,
+        }).ToArray();
+        if (sides[0] == null && sides[1] == null) return null;
+        return new FacingCameras(sides[0], sides[1]);
+
+        static string? DeviceSel(CameraSpec s) => s.Kind == CameraSpecKind.Device ? s.Value : null;
     }
 
     /// <summary>Video capture devices, one entry per physical camera (DirectShow preferred over Media Foundation
@@ -104,22 +122,15 @@ public sealed class FlashCapCamera : ICameraSource
 
     public IReadOnlyList<string> DeviceNames => Devices.Select(d => d.Name).ToList();
 
-    CaptureDeviceDescriptor? Select()
-    {
-        var devs = Devices;
-        if (devs.Count == 0) return null;
-        if (_selection == null) return devs[0];
-        if (int.TryParse(_selection, out int idx) && idx >= 0 && idx < devs.Count) return devs[idx];
-        return devs.FirstOrDefault(d => d.Name.Equals(_selection, StringComparison.OrdinalIgnoreCase))
-               ?? devs.FirstOrDefault(d => d.Name.Contains(_selection, StringComparison.OrdinalIgnoreCase));
-    }
-
     public ICameraStream? Open(CameraFacing facing, int width, int height, int fps)
     {
-        var desc = Select();
+        var devs = Devices;
+        int i = CameraSpec.SelectDevice(devs.Select(d => d.Name).ToList(), _selection[0], _selection[1], facing);
+        var desc = i >= 0 ? devs[i] : null;
+        var sel = _selection[(int)facing & 1];
         if (desc == null)
         {
-            Log.Info(_selection == null ? "Camera: no capture device found" : $"Camera: capture device '{_selection}' not found");
+            Log.Info(sel == null ? "Camera: no capture device found" : $"Camera: capture device '{sel}' not found");
             return null;
         }
         var ch = Choose(desc, width, height, fps);
