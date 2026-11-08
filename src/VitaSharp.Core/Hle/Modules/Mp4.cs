@@ -73,7 +73,7 @@ public sealed partial class Mp4 : HleModule
             uint total = t.CallGuest(size, arg);
             const uint Chunk = 256 * 1024;
             uint buf = Emu.Memory.Alloc(Chunk, "mp4 read");
-            var tmp = Path.Combine(Path.GetTempPath(), $"vitasharp-mp4-{Environment.ProcessId}-{Guid.NewGuid():N}.mp4");
+            var tmp = TempMovies.NewPath("mp4", Guid.NewGuid().ToString("N"));
             using (var fs = System.IO.File.Create(tmp))
             {
                 for (uint off = 0; off < total; off += Chunk)
