@@ -37,6 +37,8 @@ public static class DecoderOutputs
     // per (address space id, address): newest last
     static readonly Dictionary<(int, uint), List<Picture>> History = new();
     static long _seq;
+    // per address space and picture size (one movie's ring of buffers): the newest picture an upload took (its Seq)
+    static readonly Dictionary<(int, uint, uint), long> LastTaken = new();
     static long _served;
 
     /// <summary>Pictures served from the history instead of memory (diagnostics).</summary>
@@ -87,12 +89,18 @@ public static class DecoderOutputs
         {
             if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list)) return null;
             newest = list[^1];
-            Picture? found = list.FirstOrDefault(p => !p.Taken && p.Fits(w, h));
+            int space = SpaceOf(addr);
+            // a picture decoded before one of its size that an upload already took (at any address) was skipped by the
+            // game: drawing it now would step back in time. Ninja Gaiden Sigma 2 Plus decodes its movie into a ring of three
+            // buffers; one picture of one buffer was never sampled, and from then on that buffer always served its previous
+            // picture (every third frame of the intro two frames back)
+            Picture? found = list.FirstOrDefault(p => !p.Taken && p.Fits(w, h) && p.Seq > LastTaken.GetValueOrDefault((space, p.Width, p.Height)));
             if (found != null)
             {
                 // every picture before it was drawn or skipped
                 foreach (var p in list) { if (p == found) break; p.Taken = true; }
                 found.Taken = true;
+                LastTaken[(space, found.Width, found.Height)] = found.Seq;
                 if (found == newest) return null;
             }
             else

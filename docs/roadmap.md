@@ -1050,6 +1050,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
   "flashes" que restam no analisador são relâmpagos do próprio filme
   Pista do usuário (08/11/2026): a abertura do Ninja Gaiden Sigma 1 (PCSB00097) vai fluida e a do Sigma 2 engasga, no mesmo build. Comparar os dois caminhos lado a lado (player usado: avPlayer x sceAvcdec, fps do filme x vblank, buffers/anel, ritmo de entrega dos quadros e de troca do framebuffer, áudio do filme como relógio) e achar o que o Sigma 2 faz diferente; os agentes não acharam defeito olhando só o Sigma 2
+  Vídeo corrigido de verdade (08/11/2026, agente C, fix/bugs-games-20): casando cada present com o NINJA_VI.MP4
+  decodificado pelo ffmpeg (miniaturas 120x68, média por bloco, sem a média de brilho), a gravação do usuário
+  (captures\PCSE00233_20261108_015357_tudo, build cb284cf, já com o 2f7518c) mostra o filme inteiro na ordem
+  n+1, n+2, n (103 voltas de -2 em 411 presents), e não só nos B-frames. O decodificador estava certo (um quadro por
+  chamada, pts crescentes, anel de 3 buffers); o defeito era o histórico de quadros do decodificador
+  (Gpu/DecoderOutputs.cs, da 57c57b1 do Jak): o primeiro quadro do buffer 0x90500000 nunca é amostrado pelo jogo,
+  fica marcado como não usado, e daí em diante cada upload desse buffer pegava o quadro anterior (o 'mais antigo não
+  usado'), um ciclo atrasado para sempre. Com VITASHARP_DECODER_HISTORY=0 some (264/264 passos de +1). Correção: um
+  quadro decodificado antes de outro do mesmo tamanho que um upload já pegou (em qualquer endereço) foi pulado pelo
+  jogo e não é mais mostrado depois. Medido com boot ao vivo sem entrada (--capture-at=250:860), 5 execuções do build
+  final: 0 voltas para trás (325/325, 324/324, 304 com o PC carregado), contra 85-105 sem a correção
+  (ugsC3_data/captures/PCSE00233_20261108_1342* a ..._134743_tudo); teste DecoderOutputsTests. A diferença para o
+  Sigma 1: ele não deixa quadro sem amostrar no anel
 
   08/11/2026 (agente C, fix/bugs-games-19, só achados): nova gravação do usuário com o 2f7518c
   (`captures\PCSE00233_20261108_015357_tudo`, 30 fps cravados, 3 "trocas" e ~10 flashes). O `rerun` dela derruba o
@@ -1062,6 +1075,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   As trocas/flashes do analisador caem nos relâmpagos do próprio filme (quadros-fonte vizinhos diferem 50-70):
   falso positivo. Filme de 29,97 fps a 1 quadro por vblank de 30 Hz. Falta o usuário apontar o trecho que engasga
   (ou comparar com um vídeo do Vita real)
+
+  08/11/2026 (agente C, fix/bugs-games-20, interrompido pelo usuário antes de começar): o crash do `rerun` dessa
+  gravação depois de carregar o estado (AccessViolation em `T16.LdStSp`) segue aberto, sem investigação nova. Próximo
+  passo: rodar o `rerun` (cópia em `bugsC3_data`) com o log do thread que cai, comparar registradores/pilha do thread
+  com `threads_start.txt` e ver se o código traduzido (cache do JIT) ou um mapeamento de memória não foi refeito na
+  carga. Fila da rodada 20 ainda não iniciada: NFS Most Wanted no diálogo Origin, fps do shell main x f0e692f com o PC
+  livre, filme do LBP com `--video-decoder=hw`, rosto lento do Soccer Tsuku (PCSG00198)
 - [ ] FIFA 13 (PCSE00093): "algumas coisas parecem estranhas" (relato do usuário, 07/11/2026, main 90b55bc; três
   gravações: `captures\PCSE00093_20261107_030833_tudo` (4,3 s), `..._031028_tudo` (5,2 s) e `..._032507_tudo` (8,4 s),
   todas a 60 fps). O analisador só acha paradas de 112-212 ms (a primeira de cada é o estado salvo do início da gravação)
