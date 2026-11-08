@@ -1,4 +1,19 @@
 # Roadmap
+  audio-check`): 245 e 157 estalos no celular
+  Fps do shell main x f0e692f (agente C, 08/11/2026, boot-shell headless 60 s, 3 execuções de cada): f0e692f 60 fps
+  cravados nas 3; a main (com as correções desta rodada) teve quedas (55,8/40,6; 29/5,7/30/42/46; 51/23/29/51) nas 3,
+  mas o PC não estava livre: as quedas caem exatamente nos picos de 97-100% de CPU total, com csc de outro agente
+  usando ~7 núcleos (470-727%) e outros VitaSharp/testhost rodando. Sem conclusão; repetir com o PC parado
+  Filme do LBP com --video-decoder=hw x software (agente C, 08/11/2026, boot sem entrada, presents 2400-2620): o
+  trecho é a tela de título (logo animado), não o filme movie.mp4 (nenhum quadro casa com ele). hw 12 achados
+  (flashes A-B-A e 1 troca, ugsC3_data/captures/PCSA00017_20261108_154402_tudo), software 11 com quedas de fps
+  (..._154608_tudo). Pista nova: com VITASHARP_DECODER_HISTORY=0 2 de 2 execuções a 30 fps cravados e 1-2
+  achados (..._155052_tudo, ..._160414_tudo); com o histórico ligado 2 de 2 com quedas a 4-13 fps e 29-31 achados
+  (..._155746_tudo, ..._160123_tudo), mas o jogo chegou em telas diferentes (889 x 507 cenas MSAA) e o PC estava
+  carregado, então não dá para culpar o histórico ainda. Próximo passo: rerun de uma gravação (mesmo estado) com o
+  histórico ligado x desligado. O uto continua em software
+  Soccer Tsuku (rosto lento): não iniciado nesta rodada; continua precisando de uma gravação nova com a main
+# Roadmap
 
 Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
@@ -1303,6 +1318,18 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   tenta mais DNS/UDP (só o NetCheckDialog, cancelado). **Aberto**: o NFS continua parado no diálogo do Origin depois do
   toque, com e sem conta (X, toque em CONTINUE, START não fazem nada; O volta ao título); o jogo lê o controle e não faz
   IO nesse estado, então não é rede: falta achar o que o diálogo espera (o spinner continua)
+  08/11/2026 (agente C, fix/bugs-games-20, só achados, timebox): reproduz com a main (ugsC20_out/nfs1, 
+fs8):
+  depois do toque o jogo carrega 26 BNDL da UI/mundo (f659-f803, último UI/SCREENS2/669547_TRANSITIONS.BNDL) e para
+  de ler; o spinner continua, X (8 e 30 quadros), toque em CONTINUE (0.25, 0.30), START e O não mudam nada em 10 s
+  (o O voltava ao título no relato anterior, depois de mais tempo). O X chega ao jogo: ele grava SafeMemory 4 vezes
+  (f977-f981) logo depois. O Hawaii_Main_Thread só faz por quadro sceNpGetServiceState (SIGNED_OUT),
+  sceNpManagerGetNpId (SIGNED_OUT), sceNpCheckCallback, sceNpBasicCheckCallback, _sceAppMgrGetAppState; os threads de
+  job giram normalmente. Testado sem efeito: NetCheckDialog terminando OK (como o Vita3K) e sceNpManagerGetNpId
+  devolvendo o id mesmo deslogado (como o Vita3K) — nenhum dos dois libera. Sem erro HLE novo (só IsLoaded(5),
+  SignalSema OVF, NgsVoiceGetOutputPatch). No Vita3K o jogo chega ao gameplay (issue de compatibilidade #209), sem
+  menção ao Origin. Próximo passo: achar no código do jogo o que o frontend espera depois do último BNDL (backtrace
+  do Hawaii_Main_Thread em --bt, ou comparar com um log do Vita3K com --log-imports)
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
