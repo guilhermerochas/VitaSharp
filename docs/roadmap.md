@@ -530,6 +530,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   responde sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
   uma vez (282ec7d, 99Vidas sem rede). Como no Vita3K, mostrar o diálogo por cima do jogo e deixar o usuário escolher
   com os botões/toque, para não depender de respostas automáticas
+  Parado em 08/11/2026 (agente de produto, rodada 2, feat/product-2, sem código ainda): só o estudo. Próximo passo:
+  um `IMessageDialogBackend` em `Core/Host/HostServices.cs` no molde do `IImeDialogBackend` (Open/Close, resposta
+  de qualquer thread); o `sceMsgDialogInit` (e as mensagens/confirmações do SaveDataDialog) espera a resposta quando
+  há backend e mantém as respostas automáticas atuais sem ele (headless/roteiro); no desktop um overlay SkiaSharp no
+  `SetCenterOverlay` como o `ImeOverlay` (via `WindowHost.TextCapture`, controle neutro para o jogo, setas/Enter/Esc,
+  Cross/Circle e clique), textos no Texts.resx/Texts.pt-BR.resx. Depois: save states visuais (SaveStateControl),
+  botões do mouse mapeáveis (WindowHost.MouseDown, InputBinding) e textos do Android nos .resx
 - [x] Música de fundo do shell não toca (relato do usuário, 06/11/2026): no Vita real a tela inicial/LiveArea toca a
   música de fundo do sistema (e a dos temas); aqui o shell fica mudo. Ver se o shell abre a porta de áudio/BGM (SceAudio,
   `sceAppMgrSetBgmProxyApp`, o serviço de música do shell, arquivos de som em vs0:data/internal ou do tema) e o que falta
