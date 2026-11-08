@@ -1662,4 +1662,22 @@
   <data name="ZrifWatermark" xml:space="preserve">
     <value>zRIF (KO5ifR1dQ+eHBlOi…)</value>
   </data>
+  <data name="GameMsaa" xml:space="preserve">
+    <value>MSAA: {0}</value>
+  </data>
+  <data name="GameMsaaCannot" xml:space="preserve">
+    <value>MSAA: cannot change it now ({0})</value>
+  </data>
+  <data name="GameMsaaFailed" xml:space="preserve">
+    <value>MSAA: failed (see the log)</value>
+  </data>
+  <data name="GameMsaaSs" xml:space="preserve">
+    <value>2x supersampling</value>
+  </data>
+  <data name="GameMsaaOff" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="GameMsaaNative" xml:space="preserve">
+    <value>native (real multisampling)</value>
+  </data>
 </root>
