@@ -776,6 +776,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   idioma pelo sistema (com opção nas configurações) e cair para inglês quando faltar uma chave; um teste que falha se um
   texto de interface ficar fora dos arquivos ou se faltar uma chave em algum idioma. Também resolve a regra 16 do guia
   Ryubing (sem caracteres não ASCII no código). Os logs continuam em inglês
+- [ ] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
+  (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
+  releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um
+  link "English | Português" no topo de cada um. Só o que é externo: coisas internas (este roadmap, `docs/agents/`,
+  `docs/notes/`, `docs/hle/`) continuam num idioma só, como estão. Manter os dois em dia a cada mudança (um teste que
+  avisa quando um arquivo externo muda sem o par)
 - [x] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
   Fazer o CI, a cada push na `main` com testes e pacotes ok, publicar sozinho uma release (prerelease) na aba
   "Releases" do GitHub com os pacotes Native AOT (win-x64, linux-x64, osx-arm64; depois o APK android-arm64), o
