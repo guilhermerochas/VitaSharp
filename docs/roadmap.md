@@ -1114,6 +1114,33 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     NID_FFBFC540 (IPC 0xB0025 de 64 bytes ao servidor NP do shell, sem ponte no VitaSharp), o código de falha do
     sceNearInitialize depois das checagens (precisa do app Near), e os syscalls do lado do sistema (SceAppMgr 108,
     SceVshBridge 92, SceAvcodec 82, SceBbmc 48... do bootimage)
+  - Lote 5 (feat/hle-batch-5, 08/11/2026). `hle-coverage` antes -> depois: geral 5.076/19.406 (26,2%) -> 5.383 (27,7%);
+    importadas pelos jogos 1.469/1.518 (96,8%) -> 1.514 (99,7%); pelo sistema 1.323/7.539 (17,5%) -> 1.398 (18,5%); o
+    resto 2.284/10.349 (22,1%) -> 2.471 (23,9%). Feito: os 6 syscalls `_sceIo{Remove,Mkdir,Rmdir,Rename,Getstat,Sync}Async`
+    recebem o SceIoAsyncParam no registrador depois dos argumentos (o libkernel 3.74 repassa; antes ia 0); as exceções
+    C++ do libc.suprx 3.74 para processos com a libc do HLE (unwinder ARM EHABI dos módulos carregados, pr0/1/2 com
+    descritores ARM, `__snc_personality_v0` com LSDA no formato GCC, `__cxa_*` com o cabeçalho de 0x80 bytes do
+    módulo, casamento de tipos, classes de exceção com vtables, `_X*`), as 418 RTTI que o SceLibstdcxx exporta como
+    variáveis (tabela gerada dos dados de exportação do módulo, `Libc.Rtti.g.cs`), `ios_base::_Init/clear/~ios_base/
+    _Addstd`, manipuladores, `ios_base::failure` com a categoria iostream, `_Fiopen`, atômicos de 1/2/8 bytes e
+    genéricos, pedaços de `std::string`; SceLibGcc (`_Unwind_*` do libkernel) sobre o mesmo unwinder; 37 syscalls
+    `_sceAppMgr*` e 36 do SceAvcodec (Avcenc/Videoenc/Jpeg) atrás dos wrappers do driver_us/avcodec_us (struct de
+    rascunho no último argumento); `VITASHARP_HLE_CALLS=1` lista toda função HLE chamada. Validado: Minecraft
+    (PCSE00491) com `VITASHARP_HLE_MODULES=libc` 90 s chamando `ios_base::_Init`/`~ios_base` 1.737x, `clear` 2.270x,
+    0 crash; modo normal sem regressão em PCSA00080, PCSB01073, PCSE00606, PCSE00781 e no shell (custo por quadro igual, 5,8 ms; Skullgirls A/B contra
+    main: 54,1/53,9 vs 54,0/53,2 fps). Os syscalls `_sceAppMgr*`/SceAvcodec/IO só têm teste de unidade: nenhum
+    programa instalado os chama (os wrappers rodam no HLE).
+- [ ] HLE lote 6: iostreams e locale clássico do libc.suprx 3.74 (os 4 imports de jogo que faltam: `ios_base::Init`
+  C1/D1 e `_Winit` C1/D1). O Init (0x8102BD34 no libc.suprx 3.74, contador em 0x8105355C sob o lock 0) constrói, na
+  primeira chamada, 3 `basic_filebuf<char>` de 0x90 bytes sobre stdin/stdout/stderr (vtable de basic_streambuf em
+  0x8104F554, de basic_filebuf em 0x8104F5C4: overflow, underflow, uflow, pbackfail, xsputn, xsgetn, sync, setbuf,
+  seekoff/seekpos, imbue, showmanyc) e cin/cout/cerr/clog (istream/ostream com basic_ios, `_Addstd`, `tie`); o locale
+  clássico (`_Locimp`, `_Locinfo`, facetas ctype/numpunct/num_put/num_get/codecvt com vtables) começa em 0x81038DD8;
+  `_Winit` (0x81031BA0) faz o mesmo para wchar_t; os D1 (0x8102C35A / 0x810321AC) dão flush nos 3 streams na última
+  referência. Já existe: a tabela RTTI e o construtor de vtables com slots H (funções não exportadas) em
+  `Libc.Exceptions.cs`, os helpers de `std::string`, os campos de `ios_base` em `Libc.Ios.cs`. Validar com Minecraft
+  em modo libc do HLE chegando ao menu e ao jogo; também os `_Mtx_*/_Cnd_*/_Thrd_*` (31, xthreads sobre lwmutex/lwcond)
+  e os syscalls do SceVshBridge/SceBbmc (corpos no bootimage.skprx).
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
