@@ -408,6 +408,7 @@ public sealed partial class Libc
     {
         uint _p = p;
         public uint Next() { uint v = GuestMemory.R32(_p); _p += 4; return v; }
+        public uint? Address => _p;
     }
 
     static VarArgs Va(uint vaList) => new(new VaList(vaList), 0);

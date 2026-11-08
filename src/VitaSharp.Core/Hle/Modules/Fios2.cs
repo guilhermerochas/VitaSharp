@@ -431,6 +431,7 @@ public sealed partial class Fios2 : HleModule
     {
         uint _p = p;
         public uint Next() { uint v = GuestMemory.R32(_p); _p += 4; return v; }
+        public uint? Address => _p;
     }
 
     static string ErrorName(int e) => e switch
