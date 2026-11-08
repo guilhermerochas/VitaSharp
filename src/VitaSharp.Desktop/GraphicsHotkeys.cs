@@ -58,16 +58,16 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
                 {
                     ro.Msaa = saved;
                     Log.Warn($"MSAA {from} -> {to} not applied: {why}");
-                    notice($"MSAA: não foi possível trocar agora ({why})");
+                    notice(Loc.Format("GameMsaaCannot", why));
                     return;
                 }
                 Log.Info($"MSAA {from} -> {to} (hotkey) at guest frame {Display.FramesPresented}");
-                notice($"MSAA: {MsaaLabel(to)}");
+                notice(Loc.Format("GameMsaa", MsaaLabel(to)));
             }
             catch (Exception e)
             {
                 Log.Error($"MSAA change failed: {e}");
-                notice("MSAA: falhou (veja o log)");
+                notice(Loc.Get("GameMsaaFailed"));
             }
             finally { Volatile.Write(ref _busy, 0); }
         });
@@ -75,9 +75,9 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
 
     static string MsaaLabel(string mode) => mode switch
     {
-        "ss" => "superamostragem 2x",
-        "off" => "desligado",
-        _ => "nativo (multiamostragem real)",
+        "ss" => Loc.Get("GameMsaaSs"),
+        "off" => Loc.Get("GameMsaaOff"),
+        _ => Loc.Get("GameMsaaNative"),
     };
 
     static int Next(int i, int count, bool back) => back ? (i <= 0 ? count - 1 : i - 1) : (i < 0 ? 0 : (i + 1) % count);
