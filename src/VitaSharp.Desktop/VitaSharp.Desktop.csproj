@@ -77,6 +77,9 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(VitaSharpUpdateRepository)' != ''">
     <AssemblyMetadata Include="VitaSharpUpdateRepository" Value="$(VitaSharpUpdateRepository)" />
+    <!-- the build time ("version", diagnostics, the update check of a build missing from the releases list): a Native
+         AOT package has no VitaSharp.Core.dll to take it from, and a zip keeps whatever time its extractor gives -->
+    <AssemblyMetadata Include="VitaSharpBuildTime" Value="$([System.DateTime]::UtcNow.ToString('o'))" />
   </ItemGroup>
 
   <!-- self-contained single-file release (dotnet publish -r <rid> -p:VitaSharpRelease=true): the managed code is

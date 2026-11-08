@@ -22,8 +22,12 @@ public static class Updater
         (Assembly.GetEntryAssembly() ?? typeof(Updater).Assembly).GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
         BuildTime());
 
-    static DateTimeOffset BuildTime()
+    /// <summary>The time the CI built this package (VitaSharpBuildTime metadata), else the executable's time.</summary>
+    public static DateTimeOffset BuildTime()
     {
+        if (Metadata("VitaSharpBuildTime") is { } stamp
+            && DateTimeOffset.TryParse(stamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var t))
+            return t;
         try { return File.GetLastWriteTimeUtc(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "VitaSharp.Core.dll")); }
         catch (Exception) { return DateTimeOffset.UtcNow; }
     }
