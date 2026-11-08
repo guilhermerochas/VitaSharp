@@ -996,6 +996,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Ninja Gaiden Sigma (PCSB00097): alguns trechos ficam embaçados (relato do usuário, 08/11/2026, main f8ddeca,
+  gravação `captures\PCSB00097_20261108_032607_tudo`, 322 quadros de dump da GPU, 30 fps). O usuário trocou a resolução
+  interna com F1 (1x -> 2x -> 3x -> 4x) na mesma sessão: conferir com replay-gpu em 1x e na escala usada se o borrão é
+  da escala (alvo reinterpretado/desfoque lido no tamanho errado, como o planeta do LBP e a luz do Resistance) ou do
+  jogo (efeito de profundidade de campo); comparar com vídeo do Vita real. Validar
 - [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
   usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
   (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
@@ -1044,6 +1049,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   filme, `scratchpad/bugsC18_order.py`), 700 presents a partir do 300: low-delay 62 voltas para trás; sem ele 1 (no
   início) e 431 passos de +1 (`bugsC3_data/captures/PCSE00233_20261107_234018_tudo` x `..._234117_tudo`). Os
   "flashes" que restam no analisador são relâmpagos do próprio filme
+  Pista do usuário (08/11/2026): a abertura do Ninja Gaiden Sigma 1 (PCSB00097) vai fluida e a do Sigma 2 engasga, no mesmo build. Comparar os dois caminhos lado a lado (player usado: avPlayer x sceAvcdec, fps do filme x vblank, buffers/anel, ritmo de entrega dos quadros e de troca do framebuffer, áudio do filme como relógio) e achar o que o Sigma 2 faz diferente; os agentes não acharam defeito olhando só o Sigma 2
 
   08/11/2026 (agente C, fix/bugs-games-19, só achados): nova gravação do usuário com o 2f7518c
   (`captures\PCSE00233_20261108_015357_tudo`, 30 fps cravados, 3 "trocas" e ~10 flashes). O `rerun` dela derruba o
