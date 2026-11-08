@@ -82,4 +82,18 @@ public sealed partial class Ngs
 {
     /// <summary>Returns 0 (no preset) for any definition in the 3.74 SceNgs.</summary>
     [Hle] uint sceNgsVoiceDefinitionGetPresetInternal(uint definition, uint index) => 0;
+
+    /// <summary>(rack): the system handle the rack was created in, 0 for an unknown rack (SceNgs FW 3.74).</summary>
+    [Hle] uint sceNgsSystemGetSysHandleFromRack(uint rack) => _racks.TryGetValue(rack, out var r) ? r.System.Handle : 0;
+
+    /// <summary>(system): 1 when the program was built with SDK 3.55 or later (the system keeps the SDK version it was
+    /// initialised with; libngs switches its rack release and update paths on it), 0 for older ones or an unknown handle.</summary>
+    [Hle]
+    int sceNgsSystemIsFixForBugzilla89940(uint system)
+    {
+        if (!_systems.ContainsKey(system)) return 0;
+        uint pp = Emu.Linker.ProcessParam;
+        uint sdk = pp == 0 || Memory.GuestMemory.R32(pp + 4) != 0x32505350 ? SystemMisc.SystemSwVersion : Memory.GuestMemory.R32(pp + 0xC);
+        return sdk > 0x0354FFFF ? 1 : 0;
+    }
 }
