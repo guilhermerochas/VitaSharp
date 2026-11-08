@@ -1,175 +1,182 @@
+<!-- pair: README.pt-BR.md sha256=1ceb1695b83f4c9daff90eb00ab0e995f45a23ca634f09c24b65ec4636c101dc -->
 <div align="center">
+
+**English** | [Português](README.pt-BR.md)
 
 <img src="docs/assets/banner.svg" alt="VitaSharp" width="520">
 
-### Um emulador de PlayStation Vita escrito em C#
+### A PlayStation Vita emulator written in C#
 
-Roda jogos comerciais do Vita e o próprio sistema do console, sem núcleo nativo: um JIT ARMv7, um renderizador
-Vulkan e mais de 1.100 funções do sistema reimplementadas, tudo em .NET 10.
+Runs commercial Vita games and the console's own system software, with no native core: an ARMv7 JIT, a Vulkan
+renderer and more than 1,100 system functions reimplemented, all in .NET 10.
 
-[![Licença: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg)](https://www.vulkan.org/)
-[![Estado: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](docs/compatibility.md)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](docs/compatibility.md)
 
 <br>
 
-<img src="docs/assets/screenshots/shell-home.webp" alt="A tela inicial do PS Vita com os jogos instalados, rodando no VitaSharp" width="760">
+<img src="docs/assets/screenshots/shell-home.webp" alt="The PS Vita home screen with the installed games, running in VitaSharp" width="760">
 
-<sub><i>A tela inicial de verdade do PS Vita (o <code>shell.self</code> do firmware) rodando no VitaSharp.</i></sub>
+<sub><i>The real PS Vita home screen (the firmware's <code>shell.self</code>) running in VitaSharp.</i></sub>
 
 </div>
 
 ---
 
-## O que é
+## What it is
 
-O VitaSharp emula o PS Vita. Ele executa o código ARMv7 do console (interpretador e JITs nativos para x86-64 e
-ARM64), traduz os shaders da GPU do Vita para Vulkan e reimplementa as bibliotecas do sistema que os jogos chamam
-(HLE). Com o firmware oficial instalado, ele também roda o software do próprio Vita: tela de bloqueio, tela inicial,
-LiveArea e jogos abertos por elas. É um projeto de pesquisa em desenvolvimento ativo, todo em C#.
+VitaSharp emulates the PS Vita. It runs the console's ARMv7 code (an interpreter and native JITs for x86-64 and
+ARM64), translates the Vita GPU's shaders to Vulkan and reimplements the system libraries games call (HLE). With the
+official firmware installed it also runs the Vita's own software: lock screen, home screen, LiveArea and the games
+started from them. It is a research project under active development, all in C#.
 
 > [!IMPORTANT]
-> O VitaSharp não inclui jogos, firmware nem código da Sony. Use jogos e licenças tirados do seu próprio console e
-> baixe a atualização do sistema (`PSVUPDAT.PUP`) no site da PlayStation. Pirataria não é suportada.
+> VitaSharp includes no games, firmware or Sony code. Use games and licenses dumped from your own console and
+> download the system update (`PSVUPDAT.PUP`) from the PlayStation website. Piracy is not supported.
 
 <table>
 <tr>
-<td width="33%"><img src="docs/assets/screenshots/killzone-mercenary.webp" alt="Killzone: Mercenary" width="300"><br><sub><b>Killzone: Mercenary</b>, campanha</sub></td>
-<td width="33%"><img src="docs/assets/screenshots/uncharted.webp" alt="Uncharted: Golden Abyss" width="300"><br><sub><b>Uncharted: Golden Abyss</b>, primeira fase</sub></td>
-<td width="33%"><img src="docs/assets/screenshots/gravity-rush.webp" alt="Gravity Rush" width="300"><br><sub><b>Gravity Rush</b>, abertura</sub></td>
+<td width="33%"><img src="docs/assets/screenshots/killzone-mercenary.webp" alt="Killzone: Mercenary" width="300"><br><sub><b>Killzone: Mercenary</b>, campaign</sub></td>
+<td width="33%"><img src="docs/assets/screenshots/uncharted.webp" alt="Uncharted: Golden Abyss" width="300"><br><sub><b>Uncharted: Golden Abyss</b>, first chapter</sub></td>
+<td width="33%"><img src="docs/assets/screenshots/gravity-rush.webp" alt="Gravity Rush" width="300"><br><sub><b>Gravity Rush</b>, opening</sub></td>
 </tr>
 <tr>
-<td><img src="docs/assets/screenshots/god-of-war.webp" alt="God of War Collection" width="300"><br><sub><b>God of War Collection</b>, combate</sub></td>
-<td><img src="docs/assets/screenshots/persona-4-golden.webp" alt="Persona 4 Golden" width="300"><br><sub><b>Persona 4 Golden</b>, abertura</sub></td>
-<td><img src="docs/assets/screenshots/shell-livearea.webp" alt="LiveArea do Uncharted" width="300"><br><sub><b>Sistema do Vita</b>, LiveArea de um jogo</sub></td>
+<td><img src="docs/assets/screenshots/god-of-war.webp" alt="God of War Collection" width="300"><br><sub><b>God of War Collection</b>, combat</sub></td>
+<td><img src="docs/assets/screenshots/persona-4-golden.webp" alt="Persona 4 Golden" width="300"><br><sub><b>Persona 4 Golden</b>, opening</sub></td>
+<td><img src="docs/assets/screenshots/shell-livearea.webp" alt="Uncharted's LiveArea" width="300"><br><sub><b>Vita System</b>, a game's LiveArea</sub></td>
 </tr>
 </table>
 
-## Jogos
+## Games
 
-38 jogos testados até agora ([`docs/compatibility.md`](docs/compatibility.md), com o estado e o cenário de teste de
-cada um): 25 chegam ao gameplay (entre eles Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War
-Collection, FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls e Devious Dungeon, vários que
-não abrem no Vita3K) e o resto chega aos menus. Os defeitos conhecidos e o trabalho futuro estão no
-[roadmap](docs/roadmap.md).
+38 games tested so far ([`docs/compatibility.md`](docs/compatibility.md), with each one's state and test scenario):
+25 reach gameplay (among them Killzone: Mercenary, Uncharted: Golden Abyss, Gravity Rush, God of War Collection,
+FIFA 13, Persona 4 Golden, LittleBigPlanet, Tearaway, WRC 4, Skullgirls and Devious Dungeon, several that do not
+boot on Vita3K) and the rest reach the menus. Known issues and future work are in the [roadmap](docs/roadmap.md).
 
-## Plataformas
+## Platforms
 
-| Plataforma | Estado |
+| Platform | State |
 | --- | --- |
-| **Windows** (x64) | A mais testada: launcher, janela do jogo, Sistema do Vita, todas as ferramentas de diagnóstico |
-| **Android** (arm64) | App próprio (biblioteca, ajustes, controles na tela, menu de pausa); testado num Redmi Note 14 (Mali-G57) e no emulador x86_64. Por enquanto o APK é compilado localmente ([`docs/android/README.md`](docs/android/README.md)) |
-| Linux, macOS | Compilam e geram pacotes; Linux x64 testado no Debian 12, macOS ainda sem teste num Mac |
+| **Windows** (x64) | The most tested: launcher, game window, Vita System, every diagnostic tool |
+| **Android** (arm64) | Its own app (library, settings, on-screen controls, pause menu); tested on a Redmi Note 14 (Mali-G57) and the x86_64 emulator. For now the APK is built locally ([`docs/android/README.md`](docs/android/README.md)) |
+| Linux, macOS | Build and make packages; Linux x64 tested on Debian 12, macOS not yet tested on a Mac |
 
-Requisitos no PC: um driver Vulkan 1.3 (NVIDIA, AMD ou Intel recentes) e um processador com vários núcleos.
+PC requirements: a Vulkan 1.3 driver (recent NVIDIA, AMD or Intel) and a multi-core processor.
 
-## Instalar e jogar
+## Install and play
 
-1. Baixe o pacote da página de **Releases** (zip ou instalador para Windows; veja [Releases](#releases)) ou compile
-   (veja [Compilar e testar](#compilar-e-testar)).
-2. Abra o VitaSharp: o launcher (biblioteca de jogos) aparece.
-3. Em **Add game ▾**:
-   - **Install VPK…** (ou arraste o `.vpk` para a janela);
-   - **Install PKG…**: o pacote junto com a licença, um `work.bin`/`.rif` ou o texto zRIF colado;
-   - **Add game folder…**: uma pasta de jogo já descriptografada.
-4. Escolha o jogo e aperte **Play**.
+1. Download the package from the **Releases** page (zip or installer for Windows; see [Releases](#releases)) or build
+   it (see [Build and test](#build-and-test)).
+2. Open VitaSharp: the launcher (game library) shows up.
+3. On **Install pkg / vpk** (or dragging the files onto any screen):
+   - **VPK or zip**;
+   - **PKG with license**: the package with its license, a `work.bin`/`.rif` file or the pasted zRIF text;
+   - **Decrypted folder**: a game folder that is already decrypted.
+4. Pick the game and press **Play**.
 
-**Firmware (opcional).** Os jogos rodam sem firmware. Instale-o para ter as fontes e bibliotecas do sistema
-(`libSceXml`, `libSceSqlite`...) e o **Sistema do Vita**: Configurações > Geral > Firmware > **Instalar firmware
-(.PUP)…**, ou **Usar firmware do Vita3K** (copia o `os0`/`vs0`/`sa0`/`pd0` de uma instalação do Vita3K). Pela linha
-de comando: `install-firmware <PSVUPDAT.PUP>`.
+**Firmware (optional).** Games run without firmware. Install it for the system fonts and libraries (`libSceXml`,
+`libSceSqlite`...) and the **Vita System**: on the **Vita System** page, **Install firmware (.PUP)...**, or **Use
+Vita3K's firmware** (copies `os0`/`vs0`/`sa0`/`pd0` from a Vita3K installation). From the command line:
+`install-firmware <PSVUPDAT.PUP>`.
 
-**Sistema do Vita.** Com o firmware instalado, o botão **Sistema do Vita** do launcher (ou `boot-shell`) roda o
-`shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos
-instalados e LiveArea. Um jogo aberto pela LiveArea roda como um segundo processo; o botão PS (tecla Home) volta ao
-sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
+**Vita System.** With the firmware installed, the launcher's **Open Vita System** button (Ctrl+H, or `boot-shell`)
+runs the firmware's `shell.self`: initial setup the first time, lock screen, home screen with the installed games and
+LiveArea. A game opened from the LiveArea runs as a second process; the PS button (Home key) goes back to the system
+and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
-**Android.** No app: **Instalar VPK**, o `.PUP` do firmware e pacotes de driver da GPU são escolhidos pelo seletor
-de arquivos do Android; o menu de pausa (botão PS) tem os estados salvos e o **Gravar tudo**.
+**Android.** In the app: **Install VPK**, the firmware's `.PUP` and GPU driver packages are picked with Android's file
+picker; the pause menu (PS button) has the save states and **Record everything**.
 
-Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` no Linux,
-`~/Library/Application Support/VitaSharp` no macOS; `--data=<pasta>` ou `VITASHARP_DATA` trocam a pasta): jogos em
-`fs/ux0/app`, firmware em `fs/os0`... , `logs/`, `savestates/`, `captures/` (Gravar tudo), `gpudumps/`,
+**Language.** The launcher and the game window follow the system's language (English or Brazilian Portuguese);
+**Settings > General > Appearance > Language** picks one. Logs stay in English.
+
+Data lives in `%APPDATA%\VitaSharp` on Windows (`~/.local/share/VitaSharp` on Linux,
+`~/Library/Application Support/VitaSharp` on macOS; `--data=<folder>` or `VITASHARP_DATA` change the folder): games in
+`fs/ux0/app`, firmware in `fs/os0`... , `logs/`, `savestates/`, `captures/` (Record everything), `gpudumps/`,
 `diagnostics/`, `shadercache/`.
 
-## Teclas
+## Keys
 
-| Tecla | Função |
+| Key | Function |
 | --- | --- |
-| Setas, `W` `A` `S` `D`, `I` `J` `K` `L` | Direcional, analógico esquerdo, analógico direito |
-| `X` ou `Espaço` / `C` / `Z` / `V` | Cruz / Círculo / Quadrado / Triângulo |
+| Arrows, `W` `A` `S` `D`, `I` `J` `K` `L` | D-pad, left stick, right stick |
+| `X` or `Space` / `C` / `Z` / `V` | Cross / Circle / Square / Triangle |
 | `Q` / `E`, `Enter` / `Backspace` | L / R, Start / Select |
-| `Home` | Botão PS |
-| Botão esquerdo / direito do mouse | Toque na tela frontal / no touchpad traseiro |
-| `F1` / `Shift+F1` | Resolução interna seguinte / anterior com o jogo rodando (1x, 2x, 3x, 4x; só nesta sessão, com aviso na tela) |
-| `F2` / `Shift+F2` | Taxa de quadros seguinte / anterior com o jogo rodando (nativa, fixa em 30, fixa em 60, sem limite) |
-| `F3` / `Shift+F3` | MSAA seguinte / anterior com o jogo rodando (nativo, superamostragem 2x, desligado; só nesta sessão, com aviso na tela) |
-| `F4` | Modo do mouse: giroscópio (botão do meio), analógico direito, analógico esquerdo ou desligado, salvo por jogo (`Esc` solta o cursor) |
-| `F5` / `F7` | Salvar / carregar o estado rápido; `F6` escolhe um slot (1-9), `Shift+F5` / `Shift+F7` salvam / carregam nele |
-| `F8` | Inicia / para o **Gravar tudo** (ver [Relatar um bug](#relatar-um-bug)) |
-| `Ctrl+F8` | Inicia / para um dump da GPU (`gpudumps/*.vsgd`; `replay-gpu` refaz desenho por desenho, sem o jogo) |
-| `F9` | Liga / desliga o modo de depuração (logs detalhados, pré-gravação de 10 s, capturas automáticas) |
-| `F10` | Captura de diagnóstico: o próximo quadro com seus desenhos, texturas, alvos, print e log (`diagnostics/`) |
-| `F11` | Tela cheia |
-| `P` | Pausa / retoma a emulação |
+| `Home` | PS button |
+| Left / right mouse button | Touch on the front screen / the rear touchpad |
+| `F1` / `Shift+F1` | Next / previous internal resolution while the game runs (1x, 2x, 3x, 4x; this session only, with an on-screen notice) |
+| `F2` / `Shift+F2` | Next / previous frame rate while the game runs (native, locked to 30, locked to 60, unlimited) |
+| `F3` / `Shift+F3` | Next / previous MSAA mode while the game runs (native, 2x supersampling, off; this session only, with an on-screen notice) |
+| `F4` | Mouse mode: gyroscope (middle button), right stick, left stick or off, saved per game (`Esc` releases the cursor) |
+| `F5` / `F7` | Save / load the quick state; `F6` picks a slot (1-9), `Shift+F5` / `Shift+F7` save / load in it |
+| `F8` | Starts / stops **Record everything** (see [Report a bug](#report-a-bug)) |
+| `Ctrl+F8` | Starts / stops a GPU dump (`gpudumps/*.vsgd`; `replay-gpu` redraws it draw by draw, without the game) |
+| `F9` | Turns debug mode on / off (detailed logs, 10 s pre-recording, automatic captures) |
+| `F10` | Diagnostic capture: the next frame with its draws, textures, targets, screenshot and log (`diagnostics/`) |
+| `F11` | Full screen |
+| `P` | Pauses / resumes the emulation |
 
-Controles (SDL2) são detectados sozinhos, com layout posicional (o botão de baixo é sempre Cruz) e giroscópio. Tudo
-pode ser remapeado em **Configurações > Controles**, por controle ([`docs/notes/controller-config.md`](docs/notes/controller-config.md)).
+Controllers (SDL2) are detected on their own, with a positional layout (the bottom button is always Cross) and
+gyroscope. Everything can be remapped in **Settings > Controls**, per controller ([`docs/notes/controller-config.md`](docs/notes/controller-config.md)).
 
-## Relatar um bug
+## Report a bug
 
-Use o **Gravar tudo**: aperte **F8** durante o jogo (a barra de título mostra *"● REC | Gravando tudo (F8 para
-parar)"*), jogue até o problema aparecer e aperte **F8** de novo. Sai um `.zip` em `captures/` com um estado salvo,
-os controles, todas as imagens com seus tempos, o dump da GPU, o áudio (mix e cada voz) e o log: dá para reproduzir o
-problema sem jogar de novo. No Android: menu de pausa > **Gravar tudo**. Para defeitos rápidos, ligue a
-**Pré-gravação** (Configurações > Geral, ou o modo de depuração com F9): o arquivo inclui os segundos antes da tecla.
+Use **Record everything**: press **F8** while playing (the title bar shows *"● REC | Recording everything (F8 to
+stop)"*), play until the problem shows up and press **F8** again. A `.zip` comes out in `captures/` with a save
+state, the controls, every picture with its timing, the GPU dump, the audio (the mix and every voice) and the log: the
+problem can be reproduced without playing again. On Android: pause menu > **Record everything**. For quick defects,
+turn on **Pre-recording** (Settings > General, or debug mode with F9): the file then includes the seconds before the key.
 
-Envie o `.zip` com o nome do jogo (title ID) e o que aconteceu. Toda sessão também grava `logs/last.log`. Detalhes
-em [`docs/notes/session-capture.md`](docs/notes/session-capture.md); quem analisa usa `vitasharp-perf capture <zip>` e
-`VitaSharp.Desktop rerun <pasta>`.
+Send the `.zip` with the game's name (title ID) and what happened. Every session also writes `logs/last.log`.
+Details in [`docs/notes/session-capture.md`](docs/notes/session-capture.md); whoever analyses it uses
+`vitasharp-perf capture <zip>` and `VitaSharp.Desktop rerun <folder>`.
 
-## Compilar e testar
+## Build and test
 
-Precisa do [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). O primeiro build baixa o FFmpeg
-(vídeos e MP3/AAC); as outras bibliotecas nativas vêm do NuGet.
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). The first build downloads FFmpeg (videos
+and MP3/AAC); the other native libraries come from NuGet.
 
 ```sh
 dotnet build -c Release
-dotnet run --project src/VitaSharp.Desktop -c Release          # abre o launcher
-dotnet run --project src/VitaSharp.Desktop -c Release -- run <TITLEID>   # abre um jogo direto
-dotnet test tests/VitaSharp.Tests -c Release --filter "Category!=Slow"  # testes rápidos (sem o fuzz da CPU)
+dotnet run --project src/VitaSharp.Desktop -c Release          # opens the launcher
+dotnet run --project src/VitaSharp.Desktop -c Release -- run <TITLEID>   # opens a game directly
+dotnet test tests/VitaSharp.Tests -c Release --filter "Category!=Slow"  # quick tests (without the CPU fuzz)
 ```
 
-A linha de comando tem também `install`, `boot-shell`, `test <cenário>` (cenários automáticos em
-[`tests/scenarios`](tests/scenarios)), `replay-gpu`, `rerun`, `imports` e outras: `VitaSharp.Desktop --help`. O app
-Android: [`docs/android/README.md`](docs/android/README.md). Pacotes prontos (zip, instalador, tar.gz, AppImage, .app,
-.dmg; ReadyToRun ou Native AOT): `build/publish.ps1` / `build/publish.sh`.
+The command line also has `install`, `boot-shell`, `test <scenario>` (automatic scenarios in
+[`tests/scenarios`](tests/scenarios)), `replay-gpu`, `rerun`, `imports`, `update` and more: `VitaSharp.Desktop --help`.
+The Android app: [`docs/android/README.md`](docs/android/README.md). Ready packages (zip, installer, tar.gz, AppImage,
+.app, .dmg; ReadyToRun or Native AOT): `build/publish.ps1` / `build/publish.sh`.
 
-Todo script vem em par `.ps1` + `.sh`, e o CI confere isso. Para contribuir com funções do sistema, veja as
-especificações em [`docs/hle`](docs/hle/README.md).
+Every script comes as a `.ps1` + `.sh` pair, and the CI checks it. Interface texts live in
+`src/VitaSharp.Core/Localization` (`Texts.resx` in English, `Texts.pt-BR.resx`); the external docs come in both
+languages too (`README.md` + `README.pt-BR.md`, checked by `ExternalDocPairsTests`). To contribute system functions,
+see the specifications in [`docs/hle`](docs/hle/README.md).
 
 ## Releases
 
-- **Versões**: uma tag `v*` (ou **Actions > Release > Run workflow**) publica uma release com os pacotes Native AOT de
-  Windows, Linux e macOS e o `SHA256SUMS.txt`.
-- **Builds automáticos**: todo push na `main` cujo CI passou vira uma prerelease `build-<commit>` com os pacotes
-  daquele CI (as 10 mais novas ficam).
-- **Atualização automática**: os pacotes procuram uma versão nova ao abrir (Configurações > Geral > Atualizações:
-  liga/desliga, canal builds automáticos ou só versões, **Procurar agora**). O diálogo mostra a versão em uso, a nova,
-  a data e as novidades, com **Pular esta versão**, **Lembrar depois** e **Atualizar agora**: o pacote da plataforma
-  é baixado, conferido pelo `SHA256SUMS.txt` e trocado (o instalador, no Windows instalado pelo setup), e o VitaSharp
-  reabre. Só os arquivos do emulador mudam; a pasta de dados nunca. Um build compilado do código se atualiza pelo git
-  (pela linha de comando: `update [--channel=releases] [--apply]`).
-- Os pacotes não são assinados (o Windows SmartScreen avisa) e nunca incluem firmware.
+- **Versions**: a `v*` tag (or **Actions > Release > Run workflow**) publishes a release with the Native AOT packages
+  for Windows, Linux and macOS and the `SHA256SUMS.txt`.
+- **Automatic builds**: every push to `main` whose CI passed becomes a `build-<commit>` prerelease with that CI run's
+  packages (the 10 newest stay).
+- **Automatic update**: the packages check for a new version when they open (Settings > General > Updates: on/off,
+  channel automatic builds or versions only, **Check now**). The dialog shows the version in use, the new one, its
+  date and what's new, with **Skip this version**, **Remind me later** and **Update now**: the platform's package is
+  downloaded, checked against `SHA256SUMS.txt` and swapped in (the installer, on Windows installed by the setup), and
+  VitaSharp reopens. Only the emulator's files change; the data folder never does. A build compiled from source is
+  updated with git (from the command line: `update [--channel=releases] [--apply]`).
+- The packages are not signed (Windows SmartScreen warns) and never include firmware.
 
-## Créditos e licença
+## Credits and license
 
-O VitaSharp se apoia no trabalho da comunidade do Vita: [Vita3K](https://github.com/Vita3K/Vita3K) (referência de
-comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.org/) e vita-headers, a
-[wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
-(decodificador ATRAC9, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
-[Avalonia](https://avaloniaui.net/) e [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build).
+VitaSharp builds on the Vita community's work: [Vita3K](https://github.com/Vita3K/Vita3K) (behaviour reference,
+NIDs, USSE register model), [VitaSDK](https://vitasdk.org/) and vita-headers, the
+[PS Vita development wiki](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
+(ATRAC9 decoder, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
+[Avalonia](https://avaloniaui.net/) and [FFmpeg](https://ffmpeg.org/) (LGPL, downloaded at build time).
 
-Licença **GPL v3** ([LICENSE](LICENSE)); componentes de terceiros mantêm as suas. PlayStation e PS Vita são marcas da
-Sony Interactive Entertainment; o VitaSharp não tem ligação com a Sony.
+License **GPL v3** ([LICENSE](LICENSE)); third-party components keep their own. PlayStation and PS Vita are trademarks
+of Sony Interactive Entertainment; VitaSharp is not affiliated with Sony.

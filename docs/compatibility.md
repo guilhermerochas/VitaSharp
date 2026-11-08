@@ -1,4 +1,7 @@
+<!-- pair: compatibility.pt-BR.md sha256=3263a1f1b65105b325a9f2413f70b6cc90bbcfb490590bc2800c95a44bca97de -->
 # Compatibility
+
+**English** | [Português](compatibility.pt-BR.md)
 
 Games VitaSharp has been tested with, back to the [README](../README.md).
 
@@ -35,7 +38,7 @@ Games VitaSharp has been tested with, back to the [README](../README.md).
 ## Tested games
 
 VitaSharp is tested against the games below through automated scenarios in [`tests/scenarios`](../tests/scenarios)
-(see [Testing](../README.md#testing)). The table lists what has been observed so far; it is not a promise, and the furthest
+(see [Build and test](../README.md#build-and-test)). The table lists what has been observed so far; it is not a promise, and the furthest
 point a scenario reaches is not the end of the game.
 
 | Status | Meaning |

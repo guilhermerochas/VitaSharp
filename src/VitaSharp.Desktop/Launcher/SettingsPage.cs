@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿using VitaSharp.Core.Localization;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -10,7 +11,7 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>
-/// Configurações: sections on the left (Geral, Sistema do Vita, Gráficos, Controles, Emulação, Rede e PSN, Avançado),
+/// Configuracoes: sections on the left (Geral, Sistema do Vita, Graficos, Controles, Emulacao, Rede e PSN, Avancado),
 /// grouped rows on the right. Every change is saved right away (no Save button); the controller page keeps its own
 /// save (<see cref="SaveControls"/>, called when the page is left).
 /// </summary>
@@ -35,6 +36,8 @@ public sealed class SettingsPage : UserControl
     public event Action? OpenSystem;
     /// <summary>"Procurar agora" was pressed (the launcher checks the releases and shows the update dialog).</summary>
     public event Action? CheckUpdatesNow;
+    /// <summary>The interface language was picked (the launcher rebuilds itself in it).</summary>
+    public event Action? LanguageChanged;
 
     /// <summary>The controller page (created when first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
@@ -151,21 +154,31 @@ public sealed class SettingsPage : UserControl
                     Set(() => _settings.UiTheme = t);
                     ThemeChanged?.Invoke(t);
                 }, (S.ThemeSystem, null, null), (S.ThemeDark, "moon", null), (S.ThemeLight, "sun", null)))));
+        int lang = _settings.Language switch { Loc.English => 1, Loc.Portuguese => 2, _ => 0 };
+        s.Children.Add(_k.Group(
+            _k.Row("globe", S.Language, S.LanguageDetail,
+                _k.Segmented(lang, i =>
+                {
+                    Set(() => _settings.Language = i switch { 1 => Loc.English, 2 => Loc.Portuguese, _ => Loc.System });
+                    Loc.SetLanguage(_settings.Language);
+                    System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = Loc.Culture;
+                    LanguageChanged?.Invoke();
+                }, (S.ThemeSystem, null, null), (S.LanguageEnglish, null, null), (S.LanguagePortuguese, null, null)))));
         s.Children.Add(_k.GroupTitle(S.Updates));
         s.Children.Add(_k.Group(
             _k.Row("download", S.CheckUpdates, S.CheckUpdatesDetail, _k.Switch(_settings.CheckUpdates, v => Set(() => _settings.CheckUpdates = v))),
             _k.Row("layers", S.UpdateChannel, S.UpdateChannelDetail,
                 _k.Segmented(_settings.UpdateChannel == "releases" ? 1 : 0, i => Set(() => _settings.UpdateChannel = i == 1 ? "releases" : "builds"),
                     (S.ChannelBuilds, null, null), (S.ChannelReleases, null, null))),
-            _k.Row("clock", S.VersionInUse, Diagnostics.BuildVersion() + (Updater.Feed() == null ? " · " + S.NoUpdateFeed : ""),
+            _k.Row("clock", S.VersionInUse, Diagnostics.BuildVersion() + (Updater.Feed() == null ? " \u00B7 " + S.NoUpdateFeed : ""),
                 _k.Secondary(S.CheckNow, null, () => CheckUpdatesNow?.Invoke(), 36))));
         s.Children.Add(_k.GroupTitle(S.Trophies));
         s.Children.Add(_k.Group(
             _k.Row("trophy", S.TrophySound, S.TrophySoundDetail, _k.Switch(_settings.TrophySound, v => Set(() => _settings.TrophySound = v)))));
 
-        // ---------------------------------------------------------- Gráficos
+        // ---------------------------------------------------------- Graficos
         s.Children.Add(Anchor(SectionGraphics, S.SectionGraphics));
-        string[] scales = ["1x (960×544)", "2x (1920×1088)", "3x (2880×1632)"];
+        string[] scales = ["1x (960\u00D7544)", "2x (1920\u00D71088)", "3x (2880\u00D71632)"];
         s.Children.Add(_k.Group(
             _k.Row("monitor", S.Fullscreen, S.FullscreenDetail, _k.Switch(_settings.Fullscreen, v => Set(() => _settings.Fullscreen = v))),
             _k.Row("image", S.WindowSize, S.WindowSizeDetail, _k.Dropdown(scales, Math.Clamp(_settings.Scale - 1, 0, 2), i => Set(() => _settings.Scale = i + 1), 180)),
@@ -175,7 +188,7 @@ public sealed class SettingsPage : UserControl
             _k.Row("alert", S.Validation, S.ValidationDetail, _k.Switch(_settings.Validation, v => Set(() => _settings.Validation = v)))));
         s.Children.Add(_k.Wrap(S.PerGameGraphicsNote, 12.5).Also(t => t.Margin = new Thickness(6, 2, 0, 0)));
 
-        // ---------------------------------------------------------- Emulação
+        // ---------------------------------------------------------- Emulacao
         s.Children.Add(Anchor(SectionEmulation, S.SectionEmulation));
         var cpuChoices = new (string Value, string Label)[]
         {
@@ -212,7 +225,7 @@ public sealed class SettingsPage : UserControl
         var rpcnServer = _k.Field(_settings.RpcnServer, t => Set(() => _settings.RpcnServer = t.Trim()), 260, S.RpcnServerWatermark);
         var rpcnUser = _k.Field(_settings.RpcnUser, t => Set(() => _settings.RpcnUser = t.Trim()), 220);
         rpcnUser.MaxLength = 16;
-        var rpcnPass = _k.Field(_settings.RpcnPassword, t => Set(() => _settings.RpcnPassword = t), 220, password: '•');
+        var rpcnPass = _k.Field(_settings.RpcnPassword, t => Set(() => _settings.RpcnPassword = t), 220, password: '\u2022');
         var rpcnToken = _k.Field(_settings.RpcnToken, t => Set(() => _settings.RpcnToken = t.Trim()), 220, S.RpcnTokenWatermark);
         var psnLocal = _k.Switch(_settings.PsnLocalServices, v => Set(() => _settings.PsnLocalServices = v));
         void SyncPsn()
@@ -234,7 +247,7 @@ public sealed class SettingsPage : UserControl
             _k.Row("key", S.RpcnPassword, S.RpcnPasswordDetail, rpcnPass),
             _k.Row("key", S.RpcnToken, S.RpcnTokenDetail, rpcnToken)));
 
-        // ---------------------------------------------------------- Avançado
+        // ---------------------------------------------------------- Avancado
         s.Children.Add(Anchor(SectionAdvanced, S.SectionAdvanced));
         s.Children.Add(_k.Group(
             _k.Row("alert", S.DebugMode, S.DebugModeDetail, _k.Switch(_settings.DebugMode, v => Set(() => _settings.DebugMode = v))),

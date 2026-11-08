@@ -80,6 +80,9 @@ public sealed partial class MainWindow : Window
     {
         _settings = settings ?? LauncherSettings.Load();
         _saveSettings = settings == null;
+        Core.Localization.Loc.SetLanguage(_settings.Language);
+        // numbers and dates in the launcher follow the interface language too
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = Core.Localization.Loc.Culture;
         LauncherApp.ApplyTheme(_settings.UiTheme);
         Title = "VitaSharp";
         Width = 1360;
@@ -112,7 +115,7 @@ public sealed partial class MainWindow : Window
         // "Ao abrir o emulador: Sistema do Vita": the shell starts right away, the launcher stays behind it
         if (_saveSettings && _settings.StartupView == LauncherSettings.StartSystem && ShellInstalled)
             Opened += (_, _) => LaunchSystem();
-        // "Procurar atualizações ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
+        // "Procurar atualizacoes ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
         if (_saveSettings)
         {
             Updater.CleanDownloads();

@@ -103,7 +103,7 @@ public sealed partial class MainWindow
         };
         var title = compact ? _k.HStack(8, _k.Badge(label, color), _k.Text(S.When(c.When), 13, FontWeight.SemiBold))
                             : _k.HStack(8, _k.Text(CaptureTitle(c.TitleId), 14, FontWeight.SemiBold), _k.Badge(label, color));
-        var tx = _k.VStack(4, title, _k.Text(compact ? $"{System.IO.Path.GetFileName(c.Path)} · {S.Size(c.Size)}" : System.IO.Path.GetFileName(c.Path), 12, color: P.Muted));
+        var tx = _k.VStack(4, title, _k.Text(compact ? $"{System.IO.Path.GetFileName(c.Path)} \u00B7 {S.Size(c.Size)}" : System.IO.Path.GetFileName(c.Path), 12, color: P.Muted));
         tx.Margin = new Thickness(16, 0);
         tx.VerticalAlignment = VerticalAlignment.Center;
         r.Children.Add(Kit.At(tx, col: 1));

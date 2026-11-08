@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using Silk.NET.Input;
 using SkiaSharp;
 using VitaSharp.Core.Host;
@@ -195,7 +196,7 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
     /// <summary>The panel as opaque BGRA bytes.</summary>
     public static (byte[] Bgra, int Width, int Height) Render(TextEntry e, float scale)
     {
-        string shown = e.Password ? new string('•', e.Text.Length) : e.Text;
+        string shown = e.Password ? new string('\u2022', e.Text.Length) : e.Text;
         string[] lines = shown.Split('\n');
         // the caret's line and column
         int caretLine = 0, caretCol = e.Caret;
@@ -223,7 +224,7 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
             using var boxPaint = new SKPaint { Color = new SKColor(0x2A, 0x30, 0x3B), IsAntialias = true };
             using var caretPaint = new SKPaint { Color = new SKColor(0x3D, 0x8B, 0xFD), IsAntialias = true };
 
-            c.DrawText(e.Title.Length > 0 ? Fit(e.Title.Replace('\n', ' '), titleFont, w - 2 * pad) : "Digite o texto", pad, pad + 17 * scale, titleFont, white);
+            c.DrawText(e.Title.Length > 0 ? Fit(e.Title.Replace('\n', ' '), titleFont, w - 2 * pad) : Loc.Get("ImeTitle"), pad, pad + 17 * scale, titleFont, white);
             float boxTop = pad + titleH, boxLeft = pad, boxRight = w - pad;
             c.DrawRoundRect(new SKRect(boxLeft, boxTop, boxRight, boxTop + boxH), 6 * scale, 6 * scale, boxPaint);
             float textLeft = boxLeft + 10 * scale, textWidth = boxRight - 10 * scale - textLeft;
@@ -243,8 +244,7 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
                 c.Restore();
             }
             float footY = boxTop + boxH + 8 * scale + 14 * scale;
-            c.DrawText(e.Multiline ? "Enter confirmar · Shift+Enter nova linha · Esc cancelar · controle: Cruz / Círculo"
-                                   : "Enter confirmar · Esc cancelar · controle: Cruz confirma, Círculo cancela", pad, footY, small, muted);
+            c.DrawText(Loc.Get(e.Multiline ? "ImeHelpMultiline" : "ImeHelp"), pad, footY, small, muted);
             string count = $"{e.Text.Length}/{e.MaxLength}";
             c.DrawText(count, w - pad - Measure(small, count), footY, small, muted);
         }
@@ -254,8 +254,8 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
     static string Fit(string s, SKFont font, float width)
     {
         if (Measure(font, s) <= width) return s;
-        while (s.Length > 1 && Measure(font, s + "…") > width) s = s[..^1];
-        return s + "…";
+        while (s.Length > 1 && Measure(font, s + "\u2026") > width) s = s[..^1];
+        return s + "\u2026";
     }
 
     static float Measure(SKFont font, string s)

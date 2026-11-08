@@ -111,7 +111,7 @@ public sealed partial class MainWindow
             if (job.State != JobState.Running) return; // a late report after the install finished
             job.Progress = p.Fraction;
             job.Detail = p.Describe();
-            SetStatus($"{S.Installing} {job.Name}… {job.Detail}");
+            SetStatus($"{S.Installing} {job.Name}\u2026 {job.Detail}");
             JobsChanged();
         });
     }
@@ -186,7 +186,7 @@ public sealed partial class MainWindow
         string detail = j.State switch
         {
             JobState.Waiting => S.Waiting,
-            JobState.Running => $"{S.Installing} · {j.Detail}",
+            JobState.Running => $"{S.Installing} \u00B7 {j.Detail}",
             JobState.Done => S.InstalledAt(j.Detail, j.Finished),
             JobState.Cancelled => S.InstallCancelled,
             _ => S.FailedBecause(j.Detail),

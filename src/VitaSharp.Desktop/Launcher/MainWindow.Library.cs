@@ -276,7 +276,7 @@ public sealed partial class MainWindow
 
         var text = new StackPanel { Spacing = 4, Margin = new Thickness(14, 14, 14, 14) };
         text.Children.Add(_k.Text(g.Title, 14.5, FontWeight.SemiBold));
-        text.Children.Add(_k.Text(g.Version.Length > 0 ? $"{g.TitleId} · v{g.Version}" : g.TitleId, 12, color: P.Muted));
+        text.Children.Add(_k.Text(g.Version.Length > 0 ? $"{g.TitleId} \u00B7 v{g.Version}" : g.TitleId, 12, color: P.Muted));
         var foot = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
         foot.Children.Add(PlayedOrCategory(g));
         var (got, total) = TrophyCount(g);
@@ -344,9 +344,9 @@ public sealed partial class MainWindow
         {
             var r = new Grid { ColumnDefinitions = new ColumnDefinitions(Cols), Height = 62, Margin = new Thickness(18, 0) };
             r.Children.Add(_k.Picture(g.IconPath, 46, 46, 12, g.Initials, 128).Also(p => p.HorizontalAlignment = HorizontalAlignment.Left));
-            r.Children.Add(Kit.At(_k.VStack(2, _k.Text(g.Title, 14, FontWeight.SemiBold), _k.Text(g.TitleId + (g.Version.Length > 0 ? " · v" + g.Version : ""), 12, color: P.Muted)).Also(t => t.VerticalAlignment = VerticalAlignment.Center), col: 1));
+            r.Children.Add(Kit.At(_k.VStack(2, _k.Text(g.Title, 14, FontWeight.SemiBold), _k.Text(g.TitleId + (g.Version.Length > 0 ? " \u00B7 v" + g.Version : ""), 12, color: P.Muted)).Also(t => t.VerticalAlignment = VerticalAlignment.Center), col: 1));
             r.Children.Add(Kit.At(_k.Text(g.Region, 13, color: P.TextSoft), col: 2));
-            r.Children.Add(Kit.At(_k.Text(PlayOf(g.TitleId) is { } pr ? S.Duration(pr.Seconds) : "—", 13, color: P.TextSoft), col: 3));
+            r.Children.Add(Kit.At(_k.Text(PlayOf(g.TitleId) is { } pr ? S.Duration(pr.Seconds) : "\u2014", 13, color: P.TextSoft), col: 3));
             var (got, total) = TrophyCount(g);
             if (total > 0)
             {

@@ -212,7 +212,7 @@ public static class LogFiles
         catch (IOException) { }
     }
 
-    /// <summary>Title id of an app folder (…/ux0/app/PCSC00045), else "unknown".</summary>
+    /// <summary>Title id of an app folder (.../ux0/app/PCSC00045), else "unknown".</summary>
     public static string TitleOf(string appPath)
     {
         string name = Path.GetFileName(appPath.TrimEnd('/', '\\'));

@@ -86,13 +86,13 @@ public sealed class SaveStateFormatTests
     public void IncompatibleStatesAreRefusedWithAMessage()
     {
         var h = Header();
-        Assert.Contains("é de outro jogo", SaveStateFile.Incompatibility(h, "PCSA00029"));
+        Assert.Equal(VitaSharp.Core.Localization.Loc.Format("StateOtherGame", h.TitleId, h.Title, "PCSA00029"), SaveStateFile.Incompatibility(h, "PCSA00029"));
         h.Schema = "0-0";
         h.EmulatorVersion = "1.0.0+60d6517ede5e64570ae60683e2389471dd150a6f";
-        Assert.Equal("Este estado foi salvo por outra versão do VitaSharp (1.0.0+60d6517) e não pode ser carregado", SaveStateFile.Incompatibility(h, "PCSE01444"));
+        Assert.Equal(VitaSharp.Core.Localization.Loc.Format("StateOtherVersion", "1.0.0+60d6517"), SaveStateFile.Incompatibility(h, "PCSE01444"));
         h = Header();
         h.FormatVersion = SaveStateFile.FormatVersion + 1;
-        Assert.Contains("formato", SaveStateFile.Incompatibility(h, "PCSE01444"));
+        Assert.Contains((SaveStateFile.FormatVersion + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), SaveStateFile.Incompatibility(h, "PCSE01444"));
         var e = Assert.Throws<SnapshotException>(() => SaveStateFile.ReadHeader(new MemoryStream("not a state at all"u8.ToArray())));
         Assert.Contains("not a VitaSharp save state", e.Message);
     }

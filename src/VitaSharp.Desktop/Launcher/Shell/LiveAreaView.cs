@@ -101,7 +101,7 @@ public sealed class LiveAreaView : ShellCanvas
             ctx.DrawText(t, new Point(box.X + 10, box.Y + (box.Height - t.Height) / 2));
         }
         string version = _app.Version.Length > 0 ? $"   v{_app.Version}" : "";
-        DrawStatusBar(ctx, $"{_app.Title}{version}   ·   {_app.TitleId}");
+        DrawStatusBar(ctx, $"{_app.Title}{version}   \u00B7   {_app.TitleId}");
 
         if (_launch >= 0)
         {
@@ -220,7 +220,7 @@ public sealed class LiveAreaView : ShellCanvas
         var btn = StartButtonRect(gate);
         var fill = _app.IsSystem ? Color.FromRgb(110, 118, 128) : Running ? Color.FromRgb(60, 150, 90) : Color.FromRgb(20, 168, 222);
         ctx.DrawRectangle(new SolidColorBrush(fill), new Pen(new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), 1.5), btn, 14, 14);
-        string label = Running ? "Em execução" : "Iniciar";
+        string label = Core.Localization.Loc.Get(Running ? "ShellRunning" : "ShellStart");
         var t = Text(label, 15, Brushes.White, UiBold);
         ctx.DrawText(t, new Point(btn.X + (btn.Width - t.Width) / 2, btn.Y + (btn.Height - t.Height) / 2));
     }

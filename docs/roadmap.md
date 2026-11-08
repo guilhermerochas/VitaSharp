@@ -907,19 +907,36 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (`ui-render`: todas as páginas com dados reais; Killzone e o Sistema do Vita iniciados pelo launcher com `--headless`,
   saída 0 e tempo jogado gravado); falta o usuário usar com janela. A atualização automática só tem os ajustes.
 
-- [ ] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
+- [x] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
   launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão
   espalhados no código e misturados entre inglês e português. Juntar tudo em arquivos de recurso por idioma (ex.: `.resx`
   ou JSON com chaves, um para `en` e um para `pt-BR`, compartilhados pelo desktop e pelo Android via Core), escolher o
   idioma pelo sistema (com opção nas configurações) e cair para inglês quando faltar uma chave; um teste que falha se um
   texto de interface ficar fora dos arquivos ou se faltar uma chave em algum idioma. Também resolve a regra 16 do guia
   Ryubing (sem caracteres não ASCII no código). Os logs continuam em inglês
-- [ ] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
+  Feito no desktop (08/11/2026, feat/product-1): `src/VitaSharp.Core/Localization/Texts.resx` (inglês, também o padrão
+  quando falta uma chave) e `Texts.pt-BR.resx`, lidos por `Loc` (Core, para o desktop e o Android). O idioma segue o
+  sistema, com Configurações > Geral > Aparência > Idioma (Sistema / English / Português); o launcher passa a escolha
+  para o jogo (`VITASHARP_LANGUAGE`). Migrados: todas as páginas do launcher (`Strings.cs` lê a chave do próprio nome),
+  controles, firmware, importação de troféus, tela inicial recriada, avisos do jogo (barra de título, troféu, teclado
+  na tela, pausa, estados salvos, resolução/taxa por tecla, Gravar tudo, dump da GPU, diagnóstico) e as mensagens do
+  Core que aparecem para o usuário (estado incompatível, firmware, modo do mouse). `LocalizationTests`: mesmas chaves
+  e marcadores nos dois idiomas, toda chave usada no código existe, e os .cs do desktop são só ASCII (regra 16 do
+  Ryubing: um texto em português no código falha o teste). 550 textos. Validado com `ui-render --lang=en|pt-BR`.
+  Falta: o app Android (`VitaSharp.Android`, páginas e menu de pausa) e o `VitaSharp.Android.Common` ainda têm os
+  textos em português no código; migrar para as mesmas chaves e estender o teste de ASCII a eles
+- [x] README e documentação externa em dois idiomas (pedido do usuário, 07/11/2026): inglês como padrão
   (`README.md`, `docs/compatibility.md` e o que for para quem usa o emulador: instalação, firmware, controles,
   releases) e uma cópia em português do Brasil ao lado (`README.pt-BR.md`, `docs/compatibility.pt-BR.md`...), com um
   link "English | Português" no topo de cada um. Só o que é externo: coisas internas (este roadmap, `docs/agents/`,
   `docs/notes/`, `docs/hle/`) continuam num idioma só, como estão. Manter os dois em dia a cada mudança (um teste que
   avisa quando um arquivo externo muda sem o par)
+  Feito (08/11/2026, feat/product-1): `README.md` em inglês e `README.pt-BR.md`, `docs/compatibility.md` e
+  `docs/compatibility.pt-BR.md`, com "English | Português" no topo (atualizados para o launcher novo: Instalar pkg /
+  vpk, firmware na página Sistema do Vita, idioma, atualização automática). `ExternalDocPairsTests`: os externos
+  exigidos e todo `*.pt-BR.md` têm o par e o link, e a primeira linha de cada um (`<!-- pair: <outro> sha256=... -->`)
+  guarda o hash do outro idioma: mudar um sem o outro falha o teste, que mostra as duas linhas novas. O
+  `docs/android/README.md` (compilar e rodar o app) e o cabeçalho das notas de release ficam só em inglês por enquanto
 - [x] Release automática a cada build: hoje o `release.yml` só publica com tag `v*` ou pelo botão da aba Actions.
   Fazer o CI, a cada push na `main` com testes e pacotes ok, publicar sozinho uma release (prerelease) na aba
   "Releases" do GitHub com os pacotes Native AOT (win-x64, linux-x64, osx-arm64; depois o APK android-arm64), o

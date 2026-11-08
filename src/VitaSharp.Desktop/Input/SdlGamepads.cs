@@ -9,7 +9,7 @@ using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Input;
 
-/// <summary>One controller motion report in SDL units and axes (accelerometer m/s², gyroscope rad/s), timestamp in us.</summary>
+/// <summary>One controller motion report in SDL units and axes (accelerometer m/s2, gyroscope rad/s), timestamp in us.</summary>
 public readonly record struct PadMotionSample(ulong TimestampUs, Vector3 Accel, Vector3 Gyro);
 
 /// <summary>A connected controller as seen by <see cref="SdlGamepads"/>.</summary>

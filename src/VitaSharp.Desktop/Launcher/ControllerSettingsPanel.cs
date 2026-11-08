@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
+using VitaSharp.Core.Localization;
 using VitaSharp.Desktop.Input;
 
 namespace VitaSharp.Desktop.Launcher;
@@ -98,12 +99,12 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _device = new ComboBox { MinWidth = 340, VerticalAlignment = VerticalAlignment.Center };
         _device.SelectionChanged += (_, _) => { if (!_updatingUi && _device.SelectedItem is DeviceItem d) Select(d); };
-        var reset = new Button { Content = "Restaurar padrão", VerticalAlignment = VerticalAlignment.Center };
+        var reset = new Button { Content = Loc.Get("CsResetDefault"), VerticalAlignment = VerticalAlignment.Center };
         reset.Click += (_, _) => ResetProfile();
         _deviceInfo = new TextBlock { Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
 
         var deviceRow = new DockPanel { LastChildFill = true };
-        var deviceLabel = new TextBlock { Text = "Dispositivo", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var deviceLabel = new TextBlock { Text = Loc.Get("CsDevice"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         DockPanel.SetDock(deviceLabel, Dock.Left);
         DockPanel.SetDock(_device, Dock.Left);
         DockPanel.SetDock(reset, Dock.Right);
@@ -118,8 +119,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _hint = new TextBlock
         {
             Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
-            Text = "Clique num controle (ou numa linha à direita) e aperte um botão, mova um analógico ou aperte uma tecla. Esc cancela. " +
-                   "Clicar num analógico mapeia as quatro direções em sequência. Botão direito na tela ou no touchpad traseiro posiciona o ponto de toque.",
+            Text = Loc.Get("CsHint"),
         };
 
         var left = new DockPanel();
@@ -132,21 +132,21 @@ public sealed class ControllerSettingsPanel : UserControl
 
         // right side: bindings + options
         _bindingRows = new StackPanel { Spacing = 2 };
-        _swap = new CheckBox { Content = "Trocar Cruz e Círculo (Círculo confirma)" };
+        _swap = new CheckBox { Content = Loc.Get("CsSwap") };
         _swap.IsCheckedChanged += (_, _) => Edit(p => p.SwapConfirm = _swap.IsChecked == true);
-        _triggers = new CheckBox { Content = "Gatilhos analógicos também acionam L / R" };
+        _triggers = new CheckBox { Content = Loc.Get("CsTriggers") };
         _triggers.IsCheckedChanged += (_, _) => Edit(p => DefaultMappings.SetTriggersAsShoulders(p, _triggers.IsChecked == true));
-        _touchpad = new CheckBox { Content = "Touchpad = toque frontal (L2: traseiro, R2: ambos)" };
+        _touchpad = new CheckBox { Content = Loc.Get("CsTouchpad") };
         _touchpad.IsCheckedChanged += (_, _) => Edit(p => p.TouchpadEnabled = _touchpad.IsChecked == true);
-        _motion = new CheckBox { Content = "Usar giroscópio do controle" };
-        ToolTip.SetTip(_motion, "O giroscópio e o acelerômetro do controle (DualShock 4, DualSense, Switch Pro, Joy-Con) movem os sensores de movimento do Vita.");
+        _motion = new CheckBox { Content = Loc.Get("CsMotion") };
+        ToolTip.SetTip(_motion, Loc.Get("CsMotionTip"));
         _motion.IsCheckedChanged += (_, _) => Edit(p => p.MotionEnabled = _motion.IsChecked == true);
         _motionOrientation = new ComboBox
         {
-            ItemsSource = new[] { "Face do controle = tela do Vita", "Controle deitado = Vita em pé (realidade aumentada)" },
+            ItemsSource = new[] { Loc.Get("CsOrientNatural"), Loc.Get("CsOrientUpright") },
             HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12,
         };
-        ToolTip.SetTip(_motionOrientation, "Natural: segure o controle como seguraria o Vita. Vita em pé: com o controle na horizontal o Vita fica de pé à sua frente, câmera traseira apontando para a frente.");
+        ToolTip.SetTip(_motionOrientation, Loc.Get("CsOrientTip"));
         _motionOrientation.SelectionChanged += (_, _) =>
             Edit(p => p.MotionOrientation = _motionOrientation.SelectedIndex == 1 ? MotionOrientation.FlatIsUpright : MotionOrientation.Natural);
         _motionLive = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
@@ -160,26 +160,25 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _motionSource = new ComboBox
         {
-            ItemsSource = new[] { "Automático", "Controle", "Teclado e mouse", "Desligado" },
+            ItemsSource = new[] { Loc.Get("CsSourceAuto"), Loc.Get("CsSourcePad"), Loc.Get("CsSourceKeyboard"), Loc.Get("CsOff") },
             Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
         };
-        ToolTip.SetTip(_motionSource, "Quem move os sensores de movimento do Vita (giroscópio e acelerômetro), para o emulador todo. " +
-                                      "Automático: um controle com giroscópio quando conectado, senão as teclas de inclinação e o mouse.");
+        ToolTip.SetTip(_motionSource, Loc.Get("CsSourceTip"));
         _motionSource.SelectionChanged += (_, _) => Edit(p => p.MotionSource = (MotionSourceMode)Math.Max(0, _motionSource.SelectedIndex));
-        (_tiltAngle, _tiltAngleText) = SliderRow(5, 85, v => Edit(p => p.Tilt.MaxAngle = (float)Math.Round(v)), v => $"{v:0}°");
+        (_tiltAngle, _tiltAngleText) = SliderRow(5, 85, v => Edit(p => p.Tilt.MaxAngle = (float)Math.Round(v)), v => $"{v:0}\u00B0");
         (_tiltSpeed, _tiltSpeedText) = SliderRow(0.25, 4, v => Edit(p => p.Tilt.Speed = (float)v), v => $"{v:0.00}x");
         (_mouseSens, _mouseSensText) = SliderRow(0.1, 4, v => Edit(p => p.Tilt.MouseSensitivity = (float)v), v => $"{v:0.00}x");
-        _mouseLook = new CheckBox { Content = "Mouse move o Vita com o botão do meio pressionado" };
-        ToolTip.SetTip(_mouseLook, "Segure o botão do meio (roda) e mova o mouse: na horizontal o Vita gira, na vertical inclina para frente / trás. Recentralizar volta ao neutro.");
+        _mouseLook = new CheckBox { Content = Loc.Get("CsMouseLook") };
+        ToolTip.SetTip(_mouseLook, Loc.Get("CsMouseLookTip"));
         _mouseLook.IsCheckedChanged += (_, _) => Edit(p => p.Tilt.MouseLook = _mouseLook.IsChecked == true);
-        _mouseInvert = new CheckBox { Content = "Inverter eixo Y do mouse" };
+        _mouseInvert = new CheckBox { Content = Loc.Get("CsMouseInvert") };
         _mouseInvert.IsCheckedChanged += (_, _) => Edit(p => p.Tilt.MouseInvertY = _mouseInvert.IsChecked == true);
         _tiltLive = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
         var km = new StackPanel { Spacing = 6 };
-        km.Children.Add(Header("Movimento (giroscópio)"));
-        km.Children.Add(Row("Movimento", _motionSource, new TextBlock()));
-        km.Children.Add(Row("Ângulo máx.", _tiltAngle, _tiltAngleText));
-        km.Children.Add(Row("Velocidade", _tiltSpeed, _tiltSpeedText));
+        km.Children.Add(Header(Loc.Get("CsHeaderMotion")));
+        km.Children.Add(Row(Loc.Get("CsMotionRow"), _motionSource, new TextBlock()));
+        km.Children.Add(Row(Loc.Get("CsMaxAngle"), _tiltAngle, _tiltAngleText));
+        km.Children.Add(Row(Loc.Get("CsSpeed"), _tiltSpeed, _tiltSpeedText));
         km.Children.Add(_mouseLook);
         km.Children.Add(Row("Mouse", _mouseSens, _mouseSensText));
         km.Children.Add(_mouseInvert);
@@ -187,28 +186,27 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _mouseMode = new ComboBox
         {
-            ItemsSource = new[] { "Giroscópio (botão do meio)", "Analógico direito", "Analógico esquerdo", "Desligado" },
+            ItemsSource = new[] { Loc.Get("CsModeGyro"), Loc.Get("CsModeRight"), Loc.Get("CsModeLeft"), Loc.Get("CsOff") },
             Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
         };
-        ToolTip.SetTip(_mouseMode, "O que o movimento do mouse faz na janela do jogo. Num analógico, o cursor fica preso na janela (Esc solta, um clique prende de novo) " +
-                                   "e o mouse vira a alavanca: mirar e girar a câmera como num jogo de PC. F4 alterna o modo com o jogo rodando e guarda a escolha para aquele jogo.");
+        ToolTip.SetTip(_mouseMode, Loc.Get("CsModeTip"));
         _mouseMode.SelectionChanged += (_, _) => Edit(p => p.Mouse.Mode = (MouseMode)Math.Max(0, _mouseMode.SelectedIndex));
         (_mStickSens, _mStickSensText) = SliderRow(0.1, 5, v => Edit(p => p.Mouse.Sensitivity = (float)v), v => $"{v:0.00}x");
         (_mStickDz, _mStickDzText) = SliderRow(0, 0.5, v => Edit(p => p.Mouse.Deadzone = (float)v), v => $"{v:P0}");
-        ToolTip.SetTip(_mStickDz, "Zona morta do jogo a pular: qualquer movimento do mouse já começa com esta inclinação da alavanca, para movimentos pequenos não sumirem na zona morta do jogo.");
+        ToolTip.SetTip(_mStickDz, Loc.Get("CsDeadzoneTip"));
         (_mStickCurve, _mStickCurveText) = SliderRow(0.3, 3, v => Edit(p => p.Mouse.Curve = (float)v), v => $"{v:0.00}");
-        ToolTip.SetTip(_mStickCurve, "Curva de resposta: 1 = linear; acima de 1, movimentos lentos mais finos; abaixo de 1, mais rápida.");
+        ToolTip.SetTip(_mStickCurve, Loc.Get("CsCurveTip"));
         (_mStickReturn, _mStickReturnText) = SliderRow(10, 500, v => Edit(p => p.Mouse.ReturnMs = (float)Math.Round(v)), v => $"{v:0} ms");
-        ToolTip.SetTip(_mStickReturn, "Tempo para a alavanca voltar ao centro quando o mouse para.");
-        _mStickInvert = new CheckBox { Content = "Inverter eixo Y (analógico)" };
+        ToolTip.SetTip(_mStickReturn, Loc.Get("CsReturnTip"));
+        _mStickInvert = new CheckBox { Content = Loc.Get("CsStickInvert") };
         _mStickInvert.IsCheckedChanged += (_, _) => Edit(p => p.Mouse.InvertY = _mStickInvert.IsChecked == true);
         _mouseModeNote = new TextBlock { Foreground = LauncherTheme.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap };
-        km.Children.Add(Header("Mouse como analógico"));
-        km.Children.Add(Row("Modo", _mouseMode, new TextBlock()));
-        km.Children.Add(Row("Sensibilidade", _mStickSens, _mStickSensText));
-        km.Children.Add(Row("Zona morta", _mStickDz, _mStickDzText));
-        km.Children.Add(Row("Curva", _mStickCurve, _mStickCurveText));
-        km.Children.Add(Row("Retorno", _mStickReturn, _mStickReturnText));
+        km.Children.Add(Header(Loc.Get("CsHeaderMouseStick")));
+        km.Children.Add(Row(Loc.Get("CsMode"), _mouseMode, new TextBlock()));
+        km.Children.Add(Row(Loc.Get("CsSensitivity"), _mStickSens, _mStickSensText));
+        km.Children.Add(Row(Loc.Get("CsDeadzone"), _mStickDz, _mStickDzText));
+        km.Children.Add(Row(Loc.Get("CsCurve"), _mStickCurve, _mStickCurveText));
+        km.Children.Add(Row(Loc.Get("CsReturn"), _mStickReturn, _mStickReturnText));
         km.Children.Add(_mStickInvert);
         km.Children.Add(_mouseModeNote);
         _keyboardMotionOptions = new Border { Child = km };
@@ -217,25 +215,25 @@ public sealed class ControllerSettingsPanel : UserControl
         (_sensL, _sensLText) = SliderRow(0.5, 2, v => Edit(p => p.LeftStick.Sensitivity = (float)v), v => $"{v:0.00}x");
         (_dzR, _dzRText) = SliderRow(0, 0.5, v => Edit(p => p.RightStick.Deadzone = (float)v), v => $"{v:P0}");
         (_sensR, _sensRText) = SliderRow(0.5, 2, v => Edit(p => p.RightStick.Sensitivity = (float)v), v => $"{v:0.00}x");
-        _invertL = new CheckBox { Content = "Inverter eixo Y" };
+        _invertL = new CheckBox { Content = Loc.Get("CsInvertY") };
         _invertL.IsCheckedChanged += (_, _) => Edit(p => p.LeftStick.InvertY = _invertL.IsChecked == true);
-        _invertR = new CheckBox { Content = "Inverter eixo Y" };
+        _invertR = new CheckBox { Content = Loc.Get("CsInvertY") };
         _invertR.IsCheckedChanged += (_, _) => Edit(p => p.RightStick.InvertY = _invertR.IsChecked == true);
 
         var options = new StackPanel { Spacing = 8 };
-        options.Children.Add(Header("Opções"));
+        options.Children.Add(Header(Loc.Get("CsHeaderOptions")));
         options.Children.Add(_swap);
         options.Children.Add(_gamepadOptions);
         options.Children.Add(_keyboardMotionOptions);
-        options.Children.Add(Header("Analógico esquerdo"));
-        options.Children.Add(Row("Zona morta", _dzL, _dzLText));
-        options.Children.Add(Row("Sensibilidade", _sensL, _sensLText));
+        options.Children.Add(Header(Loc.Get("CsModeLeft")));
+        options.Children.Add(Row(Loc.Get("CsDeadzone"), _dzL, _dzLText));
+        options.Children.Add(Row(Loc.Get("CsSensitivity"), _sensL, _sensLText));
         options.Children.Add(_invertL);
-        options.Children.Add(Header("Analógico direito"));
-        options.Children.Add(Row("Zona morta", _dzR, _dzRText));
-        options.Children.Add(Row("Sensibilidade", _sensR, _sensRText));
+        options.Children.Add(Header(Loc.Get("CsModeRight")));
+        options.Children.Add(Row(Loc.Get("CsDeadzone"), _dzR, _dzRText));
+        options.Children.Add(Row(Loc.Get("CsSensitivity"), _sensR, _sensRText));
         options.Children.Add(_invertR);
-        options.Children.Add(Header("Mapeamento"));
+        options.Children.Add(Header(Loc.Get("CsHeaderMapping")));
         options.Children.Add(_bindingRows);
 
         var right = new Border
@@ -261,7 +259,7 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) => Tick());
         SyncDevices();
-        if (_pads == null) _status.Text = "Suporte a controles indisponível (não foi possível carregar o SDL2): só o teclado pode ser configurado.";
+        if (_pads == null) _status.Text = Loc.Get("CsNoSdl");
     }
 
     static TextBlock Header(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) };
@@ -322,19 +320,19 @@ public sealed class ControllerSettingsPanel : UserControl
     void SyncDevices()
     {
         _devicesChanged = false;
-        var items = new List<DeviceItem> { new(ControllerProfile.KeyboardId, "Teclado", null, ControllerKind.Keyboard, false) };
+        var items = new List<DeviceItem> { new(ControllerProfile.KeyboardId, Loc.Get("CtlKeyboard"), null, ControllerKind.Keyboard, false) };
         var pads = _pads?.Devices ?? [];
         PadInfo? fresh = null;
         foreach (var p in pads)
         {
-            items.Add(new DeviceItem(p.Guid, $"{p.Name} — {ControlNames.Kind(p.Kind)}", p, p.Kind, p.IsGamepad));
+            items.Add(new DeviceItem(p.Guid, $"{p.Name} \u2014 {ControlNames.Kind(p.Kind)}", p, p.Kind, p.IsGamepad));
             if (_knownPads.Add(p.InstanceId) && !_firstSync) fresh = p;
         }
         _knownPads.IntersectWith(pads.Select(p => p.InstanceId));
         // saved profiles of controllers that are not connected stay editable
         foreach (var saved in _store.Config.Controllers)
             if (!items.Any(i => i.Id.Equals(saved.Id, StringComparison.OrdinalIgnoreCase)))
-                items.Add(new DeviceItem(saved.Id, $"{(saved.Name.Length > 0 ? saved.Name : saved.Id)} (desconectado)", null, saved.Kind, saved.Bindings.Values.SelectMany(v => v).Any(b => b.StartsWith("pad:"))));
+                items.Add(new DeviceItem(saved.Id, Loc.Format("CsDisconnected", saved.Name.Length > 0 ? saved.Name : saved.Id), null, saved.Kind, saved.Bindings.Values.SelectMany(v => v).Any(b => b.StartsWith("pad:"))));
 
         // a controller that was just plugged in is selected (that is the automatic recognition the player sees);
         // on opening, the first connected controller is preferred over the keyboard
@@ -347,28 +345,28 @@ public sealed class ControllerSettingsPanel : UserControl
         _device.SelectedItem = sel;
         _updatingUi = false;
         if (sel.Id != _current?.Id || sel.Pad?.InstanceId != _current?.Pad?.InstanceId) Select(sel);
-        if (fresh != null) _status.Text = $"Conectado: {fresh.Name}. {MappingSource(fresh)}";
+        if (fresh != null) _status.Text = Loc.Format("CsConnected", fresh.Name, MappingSource(fresh));
     }
 
     string MappingSource(PadInfo p)
     {
-        string db = p.IsGamepad ? "Reconhecido pela base de controles do SDL (layout padrão)" : "Fora da base de controles: layout de joystick bruto";
+        string db = Loc.Get(p.IsGamepad ? "CsInSdlDb" : "CsNotInSdlDb");
         return $"{db}; {ProfileState(p.Guid, _store.FindSaved(p.Guid, p.Name) != null)}.";
     }
 
     string ProfileState(string id, bool saved)
-        => _dirty.Contains(id) ? "perfil editado (não salvo)"
-            : _reset.Contains(id) ? "mapeamento padrão (não salvo)"
-            : saved ? "usando o seu perfil salvo" : "usando o mapeamento padrão";
+        => _dirty.Contains(id) ? Loc.Get("CsProfileEdited")
+            : _reset.Contains(id) ? Loc.Get("CsProfileDefaultUnsaved")
+            : Loc.Get(saved ? "CsProfileSaved" : "CsProfileDefault");
 
     void RefreshDeviceInfo()
     {
         if (_current is not { } d) return;
         _deviceInfo.Text = d.IsKeyboard
-            ? $"Teclado da janela do jogo ({ProfileState(d.Id, _store.Config.Keyboard != null)}). Mouse: botão esquerdo = tela frontal, botão direito = touchpad traseiro, botão do meio = mover o Vita (giroscópio)."
+            ? Loc.Format("CsKeyboardInfo", ProfileState(d.Id, _store.Config.Keyboard != null))
             : d.Pad is { } info
-                ? $"{ControlNames.Kind(info.Kind)} · {ControlNames.Model(info.Model)} · {(info.IsGamepad ? "mapeamento da base SDL" : "joystick bruto")}{(info.HasTouchpad ? " · touchpad" : "")} · GUID {info.Guid}\n{MappingSource(info)}"
-                : $"Perfil salvo · GUID {d.Id} · conecte o controle para testá-lo.";
+                ? $"{ControlNames.Kind(info.Kind)} \u00B7 {ControlNames.Model(info.Model)} \u00B7 {(Loc.Get(info.IsGamepad ? "CsSdlMapping" : "CsRawJoystick"))}{(info.HasTouchpad ? " \u00B7 touchpad" : "")} \u00B7 GUID {info.Guid}\n{MappingSource(info)}"
+                : Loc.Format("CsSavedProfile", d.Id);
     }
 
     void Select(DeviceItem d)
@@ -420,7 +418,7 @@ public sealed class ControllerSettingsPanel : UserControl
         RefreshOptions();
         RefreshBindings();
         RefreshDeviceInfo();
-        _status.Text = "Mapeamento padrão restaurado (gravado ao clicar em Salvar).";
+        _status.Text = Loc.Get("CsResetDone");
         Changed?.Invoke();
     }
 
@@ -433,7 +431,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _keyboardMotionOptions.IsVisible = !isPad;
         _motionSource.SelectedIndex = (int)_profile.MotionSource;
         _tiltAngle.Value = _profile.Tilt.MaxAngle; _tiltSpeed.Value = _profile.Tilt.Speed; _mouseSens.Value = _profile.Tilt.MouseSensitivity;
-        _tiltAngleText.Text = $"{_tiltAngle.Value:0}°"; _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x"; _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
+        _tiltAngleText.Text = $"{_tiltAngle.Value:0}\u00B0"; _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x"; _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
         _mouseLook.IsChecked = _profile.Tilt.MouseLook;
         _mouseInvert.IsChecked = _profile.Tilt.MouseInvertY;
         var mouse = _profile.Mouse;
@@ -441,8 +439,8 @@ public sealed class ControllerSettingsPanel : UserControl
         _mStickSens.Value = mouse.Sensitivity; _mStickDz.Value = mouse.Deadzone; _mStickCurve.Value = mouse.Curve; _mStickReturn.Value = mouse.ReturnMs;
         _mStickSensText.Text = $"{mouse.Sensitivity:0.00}x"; _mStickDzText.Text = $"{mouse.Deadzone:P0}"; _mStickCurveText.Text = $"{mouse.Curve:0.00}"; _mStickReturnText.Text = $"{mouse.ReturnMs:0} ms";
         _mStickInvert.IsChecked = mouse.InvertY;
-        _mouseModeNote.Text = $"No jogo: {mouse.ToggleKey} alterna o modo (aviso na tela; fica salvo para aquele jogo), {mouse.ReleaseKey} solta o cursor e um clique prende de novo."
-            + (mouse.Games.Count > 0 ? $" Jogos com modo próprio: {string.Join(", ", mouse.Games.Select(g => $"{g.Key} ({MouseSettings.Label(Enum.TryParse<MouseMode>(g.Value, out var m) ? m : MouseMode.Motion)})"))}." : "");
+        _mouseModeNote.Text = Loc.Format("CsMouseNote", mouse.ToggleKey, mouse.ReleaseKey)
+            + (mouse.Games.Count > 0 ? Loc.Format("CsMouseGames", string.Join(", ", mouse.Games.Select(g => $"{g.Key} ({MouseSettings.Label(Enum.TryParse<MouseMode>(g.Value, out var m) ? m : MouseMode.Motion)})"))) : "");
         _triggers.IsChecked = DefaultMappings.TriggersAsShoulders(_profile);
         _triggers.IsEnabled = _current?.IsGamepad == true;
         _touchpad.IsChecked = _profile.TouchpadEnabled;
@@ -450,7 +448,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _motion.IsChecked = _profile.MotionEnabled;
         _motion.IsEnabled = _motionOrientation.IsEnabled = _current?.Pad?.HasMotion != false;
         _motionOrientation.SelectedIndex = _profile.MotionOrientation == MotionOrientation.FlatIsUpright ? 1 : 0;
-        _motionLive.Text = _current?.Pad is { HasMotion: false } ? "Este controle não tem giroscópio: o Vita fica parado (deitado, tela para cima)." : "";
+        _motionLive.Text = _current?.Pad is { HasMotion: false } ? Loc.Get("CsNoGyro") : "";
         _dzL.Value = _profile.LeftStick.Deadzone; _dzR.Value = _profile.RightStick.Deadzone;
         _sensL.Value = _profile.LeftStick.Sensitivity; _sensR.Value = _profile.RightStick.Sensitivity;
         _invertL.IsChecked = _profile.LeftStick.InvertY; _invertR.IsChecked = _profile.RightStick.InvertY;
@@ -464,14 +462,14 @@ public sealed class ControllerSettingsPanel : UserControl
         var kind = _current?.Kind ?? ControllerKind.Generic;
         var list = _profile.Get(c).Select(b => ControlNames.Describe(b, kind))
             .Concat(_profile.GetCombos(c).Select(k => ControlNames.Describe(k, kind))).ToList();
-        return list.Count == 0 ? "—" : string.Join(", ", list);
+        return list.Count == 0 ? "\u2014" : string.Join(", ", list);
     }
 
     string ListeningText => _listenMode switch
     {
-        ListenMode.Add => "adicionar: aperte…",
-        ListenMode.Combo => _comboParts.Count == 0 ? "combinação: segure os botões…" : string.Join(" + ", _comboParts.Select(b => ControlNames.Describe(b, _current?.Kind ?? ControllerKind.Generic))) + "…",
-        _ => "aperte…",
+        ListenMode.Add => Loc.Get("CsListenAdd"),
+        ListenMode.Combo => _comboParts.Count == 0 ? Loc.Get("CsListenCombo") : string.Join(" + ", _comboParts.Select(b => ControlNames.Describe(b, _current?.Kind ?? ControllerKind.Generic))) + "\u2026",
+        _ => Loc.Get("CsListen"),
     };
 
     void RefreshBindings()
@@ -481,7 +479,7 @@ public sealed class ControllerSettingsPanel : UserControl
         {
             if (c == VitaControl.TiltForward)
             {
-                var h = Header("Movimento (inclinar o Vita)");
+                var h = Header(Loc.Get("CsHeaderTilt"));
                 h.FontSize = 13;
                 _motionRowsHeader = h;
                 _bindingRows.Children.Add(h);
@@ -489,7 +487,7 @@ public sealed class ControllerSettingsPanel : UserControl
             if (c == VitaControl.PauseEmulation)
             {
                 // host hotkeys: handled by the emulator, never seen by the game
-                var h = Header("Atalhos do emulador");
+                var h = Header(Loc.Get("CsHeaderHotkeys"));
                 h.FontSize = 13;
                 _hotkeyRowsHeader = h;
                 _bindingRows.Children.Add(h);
@@ -512,14 +510,14 @@ public sealed class ControllerSettingsPanel : UserControl
                 Padding = new Thickness(8, 3), Background = _layout.SelectedControl == c || listening ? new SolidColorBrush(Color.Parse("#2A3550")) : Brushes.Transparent,
             };
             ToolTip.SetTip(row, c == VitaControl.PauseEmulation
-                ? "Pausa e retoma a emulação inteira (todos os processos, relógio do jogo e áudio). Clique para remapear"
-                : "Clique para remapear");
+                ? Loc.Get("CsPauseTip")
+                : Loc.Get("CsRemapTip"));
             row.Click += (_, _) => BeginListen(c, ListenMode.Replace);
             var add = new Button { Content = "+", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(add, "Adicionar outro mapeamento");
+            ToolTip.SetTip(add, Loc.Get("CsAddTip"));
             add.Click += (_, _) => BeginListen(c, ListenMode.Add);
-            var clear = new Button { Content = "×", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(clear, "Remover todos os mapeamentos");
+            var clear = new Button { Content = "\u00D7", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(clear, Loc.Get("CsClearTip"));
             clear.Click += (_, _) => { CancelListen(); Edit(p => p.Set(c, null)); };
             var line = new DockPanel();
             DockPanel.SetDock(clear, Dock.Right);
@@ -529,8 +527,8 @@ public sealed class ControllerSettingsPanel : UserControl
             if (VitaControls.IsHotkey(c) && _current is { IsKeyboard: false })
             {
                 // a controller binds a hotkey to buttons held together, so no button the game uses is given up
-                var combo = new Button { Content = "⊕", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
-                ToolTip.SetTip(combo, "Adicionar uma combinação de botões (segure-os juntos e solte)");
+                var combo = new Button { Content = "\u2295", Padding = new Thickness(8, 3), VerticalAlignment = VerticalAlignment.Center };
+                ToolTip.SetTip(combo, Loc.Get("CsComboTip"));
                 combo.Click += (_, _) => BeginListen(c, ListenMode.Combo);
                 DockPanel.SetDock(combo, Dock.Right);
                 line.Children.Add(combo);
@@ -551,7 +549,7 @@ public sealed class ControllerSettingsPanel : UserControl
                 if (c == VitaControl.TouchFront) { p.TouchFrontX = (float)Math.Round(normalised.X, 3); p.TouchFrontY = (float)Math.Round(normalised.Y, 3); }
                 else { p.TouchBackX = (float)Math.Round(normalised.X, 3); p.TouchBackY = (float)Math.Round(normalised.Y, 3); }
             });
-            _status.Text = $"{ControlNames.Label(c)}: ponto de toque em {normalised.X:P0}, {normalised.Y:P0}.";
+            _status.Text = Loc.Format("CsTouchPoint", ControlNames.Label(c), normalised.X, normalised.Y);
             return;
         }
         _sequence.Clear();
@@ -580,7 +578,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.SelectedControl = c;
         if (_current?.Pad is { } pad && _pads != null) _pads.TryGetState(pad.InstanceId, _baseline);
         else _baseline.Clear();
-        _status.Text = $"{ControlNames.Label(c)}: {(_current?.IsKeyboard == true ? "aperte uma tecla" : mode == ListenMode.Combo ? "segure dois ou mais botões juntos e solte" : "aperte um botão ou mova um analógico / gatilho")} (Esc cancela)…";
+        _status.Text = Loc.Format("CsListenStatus", ControlNames.Label(c), Loc.Get(_current?.IsKeyboard == true ? "CsPressKey" : mode == ListenMode.Combo ? "CsHoldCombo" : "CsPressButton"));
         RefreshBindings();
         Focus();
     }
@@ -604,7 +602,7 @@ public sealed class ControllerSettingsPanel : UserControl
         var kind = _current?.Kind ?? ControllerKind.Generic;
         var shared = VitaControls.All.Where(o => o != c && _profile.Has(o, b)).Select(ControlNames.Label).ToList();
         _status.Text = $"{ControlNames.Label(c)} = {ControlNames.Describe(b, kind)}"
-                       + (shared.Count > 0 ? $"  (também aciona: {string.Join(", ", shared)})" : "");
+                       + (shared.Count > 0 ? Loc.Format("CsAlsoPresses", string.Join(", ", shared)) : "");
         if (_sequence.Count > 0)
         {
             // next direction of the stick: wait until the stick is back near the centre first
@@ -625,7 +623,7 @@ public sealed class ControllerSettingsPanel : UserControl
         _layout.ListeningControl = null;
         var combo = new InputCombo(parts);
         Edit(p => p.AddCombo(c, combo));
-        _status.Text = $"{ControlNames.Label(c)} = {ControlNames.Describe(combo, _current?.Kind ?? ControllerKind.Generic)} (segurados juntos)";
+        _status.Text = Loc.Format("CsHeldTogether", ControlNames.Label(c), ControlNames.Describe(combo, _current?.Kind ?? ControllerKind.Generic));
     }
 
     void OnKeyDown(object? sender, KeyEventArgs e)
@@ -633,7 +631,7 @@ public sealed class ControllerSettingsPanel : UserControl
         var name = KeyNames.FromAvalonia(e.PhysicalKey, e.Key);
         if (_listen != null)
         {
-            if (e.Key == Key.Escape) { CancelListen(); _status.Text = "Cancelado."; e.Handled = true; return; }
+            if (e.Key == Key.Escape) { CancelListen(); _status.Text = Loc.Get("CsCancelled"); e.Handled = true; return; }
             if (_current?.IsKeyboard == true && name != null)
             {
                 Bound(InputBinding.OfKey(name));
@@ -703,7 +701,7 @@ public sealed class ControllerSettingsPanel : UserControl
 
         if (_listen != null)
         {
-            if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = "Nenhuma entrada detectada."; }
+            if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = Loc.Get("CsNoInput"); }
             else if (_listenMode == ListenMode.Combo)
             {
                 if (pad != null)
@@ -746,8 +744,8 @@ public sealed class ControllerSettingsPanel : UserControl
                 var (tp, tr, ty) = _tiltPreview.Angles;
                 var g = VirtualMotion.Gravity(_tiltPreview.Pose);
                 _tiltLive.Text = _profile.MotionSource is MotionSourceMode.Off or MotionSourceMode.Controller
-                    ? "Teclado e mouse não movem o Vita com esta escolha."
-                    : $"Vita: inclinação {tp:+0;-0;0}° · rolagem {tr:+0;-0;0}° · giro {ty:+0;-0;0}°\nacelerômetro {g.X:+0.00;-0.00} {g.Y:+0.00;-0.00} {g.Z:+0.00;-0.00} G";
+                    ? Loc.Get("CsKbNoMotion")
+                    : Loc.Format("CsTiltLive", tp, tr, ty, g.X, g.Y, g.Z);
             }
         }
 
@@ -758,13 +756,12 @@ public sealed class ControllerSettingsPanel : UserControl
             var a = s.Acceleration;
             float pitch = MathF.Atan2(-a.Y, -a.Z) * 180 / MathF.PI, roll = MathF.Atan2(a.X, MathF.Sqrt(a.Y * a.Y + a.Z * a.Z)) * 180 / MathF.PI;
             _motionLive.Text = _profile.MotionEnabled
-                ? $"Vita: inclinação {pitch:+0;-0;0}° · rolagem {roll:+0;-0;0}° · rotação {s.AngularVelocity.Length() * 180 / MathF.PI:0}°/s\n" +
-                  $"acelerômetro {a.X:+0.00;-0.00} {a.Y:+0.00;-0.00} {a.Z:+0.00;-0.00} G"
-                : "Giroscópio desligado: o Vita fica parado.";
+                ? Loc.Format("CsGyroLive", pitch, roll, s.AngularVelocity.Length() * 180 / MathF.PI, a.X, a.Y, a.Z)
+                : Loc.Get("CsGyroOff");
         }
 
         if (_listen == null && _ticks % 6 == 0 && (m.State.Buttons != 0 || m.FrontCount + m.BackCount > 0))
-            _status.Text = $"Pressionado: {Pressed(m.State.Buttons)}{(m.FrontCount > 0 ? $"  · toque frontal {m.FrontCount}" : "")}{(m.BackCount > 0 ? $"  · toque traseiro {m.BackCount}" : "")}";
+            _status.Text = Loc.Format("CsPressed", Pressed(m.State.Buttons)) + (m.FrontCount > 0 ? Loc.Format("CsFrontTouch", m.FrontCount) : "") + (m.BackCount > 0 ? Loc.Format("CsBackTouch", m.BackCount) : "");
     }
 
     static string Pressed(VitaButtons b)
@@ -775,7 +772,7 @@ public sealed class ControllerSettingsPanel : UserControl
             var bit = VitaControls.Button(c);
             if (bit != 0 && (b & bit) != 0) names.Add(ControlNames.Label(c));
         }
-        return names.Count == 0 ? "—" : string.Join(", ", names);
+        return names.Count == 0 ? "\u2014" : string.Join(", ", names);
     }
 
     // ------------------------------------------------------------------ saving

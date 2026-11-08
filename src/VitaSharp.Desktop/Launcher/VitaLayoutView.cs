@@ -104,7 +104,7 @@ public sealed class VitaLayoutView : Control
         // front touch screen
         bool frontTouched = _state.FrontCount > 0;
         ctx.DrawRectangle(ScreenFill, new Pen(Outline(VitaControl.TouchFront) ?? (frontTouched ? Pressed : BodyStroke), Outline(VitaControl.TouchFront) != null ? 3 : 2), new RoundedRect(Screen, 6));
-        Label(ctx, "Tela de toque frontal", new Point(Screen.Center.X, Screen.Bottom - 16), 13, Muted);
+        Label(ctx, Core.Localization.Loc.Get("LayoutFrontScreen"), new Point(Screen.Center.X, Screen.Bottom - 16), 13, Muted);
         if (TapPointFront is { } tf) DrawTapPoint(ctx, Screen, tf);
         for (int i = 0; i < _state.FrontCount; i++) DrawTouch(ctx, Screen, _state.Front[i]);
 
@@ -138,7 +138,7 @@ public sealed class VitaLayoutView : Control
         var rearOutline = Outline(VitaControl.TouchBack);
         var dashed = new Pen(rearOutline ?? (backTouched ? Pressed : ControlStroke), rearOutline != null ? 3 : 2) { DashStyle = new DashStyle([6, 4], 0) };
         ctx.DrawRectangle(backTouched ? new SolidColorBrush(Color.Parse("#1A2440")) : BodyFill, dashed, new RoundedRect(RearPad, 26));
-        Label(ctx, "Touchpad traseiro (parte de trás do console)", new Point(RearPad.Center.X, RearPad.Bottom - 16), 13, Muted);
+        Label(ctx, Core.Localization.Loc.Get("LayoutRearPad"), new Point(RearPad.Center.X, RearPad.Bottom - 16), 13, Muted);
         if (TapPointBack is { } tb) DrawTapPoint(ctx, RearPad, tb);
         for (int i = 0; i < _state.BackCount; i++) DrawTouch(ctx, RearPad, _state.Back[i]);
     }
@@ -217,7 +217,7 @@ public sealed class VitaLayoutView : Control
         var valuePos = new Point(c.X + (left ? -1 : 1) * (StickBase + 34), c.Y);
         Label(ctx, bx.ToString(CultureInfo.InvariantCulture), new Point(valuePos.X, valuePos.Y - 8), 12, Muted);
         Label(ctx, by.ToString(CultureInfo.InvariantCulture), new Point(valuePos.X, valuePos.Y + 8), 12, Muted);
-        Label(ctx, left ? "Analógico esq." : "Analógico dir.", new Point(c.X, c.Y - StickBase - 12), 12, Muted);
+        Label(ctx, Core.Localization.Loc.Get(left ? "CtlLeftStick" : "CtlRightStick"), new Point(c.X, c.Y - StickBase - 12), 12, Muted);
     }
 
     /// <summary>Where the TouchFront / TouchBack controls touch (normalised), null when the control is unbound.</summary>

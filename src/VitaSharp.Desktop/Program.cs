@@ -308,7 +308,7 @@ public static class Program
                 Console.WriteLine($"{app.TitleId} is already installed; booting {app.DestinationPath} (use --reinstall to install the VPK again)");
                 return app.DestinationPath;
             }
-            Console.WriteLine($"Installing {Path.GetFileName(archive)}…");
+            Console.WriteLine($"Installing {Path.GetFileName(archive)}\u2026");
             VpkInstaller.Install(archive, Ux0, new VpkInstallOptions
             {
                 Log = Console.WriteLine,
@@ -403,7 +403,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>Every NID with an HLE implementation → (name, HLE module). Same resolution as
+    /// <summary>Every NID with an HLE implementation -> (name, HLE module). Same resolution as
     /// HleRegistry.RegisterModule: explicit NID, else every NID of the name (optionally per library); a later
     /// registration of a NID replaces an earlier one.</summary>
     static SortedDictionary<uint, (string Name, string Module)> HleImplementedNids()

@@ -45,7 +45,7 @@ public sealed class SessionCaptureOptions
     /// <summary>Recording parts (a re-run records without a state or a GPU dump).</summary>
     public bool StartState = true, GpuDump = true, Zip = true;
     /// <summary>Hotkey name in the messages ("F8"; Android: the pause menu).</summary>
-    public string StopHint = "F8 para parar";
+    public string StopHint = Localization.Loc.Get("CaptureStopHint");
 }
 
 /// <summary>
@@ -397,7 +397,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>Starts a recording (in the background: the start save state stops the game for ~0.1-0.3 s).</summary>
     public bool Start(string reason = "hotkey")
     {
-        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke("Aguarde: a gravação anterior ainda está sendo salva"); return false; }
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke(Localization.Loc.Get("CaptureWait")); return false; }
         if (_rec != null) { Volatile.Write(ref _busy, 0); return false; }
         Idle.Reset();
         Task.Run(() =>
@@ -406,7 +406,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             catch (Exception e)
             {
                 Log.Warn($"[capture] start failed: {e}");
-                _o.Status?.Invoke($"Falha ao iniciar a gravação: {e.Message}");
+                _o.Status?.Invoke(Localization.Loc.Format("CaptureStartFailed", e.Message));
                 Idle.Set();
             }
             finally { Volatile.Write(ref _busy, 0); }
@@ -444,7 +444,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
         Log.Info($"[capture] recording ({reason}) at guest frame {r.StartFlip}: {dir}" + (pre != null ? $"; pre-roll from guest frame {pre.Flip} ({(r.StartNs - pre.StartNs) / 1e9:F1} s before)" : _preRollSeconds > 0 ? "; pre-roll without a save state yet" : ""));
         _o.RecordingChanged?.Invoke(true);
-        _o.Status?.Invoke($"Gravando tudo ({_o.StopHint})");
+        _o.Status?.Invoke(Localization.Loc.Format("CaptureRecording", _o.StopHint));
         if (pre != null)
         {
             try { File.Copy(pre.Path, Path.Combine(dir, "state_preroll.vss")); }
@@ -495,7 +495,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>Stops the recording and writes the folder and its zip in the background.</summary>
     public bool Stop(string reason = "hotkey")
     {
-        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke("Aguarde: a gravação ainda está começando"); return false; }
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke(Localization.Loc.Get("CaptureStarting")); return false; }
         if (_rec == null) { Volatile.Write(ref _busy, 0); return false; }
         Task.Run(() =>
         {
@@ -503,7 +503,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             catch (Exception e)
             {
                 Log.Warn($"[capture] stop failed: {e}");
-                _o.Status?.Invoke($"Falha ao salvar a gravação: {e.Message}");
+                _o.Status?.Invoke(Localization.Loc.Format("CaptureSaveFailed", e.Message));
             }
             finally { Volatile.Write(ref _busy, 0); Idle.Set(); }
         });
@@ -523,7 +523,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         r.StopNs = CaptureClock.NowNs; r.StopFlip = Hle.Modules.Display.FramesPresented; r.StopUs = GuestClock.Microseconds; r.StopTime = DateTime.Now;
         long cpuMs = (long)Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds - r.ProcessCpuMs0;
         Log.Info($"[capture] stopping ({reason}) at guest frame {r.StopFlip}");
-        _o.Status?.Invoke("Salvando a gravação...");
+        _o.Status?.Invoke(Localization.Loc.Get("CaptureSaving"));
         // the GPU dump ends at the game's next present when one comes soon; it never waits on the guest for long (a
         // hung game presents nothing): after 2 s the worker completes the file from the commands it already received
         r.Dump?.Stop();
@@ -579,7 +579,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             try { ZipFolder(dir, zip); LastZip = zip; }
             catch (Exception e) { Log.Warn($"[capture] zip failed: {e.Message}"); zip = null; }
         }
-        _o.Status?.Invoke($"Gravação salva: {zip ?? dir}");
+        _o.Status?.Invoke(Localization.Loc.Format("CaptureSaved", zip ?? dir));
     }
 
     /// <summary>One step of the save: a failure is logged and becomes an "error:" line of session.txt; the rest goes on.</summary>

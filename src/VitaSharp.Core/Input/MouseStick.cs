@@ -53,13 +53,13 @@ public sealed class MouseSettings
         _ => MouseMode.Motion,
     };
 
-    /// <summary>Portuguese name for the launcher and the on-screen notice.</summary>
+    /// <summary>The mode's name for the launcher and the on-screen notice, in the interface language.</summary>
     public static string Label(MouseMode m) => m switch
     {
-        MouseMode.Motion => "giroscópio (botão do meio)",
-        MouseMode.RightStick => "analógico direito",
-        MouseMode.LeftStick => "analógico esquerdo",
-        _ => "desligado",
+        MouseMode.Motion => Localization.Loc.Get("MouseModeMotion"),
+        MouseMode.RightStick => Localization.Loc.Get("MouseModeRight"),
+        MouseMode.LeftStick => Localization.Loc.Get("MouseModeLeft"),
+        _ => Localization.Loc.Get("MouseModeOff"),
     };
 
     public MouseSettings Clone() => new()

@@ -1,0 +1,1665 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Added" xml:space="preserve">
+    <value>{0} added.</value>
+  </data>
+  <data name="AddFolderMenu" xml:space="preserve">
+    <value>Decrypted game folder…</value>
+  </data>
+  <data name="AllGames" xml:space="preserve">
+    <value>All games</value>
+  </data>
+  <data name="AllRegions" xml:space="preserve">
+    <value>All regions</value>
+  </data>
+  <data name="AllRegionsShort" xml:space="preserve">
+    <value>all</value>
+  </data>
+  <data name="AllShort" xml:space="preserve">
+    <value>all</value>
+  </data>
+  <data name="AlreadyRunning" xml:space="preserve">
+    <value>{0} is already running: close it before opening another one.</value>
+  </data>
+  <data name="Appearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="AppliesNextStart" xml:space="preserve">
+    <value>Applies the next time the game starts.</value>
+  </data>
+  <data name="AppliesOnStart" xml:space="preserve">
+    <value>Applies when the game starts.</value>
+  </data>
+  <data name="AsyncShaders" xml:space="preserve">
+    <value>Compile shaders in the background</value>
+  </data>
+  <data name="AsyncShadersDetail" xml:space="preserve">
+    <value>Prepares shaders and pipelines on other threads: fewer stutters when entering new areas</value>
+  </data>
+  <data name="Camera" xml:space="preserve">
+    <value>Camera</value>
+  </data>
+  <data name="CameraDefault" xml:space="preserve">
+    <value>Default (first camera)</value>
+  </data>
+  <data name="CameraDetail" xml:space="preserve">
+    <value>Webcam used for the Vita's cameras</value>
+  </data>
+  <data name="CameraDisconnected" xml:space="preserve">
+    <value>{0} (disconnected)</value>
+  </data>
+  <data name="CameraNone" xml:space="preserve">
+    <value>None (gray picture)</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="CaptureRecording" xml:space="preserve">
+    <value>Recording everything ({0})</value>
+  </data>
+  <data name="Captures" xml:space="preserve">
+    <value>Captures</value>
+  </data>
+  <data name="CaptureSaved" xml:space="preserve">
+    <value>Recording saved: {0}</value>
+  </data>
+  <data name="CaptureSaveFailed" xml:space="preserve">
+    <value>Saving the recording failed: {0}</value>
+  </data>
+  <data name="CaptureSaving" xml:space="preserve">
+    <value>Saving the recording...</value>
+  </data>
+  <data name="CapturesSubtitle" xml:space="preserve">
+    <value>{0} files · {1} in the data folder</value>
+  </data>
+  <data name="CaptureStartFailed" xml:space="preserve">
+    <value>Starting the recording failed: {0}</value>
+  </data>
+  <data name="CaptureStarting" xml:space="preserve">
+    <value>Wait: the recording is still starting</value>
+  </data>
+  <data name="CaptureStopHint" xml:space="preserve">
+    <value>F8 to stop</value>
+  </data>
+  <data name="CaptureWait" xml:space="preserve">
+    <value>Wait: the previous recording is still being saved</value>
+  </data>
+  <data name="CategoryGame" xml:space="preserve">
+    <value>Game</value>
+  </data>
+  <data name="ChannelBuilds" xml:space="preserve">
+    <value>Automatic builds</value>
+  </data>
+  <data name="ChannelReleases" xml:space="preserve">
+    <value>Versions only</value>
+  </data>
+  <data name="Checking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="CheckNow" xml:space="preserve">
+    <value>Check now</value>
+  </data>
+  <data name="CheckUpdates" xml:space="preserve">
+    <value>Check for updates at start</value>
+  </data>
+  <data name="CheckUpdatesDetail" xml:space="preserve">
+    <value>From VitaSharp's GitHub releases</value>
+  </data>
+  <data name="ChooseFolder" xml:space="preserve">
+    <value>Decrypted folder</value>
+  </data>
+  <data name="ChooseLicenseFile" xml:space="preserve">
+    <value>Choose work.bin / .rif…</value>
+  </data>
+  <data name="ChoosePkg" xml:space="preserve">
+    <value>PKG with license</value>
+  </data>
+  <data name="ChooseVpk" xml:space="preserve">
+    <value>VPK or zip</value>
+  </data>
+  <data name="ClearFinished" xml:space="preserve">
+    <value>Clear finished</value>
+  </data>
+  <data name="Clock333" xml:space="preserve">
+    <value>333 MHz (like the Vita, recommended)</value>
+  </data>
+  <data name="Clock444" xml:space="preserve">
+    <value>444 MHz (faster loading)</value>
+  </data>
+  <data name="Closed" xml:space="preserve">
+    <value>{0} closed.</value>
+  </data>
+  <data name="Closing" xml:space="preserve">
+    <value>Closing the game (a recording in progress is saved first)…</value>
+  </data>
+  <data name="ColGame" xml:space="preserve">
+    <value>Game</value>
+  </data>
+  <data name="ColPlayed" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="ColRegion" xml:space="preserve">
+    <value>Region</value>
+  </data>
+  <data name="ColSize" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="ColTrophies" xml:space="preserve">
+    <value>Trophies</value>
+  </data>
+  <data name="ConfigureControls" xml:space="preserve">
+    <value>Configure controls</value>
+  </data>
+  <data name="ConfirmDeleteMany" xml:space="preserve">
+    <value>Delete {0} files ({1})? This cannot be undone.</value>
+  </data>
+  <data name="ConfirmDeleteOne" xml:space="preserve">
+    <value>Delete {0}? This cannot be undone.</value>
+  </data>
+  <data name="ConfirmUninstall" xml:space="preserve">
+    <value>Uninstall "{0}" ({1})? The save data stays.</value>
+  </data>
+  <data name="ContinuePlaying" xml:space="preserve">
+    <value>Continue playing</value>
+  </data>
+  <data name="Controls" xml:space="preserve">
+    <value>Controls</value>
+  </data>
+  <data name="ControlsDetail" xml:space="preserve">
+    <value>Keyboard and controllers (for every game)</value>
+  </data>
+  <data name="Copying" xml:space="preserve">
+    <value>Copying…</value>
+  </data>
+  <data name="CouldNotStart" xml:space="preserve">
+    <value>Could not start the emulator: {0}</value>
+  </data>
+  <data name="Cpu" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="CpuAuto" xml:space="preserve">
+    <value>Automatic (the best for this PC)</value>
+  </data>
+  <data name="CpuClock" xml:space="preserve">
+    <value>CPU clock</value>
+  </data>
+  <data name="CpuClockDetail" xml:space="preserve">
+    <value>444 MHz loads faster, but games that depend on the console's timing can fail</value>
+  </data>
+  <data name="CpuDetail" xml:space="preserve">
+    <value>How the Vita's ARM code runs on this PC</value>
+  </data>
+  <data name="CpuIl" xml:space="preserve">
+    <value>IL JIT (.NET DynamicMethod)</value>
+  </data>
+  <data name="CpuInterp" xml:space="preserve">
+    <value>Interpreter (slower, debugging)</value>
+  </data>
+  <data name="CpuNativeArm" xml:space="preserve">
+    <value>Native JIT (ARM64 machine code)</value>
+  </data>
+  <data name="CpuNativeX64" xml:space="preserve">
+    <value>Native JIT (x64 machine code)</value>
+  </data>
+  <data name="CsAddTip" xml:space="preserve">
+    <value>Add another mapping</value>
+  </data>
+  <data name="CsAlsoPresses" xml:space="preserve">
+    <value>  (also presses: {0})</value>
+  </data>
+  <data name="CsBackTouch" xml:space="preserve">
+    <value>  · rear touch {0}</value>
+  </data>
+  <data name="CsCancelled" xml:space="preserve">
+    <value>Cancelled.</value>
+  </data>
+  <data name="CsClearTip" xml:space="preserve">
+    <value>Remove every mapping</value>
+  </data>
+  <data name="CsComboTip" xml:space="preserve">
+    <value>Add a button combination (hold them together and release)</value>
+  </data>
+  <data name="CsConnected" xml:space="preserve">
+    <value>Connected: {0}. {1}</value>
+  </data>
+  <data name="CsCurve" xml:space="preserve">
+    <value>Curve</value>
+  </data>
+  <data name="CsCurveTip" xml:space="preserve">
+    <value>Response curve: 1 = linear; above 1, finer slow movements; below 1, faster.</value>
+  </data>
+  <data name="CsDeadzone" xml:space="preserve">
+    <value>Dead zone</value>
+  </data>
+  <data name="CsDeadzoneTip" xml:space="preserve">
+    <value>The game's dead zone to skip: any mouse movement already starts at this stick tilt, so small movements do not vanish in the game's dead zone.</value>
+  </data>
+  <data name="CsDevice" xml:space="preserve">
+    <value>Device</value>
+  </data>
+  <data name="CsDisconnected" xml:space="preserve">
+    <value>{0} (disconnected)</value>
+  </data>
+  <data name="CsFrontTouch" xml:space="preserve">
+    <value>  · front touch {0}</value>
+  </data>
+  <data name="CsGyroLive" xml:space="preserve">
+    <value>Vita: pitch {0:+0;-0;0}° · roll {1:+0;-0;0}° · rotation {2:0}°/s&#xA;accelerometer {3:+0.00;-0.00} {4:+0.00;-0.00} {5:+0.00;-0.00} G</value>
+  </data>
+  <data name="CsGyroOff" xml:space="preserve">
+    <value>Gyroscope off: the Vita stays still.</value>
+  </data>
+  <data name="CsHeaderHotkeys" xml:space="preserve">
+    <value>Emulator shortcuts</value>
+  </data>
+  <data name="CsHeaderMapping" xml:space="preserve">
+    <value>Mapping</value>
+  </data>
+  <data name="CsHeaderMotion" xml:space="preserve">
+    <value>Motion (gyroscope)</value>
+  </data>
+  <data name="CsHeaderMouseStick" xml:space="preserve">
+    <value>Mouse as a stick</value>
+  </data>
+  <data name="CsHeaderOptions" xml:space="preserve">
+    <value>Options</value>
+  </data>
+  <data name="CsHeaderTilt" xml:space="preserve">
+    <value>Motion (tilting the Vita)</value>
+  </data>
+  <data name="CsHeldTogether" xml:space="preserve">
+    <value>{0} = {1} (held together)</value>
+  </data>
+  <data name="CsHint" xml:space="preserve">
+    <value>Click a control (or a row on the right) and press a button, move a stick or press a key. Esc cancels. Clicking a stick maps its four directions in sequence. Right click on the screen or the rear touchpad places the touch point.</value>
+  </data>
+  <data name="CsHoldCombo" xml:space="preserve">
+    <value>hold two or more buttons together and release</value>
+  </data>
+  <data name="CsInSdlDb" xml:space="preserve">
+    <value>Recognized by SDL's controller database (standard layout)</value>
+  </data>
+  <data name="CsInvertY" xml:space="preserve">
+    <value>Invert Y axis</value>
+  </data>
+  <data name="CsKbNoMotion" xml:space="preserve">
+    <value>Keyboard and mouse do not move the Vita with this choice.</value>
+  </data>
+  <data name="CsKeyboardInfo" xml:space="preserve">
+    <value>Keyboard of the game window ({0}). Mouse: left button = front screen, right button = rear touchpad, middle button = move the Vita (gyroscope).</value>
+  </data>
+  <data name="CsListen" xml:space="preserve">
+    <value>press…</value>
+  </data>
+  <data name="CsListenAdd" xml:space="preserve">
+    <value>add: press…</value>
+  </data>
+  <data name="CsListenCombo" xml:space="preserve">
+    <value>combination: hold the buttons…</value>
+  </data>
+  <data name="CsListenStatus" xml:space="preserve">
+    <value>{0}: {1} (Esc cancels)…</value>
+  </data>
+  <data name="CsMaxAngle" xml:space="preserve">
+    <value>Max. angle</value>
+  </data>
+  <data name="CsMode" xml:space="preserve">
+    <value>Mode</value>
+  </data>
+  <data name="CsModeGyro" xml:space="preserve">
+    <value>Gyroscope (middle button)</value>
+  </data>
+  <data name="CsModeLeft" xml:space="preserve">
+    <value>Left stick</value>
+  </data>
+  <data name="CsModeRight" xml:space="preserve">
+    <value>Right stick</value>
+  </data>
+  <data name="CsModeTip" xml:space="preserve">
+    <value>What moving the mouse does in the game window. On a stick, the cursor is held in the window (Esc releases it, a click holds it again) and the mouse becomes the stick: aim and turn the camera like in a PC game. F4 switches the mode while the game runs and keeps the choice for that game.</value>
+  </data>
+  <data name="CsMotion" xml:space="preserve">
+    <value>Use the controller's gyroscope</value>
+  </data>
+  <data name="CsMotionRow" xml:space="preserve">
+    <value>Motion</value>
+  </data>
+  <data name="CsMotionTip" xml:space="preserve">
+    <value>The controller's gyroscope and accelerometer (DualShock 4, DualSense, Switch Pro, Joy-Con) move the Vita's motion sensors.</value>
+  </data>
+  <data name="CsMouseGames" xml:space="preserve">
+    <value> Games with their own mode: {0}.</value>
+  </data>
+  <data name="CsMouseInvert" xml:space="preserve">
+    <value>Invert the mouse's Y axis</value>
+  </data>
+  <data name="CsMouseLook" xml:space="preserve">
+    <value>Mouse moves the Vita while the middle button is held</value>
+  </data>
+  <data name="CsMouseLookTip" xml:space="preserve">
+    <value>Hold the middle button (wheel) and move the mouse: horizontally the Vita turns, vertically it tilts forward / back. Recenter goes back to neutral.</value>
+  </data>
+  <data name="CsMouseNote" xml:space="preserve">
+    <value>In game: {0} switches the mode (on-screen notice; kept for that game), {1} releases the cursor and a click holds it again.</value>
+  </data>
+  <data name="CsNoGyro" xml:space="preserve">
+    <value>This controller has no gyroscope: the Vita stays still (flat, screen up).</value>
+  </data>
+  <data name="CsNoInput" xml:space="preserve">
+    <value>No input detected.</value>
+  </data>
+  <data name="CsNoSdl" xml:space="preserve">
+    <value>Controller support unavailable (SDL2 could not be loaded): only the keyboard can be configured.</value>
+  </data>
+  <data name="CsNotInSdlDb" xml:space="preserve">
+    <value>Not in the controller database: raw joystick layout</value>
+  </data>
+  <data name="CsOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="CsOrientNatural" xml:space="preserve">
+    <value>Controller face = Vita screen</value>
+  </data>
+  <data name="CsOrientTip" xml:space="preserve">
+    <value>Natural: hold the controller as you would hold the Vita. Vita upright: with the controller held flat the Vita stands in front of you, rear camera pointing forward.</value>
+  </data>
+  <data name="CsOrientUpright" xml:space="preserve">
+    <value>Controller flat = Vita upright (augmented reality)</value>
+  </data>
+  <data name="CsPauseTip" xml:space="preserve">
+    <value>Pauses and resumes the whole emulation (every process, the game clock and audio). Click to remap</value>
+  </data>
+  <data name="CsPressButton" xml:space="preserve">
+    <value>press a button or move a stick / trigger</value>
+  </data>
+  <data name="CsPressed" xml:space="preserve">
+    <value>Pressed: {0}</value>
+  </data>
+  <data name="CsPressKey" xml:space="preserve">
+    <value>press a key</value>
+  </data>
+  <data name="CsProfileDefault" xml:space="preserve">
+    <value>using the default mapping</value>
+  </data>
+  <data name="CsProfileDefaultUnsaved" xml:space="preserve">
+    <value>default mapping (not saved)</value>
+  </data>
+  <data name="CsProfileEdited" xml:space="preserve">
+    <value>profile edited (not saved)</value>
+  </data>
+  <data name="CsProfileSaved" xml:space="preserve">
+    <value>using your saved profile</value>
+  </data>
+  <data name="CsRawJoystick" xml:space="preserve">
+    <value>raw joystick</value>
+  </data>
+  <data name="CsRemapTip" xml:space="preserve">
+    <value>Click to remap</value>
+  </data>
+  <data name="CsResetDefault" xml:space="preserve">
+    <value>Restore defaults</value>
+  </data>
+  <data name="CsResetDone" xml:space="preserve">
+    <value>Default mapping restored (written when Save is clicked).</value>
+  </data>
+  <data name="CsReturn" xml:space="preserve">
+    <value>Return</value>
+  </data>
+  <data name="CsReturnTip" xml:space="preserve">
+    <value>Time for the stick to go back to the center when the mouse stops.</value>
+  </data>
+  <data name="CsSavedProfile" xml:space="preserve">
+    <value>Saved profile · GUID {0} · connect the controller to test it.</value>
+  </data>
+  <data name="CsSdlMapping" xml:space="preserve">
+    <value>SDL database mapping</value>
+  </data>
+  <data name="CsSensitivity" xml:space="preserve">
+    <value>Sensitivity</value>
+  </data>
+  <data name="CsSourceAuto" xml:space="preserve">
+    <value>Automatic</value>
+  </data>
+  <data name="CsSourceKeyboard" xml:space="preserve">
+    <value>Keyboard and mouse</value>
+  </data>
+  <data name="CsSourcePad" xml:space="preserve">
+    <value>Controller</value>
+  </data>
+  <data name="CsSourceTip" xml:space="preserve">
+    <value>What moves the Vita's motion sensors (gyroscope and accelerometer), for the whole emulator. Automatic: a controller with a gyroscope when connected, else the tilt keys and the mouse.</value>
+  </data>
+  <data name="CsSpeed" xml:space="preserve">
+    <value>Speed</value>
+  </data>
+  <data name="CsStickInvert" xml:space="preserve">
+    <value>Invert Y axis (stick)</value>
+  </data>
+  <data name="CsSwap" xml:space="preserve">
+    <value>Swap Cross and Circle (Circle confirms)</value>
+  </data>
+  <data name="CsTiltLive" xml:space="preserve">
+    <value>Vita: pitch {0:+0;-0;0}° · roll {1:+0;-0;0}° · yaw {2:+0;-0;0}°&#xA;accelerometer {3:+0.00;-0.00} {4:+0.00;-0.00} {5:+0.00;-0.00} G</value>
+  </data>
+  <data name="CsTouchpad" xml:space="preserve">
+    <value>Touchpad = front touch (L2: rear, R2: both)</value>
+  </data>
+  <data name="CsTouchPoint" xml:space="preserve">
+    <value>{0}: touch point at {1:P0}, {2:P0}.</value>
+  </data>
+  <data name="CsTriggers" xml:space="preserve">
+    <value>Analog triggers also press L / R</value>
+  </data>
+  <data name="CtlCircle" xml:space="preserve">
+    <value>Circle</value>
+  </data>
+  <data name="CtlCross" xml:space="preserve">
+    <value>Cross</value>
+  </data>
+  <data name="CtlDpad" xml:space="preserve">
+    <value>D-pad</value>
+  </data>
+  <data name="CtlGenericController" xml:space="preserve">
+    <value>Generic controller</value>
+  </data>
+  <data name="CtlJoyAxis" xml:space="preserve">
+    <value>Axis {0}</value>
+  </data>
+  <data name="CtlJoyButton" xml:space="preserve">
+    <value>Button {0}</value>
+  </data>
+  <data name="CtlKeyboard" xml:space="preserve">
+    <value>Keyboard</value>
+  </data>
+  <data name="CtlKeyLeft" xml:space="preserve">
+    <value>Left {0}</value>
+  </data>
+  <data name="CtlKeyRight" xml:space="preserve">
+    <value>Right {0}</value>
+  </data>
+  <data name="CtlKeySpace" xml:space="preserve">
+    <value>Space</value>
+  </data>
+  <data name="CtlLeftStick" xml:space="preserve">
+    <value>Left stick</value>
+  </data>
+  <data name="CtlPauseEmulation" xml:space="preserve">
+    <value>Pause emulation</value>
+  </data>
+  <data name="CtlPsButton" xml:space="preserve">
+    <value>PS button</value>
+  </data>
+  <data name="CtlRawJoystick" xml:space="preserve">
+    <value>joystick (no mapping)</value>
+  </data>
+  <data name="CtlRecenter" xml:space="preserve">
+    <value>Recenter</value>
+  </data>
+  <data name="CtlRightStick" xml:space="preserve">
+    <value>Right stick</value>
+  </data>
+  <data name="CtlSquare" xml:space="preserve">
+    <value>Square</value>
+  </data>
+  <data name="CtlStandardGamepad" xml:space="preserve">
+    <value>standard gamepad</value>
+  </data>
+  <data name="CtlTiltBack" xml:space="preserve">
+    <value>Tilt back</value>
+  </data>
+  <data name="CtlTiltForward" xml:space="preserve">
+    <value>Tilt forward</value>
+  </data>
+  <data name="CtlTiltLeft" xml:space="preserve">
+    <value>Tilt left</value>
+  </data>
+  <data name="CtlTiltRight" xml:space="preserve">
+    <value>Tilt right</value>
+  </data>
+  <data name="CtlTouchBack" xml:space="preserve">
+    <value>Rear touch (point)</value>
+  </data>
+  <data name="CtlTouchFront" xml:space="preserve">
+    <value>Front touch (point)</value>
+  </data>
+  <data name="CtlTouchpadClick" xml:space="preserve">
+    <value>Touchpad click</value>
+  </data>
+  <data name="CtlTriangle" xml:space="preserve">
+    <value>Triangle</value>
+  </data>
+  <data name="CtlTwistLeft" xml:space="preserve">
+    <value>Turn left</value>
+  </data>
+  <data name="CtlTwistRight" xml:space="preserve">
+    <value>Turn right</value>
+  </data>
+  <data name="DataFolder" xml:space="preserve">
+    <value>Data folder</value>
+  </data>
+  <data name="DebugMode" xml:space="preserve">
+    <value>Debug mode</value>
+  </data>
+  <data name="DebugModeDetail" xml:space="preserve">
+    <value>Detailed logs and automatic diagnostics when the picture looks corrupted; costs a few percent of performance</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Deleted" xml:space="preserve">
+    <value>{0} file(s) deleted.</value>
+  </data>
+  <data name="DeleteOld" xml:space="preserve">
+    <value>Delete the ones older than 30 days ({0})</value>
+  </data>
+  <data name="DiagCapturing" xml:space="preserve">
+    <value>Capturing a diagnostic...</value>
+  </data>
+  <data name="DiagFailed" xml:space="preserve">
+    <value>Saving the diagnostic failed (see the log)</value>
+  </data>
+  <data name="DiagnosticBadge" xml:space="preserve">
+    <value>Diagnostic</value>
+  </data>
+  <data name="DiagnosticsChip" xml:space="preserve">
+    <value>F10 diagnostics · {0}</value>
+  </data>
+  <data name="DiagnosticsFolder" xml:space="preserve">
+    <value>Diagnostics folder</value>
+  </data>
+  <data name="DiagSaved" xml:space="preserve">
+    <value>Diagnostic saved: {0}</value>
+  </data>
+  <data name="DropHere" xml:space="preserve">
+    <value>Drag .pkg, .vpk or .zip files here (or onto any screen)</value>
+  </data>
+  <data name="DropHint" xml:space="preserve">
+    <value>A pkg needs its license: zRIF, work.bin or .rif. The firmware is installed on the Vita System page.</value>
+  </data>
+  <data name="DumpBusy" xml:space="preserve">
+    <value>A GPU dump recording is already running</value>
+  </data>
+  <data name="DumpFailed" xml:space="preserve">
+    <value>Recording the GPU dump failed: {0}</value>
+  </data>
+  <data name="DumpRecording" xml:space="preserve">
+    <value>Recording a GPU dump (Ctrl+F8 to stop)</value>
+  </data>
+  <data name="DumpSaved" xml:space="preserve">
+    <value>GPU dump saved: {0} ({1} frames, {2:F0} MB)</value>
+  </data>
+  <data name="DumpSaving" xml:space="preserve">
+    <value>Saving the GPU dump...</value>
+  </data>
+  <data name="DurationHours" xml:space="preserve">
+    <value>{0}h {1:00}m</value>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="DurationUnderMinute" xml:space="preserve">
+    <value>under 1 min</value>
+  </data>
+  <data name="EmptyLibrary" xml:space="preserve">
+    <value>Your library is empty</value>
+  </data>
+  <data name="EmptyLibraryText" xml:space="preserve">
+    <value>Installed games show up here with their cover, trophies and save states.</value>
+  </data>
+  <data name="FailedBecause" xml:space="preserve">
+    <value>Failed: {0}</value>
+  </data>
+  <data name="FastShaders" xml:space="preserve">
+    <value>Fast shader compilation</value>
+  </data>
+  <data name="FastShadersDetail" xml:space="preserve">
+    <value>Fewer hitches when new shaders show up; turn it off if you notice lower performance</value>
+  </data>
+  <data name="FilterAll" xml:space="preserve">
+    <value>All · {0}</value>
+  </data>
+  <data name="FilterAllShort" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="FilterPlayable" xml:space="preserve">
+    <value>Games · {0}</value>
+  </data>
+  <data name="FilterRecent" xml:space="preserve">
+    <value>Played · {0}</value>
+  </data>
+  <data name="FilterTrophies" xml:space="preserve">
+    <value>With trophies</value>
+  </data>
+  <data name="Firmware" xml:space="preserve">
+    <value>Firmware</value>
+  </data>
+  <data name="FirmwareBuild" xml:space="preserve">
+    <value>build {0}</value>
+  </data>
+  <data name="FirmwareInstalledShort" xml:space="preserve">
+    <value>Firmware {0} installed</value>
+  </data>
+  <data name="FirmwareMissingDetail" xml:space="preserve">
+    <value>Not installed: install the PSVUPDAT.PUP above</value>
+  </data>
+  <data name="FirmwareMissingShort" xml:space="preserve">
+    <value>Firmware not installed</value>
+  </data>
+  <data name="FirmwareTip" xml:space="preserve">
+    <value>Opens the Vita System page (firmware and options)</value>
+  </data>
+  <data name="FontsInstalled" xml:space="preserve">
+    <value>Font package installed</value>
+  </data>
+  <data name="FontsMissing" xml:space="preserve">
+    <value>No font package: the system uses the fallback font</value>
+  </data>
+  <data name="ForceStop" xml:space="preserve">
+    <value>Force stop</value>
+  </data>
+  <data name="FrameRate" xml:space="preserve">
+    <value>Frame rate</value>
+  </data>
+  <data name="FrameRateDetail" xml:space="preserve">
+    <value>Limit for this game</value>
+  </data>
+  <data name="FrameRateTip" xml:space="preserve">
+    <value>Native: the game runs as on the Vita. Locked to 30/60: every frame lasts 2 or 1 vblank (e.g. a game at 20 fps goes to 30). Unlimited: no vblank wait, the game runs as fast as the PC allows. Games whose logic advances per frame get faster or slower with this (speed, physics, music out of sync); if that happens, go back to Native. While the game runs, F2 / Shift+F2 change the rate for that session only.</value>
+  </data>
+  <data name="Fullscreen" xml:space="preserve">
+    <value>Start games in full screen</value>
+  </data>
+  <data name="FullscreenDetail" xml:space="preserve">
+    <value>F11 toggles it while playing</value>
+  </data>
+  <data name="FwAbout" xml:space="preserve">
+    <value>The official firmware (PSVUPDAT.PUP, downloaded from the PlayStation site) brings the system libraries VitaSharp does not reimplement (Json, Xml, Sqlite...). The system fonts come in the font package (another .PUP) or with Vita3K's firmware. Games keep working without firmware.</value>
+  </data>
+  <data name="FwCancelled" xml:space="preserve">
+    <value>Installation cancelled; the previous firmware was kept.</value>
+  </data>
+  <data name="FwCopyingVita3K" xml:space="preserve">
+    <value>Copying Vita3K's firmware…</value>
+  </data>
+  <data name="FwDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="FwFailed" xml:space="preserve">
+    <value>Installing the firmware failed: {0}</value>
+  </data>
+  <data name="FwFontPackage" xml:space="preserve">
+    <value> + font package</value>
+  </data>
+  <data name="FwFontsPresent" xml:space="preserve">
+    <value> — system fonts present (sa0)</value>
+  </data>
+  <data name="FwInstalledIn" xml:space="preserve">
+    <value>Firmware {0} installed in {1}.</value>
+  </data>
+  <data name="FwInstalling" xml:space="preserve">
+    <value>Installing {0}…</value>
+  </data>
+  <data name="FwInstallPup" xml:space="preserve">
+    <value>Install firmware (.PUP)…</value>
+  </data>
+  <data name="FwPickTitle" xml:space="preserve">
+    <value>Select the PS Vita system update (PSVUPDAT.PUP)</value>
+  </data>
+  <data name="FwPupFileType" xml:space="preserve">
+    <value>PS Vita update (.PUP)</value>
+  </data>
+  <data name="FwStatusMissing" xml:space="preserve">
+    <value>Firmware: not installed</value>
+  </data>
+  <data name="FwUseVita3K" xml:space="preserve">
+    <value>Use Vita3K's firmware</value>
+  </data>
+  <data name="FwUseVita3KTip" xml:space="preserve">
+    <value>Copies os0, vs0, sa0 and pd0 from {0} (including the system fonts, if Vita3K has them).</value>
+  </data>
+  <data name="FwWithFonts" xml:space="preserve">
+    <value> — with system fonts</value>
+  </data>
+  <data name="FwWithoutFonts" xml:space="preserve">
+    <value> — without system fonts</value>
+  </data>
+  <data name="GameChip" xml:space="preserve">
+    <value>Game: {0}</value>
+  </data>
+  <data name="GameClick" xml:space="preserve">
+    <value>When a game is chosen</value>
+  </data>
+  <data name="GameClickDetail" xml:space="preserve">
+    <value>The highlighted button on the cover, double click and Enter; the other one sits next to it</value>
+  </data>
+  <data name="GameDebugOff" xml:space="preserve">
+    <value>Debug mode off</value>
+  </data>
+  <data name="GameDebugOn" xml:space="preserve">
+    <value>Debug mode on (F9 turns it off, F10 captures, F8 records everything with the last 10 s, Ctrl+F8 records a GPU dump)</value>
+  </data>
+  <data name="GameDeviceLost" xml:space="preserve">
+    <value>The GPU stopped responding (driver restarted): load a state (F7) or restart the game</value>
+  </data>
+  <data name="GameFrameRate" xml:space="preserve">
+    <value>Frame rate: {0}</value>
+  </data>
+  <data name="GameRate30" xml:space="preserve">
+    <value>locked to 30</value>
+  </data>
+  <data name="GameRate60" xml:space="preserve">
+    <value>locked to 60</value>
+  </data>
+  <data name="GameRateNative" xml:space="preserve">
+    <value>native (the game's own)</value>
+  </data>
+  <data name="GameRateUnlimited" xml:space="preserve">
+    <value>unlimited</value>
+  </data>
+  <data name="GameRes" xml:space="preserve">
+    <value>Internal resolution: {0}</value>
+  </data>
+  <data name="GameResCannot" xml:space="preserve">
+    <value>Internal resolution: cannot change it now ({0})</value>
+  </data>
+  <data name="GameResFailed" xml:space="preserve">
+    <value>Internal resolution: failed (see the log)</value>
+  </data>
+  <data name="GameResNative" xml:space="preserve">
+    <value>1x (native, 960x544)</value>
+  </data>
+  <data name="GameRunningShort" xml:space="preserve">
+    <value>A game is running</value>
+  </data>
+  <data name="GameSavingRecording" xml:space="preserve">
+    <value>Saving the recording... do not close the window</value>
+  </data>
+  <data name="GameSavingState" xml:space="preserve">
+    <value>saving state...</value>
+  </data>
+  <data name="GameSettings" xml:space="preserve">
+    <value>Settings for this game</value>
+  </data>
+  <data name="GameTrophyUnlocked" xml:space="preserve">
+    <value>Trophy unlocked: {0} ({1})</value>
+  </data>
+  <data name="GpuDumpBadge" xml:space="preserve">
+    <value>GPU dump</value>
+  </data>
+  <data name="GpuDumps" xml:space="preserve">
+    <value>GPU dumps · {0}</value>
+  </data>
+  <data name="GpuDumpsFolder" xml:space="preserve">
+    <value>GPU dumps (gpudumps)</value>
+  </data>
+  <data name="GradeBronze" xml:space="preserve">
+    <value>Bronze</value>
+  </data>
+  <data name="GradeGold" xml:space="preserve">
+    <value>Gold</value>
+  </data>
+  <data name="GradePlatinum" xml:space="preserve">
+    <value>Platinum</value>
+  </data>
+  <data name="GradeSilver" xml:space="preserve">
+    <value>Silver</value>
+  </data>
+  <data name="HiddenTrophy" xml:space="preserve">
+    <value>Hidden trophy</value>
+  </data>
+  <data name="HiddenTrophyText" xml:space="preserve">
+    <value>The details show up once it is earned.</value>
+  </data>
+  <data name="HideLog" xml:space="preserve">
+    <value>Hide log</value>
+  </data>
+  <data name="HleModules" xml:space="preserve">
+    <value>Keep in HLE</value>
+  </data>
+  <data name="HleModulesDetail" xml:space="preserve">
+    <value>Libraries that stay on VitaSharp's implementation even when the game or the firmware brings the module. Empty: the available modules are used.</value>
+  </data>
+  <data name="HleModulesTitle" xml:space="preserve">
+    <value>Libraries</value>
+  </data>
+  <data name="HleModulesWatermark" xml:space="preserve">
+    <value>e.g. libSceJson, libult</value>
+  </data>
+  <data name="HomeBgm" xml:space="preserve">
+    <value>System music</value>
+  </data>
+  <data name="HomeBgmDetail" xml:space="preserve">
+    <value>Plays the theme's music (pd0:data/systembgm/home.at9 in the default theme)</value>
+  </data>
+  <data name="HomeBgmMissing" xml:space="preserve">
+    <value>Needs a firmware with pd0 or a theme with music</value>
+  </data>
+  <data name="HomeTheme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="ImeHelp" xml:space="preserve">
+    <value>Enter confirms · Esc cancels · controller: Cross confirms, Circle cancels</value>
+  </data>
+  <data name="ImeHelpMultiline" xml:space="preserve">
+    <value>Enter confirms · Shift+Enter new line · Esc cancels · controller: Cross / Circle</value>
+  </data>
+  <data name="ImeTitle" xml:space="preserve">
+    <value>Type the text</value>
+  </data>
+  <data name="Incompatible" xml:space="preserve">
+    <value>Incompatible</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>Install</value>
+  </data>
+  <data name="InstallCancelled" xml:space="preserve">
+    <value>Installation cancelled.</value>
+  </data>
+  <data name="InstallCancelledOf" xml:space="preserve">
+    <value>Installation of {0} cancelled.</value>
+  </data>
+  <data name="Installed" xml:space="preserve">
+    <value>{0} installed.</value>
+  </data>
+  <data name="InstalledAddOn" xml:space="preserve">
+    <value>DLC for {0} installed.</value>
+  </data>
+  <data name="InstalledAt" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="InstalledBadge" xml:space="preserve">
+    <value>Installed</value>
+  </data>
+  <data name="InstalledOn" xml:space="preserve">
+    <value>installed on {0:yyyy-MM-dd}</value>
+  </data>
+  <data name="InstalledPatch" xml:space="preserve">
+    <value>Update for {0} installed{1}.</value>
+  </data>
+  <data name="InstallFailed" xml:space="preserve">
+    <value>The installation failed: {0}</value>
+  </data>
+  <data name="InstallFailedOf" xml:space="preserve">
+    <value>{0} could not be installed. See the queue.</value>
+  </data>
+  <data name="InstallFirmware" xml:space="preserve">
+    <value>Install firmware</value>
+  </data>
+  <data name="InstallFirmwareFirst" xml:space="preserve">
+    <value>Install the firmware first</value>
+  </data>
+  <data name="Installing" xml:space="preserve">
+    <value>Installing</value>
+  </data>
+  <data name="InstallingMore" xml:space="preserve">
+    <value>Installing (+{0} queued)</value>
+  </data>
+  <data name="InstallNav" xml:space="preserve">
+    <value>Install pkg / vpk</value>
+  </data>
+  <data name="InstallPkgMenu" xml:space="preserve">
+    <value>PKG with license…</value>
+  </data>
+  <data name="InstallSubtitle" xml:space="preserve">
+    <value>Games, updates and DLCs. They go to ux0:app in the data folder; the original file is not deleted.</value>
+  </data>
+  <data name="InstallTitle" xml:space="preserve">
+    <value>Install pkg / vpk</value>
+  </data>
+  <data name="InstallVpkMenu" xml:space="preserve">
+    <value>VPK or zip…</value>
+  </data>
+  <data name="InternalResolution" xml:space="preserve">
+    <value>Internal resolution</value>
+  </data>
+  <data name="InternalResolutionDetail" xml:space="preserve">
+    <value>Sharper, costs GPU power</value>
+  </data>
+  <data name="InternalResolutionTip" xml:space="preserve">
+    <value>Renders the game at a higher resolution than the Vita's (like PCSX2): a sharper picture in the window or full screen. Each step costs much more of the graphics card (2x = 4 times the pixels, 4x = 16 times); if the game slows down, go back to 1x. While the game runs, F1 / Shift+F1 change the resolution for that session only.</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="LanguageDetail" xml:space="preserve">
+    <value>System follows the operating system's language; logs stay in English</value>
+  </data>
+  <data name="LanguageEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="LanguagePortuguese" xml:space="preserve">
+    <value>Português (Brasil)</value>
+  </data>
+  <data name="LastPlayed" xml:space="preserve">
+    <value>Last played</value>
+  </data>
+  <data name="LayoutFrontScreen" xml:space="preserve">
+    <value>Front touch screen</value>
+  </data>
+  <data name="LayoutRearPad" xml:space="preserve">
+    <value>Rear touchpad (back of the console)</value>
+  </data>
+  <data name="Library" xml:space="preserve">
+    <value>Library</value>
+  </data>
+  <data name="LibrarySubtitle" xml:space="preserve">
+    <value>{0} games installed · {1} playable</value>
+  </data>
+  <data name="LicenseFileType" xml:space="preserve">
+    <value>License</value>
+  </data>
+  <data name="LicenseFor" xml:space="preserve">
+    <value>License for {0}</value>
+  </data>
+  <data name="LicenseText" xml:space="preserve">
+    <value>Paste the zRIF of this package or choose the license file (work.bin or .rif).</value>
+  </data>
+  <data name="LiveArea" xml:space="preserve">
+    <value>LiveArea</value>
+  </data>
+  <data name="LiveAreaTip" xml:space="preserve">
+    <value>Opens the game's LiveArea (the game's board, as on the Vita); Start launches the game</value>
+  </data>
+  <data name="LoadLatestState" xml:space="preserve">
+    <value>Load latest state</value>
+  </data>
+  <data name="LoadStateTip" xml:space="preserve">
+    <value>Starts the game and loads this state</value>
+  </data>
+  <data name="Locked" xml:space="preserve">
+    <value>Locked</value>
+  </data>
+  <data name="MissingBadge" xml:space="preserve">
+    <value>Missing</value>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="MouseKeys" xml:space="preserve">
+    <value>{0} switches</value>
+  </data>
+  <data name="MouseKeysStick" xml:space="preserve">
+    <value>{0} releases the cursor, {1} switches</value>
+  </data>
+  <data name="MouseModeLeft" xml:space="preserve">
+    <value>left stick</value>
+  </data>
+  <data name="MouseModeMotion" xml:space="preserve">
+    <value>gyroscope (middle button)</value>
+  </data>
+  <data name="MouseModeOff" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="MouseModeRight" xml:space="preserve">
+    <value>right stick</value>
+  </data>
+  <data name="NeverPlayed" xml:space="preserve">
+    <value>Never played</value>
+  </data>
+  <data name="No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="NoCaptures" xml:space="preserve">
+    <value>Nothing here. In game: F8 starts and stops "Record everything", Ctrl+F8 records only the GPU dump, F10 saves a diagnostic.</value>
+  </data>
+  <data name="NoGameCaptures" xml:space="preserve">
+    <value>No recordings or dumps of this game. In game: F8 records everything, Ctrl+F8 only the GPU dump, F10 a diagnostic.</value>
+  </data>
+  <data name="NoMatch" xml:space="preserve">
+    <value>No game matches the search or the filters.</value>
+  </data>
+  <data name="NoStates" xml:space="preserve">
+    <value>No save states. In game: F5 saves the quick state, F7 loads it; F6 picks the slot and Shift+F5 / Shift+F7 save and load in it.</value>
+  </data>
+  <data name="NotAGameFolder" xml:space="preserve">
+    <value>That folder is not a game: it has no eboot.bin.</value>
+  </data>
+  <data name="NothingInstalled" xml:space="preserve">
+    <value>Nothing installed from {0} (it was installed already).</value>
+  </data>
+  <data name="NoTrophies" xml:space="preserve">
+    <value>No trophies</value>
+  </data>
+  <data name="NoTrophyGames" xml:space="preserve">
+    <value>No installed game has trophies.</value>
+  </data>
+  <data name="NoTrophyYet" xml:space="preserve">
+    <value>No trophy earned yet.</value>
+  </data>
+  <data name="NoUpdateFeed" xml:space="preserve">
+    <value>This build was compiled from source: update it with git</value>
+  </data>
+  <data name="Ok" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="OkBadge" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="OpenGameFolder" xml:space="preserve">
+    <value>Open game folder</value>
+  </data>
+  <data name="OpenGamePage" xml:space="preserve">
+    <value>Open the game page</value>
+  </data>
+  <data name="OpenLiveArea" xml:space="preserve">
+    <value>Open the LiveArea</value>
+  </data>
+  <data name="OpenPage" xml:space="preserve">
+    <value>Open page</value>
+  </data>
+  <data name="OpenSaveData" xml:space="preserve">
+    <value>Open save data</value>
+  </data>
+  <data name="OpenStatesFolder" xml:space="preserve">
+    <value>Open save states folder</value>
+  </data>
+  <data name="OpenVitaSystem" xml:space="preserve">
+    <value>Open Vita System</value>
+  </data>
+  <data name="OpenVitaSystemTip" xml:space="preserve">
+    <value>Open Vita System (Ctrl+H)&#xA;The firmware's shell.self: home screen, LiveArea and system apps, in an emulator window. Works from any launcher screen.</value>
+  </data>
+  <data name="Paused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="PausedKey" xml:space="preserve">
+    <value>Paused ({0})</value>
+  </data>
+  <data name="Pd0Detail" xml:space="preserve">
+    <value>Home screen music, themes and factory data</value>
+  </data>
+  <data name="PerGameGraphicsNote" xml:space="preserve">
+    <value>Internal resolution and frame rate are on each game's page.</value>
+  </data>
+  <data name="PickFolderTitle" xml:space="preserve">
+    <value>Choose the folder of a decrypted game (with eboot.bin and sce_sys)</value>
+  </data>
+  <data name="PickLicenseTitle" xml:space="preserve">
+    <value>Choose the license of this package (work.bin or .rif)</value>
+  </data>
+  <data name="PickPkgTitle" xml:space="preserve">
+    <value>Choose a PS Vita package (.pkg)</value>
+  </data>
+  <data name="PickVpkTitle" xml:space="preserve">
+    <value>Choose PS Vita VPKs or zips</value>
+  </data>
+  <data name="PkgFileType" xml:space="preserve">
+    <value>PS Vita package</value>
+  </data>
+  <data name="Play" xml:space="preserve">
+    <value>Play</value>
+  </data>
+  <data name="PlayDirectly" xml:space="preserve">
+    <value>Play right away</value>
+  </data>
+  <data name="PreRoll" xml:space="preserve">
+    <value>Pre-recording</value>
+  </data>
+  <data name="PreRollDetail" xml:space="preserve">
+    <value>F8 includes the seconds before the key press (a save state every 30 s pauses the game for an instant)</value>
+  </data>
+  <data name="PsnId" xml:space="preserve">
+    <value>Online ID</value>
+  </data>
+  <data name="PsnIdDetail" xml:space="preserve">
+    <value>3 to 16 letters, digits, '-' or '_', starting with a letter</value>
+  </data>
+  <data name="PsnIdInvalid" xml:space="preserve">
+    <value>Invalid online ID: use 3 to 16 letters, digits, '-' or '_', starting with a letter.</value>
+  </data>
+  <data name="PsnLocal" xml:space="preserve">
+    <value>Local PSN services</value>
+  </data>
+  <data name="PsnLocalDetail" xml:space="preserve">
+    <value>Cloud (TUS / Cross-Save), leaderboards, tickets and DLC kept on this PC (np folder)</value>
+  </data>
+  <data name="PsnSignedIn" xml:space="preserve">
+    <value>Simulate a signed-in PSN account</value>
+  </data>
+  <data name="PsnSignedInDetail" xml:space="preserve">
+    <value>Off (default): the console has no network and no account, like Vita3K. Turn it on only for games that require a PSN account; nothing goes to Sony's servers</value>
+  </data>
+  <data name="Queue" xml:space="preserve">
+    <value>Queue</value>
+  </data>
+  <data name="QueueEmpty" xml:space="preserve">
+    <value>Nothing in the queue. What you install shows up here with its progress.</value>
+  </data>
+  <data name="QuickState" xml:space="preserve">
+    <value>Quick</value>
+  </data>
+  <data name="RateFixed30" xml:space="preserve">
+    <value>Locked to 30</value>
+  </data>
+  <data name="RateFixed60" xml:space="preserve">
+    <value>Locked to 60</value>
+  </data>
+  <data name="RateNative" xml:space="preserve">
+    <value>Native (the game's)</value>
+  </data>
+  <data name="RateUnlimited" xml:space="preserve">
+    <value>Unlimited</value>
+  </data>
+  <data name="RealInternet" xml:space="preserve">
+    <value>Real internet</value>
+  </data>
+  <data name="RealInternetDetail" xml:space="preserve">
+    <value>The games' sockets, DNS and HTTP use this PC's network (Sony's servers stay blocked)</value>
+  </data>
+  <data name="RealInternetPrivacy" xml:space="preserve">
+    <value>Privacy: with real internet on, the game sends data (your IP, the online ID, scores and cloud saves) to its servers and to the RPCN server below. Off (the default), nothing leaves the PC.</value>
+  </data>
+  <data name="RecordingBadge" xml:space="preserve">
+    <value>F8 recording</value>
+  </data>
+  <data name="Recordings" xml:space="preserve">
+    <value>F8 recordings · {0}</value>
+  </data>
+  <data name="RecordingsFolder" xml:space="preserve">
+    <value>Recordings (captures)</value>
+  </data>
+  <data name="RecreatedHome" xml:space="preserve">
+    <value>Show in the library</value>
+  </data>
+  <data name="RecreatedHomeDetail" xml:space="preserve">
+    <value>The library's "Home screen" view: bubbles and LiveArea drawn by the launcher from the firmware files, until shell.self replaces it</value>
+  </data>
+  <data name="RecreatedHomeTitle" xml:space="preserve">
+    <value>Recreated home screen (provisional)</value>
+  </data>
+  <data name="RefreshTip" xml:space="preserve">
+    <value>Read the games folder again (F5)</value>
+  </data>
+  <data name="RegionAsia" xml:space="preserve">
+    <value>Asia</value>
+  </data>
+  <data name="RegionChip" xml:space="preserve">
+    <value>Region: {0}</value>
+  </data>
+  <data name="RegionEurope" xml:space="preserve">
+    <value>Europe</value>
+  </data>
+  <data name="RegionHomebrew" xml:space="preserve">
+    <value>Homebrew</value>
+  </data>
+  <data name="RegionJapan" xml:space="preserve">
+    <value>Japan</value>
+  </data>
+  <data name="RegionOther" xml:space="preserve">
+    <value>Other</value>
+  </data>
+  <data name="RegionUs" xml:space="preserve">
+    <value>USA</value>
+  </data>
+  <data name="Reinstalled" xml:space="preserve">
+    <value>{0} reinstalled.</value>
+  </data>
+  <data name="RemindLater" xml:space="preserve">
+    <value>Remind me later</value>
+  </data>
+  <data name="RemoveFromQueue" xml:space="preserve">
+    <value>Remove from the queue</value>
+  </data>
+  <data name="ReplaceAddOn" xml:space="preserve">
+    <value>This DLC for {0} is installed already. Replace it?</value>
+  </data>
+  <data name="ReplaceFolder" xml:space="preserve">
+    <value>{0} is installed already. Replace it?</value>
+  </data>
+  <data name="ReplaceGame" xml:space="preserve">
+    <value>"{0}" ({1}) is installed already. Replace it? The save data stays.</value>
+  </data>
+  <data name="ReplacePatch" xml:space="preserve">
+    <value>There is an update for {0} already. Replace it with {1}?</value>
+  </data>
+  <data name="ReplacePatchThisFile" xml:space="preserve">
+    <value>the one in this file</value>
+  </data>
+  <data name="ReplacePatchVersion" xml:space="preserve">
+    <value>version {0}</value>
+  </data>
+  <data name="ResNative" xml:space="preserve">
+    <value>1x native (960×544)</value>
+  </data>
+  <data name="RpcnPassword" xml:space="preserve">
+    <value>RPCN password</value>
+  </data>
+  <data name="RpcnPasswordDetail" xml:space="preserve">
+    <value>Stored on this PC (launcher.json)</value>
+  </data>
+  <data name="RpcnServer" xml:space="preserve">
+    <value>RPCN server</value>
+  </data>
+  <data name="RpcnServerDetail" xml:space="preserve">
+    <value>Leaderboards and cloud with other players (RPCS3's open server). Empty: the local services</value>
+  </data>
+  <data name="RpcnServerWatermark" xml:space="preserve">
+    <value>e.g. np.rpcs3.net</value>
+  </data>
+  <data name="RpcnToken" xml:space="preserve">
+    <value>RPCN token</value>
+  </data>
+  <data name="RpcnTokenDetail" xml:space="preserve">
+    <value>Only on the first login of a new account</value>
+  </data>
+  <data name="RpcnTokenWatermark" xml:space="preserve">
+    <value>first login only</value>
+  </data>
+  <data name="RpcnUser" xml:space="preserve">
+    <value>RPCN user</value>
+  </data>
+  <data name="Running" xml:space="preserve">
+    <value>Running {0}</value>
+  </data>
+  <data name="RunningBadge" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="RunningNow" xml:space="preserve">
+    <value>Running now</value>
+  </data>
+  <data name="SaveStatesTitle" xml:space="preserve">
+    <value>Save states</value>
+  </data>
+  <data name="SearchGame" xml:space="preserve">
+    <value>Search game</value>
+  </data>
+  <data name="SearchGames" xml:space="preserve">
+    <value>Search by name or ID</value>
+  </data>
+  <data name="SectionAdvanced" xml:space="preserve">
+    <value>Advanced</value>
+  </data>
+  <data name="SectionEmulation" xml:space="preserve">
+    <value>Emulation</value>
+  </data>
+  <data name="SectionGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="SectionGraphics" xml:space="preserve">
+    <value>Graphics</value>
+  </data>
+  <data name="SectionNetwork" xml:space="preserve">
+    <value>Network and PSN</value>
+  </data>
+  <data name="SeeAll" xml:space="preserve">
+    <value>See all</value>
+  </data>
+  <data name="SeeAllTrophies" xml:space="preserve">
+    <value>See the full list</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="ShellDetail" xml:space="preserve">
+    <value>The Vita's home screen and LiveArea (vs0:vsh/shell)</value>
+  </data>
+  <data name="ShellNoGames" xml:space="preserve">
+    <value>No game installed. Use "Install pkg / vpk" to install a VPK, PKG or folder.</value>
+  </data>
+  <data name="ShellRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="ShellStart" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="ShortcutAnywhere" xml:space="preserve">
+    <value>Ctrl+H · from any screen</value>
+  </data>
+  <data name="Shortcuts" xml:space="preserve">
+    <value>In-game shortcuts</value>
+  </data>
+  <data name="ShortcutsText" xml:space="preserve">
+    <value>F11 full screen · P pause (Controls &gt; Emulator shortcuts) · F5 / F7 save and load the quick state, F6 picks the slot · F8 "Record everything" (state, controls, pictures, audio and GPU dump in a .zip in captures) · Ctrl+F8 only the GPU dump · F9 turns debug mode on and off · F10 diagnostic (.zip in the diagnostics folder) · Mouse: left button = front screen, right button = rear touchpad.</value>
+  </data>
+  <data name="ShowInFolder" xml:space="preserve">
+    <value>Show in folder</value>
+  </data>
+  <data name="ShowLog" xml:space="preserve">
+    <value>Show log</value>
+  </data>
+  <data name="SkipVersion" xml:space="preserve">
+    <value>Skip this version</value>
+  </data>
+  <data name="Slot" xml:space="preserve">
+    <value>Slot {0}</value>
+  </data>
+  <data name="SortAz" xml:space="preserve">
+    <value>A–Z</value>
+  </data>
+  <data name="SortChip" xml:space="preserve">
+    <value>Sort: {0}</value>
+  </data>
+  <data name="SortRecent" xml:space="preserve">
+    <value>Last played</value>
+  </data>
+  <data name="SortTime" xml:space="preserve">
+    <value>Most played</value>
+  </data>
+  <data name="StartSection" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="StartupView" xml:space="preserve">
+    <value>When the emulator opens</value>
+  </data>
+  <data name="StartupViewDetail" xml:space="preserve">
+    <value>Vita System goes straight into the shell, like turning the console on; the launcher stays behind it</value>
+  </data>
+  <data name="StateEmpty" xml:space="preserve">
+    <value>State {0} empty</value>
+  </data>
+  <data name="StateLoaded" xml:space="preserve">
+    <value>State {0} loaded</value>
+  </data>
+  <data name="StateLoadFailed" xml:space="preserve">
+    <value>Could not load the state: {0}</value>
+  </data>
+  <data name="StateOtherFormat" xml:space="preserve">
+    <value>This state was saved by another VitaSharp version ({0}) and cannot be loaded (format {1}; this version reads format {2})</value>
+  </data>
+  <data name="StateOtherGame" xml:space="preserve">
+    <value>This state is from another game ({0} {1}) and cannot be loaded in {2}</value>
+  </data>
+  <data name="StateOtherVersion" xml:space="preserve">
+    <value>This state was saved by another VitaSharp version ({0}) and cannot be loaded</value>
+  </data>
+  <data name="StateQuickLabel" xml:space="preserve">
+    <value>quick</value>
+  </data>
+  <data name="StateSaved" xml:space="preserve">
+    <value>State {0} saved</value>
+  </data>
+  <data name="StateSaveFailed" xml:space="preserve">
+    <value>Could not save the state: {0}</value>
+  </data>
+  <data name="StateSlotEmpty" xml:space="preserve">
+    <value>State {0}: empty</value>
+  </data>
+  <data name="StateSlotSaved" xml:space="preserve">
+    <value>State {0}: saved on {1:g}</value>
+  </data>
+  <data name="StateUnreadable" xml:space="preserve">
+    <value>Not a readable save state</value>
+  </data>
+  <data name="StatusReady" xml:space="preserve">
+    <value>{0} game(s) installed · data folder: {1}</value>
+  </data>
+  <data name="StepControls" xml:space="preserve">
+    <value>Check the controls</value>
+  </data>
+  <data name="StepControlsText" xml:space="preserve">
+    <value>The keyboard is set up already. PlayStation, Xbox and generic controllers are recognized on their own.</value>
+  </data>
+  <data name="StepFirmware" xml:space="preserve">
+    <value>Install the firmware</value>
+  </data>
+  <data name="StepFirmwareDone" xml:space="preserve">
+    <value>Firmware {0} installed. The Vita System opens from the sidebar button.</value>
+  </data>
+  <data name="StepFirmwareText" xml:space="preserve">
+    <value>The official PSVUPDAT.PUP (3.74): turns on the Vita System and the libraries many games use.</value>
+  </data>
+  <data name="StepGames" xml:space="preserve">
+    <value>Add games</value>
+  </data>
+  <data name="StepGamesText" xml:space="preserve">
+    <value>Drag a pkg, vpk or zip onto the window, or pick the files. A pkg needs its license (zRIF or work.bin).</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="StoppedWithCode" xml:space="preserve">
+    <value>{0} stopped with code {1}. See the log.</value>
+  </data>
+  <data name="SystemFonts" xml:space="preserve">
+    <value>System fonts</value>
+  </data>
+  <data name="SystemSounds" xml:space="preserve">
+    <value>System sound effects</value>
+  </data>
+  <data name="SystemSoundsDetail" xml:space="preserve">
+    <value>The Vita's confirm and back sounds (common_resource.rco)</value>
+  </data>
+  <data name="Theme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="ThemeDetail" xml:space="preserve">
+    <value>System follows the operating system's theme</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="ThemeSystem" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="TiAbout" xml:space="preserve">
+    <value>A PS Vita's folder: ur0:user/00/trophy copied already decrypted (on the console the data is encrypted with that device's keys; a copy made with a file manager does not work). In the original Trophy Collection, a game shows up after it was started once from the Vita System.</value>
+  </data>
+  <data name="TiBackup" xml:space="preserve">
+    <value> The previous data was kept in {0}.</value>
+  </data>
+  <data name="TiEncrypted" xml:space="preserve">
+    <value>These files are encrypted with your PS Vita's keys and can only be read on it. Copy the folder already decrypted (with a homebrew that reads it through the system itself) and import that copy.</value>
+  </data>
+  <data name="TiFailed" xml:space="preserve">
+    <value>Import failed: {0}</value>
+  </data>
+  <data name="TiImportFolder" xml:space="preserve">
+    <value>Import trophy folder…</value>
+  </data>
+  <data name="TiImporting" xml:space="preserve">
+    <value>Importing…</value>
+  </data>
+  <data name="TiImportVita3K" xml:space="preserve">
+    <value>Import Vita3K's trophies</value>
+  </data>
+  <data name="TiImportVita3KTip" xml:space="preserve">
+    <value>Reads {0} (read only) and merges the trophies into VitaSharp's list.</value>
+  </data>
+  <data name="TimePlayed" xml:space="preserve">
+    <value>Time played</value>
+  </data>
+  <data name="TiNothing" xml:space="preserve">
+    <value>No trophy data found in that folder.</value>
+  </data>
+  <data name="TiPickTitle" xml:space="preserve">
+    <value>Select the trophy folder (ur0:user/00/trophy) or Vita3K's data folder</value>
+  </data>
+  <data name="TiVita3KDone" xml:space="preserve">
+    <value>{0} trophies imported from Vita3K ({1} games with trophies).</value>
+  </data>
+  <data name="TiVitaDone" xml:space="preserve">
+    <value>PS Vita trophy data imported ({0} games).</value>
+  </data>
+  <data name="ToastTrophyUnlocked" xml:space="preserve">
+    <value>Trophy unlocked</value>
+  </data>
+  <data name="Trophies" xml:space="preserve">
+    <value>Trophies</value>
+  </data>
+  <data name="TrophiesGot" xml:space="preserve">
+    <value>Earned · {0}</value>
+  </data>
+  <data name="TrophiesMissing" xml:space="preserve">
+    <value>Missing · {0}</value>
+  </data>
+  <data name="TrophiesSubtitle" xml:space="preserve">
+    <value>{0} of {1} trophies in {2} games</value>
+  </data>
+  <data name="TrophyImportTitle" xml:space="preserve">
+    <value>Import trophies</value>
+  </data>
+  <data name="TrophySound" xml:space="preserve">
+    <value>Trophy sound</value>
+  </data>
+  <data name="TrophySoundDetail" xml:space="preserve">
+    <value>Plays a sound when a trophy is earned in game: the firmware's notification, or a built-in sound without firmware</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>Uninstall</value>
+  </data>
+  <data name="Uninstalled" xml:space="preserve">
+    <value>{0} uninstalled.</value>
+  </data>
+  <data name="UninstallFailed" xml:space="preserve">
+    <value>Uninstalling failed: {0}</value>
+  </data>
+  <data name="UnknownVersion" xml:space="preserve">
+    <value>unknown version</value>
+  </data>
+  <data name="Unlocked" xml:space="preserve">
+    <value>Earned</value>
+  </data>
+  <data name="UpdateAvailable" xml:space="preserve">
+    <value>Update available</value>
+  </data>
+  <data name="UpdateChannel" xml:space="preserve">
+    <value>Channel</value>
+  </data>
+  <data name="UpdateChannelDetail" xml:space="preserve">
+    <value>Automatic builds come out with every change; versions only when tagged</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>Could not check for updates: {0}</value>
+  </data>
+  <data name="UpdateCloseGame" xml:space="preserve">
+    <value>Close the game before updating.</value>
+  </data>
+  <data name="UpdateDataSafe" xml:space="preserve">
+    <value>Only the emulator's files are replaced; games, saves and firmware stay as they are.</value>
+  </data>
+  <data name="UpdateDownloading" xml:space="preserve">
+    <value>Downloading… {0:P0}</value>
+  </data>
+  <data name="UpdateFailed" xml:space="preserve">
+    <value>The update failed: {0}</value>
+  </data>
+  <data name="UpdateFromTo" xml:space="preserve">
+    <value>{0}  →  {1}</value>
+  </data>
+  <data name="UpdateNotes" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="UpdateNow" xml:space="preserve">
+    <value>Update now</value>
+  </data>
+  <data name="UpdatePublished" xml:space="preserve">
+    <value>Published on {0:yyyy-MM-dd HH:mm}</value>
+  </data>
+  <data name="UpdateRestarting" xml:space="preserve">
+    <value>Package checked (SHA256SUMS). Restarting VitaSharp…</value>
+  </data>
+  <data name="Updates" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="UpToDate" xml:space="preserve">
+    <value>You are on the newest version ({0}).</value>
+  </data>
+  <data name="UseGlobal" xml:space="preserve">
+    <value>Use the defaults</value>
+  </data>
+  <data name="UseGlobalTip" xml:space="preserve">
+    <value>Puts this game back on the default options</value>
+  </data>
+  <data name="Validation" xml:space="preserve">
+    <value>Vulkan validation layers</value>
+  </data>
+  <data name="ValidationDetail" xml:space="preserve">
+    <value>Renderer debugging; makes everything much slower</value>
+  </data>
+  <data name="VersionInUse" xml:space="preserve">
+    <value>Version in use</value>
+  </data>
+  <data name="ViewGrid" xml:space="preserve">
+    <value>Covers</value>
+  </data>
+  <data name="ViewHome" xml:space="preserve">
+    <value>Home screen</value>
+  </data>
+  <data name="ViewHomeTip" xml:space="preserve">
+    <value>Recreated home screen (provisional): bubbles and LiveArea with the firmware's look</value>
+  </data>
+  <data name="ViewList" xml:space="preserve">
+    <value>List</value>
+  </data>
+  <data name="VitaShortcut" xml:space="preserve">
+    <value>Vita System shortcut</value>
+  </data>
+  <data name="VitaShortcutDetail" xml:space="preserve">
+    <value>From any launcher screen</value>
+  </data>
+  <data name="VitaSystem" xml:space="preserve">
+    <value>Vita System</value>
+  </data>
+  <data name="VitaSystemSubtitle" xml:space="preserve">
+    <value>The real firmware (shell.self and libpaf) running in the emulator. To open it: the sidebar button or Ctrl+H.</value>
+  </data>
+  <data name="VpkFileType" xml:space="preserve">
+    <value>PS Vita VPK / zip</value>
+  </data>
+  <data name="VSync" xml:space="preserve">
+    <value>VSync</value>
+  </data>
+  <data name="VSyncDetail" xml:space="preserve">
+    <value>Syncs to the monitor (no tearing)</value>
+  </data>
+  <data name="Waiting" xml:space="preserve">
+    <value>Queued</value>
+  </data>
+  <data name="Welcome" xml:space="preserve">
+    <value>Welcome to VitaSharp</value>
+  </data>
+  <data name="WelcomeSubtitle" xml:space="preserve">
+    <value>Two steps and the library is ready. Nothing leaves your computer.</value>
+  </data>
+  <data name="WhenDate" xml:space="preserve">
+    <value>{0:yyyy-MM-dd HH:mm}</value>
+  </data>
+  <data name="WhenToday" xml:space="preserve">
+    <value>today, {0:HH:mm}</value>
+  </data>
+  <data name="WhenYesterday" xml:space="preserve">
+    <value>yesterday, {0:HH:mm}</value>
+  </data>
+  <data name="WindowSize" xml:space="preserve">
+    <value>Window size</value>
+  </data>
+  <data name="WindowSizeDetail" xml:space="preserve">
+    <value>Multiple of the Vita's screen (the internal resolution is per game)</value>
+  </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="ZrifEmpty" xml:space="preserve">
+    <value>Paste a zRIF or choose the license file.</value>
+  </data>
+  <data name="ZrifNot" xml:space="preserve">
+    <value>That is not a zRIF (it starts with KO5ifR1dQ+…).</value>
+  </data>
+  <data name="ZrifUnreadable" xml:space="preserve">
+    <value>Could not read the zRIF: {0}</value>
+  </data>
+  <data name="ZrifWatermark" xml:space="preserve">
+    <value>zRIF (KO5ifR1dQ+eHBlOi…)</value>
+  </data>
+</root>

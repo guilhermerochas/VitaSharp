@@ -1,3 +1,4 @@
+using VitaSharp.Core.Localization;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.SaveState;
@@ -98,16 +99,16 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
                 {
                     ro.ResScale = saved;
                     Log.Warn($"Internal resolution {from}x -> {to}x not applied: {why}");
-                    notice($"Resolução interna: não foi possível trocar agora ({why})");
+                    notice(Loc.Format("GameResCannot", why));
                     return;
                 }
                 Log.Info($"Internal resolution {from}x -> {to}x (hotkey) at guest frame {Display.FramesPresented}");
-                notice($"Resolução interna: {Label(to)}");
+                notice(Loc.Format("GameRes", Label(to)));
             }
             catch (Exception e)
             {
                 Log.Error($"Internal resolution change failed: {e}");
-                notice("Resolução interna: falhou (veja o log)");
+                notice(Loc.Get("GameResFailed"));
             }
             finally { Volatile.Write(ref _busy, 0); }
         });
@@ -119,16 +120,16 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
         var to = Modes[Next(Array.IndexOf(Modes, FrameRate.Mode), Modes.Length, back)];
         FrameRate.Mode = to;
         Log.Info($"Frame rate: {FrameRate.Name(to)} (hotkey) at guest frame {Display.FramesPresented}");
-        notice($"Taxa de quadros: {Label(to)}");
+        notice(Loc.Format("GameFrameRate", Label(to)));
     }
 
-    static string Label(float scale) => scale == 1f ? "1x (nativa, 960x544)" : $"{scale:0}x ({960 * scale:0}x{544 * scale:0})";
+    static string Label(float scale) => scale == 1f ? Loc.Get("GameResNative") : $"{scale:0}x ({960 * scale:0}x{544 * scale:0})";
 
     static string Label(FrameRateMode m) => m switch
     {
-        FrameRateMode.Fixed30 => "fixa em 30",
-        FrameRateMode.Fixed60 => "fixa em 60",
-        FrameRateMode.Unlimited => "sem limite",
-        _ => "nativa (a do jogo)",
+        FrameRateMode.Fixed30 => Loc.Get("GameRate30"),
+        FrameRateMode.Fixed60 => Loc.Get("GameRate60"),
+        FrameRateMode.Unlimited => Loc.Get("GameRateUnlimited"),
+        _ => Loc.Get("GameRateNative"),
     };
 }
