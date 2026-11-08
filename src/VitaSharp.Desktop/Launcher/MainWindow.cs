@@ -385,7 +385,8 @@ public sealed partial class MainWindow : Window
             SelectedIndex = Math.Max(0, Array.FindIndex(choices, c => c.Factor == opts.ResScale)),
         };
         ToolTip.SetTip(res, "Renderiza o jogo numa resolução maior que a do Vita (como o PCSX2): imagem mais nítida na janela ou em tela cheia. " +
-            "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x.");
+            "Cada passo custa bem mais da placa de vídeo (2x = 4 vezes os pixels, 4x = 16 vezes); se o jogo ficar lento, volte para 1x. " +
+            "Com o jogo rodando, F1 / Shift+F1 trocam a resolução só naquela sessão.");
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(new TextBlock { Text = "Resolução interna", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
         res.Width = 170;
@@ -399,7 +400,8 @@ public sealed partial class MainWindow : Window
         };
         ToolTip.SetTip(rate, "Nativo: o jogo roda como no Vita. Fixo em 30/60: cada quadro dura 2 ou 1 vblank (ex.: um jogo a 20 fps passa a 30). " +
             "Sem limite: sem espera de vblank, o jogo roda o mais rápido que o PC aguentar. Jogos cuja lógica anda por quadro ficam " +
-            "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo.");
+            "mais rápidos ou mais lentos com isso (velocidade, física, música fora de sincronia); se acontecer, volte para Nativo. " +
+            "Com o jogo rodando, F2 / Shift+F2 trocam a taxa só naquela sessão.");
         var rateRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         rateRow.Children.Add(new TextBlock { Text = "Taxa de quadros", Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Width = 120 });
         rateRow.Children.Add(rate);
