@@ -532,6 +532,7 @@ public static class Program
         Console.WriteLine("               --host-prio=on|off  guest threads and GPU worker above normal host priority (default on)");
         Console.WriteLine("               --gpu-profile=adreno|mali|desktop  emulate a mobile GPU class: its missing features, limits and driver quirks");
         Console.WriteLine("               --res-scale=0.75|0.5|2|3|4  internal resolution: below native (faster on GPU-bound games, softer) or 2x-4x (sharper, costs GPU)");
+        Console.WriteLine("               --msaa=native|ss|off  MSAA scenes: real multisampling (default), 2x supersampling or off (F3 cycles them in game)");
         Console.WriteLine("               --frame-rate=native|30|60|unlimited  vblanks per flip: the game's own (default), fixed 30/60, or no display waits");
         Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default off: no network, NP signed out)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");

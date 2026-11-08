@@ -183,6 +183,8 @@ public static class EnvVars
     /// spaces: executables linked at addresses another process uses cannot run next to it).</summary>
     public const string SharedAddressSpace = "VITASHARP_SHARED_ADDRESS_SPACE";
     public const string ShadercOpt = "VITASHARP_SHADERC_OPT";
+    /// <summary>0 (A/B): no background shaderc warm-up at renderer start (ShaderCompiler.WarmProcessInBackground).</summary>
+    public const string ShadercWarm = "VITASHARP_SHADERC_WARM";
     public const string ShaderRebuild = "VITASHARP_SHADER_REBUILD";
     public const string ShaderWorkers = "VITASHARP_SHADER_WORKERS";
     public const string ShaderWorkerPrio = "VITASHARP_SHADER_WORKER_PRIO";

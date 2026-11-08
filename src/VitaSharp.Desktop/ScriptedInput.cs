@@ -29,8 +29,8 @@ namespace VitaSharp.Desktop;
 /// frame 1200 was presented (len in seconds): steps that must happen while the emulation is paused, when no frame
 /// comes. A key step on the pause hotkey (P by default) pauses or resumes the emulation once, when it starts, and one
 /// on F10 takes a diagnostic capture, one on F11 toggles fullscreen, one on F8 / Ctrl+F8 starts or stops "Gravar tudo" /
-/// the GPU dump (window runs) and one on F1 / F2 (Shift+F1 / Shift+F2: back) changes the internal resolution / frame
-/// rate mode (<see cref="GraphicsHotkeys"/>) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
+/// the GPU dump (window runs) and one on F1 / F2 / F3 (Shift+F1 / Shift+F2 / Shift+F3: back) changes the internal resolution / frame
+/// rate mode / MSAA mode (<see cref="GraphicsHotkeys"/>) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
 /// pauses at frame 300, captures the paused frame and resumes 5 seconds after the pause.
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource

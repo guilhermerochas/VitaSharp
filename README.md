@@ -104,6 +104,7 @@ Os dados ficam em `%APPDATA%\VitaSharp` no Windows (`~/.local/share/VitaSharp` n
 | Botão esquerdo / direito do mouse | Toque na tela frontal / no touchpad traseiro |
 | `F1` / `Shift+F1` | Resolução interna seguinte / anterior com o jogo rodando (1x, 2x, 3x, 4x; só nesta sessão, com aviso na tela) |
 | `F2` / `Shift+F2` | Taxa de quadros seguinte / anterior com o jogo rodando (nativa, fixa em 30, fixa em 60, sem limite) |
+| `F3` / `Shift+F3` | MSAA seguinte / anterior com o jogo rodando (nativo, superamostragem 2x, desligado; só nesta sessão, com aviso na tela) |
 | `F4` | Modo do mouse: giroscópio (botão do meio), analógico direito, analógico esquerdo ou desligado, salvo por jogo (`Esc` solta o cursor) |
 | `F5` / `F7` | Salvar / carregar o estado rápido; `F6` escolhe um slot (1-9), `Shift+F5` / `Shift+F7` salvam / carregam nele |
 | `F8` | Inicia / para o **Gravar tudo** (ver [Relatar um bug](#relatar-um-bug)) |

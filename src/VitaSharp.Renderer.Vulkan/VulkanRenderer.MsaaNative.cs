@@ -36,12 +36,19 @@ public sealed unsafe partial class VulkanRenderer
 {
     enum MsaaEmulation { Native, Supersample, Off }
 
-    static readonly MsaaEmulation MsaaSetting = (Environment.GetEnvironmentVariable(EnvVars.Msaa) ?? "").Trim().ToLowerInvariant() switch
+    static MsaaEmulation ParseMsaa(string? s) => (s ?? "").Trim().ToLowerInvariant() switch
     {
         "ss" or "supersample" or "supersampling" => MsaaEmulation.Supersample,
         "off" or "none" or "1x" or "0" => MsaaEmulation.Off,
         _ => MsaaEmulation.Native,
     };
+
+    /// <summary>This renderer's MSAA mode: <see cref="VulkanRendererOptions.Msaa"/> when set, else VITASHARP_MSAA. Fixed
+    /// for the renderer's life (pipelines and render targets depend on it): the F3 hotkey replaces the renderer.</summary>
+    readonly MsaaEmulation MsaaSetting;
+
+    /// <summary>The MSAA mode name ("native", "ss", "off") of this renderer.</summary>
+    public string MsaaMode => MsaaSetting switch { MsaaEmulation.Supersample => "ss", MsaaEmulation.Off => "off", _ => "native" };
 
     /// <summary>
     /// Programmable blending in multisampled scenes reads the colour attachment as an input attachment (render pass

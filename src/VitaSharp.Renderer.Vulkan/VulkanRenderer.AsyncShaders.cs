@@ -383,6 +383,8 @@ public sealed unsafe partial class VulkanRenderer
                 RunRebuildItem(rj);
                 continue;
             }
+            // then the recorded pipelines of the prewarm (VulkanRenderer.Cache.cs, Prewarm)
+            if (RunPrewarmItem()) continue;
             if (_stopShaderJobs) return;
             _workAvailable.Wait(50);
         }

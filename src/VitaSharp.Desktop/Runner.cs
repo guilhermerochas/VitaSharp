@@ -140,6 +140,8 @@ public static class Runner
             GpuProfile = Opt(options, "--gpu-profile"),
             // --res-scale=0.75|0.5|2|3|4: internal resolution below or above native (VITASHARP_RES_SCALE; VulkanRenderer.ResScale.cs)
             ResScale = float.TryParse(Opt(options, "--res-scale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var resScale) ? resScale : 0,
+            // --msaa=native|ss|off: MSAA scenes (VITASHARP_MSAA; F3 changes it while the game runs)
+            Msaa = Opt(options, "--msaa"),
         };
         // --flicker-check[=threshold]: every presented frame is read back small and checked for one-frame flashes and
         // stale frames (FlickerDetector; test scenarios turn it on): FLICKER lines in the log and the report
@@ -285,12 +287,12 @@ public static class Runner
             _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref mouseNotice) == n) ShowPauseBadge(renderer); });
         }
         window.MouseModeChanged += ShowMouseNotice;
-        // F1 / F2: internal resolution and frame rate mode while the game runs, with the same notice
+        // F1 / F2 / F3: internal resolution, frame rate mode and MSAA mode while the game runs, with the same notice
         var graphics = new GraphicsHotkeys(emu, rendererOptions, () => renderer,
             () => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; },
             text => { ShowMouseNotice(text); ShowTitle(); });
         window.GraphicsKey += k => { capture.Capture.NoteKey(k); graphics.Press(k); };
-        // scripted pause / F10 / F1 / F2 key steps (--input key@...:P) also work in the window
+        // scripted pause / F10 / F1 / F2 / F3 key steps (--input key@...:P) also work in the window
         if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window, graphics);
 
         window.Loaded += () =>
@@ -359,8 +361,8 @@ public static class Runner
     }
 
     /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
-    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F1 / F2 (Shift = back)
-    /// change the internal resolution / frame rate mode.</summary>
+    /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F1 / F2 / F3 (Shift = back)
+    /// change the internal resolution / frame rate mode / MSAA mode.</summary>
     static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null, GraphicsHotkeys? graphics = null)
     {
         if (script.TakeHostKeys() is not { } keys) return;
