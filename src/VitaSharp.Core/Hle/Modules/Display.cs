@@ -406,7 +406,9 @@ public sealed partial class Ctrl : HleModule
         {
             uint p = dst + i * 32;
             GuestMemory.Fill(p, 0, 32); // pressure bytes (+16..+27) stay 0, as in Vita3K
-            GuestMemory.Write(p, (ulong)(Emu.Kernel.ProcessTimeUs));
+            // the extra samples repeat the state one vblank apart (Vita3K's ctrl_get)
+            ulong now = Emu.Kernel.ProcessTimeUs, back = i * 16667UL;
+            GuestMemory.Write(p, now > back ? now - back : 0UL);
             uint buttons = MapButtons(ApplyRapidFire((uint)s.Buttons, VBlank.Count), api);
             if (buttons != 0) VitaSharp.Core.Util.Log.Debug($"ctrl port {port} buttons 0x{buttons:X} -> 0x{p:X8}");
             GuestMemory.W32(p + 8, negative ? ~buttons : buttons);
@@ -422,8 +424,11 @@ public sealed partial class Ctrl : HleModule
     {
         if (data == 0) return unchecked((int)0x80340001); // SCE_CTRL_ERROR_INVALID_ARG
         if (count == 0) return 0;
-        WriteData(data, 1, negative, port, api); // newest sample only
-        return 1;
+        // every requested sample, all with the current state, and the count as the result (Vita3K's ctrl_get): Need for
+        // Speed Most Wanted peeks 2 samples into a 2-entry buffer, whose second entry was left as the game had it
+        count = Math.Min(count, MaxSamples);
+        WriteData(data, count, negative, port, api);
+        return (int)count;
     }
 
     int Read(int port, uint data, uint count, bool negative, Api api)
@@ -435,6 +440,9 @@ public sealed partial class Ctrl : HleModule
     }
 
     static int Port(int port) => port <= 1 ? 0 : port - 1;
+
+    /// <summary>Upper bound on the samples one call writes.</summary>
+    const uint MaxSamples = 64;
 
     const Api Ext = Api.Ext, V2 = Api.Ext | Api.V2;
     [Hle] int sceCtrlPeekBufferPositive(int port, uint data, uint count) => Peek(Port(port), data, count, false, Api.Standard);
