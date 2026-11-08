@@ -569,7 +569,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   próximo passo continua sendo gravar as cenas de processos diferentes em render passes separados (suspender a cena
   aberta de um processo no backend quando outro submete), o que tira a arbitragem. Ainda aberto: barra de status do
   shell ausente sobre Mensagens/Amigos/Party/near (a faixa escura no topo; os atributos do param.sfo de Troféus, que
-  tem a barra, e de Mensagens são iguais: não é isso).
+  tem a barra, e de Mensagens são iguais: não é isso). 07/11/2026 (fix/system-apps-10): hoje **nenhum** app do
+  sistema mostra a barra, nem Troféus (`scratchpad/fw9_out/tro7/list.png`); só a tela inicial tem. A causa é comum
+  e provavelmente a mesma do teclado antes do intercalamento: a barra é desenhada pelo shell por cima do app e o
+  VitaSharp só apresenta o processo da frente (`Display.sceDisplaySetFrameBuf`) ou o quadro do cliente SceSharedFb.
+  Próximo passo: ver se o shell desenha a barra num plano próprio enquanto um app está na frente (sceGxm do
+  SceShellMain com o app aberto) e compor esse plano. Botão PS no PC e texto cortado no boot direto: não mexidos
+  nesta rodada (o primeiro precisa da janela, o segundo não foi reproduzido na rodada 9).
   Confirmado pelo usuário (06/11/2026): os apps do sistema estão ok. Seguem abertos à parte: teclado na tela (fps),
   Câmera (salvar foto, gravar vídeo), app Troféus e o fundo do jogo na LiveArea (agente de firmware).
   Rodada fix/system-apps-8 (06/11/2026, provas em `fw8_out/` do scratchpad): **Teclado (IME) a 60 fps** (era 5-6):
