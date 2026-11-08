@@ -19,7 +19,7 @@ public sealed partial class Audio : HleModule
         public IAudioStream? Stream;
         public AudioDiagnostics.PortStats? Stats;
         public float[] Volume = [1, 1];
-        public double NextDeadline;
+        public double NextDeadline, LastOutput;
         public short[] Buffer = [];
         public AudioDump.Writer? Dump;
         /// <summary>The dump writer's name and the <see cref="AudioDump.Generation"/> it was opened for: a dump started
@@ -138,6 +138,7 @@ public sealed partial class Audio : HleModule
                 {
                     if (p.Stats != null) AudioDiagnostics.Output(p.Stats, any == 0);
                     using (Scheduler.Block()) p.Stream.Submit(p.Buffer); // blocks while the host buffer is full: not CPU time
+                    SpaceOutputs(p);
                     if (p.Stats != null) AudioDiagnostics.AfterSubmit(p.Stats);
                     return p.Grain;
                 }
@@ -203,6 +204,34 @@ public sealed partial class Audio : HleModule
         if (p == null) return ERR_INVALID_PORT;
         return type switch { 0 => p.Grain, 1 => p.Freq, 2 => p.Channels == 1 ? 0 : 1, _ => ERR_INVALID_CONF_TYPE };
     }
+
+    /// <summary>
+    /// Keeps the grains of a port with a host device apart in time, as the hardware's double buffer does (one grain
+    /// returns per grain played). The host device frees its buffers in whole mix updates (OpenAL Soft: 1024 frames =
+    /// two 512-sample grains), so without this the guest's audio thread got its two grains back at once and ran two
+    /// mixes back to back, then waited a whole update: Ninja Gaiden Sigma 2 Plus mixes its music stream into an NGS
+    /// voice from the swap callback of each tick, and the second tick of each pair found no new stream data and played
+    /// 512 frames of silence (~40% of the grains: the "noise" in its menu music). Like Vita3K's audio_output: when
+    /// this grain comes less than a grain after the previous one, wait half of the rest (half, because the host and
+    /// Vita clocks never match exactly and a full wait would let the host buffer run dry).
+    /// </summary>
+    static void SpaceOutputs(Port p)
+    {
+        if (GuestClock.Turbo || OutputSpacing <= 0) return;
+        double now = GuestClock.Seconds, period = (double)p.Grain / p.Freq, since = now - p.LastOutput;
+        double rest = period - since;
+        if (since >= 0 && rest > 0.001)
+        {
+            using (Scheduler.Block()) PreciseSleep.Microseconds((long)(rest * OutputSpacing * 1_000_000));
+            now = GuestClock.Seconds;
+        }
+        p.LastOutput = now;
+    }
+
+    /// <summary>Fraction of the rest of a grain <see cref="SpaceOutputs"/> waits (VITASHARP_AUDIO_SPACING, default
+    /// 0.5 as Vita3K; 0 = off).</summary>
+    static readonly double OutputSpacing = double.TryParse(Environment.GetEnvironmentVariable(EnvVars.AudioSpacing),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sp) ? Math.Clamp(sp, 0, 1) : 0.5;
 
     /// <summary>Samples queued on the port and not yet played. Bink-style players poll this to pace and sync their
     /// output; a constant 0 made God of War restart its video audio port every 100 ms.</summary>

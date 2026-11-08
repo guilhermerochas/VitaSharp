@@ -35,6 +35,9 @@ public static class EnvVars
     public const string AudioDevice = "VITASHARP_AUDIO_DEVICE";
     /// <summary>Android: folder (relative to the data folder) for per-port WAVs of the guest's audio (desktop: --audio-dump).</summary>
     public const string AudioDump = "VITASHARP_AUDIO_DUMP";
+    /// <summary>Fraction of the rest of a grain sceAudioOutOutput waits when a host device hands two grains back at
+    /// once (default 0.5, as Vita3K; 0 = off).</summary>
+    public const string AudioSpacing = "VITASHARP_AUDIO_SPACING";
     /// <summary>=1: logs every NGS source voice event (play, key off, buffer callbacks, player/ATRAC9 buffer table
     /// changes) with the reported play position; with --audio-dump each source voice's output also gets its own WAV.</summary>
     public const string NgsTrace = "VITASHARP_NGS_TRACE";
