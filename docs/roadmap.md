@@ -1147,6 +1147,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   desconectado, e aí o jogo pula o online. Decisão para o lead/usuário: responder "sem rede" para jogos que só tentam
   servidores reais (ou uma opção por jogo), ou descobrir o que libera o CONTINUE (provavelmente o fim do pedido do
   Origin, que fica esperando resposta do UDP)
+  Decisão do usuário (08/11/2026): "sem rede para todos", como o Vita3K. Feito (agente C, fix/bugs-games-19): conta PSN
+  desconectada por padrão (core, launcher, Android; "Simular conta PSN conectada"/--psn=on ainda liga) e, sem conta e
+  sem internet real, sceNetCtlInetGetState DISCONNECTED e sceNetCtlInetGetInfo NOT_CONNECTED (só device e MAC). O
+  diálogo de mensagem sem UI respondia SIM a tudo; um SIM/NÃO logo depois de um NetCheckDialog cancelado ("conecte-se à
+  PSN... tentar de novo?") agora responde NÃO, como o usuário de um console sem rede: o 99Vidas, que repetia a
+  pergunta para sempre, chega ao tutorial com as lutas desconectado (`bugsC19_out/v99b/frames/sheet_3.png`); o NFS não
+  tenta mais DNS/UDP (só o NetCheckDialog, cancelado). **Aberto**: o NFS continua parado no diálogo do Origin depois do
+  toque, com e sem conta (X, toque em CONTINUE, START não fazem nada; O volta ao título); o jogo lê o controle e não faz
+  IO nesse estado, então não é rede: falta achar o que o diálogo espera (o spinner continua)
 - [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o

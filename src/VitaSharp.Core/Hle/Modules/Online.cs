@@ -82,10 +82,15 @@ public sealed partial class Net : HleModule
         return 0;
     }
 
-    // The emulated console is on a LAN (IP obtained) but has no route to Sony's servers (PsnAccount decides the NP state),
-    // the same profile Vita3K presents; socket/HTTP calls fail like an unreachable server. With real internet
+    // Signed in, the emulated console is on a LAN (IP obtained) but has no route to Sony's servers (PsnAccount decides the
+    // NP state); socket/HTTP calls fail like an unreachable server. With real internet
     // (--net=real) it is a Wi-Fi connection with the host's IPv4 address, netmask, gateway and DNS servers.
-    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = 3; return 0; }
+    // Signed out without real internet (the default, as Vita3K's "PSN signed out") the console has no connection at all:
+    // state DISCONNECTED and no IP configuration, so games skip their online steps at once. NFS Most Wanted otherwise
+    // looked up EA's servers on the "LAN" and waited behind its Origin dialog forever.
+    bool InetConnected => PsnAccount.Current.SignedIn || Cfg.Real;
+
+    [Hle] int sceNetCtlInetGetState(Ptr<int> state) { if (state.Address == 0) return ERR_NETCTL_INVALID_ADDR; state.Value = InetConnected ? 3 : 0; return 0; }
     [Hle] int sceNetCtlInetGetResult(int eventType, Ptr<int> error) { if (error.Address == 0) return ERR_NETCTL_INVALID_ADDR; error.Value = 0; return 0; }
 
     /// <summary>The host's primary IPv4 configuration (an up interface with a gateway, else any up non-loopback one).</summary>
@@ -128,6 +133,7 @@ public sealed partial class Net : HleModule
     int sceNetCtlInetGetInfo(int code, uint info)
     {
         if (info == 0) return ERR_NETCTL_INVALID_ADDR;
+        if (!InetConnected && code is not (2 or 3)) return ERR_NETCTL_NOT_CONNECTED; // only the hardware (device, MAC) is known
         var host = Cfg.Real ? HostIp() : null;
         switch (code)
         {

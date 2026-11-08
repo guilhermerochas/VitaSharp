@@ -1,8 +1,9 @@
 # 99Vidas (PCSE00914, Unity 5.3 + UnityNpToolkit): boot, PSN Cross-Save prompt, logos, title, Local > Campaign >
 # New Game > Normal, the tutorial stage with the first fights (~f2050 on).
 # Regression: the game asks to enable Cross-Save (needs a PSN account), runs the NetCheckDialog in PSN_ONLINE mode and,
-# when that is canceled (signed out), asks "retry?" forever (the message dialog answers YES). With the emulated
-# signed-in PSN account (default, --psn=on) the check succeeds; with the local PSN services (default, --psn-local=on) the
+# when that is canceled (signed out, the default since 08/11/2026), asks "retry?": the UI-less message dialog answers NO
+# after a failed network check (YES looped forever) and the game goes on offline. With the emulated
+# signed-in PSN account (--psn=on) the check succeeds; with the local PSN services (default, --psn-local=on) the
 # Cross-Save TUS download finds no data on the first boot (USER_STORAGE_DATA_NOT_FOUND), the game uploads its save to
 # <data>/np/tus/NPWR11170_00/<online id>/data_1.bin and later boots read it back (no error dialog). With
 # --psn-local=off the TUS download fails as an unreachable server and the game shows "Load/Save error ... local save

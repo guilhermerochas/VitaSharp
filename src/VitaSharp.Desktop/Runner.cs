@@ -83,7 +83,7 @@ public static class Runner
         // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = software; hw or a device: hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
             ffv.Configure(vdec);
-        // --psn=on|off: emulated PSN account signed in (default) or signed out; --psn-id=<online id> names the account
+        // --psn=on|off: emulated PSN account signed in or signed out (default: no network, NP signed out, like Vita3K); --psn-id=<online id> names the account
         // (launcher: Configurações > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
         // --net=off|real (default VITASHARP_NET, else off): real internet for SceNet/SceHttp; --net-allow=h1,h2 limits it to
         // those hosts (default VITASHARP_NET_ALLOW). Sony's servers are always blocked.
