@@ -269,8 +269,10 @@ internal static unsafe partial class Neon
                             Set(td, i, esize, GetU(all, 2 * i, esize));
                             Set(tm, i, esize, GetU(all, 2 * i + 1, esize));
                         }
+                        // d first, then m: with Vd == Vm the Cortex-A9 keeps the second half (see VZIP)
+                        Buffer.MemoryCopy(td, Reg(s, d), bytes, bytes);
                         Buffer.MemoryCopy(tm, Reg(s, m), bytes, bytes);
-                        break;
+                        return;
                     }
                     case 3: // VZIP
                     {
@@ -280,9 +282,13 @@ internal static unsafe partial class Neon
                             Set(all, 2 * i, esize, GetU(td, i, esize));
                             Set(all, 2 * i + 1, esize, GetU(tm, i, esize));
                         }
-                        Buffer.MemoryCopy(all, td, 16, bytes);
+                        // d gets the first half, then m the second. The ARM ARM leaves Vd == Vm UNKNOWN, but the
+                        // Vita's Cortex-A9 keeps the second half: NFS Most Wanted widens a packed colour with
+                        // "vzip.8 d1, d1; vzip.16 q0, q0" (each byte to a 32-bit lane), and the first half (old d0)
+                        // made every such colour 0: its movies and splash screens drew black
+                        Buffer.MemoryCopy(all, Reg(s, d), bytes, bytes);
                         Buffer.MemoryCopy(all + bytes, Reg(s, m), bytes, bytes);
-                        break;
+                        return;
                     }
                     case 4: // VMOVN (b=01000) / VQMOVUN (b=01001)
                     case 5: // VQMOVN signed (01010) / unsigned (01011)
