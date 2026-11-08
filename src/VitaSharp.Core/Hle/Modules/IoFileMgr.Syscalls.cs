@@ -9,8 +9,10 @@ namespace VitaSharp.Core.Hle.Modules;
 /// the caller's stack holding the arguments that did not fit in r0-r3 (64-bit offsets included); calls without extra
 /// arguments still pass one (unused scratch the kernel ignores). The SceIoAsyncParam of the async forms travels in the
 /// same struct, after the other arguments: Open and Chstat opt+0, Pread/Pwrite opt+8 (after the offset), Lseek opt+12
-/// (after offset and whence), Devctl/Ioctl opt+12 (after inLen, outData, outLen). The 3.74 Remove, Mkdir, Rmdir,
-/// Rename, Getstat and Sync async wrappers take no such argument (their struct is left unwritten): 0.
+/// (after offset and whence), Devctl/Ioctl opt+12 (after inLen, outData, outLen). The Remove, Mkdir, Rmdir, Rename,
+/// Getstat and Sync async forms have their arguments in registers, so the 3.74 wrappers pass the SceIoAsyncParam
+/// through in the register after them (r1 for Remove/Rmdir, r2 for Mkdir/Rename/Getstat/Sync) and the unwritten
+/// scratch struct comes last; the 3.74 iofilemgr hands that register to its async request.
 /// </summary>
 public sealed partial class IoFileMgr
 {
@@ -20,23 +22,23 @@ public sealed partial class IoFileMgr
     [Hle] int _sceIoOpen(string path, int flags, int mode, uint opt) => sceIoOpen(path, flags, mode);
     [Hle] int _sceIoOpenAsync(string path, int flags, int mode, uint opt) => sceIoOpenAsync(path, flags, mode, Word(opt, 0));
     [Hle] int _sceIoRemove(string path, uint opt) => sceIoRemove(path);
-    [Hle] int _sceIoRemoveAsync(string path, uint opt) => sceIoRemoveAsync(path, 0);
+    [Hle] int _sceIoRemoveAsync(string path, uint param, uint opt) => sceIoRemoveAsync(path, param);
     [Hle] int _sceIoMkdir(string path, int mode, uint opt) => sceIoMkdir(path, mode);
-    [Hle] int _sceIoMkdirAsync(string path, int mode, uint opt) => sceIoMkdirAsync(path, mode, 0);
+    [Hle] int _sceIoMkdirAsync(string path, int mode, uint param, uint opt) => sceIoMkdirAsync(path, mode, param);
     [Hle] int _sceIoRmdir(string path, uint opt) => sceIoRmdir(path);
-    [Hle] int _sceIoRmdirAsync(string path, uint opt) => sceIoRmdirAsync(path, 0);
+    [Hle] int _sceIoRmdirAsync(string path, uint param, uint opt) => sceIoRmdirAsync(path, param);
     [Hle] int _sceIoRename(string oldPath, string newPath, uint opt) => sceIoRename(oldPath, newPath);
-    [Hle] int _sceIoRenameAsync(string oldPath, string newPath, uint opt) => sceIoRenameAsync(oldPath, newPath, 0);
+    [Hle] int _sceIoRenameAsync(string oldPath, string newPath, uint param, uint opt) => sceIoRenameAsync(oldPath, newPath, param);
     [Hle] int _sceIoDopen(string path, uint opt) => sceIoDopen(path);
     [Hle] int _sceIoDread(int fd, uint dirent) => sceIoDread(fd, dirent);
     [Hle] int _sceIoGetstat(string path, uint stat, uint opt) => sceIoGetstat(path, stat);
-    [Hle] int _sceIoGetstatAsync(string path, uint stat, uint opt) => sceIoGetstatAsync(path, stat, 0);
+    [Hle] int _sceIoGetstatAsync(string path, uint stat, uint param, uint opt) => sceIoGetstatAsync(path, stat, param);
     [Hle] int _sceIoGetstatByFd(int fd, uint stat) => sceIoGetstatByFd(fd, stat);
     [Hle] int _sceIoChstat(string path, uint stat, int bits, uint opt) => sceIoChstat(path, stat, bits);
     [Hle] int _sceIoChstatAsync(string path, uint stat, int bits, uint opt) => sceIoChstatAsync(path, stat, bits, Word(opt, 0));
     [Hle] int _sceIoChstatByFd(int fd, uint stat, int bits) => sceIoChstatByFd(fd, stat, bits);
     [Hle] int _sceIoSync(uint device, int flag, uint opt) => sceIoSync(device, flag);
-    [Hle] int _sceIoSyncAsync(uint device, int flag, uint opt) => sceIoSyncAsync(device, flag, 0);
+    [Hle] int _sceIoSyncAsync(uint device, int flag, uint param, uint opt) => sceIoSyncAsync(device, flag, param);
 
     /// <summary>(fd, opt {offset u64, whence[, SceIoAsyncParam*]}).</summary>
     [Hle] long _sceIoLseek(int fd, uint opt) => opt == 0 ? SceError.ILLEGAL_ADDR : sceIoLseek(fd, Off64(opt), (int)Word(opt, 2));

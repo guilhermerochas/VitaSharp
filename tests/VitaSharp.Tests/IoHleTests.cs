@@ -1,4 +1,8 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using VitaSharp.Core;
+using VitaSharp.Core.Hle;
+using VitaSharp.Core.Io;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
@@ -170,6 +174,47 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         Assert.Equal((long)SceError.IO_EBADF, GuestMemory.Read<long>(param)); // a tty has no file to write at an offset
         Call(io, "sceIoComplete", wop);
         Assert.Equal(0, Call(io, "sceIoComplete", Call(io, "sceIoCloseAsync", fd, 0u)));
+    }
+
+    [Fact]
+    public void AsyncRegisterFormsTakeTheParamInTheRegisterBeforeTheScratch()
+    {
+        // 3.74 libkernel: sceIoRemoveAsync/RmdirAsync pass the SceIoAsyncParam* through in r1, Mkdir/Rename/Getstat/Sync
+        // in r2, and only then the unwritten scratch struct; iofilemgr queues that register with the request
+        string root = Path.Combine(Path.GetTempPath(), "vs_ioasync_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "d"));
+        try
+        {
+            var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
+            void Set(string prop, object v) => typeof(Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, v);
+            Set("Memory", fx.Memory);
+            Set("Vfs", new Vfs(root));
+            Set("Hle", new HleRegistry(emu));
+            emu.Vfs.Mount("ux0", Path.Combine(root, "d"));
+            var io = new IoFileMgr { Emu = emu };
+            uint opt = fx.Memory.Alloc(0x14, "opt"), param = fx.Memory.Alloc(0x18, "asyncParam"), stat = fx.Memory.Alloc(0x60, "stat");
+            GuestMemory.W32(opt, 0x5A5A5A5A);
+            GuestMemory.Write(param, -1L);
+            long Done(int op)
+            {
+                long got = GuestMemory.Read<long>(param);
+                Assert.Equal(got, (long)Call(io, "sceIoComplete", op));
+                Assert.Equal(0x5A5A5A5Au, GuestMemory.R32(opt)); // the scratch struct is never written
+                GuestMemory.Write(param, -1L);
+                return got;
+            }
+            Assert.Equal(0L, Done(Call(io, "_sceIoMkdirAsync", "ux0:a", 0x1FF, param, opt)));
+            Assert.True(Directory.Exists(Path.Combine(root, "d", "a")));
+            Assert.Equal(0L, Done(Call(io, "_sceIoGetstatAsync", "ux0:a", stat, param, opt)));
+            Assert.Equal(0L, Done(Call(io, "_sceIoRenameAsync", "ux0:a", "ux0:b", param, opt)));
+            Assert.Equal(0L, Done(Call(io, "_sceIoRmdirAsync", "ux0:b", param, opt)));
+            File.WriteAllText(Path.Combine(root, "d", "f"), "x");
+            Assert.Equal(0L, Done(Call(io, "_sceIoRemoveAsync", "ux0:f", param, opt)));
+            Assert.False(File.Exists(Path.Combine(root, "d", "f")));
+            Assert.Equal((long)SceError.IO_ENOENT, Done(Call(io, "_sceIoRemoveAsync", "ux0:f", param, opt)));
+            Done(Call(io, "_sceIoSyncAsync", 0u, 0, param, opt));
+        }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }
 
     [Fact]
