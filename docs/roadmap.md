@@ -1335,6 +1335,36 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   fica como memória zerada (`VITASHARP_DEPTH_SEED=0` desliga; `VITASHARP_GPU_POISON=1` agora envenena imagens de
   profundidade novas). Prova no replay com poison: sem a correção o HUD de cima some como no usuário, com ela aparece
   (`scratchpad/bugsC18_yt/p01.png`, `p2.png`). Falta o usuário confirmar no jogo
+  Voltou ao vivo (relato do usuário, 08/11/2026, main 65bcf95, `captures\PCSE00271_20261108_163244_tudo`): a 1x desde o
+  boot o HUD de cima some e só aparece depois do F1. Causa: a semeadura só valia para uma imagem de profundidade criada
+  na hora; numa sessão de verdade a imagem 960x544 da superfície já existia dos menus e a cena do HUD de cada luta
+  carregava o stencil velho dos menus. Corrigido (agente C, fix/bugs-games-21, e26e5bd): uma cena que carrega a
+  superfície copia a sobreposição da imagem mais nova da mesma superfície sempre que ela renderizou depois. Prova ao
+  vivo do boot pelos menus até Luta Única, sem troca de escala: main sem barras/nomes/tempo
+  (`bugsC3_data/tests/inj_nav3`), com a correção completos (`inj_nav4`; `inj_nav5` com `VITASHARP_GPU_POISON=1`)
+- [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): barra de vida "zuada", sobrepondo o resto da tela (relato do usuário,
+  08/11/2026, `captures\PCSE00233_20261108_162212_tudo`). Corrigido (agente C, 4c5f352): o jogo corta os pedaços da barra
+  com planos de recorte do usuário (saídas CLIP0-3 do vertex program, vo1 bits 0-7), que o tradutor ignorava; a parte
+  vermelha ia até a borda. Agora viram gl_ClipDistance[1..7] (gerador v23). Replay do dump igual ao vídeo do Vita real
+  (`l2I_NsWWFEI`); falta o usuário confirmar
+- [ ] 99Vidas (PCSE00914): o logo do parceiro na intro e textos de menus somem (relato do usuário, 08/11/2026,
+  `captures\PCSE00914_20261108_164513_tudo` e `..._165037_tudo`). Corrigido (agente C, 343ad70): o Unity renderiza
+  superfícies 8x8 no começo e depois carrega o logo, o atlas da fonte e sprites na mesma memória; a checagem de
+  "sobrescrito depois de renderizar" só olhava páginas inteiras dentro da superfície (uma 8x8 não tem nenhuma) e a
+  textura vinha da superfície velha. Prova ao vivo: logo "99 VIDAS" e os textos da seleção de personagem aparecem
+  (`bugsC3_data/tests/v99_fix`, `v99p_fix` x `v99_main`, `v99p_main`); o menu de pausa em jogo não foi alcançado por
+  script, falta o usuário confirmar
+- [ ] Need for Speed Most Wanted (PCSE00089): "não vira o carro" (relato do usuário, 08/11/2026,
+  `captures\PCSE00089_20261108_162657_tudo`, já em gameplay). Não reproduzido (agente C): do estado da gravação, R +
+  analógico à direita por script faz o carro girar com a main e com a correção do Peek (b3c16ca: sceCtrlPeek/Read
+  preenchem todas as amostras pedidas e devolvem a contagem, como o ctrl_get do Vita3K; o jogo lê 2 amostras). Falta
+  uma gravação com o carro em velocidade sem virar
+- [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
+  (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
+  libshacccg.suprx com o ShaRKF00D); taiInjectDataForUser/taiInjectAbs e taiHookFunctionOffsetForUser em Thumb
+  (26a9556): o SceShaccCgExt aplica os patches no libshacccg. **Aberto**: a tela continua preta em 900 quadros; o log do
+  próprio port (`ux0:data/sh4/sh4log.txt`) mostra o heap newlib de 24 MB (tamanho escolhido pelo port) cheio
+  ("malloc 1024 KB failed ... texture skipped") e o vitaGL sobre esse heap. Falta referência do Vita real
 - [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
