@@ -177,10 +177,12 @@ public static class Runner
         string? status = null;
         long statusUntil = 0;
         SessionCaptureControl? capture = null;
+        SaveStateOverlay? statePickerRef = null;
         void ShowTitle()
         {
             string? st = Environment.TickCount64 < Interlocked.Read(ref statusUntil) ? Volatile.Read(ref status) : null;
-            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel) : EmulationPause.IsPaused ? Loc.Get("GameSavingState") : $"{fps:F0} FPS"
+            string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel)
+                : EmulationPause.IsPaused ? Loc.Get(statePickerRef?.IsOpen == true ? "SsTitle" : "GameSavingState") : $"{fps:F0} FPS"
                 + (VitaSharp.Core.Hle.Modules.FrameRate.Label is { Length: > 0 } fr ? $" ({fr})" : "");
             string rec = capture?.Capture.IsRecording == true ? "\u25CF REC | " : "";
             if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = Loc.Get("GameSavingRecording");
@@ -273,8 +275,49 @@ public static class Runner
         // F6: the save state picker over the game (slots with their pictures and dates), opened on the next slot
         var statePicker = new SaveStateOverlay(window, ShowCenter, states.PathOf, states.LoadProblem,
             scripted != null ? () => scripted.GetController(0) : null);
-        statePicker.SaveRequested += slot => { states.Select(slot); states.SaveAsync(slot); };
+        statePickerRef = statePicker;
+        // the game is paused while the picker is open (the emulator's own pause: no "Pausado" badge), once the picture of
+        // the current screen was taken; a game the player had paused stays paused when it closes
+        var pickerLock = new object();
+        bool pickerPaused = false;
+        byte[]? pickerPicture = null;
+        Task? pickerGrab = null;
+        statePicker.Opened += () =>
+        {
+            lock (pickerLock) pickerPicture = null;
+            pickerGrab = Task.Run(() =>
+            {
+                byte[]? png = EmulationPause.IsPaused ? null : SaveStateControl.GrabThumbnail(rendererOptions, 300);
+                lock (pickerLock)
+                {
+                    if (!statePicker.IsOpen) return;
+                    pickerPicture = png;
+                    if (EmulationPause.Pause("save state picker", @internal: true)) pickerPaused = true;
+                }
+                statePicker.SetCurrentPicture(png);
+                ShowTitle();
+            });
+        };
+        statePicker.Closed += () =>
+        {
+            pickerGrab?.Wait(1000);
+            lock (pickerLock)
+            {
+                if (!pickerPaused) return;
+                pickerPaused = false;
+            }
+            EmulationPause.Resume("save state picker");
+            ShowTitle();
+        };
+        statePicker.SaveRequested += slot =>
+        {
+            states.Select(slot);
+            byte[]? png;
+            lock (pickerLock) png = pickerPicture;
+            states.SaveAsync(slot, png);
+        };
         statePicker.LoadRequested += slot => { states.Select(slot); states.LoadAsync(slot); };
+        statePicker.Deleted += slot => ShowStatus(Loc.Format("StateDeleted", slot == 0 ? Loc.Get("StateQuickLabel") : slot.ToString()), 3000);
         window.SaveStateKey += slot =>
         {
             capture.Capture.NoteKey(slot < 0 ? "F6" : "F5");

@@ -102,7 +102,7 @@ public static class SaveStateFile
     }
 
     /// <summary>"1.0.0+60d6517ede5e..." as "1.0.0+60d6517": the build's commit, short enough for a title bar.</summary>
-    static string ShortVersion(string? v)
+    public static string ShortVersion(string? v)
     {
         if (string.IsNullOrEmpty(v)) return Localization.Loc.Get("UnknownVersion");
         int plus = v.IndexOf('+');
