@@ -167,10 +167,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     static ulong HintKey(GxmTextureDesc[] tex, uint used, GxmVertexAttribute[]? attrs, GxmVertexStream[]? streams, uint colorFormat, bool fetchInput = false, uint outputFormat = 0, bool tileWord1 = false,
-        bool fetchSingle = false, uint varyingMask = 0, bool scaledPointSize = false)
+        bool fetchSingle = false, uint varyingMask = 0, bool scaledPointSize = false, uint[]? rtBits = null)
     {
         ulong h = ShaderHints.Fnv.Offset;
-        for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format : 0x0C000000);
+        for (int i = 0; i < 16; i++) h = ShaderHints.Fnv.Mix(h, (used & (1u << i)) != 0 ? tex[i].Format | (rtBits?[i] ?? 0) : 0x0C000000);
         if (attrs != null)
             foreach (var a in attrs) { h = ShaderHints.Fnv.Mix(h, (uint)a.RegIndex); h = ShaderHints.Fnv.Mix(h, (uint)(int)a.ComponentCount); h = ShaderHints.Fnv.Mix(h, AttributeFormatKey(a, streams)); }
         h = ShaderHints.Fnv.Mix(h, colorFormat);
@@ -310,6 +310,14 @@ public sealed unsafe partial class VulkanRenderer
         new(TextureFormats(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed), [], colorFormat, FetchInputAttachment: true,
             OutputRegisterFormat: NativeOutputFormat(d.FragmentProgram), TileWord1: true);
 
+    /// <summary>The hints with the <see cref="RtReinterpretHints"/> bits in their texture formats (same key as <see cref="HintKey"/> with them).</summary>
+    static ShaderHints WithRtReinterpret(ShaderHints h, uint[] rtBits)
+    {
+        var f = (uint[])h.TextureFormats.Clone();
+        for (int i = 0; i < f.Length && i < rtBits.Length; i++) f[i] |= rtBits[i];
+        return h with { TextureFormats = f };
+    }
+
     /// <summary>The <see cref="ShaderHints.OutputRegisterFormat"/> of a fragment program (part of its hint key).</summary>
     static uint NativeOutputFormat(GxmFragmentProgram fp) => ShaderHints.NativeOutputFormat(fp.Info.Program, fp.OutputFormat);
 
@@ -367,16 +375,24 @@ public sealed unsafe partial class VulkanRenderer
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
-        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle);
+        // above native: textures that reinterpret a render target are sampled at the native texel mapping
+        var rtBits = RtReinterpretHints(d.FragmentTextures, fp.Info.TexturesUsed);
+        ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle, rtBits: rtBits);
         if (_fsCache.TryGetValue((fp, hk), out var e)) return e;
-        var me = GetModule(fp.Info.Program, hk, (fetchInput, tileWord1) switch
+        Func<DrawCommand, uint, ShaderHints> hints = (fetchInput, tileWord1) switch
         {
             (true, false) when fetchSingle => FragmentHintsInputFetchSingle,
             (true, true) => FragmentHintsInputFetchTileWord1,
             (false, true) => FragmentHintsTileWord1,
             (true, false) => FragmentHintsInputFetch,
             _ => FragmentHints,
-        }, d, colorFormat);
+        };
+        if (rtBits != null)
+        {
+            var plain = hints;
+            hints = (dd, cf) => WithRtReinterpret(plain(dd, cf), rtBits);
+        }
+        var me = GetModule(fp.Info.Program, hk, hints, d, colorFormat);
         e = new FsEntry { Module = me.Module, Gen = me.Gen, Failed = me.Module.Handle == 0 || me.Gen == null, ProgramHash = fp.Info.Program.Hash, HintKey = hk };
         _fsCache[(fp, hk)] = e;
         _fNewShaders++;

@@ -159,3 +159,16 @@ Injustice `inj_fight` (Training fight) and Killzone `kz_skin`, cold caches, GTX 
   title caches opened again by a renderer replaced for the same title (F1 / F3 / load state).
 - Left: the driver's per-pipeline cost on new content. Smaller generated GLSL is the remaining lever (optimised SPIR-V
   showed ~30% less driver time).
+
+## Smaller GLSL (perf/desktop-13, 8 November 2026): started, not measured
+- The bundled shaderc_shared.dll does not export the SPIRV-Tools optimizer C API (no spvOptimizerCreate), so a cheap
+  custom pass list (mem2reg/scalar replacement only) is not available; only shaderc's zero/size/perf levels.
+- Experiment (removed after the measurement below): `VITASHARP_SCALAR_BANKS=1` (`ShaderGenerator.ScalarizeBanks`) turns
+  register banks addressed only with constant indices into one variable per used register and clears only those, so
+  the driver no longer has to split private arrays. Changes the GLSL without a key change: use a fresh shader cache.
+- Measured (8 November 2026, Injustice capture replay, cold emulator and driver caches, 103 pipelines and 147
+  shaders built on the GPU thread, runs alternated off/on/on/off/on/off/on/off): GPU-thread pipeline time off 10109
+  (first run, warm-up), 8572, 8032, 7227 ms; on 8130, 7189, 7644, 7626 ms. Without the first run: off 7944 ms, on
+  7647 ms on average (-4%, inside the run-to-run spread); shader time the same (~2.0-2.1 s). And the output is not
+  pixel-identical (mean difference up to 0.005 on every compared frame, while off-vs-off and on-vs-on are identical).
+  Not worth it: removed (perf/desktop-13).

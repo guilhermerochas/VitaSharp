@@ -105,7 +105,9 @@ public sealed partial class UsseTranslator
         _wordType[(bank, word)] = type;
     }
 
-    public sealed record SamplerUse(string GlslName, uint Index, bool IsCube, DataType ComponentType, int ComponentCount);
+    /// <param name="RtFetch">fragment textures that reinterpret a render target at the internal resolution: the name of
+    /// the helper that reads them (<see cref="ShaderGenerator.RtFetchHelper"/>), else null</param>
+    public sealed record SamplerUse(string GlslName, uint Index, bool IsCube, DataType ComponentType, int ComponentCount, string? RtFetch = null);
 
     public UsseTranslator(GxpProgram program)
     {
