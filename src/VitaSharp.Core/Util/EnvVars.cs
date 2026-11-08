@@ -38,6 +38,9 @@ public static class EnvVars
     /// <summary>Fraction of the rest of a grain sceAudioOutOutput waits when a host device hands two grains back at
     /// once (default 0.5, as Vita3K; 0 = off).</summary>
     public const string AudioSpacing = "VITASHARP_AUDIO_SPACING";
+    /// <summary>=0: a depth/stencil image created for a scene that loads its surface keeps Vulkan's undefined content
+    /// instead of the surface's earlier image (A/B of VulkanRenderer.SeedLoadedDepth).</summary>
+    public const string DepthSeed = "VITASHARP_DEPTH_SEED";
     /// <summary>=1: logs every NGS source voice event (play, key off, buffer callbacks, player/ATRAC9 buffer table
     /// changes) with the reported play position; with --audio-dump each source voice's output also gets its own WAV.</summary>
     public const string NgsTrace = "VITASHARP_NGS_TRACE";

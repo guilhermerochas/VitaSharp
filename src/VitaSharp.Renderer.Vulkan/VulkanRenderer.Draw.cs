@@ -1143,7 +1143,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Stencil side for the draw trace: the function alone when the ops keep the buffer, else
     /// func.sfail.dfail.dpass:ref/compareMask/writeMask (SceGxmStencilOp: 0 keep, 1 zero, 2 replace, 3 incr, 4 decr, 5 invert, 6 incr wrap, 7 decr wrap).</summary>
     static string StencilText(in StencilState s) =>
-        s.StencilFail == 0 && s.DepthFail == 0 && s.DepthPass == 0 ? s.Func.ToString()
+        s.StencilFail == 0 && s.DepthFail == 0 && s.DepthPass == 0 && s.Func is 0 or 7 ? s.Func.ToString()
         : $"{s.Func}.{s.StencilFail}.{s.DepthFail}.{s.DepthPass}:{s.Ref:X}/{s.CompareMask:X}/{s.WriteMask:X}";
 
     void TraceDraw(DrawCommand d, VsEntry vs, FsEntry fs)
