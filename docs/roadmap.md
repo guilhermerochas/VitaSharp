@@ -175,6 +175,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   a biblioteca de shader custa quase um pipeline inteiro e o Killzone tem tantos shaders quanto pipelines. O limite é a
   vazão de compilação (2 workers); ver `docs/notes/pipeline-skip.md`. Próximo passo, se voltar: mais workers ou
   pipelines.list pré-gerado por jogo
+  Rodada de 08/11/2026 (perf/desktop-12; Injustice `inj_fight` novo cenário com luta no Treino, Killzone `kz_skin`,
+  FIFA 13; GTX 1650, 4 CPUs fixadas, caches frios = `--shader-cache` e cache do driver NVIDIA novos). Antes: Injustice
+  frio 61-83 desenhos travados (5,4-6,6 s) em 33-40 quadros, Killzone frio 375 desenhos (13,5 s), 95 quadros >= 16,7 ms.
+  Onde está o tempo: o driver da NVIDIA leva 60-90 ms por pipeline (83 ms medidos no replay, sozinho, sem disputa) e
+  quase cada pipeline é um par de shaders novo (Injustice 115 pipelines / 105 pares, Killzone 552 / 533); o shaderc em
+  `zero` leva 2-12 ms por shader. O jogo pede o pipeline ~1 quadro depois do prefetch, então cada pipeline novo custa
+  quase os seus 60-90 ms. Medido e descartado: `--shaderc-opt=perf` (driver 83 -> 59 ms por pipeline, mas shaderc 12 ->
+  80 ms por shader: pior), sem `VkPipelineCache` (sem ganho; não serializa), 4 workers em 4 CPUs (mesmos engasgos, CPU
+  cheia), normalizar a chave do pipeline (estado de blend desligado, sem cor, layout de vértice: 2 duplicatas em 115,
+  3 em 552). Ubershader: não cabe (USSE arbitrário). Feito: shaderc e o tradutor aquecidos em segundo plano (o 1º shader
+  novo de uma sessão com cache quente: ~20 ms em vez de ~150-190 ms; 08aede3), prewarm também nos workers (cache do driver
+  frio: Killzone 21-22 s -> 11 s; 5ca2e0a) e o renderizador trocado (F1/F3/load state) passa a abrir os caches do jogo
+  (7d73f91). O que sobra no cache frio é o custo do driver por pipeline novo; só cai pulando desenho (descartado) ou
+  com menos SPIR-V por shader (gerar GLSL menor: o `-O` mostrou ~30% a menos no driver)
 - [ ] Prioridade das threads em CPU híbrida (núcleos E) e na bateria: medir `SetThreadSelectedCpuSets` e o
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
@@ -190,6 +204,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   padrão de todos os jogos (o Silent Hill depende dos 333 MHz). Opções para o usuário decidir: uma opção por jogo de
   "Relógio da CPU" (333 / 444 / sem ritmo) como a taxa de quadros, ou conferir num Vita de verdade se este menu com o
   mod e 480 de largura fica a 60 a 333 MHz (se ficar, o custo do laço de pixels está alto no modelo)
+- [ ] Opção por jogo "Relógio da CPU" (333 MHz / 444 MHz / sem ritmo), como a taxa de quadros por jogo: **pendente da
+  decisão do usuário, não implementar antes** (anotado em 08/11/2026, perf/desktop-12). Motivo: o menu do Sonic Mania
+  (item acima) e outros jogos presos na CPU emulada a 333 MHz; hoje só --cpu-mhz=/VITASHARP_CPU_MHZ mudam isso
 
 ## Android
 
@@ -915,6 +932,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Resistance: Burning Skies (PCSA00008): "parece problema de como a resolução interna tá funcionando" (relato do
+  usuário, 08/11/2026, gravação `captures\PCSA00008_20261108_014949_tudo`, F1 1x->4x->1x duas vezes).
+  (1) **Corrigido** (perf/desktop-12, 7d73f91; falta o usuário confirmar): cada F1 congelava 0,6-0,9 s recompilando
+  ~100 shaders e ~50 pipelines, porque o renderizador novo não abria os caches do jogo (só o primeiro recebia
+  `BeginTitle`); agora F1/F3/load state passam o título adiante e o novo faz o prewarm (cenário `res_f1`: 0 shaders
+  traduzidos e 0 quadros travados depois de cada troca). (2) **Aberto**: em 2x/3x/4x a luz da cena sai errada (listras
+  verticais finas em 2x, tudo azulado em 3x/4x; replay do dump da gravação em cada escala, `scratchpad/perf12_out/
+  res_m3900.png`). O G-buffer 0x64800000 (720x408 F16F16F16F16, escrito com bits crus) sai igual nas escalas; o erro é
+  na leitura: o passe de luz amostra esse alvo como **uma** textura 1440x408 U8U8U8U8 com o uv do pixel da tela, o que
+  cai exatamente na fronteira entre os dois texels (metades) de cada pixel (u*1440 = 2x+1). No nativo o arredondamento
+  sempre pega a 2ª metade; na escala (textura reinterpretada 1440k de largura, `ScaledReinterpretGeometry`) o mesmo
+  ponto de fronteira arredonda para um lado ou outro conforme a escala (listras esparsas em 2x, metade errada em quase
+  tudo em 3x/4x). Ler pela cópia nativa (sem a reinterpretação escalada) piora (listras a cada pixel). Opções a decidir:
+  um texelFetch com arredondamento fixo para texturas que reinterpretam alvos escalados (o gerador não sabe disso hoje),
+  ou desenhar esses alvos em nativo. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
+  antes da troca; não reproduzidos
 - [ ] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   07/11/2026; gravações `captures\shell_20261107_214909_tudo` e `..._214953_tudo`, jogo aberto pelo shell).
   Vídeo (agente C, fix/bugs-games-17): o filme da abertura (player de vídeo do jogo, SceMp4 + sceAvcdec) com d3d11va

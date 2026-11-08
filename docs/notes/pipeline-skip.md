@@ -143,3 +143,19 @@ logical CPUs at BelowNormal, interleaved off/on/on/off:
   pipeline step. More workers or prewarming from a shipped `pipelines.list` would address it; GPL does not.
 - The patch is kept out of the tree (agent scratchpad `and10_gpl_wip.patch`).
 
+## Compile throughput (perf/desktop-12, 8 November 2026)
+Injustice `inj_fight` (Training fight) and Killzone `kz_skin`, cold caches, GTX 1650, pinned to 4 logical CPUs:
+- The NVIDIA driver takes 60-90 ms per pipeline (83 ms on average when replaying the Injustice capture with nothing
+  else running), and nearly every pipeline is a new shader pair (Injustice 115 pipelines / 105 pairs, Killzone 552 /
+  533). shaderc at `zero` is 2-12 ms per shader. The prefetch sees a draw about one frame before the GPU thread needs
+  it, so each new pipeline still costs most of its compile time.
+- `--shaderc-opt=perf`: driver 83 -> 59 ms per pipeline, shaderc 12 -> 80 ms per shader. Net loss.
+- No `VkPipelineCache` on pipeline creation: no gain (the shared cache does not serialise the workers).
+- 4 workers instead of 2 on 4 CPUs: same stalls, shaderc time doubled (the CPUs are full).
+- Pipeline key normalisation (blend state when blending is off, colour state without a colour attachment, vertex
+  layout): 2 duplicates in 115 pipelines, 3 in 552. Not worth it.
+- Done: glslang and the translator warmed up in the background (first new shader of a warm session ~20 ms instead of
+  ~150-190 ms), the prewarm shared with the shader workers (cold driver cache: Killzone 21-22 s -> 11 s), and the
+  title caches opened again by a renderer replaced for the same title (F1 / F3 / load state).
+- Left: the driver's per-pipeline cost on new content. Smaller generated GLSL is the remaining lever (optimised SPIR-V
+  showed ~30% less driver time).
