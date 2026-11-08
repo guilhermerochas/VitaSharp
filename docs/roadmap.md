@@ -762,6 +762,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   do Windows). Suspeitas: ordem de apresentação dos quadros com B-frames (o histórico de quadros do decodificador
   corrigido para o Jak), um quadro entregue antes de terminar de decodificar, ou a cópia da imagem da d3d11va. Comparar
   com a decodificação em software (sem d3d11va) e com um vídeo do Vita; corrigir de forma genérica
+  Correção feita (07/11/2026, agente C, fix/bugs-games-17): o `auto` do `--video-decoder` agora decodifica em software
+  (`hw` ou o nome do dispositivo ainda pede o decodificador da GPU). Mesmo trecho do filme (boot sem entrada, presents
+  2400-2620, dados de teste): d3d11va 12 flashes e 1 par de quadros trocados, 6,0 ms por chamada e até 470 ms
+  (`bugsC3_data/captures/PCSA00017_20261107_211552_tudo`); software 0 flashes do filme, 2,8-4,7 ms por chamada e até
+  19 ms (`..._211757_tudo`, `..._212638_tudo` com o build novo). O FFmpeg de linha de comando decodifica o mesmo filme
+  (`bugsC17_lbp/movie.mp4`) igual bit a bit com e sem d3d11va (900 quadros, com e sem low_delay), então o defeito vem
+  do caminho da GPU dentro do emulador (lentidão/concorrência), não do fluxo. Falta o usuário confirmar no jogo
 - [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
@@ -1517,6 +1524,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   0x630F2B40 (amostrada pelo céu, vs 79BC61BE4C9F8178) foi lida já reescrita pela CPU ((255,0,0) contra (255,3,33)
   no 2154): a mesma classe do "céu preto por um quadro" acima (a CPU à frente do worker reescreve dados que o quadro
   ainda vai ler). `--draw-limit=222@2155` mostra só alguns objetos (`bugsC15_jak/b222`).
+  Tentativa (07/11/2026, agente C, fix/bugs-games-17, sem commit; patch em `scratchpad/bugsC17_texsnapshot_wip.patch`):
+  cópia das texturas pequenas no fim da cena (o guest guarda os bytes das texturas de até 32x32 e depois 128x128 que
+  os desenhos da cena amostram, reaproveitando a cópia enquanto as páginas não mudam; o worker usa essa cópia,
+  `VITASHARP_TEX_SNAPSHOT=0` desliga). Funciona no mecanismo: no `rerun` com `VITASHARP_TRACE_TEX=630F2B40` o worker
+  usou a cópia em 44 leituras em que a memória já tinha o quadro seguinte. Mas o `rerun` da gravação continua com
+  quadros inteiros escuros (luma 1-9): desligado 6, ligado 6/0/0/5 em quatro rodadas (`bugsC17_jak/reruns_*`), então a
+  textura do céu não é a única (ou não é a) causa; o próximo passo é `--trace-draws` num quadro escuro do `rerun` (não
+  do replay) e comparar todas as leituras (texturas maiores, vértices, uniforms) com o quadro anterior.
 - [x] Jak 1, agente C dia 5 (05/11/2026, fix/bugs-games-5; dados em `scratchpad/bugsC5_*`). (a) **Céu preto com o ritmo
   padrão da CPU** (sem `--cpu-mhz=0`, `bugsC5_scn/jak1_paced.txt`, build `bugsC3_bin`): 0 quadros com o céu preto em 619
   (`tileflick.py`: 3 achados de 1 tile cada, partículas), contra 1 em 1881 nas 3 rodadas sem ritmo do dia 3; raro demais

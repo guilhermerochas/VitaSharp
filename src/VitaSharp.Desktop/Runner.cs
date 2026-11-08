@@ -80,7 +80,7 @@ public static class Runner
             Log.Info($"IME: scripted answer \"{imeText}\" (--ime-text)");
         }
 
-        // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = hardware with software fallback)
+        // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = software; hw or a device: hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
             ffv.Configure(vdec);
         // --psn=on|off: emulated PSN account signed in (default) or signed out; --psn-id=<online id> names the account
