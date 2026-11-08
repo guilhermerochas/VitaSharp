@@ -1017,6 +1017,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   build-3cae19d e as anteriores não têm o atualizador). O pacote win-x64 dela, numa cópia, acha o próprio commit na API
   e responde "em dia"; o `version` mostrava "built 1600-12-31" (o pacote AOT não tem VitaSharp.Core.dll): agora o CI
   embute `VitaSharpBuildTime`
+  Falta (pendente do próximo push da main, que gera uma build-* mais nova que a build-d99089e): a troca de verdade.
+  Como testar, só leitura e numa cópia: (1) baixar `VitaSharp-0.0.0-build.gd99089e-win-x64.zip` da release
+  build-d99089e para uma pasta nova no scratchpad, conferir o SHA-256 com o `SHA256SUMS.txt` e extrair em `inst`;
+  (2) `inst\VitaSharp\VitaSharp.Desktop.exe --data=<pasta de teste vazia> update` deve listar a build nova;
+  (3) o diálogo: `... --data=<pasta de teste> ui-render <saída> --update-feed=https://api.github.com/repos/<dono>/VitaSharp/releases?per_page=30`
+  grava o PNG do diálogo com a versão, a data e as notas; (4) a troca: `... --data=<pasta de teste> update --apply
+  --restart-arg=--data=<pasta de teste> --restart-arg=version` (sem `--restart-arg` ele reabre o launcher com janela),
+  com o processo escondido; conferir no fim que `inst\VitaSharp\VitaSharp.Desktop.exe version` mostra o commit novo e
+  a hora do build certa, e que `update` responde em dia. Nunca rodar na instalação nem na pasta de dados do usuário
 - [x] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
