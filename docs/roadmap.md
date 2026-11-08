@@ -763,7 +763,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
   LiveArea/capturas/estados salvos/troféus/ajustes por jogo, configurações organizadas por seção, tema claro e escuro e
   as mesmas cores, fontes e ícones do app Android. Primeiro mostrar a proposta ao usuário (prints ou protótipo) e só
-  implementar depois da aprovação
+  implementar depois da aprovação. Proposta aprovada e implementada (07/11/2026, etapa 2, `docs/notes/desktop-launcher-design.md`):
+  barra lateral com o Sistema do Vita em um clique (Ctrl+H), biblioteca em capas/lista/tela inicial, página do jogo,
+  troféus, capturas, fila de instalação, configurações por seção, tema claro/escuro, tempo jogado. Validado sem janela
+  (`ui-render`: todas as páginas com dados reais; Killzone e o Sistema do Vita iniciados pelo launcher com `--headless`,
+  saída 0 e tempo jogado gravado); falta o usuário usar com janela. A atualização automática só tem os ajustes.
 
 - [ ] Textos da interface em arquivos de idioma, inglês e português (pedido do usuário, 06/11/2026): hoje os textos do
   launcher, do app Android, dos avisos na janela/barra de título, do menu de pausa e das mensagens do emulador estão

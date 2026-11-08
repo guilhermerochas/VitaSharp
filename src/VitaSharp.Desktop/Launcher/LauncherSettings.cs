@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace VitaSharp.Desktop.Launcher;
 
@@ -50,8 +50,35 @@ public sealed class LauncherSettings
     /// <summary>"Manter em HLE": firmware/game libraries kept on HLE even when the module is available, comma separated
     /// (--hle-modules=, e.g. "libSceJson"). Empty: use every module the game or the installed firmware provides.</summary>
     public string HleModules { get; set; } = "";
-    /// <summary>Library view: "list" (game list with details) or "home" ("Tela inicial": Vita-style bubbles and LiveArea).</summary>
-    public string View { get; set; } = ViewList;
+    /// <summary>Library view: "grid" (large covers, the default), "list" (one row per game) or "home" ("Tela inicial":
+    /// the recreated Vita-style bubbles and LiveArea, offered only with <see cref="RecreatedHome"/>).</summary>
+    public string View { get; set; } = ViewGrid;
+
+    /// <summary>The recreated home screen (provisional until the firmware's own shell.self replaces it) is offered as a
+    /// library view. Off by default.</summary>
+    public bool RecreatedHome { get; set; }
+
+    /// <summary>"Ao abrir o emulador": "library" (the default) or "system" (the Vita system starts right away, like
+    /// booting a console).</summary>
+    public string StartupView { get; set; } = StartLibrary;
+
+    /// <summary>"Ao escolher um jogo": "play" (start it, the default) or "livearea" (its LiveArea first).</summary>
+    public string GameClick { get; set; } = ClickPlay;
+
+    /// <summary>Launcher theme: "system" (follows the OS, the default), "dark" or "light".</summary>
+    public string UiTheme { get; set; } = ThemeSystem;
+
+    /// <summary>Library sort: "az" (title), "recent" (last played first) or "time" (most played first).</summary>
+    public string LibrarySort { get; set; } = "az";
+
+    /// <summary>Library region filter (<see cref="GameEntry.Region"/>); "" = every region.</summary>
+    public string LibraryRegion { get; set; } = "";
+
+    /// <summary>"Procurar atualizações ao iniciar" (auto-update roadmap item; the check itself is not built yet).</summary>
+    public bool CheckUpdates { get; set; } = true;
+
+    /// <summary>Update channel: "builds" (every automatic build) or "releases" (tagged versions only).</summary>
+    public string UpdateChannel { get; set; } = "builds";
     /// <summary>Home screen theme id (<see cref="VitaSharp.Core.Shell.ShellTheme.Id"/>); "" = the firmware's default.</summary>
     public string Theme { get; set; } = "";
     /// <summary>Play the system BGM (pd0:data/systembgm/home.at9 or the theme's) on the home screen.</summary>
@@ -66,7 +93,9 @@ public sealed class LauncherSettings
     /// starts. Games without an entry run with the defaults.</summary>
     public Dictionary<string, GameOptions> Games { get; set; } = new();
 
-    public const string ViewList = "list", ViewHome = "home";
+    public const string ViewGrid = "grid", ViewList = "list", ViewHome = "home";
+    public const string StartLibrary = "library", StartSystem = "system", ClickPlay = "play", ClickLiveArea = "livearea";
+    public const string ThemeSystem = "system", ThemeDark = "dark", ThemeLight = "light";
 
     /// <summary>An RPCN server and account are configured.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -78,7 +107,12 @@ public sealed class LauncherSettings
     {
         try
         {
-            if (File.Exists(FilePath)) return JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.LauncherSettings) ?? new();
+            if (File.Exists(FilePath) && JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.LauncherSettings) is { } s)
+            {
+                // the old launcher's home view switch: keep offering it
+                if (s.View == ViewHome) s.RecreatedHome = true;
+                return s;
+            }
         }
         catch (JsonException) { }
         catch (IOException) { }
@@ -156,4 +190,46 @@ public sealed class GameOptions
 /// <summary>Source-generated JSON metadata for the settings file (Native AOT has no reflection-based serializer).</summary>
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(LauncherSettings))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Dictionary<string, PlayRecord>))]
 internal sealed partial class LauncherJson : System.Text.Json.Serialization.JsonSerializerContext;
+
+/// <summary>Play time and last session of one title, recorded by the launcher for the games it starts.</summary>
+public sealed class PlayRecord
+{
+    public long Seconds { get; set; }
+    public DateTime LastPlayedUtc { get; set; }
+}
+
+/// <summary>"Tempo jogado" / "Última vez": &lt;data&gt;/playtime.json, by title ID ("shell" for the Vita system).</summary>
+public static class PlayHistory
+{
+    static string FilePath => Path.Combine(Program.DataRoot, "playtime.json");
+
+    public static Dictionary<string, PlayRecord> Load()
+    {
+        try
+        {
+            if (File.Exists(FilePath)) return JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.DictionaryStringPlayRecord) ?? new();
+        }
+        catch (JsonException) { }
+        catch (IOException) { }
+        return new();
+    }
+
+    /// <summary>Adds a session that started at <paramref name="startUtc"/> and ended now.</summary>
+    public static Dictionary<string, PlayRecord> Add(string titleId, DateTime startUtc)
+    {
+        var all = Load();
+        if (!all.TryGetValue(titleId, out var r)) all[titleId] = r = new PlayRecord();
+        r.Seconds += Math.Max(0, (long)(DateTime.UtcNow - startUtc).TotalSeconds);
+        r.LastPlayedUtc = DateTime.UtcNow;
+        try
+        {
+            Directory.CreateDirectory(Program.DataRoot);
+            File.WriteAllText(FilePath + ".tmp", JsonSerializer.Serialize(all, LauncherJson.Default.DictionaryStringPlayRecord));
+            File.Move(FilePath + ".tmp", FilePath, true);
+        }
+        catch (IOException) { }
+        return all;
+    }
+}

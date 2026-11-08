@@ -1,13 +1,18 @@
-using Avalonia.Media;
+﻿using Avalonia.Media;
+using VitaSharp.Desktop.Launcher.Ui;
 
 namespace VitaSharp.Desktop.Launcher;
 
-/// <summary>Colours shared by the launcher windows.</summary>
+/// <summary>Colours shared by the launcher's panels and dialogs: the current theme's palette (<see cref="Palette.Current"/>).</summary>
 static class LauncherTheme
 {
-    public static readonly Color AccentColor = Color.Parse("#3D7BFF");
-    public static readonly IBrush Accent = new SolidColorBrush(AccentColor);
-    public static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#9AA3B2"));
-    public static readonly IBrush Panel = new SolidColorBrush(Color.Parse("#1B1F27"));
-    public static readonly IBrush WindowBackground = new SolidColorBrush(Color.Parse("#12151B"));
+    static Palette P => Palette.Current;
+    public static Color AccentColor => P.Accent;
+    public static IBrush Accent => new SolidColorBrush(P.Accent);
+    public static IBrush OnAccent => new SolidColorBrush(P.OnAccent);
+    public static IBrush Text => new SolidColorBrush(P.Text);
+    public static IBrush Muted => new SolidColorBrush(P.Muted);
+    public static IBrush Panel => new SolidColorBrush(P.Surface);
+    public static IBrush WindowBackground => new SolidColorBrush(P.Background);
+    public static IBrush Danger => new SolidColorBrush(P.Danger);
 }

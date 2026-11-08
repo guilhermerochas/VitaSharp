@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
 using VitaSharp.Core.Input;
@@ -30,6 +30,9 @@ public sealed class ShellView : Panel, IDisposable
 
     /// <summary>Start was pressed in a LiveArea.</summary>
     public event Action<ShellApp>? LaunchRequested;
+
+    /// <summary>The LiveArea was closed (Back / Esc), so the launcher can hide it when it showed it on its own.</summary>
+    public event Action? LiveAreaClosed;
 
     public HomeScreenView Home => _home;
     public LiveAreaView? LiveArea => _liveArea;
@@ -68,7 +71,7 @@ public sealed class ShellView : Panel, IDisposable
         CloseLiveArea(sound: false);
         Sound(ShellSoundEffect.Confirm);
         _liveArea = new LiveAreaView(_visuals, app) { Running = _gameRunning && _runningTitle == app.TitleId };
-        _liveArea.Closed += () => CloseLiveArea(sound: true);
+        _liveArea.Closed += () => { CloseLiveArea(sound: true); LiveAreaClosed?.Invoke(); };
         _liveArea.Started += a => { Sound(ShellSoundEffect.Confirm); LaunchRequested?.Invoke(a); };
         Children.Add(_liveArea);
         _liveArea.Focus();

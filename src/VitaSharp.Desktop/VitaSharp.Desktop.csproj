@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
@@ -9,6 +9,8 @@
     <PackageReference Include="Avalonia" Version="11.3.0" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <!-- ui-prototype: renders launcher screens to PNGs without a window (Launcher/Prototype) -->
+    <PackageReference Include="Avalonia.Headless" Version="11.3.0" />
     <PackageReference Include="FlashCap" Version="1.12.0" />
     <!-- transitive dependency of Avalonia 11.3.0 with a known vulnerability (GHSA-xrw6-gwf8-vvr9): pin the patched release -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
@@ -55,6 +57,11 @@
     <!-- icons rendered from docs/assets/logo.svg by build/make-icons.ps1 / build/make-icons.sh (committed) -->
     <ApplicationIcon>Assets\VitaSharp.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Inter (text) and Sora (headings), the fonts of the Android app (SIL Open Font License 1.1, OFL-*.txt there) -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\VitaSharp.Android\Resources\Fonts\*.ttf" Link="Assets\Fonts\%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <!-- window and taskbar icons of the launcher (Avalonia) and the game window (GLFW), see Host/AppIcon.cs -->
   <ItemGroup>

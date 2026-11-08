@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
@@ -75,15 +75,13 @@ static class UiSnapshot
             rtb.Save(path);
             Console.WriteLine($"  wrote {path}");
         }
-        var main = new MainWindow();
+        var main = new MainWindow(LauncherSettings.Load());
         main.Show();
         await Shot(main, "library");
         var game = GameLibrary.Scan(Program.Ux0).FirstOrDefault(g => TrophySetView.ForGame(g.Path, Program.FsRoot, 1).Count > 0);
         if (game == null) { Console.WriteLine("no game with trophies"); return 1; }
-        var tw = new TrophyWindow(game, TrophySetView.ForGame(game.Path, Program.FsRoot, 1));
-        tw.Show();
-        await Shot(tw, "trophies");
-        tw.Close();
+        main.Navigate(MainWindow.PageTrophies);
+        await Shot(main, "trophies");
         main.Close();
         return 0;
     }
@@ -96,7 +94,7 @@ static class UiSnapshot
     static async Task<int> HomeScript(string outDir, string[] args)
     {
         Shell.ShellCanvas.ClockOverride = new DateTime(2026, 10, 29, 12, 34, 0);
-        var main = new MainWindow(new LauncherSettings { View = LauncherSettings.ViewHome }) { Width = 1200, Height = 780 };
+        var main = new MainWindow(new LauncherSettings { View = LauncherSettings.ViewHome, RecreatedHome = true }) { Width = 1200, Height = 780 };
         main.Show();
         int failures = 0;
         async Task Shot(string name, int delay = 600)
@@ -182,10 +180,12 @@ static class UiSnapshot
     {
         int failures = CheckKeyNames();
         using var pads = new SdlGamepads(Program.DataRoot);
-        var dlg = new SettingsDialog(new LauncherSettings(), SettingsDialog.ControlsTab, pads) { Width = 1120, Height = 760, WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterScreen };
+        var page = new SettingsPage(new LauncherSettings(), () => { }, pads);
+        var dlg = new Window { Content = page, Width = 1120, Height = 760, WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterScreen, Background = LauncherTheme.WindowBackground };
         dlg.Show();
+        page.ShowSection(SettingsPage.SectionControls);
         await Task.Delay(400);
-        var panel = dlg.Controls!;
+        var panel = page.Controls!;
         int shot = 0;
 
         async Task Snap(string name)
@@ -332,10 +332,10 @@ static class UiSnapshot
         bool comboOk = combos.SequenceEqual(["pad:back&pad:start"]);
         Console.WriteLine($"pause combination: {(comboOk ? "ok" : $"FAILED ({string.Join(", ", combos)})")}");
         if (!comboOk) failures++;
-        dlg.ShowTab(SettingsDialog.GeneralTab);
+        page.ShowSection(SettingsPage.SectionGeneral);
         await Snap("general_tab");
-        dlg.Firmware.BringIntoView();
-        await Snap("general_firmware");
+        page.ShowSection(SettingsPage.SectionNetwork);
+        await Snap("network_section");
         dlg.Close();
         Console.WriteLine(failures == 0 ? "PASS" : $"{failures} problem(s)");
         return failures == 0 ? 0 : 1;
