@@ -15,7 +15,8 @@ public sealed class HostInput : IMotionSource, IDisposable
 {
     readonly object _lock = new();
     readonly InputProfileStore _store;
-    readonly CompiledProfile _keyboard;
+    CompiledProfile _keyboard;
+    int _revision;
     readonly HashSet<string> _keys = new();
     readonly SdlGamepads? _pads;
     readonly bool _ownsPads;
@@ -42,6 +43,7 @@ public sealed class HostInput : IMotionSource, IDisposable
         _virtual = new VirtualMotion(_keyboard.Profile.Tilt);
         _mouse = new MouseStick(_keyboard.Profile.Mouse);
         _mouseMode = _keyboard.Profile.Mouse.ModeFor(null);
+        _revision = _store.Revision;
         if (_store.Config.Keyboard != null || _store.Config.Controllers.Count > 0)
             Log.Info($"Input: profiles from {ConfigPath(dataRoot)} (keyboard {(_store.Config.Keyboard != null ? "custom" : "default")}, {_store.Config.Controllers.Count} controller profile(s))");
         if (pads != null) _pads = pads.Available ? pads : null;
@@ -82,6 +84,20 @@ public sealed class HostInput : IMotionSource, IDisposable
         }
     }
 
+    /// <summary>input.json changed (the launcher's Controles screen, F4, another process): the keyboard and every
+    /// controller take the new mapping at once, without restarting the game. Called under _lock.</summary>
+    void ReloadIfChanged()
+    {
+        if (!_store.CheckChanged(ref _revision)) return;
+        _keyboard = new CompiledProfile(_store.KeyboardProfile());
+        _virtual.Settings = _keyboard.Profile.Tilt;
+        _mouse.Settings = _keyboard.Profile.Mouse;
+        _mouseMode = _keyboard.Profile.Mouse.ModeFor(_titleId);
+        _padProfiles.Clear();
+        _fallbackProfile = null;
+        Log.Info("Input: input.json changed, mapping reloaded");
+    }
+
     CompiledProfile ProfileFor(PadInfo info)
     {
         if (!_padProfiles.TryGetValue(info.InstanceId, out var p) || p.Profile.Id != info.Guid)
@@ -98,6 +114,7 @@ public sealed class HostInput : IMotionSource, IDisposable
     {
         lock (_lock)
         {
+            ReloadIfChanged();
             var m = InputMapper.Map(_keyboard, null, _keys);
             if (_pads != null)
             {
@@ -131,6 +148,7 @@ public sealed class HostInput : IMotionSource, IDisposable
     {
         lock (_lock)
         {
+            ReloadIfChanged();
             if (_pads != null)
             {
                 foreach (var info in _pads.Devices)

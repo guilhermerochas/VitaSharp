@@ -139,7 +139,7 @@ public sealed partial class AvPlayer : HleModule
             if (size == 0) return null;
             const uint Chunk = 512 * 1024;
             uint buf = Emu.Memory.Alloc(Chunk, "AvPlayer read buffer");
-            var tmp = Path.Combine(Path.GetTempPath(), $"vitasharp-avplayer-{Environment.ProcessId}-{p.TempFiles.Count}.mp4");
+            var tmp = TempMovies.NewPath("avplayer", $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(p):x8}{p.TempFiles.Count}");
             using (var fs = File.Create(tmp))
             {
                 for (uint off = 0; off < size; off += Chunk)

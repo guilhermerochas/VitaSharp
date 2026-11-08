@@ -482,6 +482,41 @@ public sealed class AndroidAppTests : IDisposable
     }
 
     [Fact]
+    public void ARemappingAppliesWithTheGameRunning()
+    {
+        // the keyboard: another store (the launcher's Controles screen) rewrites input.json while the game runs
+        string path = Path.Combine(_root, "input.json");
+        var game = InputProfileStore.Load(path);
+        game.DiskCheckIntervalMs = 0; // the game looks at the file on every poll (500 ms apart in the app)
+        var kb = new AndroidKeyboard(game);
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52 /* X */, true));
+        Assert.Equal(VitaButtons.Cross, kb.Map().State.Buttons);
+        var launcher = InputProfileStore.Load(path);
+        var p = DefaultMappings.Keyboard();
+        p.Remove(VitaControl.Cross, InputBinding.OfKey("X"));
+        p.Add(VitaControl.Cross, InputBinding.OfKey("K"));
+        p.Remove(VitaControl.RStickDown, InputBinding.OfKey("K"));
+        launcher.Put(p);
+        launcher.Save();
+        Assert.Equal(ControllerState.Neutral.Buttons, kb.Map().State.Buttons); // X let go: no longer bound
+        Assert.Equal(KeyboardKeyAction.None, kb.OnKey(52, true));
+        Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(39 /* K */, true));
+        Assert.Equal(VitaButtons.Cross, kb.Map().State.Buttons);
+
+        // a connected controller: the Controles screen saves its profile in the shared store
+        var store = new InputProfileStore();
+        var pads = new AndroidGamepads(store);
+        pads.Connect(1, "Xbox Wireless Controller", 0x045E, 0x0B13, [AndroidKeys.AxisX, AndroidKeys.AxisY, AndroidKeys.AxisZ, AndroidKeys.AxisRz]);
+        pads.OnKey(1, AndroidKeys.ButtonA, true);
+        Assert.Equal(VitaButtons.Cross, pads.Map().State.Buttons);
+        var (id, name, kind) = Assert.Single(pads.Devices);
+        var pad = store.ProfileFor(AndroidGamepads.Guid(0x045E, 0x0B13), name, kind, isGamepad: true);
+        pad.SwapConfirm = !pad.SwapConfirm;
+        store.Put(pad);
+        Assert.Equal(VitaButtons.Circle, pads.Map().State.Buttons);
+    }
+
+    [Fact]
     public void AndroidKeyboardTiltKeysDriveTheMotionSensors()
     {
         long now = 1_000_000;

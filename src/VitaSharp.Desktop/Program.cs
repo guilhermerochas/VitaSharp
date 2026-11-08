@@ -481,7 +481,7 @@ public static class Program
         Console.WriteLine("               --ime-text=<text>  answer every IME dialog / in-game keyboard with this text and Enter, no UI");
         Console.WriteLine("               --start-paused  pause the emulation right after the boot (P, or the key set in Controles, resumes)");
         Console.WriteLine("               --trophy-sound=on|off  chime with the trophy notification in the window (default on)");
-        Console.WriteLine("               --video-decoder=auto|sw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: hardware, software fallback)");
+        Console.WriteLine("               --video-decoder=auto|sw|hw|d3d11va|vaapi|videotoolbox  H.264 decoding (default auto: software; hw: the platform's hardware decoder)");
         Console.WriteLine("               --shaderc-opt=zero|size|perf  shader optimisation (default zero: fast compiles, less stutter)");
         Console.WriteLine("               --async-shaders=on|off  compile new shaders and pipelines on worker threads (default on)");
         Console.WriteLine("               --async-pipelines=on|off  background pipelines only (default on), --shader-workers=N (default auto)");

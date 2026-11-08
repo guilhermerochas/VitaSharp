@@ -262,6 +262,26 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void TempMoviesOfEndedSessionsAreDeleted()
+    {
+        string stale = Path.Combine(Path.GetTempPath(), $"vitasharp-mp4-2147483600-{Guid.NewGuid():N}.mp4");
+        string own = TempMovies.NewPath("mp4", Guid.NewGuid().ToString("N"));
+        File.WriteAllBytes(stale, [1]);
+        File.WriteAllBytes(own, [1]);
+        try
+        {
+            TempMovies.SweepStale();
+            Assert.False(File.Exists(stale));
+            Assert.True(File.Exists(own));
+        }
+        finally
+        {
+            File.Delete(stale);
+            File.Delete(own);
+        }
+    }
+
+    [Fact]
     public void BackendHonoursSoftwareSetting()
     {
         if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
@@ -269,5 +289,8 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         backend.Configure("sw");
         using var d = backend.CreateH264(new VideoDecoderOptions(W, H))!;
         Assert.Equal("ffmpeg-sw", d.Name);
+        backend.Configure("auto"); // software unless hardware is asked for
+        using var a = backend.CreateH264(new VideoDecoderOptions(W, H))!;
+        Assert.Equal("ffmpeg-sw", a.Name);
     }
 }

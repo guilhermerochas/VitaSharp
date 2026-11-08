@@ -64,9 +64,10 @@ public readonly record struct AndroidPadLayout(bool RightStickOnZ = true, bool T
 /// </summary>
 public sealed class AndroidGamepads
 {
-    sealed class Device(int id, string name, ControllerKind kind, AndroidPadLayout layout, CompiledProfile profile)
+    sealed class Device(int id, string guid, string name, ControllerKind kind, AndroidPadLayout layout, CompiledProfile profile)
     {
         public readonly int Id = id;
+        public readonly string Guid = guid;
         public readonly string Name = name;
         public readonly ControllerKind Kind = kind;
         public readonly AndroidPadLayout Layout = layout;
@@ -81,8 +82,16 @@ public sealed class AndroidGamepads
     readonly object _lock = new();
     readonly Dictionary<int, Device> _devices = new();
     readonly InputProfileStore? _profiles;
+    int _revision;
 
-    public AndroidGamepads(InputProfileStore? profiles = null) => _profiles = profiles;
+    public AndroidGamepads(InputProfileStore? profiles = null)
+    {
+        _profiles = profiles;
+        _revision = profiles?.Revision ?? 0;
+    }
+
+    ControllerProfile ProfileFor(string guid, string name, ControllerKind kind)
+        => _profiles?.ProfileFor(guid, name, kind, isGamepad: true) ?? DefaultMappings.Gamepad(guid, name, kind);
 
     /// <summary>Raised (on the caller's thread) when a controller connects or disconnects.</summary>
     public event Action? DevicesChanged;
@@ -111,8 +120,8 @@ public sealed class AndroidGamepads
     {
         string guid = Guid(vendorId, productId);
         var kind = ControllerClassifier.Classify(guid, name);
-        var profile = _profiles?.ProfileFor(guid, name, kind, isGamepad: true) ?? DefaultMappings.Gamepad(guid, name, kind);
-        lock (_lock) _devices[deviceId] = new Device(deviceId, name, kind, AndroidPadLayout.FromAxes(axes), new CompiledProfile(profile));
+        var profile = ProfileFor(guid, name, kind);
+        lock (_lock) _devices[deviceId] = new Device(deviceId, guid, name, kind, AndroidPadLayout.FromAxes(axes), new CompiledProfile(profile));
         DevicesChanged?.Invoke();
     }
 
@@ -123,13 +132,12 @@ public sealed class AndroidGamepads
         if (removed) DevicesChanged?.Invoke();
     }
 
-    /// <summary>Uses <paramref name="profile"/> for every connected controller of that id (after the Controles screen
-    /// saved it).</summary>
-    public void ApplyProfile(ControllerProfile profile)
+    /// <summary>The Controles screen (or another process) saved input.json: every connected controller takes its new
+    /// profile at once, without reconnecting or restarting the game. Called under _lock.</summary>
+    void ReloadIfChanged()
     {
-        lock (_lock)
-            foreach (var d in _devices.Values)
-                d.Profile = new CompiledProfile(profile);
+        if (_profiles == null || !_profiles.CheckChanged(ref _revision)) return;
+        foreach (var d in _devices.Values) d.Profile = new CompiledProfile(ProfileFor(d.Guid, d.Name, d.Kind));
     }
 
     /// <summary>A key event of a controller. Returns true when the key is a controller key (consume the event).</summary>
@@ -194,6 +202,7 @@ public sealed class AndroidGamepads
     {
         lock (_lock)
         {
+            ReloadIfChanged();
             var r = MappedInput.Neutral;
             bool first = true;
             foreach (var d in _devices.Values)

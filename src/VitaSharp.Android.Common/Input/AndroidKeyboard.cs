@@ -74,7 +74,9 @@ public sealed class AndroidKeyboard : IMotionSource
     readonly object _lock = new();
     readonly HashSet<string> _keys = new(StringComparer.Ordinal);
     readonly HashSet<string> _pauseHeld = new(StringComparer.Ordinal);
-    readonly CompiledProfile _profile;
+    CompiledProfile _profile;
+    readonly InputProfileStore? _profiles;
+    int _revision;
     readonly HashSet<string> _bound = new(StringComparer.Ordinal), _pauseKeys = new(StringComparer.Ordinal), _psKeys = new(StringComparer.Ordinal);
     readonly VirtualMotion _virtual;
     readonly Func<long> _nowUs;
@@ -84,9 +86,18 @@ public sealed class AndroidKeyboard : IMotionSource
     /// <param name="nowUs">Host clock in microseconds for the virtual motion (tests); null = Stopwatch.</param>
     public AndroidKeyboard(InputProfileStore? profiles = null, Func<long>? nowUs = null)
     {
+        _profiles = profiles;
+        _revision = profiles?.Revision ?? 0;
         _profile = new CompiledProfile(profiles?.KeyboardProfile() ?? DefaultMappings.Keyboard());
         _virtual = new VirtualMotion(_profile.Profile.Tilt);
         _nowUs = nowUs ?? (() => (long)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency * 1e6));
+        IndexKeys();
+    }
+
+    /// <summary>The keys of the keyboard profile: the pause and PS hotkeys and every other bound key.</summary>
+    void IndexKeys()
+    {
+        _bound.Clear(); _pauseKeys.Clear(); _psKeys.Clear();
         foreach (var c in VitaControls.All)
             foreach (ref readonly var b in _profile[c])
             {
@@ -94,6 +105,17 @@ public sealed class AndroidKeyboard : IMotionSource
                 (c == VitaControl.PauseEmulation ? _pauseKeys : _bound).Add(b.Key);
                 if (c == VitaControl.PS) _psKeys.Add(b.Key);
             }
+    }
+
+    /// <summary>input.json changed (the Controles screen, another process): the new keyboard mapping applies at once,
+    /// without restarting the game. Called under _lock.</summary>
+    void ReloadIfChanged()
+    {
+        if (_profiles == null || !_profiles.CheckChanged(ref _revision)) return;
+        _profile = new CompiledProfile(_profiles.KeyboardProfile());
+        _virtual.Settings = _profile.Profile.Tilt;
+        IndexKeys();
+        _keys.RemoveWhere(k => !_bound.Contains(k));
     }
 
     public ControllerProfile Profile => _profile.Profile;
@@ -110,6 +132,7 @@ public sealed class AndroidKeyboard : IMotionSource
         if (AndroidKeyNames.Name(keyCode) is not { } name) return KeyboardKeyAction.None;
         lock (_lock)
         {
+            ReloadIfChanged();
             // the pause hotkey never reaches the game; a held key opens the menu once
             if (_pauseKeys.Contains(name))
             {
@@ -145,7 +168,11 @@ public sealed class AndroidKeyboard : IMotionSource
     /// <summary>The keyboard's Vita state through the keyboard profile.</summary>
     public MappedInput Map()
     {
-        lock (_lock) return InputMapper.Map(_profile, null, _keys);
+        lock (_lock)
+        {
+            ReloadIfChanged();
+            return InputMapper.Map(_profile, null, _keys);
+        }
     }
 
     // ------------------------------------------------------------------ motion (IMotionSource)

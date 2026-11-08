@@ -8,8 +8,15 @@ namespace VitaSharp.Core.Media;
 /// the bitstream work, FFmpeg keeps parsing, reordering and timestamps): D3D11VA on Windows, VAAPI on Linux,
 /// VideoToolbox on macOS. Pictures are downloaded to system memory (NV12), since the guest reads them from its own
 /// memory anyway. Whenever the hardware path is unavailable or fails, decoding continues in software.
-/// Policy: <see cref="Hardware"/>, set from VITASHARP_VIDEO_HW (off | auto | a device type name such as d3d11va,
+/// Policy: <see cref="Hardware"/>, set from VITASHARP_VIDEO_HW (off | auto | hw | a device type name such as d3d11va,
 /// dxva2, vaapi, videotoolbox, vulkan, cuda) or the front-end's --video-decoder option.
+/// <para>
+/// auto decodes in software: Vita movies (at most 960x544) take ~3 ms a picture on a desktop CPU, while the D3D11VA path
+/// took 6 ms on average with calls up to 470 ms (picture download behind the GPU's other work), and LittleBigPlanet's
+/// opening movie flickered with it (logo and particles appearing and vanishing between pictures, black pictures: 12
+/// flashes in 7 s against none in software, the same stream FFmpeg decodes bit-exact either way outside the
+/// emulator). hw (or a device name) still picks the hardware decoder.
+/// </para>
 /// </summary>
 public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 {
@@ -18,7 +25,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
     /// <summary>Hardware decoding policy (default: VITASHARP_VIDEO_HW, else <see cref="HardwareDecode.Auto"/>).</summary>
     public HardwareDecode Hardware { get; set; } = ParseEnvironment(out _);
 
-    /// <summary>Device type forced by VITASHARP_VIDEO_HW, or none (the platform default).</summary>
+    /// <summary>Hardware device type asked for by VITASHARP_VIDEO_HW (hw: the platform's), or none (software).</summary>
     public AVHWDeviceType ForcedDevice { get; set; } = ParseEnvironmentDevice();
 
     static HardwareDecode ParseEnvironment(out string? value)
@@ -37,14 +44,16 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 
     static AVHWDeviceType ParseDevice(string? v, string source)
     {
-        if (string.IsNullOrEmpty(v) || v is "auto" or "on" or "1" or "hw" || IsOff(v)) return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        if (string.IsNullOrEmpty(v) || v == "auto" || IsOff(v)) return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        if (v is "on" or "1" or "hw") return PlatformDevice;
         if (!FFmpegLoader.Available) return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
         var t = ffmpeg.av_hwdevice_find_type_by_name(v);
         if (t == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE) Log.Warn($"{source}={v}: unknown FFmpeg hardware device type, using the platform default");
         return t;
     }
 
-    /// <summary>Applies a front-end setting: "auto"/"hw", "sw"/"off", or an FFmpeg hwaccel device type name.</summary>
+    /// <summary>Applies a front-end setting: "auto" (software), "hw" (the platform's hardware decoder), "sw"/"off", or an
+    /// FFmpeg hwaccel device type name.</summary>
     public void Configure(string setting)
     {
         var v = setting.Trim().ToLowerInvariant();
@@ -62,8 +71,8 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
     public IVideoDecoder? CreateH264(VideoDecoderOptions options)
     {
         if (!FFmpegLoader.Available) return null;
-        var device = Hardware == HardwareDecode.Off ? AVHWDeviceType.AV_HWDEVICE_TYPE_NONE
-            : ForcedDevice != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? ForcedDevice : PlatformDevice;
+        // auto: software (see the class remarks); a hardware decoder only when one was asked for
+        var device = Hardware == HardwareDecode.Off ? AVHWDeviceType.AV_HWDEVICE_TYPE_NONE : ForcedDevice;
         return FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, device);
     }
 }
