@@ -504,7 +504,7 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     bool OverwrittenSinceRendered(RenderTarget rt, uint addr, ulong bytes)
     {
-        if (!DirtyPages.Enabled || rt.WrittenBack || rt.MemStamp == 0) return false;
+        if (!DirtyPages.Enabled || rt.MemStamp == 0) return false;
         ulong rtEnd = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
         ulong start = Math.Max(addr, rt.Address), end = Math.Min(addr + bytes, rtEnd);
         // whole pages only, and not the first one: a surface's first and last pages are shared with whatever lies next
@@ -515,7 +515,17 @@ public sealed unsafe partial class VulkanRenderer
         const ulong page = 1UL << DirtyPages.PageShift;
         start = (start + page - 1 & ~(page - 1)) + page;
         end &= ~(page - 1);
-        if (end <= start) return false;
+        if (end <= start)
+        {
+            // a surface too small to own a whole page: the whole pages of the texture past the surface's last page (and
+            // the one after it) tell instead; the renderer's writebacks of the surface never touch them. 99Vidas (Unity)
+            // renders an 8x8 surface (written back) early on and later loads its partner logo, a 128x128 texture, into
+            // the same memory; read from the stale surface, the logo was invisible
+            start = (rtEnd + page - 1 & ~(page - 1)) + page;
+            end = addr + bytes & ~(page - 1);
+            if (end <= start) return false;
+        }
+        else if (rt.WrittenBack) return false; // the writeback dirties the surface's pages: CPU writes are not told apart
         SweepDirtyPages();
         if (!DirtyPages.WrittenSince((uint)start, (uint)(end - start), rt.MemStamp)) return false;
 
