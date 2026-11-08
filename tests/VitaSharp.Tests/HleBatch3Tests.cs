@@ -69,6 +69,41 @@ public sealed class HleBatch3Tests(GuestMemoryFixture fx)
     }
 
     [Fact]
+    public void AdhocPdpSocketsWithoutNetwork()
+    {
+        var a = new NetAdhoc { Emu = Shell() };
+        uint mac = Alloc(8), buf = Alloc(64), port = Alloc(4), len = Alloc(4);
+        Assert.Equal(unchecked((int)0x80410712), Call(a, "sceNetAdhocPdpCreate", mac, 1000u, 0x2000u, 0)); // before init
+        Assert.Equal(unchecked((int)0x80410711), Call(a, "sceNetAdhocPdpCreate", 0u, 1000u, 0x2000u, 0));
+        a.GetType().GetField("_inited", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(a, true);
+        int id = Call(a, "sceNetAdhocPdpCreate", mac, 1000u, 0x2000u, 0);
+        Assert.True(id > 0);
+        Assert.Equal(unchecked((int)0x8041070A), Call(a, "sceNetAdhocPdpCreate", mac, 1000u, 0x2000u, 0)); // port in use
+        Assert.Equal(16, Call(a, "sceNetAdhocPdpSend", id, mac, 1000u, buf, 16, 0u, 0)); // goes nowhere, accepted
+        GuestMemory.W32(len, 64);
+        Assert.Equal(unchecked((int)0x80410709), Call(a, "sceNetAdhocPdpRecv", id, mac, port, buf, new Ptr<int>(len), 0u, 1)); // nonblocking
+        Assert.Equal(0, Call(a, "sceNetAdhocSetSocketAlert", id, 2));
+        Assert.Equal(unchecked((int)0x80410708), Call(a, "sceNetAdhocPdpRecv", id, mac, port, buf, new Ptr<int>(len), 0u, 0)); // alerted
+        Assert.Equal(0, Call(a, "sceNetAdhocPdpDelete", id, 0));
+        Assert.Equal(unchecked((int)0x80410701), Call(a, "sceNetAdhocPdpDelete", id, 0));
+    }
+
+    [Fact]
+    public void Commerce2PoolShortfall()
+    {
+        var c = new NpCommerce2 { Emu = Shell() };
+        uint ctx = Alloc(4), size = Alloc(4);
+        Assert.Equal(unchecked((int)0x80550F01), Call(c, "sceNpCommerce2GetShortfallOfPool", 1u, new Ptr<uint>(size)));
+        Assert.Equal(0, Call(c, "sceNpCommerce2Init"));
+        Assert.Equal(0, Call(c, "sceNpCommerce2CreateCtx", 2u, new Ptr<uint>(ctx)));
+        Assert.Equal(unchecked((int)0x80550F03), Call(c, "sceNpCommerce2GetShortfallOfPool", GuestMemory.R32(ctx), new Ptr<uint>(0)));
+        Assert.Equal(unchecked((int)0x80550F0C), Call(c, "sceNpCommerce2GetShortfallOfPool", GuestMemory.R32(ctx) + 100, new Ptr<uint>(size)));
+        GuestMemory.W32(size, 77);
+        Assert.Equal(0, Call(c, "sceNpCommerce2GetShortfallOfPool", GuestMemory.R32(ctx), new Ptr<uint>(size)));
+        Assert.Equal(0u, GuestMemory.R32(size));
+    }
+
+    [Fact]
     public void RtabiDivisionMatchesFirmware()
     {
         var c = new Clib();
