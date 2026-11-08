@@ -1443,11 +1443,21 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   uma gravação com o carro em velocidade sem virar
   Confirmado pelo usuário (08/11/2026)
 - [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
+- [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
   libshacccg.suprx com o ShaRKF00D); taiInjectDataForUser/taiInjectAbs e taiHookFunctionOffsetForUser em Thumb
   (26a9556): o SceShaccCgExt aplica os patches no libshacccg. **Aberto**: a tela continua preta em 900 quadros; o log do
   próprio port (`ux0:data/sh4/sh4log.txt`) mostra o heap newlib de 24 MB (tamanho escolhido pelo port) cheio
   ("malloc 1024 KB failed ... texture skipped") e o vitaGL sobre esse heap. Falta referência do Vita real
+  Corrigido (08/11/2026, agente C, fix/bugs-c-22): o vitaGL chama `sceAppMgrGetBudgetInfo` para saber se é app de
+  sistema; o HLE devolvia 0 para todos, o vitaGL entrava no modo de sistema, não criava os pools de CDRAM/RAM/phycont
+  e punha todas as texturas no heap newlib de 24 MB. Agora só programas do sistema recebem o orçamento (o Vita3K
+  responde "not system mode" para apps). Com isso: pools `cdram_mempool` 112 MB, `ram_mempool` 32 MB,
+  `phycont_mempool` 26 MB, heap newlib em ~8 MB, 30 fps (antes 15) e o jogo mostra logo da Konami, aviso, título,
+  menu, tela de Load, dificuldade, texto de abertura e o quarto em primeira pessoa com o menu de pausa. No Vita3K do usuário o mesmo port também cria os pools (log do port: "after vitaGL: cdram 0 KB") e toca o
+  filme m_00. Diferença que sobra: o Vita3K informa 232 MB de memória de usuário livre no início e o VitaSharp 341 MB
+  (o port pede 188 vs 200 MB para a memória x86); o `SH4_AUTOSHOT` do port (glReadPixels) sai preto nos dois
+  emuladores. O código de erro exato do Vita real para apps não está confirmado (o vitaGL só testa != 0)
 - [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo

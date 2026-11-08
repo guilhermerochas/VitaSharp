@@ -595,7 +595,20 @@ public sealed partial class SystemMisc : HleModule
         Emu.RequestExec(path, args.ToArray());
         throw new GuestThreadExitException(0, false); // this thread ends; the host restarts the process
     }
-    [Hle] int sceAppMgrGetBudgetInfo(uint info) { GuestMemory.Span(info + 4, 0x60).Clear(); return 0; }
+    /// <summary>
+    /// The memory budget of a system application (SceAppMgrBudgetInfo, 0x88 bytes). Only the system software gets
+    /// it; an ordinary application gets an error (Vita3K: "not system mode"). vitaGL calls it to detect a system app
+    /// and, when it succeeds, skips its own CDRAM/RAM pools and puts every texture on the newlib heap, which then fills
+    /// up on a game (a homebrew port stayed black with "malloc failed, texture skipped"). The exact error code is
+    /// not confirmed; callers only test for non-zero.
+    /// </summary>
+    [Hle]
+    int sceAppMgrGetBudgetInfo(uint info)
+    {
+        if (!Emu.IsSystemProgram) return unchecked((int)0x8080201A); // SCE_APPMGR_ERROR_INVALID (code a confirmar)
+        GuestMemory.Span(info + 4, 0x60).Clear();
+        return 0;
+    }
     [Hle] int sceAppMgrGetRunningAppIdListForShell(uint list, int count) => GetRunningAppIdListForShell(list, count, 0);
 
     // ------------------------------------------------------------------ ScePower
