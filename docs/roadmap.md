@@ -735,6 +735,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   nunca vira "latest" e só as 10 últimas ficam (`KEEP_BUILDS`; as antigas e suas tags são apagadas com `gh release
   delete --cleanup-tag`). README, seção Releases, atualizado. O APK continua de fora até o CI ter o job do Android
   Feito: release automática build-<hash> a cada push verde na main (6b85695), já publicando (build-eb950c1)
+- [ ] Atualização automática do emulador pelas releases do GitHub, no estilo do PCSX2 (pedido do usuário, 07/11/2026):
+  ao abrir (e por um botão "Procurar atualizações" nas Configurações), consultar a API de releases do GitHub do
+  projeto, comparar com a versão/hash do build em uso e, se houver uma mais nova, mostrar um diálogo com a versão, a
+  data e as notas (lista de commits), com Atualizar / Pular esta versão / Lembrar depois. Atualizar baixa o pacote da
+  plataforma certa (win-x64, linux-x64, osx-arm64), confere o `SHA256SUMS.txt`, troca os arquivos do emulador (um
+  pequeno atualizador ou renomear-e-substituir, já que o exe em uso não pode ser sobrescrito no Windows) e reabre.
+  Opções: canal (builds automáticas `build-*` ou só versões `v*`), checar ao iniciar liga/desliga. Nunca toca nos
+  dados do usuário (pasta de dados, firmware, saves). Android: avisar e abrir o APK novo (instalação pelo sistema),
+  depois que o CI publicar o APK
 - [ ] Renomear `VitaSharp.Android.Common` (a lógica do app de celular que não depende do Android e é testada no PC:
   mapeamento de entrada, sensores, câmera, núcleos rápidos, ritmo de quadros, preferências) para
   `VitaSharp.Mobile.Core` (escolhido pelo usuário; o app continua `VitaSharp.Android`, um futuro iOS usaria o mesmo
