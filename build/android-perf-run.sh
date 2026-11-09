@@ -20,6 +20,7 @@
 #   MAXTEMP (battery deg C before a run, default 37; waits at most 5 min), APK (install it first), OUT (results folder,
 #   default ./android-perf-run/<scene>_<time>), EXTRA_ENV (env.txt lines for every variant, ';'-separated).
 #   STAT=1: simpleperf stat (cycles, instructions, L1I refills) of the guest main thread for 10 s of each window.
+#   Several phones attached: export ANDROID_SERIAL=<serial> (adb and build/android-awake.sh SERIAL) before running.
 set -uo pipefail
 export MSYS_NO_PATHCONV=1
 scene="${1:?usage: android-perf-run.sh SCENE [VARIANTS] [RUNS]}"

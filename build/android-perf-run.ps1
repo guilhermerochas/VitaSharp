@@ -18,6 +18,7 @@
 #   start, default 150). -Stat: simpleperf stat (cycles, instructions, L1I refills) of the guest main thread, 10 s.
 #   app_fps column: the app's own presented-frame rate ([perf] lines); with bursty output (queued frames shown back to
 #   back after a stall) the display median overstates, the mean and app_fps are the throughput.
+# Several phones attached: set $env:ANDROID_SERIAL = "<serial>" first (adb uses it).
 # Linux/macOS: build/android-perf-run.sh (same steps).
 param(
     [Parameter(Mandatory)][string]$Scene,
