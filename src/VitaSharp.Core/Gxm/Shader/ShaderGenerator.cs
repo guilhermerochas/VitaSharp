@@ -1,5 +1,6 @@
 using VitaSharp.Core.Util;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace VitaSharp.Core.Gxm.Shader;
 
@@ -266,6 +267,32 @@ public static class ShaderGenerator
     public static bool VertexStores = true, FragmentStores = true;
 
     public static bool MemoryStores(bool vertex) => vertex ? VertexStores : FragmentStores;
+
+    /// <summary>VITASHARP_SHADER_FP16=half (A/B, set by the renderer): what the GXP holds in half registers is declared
+    /// mediump (RelaxedPrecision, as Vita3K decorates F16/U8 values), so Mali/Adreno run it at 16 bits. Part of the
+    /// cache key.</summary>
+    public static bool RelaxHalfPrecision;
+
+    /// <summary>mediump on the values the GXP holds in half registers: the temporaries the translator unpacks them into,
+    /// the varyings the GXP loads as F16 (every use a copy into such a temporary) and a half/8-bit colour output.
+    /// Used by the generator with <see cref="RelaxHalfPrecision"/> and by the Mali cost what-if.</summary>
+    public static string RelaxHalf(string glsl)
+    {
+        var s = Regex.Replace(glsl, @"(^|[\s;{(])(vec[234]|float) (\w+) = unpackHalf2x16", "$1mediump $2 $3 = unpackHalf2x16", RegexOptions.Multiline);
+        s = Regex.Replace(s, @"(^|[\s;{(])(vec[234]|float) (\w+) = (vec[234])\(unpackHalf2x16", "$1mediump $2 $3 = $4(unpackHalf2x16", RegexOptions.Multiline);
+        var halfTemps = Regex.Matches(s, @"mediump vec2 (\w+) = unpackHalf2x16").Select(m => m.Groups[1].Value).ToHashSet();
+        foreach (Match m in Regex.Matches(s, @"^(layout\([^)]*\) (?:centroid |flat |noperspective )*)in (vec[234]|float) (\w+);", RegexOptions.Multiline).Cast<Match>().ToList())
+        {
+            string name = m.Groups[3].Value;
+            int uses = Regex.Matches(s, $@"(?<![\w.]){Regex.Escape(name)}\b").Count - 1;
+            int copies = Regex.Matches(s, $@"(\w+)\.[xy] = {Regex.Escape(name)}\.[xyzw];").Count(c => halfTemps.Contains(c.Groups[1].Value));
+            if (uses > 0 && copies == uses) s = s.Replace(m.Value, $"{m.Groups[1].Value}in mediump {m.Groups[2].Value} {name};");
+        }
+        if (Regex.IsMatch(s, @"^// gxp .* out (F16|U8|C10)", RegexOptions.Multiline))
+            s = s.Replace("layout(location = 0) out vec4 out_color;", "layout(location = 0) out mediump vec4 out_color;");
+        return s;
+    }
+
 
     /// <summary>Read/write helpers of the dynamically indexed banks (<see cref="LowerDynamicIndexing"/>).</summary>
     static string DynHelpers(IEnumerable<string> banks)
@@ -596,7 +623,7 @@ float packC10(vec3 c) {
         foreach (var w in t.Warnings) result.Warnings.Add(w);
         return new GeneratedShader
         {
-            Glsl = sb.ToString(),
+            Glsl = RelaxHalfPrecision ? RelaxHalf(sb.ToString()) : sb.ToString(),
             IsVertex = vertex,
             UniformBytes = result.UniformBytes,
             UsesFragColor = result.UsesFragColor,

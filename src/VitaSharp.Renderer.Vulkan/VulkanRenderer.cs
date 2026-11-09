@@ -205,6 +205,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             : Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Hardware;
         // memory stores of GXM programs write the mirror of guest memory (VulkanRenderer.Mapped.cs) where allowed
         Core.Gxm.Shader.ShaderGenerator.VertexStores = _core.VertexStores;
+        Core.Gxm.Shader.ShaderGenerator.RelaxHalfPrecision = Environment.GetEnvironmentVariable(EnvVars.ShaderFp16)?.Trim() == "half";
         Core.Gxm.Shader.ShaderGenerator.FragmentStores = _core.FragmentStores;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
@@ -360,13 +361,18 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     bool ResultsPending()
     {
         foreach (var f in _frames)
-            if ((f.Recording || (f.Submitted && !f.Retired)) && (LazyWritebackSync ? HasPendingSyncResults(f) : HasPendingResults(f))) return true;
+            if ((f.Recording || (f.Submitted && !f.Retired)) && (RelaxedGpuSync ? f.Signals.Count > 0 : LazyWritebackSync ? HasPendingSyncResults(f) : HasPendingResults(f))) return true;
         return false;
     }
 
     /// <summary><see cref="EnvVars.LazyWritebackSync"/>: sync points wait for visibility results and earlier deferred
     /// signals only; render-target writebacks are published when their frame retires (polls, the next flip).</summary>
     static readonly bool LazyWritebackSync = Environment.GetEnvironmentVariable(EnvVars.LazyWritebackSync) == "1";
+
+    /// <summary><see cref="EnvVars.RelaxedGpuSync"/>: sync points fire once the worker recorded the work before them
+    /// (in GPU order with earlier deferred ones); writebacks and visibility results reach guest memory when their frame
+    /// retires, so the guest may read them a frame or two late (RPCS3's relaxed ZCULL sync, Dolphin's dual core).</summary>
+    static readonly bool RelaxedGpuSync = Environment.GetEnvironmentVariable(EnvVars.RelaxedGpuSync) == "1";
 
     bool HasPendingSyncResults(Frame f) => f.Signals.Count > 0 || f.Visibility is { Used: > 0 };
 
@@ -447,6 +453,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void ExecuteCommand(GpuCommand command)
     {
+        if (_xferInvalidations.Count > 0) DrainTransferInvalidations();
         if (GpuQueue.InterleaveScenes && command.Pid != 0) SwitchSceneProcess(command);
         switch (command)
         {
@@ -461,7 +468,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 break;
             case PresentCommand p: _presentCmd = p; Present(p.Frame); _presentCmd = null; break;
             case CallbackCommand cb:
-                if (cb.WriteSize > 0) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
+                if (cb.WriteSize > 0 && !cb.Deferred) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
                 break;
         }
     }
@@ -480,6 +487,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public ImageView SrgbView;    // attachment view for scenes with surface gamma
         public ImageView RawView;     // integer attachment view for raw-bit fragment outputs (see RawAttachmentView)
         public ImageMemoryPool.Allocation Mem;
+        /// <summary>The formats the image can be viewed with (VITASHARP_RT_FORMAT_LIST); null = any of its size class.</summary>
+        public Format[]? ViewFormats;
+        public bool CanView(Format f) => f == Format || ViewFormats == null || Array.IndexOf(ViewFormats, f) >= 0;
         public bool Dirty;            // written since the last read barrier
         public long Version;          // bumped whenever the contents change
         public long LastScene;        // serial of the last scene that rendered into it
@@ -556,11 +566,17 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     readonly Dictionary<(uint, uint, uint, SampleCountFlags), DepthTarget> _depthTargets = new();
 
     (Image, ImageView, ImageMemoryPool.Allocation) CreateImage(MemCat cat, uint w, uint h, Format format, ImageUsageFlags usage, ImageAspectFlags aspect,
-        uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null, SampleCountFlags samples = SampleCountFlags.Count1Bit)
+        uint mips = 1, uint layers = 1, bool mutable = false, bool cube = false, ComponentMapping? swizzle = null, SampleCountFlags samples = SampleCountFlags.Count1Bit,
+        Format[]? viewFormats = null)
     {
+        var vf = viewFormats ?? Array.Empty<Format>();
+        fixed (Format* pvf = vf)
+        {
+        var list = new ImageFormatListCreateInfo { SType = StructureType.ImageFormatListCreateInfo, ViewFormatCount = (uint)vf.Length, PViewFormats = pvf };
         var ici = new ImageCreateInfo
         {
             SType = StructureType.ImageCreateInfo,
+            PNext = vf.Length > 0 ? &list : null,
             ImageType = ImageType.Type2D,
             Format = format,
             Extent = new Extent3D(Math.Max(w, 1), Math.Max(h, 1), 1),
@@ -584,7 +600,42 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         }
         _vk.BindImageMemory(_dev, image, alloc.Memory, alloc.Offset).Ok("vkBindImageMemory");
         var view = CreateView(image, format, aspect, mips, layers, cube, swizzle ?? default);
+        if (_core.CompressionQuery) LogCompression(cat, image, format, aspect, usage, mutable, vf.Length, samples);
         return (image, view, alloc);
+        }
+    }
+
+    readonly HashSet<(MemCat, Format, ImageUsageFlags, bool, int, SampleCountFlags)> _compressionLogged = new();
+
+    /// <summary>VITASHARP_AFBC_LOG=1: the compression the driver gave the first image of each kind.</summary>
+    void LogCompression(MemCat cat, Image image, Format format, ImageAspectFlags aspect, ImageUsageFlags usage, bool mutable, int listed, SampleCountFlags samples)
+    {
+        if (!_compressionLogged.Add((cat, format, usage, mutable, listed, samples))) return;
+        var a = (aspect & ImageAspectFlags.ColorBit) != 0 ? ImageAspectFlags.ColorBit : ImageAspectFlags.DepthBit;
+        Log.Info($"[afbc] {cat} {format} {samples} usage {usage} mutable {mutable} listed formats {listed}: {_core.ImageCompression(image, a)}");
+    }
+
+    /// <summary><see cref="EnvVars.RtFormatList"/>: the formats a render target of <paramref name="format"/> is viewed
+    /// with (its own, the RGBA view of BGRA surfaces, the sRGB views of gamma scenes, the integer view of raw outputs).</summary>
+    /// <summary>Modes (A/B): 1 = every format the renderer may view the target with; srgb = the format and its sRGB
+    /// twin only; immutable = none (no MUTABLE_FORMAT). With srgb/immutable, views outside the list fall back to the
+    /// surface's own format (RGBA reads of BGRA through a swizzle; sRGB writes/reads and raw integer outputs inexact:
+    /// measurement only, compare the picture).</summary>
+    static readonly string RtFormatList = Environment.GetEnvironmentVariable(EnvVars.RtFormatList)?.Trim() ?? "";
+
+    static Format[]? RenderTargetViewFormats(Format format)
+    {
+        if (RtFormatList == "immutable") return [format];
+        if (RtFormatList == "srgb") return Formats.Srgb(format) is var s && s != format ? [format, s] : [format];
+        if (RtFormatList != "1") return null;
+        var list = new List<Format> { format };
+        void Add(Format f) { if (f != Format.Undefined && !list.Contains(f)) list.Add(f); }
+        var sampled = format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : format;
+        Add(sampled);
+        Add(Formats.Srgb(format));
+        Add(Formats.Srgb(sampled));
+        foreach (int bits in new[] { 8, 16, 32 }) Add(RawAttachmentFormat(format, bits));
+        return list.ToArray();
     }
 
     ImageView CreateView(Image image, Format format, ImageAspectFlags aspect, uint mips, uint layers, bool cube, ComponentMapping swizzle)
@@ -650,10 +701,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         format = RenderableFormat(format);
         float scale = TargetScale(c.Width, c.Height, format); // internal resolution (VulkanRenderer.ResScale.cs)
         // input attachment: programmable-blending draws of one-sample scenes read it in a render pass (VulkanRenderer.SingleFetch.cs)
+        var views = RenderTargetViewFormats(format);
         var (img, view, mem) = CreateImage(MemCat.RenderTarget, ScaleDim(c.Width, scale), ScaleDim(c.Height, scale), format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
-            ImageAspectFlags.ColorBit, mutable: true);
-        rt = new RenderTarget { Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount, Scale = scale };
+            ImageAspectFlags.ColorBit, mutable: views is not { Length: 1 }, viewFormats: views is { Length: > 1 } ? views : null);
+        rt = new RenderTarget { ViewFormats = views, Address = c.Data, Width = c.Width, Height = c.Height, ColorFormat = c.ColorFormat, Stride = c.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount, Scale = scale };
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
         _renderTargets[key] = rt;
@@ -812,6 +864,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var srgb = _rt != null ? Formats.Srgb(_rt.Format) : Format.Undefined;
         _rtGamma = _rt != null && b.Color!.GammaMode != 0 && srgb != _rt.Format && _core.SupportsColorAttachment(srgb);
         _rtAttachFormat = _rt == null ? Format.Undefined : _rtGamma ? srgb : _rt.Format;
+        if (_rtGamma && !_rt!.CanView(srgb)) { _rtGamma = false; _rtAttachFormat = _rt.Format; Log.WarnOnce("rt-immutable-srgb", "[afbc] immutable render target: sRGB scene rendered without gamma (measurement only)"); }
         if (_rtGamma && _rt!.SrgbView.Handle == 0) _rt.SrgbView = CreateView(_rt.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);
         if (b.Color is { } cs) Log.DebugOnce($"scene{cs.Data:X}{cs.Width}{cs.ColorFormat:X}", $"[gpu] scene target 0x{cs.Data:X8} {cs.Width}x{cs.Height} stride {cs.StrideInPixels} fmt 0x{cs.ColorFormat:X8} type 0x{cs.SurfaceType:X} gamma {cs.GammaMode}");
         if (b.Depth is { } ds) Log.DebugOnce($"scened{ds.DepthData:X}", $"[gpu] scene depth 0x{ds.DepthData:X8} stencil 0x{ds.StencilData:X8} stride {ds.StrideInSamples} fmt 0x{ds.Format:X8} type 0x{ds.Type:X8} ({b.Width}x{b.Height})");
@@ -920,7 +973,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // a scene whose pixels the CPU can read back signals its notifications only once they are in memory; the
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
-        if (e.Notifications.Length > 0 && ((writeback && !LazyWritebackSync) || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
+        if (e.Notifications.Length > 0 && ((writeback && !LazyWritebackSync && !RelaxedGpuSync) || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
         if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;
@@ -958,6 +1011,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if (ss.RawView.Handle == 0) ss.RawView = CreateView(ss.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
             return ss.RawView;
         }
+        if (!rt.CanView(format)) { Log.WarnOnce("rt-immutable-raw", "[afbc] immutable render target: raw outputs through the surface's own view (measurement only)"); return rt.View; }
         if (rt.RawView.Handle == 0) rt.RawView = CreateView(rt.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
         return rt.RawView;
     }
