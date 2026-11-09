@@ -174,7 +174,7 @@ public static class HleGuestCode
     const uint FallbackSvc = 0xEF00FFFF;
 
     /// <summary>sceGxmSetUniformDataF(buffer, param, componentOffset, componentCount, source): the F32 parameters that
-    /// are a scalar array or a single vector (no per-element padding) copy componentCount words to
+    /// are a single vector or an array of 1, 2 or 4 components (no per-element padding) copy componentCount words to
     /// buffer + resourceIndex * 4 + componentOffset * 4; every other case (and the errors after the NULL checks'
     /// INVALID_VALUE) is the C# version's.</summary>
     static readonly uint[] SetUniformDataF =
@@ -192,12 +192,14 @@ public static class HleGuestCode
         0x18BD0030,                                  // popne {r4, r5}
         .. ReturnGxmError(NE, ErrInvalidValue),
         0xE1B04224,                                  // lsrs r4, r4, #4     type: F32 is 0
-        0x1A00000F,                                  // bne fallback
+        0x1A000011,                                  // bne fallback
         0xE5915008,                                  // ldr r5, [r1, #8]    array size
         0xE3550001,                                  // cmp r5, #1
         0x15D15005,                                  // ldrbne r5, [r1, #5]
         0x1205500F,                                  // andne r5, r5, #15   component count
         0x13550001,                                  // cmpne r5, #1
+        0x13550002,                                  // cmpne r5, #2        2 and 4 F32 components: elements
+        0x13550004,                                  // cmpne r5, #4        need no padding (contiguous)
         0x1A000009,                                  // bne fallback
         0xE591500C,                                  // ldr r5, [r1, #12]   resource index
         0xE0800105,                                  // add r0, r0, r5, lsl #2
@@ -603,6 +605,59 @@ public static class HleGuestCode
         ("sceGxmSetViewport", Gxm, SetViewport),
     ];
 
+    // ------------------------------------------------------------------ GXP program parameter queries
+    //
+    // Reads of the program blob the game owns (Gxm/Shader/Gxp.cs layout): the parameter table at +0x28 (relative),
+    // its count at +0x24, 16 bytes per parameter (name offset, category | type << 4, components | container << 4,
+    // semantic, semantic index | cube << 4, array size, resource index). Killzone asks ~80 per frame.
+
+    /// <summary>sceGxmProgramGetParameter(program, index): the index-th entry, NULL past the count (a NULL program: C#).</summary>
+    static readonly uint[] ProgramGetParameter =
+    [
+        0xE3500000,        // 0 cmp r0, #0
+        Branch(EQ, 1, 11), // 1 beq fallback
+        0xE5902024,        // 2 ldr r2, [r0, #0x24]  count
+        0xE1510002,        // 3 cmp r1, r2
+        0x23A00000,        // 4 movhs r0, #0
+        0x212FFF1E,        // 5 bxhs lr
+        0xE5902028,        // 6 ldr r2, [r0, #0x28]  table offset
+        0xE0800002,        // 7 add r0, r0, r2
+        0xE2800028,        // 8 add r0, r0, #0x28
+        0xE0800201,        // 9 add r0, r0, r1, lsl #4
+        BxLr,              // 10
+        FallbackSvc,       // 11
+        BxLr,              // 12
+    ];
+
+    static readonly (string Name, string Library, uint[] Code)[] ProgramParameterRoutines =
+    [
+        ("sceGxmProgramGetParameter", Gxm, ProgramGetParameter),
+        ("sceGxmProgramParameterGetName", Gxm, [0xE3500000, 0x15901000, 0x10800001, BxLr]),     // cmp r0, #0 ; ldrne r1, [r0] ; addne r0, r0, r1
+        ("sceGxmProgramParameterGetCategory", Gxm, [0xE5D00004, 0xE200000F, BxLr]),             // ldrb r0, [r0, #4] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetType", Gxm, [0xE5D00004, 0xE1A00220, BxLr]),                 // ldrb r0, [r0, #4] ; lsr r0, r0, #4
+        ("sceGxmProgramParameterGetComponentCount", Gxm, [0xE5D00005, 0xE200000F, BxLr]),       // ldrb r0, [r0, #5] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetContainerIndex", Gxm, [0xE5D00005, 0xE1A00220, BxLr]),       // ldrb r0, [r0, #5] ; lsr r0, r0, #4
+        ("sceGxmProgramParameterGetSemantic", Gxm, [0xE5D01004, 0xE311000F, 0x05D00006, 0x13A00000, BxLr]), // attributes only: ldrb r1, [r0, #4] ; tst r1, #15 ; ldrbeq r0, [r0, #6] ; movne r0, #0
+        ("sceGxmProgramParameterGetSemanticIndex", Gxm, [0xE5D00007, 0xE200000F, BxLr]),        // ldrb r0, [r0, #7] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetArraySize", Gxm, [0xE5900008, BxLr]),                        // ldr r0, [r0, #8]
+        ("sceGxmProgramParameterGetResourceIndex", Gxm, [0xE590000C, BxLr]),                    // ldr r0, [r0, #12]
+        ("sceGxmProgramParameterIsSamplerCube", Gxm, [0xE5D00007, 0xE1A00220, 0xE2000001, BxLr]), // ldrb r0, [r0, #7] ; lsr r0, r0, #4 ; and r0, r0, #1
+        // sceGxmPrecomputedDrawSetVertexStream(state, index, data): the C# checks in order; a stream the program does not
+        // read (index >= the slot count at +12) has no slot and is not written
+        ("sceGxmPrecomputedDrawSetVertexStream", Gxm,
+        [
+            0xE3500000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r0, #0
+            0xE3510010, .. ReturnGxmError(HS, ErrInvalidValue),   // cmp r1, #16
+            0xE3520000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r2, #0
+            0xE1D030BC,                                           // ldrh r3, [r0, #12]  slots
+            0xE1510003,                                           // cmp r1, r3
+            0x35903008,                                           // ldrlo r3, [r0, #8]  stream array
+            0x37832101,                                           // strlo r2, [r3, r1, lsl #2]
+            0xE3A00000,                                           // mov r0, #0
+            BxLr,
+        ]),
+    ];
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
     static readonly bool ContextModes = Mode != "precomputed";
@@ -658,6 +713,7 @@ public static class HleGuestCode
         .. (KernelRoutines ? KernelLeafRoutines : []),
         .. (LwMutexRoutines ? LwMutexRoutineTable : []),
         .. (ContextState ? ContextStateRoutines : []),
+        .. (TextureRoutines ? ProgramParameterRoutines : []),
     ];
 
     static readonly Dictionary<uint, int> RoutineByNid = BuildNidTable();

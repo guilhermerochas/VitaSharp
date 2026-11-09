@@ -356,6 +356,46 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
             Assert.Equal((7, 0x77), ((int)g.State.Front.Stencil.Func, (int)g.State.Front.Stencil.Ref));
         }
 
+        // program parameter queries: a parameter table at +0x28 (relative) with 3 entries
+        uint prog = fx.Memory.Alloc(0x100, "gcprog");
+        GuestMemory.Fill(prog, 0, 0x100);
+        GuestMemory.W32(prog + 0x24, 3); GuestMemory.W32(prog + 0x28, 0x18); // table at prog + 0x40
+        Assert.Equal(prog + 0x40 + 2 * 16, RunGuest("sceGxmProgramGetParameter", prog, 2));
+        Assert.Equal(0u, RunGuest("sceGxmProgramGetParameter", prog, 3));
+        Assert.False(fellBack);
+        RunGuest("sceGxmProgramGetParameter", 0, 0);
+        Assert.True(fellBack);
+        uint pparam = prog + 0x40 + 16;
+        foreach (var (b4, b5, b6, b7) in new[] { (0x30, 0x23, 9, 0x15), (0x01, 0x14, 7, 0x03), (0xA0, 0xF0, 0xFF, 0xFF) })
+        {
+            GuestMemory.W32(pparam, 0x80); GuestMemory.Write(pparam + 4, (byte)b4); GuestMemory.Write(pparam + 5, (byte)b5);
+            GuestMemory.Write(pparam + 6, (byte)b6); GuestMemory.Write(pparam + 7, (byte)b7);
+            GuestMemory.W32(pparam + 8, 0x11223344); GuestMemory.W32(pparam + 12, 0x55);
+            foreach (var f in new[] { "sceGxmProgramParameterGetName", "sceGxmProgramParameterGetCategory", "sceGxmProgramParameterGetType",
+                "sceGxmProgramParameterGetComponentCount", "sceGxmProgramParameterGetContainerIndex", "sceGxmProgramParameterGetSemantic",
+                "sceGxmProgramParameterGetSemanticIndex", "sceGxmProgramParameterGetArraySize", "sceGxmProgramParameterGetResourceIndex",
+                "sceGxmProgramParameterIsSamplerCube" })
+            {
+                Assert.Equal(U(Call(gxm, f, pparam)), RunGuest(f, pparam));
+                Assert.False(fellBack, f);
+            }
+        }
+        Assert.Equal(0u, RunGuest("sceGxmProgramParameterGetName", 0));
+
+        // sceGxmPrecomputedDrawSetVertexStream: errors in the C# order, streams without a slot not written
+        uint pdraw = fx.Memory.Alloc(0x20, "gcpdraw"), slots = fx.Memory.Alloc(0x40, "gcslots");
+        foreach (var (st, idx, data) in new[] { (pdraw, 1u, 0x81000040u), (pdraw, 5u, 0x81000040u), (pdraw, 16u, 0x81000040u), (pdraw, 0u, 0u),
+            (0u, 1u, 1u), (0u, 20u, 0u), (pdraw, 20u, 0u) })
+        {
+            GuestMemory.Fill(slots, 0xEE, 0x40); GuestMemory.W32(pdraw + 8, slots); GuestMemory.Write(pdraw + 12, (ushort)2);
+            uint want = U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", st, idx, data));
+            var mem = GuestMemory.ReadSpan(slots, 0x40).ToArray();
+            GuestMemory.Fill(slots, 0xEE, 0x40);
+            Assert.Equal(want, RunGuest("sceGxmPrecomputedDrawSetVertexStream", st, idx, data));
+            Assert.False(fellBack);
+            Assert.Equal(mem, GuestMemory.ReadSpan(slots, 0x40).ToArray());
+        }
+
         uint tex = fx.Memory.Alloc(0x10, "gctex");
         foreach (var f in new[] { "sceGxmTextureSetUAddrModeSafe", "sceGxmTextureSetVAddrModeSafe" })
             foreach (var (type, mode) in new[] { (0x00000000u, 1u), (0x60000000u, 0xFFu), (0xC0000000u, 3u), (0x80000000u, 2u) })
@@ -377,6 +417,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         {
             (0x01, 4, 1u, 0u, 4u, true), (0x01, 4, 1u, 2u, 2u, true), (0x01, 1, 8u, 3u, 5u, true), (0x01, 3, 1u, 0u, 0u, true),
             (0x01, 3, 4u, 1u, 7u, false), (0x11, 4, 1u, 0u, 4u, false), (0x02, 4, 1u, 0u, 4u, false),
+            (0x01, 4, 3u, 2u, 9u, true), (0x01, 2, 6u, 3u, 7u, true), (0x11, 4, 3u, 0u, 8u, false),
         })
         {
             GuestMemory.Write(param + 4, (byte)b4); GuestMemory.Write(param + 5, (byte)comps);
@@ -386,7 +427,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
             var mem = GuestMemory.ReadSpan(ub, 0x100).ToArray();
             GuestMemory.Fill(ub, 0xEE, 0x100);
             uint got = RunGuest("sceGxmSetUniformDataF", ub, param, offset, count, src);
-            Assert.Equal(!fast && (b4 & 0xF) == 1, fellBack);
+            Assert.True((!fast && (b4 & 0xF) == 1) == fellBack, $"b4={b4:X} comps={comps} array={arraySize} offset={offset} count={count} fellBack={fellBack}");
             if (fellBack) continue; // the C# version runs
             Assert.Equal(want, got);
             Assert.Equal(mem, GuestMemory.ReadSpan(ub, 0x100).ToArray());
