@@ -316,8 +316,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   7,6/4,6 -> 2,2/1,6 us por chamada, CPU dentro do HLE da thread principal 13,2/6,6 -> 4,9/3,1 ms por quadro.
   Achados do worker da GPU (perfil por unidade de textura, só desenvolvedor): na corrida do F1 o custo por draw está
   espalhado (gravação 1,0, geometria 0,7, uniforms 0,7, unidades de textura 0,8 ms por quadro para ~1.400 draws); um
-  memo de unidades resolvidas acertou 74-83% e quase não mudou o tempo (não entrou); no Killzone o que pesa são as
-  unidades que faltam no memo (uploads com decodificação na CPU, em medição).
+  memo de unidades resolvidas acerta 74-83% das unidades (no desktop pouco ganho; entrou para o celular, onde a
+  resolução de unidades era 17 de 49 ms do worker: `VITASHARP_UNIT_MEMO=0` desliga). (6) Worker da GPU: memo da
+  entrada de shader por programa e formatos de textura (fase Shader 0,285 -> 0,241 ms no KZ desktop;
+  `VITASHARP_SHADER_MEMO=0`), extensões de stream por programa, e cache de conteúdo de texturas: o Killzone passa
+  texturas pela mesma memória (26.000 despejos "substituída por outra" em 6.500 quadros) e reenviava a textura antiga
+  quando ela voltava (no celular, transcodificação ASTC na CPU); a imagem despejada (e a de um conteúdo que a textura
+  deixa, da segunda troca em diante) fica guardada pelo conteúdo (48 MB) e volta sem upload: uploads 2,12 -> 0,96 por
+  quadro, tempo de upload 1,44 -> 0,49 ms (`VITASHARP_TEX_CONTENT_CACHE=0`). Perfil do worker (só desenvolvedor):
+  `VITASHARP_WORKER_PROF_FROM=N` começa a medir no quadro N; as unidades de textura são divididas em memória/RT/outras e
+  o caminho de falta em lookup/checagem/hash/upload; a linha PERF texcache traz ms de upload e conteúdos repetidos.
 
 ## Android
 
