@@ -254,7 +254,7 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     /// <summary><see cref="EnvVars.AndroidSurfaceSize"/>: the size the game's surface buffers are allocated at, below the
     /// view's (the display hardware scales them up); "game" = the height of the Vita's screen.</summary>
-    static readonly string? SurfaceSize = Environment.GetEnvironmentVariable(EnvVars.AndroidSurfaceSize)?.Trim().ToLowerInvariant();
+    static readonly string? SurfaceSize = System.Environment.GetEnvironmentVariable(EnvVars.AndroidSurfaceSize)?.Trim().ToLowerInvariant();
     (int, int) _surfaceSizeSet;
 
     void ApplySurfaceSize(SurfaceView v)
