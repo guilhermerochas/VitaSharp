@@ -351,3 +351,31 @@ Display median / mean frame ms, 30 s per run, interleaved:
   was installed but not measured before the round stopped; next: run `loadstress.sh`-style loads with it, and if the
   crashes persist, look for unsafe writes into managed memory on the load path (`ReplaceBackend`, `Code.Clear`,
   module `LoadState`). Scripted `loadstate` steps after the first in one live file did not run (only one load per file).
+
+## Device lab, 9 November 2026 (perf/android-lab)
+
+All runs: Redmi Note 14 (Android 16), `build/android-perf-run.sh` (cold start, scripted state load or the `kzboot`
+no-state route, 60 s warm-up, 30 s window, SurfaceFlinger cadence, PERF deltas, atrace clocks). **Read throughput
+from the display mean or the app's own `[perf]` fps, not the display median**: after a stall the queued frames are
+shown back to back at 1-2 vblanks, so the median looked like "20-30 fps bursts" while the guest flipped steadily
+every ~4 vblanks (traced: 134 flips in 10 s = 13.4 fps).
+
+| Step (Killzone staircase) | App fps | GPU ms | GPU worker ms | Game thread ms |
+|---|---|---|---|---|
+| main 9f21653 (mono LLVM / CoreCLR) | 12 | 45-50 | 34-42 | 21-30 |
+| + Finish fix, transfer DEFER (ebfe72c, mono-aot) | 13.3-15.7 | 42-43 | 48-50 | 25-28 |
+| same tree on CoreCLR / NativeAOT | 22-23 / 21-23 | 42-47 | 23-27 | 17-18 |
+| NativeAOT + far-plane discard removed (state route) | 21.8-23.6 (vs 15.4-16.3) | 30 | 24-25 | 14-15 |
+
+- The 12 fps on main came from one `Finish` per frame (a CPU transfer matched writebacks of frames that had already
+  retired: ~2,400 waits / 26-29 s per 30 s window); the 06/11 APK had 4 per session.
+- Switches without a gain on Killzone (each 2+ runs): `VITASHARP_ANDROID_AFFINITY=off` and `VITASHARP_CPU_MHZ=0`
+  (worse), Android game mode performance, `VITASHARP_ANDROID_ADPF=gpu|wall`, `VITASHARP_ANDROID_GAME_STATE=1`,
+  `VITASHARP_ANDROID_SURFACE_SIZE=game`, `VITASHARP_VK_DIRECT=1`, `VITASHARP_GPU_RELAXED_SYNC=1` (+25% but the glass
+  wall behind the stairs renders dark: rejected). Thermal headroom stayed 0.65-0.66 (no throttling).
+- kz_game GPU bench (frame present 529): the main MSAA scene is ~21 of ~42 ms (vertex+load ~11, fragment ~10); the
+  ~26 render-target region copies cost up to ~10 ms; dropping the far-plane discard 48.4 -> 39.0 ms; uniform loads
+  without the bounds check -6 ms (shaders generated with the desktop profile, which writes `gl_ClipDistance`, crash
+  the Mali compiler in `cmpbe_v2_compile_multiple_shaders`).
+- Save states are tied to the build's snapshot schema at run time: a state saved by a CoreCLR build loads on Mono LLVM
+  and NativeAOT builds of the same code but not on mono-aot (non-LLVM) ones.

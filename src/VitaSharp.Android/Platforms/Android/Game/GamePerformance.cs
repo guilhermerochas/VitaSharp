@@ -18,7 +18,12 @@ namespace VitaSharp.Android.Game;
 /// threads and the JIT workers off it, shader workers off it unless the fast cores are idle.</item>
 /// <item><b>ADPF</b> (API 31+): a <c>PerformanceHintManager</c> session for the hot threads; each presented guest frame
 /// reports its work (<see cref="FrameWorkMeter"/>) against the game's frame time (<see cref="FrameRateEstimator"/>:
-/// 16.7 ms at 60 fps, 33.3 ms at 30), so the system raises the clocks before the game falls behind.</item>
+/// 16.7 ms at 60 fps, 33.3 ms at 30), so the system raises the clocks before the game falls behind.
+/// <c>VITASHARP_ANDROID_ADPF=gpu|wall</c> (API 35+, A/B) reports a WorkDuration with the frame's GPU time too
+/// (<see cref="GpuBusy"/>), for systems that scale the GPU from hint sessions.</item>
+/// <item><b>Game APIs</b> (<see cref="NativeGameState"/>): the game mode and thermal headroom in the log;
+/// <c>VITASHARP_ANDROID_GAME_STATE=1</c> adds GameManager.setGameState (loading / gameplay) and the battery mode's
+/// power-efficiency wish.</item>
 /// <item><b>Display rate</b> (API 30+, always on): the game's frame rate goes to <c>Surface.setFrameRate</c> through
 /// <see cref="FrameRateChanged"/>, so a 90/120 Hz panel switches to a rate the frames divide evenly.</item>
 /// <item>hot threads get a 1 us timer slack (sleeps end on time without spinning: <see cref="HostTuning.AvoidBusyWaits"/>).</item>
@@ -42,6 +47,10 @@ public sealed partial class GamePerformance : IDisposable
     long _lastSample = -1, _lastLongWaits;
     int[] _hot = [];
     bool _reported, _firstFrame;
+    readonly AdpfReport _report;
+    readonly NativeGameState _gameState;
+    long _lastGpuBusy = -1, _lastFrameStart = -1;
+    int _steps;
 
     /// <summary>The game's frame rate changed (on the presenting guest thread): the display refresh rate to ask for.</summary>
     public event Action<float>? FrameRateChanged;
@@ -54,6 +63,9 @@ public sealed partial class GamePerformance : IDisposable
         _context = context;
         _enabled = !IsOff(System.Environment.GetEnvironmentVariable(EnvVars.AndroidAffinity));
         HostTuning.AvoidBusyWaits = true;
+        _report = ParseReport(System.Environment.GetEnvironmentVariable(EnvVars.AndroidAdpf));
+        _gameState = new NativeGameState(context);
+        _gameState.SetLoading(true); // the boot, until the first presented frame
         NativeThread.Registered = OnRegistered;
         Display.Presented = OnFrame;
         if (!_enabled)
@@ -72,7 +84,6 @@ public sealed partial class GamePerformance : IDisposable
     /// <summary>Starts the placement steps (call once the emulator exists; its GPU worker may already run).</summary>
     public void Start()
     {
-        if (!_enabled) return;
         _timer ??= new Timer(_ => Step(), null, 500, 1000);
     }
 
@@ -93,6 +104,17 @@ public sealed partial class GamePerformance : IDisposable
     /// <summary>One placement step: sample the threads, plan, apply the masks, update the ADPF session's threads.</summary>
     void Step()
     {
+        // every 5 s: the Android game mode (the user or the OEM game service may switch it while the game runs);
+        // every 30 s: the thermal headroom, for the record (logs/last.log, next to the PERF lines)
+        int step = _steps++;
+        try
+        {
+            if (step % 5 == 0 && _gameState.PollMode())
+                lock (_lock) _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency);
+            if (step % 30 == 0) _gameState.LogThermal();
+        }
+        catch (Exception e) { Fail("gamestate", $"game mode / thermal step failed: {e.Message}"); }
+        if (!_enabled) return;
         try
         {
             var planner = _planner!;
@@ -147,8 +169,8 @@ public sealed partial class GamePerformance : IDisposable
             _hot = plan.HotTids;
             _meter.Reset(_hot, _hot.Select(ThreadCpuNanos).ToArray(), NowNanos());
             if (_hot.Length == 0) return;
-            if (_hints == null) _hints = HintSession.Create(_context, _hot, _rate.TargetNanos);
-            else if (!_hints.SetThreads(_hot)) { _hints.Dispose(); _hints = HintSession.Create(_context, _hot, _rate.TargetNanos); }
+            if (_hints == null) { _hints = HintSession.Create(_context, _hot, _rate.TargetNanos); _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency); }
+            else if (!_hints.SetThreads(_hot)) { _hints.Dispose(); _hints = HintSession.Create(_context, _hot, _rate.TargetNanos); _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency); }
         }
         Log.Info($"ADPF/placement: hot threads {string.Join(", ", plan.HotTids.Select(t => $"{t} '{NativeThread.Names.GetValueOrDefault(t)}'"))}");
     }
@@ -161,6 +183,7 @@ public sealed partial class GamePerformance : IDisposable
         try
         {
             if (!_firstFrame) { _firstFrame = true; LogcatSink.EnterGameplay(); }
+            _gameState.SetLoading(false);
             long longWaits = Volatile.Read(ref VBlank.LongWaits);
             bool longWait = longWaits != _lastLongWaits;
             _lastLongWaits = longWaits;
@@ -176,8 +199,15 @@ public sealed partial class GamePerformance : IDisposable
                 if (_hints == null || _meter.Tids.Length == 0) return;
                 var cpu = new long[_meter.Tids.Length];
                 for (int i = 0; i < cpu.Length; i++) cpu[i] = ThreadCpuNanos(_meter.Tids[i]);
-                long work = _meter.OnFrame(cpu, NowNanos());
-                if (work > 0) _hints.Report(work);
+                long now = NowNanos();
+                long work = _meter.OnFrame(cpu, now);
+                long gpuBusy = GpuBusy.Nanos;
+                long gpu = _lastGpuBusy < 0 ? -1 : gpuBusy - _lastGpuBusy;
+                long wall = _lastFrameStart < 0 ? -1 : now - _lastFrameStart;
+                long start = _lastFrameStart;
+                _lastGpuBusy = gpuBusy;
+                _lastFrameStart = now;
+                if (work > 0) _hints.Report(_report, start, work, gpu, wall);
             }
         }
         catch (Exception e) { Fail("frame", $"frame report failed: {e.Message}"); }
@@ -190,6 +220,30 @@ public sealed partial class GamePerformance : IDisposable
         lock (_failures) if (!_failures.Add(key)) return;
         Log.Warn(message);
     }
+
+    /// <summary>A load (boot, load state) starts or the game shows frames again: GameManager.setGameState, so the
+    /// system may boost the load and knows gameplay from loading screens.</summary>
+    public void SetLoading(bool loading) => _gameState.SetLoading(loading);
+
+    /// <summary>What a frame's ADPF report says (<see cref="EnvVars.AndroidAdpf"/>).</summary>
+    public enum AdpfReport
+    {
+        /// <summary>The busiest hot thread's CPU time (the default).</summary>
+        Cpu,
+        /// <summary>API 35+: a WorkDuration with the CPU time and the GPU time of the frame (renderer timestamps);
+        /// total = the larger of the two. Older systems: as <see cref="Cpu"/>.</summary>
+        Gpu,
+        /// <summary>API 35+: as <see cref="Gpu"/>, total = the frame's wall time (a frame that misses its target says so
+        /// even when neither processor was busy the whole time: the serial game -> GPU chain).</summary>
+        Wall,
+    }
+
+    static AdpfReport ParseReport(string? v) => v?.Trim().ToLowerInvariant() switch
+    {
+        "gpu" => AdpfReport.Gpu,
+        "wall" => AdpfReport.Wall,
+        _ => AdpfReport.Cpu,
+    };
 
     public void Dispose()
     {
@@ -276,10 +330,40 @@ public sealed partial class GamePerformance : IDisposable
             catch (Exception e) { Log.Warn($"ADPF: setThreads failed: {e.Message}"); return false; }
         }
 
-        public void Report(long nanos)
+        bool _workDurationFailed;
+
+        /// <summary>One frame: <paramref name="cpu"/> = the busiest hot thread's CPU time, <paramref name="gpu"/> = the
+        /// GPU time retired since the previous frame (-1 unknown), <paramref name="wall"/> = the frame interval (-1 for
+        /// the first), <paramref name="start"/> = when the interval began (CLOCK_MONOTONIC ns).</summary>
+        public void Report(AdpfReport mode, long start, long cpu, long gpu, long wall)
         {
             if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(31)) return;
-            _session.ReportActualWorkDuration(nanos);
+            if (mode != AdpfReport.Cpu && !_workDurationFailed && start > 0 && gpu >= 0 && wall > 0 && OperatingSystem.IsAndroidVersionAtLeast(35))
+            {
+                long total = mode == AdpfReport.Wall ? wall : Math.Clamp(Math.Max(cpu, gpu), 1, wall);
+                try
+                {
+                    using var d = new WorkDuration
+                    {
+                        WorkPeriodStartTimestampNanos = start,
+                        ActualTotalDurationNanos = total,
+                        ActualCpuDurationNanos = Math.Min(cpu, total),
+                        ActualGpuDurationNanos = Math.Min(gpu, total),
+                    };
+                    _session.ReportActualWorkDuration(d);
+                    return;
+                }
+                catch (Exception e) { _workDurationFailed = true; Log.Warn($"ADPF: WorkDuration report failed ({e.Message}): CPU time only from now"); }
+            }
+            _session.ReportActualWorkDuration(cpu);
+        }
+
+        /// <summary>API 35+: the game mode's wish (battery: efficient cores and clocks first; else speed first).</summary>
+        public void PreferPowerEfficiency(bool on)
+        {
+            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(35)) return;
+            try { _session.SetPreferPowerEfficiency(on); }
+            catch (Exception e) { Log.Warn($"ADPF: setPreferPowerEfficiency failed: {e.Message}"); }
         }
 
         public void UpdateTarget(long nanos)

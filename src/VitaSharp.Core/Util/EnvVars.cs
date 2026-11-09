@@ -302,6 +302,13 @@ public static class EnvVars
     /// width following the view's aspect; the display hardware scales the buffers up. Less to blit and compose per frame.
     /// Default: the view's own size.</summary>
     public const string AndroidSurfaceSize = "VITASHARP_ANDROID_SURFACE_SIZE";
+    /// <summary>Android: what each frame reports to the ADPF hint session: cpu (default: the busiest hot thread's CPU
+    /// time), gpu (API 35+ WorkDuration with the frame's CPU time and the renderer's GPU time) or wall (the same with the
+    /// frame interval as total).</summary>
+    public const string AndroidAdpf = "VITASHARP_ANDROID_ADPF";
+    /// <summary>Android: =1 uses the system's game APIs: GameManager.setGameState (loading / gameplay) and the game mode
+    /// (battery mode asks the ADPF session for power efficiency). Default off (A/B).</summary>
+    public const string AndroidGameState = "VITASHARP_ANDROID_GAME_STATE";
     /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
     public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
     /// <summary>Developer builds: the GPU worker spends FACTOR times its real time on each command (busy wait), to

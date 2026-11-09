@@ -45,6 +45,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
+- [ ] Save state e runtime do Android (09/11/2026, laboratório): um estado salvo por um APK CoreCLR carrega em APKs
+  Mono LLVM e NativeAOT do mesmo código, mas um APK mono-aot sem LLVM recusa ("salvo por outra versão", StateOtherVersion)
+  embora o hash de SnapshotSchema seja igual na compilação: o hash em tempo de execução depende do runtime/AOT (ordem de
+  reflexão ou trimming?). Deixar o hash estável entre runtimes, ou medir a compatibilidade no lugar do hash.
+- [ ] Uncharted (PCSA00029) no Android congela depois de carregar um estado na tela de título (09/11/2026, main
+  9f21653, APK CoreCLR do and_rt; estado do slot 1 salvo no gameplay do Prologue pelo mesmo APK): o log diz "Estado do
+  slot 1 carregado" (0,8 s parado), mas o jogo nunca mais apresenta um quadro (frames presented parado em 1964, GPU
+  submitted == completed, o áudio continua, tela parada no título, 0 fps). 2 de 2 (carga em 30 s e em 50 s). Logs no
+  scratchpad do agente: `lab\uc_clr1\clr_0\last.log`, `lab\uc_clr2\clr_0\last.log`. Ainda não conferido no APK mono.
+- [ ] F1 2011 (PCSE00002) no Android: carregar um estado durante os vídeos de abertura (30 s depois da primeira leitura
+  do controle) falha com "thread 'AudioOutput' did not stop (in ); restart the game" (09/11/2026, main 9f21653, APK
+  CoreCLR; log `lab\f1_clr1\clr_0\last.log` no scratchpad do agente); em 60 s carrega e roda. O roteiro de medida
+  (`build/android-perf-run.sh`) carrega o F1 em 60 s por isso.
 - [x] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
   jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
   salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot

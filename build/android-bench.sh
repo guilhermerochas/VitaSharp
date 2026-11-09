@@ -67,6 +67,8 @@ echo "$rounds rounds in $(( $(date +%s) - start )) s; results $bench/results/$ru
 if [ -n "${PERF:-}" ]; then
   $PERF bench table "$(lp "$bench/results/$run.tsv")" --base "${vs[0]}" --scenes "${SCENES:-3}"
 else
-  dotnet run --project "$(lp "$here/tools/VitaSharp.PerfTools")" -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- \
+  # dotnet run does not take MSBuild's -m (it reached the tool as an argument): build first, then run the build
+  dotnet build "$(lp "$here/tools/VitaSharp.PerfTools")" -c Release -p:VitaSharpDeveloper=true -p:UseSharedCompilation=false -m:2 -v q -nologo >/dev/null
+  dotnet run --no-build --project "$(lp "$here/tools/VitaSharp.PerfTools")" -c Release -p:VitaSharpDeveloper=true -- \
     bench table "$(lp "$bench/results/$run.tsv")" --base "${vs[0]}" --scenes "${SCENES:-3}"
 fi

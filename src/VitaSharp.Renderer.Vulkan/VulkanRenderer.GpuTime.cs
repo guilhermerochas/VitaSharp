@@ -58,8 +58,10 @@ public sealed unsafe partial class VulkanRenderer
         if (_vk.GetQueryPoolResults(_dev, _timePool, (uint)f.TimeQuery, 2, 16, t, 8, QueryResultFlags.Result64Bit) == Result.Success && t[1] >= t[0])
         {
             _lastGpuMs = (t[1] - t[0]) * _timePeriodNs / 1e6;
-            _gpuNs += (t[1] - t[0]) * _timePeriodNs;
+            double ns = (t[1] - t[0]) * _timePeriodNs;
+            _gpuNs += ns;
             _gpuSubmits++;
+            VitaSharp.Core.Util.GpuBusy.Add((long)ns);
         }
         f.TimeQuery = -1;
     }
