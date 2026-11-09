@@ -15,6 +15,8 @@ public enum ExitReason : int
     /// <summary>Managed only (never set by generated code): an SVC was handled inside CpuCore.Run and the thread must leave it
     /// (suspension, pause) before going on at the state's pc.</summary>
     Handled = 7,
+    /// <summary>VMSR entered or left VFP short-vector mode (FPSCR LEN/STRIDE); handled inside CpuCore.Run.</summary>
+    FpMode = 8,
 }
 
 /// <summary>

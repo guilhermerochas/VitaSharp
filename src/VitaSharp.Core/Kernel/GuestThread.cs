@@ -253,6 +253,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                     Scheduler.Yield(this);
                     break;
                 case ExitReason.Handled: // an HLE call ran inside Core.Run; the loop parks the thread if it must
+                case ExitReason.FpMode: // VFP vector mode switch (normally consumed inside Core.Run)
                     break;
                 case ExitReason.Halt:
                     throw new GuestThreadExitException(0, false);

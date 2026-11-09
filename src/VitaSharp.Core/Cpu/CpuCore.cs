@@ -280,6 +280,18 @@ public sealed unsafe class CpuCore : IDisposable
             Block? b = null;
             nint entry = 0;
             if (resume) { resume = false; entry = native!.ResumeEntry; }
+            else if ((s->Fpscr & Vfp.FpscrVectorMask) != 0)
+            {
+                // VFP short-vector mode (FPSCR LEN/STRIDE): only the interpreter models it; generated code assumes
+                // scalar VFP. VMSR ends its block and leaves native code (ExitReason.FpMode), so no generated code
+                // runs in this mode.
+                b = Lookup(s->R[15], s->Thumb != 0);
+                InterpretVector(s, b);
+                BlocksExecuted++;
+                InstructionsExecuted += b.Insts.Length;
+                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
+                goto ran;
+            }
             else
             {
                 if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
@@ -341,6 +353,8 @@ public sealed unsafe class CpuCore : IDisposable
                 InstructionsExecuted += b.Insts.Length;
                 sinceCheck += b.Cycles; BlockCycles += b.Cycles;
             }
+        ran:
+            if (s->Exit == ExitReason.FpMode) s->Exit = ExitReason.None; // VMSR changed the vector mode: the loop picks the path
             if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
             if (s->Exit != ExitReason.None)
             {
@@ -352,7 +366,8 @@ public sealed unsafe class CpuCore : IDisposable
                 sinceCheck = PendingInstructions;
                 PendingInstructions = 0;
                 if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
-                resume = native != null && native.ResumeEntry != 0 && Probes == null && BlockHook == null && !verify;
+                resume = native != null && native.ResumeEntry != 0 && Probes == null && BlockHook == null && !verify
+                    && (s->Fpscr & Vfp.FpscrVectorMask) == 0;
             }
             if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }
         }
@@ -380,6 +395,24 @@ public sealed unsafe class CpuCore : IDisposable
             if (d.EndsBlock || i == insts.Length - 1) s->R[15] = d.Address + d.Size;
             if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond)) continue;
             ptrs[(int)d.Op](s, d.Raw, d.Address);
+        }
+    }
+
+    static bool _vectorModeSeen;
+
+    /// <summary><see cref="Interpret"/> in VFP short-vector mode: the vector-capable VFP instructions run as vectors.</summary>
+    static void InterpretVector(CpuState* s, Block b)
+    {
+        if (!_vectorModeSeen) { _vectorModeSeen = true; Util.Log.Info($"VFP short-vector mode in use (FPSCR 0x{s->Fpscr:X8}, block 0x{b.Start:X8})"); }
+        var insts = b.Insts;
+        var ptrs = HandlerTable.Pointers;
+        for (int i = 0; i < insts.Length; i++)
+        {
+            ref var d = ref insts[i];
+            if (d.EndsBlock || i == insts.Length - 1) s->R[15] = d.Address + d.Size;
+            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond)) continue;
+            if ((s->Fpscr & Vfp.FpscrVectorMask) != 0 && Vfp.IsVectorCapable(d.Op, d.Raw)) Vfp.VectorOp(s, d.Op, d.Raw, d.Address);
+            else ptrs[(int)d.Op](s, d.Raw, d.Address);
         }
     }
 

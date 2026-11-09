@@ -68,8 +68,132 @@ public sealed partial class Taihen : HleModule
         return TAI_ERROR_NOT_FOUND;
     }
 
-    [Hle] int taiHookFunctionExportForUser(uint hook, uint args) => TAI_ERROR_NOT_IMPLEMENTED;
-    [Hle] int taiHookFunctionImportForUser(uint hook, uint args) => TAI_ERROR_NOT_IMPLEMENTED;
+    /// <summary>The function a module exports (libNid TAI_ANY_LIBRARY: any of its libraries), 0 when it does not.</summary>
+    static uint ExportOf(LoadedModule m, uint libNid, uint funcNid)
+    {
+        for (uint p = m.ExportsStart; p < m.ExportsEnd;)
+        {
+            ushort size = GuestMemory.Read<ushort>(p);
+            ushort nfunc = GuestMemory.Read<ushort>(p + 6);
+            uint lib = GuestMemory.R32(p + 0x10), nids = GuestMemory.R32(p + 0x18), entries = GuestMemory.R32(p + 0x1C);
+            if (libNid == TAI_ANY_LIBRARY || libNid == lib)
+                for (uint i = 0; i < nfunc; i++)
+                    if (GuestMemory.R32(nids + i * 4) == funcNid) return GuestMemory.R32(entries + i * 4);
+            if (size == 0) break;
+            p += size;
+        }
+        return 0;
+    }
+
+    /// <summary>The struct _tai_hook_user { next, func, old } that *p_hook points to: TAI_CONTINUE calls <c>old</c>.</summary>
+    uint HookUser(uint func, uint old)
+    {
+        uint user = Emu.Memory.Alloc(12, "taihen hook ref");
+        GuestMemory.W32(user, 0);
+        GuestMemory.W32(user + 4, func);
+        GuestMemory.W32(user + 8, old);
+        return user;
+    }
+
+    /// <summary>
+    /// Hooks import stubs: each jumps to <paramref name="func"/>, and the original is reached through a trampoline
+    /// holding a copy of the first stub (an SVC stub or a jump stub: both run from anywhere). The stubs' previous
+    /// contents are kept for taiHookRelease.
+    /// </summary>
+    int HookStubs(uint hook, List<uint> stubs, uint func)
+    {
+        uint tramp = Emu.Memory.Alloc(12, "taihen import trampoline");
+        GuestMemory.Span(stubs[0], 12).CopyTo(GuestMemory.Span(tramp, 12));
+        Emu.Code.Invalidate(tramp, 12);
+        var saved = new List<(uint, byte[])>();
+        foreach (uint stub in stubs)
+        {
+            saved.Add((stub, GuestMemory.Span(stub, 12).ToArray()));
+            Linker.WriteJumpStub(stub, func);
+            Emu.Code.Invalidate(stub, 12);
+        }
+        GuestMemory.W32(hook, HookUser(func, tramp));
+        lock (_injections)
+        {
+            int uid = _nextInjection++;
+            _stubHooks[uid] = saved;
+            return uid;
+        }
+    }
+
+    // import/export hooks done on stubs: uid -> (stub, its 12 bytes before)
+    readonly Dictionary<int, List<(uint Stub, byte[] Original)>> _stubHooks = new();
+
+    /// <summary>tai_hook_args_t { size, module, library_nid, func_nid, hook_func } (0x14 bytes).</summary>
+    (LoadedModule? Module, string Name, uint LibNid, uint FuncNid, uint Func)? HookArgs(uint args)
+    {
+        if (args == 0 || GuestMemory.R32(args) < 0x14) return null;
+        uint name = GuestMemory.R32(args + 4);
+        return (FindModule(name), name == 0 ? "(main)" : GuestMemory.ReadCString(name), GuestMemory.R32(args + 8), GuestMemory.R32(args + 12), GuestMemory.R32(args + 16));
+    }
+
+    /// <summary>
+    /// taiHookFunctionImportForUser(tai_hook_ref_t *p_hook, tai_hook_args_t *args): the module's import of func_nid
+    /// (from library_nid, any with TAI_ANY_LIBRARY) calls the hook; TAI_CONTINUE reaches what the import was bound to.
+    /// </summary>
+    [Hle]
+    int taiHookFunctionImportForUser(uint hook, uint args)
+    {
+        if (hook == 0 || HookArgs(args) is not { } a || a.Func == 0) return TAI_ERROR_INVALID_ARGS;
+        if (a.Module is not { } m) return TAI_ERROR_NOT_FOUND;
+        var stubs = Emu.Linker.BoundStubs(a.FuncNid, a.LibNid == TAI_ANY_LIBRARY ? null : a.LibNid)
+            .Where(s => m.Segments.Values.Any(g => s >= g.Address && s - g.Address < g.Size)).ToList();
+        if (stubs.Count == 0)
+        {
+            Log.Warn($"taiHookFunctionImportForUser: {a.Name} does not import 0x{a.FuncNid:X8} ({NidDatabase.NameOf(a.FuncNid)})");
+            return TAI_ERROR_NOT_FOUND;
+        }
+        return HookStubs(hook, stubs, a.Func);
+    }
+
+    /// <summary>
+    /// taiHookFunctionExportForUser(tai_hook_ref_t *p_hook, tai_hook_args_t *args): every caller of an exported function
+    /// calls the hook. A Thumb function of a loaded module is hooked in place (as taiHookFunctionOffsetForUser); when
+    /// that cannot be done, and for the firmware functions VitaSharp implements itself, the import stubs bound to it
+    /// are redirected instead (as Vita3K falls back to).
+    /// </summary>
+    [Hle]
+    int taiHookFunctionExportForUser(uint hook, uint args)
+    {
+        if (hook == 0 || HookArgs(args) is not { } a || a.Func == 0) return TAI_ERROR_INVALID_ARGS;
+        uint target = a.Module is { } m ? ExportOf(m, a.LibNid, a.FuncNid) : 0;
+        if (target != 0)
+        {
+            if ((target & 1) != 0)
+            {
+                int r = InlineHook(hook, target & ~1u, a.Func, a.Name);
+                if (r >= 0) return r;
+            }
+            var bound = Emu.Linker.BoundStubs(a.FuncNid).Where(s => JumpTarget(s) == target).ToList();
+            if (bound.Count == 0)
+            {
+                Log.Warn($"taiHookFunctionExportForUser: 0x{a.FuncNid:X8} of {a.Name} at 0x{target:X8} cannot be hooked in place and no import is bound to it");
+                return TAI_ERROR_NOT_IMPLEMENTED;
+            }
+            return HookStubs(hook, bound, a.Func);
+        }
+        // a firmware function: the imports bound to the HLE implementation (SVC stubs carrying the NID)
+        var hle = Emu.Linker.BoundStubs(a.FuncNid).Where(s => (GuestMemory.R32(s) >> 24) == 0xEF && GuestMemory.R32(s + 8) == a.FuncNid).ToList();
+        if (hle.Count == 0 || !Emu.Hle.IsImplemented(a.FuncNid))
+        {
+            Log.Warn($"taiHookFunctionExportForUser: {a.Name} 0x{a.LibNid:X8}/0x{a.FuncNid:X8} ({NidDatabase.NameOf(a.FuncNid)}) not found");
+            return TAI_ERROR_NOT_FOUND;
+        }
+        return HookStubs(hook, hle, a.Func);
+    }
+
+    /// <summary>The target of a movw/movt/bx r12 jump stub, 0 for anything else.</summary>
+    static uint JumpTarget(uint stub)
+    {
+        uint movw = GuestMemory.R32(stub), movt = GuestMemory.R32(stub + 4);
+        if ((movw & 0xFFF0F000) != 0xE300C000 || (movt & 0xFFF0F000) != 0xE340C000 || GuestMemory.R32(stub + 8) != 0xE12FFF1C) return 0;
+        return ((((movt >> 4) & 0xF000) | (movt & 0xFFF)) << 16) | ((movw >> 4) & 0xF000) | (movw & 0xFFF);
+    }
     // hooks: uid -> (patched address, the bytes that were there before)
     readonly Dictionary<int, (uint Address, byte[] Original)> _hooks = new();
 
@@ -95,15 +219,21 @@ public sealed partial class Taihen : HleModule
             Log.WarnOnce($"taihook-arm-{target:X8}", $"taiHookFunctionOffsetForUser: ARM function 0x{target:X8} of {m.Name} not hooked (Thumb only)");
             return TAI_ERROR_NOT_IMPLEMENTED;
         }
-        // whole instructions covering the patch (ldr.w pc, [pc, #imm] + the hook's address: 8 bytes, 10 when not word aligned)
-        uint patch = target % 4 == 0 ? 8u : 10u, moved = 0;
+        return InlineHook(hook, target, func, m.Name);
+    }
+
+    /// <summary>Hooks the Thumb function at <paramref name="target"/> in place (see taiHookFunctionOffsetForUser).</summary>
+    int InlineHook(uint hook, uint target, uint func, string moduleName)
+    {
+        // whole instructions covering the patch (ldr.w pc, [pc, #imm] + the hook's address: 8 bytes)
+        uint patch = 8, moved = 0;
         while (moved < patch)
         {
             ushort hw = GuestMemory.Read<ushort>(target + moved);
             bool wide = (hw >> 11) is 0x1D or 0x1E or 0x1F;
             if (PcRelativeThumb(hw, wide ? GuestMemory.Read<ushort>(target + moved + 2) : (ushort)0))
             {
-                Log.WarnOnce($"taihook-pcrel-{target:X8}", $"taiHookFunctionOffsetForUser: 0x{target:X8} of {m.Name} starts with a PC-relative instruction (0x{hw:X4}): not hooked");
+                Log.WarnOnce($"taihook-pcrel-{target:X8}", $"taihen: 0x{target:X8} of {moduleName} starts with a PC-relative instruction (0x{hw:X4}): not hooked in place");
                 return TAI_ERROR_NOT_IMPLEMENTED;
             }
             moved += wide ? 4u : 2u;
@@ -112,10 +242,7 @@ public sealed partial class Taihen : HleModule
         uint tramp = Emu.Memory.Alloc(moved + 16, "taihen hook");
         GuestMemory.Span(target, (int)moved).CopyTo(GuestMemory.Span(tramp, (int)moved));
         WriteThumbJump(tramp + moved, (target + moved) | 1);
-        uint user = Emu.Memory.Alloc(12, "taihen hook ref");
-        GuestMemory.W32(user, 0);
-        GuestMemory.W32(user + 4, func);
-        GuestMemory.W32(user + 8, tramp | 1);
+        uint user = HookUser(func, tramp | 1);
         var original = GuestMemory.Span(target, (int)patch).ToArray();
         WriteThumbJump(target, func | 1);
         Emu.Code.Invalidate(target, patch);
@@ -129,14 +256,16 @@ public sealed partial class Taihen : HleModule
         }
     }
 
-    /// <summary>ldr.w pc, [pc, #imm] and the destination right after it (8 bytes; 10 when not word aligned).</summary>
+    /// <summary>ldr.w pc, [pc, #imm] and the destination right after it (8 bytes).</summary>
     static void WriteThumbJump(uint at, uint dest)
     {
-        // the literal is read from Align(at + 4, 4) + imm: put it right after the 4-byte instruction
+        // the literal is read from Align(at + 4, 4) + imm and sits right after the 4-byte instruction, at at + 4: imm is
+        // 2 when the instruction is not word aligned (the literal was written 2 bytes further, so a hook placed at a
+        // halfword address jumped through garbage: Dead Space's SceShaccCgExt trampoline went to 0xE7AF0000)
         uint imm = at % 4 == 0 ? 0u : 2u;
         GuestMemory.Write(at, (ushort)0xF8DF);
         GuestMemory.Write(at + 2, (ushort)(0xF000 | imm));
-        GuestMemory.W32(at + 4 + imm, dest);
+        GuestMemory.W32(at + 4, dest);
     }
 
     /// <summary>Thumb instructions that read the PC (they cannot run from the trampoline): branches, literal loads,
@@ -218,11 +347,119 @@ public sealed partial class Taihen : HleModule
     int taiHookRelease(int uid, uint hook)
     {
         (uint Address, byte[] Original) h;
-        lock (_injections) if (!_hooks.Remove(uid, out h)) return TAI_ERROR_NOT_FOUND;
+        List<(uint Stub, byte[] Original)>? stubs;
+        lock (_injections)
+        {
+            if (_stubHooks.Remove(uid, out stubs)) h = (0, []);
+            else if (!_hooks.Remove(uid, out h)) return TAI_ERROR_NOT_FOUND;
+        }
+        if (stubs != null)
+        {
+            foreach (var (stub, original) in stubs)
+            {
+                original.CopyTo(GuestMemory.Span(stub, 12));
+                Emu.Code.Invalidate(stub, 12);
+            }
+            return 0;
+        }
         h.Original.CopyTo(GuestMemory.Span(h.Address, h.Original.Length));
         Emu.Code.Invalidate(h.Address, (uint)h.Original.Length);
         return 0;
     }
+
+    // ------------------------------------------------------------------ taihenUnsafe
+
+    // kernel plugins "loaded" through taiLoadKernelModule: uid -> path. Their kernel code does not run here; the user
+    // API of the one homebrew relies on, kubridge, is HLE (Kubridge).
+    readonly Dictionary<int, string> _kernelModules = new();
+
+    int LoadKernelModule(string path)
+    {
+        if (Emu.Vfs.Resolve(path) is not { } host || !File.Exists(host))
+        {
+            Log.Warn($"taiLoadKernelModule: {path} not found");
+            return SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE;
+        }
+        lock (_kernelModules)
+        {
+            int uid = 0x7F000001 + _kernelModules.Count * 2;
+            _kernelModules[uid] = path;
+            Log.Warn($"taiLoadKernelModule: {path} accepted; its kernel code is not run (uid 0x{uid:X})");
+            return uid;
+        }
+    }
+
+    const int SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE = unchecked((int)0x8002D01C);
+
+    /// <summary>taiLoadKernelModule(path, flags, opt): a kernel plugin (.skprx).</summary>
+    [Hle] int taiLoadKernelModule(string path, int flags, uint opt) => LoadKernelModule(path);
+
+    /// <summary>taiStartKernelModuleForUser(modid, args, opt, int *res): module_start reports SCE_KERNEL_START_SUCCESS.</summary>
+    [Hle]
+    int taiStartKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
+    {
+        lock (_kernelModules) if (!_kernelModules.ContainsKey(modid)) return SceError.INVALID_UID;
+        res.TrySet(0);
+        return 0;
+    }
+
+    /// <summary>taiLoadStartKernelModuleForUser(path, tai_module_args_t *args).</summary>
+    [Hle] int taiLoadStartKernelModuleForUser(string path, uint args) => LoadKernelModule(path);
+
+    /// <summary>taiLoadStartModuleForPidForUser(path, tai_module_args_t *args): a user module loaded into the process
+    /// (args = { size, pid, args, argp, flags }); module_start runs with args/argp.</summary>
+    [Hle]
+    int taiLoadStartModuleForPidForUser(string path, uint args)
+    {
+        uint argc = 0, argp = 0;
+        if (args != 0 && GuestMemory.R32(args) >= 0x10) { argc = GuestMemory.R32(args + 8); argp = GuestMemory.R32(args + 12); }
+        try
+        {
+            var m = Emu.LoadModule(path);
+            if (m.StartEntry != 0) GuestThread.Current!.CallGuest(m.StartEntry, argc, argp);
+            return m.Uid;
+        }
+        catch (FileNotFoundException)
+        {
+            Log.Warn($"taiLoadStartModuleForPidForUser: {path} not found");
+            return SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE;
+        }
+    }
+
+    [Hle]
+    int taiStopKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
+    {
+        lock (_kernelModules) if (!_kernelModules.ContainsKey(modid)) return SceError.INVALID_UID;
+        res.TrySet(0);
+        return 0;
+    }
+
+    [Hle]
+    int taiUnloadKernelModule(int modid, int flags, uint opt)
+    {
+        lock (_kernelModules) return _kernelModules.Remove(modid) ? 0 : SceError.INVALID_UID;
+    }
+
+    [Hle]
+    int taiStopUnloadKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
+    {
+        res.TrySet(0);
+        lock (_kernelModules) return _kernelModules.Remove(modid) ? 0 : SceError.INVALID_UID;
+    }
+
+    /// <summary>taiMemcpyUserToKernel / taiMemcpyKernelToUser(dst, src, len): one address space here.</summary>
+    [Hle] int taiMemcpyUserToKernel(uint dst, uint src, uint len) => Memcpy(dst, src, len);
+    [Hle] int taiMemcpyKernelToUser(uint dst, uint src, uint len) => Memcpy(dst, src, len);
+
+    static int Memcpy(uint dst, uint src, uint len)
+    {
+        if (dst == 0 || src == 0) return TAI_ERROR_INVALID_ARGS;
+        if (len != 0) GuestMemory.Span(src, (int)len).CopyTo(GuestMemory.Span(dst, (int)len));
+        return 0;
+    }
+
+    /// <summary>taiReloadConfig(): taiHEN re-reads its config.txt; plugins are only loaded at boot here.</summary>
+    [Hle] int taiReloadConfig() => 0;
 
     /// <summary>taiInjectRelease(uid): puts the original bytes back.</summary>
     [Hle]
