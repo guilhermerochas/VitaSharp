@@ -147,8 +147,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
-- [ ] Avaliar a versão nova do .NET para desempenho (pedido do usuário, 09/11/2026), desktop e Android: ler as notas
-  oficiais de desempenho da versão (blog "Performance Improvements in .NET" e release notes: JIT/RyuJIT ARM64 e x64,
+- [ ] Avaliar o .NET 11 para desempenho (pedido do usuário, 09/11/2026), desktop e Android: ler as notas
+  oficiais de desempenho do .NET 11 (blog "Performance Improvements in .NET" e release notes: JIT/RyuJIT ARM64 e x64,
   NativeAOT, GC, SIMD/Vector, interop) e listar o que toca o emulador (JIT do guest em C#, renderer, HLE, áudio).
   Depois medir de verdade, sem trocar a main: build numa branch com o SDK novo, desktop (Killzone, Uncharted, F1, Sonic
   Mania: entradas HLE/ms de CPU por quadro) e Android NativeAOT no celular (protocolo do laboratório:
