@@ -66,7 +66,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ead401c (base ebfe72c) 14/8. Não é o runtime e nenhuma chave isola a causa (todas dentro do ruído do controle).
   Ressalva: o APK mono-aot decodifica a 16 ms por chamada contra 10-11 ms nos outros, então a contagem menor pode ser
   efeito de tempo e não de código. O sceAvcdec é igual em todas (0 repetidas, 0 descartadas, 7-8 chamadas sem picture
-  no 1º decodificador). Próximo passo: um mono-aot da main com o mesmo detector, depois bisectar. Logs e prints no
+  no 1º decodificador). Com `VITASHARP_DISPLAY_EARLY_SIGNAL=1` (a622069) cai para 15/13, contra 32/69 sem ela: o tempo
+  do flip/apresentação pesa. Próximo passo: um mono-aot da main com o mesmo detector, depois bisectar. Logs e prints no
   scratchpad do agente: `lab\flicker\{A..J}_{0,1}.log` / `.png`, roteiro `lab\flicker\intro_ab.sh`.
 - [x] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
   jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do

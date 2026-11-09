@@ -379,3 +379,13 @@ every ~4 vblanks (traced: 134 flips in 10 s = 13.4 fps).
   the Mali compiler in `cmpbe_v2_compile_multiple_shaders`).
 - Save states are tied to the build's snapshot schema at run time: a state saved by a CoreCLR build loads on Mono LLVM
   and NativeAOT builds of the same code but not on mono-aot (non-LLVM) ones.
+
+**Sync and display switches, evening (developer NativeAOT APK of perf/android-all a622069, 2 runs each, app fps).**
+Killzone staircase: base 23.5-24.0; `VITASHARP_DISPLAY_EARLY_SIGNAL=1` 26.5-27.7 (+12%, glass wall intact);
+`VITASHARP_GPU_RELAXED_SYNC=1` 22.2-23.5; `VITASHARP_LAZY_WRITEBACK_SYNC=1` 19.9-20.8 (the notification wait falls from
+~6 to ~1 ms/frame but the game thread rises from 11.8 to 14 ms); EARLY + LAZY 21.7-23.0; 4 frames in flight = 8.
+F1 race grid: base 28.9-29.7 (locked 30), EARLY 25.2-25.6 (-15%: GPU worker 22.7 -> 30.7 ms, game thread 12.3 -> 15.4).
+EARLY is therefore a per-game effect, not a safe Android default. In Killzone no thread is saturated (10 s sched trace:
+GPU worker 56% of a core, game thread 32%): the frame is the serial sum of game, worker and GPU time, and the game
+waits ~8 ms/frame in `sceGxmDisplayQueueAddEntry` and ~6 ms on notifications. Uncharted was not measured: its save
+states were from an older snapshot schema.
