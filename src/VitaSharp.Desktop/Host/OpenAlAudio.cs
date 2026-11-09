@@ -24,9 +24,16 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     readonly int _mixRate, _updateSamples;
     readonly List<Stream> _streams = new();
 
-    OpenAlAudio(AL al, ALContext alc, Device* device, Context* context)
+    /// <summary>The device name asked for (--audio-device), null/empty = follow the system default; and the output
+    /// opened now (an ALC_ALL_DEVICES_SPECIFIER name, "" = OpenAL's default).</summary>
+    readonly string? _requested;
+    string _opened = "";
+    long _nextWatch;
+
+    OpenAlAudio(AL al, ALContext alc, Device* device, Context* context, string? requested, string opened)
     {
         _al = al; _alc = alc; _device = device; _context = context;
+        _requested = requested; _opened = opened;
         try { _deviceName = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "?"; } catch { _deviceName = "?"; }
         int freq = 0, refresh = 0;
         try
@@ -73,7 +80,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     /// else the system default unless it is a game controller, in which case the first speaker or headphone output.
     /// "" = OpenAL's own default.
     /// </summary>
-    static string PickDevice(ALContext alc, string? requested)
+    static string PickDevice(ALContext alc, string? requested, bool quiet = false)
     {
         var names = ListDevices(alc, out var def);
         if (!string.IsNullOrWhiteSpace(requested))
@@ -81,19 +88,56 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
             var match = names.FirstOrDefault(n => n.Equals(requested, StringComparison.OrdinalIgnoreCase))
                         ?? names.FirstOrDefault(n => n.Contains(requested, StringComparison.OrdinalIgnoreCase));
             if (match != null) return match;
-            Log.Warn($"Audio: device '{requested}' not found (available: {string.Join(", ", names)}); using the default");
+            if (!quiet) Log.Warn($"Audio: device '{requested}' not found (available: {string.Join(", ", names)}); using the default");
         }
         if (def != null && IsController(def))
         {
             var other = names.FirstOrDefault(n => !IsController(n));
             if (other != null)
             {
-                Log.Info($"Audio: the default output '{def}' is a game controller; using '{other}' instead");
+                if (!quiet) Log.Info($"Audio: the default output '{def}' is a game controller; using '{other}' instead");
                 return other;
             }
         }
-        Log.Info($"Audio: outputs: {string.Join(" | ", names)}; system default: {def ?? "?"}");
+        if (!quiet) Log.Info($"Audio: outputs: {string.Join(" | ", names)}; system default: {def ?? "?"}");
         return def ?? "";
+    }
+
+    const int ALC_CONNECTED = 0x313;
+
+    /// <summary>
+    /// Follows the output: once a second (and whenever a stream stops draining), checks that the device is still
+    /// connected (ALC_EXT_disconnect) and which output should be used (the system default unless it is a game
+    /// controller, or the requested one), and moves the device there with alcReopenDeviceSOFT, keeping the context and
+    /// every source. Called under the lock.
+    /// </summary>
+    void Watch(bool force)
+    {
+        long now = Environment.TickCount64;
+        if (!force && now < _nextWatch) return;
+        _nextWatch = now + 1000;
+        int connected = 1;
+        try { _alc.GetContextProperty(_device, (GetContextInteger)ALC_CONNECTED, 1, &connected); } catch (Exception) { }
+        string target;
+        try { target = PickDevice(_alc, _requested, quiet: true); } catch (Exception) { return; }
+        bool moved = !string.Equals(target, _opened, StringComparison.Ordinal);
+        if (connected != 0 && !moved) return; // nothing to switch to
+        var reopen = (delegate* unmanaged[Cdecl]<Device*, byte*, int*, byte>)_alc.GetProcAddress(_device, "alcReopenDeviceSOFT");
+        string why = connected == 0 ? "the output was disconnected" : "the system default output changed";
+        if (reopen == null)
+        {
+            Log.WarnOnce("al-reopen", $"Audio: {why}, and this OpenAL has no alcReopenDeviceSOFT");
+            return;
+        }
+        var bytes = System.Text.Encoding.UTF8.GetBytes(target + "\0");
+        byte ok;
+        fixed (byte* n = bytes) ok = reopen(_device, target.Length == 0 ? null : n, null);
+        if (ok != 0)
+        {
+            Log.Info($"Audio: {why}: now on '{(target.Length == 0 ? "the default output" : target)}' (was '{_opened}')");
+            _opened = target;
+        }
+        else Log.WarnOnce($"al-reopen-fail-{target}", $"Audio: {why}, and reopening on '{target}' failed");
     }
 
     public static OpenAlAudio? TryCreate(string? requestedDevice = null)
@@ -108,7 +152,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
             if (dev == null) { Log.Warn("OpenAL: no output device"); return null; }
             var ctx = alc.CreateContext(dev, null);
             alc.MakeContextCurrent(ctx);
-            var a = new OpenAlAudio(al, alc, dev, ctx);
+            var a = new OpenAlAudio(al, alc, dev, ctx, requestedDevice ?? Environment.GetEnvironmentVariable(EnvVars.AudioDevice), name);
             Log.Info($"Audio: OpenAL Soft, {a.Describe()}");
             AudioDiagnostics.DeviceInfo = a.Describe;
             return a;
@@ -250,6 +294,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
 
         public void Submit(ReadOnlySpan<short> interleaved)
         {
+            long waitStart = 0;
             while (true)
             {
                 if (_o._paused)
@@ -262,6 +307,18 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                 lock (_o._lock)
                 {
                     _o._alc.MakeContextCurrent(_o._context);
+                    // a queue that stays full for 250 ms: the device stopped consuming (lost, or moved by the system).
+                    // A DualShock 4 (a headset output of its own) plugged in and out several times left the output
+                    // stalled: no buffer came back, sceAudioOutOutput blocked for good and Dead Space went silent
+                    long now = Environment.TickCount64;
+                    _o.Watch(force: waitStart != 0 && now - waitStart > 250);
+                    if (waitStart != 0 && now - waitStart > 1000)
+                    {
+                        // never hold the guest's audio thread: this grain is dropped
+                        Log.WarnOnce("al-stalled", "Audio: the output device stopped playing; grains are dropped until it recovers");
+                        Interlocked.Increment(ref _underruns);
+                        return;
+                    }
                     Reclaim();
                     _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
                     // Stopped (not Initial): the queue ran dry, the guest did not submit in time (audible gap). Counted
@@ -297,6 +354,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                         return;
                     }
                 }
+                if (waitStart == 0) waitStart = Environment.TickCount64;
                 Thread.Sleep(1); // 1 ms system timer while a game runs (Runner: timeBeginPeriod)
             }
         }
