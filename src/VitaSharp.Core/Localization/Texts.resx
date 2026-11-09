@@ -2907,4 +2907,16 @@
   <data name="OpenGamesFolderTip" xml:space="preserve">
     <value>Open the games folder (ux0:app): {0}</value>
   </data>
+  <data name="SectionAudio" xml:space="preserve">
+    <value>Audio</value>
+  </data>
+  <data name="AudioOutput" xml:space="preserve">
+    <value>Audio output</value>
+  </data>
+  <data name="AudioOutputDetail" xml:space="preserve">
+    <value>Where the sound of games and the Vita system plays. A chosen output is kept: if it is unplugged the system default plays until it is back. The system default never moves to a game controller's headset jack on its own</value>
+  </data>
+  <data name="AudioOutputDefault" xml:space="preserve">
+    <value>System default</value>
+  </data>
 </root>

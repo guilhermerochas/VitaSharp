@@ -2907,4 +2907,16 @@
   <data name="OpenGamesFolderTip" xml:space="preserve">
     <value>Abrir pasta dos jogos (ux0:app): {0}</value>
   </data>
+  <data name="SectionAudio" xml:space="preserve">
+    <value>Áudio</value>
+  </data>
+  <data name="AudioOutput" xml:space="preserve">
+    <value>Saída de áudio</value>
+  </data>
+  <data name="AudioOutputDetail" xml:space="preserve">
+    <value>Onde toca o som dos jogos e do Sistema do Vita. A saída escolhida é mantida: se for desconectada, o padrão do sistema toca até ela voltar. O padrão do sistema nunca passa sozinho para o fone de um controle</value>
+  </data>
+  <data name="AudioOutputDefault" xml:space="preserve">
+    <value>Padrão do sistema</value>
+  </data>
 </root>
