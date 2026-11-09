@@ -328,6 +328,9 @@ public static class EnvVars
     /// <summary>1 (A/B): a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with
     /// the later sync points and transfers) instead of the GPU worker waiting for the frame. Default 0.</summary>
     public const string TransferDefer = "VITASHARP_TRANSFER_DEFER";
+    /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
+    /// read the previous content, as before 240a8de). Default on.</summary>
+    public const string TransferWritebackWait = "VITASHARP_TRANSFER_WRITEBACK_WAIT";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";

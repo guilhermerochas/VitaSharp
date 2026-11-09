@@ -146,7 +146,7 @@ public sealed unsafe partial class VulkanRenderer
         // the previous frame's (black) pixels whenever the frame was still in flight and the intro cutscene went dark for
         // a frame. Only the frame that publishes those rows (and the older ones, retired first) is waited for, not every
         // frame in flight (VITASHARP_TRANSFER_DEFER=1: not even that, see VulkanRenderer.TransferDefer.cs)
-        if (PendingWritebackFrame(lo, hi) is { } f)
+        if (TransferWritebackWait && PendingWritebackFrame(lo, hi) is { } f)
         {
             bool recording = f == F && f.Recording;
             if (_xferPendingWaits++ < 20 || TraceSync)
@@ -209,6 +209,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     readonly List<RenderTarget> _xferTargets = new();
+
+    /// <summary>VITASHARP_TRANSFER_WRITEBACK_WAIT=0 (A/B): no wait for a writeback in flight (the behaviour before 240a8de).</summary>
+    static readonly bool TransferWritebackWait = Environment.GetEnvironmentVariable(EnvVars.TransferWritebackWait) != "0";
 
     /// <summary>The newest frame not retired yet with a writeback that lands in [lo, hi), or null.</summary>
     Frame? PendingWritebackFrame(ulong lo, ulong hi)
