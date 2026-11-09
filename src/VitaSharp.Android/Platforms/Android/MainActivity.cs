@@ -15,10 +15,17 @@ public sealed class MainActivity : MauiAppCompatActivity
 {
     public static MainActivity? Current { get; private set; }
 
+    /// <summary>Set on a second instance that only hands its intent to the first one and closes.</summary>
+    bool _duplicate;
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        if (Current is { IsDestroyed: false, IsFinishing: false } first && !ReferenceEquals(first, this))
+        {
+            ForwardToFirst(first, savedInstanceState);
+            return;
+        }
         Current = this;
-        ReleaseWindowFromOtherActivity();
         base.OnCreate(savedInstanceState);
         // the screens are always dark (Ui/Theme), but the MAUI theme asks for dark status/navigation bar icons (a light
         // window): they were nearly invisible on the dark background
@@ -34,27 +41,30 @@ public sealed class MainActivity : MauiAppCompatActivity
     }
 
     /// <summary>
-    /// The app has one MAUI window (MauiReactor's application hands the same one to every activity). MAUI refuses to
-    /// attach it to a new MainActivity while it still belongs to another live one ("This window is already associated
-    /// with an active Activity"), which killed 4 of 10 cold launches of the Native AOT build. The new activity is the
-    /// one on screen: the window is detached from the old one first (logged, with what the old one was).
+    /// A launch intent that arrives while a game is in front (GameActivity on top of the task, so singleTop does not
+    /// reuse the first MainActivity) creates a second MainActivity. The app has one MAUI window, which MAUI cannot hand
+    /// to a second live activity ("This window is already associated with an active Activity"; detaching it from the
+    /// first one fails later with "Window was already created"), so the second instance closes at once and the first
+    /// one handles the intent (the game in front gets it as a new intent). MAUI's OnCreate runs Android's onCreate
+    /// before it throws for the window, so the activity is in a valid state to finish.
     /// </summary>
-    void ReleaseWindowFromOtherActivity()
+    void ForwardToFirst(MainActivity first, Bundle? savedInstanceState)
     {
-        try
-        {
-            if (Microsoft.Maui.Controls.Application.Current?.Windows is not { Count: > 0 } windows) return;
-            foreach (var w in windows)
-            {
-                if (w.Handler?.PlatformView is not Activity old || ReferenceEquals(old, this) || old.IsDestroyed) continue;
-                bool sameJava = old.Handle == Handle;
-                Core.Util.Log.Warn($"MAUI window still attached to another {old.GetType().Name} (same Java object {sameJava}, " +
-                                   $"finishing {old.IsFinishing}): detached for the new activity");
-                w.Handler?.DisconnectHandler();
-                if (!sameJava && !old.IsFinishing) old.Finish();
-            }
-        }
-        catch (Exception e) { Core.Util.Log.Warn($"MAUI window check: {e.Message}"); }
+        _duplicate = true;
+        Core.Util.Log.Info("Second MainActivity: its launch intent goes to the first one");
+        try { base.OnCreate(savedInstanceState); }
+        catch (InvalidOperationException e) { Core.Util.Log.Info($"Second MainActivity: {e.Message}"); }
+        var intent = Intent;
+        Finish();
+        first.LaunchRequestedGame(intent);
+    }
+
+    protected override void OnPostCreate(Bundle? savedInstanceState)
+    {
+        if (!_duplicate) { base.OnPostCreate(savedInstanceState); return; }
+        // Android's onPostCreate runs first; MAUI's window events after it have no window for this instance
+        try { base.OnPostCreate(savedInstanceState); }
+        catch (InvalidOperationException e) { Core.Util.Log.Info($"Second MainActivity: {e.Message}"); }
     }
 
     protected override void OnNewIntent(Intent? intent)
@@ -89,6 +99,7 @@ public sealed class MainActivity : MauiAppCompatActivity
     protected override void OnResume()
     {
         base.OnResume();
+        if (_duplicate) return;
         Current = this;
         // the game process may have changed the statistics and "last played"
         if (AppServices.Initialized) AppServices.ReloadPrefs();
