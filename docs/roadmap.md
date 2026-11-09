@@ -297,6 +297,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
   modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
   medir no Killzone com e sem o modo desempenho
+  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
+  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
 - [ ] Vibração dos botões na tela enquanto segura o analógico (pedido do usuário, 07/11/2026): opção nos controles por
   toque para os botões virtuais vibrarem ao serem tocados mesmo com o outro dedo no analógico (hoje o toque multiponto
   com o analógico pressionado não dá retorno tátil); intensidade ajustável e desligável, por perfil de controle
@@ -1517,7 +1519,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   que também prendia o foco do diálogo do Origin (X em CONTINUE não fazia nada). Com o b3c16ca, do boot sem estado: X
   passa o diálogo do Origin e A/D do teclado viram o carro na corrida (`scratchpad/bugsB1/nfs_b1_sheet.png`,
   `nfs_steer_proof.png`)
-- [ ] Need for Speed Most Wanted (PCSE00089): depois de "trocar de carro" a tela fica preta (relato do usuário,
+- [x] Need for Speed Most Wanted (PCSE00089): depois de "trocar de carro" a tela fica preta (relato do usuário,
   08/11/2026, `captures\PCSE00089_20261108_183918_tudo`, build 3261a98). Achados (agente B): reproduz no replay-gpu (388
   quadros pretos). A cena é desenhada (HDR F16 e o tonemap em 0x60A99800 com conteúdo); o último passe (fs
   3C7FBEE743D02522, LUT 16x2048) recebe da CPU escala 0,0795 / viés -0,0049 contra 0,9708 / 0,0135 numa corrida normal:
@@ -1529,7 +1531,10 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   SceMp4/sceAvcdec acontece; a tela segue escura. Próximo: chegar à troca de carro sem estado (dirigir até um ponto de
   troca) com trace do SceMp4/sceAvcdec desde a abertura do filme e ver o que o player do jogo (entry 0x816361B5) espera
   de um filme sem áudio (fim de stream, sceMp4Reset para repetir, relógio de áudio)
-- [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
+  Corrigido (08/11/2026, 64a15c4, merge f4097ef, agente B): o `sceMp4GetNextUnit` devolvia um erro negativo inventado
+  no fim do stream; o libscemp4 3.74 devolve 1. O player do jogo tratava o negativo como erro de leitura, o demuxer
+  parava e o decodificador de vídeo esperava para sempre (tela preta depois da prévia do carro)
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
   08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Achados (agente B): reproduz do estado da
   gravação com o build 3261a98 (~250 quadros depois do estado): 'main' espera a eventflag AkManualEvent, o
   'AK::EventManager' (Wwise) gira LockLwMutex/UnlockLwMutex2 em 0x81513A2C esperando um buffer de stream ([obj+0x9C] >
@@ -1542,6 +1547,9 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   travamento a contagem de pendentes está em 0 (IO dormindo) e o EventManager espera dados de um stream: um pedido
   sumiu ou nunca foi feito. As semânticas de eventflag/lwmutex do HLE conferem; falta seguir quem chama 0x81517354
   (enfileira) e 0x815173CC/0x815173AE (pausa/retoma) perto do travamento. Causa ainda aberta
+  Corrigido (08/11/2026, 0d19271, merge f4097ef, agente B): quando a corrente de buffers de um player do NGS (ou
+  ATRAC9) termina (próximo índice -1), o buffer atual (+4) guardava o -1; o Wwise lê +4 como slot do anel e o
+  AK::EventManager girava no ReleaseBuffer para sempre. Agora o último buffer fica como atual (como o Vita3K)
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   Fechado (08/11/2026): roda até o gameplay (9bc0d66); a imagem "zuada" e os controles seguem num item próprio se o usuário detalhar
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
@@ -1782,8 +1790,8 @@ fs8):
   - SceAppMgrUser::sceAppMgrCheckRifGD (0x6E5CBCA2) — feita (feat/hle-unimplemented-2)
   - SceAppMgrUser::sceAppMgrMmsMount (0xF4730BA8) — feita (feat/hle-unimplemented-2)
   - SceAppMgrUser::sceAppMgrSetBackRenderPortOwner (0x7149016E) — feita (feat/hle-unimplemented-2)
-  - SceCodecEngineUser::NID_9A5E7B2F (0x9A5E7B2F)
-  - SceCodecEngineUser::NID_9AD7E66F (0x9AD7E66F)
+  - SceCodecEngineUser::NID_9A5E7B2F (0x9A5E7B2F) — feita (15dc989, 07/11/2026; conferido em 08/11/2026)
+  - SceCodecEngineUser::NID_9AD7E66F (0x9AD7E66F) — feita (15dc989, 07/11/2026; conferido em 08/11/2026)
   - SceErrorUser::sceErrorHistoryPostError (0xBC416CFA) — feita (feat/hle-unimplemented-2)
   - SceHttp::NID_855D5254 (0x855D5254) — feita (feat/hle-unimplemented-2)
   - SceModulemgr::sceKernelInhibitLoadingModule (0x6CED1F63) — feita (feat/hle-unimplemented-2)
