@@ -42,6 +42,9 @@ public static class Strings
     public static string ForceStop => T();
     public static string GoToGame => T();
     public static string GoToGameTip => T();
+    public static string OpenFileSystem => T();
+    public static string OpenFileSystemTip(string path) => F(T(), path);
+    public static string OpenGamesFolderTip(string path) => F(T(), path);
     public static string ShowLog => T();
     public static string HideLog => T();
     public static string Ok => T();

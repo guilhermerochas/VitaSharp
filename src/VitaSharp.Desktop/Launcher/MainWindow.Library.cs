@@ -27,7 +27,7 @@ public sealed partial class MainWindow
         _filtersHost = new Border();
         _resultsHost = new Border();
 
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Margin = new Thickness(0, 0, 0, 20) };
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"), Margin = new Thickness(0, 0, 0, 20) };
         header.Children.Add(_k.VStack(2, _k.Heading(S.Library, 30), _k.Text(S.LibrarySubtitle(_all.Count, _all.Count(g => g.Category == "gd")), 13.5, color: P.Muted)));
         _search = new TextBox
         {
@@ -45,9 +45,15 @@ public sealed partial class MainWindow
         refresh.Margin = new Thickness(0, 0, 12, 0);
         refresh.VerticalAlignment = VerticalAlignment.Center;
         header.Children.Add(Kit.At(refresh, col: 2));
+        // ux0:app, where the installed games are
+        var gamesFolder = Path.Combine(Program.Ux0, "app");
+        var openGames = _k.Secondary("", "folder", () => { Directory.CreateDirectory(gamesFolder); OpenPath(gamesFolder); }, 46, tip: S.OpenGamesFolderTip(gamesFolder));
+        openGames.Margin = new Thickness(0, 0, 12, 0);
+        openGames.VerticalAlignment = VerticalAlignment.Center;
+        header.Children.Add(Kit.At(openGames, col: 3));
         var add = InstallMenu(46);
         add.VerticalAlignment = VerticalAlignment.Center;
-        header.Children.Add(Kit.At(add, col: 3));
+        header.Children.Add(Kit.At(add, col: 4));
         page.Children.Add(header);
 
         page.Children.Add(Kit.At(_filtersHost, row: 1));
