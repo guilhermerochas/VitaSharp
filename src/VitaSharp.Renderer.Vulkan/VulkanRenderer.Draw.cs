@@ -357,11 +357,60 @@ public sealed unsafe partial class VulkanRenderer
         catch { }
     }
 
+    /// <summary>
+    /// The shader entry a draw's program and texture formats gave last time, so most draws skip the hint key (an FNV
+    /// over the 16 texture units and every vertex attribute) and the cache lookup: the key depends only on the program
+    /// object, the formats of the units it samples and (fragment) the colour format and variant flags, all compared
+    /// here. Direct-mapped by program. VITASHARP_SHADER_MEMO=0 turns it off (A/B).
+    /// </summary>
+    sealed class ShaderMemo
+    {
+        public object? Program;
+        public uint Extra;
+        public readonly uint[] Formats = new uint[16];
+        public object? Entry;
+    }
+
+    static readonly bool ShaderMemoOn = Environment.GetEnvironmentVariable(Core.Util.EnvVars.ShaderMemo) != "0";
+    readonly ShaderMemo[] _vsMemo = NewShaderMemos(), _fsMemo = NewShaderMemos();
+    static ShaderMemo[] NewShaderMemos() { var a = new ShaderMemo[64]; for (int i = 0; i < a.Length; i++) a[i] = new ShaderMemo(); return a; }
+    static ShaderMemo MemoSlot(ShaderMemo[] table, object program) => table[System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(program) & 63];
+
+    static bool MemoHit(ShaderMemo m, object program, uint extra, GxmTextureDesc[] tex, uint used)
+    {
+        if (!ReferenceEquals(m.Program, program) || m.Extra != extra || m.Entry == null) return false;
+        for (uint u = used & 0xFFFF; u != 0; u &= u - 1)
+        {
+            int i = System.Numerics.BitOperations.TrailingZeroCount(u);
+            if (m.Formats[i] != tex[i].Format) return false;
+        }
+        return true;
+    }
+
+    static void MemoStore(ShaderMemo m, object program, uint extra, GxmTextureDesc[] tex, uint used, object entry)
+    {
+        m.Program = program; m.Extra = extra; m.Entry = entry;
+        for (uint u = used & 0xFFFF; u != 0; u &= u - 1)
+        {
+            int i = System.Numerics.BitOperations.TrailingZeroCount(u);
+            m.Formats[i] = tex[i].Format;
+        }
+    }
+
     VsEntry GetVertexShader(DrawCommand d)
     {
         var vp = d.VertexProgram;
         // the cache key is computed without building the hints (thousands of draws per frame hit the cache)
         uint mask = VertexVaryingMask(d);
+        var memo = MemoSlot(_vsMemo, vp);
+        if (ShaderMemoOn && MemoHit(memo, vp, mask, d.VertexTextures, vp.Info.TexturesUsed)) return (VsEntry)memo.Entry!;
+        var found = GetVertexShaderKeyed(d, vp, mask);
+        if (ShaderMemoOn) MemoStore(memo, vp, mask, d.VertexTextures, vp.Info.TexturesUsed, found);
+        return found;
+    }
+
+    VsEntry GetVertexShaderKeyed(DrawCommand d, GxmVertexProgram vp, uint mask)
+    {
         ulong hk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: mask, scaledPointSize: vp.Info.Program.WritesPointSize);
         if (_vsCache.TryGetValue((vp, hk), out var e)) return e;
         var me = GetModule(vp.Info.Program, hk, VertexHints, d, mask);
@@ -380,6 +429,18 @@ public sealed unsafe partial class VulkanRenderer
     {
         var fp = d.FragmentProgram;
         uint colorFormat = _rt?.ColorFormat ?? 0;
+        // the plain variant only (the fetch and tile-word variants are rarer); render-target reinterpretation hints depend
+        // on the textures' memory, not only their formats: no memo above native resolution
+        if (!ShaderMemoOn || ResScale > 1f || fetchInput || tileWord1 || fetchSingle) return GetFragmentShaderKeyed(d, fp, colorFormat, fetchInput, tileWord1, fetchSingle);
+        var memo = MemoSlot(_fsMemo, fp);
+        if (MemoHit(memo, fp, colorFormat, d.FragmentTextures, fp.Info.TexturesUsed)) return (FsEntry)memo.Entry!;
+        var found = GetFragmentShaderKeyed(d, fp, colorFormat, false, false, false);
+        MemoStore(memo, fp, colorFormat, d.FragmentTextures, fp.Info.TexturesUsed, found);
+        return found;
+    }
+
+    FsEntry GetFragmentShaderKeyed(DrawCommand d, GxmFragmentProgram fp, uint colorFormat, bool fetchInput, bool tileWord1, bool fetchSingle)
+    {
         // above native: textures that reinterpret a render target are sampled at the native texel mapping
         var rtBits = RtReinterpretHints(d.FragmentTextures, fp.Info.TexturesUsed);
         ulong hk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, colorFormat, fetchInput, NativeOutputFormat(fp), tileWord1, fetchSingle, rtBits: rtBits);

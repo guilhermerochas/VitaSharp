@@ -25,6 +25,9 @@ public sealed unsafe partial class VulkanRenderer
         /// <summary><see cref="AddressSpace.Id"/> of the process whose memory the contents were read from (0 for CDRAM
         /// and kernel memory, the same in every space): private memory at the same address is another process's data.</summary>
         public int SpaceId;
+        /// <summary>How often the contents changed after the first upload (the content cache keeps images from the second
+        /// change on: VulkanRenderer.TexContentCache.cs).</summary>
+        public int Changes;
     }
 
     /// <summary>The id the texture cache keeps for data at <paramref name="addr"/> read now (see <see cref="Texture.SpaceId"/>).</summary>
@@ -57,7 +60,7 @@ public sealed unsafe partial class VulkanRenderer
         double f = System.Diagnostics.Stopwatch.Frequency / 1000.0;
         return $"PERF texcache ({DirtyPages.Mode switch { "0" => "dirty tracking off", "verify" => "verify", _ => "dirty tracking" }}): " +
                $"{_texChecks / frames:F1} checks/frame, {_texSkipped / frames:F1} clean (skipped), {_texHashed / frames:F1} hashed " +
-               $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame ({_texUploadTicks / f / frames:F3} ms/frame, {_texUploadRepeats / frames:F2} of contents uploaded before), " +
+               $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame ({_texUploadTicks / f / frames:F3} ms/frame, {_texUploadRepeats / frames:F2} of contents uploaded before), content cache {_texContentHits / frames:F2} images taken back/frame ({_contentCache.Count} kept, {_contentCacheBytes >> 20} MB), " +
                $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "")
                + (_opt.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget: {_inspectBackground} inspected in the background, {_inspectStale} changed before their turn, {_inspectQueue.Count} still queued)" : "");
     }
@@ -645,6 +648,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
         if (tex != null && tex.CheckedFrame == FrameCount && tex.SpaceId == SpaceIdOf(addr)) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
+        ProfMark(ProfPhase.TexMemLookup); // everything up to here: the unit's lookups
 
         var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         bool cube = asCube || d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
@@ -673,6 +677,7 @@ public sealed unsafe partial class VulkanRenderer
         bool written = tex == null || tex.ForceCheck || tex.SpaceId != spaceId
             || DirtyPages.WrittenSince(addr + residentOffset, total - residentOffset, tex.Stamp)
             || (paletted && DirtyPages.WrittenSince(d.PaletteAddress, paletteBytes, tex.Stamp));
+        ProfMark(ProfPhase.TexMemCheck); // the layout and the dirty-page check
         if (!written && !DirtyPages.Verify)
         {
             _texSkipped++;
@@ -717,17 +722,54 @@ public sealed unsafe partial class VulkanRenderer
         Log.WarnOnce($"texfmtinfo{d.Format:X}{d.TextureType:X}", $"[gpu] texture format 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} first seen {w}x{h} mips {mips}");
         if (!_core.SupportsSampled(format)) { Log.WarnOnce($"texfmt{format}", $"Texture format {format} not supported for sampling"); return (default, default); }
 
+        var texSwizzle = Formats.TextureSwizzle(d.Format);
+        // BC4/BC5 as ASTC luminance(+alpha): the channels come from L (and A)
+        if (astc is { } ch) texSwizzle = AstcTranscoder.Compose(texSwizzle, ch);
+        (Image, ImageView, ImageMemoryPool.Allocation) NewTextureImage() =>
+            CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+                mips - lodMin, faces, cube: cube, swizzle: texSwizzle);
+        // a decoder output read with the size of the picture before the newest: the GPU would have read that picture,
+        // before the CPU decoded the next one over it (Gpu/DecoderOutputs.cs). Checked again on its next use.
+        var earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
+        // contents this texture (or another one with the same key layout) had before: take that image back, no upload
+        bool fromCache = false;
+        if (ContentCacheOn && earlier == null && hash != 0)
+        {
+            ulong oldHash = tex?.Hash ?? 0; // what the current image holds (a forced re-check does not change that)
+            if (TakeCachedContent(key, hash) is { } cached)
+            {
+                if (tex == null)
+                {
+                    EvictOverlappingTextures(addr, total);
+                    tex = new Texture();
+                    _textures[key] = tex;
+                    _texSrcTex = tex;
+                    _fNewTextures++;
+                }
+                else KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total);
+                (tex.Image, tex.View, tex.Mem) = cached;
+                tex.Changes++;
+                fromCache = true;
+                BumpTexEpoch(0); // the texture's view changed
+            }
+            else if (tex != null && tex.Changes > 0 && oldHash != 0 && total <= ContentCacheMaxTexture)
+            {
+                // a texture whose contents keep changing: its current image is kept for that content, the new content
+                // goes into a new image
+                KeepContent(key, oldHash, tex.Image, tex.View, tex.Mem, total);
+                (tex.Image, tex.View, tex.Mem) = NewTextureImage();
+                tex.Changes++;
+                BumpTexEpoch(0);
+            }
+            else if (tex != null) tex.Changes++;
+        }
         if (tex == null)
         {
             // textures of memory that now holds this one are stale: drop those unused for a while (streaming games
             // reuse memory for textures of other sizes/formats, whose cache entries otherwise stayed forever)
             EvictOverlappingTextures(addr, total);
             tex = new Texture();
-            var swizzle = Formats.TextureSwizzle(d.Format);
-            // BC4/BC5 as ASTC luminance(+alpha): the channels come from L (and A)
-            if (astc is { } ch) swizzle = AstcTranscoder.Compose(swizzle, ch);
-            (tex.Image, tex.View, tex.Mem) = CreateImage(MemCat.Texture, baseW, baseH, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
-                mips - lodMin, faces, cube: cube, swizzle: swizzle);
+            (tex.Image, tex.View, tex.Mem) = NewTextureImage();
             _textures[key] = tex;
             _texSrcTex = tex;
             _fNewTextures++;
@@ -742,9 +784,13 @@ public sealed unsafe partial class VulkanRenderer
         tex.LastUsedFrame = FrameCount;
         tex.DataStart = addr;
         tex.DataSize = total;
-        // a decoder output read with the size of the picture before the newest: the GPU would have read that picture,
-        // before the CPU decoded the next one over it (Gpu/DecoderOutputs.cs). Checked again on its next use.
-        var earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
+        if (fromCache)
+        {
+            _texContentHits++;
+            _texUploads--; // counted above, nothing was uploaded
+            ProfMark(ProfPhase.TexMemHash);
+            return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
+        }
         if (earlier != null)
         {
             tex.Hash = 0;
@@ -755,7 +801,9 @@ public sealed unsafe partial class VulkanRenderer
         {
             using var source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
             long u0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            ProfMark(ProfPhase.TexMemHash); // hashing the changed memory, a new image
             UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
+            ProfMark(ProfPhase.TexMemUpload);
             _texUploadTicks += System.Diagnostics.Stopwatch.GetTimestamp() - u0;
             if (_uploadedContents.Count > 65536) _uploadedContents.Clear();
             if (!_uploadedContents.Add(hash ^ (ulong)d.Format * 0x9E3779B97F4A7C15UL ^ ((ulong)w << 48) ^ ((ulong)h << 32))) _texUploadRepeats++;
@@ -1122,6 +1170,7 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyTextures()
     {
+        FlushContentCache(now: true);
         foreach (var t in _textures.Values)
         {
             _vk.DestroyImageView(_dev, t.View, null);

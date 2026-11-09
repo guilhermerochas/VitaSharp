@@ -248,7 +248,21 @@ public sealed unsafe partial class VulkanRenderer
         _overlapKeys.Clear();
         foreach (var (k, t) in _textures)
             if (t.DataStart < end && addr < (ulong)t.DataStart + t.DataSize && FrameCount - t.LastUsedFrame >= TrimMinAge) _overlapKeys.Add(k);
-        foreach (var k in _overlapKeys) { _evOverlap++; ReleaseTexture(k, _textures[k], now: false); }
+        foreach (var k in _overlapKeys)
+        {
+            _evOverlap++;
+            var t = _textures[k];
+            // streaming games bring such textures back: the image is kept for its content (VulkanRenderer.TexContentCache.cs)
+            if (ContentCacheOn && t.Hash != 0 && t.DataSize <= ContentCacheMaxTexture) // Hash: what the image holds (0 when unknown)
+            {
+                _textures.Remove(k);
+                _evTextures++;
+                _evTextureBytes += (long)t.Mem.Size;
+                BumpTexEpoch(0);
+                KeepContent(k, t.Hash, t.Image, t.View, t.Mem, t.DataSize);
+            }
+            else ReleaseTexture(k, t, now: false);
+        }
     }
 
     /// <summary>Whether a render target is still needed as is: in use by the current scene/presentation, or its
@@ -397,6 +411,7 @@ public sealed unsafe partial class VulkanRenderer
                 ? Evict(need + (128ul << 20), minAge: 2, rtIdle: RtIdleFrames, lostIdle: long.MaxValue, now: true)
                 : Evict(ulong.MaxValue, minAge: 1, rtIdle: 1, lostIdle: RtLostIdleFrames, now: true);
             freed += TrimWritebackPool(minAge: 0); // idle writeback staging (host memory)
+            freed += FlushContentCache(now: true); // images kept for earlier texture contents
             // 3. empty pages back to the driver (a buffer or a page of another size may fit where the page was)
             ulong trimmed = _imagePool.TrimEmptyPages(keepSpare: device ? 0 : 1);
             _reclaimTicks += Stopwatch.GetTimestamp() - t0;
