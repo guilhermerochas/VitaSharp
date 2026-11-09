@@ -993,8 +993,14 @@ public sealed unsafe partial class VulkanRenderer
             _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
             for (int i = 1; i < 4; i++) _dyn.Sets[i] = sets[i].Handle;
             _dyn.SetsBound = true;
-            for (int s = 0; s < 16; s++)
-                if ((vs.StreamMask & (1u << s)) != 0) _cmd.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
+            // one call for every stream (the bindings between them get the dummy buffer): each vkCmd* costs driver CPU
+            if (vs.StreamMask != 0)
+            {
+                int lo = System.Numerics.BitOperations.TrailingZeroCount(vs.StreamMask), hi = 31 - System.Numerics.BitOperations.LeadingZeroCount(vs.StreamMask);
+                for (int s = lo + 1; s < hi; s++)
+                    if ((vs.StreamMask & (1u << s)) == 0) { vbufs[s] = _dummyBuffer; voffs[s] = 0; }
+                _cmd.CmdBindVertexBuffers(cmd, (uint)lo, (uint)(hi - lo + 1), &vbufs[lo], &voffs[lo]);
+            }
             if (vs.DummyBinding)
             {
                 var db = _dummyBuffer; ulong dz = 0;
@@ -1126,6 +1132,9 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
+        // VITASHARP_DEPTH_OPS_NONE: what the pending tiled renderings do with depth/stencil (a stencil test counts as a write)
+        _chainDepthUse |= depthTest || stencil;
+        _chainDepthWrite |= front.DepthWrite || back.DepthWrite || stencil;
         if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _cmd.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
         if (stencil)
         {

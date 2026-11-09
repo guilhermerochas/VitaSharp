@@ -52,7 +52,26 @@ public sealed unsafe partial class VulkanRenderer
         long dt = Stopwatch.GetTimestamp() - t0;
         _retireWaitTicks[c] += dt;
         if (TraceSync && Ms(dt) >= 20) _longWait = (cause, Ms(dt));
+        if (SyncCallers) NoteBlockedCaller(cause, dt);
     }
+
+    /// <summary>VITASHARP_SYNC_CALLERS=1: every blocking fence wait is attributed to its callers (3 frames of the stack),
+    /// summed in the PERF sync line: which code makes the GPU worker wait for the GPU.</summary>
+    static readonly bool SyncCallers = Environment.GetEnvironmentVariable(EnvVars.SyncCallers) == "1";
+    readonly Dictionary<string, (long Count, long Ticks)> _blockedCallers = new();
+
+    void NoteBlockedCaller(RetireCause cause, long ticks)
+    {
+        var names = new StackTrace(2, false).GetFrames().Select(f => DiagnosticMethodInfo.Create(f)?.Name ?? "?")
+            .Where(n => n is not ("RetireFrame" or "WaitFrameFence")).Take(3);
+        string key = $"{cause}:{string.Join("<", names)}";
+        var (n, t) = _blockedCallers.GetValueOrDefault(key);
+        _blockedCallers[key] = (n + 1, t + ticks);
+    }
+
+    string BlockedCallersReport() => !SyncCallers || _blockedCallers.Count == 0 ? "" :
+        "; blocked by " + string.Join(", ", _blockedCallers.OrderByDescending(kv => kv.Value.Ticks).Take(8)
+            .Select(kv => $"{kv.Key} {kv.Value.Count}x {Ms(kv.Value.Ticks):F0} ms"));
 
     /// <summary>The oldest submitted frame that has not been retired (frames retire in submission order).</summary>
     Frame? OldestInFlight()
@@ -144,6 +163,7 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append($"; uniform blocks {_statUniformBytes / wf / 1024:F0} KB/frame, guest memory into the CDRAM mirror {_statMirrorCopyBytes / wf / 1024:F0} KB/frame");
         sb.Append(RangeCacheReport());
         sb.Append(TexSetReuseReport());
+        sb.Append(BlockedCallersReport());
         return sb.ToString();
     }
 }

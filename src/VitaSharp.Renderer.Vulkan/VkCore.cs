@@ -503,6 +503,10 @@ public sealed unsafe class VkCore : IDisposable
         if (MemoryBudgetSupported) exts.Add(MemoryBudgetExtension);
         if (RasterizationOrderColor) exts.Add(roaaName!);
         if (mirrorExt) exts.Add(MirrorClampExtension);
+        // LOAD_OP_NONE / STORE_OP_NONE: an attachment no draw of a rendering uses keeps its memory without tile traffic
+        string? noneExt = devExts.Contains("VK_KHR_load_store_op_none") ? "VK_KHR_load_store_op_none" : devExts.Contains("VK_EXT_load_store_op_none") ? "VK_EXT_load_store_op_none" : null;
+        LoadStoreOpNone = noneExt != null;
+        if (noneExt != null) exts.Add(noneExt);
         // VITASHARP_AFBC_LOG=1: the driver reports whether render targets are framebuffer-compressed (Mali AFBC)
         CompressionQuery = Environment.GetEnvironmentVariable(EnvVars.AfbcLog) == "1" && devExts.Contains(CompressionControlExtension);
         if (CompressionQuery) exts.Add(CompressionControlExtension);
@@ -746,6 +750,9 @@ public sealed unsafe class VkCore : IDisposable
 
     const string MemoryBudgetExtension = "VK_EXT_memory_budget";
     const string CompressionControlExtension = "VK_EXT_image_compression_control";
+
+    /// <summary>VK_KHR/EXT_load_store_op_none is enabled (AttachmentLoadOp/StoreOp NONE).</summary>
+    public bool LoadStoreOpNone;
 
     /// <summary>VK_EXT_image_compression_control is enabled to query render targets' compression (VITASHARP_AFBC_LOG).</summary>
     public bool CompressionQuery;

@@ -179,9 +179,10 @@ public static class EnvVars
     public const string TexSetPersist = "VITASHARP_TEXSET_PERSIST";
     /// <summary>1: vkQueuePresentKHR runs on a thread of its own, off the GPU worker (VulkanRenderer.PresentThread.cs).</summary>
     public const string PresentThread = "VITASHARP_PRESENT_THREAD";
-    /// <summary>1: a deferred single-sampled scene rendering is begun over the tiles its draws can write (the union of
-    /// their region clips and viewports) instead of the whole surface, so a tiler loads and stores only those tiles
-    /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs).</summary>
+    /// <summary>A deferred single-sampled scene rendering is begun over the tiles its draws can write (the union of their
+    /// region clips and viewports) instead of the whole surface, so a tiler loads and stores only those tiles
+    /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs). Default on for tile-based GPUs
+    /// (0 turns it off, 1 forces it elsewhere).</summary>
     public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
     /// <summary>1: logs, per render-target format, the framebuffer compression the driver applied (Mali AFBC) through
     /// VK_EXT_image_compression_control, where the device has it.</summary>
@@ -345,6 +346,14 @@ public static class EnvVars
     /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
     /// read the previous content, as before 240a8de). Default on.</summary>
     public const string TransferWritebackWait = "VITASHARP_TRANSFER_WRITEBACK_WAIT";
+    /// <summary>1: the PERF sync line attributes every blocking GPU fence wait of the worker to its callers (stack).</summary>
+    public const string SyncCallers = "VITASHARP_SYNC_CALLERS";
+    /// <summary>Tile-based GPUs with VK_*_load_store_op_none: depth/stencil that no draw of a rendering tests or writes is
+    /// neither loaded nor stored; only tested, it is not stored. Default on there (0 turns it off).</summary>
+    public const string DepthOpsNone = "VITASHARP_DEPTH_OPS_NONE";
+    /// <summary>1 (measurement only, wrong picture): render-target regions sampled as textures are copied once and never
+    /// refreshed, to bound the GPU cost of those copies (bench).</summary>
+    public const string RegionCopySkip = "VITASHARP_REGION_COPY_SKIP";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";

@@ -824,7 +824,7 @@ public sealed unsafe partial class VulkanRenderer
         public long LastUsedFrame;
     }
 
-    readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();
+    readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();    static readonly bool RegionCopySkip = Environment.GetEnvironmentVariable(EnvVars.RegionCopySkip) == "1";
 
     /// <summary>True when <paramref name="rt"/> is the only colour target whose memory intersects [addr, addr + bytes).</summary>
     bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
@@ -867,6 +867,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         r.LastUsedFrame = FrameCount;
         if (r.Version == rt.Version) return r.View;
+        // VITASHARP_REGION_COPY_SKIP=1 (measurement only, wrong picture): an existing region is not refreshed, to bound what
+        // the copies cost on a tiler
+        if (RegionCopySkip && r.Version >= 0) return r.View;
         r.Version = rt.Version;
         // another surface's region is copied before the open rendering; a region of the scene's own surface too when
         // the rendering has not drawn there, else it ends the rendering
