@@ -284,6 +284,32 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   CPU por desenho (o jogo fica nos 20 fps dele). Um save state carregado mantém os stubs de SVC de quando foi salvo (o
   código do guest só entra num boot novo). O que ainda sai do código nativo em quantidade: lwmutex (objetos do host),
   `sceKernelGetProcessTimeWide` e os setters de estado do contexto da libgxm (estado em C#)
+- [x] Rodadas 17-18 de desempenho (perf/desktop-17, 09/11/2026): HLE que vira código do guest (a chamada não sai do
+  código nativo; no celular cada saída é uma transição nativo -> gerenciado). Medido headless no PC com a máquina a
+  87-100% de CPU por builds do Android (fps e ms/quadro viraram ruído; o que vale é entradas no código nativo/quadro):
+  (1) lwmutex com o estado só na área de trabalho do guest (`Kernel/Sync.cs`: +0 UID do dono com bit 31 = alguém
+  dorme, +8 contagem, +16 UID, 0 depois de apagado; protocolo de futex), lock/trylock/unlock sem disputa e
+  `sceKernelSignalLwCond(All)` sem ninguém esperando em código do guest (LDREX/STREX), o resto no C#;
+  `VITASHARP_HLE_GUEST_CODE=nolw` desliga. Killzone `kzl_walk3`: `killzone_vita` 2.587-2.674 -> 1.886-2.075
+  entradas/quadro (sem as ~640 + 640 chamadas de lwmutex), JobSched ~560 -> ~470; Sonic Mania `main` 1.863 ->
+  1.112 (-40%), CPU da `main` 3,31 -> 3,17 ms/quadro; FIFA 13 e Uncharted quase não usam lwmutex. (2) Os setters do
+  contexto da libgxm (programas, índices de visibilidade, depth func/write, fragment enable, two-sided, stencil
+  func/ref, region clip, viewport: 17 funções) gravam no próprio contexto imediato (128 bytes do guest com uma marca
+  em +11; `GxmContext.SyncGuestState`/`PublishGuestState`, o C# lê antes de desenhar/reservar/executar listas/salvar);
+  contextos diferidos e contextos de save states antigos (64 bytes) continuam no C#; `=nogxmctx` desliga. Killzone:
+  JobSched 513-570 -> 223-257 entradas/quadro (CPU 2,72 -> 2,03 ms/quadro por thread), `killzone_vita` 2.007 ->
+  1.713. Uncharted: ~1.500 das 3.600 entradas/quadro da thread principal eram esses setters. (3) Também em código do
+  guest: as consultas de parâmetro de programa GXP, `sceGxmPrecomputedDrawSetVertexStream` e
+  `sceGxmSetUniformDataF` de arrays F32 de 2 ou 4 componentes (Uncharted mandava ~530/quadro ao C#). (4) Save state:
+  ao carregar, `Linker.RebindHleStubs` + `HleGuestCode.Replace` religam os stubs de HLE às rotinas desta build (609
+  stubs no Killzone); validado em gameplay do Killzone: salvar e carregar na mesma build e carregar com o código do
+  guest ligado um estado salvo com `=nogxmctx`. Bug achado no caminho (corrigido antes do hash): as reservas do uniform
+  buffer padrão liam o programa antigo (antes da sincronização), e os textos do Killzone saíam como blocos. Descartado: `sceKernelGetProcessTimeWide` como código do guest (o
+  valor depende da posição emulada da thread e do máximo monotônico entre threads). Achado: o F1 2011 chama
+  `sceKernelGetProcessTimeWide` ~2.200 vezes por quadro (51% das entradas da thread principal), em espera ativa
+  (cresce com o tempo livre): no PC não custa fps; no celular é uma transição por chamada (candidato a intrínseco no
+  JIT ARM64). Falta: medir no celular (APK mono-aot, `env.txt` com `VITASHARP_HLE_GUEST_CODE` vazio / `nolw` /
+  `nogxmctx`, Killzone, Uncharted e F1: ms da thread do jogo e fps).
 
 ## Android
 

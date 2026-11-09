@@ -29,7 +29,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     readonly Emulator _emu;
     /// <summary>The process the thread belongs to.</summary>
     public Emulator Process => _emu;
-    public int Pid => _emu.Pid;
+    public int Pid => _emu?.Pid ?? 0; // 0: a thread object made without a process (unit tests)
     public CpuCore Core { get; }
     public HleContext Hle { get; }
     public uint Entry { get; }

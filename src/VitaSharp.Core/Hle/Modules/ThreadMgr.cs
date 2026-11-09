@@ -613,11 +613,11 @@ public sealed partial class ThreadMgr : HleModule
     internal int sceKernelCreateLwMutex(uint work, string name, uint attr, int initCount, uint opt)
     {
         if (work == 0) return SceError.INVALID_ARGUMENT;
-        var m = new Mutex { Name = name, Attr = attr, InitCount = initCount, WorkArea = work };
+        var m = new Mutex { Name = name, Attr = attr, InitCount = initCount, WorkArea = work, Threads = K.Objects };
         int uid = K.Objects.Register(m);
         GuestMemory.Span(work, 32).Clear();
-        GuestMemory.W32(work + 12, attr);
-        GuestMemory.W32(work + 16, (uint)uid);
+        GuestMemory.W32(work + Mutex.LwAttrOffset, attr);
+        GuestMemory.W32(work + Mutex.LwUidOffset, (uint)uid);
         m.InitOwner(Self, initCount);
         return 0;
     }
@@ -747,6 +747,7 @@ public sealed partial class ThreadMgr : HleModule
         int uid = K.Objects.Register(new CondVar { Name = name, Attr = attr, Mutex = m, WorkArea = work });
         GuestMemory.W32(work, (uint)uid);
         GuestMemory.W32(work + 4, (uint)m.Uid);
+        GuestMemory.W32(work + CondVar.LwQueuedOffset, 0); // no waiter queued: signals are guest code (HleGuestCode)
         return 0;
     }
 

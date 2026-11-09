@@ -23,7 +23,13 @@ public sealed partial class Mutex
     internal int OwnerUid;
     internal void Save(SnapshotWriter w) { w.Write(Attr); w.Write(InitCount); w.WriteKernelObject(Owner); w.Write(LockCount); w.Write(WorkArea); w.Write(_deleted); }
     internal void Load(SnapshotReader r) { Attr = r.ReadUInt32(); InitCount = r.ReadInt32(); OwnerUid = r.ReadInt32(); LockCount = r.ReadInt32(); WorkArea = r.ReadUInt32(); _deleted = r.ReadBool(); }
-    internal void Resolve(ObjectTable t) => Owner = OwnerUid != 0 ? t.Get<GuestThread>(OwnerUid) : null;
+    /// <summary>A lightweight mutex's owner and count are its guest work area's (restored with the memory): the owner
+    /// word is rewritten without <see cref="Contended"/>, since no thread sleeps on it after a load.</summary>
+    internal void Resolve(ObjectTable t)
+    {
+        if (IsLight) Threads = t;
+        Owner = OwnerUid != 0 ? t.Get<GuestThread>(OwnerUid) : null;
+    }
 }
 
 public sealed partial class CondVar

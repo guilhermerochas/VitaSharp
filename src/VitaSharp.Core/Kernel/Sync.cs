@@ -302,27 +302,53 @@ public sealed partial class EventFlag : KernelObject
     }
 }
 
-/// <summary>Mutex used both for SceKernelMutex and lightweight mutexes (whose work area mirrors the state).</summary>
+/// <summary>
+/// Mutex used both for SceKernelMutex and lightweight mutexes. A lightweight mutex's state lives in its guest work area
+/// (SceKernelLwMutexWork), the only copy: +0 the owner's thread UID (0 = free; bit 31 <see cref="Contended"/>: a thread
+/// sleeps on it), +8 the lock count, +12 the attributes, +16 the mutex UID (0 once deleted). As in the real SceLibKernel
+/// (and the futex protocol of Linux's NPTL), an uncontended lock and unlock are atomic operations on that memory by
+/// the caller itself, guest code that never enters the kernel (Hle/HleGuestCode: lock = compare-and-swap 0 -> own
+/// UID, unlock = swap back to 0 unless a sleeper set <see cref="Contended"/>); only a lock that must wait and an
+/// unlock that must wake someone come here.
+/// </summary>
 public sealed partial class Mutex : KernelObject
 {
     public override int UidClass => IsLight ? 10 : 4;
     public const uint AttrRecursive = 0x02;
+    /// <summary>Owner word bit: at least one thread waits (or is about to) in <see cref="Lock"/>, so the owner's unlock
+    /// must go through the kernel to wake it. Thread UIDs are positive, so the bit is free.</summary>
+    public const uint Contended = 0x80000000;
+    public const uint LwOwnerOffset = 0, LwCountOffset = 8, LwAttrOffset = 12, LwUidOffset = 16;
     public uint Attr;
     public int InitCount;
-    public GuestThread? Owner;
-    public int LockCount;
+    GuestThread? _owner;
+    int _lockCount;
     public int Waiters;
     public uint WorkArea; // lightweight mutex work area (0 for normal mutexes)
+    /// <summary>The kernel's objects (lightweight mutexes: the owner word holds a UID, resolved through this).</summary>
+    public ObjectTable? Threads;
     bool _deleted;
     int _cancelled;
 
     public bool IsLight => WorkArea != 0;
 
-    void UpdateWorkArea()
+    /// <summary>The owner word for stores (its page is marked written).</summary>
+    ref int OwnerWord => ref GuestMemory.Ref<int>(WorkArea + LwOwnerOffset);
+    /// <summary>The owner word, read without marking its page written.</summary>
+    unsafe int OwnerWordValue => Volatile.Read(ref *(int*)GuestMemory.Ptr(WorkArea + LwOwnerOffset));
+    uint OwnerUidWord => (uint)OwnerWordValue & ~Contended;
+
+    /// <summary>The owning thread (a lightweight mutex: the UID in its work area).</summary>
+    public GuestThread? Owner
     {
-        if (WorkArea == 0) return;
-        GuestMemory.W32(WorkArea + 0, Owner != null ? (uint)Owner.Uid : 0);
-        GuestMemory.W32(WorkArea + 8, (uint)LockCount);
+        get => IsLight ? (OwnerUidWord is var u and not 0 ? Threads?.Get<GuestThread>((int)u) : null) : _owner;
+        set { if (IsLight) Volatile.Write(ref OwnerWord, value?.Uid ?? 0); else _owner = value; }
+    }
+
+    public int LockCount
+    {
+        get => IsLight ? (int)GuestMemory.R32(WorkArea + LwCountOffset) : _lockCount;
+        set { if (IsLight) GuestMemory.W32(WorkArea + LwCountOffset, (uint)value); else _lockCount = value; }
     }
 
     public void InitOwner(GuestThread? t, int count)
@@ -330,28 +356,76 @@ public sealed partial class Mutex : KernelObject
         lock (this)
         {
             if (count > 0) { Owner = t; LockCount = count; }
-            UpdateWorkArea();
+            else if (IsLight) { Owner = null; LockCount = 0; }
         }
     }
 
     int FailedToOwn => IsLight ? SceError.LW_MUTEX_FAILED_TO_OWN : SceError.MUTEX_FAILED_TO_OWN;
     int Recursive => IsLight ? SceError.LW_MUTEX_RECURSIVE : SceError.MUTEX_RECURSIVE;
 
+    /// <summary>A lightweight mutex's owner word can be taken: free, or held by a thread that has ended.</summary>
+    bool LightFree(int w) => w == 0 || Threads?.Get<GuestThread>(w & (int)~Contended) is not { } o || o.Status == ThreadStatus.Dormant;
+
+    /// <summary>Takes a lightweight mutex for <paramref name="self"/> if it is free (under this object's lock); keeps
+    /// <see cref="Contended"/> when other threads still sleep on it.</summary>
+    bool LightTryAcquire(GuestThread self, int otherWaiters)
+    {
+        while (true)
+        {
+            int w = OwnerWordValue;
+            if (!LightFree(w)) return false;
+            int mine = self.Uid | (otherWaiters > 0 ? unchecked((int)Contended) : 0);
+            if (Interlocked.CompareExchange(ref OwnerWord, mine, w) == w) return true;
+        }
+    }
+
+    /// <summary>Wait predicate of a lightweight lock: true once the mutex can be taken; otherwise marks it
+    /// <see cref="Contended"/> (before the caller sleeps, under this object's lock) so the owner's unlock comes here.</summary>
+    bool LightReady()
+    {
+        while (true)
+        {
+            int w = OwnerWordValue;
+            if (LightFree(w)) return true;
+            if ((w & unchecked((int)Contended)) != 0) return false;
+            if (Interlocked.CompareExchange(ref OwnerWord, w | unchecked((int)Contended), w) == w) return false;
+        }
+    }
+
+    /// <summary>Releases a lightweight mutex completely (count 0, owner word 0, which also clears <see cref="Contended"/>:
+    /// sleepers set it again when they find it taken) and wakes the sleepers.</summary>
+    void LightRelease()
+    {
+        LockCount = 0;
+        Interlocked.Exchange(ref OwnerWord, 0);
+        Monitor.PulseAll(this);
+    }
+
     public int TryLock(GuestThread self, int count)
     {
         lock (this)
         {
+            if (IsLight)
+            {
+                if (OwnerUidWord == (uint)self.Uid)
+                {
+                    if ((Attr & AttrRecursive) == 0) return Recursive;
+                    LockCount += count;
+                    return SceError.OK;
+                }
+                if (!LightTryAcquire(self, Waiters)) return FailedToOwn;
+                LockCount = count;
+                return SceError.OK;
+            }
             if (Owner == self)
             {
                 if ((Attr & AttrRecursive) == 0) return Recursive;
                 LockCount += count;
-                UpdateWorkArea();
                 return SceError.OK;
             }
             if (Owner != null) return FailedToOwn;
             Owner = self;
             LockCount = count;
-            UpdateWorkArea();
             return SceError.OK;
         }
     }
@@ -361,24 +435,31 @@ public sealed partial class Mutex : KernelObject
         if (count <= 0) return SceError.INVALID_ARGUMENT;
         lock (this)
         {
-            if (Owner == self)
+            if (IsLight ? OwnerUidWord == (uint)self.Uid : Owner == self)
             {
                 if ((Attr & AttrRecursive) == 0) return Recursive;
                 LockCount += count;
-                UpdateWorkArea();
                 return SceError.OK;
             }
+            if (IsLight && LightTryAcquire(self, Waiters)) { LockCount = count; return SceError.OK; }
             Waiters++;
             int gen = _cancelled;
             try
             {
-                int r = Wait.Until(this, (m: this, gen), static t => t.m.Owner == null || t.m.Owner.Status == ThreadStatus.Dormant, timeout,
-                    static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                if (r != SceError.OK) return r;
-                Owner = self;
-                LockCount = count;
-                UpdateWorkArea();
-                return SceError.OK;
+                while (true)
+                {
+                    int r = IsLight
+                        ? Wait.Until(this, (m: this, gen), static t => t.m.LightReady(), timeout,
+                            static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription)
+                        : Wait.Until(this, (m: this, gen), static t => t.m._owner == null || t.m._owner.Status == ThreadStatus.Dormant, timeout,
+                            static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+                    if (r != SceError.OK) return r;
+                    // a lightweight mutex can be taken by guest code between the wake-up and here: wait again
+                    if (IsLight && !LightTryAcquire(self, Waiters - 1)) continue;
+                    if (!IsLight) Owner = self;
+                    LockCount = count;
+                    return SceError.OK;
+                }
             }
             finally { Waiters--; }
         }
@@ -388,11 +469,17 @@ public sealed partial class Mutex : KernelObject
     {
         lock (this)
         {
-            if (Owner != self) return IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
+            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self) return IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
             if (count > LockCount) return IsLight ? SceError.LW_MUTEX_UNLOCK_UDF : SceError.MUTEX_UNLOCK_UDF;
-            LockCount -= count;
-            if (LockCount == 0) Owner = null;
-            UpdateWorkArea();
+            int left = LockCount - count;
+            if (IsLight)
+            {
+                if (left != 0) LockCount = left;
+                else LightRelease();
+                return SceError.OK;
+            }
+            LockCount = left;
+            if (left == 0) Owner = null;
             Monitor.PulseAll(this);
             return SceError.OK;
         }
@@ -403,11 +490,11 @@ public sealed partial class Mutex : KernelObject
     {
         lock (this)
         {
-            if (Owner != self) return -1;
+            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self) return -1;
             int c = LockCount;
+            if (IsLight) { LightRelease(); return c; }
             LockCount = 0;
             Owner = null;
-            UpdateWorkArea();
             Monitor.PulseAll(this);
             return c;
         }
@@ -425,7 +512,6 @@ public sealed partial class Mutex : KernelObject
             _cancelled++;
             LockCount = newCount;
             Owner = newCount > 0 ? self : null;
-            UpdateWorkArea();
             Monitor.PulseAll(this);
             return SceError.OK;
         }
@@ -436,16 +522,20 @@ public sealed partial class Mutex : KernelObject
         lock (this)
         {
             _deleted = true;
-            Owner = null;
             LockCount = 0;
-            if (WorkArea != 0) GuestMemory.W32(WorkArea, 0);
+            Owner = null;
+            // the guest fast paths check the UID word: a deleted mutex's calls come to the kernel (UNKNOWN_LW_MUTEX_ID)
+            if (IsLight) GuestMemory.W32(WorkArea + LwUidOffset, 0);
             Monitor.PulseAll(this);
         }
     }
 }
 
 /// <summary>Condition variable bound to a mutex (SceKernelCond and lightweight conds). Waiters queue in arrival order;
-/// a signal releases the first one, SignalTo a specific thread, SignalAll every waiter.</summary>
+/// a signal releases the first one, SignalTo a specific thread, SignalAll every waiter. A lightweight cond publishes the
+/// number of queued waiters in its work area (+0 its UID, +4 its mutex's, +8 <see cref="LwQueuedOffset"/>), so a signal
+/// with nobody to wake, the common case, is guest code that never enters the kernel (Hle/HleGuestCode). A waiter counts
+/// itself there before its mutex is released: a signaller holding the mutex always sees it.</summary>
 public sealed partial class CondVar : KernelObject
 {
     public override int UidClass => WorkArea != 0 ? 11 : 5;
@@ -454,6 +544,9 @@ public sealed partial class CondVar : KernelObject
     public uint WorkArea;
     public int Waiters;
     bool _deleted;
+    public const uint LwQueuedOffset = 8;
+
+    void PublishQueued(int n) { if (WorkArea != 0) GuestMemory.W32(WorkArea + LwQueuedOffset, (uint)n); }
 
     sealed class Waiter
     {
@@ -470,10 +563,11 @@ public sealed partial class CondVar : KernelObject
         int count;
         lock (this)
         {
+            PublishQueued(_queue.Count + 1); // this waiter, before its mutex goes
             // a wait reissued by a save state load released its mutex before the state was saved
             count = self.CondReissueCount > 0 ? self.CondReissueCount : Mutex.ReleaseAll(self);
             self.CondReissueCount = 0;
-            if (count < 0) return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
+            if (count < 0) { PublishQueued(_queue.Count); return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED; }
             self.CondWaitCount = count; // save states: the lock count the reissued wait gives back
             Waiters++;
             var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
@@ -490,7 +584,7 @@ public sealed partial class CondVar : KernelObject
             finally
             {
                 Waiters--;
-                if (!w.Released) _queue.Remove(node);
+                if (!w.Released) { _queue.Remove(node); PublishQueued(_queue.Count); }
                 w.Thread = null!;
                 if (_freeNodes.Count < 64) _freeNodes.Push(node);
             }
@@ -506,6 +600,7 @@ public sealed partial class CondVar : KernelObject
     {
         node.Value.Released = true;
         _queue.Remove(node);
+        PublishQueued(_queue.Count);
     }
 
     public void Signal()
@@ -544,7 +639,13 @@ public sealed partial class CondVar : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            // the guest fast paths check the UID word: a deleted cond's signals come to the kernel (UNKNOWN_LW_COND_ID)
+            if (WorkArea != 0) GuestMemory.W32(WorkArea, 0);
+            Monitor.PulseAll(this);
+        }
     }
 }
 

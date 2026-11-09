@@ -237,6 +237,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         const uint FallbackIndex = 0x123; // the SVC a routine leaves to C# with
         uint stack = fx.Memory.Alloc(0x100, "gcstack");
         bool fellBack = false;
+        float[]? floats = null; // s0.. for the next RunGuest
         uint RunGuest(string name, params uint[] args)
         {
             uint nid = VitaSharp.Core.Hle.NidDatabase.LookupName(name).First(n => n.Library == "SceGxm").Nid;
@@ -247,6 +248,8 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
             uint sp = stack + 0x80;
             for (int i = 0; i < args.Length; i++) { if (i < 4) s->R[i] = args[i]; else GuestMemory.W32(sp + (uint)(i - 4) * 4, args[i]); }
             s->R[13] = sp; s->R[14] = trap; s->R[15] = code; s->Thumb = 0;
+            if (floats != null) for (int i = 0; i < floats.Length; i++) ((float*)s->D)[i] = floats[i];
+            floats = null;
             Assert.Equal(VitaSharp.Core.Cpu.ExitReason.Svc, core.Run());
             fellBack = s->SvcImm == FallbackIndex;
             Assert.Equal(sp, s->R[13]);
@@ -296,6 +299,103 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         c.SyncGuestState();
         Assert.Equal((2, 1, 2), ((int)c.State.CullMode, (int)c.State.Front.PolygonMode, (int)c.State.Back.PolygonMode));
 
+        // context state setters: a context without the guest layout goes to C#; with it, the stores are read back by Sync
+        if (VitaSharp.Core.Hle.HleGuestCode.ContextState)
+        {
+            RunGuest("sceGxmSetVertexProgram", ctx, 0x81000400);
+            Assert.True(fellBack);
+            RunGuest("sceGxmSetVertexProgram", 0, 0x81000400); // NULL: ignored, no fallback
+            Assert.False(fellBack);
+            uint gctx = fx.Memory.Alloc(VitaSharp.Core.Gxm.GxmContext.GuestSize, "gcctx2");
+            GuestMemory.Fill(gctx, 0, VitaSharp.Core.Gxm.GxmContext.GuestSize);
+            var vp = new VitaSharp.Core.Gxm.GxmVertexProgram { Handle = 0x81000400, Info = null!, Attributes = [], Streams = [] };
+            var g = new VitaSharp.Core.Gxm.GxmContext { Handle = gctx, GuestState = true, ResolveVertexProgram = h => h == vp.Handle ? vp : null };
+            g.PublishGuestState();
+            g.SyncGuestState();
+            var before = g.State;
+            Assert.Equal(before, new VitaSharp.Core.Gxm.GxmContext { Handle = 0 }.State); // the defaults survive the round trip
+            void Run(string f, params uint[] a) { RunGuest(f, [gctx, .. a]); Assert.False(fellBack, f); }
+            Run("sceGxmSetVertexProgram", 0x81000400);
+            Run("sceGxmSetFragmentProgram", 0x81000500);
+            Run("sceGxmSetFrontVisibilityTestIndex", 7);
+            Run("sceGxmSetBackVisibilityTestIndex", 9);
+            Run("sceGxmSetFrontDepthFunc", 2u << 22);
+            Run("sceGxmSetBackDepthFunc", 5u << 22);
+            Run("sceGxmSetFrontDepthWriteEnable", 1); // SCE_GXM_DEPTH_WRITE_DISABLED
+            Run("sceGxmSetBackDepthWriteEnable", 0);
+            Run("sceGxmSetFrontFragmentProgramEnable", 1);
+            Run("sceGxmSetBackFragmentProgramEnable", 0);
+            Run("sceGxmSetFrontStencilFunc", 3u << 25, 1, 2, 0xB, 0x3C, 0xC3); // two-sided off: the back side too
+            Run("sceGxmSetFrontStencilRef", 0x55);
+            Run("sceGxmSetRegionClip", 0x80000000, 4, 6, 100, 200);
+            floats = [1.5f, 2.5f, -3.5f, 4.5f, 0.25f, 0.75f];
+            Run("sceGxmSetViewport");
+            g.SyncGuestState();
+            var st = g.State;
+            Assert.Same(vp, g.VertexProgram);
+            Assert.Null(g.FragmentProgram); // not registered
+            Assert.Equal((7u, 9u), (g.VisFrontIndex, g.VisBackIndex));
+            Assert.Equal((2, 5), ((int)st.Front.DepthFunc, (int)st.Back.DepthFunc));
+            Assert.Equal((false, true, false, true), (st.Front.DepthWrite, st.Back.DepthWrite, st.Front.FragmentEnabled, st.Back.FragmentEnabled));
+            var fs = st.Front.Stencil;
+            Assert.Equal((3, 1, 2, 3, 0x3C, 0xC3, 0x55), ((int)fs.Func, (int)fs.StencilFail, (int)fs.DepthFail, (int)fs.DepthPass, (int)fs.CompareMask, (int)fs.WriteMask, (int)fs.Ref));
+            Assert.Equal(fs, st.Back.Stencil);
+            Assert.Equal((2, 4, 6, 100, 200), ((int)st.RegionClipMode, st.ClipMinX, st.ClipMinY, st.ClipMaxX, st.ClipMaxY));
+            Assert.Equal((1.5f, 2.5f, -3.5f, 4.5f, 0.25f, 0.75f), (st.VpOffX, st.VpScaleX, st.VpOffY, st.VpScaleY, st.VpOffZ, st.VpScaleZ));
+            Assert.True(g.ViewportSet && g.RegionClipSet);
+            // two-sided on: the front stencil calls leave the back side alone
+            Run("sceGxmSetTwoSidedEnable", 1);
+            Run("sceGxmSetBackStencilFunc", 1u << 25, 4, 5, 6, 0x11, 0x22);
+            Run("sceGxmSetBackStencilRef", 0x66);
+            Run("sceGxmSetFrontStencilFunc", 7u << 25, 0, 0, 0, 0xFF, 0xFF);
+            Run("sceGxmSetFrontStencilRef", 0x77);
+            g.SyncGuestState();
+            var bs = g.State.Back.Stencil;
+            Assert.True(g.State.TwoSided);
+            Assert.Equal((1, 4, 5, 6, 0x11, 0x22, 0x66), ((int)bs.Func, (int)bs.StencilFail, (int)bs.DepthFail, (int)bs.DepthPass, (int)bs.CompareMask, (int)bs.WriteMask, (int)bs.Ref));
+            Assert.Equal((7, 0x77), ((int)g.State.Front.Stencil.Func, (int)g.State.Front.Stencil.Ref));
+        }
+
+        // program parameter queries: a parameter table at +0x28 (relative) with 3 entries
+        uint prog = fx.Memory.Alloc(0x100, "gcprog");
+        GuestMemory.Fill(prog, 0, 0x100);
+        GuestMemory.W32(prog + 0x24, 3); GuestMemory.W32(prog + 0x28, 0x18); // table at prog + 0x40
+        Assert.Equal(prog + 0x40 + 2 * 16, RunGuest("sceGxmProgramGetParameter", prog, 2));
+        Assert.Equal(0u, RunGuest("sceGxmProgramGetParameter", prog, 3));
+        Assert.False(fellBack);
+        RunGuest("sceGxmProgramGetParameter", 0, 0);
+        Assert.True(fellBack);
+        uint pparam = prog + 0x40 + 16;
+        foreach (var (b4, b5, b6, b7) in new[] { (0x30, 0x23, 9, 0x15), (0x01, 0x14, 7, 0x03), (0xA0, 0xF0, 0xFF, 0xFF) })
+        {
+            GuestMemory.W32(pparam, 0x80); GuestMemory.Write(pparam + 4, (byte)b4); GuestMemory.Write(pparam + 5, (byte)b5);
+            GuestMemory.Write(pparam + 6, (byte)b6); GuestMemory.Write(pparam + 7, (byte)b7);
+            GuestMemory.W32(pparam + 8, 0x11223344); GuestMemory.W32(pparam + 12, 0x55);
+            foreach (var f in new[] { "sceGxmProgramParameterGetName", "sceGxmProgramParameterGetCategory", "sceGxmProgramParameterGetType",
+                "sceGxmProgramParameterGetComponentCount", "sceGxmProgramParameterGetContainerIndex", "sceGxmProgramParameterGetSemantic",
+                "sceGxmProgramParameterGetSemanticIndex", "sceGxmProgramParameterGetArraySize", "sceGxmProgramParameterGetResourceIndex",
+                "sceGxmProgramParameterIsSamplerCube" })
+            {
+                Assert.Equal(U(Call(gxm, f, pparam)), RunGuest(f, pparam));
+                Assert.False(fellBack, f);
+            }
+        }
+        Assert.Equal(0u, RunGuest("sceGxmProgramParameterGetName", 0));
+
+        // sceGxmPrecomputedDrawSetVertexStream: errors in the C# order, streams without a slot not written
+        uint pdraw = fx.Memory.Alloc(0x20, "gcpdraw"), slots = fx.Memory.Alloc(0x40, "gcslots");
+        foreach (var (st, idx, data) in new[] { (pdraw, 1u, 0x81000040u), (pdraw, 5u, 0x81000040u), (pdraw, 16u, 0x81000040u), (pdraw, 0u, 0u),
+            (0u, 1u, 1u), (0u, 20u, 0u), (pdraw, 20u, 0u) })
+        {
+            GuestMemory.Fill(slots, 0xEE, 0x40); GuestMemory.W32(pdraw + 8, slots); GuestMemory.Write(pdraw + 12, (ushort)2);
+            uint want = U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", st, idx, data));
+            var mem = GuestMemory.ReadSpan(slots, 0x40).ToArray();
+            GuestMemory.Fill(slots, 0xEE, 0x40);
+            Assert.Equal(want, RunGuest("sceGxmPrecomputedDrawSetVertexStream", st, idx, data));
+            Assert.False(fellBack);
+            Assert.Equal(mem, GuestMemory.ReadSpan(slots, 0x40).ToArray());
+        }
+
         uint tex = fx.Memory.Alloc(0x10, "gctex");
         foreach (var f in new[] { "sceGxmTextureSetUAddrModeSafe", "sceGxmTextureSetVAddrModeSafe" })
             foreach (var (type, mode) in new[] { (0x00000000u, 1u), (0x60000000u, 0xFFu), (0xC0000000u, 3u), (0x80000000u, 2u) })
@@ -317,6 +417,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         {
             (0x01, 4, 1u, 0u, 4u, true), (0x01, 4, 1u, 2u, 2u, true), (0x01, 1, 8u, 3u, 5u, true), (0x01, 3, 1u, 0u, 0u, true),
             (0x01, 3, 4u, 1u, 7u, false), (0x11, 4, 1u, 0u, 4u, false), (0x02, 4, 1u, 0u, 4u, false),
+            (0x01, 4, 3u, 2u, 9u, true), (0x01, 2, 6u, 3u, 7u, true), (0x11, 4, 3u, 0u, 8u, false),
         })
         {
             GuestMemory.Write(param + 4, (byte)b4); GuestMemory.Write(param + 5, (byte)comps);
@@ -326,7 +427,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
             var mem = GuestMemory.ReadSpan(ub, 0x100).ToArray();
             GuestMemory.Fill(ub, 0xEE, 0x100);
             uint got = RunGuest("sceGxmSetUniformDataF", ub, param, offset, count, src);
-            Assert.Equal(!fast && (b4 & 0xF) == 1, fellBack);
+            Assert.True((!fast && (b4 & 0xF) == 1) == fellBack, $"b4={b4:X} comps={comps} array={arraySize} offset={offset} count={count} fellBack={fellBack}");
             if (fellBack) continue; // the C# version runs
             Assert.Equal(want, got);
             Assert.Equal(mem, GuestMemory.ReadSpan(ub, 0x100).ToArray());

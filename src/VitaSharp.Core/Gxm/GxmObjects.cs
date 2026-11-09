@@ -129,12 +129,122 @@ public sealed class GxmContext
     /// <see cref="State"/> before a draw reads it. Zero is the default of all three.</summary>
     public const uint CullModeOffset = 8, FrontPolygonModeOffset = 9, BackPolygonModeOffset = 10;
 
+    // The rest of the state the hot setters write (Killzone: ~1,100 calls per frame) lives in the context's guest memory
+    // too when the context has the guest layout (GuestStateFlagOffset = 1: immediate contexts, whose 128 bytes are ours),
+    // so those setters can be guest code (Hle/HleGuestCode) instead of a round trip into C# per call. The bytes are the
+    // only copy of these fields then: SyncGuestState reads them into State and the fields below wherever the context
+    // state is read, and a C# writer of them edits between SyncGuestState and PublishGuestState.
+    /// <summary>Byte: 1 = the fields below live in guest memory (guest-code setters write them).</summary>
+    public const uint GuestStateFlagOffset = 11;
+    /// <summary>Words: the bound vertex / fragment program handles, the front / back visibility test indices.</summary>
+    public const uint VertexProgramOffset = 12, FragmentProgramOffset = 16, VisFrontIndexOffset = 20, VisBackIndexOffset = 24;
+    /// <summary>Bytes: two-sided mode (0/1), depth functions (SceGxmDepthFunc &gt;&gt; 22), depth writes and fragment
+    /// programs enabled (0/1), <see cref="SetFlagsOffset"/> (bit 0 viewport set, bit 1 region clip set), the region clip
+    /// mode (SceGxmRegionClipMode &gt;&gt; 30).</summary>
+    public const uint TwoSidedOffset = 28, FrontDepthFuncOffset = 29, BackDepthFuncOffset = 30, FrontDepthWriteOffset = 31,
+        BackDepthWriteOffset = 32, FrontFragmentEnableOffset = 33, BackFragmentEnableOffset = 34, SetFlagsOffset = 35,
+        RegionClipModeOffset = 43;
+    /// <summary>Stencil state per side, 7 bytes: func (SceGxmStencilFunc &gt;&gt; 25), stencil fail, depth fail, depth pass
+    /// ops (&amp; 7), compare mask, write mask, reference.</summary>
+    public const uint FrontStencilOffset = 36, BackStencilOffset = 44;
+    /// <summary>Region clip min x, min y, max x, max y (words); the viewport's x offset, x scale, y offset, y scale,
+    /// z offset, z scale (floats, sceGxmSetViewport's order).</summary>
+    public const uint ClipOffset = 64, ViewportOffset = 80;
+    /// <summary>Guest bytes an immediate context's handle points to.</summary>
+    public const uint GuestSize = 128;
+    public const byte ViewportSetFlag = 1, RegionClipSetFlag = 2;
+
+    /// <summary>The fields above live in guest memory (<see cref="GuestStateFlagOffset"/>).</summary>
+    public bool GuestState;
+    /// <summary>Resolve a program handle the guest stored (Gxm's registered programs; null = unknown, as the setters did).</summary>
+    public Func<uint, GxmVertexProgram?>? ResolveVertexProgram;
+    public Func<uint, GxmFragmentProgram?>? ResolveFragmentProgram;
+    uint _syncedVp, _syncedFp;
+
+    static void ReadStencil(uint a, ref StencilState s)
+    {
+        ulong v = GuestMemory.Read<ulong>(a);
+        s.Func = (byte)v; s.StencilFail = (byte)(v >> 8); s.DepthFail = (byte)(v >> 16); s.DepthPass = (byte)(v >> 24);
+        s.CompareMask = (byte)(v >> 32); s.WriteMask = (byte)(v >> 40); s.Ref = (byte)(v >> 48);
+    }
+
+    static void WriteStencil(uint a, in StencilState s)
+    {
+        GuestMemory.Write(a, s.Func); GuestMemory.Write(a + 1, s.StencilFail); GuestMemory.Write(a + 2, s.DepthFail);
+        GuestMemory.Write(a + 3, s.DepthPass); GuestMemory.Write(a + 4, s.CompareMask); GuestMemory.Write(a + 5, s.WriteMask);
+        GuestMemory.Write(a + 6, s.Ref);
+    }
+
+    /// <summary>Copies the state guest code may have written into <see cref="State"/>, the programs, the visibility indices
+    /// and the set flags.</summary>
     public void SyncGuestState()
     {
-        uint w = GuestMemory.R32(Handle + CullModeOffset);
+        uint h = Handle;
+        uint w = GuestMemory.R32(h + CullModeOffset);
         State.CullMode = (byte)w;
         State.Front.PolygonMode = (byte)(w >> 8);
         State.Back.PolygonMode = (byte)(w >> 16);
+        if (!GuestState) return;
+        uint vp = GuestMemory.R32(h + VertexProgramOffset), fp = GuestMemory.R32(h + FragmentProgramOffset);
+        if (vp != _syncedVp || (vp != 0 && VertexProgram == null)) { _syncedVp = vp; VertexProgram = vp == 0 ? null : ResolveVertexProgram?.Invoke(vp); }
+        if (fp != _syncedFp || (fp != 0 && FragmentProgram == null)) { _syncedFp = fp; FragmentProgram = fp == 0 ? null : ResolveFragmentProgram?.Invoke(fp); }
+        VisFrontIndex = GuestMemory.R32(h + VisFrontIndexOffset);
+        VisBackIndex = GuestMemory.R32(h + VisBackIndexOffset);
+        ulong b = GuestMemory.Read<ulong>(h + TwoSidedOffset); // bytes 28..35
+        State.TwoSided = (byte)b != 0;
+        State.Front.DepthFunc = (byte)(b >> 8);
+        State.Back.DepthFunc = (byte)(b >> 16);
+        State.Front.DepthWrite = (byte)(b >> 24) != 0;
+        State.Back.DepthWrite = (byte)(b >> 32) != 0;
+        State.Front.FragmentEnabled = (byte)(b >> 40) != 0;
+        State.Back.FragmentEnabled = (byte)(b >> 48) != 0;
+        byte flags = (byte)(b >> 56);
+        ViewportSet = (flags & ViewportSetFlag) != 0;
+        RegionClipSet = (flags & RegionClipSetFlag) != 0;
+        ReadStencil(h + FrontStencilOffset, ref State.Front.Stencil);
+        ReadStencil(h + BackStencilOffset, ref State.Back.Stencil);
+        State.RegionClipMode = GuestMemory.Read<byte>(h + RegionClipModeOffset);
+        uint c = h + ClipOffset;
+        State.ClipMinX = (int)GuestMemory.R32(c); State.ClipMinY = (int)GuestMemory.R32(c + 4);
+        State.ClipMaxX = (int)GuestMemory.R32(c + 8); State.ClipMaxY = (int)GuestMemory.R32(c + 12);
+        uint v = h + ViewportOffset;
+        State.VpOffX = GuestMemory.Read<float>(v); State.VpScaleX = GuestMemory.Read<float>(v + 4);
+        State.VpOffY = GuestMemory.Read<float>(v + 8); State.VpScaleY = GuestMemory.Read<float>(v + 12);
+        State.VpOffZ = GuestMemory.Read<float>(v + 16); State.VpScaleZ = GuestMemory.Read<float>(v + 20);
+    }
+
+    /// <summary>Writes <see cref="State"/>, the programs, the visibility indices and the set flags into the guest copy
+    /// (context creation, a save state load, a C# writer after <see cref="SyncGuestState"/>); nothing without the guest
+    /// layout.</summary>
+    public void PublishGuestState()
+    {
+        if (!GuestState) return;
+        uint h = Handle;
+        GuestMemory.Write(h + CullModeOffset, State.CullMode);
+        GuestMemory.Write(h + FrontPolygonModeOffset, State.Front.PolygonMode);
+        GuestMemory.Write(h + BackPolygonModeOffset, State.Back.PolygonMode);
+        GuestMemory.Write(h + GuestStateFlagOffset, (byte)1);
+        GuestMemory.W32(h + VertexProgramOffset, _syncedVp = VertexProgram?.Handle ?? 0);
+        GuestMemory.W32(h + FragmentProgramOffset, _syncedFp = FragmentProgram?.Handle ?? 0);
+        GuestMemory.W32(h + VisFrontIndexOffset, VisFrontIndex);
+        GuestMemory.W32(h + VisBackIndexOffset, VisBackIndex);
+        GuestMemory.Write(h + TwoSidedOffset, (byte)(State.TwoSided ? 1 : 0));
+        GuestMemory.Write(h + FrontDepthFuncOffset, State.Front.DepthFunc);
+        GuestMemory.Write(h + BackDepthFuncOffset, State.Back.DepthFunc);
+        GuestMemory.Write(h + FrontDepthWriteOffset, (byte)(State.Front.DepthWrite ? 1 : 0));
+        GuestMemory.Write(h + BackDepthWriteOffset, (byte)(State.Back.DepthWrite ? 1 : 0));
+        GuestMemory.Write(h + FrontFragmentEnableOffset, (byte)(State.Front.FragmentEnabled ? 1 : 0));
+        GuestMemory.Write(h + BackFragmentEnableOffset, (byte)(State.Back.FragmentEnabled ? 1 : 0));
+        GuestMemory.Write(h + SetFlagsOffset, (byte)((ViewportSet ? ViewportSetFlag : 0) | (RegionClipSet ? RegionClipSetFlag : 0)));
+        WriteStencil(h + FrontStencilOffset, in State.Front.Stencil);
+        WriteStencil(h + BackStencilOffset, in State.Back.Stencil);
+        GuestMemory.Write(h + RegionClipModeOffset, State.RegionClipMode);
+        uint c = h + ClipOffset;
+        GuestMemory.W32(c, (uint)State.ClipMinX); GuestMemory.W32(c + 4, (uint)State.ClipMinY);
+        GuestMemory.W32(c + 8, (uint)State.ClipMaxX); GuestMemory.W32(c + 12, (uint)State.ClipMaxY);
+        uint v = h + ViewportOffset;
+        GuestMemory.Write(v, State.VpOffX); GuestMemory.Write(v + 4, State.VpScaleX); GuestMemory.Write(v + 8, State.VpOffY);
+        GuestMemory.Write(v + 12, State.VpScaleY); GuestMemory.Write(v + 16, State.VpOffZ); GuestMemory.Write(v + 20, State.VpScaleZ);
     }
     /// <summary>Visibility test state (sceGxmSet*VisibilityTest*, sceGxmSetVisibilityBuffer).</summary>
     public bool VisFrontEnable, VisBackEnable, VisFrontIncrement = true, VisBackIncrement = true;

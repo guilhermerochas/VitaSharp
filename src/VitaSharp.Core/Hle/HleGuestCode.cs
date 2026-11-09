@@ -174,7 +174,7 @@ public static class HleGuestCode
     const uint FallbackSvc = 0xEF00FFFF;
 
     /// <summary>sceGxmSetUniformDataF(buffer, param, componentOffset, componentCount, source): the F32 parameters that
-    /// are a scalar array or a single vector (no per-element padding) copy componentCount words to
+    /// are a single vector or an array of 1, 2 or 4 components (no per-element padding) copy componentCount words to
     /// buffer + resourceIndex * 4 + componentOffset * 4; every other case (and the errors after the NULL checks'
     /// INVALID_VALUE) is the C# version's.</summary>
     static readonly uint[] SetUniformDataF =
@@ -192,12 +192,14 @@ public static class HleGuestCode
         0x18BD0030,                                  // popne {r4, r5}
         .. ReturnGxmError(NE, ErrInvalidValue),
         0xE1B04224,                                  // lsrs r4, r4, #4     type: F32 is 0
-        0x1A00000F,                                  // bne fallback
+        0x1A000011,                                  // bne fallback
         0xE5915008,                                  // ldr r5, [r1, #8]    array size
         0xE3550001,                                  // cmp r5, #1
         0x15D15005,                                  // ldrbne r5, [r1, #5]
         0x1205500F,                                  // andne r5, r5, #15   component count
         0x13550001,                                  // cmpne r5, #1
+        0x13550002,                                  // cmpne r5, #2        2 and 4 F32 components: elements
+        0x13550004,                                  // cmpne r5, #4        need no padding (contiguous)
         0x1A000009,                                  // bne fallback
         0xE591500C,                                  // ldr r5, [r1, #12]   resource index
         0xE0800105,                                  // add r0, r0, r5, lsl #2
@@ -322,9 +324,342 @@ public static class HleGuestCode
         BxLr,                      // 26
     ];
 
+    // ------------------------------------------------------------------ lightweight mutexes
+    //
+    // The uncontended lock and unlock of a lightweight mutex, on its guest work area (Kernel/Sync.cs Mutex: +0 owner UID
+    // with bit 31 = a thread sleeps on it, +8 count, +12 attributes, +16 UID, 0 once deleted), as the real SceLibKernel
+    // does in user mode (and PPSSPP's/Linux's futex protocol): lock = LDREX/STREX 0 -> own UID, unlock = own UID -> 0.
+    // Anything else (taken by another thread, a sleeper to wake, a bad argument, a deleted mutex) is the C# version's,
+    // entered with the caller's registers. Games lock and unlock thousands of times per frame (F1 2011, FIFA 13,
+    // Sonic Mania's loader), almost always uncontended.
+
+    const uint LE = 0xD, GT = 0xC;
+    const uint Dmb = 0xF57FF05B, Clrex = 0xF57FF01F;
+
+    /// <summary>sceKernelLockLwMutex(CB)(work, count, timeout) / sceKernelTryLockLwMutex(work, count)
+    /// (<paramref name="checkCount"/>: the lock's count &lt;= 0 is INVALID_ARGUMENT, the C# version's).</summary>
+    static uint[] LwMutexLock(bool checkCount)
+    {
+        var c = new List<uint>
+        {
+            0xE3500000,                // cmp r0, #0
+            0,                         // beq slow (patched)
+            0xE590C010,                // ldr r12, [r0, #16]   UID
+            0xE35C0000,                // cmp r12, #0
+            0,                         // beq slow
+        };
+        if (checkCount) c.AddRange([0xE3510000, 0]); // cmp r1, #0 ; ble slow
+        int loop = c.Count + 2;
+        c.AddRange(
+        [
+            0xEE1D3F70,                // mrc p15, 0, r3, c13, c0, 3   TPIDRURO
+            0xE51337FC,                // ldr r3, [r3, #-0x7FC]        thread UID (kernel TLS word 1)
+            0xE190CF9F,                // loop: ldrex r12, [r0]
+            0xE35C0000,                // cmp r12, #0
+            0,                         // bne held
+            0xE180CF93,                // strex r12, r3, [r0]
+            0xE35C0000,                // cmp r12, #0
+            Branch(NE, loop + 5, loop),// bne loop
+            Dmb,                       // dmb ish
+            0xE5801008,                // str r1, [r0, #8]      count
+            0xE3A00000,                // mov r0, #0
+            BxLr,
+        ]);
+        int held = c.Count;
+        c.AddRange(
+        [
+            Clrex,                     // held: clrex
+            0xE3CCC102,                // bic r12, r12, #0x80000000
+            0xE15C0003,                // cmp r12, r3           ours: a recursive lock
+            0,                         // bne slow
+            0xE590C00C,                // ldr r12, [r0, #12]    attributes
+            0xE31C0002,                // tst r12, #2           SCE_KERNEL_MUTEX_ATTR_RECURSIVE
+            0,                         // beq slow (RECURSIVE error)
+            0xE590C008,                // ldr r12, [r0, #8]
+            0xE08CC001,                // add r12, r12, r1
+            0xE580C008,                // str r12, [r0, #8]
+            0xE3A00000,                // mov r0, #0
+            BxLr,
+        ]);
+        int slow = c.Count;
+        c.AddRange([FallbackSvc, BxLr]);
+        c[1] = Branch(EQ, 1, slow);
+        c[4] = Branch(EQ, 4, slow);
+        if (checkCount) c[6] = Branch(LE, 6, slow);
+        c[loop + 2] = Branch(NE, loop + 2, held);
+        c[held + 3] = Branch(NE, held + 3, slow);
+        c[held + 6] = Branch(EQ, held + 6, slow);
+        return [.. c];
+    }
+
+    /// <summary>sceKernelUnlockLwMutex(2)(work, count): the owner (no sleeper flagged) drops count; at 0 it swaps its UID
+    /// back to 0, unless a sleeper flagged the word meanwhile (then the C# version wakes it).</summary>
+    static readonly uint[] LwMutexUnlock =
+    [
+        0xE3500000,                // 0  cmp r0, #0
+        Branch(EQ, 1, 29),         // 1  beq slow
+        0xE590C010,                // 2  ldr r12, [r0, #16]
+        0xE35C0000,                // 3  cmp r12, #0
+        Branch(EQ, 4, 29),         // 4  beq slow
+        0xEE1D3F70,                // 5  mrc p15, 0, r3, c13, c0, 3
+        0xE51337FC,                // 6  ldr r3, [r3, #-0x7FC]
+        0xE590C000,                // 7  ldr r12, [r0]
+        0xE15C0003,                // 8  cmp r12, r3          ours and nobody flagged
+        Branch(NE, 9, 29),         // 9  bne slow (NOT_OWNED, or a sleeper to wake)
+        0xE5902008,                // 10 ldr r2, [r0, #8]
+        0xE1510002,                // 11 cmp r1, r2
+        Branch(GT, 12, 29),        // 12 bgt slow (UNLOCK_UDF)
+        0xE0522001,                // 13 subs r2, r2, r1
+        0x15802008,                // 14 strne r2, [r0, #8]   still held
+        0x13A00000,                // 15 movne r0, #0
+        0x112FFF1E,                // 16 bxne lr
+        0xE5802008,                // 17 str r2, [r0, #8]     count 0, before the owner word frees it
+        Dmb,                       // 18 dmb ish
+        0xE190CF9F,                // 19 loop: ldrex r12, [r0]
+        0xE15C0003,                // 20 cmp r12, r3
+        Branch(NE, 21, 27),        // 21 bne contended
+        0xE180CF92,                // 22 strex r12, r2, [r0]  (r2 = 0)
+        0xE35C0000,                // 23 cmp r12, #0
+        Branch(NE, 24, 19),        // 24 bne loop
+        0xE3A00000,                // 25 mov r0, #0
+        BxLr,                      // 26
+        Clrex,                     // 27 contended: clrex
+        0xE5801008,                // 28 str r1, [r0, #8]     the count back (it was exactly r1)
+        FallbackSvc,               // 29 slow: the C# version
+        BxLr,                      // 30
+    ];
+
+    /// <summary>sceKernelSignalLwCond / SignalLwCondAll(work): with no waiter queued (work area +8, Kernel/Sync.cs
+    /// CondVar.LwQueuedOffset) a signal does nothing and returns 0; a waiter to release, a deleted cond (UID word 0)
+    /// or a NULL work area go to the C# version.</summary>
+    static readonly uint[] LwCondSignal =
+    [
+        0xE3500000,                // 0 cmp r0, #0
+        Branch(EQ, 1, 9),          // 1 beq slow
+        0xE590C000,                // 2 ldr r12, [r0]        UID
+        0xE35C0000,                // 3 cmp r12, #0
+        Branch(EQ, 4, 9),          // 4 beq slow
+        0xE590C008,                // 5 ldr r12, [r0, #8]    waiters queued
+        0xE35C0000,                // 6 cmp r12, #0
+        0x03A00000,                // 7 moveq r0, #0
+        0x012FFF1E,                // 8 bxeq lr
+        FallbackSvc,               // 9 slow
+        BxLr,                      // 10
+    ];
+
+    // declared before every flag derived from it: static initializers run in textual order
+    static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
+
+    /// <summary>VITASHARP_HLE_GUEST_CODE=nolw: without the lightweight mutex and cond routines (A/B).</summary>
+    static readonly bool LwMutexRoutines = Mode is not ("precomputed" or "gxm" or "nolw");
+
+    static readonly (string Name, string Library, uint[] Code)[] LwMutexRoutineTable =
+    [
+        ("sceKernelLockLwMutex", LibKernel, LwMutexLock(checkCount: true)),
+        ("sceKernelLockLwMutexCB", LibKernel, LwMutexLock(checkCount: true)),
+        ("sceKernelTryLockLwMutex", LibKernel, LwMutexLock(checkCount: false)),
+        ("sceKernelUnlockLwMutex", LibKernel, LwMutexUnlock),
+        ("sceKernelUnlockLwMutex2", LibKernel, LwMutexUnlock),
+        ("sceKernelSignalLwCond", LibKernel, LwCondSignal),
+        ("sceKernelSignalLwCondAll", LibKernel, LwCondSignal),
+    ];
+
+    // ------------------------------------------------------------------ libgxm context state setters
+    //
+    // Killzone calls these ~1,100 times per frame (program binds, region clip, depth/stencil, viewport and visibility
+    // index per draw): on the Vita they are libgxm user code writing the context's state words. An immediate context
+    // with the guest layout (Gxm/GxmContext.GuestStateFlagOffset = 1) keeps that state in its own 128 guest bytes, so
+    // the setters are stores there; a context without it (deferred contexts, contexts restored from older save states)
+    // takes the C# version. A NULL context is ignored, as in C#.
+
+    static uint Ctx(uint offset) => offset; // readability: a GxmContext field offset (all < 0x100)
+
+    /// <summary>The prologue of every context setter: NULL returns, no guest layout goes to C# (the routine's last two
+    /// words are FallbackSvc, BxLr; <paramref name="length"/> is the routine's total word count).</summary>
+    static uint[] ContextPrologue(int length) =>
+    [
+        0xE3500000,                // 0 cmp r0, #0
+        0x012FFF1E,                // 1 bxeq lr
+        0xE5D0C000 | Ctx(VitaSharp.Core.Gxm.GxmContext.GuestStateFlagOffset), // 2 ldrb r12, [r0, #flag]
+        0xE35C0001,                // 3 cmp r12, #1
+        Branch(NE, 4, length - 2), // 4 bne fallback
+    ];
+
+    static uint[] ContextRoutine(params uint[] body)
+    {
+        int length = 5 + body.Length + 2;
+        return [.. ContextPrologue(length), .. body, FallbackSvc, BxLr];
+    }
+
+    const uint StrR1 = 0xE5801000, StrbR1 = 0xE5C01000;
+
+    /// <summary>A word argument stored as is (program handles, visibility indices).</summary>
+    static uint[] SetCtxWord(uint offset) => ContextRoutine(StrR1 | offset, BxLr);
+
+    /// <summary>sceGxmSet{Front,Back}DepthFunc: (byte)(func &gt;&gt; 22).</summary>
+    static uint[] SetCtxDepthFunc(uint offset) => ContextRoutine(0xE1A01B21, StrbR1 | offset, BxLr); // lsr r1, r1, #22
+
+    /// <summary>sceGxmSet{Front,Back}{DepthWrite,FragmentProgram}Enable: enabled is 0, stored as 1.</summary>
+    static uint[] SetCtxEnabledIfZero(uint offset) =>
+        ContextRoutine(0xE3510000, 0x03A01001, 0x13A01000, StrbR1 | offset, BxLr); // cmp r1, #0 ; moveq r1, #1 ; movne r1, #0
+
+    /// <summary>sceGxmSetTwoSidedEnable: any non-zero mode is on.</summary>
+    static readonly uint[] SetTwoSided =
+        ContextRoutine(0xE3510000, 0x13A01001, StrbR1 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset, BxLr); // cmp r1, #0 ; movne r1, #1
+
+    const uint FrontRef = VitaSharp.Core.Gxm.GxmContext.FrontStencilOffset + 6, BackRef = VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 6;
+
+    /// <summary>sceGxmSetFrontStencilRef: the front reference, and the back one too while two-sided mode is off.</summary>
+    static readonly uint[] SetFrontStencilRef = ContextRoutine(
+        StrbR1 | FrontRef,                                                   // strb r1, [r0, #front ref]
+        0xE5D0C000 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset,           // ldrb r12, [r0, #two-sided]
+        0xE35C0000,                                                          // cmp r12, #0
+        0x05C01000 | BackRef,                                                // strbeq r1, [r0, #back ref]
+        BxLr);
+
+    /// <summary>sceGxmSet{Front,Back}StencilFunc(ctx, func, stencilFail, depthFail, depthPass, compareMask, writeMask):
+    /// func &gt;&gt; 25, the three ops &amp; 7, the masks; the front one also sets the back state while two-sided mode is off
+    /// (the six bytes copied, the reference left alone).</summary>
+    static uint[] SetCtxStencilFunc(uint b, bool front) =>
+        ContextRoutine(
+        [
+            0xE1A01CA1,                // lsr r1, r1, #25
+            StrbR1 | b,                // strb r1, [r0, #b]
+            0xE2022007,                // and r2, r2, #7
+            0xE5C02000 | (b + 1),      // strb r2, [r0, #b + 1]
+            0xE2033007,                // and r3, r3, #7
+            0xE5C03000 | (b + 2),      // strb r3, [r0, #b + 2]
+            0xE59DC000,                // ldr r12, [sp]       depthPass
+            0xE20CC007,                // and r12, r12, #7
+            0xE5C0C000 | (b + 3),      // strb r12, [r0, #b + 3]
+            0xE59DC004,                // ldr r12, [sp, #4]   compareMask
+            0xE5C0C000 | (b + 4),      // strb r12, [r0, #b + 4]
+            0xE59DC008,                // ldr r12, [sp, #8]   writeMask
+            0xE5C0C000 | (b + 5),      // strb r12, [r0, #b + 5]
+            .. (front ?
+            (uint[])[
+                0xE5D0C000 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset, // ldrb r12, [r0, #two-sided]
+                0xE35C0000,            // cmp r12, #0
+                0x112FFF1E,            // bxne lr
+                0xE590C000 | b,        // ldr r12, [r0, #b]        func and the three ops
+                0xE580C000 | VitaSharp.Core.Gxm.GxmContext.BackStencilOffset,           // str r12, [r0, #back]
+                0xE1D0C0B0 | ((b + 4) & 0xF) | (((b + 4) >> 4) << 8),                   // ldrh r12, [r0, #b + 4]   the masks
+                0xE1C0C0B0 | ((VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 4) & 0xF) | (((VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 4) >> 4) << 8), // strh
+            ] : []),
+            BxLr,
+        ]);
+
+    const uint ClipBase = VitaSharp.Core.Gxm.GxmContext.ClipOffset, ViewportBase = VitaSharp.Core.Gxm.GxmContext.ViewportOffset,
+        SetFlags = VitaSharp.Core.Gxm.GxmContext.SetFlagsOffset;
+
+    /// <summary>sceGxmSetRegionClip(ctx, mode, xMin, yMin, xMax, yMax): mode &gt;&gt; 30, the four bounds, the "region clip
+    /// set" flag.</summary>
+    static readonly uint[] SetRegionClip = ContextRoutine(
+        0xE1A01F21,                                                   // lsr r1, r1, #30
+        StrbR1 | VitaSharp.Core.Gxm.GxmContext.RegionClipModeOffset,  // strb r1, [r0, #mode]
+        0xE5802000 | ClipBase,                                        // str r2, [r0, #clip]
+        0xE5803000 | (ClipBase + 4),                                  // str r3, [r0, #clip + 4]
+        0xE59DC000,                                                   // ldr r12, [sp]
+        0xE580C000 | (ClipBase + 8),                                  // str r12, [r0, #clip + 8]
+        0xE59DC004,                                                   // ldr r12, [sp, #4]
+        0xE580C000 | (ClipBase + 12),                                 // str r12, [r0, #clip + 12]
+        0xE5D0C000 | SetFlags,                                        // ldrb r12, [r0, #flags]
+        0xE38CC000 | VitaSharp.Core.Gxm.GxmContext.RegionClipSetFlag, // orr r12, r12, #region clip set
+        0xE5C0C000 | SetFlags,                                        // strb r12, [r0, #flags]
+        BxLr);
+
+    /// <summary>VSTR s<paramref name="s"/>, [r0, #offset].</summary>
+    static uint Vstr(int s, uint offset) => 0xED800A00 | ((uint)(s & 1) << 22) | ((uint)(s >> 1) << 12) | (offset / 4);
+
+    /// <summary>sceGxmSetViewport(ctx, xOffset, xScale, yOffset, yScale, zOffset, zScale): the six floats (s0-s5, hard-float
+    /// ABI) in that order, the "viewport set" flag.</summary>
+    static readonly uint[] SetViewport = ContextRoutine(
+        Vstr(0, ViewportBase), Vstr(1, ViewportBase + 4), Vstr(2, ViewportBase + 8),
+        Vstr(3, ViewportBase + 12), Vstr(4, ViewportBase + 16), Vstr(5, ViewportBase + 20),
+        0xE5D0C000 | SetFlags,                                        // ldrb r12, [r0, #flags]
+        0xE38CC000 | VitaSharp.Core.Gxm.GxmContext.ViewportSetFlag,   // orr r12, r12, #viewport set
+        0xE5C0C000 | SetFlags,                                        // strb r12, [r0, #flags]
+        BxLr);
+
+    /// <summary>VITASHARP_HLE_GUEST_CODE=nogxmctx: contexts without the guest layout, the setters below on SVCs (A/B).</summary>
+    public static readonly bool ContextState = Enabled && Mode is not ("precomputed" or "nogxmctx");
+
+    static readonly (string Name, string Library, uint[] Code)[] ContextStateRoutines =
+    [
+        ("sceGxmSetVertexProgram", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VertexProgramOffset)),
+        ("sceGxmSetFragmentProgram", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.FragmentProgramOffset)),
+        ("sceGxmSetFrontVisibilityTestIndex", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VisFrontIndexOffset)),
+        ("sceGxmSetBackVisibilityTestIndex", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VisBackIndexOffset)),
+        ("sceGxmSetFrontDepthFunc", Gxm, SetCtxDepthFunc(VitaSharp.Core.Gxm.GxmContext.FrontDepthFuncOffset)),
+        ("sceGxmSetBackDepthFunc", Gxm, SetCtxDepthFunc(VitaSharp.Core.Gxm.GxmContext.BackDepthFuncOffset)),
+        ("sceGxmSetFrontDepthWriteEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.FrontDepthWriteOffset)),
+        ("sceGxmSetBackDepthWriteEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.BackDepthWriteOffset)),
+        ("sceGxmSetFrontFragmentProgramEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.FrontFragmentEnableOffset)),
+        ("sceGxmSetBackFragmentProgramEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.BackFragmentEnableOffset)),
+        ("sceGxmSetTwoSidedEnable", Gxm, SetTwoSided),
+        ("sceGxmSetFrontStencilRef", Gxm, SetFrontStencilRef),
+        ("sceGxmSetBackStencilRef", Gxm, ContextRoutine(StrbR1 | BackRef, BxLr)),
+        ("sceGxmSetFrontStencilFunc", Gxm, SetCtxStencilFunc(VitaSharp.Core.Gxm.GxmContext.FrontStencilOffset, front: true)),
+        ("sceGxmSetBackStencilFunc", Gxm, SetCtxStencilFunc(VitaSharp.Core.Gxm.GxmContext.BackStencilOffset, front: false)),
+        ("sceGxmSetRegionClip", Gxm, SetRegionClip),
+        ("sceGxmSetViewport", Gxm, SetViewport),
+    ];
+
+    // ------------------------------------------------------------------ GXP program parameter queries
+    //
+    // Reads of the program blob the game owns (Gxm/Shader/Gxp.cs layout): the parameter table at +0x28 (relative),
+    // its count at +0x24, 16 bytes per parameter (name offset, category | type << 4, components | container << 4,
+    // semantic, semantic index | cube << 4, array size, resource index). Killzone asks ~80 per frame.
+
+    /// <summary>sceGxmProgramGetParameter(program, index): the index-th entry, NULL past the count (a NULL program: C#).</summary>
+    static readonly uint[] ProgramGetParameter =
+    [
+        0xE3500000,        // 0 cmp r0, #0
+        Branch(EQ, 1, 11), // 1 beq fallback
+        0xE5902024,        // 2 ldr r2, [r0, #0x24]  count
+        0xE1510002,        // 3 cmp r1, r2
+        0x23A00000,        // 4 movhs r0, #0
+        0x212FFF1E,        // 5 bxhs lr
+        0xE5902028,        // 6 ldr r2, [r0, #0x28]  table offset
+        0xE0800002,        // 7 add r0, r0, r2
+        0xE2800028,        // 8 add r0, r0, #0x28
+        0xE0800201,        // 9 add r0, r0, r1, lsl #4
+        BxLr,              // 10
+        FallbackSvc,       // 11
+        BxLr,              // 12
+    ];
+
+    static readonly (string Name, string Library, uint[] Code)[] ProgramParameterRoutines =
+    [
+        ("sceGxmProgramGetParameter", Gxm, ProgramGetParameter),
+        ("sceGxmProgramParameterGetName", Gxm, [0xE3500000, 0x15901000, 0x10800001, BxLr]),     // cmp r0, #0 ; ldrne r1, [r0] ; addne r0, r0, r1
+        ("sceGxmProgramParameterGetCategory", Gxm, [0xE5D00004, 0xE200000F, BxLr]),             // ldrb r0, [r0, #4] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetType", Gxm, [0xE5D00004, 0xE1A00220, BxLr]),                 // ldrb r0, [r0, #4] ; lsr r0, r0, #4
+        ("sceGxmProgramParameterGetComponentCount", Gxm, [0xE5D00005, 0xE200000F, BxLr]),       // ldrb r0, [r0, #5] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetContainerIndex", Gxm, [0xE5D00005, 0xE1A00220, BxLr]),       // ldrb r0, [r0, #5] ; lsr r0, r0, #4
+        ("sceGxmProgramParameterGetSemantic", Gxm, [0xE5D01004, 0xE311000F, 0x05D00006, 0x13A00000, BxLr]), // attributes only: ldrb r1, [r0, #4] ; tst r1, #15 ; ldrbeq r0, [r0, #6] ; movne r0, #0
+        ("sceGxmProgramParameterGetSemanticIndex", Gxm, [0xE5D00007, 0xE200000F, BxLr]),        // ldrb r0, [r0, #7] ; and r0, r0, #15
+        ("sceGxmProgramParameterGetArraySize", Gxm, [0xE5900008, BxLr]),                        // ldr r0, [r0, #8]
+        ("sceGxmProgramParameterGetResourceIndex", Gxm, [0xE590000C, BxLr]),                    // ldr r0, [r0, #12]
+        ("sceGxmProgramParameterIsSamplerCube", Gxm, [0xE5D00007, 0xE1A00220, 0xE2000001, BxLr]), // ldrb r0, [r0, #7] ; lsr r0, r0, #4 ; and r0, r0, #1
+        // sceGxmPrecomputedDrawSetVertexStream(state, index, data): the C# checks in order; a stream the program does not
+        // read (index >= the slot count at +12) has no slot and is not written
+        ("sceGxmPrecomputedDrawSetVertexStream", Gxm,
+        [
+            0xE3500000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r0, #0
+            0xE3510010, .. ReturnGxmError(HS, ErrInvalidValue),   // cmp r1, #16
+            0xE3520000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r2, #0
+            0xE1D030BC,                                           // ldrh r3, [r0, #12]  slots
+            0xE1510003,                                           // cmp r1, r3
+            0x35903008,                                           // ldrlo r3, [r0, #8]  stream array
+            0x37832101,                                           // strlo r2, [r3, r1, lsl #2]
+            0xE3A00000,                                           // mov r0, #0
+            BxLr,
+        ]),
+    ];
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
-    static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
     static readonly bool ContextModes = Mode != "precomputed";
     static readonly bool KernelRoutines = Mode is not ("precomputed" or "gxm");
     /// <summary>=notex: without the texture-control-word and program-header routines (A/B).</summary>
@@ -376,6 +711,9 @@ public static class HleGuestCode
         .. (TextureRoutines ? TextureAndProgramRoutines : []),
         .. (ContextModes ? ContextModeRoutines : []),
         .. (KernelRoutines ? KernelLeafRoutines : []),
+        .. (LwMutexRoutines ? LwMutexRoutineTable : []),
+        .. (ContextState ? ContextStateRoutines : []),
+        .. (TextureRoutines ? ProgramParameterRoutines : []),
     ];
 
     static readonly Dictionary<uint, int> RoutineByNid = BuildNidTable();
@@ -407,24 +745,64 @@ public static class HleGuestCode
         lock (Placed)
         {
             var key = (space, space.Id, owner ?? svcIndexOf);
-            if (!Placed.TryGetValue(key, out var addrs))
-            {
-                uint bytes = 0;
-                foreach (var r in Routines) bytes += (uint)r.Code.Length * 4;
-                uint at = memory.Alloc(bytes, "HLE guest code", MemoryRegion.User, 16);
-                addrs = new uint[Routines.Length];
-                for (int i = 0; i < Routines.Length; i++)
-                {
-                    addrs[i] = at;
-                    foreach (uint w in Routines[i].Code)
-                    {
-                        GuestMemory.W32(at, w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(i)) & 0xFFFFFF) : w);
-                        at += 4;
-                    }
-                }
-                Placed[key] = addrs;
-            }
+            if (!Placed.TryGetValue(key, out var addrs)) Placed[key] = addrs = Place(memory, svcIndexOf, reuse: false);
             return addrs[index];
         }
+    }
+
+    const string BlockName = "HLE guest code";
+
+    /// <summary>Writes every routine into guest memory (fallback SVCs resolved through <paramref name="svcIndexOf"/>) and
+    /// returns their addresses; <paramref name="reuse"/>: a block of the calling space that already holds exactly this
+    /// image (a save state of this build) is used instead of a new one.</summary>
+    static uint[] Place(GuestMemory memory, Func<uint, uint> svcIndexOf, bool reuse)
+    {
+        var image = new List<uint>();
+        var offsets = new uint[Routines.Length];
+        for (int i = 0; i < Routines.Length; i++)
+        {
+            offsets[i] = (uint)image.Count * 4;
+            foreach (uint w in Routines[i].Code) image.Add(w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(i)) & 0xFFFFFF) : w);
+        }
+        uint bytes = (uint)image.Count * 4, at = 0;
+        if (reuse)
+            foreach (var b in OwnBlocks(memory))
+                if (b.Size >= bytes && GuestMemory.ReadSpan(b.Address, (int)bytes).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(image))))
+                { at = b.Address; break; }
+        if (at == 0)
+        {
+            at = memory.Alloc(bytes, BlockName, MemoryRegion.User, 16);
+            for (int i = 0; i < image.Count; i++) GuestMemory.W32(at + (uint)i * 4, image[i]);
+        }
+        var addrs = new uint[Routines.Length];
+        for (int i = 0; i < addrs.Length; i++) addrs[i] = at + offsets[i];
+        return addrs;
+    }
+
+    /// <summary>The guest-code blocks of the calling thread's address space.</summary>
+    static IEnumerable<GuestMemory.Block> OwnBlocks(GuestMemory memory)
+    {
+        var space = AddressSpace.Current;
+        return memory.Blocks().Where(b => b.Name == BlockName && (b.Space == null || ReferenceEquals(b.Space, space)));
+    }
+
+    /// <summary>
+    /// After a save state load (memory and the HLE function table restored): the routines placed in this session are
+    /// gone with the old memory, and the restored memory holds the saved session's, from the build that saved it (or
+    /// none: a state from before a routine existed keeps SVC stubs). Places this build's routines again, in the calling
+    /// space for registry <paramref name="owner"/> (reusing a restored block that already holds them), and returns a test
+    /// for "an address in a guest-code block of the restored memory", for <see cref="Linker.RebindHleStubs"/>.
+    /// </summary>
+    public static Func<uint, bool> Replace(GuestMemory memory, Func<uint, uint> svcIndexOf, object owner)
+    {
+        var old = OwnBlocks(memory).Select(b => (b.Address, b.Size)).ToArray();
+        bool InOld(uint a) { foreach (var (s, n) in old) if (a - s < n) return true; return false; }
+        if (!Enabled || AddressSpace.Current is not { } space) return InOld;
+        lock (Placed)
+        {
+            foreach (var k in Placed.Keys.Where(k => ReferenceEquals(k.Item3, owner)).ToList()) Placed.Remove(k);
+            Placed[(space, space.Id, owner)] = Place(memory, svcIndexOf, reuse: true);
+        }
+        return InOld;
     }
 }
