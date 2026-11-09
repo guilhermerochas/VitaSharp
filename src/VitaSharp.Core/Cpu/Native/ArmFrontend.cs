@@ -64,7 +64,24 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>Per-op inline/callout counters (diagnostics: which instructions are worth adding to the IR next).</summary>
     public static readonly long[] InlineCount = new long[(int)Op.Count], CalloutCount = new long[(int)Op.Count];
 
-    public IrBlock Translate(Block block)
+    public IrBlock Translate(Block block) => Translate(block, null);
+
+    /// <summary>
+    /// Whether a block ending in <paramref name="d"/> can be continued by its fall-through block in one translation
+    /// (<see cref="Translate(Block, IReadOnlyList{Block}?)"/>): a conditional direct branch or CBZ/CBNZ, whose taken path
+    /// exits and whose other path goes on at the next address.
+    /// </summary>
+    public static bool Continues(in DecodedInst d) =>
+        d.Op == Op.T16_Cbz ? (d.Flags & InstFlags.Conditional) == 0
+        : d.Op is Op.A32_B or Op.T16_BCond or Op.T32_BCondW && (d.Flags & InstFlags.Conditional) != 0;
+
+    /// <summary>
+    /// Translates <paramref name="block"/> or, with <paramref name="chain"/> (the block first, then the blocks that
+    /// follow it in memory), one superblock: each block but the last ends in a conditional branch (<see cref="Continues"/>)
+    /// whose taken path exits while the other path goes on into the next block with the guest state still in temps. Every
+    /// exit charges the cycles of the blocks up to its own (in Imm4, plus one).
+    /// </summary>
+    public IrBlock Translate(Block block, IReadOnlyList<Block>? chain)
     {
         if (!_reuseIr) _b = new IrBuilder(block.Start, block.Thumb);
         else if (_reused == null) _b = _reused = new IrBuilder(block.Start, block.Thumb);
@@ -72,35 +89,66 @@ public sealed unsafe partial class ArmFrontend
         _thumb = block.Thumb;
         _b.DynamicExitOperands = DynamicExitOperands;
         var ir = _b.Block;
-        ir.Cycles = block.Cycles;
-        ir.GuestInstructions = block.Insts.Length;
-        var insts = block.Insts;
+        int segments = chain?.Count ?? 1;
+        long cycles = 0;
+        int guest = 0;
         bool terminated = false;
-        for (int i = 0; i < insts.Length; i++)
+        for (int k = 0; k < segments && !terminated; k++)
         {
-            ref readonly var d = ref insts[i];
-            bool last = i == insts.Length - 1;
-            if (d.EndsBlock || last) _b.SetReg(15, _b.Const(d.Address + d.Size));
-            if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop) { if (last) { _b.Exit(); terminated = true; } continue; }
-
-            bool cond = (d.Flags & InstFlags.Conditional) != 0;
-            if (cond) _b.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
-            bool exitNow = Translate(d);
-            if (d.EndsBlock || last || exitNow)
+            var seg = chain?[k] ?? block;
+            bool more = k + 1 < segments;
+            int from = ir.Insts.Count;
+            var insts = seg.Insts;
+            for (int i = 0; i < insts.Length; i++)
             {
-                // the block ends after this instruction (on the path that executed it)
-                _b.Exit(neverLink: exitNow);
-                if (cond)
+                ref readonly var d = ref insts[i];
+                bool last = i == insts.Length - 1;
+                if (d.EndsBlock || last) _b.SetReg(15, _b.Const(d.Address + d.Size));
+                if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop) { if (last && !more) { _b.Exit(); terminated = true; } continue; }
+
+                bool cond = (d.Flags & InstFlags.Conditional) != 0;
+                if (cond) _b.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
+                bool exitNow = Translate(d);
+                bool goOn = more && last && !exitNow && Continues(d);
+                if (d.EndsBlock || last || exitNow)
                 {
-                    _b.EndRegion(terminated: true);
-                    _b.Exit(); // condition failed: fall through to the next address (R15 was set before the region)
+                    // the block ends after this instruction (on the path that executed it)
+                    if (goOn)
+                    {
+                        // superblock: the taken path exits, the other one continues into the next block
+                        if (cond) { _b.Exit(); _b.EndRegion(terminated: true); }
+                        break;
+                    }
+                    _b.Exit(neverLink: exitNow);
+                    if (cond)
+                    {
+                        _b.EndRegion(terminated: true);
+                        _b.Exit(); // condition failed: fall through to the next address (R15 was set before the region)
+                    }
+                    terminated = true;
+                    break;
                 }
-                terminated = true;
-                break;
+                if (cond) _b.EndRegion(terminated: false);
             }
-            if (cond) _b.EndRegion(terminated: false);
+            cycles += seg.Cycles;
+            guest += insts.Length;
+            if (chain != null)
+            {
+                // the exits of this block charge the cycles up to it
+                var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+                for (int j = from; j < span.Length; j++)
+                    if (span[j].Op is IrOp.ExitStatic or IrOp.ExitDynamic && span[j].Imm4 == 0) span[j].Imm4 = (uint)Math.Min(cycles, int.MaxValue - 1) + 1;
+            }
         }
         if (!terminated) _b.Exit();
+        if (chain != null)
+        {
+            var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+            for (int j = 0; j < span.Length; j++)
+                if (span[j].Op is IrOp.ExitStatic or IrOp.ExitDynamic && span[j].Imm4 == 0) span[j].Imm4 = (uint)Math.Min(cycles, int.MaxValue - 1) + 1;
+        }
+        ir.Cycles = cycles;
+        ir.GuestInstructions = guest;
         return ir;
     }
 

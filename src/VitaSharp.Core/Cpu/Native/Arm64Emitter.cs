@@ -124,10 +124,14 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Indirect exits read a dispatch-table entry's key and arena offset with one plain 64-bit load
         /// (<see cref="NativeRuntime.DispatchEntry"/>) instead of two acquire loads and a second key check.</summary>
         PackedDispatch = 131072,
-        All = 262143,
+        /// <summary>A block ending in a conditional branch is translated together with the (already executed) blocks
+        /// that follow its not-taken path, up to 4 blocks / 128 instructions (<see cref="NativeArm64Compiler"/>): the
+        /// guest state stays in temps across them, and each continued branch saves an exit and a block entry.</summary>
+        Superblocks = 262144,
+        All = 524287,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -283,6 +287,7 @@ public sealed unsafe partial class Arm64Emitter
             _cur = i;
             Lower(insts[i], slotFor, ref exitIndex);
         }
+        _exitCost = 0; // the abort path charges the whole block
         if (_abortUsed || !_stub)
         {
             _a.Bind(_abort);
@@ -491,6 +496,10 @@ public sealed unsafe partial class Arm64Emitter
     /// Adds the block's cycles and counts to the state; leaves CycleAcc in x16. With pinned counters: x26 += 1,
     /// x27 += instructions, ADDS x28 += cycles, so the flags say GE exactly when CycleAcc reached CheckWindow.
     /// </summary>
+    /// <summary>Cycles the exit being lowered charges: its own (Imm4 - 1, superblocks: the blocks up to it) or the block's.</summary>
+    uint _exitCost;
+    long ExitCycles => _exitCost != 0 ? _exitCost - 1 : _ir.Cycles;
+
     void EmitAccounting()
     {
         var a = _a;
@@ -501,13 +510,13 @@ public sealed unsafe partial class Arm64Emitter
                 a.AddImm(PinBlocks, PinBlocks, 1, true);
                 AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
             }
-            ulong c = (ulong)Math.Min(_ir.Cycles, int.MaxValue);
+            ulong c = (ulong)Math.Min(ExitCycles, int.MaxValue);
             if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24)) a.AddsImm(PinBudget, PinBudget, (uint)c, true);
             else { a.MovImm64(X8, c); a.Adds(PinBudget, PinBudget, X8, x: true); }
             return;
         }
         a.LdrX(X16, State, OffCycleAcc);
-        AddConst64(X16, (ulong)Math.Min(_ir.Cycles, int.MaxValue));
+        AddConst64(X16, (ulong)Math.Min(ExitCycles, int.MaxValue));
         a.StrX(X16, State, OffCycleAcc);
         a.LdrX(X17, State, OffNBlocks);
         a.AddImm(X17, X17, 1, true);
@@ -718,6 +727,7 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.Callout: CallHandler(x.Imm, x.Imm2, x.Imm3); return;
             case IrOp.ExitStatic:
             {
+                _exitCost = x.Imm4;
                 nint slot = slotFor(exitIndex++);
                 int ret = a.NewLabel();
                 // LinkBreak only on back edges: every cycle of linked blocks has an exit to an address at or below its
@@ -791,6 +801,7 @@ public sealed unsafe partial class Arm64Emitter
             }
             case IrOp.ExitDynamic:
             {
+                _exitCost = x.Imm4;
                 int ret = a.NewLabel();
                 EmitAccounting();
                 if (x.Imm == 0 && _rt.DispatchTable != 0 && !NativeRuntime.NoLink)
