@@ -63,7 +63,7 @@ public static unsafe class BlockBuilder
                 var d = Decoder.DecodeArm(GuestMemory.Read<uint>(addr), addr); // the building thread's (its process's) space
                 list.Add(d);
                 addr += 4;
-                if (d.EndsBlock || list.Count >= MaxInstructions) break;
+                if (d.EndsBlock || list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr) break;
             }
         }
         else
@@ -97,7 +97,8 @@ public static unsafe class BlockBuilder
                 list.Add(d);
                 addr += d.Size;
                 if (d.EndsBlock) break;
-                if (list.Count >= MaxInstructions && (itState & 0xF) == 0) break;
+                // VMSR may switch VFP short-vector mode, which the rest of a block cannot follow
+                if ((list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr) && (itState & 0xF) == 0) break;
             }
         }
         var insts = list.ToArray();

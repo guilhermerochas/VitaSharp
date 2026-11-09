@@ -1190,8 +1190,8 @@ public sealed unsafe partial class ArmFrontend
 
     bool? VfpVmsr(in DecodedInst d)
     {
-        if (Bits(d.Raw, 19, 16) == 1) B.StoreState(FpscrOffset, Reg(Bits(d.Raw, 15, 12)));
-        return false;
+        // FPSCR: the handler (it raises ExitReason.FpMode when short-vector mode starts or ends; the block ends after it)
+        return Bits(d.Raw, 19, 16) == 1 ? null : false;
     }
 
     bool? VfpVdupCore(in DecodedInst d)
