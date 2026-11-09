@@ -59,6 +59,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         var fe = _frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
         fe.HleCallouts = hleCallouts;
         fe.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
+        fe.DynamicExitOperands = true;
         var ir = fe.Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         if (successors != null && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0 && !NativeVerifier.Enabled && CpuCore.Probes == null)
@@ -124,8 +125,14 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             if (x.Op != IrOp.ExitStatic) continue;
             if (coldPc) x.Imm3 = StateLiveness.ColdPc; // patched exits store R15 on their dispatcher paths only
             bool thumb = x.Imm2 != 0;
-            var t = successors(x.Imm, thumb);
-            int dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
+            Block? t;
+            int dead;
+            try
+            {
+                t = successors(x.Imm, thumb);
+                dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
+            }
+            catch (Exception) { continue; } // whatever the target holds, this block still compiles (with the stores)
             if (dead == 0) continue;
             targets.Add((x.Imm, thumb, dead));
             if (t!.Start < b.Start || t.End > b.End) { deps ??= new(4); deps.Add(t.Start); deps.Add(t.End); }

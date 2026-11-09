@@ -18,6 +18,32 @@ Branch `feat/native-jit` (from main ff80a08). Not merged, not pushed.
 | Media instructions, VLD2-4/VST2-4, VSHL.reg.64, VMULL, VCLS, VQMOVN inline on both backends; cheaper compilation (branch perf/jit-complete) | done, see "perf/jit-complete" below |
 | ARM64 code quality: pinned block counters, compare + branch fusion, STP/LDP state flushes, SIMD register cache, lazy FPCR (branch perf/arm64-jit) | done in the sandbox, falta medir no aparelho; see "perf/arm64-jit" below |
 
+## perf/android-jit (2026-11-09): hot-code size on the phone
+
+Branch `perf/android-jit` (from main 9f21653). Not merged, not pushed. x64 output unchanged (ARM64 compiler only).
+
+**Why.** simpleperf of Killzone's game thread on the Redmi (device lab, staircase scene, mono-aot-llvm APK of
+06/11, `VITASHARP_NATIVE_MAP`): generated code 54% of the thread's samples, VitaSharp.Core 22%, Mono/libc/stubs outside
+the arena ~20%. `simpleperf stat`: IPC 0.49, 60 L1I refills and 10 iTLB refills per 1,000 instructions, 17 branch
+mispredictions per 1,000. The samples are flat: 50% of the JIT samples fall in 932 blocks (600 KB of code over 579
+pages), 80% in 3,585 blocks (1.7 MB over 1,613 pages), far beyond the A76's 64 KB L1I. Code size is the lever, not
+instruction latency. Hot code by category: dirty-page marks ~19% (6 instructions after every guest store), state
+loads/stores ~25% (D registers of VFP code included), exits/accounting ~10%. Analysis scripts: simpleperf's
+`simpleperf_report_lib` (NDK) for raw sample addresses, the native map for block attribution, capstone to classify.
+
+| `VITASHARP_NATIVE_A64_NOOPT` name | Change |
+|---|---|
+| `succ` | Static exits skip storing registers/flags their target block overwrites before reading (`StateLiveness`: the target decoded from the process's space, its IR scanned; the target's range becomes a dependency of the block, `Block.Deps`). Blocks with a core callout keep every store. Patched exits store R15 only on their dispatcher paths (`StateLiveness.ColdPc`), the tier-up and FPSCR exits store the block's own pc. Off with the verifier or probes. |
+| `count` | Blocks keep only the cycle budget (x28): no block/instruction counters (`VITASHARP_NATIVE_COUNTERS=1` keeps them for the PERF line). x26 holds the dirty-page table base, x27 is a temp; dirty marks become `lsr; ldrb [x26, x16]; cbz` with the set out of line (3 inline instructions instead of 6). |
+| `group` | Stores through one base at constant offsets spanning < 4 KB in straight-line code share one mark after the last (the sweep treats a marked page's next page as written). |
+| `fence` | A DMB right after another with no memory access between is dropped. |
+| `fpentry` | Blocks with scalar VFP check FPSCR[25:16] once at entry (VMSR ends a block); FpOps then have no handler path, are not call sites, and take operands from the SIMD register cache (D registers and even S registers; double results cached). Another mode: the block returns before running (`TierUpRequest = 2`) and the dispatcher interprets it once. |
+| `stub` (extended) | The unlinked path of a patched exit is out of line too: one B word behind the site. |
+
+Tests (Unicorn sandbox, fast suite): `Arm64DeadSuccessorStoresMatchInterpreter` (random blocks + random successors run
+native then interpreted vs both interpreted; 2,110 stores dropped, 0 differences), `Arm64GroupedDirtyMarksCoverStores`
+(every written page marked or after a marked page; 384/400 blocks shorter), `Arm64BudgetOnlyCounters`.
+
 ## perf/a64-regalloc (2026-10-31): guest state across regions, exit stubs
 
 Branch `perf/a64-regalloc` (from main b8d2331). Not merged, not pushed; x64 output

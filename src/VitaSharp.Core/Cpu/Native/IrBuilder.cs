@@ -50,6 +50,9 @@ public sealed unsafe class IrBuilder
 
     public bool InRegion => _regionLabel >= 0;
 
+    /// <summary>Indirect exits carry the target pc (A) and Thumb state (B) temps when cached (ARM64 backend).</summary>
+    public bool DynamicExitOperands;
+
     int Emit(IrInst i) { Block.Insts.Add(i); return Block.Insts.Count - 1; }
 
     public int Const(uint v) => Block.NewConst(v);
@@ -235,7 +238,10 @@ public sealed unsafe class IrBuilder
             return;
         }
         Flush();
-        Emit(new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u });
+        // the target pc and Thumb state as temps (also in the state now): the dispatch-table lookup needs no reload
+        Emit(DynamicExitOperands
+            ? new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u, A = _val[15], B = _val[SlotThumb] }
+            : new IrInst(IrOp.ExitDynamic) { Imm = neverLink ? 1u : 0u });
     }
 
     /// <summary>

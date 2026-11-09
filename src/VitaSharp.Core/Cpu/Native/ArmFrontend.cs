@@ -41,6 +41,9 @@ public sealed unsafe partial class ArmFrontend
     /// <see cref="Arm64Emitter.A64Opt.DeferRegions"/>, off for x64).</summary>
     public bool DeferRegions;
 
+    /// <summary>Indirect exits carry the target pc and Thumb temps (<see cref="IrBuilder.DynamicExitOperands"/>; ARM64).</summary>
+    public bool DynamicExitOperands;
+
     static readonly uint ExitOffset = (uint)StateLayout.Of(nameof(CpuState.Exit));
     static readonly uint SvcImmOffset = (uint)StateLayout.Of(nameof(CpuState.SvcImm));
     static readonly uint SvcPcOffset = (uint)StateLayout.Of(nameof(CpuState.SvcPc));
@@ -67,6 +70,7 @@ public sealed unsafe partial class ArmFrontend
         else if (_reused == null) _b = _reused = new IrBuilder(block.Start, block.Thumb);
         else { _reused.Reset(block.Start, block.Thumb); _b = _reused; }
         _thumb = block.Thumb;
+        _b.DynamicExitOperands = DynamicExitOperands;
         var ir = _b.Block;
         ir.Cycles = block.Cycles;
         ir.GuestInstructions = block.Insts.Length;

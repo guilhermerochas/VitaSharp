@@ -121,10 +121,13 @@ public sealed unsafe partial class Arm64Emitter
         /// FpOps stop being call sites for register allocation; in another mode the block returns at once and the
         /// dispatcher interprets it (<see cref="CpuState.TierUpRequest"/> = 2).</summary>
         FpEntryCheck = 65536,
-        All = 131071,
+        /// <summary>Indirect exits read a dispatch-table entry's key and arena offset with one plain 64-bit load
+        /// (<see cref="NativeRuntime.DispatchEntry"/>) instead of two acquire loads and a second key check.</summary>
+        PackedDispatch = 131072,
+        All = 262143,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -177,6 +180,8 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>With <see cref="PinnedCounters"/>: the trampoline and the blocks keep only the cycle budget, not the
         /// block and instruction counts (<see cref="A64Opt.NoBlockCounts"/>).</summary>
         public bool NoBlockCounts;
+        /// <summary>Start of the code arena: dispatch-table entries hold code offsets from it (<see cref="A64Opt.PackedDispatch"/>; 0: not packed).</summary>
+        public ulong CodeBase;
     }
 
     /// <summary>Byte offsets in the last prepared block of each static exit's patch site (<see cref="Runtime.PatchLinks"/>),
@@ -234,6 +239,7 @@ public sealed unsafe partial class Arm64Emitter
             }
         }
         _coldExits.Clear();
+        _coldUnlinked.Clear();
         _coldMarks.Clear();
         ForgetHostFlags();
         _fpcrHost = false;
@@ -321,6 +327,8 @@ public sealed unsafe partial class Arm64Emitter
     bool _stub, _abortUsed, _slotPathUsed, _tailZeroUsed;
     int _tail, _tailZero, _slotPath;
     readonly List<(int Label, nint Slot, uint? Pc)> _coldExits = new();
+    /// <summary>Unlinked paths of patched exits (the site's B to the next word leads here): the slot path.</summary>
+    readonly List<(int Label, nint Slot, uint? Pc)> _coldUnlinked = new();
     /// <summary>Dirty-page marks of clean pages, laid out after the block (<see cref="MarkDirtyReg"/>).</summary>
     readonly List<(int Cold, int Back)> _coldMarks = new();
 
@@ -350,6 +358,13 @@ public sealed unsafe partial class Arm64Emitter
     void EmitSharedTails()
     {
         var a = _a;
+        foreach (var (label, slot, pc) in _coldUnlinked)
+        {
+            a.Bind(label);
+            if (pc is uint p) StorePc(p);
+            a.LdrLit(X16, (ulong)slot);
+            a.B(_slotPath);
+        }
         foreach (var (label, slot, pc) in _coldExits)
         {
             a.Bind(label);
@@ -722,17 +737,18 @@ public sealed unsafe partial class Arm64Emitter
                     a.Emit(UnlinkedSiteWord);
                     // StateLiveness.ColdPc: the IR left R15 to this exit, which stores it on the paths to the dispatcher only
                     bool coldPc = _stub && x.Imm3 == StateLiveness.ColdPc;
-                    if (coldPc) StorePc(x.Imm);
-                    a.LdrLit(X16, (ulong)slot);
                     if (_stub)
                     {
-                        // linked, only the accounting, the checks and the patched B are on the hot path; the return
-                        // path goes after the block's code
+                        // linked, only the accounting, the checks and the patched B are on the hot path (plus one B
+                        // word behind the site); the unlinked and return paths go after the block's code
+                        int unlinked = a.NewLabel();
+                        a.B(unlinked);
                         _slotPathUsed = true;
-                        a.B(_slotPath);
+                        _coldUnlinked.Add((unlinked, slot, coldPc ? x.Imm : (uint?)null));
                         _coldExits.Add((ret, slot, coldPc ? x.Imm : (uint?)null));
                         return;
                     }
+                    a.LdrLit(X16, (ulong)slot);
                     a.LdrX(X17, X16, 0);
                     a.Cbz(X17, ret2, true);
                     a.Br(X17);
@@ -783,12 +799,27 @@ public sealed unsafe partial class Arm64Emitter
                     // reorders loads, so the first two are acquire loads: the code pointer is read after the key and
                     // the second key read after the code pointer.
                     WindowChecks(ret);
-                    LdState(X0, OffR + 60);
-                    LdState(X1, OffThumb);
-                    a.Orr(X1, X0, X1);                                   // key = pc | thumb
+                    int pc = X0, th = X1;
+                    if (x.A >= 0) pc = Use(x.A, X0); else LdState(X0, OffR + 60);
+                    if (x.B >= 0) th = UseZ(x.B, X1); else LdState(X1, OffThumb);
+                    a.Orr(X1, pc, th);                                   // key = pc | thumb
+                    if (pc != X0) a.Mov(X0, pc);
                     a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
                     a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
                     a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
+                    if (_rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0)
+                    {
+                        // {key, arena offset} in one single-copy-atomic load: a republished entry is read whole
+                        a.LdrX(X4, X3, 0);
+                        a.Cmp(X4, X1);                                   // 32-bit compare: the key half
+                        a.BCond(Cond.NE, ret);
+                        a.LdrLit(X5, _rt.CodeBase);
+                        a.Add(X5, X5, X4, Shift.Lsr, 32, x: true);
+                        a.Br(X5);
+                        a.Bind(ret);
+                        ExitZero();
+                        return;
+                    }
                     a.Ldar(X4, X3);
                     a.Cmp(X4, X1);
                     a.BCond(Cond.NE, ret);
@@ -1401,46 +1432,71 @@ public sealed unsafe partial class Arm64Emitter
         }
         if (!checkedAtEntry) a.BCond(Cond.NE, slow);
 
+        // operands from the SIMD register cache when the op has no handler path (A64Opt.FpEntryCheck): a D register, or
+        // an S register in the low half of its D register; double results are cached (write-through, like VecOps)
+        bool cache = checkedAtEntry && _vcache, resultCached = false;
+        if (cache) _vcBusy = 0;
+        int Opnd(int scratch, int off)
+        {
+            int rel = off - OffD;
+            if (cache && (dbl || (rel & 7) == 0)) return Src(scratch, rel, false);
+            a.LdSt(ld, scratch, State, off);
+            return scratch;
+        }
+        int ResultReg() => cache && dbl ? Dst(0) : 0;
+        void Result(int r)
+        {
+            if (cache && dbl) { Put(dOff - OffD, r, false); resultCached = true; }
+            else a.LdSt(st, r, State, dOff);
+        }
+
         switch (kind)
         {
             case FpKind.Add: case FpKind.Sub: case FpKind.Mul: case FpKind.NMul: case FpKind.Div:
-                a.LdSt(ld, 1, State, nOff);
-                a.LdSt(ld, 2, State, mOff);
+            {
+                int n = Opnd(1, nOff), m = Opnd(2, mOff), r = ResultReg();
                 switch (kind)
                 {
-                    case FpKind.Add: a.Fadd(0, 1, 2, dbl); break;
-                    case FpKind.Sub: a.Fsub(0, 1, 2, dbl); break;
-                    case FpKind.Mul: a.Fmul(0, 1, 2, dbl); break;
-                    case FpKind.NMul: a.Fnmul(0, 1, 2, dbl); break; // -(n*m): a NaN product negates the default NaN, like VNMUL
-                    default: a.Fdiv(0, 1, 2, dbl); break;
+                    case FpKind.Add: a.Fadd(r, n, m, dbl); break;
+                    case FpKind.Sub: a.Fsub(r, n, m, dbl); break;
+                    case FpKind.Mul: a.Fmul(r, n, m, dbl); break;
+                    case FpKind.NMul: a.Fnmul(r, n, m, dbl); break; // -(n*m): a NaN product negates the default NaN, like VNMUL
+                    default: a.Fdiv(r, n, m, dbl); break;
                 }
-                a.LdSt(st, 0, State, dOff);
+                Result(r);
                 break;
+            }
             case FpKind.Mla: case FpKind.Mls: case FpKind.Nmla: case FpKind.Nmls:
-                // d = (+/-)d (+/-) round(n * m): the product is rounded on its own (not fused)
-                a.LdSt(ld, 1, State, nOff);
-                a.LdSt(ld, 2, State, mOff);
-                a.LdSt(ld, 3, State, dOff);
-                a.Fmul(1, 1, 2, dbl);
-                if (kind is FpKind.Nmla or FpKind.Nmls) a.Fneg(3, 3, dbl);
-                if (kind is FpKind.Mla or FpKind.Nmls) a.Fadd(0, 3, 1, dbl); else a.Fsub(0, 3, 1, dbl);
-                a.LdSt(st, 0, State, dOff);
+            {
+                // d = (+/-)d (+/-) round(n * m): the product is rounded on its own (not fused); cached operands are
+                // never written in place
+                int n = Opnd(1, nOff), m = Opnd(2, mOff), d = Opnd(3, dOff);
+                a.Fmul(1, n, m, dbl);
+                if (kind is FpKind.Nmla or FpKind.Nmls) { a.Fneg(3, d, dbl); d = 3; }
+                int r = ResultReg();
+                if (kind is FpKind.Mla or FpKind.Nmls) a.Fadd(r, d, 1, dbl); else a.Fsub(r, d, 1, dbl);
+                Result(r);
                 break;
+            }
             case FpKind.Sqrt:
-                a.LdSt(ld, 1, State, mOff);
-                a.Fsqrt(0, 1, dbl);
-                a.LdSt(st, 0, State, dOff);
+            {
+                int m = Opnd(1, mOff), r = ResultReg();
+                a.Fsqrt(r, m, dbl);
+                Result(r);
                 break;
+            }
             case FpKind.Cmp: case FpKind.CmpZero:
-                a.LdSt(ld, 0, State, dOff);
-                if (kind == FpKind.CmpZero) a.FcmpZero(0, dbl);
-                else { a.LdSt(ld, 1, State, mOff); a.Fcmp(0, 1, dbl); }
+            {
+                int d = Opnd(0, dOff);
+                if (kind == FpKind.CmpZero) a.FcmpZero(d, dbl);
+                else a.Fcmp(d, Opnd(1, mOff), dbl);
                 a.Mrs(X16, SysReg.Nzcv);              // FCMP's NZCV are VCMP's (unordered 0011, equal 0110, less 1000, greater 0010)
                 LdState(X17, OffFpscr);
                 a.AndImm(X17, X17, 0x0FFFFFFF);
                 a.Orr(X17, X17, X16);
                 StState(X17, OffFpscr);
                 break;
+            }
             case FpKind.CvtToDouble:
                 a.LdSt(LsKind.LdrS, 1, State, mOff);
                 a.FcvtSD(0, 1);
@@ -1485,7 +1541,7 @@ public sealed unsafe partial class Arm64Emitter
         }
         // both paths write d (at most 8 bytes at its offset): cached SIMD copies there are stale; the handler path
         // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
-        if (checkedAtEntry) { VcInvalidate((int)(x.Imm4 & 0xFF), 8); return; }
+        if (checkedAtEntry) { if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero)) VcInvalidate((int)(x.Imm4 & 0xFF), 8); return; }
         a.B(done);
         VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);

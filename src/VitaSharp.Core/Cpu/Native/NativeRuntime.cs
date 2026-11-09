@@ -68,6 +68,7 @@ public sealed unsafe partial class NativeRuntime
             Arm64Stubs = new Arm64Emitter.Runtime
             {
                 Epilogue = (ulong)(entry64 + epi),
+                CodeBase = (ulong)Code.ExecBase,
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
                 PinnedCounters = pinned,
@@ -212,13 +213,18 @@ public sealed unsafe partial class NativeRuntime
     public readonly DispatchEntry* Dispatch = (DispatchEntry*)AllocateDispatchTable();
     public const uint NoKey = 0xFFFFFFFF; // never a valid key: block addresses are even
 
-    public struct DispatchEntry { public uint Key, Pad; public nint Code; }
+    /// <summary>One table entry. <see cref="Off"/> is the code's offset in the arena: {Key, Off} is one aligned 64-bit word,
+    /// so ARM64 code reads both with a single plain load (A64Opt.PackedDispatch) instead of the key/code/key protocol.</summary>
+    public struct DispatchEntry { public uint Key, Off; public nint Code; }
+
+    /// <summary>The packed {key, arena offset} word of an entry for <paramref name="code"/>.</summary>
+    public ulong PackedEntry(uint key, nint code) => (ulong)(uint)((byte*)code - Code.ExecBase) << 32 | key;
 
     /// <summary>A new, empty indirect-exit table.</summary>
     public static nint AllocateDispatchTable()
     {
         var t = (DispatchEntry*)NativeMemory.AlignedAlloc((nuint)(sizeof(DispatchEntry) << DispatchBits), 64);
-        for (int i = 0; i < 1 << DispatchBits; i++) { t[i].Key = NoKey; t[i].Code = 0; }
+        for (int i = 0; i < 1 << DispatchBits; i++) { t[i].Key = NoKey; t[i].Off = 0; t[i].Code = 0; }
         return (nint)t;
     }
 
@@ -237,9 +243,9 @@ public sealed unsafe partial class NativeRuntime
         var e = EntryOf(b);
         lock (_dispatchLock)
         {
-            Volatile.Write(ref e->Key, NoKey);
+            Volatile.Write(ref *(ulong*)e, NoKey);
             Volatile.Write(ref e->Code, b.NativeEntry);
-            Volatile.Write(ref e->Key, KeyOf(b));
+            Volatile.Write(ref *(ulong*)e, PackedEntry(KeyOf(b), b.NativeEntry)); // key and offset in one store
         }
     }
 
