@@ -52,8 +52,10 @@ public sealed unsafe partial class NativeRuntime
         {
             int epi = 0;
             bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
+            bool noCounts = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.NoBlockCounts) != 0
+                && Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) != "1";
             int trampSize = 0;
-            byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned); trampSize = t.Length; return t; });
+            byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noCounts); trampSize = t.Length; return t; });
             if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
             ulong epilogue = (ulong)(entry64 + epi);
@@ -69,6 +71,7 @@ public sealed unsafe partial class NativeRuntime
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
                 PinnedCounters = pinned,
+                NoBlockCounts = noCounts,
                 PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0,
             };
             PatchLinks = Arm64Stubs.PatchLinks;

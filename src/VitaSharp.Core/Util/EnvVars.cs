@@ -126,7 +126,8 @@ public static class EnvVars
     /// <summary>Tests: the block corpus (recorded with <see cref="NativeCorpus"/>) the compile-cost benchmark compiles.</summary>
     public const string BenchCorpus = "VITASHARP_BENCH_CORPUS";
     /// <summary>=1: x64 native blocks count the VFP/NEON ops and conditional branches they execute (profiling of
-    /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
+    /// register pinning / compare-branch fusion; reported on the PERF cycles lines). ARM64 native blocks count the
+    /// executed blocks and guest instructions (the PERF cycles line's "K blocks") only with it (Arm64Emitter.A64Opt.NoBlockCounts).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
     /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
