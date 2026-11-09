@@ -157,6 +157,9 @@ public static class EnvVars
     /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's
     /// hybrid suspend handles; callouts from that mode are allowed).</summary>
     public const string NativeGcTransition = "VITASHARP_NATIVE_GC_TRANSITION";
+    /// <summary>=off: bulk copies (Util/FastCopy) use Span.CopyTo; by default Mono and CoreCLR on ARM64 Linux/Android call
+    /// the C library's memmove for copies of 128 bytes or more.</summary>
+    public const string NativeMemmove = "VITASHARP_NATIVE_MEMMOVE";
     /// <summary>ARM64 backend: comma-separated optimisations to turn off for bisection on a device (all, or any of
     /// pin, backedge, fuse, pair, vcache, fpcr, fpcheck, dirty, lit, patch, cond, stub; see Arm64Emitter.A64Opt and docs/notes/native-jit.md).</summary>
     public const string NativeA64NoOpt = "VITASHARP_NATIVE_A64_NOOPT";
