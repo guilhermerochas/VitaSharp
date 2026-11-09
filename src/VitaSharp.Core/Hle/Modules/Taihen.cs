@@ -95,8 +95,8 @@ public sealed partial class Taihen : HleModule
             Log.WarnOnce($"taihook-arm-{target:X8}", $"taiHookFunctionOffsetForUser: ARM function 0x{target:X8} of {m.Name} not hooked (Thumb only)");
             return TAI_ERROR_NOT_IMPLEMENTED;
         }
-        // whole instructions covering the patch (ldr.w pc, [pc, #imm] + the hook's address: 8 bytes, 10 when not word aligned)
-        uint patch = target % 4 == 0 ? 8u : 10u, moved = 0;
+        // whole instructions covering the patch (ldr.w pc, [pc, #imm] + the hook's address: 8 bytes)
+        uint patch = 8, moved = 0;
         while (moved < patch)
         {
             ushort hw = GuestMemory.Read<ushort>(target + moved);
@@ -129,14 +129,16 @@ public sealed partial class Taihen : HleModule
         }
     }
 
-    /// <summary>ldr.w pc, [pc, #imm] and the destination right after it (8 bytes; 10 when not word aligned).</summary>
+    /// <summary>ldr.w pc, [pc, #imm] and the destination right after it (8 bytes).</summary>
     static void WriteThumbJump(uint at, uint dest)
     {
-        // the literal is read from Align(at + 4, 4) + imm: put it right after the 4-byte instruction
+        // the literal is read from Align(at + 4, 4) + imm and sits right after the 4-byte instruction, at at + 4: imm is
+        // 2 when the instruction is not word aligned (the literal was written 2 bytes further, so a hook placed at a
+        // halfword address jumped through garbage: Dead Space's SceShaccCgExt trampoline went to 0xE7AF0000)
         uint imm = at % 4 == 0 ? 0u : 2u;
         GuestMemory.Write(at, (ushort)0xF8DF);
         GuestMemory.Write(at + 2, (ushort)(0xF000 | imm));
-        GuestMemory.W32(at + 4 + imm, dest);
+        GuestMemory.W32(at + 4, dest);
     }
 
     /// <summary>Thumb instructions that read the PC (they cannot run from the trampoline): branches, literal loads,
