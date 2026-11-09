@@ -1006,7 +1006,7 @@ public sealed partial class Ngs : HleModule
 
     // ---- player (PCM16 / HEVAG)
 
-    bool ProcessPlayer(NgsVoice v, NgsModuleData m, int g)
+    unsafe bool ProcessPlayer(NgsVoice v, NgsModuleData m, int g)
     {
         var st = m.Source!;
         var pl = PlayerLayout(m);
@@ -1070,11 +1070,30 @@ public sealed partial class Ngs : HleModule
             if (adpcm)
             {
                 int frameBytes = 16 * channels;
-                int frames = Math.Max(1, (needFrames + 27) / 28);
-                consumed = Math.Min(frames * frameBytes, bytes - pos);
-                consumed -= consumed % frameBytes;
-                if (consumed <= 0) { SetState(m, 0, bytes); continue; }
-                decodedLen = DecodeHevag(buf + (uint)pos, consumed, channels, st);
+                if (st.StagingLen > 0 || bytes - pos < frameBytes)
+                {
+                    // the stream is one byte sequence across the buffers: a frame can start at the end of one buffer
+                    // and finish at the start of the next (Wwise's streamed HEVAG skips the file header in the first
+                    // buffer, so every later boundary cuts a frame). Dropping the tail misaligned all later frames
+                    // into noise (Batman: Arkham Origins Blackgate's music); keep it and complete it (Vita3K).
+                    if (st.Staging.Length < frameBytes) Array.Resize(ref st.Staging, frameBytes);
+                    consumed = Math.Min(frameBytes - st.StagingLen, bytes - pos);
+                    GuestMemory.Span(buf + (uint)pos, consumed).CopyTo(st.Staging.AsSpan(st.StagingLen));
+                    st.StagingLen += consumed;
+                    decodedLen = 0;
+                    if (st.StagingLen == frameBytes)
+                    {
+                        st.StagingLen = 0;
+                        fixed (byte* frame = st.Staging) decodedLen = DecodeHevag(frame, frameBytes, channels, st);
+                    }
+                }
+                else
+                {
+                    int frames = Math.Max(1, (needFrames + 27) / 28);
+                    consumed = Math.Min(frames * frameBytes, bytes - pos);
+                    consumed -= consumed % frameBytes;
+                    decodedLen = DecodeHevag(GuestMemory.Ptr(buf + (uint)pos), consumed, channels, st);
+                }
             }
             else
             {
@@ -1108,7 +1127,7 @@ public sealed partial class Ngs : HleModule
         index is >= 0 and < 4 && m.Param32(8 + index * pl.Stride) != 0 && m.Param32(8 + index * pl.Stride + 4) != 0;
 
     /// <summary>Decodes into the source state's reusable buffer; returns the number of floats written.</summary>
-    static unsafe int DecodeHevag(uint addr, int size, int channels, NgsSourceState st)
+    static unsafe int DecodeHevag(byte* input, int size, int channels, NgsSourceState st)
     {
         int framesPerChannel = size / 16 / channels;
         int outLen = framesPerChannel * 28 * 2;
@@ -1116,7 +1135,6 @@ public sealed partial class Ngs : HleModule
         int ch = 0, block = 0;
         // one view of the input (each GuestMemory.Read resolves the thread's address space) and the coefficient row
         // per frame (2-D array reads are calls under Mono's AOT): the HEVAG decode was the busiest NGS work on a phone
-        byte* input = GuestMemory.Base + addr;
         var coefs = HevagTables.Coefs;
         for (int f = 0; f < size / 16; f++)
         {

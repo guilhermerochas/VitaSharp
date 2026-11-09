@@ -1529,19 +1529,28 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   SceMp4/sceAvcdec acontece; a tela segue escura. Próximo: chegar à troca de carro sem estado (dirigir até um ponto de
   troca) com trace do SceMp4/sceAvcdec desde a abertura do filme e ver o que o player do jogo (entry 0x816361B5) espera
   de um filme sem áudio (fim de stream, sceMp4Reset para repetir, relógio de áudio)
-- [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
-  08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Achados (agente B): reproduz do estado da
-  gravação com o build 3261a98 (~250 quadros depois do estado): 'main' espera a eventflag AkManualEvent, o
-  'AK::EventManager' (Wwise) gira LockLwMutex/UnlockLwMutex2 em 0x81513A2C esperando um buffer de stream ([obj+0x9C] >
-  0) e o 'AK::IOThread' espera a eventflag CAkIOThread.Events (0xD, OR) sem nunca acordar; depois da carga a porta 1
-  só recebe silêncio (`scratchpad/bugsB1/bat1/audio`). O audio/ vazio da gravação combina com isso (o thread do Wwise
-  já não chamava sceAudioOutOutput quando o F8 começou). Protocolo (disassembly do eboot, só estudo): o IO thread do
-  Wwise espera 0xD em OR sem limpar; o bit 0x8 é ligado quando a contagem de pedidos pendentes (+0x40) passa de 0 para
-  1 sem pausa (+0x44) e desligado quando volta a 0 ou ao pausar (sceKernelClearEventFlag com o complemento, que o HLE
-  trata certo: Pattern &= bits); o bit 0x4 segue a contagem de +0x3C; 0x2 os slots livres (+0x48 contra +0x4). No
-  travamento a contagem de pendentes está em 0 (IO dormindo) e o EventManager espera dados de um stream: um pedido
-  sumiu ou nunca foi feito. As semânticas de eventflag/lwmutex do HLE conferem; falta seguir quem chama 0x81517354
-  (enfileira) e 0x815173CC/0x815173AE (pausa/retoma) perto do travamento. Causa ainda aberta
+  Rodada 2 (agente B, Ghidra no libscemp4 do FW 3.74 e no eboot, só estudo): o sceMp4GetNextUnit de verdade devolve 0
+  (unidade), 1 (fim do stream) ou -1 (erro); o HLE devolvia 0x80630010. O player do jogo (o mesmo do F1 2011) passa
+  o valor adiante: negativo vai para o caminho de erro (o Demux para sem avisar o VideoDec), 1 para o de fim (repete,
+  esvazia, avisa). Corrigido em 64a15c4 (GetNextUnit devolve 1 no fim); no boot a prévia 1689283 chega ao fim com 1 e
+  o jogo fecha o player normalmente. **Falta validar** na troca de carro: não cheguei lá (a corrida do prólogo de
+  1,6 mi; com o novo `hold` do --nav (3be9b2c) dá para acelerar e virar juntos, mas guiar às cegas por prints levou
+  mais de 30 passos e não terminou a corrida)
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
+  08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Travamento corrigido (agente B, 0d19271):
+  o Wwise (FUN_814f02cc, Ghidra no eboot, só estudo) lê o estado do player NGS e libera os buffers do stream do índice
+  dele até o "buffer atual" (+4), andando de 1 em 1 módulo 3; quando a cadeia de buffers acabava (next = -1), o HLE
+  gravava -1 em +4 e esse laço nunca terminava (AK::EventManager girando no ReleaseBuffer, main esperando
+  AkManualEvent, IO thread parado). Agora um next inválido deixa o último buffer como atual (os válidos seguem como
+  no Vita3K). Do boot sem estado: intro, luta no telhado, cena da Mulher-Gato, gancho no letreiro ROYAL e adiante,
+  23209 quadros a 30 fps (`scratchpad/bugsB2/bat_l1/sheet6-8.png`); o build 3261a98 trava do estado da gravação.
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" (agente B, 0caefdf). A música e os sons em stream
+  do Wwise são vozes NGS em HEVAG estéreo; o primeiro buffer pula o cabeçalho do arquivo (52 bytes), então toda
+  fronteira de buffer seguinte corta um quadro de 16 bytes. O HLE jogava fora a sobra do buffer e decodificava o
+  próximo desde o byte 0: tudo dali em diante saía 4 bytes fora de quadro, como ruído. Agora o quadro partido espera o
+  começo do buffer seguinte (como no Vita3K). Espectro da porta 1 no gameplay: antes 37-41% da energia abaixo de 1 kHz
+  e 12-27% em 4-8 kHz; depois 86-95% abaixo de 1 kHz e 0,1-3% em 4-8 kHz, como um longplay do Vita de verdade
+  (75-95% / 0,2-7%) (`scratchpad/bugsB2/bat_g1/audio`, `bat_l1/audio`, `yt/longplay.wav`)
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   Fechado (08/11/2026): roda até o gameplay (9bc0d66); a imagem "zuada" e os controles seguem num item próprio se o usuário detalhar
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
