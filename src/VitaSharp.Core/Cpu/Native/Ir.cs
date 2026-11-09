@@ -148,6 +148,7 @@ public enum FpFlags : uint
 {
     Double = 1 << 8,           // operands are doubles (for conversions: the float side)
     OtherOp = 1 << 9,          // the interpreter handler is Vfp_Other (else Vfp_Arith)
+    Checked = 1 << 10,         // ARM64 emitter: the block entry checked the FPSCR mode, the op has no handler path
 }
 
 /// <summary>

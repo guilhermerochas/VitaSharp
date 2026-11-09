@@ -275,6 +275,7 @@ public sealed unsafe class CpuCore : IDisposable
         Native.NativeRuntime? native = null;
         bool resume = false; // an HLE call returned: native code continues through the dispatch table
         bool republish = false; // an indirect exit missed the dispatch table: the block found next takes its entry back
+        bool interpretNext = false; // a native block returned before running (ARM64 FPSCR mode check): interpret it once
         while (!StopRequested)
         {
             Block? b = null;
@@ -296,7 +297,8 @@ public sealed unsafe class CpuCore : IDisposable
             {
                 if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
                 b = Lookup(s->R[15], s->Thumb != 0);
-                if (b.NativeEntry != 0 && BlockHook == null && !verify) entry = b.NativeEntry;
+                if (b.NativeEntry != 0 && BlockHook == null && !verify && !interpretNext) entry = b.NativeEntry;
+                interpretNext = false;
                 if (republish) { republish = false; if (entry != 0) native!.Republish(b); }
             }
             if (entry == 0 && b!.NativeEntry != 0 && BlockHook == null && verify)
@@ -335,6 +337,7 @@ public sealed unsafe class CpuCore : IDisposable
                 BlockCycles += s->CycleAcc - sinceCheck;
                 sinceCheck = s->CycleAcc;
                 if (s->LastExitSlot != 0) LinkExit(s);
+                else if (s->TierUpRequest == 2) { s->TierUpRequest = 0; interpretNext = true; } // FPSCR not in the mode the block assumes
                 else if (s->TierUpRequest != 0) { s->TierUpRequest = 0; Jit.TierUp(Lookup(s->R[15], s->Thumb != 0)); }
             }
             else

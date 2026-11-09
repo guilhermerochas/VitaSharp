@@ -116,10 +116,15 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Guest stores through one base register at constant offsets spanning less than a page, in straight-line
         /// code, share one dirty-page mark after the last of them (<see cref="PlanMarks"/>): pushes, STM and struct stores.</summary>
         GroupMarks = 32768,
-        All = 65535,
+        /// <summary>A block with scalar VFP code checks the FPSCR mode once at its entry instead of at every VFP op:
+        /// in the Vita's mode (VMSR, the only way to change it, ends a block) every op runs inline with no handler path, so
+        /// FpOps stop being call sites for register allocation; in another mode the block returns at once and the
+        /// dispatcher interprets it (<see cref="CpuState.TierUpRequest"/> = 2).</summary>
+        FpEntryCheck = 65536,
+        All = 131071,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -218,6 +223,16 @@ public sealed unsafe partial class Arm64Emitter
         _storeLit = (opts & A64Opt.StoreLiteral) != 0;
         _stub = (opts & A64Opt.ExitStubs) != 0;
         _abortUsed = _slotPathUsed = _tailZeroUsed = false;
+        bool fpEntry = false, calls = false;
+        {
+            var all = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
+            foreach (ref var x in all)
+            {
+                if (x.Op == IrOp.FpOp && checkFp) { x.Imm |= (uint)FpFlags.Checked; fpEntry = true; }
+                if (LinearScan.IsCallSite(x)) calls = true;
+            }
+        }
         _coldExits.Clear();
         _coldMarks.Clear();
         ForgetHostFlags();
@@ -236,8 +251,8 @@ public sealed unsafe partial class Arm64Emitter
         _tail = _a.NewLabel();
         _tailZero = _a.NewLabel();
         _slotPath = _a.NewLabel();
-        _checkExit = ir.Callouts > 0;
-        int tierUp = _a.NewLabel();
+        _checkExit = calls;
+        int tierUp = _a.NewLabel(), fpMode = _a.NewLabel();
         if (tierUpCounter != 0)
         {
             _a.LdrLit(X16, (ulong)tierUpCounter);
@@ -245,6 +260,14 @@ public sealed unsafe partial class Arm64Emitter
             _a.SubsImm(X17, X17, 1);
             _a.Str(X17, X16, 0);
             _a.BCond(Cond.EQ, tierUp);
+        }
+        if (fpEntry)
+        {
+            // FPSCR[25:16] == DN FZ, RMode 0, STRIDE 0, LEN 0, bit 19 clear (see FpOp)
+            LdState(X16, OffFpscr);
+            _a.Ubfx(X16, X16, 16, 10);
+            _a.CmpImm(X16, 0x300);
+            _a.BCond(Cond.NE, fpMode);
         }
         int exitIndex = 0;
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
@@ -266,6 +289,16 @@ public sealed unsafe partial class Arm64Emitter
             StorePc(ir.StartPc); // linked exits into this block may have left R15 to their cold paths (StateLiveness.ColdPc)
             if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
             _a.MovImm(X16, 1);
+            _a.Str(X16, State, OffTierUp);
+            if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
+        }
+        if (fpEntry)
+        {
+            // another FPSCR mode: nothing ran yet; the dispatcher interprets the block (CpuCore.Run)
+            _a.Bind(fpMode);
+            StorePc(ir.StartPc);
+            if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
+            _a.MovImm(X16, 2);
             _a.Str(X16, State, OffTierUp);
             if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
         }
@@ -1347,10 +1380,12 @@ public sealed unsafe partial class Arm64Emitter
         int slow = a.NewLabel(), done = a.NewLabel();
         var ld = dbl ? LsKind.LdrD : LsKind.LdrS;
         var st = dbl ? LsKind.StrD : LsKind.StrS;
+        bool checkedAtEntry = (x.Imm & (uint)FpFlags.Checked) != 0;
 
-        LdState(X16, OffFpscr);
-        if (_fastFpCheck)
+        if (checkedAtEntry) { } // A64Opt.FpEntryCheck: the block entry checked the mode
+        else if (_fastFpCheck)
         {
+            LdState(X16, OffFpscr);
             // FPSCR[25:16] == DN FZ, RMode 0, STRIDE 0, LEN 0, and bit 19 (reserved on the Vita) clear; a set bit 19 only
             // takes the handler, which is always exact
             a.Ubfx(X16, X16, 16, 10);
@@ -1358,12 +1393,13 @@ public sealed unsafe partial class Arm64Emitter
         }
         else
         {
+            LdState(X16, OffFpscr);
             a.MovImm(X17, 0x03F70000);
             a.And(X16, X16, X17);
             a.MovImm(X17, 0x03000000);
             a.Cmp(X16, X17);
         }
-        a.BCond(Cond.NE, slow);
+        if (!checkedAtEntry) a.BCond(Cond.NE, slow);
 
         switch (kind)
         {
@@ -1443,12 +1479,14 @@ public sealed unsafe partial class Arm64Emitter
                 a.LdSt(LsKind.StrS, 0, State, dOff);
                 break;
             default:
+                if (checkedAtEntry) throw new NotSupportedException($"FpOp {kind} has no inline form"); // FpOp is then not a call site
                 a.B(slow);
                 break;
         }
-        a.B(done);
         // both paths write d (at most 8 bytes at its offset): cached SIMD copies there are stale; the handler path
         // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
+        if (checkedAtEntry) { VcInvalidate((int)(x.Imm4 & 0xFF), 8); return; }
+        a.B(done);
         VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);
         CallHandler((uint)op, x.Imm2, x.Imm3, restore: true); // merges with the fast path, which is in the guest mode
