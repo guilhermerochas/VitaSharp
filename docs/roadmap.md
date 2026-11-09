@@ -276,6 +276,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   por quadro, `sceClibMemcpy` em C# 7,37 M -> 0,90 M chamadas, CPU da `main` 2,62-2,79 -> 2,42-2,56 ms/quadro, rodada
   67,0/66,7 s -> 65,5/65,3 s. Medido e descartado: chamar o HLE de dentro do código nativo também no x64 (callout,
   como no ARM64): 65,6/65,3 s, igual. O que sobra na travada é o ritmo da CPU emulada (opção "Relógio da CPU", pendente)
+  Também: FIFA 13 (tela de título; o roteiro não passa dela com os dados de teste) CPU do processo 12,0 -> 10,5 ms/quadro
+  (6,4 M `sceKernelGetThreadId` saíram do C#), Injustice 26,2 -> 24,7. Depois, os setters/getters da palavra de controle
+  de textura da libgxm (`sceGxmTextureSet{U,V}AddrMode`, `Set{Mag,Min,Mip}Filter`, `SetLodBias`, `SetLodMin`,
+  `GetType`) e `sceGxmProgramGetDefaultUniformBufferSize` também em código do guest (`=notex` desliga, A/B): no boot do
+  Jak 1 a `F3DPlaybackThread` cai de 28.700 para 14.900 entradas no código nativo por quadro e de ~5,1 para ~4,7 us de
+  CPU por desenho (o jogo fica nos 20 fps dele). Um save state carregado mantém os stubs de SVC de quando foi salvo (o
+  código do guest só entra num boot novo). O que ainda sai do código nativo em quantidade: lwmutex (objetos do host),
+  `sceKernelGetProcessTimeWide` e os setters de estado do contexto da libgxm (estado em C#)
 
 ## Android
 

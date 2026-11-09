@@ -97,6 +97,78 @@ public static class HleGuestCode
         BxLr,
     ];
 
+    /// <summary>The A32 modified-immediate field (rotation and 8 bits) of <paramref name="v"/>.</summary>
+    static uint Imm(uint v)
+    {
+        for (int rot = 0; rot < 16; rot++)
+        {
+            uint r = rot == 0 ? v : (v << (2 * rot)) | (v >> (32 - 2 * rot));
+            if (r <= 0xFF) return ((uint)rot << 8) | r;
+        }
+        throw new ArgumentException($"0x{v:X} is not an A32 modified immediate");
+    }
+
+    /// <summary>Linear strided texture (word 1's type field is SCE_GXM_TEXTURE_LINEAR_STRIDED): return 0 (Gxm.IsStrided).</summary>
+    static readonly uint[] SkipStrided =
+    [
+        0xE5902004, // ldr r2, [r0, #4]
+        0xE1A02EA2, // lsr r2, r2, #29
+        0xE3520006, // cmp r2, #6
+        0x03A00000, // moveq r0, #0
+        0x012FFF1E, // bxeq lr
+    ];
+
+    /// <summary>sceGxmTextureSet*(texture, value) = Gxm.SetBits(texture, shift, bits, value) on word 0, after the linear
+    /// strided check when <paramref name="strided"/>; <paramref name="boolean"/>: the value is value != 0.</summary>
+    static uint[] SetTextureField(int shift, int bits, bool strided, bool boolean = false)
+    {
+        uint low = (1u << bits) - 1;
+        return
+        [
+            .. (strided ? SkipStrided : []),
+            0xE3500000, .. ReturnGxmError(EQ, ErrInvalidPointer), // cmp r0, #0
+            0xE5902000,                                  // ldr r2, [r0]
+            0xE3C22000 | Imm(low << shift),              // bic r2, r2, #mask
+            .. (boolean ? (uint[])[0xE3510000, 0x13A01001] : []), // cmp r1, #0 ; movne r1, #1
+            0xE2011000 | Imm(low),                       // and r1, r1, #low
+            0xE1822001 | ((uint)shift << 7),             // orr r2, r2, r1, lsl #shift
+            0xE5802000,                                  // str r2, [r0]
+            0xE3A00000,                                  // mov r0, #0
+            BxLr,
+        ];
+    }
+
+    /// <summary>sceGxmTextureSetLodMin(texture, lodMin) (Gxm.cs): bits 0-1 of word 2 take lodMin >> 2, bits 26-27 of word 3
+    /// take lodMin &amp; 3, each a SetBits with its own NULL check of the word's address.</summary>
+    static readonly uint[] SetLodMin =
+    [
+        .. SkipStrided,
+        0xE2903008,                // adds r3, r0, #8
+        Branch(EQ, 6, 22),         // beq error
+        0xE5932000,                // ldr r2, [r3]
+        0xE3C22003,                // bic r2, r2, #3
+        0xE1A0C121,                // lsr r12, r1, #2
+        0xE20CC003,                // and r12, r12, #3
+        0xE182200C,                // orr r2, r2, r12
+        0xE5832000,                // str r2, [r3]
+        0xE290300C,                // adds r3, r0, #12
+        Branch(EQ, 14, 22),        // beq error
+        0xE5932000,                // ldr r2, [r3]
+        0xE3C22303,                // bic r2, r2, #0x0C000000
+        0xE201C003,                // and r12, r1, #3
+        0xE1822D0C,                // orr r2, r2, r12, lsl #26
+        0xE5832000,                // str r2, [r3]
+        0xE3A00000,                // mov r0, #0
+        BxLr,                      // 21
+        .. ReturnGxmError(0xE, ErrInvalidPointer), // 22 error
+    ];
+
+    /// <summary>sceGxmTextureGetType(texture): word 1 &amp; 0xE0000000.</summary>
+    static readonly uint[] GetTextureType = [0xE5900004, 0xE2000000 | Imm(0xE0000000), BxLr]; // ldr r0, [r0, #4] ; and r0, r0, #0xE0000000
+
+    /// <summary>sceGxmProgramGetDefaultUniformBufferSize(program): the word at +0x64, times 4.</summary>
+    static readonly uint[] GetDefaultUniformBufferSize = [0xE5900064, 0xE1A00100, BxLr]; // ldr r0, [r0, #0x64] ; lsl r0, r0, #2
+
     /// <summary>Placeholder for an SVC into the routine's own C# version (<see cref="AddressOf"/> fills the index in):
     /// the cases a routine leaves to C#, entered with the caller's registers and stack.</summary>
     const uint FallbackSvc = 0xEF00FFFF;
@@ -255,6 +327,8 @@ public static class HleGuestCode
     static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
     static readonly bool ContextModes = Mode != "precomputed";
     static readonly bool KernelRoutines = Mode is not ("precomputed" or "gxm");
+    /// <summary>=notex: without the texture-control-word and program-header routines (A/B).</summary>
+    static readonly bool TextureRoutines = Mode is not ("precomputed" or "notex");
 
     const string Gxm = "SceGxm", LibKernel = "SceLibKernel";
 
@@ -275,6 +349,19 @@ public static class HleGuestCode
         ("sceClibMemset", LibKernel, Memset),
     ];
 
+    static readonly (string Name, string Library, uint[] Code)[] TextureAndProgramRoutines =
+    [
+        ("sceGxmTextureGetType", Gxm, GetTextureType),
+        ("sceGxmTextureSetUAddrMode", Gxm, SetTextureField(6, 3, strided: false)),
+        ("sceGxmTextureSetVAddrMode", Gxm, SetTextureField(3, 3, strided: false)),
+        ("sceGxmTextureSetMagFilter", Gxm, SetTextureField(12, 2, strided: false)),
+        ("sceGxmTextureSetMinFilter", Gxm, SetTextureField(10, 2, strided: true)),
+        ("sceGxmTextureSetMipFilter", Gxm, SetTextureField(9, 1, strided: true, boolean: true)),
+        ("sceGxmTextureSetLodBias", Gxm, SetTextureField(21, 6, strided: true)),
+        ("sceGxmTextureSetLodMin", Gxm, SetLodMin),
+        ("sceGxmProgramGetDefaultUniformBufferSize", Gxm, GetDefaultUniformBufferSize),
+    ];
+
     static readonly (string Name, string Library, uint[] Code)[] Routines =
     [
         ("sceGxmPrecomputedVertexStateSetUniformBuffer", Gxm, SetUniformBuffer),
@@ -286,6 +373,7 @@ public static class HleGuestCode
         ("sceGxmTextureSetUAddrModeSafe", Gxm, SetAddrModeSafe(6)),
         ("sceGxmTextureSetVAddrModeSafe", Gxm, SetAddrModeSafe(3)),
         ("sceGxmSetUniformDataF", Gxm, SetUniformDataF),
+        .. (TextureRoutines ? TextureAndProgramRoutines : []),
         .. (ContextModes ? ContextModeRoutines : []),
         .. (KernelRoutines ? KernelLeafRoutines : []),
     ];
