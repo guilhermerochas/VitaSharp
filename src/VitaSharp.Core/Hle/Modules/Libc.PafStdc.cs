@@ -487,6 +487,11 @@ public sealed partial class Libc
     // ---- process exit and the C++ runtime (the C library's)
     [Hle("exit", Nid = 0x92BF63C9)] void PafExit(int status) => exit(status);
     [Hle("abort", Library = "ScePafStdc")] void PafAbort() => abort();
+    [Hle("sce_paf_private_towlower")] int PafPrivateTowlower(int c) => towlower(c);
+    [Hle("sce_paf_private_fflush")] int PafPrivateFflush(uint file) => fflush(file);
+    /// <summary>sce_paf_exit (FW 3.74): libpaf's own exit is a fatal stop, the (empty) debug print then a breakpoint,
+    /// never a return: the process ends as on abort.</summary>
+    [Hle("sce_paf_exit", Nid = 0xD608246A, Library = "ScePafStdc")] void PafExitFatal(int status) => abort();
     [Hle("__cxa_finalize", Library = "ScePafStdc")] void PafCxaFinalize(uint dso) => __cxa_finalize(dso);
     [Hle("__cxa_guard_acquire", Library = "ScePafStdc")] int PafGuardAcquire(uint g) => __cxa_guard_acquire(g);
     [Hle("__cxa_guard_release", Library = "ScePafStdc")] void PafGuardRelease(uint g) => __cxa_guard_release(g);

@@ -84,8 +84,10 @@ public sealed partial class NpManager : HleModule
     [Hle]
     int sceNpTerm()
     {
-        lock (_lock) { _npInited = false; _commId = null; }
+        bool closeIpmi;
+        lock (_lock) { _npInited = false; _commId = null; closeIpmi = !_sysInited; }
         lock (_npCallbacks) _npCallbacks.Clear();
+        if (closeIpmi) IpmiClose();
         return 0;
     }
 
