@@ -237,6 +237,7 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         const uint FallbackIndex = 0x123; // the SVC a routine leaves to C# with
         uint stack = fx.Memory.Alloc(0x100, "gcstack");
         bool fellBack = false;
+        float[]? floats = null; // s0.. for the next RunGuest
         uint RunGuest(string name, params uint[] args)
         {
             uint nid = VitaSharp.Core.Hle.NidDatabase.LookupName(name).First(n => n.Library == "SceGxm").Nid;
@@ -247,6 +248,8 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
             uint sp = stack + 0x80;
             for (int i = 0; i < args.Length; i++) { if (i < 4) s->R[i] = args[i]; else GuestMemory.W32(sp + (uint)(i - 4) * 4, args[i]); }
             s->R[13] = sp; s->R[14] = trap; s->R[15] = code; s->Thumb = 0;
+            if (floats != null) for (int i = 0; i < floats.Length; i++) ((float*)s->D)[i] = floats[i];
+            floats = null;
             Assert.Equal(VitaSharp.Core.Cpu.ExitReason.Svc, core.Run());
             fellBack = s->SvcImm == FallbackIndex;
             Assert.Equal(sp, s->R[13]);
@@ -295,6 +298,63 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         RunGuest("sceGxmSetBackPolygonMode", ctx, 0x00010000);  // SCE_GXM_POLYGON_MODE_POINT
         c.SyncGuestState();
         Assert.Equal((2, 1, 2), ((int)c.State.CullMode, (int)c.State.Front.PolygonMode, (int)c.State.Back.PolygonMode));
+
+        // context state setters: a context without the guest layout goes to C#; with it, the stores are read back by Sync
+        if (VitaSharp.Core.Hle.HleGuestCode.ContextState)
+        {
+            RunGuest("sceGxmSetVertexProgram", ctx, 0x81000400);
+            Assert.True(fellBack);
+            RunGuest("sceGxmSetVertexProgram", 0, 0x81000400); // NULL: ignored, no fallback
+            Assert.False(fellBack);
+            uint gctx = fx.Memory.Alloc(VitaSharp.Core.Gxm.GxmContext.GuestSize, "gcctx2");
+            GuestMemory.Fill(gctx, 0, VitaSharp.Core.Gxm.GxmContext.GuestSize);
+            var vp = new VitaSharp.Core.Gxm.GxmVertexProgram { Handle = 0x81000400, Info = null!, Attributes = [], Streams = [] };
+            var g = new VitaSharp.Core.Gxm.GxmContext { Handle = gctx, GuestState = true, ResolveVertexProgram = h => h == vp.Handle ? vp : null };
+            g.PublishGuestState();
+            g.SyncGuestState();
+            var before = g.State;
+            Assert.Equal(before, new VitaSharp.Core.Gxm.GxmContext { Handle = 0 }.State); // the defaults survive the round trip
+            void Run(string f, params uint[] a) { RunGuest(f, [gctx, .. a]); Assert.False(fellBack, f); }
+            Run("sceGxmSetVertexProgram", 0x81000400);
+            Run("sceGxmSetFragmentProgram", 0x81000500);
+            Run("sceGxmSetFrontVisibilityTestIndex", 7);
+            Run("sceGxmSetBackVisibilityTestIndex", 9);
+            Run("sceGxmSetFrontDepthFunc", 2u << 22);
+            Run("sceGxmSetBackDepthFunc", 5u << 22);
+            Run("sceGxmSetFrontDepthWriteEnable", 1); // SCE_GXM_DEPTH_WRITE_DISABLED
+            Run("sceGxmSetBackDepthWriteEnable", 0);
+            Run("sceGxmSetFrontFragmentProgramEnable", 1);
+            Run("sceGxmSetBackFragmentProgramEnable", 0);
+            Run("sceGxmSetFrontStencilFunc", 3u << 25, 1, 2, 0xB, 0x3C, 0xC3); // two-sided off: the back side too
+            Run("sceGxmSetFrontStencilRef", 0x55);
+            Run("sceGxmSetRegionClip", 0x80000000, 4, 6, 100, 200);
+            floats = [1.5f, 2.5f, -3.5f, 4.5f, 0.25f, 0.75f];
+            Run("sceGxmSetViewport");
+            g.SyncGuestState();
+            var st = g.State;
+            Assert.Same(vp, g.VertexProgram);
+            Assert.Null(g.FragmentProgram); // not registered
+            Assert.Equal((7u, 9u), (g.VisFrontIndex, g.VisBackIndex));
+            Assert.Equal((2, 5), ((int)st.Front.DepthFunc, (int)st.Back.DepthFunc));
+            Assert.Equal((false, true, false, true), (st.Front.DepthWrite, st.Back.DepthWrite, st.Front.FragmentEnabled, st.Back.FragmentEnabled));
+            var fs = st.Front.Stencil;
+            Assert.Equal((3, 1, 2, 3, 0x3C, 0xC3, 0x55), ((int)fs.Func, (int)fs.StencilFail, (int)fs.DepthFail, (int)fs.DepthPass, (int)fs.CompareMask, (int)fs.WriteMask, (int)fs.Ref));
+            Assert.Equal(fs, st.Back.Stencil);
+            Assert.Equal((2, 4, 6, 100, 200), ((int)st.RegionClipMode, st.ClipMinX, st.ClipMinY, st.ClipMaxX, st.ClipMaxY));
+            Assert.Equal((1.5f, 2.5f, -3.5f, 4.5f, 0.25f, 0.75f), (st.VpOffX, st.VpScaleX, st.VpOffY, st.VpScaleY, st.VpOffZ, st.VpScaleZ));
+            Assert.True(g.ViewportSet && g.RegionClipSet);
+            // two-sided on: the front stencil calls leave the back side alone
+            Run("sceGxmSetTwoSidedEnable", 1);
+            Run("sceGxmSetBackStencilFunc", 1u << 25, 4, 5, 6, 0x11, 0x22);
+            Run("sceGxmSetBackStencilRef", 0x66);
+            Run("sceGxmSetFrontStencilFunc", 7u << 25, 0, 0, 0, 0xFF, 0xFF);
+            Run("sceGxmSetFrontStencilRef", 0x77);
+            g.SyncGuestState();
+            var bs = g.State.Back.Stencil;
+            Assert.True(g.State.TwoSided);
+            Assert.Equal((1, 4, 5, 6, 0x11, 0x22, 0x66), ((int)bs.Func, (int)bs.StencilFail, (int)bs.DepthFail, (int)bs.DepthPass, (int)bs.CompareMask, (int)bs.WriteMask, (int)bs.Ref));
+            Assert.Equal((7, 0x77), ((int)g.State.Front.Stencil.Func, (int)g.State.Front.Stencil.Ref));
+        }
 
         uint tex = fx.Memory.Alloc(0x10, "gctex");
         foreach (var f in new[] { "sceGxmTextureSetUAddrModeSafe", "sceGxmTextureSetVAddrModeSafe" })

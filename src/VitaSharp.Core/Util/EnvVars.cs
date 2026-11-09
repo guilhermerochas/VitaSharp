@@ -145,7 +145,8 @@ public static class EnvVars
     /// <summary>=0: the HLE functions that have a guest-code version (Hle/HleGuestCode: libgxm's precomputed-state
     /// packing, SceLibKernel's TLS lookups and small Clib copies) are bound to their C# versions through SVC stubs, as before;
     /// =gxm: only libgxm's routines (SceLibKernel's through SVCs); =notex: without libgxm's texture-control-word and
-    /// program-header routines; =precomputed: only libgxm's precomputed-state ones.</summary>
+    /// program-header routines; =nolw: without the lightweight mutex/cond routines; =nogxmctx: without the libgxm context
+    /// state setters (contexts keep that state in C#); =precomputed: only libgxm's precomputed-state ones.</summary>
     public const string HleGuestCode = "VITASHARP_HLE_GUEST_CODE";
     /// <summary>Mono only (Android): =on enters native code with the runtime's GC transition, as CoreCLR always does;
     /// the default skips it (SuppressGCTransition: the thread stays in managed mode while guest code runs, which Mono's

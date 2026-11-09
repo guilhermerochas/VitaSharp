@@ -229,7 +229,7 @@ public sealed partial class Gxm : HleModule
     int sceGxmCreateContext(uint p, Ptr<uint> outContext)
     {
         if (p == 0 || outContext.Address == 0) return ERR_INVALID_POINTER;
-        uint h = AllocObj(64, "SceGxmContext");
+        uint h = AllocObj(GxmContext.GuestSize, "SceGxmContext");
         var c = new GxmContext
         {
             Handle = h,
@@ -237,6 +237,7 @@ public sealed partial class Gxm : HleModule
             VertexRing = GuestMemory.R32(p + 16), VertexRingSize = GuestMemory.R32(p + 20),
             FragmentRing = GuestMemory.R32(p + 24), FragmentRingSize = GuestMemory.R32(p + 28),
         };
+        AttachGuestState(c, HleGuestCode.ContextState);
         _contexts[h] = c;
         outContext.Value = h;
         return 0;
@@ -335,6 +336,24 @@ public sealed partial class Gxm : HleModule
     [Hle] int sceGxmVshSyncObjectDestroy(uint key) { _vshSyncObjects.TryRemove(key, out _); return 0; }
 
     GxmContext? Ctx(uint h) => _contexts.TryGetValue(h, out var c) ? c : null;
+
+    /// <summary>Gives an immediate context the guest layout of its hot state (GxmContext.GuestState: the setters that are
+    /// guest code write it there) and writes its current state into it.</summary>
+    void AttachGuestState(GxmContext c, bool on)
+    {
+        c.GuestState = on;
+        c.ResolveVertexProgram = h => _vertexPrograms.GetValueOrDefault(h);
+        c.ResolveFragmentProgram = h => _fragmentPrograms.GetValueOrDefault(h);
+        c.PublishGuestState();
+    }
+
+    /// <summary>A C# edit of state that may live in the context's guest memory: read it, change it, write it back.</summary>
+    static void Edit<T>(GxmContext c, T arg, Action<GxmContext, T> edit)
+    {
+        c.SyncGuestState();
+        edit(c, arg);
+        c.PublishGuestState();
+    }
 
     // =========================================================== surfaces
 
@@ -532,6 +551,7 @@ public sealed partial class Gxm : HleModule
 
     void SetDefaultRegionClipAndViewport(GxmContext c, uint xMax, uint yMax)
     {
+        c.SyncGuestState();
         ref var s = ref c.State;
         s.VpOffX = 0.5f * (1.0f + xMax);
         s.VpOffY = 0.5f * (1.0f + yMax);
@@ -541,6 +561,7 @@ public sealed partial class Gxm : HleModule
         s.VpScaleZ = 0.5f;
         s.RegionClipMode = 2;
         s.ClipMinX = 0; s.ClipMinY = 0; s.ClipMaxX = (int)xMax; s.ClipMaxY = (int)yMax;
+        c.PublishGuestState();
     }
 
     [Hle]
@@ -738,8 +759,8 @@ public sealed partial class Gxm : HleModule
 
     // =========================================================== state setters
 
-    [Hle] void sceGxmSetVertexProgram(uint ctx, uint vp) { if (Ctx(ctx) is { } c) c.VertexProgram = _vertexPrograms.GetValueOrDefault(vp); }
-    [Hle] void sceGxmSetFragmentProgram(uint ctx, uint fp) { if (Ctx(ctx) is { } c) c.FragmentProgram = _fragmentPrograms.GetValueOrDefault(fp); }
+    [Hle] void sceGxmSetVertexProgram(uint ctx, uint vp) { if (Ctx(ctx) is { } c) Edit(c, _vertexPrograms.GetValueOrDefault(vp), static (c, p) => c.VertexProgram = p); }
+    [Hle] void sceGxmSetFragmentProgram(uint ctx, uint fp) { if (Ctx(ctx) is { } c) Edit(c, _fragmentPrograms.GetValueOrDefault(fp), static (c, p) => c.FragmentProgram = p); }
 
     [Hle]
     int sceGxmSetVertexStream(uint ctx, uint index, uint data)
@@ -846,14 +867,14 @@ public sealed partial class Gxm : HleModule
     }
 
     [Hle] internal void sceGxmSetCullMode(uint ctx, uint mode) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.CullModeOffset, (byte)mode); }
-    [Hle] void sceGxmSetTwoSidedEnable(uint ctx, uint mode) { if (Ctx(ctx) is { } c) c.State.TwoSided = mode != 0; }
+    [Hle] void sceGxmSetTwoSidedEnable(uint ctx, uint mode) { if (Ctx(ctx) is { } c) Edit(c, mode != 0, static (c, v) => c.State.TwoSided = v); }
 
-    [Hle] internal void sceGxmSetFrontDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Front.DepthFunc = (byte)(f >> 22); }
-    [Hle] void sceGxmSetBackDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Back.DepthFunc = (byte)(f >> 22); }
-    [Hle] internal void sceGxmSetFrontDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.DepthWrite = e == 0; }
-    [Hle] internal void sceGxmSetBackDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.DepthWrite = e == 0; }
-    [Hle] void sceGxmSetFrontFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.FragmentEnabled = e == 0; }
-    [Hle] void sceGxmSetBackFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.FragmentEnabled = e == 0; }
+    [Hle] internal void sceGxmSetFrontDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) Edit(c, (byte)(f >> 22), static (c, v) => c.State.Front.DepthFunc = v); }
+    [Hle] void sceGxmSetBackDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) Edit(c, (byte)(f >> 22), static (c, v) => c.State.Back.DepthFunc = v); }
+    [Hle] internal void sceGxmSetFrontDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) Edit(c, e == 0, static (c, v) => c.State.Front.DepthWrite = v); }
+    [Hle] internal void sceGxmSetBackDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) Edit(c, e == 0, static (c, v) => c.State.Back.DepthWrite = v); }
+    [Hle] void sceGxmSetFrontFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) Edit(c, e == 0, static (c, v) => c.State.Front.FragmentEnabled = v); }
+    [Hle] void sceGxmSetBackFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) Edit(c, e == 0, static (c, v) => c.State.Back.FragmentEnabled = v); }
     [Hle] internal void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.FrontPolygonModeOffset, (byte)(m >> 15)); }
     [Hle] internal void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.BackPolygonModeOffset, (byte)(m >> 15)); }
     /// <summary>SCE_GXM_WBUFFER_ENABLED = 0x4000 (not 1).</summary>
@@ -897,48 +918,57 @@ public sealed partial class Gxm : HleModule
     void sceGxmSetFrontStencilFunc(uint ctx, uint func, uint stencilFail, uint depthFail, uint depthPass, uint compareMask, uint writeMask)
     {
         if (Ctx(ctx) is not { } c) return;
+        c.SyncGuestState();
         SetStencil(ref c.State.Front.Stencil, func, stencilFail, depthFail, depthPass, compareMask, writeMask);
         if (!c.State.TwoSided) SetStencil(ref c.State.Back.Stencil, func, stencilFail, depthFail, depthPass, compareMask, writeMask);
+        c.PublishGuestState();
     }
 
     [Hle]
     void sceGxmSetBackStencilFunc(uint ctx, uint func, uint stencilFail, uint depthFail, uint depthPass, uint compareMask, uint writeMask)
     {
-        if (Ctx(ctx) is { } c) SetStencil(ref c.State.Back.Stencil, func, stencilFail, depthFail, depthPass, compareMask, writeMask);
+        if (Ctx(ctx) is not { } c) return;
+        c.SyncGuestState();
+        SetStencil(ref c.State.Back.Stencil, func, stencilFail, depthFail, depthPass, compareMask, writeMask);
+        c.PublishGuestState();
     }
 
-    [Hle] void sceGxmSetFrontStencilRef(uint ctx, uint r) { if (Ctx(ctx) is { } c) { c.State.Front.Stencil.Ref = (byte)r; if (!c.State.TwoSided) c.State.Back.Stencil.Ref = (byte)r; } }
-    [Hle] void sceGxmSetBackStencilRef(uint ctx, uint r) { if (Ctx(ctx) is { } c) c.State.Back.Stencil.Ref = (byte)r; }
+    [Hle] void sceGxmSetFrontStencilRef(uint ctx, uint r) { if (Ctx(ctx) is { } c) Edit(c, (byte)r, static (c, v) => { c.State.Front.Stencil.Ref = v; if (!c.State.TwoSided) c.State.Back.Stencil.Ref = v; }); }
+    [Hle] void sceGxmSetBackStencilRef(uint ctx, uint r) { if (Ctx(ctx) is { } c) Edit(c, (byte)r, static (c, v) => c.State.Back.Stencil.Ref = v); }
 
     [Hle]
     void sceGxmSetViewport(uint ctx, float xOffset, float xScale, float yOffset, float yScale, float zOffset, float zScale)
     {
         if (Ctx(ctx) is not { } c) return;
+        c.SyncGuestState();
         ref var s = ref c.State;
         s.VpOffX = xOffset; s.VpScaleX = xScale; s.VpOffY = yOffset; s.VpScaleY = yScale; s.VpOffZ = zOffset; s.VpScaleZ = zScale;
         c.ViewportSet = true;
+        c.PublishGuestState();
     }
 
-    [Hle] void sceGxmSetViewportEnable(uint ctx, uint enable) { if (Ctx(ctx) is { } c) { c.State.ViewportEnabled = enable == 0; c.ViewportSet = true; } }
+    [Hle] void sceGxmSetViewportEnable(uint ctx, uint enable) { if (Ctx(ctx) is { } c) Edit(c, enable == 0, static (c, v) => { c.State.ViewportEnabled = v; c.ViewportSet = true; }); }
 
     [Hle]
     void sceGxmSetRegionClip(uint ctx, uint mode, uint xMin, uint yMin, uint xMax, uint yMax)
     {
         if (Ctx(ctx) is not { } c) return;
+        c.SyncGuestState();
         ref var s = ref c.State;
         s.RegionClipMode = (byte)(mode >> 30);
         s.ClipMinX = (int)xMin; s.ClipMinY = (int)yMin; s.ClipMaxX = (int)xMax; s.ClipMaxY = (int)yMax;
         c.RegionClipSet = true;
+        c.PublishGuestState();
     }
 
-    [Hle] void sceGxmSetDefaultRegionClipAndViewport(uint ctx, uint xMax, uint yMax) { if (Ctx(ctx) is { } c) { SetDefaultRegionClipAndViewport(c, xMax, yMax); c.ViewportSet = c.RegionClipSet = true; } }
+    [Hle] void sceGxmSetDefaultRegionClipAndViewport(uint ctx, uint xMax, uint yMax) { if (Ctx(ctx) is { } c) { SetDefaultRegionClipAndViewport(c, xMax, yMax); Edit(c, 0, static (c, _) => c.ViewportSet = c.RegionClipSet = true); } }
     // visibility tests: the GPU counts the samples of a draw that pass the depth/stencil tests into a word of the
     // visibility buffer (index * 4 within the per-core stride); games use them for occlusion culling and streaming
     const uint VisibilityOpIncrement = 0, VisibilityAlignment = 16;
     [Hle] void sceGxmSetFrontVisibilityTestEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.VisFrontEnable = e != 0; }
     [Hle] void sceGxmSetBackVisibilityTestEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.VisBackEnable = e != 0; }
-    [Hle] void sceGxmSetFrontVisibilityTestIndex(uint ctx, uint i) { if (Ctx(ctx) is { } c) c.VisFrontIndex = i; }
-    [Hle] void sceGxmSetBackVisibilityTestIndex(uint ctx, uint i) { if (Ctx(ctx) is { } c) c.VisBackIndex = i; }
+    [Hle] void sceGxmSetFrontVisibilityTestIndex(uint ctx, uint i) { if (Ctx(ctx) is { } c) Edit(c, i, static (c, v) => c.VisFrontIndex = v); }
+    [Hle] void sceGxmSetBackVisibilityTestIndex(uint ctx, uint i) { if (Ctx(ctx) is { } c) Edit(c, i, static (c, v) => c.VisBackIndex = v); }
     [Hle] void sceGxmSetFrontVisibilityTestOp(uint ctx, uint op) { if (Ctx(ctx) is { } c) c.VisFrontIncrement = op == VisibilityOpIncrement; }
     [Hle] void sceGxmSetBackVisibilityTestOp(uint ctx, uint op) { if (Ctx(ctx) is { } c) c.VisBackIncrement = op == VisibilityOpIncrement; }
 
@@ -1248,7 +1278,6 @@ public sealed partial class Gxm : HleModule
         else if (!c.InScene) return ERR_NOT_WITHIN_SCENE;
         if (vp == null || fp == null) return ERR_NULL_PROGRAM;
         if (indexData == 0) return ERR_INVALID_POINTER;
-        c.SyncGuestState(); // cull/polygon modes written by guest code
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawBacktrace(vp, fp, indexData, indexCount);
         // visibility test (front state; the back state applies when only it is enabled)
         bool front = c.VisFrontEnable, back = c.VisBackEnable;
@@ -1460,7 +1489,7 @@ public sealed partial class Gxm : HleModule
             c.VdmBuffer = mem; c.VdmBufferSize = size; c.VdmUsed = 0;
         }
         c.InCommandList = true;
-        c.ViewportSet = c.RegionClipSet = false;
+        Edit(c, 0, static (c, _) => c.ViewportSet = c.RegionClipSet = false);
         c.VdmListStart = c.VdmBuffer + c.VdmUsed;
         c.Recording = new List<DrawRecipe>();
         return 0;
@@ -1527,6 +1556,7 @@ public sealed partial class Gxm : HleModule
             if (_commandLists.TryGetValue(listId, out rec)) rec.LastUse = ++_commandListClock;
         }
         if (rec == null) return ERR_INVALID_POINTER;
+        c.SyncGuestState();
         foreach (var d in rec.Draws)
         {
             // viewport and region clip come from the executing scene unless the deferred context set them itself
@@ -1634,6 +1664,7 @@ public sealed partial class Gxm : HleModule
     /// ring block (a stale matrix: flat full-screen colours).</summary>
     int DrawImmediate(GxmContext c, uint primType, uint indexType, uint indexData, uint indexCount, uint instanceCount)
     {
+        c.SyncGuestState(); // programs and state written by guest code
         ImmediateDrawState(c, out var vUbs, out var fUbs, out var vTex, out var fTex);
         return Draw(c, c.VertexProgram, c.FragmentProgram, vUbs, fUbs, vTex, fTex, c.Streams, primType, indexType, indexData, indexCount, instanceCount);
     }
@@ -1840,6 +1871,7 @@ public sealed partial class Gxm : HleModule
         var c = Ctx(ctx);
         if (c == null || draw == 0) return ERR_INVALID_POINTER;
         if (!c.Deferred && !c.InScene) return ERR_NOT_WITHIN_SCENE;
+        c.SyncGuestState(); // programs and state written by guest code
         var vp = c.VertexProgram; var fp = c.FragmentProgram;
         // per-context scratch copies (Draw copies them into the pooled command): no arrays cloned per draw
         var vUbs = c.PreVertexUbs; var fUbs = c.PreFragmentUbs;

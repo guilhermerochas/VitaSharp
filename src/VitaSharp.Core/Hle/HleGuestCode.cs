@@ -462,6 +462,147 @@ public static class HleGuestCode
         ("sceKernelSignalLwCondAll", LibKernel, LwCondSignal),
     ];
 
+    // ------------------------------------------------------------------ libgxm context state setters
+    //
+    // Killzone calls these ~1,100 times per frame (program binds, region clip, depth/stencil, viewport and visibility
+    // index per draw): on the Vita they are libgxm user code writing the context's state words. An immediate context
+    // with the guest layout (Gxm/GxmContext.GuestStateFlagOffset = 1) keeps that state in its own 128 guest bytes, so
+    // the setters are stores there; a context without it (deferred contexts, contexts restored from older save states)
+    // takes the C# version. A NULL context is ignored, as in C#.
+
+    static uint Ctx(uint offset) => offset; // readability: a GxmContext field offset (all < 0x100)
+
+    /// <summary>The prologue of every context setter: NULL returns, no guest layout goes to C# (the routine's last two
+    /// words are FallbackSvc, BxLr; <paramref name="length"/> is the routine's total word count).</summary>
+    static uint[] ContextPrologue(int length) =>
+    [
+        0xE3500000,                // 0 cmp r0, #0
+        0x012FFF1E,                // 1 bxeq lr
+        0xE5D0C000 | Ctx(VitaSharp.Core.Gxm.GxmContext.GuestStateFlagOffset), // 2 ldrb r12, [r0, #flag]
+        0xE35C0001,                // 3 cmp r12, #1
+        Branch(NE, 4, length - 2), // 4 bne fallback
+    ];
+
+    static uint[] ContextRoutine(params uint[] body)
+    {
+        int length = 5 + body.Length + 2;
+        return [.. ContextPrologue(length), .. body, FallbackSvc, BxLr];
+    }
+
+    const uint StrR1 = 0xE5801000, StrbR1 = 0xE5C01000;
+
+    /// <summary>A word argument stored as is (program handles, visibility indices).</summary>
+    static uint[] SetCtxWord(uint offset) => ContextRoutine(StrR1 | offset, BxLr);
+
+    /// <summary>sceGxmSet{Front,Back}DepthFunc: (byte)(func &gt;&gt; 22).</summary>
+    static uint[] SetCtxDepthFunc(uint offset) => ContextRoutine(0xE1A01B21, StrbR1 | offset, BxLr); // lsr r1, r1, #22
+
+    /// <summary>sceGxmSet{Front,Back}{DepthWrite,FragmentProgram}Enable: enabled is 0, stored as 1.</summary>
+    static uint[] SetCtxEnabledIfZero(uint offset) =>
+        ContextRoutine(0xE3510000, 0x03A01001, 0x13A01000, StrbR1 | offset, BxLr); // cmp r1, #0 ; moveq r1, #1 ; movne r1, #0
+
+    /// <summary>sceGxmSetTwoSidedEnable: any non-zero mode is on.</summary>
+    static readonly uint[] SetTwoSided =
+        ContextRoutine(0xE3510000, 0x13A01001, StrbR1 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset, BxLr); // cmp r1, #0 ; movne r1, #1
+
+    const uint FrontRef = VitaSharp.Core.Gxm.GxmContext.FrontStencilOffset + 6, BackRef = VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 6;
+
+    /// <summary>sceGxmSetFrontStencilRef: the front reference, and the back one too while two-sided mode is off.</summary>
+    static readonly uint[] SetFrontStencilRef = ContextRoutine(
+        StrbR1 | FrontRef,                                                   // strb r1, [r0, #front ref]
+        0xE5D0C000 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset,           // ldrb r12, [r0, #two-sided]
+        0xE35C0000,                                                          // cmp r12, #0
+        0x05C01000 | BackRef,                                                // strbeq r1, [r0, #back ref]
+        BxLr);
+
+    /// <summary>sceGxmSet{Front,Back}StencilFunc(ctx, func, stencilFail, depthFail, depthPass, compareMask, writeMask):
+    /// func &gt;&gt; 25, the three ops &amp; 7, the masks; the front one also sets the back state while two-sided mode is off
+    /// (the six bytes copied, the reference left alone).</summary>
+    static uint[] SetCtxStencilFunc(uint b, bool front) =>
+        ContextRoutine(
+        [
+            0xE1A01CA1,                // lsr r1, r1, #25
+            StrbR1 | b,                // strb r1, [r0, #b]
+            0xE2022007,                // and r2, r2, #7
+            0xE5C02000 | (b + 1),      // strb r2, [r0, #b + 1]
+            0xE2033007,                // and r3, r3, #7
+            0xE5C03000 | (b + 2),      // strb r3, [r0, #b + 2]
+            0xE59DC000,                // ldr r12, [sp]       depthPass
+            0xE20CC007,                // and r12, r12, #7
+            0xE5C0C000 | (b + 3),      // strb r12, [r0, #b + 3]
+            0xE59DC004,                // ldr r12, [sp, #4]   compareMask
+            0xE5C0C000 | (b + 4),      // strb r12, [r0, #b + 4]
+            0xE59DC008,                // ldr r12, [sp, #8]   writeMask
+            0xE5C0C000 | (b + 5),      // strb r12, [r0, #b + 5]
+            .. (front ?
+            (uint[])[
+                0xE5D0C000 | VitaSharp.Core.Gxm.GxmContext.TwoSidedOffset, // ldrb r12, [r0, #two-sided]
+                0xE35C0000,            // cmp r12, #0
+                0x112FFF1E,            // bxne lr
+                0xE590C000 | b,        // ldr r12, [r0, #b]        func and the three ops
+                0xE580C000 | VitaSharp.Core.Gxm.GxmContext.BackStencilOffset,           // str r12, [r0, #back]
+                0xE1D0C0B0 | ((b + 4) & 0xF) | (((b + 4) >> 4) << 8),                   // ldrh r12, [r0, #b + 4]   the masks
+                0xE1C0C0B0 | ((VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 4) & 0xF) | (((VitaSharp.Core.Gxm.GxmContext.BackStencilOffset + 4) >> 4) << 8), // strh
+            ] : []),
+            BxLr,
+        ]);
+
+    const uint ClipBase = VitaSharp.Core.Gxm.GxmContext.ClipOffset, ViewportBase = VitaSharp.Core.Gxm.GxmContext.ViewportOffset,
+        SetFlags = VitaSharp.Core.Gxm.GxmContext.SetFlagsOffset;
+
+    /// <summary>sceGxmSetRegionClip(ctx, mode, xMin, yMin, xMax, yMax): mode &gt;&gt; 30, the four bounds, the "region clip
+    /// set" flag.</summary>
+    static readonly uint[] SetRegionClip = ContextRoutine(
+        0xE1A01F21,                                                   // lsr r1, r1, #30
+        StrbR1 | VitaSharp.Core.Gxm.GxmContext.RegionClipModeOffset,  // strb r1, [r0, #mode]
+        0xE5802000 | ClipBase,                                        // str r2, [r0, #clip]
+        0xE5803000 | (ClipBase + 4),                                  // str r3, [r0, #clip + 4]
+        0xE59DC000,                                                   // ldr r12, [sp]
+        0xE580C000 | (ClipBase + 8),                                  // str r12, [r0, #clip + 8]
+        0xE59DC004,                                                   // ldr r12, [sp, #4]
+        0xE580C000 | (ClipBase + 12),                                 // str r12, [r0, #clip + 12]
+        0xE5D0C000 | SetFlags,                                        // ldrb r12, [r0, #flags]
+        0xE38CC000 | VitaSharp.Core.Gxm.GxmContext.RegionClipSetFlag, // orr r12, r12, #region clip set
+        0xE5C0C000 | SetFlags,                                        // strb r12, [r0, #flags]
+        BxLr);
+
+    /// <summary>VSTR s<paramref name="s"/>, [r0, #offset].</summary>
+    static uint Vstr(int s, uint offset) => 0xED800A00 | ((uint)(s & 1) << 22) | ((uint)(s >> 1) << 12) | (offset / 4);
+
+    /// <summary>sceGxmSetViewport(ctx, xOffset, xScale, yOffset, yScale, zOffset, zScale): the six floats (s0-s5, hard-float
+    /// ABI) in that order, the "viewport set" flag.</summary>
+    static readonly uint[] SetViewport = ContextRoutine(
+        Vstr(0, ViewportBase), Vstr(1, ViewportBase + 4), Vstr(2, ViewportBase + 8),
+        Vstr(3, ViewportBase + 12), Vstr(4, ViewportBase + 16), Vstr(5, ViewportBase + 20),
+        0xE5D0C000 | SetFlags,                                        // ldrb r12, [r0, #flags]
+        0xE38CC000 | VitaSharp.Core.Gxm.GxmContext.ViewportSetFlag,   // orr r12, r12, #viewport set
+        0xE5C0C000 | SetFlags,                                        // strb r12, [r0, #flags]
+        BxLr);
+
+    /// <summary>VITASHARP_HLE_GUEST_CODE=nogxmctx: contexts without the guest layout, the setters below on SVCs (A/B).</summary>
+    public static readonly bool ContextState = Enabled && Mode is not ("precomputed" or "nogxmctx");
+
+    static readonly (string Name, string Library, uint[] Code)[] ContextStateRoutines =
+    [
+        ("sceGxmSetVertexProgram", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VertexProgramOffset)),
+        ("sceGxmSetFragmentProgram", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.FragmentProgramOffset)),
+        ("sceGxmSetFrontVisibilityTestIndex", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VisFrontIndexOffset)),
+        ("sceGxmSetBackVisibilityTestIndex", Gxm, SetCtxWord(VitaSharp.Core.Gxm.GxmContext.VisBackIndexOffset)),
+        ("sceGxmSetFrontDepthFunc", Gxm, SetCtxDepthFunc(VitaSharp.Core.Gxm.GxmContext.FrontDepthFuncOffset)),
+        ("sceGxmSetBackDepthFunc", Gxm, SetCtxDepthFunc(VitaSharp.Core.Gxm.GxmContext.BackDepthFuncOffset)),
+        ("sceGxmSetFrontDepthWriteEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.FrontDepthWriteOffset)),
+        ("sceGxmSetBackDepthWriteEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.BackDepthWriteOffset)),
+        ("sceGxmSetFrontFragmentProgramEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.FrontFragmentEnableOffset)),
+        ("sceGxmSetBackFragmentProgramEnable", Gxm, SetCtxEnabledIfZero(VitaSharp.Core.Gxm.GxmContext.BackFragmentEnableOffset)),
+        ("sceGxmSetTwoSidedEnable", Gxm, SetTwoSided),
+        ("sceGxmSetFrontStencilRef", Gxm, SetFrontStencilRef),
+        ("sceGxmSetBackStencilRef", Gxm, ContextRoutine(StrbR1 | BackRef, BxLr)),
+        ("sceGxmSetFrontStencilFunc", Gxm, SetCtxStencilFunc(VitaSharp.Core.Gxm.GxmContext.FrontStencilOffset, front: true)),
+        ("sceGxmSetBackStencilFunc", Gxm, SetCtxStencilFunc(VitaSharp.Core.Gxm.GxmContext.BackStencilOffset, front: false)),
+        ("sceGxmSetRegionClip", Gxm, SetRegionClip),
+        ("sceGxmSetViewport", Gxm, SetViewport),
+    ];
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
     static readonly bool ContextModes = Mode != "precomputed";
@@ -516,6 +657,7 @@ public static class HleGuestCode
         .. (ContextModes ? ContextModeRoutines : []),
         .. (KernelRoutines ? KernelLeafRoutines : []),
         .. (LwMutexRoutines ? LwMutexRoutineTable : []),
+        .. (ContextState ? ContextStateRoutines : []),
     ];
 
     static readonly Dictionary<uint, int> RoutineByNid = BuildNidTable();

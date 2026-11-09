@@ -171,6 +171,8 @@ public sealed partial class Gxm : ISnapshotState
         for (int i = 0; i < n; i++)
         {
             var c = ReadContext(r);
+            // the guest layout of the hot state needs the 128-byte handle of this build's contexts (older states: 64)
+            if (!c.Deferred) AttachGuestState(c, HleGuestCode.ContextState && Emu.Memory.FindBlock(c.Handle) is { } b && b.Address == c.Handle && b.Size >= GxmContext.GuestSize);
             _contexts[c.Handle] = c;
         }
 
@@ -198,6 +200,7 @@ public sealed partial class Gxm : ISnapshotState
 
     static void WriteContext(SnapshotWriter w, GxmContext c)
     {
+        c.SyncGuestState(); // the state guest code wrote
         w.Write(c.Handle);
         w.WriteArray(c.StreamScratch); w.WriteArray(c.PreVertexUbs); w.WriteArray(c.PreFragmentUbs);
         WriteArray(w, c.PreVertexTextures); WriteArray(w, c.PreFragmentTextures);
