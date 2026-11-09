@@ -645,6 +645,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         if (TracingThisFrame) TraceTexture(key, d, Formats.Texture(GxmFormats.BaseOf(d.Format)), w, h);
         if (tex != null && tex.CheckedFrame == FrameCount && tex.SpaceId == SpaceIdOf(addr)) { tex.LastUsedFrame = FrameCount; return (tex.View, ImageLayout.ShaderReadOnlyOptimal); }
+        ProfMark(ProfPhase.TexMemLookup); // everything up to here: the unit's lookups
 
         var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         bool cube = asCube || d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
@@ -673,6 +674,7 @@ public sealed unsafe partial class VulkanRenderer
         bool written = tex == null || tex.ForceCheck || tex.SpaceId != spaceId
             || DirtyPages.WrittenSince(addr + residentOffset, total - residentOffset, tex.Stamp)
             || (paletted && DirtyPages.WrittenSince(d.PaletteAddress, paletteBytes, tex.Stamp));
+        ProfMark(ProfPhase.TexMemCheck); // the layout and the dirty-page check
         if (!written && !DirtyPages.Verify)
         {
             _texSkipped++;
@@ -755,7 +757,9 @@ public sealed unsafe partial class VulkanRenderer
         {
             using var source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
             long u0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            ProfMark(ProfPhase.TexMemHash); // hashing the changed memory, a new image
             UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
+            ProfMark(ProfPhase.TexMemUpload);
             _texUploadTicks += System.Diagnostics.Stopwatch.GetTimestamp() - u0;
             if (_uploadedContents.Count > 65536) _uploadedContents.Clear();
             if (!_uploadedContents.Add(hash ^ (ulong)d.Format * 0x9E3779B97F4A7C15UL ^ ((ulong)w << 48) ^ ((ulong)h << 32))) _texUploadRepeats++;

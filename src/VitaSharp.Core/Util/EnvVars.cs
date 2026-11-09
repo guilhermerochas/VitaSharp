@@ -20,6 +20,8 @@ public static class EnvVars
     public const string TexLookup = "VITASHARP_TEXLOOKUP";
     /// <summary>=0: no memo of resolved texture units in the GPU worker (Renderer.Vulkan VulkanRenderer.UnitMemo, A/B).</summary>
     public const string UnitMemo = "VITASHARP_UNIT_MEMO";
+    /// <summary>=0: no memo of the shader entry per program and texture formats in the GPU worker (A/B).</summary>
+    public const string ShaderMemo = "VITASHARP_SHADER_MEMO";
     /// <summary>Developer builds: presented frame from which VITASHARP_WORKER_PROF measures (default 30).</summary>
     public const string WorkerProfFrom = "VITASHARP_WORKER_PROF_FROM";
     /// <summary>A/B switch: =old scans draw indices for their min/max one at a time; default new (128-bit vectors).</summary>

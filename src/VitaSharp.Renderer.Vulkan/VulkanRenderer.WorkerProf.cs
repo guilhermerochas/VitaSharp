@@ -16,6 +16,8 @@ public sealed unsafe partial class VulkanRenderer
         TexPre, TexHit, TexResolve, TexAlloc,
         // inside TexResolve: one unit resolved to guest memory / a colour target / anything else, then its sampler
         TexUnitMem, TexUnitRt, TexUnitOther, TexSampler, TexUnitMemo,
+        // inside a guest-memory unit that is not this frame's first check: lookups, layout + dirty check, hash, upload
+        TexMemLookup, TexMemCheck, TexMemHash, TexMemUpload,
         // inside Present: frame begin + rendering end, the rest before the present, swapchain acquire, blit, submit, retire
         PresBegin, PresPrep, PresAcquire, PresBlit, PresSubmit, PresRetire,
         // inside BeginScene: retire poll, frame begin, rendering end, colour target lookup, depth target lookup
