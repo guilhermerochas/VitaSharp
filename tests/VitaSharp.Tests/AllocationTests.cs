@@ -67,4 +67,32 @@ public sealed class AllocationTests
         for (int i = 0; i < 2000; i++) UniformArena.Release(UniformArena.Rent(1000, out _));
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1 << 20);
     }
+
+    /// <summary>Slices rented without clearing are zero too: writers mark what they write (UniformChunk.MarkWritten) and a
+    /// recycled chunk clears exactly that, including granules at word boundaries and odd sizes.</summary>
+    [Fact]
+    public void UniformArenaClearsWhatWasMarked()
+    {
+        var rng = new Random(7);
+        for (int round = 0; round < 3; round++)
+        {
+            var held = new List<UniformChunk>();
+            for (int i = 0; i < 3000; i++)
+            {
+                int len = 16 + rng.Next(20000);
+                var c = UniformArena.Rent(len, out int off, clear: false);
+                var slice = c.Span.Slice(off, len);
+                Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
+                // a few writes of random size and place, each marked
+                for (int k = 0; k < 3; k++)
+                {
+                    int a = rng.Next(len), n = 1 + rng.Next(Math.Min(len - a, 17000));
+                    slice.Slice(a, n).Fill(0x5A);
+                    c.MarkWritten(off + a, n);
+                }
+                held.Add(c);
+            }
+            foreach (var c in held) UniformArena.Release(c);
+        }
+    }
 }

@@ -27,8 +27,56 @@ public sealed unsafe class UniformChunk
     /// <summary>On the free stack (guards against a second recycle: see UniformArena.Release).</summary>
     internal bool InFree;
 
-    internal UniformChunk(int size) { _data = new byte[size]; Size = size; }
-    internal UniformChunk(nint ptr, int size, IUniformHeap heap, int id) { _ptr = ptr; Size = size; Heap = heap; HeapId = id; }
+    internal UniformChunk(int size) { _data = new byte[size]; Size = size; _written = new ulong[WrittenWords(size)]; }
+    internal UniformChunk(nint ptr, int size, IUniformHeap heap, int id)
+    {
+        _ptr = ptr; Size = size; Heap = heap; HeapId = id; _written = new ulong[WrittenWords(size)];
+        Span.Clear(); // heap memory comes uninitialised: the zero invariant below starts here
+    }
+
+    // A chunk the arena hands out is all zero except what was written into it since, and is zero again when it is
+    // recycled: a draw's uniform slice must read zero where no buffer is copied, and clearing every slice whole (8 KB
+    // per unknown-size buffer, most of it never written) was most of the guest thread's cost per draw (F1 2011 races,
+    // ~1,200 draws a frame). Writers mark what they wrote, in 256-byte granules; a recycled chunk clears only those.
+    const int GranuleShift = 8;
+    readonly ulong[] _written;
+    static int WrittenWords(int size) => (((size + (1 << GranuleShift) - 1) >> GranuleShift) + 63) / 64;
+
+    /// <summary>Marks <paramref name="length"/> bytes at <paramref name="offset"/> (chunk offset) as written: they are
+    /// cleared when the chunk is recycled. Any thread.</summary>
+    public void MarkWritten(int offset, int length)
+    {
+        if (length <= 0) return;
+        int g0 = offset >> GranuleShift, g1 = (offset + length - 1) >> GranuleShift;
+        for (int w = g0 >> 6; w <= g1 >> 6; w++)
+        {
+            int lo = w == g0 >> 6 ? g0 & 63 : 0, hi = w == g1 >> 6 ? g1 & 63 : 63;
+            ulong bits = (hi == 63 ? ulong.MaxValue : (1UL << (hi + 1)) - 1) & ~((1UL << lo) - 1);
+            if ((Volatile.Read(ref _written[w]) & bits) != bits) Interlocked.Or(ref _written[w], bits);
+        }
+    }
+
+    /// <summary>Clears the granules written since the chunk was handed out (no reader or writer is left).</summary>
+    internal void ClearWritten()
+    {
+        var span = Span;
+        for (int w = 0; w < _written.Length; w++)
+        {
+            ulong bits = _written[w];
+            if (bits == 0) continue;
+            _written[w] = 0;
+            for (int b = 0; b < 64;)
+            {
+                if ((bits >> b) == 0) break;
+                b += System.Numerics.BitOperations.TrailingZeroCount(bits >> b); // the next written granule
+                int e = b;
+                while (e < 64 && ((bits >> e) & 1) != 0) e++; // and the run of written ones from it
+                int start = ((w << 6) + b) << GranuleShift, end = Math.Min(((w << 6) + e) << GranuleShift, Size);
+                if (start < end) span[start..end].Clear();
+                b = e;
+            }
+        }
+    }
 
     public Span<byte> Span => _ptr is var p and not 0 ? new Span<byte>((void*)p, Size) : _data;
 
@@ -90,7 +138,9 @@ public static class UniformArena
         }
     }
 
-    /// <summary>A zero-filled slice of <paramref name="bytes"/> bytes at <paramref name="offset"/> in the returned chunk.</summary>
+    /// <summary>A zero-filled slice of <paramref name="bytes"/> bytes at <paramref name="offset"/> in the returned chunk.
+    /// <paramref name="clear"/> false: the caller marks what it writes (<see cref="UniformChunk.MarkWritten"/>); true: the
+    /// whole slice counts as written.</summary>
     public static UniformChunk Rent(int bytes, out int offset, bool clear = true)
     {
         UniformChunk c;
@@ -115,7 +165,7 @@ public static class UniformArena
             c.Used = offset + bytes;
             Interlocked.Increment(ref c.Outstanding);
         }
-        if (clear) c.Span.Slice(offset, bytes).Clear(); // callers that fill the whole slice themselves skip it
+        if (clear) c.MarkWritten(offset, bytes); // zero already; the caller may write any of it
         return c;
     }
 
@@ -158,6 +208,7 @@ public static class UniformArena
     static void Recycle(UniformChunk c)
     {
         if (c.InFree) return;
+        c.ClearWritten();
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
         if (c.Heap != null) { c.InFree = true; Free.Push(c); }
         else if (_freeManaged < MaxFreeChunks) { c.InFree = true; Free.Push(c); _freeManaged++; }
