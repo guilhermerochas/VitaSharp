@@ -19,6 +19,7 @@
 #   env: WARMUP (s, default 60), MEASURE (s, default 30), LOADAT (s after the first pad poll; default 30, f1 60),
 #   MAXTEMP (battery deg C before a run, default 37; waits at most 5 min), APK (install it first), OUT (results folder,
 #   default ./android-perf-run/<scene>_<time>), EXTRA_ENV (env.txt lines for every variant, ';'-separated).
+#   touch OUT/STOP to end a series cleanly before its next run.
 #   STAT=1: simpleperf stat (cycles, instructions, L1I refills) of the guest main thread for 10 s of each window.
 #   Several phones attached: export ANDROID_SERIAL=<serial> (adb and build/android-awake.sh SERIAL) before running.
 set -uo pipefail
@@ -100,6 +101,8 @@ for ((r = 0; r < runs; r++)); do
 done
 
 for item in "${order[@]}"; do
+  # a file OUT/STOP ends the series before the next run (a clean stop: killing the shell leaves its adb loop running)
+  [ -f "$out/STOP" ] && { echo "STOP file found: ending the series"; break; }
   vi=${item%%:*}; r=${item##*:}; name=${names[$vi]}
   rd="$out/${name}_$r"; mkdir -p "$rd"
   if [ -n "${apks[$vi]}" ] && [ "$installed" != "${apks[$vi]}" ]; then
