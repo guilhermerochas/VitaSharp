@@ -177,6 +177,7 @@ public sealed partial class SqliteVsh : HleModule
         if ((1 << (flags & 7) & 0x46) == 0) return SQLITE_MISUSE;
         string file = HostPath(Str(path) ?? "");
         int rc = raw.sqlite3_open_v2(file, out sqlite3 h, flags, null);
+        Log.Info($"SceSqliteVsh: open {Str(path)} (flags 0x{flags:X}) = {rc}");
         if (h == null) return SQLITE_NOMEM;
         var db = new Db { H = h };
         GuestMemory.W32(ppDb, HandleOf(db));
@@ -303,6 +304,7 @@ public sealed partial class SqliteVsh : HleModule
             int used = Encoding.UTF8.GetByteCount(s) - Encoding.UTF8.GetByteCount(tail ?? "");
             GuestMemory.W32(pTail, sql + (uint)used);
         }
+        if (rc != SQLITE_OK) Log.Info($"SceSqliteVsh: prepare \"{(s.Length > 120 ? s[..120] + "..." : s)}\" = {rc} ({raw.sqlite3_errmsg(db.H).utf8_to_string()})");
         if (rc != SQLITE_OK || h == null || h.IsInvalid) return rc;
         var st = new Stmt { H = h, Db = db };
         lock (_lock) db.Stmts.Add(st);
