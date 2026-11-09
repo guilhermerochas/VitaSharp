@@ -821,6 +821,7 @@ public sealed partial class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null || outBuf.Address == 0) return ERR_INVALID_POINTER;
+        c.SyncGuestState(); // the program guest code bound
         uint size = (c.VertexProgram?.Info.Program.DefaultUniformBufferCount ?? 0) * 4;
         if (size == 0) { outBuf.Value = 0; c.VertexUniformBuffers[14] = 0; return 0; }
         c.VertexRingUsed = (c.VertexRingUsed + 3) & ~3u;
@@ -846,6 +847,7 @@ public sealed partial class Gxm : HleModule
     {
         var c = Ctx(ctx);
         if (c == null || outBuf.Address == 0) return ERR_INVALID_POINTER;
+        c.SyncGuestState(); // the program guest code bound
         uint size = (c.FragmentProgram?.Info?.Program.DefaultUniformBufferCount ?? 0) * 4;
         if (size == 0) { outBuf.Value = 0; c.FragmentUniformBuffers[14] = 0; return 0; }
         c.FragmentRingUsed = (c.FragmentRingUsed + 3) & ~3u;
