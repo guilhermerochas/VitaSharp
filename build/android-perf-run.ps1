@@ -14,6 +14,10 @@
 #     phone shell command run before each start (@cmd game mode performance io.github.vitasharp; set back to standard).
 #   -Warmup 60 -Measure 30 -LoadAt (s after the first pad poll; default 30, f1 60) -MaxTemp 37 (battery deg C, waits at most 5 min)
 #   -Apk (install it first) -Out (results folder) -ExtraEnv (env.txt lines for every variant, ';'-separated)
+#   -Scene kzboot: the staircase without a state (new campaign through the menus by touch; -BootWait s after the
+#   start, default 150). -Stat: simpleperf stat (cycles, instructions, L1I refills) of the guest main thread, 10 s.
+#   app_fps column: the app's own presented-frame rate ([perf] lines); with bursty output (queued frames shown back to
+#   back after a stall) the display median overstates, the mean and app_fps are the throughput.
 # Linux/macOS: build/android-perf-run.sh (same steps).
 param(
     [Parameter(Mandatory)][string]$Scene,
@@ -25,7 +29,9 @@ param(
     [double]$MaxTemp = 37,
     [string]$Apk = '',
     [string]$Out = '',
-    [string]$ExtraEnv = ''
+    [string]$ExtraEnv = '',
+    [int]$BootWait = 150,
+    [switch]$Stat
 )
 $ErrorActionPreference = 'Stop'
 $pkg = 'io.github.vitasharp'
@@ -35,8 +41,11 @@ switch -Regex ($Scene) {
     '^kz$' { $title = 'PCSC00045'; $slot = 1 }
     '^uc$' { $title = 'PCSA00029'; $slot = 1 }
     '^f1$' { $title = 'PCSE00002'; $slot = 1; if (-not $LoadAt) { $LoadAt = 60 } }   # after the intro videos
+    # no save state (builds whose snapshot schema differs): new single-player campaign, normal difficulty, through the
+    # Valor card and menus by touch, to the first gameplay (the staircase) about 2 min after the start
+    '^kzboot$' { $title = 'PCSC00045'; $slot = 0; $boot = 'tap@40:0.82:0.77,tap@52:0.25:0.37,tap@62:0.5:0.55' }
     '^[^:]+:\d+$' { $title, $slot = $Scene.Split(':'); $slot = [int]$slot }
-    default { throw "unknown scene '$Scene' (kz, uc, f1 or TITLEID:SLOT)" }
+    default { throw "unknown scene '$Scene' (kz, kzboot, uc, f1 or TITLEID:SLOT)" }
 }
 if (-not $LoadAt) { $LoadAt = 30 }
 if (-not $Out) { $Out = Join-Path (Get-Location) ("android-perf-run\{0}_{1}" -f $Scene.Split(':')[0], (Get-Date -Format 'yyyyMMdd_HHmmss')) }
@@ -46,7 +55,7 @@ function Sh([string]$cmd) { ((adb shell $cmd 2>$null) -join "`n") -replace "`r",
 adb get-state | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'no phone connected (adb get-state failed)' }
 if ($Apk) { "installing $Apk"; adb install -r $Apk | Select-Object -Last 1 }
-if ((Sh "[ -f $files/savestates/$title/slot$slot.vss ] && echo ok") -notmatch 'ok') { throw "no save state $title slot $slot on the phone" }
+if ($slot -ne 0 -and (Sh "[ -f $files/savestates/$title/slot$slot.vss ] && echo ok") -notmatch 'ok') { throw "no save state $title slot $slot on the phone" }
 $activity = ((Sh "cmd package resolve-activity --brief $pkg") -split "`n" | Select-Object -Last 1).Trim()
 $apkInfo = ((Sh "dumpsys package $pkg") -split "`n" | Where-Object { $_ -match 'lastUpdateTime' } | Select-Object -First 1).Trim()
 
@@ -70,7 +79,7 @@ function GameLayer {
 function Median($xs) { $a = @($xs | Sort-Object); if ($a.Count -eq 0) { return $null }; $a[[int][Math]::Floor(($a.Count - 1) / 2)] }
 function Num([string]$s) { [double]::Parse($s.Replace(',', '.'), $inv) }
 
-$header = "variant`trun`tvalid`tsf_frames`tmedian_ms`tp90_ms`tmedian_fps`tmean_fps`tgpu_ms`tgame_ms`tworker_ms`tproc_cpu_ms`tbig_mhz`tlittle_mhz`tgpu_mhz`ttemp_start`ttemp_end`tskin_end`tthermal`tnote"
+$header = "variant`trun`tvalid`tsf_frames`tmedian_ms`tp90_ms`tmedian_fps`tmean_fps`tgpu_ms`tgame_ms`tworker_ms`tproc_cpu_ms`tbig_mhz`tlittle_mhz`tgpu_mhz`ttemp_start`ttemp_end`tskin_end`tthermal`tapp_fps`tnote"
 Set-Content -Path (Join-Path $Out 'results.tsv') -Value $header -Encoding utf8
 $info = "scene $Scene ($title slot $slot), $($vs.Count) variant(s) x $Runs, warm-up $Warmup s, measure $Measure s; $apkInfo"
 $info; Set-Content -Path (Join-Path $Out 'info.txt') -Value $info -Encoding utf8
@@ -87,7 +96,8 @@ foreach ($item in $order) {
     adb shell am force-stop $pkg
     & "$PSScriptRoot\android-awake.ps1" reopen | Out-Null
     $t0 = Cool
-    $envLines = @("VITASHARP_ANDROID_INPUT=loadstate@${LoadAt}:$slot", 'VITASHARP_SESSION_REPORT_SECONDS=10')
+    $steps = if ($slot -eq 0) { $boot } else { "loadstate@${LoadAt}:$slot" }
+    $envLines = @("VITASHARP_ANDROID_INPUT=$steps", 'VITASHARP_SESSION_REPORT_SECONDS=10')
     if ($ExtraEnv) { $envLines += $ExtraEnv.Split(';') }
     if ($v.Env) { $envLines += $v.Env.Split(';') }
     # entries starting with @ are phone shell commands run before the start (the game mode goes back to standard after)
@@ -98,7 +108,14 @@ foreach ($item in $order) {
     adb push (Join-Path $rd 'env.txt') "$files/config/env.txt" | Out-Null
     adb shell am start -n $activity --es titleId $title | Out-Null
     $start = Get-Date; $loaded = $false; $why = ''
-    while (((Get-Date) - $start).TotalSeconds -lt $LoadAt + 150) {
+    if ($slot -eq 0) {   # no state: the scripted steps reach gameplay after -BootWait s
+        while (((Get-Date) - $start).TotalSeconds -lt $BootWait) {
+            Start-Sleep 5
+            if (-not (Sh "pidof ${pkg}:game").Trim()) { $why = 'game process gone'; break }
+        }
+        $loaded = -not $why
+    }
+    while ($slot -ne 0 -and ((Get-Date) - $start).TotalSeconds -lt $LoadAt + 150) {
         Start-Sleep 5
         # the scripted step logs its result; only "Save state: <path> loaded in" means the state is in
         if ((Sh "grep -c 'Scripted load state, slot ${slot}: ' $files/logs/last.log").Trim() -ne '0') {
@@ -113,7 +130,7 @@ foreach ($item in $order) {
         $rows += [pscustomobject]@{ Name = $v.Name; Valid = $false }
         $note = 'state not loaded' + $(if ($why) { ": $why" } else { '' })
         # 20 columns: variant run valid, 12 empty (sf_frames .. gpu_mhz), temp_start, 3 empty, note
-        Add-Content -Path (Join-Path $Out 'results.tsv') -Value (@($v.Name, $r, 0) + @('') * 12 + @($t0, '', '', '', $note) -join "`t")
+        Add-Content -Path (Join-Path $Out 'results.tsv') -Value (@($v.Name, $r, 0) + @('') * 12 + @($t0, '', '', '', '', $note) -join "`t")
         "$($v.Name) run ${r}: $note"; continue
     }
     Start-Sleep $Warmup
@@ -124,6 +141,17 @@ foreach ($item in $order) {
     # clocks over 10 s of the window from the kernel trace (time-weighted: GPU mfg_pll_ck, big cores 6-7)
     $atrace = Start-Process adb -ArgumentList 'shell', 'atrace', '-t', '10', 'freq', 'power' -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $rd 'atrace.txt') -RedirectStandardError (Join-Path $rd 'atrace.err')
+    # -Stat: hardware counters of the guest main thread for 10 s of the window (simpleperf stat, profileable APK)
+    $statProc = $null
+    if ($Stat) {
+        $logText = Sh "cat $files/logs/last.log"
+        $main = ([regex]::Match($logText, "pinned guest main '([^']+)'")).Groups[1].Value
+        $mt = ([regex]::Matches($logText, "(\d+) '" + [regex]::Escape($main) + "'") | Select-Object -Last 1).Groups[1].Value
+        if ($mt) {
+            $statProc = Start-Process adb -ArgumentList 'shell', 'simpleperf', 'stat', '--app', $pkg, '-e', 'cpu-cycles,instructions,raw-l1i-cache-refill,raw-l1i-tlb-refill', '-t', $mt, '--duration', '10' `
+                -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $rd 'stat.txt') -RedirectStandardError (Join-Path $rd 'stat.err')
+        }
+    }
     $ws = (Sh 'date +%H:%M:%S').Trim(); $mstart = Get-Date
     do {
         $sf.AddRange([string[]]((Sh "dumpsys SurfaceFlinger --latency `"$layer`"") -split "`n" | Select-Object -Skip 1))
@@ -133,6 +161,7 @@ foreach ($item in $order) {
     $sf.AddRange([string[]]((Sh "dumpsys SurfaceFlinger --latency `"$layer`"") -split "`n" | Select-Object -Skip 1))
     $we = (Sh 'date +%H:%M:%S').Trim()
     $atrace.WaitForExit(30000) | Out-Null
+    if ($statProc) { $statProc.WaitForExit(30000) | Out-Null }
     cmd /c "adb exec-out screencap -p > `"$(Join-Path $rd 'end.png')`""
     $tb = BatteryTemp
     $therm = Sh 'dumpsys thermalservice'
@@ -154,6 +183,9 @@ foreach ($item in $order) {
         $med = $d[[int][Math]::Floor(($sfn + 1) / 2) - 1]; $p90 = $d[[int][Math]::Floor($sfn * 0.9 + 0.5) - 1]
         $mfps = 1000 / $med; $meanfps = 1000 * $sfn / ($d | Measure-Object -Sum).Sum
     }
+    # cadence: display intervals in vblanks (16.67 ms), e.g. "1v:112 2v:70 3v:96 ..." (also in RUN\hist.txt)
+    $hist = ($d | Group-Object { [int][Math]::Floor($_ / 16.667 + 0.5) } | Sort-Object { [int]$_.Name } | ForEach-Object { "$($_.Name)v:$($_.Count)" }) -join ' '
+    Set-Content -Path (Join-Path $rd 'hist.txt') -Value $hist
     # PERF summaries inside the window: deltas between the first and the last summary written after the warm-up
     $log = Get-Content (Join-Path $rd 'last.log')
     $mainName = ([regex]::Match(($log -join "`n"), "pinned guest main '([^']+)'")).Groups[1].Value
@@ -172,6 +204,15 @@ foreach ($item in $order) {
         elseif ($line -match 'PERF thread GPU worker: ([0-9,]+) s cpu') { $cur.W = Num $Matches[1] }
         elseif ($mainName -and $line.Contains("PERF thread ${mainName}: ") -and $line -match ': ([0-9,]+) s cpu') { $cur.M = Num $Matches[1] }
     }
+    # the app's own presented-frame rate over the window ([perf] lines every 30 s; the first one after the window too)
+    $appVals = @(); $late = $false
+    foreach ($line in $log) {
+        if ($line -match '^\[(\d\d:\d\d:\d\d)\.\d+\].*\[perf\] ([0-9,]+) fps over') {
+            $t = $Matches[1]
+            if (($t -ge $ws -and $t -le $we) -or ($t -gt $we -and -not $late)) { $appVals += (Num $Matches[2]); if ($t -gt $we) { $late = $true } }
+        }
+    }
+    $appFps = if ($appVals.Count) { (($appVals | Measure-Object -Average).Average).ToString('F1', $inv) } else { '-' }
     $gpu = $game = $worker = $proc = '-'
     if ($sum.Count -ge 2 -and $sum[-1].F -gt $sum[0].F) {
         $df = $sum[-1].F - $sum[0].F
@@ -197,10 +238,10 @@ foreach ($item in $order) {
     $valid = -not $note
     if ($sfn -lt 10) { $valid = $false; $note = (@($note, "no display frames (layer '$layer')") | Where-Object { $_ }) -join '; ' }
     $fmt = { param($x) if ($x -is [double]) { $x.ToString('F1', $inv) } else { "$x" } }
-    $cols = @($v.Name, $r, [int]$valid, $sfn, (& $fmt $med), (& $fmt $p90), (& $fmt $mfps), (& $fmt $meanfps), $gpu, $game, $worker, $proc, $big, $little, $gpuMhz, $t0, $tb, $ts, $tst, $note)
+    $cols = @($v.Name, $r, [int]$valid, $sfn, (& $fmt $med), (& $fmt $p90), (& $fmt $mfps), (& $fmt $meanfps), $gpu, $game, $worker, $proc, $big, $little, $gpuMhz, $t0, $tb, $ts, $tst, $appFps, $note)
     Add-Content -Path (Join-Path $Out 'results.tsv') -Value ($cols -join "`t")
-    $rows += [pscustomobject]@{ Name = $v.Name; Valid = $valid; Med = $med; P90 = $p90; MFps = $mfps; MeanFps = $meanfps; Gpu = $gpu; Game = $game; Worker = $worker; Big = $big; GpuMhz = $gpuMhz }
-    "$($v.Name) run ${r}: median $(& $fmt $med) ms (p90 $(& $fmt $p90)), $(& $fmt $mfps) fps median, $(& $fmt $meanfps) mean; GPU $gpu ms at $gpuMhz MHz, game $game, worker $worker; big cores $big MHz; $t0 -> $tb C $note"
+    $rows += [pscustomobject]@{ Name = $v.Name; Valid = $valid; Med = $med; P90 = $p90; MFps = $mfps; MeanFps = $meanfps; Gpu = $gpu; Game = $game; Worker = $worker; Big = $big; GpuMhz = $gpuMhz; AppFps = $appFps }
+    "$($v.Name) run ${r}: median $(& $fmt $med) ms (p90 $(& $fmt $p90)), $(& $fmt $mfps) fps median, $(& $fmt $meanfps) mean, app $appFps fps; GPU $gpu ms at $gpuMhz MHz, game $game, worker $worker; big cores $big MHz; $t0 -> $tb C; cadence $hist $note"
 }
 adb shell rm -f "$files/config/env.txt" "$files/config/input_live.txt"
 
@@ -209,7 +250,7 @@ adb shell rm -f "$files/config/env.txt" "$files/config/input_live.txt"
 $table = foreach ($v in $vs) {
     $ok = @($rows | Where-Object { $_.Name -eq $v.Name -and $_.Valid })
     $m = { param($k) $x = Median ($ok | ForEach-Object { $_.$k } | Where-Object { $_ -ne '-' } | ForEach-Object { [double]$_ }); if ($null -eq $x) { '-' } else { $x.ToString('0.#', $inv) } }
-    [pscustomobject]@{ variant = $v.Name; runs = $ok.Count; median_ms = (& $m 'Med'); p90_ms = (& $m 'P90'); median_fps = (& $m 'MFps'); mean_fps = (& $m 'MeanFps'); gpu_ms = (& $m 'Gpu'); game_ms = (& $m 'Game'); worker = (& $m 'Worker'); big_mhz = (& $m 'Big'); gpu_mhz = (& $m 'GpuMhz') }
+    [pscustomobject]@{ variant = $v.Name; runs = $ok.Count; median_ms = (& $m 'Med'); p90_ms = (& $m 'P90'); median_fps = (& $m 'MFps'); mean_fps = (& $m 'MeanFps'); app_fps = (& $m 'AppFps'); gpu_ms = (& $m 'Gpu'); game_ms = (& $m 'Game'); worker = (& $m 'Worker'); big_mhz = (& $m 'Big'); gpu_mhz = (& $m 'GpuMhz') }
 }
 $text = $table | Format-Table -AutoSize | Out-String
 $text; Set-Content -Path (Join-Path $Out 'summary.txt') -Value $text -Encoding utf8
