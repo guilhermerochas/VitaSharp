@@ -1865,6 +1865,44 @@ fs8):
   coisas: (1) por que o passo do roteiro rodou duas vezes (o ScriptedPad relido depois da carga?); (2) uma carga que
   falha no meio deixa o jogo parado em vez de voltar ao estado de antes. Em 25 corridas com uma carga só, nenhuma
   falhou. Parecido com o item abaixo (desktop). Com o agente de bugs
+- [ ] Android: o vídeo de abertura do F1 2011 (PCSE00002) pisca (relato do usuário, 09/11/2026, APK com todos os
+  ganhos, perf/android-all 577bce4): quadros pretos (a imagem inteira com luma 0 entre pictures de luma 16) e pictures
+  fora de ordem. A captura do usuário (`PCSE00002_20261109_185836_tudo`, 3º filme, jogo a 20 fps) tem 13 piscadas
+  pretas e 7 pictures fora de ordem em 8 s. Perguntar ao lab se o gameplay também pisca. **Restrição do usuário: a
+  correção não pode afetar a performance** (medir no celular, sem perda de fps).
+  - O replay da captura no PC reproduz o defeito com qualquer build e qualquer chave do renderizador, inclusive o
+    perfil do desktop e a main da manhã de 09/11. As pictures pretas ou velhas já estão na memória do guest quando o
+    worker da GPU grava o quadro: o defeito é do lado do guest/HLE, não do renderizador.
+  - A/B no celular (lab), abertura do F1 desde o boot a frio, 35 s, `VITASHARP_FLICKER_CHECK=1`, quadros marcados
+    por execução (2 execuções):
+
+    | Variante | Piscadas |
+    |---|---|
+    | NativeAOT f010c45 | 40 / 36 |
+    | + `VITASHARP_DECODER_HISTORY=0` | 110 / 78 (pior) |
+    | + `VITASHARP_TEX_CONTENT_CACHE=0` | 99 / 47 |
+    | Mono LLVM do mesmo código (901f294) | 44 / 19 |
+    | APK11 (mono-aot de ead401c, base ebfe72c) | 14 / 8 |
+
+    Nenhuma das chaves `VITASHARP_UNIT_MEMO=0`, `VITASHARP_UB_ZERO=full`, `VITASHARP_HLE_GUEST_CODE=0`/`nogxmctx`,
+    `DECODER_HISTORY` ou `TEX_CONTENT_CACHE` chega perto do APK11. O runtime não é a causa: o Mono pisca tanto quanto o
+    NativeAOT. As linhas do sceAvcdec são iguais em todas as execuções: 1º decodificador com 150 chamadas, 0 pictures
+    repetidas, 0 descartadas e 7-8 chamadas sem picture; 2º com 241 chamadas, 0 sem picture e 5-8 respondidas com a
+    última picture do decodificador anterior.
+  - **Hipótese de tempo:** o APK11 decodificava mais devagar (MediaCodec c2.android.avc em software, 16 ms por chamada
+    contra 10-12 ms), então provavelmente é uma corrida que já existe há tempo e ficou mais visível com o jogo mais
+    rápido.
+  - **Hipótese a verificar (posse dos buffers):** o worker lê o buffer de saída do decodificador depois que o jogo já o
+    reutilizou. O jogo teria limpado o buffer (luma 0) ou decodificado a próxima picture nele, enquanto o quadro na tela
+    ainda o amostra. Ou nós escrevemos num buffer que o jogo ainda não devolveu, ou publicamos a picture antes dos
+    pixels. A comparar com o Vita3K: quando o avPlayer/sceAvcdec devolve um frame buffer ao jogo, e se o
+    `Videodec.Output` (fila `Ready`, `repeatIfLate`, `Recycle`) escreve num buffer que o jogo ainda usa. Também o
+    sinal que o jogo espera antes de reutilizar um buffer (notificações e fila de display), que pode chegar cedo demais
+    no nosso caminho.
+  - Correção candidata, a medir antes: fotografar, no thread do jogo, a picture que está no endereço quando o draw que
+    a amostra é submetido (o que a GPU do Vita leria logo depois) e fazer o worker usar essa foto quando a memória já
+    mudou, no lugar das heurísticas do `DecoderOutputs.EarlierFor`. Só custa quando há histórico de decodificador.
+    Medir o fps no celular antes e depois (restrição acima). Com o agente de bugs
 - [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
   (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
   (`and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
