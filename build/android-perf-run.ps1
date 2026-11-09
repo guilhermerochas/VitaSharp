@@ -108,6 +108,13 @@ foreach ($item in $order) {
     [IO.File]::WriteAllText((Join-Path $rd 'env.txt'), ($envLines -join "`n") + "`n")
     adb push (Join-Path $rd 'env.txt') "$files/config/env.txt" | Out-Null
     adb shell am start -n $activity --es titleId $title | Out-Null
+    # a launch whose game process never appears (the launcher activity died at start) is retried once
+    for ($i = 0; $i -lt 10 -and -not (Sh "pidof ${pkg}:game").Trim(); $i++) { Start-Sleep 1 }
+    if (-not (Sh "pidof ${pkg}:game").Trim()) {
+        Write-Warning "$($v.Name) run ${r}: no game process 10 s after the start, launching again"
+        adb shell am force-stop $pkg; & "$PSScriptRoot\android-awake.ps1" reopen | Out-Null; Start-Sleep 2
+        adb shell am start -n $activity --es titleId $title | Out-Null
+    }
     $start = Get-Date; $loaded = $false; $why = ''
     if ($slot -eq 0) {   # no state: the scripted steps reach gameplay after -BootWait s
         while (((Get-Date) - $start).TotalSeconds -lt $BootWait) {
