@@ -188,24 +188,38 @@ public sealed unsafe partial class VulkanRenderer
         // surface at the memory of a 360x204 one and copies them out right after the scene; the copy found the
         // previous frame's 360x204 (black) pixels there whenever the frame was still in flight, and the sky
         // textures, and the whole intro cutscene lit by them, came out black for a frame
-        if (any || PendingWritebackOverlaps(lo, hi)) Finish();
+        if (any) { Finish(); return; }
+        // only the frame that will publish those rows (and the older ones, retired first) is waited for, not every
+        // frame in flight: a game that copies out a surface written back by an earlier frame keeps the GPU busy
+        if (PendingWritebackFrame(lo, hi) is { } f)
+        {
+            bool recording = f == F && f.Recording;
+            if (_xferPendingWaits++ < 20 || TraceSync)
+                Log.Info($"[gpu] transfer reads 0x{lo:X8}-0x{hi:X8} with a writeback in flight ({(recording ? "recording frame" : "submitted frame")}): waiting for that frame (present {_presentCount})");
+            if (recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+            RetireFrame(f, RetireCause.Finish);
+        }
     }
 
     readonly List<RenderTarget> _xferTargets = new();
 
-    /// <summary>A writeback recorded in a frame that has not retired yet lands in [lo, hi).</summary>
-    bool PendingWritebackOverlaps(ulong lo, ulong hi)
+    /// <summary>The newest frame not retired yet with a writeback that lands in [lo, hi), or null.</summary>
+    Frame? PendingWritebackFrame(ulong lo, ulong hi)
     {
+        Frame? newest = null;
+        long newestOrder = long.MinValue;
         foreach (var f in _frames)
         {
-            if (f == null) continue;
+            if (f == null || !(f.Recording || (f.Submitted && !f.Retired))) continue;
+            long order = f.Recording ? long.MaxValue : f.SubmitSeq; // the recording frame is submitted after every other
+            if (order <= newestOrder) continue;
             foreach (var wb in f.Writebacks)
-                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo) return true;
+                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo) { newest = f; newestOrder = order; break; }
         }
-        return false;
+        return newest;
     }
 
-    int _xferWritebacks, _xferInScene;
+    int _xferWritebacks, _xferInScene, _xferPendingWaits;
 
     /// <summary>Copies one pixel rectangle of the target into a host buffer (into guest memory once the frame completed).</summary>
     void CopyOutRect(RenderTarget rt, uint x, uint y, uint w, uint h, int hostBpp, int guestBpp, WritebackConvert conv)
