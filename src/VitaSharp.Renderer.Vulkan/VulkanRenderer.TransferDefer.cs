@@ -25,11 +25,16 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Destinations of deferred transfers that ran: their cached textures and surfaces are refreshed at the
     /// next command boundary (a retirement can happen in the middle of a draw).</summary>
     readonly List<(uint Address, uint Size)> _xferInvalidations = new();
-    long _statXferDeferred;
+    long _statXferDeferred, _statXferLateReads;
+    /// <summary>Transfer destinations a draw read while their transfer was still queued on the frame being recorded: those
+    /// transfers are not deferred again (the worker waits for the frame as without the switch), so a stale read can happen
+    /// at most once per destination.</summary>
+    readonly HashSet<uint> _xferReadEarly = new();
 
     public bool DeferCallback(CallbackCommand cb)
     {
         if (!TransferDefer) return false;
+        if (cb.WriteSize > 0 && _xferReadEarly.Contains(cb.WriteAddress) && _xferDeferFrame is not { Retired: false }) return false;
         Frame? target = _xferDeferFrame is { Retired: false } d && (d.Recording || d.Submitted) ? d : null;
         if (target == null)
         {
@@ -81,7 +86,13 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (a >= addr + size || addr >= a + s) continue;
             if (f.Submitted && !f.Retired) RetireFrame(f, RetireCause.Finish);
-            else if (f.Recording) Log.WarnOnce("xfer-defer-texture", $"[gpu] texture 0x{addr:X8} reads a transfer queued on the frame being recorded: read as it is now");
+            else if (f.Recording)
+            {
+                // read before the transfer could run: this destination's transfers wait for their frame from now on
+                _xferReadEarly.Add(a);
+                if (_statXferLateReads++ < 20 || TraceSync)
+                    Log.Info($"[gpu] texture 0x{addr:X8} reads transfer destination 0x{a:X8} queued on the frame being recorded: read as it is now; its next transfers are not deferred");
+            }
         }
         // only the texture cache now (a surface reload records commands: left to the command boundary)
         foreach (var (a, s) in _xferInvalidations)
