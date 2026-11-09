@@ -18,6 +18,10 @@ public static class EnvVars
     /// <summary>A/B switch: =old builds the per-draw texture sets the way main b29e26a did (all 16 units visited, render
     /// targets scanned through the dictionary); default new (only the sampled units, flat render-target range table).</summary>
     public const string TexLookup = "VITASHARP_TEXLOOKUP";
+    /// <summary>=0: no memo of resolved texture units in the GPU worker (Renderer.Vulkan VulkanRenderer.UnitMemo, A/B).</summary>
+    public const string UnitMemo = "VITASHARP_UNIT_MEMO";
+    /// <summary>Developer builds: presented frame from which VITASHARP_WORKER_PROF measures (default 30).</summary>
+    public const string WorkerProfFrom = "VITASHARP_WORKER_PROF_FROM";
     /// <summary>A/B switch: =old scans draw indices for their min/max one at a time; default new (128-bit vectors).</summary>
     public const string MinMaxScan = "VITASHARP_MINMAX";
     /// <summary>A/B switch: =1 records the hot vkCmd* calls through device-level function pointers loaded once with

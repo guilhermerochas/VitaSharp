@@ -207,6 +207,7 @@ public sealed unsafe partial class VulkanRenderer
     void ReleaseDepthTarget((uint, uint, uint, SampleCountFlags) key, DepthTarget dt, bool now)
     {
         _depthTargets.Remove(key);
+        _targetGen++;
         _evDepth++;
         _evDepthBytes += (long)dt.Mem.Size;
         if (_depthTextures.Remove(dt, out var t)) ReleaseDepthTex(t, now);
@@ -334,6 +335,7 @@ public sealed unsafe partial class VulkanRenderer
                     var rt = (RenderTarget)e.Value;
                     if (!_renderTargets.Remove(((uint, uint, uint, uint))e.Key)) continue;
                     _rtRangesValid = false;
+                    _targetGen++;
                     _evTargets++;
                     _evTargetBytes += (long)e.Bytes;
                     ReleaseRenderTarget(rt, now);

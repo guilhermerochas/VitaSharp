@@ -14,6 +14,8 @@ public sealed unsafe partial class VulkanRenderer
         Shader, TexSets, Texture, Pipeline, Geometry, Uniform, Begin, Record,
         // inside TexSets (BuildTextureSet): before the lookup, a reused set, resolving the units, allocating and writing
         TexPre, TexHit, TexResolve, TexAlloc,
+        // inside TexResolve: one unit resolved to guest memory / a colour target / anything else, then its sampler
+        TexUnitMem, TexUnitRt, TexUnitOther, TexSampler, TexUnitMemo,
         // inside Present: frame begin + rendering end, the rest before the present, swapchain acquire, blit, submit, retire
         PresBegin, PresPrep, PresAcquire, PresBlit, PresSubmit, PresRetire,
         // inside BeginScene: retire poll, frame begin, rendering end, colour target lookup, depth target lookup
@@ -27,10 +29,24 @@ public sealed unsafe partial class VulkanRenderer
     static readonly bool WorkerProf = false;
 #endif
     readonly long[] _profTicks = new long[(int)ProfPhase.Count];
+    /// <summary>Texture units resolved: memory, colour target, other.</summary>
+    readonly long[] _profUnits = new long[4];
+
+    [Conditional("VITASHARP_DEVELOPER")]
+    void ProfUnit(TexSource src)
+    {
+        if (!WorkerProf) return;
+        var kind = src & TexSource.KindMask;
+        int i = (src & TexSource.Memo) != 0 ? 3 : kind is TexSource.Memory or TexSource.MemoryCube ? 0 : kind is TexSource.RenderTarget or TexSource.Region or TexSource.Reinterpret or TexSource.RtMipmapped ? 1 : 2;
+        _profUnits[i]++;
+        ProfMark(i == 3 ? ProfPhase.TexUnitMemo : i == 0 ? ProfPhase.TexUnitMem : i == 1 ? ProfPhase.TexUnitRt : ProfPhase.TexUnitOther);
+    }
     long _profT, _profExecTicks, _profDrawTicks;
     readonly Dictionary<Type, long> _profByType = new();
     long _profQueueSubmitTicks, _profQueuePresentTicks;
-    const int ProfWarmup = 30;
+    /// <summary>Frames before the measurement starts (VITASHARP_WORKER_PROF_FROM, default 30): a later start leaves the
+    /// loading screens' texture uploads out of a gameplay measurement.</summary>
+    static readonly int ProfWarmup = int.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.WorkerProfFrom), out int pf) && pf > 0 ? pf : 30;
 
     [Conditional("VITASHARP_DEVELOPER")]
     void ProfStart() { if (WorkerProf) _profT = Stopwatch.GetTimestamp(); }
@@ -59,7 +75,7 @@ public sealed unsafe partial class VulkanRenderer
             _profByType[type] = _profByType.GetValueOrDefault(type) + dt;
         }
         // the first frames compile shaders and pipelines: the steady state is measured after them
-        if (command is PresentCommand && _workFrames == ProfWarmup) { _profExecTicks = _profDrawTicks = 0; Array.Clear(_profTicks); _profByType.Clear(); _profQueueSubmitTicks = _profQueuePresentTicks = 0; }
+        if (command is PresentCommand && _workFrames == ProfWarmup) { _profExecTicks = _profDrawTicks = 0; Array.Clear(_profTicks); Array.Clear(_profUnits); _profByType.Clear(); _profQueueSubmitTicks = _profQueuePresentTicks = 0; }
     }
 
     string WorkerProfReport()
@@ -73,6 +89,7 @@ public sealed unsafe partial class VulkanRenderer
         sb.Append("; sub-phases:");
         for (int i = (int)ProfPhase.Record + 1; i < (int)ProfPhase.Count; i++) sb.Append($" {(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
         sb.Append($" vkQueueSubmit {Ms(_profQueueSubmitTicks) / f:F3} vkQueuePresent {Ms(_profQueuePresentTicks) / f:F3}");
+        sb.Append($"; units/frame mem {_profUnits[0] / f:F0} rt {_profUnits[1] / f:F0} other {_profUnits[2] / f:F0} memo {_profUnits[3] / f:F0}");
         return sb.ToString();
     }
 }

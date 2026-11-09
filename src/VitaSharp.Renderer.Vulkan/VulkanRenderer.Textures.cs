@@ -32,6 +32,9 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Texture cache counters (PERF texcache line).</summary>
     long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
+    /// <summary>Time in texture uploads (decode, transcode, staging), and uploads of a content uploaded before.</summary>
+    long _texUploadTicks, _texUploadRepeats;
+    readonly HashSet<ulong> _uploadedContents = new();
     long _sweptFrame = -1;
     long _sweepTicks;
 
@@ -54,7 +57,7 @@ public sealed unsafe partial class VulkanRenderer
         double f = System.Diagnostics.Stopwatch.Frequency / 1000.0;
         return $"PERF texcache ({DirtyPages.Mode switch { "0" => "dirty tracking off", "verify" => "verify", _ => "dirty tracking" }}): " +
                $"{_texChecks / frames:F1} checks/frame, {_texSkipped / frames:F1} clean (skipped), {_texHashed / frames:F1} hashed " +
-               $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame, " +
+               $"({_texHashedBytes / frames / 1024:F0} KB/frame, {_texHashTicks / f / frames:F3} ms/frame), {_texUploads / frames:F2} uploads/frame ({_texUploadTicks / f / frames:F3} ms/frame, {_texUploadRepeats / frames:F2} of contents uploaded before), " +
                $"sweep {_sweepTicks / f / frames:F3} ms/frame" + (DirtyPages.Verify ? $", MISSED {_texMissed}" : "")
                + (_opt.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget: {_inspectBackground} inspected in the background, {_inspectStale} changed before their turn, {_inspectQueue.Count} still queued)" : "");
     }
@@ -196,6 +199,37 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
+    /// <summary>
+    /// A small direct-mapped memo of texture units that resolved to guest-memory textures in this frame: a unit with the
+    /// same descriptor takes the view and sampler again without the lookups (colour/depth target scans, the texture
+    /// cache key, the sampler table). Consecutive draws mostly bind the same textures (F1 2011's ~1,400 draws a frame:
+    /// unit resolution was about half of the GPU worker's per-draw time). An entry holds while the frame, the view epoch
+    /// (<see cref="_texEpoch"/>: no image released or replaced) and the colour/depth target set (<see cref="_targetGen"/>)
+    /// are the ones it was made in; colour-target sources are never memoised (their barriers and versions are per use).
+    /// VITASHARP_UNIT_MEMO=0 turns it off (A/B).
+    /// </summary>
+    readonly struct UnitMemo(GxmTextureDesc desc, bool asCube, long frame, long epoch, long targetGen, int space, ImageView view, Sampler sampler, Texture tex)
+    {
+        readonly GxmTextureDesc _desc = desc;
+        readonly bool _asCube = asCube;
+        readonly long _frame = frame, _epoch = epoch, _targetGen = targetGen;
+        public readonly int Space = space;
+        public readonly ImageView View = view;
+        public readonly Sampler Sampler = sampler;
+        public readonly Texture? Tex = tex;
+        public bool Hit(in GxmTextureDesc d, bool asCube, long frame, long epoch, long targetGen) =>
+            _frame == frame && _epoch == epoch && _targetGen == targetGen && _asCube == asCube && _desc == d && Tex != null;
+    }
+
+    static readonly bool UnitMemoOn = Environment.GetEnvironmentVariable(EnvVars.UnitMemo) != "0";
+    readonly UnitMemo[] _unitMemo = new UnitMemo[1024];
+    long _statUnitMemoHits;
+    /// <summary>Bumped whenever a colour or depth target is added or removed (texture sources may change).</summary>
+    long _targetGen;
+
+    static int UnitMemoSlot(in GxmTextureDesc d, bool asCube) =>
+        (int)((d.W2 >> 4 ^ d.W2 >> 13 ^ d.W0 ^ d.W1 >> 7 ^ (asCube ? 0x55u : 0)) & 1023);
+
     DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         ProfMark(ProfPhase.TexPre);
@@ -228,10 +262,34 @@ public sealed unsafe partial class VulkanRenderer
             info.ImageView = cubeType ? _dummyCubeView : _dummyView;
             info.ImageLayout = ImageLayout.ShaderReadOnlyOptimal;
             if (desc.IsNull) continue;
-            var (v, l) = ResolveTextureOrSkip(desc, asCube);
-            if (v.Handle != 0) { info.ImageView = v; info.ImageLayout = l; info.Sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v); }
+            ProfMark(ProfPhase.TexResolve);
+            ImageView v;
+            ImageLayout l;
+            ref var memo = ref _unitMemo[UnitMemoSlot(desc, asCube)];
+            if (UnitMemoOn && memo.Hit(desc, asCube, FrameCount, _texEpoch, _targetGen) && memo.Space == SpaceIdOf(desc.DataAddress) && _drawRing == null)
+            {
+                // the same guest-memory texture as a unit resolved earlier this frame: nothing it depends on changed
+                v = memo.View; l = ImageLayout.ShaderReadOnlyOptimal;
+                _texSrc = TexSource.Memory; _texSrcTex = memo.Tex; _texSrcRt = null; _texSrcAddr = 0;
+                memo.Tex!.LastUsedFrame = FrameCount;
+                info.ImageView = v; info.ImageLayout = l; info.Sampler = memo.Sampler; NoteSampled(v);
+                _statUnitMemoHits++;
+                ProfUnit(TexSource.Memory | TexSource.Memo);
+            }
+            else
+            {
+                (v, l) = ResolveTextureOrSkip(desc, asCube);
+                ProfUnit(_texSrc);
+                if (v.Handle != 0)
+                {
+                    info.ImageView = v; info.ImageLayout = l; info.Sampler = GetSampler(desc.W0, desc.TextureType); NoteSampled(v);
+                    if (UnitMemoOn && _texSrc == TexSource.Memory && _texSrcTex is { } t && t.View.Handle == v.Handle && !TracingThisFrame)
+                        memo = new UnitMemo(desc, asCube, FrameCount, _texEpoch, _targetGen, SpaceIdOf(desc.DataAddress), v, info.Sampler, t);
+                }
+            }
             if (_drawRing != null) DrawRingTexture(vertexStage, i, desc, v.Handle == 0);
             if (_reuseOk) NoteReuseSource(i, v);
+            ProfMark(ProfPhase.TexSampler);
         }
         ProfMark(ProfPhase.TexResolve);
         var cache = vertexStage ? _texSetV : _texSetF;
@@ -696,7 +754,11 @@ public sealed unsafe partial class VulkanRenderer
         try
         {
             using var source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
+            long u0 = System.Diagnostics.Stopwatch.GetTimestamp();
             UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
+            _texUploadTicks += System.Diagnostics.Stopwatch.GetTimestamp() - u0;
+            if (_uploadedContents.Count > 65536) _uploadedContents.Clear();
+            if (!_uploadedContents.Add(hash ^ (ulong)d.Format * 0x9E3779B97F4A7C15UL ^ ((ulong)w << 48) ^ ((ulong)h << 32))) _texUploadRepeats++;
         }
         catch (VkOutOfMemoryException)
         {

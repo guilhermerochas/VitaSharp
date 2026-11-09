@@ -20,6 +20,7 @@ enum TexSource : byte
     Reinterpret = 6,   // a colour target read with another format (alias view)
     RtMipmapped = 7,   // a colour target with generated mips
     KindMask = 0x0F,
+    Memo = 0x10,       // (worker profile only) the unit came from the resolved-unit memo
     Failed = 0x20,     // the resolution gave no view (the dummy texture was bound)
     SceneStart = 0x40, // the target being rendered, read through its scene-start copy (own tiles)
     LodLowered = 0x80, // LOD min > 0 over a rendered surface: the smaller levels behind it were resolved

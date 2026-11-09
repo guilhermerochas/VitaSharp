@@ -132,6 +132,11 @@ public sealed unsafe partial class VulkanRenderer
         public ulong ProgramHash, HintKey;
         /// <summary>Guest vertex program (its attributes/streams are recorded with the pipelines this shader is used in).</summary>
         public GxmVertexProgram? Vp;
+        /// <summary>Per stream, the end of the last attribute in a vertex (bytes), for <see cref="StreamEndsVp"/>; and
+        /// whether the layout has the dummy binding 16. Computed on the first draw instead of on every draw.</summary>
+        public uint[]? StreamEnds;
+        public GxmVertexProgram? StreamEndsVp;
+        public bool DummyBinding;
     }
 
     sealed class FsEntry
@@ -460,6 +465,7 @@ public sealed unsafe partial class VulkanRenderer
         e.Attributes = attrs.ToArray();
         e.LayoutHash = LayoutHash(e.Bindings, e.Attributes);
         e.StreamMask = streamMask;
+        e.StreamEnds = null; // recomputed by the next draw
     }
 
     /// <summary>Identity of a vertex input layout (part of the pipeline key; the prewarm thread computes it from
@@ -894,19 +900,26 @@ public sealed unsafe partial class VulkanRenderer
         var vbufs = stackalloc Buffer[17];
         var voffs = stackalloc ulong[17];
         var vp = d.VertexProgram;
+        if (!ReferenceEquals(vs.StreamEndsVp, vp) || vs.StreamEnds == null)
+        {
+            var ends = new uint[16];
+            foreach (var a in vp.Attributes)
+            {
+                if (a.StreamIndex >= 16) continue;
+                var (_, size) = Formats.Attribute(a.Format, Math.Min((int)a.ComponentCount, 4), 'f');
+                uint attrBytes = (uint)(size * Math.Max(1, (a.ComponentCount + 3) / 4));
+                ends[a.StreamIndex] = Math.Max(ends[a.StreamIndex], a.Offset + attrBytes);
+            }
+            vs.DummyBinding = vs.Bindings.Any(b => b.Binding == 16);
+            vs.StreamEnds = ends;
+            vs.StreamEndsVp = vp;
+        }
         for (int s = 0; s < 16; s++)
         {
             if ((vs.StreamMask & (1u << s)) == 0) continue;
             var stream = vp.Streams[s];
             bool instanced = stream.IndexSource is 2 or 3;
-            uint end = 0;
-            foreach (var a in vp.Attributes)
-            {
-                if (a.StreamIndex != s) continue;
-                var (_, size) = Formats.Attribute(a.Format, Math.Min((int)a.ComponentCount, 4), 'f');
-                uint attrBytes = (uint)(size * Math.Max(1, (a.ComponentCount + 3) / 4));
-                end = Math.Max(end, a.Offset + attrBytes);
-            }
+            uint end = vs.StreamEnds[s];
             uint count = instanced ? d.InstanceCount : maxIndex + 1 - firstVertex;
             uint length = (count - 1) * stream.Stride + end + 16;
             uint addr = d.Streams[s];
@@ -982,7 +995,7 @@ public sealed unsafe partial class VulkanRenderer
             _dyn.SetsBound = true;
             for (int s = 0; s < 16; s++)
                 if ((vs.StreamMask & (1u << s)) != 0) _cmd.CmdBindVertexBuffers(cmd, (uint)s, 1, &vbufs[s], &voffs[s]);
-            if (vs.Bindings.Any(b => b.Binding == 16))
+            if (vs.DummyBinding)
             {
                 var db = _dummyBuffer; ulong dz = 0;
                 _cmd.CmdBindVertexBuffers(cmd, 16, 1, &db, &dz);
