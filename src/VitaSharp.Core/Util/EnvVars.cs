@@ -348,7 +348,8 @@ public static class EnvVars
     /// <summary>1 (measurement only, wrong picture): MSAA scenes start from undefined samples instead of drawing the
     /// surface's content into them, to bound that load's GPU cost (bench).</summary>
     public const string MsaaLoadSkip = "VITASHARP_MSAA_LOAD_SKIP";
-    /// <summary>1 (A/B): the shaders' constant-address uniform loads skip the bounds check (always in range). Default off.</summary>
+    /// <summary>0 (A/B): the shaders' constant-address uniform loads go through the bounds check again (they are always in
+    /// range, so they skip it by default).</summary>
     public const string UniformUnchecked = "VITASHARP_UNIFORM_UNCHECKED";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>

@@ -273,7 +273,7 @@ public static class ShaderGenerator
     /// cache key.</summary>
     public static bool RelaxHalfPrecision;
 
-    /// <summary>VITASHARP_UNIFORM_UNCHECKED=1 (A/B, set by the renderer): the constant-address uniform loads of copied
+    /// <summary>VITASHARP_UNIFORM_UNCHECKED (default on, 0 = off; set by the renderer): the constant-address uniform loads of copied
     /// slots read the storage buffer directly instead of through fetchMemory's bounds check (they are always in range).
     /// Mali bench of the Killzone frame with every check removed: -6 ms. Part of the cache key.</summary>
     public static bool UncheckedUniformLoads;
