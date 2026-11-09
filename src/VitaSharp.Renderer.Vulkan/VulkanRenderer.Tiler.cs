@@ -73,7 +73,7 @@ public sealed unsafe partial class VulkanRenderer
     string LoadStoreReport() =>
         $"load/store ops{(TiledRenderings ? " (tile-based" : " (desktop")}, {_tileDeferred} deferred single-sampled renderings{(RenderAreaTrim ? $", {_statTrimmed} begun over {100 * _statTrimFraction / Math.Max(1, _statTrimmed):F0}% of their surface on average" : "")}): colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
         $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}" +
-        (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") + $"; {SceneBreakReport()}; region copies reused {_statRegionReused}";
+        (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") + $"; region copies {_statRegionOwn} of the scene's surface, {_statRegionOther} of others; {SceneBreakReport()}; region copies reused {_statRegionReused}";
 
     /// <summary>Opens a single-sampled scene rendering in a secondary command buffer.</summary>
     /// <param name="wordView">the scene's tile-word attachment (colour attachment 1), default = none</param>

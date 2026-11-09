@@ -572,8 +572,12 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// First draw of a scene's first rendering: every sample takes the surface's pixel, read from the scene-start
     /// copy through a view of the attachment's format (raw integer views copy the bits exactly).
     /// </summary>
+    /// <summary>VITASHARP_MSAA_LOAD_SKIP=1 (measurement only, wrong picture): no scene-start load draw in MSAA scenes.</summary>
+    static readonly bool MsaaLoadSkip = Environment.GetEnvironmentVariable(EnvVars.MsaaLoadSkip) == "1";
+
     void RecordMsaaLoad(Format format, bool tileWord1)
     {
+        if (MsaaLoadSkip) return;
         var src = SceneStartCopyView(_rt!, format);
         var cmd = _msCmd;
         var pipeline = MsaaLoadPipeline(format, _msSamples, tileWord1);

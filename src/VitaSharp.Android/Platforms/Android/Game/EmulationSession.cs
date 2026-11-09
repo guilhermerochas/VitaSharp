@@ -8,6 +8,7 @@ using VitaSharp.Core;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 using VitaSharp.Mobile.Core.Gpu;
 using VitaSharp.Mobile.Core.Input;
@@ -132,6 +133,7 @@ public sealed partial class EmulationSession : IDisposable
             VSync = _settings.VSync,
             GpuProfile = _settings.GpuProfile.Length > 0 ? _settings.GpuProfile : null,
             ResScale = _settings.ResScaleValue, // per-game internal resolution (0: VITASHARP_RES_SCALE in env.txt, else native)
+            Msaa = _settings.Msaa == "off" ? "off" : null, // per-game MSAA (null: VITASHARP_MSAA in env.txt, else native)
         };
 #if VITASHARP_DEVELOPER
         // developer APK, VITASHARP_FLICKER_CHECK=1[:threshold] in env.txt: every presented frame is read back small and
@@ -514,6 +516,30 @@ public sealed partial class EmulationSession : IDisposable
     /// before the activity finishes: the screens' activity resumes (and re-reads the statistics) as soon as this one
     /// finishes, before its onDestroy runs, so recording only there showed the previous numbers.
     /// </summary>
+    /// <summary>The game's multisampled scenes render with one sample (the per-game MSAA option).</summary>
+    public bool MsaaOff => _rendererOptions.Msaa == "off";
+
+    /// <summary>Changes the per-game MSAA option while the game runs: saved for the title, and the renderer is replaced
+    /// between two scenes with the new mode (as a state load does; its caches are built again).</summary>
+    public void SetMsaaOff(bool off)
+    {
+        try
+        {
+            var gs = GameSettings.Load(AppServices.Data.GameSettingsFile(_game.TitleId));
+            gs.Msaa = off ? "off" : null;
+            AppServices.SaveGameSettings(_game.TitleId, gs);
+        }
+        catch (Exception e) { Log.Warn($"MSAA setting: {e.Message}"); }
+        _rendererOptions.Msaa = off ? "off" : null;
+        if (!_started) return;
+        Task.Run(() =>
+        {
+            var why = SaveStates.ReplaceBackendBetweenScenes(_emu, () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
+            if (why != null) Log.Warn($"MSAA {(off ? "off" : "native")} applies at the next start: {why}");
+            else Log.Info($"MSAA {(off ? "off" : "native")}: renderer replaced");
+        });
+    }
+
     public void RecordStatistics()
     {
         if (Interlocked.Exchange(ref _recorded, 1) != 0) return;
