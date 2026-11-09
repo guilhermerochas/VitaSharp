@@ -47,6 +47,11 @@ public interface IGpuBackend : IDisposable
     /// (<see cref="CallbackCommand.ReadAddress"/>) must be in guest memory when this returns.</summary>
     void BeforeCallback(CallbackCommand command) { }
 
+    /// <summary>Called on the worker thread before <see cref="BeforeCallback"/>: true when the backend takes the action
+    /// and runs it itself once the GPU work it reads is complete (in order with the sync points after it), instead of
+    /// the worker waiting for that work now.</summary>
+    bool DeferCallback(CallbackCommand command) => false;
+
     /// <summary>Backend statistics for the end-of-run PERF report (null: nothing to report).</summary>
     string? Report() => null;
 }

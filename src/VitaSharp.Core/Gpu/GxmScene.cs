@@ -76,6 +76,8 @@ public sealed class CallbackCommand : GpuCommand
     public uint WriteAddress, WriteSize;
     /// <summary>Guest memory range the action reads (backends write rendered surfaces in it back first).</summary>
     public uint ReadAddress, ReadSize;
+    /// <summary>Set by the backend when it runs the action later itself (<see cref="IGpuBackend.DeferCallback"/>).</summary>
+    public bool Deferred;
 }
 
 public struct StencilState
