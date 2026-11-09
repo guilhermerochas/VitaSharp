@@ -109,6 +109,9 @@ public sealed class HostInput : IMotionSource, IDisposable
         return p;
     }
 
+    /// <summary>The keyboard's sticks travel like a real stick's (KeyStickSlew).</summary>
+    readonly KeyStickSlew _keySlew = new();
+
     /// <summary>Current Vita input from the keyboard and every controller.</summary>
     public MappedInput Poll()
     {
@@ -116,6 +119,7 @@ public sealed class HostInput : IMotionSource, IDisposable
         {
             ReloadIfChanged();
             var m = InputMapper.Map(_keyboard, null, _keys);
+            _keySlew.Apply(ref m, System.Diagnostics.Stopwatch.GetTimestamp(), System.Diagnostics.Stopwatch.Frequency);
             if (_pads != null)
             {
                 int k = 0;
