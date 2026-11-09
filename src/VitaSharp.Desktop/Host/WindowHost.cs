@@ -149,6 +149,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             IsVisible = Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.HiddenWindow) != "1",
         };
         _window = Window.Create(opts);
+        _title = title;
         _windowedSize = opts.Size;
         _fullscreen = fullscreen;
         _window.Load += OnLoad;
@@ -184,6 +185,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             else _gcPauseAtUpdate = GC.GetTotalPauseDuration();
             _lastUpdate = t;
             DrainWindowWork();
+            ApplyPendingTitle();
             Tick?.Invoke();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             if (now - _lastHotkeyPoll >= System.Diagnostics.Stopwatch.Frequency / 100)
@@ -243,7 +245,30 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         return true;
     }
 
-    public string Title { get => _window.Title; set => _window.Title = value; }
+    /// <summary>
+    /// The title bar text. Any thread may set it; only the window thread hands it to GLFW (at once when set there, else
+    /// on the loop's next update, the latest text wins). glfwSetWindowTitle is main-thread only: GLFW 3.4 frees and
+    /// re-duplicates its own copy of the title on every call, so the 1 s FPS timer and a hotkey's status line setting
+    /// it at the same time from two pool threads freed one copy twice (native heap corruption, c0000374 in free_base
+    /// under glfwSetWindowTitle, Dead Space after quick F1 resolution switches).
+    /// </summary>
+    public string Title
+    {
+        get => _title;
+        set
+        {
+            _title = value;
+            if (_windowThread == Environment.CurrentManagedThreadId) { Volatile.Write(ref _pendingTitle, null); _window.Title = value; }
+            else { Volatile.Write(ref _pendingTitle, value); _windowWake.Set(); }
+        }
+    }
+    string _title = "";
+    string? _pendingTitle;
+
+    void ApplyPendingTitle()
+    {
+        if (Interlocked.Exchange(ref _pendingTitle, null) is { } t) _window.Title = t;
+    }
 
     void OnLoad()
     {
