@@ -417,6 +417,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   display do KZ de outro jeito genérico; nos shaders, os vertex shaders da cena principal são limitados por load/store
   (`vitasharp-perf mali-cost`: ~79 leituras dinâmicas da paleta de ossos por vértice, ocupação 50%); ler 4 palavras
   com uma checagem (fetchMemory4) piorou no modelo; candidato: uniforms em UBO (registradores do Mali)
+  Opções para o EARLY (decisão do usuário): (b, preferida, genérica) adaptativo: liberar o callback no submit só
+  quando o quadro está preso na GPU (o jogo esperou a fila de display enquanto o worker ficou ocioso), e voltar ao
+  callback na conclusão quando a CPU (worker + jogo nos dois A76) é o limite, como no F1; (a, alternativa) opção por
+  jogo para o usuário no Android (como o MSAA), desligada por padrão
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
