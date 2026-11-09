@@ -1116,6 +1116,48 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
+  fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
+  trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
+  plugins do config.txt (805af91). Validado headless até o gameplay (logo da EA, menu de dificuldade, cinemática,
+  Isaac no corredor). **Relatos do usuário de 09/11 (00:2x)**: (1) "o andar para frente do teclado não funciona": o
+  port transforma o analógico esquerdo num toque no joystick da tela, e um analógico que pula do centro para a borda
+  numa amostra não anda (nav `lstick 0 -1`: Isaac parado; o mesmo empurrão em 6 quadros, `lstick 0 -1 120 6`: anda até
+  a sala seguinte). Correção: o analógico do teclado percorre o curso em 100 ms (KeyStickSlew); falta o usuário
+  confirmar com o teclado. (2) "o som sumiu de repente": a porta BGM continuou mandando áudio não silencioso, sem
+  underrun, mas só ~661 s "ativos" dos 837 s e a gravação F8 das 00:21 não tem nenhum WAV: o fluxo de áudio do jogo
+  parou de sair perto das 00:19:50, quando o controle DS4 (que tem saída de fone própria) conectou/desconectou várias
+  vezes. Hipótese: o OpenAL parou de consumir buffers e o sceAudioOutOutput ficou bloqueado. Correção feita, **não
+  validada** (não reproduzi a troca de dispositivo): OpenAlAudio verifica ALC_CONNECTED e o padrão do sistema a cada
+  1 s e move o dispositivo com alcReopenDeviceSOFT; nunca segura a thread de áudio do jogo mais de 1 s. Próximo passo:
+  reproduzir conectando/desconectando o controle com o jogo rodando e conferir o log "Audio: ... now on"
+- [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e as luzes não iluminavam (relato do usuário, 08/11/2026,
+  `captures\PCSE00011_20261108_225425_tudo`). Causa: o buffer de luz (superfície 0x41200000, U2F10F10F10 num F16x4 do
+  host) guarda no alfa a profundidade de cada pixel e cada luz (stencil volume + programmable blending) reconstrói a
+  posição a partir dele; o gerador prendia o alfa em 0..1, então nenhuma luz (lanterna incluída) somava nada. Dentro da
+  cena o hardware lê de volta o registrador de saída F16 do tile. Correção (ShaderGenerator v24): o alfa não é mais
+  preso. Replay: o spot da lanterna (draw 81) passa de 0 a 23 mil pixels acesos, o personagem e o chão à frente
+  iluminados (`<scratchpad>\c24\rp\bomfull\frame_007538.png`, antes `cmp\base\...\frame_007560.png`);
+  `replay-gpu --compare` dos 19 dumps/gravações: só o PCSE00011 muda. Real Vita (YouTube -fQbhws3LyI, zona 1) ainda
+  parece mais claro ao redor do jogador: conferir no jogo rodando. Falta validar ao vivo
+- [ ] Salt and Sanctuary (PCSE01023): logo da Ska Studios pisca na introdução (relato do usuário, 08/11/2026,
+  `captures\PCSE01023_20261108_220030_tudo`). Achados (não resolvido): o replay reproduz (quadros no 0x66600000 claros,
+  ~3,3x os do 0x66900000); os dois quadros têm os mesmos 5 desenhos (quad preto em tela cheia, um mask update em tela
+  cheia com stencil ALWAYS, e três sprites aditivos com alfa crescendo suave), mesmas texturas (md5 iguais). O desenho
+  2 é um programa de mask update, que o VitaSharp ignora (o Vita3K implementa a máscara GXM: imagem de máscara por
+  alvo, iniciada pela background mask da superfície de profundidade, ALWAYS=1/NEVER=0, desenhos rejeitados onde a
+  máscara é 0). Próximo passo: ver no replay qual dos desenhos difere entre os dois buffers (`--draw-limit=N@17/18`) e
+  se a máscara GXM explica (implementar como o Vita3K: vulkan/context.cpp, scene.cpp, state_set.cpp)
+- [ ] Silent Hill 4 (SILH00004), controles: não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
+  `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
+  rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
+  (`lstick x y quadros rampa`)
+- [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
+  tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
+  LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
+  sceFiosKernelOverlayResolveWithRangeSync02. Faltam: sceKernelWaitMultipleEvents(CB), _sceKernelGetTimer5Reg,
+  sceShellSvcGetSvcObj, IPMI::Client::create; o resto é do lado do kernel (o Vita3K roda .skprx em LLE; aqui o
+  kubridge é HLE). Lista de LLE automático do Vita3K (HTTP, SSL, PGF, FIOS2, MP4, AVPLAYER...) a comparar com jogos
 - [x] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
   usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). O MP4 gravado está certo (ffprobe 7,70 s;
   `mvhd` 90000/693120). **Corrigido** (feat/product-4): o player da câmera (avPlayer LLE) pega a duração do arquivo no
