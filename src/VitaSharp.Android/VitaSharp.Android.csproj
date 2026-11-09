@@ -142,6 +142,12 @@
     <AndroidNativeLibrary Include="$(VitaSharpValidationLayer)" Abi="arm64-v8a" />
   </ItemGroup>
 
+  <!-- Runtime environment set before the .NET runtime starts (-p:VitaSharpAndroidEnv=<file of KEY=VALUE lines>): the
+       DOTNET_* knobs of CoreCLR (GC, tiering, perf map) are read at runtime start, before config/env.txt is applied -->
+  <ItemGroup Condition="'$(VitaSharpAndroidEnv)' != ''">
+    <AndroidEnvironment Include="$(VitaSharpAndroidEnv)" />
+  </ItemGroup>
+
   <!-- libadrenotools and its hook libraries (arm64-v8a only), built by build/build-android-adrenotools.ps1 or .sh (not
        committed): packaged when present; without them "Driver da GPU" cannot load custom drivers and the system Vulkan
        driver is used. libadrenotools loads the hooks by path from the native library directory, so the manifest has

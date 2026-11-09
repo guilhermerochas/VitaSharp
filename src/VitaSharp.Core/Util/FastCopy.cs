@@ -8,28 +8,42 @@ namespace VitaSharp.Core.Util;
 /// writebacks). On Mono (the Android app) <c>Span.CopyTo</c> runs Mono's own managed block copy, which measured about
 /// 250 MB/s on a Cortex-A76 (F1 2011's 8 MB of uniforms and 13 MB of uploads per race frame took most of two cores);
 /// there the copy goes to the C library's memmove (NEON, several GB/s), called without a GC transition (it neither
-/// blocks nor calls back). CoreCLR's CopyTo already ends in the native memmove for large sizes: the desktop keeps it.
+/// blocks nor calls back). CoreCLR on ARM64 keeps large copies in its managed <c>SpanHelpers.Memmove</c>: on the phone
+/// that was 18.6% of the GPU worker in Killzone (libc's memcpy 1.6%, perf map + simpleperf, 09/11/2026), so ARM64
+/// Linux/Android under CoreCLR uses libc too (copies of <see cref="LongCopy"/> bytes or more keep the GC
+/// transition there, so a long copy never holds up a collection). The x64 desktop keeps CopyTo (its native threshold is
+/// 2 KB). <see cref="EnvVars.NativeMemmove"/>=off keeps CopyTo everywhere.
 /// </summary>
 public static unsafe class FastCopy
 {
-    /// <summary>Copies at or above this size go to libc on Mono; smaller ones stay inline.</summary>
+    /// <summary>Copies at or above this size go to libc; smaller ones stay inline.</summary>
     const int NativeThreshold = 128;
 
-    static readonly delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*> Memmove = Resolve();
+    /// <summary>CoreCLR: copies at or above this size call libc with the GC transition (a collection may run meanwhile).</summary>
+    const int LongCopy = 256 * 1024;
 
-    static delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*> Resolve()
+    static readonly delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*> Memmove;
+    static readonly delegate* unmanaged<void*, void*, nuint, void*> MemmoveLong;
+
+    static FastCopy()
     {
-        if (Type.GetType("Mono.RuntimeStructs") == null || !OperatingSystem.IsLinux() && !OperatingSystem.IsAndroid()) return null;
+        bool mono = Type.GetType("Mono.RuntimeStructs") != null;
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsAndroid()) return;
+        if (!mono && RuntimeInformation.ProcessArchitecture != Architecture.Arm64) return;
+        if (Environment.GetEnvironmentVariable(EnvVars.NativeMemmove) is "off" or "0") return;
         try
         {
             if (NativeLibrary.TryLoad("libc.so", out var libc) && NativeLibrary.TryGetExport(libc, "memmove", out var f))
-                return (delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*>)f;
+            {
+                Memmove = (delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*>)f;
+                // Mono's hybrid suspend does not wait for a thread in a native call: no transition needed at any size
+                if (!mono) MemmoveLong = (delegate* unmanaged<void*, void*, nuint, void*>)f;
+            }
         }
         catch (Exception) { }
-        return null;
     }
 
-    /// <summary>Whether copies go to the C library (Mono).</summary>
+    /// <summary>Whether copies go to the C library.</summary>
     public static bool Native => Memmove != null;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
