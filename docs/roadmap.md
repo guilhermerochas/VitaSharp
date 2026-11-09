@@ -683,6 +683,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] Idioma do sistema por jogo (pedido do usuário, 09/11/2026): opção "Idioma do sistema" nos ajustes de cada jogo
+  (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
+  jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
+  (padrão) e inglês; com o sistema em pt-BR o jogo cai no japonês. Padrão: seguir o idioma do sistema/app
 - [x] Diálogos comuns com interface de verdade (08/11/2026): o sceMsgDialog (e os outros diálogos comuns sem UI)
   respondia sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
   uma vez (282ec7d, 99Vidas sem rede). Como no Vita3K, mostrar o diálogo por cima do jogo e deixar o usuário escolher
