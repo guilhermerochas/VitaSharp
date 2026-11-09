@@ -75,7 +75,11 @@ bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes
 
 ## Runtime and CPU backends
 
-- **.NET for Android 10 runs on Mono** (the MAUI default). The APK carries `libmonosgen-2.0.so` with its JIT and,
+- **Release builds are Native AOT** (since 09/11/2026, `VitaSharpAndroidRuntime=nativeaot`,
+  [below](#runtime-and-aot-choice-vitasharpandroidruntime)): ILC compiles the whole app into
+  `lib/arm64-v8a/libVitaSharp.Android.so` with CoreCLR's GC and no JIT, so there is no dynamic code and no **IL
+  backend**: the chain is native > interpreter. Debug builds and the other values run on Mono or CoreCLR as below.
+- **Mono** (the MAUI default, `mono-*` values). The APK carries `libmonosgen-2.0.so` with its JIT and,
   in Release, AOT images of **every method of every assembly** (`libaot-*.so`, `VitaSharpAndroidRuntime=mono-aot`,
   [below](#runtime-and-aot-choice-vitasharpandroidruntime)). The AOT mode is Mono's `Normal` one: the JIT stays and
   compiles what the AOT images do not cover (the `[UnsafeAccessor]` stubs of the HLE bindings, some generic
@@ -177,14 +181,16 @@ The roadmap's "Custo do Mono" item: everything managed (HLE modules, renderer, G
 JIT compilers themselves) ran on Mono's JIT, whose code is much weaker than CoreCLR's RyuJIT, and the .NET for
 Android Release default only AOT-compiles the methods of the MAUI startup profiles plus the app assembly
 (`profile-only`): `VitaSharp.Core.dll` (4.3 MB of IL) got a 384 KB AOT image, the renderer 19 KB. The csproj now
-selects the runtime with one property; **Release defaults to `mono-aot-llvm`** (since 31/10/2026, measured below), Debug to
-`mono-jit`:
+selects the runtime with one property; **Release defaults to `nativeaot`** (since 09/11/2026; `mono-aot-llvm` from 31/10),
+Debug to `mono-jit`:
 
 ```
-dotnet build src/VitaSharp.Android -c Release -m:2                                   # mono-aot-llvm
+dotnet build src/VitaSharp.Android -c Release -m:2                                   # nativeaot (needs the NDK)
+dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=coreclr    # CoreCLR, 6-8 minutes
+dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-aot-llvm  # the old Release
 dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-aot   # 5-minute build
 dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mono-jit   # the old Release
-#   mono-jit | mono-aot | mono-aot-llvm | coreclr; anything else stops the build
+#   mono-jit | mono-aot | mono-aot-llvm | coreclr | nativeaot; anything else stops the build
 ```
 
 | Value | What it sets | Runtime |
@@ -192,7 +198,21 @@ dotnet build src/VitaSharp.Android -c Release -m:2 -p:VitaSharpAndroidRuntime=mo
 | `mono-jit` | nothing (SDK defaults: profiled AOT in Release, no AOT in Debug) | Mono JIT for everything outside the startup profiles |
 | `mono-aot` | `RunAOTCompilation=true`, `AndroidEnableProfiledAot=false`, `AndroidAotMode=Normal` | every method AOT-compiled by Mono's own backend, the JIT kept |
 | `mono-aot-llvm` | the same plus `EnableLLVM=true` | AOT through LLVM (`opt`/`llc` of the AOT cross pack), the JIT kept |
-| `coreclr` | `UseMonoRuntime=false` | CoreCLR, RyuJIT with tiering, partial ReadyToRun; warning XA1040 (experimental) |
+| `coreclr` | `UseMonoRuntime=false` | CoreCLR, RyuJIT with tiered PGO over a composite ReadyToRun image; warning XA1040 (experimental) |
+| `nativeaot` | `UseMonoRuntime=false`, `PublishAot=true`, the NDK (`AndroidNdkDirectory`, `ANDROID_NDK_ROOT` or the newest `<sdk>/ndk/<version>`) | Native AOT: the whole app ILC-compiled into one `.so`, CoreCLR's GC, no JIT (no IL backend) |
+
+**Phone, 09/11/2026** (Redmi Note 14, Killzone: Mercenary on the staircase, tree ebfe72c, interleaved runs): Native AOT
+21-23 fps (p90 50 ms, GPU worker 25-27 ms, game thread 17-18 ms), CoreCLR 22-23 fps (p90 67 ms), `mono-aot` 13.5-14
+fps. On the CoreCLR build the runtime itself was 6.9% of the game thread (Mono's runtime and transition stubs about
+20%); its managed `SpanHelpers.Memmove` was 18.6% of the GPU worker until `FastCopy` sent bulk copies to libc on
+ARM64 (`VITASHARP_NATIVE_MEMMOVE=off` turns that off). Native AOT also starts with no JIT warm-up. `nativeaot` needs
+three fixes for the 36.1 workload, in the csproj: the runtime's libunwind against the NDK's
+(`-Wl,--allow-multiple-definition`), the Android runtime pack's System.IO.Hashing 9.0 next to the core's 10.0
+(XAAMP7004 duplicate key), and the resource-designer and satellite assemblies ILC was not given (MainActivity threw
+FileNotFoundException at launch; the texts came out in English). Build with `-nr:false`: a reused MSBuild node kept
+`linked/Java.Interop.dll` mapped and broke the next ILLink (IL1011). `-p:VitaSharpAndroidEnv=<file>` bakes
+`KEY=VALUE` lines into the runtime environment (the `DOTNET_*` knobs are read before `config/env.txt`; used for
+`DOTNET_PerfMapEnabled=1`).
 
 Mono's AOT task starts one compiler per logical CPU (plus `opt`/`llc` each with LLVM), which pinned the PC's 8 cores
 above 90%; the csproj sets `_DisableParallelAot=true` (one assembly at a time per ABI, two ABIs in parallel with
@@ -225,11 +245,9 @@ built; with libshaderc and libadrenotools):
   precompiled code, so startup and the first minutes are JIT time) and the APK is the largest (debugger libraries
   `libmscordaccore.so`/`libmscordbi.so` included). It is .NET 11's default, so it is the path forward: second
   candidate for the phone A/B.
-- **Native AOT**: ILC compiles the whole app (MAUI, MauiReactor; only Silk.NET's loader IL3000/IL3002 warnings), but
-  the link fails with NDK r30: `ld.lld: duplicate symbol: __unw_init_local` (the runtime pack's libunwind against the
-  NDK's). Even fixed, it would be a dead end here: .NET 10 MAUI supports Native AOT only on iOS/Mac Catalyst
-  (Android is experimental even in .NET 11), `TrimMode` must be full (Silk.NET and the HLE tables are not
-  trim-annotated) and there is no Reflection.Emit, so the IL backend goes. Not offered by the switch.
+- **Native AOT** (30/10/2026; superseded on 09/11/2026, see the phone results above): ILC compiled the whole app but
+  the link failed with NDK r30 (`duplicate symbol: __unw_init_local`). `TrimMode=partial` turned out to be enough, and
+  the IL backend is not needed on a phone (the native backend is the default there).
 - **What each keeps of the CPU backends**: the native ARM64 JIT maps its arena with mmap/memfd and calls into it
   through `delegate* unmanaged`, with `[UnmanagedCallersOnly]` callouts: no Reflection.Emit, so it works under all of
   them (Mono's AOT compiles the native-to-managed wrappers of the callouts; under `Normal` the JIT can still build

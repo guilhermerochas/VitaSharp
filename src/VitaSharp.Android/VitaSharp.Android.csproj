@@ -58,9 +58,8 @@
     <AndroidPackageFormat>apk</AndroidPackageFormat>
 
     <!--
-      Runtime: Mono (the .NET for Android default) with its JIT, so RuntimeFeature.IsDynamicCodeSupported is true and the
-      IL backend exists next to the native ARM64 JIT. Release builds AOT-compile every method ahead of time with the JIT
-      kept for the rest (VitaSharpAndroidRuntime below; CoreCLR and Native AOT are options); no Mono full-AOT-only mode
+      Runtime (VitaSharpAndroidRuntime below): Release builds are Native AOT (no JIT: the native ARM64 CPU backend and
+      the interpreter, no IL backend); Debug builds run on Mono with its JIT; CoreCLR and Mono AOT stay selectable
       (docs/android/README.md, "Runtime and CPU backends").
     -->
     <UseInterpreter>false</UseInterpreter>
@@ -73,23 +72,23 @@
 
   <!--
     Runtime and AOT: -p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr|nativeaot (docs/android/README.md,
-    "Runtime and CPU backends"). Release defaults to mono-aot-llvm (measured fastest on a phone), Debug to mono-jit. Every
-    choice but nativeaot keeps a JIT, so dynamic code stays supported and compiled and the CPU chain is still native > il >
+    "Runtime and CPU backends"). Release defaults to nativeaot (measured fastest on a phone, 09/11/2026: Killzone 21-23
+    fps against 13.5-14 with mono-aot), Debug to mono-jit. Every choice but nativeaot keeps a JIT, so dynamic code stays supported and compiled and the CPU chain is still native > il >
     interpreter (nativeaot: native > interpreter).
       mono-jit       Mono with its JIT; in Release the .NET for Android default profiled AOT (the startup methods of
                      the MAUI profiles and the app assembly; VitaSharp.Core and the renderer are JIT-compiled on the
                      device)
       mono-aot       Mono, every method of every assembly AOT-compiled (AndroidAotMode=Normal: the JIT stays and
                      compiles what AOT cannot cover: UnsafeAccessor stubs, some generic instantiations, DynamicMethods)
-      mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); the Release default: about 17 min to build
-                     instead of 5, but F1 2011 races ran 35% faster on the phone than with mono-aot
+      mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); the Release default until 09/11/2026: about
+                     17 min to build instead of 5, but F1 2011 races ran 35% faster on the phone than with mono-aot
       coreclr        CoreCLR (RyuJIT with tiered PGO over a composite ReadyToRun image), experimental in .NET 10
                      (warning XA1040)
-      nativeaot      Native AOT (ILC, the whole app in one libVitaSharp.Android.so, CoreCLR's GC, no JIT), experimental;
-                     needs the NDK (AndroidNdkDirectory, else the newest <Android SDK>/ndk/<version>)
+      nativeaot      Native AOT (ILC, the whole app in one libVitaSharp.Android.so, CoreCLR's GC, no JIT); the Release
+                     default (experimental in .NET 10 for Android); about 10 min to build; needs the NDK (AndroidNdkDirectory, else the newest <Android SDK>/ndk/<version>)
   -->
   <PropertyGroup>
-    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">mono-aot-llvm</VitaSharpAndroidRuntime>
+    <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">nativeaot</VitaSharpAndroidRuntime>
     <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == ''">mono-jit</VitaSharpAndroidRuntime>
   </PropertyGroup>
   <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'mono-aot' or '$(VitaSharpAndroidRuntime)' == 'mono-aot-llvm'">
@@ -124,6 +123,10 @@
   <Target Name="_VitaSharpCheckAndroidRuntime" BeforeTargets="PrepareForBuild"
       Condition="'$(VitaSharpAndroidRuntime)' != 'mono-jit' and '$(VitaSharpAndroidRuntime)' != 'mono-aot' and '$(VitaSharpAndroidRuntime)' != 'mono-aot-llvm' and '$(VitaSharpAndroidRuntime)' != 'coreclr' and '$(VitaSharpAndroidRuntime)' != 'nativeaot'">
     <Error Text="VitaSharpAndroidRuntime='$(VitaSharpAndroidRuntime)': use mono-jit, mono-aot, mono-aot-llvm, coreclr or nativeaot" />
+  </Target>
+  <Target Name="_VitaSharpCheckNdk" BeforeTargets="PrepareForBuild"
+      Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot' and ('$(AndroidNdkDirectory)' == '' or !Exists('$(AndroidNdkDirectory)'))">
+    <Error Text="VitaSharpAndroidRuntime=nativeaot needs the Android NDK: install it with the SDK manager (ndk;&lt;version&gt;) or pass -p:AndroidNdkDirectory=&lt;dir&gt;; -p:VitaSharpAndroidRuntime=mono-aot-llvm builds without it" />
   </Target>
 
   <!--
