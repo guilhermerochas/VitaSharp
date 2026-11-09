@@ -483,7 +483,15 @@ public sealed unsafe partial class VulkanRenderer
                 if (rt.SampledView.Handle != 0) { var old = rt.SampledView; BumpTexEpoch(1); DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null)); }
                 var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
                 if (gamma) viewFormat = Formats.Srgb(viewFormat);
-                rt.SampledView = CreateView(rt.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, sw);
+                var viewSw = sw;
+                if (!rt.CanView(viewFormat))
+                {
+                    // a target with a short format list (VITASHARP_RT_FORMAT_LIST): the RGBA reading of a BGRA image is a swizzle
+                    if (rt.Format is Format.B8G8R8A8Unorm) viewSw = Formats.Compose(new ComponentMapping(ComponentSwizzle.B, ComponentSwizzle.G, ComponentSwizzle.R, ComponentSwizzle.A), sw);
+                    viewFormat = gamma && rt.CanView(Formats.Srgb(rt.Format)) ? Formats.Srgb(rt.Format) : rt.Format;
+                    if (gamma && viewFormat == rt.Format) Log.WarnOnce("rt-immutable-gamma-tex", "[afbc] render target without an sRGB view sampled with gamma: read linear (measurement only)");
+                }
+                rt.SampledView = CreateView(rt.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, viewSw);
                 rt.SampledSwizzle = sw;
                 rt.SampledGamma = gamma;
             }
