@@ -727,6 +727,17 @@ public sealed partial class Ngs : HleModule
     }
 
     static void SetState(NgsModuleData m, int off, int v) => BitConverter.TryWriteBytes(m.GuestState.AsSpan(off), v);
+
+    /// <summary>
+    /// Follows a buffer's next index into the player state's current buffer (+4). An index that names no buffer slot
+    /// (-1 ends the chain) leaves the last played buffer there: games read +4 as a slot number. Wwise's streamed
+    /// voices release ring buffers from their own index up to it, stepping modulo the ring size, and with -1 there
+    /// that loop never ended (Batman: Arkham Origins Blackgate's sound thread spun forever when a stream ran dry).
+    /// </summary>
+    static void SetChainedBuffer(NgsModuleData m, int next)
+    {
+        if (next is >= 0 and < 4) SetState(m, 4, next);
+    }
     static int GetState(NgsModuleData m, int off) => BitConverter.ToInt32(m.GuestState, off);
 
     [Hle("sceNgsVoicePlayInternal")]
@@ -1041,7 +1052,7 @@ public sealed partial class Ngs : HleModule
                 {
                     int next = m.ParamI16(bp + 10);
                     st.LoopCount = 0;
-                    SetState(m, 4, next);
+                    SetChainedBuffer(m, next);
                     if (!ValidPlayerBuffer(m, pl, next))
                     {
                         InvokeCallback(v, m.Callback, m.UserData, 0x5CE6, PLAYER_END_OF_DATA, 0, 0);
@@ -1197,7 +1208,7 @@ public sealed partial class Ngs : HleModule
                 {
                     int next = m.ParamI16(bp + 10);
                     st.LoopCount = 0;
-                    SetState(m, 4, next);
+                    SetChainedBuffer(m, next);
                     if (next < 0 || next >= 4 || m.Param32(8 + next * 16) == 0 || m.Param32(8 + next * 16 + 4) == 0)
                     {
                         InvokeCallback(v, m.Callback, m.UserData, 0x5CAA, AT9_END_OF_DATA, 0, 0);

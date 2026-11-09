@@ -18,9 +18,16 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed partial class Mp4 : HleModule
 {
-    // error values are not documented; games only test for < 0 (end of stream ends playback)
+    // error values are not documented; games only test for < 0
     const int ERR_INVALID_HANDLE = unchecked((int)0x80630002), ERR_END_OF_STREAM = unchecked((int)0x80630010),
         ERR_NOT_FOUND = unchecked((int)0x80630005), ERR_INVALID_ARG = unchecked((int)0x80630001);
+    /// <summary>
+    /// What GetNextUnit returns once every enabled stream has been read: libscemp4 (FW 3.74) maps its internal
+    /// end-of-stream codes to 1 (0 = a unit, -1 = an error). Players tell the end from an error by it: Need for
+    /// Speed Most Wanted's demuxer took a negative value for a read error and stopped without telling its video
+    /// decoder thread, which then waited for the stream end forever (black screen after a car preview movie).
+    /// </summary>
+    const int END_OF_STREAM = 1;
 
     sealed partial class File
     {
@@ -209,7 +216,7 @@ public sealed partial class Mp4 : HleModule
         if (u == null)
         {
             Log.Debug($"sceMp4: end of stream (handle {h})");
-            return ERR_END_OF_STREAM;
+            return END_OF_STREAM;
         }
         if (f.BufferSize < u.Data.Length)
         {
