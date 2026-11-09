@@ -20,6 +20,10 @@ public sealed partial class MainWindow
         var page = new StackPanel { Margin = new Thickness(36, 28, 36, 32) };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
         header.Children.Add(_k.VStack(2, _k.Heading(S.VitaSystem, 30), _k.Text(S.VitaSystemSubtitle, 13.5, color: P.Muted)));
+        // the emulated memory card and firmware partitions (ux0, ur0, os0, vs0...) in the file manager
+        var openFs = _k.Secondary(S.OpenFileSystem, "folder", () => { Directory.CreateDirectory(Program.FsRoot); OpenPath(Program.FsRoot); }, 46, tip: S.OpenFileSystemTip(Program.FsRoot));
+        openFs.VerticalAlignment = VerticalAlignment.Center;
+        header.Children.Add(Kit.At(openFs, col: 1));
         page.Children.Add(header);
 
         var cols = new Grid { ColumnDefinitions = new ColumnDefinitions("*,24,*") };

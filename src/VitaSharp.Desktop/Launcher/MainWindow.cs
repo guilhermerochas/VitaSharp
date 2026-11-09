@@ -240,7 +240,9 @@ public sealed partial class MainWindow : Window
     /// <summary>"Abrir Sistema do Vita": the firmware's shell in one click (or Ctrl+H) from any page.</summary>
     Control LaunchButton()
     {
-        bool enabled = ShellInstalled && _running == null;
+        // while the Vita system runs, the button goes to its window
+        bool shellRunning = _running != null && _runningId == "shell";
+        bool enabled = ShellInstalled && (_running == null || shellRunning);
         var fg = enabled ? P.OnAccent : P.Faint;
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         g.Children.Add(new Border
@@ -250,7 +252,7 @@ public sealed partial class MainWindow : Window
             Child = new Border { Margin = new Thickness(2, 0, 0, 0), Child = _k.Icon("play", 13, fg, fill: true) },
         });
         var texts = _k.VStack(0, _k.Text(S.OpenVitaSystem, 14, FontWeight.SemiBold, fg),
-            enabled ? _k.Text(S.ShortcutAnywhere, 11, FontWeight.Medium, P.OnAccent).Also(x => x.Opacity = 0.75)
+            enabled ? _k.Text(shellRunning ? S.GoToGame : S.ShortcutAnywhere, 11, FontWeight.Medium, P.OnAccent).Also(x => x.Opacity = 0.75)
                 : _k.Text(!ShellInstalled ? S.InstallFirmwareFirst : S.GameRunningShort, 11, color: P.Faint));
         texts.VerticalAlignment = VerticalAlignment.Center;
         g.Children.Add(Kit.At(texts, col: 1));
@@ -263,15 +265,21 @@ public sealed partial class MainWindow : Window
             BorderBrush = Kit.B(enabled ? Colors.Transparent : P.Border), BorderThickness = new Thickness(1),
             BoxShadow = enabled ? BoxShadows.Parse(P.Dark ? "0 8 24 0 #406E9BFF" : "0 8 20 0 #403767DB") : default,
         };
-        return Kit.Click(visual, LaunchSystem, S.OpenVitaSystemTip, enabled);
+        return Kit.Click(visual, LaunchSystem, shellRunning ? S.GoToGameTip : S.OpenVitaSystemTip, enabled);
     }
 
     Control? RunningCard()
     {
         if (_running == null) return null;
         var head = _k.HStack(8, _k.Dot(P.Ok), _k.Text(S.RunningNow, 12.5, FontWeight.SemiBold, P.Ok));
-        var body = _k.VStack(8, head, _k.Text(_runningTitle ?? "", 13.5, FontWeight.Medium),
-            _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, 34, P.Danger));
+        // the name and "Ir para o jogo" bring the game's window to the front (it runs in its own process and window)
+        var name = Kit.Click(_k.Text(_runningTitle ?? "", 13.5, FontWeight.Medium), GoToGame, S.GoToGameTip);
+        name.HorizontalAlignment = HorizontalAlignment.Left;
+        var go = _k.Primary(S.GoToGame, "monitor", GoToGame, 34, 0, tip: S.GoToGameTip);
+        go.HorizontalAlignment = HorizontalAlignment.Stretch;
+        var stop = _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, 34, P.Danger);
+        stop.HorizontalAlignment = HorizontalAlignment.Stretch;
+        var body = _k.VStack(8, head, name, go, stop);
         return new Border
         {
             Background = Kit.B(P.Surface), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1),
@@ -421,8 +429,25 @@ public sealed partial class MainWindow : Window
 
     bool _stopAsked;
 
+    /// <summary>"Ir para o jogo": the running game's window comes to the front with the focus (restored if minimized).</summary>
+    internal void GoToGame()
+    {
+        if (_running is not { } p) return;
+        var line = GameWindowActivator.Activate(p);
+        AppendLog(line);
+        LastFocusResultForTests = line;
+    }
+
+    /// <summary>The log line of the last <see cref="GoToGame"/> (ui-render's focus check).</summary>
+    internal string? LastFocusResultForTests { get; private set; }
+
+    /// <summary>A click on <paramref name="g"/> while it runs goes to its window instead.</summary>
+    bool IsRunningGame(GameEntry g) => _running != null && _runningGame?.TitleId == g.TitleId;
+
     void StartEmulator(string title, string titleId, string[] command, GameEntry? g)
     {
+        // starting what already runs (its "Jogar", the LiveArea's Start, "Abrir Sistema do Vita") goes to its window
+        if (_running != null && _runningId == titleId) { GoToGame(); return; }
         if (_running != null) { SetStatus(S.AlreadyRunning(_runningTitle ?? "")); return; }
         CloseOverlay();
         var exe = Environment.ProcessPath!;
