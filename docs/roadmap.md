@@ -2796,3 +2796,12 @@ fs8):
   são o gargalo (AAC 5 ms, H.264 12,8 ms por chamada, MediaExtractor 0,4 ms); falta ver as threads do player do jogo
   (simpleperf). Comparar também os dumps de áudio de F1 (menu e corrida) e God of War com o PC (`vitasharp-perf
   audio-check`): 245 e 157 estalos no celular
+- **Silent Hill 4 port (SILH00004), "a visualização tá zuada" (08/11/2026, capture SILH00004_20261108_211441, not
+  solved):** checked so far: the depth-clamp change (580f464) does not touch it (replay with and without it:
+  pixel-identical); the post pass (scene 640x362 -> 0x60F8CC00 -> back) does not blur or darken it (the scene target
+  before it looks the same); the BC1/BC2 swizzled-arbitrary atlases decode to plausible (dark, rusty) art; the
+  stencil-masked effect target 0x613EF000 stays empty because no draw in that frame writes a non-zero stencil (so
+  the composite is a no-op, which may be right). Real Vita footage (YouTube i1CuZULiQ6w) shows a much brighter,
+  grey-green apartment, but not the same spot. Next: a Vita3K picture at the same save (its Vulkan window comes out
+  white with PrintWindow: capture it another way), and ask the user what exactly looks wrong. The title menu's
+  Continue stays grey with the user's sh4.sav copied (the save is read whole, 694288 bytes); Load is enabled.
