@@ -121,6 +121,13 @@ for item in "${order[@]}"; do
   while IFS= read -r c; do [ -n "$c" ] && adb shell "$c" < /dev/null; done <<< "$shellcmds"
   adb push "$(lp "$rd/env.txt")" "$files/config/env.txt" >/dev/null
   adb shell am start -n "$activity" --es titleId "$title" >/dev/null
+  # a launch whose game process never appears (the launcher activity died at start) is retried once
+  for ((i = 0; i < 10; i++)); do [ -n "$(sh_ pidof $pkg:game)" ] && break; sleep 1; done
+  if [ -z "$(sh_ pidof $pkg:game)" ]; then
+    echo "$name run $r: no game process 10 s after the start, launching again" >&2
+    adb shell am force-stop $pkg; "$here/android-awake.sh" reopen >/dev/null; sleep 2
+    adb shell am start -n "$activity" --es titleId "$title" >/dev/null
+  fi
   start=$(date +%s); loaded=0; why=""
   if [ "$slot" = 0 ]; then   # no state: the scripted steps reach gameplay after BOOTWAIT s (default 150)
     while (( $(date +%s) - start < ${BOOTWAIT:-150} )); do sleep 5; [ -z "$(sh_ pidof $pkg:game)" ] && { why="game process gone"; break; }; done
