@@ -2817,6 +2817,18 @@
   <data name="MRes50" xml:space="preserve">
     <value>50% (fastest, smoothest)</value>
   </data>
+  <data name="MMsaa" xml:space="preserve">
+    <value>MSAA (anti-aliasing)</value>
+  </data>
+  <data name="MMsaaNative" xml:space="preserve">
+    <value>Native (as the game asks)</value>
+  </data>
+  <data name="MMsaaOff" xml:space="preserve">
+    <value>Off (faster, jagged edges)</value>
+  </data>
+  <data name="MMsaaDetail" xml:space="preserve">
+    <value>Off renders the game with one sample per pixel: less GPU work, edges alias. Applies right away</value>
+  </data>
   <data name="MDefaultParen" xml:space="preserve">
     <value>Default ({0})</value>
   </data>

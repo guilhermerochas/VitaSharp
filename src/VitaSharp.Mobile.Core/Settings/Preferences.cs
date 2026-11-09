@@ -74,6 +74,9 @@ public sealed class GameSettings
     /// <summary>"Resolucao interna": render-target scale below native, "0.75" or "0.5" (null = native; per game only,
     /// VulkanRenderer.ResScale.cs). Lower is faster on GPU-bound games, and softer.</summary>
     public string? ResScale { get; set; }
+    /// <summary>"MSAA": "off" renders the game's multisampled scenes with one sample (faster on the GPU, edges alias);
+    /// null = native (as the game asks, 2x/4x). Per game only.</summary>
+    public string? Msaa { get; set; }
 
     /// <summary>Total time played, in seconds.</summary>
     public long PlaySeconds { get; set; }
@@ -82,7 +85,7 @@ public sealed class GameSettings
     public double AverageFps { get; set; }
 
     [JsonIgnore]
-    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null || ResScale != null;
+    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null || ResScale != null || Msaa != null;
 
     public static GameSettings Load(string path) => SettingsFile.Load(path, PrefsJson.Default.GameSettings) ?? new();
     public void Save(string path) => SettingsFile.Save(path, this, PrefsJson.Default.GameSettings);
@@ -98,7 +101,7 @@ public sealed class GameSettings
 }
 
 /// <summary>What a game runs with: the game's settings over the global ones, validated.</summary>
-public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps, string ResScale = "")
+public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps, string ResScale = "", string Msaa = "")
 {
     public static EffectiveSettings Resolve(AppPreferences app, GameSettings? game)
     {
@@ -108,7 +111,8 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
         if (mhz is not (0 or 444)) mhz = 0;
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
         string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
-        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res);
+        string msaa = game?.Msaa == "off" ? "off" : "";
+        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res, msaa);
     }
 
     /// <summary>VulkanRendererOptions.ResScale for <see cref="ResScale"/> (0 = native).</summary>
@@ -140,6 +144,12 @@ public static class SettingsChoices
         new("", Loc.Get("MResNative")),
         new("0.75", Loc.Get("MRes75")),
         new("0.5", Loc.Get("MRes50")),
+    ];
+
+    public static IReadOnlyList<Choice> MsaaModes { get; } =
+    [
+        new("", Loc.Get("MMsaaNative")),
+        new("off", Loc.Get("MMsaaOff")),
     ];
 
     /// <summary>The label of <paramref name="value"/> in <paramref name="choices"/>, or the value itself.</summary>
