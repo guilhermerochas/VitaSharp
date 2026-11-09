@@ -56,8 +56,8 @@
     <!--
       Runtime: Mono (the .NET for Android default) with its JIT, so RuntimeFeature.IsDynamicCodeSupported is true and the
       IL backend exists next to the native ARM64 JIT. Release builds AOT-compile every method ahead of time with the JIT
-      kept for the rest (VitaSharpAndroidRuntime below); no Mono full-AOT-only mode, no Native AOT (docs/android/README.md,
-      "Runtime and CPU backends").
+      kept for the rest (VitaSharpAndroidRuntime below; CoreCLR and Native AOT are options); no Mono full-AOT-only mode
+      (docs/android/README.md, "Runtime and CPU backends").
     -->
     <UseInterpreter>false</UseInterpreter>
     <!-- the emulator reflects over nothing at run time, but the core and Silk.NET are not trim-annotated: keep them -->
@@ -68,9 +68,10 @@
   </PropertyGroup>
 
   <!--
-    Runtime and AOT: -p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr (docs/android/README.md,
-    "Runtime and CPU backends"). Release defaults to mono-aot-llvm (measured fastest on a phone), Debug to mono-jit. Every choice keeps a JIT, so dynamic
-    code stays supported and compiled and the CPU chain is still native > il > interpreter.
+    Runtime and AOT: -p:VitaSharpAndroidRuntime=mono-jit|mono-aot|mono-aot-llvm|coreclr|nativeaot (docs/android/README.md,
+    "Runtime and CPU backends"). Release defaults to mono-aot-llvm (measured fastest on a phone), Debug to mono-jit. Every
+    choice but nativeaot keeps a JIT, so dynamic code stays supported and compiled and the CPU chain is still native > il >
+    interpreter (nativeaot: native > interpreter).
       mono-jit       Mono with its JIT; in Release the .NET for Android default profiled AOT (the startup methods of
                      the MAUI profiles and the app assembly; VitaSharp.Core and the renderer are JIT-compiled on the
                      device)
@@ -78,7 +79,10 @@
                      compiles what AOT cannot cover: UnsafeAccessor stubs, some generic instantiations, DynamicMethods)
       mono-aot-llvm  mono-aot through LLVM (opt/llc of the AOT cross pack); the Release default: about 17 min to build
                      instead of 5, but F1 2011 races ran 35% faster on the phone than with mono-aot
-      coreclr        CoreCLR (RyuJIT, partial ReadyToRun), experimental in .NET 10 (warning XA1040)
+      coreclr        CoreCLR (RyuJIT with tiered PGO over a composite ReadyToRun image), experimental in .NET 10
+                     (warning XA1040)
+      nativeaot      Native AOT (ILC, the whole app in one libVitaSharp.Android.so, CoreCLR's GC, no JIT), experimental;
+                     needs the NDK (AndroidNdkDirectory, else the newest <Android SDK>/ndk/<version>)
   -->
   <PropertyGroup>
     <VitaSharpAndroidRuntime Condition="'$(VitaSharpAndroidRuntime)' == '' and '$(Configuration)' == 'Release'">mono-aot-llvm</VitaSharpAndroidRuntime>
@@ -97,8 +101,14 @@
   <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'mono-aot-llvm'">
     <EnableLLVM>true</EnableLLVM>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'coreclr'">
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'coreclr' or '$(VitaSharpAndroidRuntime)' == 'nativeaot'">
     <UseMonoRuntime>false</UseMonoRuntime>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">
+    <PublishAot>true</PublishAot>
+    <_VitaSharpNdks Condition="'$(AndroidNdkDirectory)' == '' and '$(ANDROID_NDK_ROOT)' == '' and Exists('$(AndroidSdkDirectory)/ndk')">$([System.IO.Directory]::GetDirectories('$(AndroidSdkDirectory)/ndk'))</_VitaSharpNdks>
+    <AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == '' and '$(ANDROID_NDK_ROOT)' != ''">$(ANDROID_NDK_ROOT)</AndroidNdkDirectory>
+    <AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == '' and '$(_VitaSharpNdks)' != ''">$(_VitaSharpNdks.Substring($([MSBuild]::Add($(_VitaSharpNdks.LastIndexOf(';')), 1))))</AndroidNdkDirectory>
   </PropertyGroup>
   <!-- the choice is logged at startup (RuntimeReport: "Runtime: ..., build mono-aot") so phone logs say what ran -->
   <ItemGroup>
@@ -108,8 +118,32 @@
     </AssemblyAttribute>
   </ItemGroup>
   <Target Name="_VitaSharpCheckAndroidRuntime" BeforeTargets="PrepareForBuild"
-      Condition="'$(VitaSharpAndroidRuntime)' != 'mono-jit' and '$(VitaSharpAndroidRuntime)' != 'mono-aot' and '$(VitaSharpAndroidRuntime)' != 'mono-aot-llvm' and '$(VitaSharpAndroidRuntime)' != 'coreclr'">
-    <Error Text="VitaSharpAndroidRuntime='$(VitaSharpAndroidRuntime)': use mono-jit, mono-aot, mono-aot-llvm or coreclr" />
+      Condition="'$(VitaSharpAndroidRuntime)' != 'mono-jit' and '$(VitaSharpAndroidRuntime)' != 'mono-aot' and '$(VitaSharpAndroidRuntime)' != 'mono-aot-llvm' and '$(VitaSharpAndroidRuntime)' != 'coreclr' and '$(VitaSharpAndroidRuntime)' != 'nativeaot'">
+    <Error Text="VitaSharpAndroidRuntime='$(VitaSharpAndroidRuntime)': use mono-jit, mono-aot, mono-aot-llvm, coreclr or nativeaot" />
+  </Target>
+
+  <!--
+    Native AOT fixes for .NET for Android 36.1 (all measured on the 36.1.69 workload with NDK r30):
+    - the runtime pack's static libRuntime carries its own libunwind and clang adds the NDK's libunwind.a: duplicate
+      __unw_* symbols. Without the NDK's the static libc++abi misses _Unwind_*; both are LLVM libunwind, so the first
+      definition (the runtime's) wins.
+    - the Android runtime pack ships System.IO.Hashing 9.0 next to the core's 10.0 package: both reach the packaging
+      steps (XAAMP7004 duplicate key); the newer one is kept.
+    - ILC is not given the generated resource-designer assembly that MAUI's activities use (MainActivity.OnCreate
+      threw FileNotFoundException at launch) nor the referenced projects' satellite assemblies (pt-BR texts).
+  -->
+  <ItemGroup Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">
+    <LinkerArg Include="-Wl,--allow-multiple-definition" />
+  </ItemGroup>
+  <Target Name="_VitaSharpNativeAotInputs" AfterTargets="_AndroidComputeIlcCompileInputs" Condition="'$(VitaSharpAndroidRuntime)' == 'nativeaot'">
+    <ItemGroup>
+      <_VsKeep Include="@(ResolvedFileToPublish)" Condition="'%(Filename)' != 'System.IO.Hashing' or '%(ResolvedFileToPublish.NuGetPackageId)' == 'System.IO.Hashing'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" />
+      <ResolvedFileToPublish Include="@(_VsKeep)" />
+      <IlcReference Include="$(IntermediateLinkDir)_Microsoft.Android.Resource.Designer.dll" Condition="Exists('$(IntermediateLinkDir)_Microsoft.Android.Resource.Designer.dll')" />
+      <_VsSatellite Include="$(IntermediateLinkDir)*\*.resources.dll" />
+      <IlcSatelliteAssembly Include="@(_VsSatellite)" Exclude="@(IlcSatelliteAssembly)" />
+    </ItemGroup>
   </Target>
 
   <ItemGroup>
@@ -140,6 +174,12 @@
        env.txt enables it (the loader finds layers in the app's own native library directory) -->
   <ItemGroup Condition="'$(VitaSharpValidationLayer)' != ''">
     <AndroidNativeLibrary Include="$(VitaSharpValidationLayer)" Abi="arm64-v8a" />
+  </ItemGroup>
+
+  <!-- Runtime environment set before the .NET runtime starts (-p:VitaSharpAndroidEnv=<file of KEY=VALUE lines>): the
+       DOTNET_* knobs of CoreCLR (GC, tiering, perf map) are read at runtime start, before config/env.txt is applied -->
+  <ItemGroup Condition="'$(VitaSharpAndroidEnv)' != ''">
+    <AndroidEnvironment Include="$(VitaSharpAndroidEnv)" />
   </ItemGroup>
 
   <!-- libadrenotools and its hook libraries (arm64-v8a only), built by build/build-android-adrenotools.ps1 or .sh (not
