@@ -128,10 +128,13 @@ public sealed unsafe partial class Arm64Emitter
         /// that follow its not-taken path, up to 4 blocks / 128 instructions (<see cref="NativeArm64Compiler"/>): the
         /// guest state stays in temps across them, and each continued branch saves an exit and a block entry.</summary>
         Superblocks = 262144,
-        All = 524287,
+        /// <summary>The SIMD register cache is write-back: VecOp and inline FpOp results stay in v18-v31 until a branch,
+        /// label, call, exit, eviction or another access to the register file in memory needs them stored.</summary>
+        LazyVec = 524288,
+        All = 1048575,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -248,7 +251,9 @@ public sealed unsafe partial class Arm64Emitter
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
-        _vcAny = false;
+        Array.Clear(_vcDirty);
+        _vcAny = _vcAnyDirty = false;
+        _vlazy = _vcache && (opts & A64Opt.LazyVec) != 0;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? _count ? CalleeSavedPinned : CalleeSavedBudgetOnly : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -466,6 +471,7 @@ public sealed unsafe partial class Arm64Emitter
     bool TryPair(in IrInst x, in IrInst y)
     {
         var a = _a;
+        if (_vcAnyDirty && (x.Op is IrOp.LoadState or IrOp.StoreState || y.Op is IrOp.LoadState or IrOp.StoreState)) VcFlushAll();
         int o1 = StateOffset(x, true), o2 = StateOffset(y, true);
         if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1))
         {
@@ -569,6 +575,7 @@ public sealed unsafe partial class Arm64Emitter
         if (_hfN >= 0 || _hfZ >= 0 || _hfC >= 0 || _hfV >= 0)
             if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
         // merge points and callouts end the SIMD register cache (FpOp reloads it after its handler path instead)
+        if (_vcAnyDirty && !KeepsDirtyVec(x)) VcFlushAll(); // before branches, labels, calls, exits, register-file accesses
         if (_vcAny && x.Op is IrOp.Label or IrOp.Callout) VcForget();
         if (_fpcrHost && NeedsGuestFpcr(x.Op)) EnsureGuestFpcr(); // MSR FPCR leaves NZCV alone (branch fusion)
         switch (x.Op)
@@ -1451,6 +1458,7 @@ public sealed unsafe partial class Arm64Emitter
         {
             int rel = off - OffD;
             if (cache && (dbl || (rel & 7) == 0)) return Src(scratch, rel, false);
+            VcFlushOverlap(rel, dbl ? 8 : 4);
             a.LdSt(ld, scratch, State, off);
             return scratch;
         }
@@ -1458,7 +1466,14 @@ public sealed unsafe partial class Arm64Emitter
         void Result(int r)
         {
             if (cache && dbl) { Put(dOff - OffD, r, false); resultCached = true; }
-            else a.LdSt(st, r, State, dOff);
+            else { VcFlushOverlap(dOff - OffD, dbl ? 8 : 4); a.LdSt(st, r, State, dOff); }
+        }
+        if (_vcAnyDirty && kind is not (FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla
+            or FpKind.Mls or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt or FpKind.Cmp or FpKind.CmpZero))
+        {
+            // conversions read and write the register file directly
+            VcFlushOverlap((int)(x.Imm4 & 0xFF) & ~7, 16);
+            VcFlushOverlap((int)((x.Imm4 >> 16) & 0xFF) & ~7, 16);
         }
 
         switch (kind)
@@ -1552,7 +1567,14 @@ public sealed unsafe partial class Arm64Emitter
         }
         // both paths write d (at most 8 bytes at its offset): cached SIMD copies there are stale; the handler path
         // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
-        if (checkedAtEntry) { if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero)) VcInvalidate((int)(x.Imm4 & 0xFF), 8); return; }
+        if (checkedAtEntry)
+        {
+            // exactly the bytes written: a dirty cached neighbour of an S result is still the only copy of its value
+            bool arith = kind is FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla or FpKind.Mls
+                or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt;
+            if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero)) VcInvalidate((int)(x.Imm4 & 0xFF), arith && !dbl ? 4 : 8);
+            return;
+        }
         a.B(done);
         VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);
