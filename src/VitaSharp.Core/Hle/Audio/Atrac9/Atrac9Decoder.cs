@@ -82,13 +82,20 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
             }
         }
 
+        /// <summary>Host time per decode stage (Stopwatch ticks; PERF ngs): unpack, dequantize+stereo+scale, band
+        /// extension, IMDCT, PCM conversion.</summary>
+        public static readonly long[] StageTicks = new long[5];
+        public static readonly string[] StageNames = ["unpack", "dequant", "bandext", "imdct", "topcm"];
+
         private void DecodeSuperFrame(short[][] pcmOut)
         {
             for (int i = 0; i < Config.FramesPerSuperframe; i++)
             {
                 Frame.FrameIndex = i;
                 DecodeFrame(Reader, Frame);
+                long t = System.Diagnostics.Stopwatch.GetTimestamp();
                 PcmFloatToShort(pcmOut, i * Config.FrameSamples);
+                StageTicks[4] += System.Diagnostics.Stopwatch.GetTimestamp() - t;
                 Reader.AlignPosition(8);
             }
         }
@@ -105,26 +112,45 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
                     short[] pcmDest = pcmOut[channelNum++];
                     for (int d = 0, s = start; s < endSample; d++, s++)
                     {
-                        double sample = pcmSrc[d];
-                        // Not using Math.Round because it's ~20x slower on 64-bit
-                        int roundedSample = (int)Math.Floor(sample + 0.5);
-                        pcmDest[s] = Helpers.Clamp16(roundedSample);
+                        pcmDest[s] = RoundToPcm16(pcmSrc[d]);
                     }
                 }
             }
         }
 
+        /// <summary>floor(x + 0.5) clamped to 16 bits, without Math.Floor (a libm call per sample under Mono's AOT).</summary>
+        internal static short RoundToPcm16(double sample)
+        {
+            double x = sample + 0.5;
+            if (double.IsNaN(x)) return 0; // (int)Math.Floor(NaN) is 0 (saturating conversion)
+            if (x <= short.MinValue) return short.MinValue;
+            if (x >= short.MaxValue) return short.MaxValue;
+            int r = (int)x; // truncates toward zero
+            if (r > x) r--; // floor for negatives
+            return (short)r;
+        }
+
         private static void DecodeFrame(BitReader reader, Frame frame)
         {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Unpack.UnpackFrame(reader, frame);
+            long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+            StageTicks[0] += t1 - t0;
 
             foreach (Block block in frame.Blocks)
             {
                 Quantization.DequantizeSpectra(block);
                 Stereo.ApplyIntensityStereo(block);
                 Quantization.ScaleSpectrum(block);
+                long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
                 BandExtension.ApplyBandExtension(block);
+                long t3 = System.Diagnostics.Stopwatch.GetTimestamp();
                 ImdctBlock(block);
+                long t4 = System.Diagnostics.Stopwatch.GetTimestamp();
+                StageTicks[1] += t2 - t1;
+                StageTicks[2] += t3 - t2;
+                StageTicks[3] += t4 - t3;
+                t1 = t4;
             }
         }
 
