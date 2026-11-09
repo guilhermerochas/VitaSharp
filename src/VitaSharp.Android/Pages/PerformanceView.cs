@@ -36,7 +36,7 @@ public sealed class PerformanceView : Screen<PerformanceState>
             VStack(
                 SectionTitle(Loc.Get("MThisDevice")),
                 Card(
-                    Row(".NET", RuntimeReport.IsMono ? "Mono" : "CoreCLR", detail: RuntimeReport.Runtime),
+                    Row(".NET", RuntimeReport.Kind, detail: RuntimeReport.Runtime),
                     Divider(),
                     Row(Loc.Get("MDynamicCode"), RuntimeReport.DynamicCodeSupported ? Loc.Get("MYesLower") : Loc.Get("MNoLower"),
                         detail: RuntimeReport.DynamicCodeCompiled ? Loc.Get("MJitCompiled") : Loc.Get("MInterpreted")),

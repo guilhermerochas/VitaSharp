@@ -35,12 +35,20 @@ public static class FFmpegLoader
             .. OperatingSystem.IsMacOS() ? new[] { "/opt/homebrew/lib", "/usr/local/lib" } : [],
         ];
         // "avcodec-62.dll" on Windows, "libavcodec.so.62" on Linux, "libavcodec.62.dylib" on macOS
-        foreach (var dir in candidates.Where(d => d.Length > 0 && Directory.Exists(d) && Directory.EnumerateFiles(d, "*avcodec*").Any()))
+        foreach (var dir in candidates.Where(d => d.Length > 0 && HasAvcodec(d)))
             if (TryLoad(dir)) return true;
         // Linux: the distribution's FFmpeg, found by the dynamic loader's default search path
         if (OperatingSystem.IsLinux() && TryLoad("")) return true;
         Log.Warn("FFmpeg libraries not found: videos (SceAvPlayer) and MP3/AAC decoding (SceAudiodec) are disabled");
         return false;
+    }
+
+    /// <summary>Whether <paramref name="dir"/> holds an avcodec library. A folder the process may not list counts as none:
+    /// under Native AOT on Android the base directory is the app_process folder (/system/bin), which an app cannot read.</summary>
+    static bool HasAvcodec(string dir)
+    {
+        try { return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*avcodec*").Any(); }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException) { return false; }
     }
 
     static bool TryLoad(string dir)
