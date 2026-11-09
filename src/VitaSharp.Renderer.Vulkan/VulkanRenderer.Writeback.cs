@@ -138,6 +138,29 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (cb.ReadSize == 0) return;
         ulong lo = cb.ReadAddress, hi = lo + cb.ReadSize;
+        bool any = WriteBackTransferSource(cb);
+        if (any) { Finish(); return; } // submits and retires every frame: the rows are in guest memory when it returns
+        // the source's pixels were already copied out at its scene end (MemVersion == Version) but that frame has not
+        // retired yet: its rows are not in memory, and the transfer would read older ones. Jak 1 renders its sky tiles
+        // into a 512x512 surface at the memory of a 360x204 one and copies them out right after the scene; the copy found
+        // the previous frame's (black) pixels whenever the frame was still in flight and the intro cutscene went dark for
+        // a frame. Only the frame that publishes those rows (and the older ones, retired first) is waited for, not every
+        // frame in flight (VITASHARP_TRANSFER_DEFER=1: not even that, see VulkanRenderer.TransferDefer.cs)
+        if (PendingWritebackFrame(lo, hi) is { } f)
+        {
+            bool recording = f == F && f.Recording;
+            if (_xferPendingWaits++ < 20 || TraceSync)
+                Log.Info($"[gpu] transfer reads 0x{lo:X8}-0x{hi:X8} with a writeback in flight ({(recording ? "recording frame" : "submitted frame")}): waiting for that frame (present {_presentCount})");
+            if (recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+            RetireFrame(f, RetireCause.Finish);
+        }
+    }
+
+    /// <summary>Writes back the rendered surfaces in the range a transfer reads whose pixels are only on the GPU
+    /// (recorded into the current frame); true when there was one.</summary>
+    bool WriteBackTransferSource(CallbackCommand cb)
+    {
+        ulong lo = cb.ReadAddress, hi = lo + cb.ReadSize;
         bool any = false, swept = false;
         // a snapshot: the writeback buffer allocation may reclaim memory, and eviction removes targets from the map
         _xferTargets.Clear();
@@ -182,23 +205,7 @@ public sealed unsafe partial class VulkanRenderer
             any = true;
         }
         _xferTargets.Clear();
-        // submits and retires every frame: the rows are in guest memory when it returns. Also when the source's pixels
-        // were already copied out at its scene end (MemVersion == Version) but that frame has not retired yet: its
-        // rows are not in memory, and the transfer read older ones. Jak 1 renders its sky tiles into a 512x512
-        // surface at the memory of a 360x204 one and copies them out right after the scene; the copy found the
-        // previous frame's 360x204 (black) pixels there whenever the frame was still in flight, and the sky
-        // textures, and the whole intro cutscene lit by them, came out black for a frame
-        if (any) { Finish(); return; }
-        // only the frame that will publish those rows (and the older ones, retired first) is waited for, not every
-        // frame in flight: a game that copies out a surface written back by an earlier frame keeps the GPU busy
-        if (PendingWritebackFrame(lo, hi) is { } f)
-        {
-            bool recording = f == F && f.Recording;
-            if (_xferPendingWaits++ < 20 || TraceSync)
-                Log.Info($"[gpu] transfer reads 0x{lo:X8}-0x{hi:X8} with a writeback in flight ({(recording ? "recording frame" : "submitted frame")}): waiting for that frame (present {_presentCount})");
-            if (recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
-            RetireFrame(f, RetireCause.Finish);
-        }
+        return any;
     }
 
     readonly List<RenderTarget> _xferTargets = new();

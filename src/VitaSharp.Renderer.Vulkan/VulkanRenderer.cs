@@ -453,6 +453,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     void ExecuteCommand(GpuCommand command)
     {
+        if (_xferInvalidations.Count > 0) DrainTransferInvalidations();
         if (GpuQueue.InterleaveScenes && command.Pid != 0) SwitchSceneProcess(command);
         switch (command)
         {
@@ -467,7 +468,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 break;
             case PresentCommand p: _presentCmd = p; Present(p.Frame); _presentCmd = null; break;
             case CallbackCommand cb:
-                if (cb.WriteSize > 0) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
+                if (cb.WriteSize > 0 && !cb.Deferred) InvalidateTextures(cb.WriteAddress, cb.WriteSize);
                 break;
         }
     }

@@ -325,6 +325,9 @@ public static class EnvVars
     /// <summary>half (A/B): the generated shaders declare the GXP's half-register values, F16 varyings and F16/U8/C10
     /// colour outputs mediump (RelaxedPrecision), as Vita3K does. Default off (everything highp).</summary>
     public const string ShaderFp16 = "VITASHARP_SHADER_FP16";
+    /// <summary>1 (A/B): a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with
+    /// the later sync points and transfers) instead of the GPU worker waiting for the frame. Default 0.</summary>
+    public const string TransferDefer = "VITASHARP_TRANSFER_DEFER";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";

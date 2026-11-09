@@ -462,7 +462,10 @@ public sealed class GpuQueue : IDisposable
         // the command's guest addresses are its process's: the worker reads and writes that address space until the
         // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)
         AddressSpace.MakeCurrent(cmd.Space);
-        if (cmd is CallbackCommand pre)
+        if (cmd is CallbackCommand xfer && (xfer.ReadSize > 0 || xfer.WriteSize > 0))
+            try { lock (_backendLock) xfer.Deferred = Backend?.DeferCallback(xfer) ?? false; }
+            catch (Exception e) { Log.WarnOnce("gpu-defercallback", $"GPU backend failed to defer a transfer: {e}"); }
+        if (cmd is CallbackCommand { Deferred: false } pre)
         {
             // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
             // rendered surface needs its pixels in memory first

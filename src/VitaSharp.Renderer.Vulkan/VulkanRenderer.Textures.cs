@@ -580,6 +580,7 @@ public sealed unsafe partial class VulkanRenderer
     (ImageView, ImageLayout) ResolveMemoryTexture(GxmTextureDesc d, uint addr, uint w, uint h, bool gamma, bool asCube)
     {
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
+        if (_xferPendingDst.Count > 0) WaitPendingTransferInto(addr, Math.Max(w * h * 4, 1)); // VITASHARP_TRANSFER_DEFER
         _textures.TryGetValue(key, out var tex);
         _texSrcTex = tex;
         if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
