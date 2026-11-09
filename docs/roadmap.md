@@ -58,6 +58,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   do controle) falha com "thread 'AudioOutput' did not stop (in ); restart the game" (09/11/2026, main 9f21653, APK
   CoreCLR; log `lab\f1_clr1\clr_0\last.log` no scratchpad do agente); em 60 s carrega e roda. O roteiro de medida
   (`build/android-perf-run.sh`) carrega o F1 em 60 s por isso.
+- [ ] F1 2011 (PCSE00002) no Android pisca nos vídeos de abertura (09/11/2026, laboratório): quadros inteiros pretos
+  entre as pictures do filme (luma 16 <-> 0). Contagem de `FLICKER frame` com `VITASHARP_FLICKER_CHECK=1`, cold boot,
+  35 s, 2 execuções por variante intercaladas: NativeAOT f010c45 40/36 e 32/58 (controle de outra rodada);
+  `DECODER_HISTORY=0` 110/78; `TEX_CONTENT_CACHE=0` 99/47; `UNIT_MEMO=0` 46/55; `UB_ZERO=full` 45/47;
+  `HLE_GUEST_CODE=0` 45/42; `HLE_GUEST_CODE=nogxmctx` 64/45; Mono LLVM 901f294 (mesmo código) 44/19; APK mono-aot
+  ead401c (base ebfe72c) 14/8. Não é o runtime e nenhuma chave isola a causa (todas dentro do ruído do controle).
+  Ressalva: o APK mono-aot decodifica a 16 ms por chamada contra 10-11 ms nos outros, então a contagem menor pode ser
+  efeito de tempo e não de código. O sceAvcdec é igual em todas (0 repetidas, 0 descartadas, 7-8 chamadas sem picture
+  no 1º decodificador). Com `VITASHARP_DISPLAY_EARLY_SIGNAL=1` (a622069) cai para 15/13, contra 32/69 sem ela: o tempo
+  do flip/apresentação pesa. Próximo passo: um mono-aot da main com o mesmo detector, depois bisectar. Logs e prints no
+  scratchpad do agente: `lab\flicker\{A..J}_{0,1}.log` / `.png`, roteiro `lab\flicker\intro_ab.sh`.
 - [x] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
   jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
   salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
