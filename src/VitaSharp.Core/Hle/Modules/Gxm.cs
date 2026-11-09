@@ -1019,6 +1019,8 @@ public sealed partial class Gxm : HleModule
     /// the scene's end first (<see cref="SceneGate"/>; VITASHARP_UB_SCENE_END=0 copies as soon as the worker gets the draw).
     /// </summary>
     static readonly bool UbLate = Environment.GetEnvironmentVariable(EnvVars.UbLate) != "0";
+    /// <summary>VITASHARP_UB_ZERO=full: the old whole-slice clear per draw (A/B).</summary>
+    static readonly bool UbZeroFull = Environment.GetEnvironmentVariable(EnvVars.UbZero) == "full";
     static readonly bool UbAtSceneEnd = Environment.GetEnvironmentVariable(EnvVars.UbSceneEnd) != "0";
     /// <summary>VITASHARP_UB_SCENE_END=frame: the gates of a frame's scenes open at its display-queue entry (the flip),
     /// not at each scene's end, for games that fill buffers after sceGxmEndScene (the hardware runs the scene later).</summary>
@@ -1153,8 +1155,8 @@ public sealed partial class Gxm : HleModule
     static void CopyLateUniforms(DrawCommand d)
     {
         if (!d.UniformsLate || d.UniformChunk == null) return;
-        if (d.VertexUniformsLength > 0) CopySlots(d.VertexProgram.Info, d.VertexUniformAddrs, d.VertexUniformSpan);
-        if (d.FragmentUniformsLength > 0 && d.FragmentProgram.Info is { } fi) CopySlots(fi, d.FragmentUniformAddrs, d.FragmentUniformSpan);
+        if (d.VertexUniformsLength > 0) CopySlots(d.VertexProgram.Info, d.VertexUniformAddrs, d.VertexUniformSpan, d.UniformChunk, d.VertexUniformsOffset);
+        if (d.FragmentUniformsLength > 0 && d.FragmentProgram.Info is { } fi) CopySlots(fi, d.FragmentUniformAddrs, d.FragmentUniformSpan, d.UniformChunk, d.FragmentUniformsOffset);
     }
 
     /// <summary>Bytes of a uniform slot copied from <paramref name="addr"/>: the slot size, cut at the next bound buffer
@@ -1198,34 +1200,30 @@ public sealed partial class Gxm : HleModule
     /// <summary>Profiling: bytes of uniform buffers copied into draw commands (racy, one counter for all threads).</summary>
     public static long UniformBytesCopied;
 
-    /// <summary>Gathers the draw's uniform buffers into <paramref name="data"/> (zero-filled, UniformBytes long); returns the byte count.</summary>
-    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data, bool deferBound = false)
+    /// <summary>Gathers the draw's uniform buffers into <paramref name="data"/>, a zero-filled UniformBytes-long slice at
+    /// <paramref name="chunkOffset"/> of <paramref name="chunk"/> (what is written is marked there, so the arena clears
+    /// only that when the chunk is recycled); returns the byte count.</summary>
+    static int CopyUniforms(GxmProgramInfo info, uint[] buffers, Span<byte> data, UniformChunk chunk, int chunkOffset, bool deferBound = false)
     {
         if (info.UniformBytes == 0) return 0;
-        // the slice is not pre-cleared (most of a large "unknown size" block is never written): the bytes no copy
-        // covers are zeroed afterwards, so the contents are the same as with a zero-filled slice
-        var slots = info.UniformSlots;
-        Span<long> copied = slots.Count <= 32 ? stackalloc long[slots.Count] : new long[slots.Count];
-        int n = 0;
-        foreach (var slot in slots)
+        foreach (var slot in info.UniformSlots)
         {
-            if (slot.Mapped) continue; // read in place by the renderer
+            if (slot.Mapped) { chunk.MarkWritten(chunkOffset + slot.ByteOffset, 16); continue; } // the renderer writes its header
             if (deferBound && slot.GuestIndex < 14) continue; // copied by the GPU worker (CopyLateUniforms)
             uint idx = Math.Min(slot.GuestIndex, 14);
             uint addr = buffers[idx];
             if (addr == 0) continue;
             int size = SlotCopySize(info, slot, addr, buffers);
             FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
-            copied[n++] = ((long)slot.ByteOffset << 32) | (uint)(slot.ByteOffset + size);
+            chunk.MarkWritten(chunkOffset + slot.ByteOffset, size);
             UniformBytesCopied += size;
         }
-        ZeroUncovered(data, copied[..n]);
         return info.UniformBytes;
     }
 
     /// <summary>Copies the bound buffers' slots (index 0-13) of a draw whose CopyUniforms deferred them; their bytes
-    /// are already zero (ZeroUncovered), so a slot without a buffer stays zero.</summary>
-    static void CopySlots(GxmProgramInfo info, uint[] buffers, Span<byte> data)
+    /// are zero until then (the arena's chunks), so a slot without a buffer stays zero.</summary>
+    static void CopySlots(GxmProgramInfo info, uint[] buffers, Span<byte> data, UniformChunk chunk, int chunkOffset)
     {
         foreach (var slot in info.UniformSlots)
         {
@@ -1235,22 +1233,9 @@ public sealed partial class Gxm : HleModule
             int size = Math.Min(SlotCopySize(info, slot, addr, buffers), data.Length - slot.ByteOffset);
             if (size <= 0) continue;
             FastCopy.Copy(GuestMemory.ReadSpan(addr, size), data.Slice(slot.ByteOffset, size));
+            chunk.MarkWritten(chunkOffset + slot.ByteOffset, size);
             UniformBytesCopied += size;
         }
-    }
-
-    /// <summary>Clears the bytes of <paramref name="data"/> outside the copied ranges (start &lt;&lt; 32 | end).</summary>
-    static void ZeroUncovered(Span<byte> data, Span<long> ranges)
-    {
-        ranges.Sort();
-        int cursor = 0;
-        foreach (long r in ranges)
-        {
-            int start = (int)(r >> 32), end = (int)(uint)r;
-            if (start > cursor) data[cursor..start].Clear();
-            if (end > cursor) cursor = end;
-        }
-        if (cursor < data.Length) data[cursor..].Clear();
     }
 
     /// <summary>Debug (env VITASHARP_BT_DRAW=indexCount): logs a guest backtrace for every draw with that index count,
@@ -1325,18 +1310,18 @@ public sealed partial class Gxm : HleModule
         int vBytes = vp.Info.UniformBytes, fBytes = fp.Info?.UniformBytes ?? 0, vAligned = UniformArena.Align(vBytes);
         if (vBytes + fBytes > 0)
         {
+            // the slice is zero (UniformArena); CopyUniforms writes the buffers' bytes and marks them
             var chunk = cmd.UniformChunk = UniformArena.Rent(vAligned + fBytes, out int off, clear: false);
             cmd.VertexUniformsOffset = off;
             cmd.FragmentUniformsOffset = off + vAligned;
-            chunk.Span.Slice(off + vBytes, vAligned - vBytes).Clear(); // the alignment gap (CopyUniforms fills the rest)
-            if (fp.Info == null) chunk.Span.Slice(off + vAligned, fBytes).Clear();
+            if (UbZeroFull) { chunk.Span.Slice(off, vAligned + fBytes).Clear(); chunk.MarkWritten(off, vAligned + fBytes); }
         }
         var uniforms = cmd.UniformChunk is { } uc ? uc.Span : default;
         cmd.UniformsLate = UbLate && GpuQueue.LateUniformCopy != null;
         cmd.Gate = cmd.UniformsLate && UbAtSceneEnd ? _sceneGate : null;
         cmd.Scene = _sceneGate;
-        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformsLate);
-        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformsLate) : 0;
+        cmd.VertexUniformsLength = CopyUniforms(vp.Info, vUbs, uniforms.Slice(cmd.VertexUniformsOffset, vBytes), cmd.UniformChunk!, cmd.VertexUniformsOffset, cmd.UniformsLate);
+        cmd.FragmentUniformsLength = fp.Info != null ? CopyUniforms(fp.Info, fUbs, uniforms.Slice(cmd.FragmentUniformsOffset, fBytes), cmd.UniformChunk!, cmd.FragmentUniformsOffset, cmd.UniformsLate) : 0;
         if (UbAudit) AuditDraw(vp, vUbs, cmd.VertexUniformsLength);
         if (BtDrawIndexCount != 0 && indexCount == BtDrawIndexCount) LogDrawUniforms(vp, uniforms.Slice(cmd.VertexUniformsOffset, vBytes));
         vUbs.AsSpan(0, Math.Min(vUbs.Length, 15)).CopyTo(cmd.VertexUniformAddrs);
