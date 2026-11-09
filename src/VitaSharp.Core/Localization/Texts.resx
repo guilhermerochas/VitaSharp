@@ -2892,4 +2892,10 @@
   <data name="FolderStates" xml:space="preserve">
     <value>Save states (savestates/{0})</value>
   </data>
+  <data name="GoToGame" xml:space="preserve">
+    <value>Go to game</value>
+  </data>
+  <data name="GoToGameTip" xml:space="preserve">
+    <value>Bring the game's window to the front (restores it when minimized)</value>
+  </data>
 </root>

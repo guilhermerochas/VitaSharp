@@ -58,7 +58,8 @@ public sealed partial class MainWindow
         var icon = _k.Picture(g.IconPath, 148, 148, 34, g.Initials);
         icon.BoxShadow = BoxShadows.Parse("0 12 36 0 #66000000");
         icon.VerticalAlignment = VerticalAlignment.Bottom;
-        id.Children.Add(icon);
+        // the running game's icon goes to its window, like "Ir para o jogo"
+        id.Children.Add(IsRunningGame(g) ? Kit.Click(icon, GoToGame, S.GoToGameTip).Also(b => b.VerticalAlignment = VerticalAlignment.Bottom) : icon);
         var info = new StackPanel { Spacing = 8, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Bottom };
         var badges = _k.HStack(8, _k.Badge(g.Category == "gd" ? S.CategoryGame : g.CategoryText, P.Accent), _k.Badge(g.Region, P.TextSoft));
         if (_runningGame?.TitleId == g.TitleId) badges.Children.Add(_k.Badge(S.RunningBadge, P.Ok));

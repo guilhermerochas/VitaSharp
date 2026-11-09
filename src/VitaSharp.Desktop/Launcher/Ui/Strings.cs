@@ -40,6 +40,8 @@ public static class Strings
     public static string RunningNow => T();
     public static string Stop => T();
     public static string ForceStop => T();
+    public static string GoToGame => T();
+    public static string GoToGameTip => T();
     public static string ShowLog => T();
     public static string HideLog => T();
     public static string Ok => T();

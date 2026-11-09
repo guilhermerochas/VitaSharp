@@ -183,10 +183,10 @@ public sealed partial class MainWindow
         var icon = _k.Picture(g.IconPath, 132, 132, 30, g.Initials);
         icon.VerticalAlignment = VerticalAlignment.Center;
         icon.BoxShadow = BoxShadows.Parse("0 10 30 0 #55000000");
-        row.Children.Add(Kit.Click(icon, () => Navigate(PageGame, g), S.OpenGamePage));
+        row.Children.Add(Kit.Click(icon, () => OpenOrGoTo(g), IsRunningGame(g) ? S.GoToGameTip : S.OpenGamePage));
         var info = new StackPanel { Spacing = 7, Margin = new Thickness(26, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
         info.Children.Add(_k.Kicker(S.ContinuePlaying, P.Accent));
-        info.Children.Add(Kit.Click(_k.Heading(g.Title, 26), () => Navigate(PageGame, g), S.OpenGamePage));
+        info.Children.Add(Kit.Click(_k.Heading(g.Title, 26), () => OpenOrGoTo(g), IsRunningGame(g) ? S.GoToGameTip : S.OpenGamePage));
         var meta = _k.HStack(14, IconText("clock", S.PlayedSummary(PlayOf(g.TitleId))));
         var (got, total) = TrophyCount(g);
         if (total > 0)
@@ -204,12 +204,20 @@ public sealed partial class MainWindow
         return card;
     }
 
-    /// <summary>"Jogar" (or "Parar" for the game that runs now).</summary>
-    Button PlayButton(GameEntry g, double height, double minWidth)
+    /// <summary>"Jogar" (or "Ir para o jogo" and "Parar" for the game that runs now).</summary>
+    Control PlayButton(GameEntry g, double height, double minWidth)
     {
-        if (_running != null && _runningGame?.TitleId == g.TitleId)
-            return _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, height, P.Danger);
+        if (IsRunningGame(g))
+            return _k.HStack(10, _k.Primary(S.GoToGame, "monitor", GoToGame, height, minWidth, tip: S.GoToGameTip),
+                _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, height, P.Danger));
         return _k.Primary(S.Play, "play", () => Launch(g), height, minWidth, _running == null, _running != null ? S.AlreadyRunning(_runningTitle ?? "") : null);
+    }
+
+    /// <summary>A click on a game: its window when it runs, else its page.</summary>
+    void OpenOrGoTo(GameEntry g)
+    {
+        if (IsRunningGame(g)) GoToGame();
+        else Navigate(PageGame, g);
     }
 
     Control IconText(string icon, string text, Color? iconColor = null, double size = 13)
@@ -302,7 +310,7 @@ public sealed partial class MainWindow
         card.PointerEntered += (_, _) => { hover.IsVisible = true; card.BorderBrush = Kit.B(P.Accent); };
         card.PointerExited += (_, _) => { hover.IsVisible = false; card.BorderBrush = Kit.B(border); };
         card.ContextFlyout = GameFoldersMenu(g); // right click: the game's folders
-        card.Tapped += (_, e) => { if (!FromButton(e)) Navigate(PageGame, g); };
+        card.Tapped += (_, e) => { if (!FromButton(e)) OpenOrGoTo(g); };
         card.DoubleTapped += (_, e) => { if (!FromButton(e) && _running == null) DefaultAction(g); };
     }
 
@@ -314,6 +322,15 @@ public sealed partial class MainWindow
     {
         bool liveAreaFirst = _settings.GameClick == LauncherSettings.ClickLiveArea;
         bool can = _running == null;
+        if (IsRunningGame(g))
+        {
+            // the game that runs: its window, not a second start
+            var go = _k.Primary(S.GoToGame, "monitor", GoToGame, height, 0, tip: S.GoToGameTip);
+            go.HorizontalAlignment = HorizontalAlignment.Center;
+            go.VerticalAlignment = VerticalAlignment.Center;
+            go.Margin = new Thickness(0, -20, 0, 0);
+            return go;
+        }
         var play = liveAreaFirst ? _k.Secondary(S.Play, "play", () => Launch(g), height, enabled: can) : _k.Primary(S.Play, "play", () => Launch(g), height, 0, can);
         var live = liveAreaFirst ? _k.Primary(S.LiveArea, "vita", () => OpenLiveArea(g), height, 0) : _k.Secondary(S.LiveArea, "vita", () => OpenLiveArea(g), height);
         ToolTip.SetTip(live, S.LiveAreaTip);
@@ -369,7 +386,7 @@ public sealed partial class MainWindow
             };
             row.PointerEntered += (_, _) => { acts.IsVisible = true; row.Background = Kit.B(P.Highlight); row.BorderBrush = Kit.B(P.HighlightBorder); };
             row.PointerExited += (_, _) => { acts.IsVisible = false; row.Background = Kit.B(zebra); row.BorderBrush = Kit.B(Colors.Transparent); };
-            row.Tapped += (_, e) => { if (!FromButton(e)) Navigate(PageGame, g); };
+            row.Tapped += (_, e) => { if (!FromButton(e)) OpenOrGoTo(g); };
             row.DoubleTapped += (_, e) => { if (!FromButton(e) && _running == null) DefaultAction(g); };
             s.Children.Add(row);
         }
