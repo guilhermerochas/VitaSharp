@@ -105,10 +105,11 @@ public enum GpuQuirk : long
     /// path): selected without <see cref="GpuFeature.DynamicRendering"/> and on <see cref="DynamicRenderingSuspect"/>
     /// drivers; VITASHARP_GPU_QUIRKS=+RenderPasses forces it on a desktop GPU for testing.</summary>
     RenderPasses = 1L << 12,
-    /// <summary>No shaderClipDistance but depth clamp: the vertex shader passes the far-plane distance (w - z) as a
-    /// varying and the fragment shader discards where it is negative, the clip the clip distance did (exact up to the
-    /// interpolation of the distance). Forced off (VITASHARP_GPU_QUIRKS=-FarPlaneDiscard) the device runs without depth
-    /// clamp instead: the hardware clips the far plane and also the near plane (keeps early depth tests).</summary>
+    /// <summary>Only when forced on (VITASHARP_GPU_QUIRKS=+FarPlaneDiscard, testing): the vertex shader passes the
+    /// far-plane distance (w - z) as a varying and the fragment shader discards where it is negative. By default a
+    /// device without shaderClipDistance runs without depth clamp and the hardware clips the far plane (and the near
+    /// plane, as GXM does): the discard repeated that clip and, on Mali, cost the early depth/stencil tests and forward
+    /// pixel kill of every draw.</summary>
     FarPlaneDiscard = 1L << 13,
 }
 
@@ -486,25 +487,15 @@ public static class GpuQuirkTable
                 reasons.Add($"{q}: no extended dynamic state (Vulkan 1.3 core)");
             }
         }
-        // the GXM far plane: a clip distance; without it a fragment-shader discard, or (forced off, or no depth clamp) the
-        // hardware's own clip. The renderer no longer enables depth clamp (GXM clips the near plane: VkCore.DepthClamp),
-        // so the discard only repeats the hardware's far clip; it is kept for the Mali shader pack key
-        if ((features & (GpuFeature.ShaderClipDistance | GpuFeature.DepthClamp)) == GpuFeature.DepthClamp)
+        // the GXM far plane: a clip distance; without it the hardware's own clip. The renderer no longer enables depth
+        // clamp (GXM clips the near plane: VkCore.DepthClamp), so the hardware clips the far plane too and a
+        // fragment-shader discard (GpuQuirk.FarPlaneDiscard, now only when forced on) would only repeat that clip. On Mali
+        // that discard in every fragment shader turned off early depth/stencil tests and forward pixel kill everywhere.
+        if ((features & (GpuFeature.ShaderClipDistance | GpuFeature.DepthClamp)) == GpuFeature.DepthClamp && (quirks & GpuQuirk.FarPlaneDiscard) == 0)
         {
-            bool forcedOff = (overrides ?? "").Split(',', StringSplitOptions.TrimEntries)
-                .Any(o => o.Equals("-" + nameof(GpuQuirk.FarPlaneDiscard), StringComparison.OrdinalIgnoreCase));
-            if (!forcedOff)
-            {
-                if ((quirks & GpuQuirk.FarPlaneDiscard) == 0)
-                    reasons.Add($"{GpuQuirk.FarPlaneDiscard}: no shaderClipDistance: the far plane is clipped by a fragment-shader discard (kept from when depth clamp was on; the hardware clips both planes now)");
-                quirks |= GpuQuirk.FarPlaneDiscard;
-            }
-            else
-            {
-                features &= ~GpuFeature.DepthClamp;
-                mask |= GpuFeature.DepthClamp & dev.Features;
-                reasons.Add($"{GpuQuirk.FarPlaneDiscard}: forced off without shaderClipDistance: depth clamp off, the hardware clips the far and the near plane");
-            }
+            features &= ~GpuFeature.DepthClamp;
+            mask |= GpuFeature.DepthClamp & dev.Features;
+            reasons.Add($"{GpuFeature.ShaderClipDistance} missing: depth clamp off, the hardware clips the far and the near plane (no fragment discard)");
         }
         // a quirk forced off must not leave its reason line behind
         reasons.RemoveAll(r => !r.Contains(" forced ") && Enum.TryParse<GpuQuirk>(r[..r.IndexOf(':')], out var q) && (quirks & q) == 0);
