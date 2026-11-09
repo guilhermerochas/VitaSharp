@@ -766,6 +766,9 @@ public sealed unsafe partial class VulkanRenderer
         _drawSerial++;
         if (_traceManual) _traceDrawId++;
         if (!_inScene || d.IndexCount == 0) return;
+        if (d.FragmentProgram.IsMaskUpdate && _diagActive != null && (_traceManual || _traceFrame == _presentCount))
+            TraceLine($"[draw] id={NextDrawId - 1} f={_presentCount} mask update (not rendered): prim={d.PrimitiveType} n={d.IndexCount}x{d.InstanceCount} " +
+                      $"st={StencilText(d.State.Front.Stencil)}/{StencilText(d.State.Back.Stencil)} clip={d.State.RegionClipMode}[{d.State.ClipMinX},{d.State.ClipMinY}-{d.State.ClipMaxX},{d.State.ClipMaxY}]");
         if (d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null) return;
         var st = d.State;
         if (st.RegionClipMode == 1) return; // clip everything

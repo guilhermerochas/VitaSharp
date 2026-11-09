@@ -141,7 +141,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 23;
+    public const int GeneratorVersion = 24;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -1071,10 +1071,13 @@ float packC10(vec3 c) {
                 }
             }
             // U2F10F10F10 surfaces are rendered into a host F16x4 image, which also stores what the guest format
-            // cannot: unsigned 10-bit floats hold no negative values and the 2-bit alpha is normalised. Killzone's
-            // 240x136 luminance target (auto exposure) regularly received a few slightly negative pixels.
+            // cannot: unsigned 10-bit floats hold no negative values. Killzone's 240x136 luminance target (auto
+            // exposure) regularly received a few slightly negative pixels. The alpha is not clamped: within a scene
+            // the tile buffer keeps the F16 output register, so programmable blending reads back what was written
+            // (Silent Hill: Book of Memories keeps each pixel's view depth in the light buffer's alpha and every
+            // light reconstructs the position from it; clamped to 1, the lights, the flashlight included, lit nothing).
             if ((hints.ColorFormat & 0xF1800000) == 0x41000000)
-                t.Line("out_color = vec4(max(out_color.rgb, vec3(0.0)), clamp(out_color.a, 0.0, 1.0));");
+                t.Line("out_color = vec4(max(out_color.rgb, vec3(0.0)), out_color.a);");
         }
         int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the

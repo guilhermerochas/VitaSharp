@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=aacab8ac25076a897ef12f25ccc2861e22e1539eea691eb5072c654b83d2854a -->
+<!-- pair: README.md sha256=2c38c1632214420a165f524daf1e0661f2c4ba6cdd66e7a4dd03a9f22be37760 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -57,6 +57,28 @@ LiveArea e jogos abertos por elas. É um projeto de pesquisa em desenvolvimento 
 <td><img src="docs/assets/screenshots/shell-livearea.webp" alt="LiveArea do Uncharted" width="300"><br><sub><b>Sistema do Vita</b>, LiveArea de um jogo</sub></td>
 </tr>
 </table>
+
+## Status
+
+[![games imports](docs/assets/status/badge-games.svg)](docs/hle/progress.md)
+[![system imports](docs/assets/status/badge-system.svg)](docs/hle/progress.md)
+[![VitaSDK functions](docs/assets/status/badge-vitasdk.svg)](docs/hle/progress.md)
+[![firmware 3.74 exports](docs/assets/status/badge-overall.svg)](docs/hle/progress.md)
+
+<a href="docs/hle/progress.md">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/status/progress-map-light.svg">
+  <img src="docs/assets/status/progress-map.svg" alt="Mapa do progresso do HLE: uma célula por biblioteca do firmware, do tamanho das funções que ela exporta e com a cor de quantas estão implementadas" width="760">
+</picture>
+</a>
+
+[Progresso por biblioteca](docs/hle/progress.md)
+
+<sub>* Porcentagens das funções que o firmware 3.74 exporta para o código de usuário (seus módulos de usuário e as
+bibliotecas de syscall dos módulos do kernel) com implementação HLE, não de todas as funções do sistema do PS Vita.
+"Games imports": as funções exportadas que os jogos de teste instalados importam; "system imports": as que só o
+software do sistema importa; VitaSDK: as funções de usuário da lista de NIDs do VitaSDK. Atualizado com
+`build/hle-status.ps1`.</sub>
 
 ## Jogos
 

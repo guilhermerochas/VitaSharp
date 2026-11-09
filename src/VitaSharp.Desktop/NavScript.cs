@@ -15,6 +15,8 @@ namespace VitaSharp.Desktop;
 ///                                   ltrigger, rtrigger, psbutton (default 8 frames)
 ///   lstick X Y [frames]             hold the left stick at X, Y in -1..1 (Y -1 = up; rstick: the right stick;
 ///                                   default 30 frames)
+///   hold BUTTONS                    keep buttons held (comma separated, e.g. rtrigger,cross) under the following
+///                                   commands until "hold none": accelerate while lstick steers
 ///   wait FRAMES                     presented frames
 ///   sleep SECONDS                   wall-clock seconds
 ///   stable [SECONDS] [TIMEOUT]      until the picture has not changed for SECONDS (default 1.5; give up after TIMEOUT,
@@ -33,7 +35,7 @@ sealed class NavScript : IInputBackend
     readonly VulkanRendererOptions _ro;
     readonly object _lock = new();
     // the action being performed: buttons held, or a touch (from, to, progress over the presented frames)
-    VitaButtons _buttons;
+    VitaButtons _buttons, _held;
     byte _lx = 128, _ly = 128, _rx = 128, _ry = 128; // sticks held by lstick/rstick (0..255, 128 = centre)
     (float X0, float Y0, float X1, float Y1, long Start, long Frames)? _touch;
     long _actionEnd = -1;
@@ -149,10 +151,22 @@ sealed class NavScript : IInputBackend
             case "press":
                 Act(Enum.Parse<VitaButtons>(p[1], true), null, Len(2, 8));
                 break;
+            case "hold":
+                lock (_lock) _held = p.Length < 2 || p[1].Equals("none", StringComparison.OrdinalIgnoreCase) ? VitaButtons.None : Enum.Parse<VitaButtons>(p[1], true);
+                break;
             case "lstick" or "rstick":
             {
                 byte x = Axis(F(1)), y = Axis(F(2));
                 bool left = p[0].Equals("lstick", StringComparison.OrdinalIgnoreCase);
+                // lstick x y [frames [rampFrames]]: x/y in -1..1; the optional ramp moves the stick there over that
+                // many frames, as a thumb does, instead of jumping from the centre
+                long ramp = Len(4, 0);
+                for (long i = 1; i < ramp; i++)
+                {
+                    byte rx = Axis(F(1) * i / ramp), ry = Axis(F(2) * i / ramp);
+                    lock (_lock) { if (left) (_lx, _ly) = (rx, ry); else (_rx, _ry) = (rx, ry); }
+                    WaitFrames(Frames + 1);
+                }
                 lock (_lock) { if (left) (_lx, _ly) = (x, y); else (_rx, _ry) = (x, y); }
                 Act(VitaButtons.None, null, Len(3, 30));
                 lock (_lock) { _lx = _ly = _rx = _ry = 128; }
@@ -233,7 +247,7 @@ sealed class NavScript : IInputBackend
     public ControllerState GetController(int port)
     {
         var st = ControllerState.Neutral;
-        lock (_lock) { st.Buttons = _buttons; st.Lx = _lx; st.Ly = _ly; st.Rx = _rx; st.Ry = _ry; }
+        lock (_lock) { st.Buttons = _buttons | _held; st.Lx = _lx; st.Ly = _ly; st.Rx = _rx; st.Ry = _ry; }
         return st;
     }
 

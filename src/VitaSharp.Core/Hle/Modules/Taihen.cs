@@ -511,7 +511,8 @@ public sealed partial class Security : HleModule
     internal const int SCE_RNG_ERROR_INVALID_ARGUMENT = unchecked((int)0x810C0000);
 
     /// <summary>sceKernelGetRandomNumber(void *output, SceSize size): at most 64 bytes per call.</summary>
-    [Hle]
+    [Hle("sceKernelGetRandomNumber")]
+    [Hle("_sceKernelGetRandomNumber")] // the SceSblRng syscall behind it (Vita3K)
     int sceKernelGetRandomNumber(uint output, uint size)
     {
         if (size > 0x40) return SCE_RNG_ERROR_INVALID_ARGUMENT;

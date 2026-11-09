@@ -12,6 +12,7 @@ public sealed unsafe partial class VmThreads : HleModule
 
     [Hle("sceKernelSuspendThreadForMono")]
     [Hle("sceKernelSuspendThreadForVM")]
+    [Hle("_sceKernelSuspendThreadForVM")] // the syscall the SceKernelForVM wrapper makes
     int Suspend(int uid)
     {
         var t = Target(uid);
@@ -23,6 +24,7 @@ public sealed unsafe partial class VmThreads : HleModule
 
     [Hle("sceKernelResumeThreadForMono")]
     [Hle("sceKernelResumeThreadForVM")]
+    [Hle("_sceKernelResumeThreadForVM")]
     int Resume(int uid)
     {
         var t = Target(uid);

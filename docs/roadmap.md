@@ -324,6 +324,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   nos painéis como o Game Turbo da Xiaomi e o Game Booster da Samsung e receber o perfil de desempenho; respeitar o
   modo escolhido (desempenho = sem limite de energia; bateria = ritmo econômico). Validar no Redmi com o Game Turbo e
   medir no Killzone com e sem o modo desempenho
+  Declaração feita (conferido em 08/11/2026: 7b6a2ae, `isGame`/`appCategory="game"` e `game_mode_config` no
+  AndroidManifest, modo de jogo lido no GameActivity); falta validar no Redmi com o Game Turbo e medir no Killzone
 - [ ] Vibração dos botões na tela enquanto segura o analógico (pedido do usuário, 07/11/2026): opção nos controles por
   toque para os botões virtuais vibrarem ao serem tocados mesmo com o outro dedo no analógico (hoje o toque multiponto
   com o analógico pressionado não dá retorno tátil); intensidade ajustável e desligável, por perfil de controle
@@ -1159,6 +1161,48 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
+  fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
+  trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
+  plugins do config.txt (805af91). Validado headless até o gameplay (logo da EA, menu de dificuldade, cinemática,
+  Isaac no corredor). **Relatos do usuário de 09/11 (00:2x)**: (1) "o andar para frente do teclado não funciona": o
+  port transforma o analógico esquerdo num toque no joystick da tela, e um analógico que pula do centro para a borda
+  numa amostra não anda (nav `lstick 0 -1`: Isaac parado; o mesmo empurrão em 6 quadros, `lstick 0 -1 120 6`: anda até
+  a sala seguinte). Correção: o analógico do teclado percorre o curso em 100 ms (KeyStickSlew); falta o usuário
+  confirmar com o teclado. (2) "o som sumiu de repente": a porta BGM continuou mandando áudio não silencioso, sem
+  underrun, mas só ~661 s "ativos" dos 837 s e a gravação F8 das 00:21 não tem nenhum WAV: o fluxo de áudio do jogo
+  parou de sair perto das 00:19:50, quando o controle DS4 (que tem saída de fone própria) conectou/desconectou várias
+  vezes. Hipótese: o OpenAL parou de consumir buffers e o sceAudioOutOutput ficou bloqueado. Correção feita, **não
+  validada** (não reproduzi a troca de dispositivo): OpenAlAudio verifica ALC_CONNECTED e o padrão do sistema a cada
+  1 s e move o dispositivo com alcReopenDeviceSOFT; nunca segura a thread de áudio do jogo mais de 1 s. Próximo passo:
+  reproduzir conectando/desconectando o controle com o jogo rodando e conferir o log "Audio: ... now on"
+- [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e as luzes não iluminavam (relato do usuário, 08/11/2026,
+  `captures\PCSE00011_20261108_225425_tudo`). Causa: o buffer de luz (superfície 0x41200000, U2F10F10F10 num F16x4 do
+  host) guarda no alfa a profundidade de cada pixel e cada luz (stencil volume + programmable blending) reconstrói a
+  posição a partir dele; o gerador prendia o alfa em 0..1, então nenhuma luz (lanterna incluída) somava nada. Dentro da
+  cena o hardware lê de volta o registrador de saída F16 do tile. Correção (ShaderGenerator v24): o alfa não é mais
+  preso. Replay: o spot da lanterna (draw 81) passa de 0 a 23 mil pixels acesos, o personagem e o chão à frente
+  iluminados (`<scratchpad>\c24\rp\bomfull\frame_007538.png`, antes `cmp\base\...\frame_007560.png`);
+  `replay-gpu --compare` dos 19 dumps/gravações: só o PCSE00011 muda. Real Vita (YouTube -fQbhws3LyI, zona 1) ainda
+  parece mais claro ao redor do jogador: conferir no jogo rodando. Falta validar ao vivo
+- [ ] Salt and Sanctuary (PCSE01023): logo da Ska Studios pisca na introdução (relato do usuário, 08/11/2026,
+  `captures\PCSE01023_20261108_220030_tudo`). Achados (não resolvido): o replay reproduz (quadros no 0x66600000 claros,
+  ~3,3x os do 0x66900000); os dois quadros têm os mesmos 5 desenhos (quad preto em tela cheia, um mask update em tela
+  cheia com stencil ALWAYS, e três sprites aditivos com alfa crescendo suave), mesmas texturas (md5 iguais). O desenho
+  2 é um programa de mask update, que o VitaSharp ignora (o Vita3K implementa a máscara GXM: imagem de máscara por
+  alvo, iniciada pela background mask da superfície de profundidade, ALWAYS=1/NEVER=0, desenhos rejeitados onde a
+  máscara é 0). Próximo passo: ver no replay qual dos desenhos difere entre os dois buffers (`--draw-limit=N@17/18`) e
+  se a máscara GXM explica (implementar como o Vita3K: vulkan/context.cpp, scene.cpp, state_set.cpp)
+- [ ] Silent Hill 4 (SILH00004), controles: não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
+  `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
+  rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
+  (`lstick x y quadros rampa`)
+- [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
+  tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
+  LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
+  sceFiosKernelOverlayResolveWithRangeSync02. Faltam: sceKernelWaitMultipleEvents(CB), _sceKernelGetTimer5Reg,
+  sceShellSvcGetSvcObj, IPMI::Client::create; o resto é do lado do kernel (o Vita3K roda .skprx em LLE; aqui o
+  kubridge é HLE). Lista de LLE automático do Vita3K (HTTP, SSL, PGF, FIOS2, MP4, AVPLAYER...) a comparar com jogos
 - [x] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
   usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). O MP4 gravado está certo (ffprobe 7,70 s;
   `mvhd` 90000/693120). **Corrigido** (feat/product-4): o player da câmera (avPlayer LLE) pega a duração do arquivo no
@@ -1466,6 +1510,8 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   - Lote 7 (feat/hle-batch-7-clean, 08/11/2026): o lado do sistema, escrito à mão a partir do firmware 3.74 e dos headers do VitaSDK. `hle-coverage --vitasdk=...` antes -> depois: geral 5.540/19.406 (28,5%) -> 6.038 (31,1%); jogos 1.518/1.518 (100%); sistema 1.399/7.539 (18,6%) -> 1.842 (24,4%); o resto 2.623/10.349 (25,3%) -> 2.678 (25,9%); VitaSDK 4.599/7.006 (65,6%) -> 5.088 (72,6%). Feito: o resto do SceVshBridge (92, com as checagens de cópia/tamanho do bridge: flags QA, console id, NVS, modo IDU, CAF dos relatórios de crash, assinaturas de eboot, relógios seguro/de rede, viewport, montagens) e do SceAppMgr (72 + 28 wrappers do driver_us: QuitApp/DestroyOtherApp, listas de pid/app id do shell, pedidos de notificação na fila do shell, eventos de sistema na fila do app, SendParam, dono exclusivo do som/btrm, arquivos de dados do sistema, montagens que o emulador não precisa com a resposta do kernel); SceAVConfig (25: HDMI/volume mestre = 0x803A0109 no portátil, volume do sistema no registro), SceBbmc (48: sem modem 3G, 0x80330003), Videodec/M4vdec (68: decodificação dividida, NAL AU, modos, CSC, MPEG-4 pelo FFmpeg), syscalls do SceNetPs (27, blocos como o libnet.suprx empacota), ScePafStdc (72, regras do libpaf), xthreads do libc.suprx (_Mtx/_Cnd/_Thrd/_Pad, rascunho do lote 6 terminado), formas syscall/Internal de funções que o HLE já tinha. Uma tentativa de traduzir mecanicamente o código Thumb do firmware para C# foi descartada (cópia derivada do código da Sony num repositório público, e não é implementação): nada gerado do firmware entra. Validado: shell (Amigos, Troféus, Câmera) e 10 apps do sistema abertos direto, mesmos resultados da base (0 "Unimplemented", mesmas quedas dos apps abertos sem o shell); chamadas ao vivo: sceAppMgrReceiveNotificationRequestForShell, sceAVConfigGetSystemVol, vshSysconIsIduMode; as outras novas só têm teste de unidade (HleBatch7Tests; nenhum fluxo exercitado as chama). Falta (sistema): SceSblGcAuthMgr (59, cripto do cartão de jogo), SceCompat (36, emulador de PSP), SceSblSsUpdateMgr (24), NGS Internal (12), Threadmgr (9), Motion Ext (8), DrmBridge (9), libpaf/WebKit/email (NIDs sem nome, C++ com dados do módulo), NIDs sem nome do NetCtl/NpManager/NpCommerce2 (IPC ao shell). A meta de ~1000 por lote não foi atingida neste (+498 no geral).
   - Lote 8 (feat/hle-batch-8, 08/11/2026), parte 1: as classes do libpaf que se sustentam sozinhas, escritas à mão a partir do comportamento do libpaf.suprx 3.74 (layouts e regras lidos na desmontagem) e dos nomes da lista de NIDs do projeto comunitário ScePaf-RE (nomes C++ dos programas de teste dos protótipos; NID = SHA-1 do nome + "PAF"; só os nomes entram, nenhum código: 3.994 nomes novos no `nids.txt`). `hle-coverage --vitasdk=...` antes -> depois: geral 6.114/19.406 (31,5%) -> 6.677 (34,4%); jogos 1.552/1.552 (100%); sistema 1.834/7.516 (24,4%) -> 2.134 (28,4%); o resto 2.728/10.338 (26,4%) -> 2.991 (28,9%); VitaSDK 5.168/7.006 (73,8%) -> 5.227 (74,6%). Feito (módulo `Paf`, só reserva do firmware: um programa do sistema carrega o libpaf de verdade): paf::math::rect (centro/tamanho, bordas, hit/contém), paf::rtc e paf::datetime::DateTime (ticks sobre o SceRtc, o parser de datas do SQLite com os erros 0x8025108x, RFC 3339, dia da semana), paf::common (UTF-8/UTF-16 em paf::string, FromString, FormatString, path Split/SplitExt/Join, RefObj, common::String), LocalFile/MemFile/Dir (tabela virtual de HLE com a ordem da interface File, async imediato com WaitAsync, Dir recursivo), paf::thread (Mutex/RMutex/Cond/Semaphore/RWLock/Thread/CallQueue/SyncCall/ThreadIDCache sobre o kernel do HLE), SHA-1 (RFC 3174 com o contexto na memória do guest), zlib (sceZlibDecompress, compress::Decompress), HeapAllocator (mspace do SceClib) e os buffers (Malloc/HeapAlloc/Sub/SubConst/UnmanagedConst em SharedPtr), cxml (Document/Element/Attribute/File e o util::*), Url, as curvas de Timer::DoFunc*, o estado do inputdevice (pad/touch/motion), os acessores de membro de image::Image/JobItem/Framework/ScrollViewBase/ListView/SurfaceBase e os nomes sem `private` da ScePafStdc. Validação: testes de unidade (HleBatch8Tests: rect, datas, strings/caminhos, SHA-1 dos vetores do RFC, zlib, heap, LocalFile/Dir num ux0 de teste, cxml montado à mão, Url, curvas); nada disso é chamado ao vivo (o libpaf é LLE nos apps do sistema); shell (Amigos, Troféus, Câmera) e 10 apps do sistema sem cabeça: mesmos resultados da base do lote 7 (0 "Unimplemented", mesmas quedas e o mesmo timeout do NPXS10026). Não feito neste lote: o lado NP (SceNpCommerce2/NpManager/NetCtl/NpCommonPs4: as exportações sem nome são clientes IPC do servidor do shell, sem fonte de nomes; o NID_FFBFC540 continua sem ponte), SceSqliteVsh/dbutil (NIDs da vsh sem nome; a comparação de código com o SceSqlite nomeado não deu pares confiáveis), e o grosso do libpaf (ui::Widget e família, graph, image, Plugin, Framework, job, cache: dependem do motor de widgets/GPU do próprio libpaf). Meta de 3.000 no sistema não atingida (+300). Próximo: com o Ghidra + VitaLoader instalados (só estudo), ler as exportações sem nome do NP/sqlite e o motor de widgets do libpaf.
 - [x] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
+  - Lote 9 (feat/hle-batch-9, 08/11/2026): o lado NP do software do sistema, o SQLite da vsh e mais membros do libpaf, com os módulos do firmware 3.74 descompilados no Ghidra + VitaLoader (só estudo; o contrato de cada exportação lido no módulo e escrito à mão em C#, nada do código descompilado no repositório). `hle-coverage --vitasdk=...` antes -> depois (com os 155 analisadores do NpCommerce2 do agente auxiliar hle9b, já na main): geral 6.677/19.406 (34,4%) -> 7.389 (38,1%); jogos 1.559/1.559 (100%); sistema 2.130/7.512 (28,4%) -> 2.820 (37,5%; +535 deste ramo, +155 do hle9b); o resto 2.988 -> 3.010; VitaSDK 5.227/7.006 (74,6%). Feito: `ShellSvcIpc` (o pedido que libnetctl/np_manager fazem ao serviço do shell pelo objeto de serviço do libshellsvc: método síncrono, entradas {ptr, tamanho}, saídas {ptr, tamanho, escrito}, palavra de resultado; o HLE repassa o mesmo pedido ao serviço de verdade do shell; sem libshellsvc no processo, "não inicializado"); SceNetCtl (62: os pedidos 0x200xx com as checagens da biblioteca e a tabela de tratadores do shell, mais duas listas de callbacks do sistema, o tick de rede guardado, o nome de autenticação ad hoc e o contexto do cliente de autenticação); SceNpManager (18: os pedidos 0xA00xx/0xB00xx; o NID_FFBFC540 = método 0xB0025, 64 bytes, agora com ponte; a configuração de comunicação que o sceNpInit guarda; o término do lado do sistema); SceNpCommerce2 (206: criação de pedido por tipo, id = contexto << 16 | n, oito por contexto; as checagens de contexto/pedido de toda operação da loja, a troca com o servidor, os pedidos do serviço de loja do shell, ticket, cópia de sessão; a loja continua inalcançável, como nas outras funções da loja do HLE); SceNpCommon (22: escape de URL/XML, o primeiro caractere XML, Base64, a família strtol, comparação de online id, o bloco de configuração e os padrões das opções de depuração num console de varejo); SceNpCommonPs4 (35, só reserva do firmware: rand, atômicos, acessores, tempo, travas lwmutex, heaps e alocadores, o cabeçalho Bearer); SceSqliteVsh (89: o SQLite 3.7.6.3 da vsh, cada exportação casada com a função da API pelo que faz no módulo; roda sobre o SQLite de verdade (e_sqlite3 pelo SQLitePCLRaw, domínio público / Apache-2.0, nos créditos do README) nos arquivos do host para onde os caminhos do guest apontam; bancos/statements/blobs/valores/contextos como handles, texto e blobs no heap do módulo até o próximo step/reset/finalize, callbacks de exec/colação/função/ganchos no guest; só reserva do firmware, `VITASHARP_HLE_MODULES=SceSqliteVsh` liga); libpaf (~120: membros de Widget/TextBox/ScrollView/RichText/BusyIndicator/ListItem, superfícies (filtros, wrap, páginas, refcount), estado de blend/depth/cull do ARL, TextLayout/TextStyle, Image (extensão, recorte), PropertyList, parâmetros de Plugin/Page, Timer, gestos, std::map, http::Transaction sobre o SceHttp). Um importador vs0 que antes pegava uma biblioteca toda do firmware não passa a uma HLE parcial (conferido por módulo; NID_650D111B e NID_CC8E6AC6 ficaram de fora: o NPXS10031 e o activity_db importam só eles, e o activity_db tirava o np_common do firmware, cujas exportações o resto do shell usava). Validação: testes de unidade (HleBatch9Tests, inclusive SQL de verdade num banco :memory:); shell (Amigos, Troféus, Câmera) e 10 apps do sistema sem cabeça: mesmos resultados da base (0 "Unimplemented", as mesmas quedas e o mesmo timeout do NPXS10026). Chamadas ao vivo: com `VITASHARP_HLE_MODULES=SceSqliteVsh,sqlite` o shell roda as consultas do próprio banco no SQLite do HLE (open_v2 13x, prepare_v2 35x, step 68x, column_text/int/count, exec 8x, create_function 4x, ganchos de commit/rollback/update, mprintf) e o NPXS10014 abre o seu banco (open_v2, busy_timeout, ganchos, prepare_v2); mas o livespace_db do shell para numa asserção do libpaf (BKPT, pela pilha SceLsdb -> SceDbutil, um ponteiro de texto NULL num paf::string) logo depois de abrir os bancos, então o HLE do SQLite fica desligado por padrão (o firmware continua com o seu). Próximo passo: achar a resposta que difere (o log agora mostra cada open e cada prepare que falha). Os outros pedidos novos (NetCtl, NpManager, NpCommerce2, NpCommon, libpaf) só têm teste de unidade: nenhum fluxo exercitado sem cabeça os chama (a loja só chama sceNpCommerce2Init sem rede). Não feito: os 27 pedidos do np_manager pela conexão libipmi própria (o HLE não abre essa conexão; o SceIpmi do libshellsvc está descompilado), os dois do cliente de autenticação ad hoc do libnetctl, o callout do np_common, o NpUtility (estado interno de HTTP), o resto do NpCommonPs4 (classes com vtables do módulo), o sqlite3_busy_handler/sqlite3_config (o SQLitePCLRaw não os expõe), o grosso do ui::Widget (motor de widgets/GPU). Meta de 3.000 no sistema não atingida (2.820).
+- [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
   pretos isolados (2432, 2460). O filme é tocado pelo AvPlayer com H.264 pelo `ffmpeg-d3d11va` (decodificação na GPU
@@ -1542,7 +1588,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   que também prendia o foco do diálogo do Origin (X em CONTINUE não fazia nada). Com o b3c16ca, do boot sem estado: X
   passa o diálogo do Origin e A/D do teclado viram o carro na corrida (`scratchpad/bugsB1/nfs_b1_sheet.png`,
   `nfs_steer_proof.png`)
-- [ ] Need for Speed Most Wanted (PCSE00089): depois de "trocar de carro" a tela fica preta (relato do usuário,
+- [x] Need for Speed Most Wanted (PCSE00089): depois de "trocar de carro" a tela fica preta (relato do usuário,
   08/11/2026, `captures\PCSE00089_20261108_183918_tudo`, build 3261a98). Achados (agente B): reproduz no replay-gpu (388
   quadros pretos). A cena é desenhada (HDR F16 e o tonemap em 0x60A99800 com conteúdo); o último passe (fs
   3C7FBEE743D02522, LUT 16x2048) recebe da CPU escala 0,0795 / viés -0,0049 contra 0,9708 / 0,0135 numa corrida normal:
@@ -1554,7 +1600,32 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   SceMp4/sceAvcdec acontece; a tela segue escura. Próximo: chegar à troca de carro sem estado (dirigir até um ponto de
   troca) com trace do SceMp4/sceAvcdec desde a abertura do filme e ver o que o player do jogo (entry 0x816361B5) espera
   de um filme sem áudio (fim de stream, sceMp4Reset para repetir, relógio de áudio)
-- [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
+  Rodada 2 (agente B, Ghidra no libscemp4 do FW 3.74 e no eboot, só estudo): o sceMp4GetNextUnit de verdade devolve 0
+  (unidade), 1 (fim do stream) ou -1 (erro); o HLE devolvia 0x80630010. O player do jogo (o mesmo do F1 2011) passa
+  o valor adiante: negativo vai para o caminho de erro (o Demux para sem avisar o VideoDec), 1 para o de fim (repete,
+  esvazia, avisa). Corrigido em 64a15c4 (GetNextUnit devolve 1 no fim); no boot a prévia 1689283 chega ao fim com 1 e
+  o jogo fecha o player normalmente. **Falta validar** na troca de carro: não cheguei lá (a corrida do prólogo de
+  1,6 mi; com o novo `hold` do --nav (3be9b2c) dá para acelerar e virar juntos, mas guiar às cegas por prints levou
+  mais de 30 passos e não terminou a corrida)
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
+  08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Travamento corrigido (agente B, 0d19271):
+  o Wwise (FUN_814f02cc, Ghidra no eboot, só estudo) lê o estado do player NGS e libera os buffers do stream do índice
+  dele até o "buffer atual" (+4), andando de 1 em 1 módulo 3; quando a cadeia de buffers acabava (next = -1), o HLE
+  gravava -1 em +4 e esse laço nunca terminava (AK::EventManager girando no ReleaseBuffer, main esperando
+  AkManualEvent, IO thread parado). Agora um next inválido deixa o último buffer como atual (os válidos seguem como
+  no Vita3K). Do boot sem estado: intro, luta no telhado, cena da Mulher-Gato, gancho no letreiro ROYAL e adiante,
+  23209 quadros a 30 fps (`scratchpad/bugsB2/bat_l1/sheet6-8.png`); o build 3261a98 trava do estado da gravação.
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" (agente B, 0caefdf). A música e os sons em stream
+  do Wwise são vozes NGS em HEVAG estéreo; o primeiro buffer pula o cabeçalho do arquivo (52 bytes), então toda
+  fronteira de buffer seguinte corta um quadro de 16 bytes. O HLE jogava fora a sobra do buffer e decodificava o
+  próximo desde o byte 0: tudo dali em diante saía 4 bytes fora de quadro, como ruído. Agora o quadro partido espera o
+  começo do buffer seguinte (como no Vita3K). Espectro da porta 1 no gameplay: antes 37-41% da energia abaixo de 1 kHz
+  e 12-27% em 4-8 kHz; depois 86-95% abaixo de 1 kHz e 0,1-3% em 4-8 kHz, como um longplay do Vita de verdade
+  (75-95% / 0,2-7%) (`scratchpad/bugsB2/bat_g1/audio`, `bat_l1/audio`, `yt/longplay.wav`)
+  Corrigido (08/11/2026, 64a15c4, merge f4097ef, agente B): o `sceMp4GetNextUnit` devolvia um erro negativo inventado
+  no fim do stream; o libscemp4 3.74 devolve 1. O player do jogo tratava o negativo como erro de leitura, o demuxer
+  parava e o decodificador de vídeo esperava para sempre (tela preta depois da prévia do carro)
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
   08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Achados (agente B): reproduz do estado da
   gravação com o build 3261a98 (~250 quadros depois do estado): 'main' espera a eventflag AkManualEvent, o
   'AK::EventManager' (Wwise) gira LockLwMutex/UnlockLwMutex2 em 0x81513A2C esperando um buffer de stream ([obj+0x9C] >
@@ -1567,6 +1638,9 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   travamento a contagem de pendentes está em 0 (IO dormindo) e o EventManager espera dados de um stream: um pedido
   sumiu ou nunca foi feito. As semânticas de eventflag/lwmutex do HLE conferem; falta seguir quem chama 0x81517354
   (enfileira) e 0x815173CC/0x815173AE (pausa/retoma) perto do travamento. Causa ainda aberta
+  Corrigido (08/11/2026, 0d19271, merge f4097ef, agente B): quando a corrente de buffers de um player do NGS (ou
+  ATRAC9) termina (próximo índice -1), o buffer atual (+4) guardava o -1; o Wwise lê +4 como slot do anel e o
+  AK::EventManager girava no ReleaseBuffer para sempre. Agora o último buffer fica como atual (como o Vita3K)
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   Fechado (08/11/2026): roda até o gameplay (9bc0d66); a imagem "zuada" e os controles seguem num item próprio se o usuário detalhar
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
@@ -1807,8 +1881,8 @@ fs8):
   - SceAppMgrUser::sceAppMgrCheckRifGD (0x6E5CBCA2) — feita (feat/hle-unimplemented-2)
   - SceAppMgrUser::sceAppMgrMmsMount (0xF4730BA8) — feita (feat/hle-unimplemented-2)
   - SceAppMgrUser::sceAppMgrSetBackRenderPortOwner (0x7149016E) — feita (feat/hle-unimplemented-2)
-  - SceCodecEngineUser::NID_9A5E7B2F (0x9A5E7B2F)
-  - SceCodecEngineUser::NID_9AD7E66F (0x9AD7E66F)
+  - SceCodecEngineUser::NID_9A5E7B2F (0x9A5E7B2F) — feita (15dc989, 07/11/2026; conferido em 08/11/2026)
+  - SceCodecEngineUser::NID_9AD7E66F (0x9AD7E66F) — feita (15dc989, 07/11/2026; conferido em 08/11/2026)
   - SceErrorUser::sceErrorHistoryPostError (0xBC416CFA) — feita (feat/hle-unimplemented-2)
   - SceHttp::NID_855D5254 (0x855D5254) — feita (feat/hle-unimplemented-2)
   - SceModulemgr::sceKernelInhibitLoadingModule (0x6CED1F63) — feita (feat/hle-unimplemented-2)
