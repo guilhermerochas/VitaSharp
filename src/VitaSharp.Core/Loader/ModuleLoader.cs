@@ -74,6 +74,14 @@ public sealed class Linker(IImportResolver hle)
         lock (_lock) return _funcExports.TryGetValue(nid, out addr);
     }
 
+    /// <summary>Import stubs bound to function <paramref name="nid"/> (any library when <paramref name="libNid"/> is null),
+    /// in binding order (taiHEN import and export hooks patch them).</summary>
+    public List<uint> BoundStubs(uint nid, uint? libNid = null)
+    {
+        lock (_lock)
+            return _funcBindings.Where(b => b.nid == nid && (libNid == null || b.libNid == libNid)).Select(b => b.stub).ToList();
+    }
+
     /// <summary>The function <paramref name="nid"/> of library <paramref name="libNid"/> a loaded module exports.</summary>
     public bool TryGetFunctionExport(uint libNid, uint nid, out uint addr)
     {

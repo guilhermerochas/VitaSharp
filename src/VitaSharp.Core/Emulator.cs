@@ -531,6 +531,7 @@ public sealed class Emulator : IDisposable
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
+        if (!IsSystemProgram) LoadTaiPlugins();
         if (IsSystemProgram)
         {
             PreloadFirmwareModules(preloadDisabled);
@@ -790,6 +791,42 @@ public sealed class Emulator : IDisposable
         Kernel.Modules.TryRemove(m.Uid, out _);
         Kernel.Objects.Remove(m.Uid);
         Log.Info($"Unloaded module {m.Name} ({m.Path}): {rebound} import stub(s) rebound");
+    }
+
+    /// <summary>
+    /// taiHEN's user plugins for the application: the .suprx listed under <c>*ALL</c> and <c>*TITLEID</c> in
+    /// ux0:tai/config.txt (else ur0:tai/config.txt) load into the process before it starts, and their module_start runs
+    /// before the main thread (as Vita3K does). <c>*KERNEL</c> plugins are kernel code, which does not run here; the
+    /// user API of kubridge, the one homebrew relies on, is HLE.
+    /// </summary>
+    void LoadTaiPlugins()
+    {
+        string? config = null;
+        foreach (var path in new[] { "ux0:tai/config.txt", "ur0:tai/config.txt" })
+            if (Vfs.Resolve(path) is { } host && File.Exists(host)) { config = host; break; }
+        if (config == null) return;
+        string section = "";
+        foreach (var raw in File.ReadAllLines(config))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line[0] == '#') continue;
+            if (line[0] == '*') { section = line[1..].Trim(); continue; }
+            if (section == "KERNEL")
+            {
+                Log.Info($"taiHEN: kernel plugin {line} not run (kernel code)");
+                continue;
+            }
+            if (section != "ALL" && !string.Equals(section, TitleId, StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var m = LoadModule(line);
+                Log.Info($"taiHEN: plugin {line} loaded for {TitleId} ({m.Name})");
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                Log.Warn($"taiHEN: plugin {line} not loaded: {e.Message}");
+            }
+        }
     }
 
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>

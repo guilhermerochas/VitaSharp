@@ -164,4 +164,48 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
             }
         });
     }
+    /// <summary>libgxm's texture-control-word setters/getters and the program-header getter as guest code store and return
+    /// exactly what Gxm.cs does, for linear strided and other textures, every value bit and a NULL texture.</summary>
+    [Theory]
+    [InlineData("sceGxmTextureSetUAddrMode")]
+    [InlineData("sceGxmTextureSetVAddrMode")]
+    [InlineData("sceGxmTextureSetMagFilter")]
+    [InlineData("sceGxmTextureSetMinFilter")]
+    [InlineData("sceGxmTextureSetMipFilter")]
+    [InlineData("sceGxmTextureSetLodBias")]
+    [InlineData("sceGxmTextureSetLodMin")]
+    [InlineData("sceGxmTextureGetType")]
+    [InlineData("sceGxmProgramGetDefaultUniformBufferSize")]
+    public void GxmTextureRoutinesMatchHle(string name)
+    {
+        if (!HleGuestCode.Enabled) return;
+        var gxm = new VitaSharp.Core.Hle.Modules.Gxm();
+        var method = typeof(VitaSharp.Core.Hle.Modules.Gxm).GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)!;
+        bool getter = method.GetParameters().Length == 1;
+        Assert.NotNull(method);
+        uint tex = fx.Memory.Alloc(0x100, "gk tex");
+        var rng = new Random(name.Length * 31);
+        ForEachBackend(backend =>
+        {
+            using var r = new Runner(fx, name, "SceGxm");
+            for (int i = 0; i < 300; i++)
+            {
+                var words = new uint[26];
+                for (int k = 0; k < words.Length; k++) words[k] = (uint)rng.NextInt64();
+                if (i % 3 == 0) words[1] = (words[1] & 0x1FFFFFFF) | 0xC0000000; // SCE_GXM_TEXTURE_LINEAR_STRIDED
+                uint value = i % 5 == 0 ? (uint)rng.NextInt64() : (uint)rng.Next(0, 80);
+                // a NULL texture: only where the C# version checks it before reading the texture (the others read word 1)
+                uint arg = i == 7 && name is "sceGxmTextureSetUAddrMode" or "sceGxmTextureSetVAddrMode" or "sceGxmTextureSetMagFilter" ? 0u : tex;
+                void Load() { for (int k = 0; k < words.Length; k++) GuestMemory.W32(tex + (uint)k * 4, words[k]); }
+                Load();
+                object? expected = getter ? method.Invoke(gxm, [arg]) : method.Invoke(gxm, [arg, value]);
+                var after = Enumerable.Range(0, words.Length).Select(k => GuestMemory.R32(tex + (uint)k * 4)).ToArray();
+                Load();
+                uint? got = r.Call(arg, value);
+                Assert.NotNull(got);
+                Assert.Equal(Convert.ToUInt32(expected is int e ? (uint)e : expected), got);
+                Assert.Equal(after, Enumerable.Range(0, words.Length).Select(k => GuestMemory.R32(tex + (uint)k * 4)).ToArray());
+            }
+        });
+    }
 }

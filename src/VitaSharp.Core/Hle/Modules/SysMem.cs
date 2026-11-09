@@ -40,6 +40,13 @@ public sealed partial class SysMem : HleModule
             shareable = (attr & ShareAttr) != 0 && optSize >= 0x18 && GuestMemory.R32(opt + 0x14) != 0;
         }
         if ((size & (align - 1)) != 0 && !cdram && (size & 0xFFF) != 0) return SceError.ILLEGAL_SIZE;
+        return AllocBlock(name, type, size, align, shareable);
+    }
+
+    /// <summary>A block of <paramref name="type"/> after the argument checks (also kubridge's kernel allocations).</summary>
+    internal int AllocBlock(string name, uint type, uint size, uint align, bool shareable = false)
+    {
+        bool cdram = type == TypeUserCdramRw;
         try
         {
             // a shareable block lives in memory every address space maps (as the CDRAM ones)

@@ -276,6 +276,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   por quadro, `sceClibMemcpy` em C# 7,37 M -> 0,90 M chamadas, CPU da `main` 2,62-2,79 -> 2,42-2,56 ms/quadro, rodada
   67,0/66,7 s -> 65,5/65,3 s. Medido e descartado: chamar o HLE de dentro do código nativo também no x64 (callout,
   como no ARM64): 65,6/65,3 s, igual. O que sobra na travada é o ritmo da CPU emulada (opção "Relógio da CPU", pendente)
+  Também: FIFA 13 (tela de título; o roteiro não passa dela com os dados de teste) CPU do processo 12,0 -> 10,5 ms/quadro
+  (6,4 M `sceKernelGetThreadId` saíram do C#), Injustice 26,2 -> 24,7. Depois, os setters/getters da palavra de controle
+  de textura da libgxm (`sceGxmTextureSet{U,V}AddrMode`, `Set{Mag,Min,Mip}Filter`, `SetLodBias`, `SetLodMin`,
+  `GetType`) e `sceGxmProgramGetDefaultUniformBufferSize` também em código do guest (`=notex` desliga, A/B): no boot do
+  Jak 1 a `F3DPlaybackThread` cai de 28.700 para 14.900 entradas no código nativo por quadro e de ~5,1 para ~4,7 us de
+  CPU por desenho (o jogo fica nos 20 fps dele). Um save state carregado mantém os stubs de SVC de quando foi salvo (o
+  código do guest só entra num boot novo). O que ainda sai do código nativo em quantidade: lwmutex (objetos do host),
+  `sceKernelGetProcessTimeWide` e os setters de estado do contexto da libgxm (estado em C#)
 
 ## Android
 
@@ -1185,7 +1193,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   primeiro uso. (3) Os dois "flashes" depois de 4x->1x são uma variação de 0,3 de luma numa célula,
   antes da troca; não reproduzidos
   Confirmado pelo usuário (08/11/2026)
-- [ ] Resistance: Burning Skies (PCSA00008): às vezes trava na primeira tela de carregamento (a caveira gira para
+- [x] Resistance: Burning Skies (PCSA00008): às vezes trava na primeira tela de carregamento (a caveira gira para
   sempre) logo depois do boot (achado do agente, 08/11/2026). Intermitente e já existe no main (main: 1 de 8 boots;
   perf/desktop-13: 3 de 15). O jogo cria a thread 'Autoload' (quadro ~61) e nunca chega à 'FMOD nonblocking
   thread (0)' (quadro ~155 numa execução boa); nada de 3D é desenhado. Não depende da escala. Próximo passo: captura
@@ -1206,6 +1214,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (o rastro da própria FIOS saía com "(null)" em tudo). Para diagnosticar: `--poke=820D2514:15@1` liga o rastro da
   FIOS2 (api/op/io; 2 = sched e 8 = chunk são muito verbosos). Se voltar a travar com a CPU livre, olhar a última
   operação "Accept" sem "COMPLETE" nesse rastro
+  Fechado (08/11/2026, perf/desktop-15): não era trava, era carregamento lento com a CPU disputada; 23 boots frios sem travar
 - [x] Ninja Gaiden Sigma 2 Plus (PCSE00233): o vídeo "trava" e a música do menu sai "com ruído" (relato do usuário,
   perf/desktop-14: 0 de 30 boots com o cache de shaders quente (10 a 1x, 10 a 1x em paralelo, 10 a 2x com dumps de
   quadro); 3 de 15 com cache frio (`--shader-cache` e cache do driver novos). Nas travadas a main fica num
@@ -1337,7 +1346,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   segundo frame (FirstInSuperframe) e o Vita3K também chama DECODE_ERROR: o mesmo que fazemos desde o 7732c69 (toca
   silêncio, conta os bytes; o jogo mata a voz no fim do clipe). Sem mudança
   Áudio da torcida confirmado ok pelo usuário (07/11/2026, depois do espaçamento dos grãos 352d66f); segue aberto o escanteio
-- [ ] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
+- [x] Mais ~1000 funções HLE implementadas de verdade (pedido do usuário, 07/11/2026; começar na próxima rodada de
   agentes, além das que já estão na lista das não implementadas). Hoje: ~2.840 funções com comportamento no VitaSharp
   contra ~2.626 no Vita3K (das 7.380 que ele declara, 4.630 respondem UNIMPLEMENTED). Cada função com o comportamento
   do Vita: lógica de verdade quando a função faz algo, e retorno vazio/de erro só quando é isso que o console faz
@@ -1412,7 +1421,8 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     0 crash; modo normal sem regressão em PCSA00080, PCSB01073, PCSE00606, PCSE00781 e no shell (custo por quadro igual, 5,8 ms; Skullgirls A/B contra
     main: 54,1/53,9 vs 54,0/53,2 fps). Os syscalls `_sceAppMgr*`/SceAvcodec/IO só têm teste de unidade: nenhum
     programa instalado os chama (os wrappers rodam no HLE).
-- [ ] HLE lote 6: iostreams e locale clássico do libc.suprx 3.74 (os 4 imports de jogo que faltam: `ios_base::Init`
+  Superado (08/11/2026): lotes 3-9 somaram mais de 3.600 funções; a meta atual é o sistema em 3.000 (hle-coverage)
+- [x] HLE lote 6: iostreams e locale clássico do libc.suprx 3.74 (os 4 imports de jogo que faltam: `ios_base::Init`
   C1/D1 e `_Winit` C1/D1). O Init (0x8102BD34 no libc.suprx 3.74, contador em 0x8105355C sob o lock 0) constrói, na
   primeira chamada, 3 `basic_filebuf<char>` de 0x90 bytes sobre stdin/stdout/stderr (vtable de basic_streambuf em
   0x8104F554, de basic_filebuf em 0x8104F5C4: overflow, underflow, uflow, pbackfail, xsputn, xsgetn, sync, setbuf,
@@ -1424,10 +1434,11 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   em modo libc do HLE chegando ao menu e ao jogo; também os `_Mtx_*/_Cnd_*/_Thrd_*` (31, xthreads sobre lwmutex/lwcond)
   e os syscalls do SceVshBridge/SceBbmc (corpos no bootimage.skprx).
   - Passo 1 (feat/hle-batch-6, 08/11/2026): os jogos chegam a 1518/1518. O SceLibstdcxx do libc.suprx 3.74 é a biblioteca "abridged" da Dinkumware: não tem std::locale (basic_ios sem _Ploc; as facetas são _ctype<E> e _codecvt<E, char, _Mbstatet> embutidas), então não há locale clássico a reverter (0x81038DD8 é ~basic_ios). Feito (Libc.Streams/Iostreams/Strstream.cs): basic_streambuf e basic_filebuf<char/wchar_t> (overflow/underflow/uflow/pbackfail/xsgetn/xsputn/seek/setbuf/sync/_Endwrite, conversão UTF-8 do wchar_t pelo codecvt), _ctype/_codecvt, ios_base (_Findarr, register_callback, _Callfns, _Tidy, copyfmt), basic_ios/istream/ostream/iostream (destrutores, thunks, ostream(sb, isstd)), ios_base::Init e _Winit (filebufs sobre stdin/stdout/stderr, cin/cout/cerr/clog com tie e unitbuf, contagens -1 como variáveis), strstreambuf/istrstream/ostrstream/strstream, e as variáveis de dados que os jogos importam no modo libc do HLE (cin..wclog, _Ctype, _Tolotab, _Touptab, _Stdin/_Stdout/_Stderr, _BADOFF, _Fpz). O filebuf não aponta para o buffer do FILE (o FILE do HLE não tem buffer): cada caractere passa por overflow/uflow. Validado: Minecraft (PCSE00491) com VITASHARP_HLE_MODULES=libc chama ios_base::Init/_Winit 1189x, chega ao menu principal, termos, aviso de salvamento, diálogo PSN e placares, 0 "Unimplemented", 0 crash, 0 variáveis sem resolver (antes 8). Próximo: sistema (xthreads _Mtx/_Cnd/_Thrd e _Pad já escritos em rascunho, não commitados), depois VitaSDK e o resto.
+  Feito (08/11/2026): jogos instalados em 100% das importações (lote 6, be7af8e)
 - [x] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   - Lote 7 (feat/hle-batch-7-clean, 08/11/2026): o lado do sistema, escrito à mão a partir do firmware 3.74 e dos headers do VitaSDK. `hle-coverage --vitasdk=...` antes -> depois: geral 5.540/19.406 (28,5%) -> 6.038 (31,1%); jogos 1.518/1.518 (100%); sistema 1.399/7.539 (18,6%) -> 1.842 (24,4%); o resto 2.623/10.349 (25,3%) -> 2.678 (25,9%); VitaSDK 4.599/7.006 (65,6%) -> 5.088 (72,6%). Feito: o resto do SceVshBridge (92, com as checagens de cópia/tamanho do bridge: flags QA, console id, NVS, modo IDU, CAF dos relatórios de crash, assinaturas de eboot, relógios seguro/de rede, viewport, montagens) e do SceAppMgr (72 + 28 wrappers do driver_us: QuitApp/DestroyOtherApp, listas de pid/app id do shell, pedidos de notificação na fila do shell, eventos de sistema na fila do app, SendParam, dono exclusivo do som/btrm, arquivos de dados do sistema, montagens que o emulador não precisa com a resposta do kernel); SceAVConfig (25: HDMI/volume mestre = 0x803A0109 no portátil, volume do sistema no registro), SceBbmc (48: sem modem 3G, 0x80330003), Videodec/M4vdec (68: decodificação dividida, NAL AU, modos, CSC, MPEG-4 pelo FFmpeg), syscalls do SceNetPs (27, blocos como o libnet.suprx empacota), ScePafStdc (72, regras do libpaf), xthreads do libc.suprx (_Mtx/_Cnd/_Thrd/_Pad, rascunho do lote 6 terminado), formas syscall/Internal de funções que o HLE já tinha. Uma tentativa de traduzir mecanicamente o código Thumb do firmware para C# foi descartada (cópia derivada do código da Sony num repositório público, e não é implementação): nada gerado do firmware entra. Validado: shell (Amigos, Troféus, Câmera) e 10 apps do sistema abertos direto, mesmos resultados da base (0 "Unimplemented", mesmas quedas dos apps abertos sem o shell); chamadas ao vivo: sceAppMgrReceiveNotificationRequestForShell, sceAVConfigGetSystemVol, vshSysconIsIduMode; as outras novas só têm teste de unidade (HleBatch7Tests; nenhum fluxo exercitado as chama). Falta (sistema): SceSblGcAuthMgr (59, cripto do cartão de jogo), SceCompat (36, emulador de PSP), SceSblSsUpdateMgr (24), NGS Internal (12), Threadmgr (9), Motion Ext (8), DrmBridge (9), libpaf/WebKit/email (NIDs sem nome, C++ com dados do módulo), NIDs sem nome do NetCtl/NpManager/NpCommerce2 (IPC ao shell). A meta de ~1000 por lote não foi atingida neste (+498 no geral).
   - Lote 8 (feat/hle-batch-8, 08/11/2026), parte 1: as classes do libpaf que se sustentam sozinhas, escritas à mão a partir do comportamento do libpaf.suprx 3.74 (layouts e regras lidos na desmontagem) e dos nomes da lista de NIDs do projeto comunitário ScePaf-RE (nomes C++ dos programas de teste dos protótipos; NID = SHA-1 do nome + "PAF"; só os nomes entram, nenhum código: 3.994 nomes novos no `nids.txt`). `hle-coverage --vitasdk=...` antes -> depois: geral 6.114/19.406 (31,5%) -> 6.677 (34,4%); jogos 1.552/1.552 (100%); sistema 1.834/7.516 (24,4%) -> 2.134 (28,4%); o resto 2.728/10.338 (26,4%) -> 2.991 (28,9%); VitaSDK 5.168/7.006 (73,8%) -> 5.227 (74,6%). Feito (módulo `Paf`, só reserva do firmware: um programa do sistema carrega o libpaf de verdade): paf::math::rect (centro/tamanho, bordas, hit/contém), paf::rtc e paf::datetime::DateTime (ticks sobre o SceRtc, o parser de datas do SQLite com os erros 0x8025108x, RFC 3339, dia da semana), paf::common (UTF-8/UTF-16 em paf::string, FromString, FormatString, path Split/SplitExt/Join, RefObj, common::String), LocalFile/MemFile/Dir (tabela virtual de HLE com a ordem da interface File, async imediato com WaitAsync, Dir recursivo), paf::thread (Mutex/RMutex/Cond/Semaphore/RWLock/Thread/CallQueue/SyncCall/ThreadIDCache sobre o kernel do HLE), SHA-1 (RFC 3174 com o contexto na memória do guest), zlib (sceZlibDecompress, compress::Decompress), HeapAllocator (mspace do SceClib) e os buffers (Malloc/HeapAlloc/Sub/SubConst/UnmanagedConst em SharedPtr), cxml (Document/Element/Attribute/File e o util::*), Url, as curvas de Timer::DoFunc*, o estado do inputdevice (pad/touch/motion), os acessores de membro de image::Image/JobItem/Framework/ScrollViewBase/ListView/SurfaceBase e os nomes sem `private` da ScePafStdc. Validação: testes de unidade (HleBatch8Tests: rect, datas, strings/caminhos, SHA-1 dos vetores do RFC, zlib, heap, LocalFile/Dir num ux0 de teste, cxml montado à mão, Url, curvas); nada disso é chamado ao vivo (o libpaf é LLE nos apps do sistema); shell (Amigos, Troféus, Câmera) e 10 apps do sistema sem cabeça: mesmos resultados da base do lote 7 (0 "Unimplemented", mesmas quedas e o mesmo timeout do NPXS10026). Não feito neste lote: o lado NP (SceNpCommerce2/NpManager/NetCtl/NpCommonPs4: as exportações sem nome são clientes IPC do servidor do shell, sem fonte de nomes; o NID_FFBFC540 continua sem ponte), SceSqliteVsh/dbutil (NIDs da vsh sem nome; a comparação de código com o SceSqlite nomeado não deu pares confiáveis), e o grosso do libpaf (ui::Widget e família, graph, image, Plugin, Framework, job, cache: dependem do motor de widgets/GPU do próprio libpaf). Meta de 3.000 no sistema não atingida (+300). Próximo: com o Ghidra + VitaLoader instalados (só estudo), ler as exportações sem nome do NP/sqlite e o motor de widgets do libpaf.
-- [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
+- [x] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
   pretos isolados (2432, 2460). O filme é tocado pelo AvPlayer com H.264 pelo `ffmpeg-d3d11va` (decodificação na GPU
@@ -1460,6 +1471,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   do dump da gravação: nativo nítido, 2x antes desfocado, 2x depois igual ao nativo (`bugsC18_rp/lbp_r1`, `lbp_r2`,
   `lbp_r2fix`, `bugsC18_yt/lbpfix.png`)
   Confirmado pelo usuário (08/11/2026)
+  Confirmado pelo usuário (08/11/2026): filme e áudio corrigidos (software decode + espaçamento de grãos)
 - [x] Injustice (PCSE00271): elementos do HUD faltando/ruins (relato do usuário, 07/11/2026, gravação
   `captures\PCSE00271_20261107_223633_tudo`). Nos 478 quadros ao vivo as barras de vida, os nomes e o tempo nunca
   aparecem (o HUD de baixo aparece); o replay do mesmo dump mostra tudo e bate com o Vita real (vídeo `XerzDSm7Z9U`:
@@ -1520,7 +1532,8 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   o valor adiante: negativo vai para o caminho de erro (o Demux para sem avisar o VideoDec), 1 para o de fim (repete,
   esvazia, avisa). Corrigido em 64a15c4 (GetNextUnit devolve 1 no fim); no boot a prévia 1689283 chega ao fim com 1 e
   o jogo fecha o player normalmente. **Falta validar** na troca de carro: não cheguei lá (a corrida do prólogo de
-  1,6 mi precisa de acelerar e virar juntos, o que o --nav não faz)
+  1,6 mi; com o novo `hold` do --nav (3be9b2c) dá para acelerar e virar juntos, mas guiar às cegas por prints levou
+  mais de 30 passos e não terminou a corrida)
 - [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
   08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Travamento corrigido (agente B, 0d19271):
   o Wwise (FUN_814f02cc, Ghidra no eboot, só estudo) lê o estado do player NGS e libera os buffers do stream do índice
@@ -1529,12 +1542,15 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   AkManualEvent, IO thread parado). Agora um next inválido deixa o último buffer como atual (os válidos seguem como
   no Vita3K). Do boot sem estado: intro, luta no telhado, cena da Mulher-Gato, gancho no letreiro ROYAL e adiante,
   23209 quadros a 30 fps (`scratchpad/bugsB2/bat_l1/sheet6-8.png`); o build 3261a98 trava do estado da gravação.
-- [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" (achados do agente B, 08/11/2026): a música do
-  menu é uma voz NGS do Wwise em HEVAG estéreo a 24 kHz (stream em anel de 3 buffers); o WAV da voz tem hf/rms 0,58 e
-  3-4% da energia acima de 12 kHz (uma fonte de 24 kHz não tem nada lá: imagem do reamostrador ou ruído na
-  decodificação); no gameplay o canal esquerdo da porta 1 tem rajadas de saltos > 20000 entre amostras
-  (`scratchpad/bugsB2/bat_v1/audio`, `bat_l1/audio`). Falta comparar com o Vita de verdade/Vita3K e achar a causa
-- [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
+- [x] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" (agente B, 0caefdf). A música e os sons em stream
+  do Wwise são vozes NGS em HEVAG estéreo; o primeiro buffer pula o cabeçalho do arquivo (52 bytes), então toda
+  fronteira de buffer seguinte corta um quadro de 16 bytes. O HLE jogava fora a sobra do buffer e decodificava o
+  próximo desde o byte 0: tudo dali em diante saía 4 bytes fora de quadro, como ruído. Agora o quadro partido espera o
+  começo do buffer seguinte (como no Vita3K). Espectro da porta 1 no gameplay: antes 37-41% da energia abaixo de 1 kHz
+  e 12-27% em 4-8 kHz; depois 86-95% abaixo de 1 kHz e 0,1-3% em 4-8 kHz, como um longplay do Vita de verdade
+  (75-95% / 0,2-7%) (`scratchpad/bugsB2/bat_g1/audio`, `bat_l1/audio`, `yt/longplay.wav`)
+- [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
+  Fechado (08/11/2026): roda até o gameplay (9bc0d66); a imagem "zuada" e os controles seguem num item próprio se o usuário detalhar
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
   libshacccg.suprx com o ShaRKF00D); taiInjectDataForUser/taiInjectAbs e taiHookFunctionOffsetForUser em Thumb

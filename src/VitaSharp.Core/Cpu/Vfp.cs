@@ -235,6 +235,71 @@ internal static unsafe class Vfp
         s->SvcPc = pc;
     }
 
+    // ------------------------------------------------------------ short vectors (FPSCR LEN / STRIDE)
+
+    /// <summary>FPSCR LEN (bits 18:16) and STRIDE (bits 21:20): non-zero selects VFP short-vector operation.</summary>
+    public const uint FpscrVectorMask = 0x00370000;
+
+    /// <summary>
+    /// The VFP data-processing instructions that short-vector mode turns into vector operations (ARMv7 ARM, "VFP vector
+    /// operation support"): VMLA/VMLS/VNMLA/VNMLS/VMUL/VNMUL/VADD/VSUB/VDIV, VMOV (register and immediate), VABS,
+    /// VNEG and VSQRT. Compares and conversions stay scalar.
+    /// </summary>
+    public static bool IsVectorCapable(Op op, uint ins) => op switch
+    {
+        Op.Vfp_Arith or Op.Vfp_MovImm => true,
+        Op.Vfp_Other => Bits(ins, 19, 16) <= 1,
+        _ => false,
+    };
+
+    /// <summary>
+    /// A vector-capable instruction run with FPSCR LEN/STRIDE set (as QEMU's ARM model does it). Registers are in banks
+    /// of eight singles or four doubles; a destination in bank 0 makes the instruction scalar, a Vm in bank 0 is a scalar applied to every
+    /// element; the other operands step by STRIDE (1, or 2 for STRIDE = 11) and wrap inside their bank. Each element
+    /// is the scalar operation on re-encoded registers, in order (overlapping vectors read the updated values).
+    /// The Vita's Cortex-A9 has no short-vector hardware: it raises an undefined-instruction exception that homebrew
+    /// (VFPVector through kubridge, e.g. Android ports of games built for VFPv2 vectors) emulates the same way.
+    /// </summary>
+    public static void VectorOp(CpuState* s, Op op, uint ins, uint pc)
+    {
+        uint fpscr = s->Fpscr;
+        uint len = ((fpscr >> 16) & 7) + 1, stride = ((fpscr >> 20) & 3) == 3 ? 2u : 1u;
+        bool dbl = Bit(ins, 8) != 0;
+        uint d = dbl ? DoubleD(ins) : SingleD(ins), n = dbl ? DoubleN(ins) : SingleN(ins), m = dbl ? DoubleM(ins) : SingleM(ins);
+        // bank 0 is S0-S7, or D0-D3 (and D16-D19, the bank 0 of the upper half: the bank field is bits 3:2)
+        uint bankMask = dbl ? 3u : 7u, bankField = dbl ? 0xCu : 0x18u;
+        if ((d & bankField) == 0) len = 1;
+        uint mStride = (m & bankField) == 0 ? 0 : stride;
+        // the vector bits are only read here: the scalar handlers ignore them
+        for (uint i = 0; i < len; i++)
+        {
+            uint e = Encode(ins, d, n, m, dbl, op);
+            switch (op)
+            {
+                case Op.Vfp_Arith: Arith(s, e, pc); break;
+                case Op.Vfp_MovImm: MovImm(s, e, pc); break;
+                default: Other(s, e, pc); break;
+            }
+            d = (d & ~bankMask) | ((d + stride) & bankMask);
+            n = (n & ~bankMask) | ((n + stride) & bankMask);
+            m = (m & ~bankMask) | ((m + mStride) & bankMask);
+        }
+    }
+
+    /// <summary>The instruction with other registers: Vd always, Vn for the arithmetic ops, Vm unless it is VMOV
+    /// immediate (whose immediate sits in the Vn/Vm fields; VMOV/VABS/VNEG/VSQRT have opc2 in the Vn field).</summary>
+    static uint Encode(uint ins, uint d, uint n, uint m, bool dbl, Op op)
+    {
+        ins &= ~((1u << 22) | (0xFu << 12));
+        ins |= dbl ? ((d >> 4) << 22) | ((d & 0xF) << 12) : ((d & 1) << 22) | ((d >> 1) << 12);
+        if (op == Op.Vfp_MovImm) return ins;
+        ins &= ~((1u << 5) | 0xFu);
+        ins |= dbl ? ((m >> 4) << 5) | (m & 0xF) : ((m & 1) << 5) | (m >> 1);
+        if (op != Op.Vfp_Arith) return ins;
+        ins &= ~((0xFu << 16) | (1u << 7));
+        return ins | (dbl ? ((n & 0xF) << 16) | ((n >> 4) << 7) : ((n >> 1) << 16) | ((n & 1) << 7));
+    }
+
     /// <summary>VCVT between floating-point and fixed-point: op=bit18 (to fixed), U=bit16, sx=bit7, imm=imm4:i</summary>
     static void FixedConvert(CpuState* s, uint ins, bool dbl)
     {
@@ -335,7 +400,11 @@ internal static unsafe class Vfp
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Vmsr(CpuState* s, uint ins, uint pc)
     {
-        if (Bits(ins, 19, 16) == 1) s->Fpscr = s->R[Bits(ins, 15, 12)];
+        if (Bits(ins, 19, 16) != 1) return;
+        uint old = s->Fpscr, v = s->R[Bits(ins, 15, 12)];
+        s->Fpscr = v;
+        // entering or leaving short-vector mode: the dispatcher switches between generated code and the interpreter
+        if (((old ^ v) & FpscrVectorMask) != 0 && s->Exit == ExitReason.None) s->Exit = ExitReason.FpMode;
     }
 
     /// <summary>VMOV core -> scalar: cond 1110 0 opc1 0 Vd Rt 1011 D opc2 1 0000</summary>

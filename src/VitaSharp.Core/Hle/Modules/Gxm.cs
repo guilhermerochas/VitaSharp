@@ -845,17 +845,17 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
-    [Hle] void sceGxmSetCullMode(uint ctx, uint mode) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.CullModeOffset, (byte)mode); }
+    [Hle] internal void sceGxmSetCullMode(uint ctx, uint mode) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.CullModeOffset, (byte)mode); }
     [Hle] void sceGxmSetTwoSidedEnable(uint ctx, uint mode) { if (Ctx(ctx) is { } c) c.State.TwoSided = mode != 0; }
 
-    [Hle] void sceGxmSetFrontDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Front.DepthFunc = (byte)(f >> 22); }
+    [Hle] internal void sceGxmSetFrontDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Front.DepthFunc = (byte)(f >> 22); }
     [Hle] void sceGxmSetBackDepthFunc(uint ctx, uint f) { if (Ctx(ctx) is { } c) c.State.Back.DepthFunc = (byte)(f >> 22); }
-    [Hle] void sceGxmSetFrontDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.DepthWrite = e == 0; }
-    [Hle] void sceGxmSetBackDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.DepthWrite = e == 0; }
+    [Hle] internal void sceGxmSetFrontDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.DepthWrite = e == 0; }
+    [Hle] internal void sceGxmSetBackDepthWriteEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.DepthWrite = e == 0; }
     [Hle] void sceGxmSetFrontFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Front.FragmentEnabled = e == 0; }
     [Hle] void sceGxmSetBackFragmentProgramEnable(uint ctx, uint e) { if (Ctx(ctx) is { } c) c.State.Back.FragmentEnabled = e == 0; }
-    [Hle] void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.FrontPolygonModeOffset, (byte)(m >> 15)); }
-    [Hle] void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.BackPolygonModeOffset, (byte)(m >> 15)); }
+    [Hle] internal void sceGxmSetFrontPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.FrontPolygonModeOffset, (byte)(m >> 15)); }
+    [Hle] internal void sceGxmSetBackPolygonMode(uint ctx, uint m) { if (Ctx(ctx) is { } c) GuestMemory.Write(c.Handle + GxmContext.BackPolygonModeOffset, (byte)(m >> 15)); }
     /// <summary>SCE_GXM_WBUFFER_ENABLED = 0x4000 (not 1).</summary>
     [Hle]
     void sceGxmSetWBufferEnable(uint ctx, uint enable)
@@ -2321,8 +2321,8 @@ public sealed partial class Gxm : HleModule
     [Hle] int sceGxmTextureSetMagFilter(uint tex, uint f) => SetBits(tex, 12, 2, f);
     [Hle] int sceGxmTextureSetMinFilter(uint tex, uint f) => IsStrided(tex) ? 0 : SetBits(tex, 10, 2, f);
     [Hle] int sceGxmTextureSetMipFilter(uint tex, uint f) => IsStrided(tex) ? 0 : SetBits(tex, 9, 1, f != 0 ? 1u : 0);
-    [Hle] int sceGxmTextureSetUAddrMode(uint tex, uint m) => SetBits(tex, 6, 3, m);
-    [Hle] int sceGxmTextureSetVAddrMode(uint tex, uint m) => SetBits(tex, 3, 3, m);
+    [Hle] internal int sceGxmTextureSetUAddrMode(uint tex, uint m) => SetBits(tex, 6, 3, m);
+    [Hle] internal int sceGxmTextureSetVAddrMode(uint tex, uint m) => SetBits(tex, 3, 3, m);
     [Hle] int sceGxmTextureSetUAddrModeSafe(uint tex, uint m) => tex != 0 && IsStrided(tex) ? 0 : SetBits(tex, 6, 3, m);
     [Hle] int sceGxmTextureSetVAddrModeSafe(uint tex, uint m) => tex != 0 && IsStrided(tex) ? 0 : SetBits(tex, 3, 3, m);
     /// <summary>Linear strided textures do not support address modes: they read as CLAMP (2).</summary>

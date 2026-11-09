@@ -684,7 +684,10 @@ public sealed partial class SystemMisc : HleModule
     /// <summary>SceKernelSystemSwVersion (0x28): +0 size, +4 versionString[0x1C], +0x20 version, +0x24 unk_24.
     /// The caller's size field bounds how many bytes are written.</summary>
     [Hle]
-    int sceKernelGetSystemSwVersion(uint data)
+    int sceKernelGetSystemSwVersion(uint data) => WriteSystemSwVersion(data);
+
+    /// <summary>The SceKernelSystemSwVersion of <see cref="sceKernelGetSystemSwVersion"/> (also _vshSblGetSystemSwVersion).</summary>
+    internal static int WriteSystemSwVersion(uint data)
     {
         if (data == 0) return SceError.ILLEGAL_ADDR;
         Span<byte> full = stackalloc byte[0x28];
