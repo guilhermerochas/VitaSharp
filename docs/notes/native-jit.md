@@ -50,6 +50,14 @@ alternating pairs against `VITASHARP_NATIVE_A64_NOOPT=succ,count,group,fence`, 3
 in fewer instructions. Display unchanged (12 fps median in both): that day's main was bound by the GPU worker's fence
 wait, not the game thread. `fpentry`, `packed` and the out-of-line unlinked exits (f6eacd7) came after this run.
 
+**Measured on NativeAOT** (b760002 = everything above + perf/android-gpu ebfe72c, device lab, Killzone slot-1 route,
+order A B D D B A; A = all on, B = `NOOPT=chain,vlazy,assoc`, D = `NOOPT=succ,count,group,fence,fpentry,packed,chain,vlazy,assoc`):
+game thread 15.9/16.0 (A), 18.3/17.1 (B), 20.4/18.4 (D) ms per frame; host time in generated code on the game thread
+21.4/21.9, 21.2/20.6, 24.6/23.3 ms; native entries per frame 1,800/1,789, 2,297/2,184, 2,163/2,010. JobSched and Havok
+(A55) within the noise in this series (29-38 ms each). Display: GPU-bound (~43 ms, 51 ms in the first two runs) with
+bimodal frames (2-3 vs 6-8 vblanks, the transfer phase); A had more slow frames than D in this series, so fps needs a
+D A D A confirmation.
+
 Tests (Unicorn sandbox, fast suite): `Arm64DeadSuccessorStoresMatchInterpreter` (random blocks + random successors run
 native then interpreted vs both interpreted; 2,110 stores dropped, 0 differences), `Arm64SuperblocksMatchInterpreter`
 (ARM and Thumb, state and charged cycles), `Arm64GroupedDirtyMarksCoverStores`
