@@ -214,7 +214,9 @@ public sealed unsafe partial class VulkanRenderer
 
 
     /// <summary>VITASHARP_DEPTH_OPS_NONE=1 (A/B): see <see cref="FlushChain"/>.</summary>
-    static readonly bool DepthOpsNone = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthOpsNone)?.Trim() == "1";
+    static readonly bool? DepthOpsNoneEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthOpsNone)?.Trim() switch { "1" => true, "0" => false, _ => null };
+    /// <summary>On by default on tile-based GPUs with the extension (pixel-identical on 9 dumps, 5,782 frames).</summary>
+    bool DepthOpsNone => DepthOpsNoneEnv ?? TiledRenderings;
     const AttachmentLoadOp LoadOpNone = (AttachmentLoadOp)1000400000;
     const AttachmentStoreOp StoreOpNone = (AttachmentStoreOp)1000301000;
     /// <summary>A draw of the pending renderings tests (or writes) depth/stencil (set in SetDynamicState).</summary>
@@ -222,7 +224,9 @@ public sealed unsafe partial class VulkanRenderer
     long _statDepthNone, _statDepthReadOnly;
 
     /// <summary>VITASHARP_RENDER_AREA_TRIM=1: see <see cref="ChainRenderArea"/>.</summary>
-    static readonly bool RenderAreaTrim = Environment.GetEnvironmentVariable(Core.Util.EnvVars.RenderAreaTrim)?.Trim() == "1";
+    static readonly bool? RenderAreaTrimEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.RenderAreaTrim)?.Trim() switch { "1" => true, "0" => false, _ => null };
+    /// <summary>On by default on tile-based GPUs (Mali bench of the Killzone frame: 49.7 -> 45.3 ms GPU, same picture).</summary>
+    bool RenderAreaTrim => RenderAreaTrimEnv ?? TiledRenderings;
 
     long _statTrimmed;
     double _statTrimFraction;
@@ -241,7 +245,7 @@ public sealed unsafe partial class VulkanRenderer
     Rect2D ChainRenderArea(in TilePass p)
     {
         var full = new Rect2D(new Offset2D(0, 0), p.Area);
-        if (!RenderAreaTrim || _drawnAll || _drawnRects.Count == 0 || !p.HasColor || p.DepthLoad != AttachmentLoadOp.Load) return full;
+        if (!RenderAreaTrim || _drawnAll || _drawnRects.Count == 0 || !p.HasColor || p.DepthLoad is not (AttachmentLoadOp.Load or LoadOpNone)) return full;
         long x0 = long.MaxValue, y0 = long.MaxValue, x1 = long.MinValue, y1 = long.MinValue;
         foreach (var r in _drawnRects)
         {
