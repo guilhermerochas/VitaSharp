@@ -310,6 +310,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (cresce com o tempo livre): no PC não custa fps; no celular é uma transição por chamada (candidato a intrínseco no
   JIT ARM64). Falta: medir no celular (APK mono-aot, `env.txt` com `VITASHARP_HLE_GUEST_CODE` vazio / `nolw` /
   `nogxmctx`, Killzone, Uncharted e F1: ms da thread do jogo e fps).
+  (5) Arena de uniforms (`Gpu/UniformArena`): os blocos ficam zerados e quem escreve marca o que escreveu (grânulos de
+  256 bytes); o bloco reciclado limpa só isso, em vez de a thread do jogo zerar a fatia inteira de cada draw (8 KB por
+  buffer de tamanho desconhecido). F1 2011 na corrida (2 pares, `VITASHARP_UB_ZERO=full` = antes): `sceGxmDrawPrecomputed`
+  7,6/4,6 -> 2,2/1,6 us por chamada, CPU dentro do HLE da thread principal 13,2/6,6 -> 4,9/3,1 ms por quadro.
+  Achados do worker da GPU (perfil por unidade de textura, só desenvolvedor): na corrida do F1 o custo por draw está
+  espalhado (gravação 1,0, geometria 0,7, uniforms 0,7, unidades de textura 0,8 ms por quadro para ~1.400 draws); um
+  memo de unidades resolvidas acertou 74-83% e quase não mudou o tempo (não entrou); no Killzone o que pesa são as
+  unidades que faltam no memo (uploads com decodificação na CPU, em medição).
 
 ## Android
 
