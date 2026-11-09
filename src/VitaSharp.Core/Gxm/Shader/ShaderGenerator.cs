@@ -273,6 +273,11 @@ public static class ShaderGenerator
     /// cache key.</summary>
     public static bool RelaxHalfPrecision;
 
+    /// <summary>VITASHARP_UNIFORM_UNCHECKED (default on, 0 = off; set by the renderer): the constant-address uniform loads of copied
+    /// slots read the storage buffer directly instead of through fetchMemory's bounds check (they are always in range).
+    /// Mali bench of the Killzone frame with every check removed: -6 ms. Part of the cache key.</summary>
+    public static bool UncheckedUniformLoads;
+
     /// <summary>mediump on the values the GXP holds in half registers: the temporaries the translator unpacks them into,
     /// the varyings the GXP loads as F16 (every use a copy into such a temporary) and a half/8-bit colour output.
     /// Used by the generator with <see cref="RelaxHalfPrecision"/> and by the Mali cost what-if.</summary>
@@ -445,8 +450,14 @@ float packC10(vec3 c) {
             if (UniformLoop)
                 t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
             else
+            {
+                // the words of a copied slot are always inside the per-draw uniform data (UniformBytes long, the
+                // renderer binds exactly that much): read without fetchMemory's bounds check (UncheckedUniformLoads)
+                bool unchecked_ = UncheckedUniformLoads && !bb.Mapped && bb.Base + count * 4 <= lastBase;
                 for (int k = 0; k < count; k += 4)
-                    t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = fetchMemory({bb.Base + j * 4});")));
+                    t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = " +
+                        (unchecked_ ? $"uintBitsToFloat(ub[{(bb.Base + j * 4) >> 2}]);" : $"fetchMemory({bb.Base + j * 4});"))));
+            }
         }
 
         // ---- program inputs

@@ -104,13 +104,16 @@ public sealed class GamePage : Screen<GameState, GameProps>
                         Row(Loc.Get("MInternalResolution"), ValueText(SettingsChoices.ResScales, s.ResScale, SettingsChoices.LabelOf(SettingsChoices.ResScales, eff.ResScale)),
                             () => Pick(Loc.Get("MInternalResolution"), SettingsChoices.ResScales, "", v => s.ResScale = v)),
                         Divider(),
+                        Row(Loc.Get("MMsaa"), ValueText(SettingsChoices.MsaaModes, s.Msaa, SettingsChoices.LabelOf(SettingsChoices.MsaaModes, eff.Msaa)),
+                            () => Pick(Loc.Get("MMsaa"), SettingsChoices.MsaaModes, "", v => s.Msaa = v)),
+                        Divider(),
                         ToggleRow("VSync", eff.VSync, v => Save(x => x.VSync = v == app.VSync ? null : v)),
                         Divider(),
                         ToggleRow(Loc.Get("MShowFps"), eff.ShowFps, v => Save(x => x.ShowFps = v == app.ShowFps ? null : v)),
                         s.HasOverrides ? Divider() : null,
                         s.HasOverrides ? Row(Loc.Get("MResetToDefaults"), null, () => Save(x =>
                         {
-                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null;
+                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null; x.Msaa = null;
                         })) : null
                     ),
                     SectionTitle(Loc.Get("MSaves")),

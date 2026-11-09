@@ -2817,6 +2817,18 @@
   <data name="MRes50" xml:space="preserve">
     <value>50% (o mais rápido, mais suave)</value>
   </data>
+  <data name="MMsaa" xml:space="preserve">
+    <value>MSAA (suavização de serrilhado)</value>
+  </data>
+  <data name="MMsaaNative" xml:space="preserve">
+    <value>Nativo (como o jogo pede)</value>
+  </data>
+  <data name="MMsaaOff" xml:space="preserve">
+    <value>Desligado (mais rápido, bordas serrilhadas)</value>
+  </data>
+  <data name="MMsaaDetail" xml:space="preserve">
+    <value>Desligado desenha o jogo com uma amostra por pixel: menos trabalho para a GPU, bordas serrilhadas. Vale na hora</value>
+  </data>
   <data name="MDefaultParen" xml:space="preserve">
     <value>Padrão ({0})</value>
   </data>
