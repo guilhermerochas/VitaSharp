@@ -116,9 +116,6 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         base.OnCreate(savedInstanceState);
         AppServices.Initialize(this, gameProcess: true);
-        // Android game mode (game_mode_config.xml): set by the user or the OEM game service, logged for the record
-        if (OperatingSystem.IsAndroidVersionAtLeast(31) && GetSystemService(GameService) is GameManager gameManager)
-            VitaSharp.Core.Util.Log.Info($"Android game mode: {gameManager.GameMode} (1 standard, 2 performance, 3 battery, 4 custom)");
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
         if (Intent?.GetBooleanExtra(ExtraWakeScreen, false) == true) WakeScreen();
 

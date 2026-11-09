@@ -277,6 +277,13 @@ public static class EnvVars
     /// <summary>Android: =1 asks for Window.setSustainedPerformanceMode where the device supports it (lower, steadier
     /// clocks for long sessions; off by default because it lowers peak speed).</summary>
     public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
+    /// <summary>Android: what each frame reports to the ADPF hint session: cpu (default: the busiest hot thread's CPU
+    /// time), gpu (API 35+ WorkDuration with the frame's CPU time and the renderer's GPU time) or wall (the same with the
+    /// frame interval as total).</summary>
+    public const string AndroidAdpf = "VITASHARP_ANDROID_ADPF";
+    /// <summary>Android: =1 uses the system's game APIs: GameManager.setGameState (loading / gameplay) and the game mode
+    /// (battery mode asks the ADPF session for power efficiency). Default off (A/B).</summary>
+    public const string AndroidGameState = "VITASHARP_ANDROID_GAME_STATE";
     /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
     public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
     /// <summary>Developer builds: the GPU worker spends FACTOR times its real time on each command (busy wait), to

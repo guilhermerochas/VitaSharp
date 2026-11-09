@@ -56,6 +56,7 @@ public sealed partial class EmulationSession
 
     public string LoadState(int slot)
     {
+        Performance.SetLoading(true); // until the next presented frame (GamePerformance.OnFrame)
         try
         {
             // a state of another executable of the game (saved after a LoadExec: Jak 1 of the Jak and Daxter
