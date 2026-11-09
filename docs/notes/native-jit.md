@@ -39,6 +39,7 @@ loads/stores ~25% (D registers of VFP code included), exits/accounting ~10%. Ana
 | `fence` | A DMB right after another with no memory access between is dropped. |
 | `fpentry` | Blocks with scalar VFP check FPSCR[25:16] once at entry (VMSR ends a block); FpOps then have no handler path, are not call sites, and take operands from the SIMD register cache (D registers and even S registers; double results cached). Another mode: the block returns before running (`TierUpRequest = 2`) and the dispatcher interprets it once. |
 | `stub` (extended) | The unlinked path of a patched exit is out of line too: one B word behind the site. |
+| `chain` | Superblocks: a block ending in a conditional direct branch (B<c>, B<c>.W, CBZ/CBNZ) is translated with the already-executed blocks of its not-taken path (up to 4 blocks / 128 instructions); taken paths exit, each exit charges the cycles up to it (IR exit Imm4), the continued blocks are dependencies. |
 
 **Measured on the phone** (device lab, 50f7ddf dev APK: `succ`, `count`, `group`, `fence`; Killzone staircase, 3
 alternating pairs against `VITASHARP_NATIVE_A64_NOOPT=succ,count,group,fence`, 30 s windows): game thread 24.2 vs
@@ -48,7 +49,8 @@ in fewer instructions. Display unchanged (12 fps median in both): that day's mai
 wait, not the game thread. `fpentry`, `packed` and the out-of-line unlinked exits (f6eacd7) came after this run.
 
 Tests (Unicorn sandbox, fast suite): `Arm64DeadSuccessorStoresMatchInterpreter` (random blocks + random successors run
-native then interpreted vs both interpreted; 2,110 stores dropped, 0 differences), `Arm64GroupedDirtyMarksCoverStores`
+native then interpreted vs both interpreted; 2,110 stores dropped, 0 differences), `Arm64SuperblocksMatchInterpreter`
+(ARM and Thumb, state and charged cycles), `Arm64GroupedDirtyMarksCoverStores`
 (every written page marked or after a marked page; 384/400 blocks shorter), `Arm64BudgetOnlyCounters`.
 
 ## perf/a64-regalloc (2026-10-31): guest state across regions, exit stubs
