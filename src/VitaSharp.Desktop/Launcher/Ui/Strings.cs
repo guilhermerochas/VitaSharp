@@ -314,6 +314,10 @@ public static class Strings
     public static string SectionGraphics => T();
     public static string SectionEmulation => T();
     public static string SectionNetwork => T();
+    public static string SectionAudio => T();
+    public static string AudioOutput => T();
+    public static string AudioOutputDetail => T();
+    public static string AudioOutputDefault => T();
     public static string SectionAdvanced => T();
     public static string StartSection => T();
     public static string StartupView => T();

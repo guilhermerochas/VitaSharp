@@ -151,6 +151,16 @@ public static class Program
                 return Input.PadTest.Run(args.Skip(1).ToArray());
             case "camera-test":
                 return CameraTest.Run(args.Skip(1).ToArray());
+            case "audio-devices":
+            {
+                // audio-devices [--audio-device=<name>]: the outputs OpenAL lists, the system default and the one a game
+                // would open now (silent: no sound is played)
+                var (outs, def) = Host.OpenAlAudio.ListOutputs();
+                foreach (var o in outs) Console.WriteLine($"{(o == def ? "* " : "  ")}{o}");
+                using var a = Host.OpenAlAudio.TryCreate(OptValue(args, "--audio-device"));
+                Console.WriteLine(a == null ? "no output opened" : $"opened: {a.DeviceName}");
+                return a == null ? 1 : 0;
+            }
             case "hle-implemented":
                 // hle-implemented [--vitasdk=<vitasdk-user-functions.tsv>]: every NID with an HLE implementation, as
                 // docs/hle/data/vitasharp-implemented.tsv (nid, name, module, library, "vh" when the VitaSDK lists it).
@@ -542,6 +552,7 @@ public static class Program
         Console.WriteLine("  rerun <capture folder> [--from=preroll|start] [--window] [--rerun-gpu-dump]  replay a Gravar tudo capture's input from its save state");
         Console.WriteLine("  run options: --nav=<file> [--nav-live] [--nav-out=<dir>]  screen-driven input script (NavScript: tap/press/stable/shot/quit)");
         Console.WriteLine("  hle-implemented [--vitasdk=<tsv>]   list every NID the HLE implements (docs/hle/data/vitasharp-implemented.tsv)");
+        Console.WriteLine("  audio-devices [--audio-device=<name>]  list the audio outputs and show the one a game opens");
         Console.WriteLine("  hle-coverage [--out=<tsv>] [--vitasdk=<tsv>]  HLE coverage of every function the installed firmware exports (games/system/general)");
         Console.WriteLine("  imports <TITLEID|folder> [x.self]   list the system functions a title (or one of its executables) needs");
         Console.WriteLine("        [--names=SceNp,SceNet]          ...and every imported function name of the libraries with these prefixes");

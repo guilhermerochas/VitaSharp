@@ -103,6 +103,10 @@ public sealed class LauncherSettings
     /// built-in one), --trophy-sound=.</summary>
     public bool TrophySound { get; set; } = true;
 
+    /// <summary>"Saida de audio" (--audio-device=): "" = the system default (never a game controller's headset jack on
+    /// its own), else an output name as OpenAL lists it, kept even while that output is unplugged.</summary>
+    public string AudioDevice { get; set; } = "";
+
     /// <summary>"Ajustes do jogo": options of one game by title ID, set on the game's page and passed only when that game
     /// starts. Games without an entry run with the defaults.</summary>
     public Dictionary<string, GameOptions> Games { get; set; } = new();
@@ -160,6 +164,7 @@ public sealed class LauncherSettings
         if (Validation) yield return "--validation";
         if (!string.IsNullOrWhiteSpace(CameraFront)) yield return $"--camera-front={CameraFront}";
         if (!string.IsNullOrWhiteSpace(CameraBack)) yield return $"--camera-back={CameraBack}";
+        if (!string.IsNullOrWhiteSpace(AudioDevice)) yield return $"--audio-device={AudioDevice}";
         if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
         if (CpuMhz > 0) yield return $"--cpu-mhz={CpuMhz}";
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";

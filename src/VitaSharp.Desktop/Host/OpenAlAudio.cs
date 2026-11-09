@@ -19,15 +19,15 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
     readonly Device* _device;
     readonly Context* _context;
     readonly object _lock = new();
-    readonly string _deviceName;
+    string _deviceName;
     /// <summary>Mixer rate and samples per mix update of the device.</summary>
     readonly int _mixRate, _updateSamples;
     readonly List<Stream> _streams = new();
 
-    OpenAlAudio(AL al, ALContext alc, Device* device, Context* context)
+    OpenAlAudio(AL al, ALContext alc, Device* device, Context* context, AudioOutputFollower follower)
     {
-        _al = al; _alc = alc; _device = device; _context = context;
-        try { _deviceName = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "?"; } catch { _deviceName = "?"; }
+        _al = al; _alc = alc; _device = device; _context = context; _follower = follower;
+        _deviceName = OpenedName(alc, device) ?? "?";
         int freq = 0, refresh = 0;
         try
         {
@@ -64,36 +64,34 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         return names;
     }
 
-    static readonly string[] ControllerMarkers = ["controller", "dualsense", "dualshock", "wireless controller", "xbox"];
-
-    static bool IsController(string name) => ControllerMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>
-    /// The device to open: <paramref name="requested"/> (--audio-device / VITASHARP_AUDIO_DEVICE) when it names one,
-    /// else the system default unless it is a game controller, in which case the first speaker or headphone output.
-    /// "" = OpenAL's own default.
-    /// </summary>
-    static string PickDevice(ALContext alc, string? requested)
+    /// <summary>The full name of an open output: ALC_ALL_DEVICES_SPECIFIER on the device (ALC_DEVICE_SPECIFIER gives
+    /// only "OpenAL Soft" on Windows).</summary>
+    static string? OpenedName(ALContext alc, Device* device)
     {
-        var names = ListDevices(alc, out var def);
-        if (!string.IsNullOrWhiteSpace(requested))
+        try
         {
-            var match = names.FirstOrDefault(n => n.Equals(requested, StringComparison.OrdinalIgnoreCase))
-                        ?? names.FirstOrDefault(n => n.Contains(requested, StringComparison.OrdinalIgnoreCase));
-            if (match != null) return match;
-            Log.Warn($"Audio: device '{requested}' not found (available: {string.Join(", ", names)}); using the default");
+            var getString = (delegate* unmanaged[Cdecl]<Device*, int, byte*>)alc.Context.GetProcAddress("alcGetString");
+            byte* p = getString == null ? null : getString(device, ALC_ALL_DEVICES_SPECIFIER);
+            return p == null ? null : System.Runtime.InteropServices.Marshal.PtrToStringUTF8((nint)p);
         }
-        if (def != null && IsController(def))
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>The output names and the system default, for the launcher's "Saida de audio" list (empty when OpenAL
+    /// cannot be loaded).</summary>
+    public static (List<string> Outputs, string? Default) ListOutputs()
+    {
+        try
         {
-            var other = names.FirstOrDefault(n => !IsController(n));
-            if (other != null)
-            {
-                Log.Info($"Audio: the default output '{def}' is a game controller; using '{other}' instead");
-                return other;
-            }
+            var alc = ALContext.GetApi(true);
+            var names = ListDevices(alc, out var def);
+            return (names, def);
         }
-        Log.Info($"Audio: outputs: {string.Join(" | ", names)}; system default: {def ?? "?"}");
-        return def ?? "";
+        catch (Exception e)
+        {
+            Log.Warn($"OpenAL unavailable: {e.Message}");
+            return ([], null);
+        }
     }
 
     public static OpenAlAudio? TryCreate(string? requestedDevice = null)
@@ -102,15 +100,19 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         {
             var alc = ALContext.GetApi(true);
             var al = AL.GetApi(true);
-            string name = PickDevice(alc, requestedDevice ?? Environment.GetEnvironmentVariable(EnvVars.AudioDevice));
+            var follower = new AudioOutputFollower(requestedDevice ?? Environment.GetEnvironmentVariable(EnvVars.AudioDevice), GameControllerAudio.Predicate());
+            var names = ListDevices(alc, out var def);
+            string name = follower.Initial(names, def, out var why);
+            Log.Info(why);
             var dev = alc.OpenDevice(name);
             if (dev == null && name.Length > 0) dev = alc.OpenDevice("");
             if (dev == null) { Log.Warn("OpenAL: no output device"); return null; }
             var ctx = alc.CreateContext(dev, null);
             alc.MakeContextCurrent(ctx);
-            var a = new OpenAlAudio(al, alc, dev, ctx);
+            var a = new OpenAlAudio(al, alc, dev, ctx, follower);
             Log.Info($"Audio: OpenAL Soft, {a.Describe()}");
             AudioDiagnostics.DeviceInfo = a.Describe;
+            a.StartWatching();
             return a;
         }
         catch (Exception e)
@@ -329,8 +331,63 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
         }
     }
 
+    // ---------------------------------------------------------------- output changes (AudioOutputFollower)
+
+    const int ALC_CONNECTED = 0x313;
+    readonly AudioOutputFollower _follower;
+    readonly ManualResetEventSlim _stopWatch = new();
+    Thread? _watcher;
+    delegate* unmanaged[Cdecl]<Device*, byte*, int*, byte> _reopen;
+
+    /// <summary>The name of the open output (as OpenAL lists it).</summary>
+    public string DeviceName => _deviceName;
+
+    /// <summary>Checks the outputs every 2 s: a chosen output that disappears falls back to the system default and comes
+    /// back when it is listed again; with the system default, a default change moves the stream. alcReopenDeviceSOFT
+    /// (ALC_SOFT_reopen_device, OpenAL Soft 1.22+) keeps the context, sources and queued grains.</summary>
+    void StartWatching()
+    {
+        if (_alc.IsExtensionPresent(_device, "ALC_SOFT_reopen_device"))
+            _reopen = (delegate* unmanaged[Cdecl]<Device*, byte*, int*, byte>)_alc.GetProcAddress(_device, "alcReopenDeviceSOFT");
+        if (_reopen == null) { Log.Warn("Audio: OpenAL has no ALC_SOFT_reopen_device; the output will not follow device changes"); return; }
+        _watcher = new Thread(Watch) { IsBackground = true, Name = "audio output watch", Priority = ThreadPriority.BelowNormal };
+        _watcher.Start();
+    }
+
+    void Watch()
+    {
+        while (!_stopWatch.Wait(2000))
+        {
+            try
+            {
+                var names = ListDevices(_alc, out var def);
+                int connected = 1;
+                lock (_lock) { if (_alc.IsExtensionPresent(_device, "ALC_EXT_disconnect")) _alc.GetContextProperty(_device, (GetContextInteger)ALC_CONNECTED, 1, &connected); }
+                var next = _follower.Check(names, def, connected != 0, out var message);
+                if (message != null) Log.Info(message);
+                if (next != null) Reopen(next);
+            }
+            catch (Exception e) { Log.Warn($"Audio: output check failed: {e.Message}"); }
+        }
+    }
+
+    void Reopen(string name)
+    {
+        lock (_lock)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(name + "\0");
+            byte ok;
+            fixed (byte* p = bytes) ok = _reopen(_device, name.Length == 0 ? null : p, null);
+            if (ok == 0) { Log.Warn($"Audio: could not reopen on '{name}'; staying on '{_deviceName}'"); return; }
+            _deviceName = OpenedName(_alc, _device) ?? name;
+            Log.Info($"Audio: now playing on '{_deviceName}'");
+        }
+    }
+
     public void Dispose()
     {
+        _stopWatch.Set();
+        _watcher?.Join(3000);
         if (AudioDiagnostics.DeviceInfo == Describe) AudioDiagnostics.DeviceInfo = null;
         lock (_lock)
         {

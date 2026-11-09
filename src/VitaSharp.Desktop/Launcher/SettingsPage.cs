@@ -19,7 +19,7 @@ namespace VitaSharp.Desktop.Launcher;
 public sealed class SettingsPage : UserControl
 {
     public const string SectionGeneral = "general", SectionGraphics = "graphics", SectionControls = "controls",
-        SectionEmulation = "emulation", SectionNetwork = "network", SectionAdvanced = "advanced", SectionSystem = "system";
+        SectionEmulation = "emulation", SectionAudio = "audio", SectionNetwork = "network", SectionAdvanced = "advanced", SectionSystem = "system";
 
     readonly LauncherSettings _settings;
     readonly Action _save;
@@ -101,7 +101,8 @@ public sealed class SettingsPage : UserControl
         foreach (var (key, icon, text) in new[]
                  {
                      (SectionGeneral, "settings", S.SectionGeneral), (SectionSystem, "vita", S.VitaSystem), (SectionGraphics, "monitor", S.SectionGraphics),
-                     (SectionControls, "gamepad", S.Controls), (SectionEmulation, "cpu", S.SectionEmulation), (SectionNetwork, "user", S.SectionNetwork),
+                     (SectionControls, "gamepad", S.Controls), (SectionEmulation, "cpu", S.SectionEmulation), (SectionAudio, "volume", S.SectionAudio),
+                     (SectionNetwork, "user", S.SectionNetwork),
                      (SectionAdvanced, "terminal", S.SectionAdvanced),
                  })
         {
@@ -179,6 +180,21 @@ public sealed class SettingsPage : UserControl
         return (values, labels);
     }
 
+    /// <summary>Values and labels of the "Saida de audio" dropdown: the system default, then each output (friendly
+    /// names); the current value is kept, marked disconnected, while its output is unplugged.</summary>
+    public static (List<string> Values, List<string> Labels) AudioOutputChoices(IReadOnlyList<string> outputs, string current)
+    {
+        var values = new List<string> { "" };
+        var labels = new List<string> { S.AudioOutputDefault };
+        foreach (var o in outputs) { values.Add(o); labels.Add(VitaSharp.Core.Host.AudioOutputFollower.FriendlyName(o)); }
+        if (current.Length > 0 && !values.Contains(current, StringComparer.OrdinalIgnoreCase))
+        {
+            values.Add(current);
+            labels.Add(S.CameraDisconnected(VitaSharp.Core.Host.AudioOutputFollower.FriendlyName(current)));
+        }
+        return (values, labels);
+    }
+
     Control BuildList()
     {
         var s = new StackPanel { Spacing = 10, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 32) };
@@ -226,6 +242,14 @@ public sealed class SettingsPage : UserControl
         s.Children.Add(_k.GroupTitle(S.Trophies));
         s.Children.Add(_k.Group(
             _k.Row("trophy", S.TrophySound, S.TrophySoundDetail, _k.Switch(_settings.TrophySound, v => Set(() => _settings.TrophySound = v)))));
+
+        // ---------------------------------------------------------- Audio
+        s.Children.Add(Anchor(SectionAudio, S.SectionAudio));
+        var (audioValues, audioLabels) = AudioOutputChoices(VitaSharp.Desktop.Host.OpenAlAudio.ListOutputs().Outputs, _settings.AudioDevice);
+        s.Children.Add(_k.Group(
+            _k.Row("volume", S.AudioOutput, S.AudioOutputDetail, _k.Dropdown(audioLabels,
+                Math.Max(0, audioValues.FindIndex(v => v.Equals(_settings.AudioDevice, StringComparison.OrdinalIgnoreCase))),
+                i => Set(() => _settings.AudioDevice = audioValues[i]), 300))));
 
         // ---------------------------------------------------------- Graficos
         s.Children.Add(Anchor(SectionGraphics, S.SectionGraphics));
