@@ -39,6 +39,7 @@ loads/stores ~25% (D registers of VFP code included), exits/accounting ~10%. Ana
 | `fence` | A DMB right after another with no memory access between is dropped. |
 | `fpentry` | Blocks with scalar VFP check FPSCR[25:16] once at entry (VMSR ends a block); FpOps then have no handler path, are not call sites, and take operands from the SIMD register cache (D registers and even S registers; double results cached). Another mode: the block returns before running (`TierUpRequest = 2`) and the dispatcher interprets it once. |
 | `stub` (extended) | The unlinked path of a patched exit is out of line too: one B word behind the site. |
+| `vlazy` | The SIMD register cache is write-back: VecOp and inline FpOp results stay dirty in v18-v31 until a branch, label, call, exit, eviction, partial rewrite or another access to the register file in memory (`str d` was 4.6% of the game thread's hot JIT code). |
 | `chain` | Superblocks: a block ending in a conditional direct branch (B<c>, B<c>.W, CBZ/CBNZ) is translated with the already-executed blocks of its not-taken path (up to 4 blocks / 128 instructions); taken paths exit, each exit charges the cycles up to it (IR exit Imm4), the continued blocks are dependencies. |
 
 **Measured on the phone** (device lab, 50f7ddf dev APK: `succ`, `count`, `group`, `fence`; Killzone staircase, 3
