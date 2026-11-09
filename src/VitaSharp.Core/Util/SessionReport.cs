@@ -47,6 +47,7 @@ public static class SessionReport
                 yield return $"  mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting";
         foreach (var l in GpuLines(emu)) yield return l;
         foreach (var l in AudioDiagnostics.SummaryLines()) yield return l; // always: ports, outputs/s, underruns per minute
+        foreach (var l in VitaSharp.Core.Hle.Modules.Ngs.PerfLines()) yield return l;
         foreach (var l in DebugSummaryLines()) yield return l;
         foreach (var l in ProcessLines()) yield return l;
     }
@@ -70,6 +71,7 @@ public static class SessionReport
         Add(() => [HleCallsLine(emu)]);
         Add(() => GpuLines(emu));
         Add(AudioDiagnostics.SummaryLines);
+        Add(VitaSharp.Core.Hle.Modules.Ngs.PerfLines);
         Add(ProcessLines);
         return lines;
     }

@@ -886,12 +886,24 @@ public sealed partial class Ngs : HleModule
                 else buf = new NgsVoice[n];
                 s.Queue.CopyTo(buf);
                 s.UpdateDepth++;
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 try { Update(new ReadOnlySpan<NgsVoice>(buf, 0, n)); }
-                finally { s.UpdateDepth--; }
+                finally
+                {
+                    s.UpdateDepth--;
+                    Interlocked.Add(ref s_updateTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
+                    Interlocked.Increment(ref s_updates);
+                    Interlocked.Add(ref s_voices, n);
+                }
             }
         }
         finally { t_deferred = outer; }
-        foreach (var c in callbacks) CallNow(c.Voice, c.Callback, c.UserData, c.ModuleId, c.Reason, c.Reason2, c.Ptr);
+        if (callbacks.Count > 0)
+        {
+            long tc = System.Diagnostics.Stopwatch.GetTimestamp();
+            foreach (var c in callbacks) CallNow(c.Voice, c.Callback, c.UserData, c.ModuleId, c.Reason, c.Reason2, c.Ptr);
+            Interlocked.Add(ref s_callbackTicks, System.Diagnostics.Stopwatch.GetTimestamp() - tc);
+        }
         callbacks.Clear();
         t_spare = callbacks;
         return OK;
@@ -916,7 +928,10 @@ public sealed partial class Ngs : HleModule
                 uint finishedModule = 0;
                 foreach (var m in v.Modules)
                 {
-                    if (Process(v, m))
+                    long tm = System.Diagnostics.Stopwatch.GetTimestamp();
+                    bool done = Process(v, m);
+                    CountModule(m.Kind, System.Diagnostics.Stopwatch.GetTimestamp() - tm);
+                    if (done)
                     {
                         finished = true;
                         finishedModule = NgsModules.Id(m.Kind);
@@ -931,7 +946,12 @@ public sealed partial class Ngs : HleModule
                     Stop(v);
                 }
                 DumpVoice(v);
-                if (v.Product != null) Deliver(v, queue);
+                if (v.Product != null)
+                {
+                    long td = System.Diagnostics.Stopwatch.GetTimestamp();
+                    Deliver(v, queue);
+                    Interlocked.Add(ref s_deliverTicks, System.Diagnostics.Stopwatch.GetTimestamp() - td);
+                }
                 v.FrameCount++;
             }
         }
@@ -976,9 +996,14 @@ public sealed partial class Ngs : HleModule
                 return false;
             case NgsModuleKind.Output:
             {
-                var span = m.GuestState.AsSpan();
-                for (int i = 0; i < g * 2; i++)
-                    BitConverter.TryWriteBytes(span[(i * 2)..], (short)Math.Clamp(v.Input[i] * 32768f, -32768f, 32767f));
+                // one typed view, no slice per sample (a call each under Mono's AOT)
+                var outS = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(m.GuestState.AsSpan());
+                var inF = v.Input.AsSpan(0, Math.Min(g * 2, outS.Length));
+                for (int i = 0; i < inF.Length; i++)
+                {
+                    float x = inF[i] * 32768f;
+                    outS[i] = (short)(x < -32768f ? -32768f : x > 32767f ? 32767f : x);
+                }
                 return false;
             }
             case NgsModuleKind.Player:
@@ -999,7 +1024,8 @@ public sealed partial class Ngs : HleModule
         var outBuf = m.EmitBuf is { } eb && eb.Length == g * 2 ? eb : m.EmitBuf = new float[g * 2];
         Array.Clear(outBuf);
         int avail = Math.Min(st.Available, g);
-        for (int i = 0; i < avail * 2; i++) outBuf[i] = st.Pcm[st.PcmRead * 2 + i];
+        // one block copy (the List indexer was a call per sample under Mono's AOT)
+        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(st.Pcm).Slice(st.PcmRead * 2, avail * 2).CopyTo(outBuf);
         st.PcmRead += avail;
         return outBuf;
     }
@@ -1272,6 +1298,7 @@ public sealed partial class Ngs : HleModule
             bool decoded = true;
             DumpSuperframe(v, config, st.Staging);
             if (Trace && take == sfBytes) TraceStale(m, buf, pos / sfBytes, st.Staging);
+            long ta = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 st.At9.Decode(st.Staging, st.At9Out!);
@@ -1288,6 +1315,8 @@ public sealed partial class Ngs : HleModule
                     continue;
                 }
             }
+            Interlocked.Add(ref s_at9DecodeTicks, System.Diagnostics.Stopwatch.GetTimestamp() - ta);
+            Interlocked.Increment(ref s_at9Superframes);
             var pcm = st.DecodeBuffer(Math.Max(count, 0) * 2); // reused scratch: one superframe per call (zeroed)
             for (int i = 0; decoded && i < count; i++)
             {
