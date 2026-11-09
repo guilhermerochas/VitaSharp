@@ -70,7 +70,8 @@ public sealed unsafe partial class NativeJitTests
         code.Clear();
         GuestBytes(thumb, words).CopyTo(code);
         var b = BlockBuilder.Build(CodeBase, thumb);
-        var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+        // the loop's own block is its only known successor (the code after the loop is never decoded)
+        var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs, successors: (pc, t) => pc == b.Start && t == thumb ? b : null)!;
         var info = (NativeCodeInfo)cb.Tag!;
         var s = CpuState.Allocate();
         try
@@ -374,6 +375,110 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.Successors"/>: random blocks ending in a conditional branch, with random target and
+    /// fall-through blocks (often starting with a flag setter or a register move, so stores become dead). The native
+    /// block runs with the stores its successors overwrite dropped, then the successor runs in the interpreter; the state
+    /// after the successor must equal running both in the interpreter. Core callouts (MRS/MSR) keep every store.
+    /// </summary>
+    [Arm64SandboxTheory]
+    [InlineData(500, 4407)]
+    public void Arm64DeadSuccessorStoresMatchInterpreter(int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        var rng = new Random(seed);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0, shorter = 0, longer = 0, detailed = 0;
+        long dropped0 = NativeArm64Compiler.DeadStoresDropped;
+        const uint Target = CodeBase + 0x400;
+        uint RandomIns(uint cond)
+        {
+            while (true)
+            {
+                uint r = (uint)rng.NextInt64();
+                uint ins = rng.Next(12) switch
+                {
+                    < 5 => (cond << 28) | (r & 0x03F77F67) & ~(rng.Next(2) == 0 ? 0x02000000u : 0x10u), // data processing r0-r7
+                    5 => (cond << 28) | 0x05800000u | (r & 0x00106000) | 0x1000 | (r & 0x3FC),             // LDR/STR r1/r3/r5/r7, [r0, #imm]
+                    6 => (cond << 28) | 0x03A00000u | (r & 0x7000) | (r & 0xFF),                           // MOV r0-r7, #imm
+                    7 => (cond << 28) | 0x00A00000u | (r & 0x00077007) & ~0x8000u,                         // ADC (reads C)
+                    8 when rng.Next(4) == 0 => (cond << 28) | (rng.Next(3) == 0 ? 0x0128F003u : 0x010F1000u | (r & 0x6000)), // MSR / MRS
+                    _ => (cond << 28) | 0x00100000u | (r & 0x00E00000) | (r & 0x00077007) & ~0x8000u,     // flag setters, Rd r0-r7
+                };
+                var d = Decoder.DecodeArm(ins, CodeBase);
+                if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, false)) continue;
+                return ins;
+            }
+        }
+        uint Cond() => rng.Next(3) == 0 ? (uint)rng.Next(14) : 14u;
+        byte[] Words(List<uint> w) => w.SelectMany(BitConverter.GetBytes).ToArray();
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var a = new List<uint>();
+                int n = rng.Next(1, 10);
+                for (int k = 0; k < n; k++) a.Add(RandomIns(Cond()));
+                uint bpc = CodeBase + 4u * (uint)a.Count;
+                a.Add(((uint)rng.Next(14) << 28) | 0x0A000000u | (((Target - (bpc + 8)) >> 2) & 0xFFFFFF)); // bcond Target
+                // the fall-through block follows the branch, the target block is at Target; both end in "b ."
+                List<uint> Successor()
+                {
+                    var w = new List<uint>();
+                    int m = rng.Next(0, 6);
+                    if (rng.Next(3) != 0) w.Add(RandomIns(14));
+                    for (int k = 0; k < m; k++) w.Add(RandomIns(Cond()));
+                    w.Add(0xEAFFFFFE);
+                    return w;
+                }
+                var fall = Successor();
+                var code = GuestMemory.Span(CodeBase, 0x800);
+                code.Clear();
+                Words(a).CopyTo(code);
+                Words(fall).CopyTo(code[(4 * a.Count)..]);
+                Words(Successor()).CopyTo(code[0x400..]);
+                var blocks = new Dictionary<(uint, bool), Block>();
+                Block Get(uint pc, bool thumb) => blocks.TryGetValue((pc, thumb), out var x) ? x : blocks[(pc, thumb)] = BlockBuilder.Build(pc, thumb);
+                var b = Get(CodeBase, false);
+                var st = new RandomState(rng);
+                st.Regs[0] = DataBase + 0x400;
+                st.Apply(s, false);
+                var interp = Take(s, Guard(() => { CpuCore.Interpret(s, b); CpuCore.Interpret(s, Get(s->R[15], false)); }));
+                int[] words = new int[2];
+                for (int mode = 0; mode < 2; mode++)
+                {
+                    Arm64Emitter.Opts = mode == 1 ? old | Arm64Emitter.A64Opt.Successors : old & ~Arm64Emitter.A64Opt.Successors;
+                    var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs, successors: Get)!;
+                    words[mode] = ((NativeCodeInfo)cb.Tag!).Size;
+                    st.Apply(s, false);
+                    var native = Take(s, Guard(() => { RunArm64(sb, s, cb.NativeEntry); CpuCore.Interpret(s, Get(s->R[15], false)); }));
+                    compared++;
+                    string diff = Diff(interp, native);
+                    if (diff.Length > 0)
+                    {
+                        if (detailed++ < 4) output.WriteLine($"--- successors {mode == 1}{diff}\n{DescribeArm64(b, cb)}\nfall: {string.Join(",", fall.Select(x => x.ToString("X8")))}");
+                        Record(failures, $"successors {mode == 1}", b, diff);
+                    }
+                }
+                if (words[1] < words[0]) shorter++;
+                if (words[1] > words[0]) longer++;
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        long dropped = NativeArm64Compiler.DeadStoresDropped - dropped0;
+        output.WriteLine($"compared {compared} runs, {dropped} stores dropped, {shorter} blocks shorter, {longer} longer; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        // static size may grow: R15 moves to each exit's dispatcher paths (StateLiveness.ColdPc), off the linked path
+        Assert.True(dropped > 0 && shorter > 0, "no stores dropped");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
+    /// <summary>
     /// <see cref="Arm64Emitter.A64Opt.BackEdgeBreak"/>: with LinkBreak set and a full pacing window left, a linked forward
     /// exit chains on and the linked back edge returns (two blocks); without the option the first exit returns.
     /// The pinned counters must also hand the dispatcher the right block and cycle totals.
@@ -417,6 +522,130 @@ public sealed unsafe partial class NativeJitTests
             }
         }
         finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+    }
+
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.NoBlockCounts"/>: a self-linked loop on the budget-only trampoline keeps the cycle
+    /// budget exact, leaves the block counts alone and ends in the interpreter's state; its linked exit also leaves R15
+    /// to the dispatcher path (<see cref="StateLiveness.ColdPc"/>), and the loop must still end at the right address. Its guest
+    /// store marks the page through the pinned dirty-table register.
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64BudgetOnlyCounters()
+    {
+        if (Arm64Runner.Native) return; // the switch changes the trampoline (sandbox only)
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        // loop: add r0,r0,#3; str r0,[r1]; subs r2,r2,#1; bne loop; b .
+        uint[] prog = [0xE2800003, 0xE5810000, 0xE2522001, 0x1AFFFFFB, 0xEAFFFFFE];
+        prog.SelectMany(BitConverter.GetBytes).ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+        using var sb = new Arm64Sandbox(countInstructions: false, noBlockCounts: true);
+        var b = BlockBuilder.Build(CodeBase, false);
+        var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs, successors: (pc, t) => pc == b.Start && !t ? b : null)!;
+        var s = CpuState.Allocate();
+        try
+        {
+            *s = default; s->MemBase = GuestMemory.Base; s->R[15] = CodeBase; s->R[1] = DataBase + 0x10; s->R[2] = 10; s->NBlocks = 7; s->NInstr = 9;
+            s->CycleAcc = 0; s->CheckWindow = 1L << 40; s->LinkBreak = 0;
+            DirtyPages.Table[DataBase >> DirtyPages.PageShift] = 0;
+            sb.Run(s, cb.NativeEntry); // one iteration: the back edge is not linked yet
+            Assert.Equal(1, DirtyPages.Table[DataBase >> DirtyPages.PageShift]); // the out-of-line mark (pinned table base)
+            Assert.Equal(CodeBase, s->R[15]);
+            *(nint*)s->LastExitSlot = cb.NativeEntry;
+            sb.Run(s, cb.NativeEntry);
+            Assert.Equal(30u, s->R[0]);
+            Assert.Equal(0u, s->R[2]);
+            Assert.Equal(CodeBase + 16, s->R[15]);
+            Assert.Equal(30u, GuestMemory.Read<uint>(DataBase + 0x10));
+            Assert.Equal(1u, s->Z);
+            Assert.Equal(10 * b.Cycles, s->CycleAcc);
+            Assert.Equal(7, s->NBlocks);
+            Assert.Equal(9, s->NInstr);
+            *(nint*)s->LastExitSlot = 0;
+        }
+        finally { CpuState.Free(s); }
+    }
+
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.GroupMarks"/>: blocks of STR/STRB/STRH/STRD/STMDB through one or two base registers
+    /// at random offsets around page boundaries. Every page a store wrote must be marked dirty, or be the page after a
+    /// marked one (the sweep's rule), and memory must match the interpreter; grouping must leave fewer marks.
+    /// </summary>
+    [Arm64SandboxTheory]
+    [InlineData(400, 5501)]
+    public void Arm64GroupedDirtyMarksCoverStores(int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        var rng = new Random(seed);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        int fewer = 0, more = 0;
+        var failures = new List<string>();
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var words = new List<uint>();
+                int n = rng.Next(2, 9);
+                for (int k = 0; k < n; k++)
+                {
+                    uint rn = (uint)rng.Next(2) * 8;            // r0 or r8
+                    uint rt = 1 + (uint)rng.Next(6);
+                    uint imm = (uint)rng.Next(rng.Next(2) == 0 ? 64 : 4096) & ~3u;
+                    words.Add(rng.Next(6) switch
+                    {
+                        0 => 0xE5C00000u | rn << 16 | rt << 12 | imm,                                   // STRB rt, [rn, #imm]
+                        1 => 0xE1C000B0u | rn << 16 | rt << 12 | (imm & 0xF0) << 4 | (imm & 0xF),      // STRH rt, [rn, #imm8]
+                        2 => 0xE1C000F0u | rn << 16 | 2u << 12 | (imm & 0xF0) << 4 | (imm & 0xF & ~7u), // STRD r2, r3, [rn, #imm8]
+                        3 => 0xE9200000u | rn << 16 | 0x00FEu,                                           // STMDB rn!, {r1-r7}
+                        _ => 0xE5800000u | rn << 16 | rt << 12 | imm,                                    // STR rt, [rn, #imm]
+                    });
+                    if (rng.Next(5) == 0) words.Add(0xE2800000u | rn << 16 | rn << 12 | (uint)rng.Next(256)); // add rn, rn, #imm
+                }
+                words.Add(0xEAFFFFFE);
+                words.SelectMany(BitConverter.GetBytes).ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, false);
+                var st = new RandomState(rng);
+                // bases a little below a page boundary of the data area (stores cross into the next page)
+                st.Regs[0] = DataBase + 0x2000 - (uint)rng.Next(0x200) * 4;
+                st.Regs[8] = DataBase + 0x5000 - (uint)rng.Next(0x200) * 4;
+                st.Apply(s, false);
+                var before = GuestMemory.Span(DataBase, (int)DataSize).ToArray();
+                CpuCore.Interpret(s, b);
+                var interp = Take(s, null);
+                var after = interp.Mem;
+                int[] marks = new int[2];
+                for (int mode = 0; mode < 2; mode++)
+                {
+                    Arm64Emitter.Opts = mode == 1 ? old | Arm64Emitter.A64Opt.GroupMarks : old & ~Arm64Emitter.A64Opt.GroupMarks;
+                    var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                    st.Apply(s, false);
+                    uint p0 = DataBase >> DirtyPages.PageShift, pages = DataSize >> DirtyPages.PageShift;
+                    for (uint p = 0; p <= pages; p++) DirtyPages.Table[p0 + p] = 0;
+                    RunArm64(sb, s, cb.NativeEntry);
+                    var native = Take(s, null);
+                    string diff = Diff(interp, native);
+                    if (diff.Length > 0) failures.Add($"group {mode == 1}: {diff}");
+                    for (int i = 0; i < after.Length; i++)
+                    {
+                        if (after[i] == before[i]) continue;
+                        uint pg = (DataBase + (uint)i) >> DirtyPages.PageShift;
+                        if (DirtyPages.Table[pg] == 0 && DirtyPages.Table[pg - 1] == 0) { failures.Add($"group {mode == 1}: page {pg:X} written, not marked\n{DescribeArm64(b, cb)}"); break; }
+                    }
+                    marks[mode] = ((NativeCodeInfo)cb.Tag!).Size; // fewer marks: shorter code
+                }
+                if (marks[1] < marks[0]) fewer++;
+                if (marks[1] > marks[0]) more++;
+                if (failures.Count > 3) break;
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        output.WriteLine($"{fewer} blocks shorter with grouped marks, {more} longer");
+        foreach (var f in failures) output.WriteLine(f);
+        Assert.True(failures.Count == 0, failures.FirstOrDefault());
+        Assert.True(fewer > 0 && more == 0);
     }
 
     [Arm64SandboxFact]
