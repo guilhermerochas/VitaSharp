@@ -249,6 +249,29 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         float scale = Math.Min(v.Width / 960f, v.Height / 544f);
         float iw = 960 * scale / v.Width, ih = 544 * scale / v.Height;
         _pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
+        ApplySurfaceSize(v);
+    }
+
+    /// <summary><see cref="EnvVars.AndroidSurfaceSize"/>: the size the game's surface buffers are allocated at, below the
+    /// view's (the display hardware scales them up); "game" = the height of the Vita's screen.</summary>
+    static readonly string? SurfaceSize = Environment.GetEnvironmentVariable(EnvVars.AndroidSurfaceSize)?.Trim().ToLowerInvariant();
+    (int, int) _surfaceSizeSet;
+
+    void ApplySurfaceSize(SurfaceView v)
+    {
+        if (string.IsNullOrEmpty(SurfaceSize) || v.Holder is not { } holder) return;
+        int h = SurfaceSize switch
+        {
+            "game" => 544,
+            "half" => v.Height / 2,
+            _ => int.TryParse(SurfaceSize, out int px) ? px : 0,
+        };
+        if (h <= 0 || h >= v.Height) return;
+        int w = (int)Math.Round((double)v.Width * h / v.Height);
+        if (_surfaceSizeSet == (w, h)) return;
+        _surfaceSizeSet = (w, h);
+        holder.SetFixedSize(w, h);
+        Log.Info($"Game surface buffers {w}x{h} (view {v.Width}x{v.Height}, {EnvVars.AndroidSurfaceSize}={SurfaceSize})");
     }
 
     // ------------------------------------------------------------------ lifecycle
