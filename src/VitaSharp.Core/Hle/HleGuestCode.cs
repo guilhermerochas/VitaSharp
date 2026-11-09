@@ -445,6 +445,9 @@ public static class HleGuestCode
         BxLr,                      // 10
     ];
 
+    // declared before every flag derived from it: static initializers run in textual order
+    static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=nolw: without the lightweight mutex and cond routines (A/B).</summary>
     static readonly bool LwMutexRoutines = Mode is not ("precomputed" or "gxm" or "nolw");
 
@@ -461,7 +464,6 @@ public static class HleGuestCode
 
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
-    static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
     static readonly bool ContextModes = Mode != "precomputed";
     static readonly bool KernelRoutines = Mode is not ("precomputed" or "gxm");
     /// <summary>=notex: without the texture-control-word and program-header routines (A/B).</summary>
