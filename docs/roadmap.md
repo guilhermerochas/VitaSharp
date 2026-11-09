@@ -981,6 +981,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Core libretro do VitaSharp (pedido do usuário, 08/11/2026; fazer depois do Android em velocidade nativa, porque
+  depende do mesmo trabalho de runtime): projeto novo `VitaSharp.Libretro` que expõe a API C do libretro (`retro_init`,
+  `retro_load_game`, `retro_run`, `retro_serialize`...) via NativeAOT (`[UnmanagedCallersOnly]`, DLL no Windows e `.so`
+  no Linux/Android). Vídeo pela interface Vulkan de hardware do libretro (RETRO_HW_CONTEXT_VULKAN: o renderizador
+  desenha nas imagens que o frontend dá), entrada pelo RetroPad + ponteiro (toque), áudio pelo `audio_sample_batch`,
+  estados salvos do VitaSharp no `retro_serialize` (rewind), firmware na pasta `system` do frontend. Sincronizar o
+  emulador multi-thread com o `retro_run` por quadro sem perder desempenho. Validar no RetroArch (Windows, Linux e
+  Android)
 - [x] Sugestão de layout novo para o launcher do desktop (pedido do usuário, 07/11/2026), como foi feito para o app
   Android: proposta de um visual moderno e próprio do VitaSharp (o usuário citou o Ryujinx só como exemplo de visual
   moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
