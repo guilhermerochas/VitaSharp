@@ -268,6 +268,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (patch guardado fora do repositório). Falta (próximo passo): o custo de host das
   chamadas HLE triviais (`sceClibMemcpy`/`sceKernelGetTLSAddr` como intrínsecos no JIT em vez de sair do código
   nativo, como os "HLE inline" do Ryujinx/dynarmic) e os 1,5 s de ritmo da CPU emulada, que um Vita também gastaria
+  Feito em parte (perf/desktop-16, 08/11/2026): `sceKernelGetTLSAddr`, `sceKernelGetThreadId` e as cópias/preenchimentos
+  de até 256 bytes de `sceClibMemcpy`/`_safe`/`Memmove`/`Memset` viraram código ARM do guest (`Hle/HleGuestCode`, como
+  a tabela de substituição do PPSSPP e a leitura inline do TPIDRRO_EL0 do ARMeilleure), compilado pelos dois backends
+  nativos; cópia com destino dentro da origem (memmove para trás) e as maiores continuam no C#. `mania_boot` (2 rodadas
+  de cada, mesmo binário, `VITASHARP_HLE_GUEST_CODE=gxm` = antes): entradas no código nativo da `main` 6.340 -> 1.830-1.990
+  por quadro, `sceClibMemcpy` em C# 7,37 M -> 0,90 M chamadas, CPU da `main` 2,62-2,79 -> 2,42-2,56 ms/quadro, rodada
+  67,0/66,7 s -> 65,5/65,3 s. Medido e descartado: chamar o HLE de dentro do código nativo também no x64 (callout,
+  como no ARM64): 65,6/65,3 s, igual. O que sobra na travada é o ritmo da CPU emulada (opção "Relógio da CPU", pendente)
 
 ## Android
 
@@ -2880,3 +2888,12 @@ fs8):
   são o gargalo (AAC 5 ms, H.264 12,8 ms por chamada, MediaExtractor 0,4 ms); falta ver as threads do player do jogo
   (simpleperf). Comparar também os dumps de áudio de F1 (menu e corrida) e God of War com o PC (`vitasharp-perf
   audio-check`): 245 e 157 estalos no celular
+- **Silent Hill 4 port (SILH00004), "a visualização tá zuada" (08/11/2026, capture SILH00004_20261108_211441, not
+  solved):** checked so far: the depth-clamp change (580f464) does not touch it (replay with and without it:
+  pixel-identical); the post pass (scene 640x362 -> 0x60F8CC00 -> back) does not blur or darken it (the scene target
+  before it looks the same); the BC1/BC2 swizzled-arbitrary atlases decode to plausible (dark, rusty) art; the
+  stencil-masked effect target 0x613EF000 stays empty because no draw in that frame writes a non-zero stencil (so
+  the composite is a no-op, which may be right). Real Vita footage (YouTube i1CuZULiQ6w) shows a much brighter,
+  grey-green apartment, but not the same spot. Next: a Vita3K picture at the same save (its Vulkan window comes out
+  white with PrintWindow: capture it another way), and ask the user what exactly looks wrong. The title menu's
+  Continue stays grey with the user's sh4.sav copied (the save is read whole, 694288 bytes); Load is enabled.

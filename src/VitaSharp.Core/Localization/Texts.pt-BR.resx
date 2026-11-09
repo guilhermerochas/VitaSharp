@@ -2892,4 +2892,19 @@
   <data name="FolderStates" xml:space="preserve">
     <value>Estados salvos (savestates/{0})</value>
   </data>
+  <data name="GoToGame" xml:space="preserve">
+    <value>Ir para o jogo</value>
+  </data>
+  <data name="GoToGameTip" xml:space="preserve">
+    <value>Traz a janela do jogo para a frente (e a restaura se estiver minimizada)</value>
+  </data>
+  <data name="OpenFileSystem" xml:space="preserve">
+    <value>Abrir sistema de arquivos</value>
+  </data>
+  <data name="OpenFileSystemTip" xml:space="preserve">
+    <value>Abre o sistema de arquivos do Vita emulado (ux0, ur0, os0, vs0...) no gerenciador de arquivos: {0}</value>
+  </data>
+  <data name="OpenGamesFolderTip" xml:space="preserve">
+    <value>Abrir pasta dos jogos (ux0:app): {0}</value>
+  </data>
 </root>
