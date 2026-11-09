@@ -40,6 +40,13 @@ loads/stores ~25% (D registers of VFP code included), exits/accounting ~10%. Ana
 | `fpentry` | Blocks with scalar VFP check FPSCR[25:16] once at entry (VMSR ends a block); FpOps then have no handler path, are not call sites, and take operands from the SIMD register cache (D registers and even S registers; double results cached). Another mode: the block returns before running (`TierUpRequest = 2`) and the dispatcher interprets it once. |
 | `stub` (extended) | The unlinked path of a patched exit is out of line too: one B word behind the site. |
 
+**Measured on the phone** (device lab, 50f7ddf dev APK: `succ`, `count`, `group`, `fence`; Killzone staircase, 3
+alternating pairs against `VITASHARP_NATIVE_A64_NOOPT=succ,count,group,fence`, 30 s windows): game thread 24.2 vs
+26.6 ms/frame (median, -9%); host time in generated code on the game thread 14.8-15.9 vs 16.4-18.8 ms/frame, JobSched
+32-42 vs 34-51; `simpleperf stat` on the game thread: 49 vs 52 L1I refills per 1,000 instructions, and the same work
+in fewer instructions. Display unchanged (12 fps median in both): that day's main was bound by the GPU worker's fence
+wait, not the game thread. `fpentry`, `packed` and the out-of-line unlinked exits (f6eacd7) came after this run.
+
 Tests (Unicorn sandbox, fast suite): `Arm64DeadSuccessorStoresMatchInterpreter` (random blocks + random successors run
 native then interpreted vs both interpreted; 2,110 stores dropped, 0 differences), `Arm64GroupedDirtyMarksCoverStores`
 (every written page marked or after a marked page; 384/400 blocks shorter), `Arm64BudgetOnlyCounters`.
