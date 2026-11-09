@@ -406,6 +406,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `VITASHARP_GPU_RELAXED_SYNC` (12 -> 15 fps mas a parede de vidro atrás da escada fica escura e borrada) e
   `VITASHARP_SHADER_FP16=half` (281 de 300 shaders relaxados, ainda não medido no Mali). O worker da GPU passou a ser
   o limite (47-50 ms no build mono-aot, GPU 42 ms, jogo 24 ms)
+  Fim do dia 09/11 (NativeAOT + JIT + far plane + uniforms sem checagem, dev a622069): KZ 23,5-24 fps, GPU 26-28 ms,
+  worker 22-24, jogo 11,5; nada bloqueia o worker, mas o jogo espera ~8,5 ms/quadro na fila de display e ~5 ms em
+  notificações (os 4 writebacks de cena por quadro) e o worker fica 10 ms ocioso: o quadro é serial. Testado ao vivo:
+  `VITASHARP_DISPLAY_EARLY_SIGNAL=1` KZ +12% (26,5-27,7 fps) mas F1 corrida -15% (29,7 -> 25,2; worker 22,7 -> 30,7 ms,
+  jogo 12,3 -> 15,4: o jogo corre na frente e disputa os dois A76) e o Uncharted ficou mais lento em 04/11: continua só
+  por env (sem padrão por jogo). Pista para o flicker: com EARLY os quadros pretos do vídeo de abertura do F1 caem
+  de 32/69 para 15/13 (é timing). `GPU_RELAXED_SYNC` e `LAZY_WRITEBACK_SYNC` pioram o KZ; 4 quadros em voo = 8.
+  Próximos: entender por que o EARLY deixa o worker do F1 mais lento (CPU/escalonamento) e tirar a espera da fila de
+  display do KZ de outro jeito genérico; nos shaders, os vertex shaders da cena principal são limitados por load/store
+  (`vitasharp-perf mali-cost`: ~79 leituras dinâmicas da paleta de ossos por vértice, ocupação 50%); ler 4 palavras
+  com uma checagem (fetchMemory4) piorou no modelo; candidato: uniforms em UBO (registradores do Mali)
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
