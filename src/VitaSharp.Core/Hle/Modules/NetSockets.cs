@@ -673,7 +673,7 @@ public sealed partial class Net
     void sceNetCtlTerm()
     {
         _netctlInited = false;
-        lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); _sysCallbacks1.Clear(); _sysCallbacks2.Clear(); }
+        lock (_inetCallbacks) { _inetCallbacks.Clear(); _adhocCallbacks.Clear(); _sysCallbacks1.Clear(); _sysCallbacks2.Clear(); _sysCallbacks3.Clear(); _sysCallbacks4.Clear(); }
     }
 
     [Hle]
@@ -745,7 +745,7 @@ public sealed partial class Net
         if (func == 0 || cid == 0) return ERR_NETCTL_INVALID_ADDR;
         lock (_inetCallbacks)
         {
-            var t = list == 0 ? _sysCallbacks1 : _sysCallbacks2;
+            var t = SysList(list);
             for (int i = 0; i < 8; i++)
                 if (!t.ContainsKey(i))
                 {
