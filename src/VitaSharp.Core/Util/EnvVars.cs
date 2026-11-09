@@ -342,6 +342,9 @@ public static class EnvVars
     /// <summary>Tile-based GPUs with VK_*_load_store_op_none: depth/stencil that no draw of a rendering tests or writes is
     /// neither loaded nor stored; only tested, it is not stored. Default on there (0 turns it off).</summary>
     public const string DepthOpsNone = "VITASHARP_DEPTH_OPS_NONE";
+    /// <summary>1 (measurement only, wrong picture): render-target regions sampled as textures are copied once and never
+    /// refreshed, to bound the GPU cost of those copies (bench).</summary>
+    public const string RegionCopySkip = "VITASHARP_REGION_COPY_SKIP";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
