@@ -503,6 +503,10 @@ public sealed unsafe class VkCore : IDisposable
         if (MemoryBudgetSupported) exts.Add(MemoryBudgetExtension);
         if (RasterizationOrderColor) exts.Add(roaaName!);
         if (mirrorExt) exts.Add(MirrorClampExtension);
+        // VITASHARP_AFBC_LOG=1: the driver reports whether render targets are framebuffer-compressed (Mali AFBC)
+        CompressionQuery = Environment.GetEnvironmentVariable(EnvVars.AfbcLog) == "1" && devExts.Contains(CompressionControlExtension);
+        if (CompressionQuery) exts.Add(CompressionControlExtension);
+        else if (Environment.GetEnvironmentVariable(EnvVars.AfbcLog) == "1") Log.Info($"[afbc] {CompressionControlExtension} not supported: compression cannot be queried");
         var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
@@ -741,6 +745,21 @@ public sealed unsafe class VkCore : IDisposable
     // =================================================================== memory accounting and budget
 
     const string MemoryBudgetExtension = "VK_EXT_memory_budget";
+    const string CompressionControlExtension = "VK_EXT_image_compression_control";
+
+    /// <summary>VK_EXT_image_compression_control is enabled to query render targets' compression (VITASHARP_AFBC_LOG).</summary>
+    public bool CompressionQuery;
+
+    /// <summary>The compression the driver applied to an image's first subresource (VITASHARP_AFBC_LOG), or null.</summary>
+    public string? ImageCompression(Image image, ImageAspectFlags aspect)
+    {
+        if (!CompressionQuery || !Vk.TryGetDeviceExtension(Instance, Device, out ExtImageCompressionControl ext)) return null;
+        var cp = new ImageCompressionPropertiesEXT { SType = StructureType.ImageCompressionPropertiesExt };
+        var layout = new SubresourceLayout2 { SType = StructureType.SubresourceLayout2, PNext = &cp };
+        var sub = new ImageSubresource2 { SType = StructureType.ImageSubresource2, ImageSubresource = new ImageSubresource(aspect, 0, 0) };
+        ext.GetImageSubresourceLayout2(Device, image, &sub, &layout);
+        return $"{cp.ImageCompressionFlags} fixed-rate {cp.ImageCompressionFixedRateFlags}";
+    }
     const string MirrorClampExtension = "VK_KHR_sampler_mirror_clamp_to_edge";
     /// <summary>VITASHARP_GPU_DEVICE: index or part of the name of the physical device to use (default: the best one).</summary>
     static readonly string? DeviceFilter = Environment.GetEnvironmentVariable(EnvVars.GpuDevice) is { Length: > 0 } s ? s.Trim() : null;
